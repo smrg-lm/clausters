@@ -41,7 +41,7 @@ use crate::osc::server::{OscServer, ServerInfo};
 use crate::server::engine::{
     BLOCK_SIZE, DEFAULT_AUDIO_BUSES, DEFAULT_CONTROL_BUSES, Engine, engine_pair_full,
 };
-use crate::server::ipc::{IpcPeer, Role, Segment};
+use crate::server::ipc::{DEFAULT_TAP_FRAMES, DEFAULT_TAPS, IpcPeer, Role, Segment};
 
 /// How a session is opened. The defaults match the batch renderer's, so an
 /// operation and a score of the same material start from the same server.
@@ -90,8 +90,9 @@ pub struct NrtSession {
     server: OscServer,
     engine: Engine,
     peer: IpcPeer,
-    /// Kept alive for both peers; the ring lives in it.
-    _segment: Arc<Segment>,
+    /// Kept alive for both peers; the ring lives in it, and it is what a
+    /// caller hands a player so the two share one material.
+    segment: Arc<Segment>,
     channels: usize,
     sample_rate: f64,
     /// The one block the engine renders into, allocated once.
@@ -122,15 +123,37 @@ impl NrtSession {
         // between a session nobody else can see and one whose buffers a peer
         // maps by name.
         let segment = match &cfg.shm {
-            Some(path) => Segment::create_with(path, cfg.control_buses).map_err(|e| {
-                format!(
-                    "cannot create the shared segment at {}: {e}",
-                    path.display()
+            Some(path) => {
+                // Sized with the ordinary tap region even though a session
+                // never writes one: the process that attaches to this segment
+                // *does* have a device, and its scopes and meters need the
+                // rings to be there.
+                let (segment, _) = Segment::open_or_create_full(
+                    path,
+                    cfg.control_buses,
+                    DEFAULT_TAPS,
+                    DEFAULT_TAP_FRAMES,
                 )
-            })?,
+                .map_err(|e| {
+                    format!("cannot open the shared segment at {}: {e}", path.display())
+                })?;
+                // A session is driven through the ring, so it has to be the
+                // one serving it — and it owns the material it publishes.
+                // Finding the command plane taken means another server is
+                // already the owner here, which is a wiring mistake worth
+                // saying out loud rather than half-working.
+                if !segment.claim_control() {
+                    return Err(format!(
+                        "the segment at {} is already served by pid {}",
+                        path.display(),
+                        segment.control_owner().unwrap_or(0),
+                    ));
+                }
+                segment
+            }
             None => Segment::in_memory_with(cfg.control_buses),
         };
-        let (engine, handle) = engine_pair_full(
+        let (mut engine, handle) = engine_pair_full(
             cfg.sample_rate as f32,
             cfg.channels,
             cfg.workers,
@@ -139,6 +162,13 @@ impl NrtSession {
             cfg.control_buses,
             cfg.limits,
         );
+        // **The clocks belong to the device, and this mode has none.** The
+        // frames a session runs are what an operation asked for, not time
+        // passing, so publishing them into the segment would report a playhead
+        // that moves whenever somebody applies a fade — and in the arrangement
+        // this mode exists for, the process that *does* have a device is
+        // writing those very words from another process.
+        engine.silence_time_publication();
         let info = ServerInfo {
             nominal_sample_rate: cfg.sample_rate,
             actual_sample_rate: cfg.sample_rate,
@@ -166,13 +196,19 @@ impl NrtSession {
             server,
             engine,
             peer: IpcPeer::new(Arc::clone(&segment), Role::Client),
-            _segment: segment,
+            segment,
             channels: cfg.channels,
             sample_rate: cfg.sample_rate,
             block: vec![0.0; BLOCK_SIZE * cfg.channels],
             frames: 0,
             seed,
         })
+    }
+
+    /// The segment this session publishes into: its material directory, its
+    /// control buses, and the rings it serves.
+    pub fn segment(&self) -> &Arc<Segment> {
+        &self.segment
     }
 
     pub fn sample_rate(&self) -> f64 {
@@ -308,5 +344,14 @@ impl NrtSession {
             Ok(())
         })?;
         Ok(out)
+    }
+}
+
+impl Drop for NrtSession {
+    fn drop(&mut self) {
+        // A shared session gives the command plane back, so the next process
+        // on this segment adopts it instead of taking it over from a pid that
+        // is gone. On a heap segment this is a no-op: nobody else can see it.
+        self.segment.release_control();
     }
 }

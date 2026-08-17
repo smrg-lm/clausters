@@ -328,6 +328,99 @@ impl ClaustersHeadless {
     }
 }
 
+/// An in-process **on-demand session**: engine, network loop and material,
+/// with **no audio device** — the mode an editor works in.
+///
+/// [`Clausters`] below is the other door and the difference is the whole
+/// point: that one is a full real-time server, holding the machine's input and
+/// output. This one holds nothing but computation. It performs the editing
+/// verbs, renders on demand ([`/buffer_render`](crate::server::nrtsession)),
+/// and — given a `shm` path — **owns the material**: every buffer it installs
+/// lives in a region beside the segment, where a peer draws it, a peer edits
+/// it, and a separate RT server plays it.
+///
+/// That separation is what a host needs to be an application rather than a
+/// window on a server: the editor and its material outlive the process that
+/// happens to be making sound, and killing the player takes no take with it.
+///
+/// It is driven exactly like [`Clausters`] — [`send`](Self::send) an OSC
+/// packet, [`poll_into`](Self::poll_into) a reply — so a caller swaps one for
+/// the other without learning a second protocol. The session runs on its own
+/// thread, serving the ring and performing what arrives; dropping this stops
+/// it.
+pub struct ClaustersSession {
+    peer: IpcPeer,
+    segment: Arc<Segment>,
+    shm: Option<std::path::PathBuf>,
+    stop: Arc<std::sync::atomic::AtomicBool>,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
+
+impl ClaustersSession {
+    /// Opens a session against `cfg`. With `cfg.shm` set, the segment is a
+    /// file and this session is the **owner** of everything in it; without
+    /// one it is an ordinary in-process session nobody else can see.
+    pub fn open(cfg: &crate::server::nrtsession::SessionConfig) -> Result<Self, String> {
+        let mut session = crate::server::nrtsession::NrtSession::open(cfg)?;
+        let segment = Arc::clone(session.segment());
+        let peer = IpcPeer::new(Arc::clone(&segment), Role::Client);
+        let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let flag = Arc::clone(&stop);
+        let thread = std::thread::Builder::new()
+            .name("clausters-session".into())
+            .spawn(move || {
+                // One turn per pass, then a short sleep when nothing came:
+                // this mode has no clock, so there is nothing to pace against
+                // and nothing to be late for — only work to pick up.
+                while !flag.load(Ordering::Relaxed) {
+                    if session.settle() {
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(2));
+                }
+            })
+            .map_err(|e| format!("cannot start the session thread: {e}"))?;
+        Ok(Self {
+            peer,
+            segment,
+            shm: cfg.shm.clone(),
+            stop,
+            thread: Some(thread),
+        })
+    }
+
+    /// Delivers one complete OSC packet; `false` means the ring was full.
+    pub fn send(&self, packet: &[u8]) -> bool {
+        self.peer.push(crate::server::ipc::DEFAULT_PEER, packet)
+    }
+
+    /// Pops one pending reply into `buf`, returning its length.
+    pub fn poll_into(&self, buf: &mut [u8]) -> Option<usize> {
+        self.peer.try_pop(buf).map(|(_, len)| len)
+    }
+
+    /// The segment this session publishes into — the material's directory,
+    /// the control buses, and the clocks somebody *else* writes.
+    pub fn segment(&self) -> &Arc<Segment> {
+        &self.segment
+    }
+
+    /// Where the segment is, when it is a file: what a player is pointed at
+    /// (`clausters --shm <path>`) and what a peer maps buffers by.
+    pub fn shm_path(&self) -> Option<&std::path::Path> {
+        self.shm.as_deref()
+    }
+}
+
+impl Drop for ClaustersSession {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Relaxed);
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
+}
+
 /// An in-process live server: audio device + engine + network loop, with
 /// the host as the single ring client.
 ///

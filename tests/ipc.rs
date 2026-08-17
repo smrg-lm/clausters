@@ -783,3 +783,88 @@ fn shared_server(
     }
     (server, engine)
 }
+
+/// **The editor's arrangement, end to end in one process**: the on-demand
+/// session owns the segment and the material, an RT-shaped server attaches to
+/// play it, and the session never touches the clocks.
+///
+/// The three roles are the phase's whole design — the session computes, the
+/// player holds the devices, and whoever edits writes the cells directly —
+/// so this asserts the two rules that make them safe to run at once.
+#[test]
+fn a_session_owns_the_material_and_a_player_attaches_to_it() {
+    use clausters::server::nrtsession::{NrtSession, SessionConfig};
+
+    let path = std::env::temp_dir().join(format!(
+        "clausters-shm-session-{}-{}",
+        std::process::id(),
+        line!()
+    ));
+    let _ = std::fs::remove_file(&path);
+
+    let mut session = NrtSession::open(&SessionConfig {
+        sample_rate: SR as f64,
+        channels: 1,
+        shm: Some(path.clone()),
+        ..Default::default()
+    })
+    .expect("session");
+    let segment = Arc::clone(session.segment());
+    assert_eq!(
+        segment.control_owner(),
+        Some(std::process::id()),
+        "the session serves the ring it is driven through"
+    );
+
+    session
+        .send_msg(
+            "/buffer_alloc",
+            vec![OscType::Int(1), OscType::Int(64), OscType::Int(1)],
+        )
+        .unwrap();
+    for _ in 0..200 {
+        session.settle();
+        if segment.buffer_info(1).is_some() {
+            break;
+        }
+    }
+    let (_, take) = segment
+        .map_buffer(&path, 1)
+        .expect("a session with a path publishes its material");
+    take.set_at(9, 0.25);
+
+    // The player: a server that attached, mapping what the session owns.
+    let (player_segment, created) = Segment::open_or_create_full(&path, 1024, 2, 1024).unwrap();
+    assert!(!created);
+    assert!(!player_segment.claim_control());
+    let (mut player, _engine) = shared_server(&player_segment, None);
+    player.attach_segment(Arc::clone(&player_segment));
+    assert_eq!(player.attach_material_at(path.clone()), 1);
+    let (_, played) = player_segment.map_buffer(&path, 1).unwrap();
+    assert_eq!(
+        played.at(9),
+        0.25,
+        "the player plays the very cells the session owns"
+    );
+
+    // **The clocks belong to the device.** Running the session is an
+    // operation, not time passing: a fade must not jog a playhead the player
+    // is publishing.
+    let before = segment.clock().load(Ordering::Relaxed);
+    session.run(4096, |_| Ok(())).unwrap();
+    assert_eq!(
+        segment.clock().load(Ordering::Relaxed),
+        before,
+        "a session with no device publishes no time"
+    );
+
+    drop(session);
+    assert_eq!(
+        player_segment.control_owner(),
+        None,
+        "a session gives the command plane back on the way out"
+    );
+
+    let _ = std::fs::remove_file(&path);
+    let _ = std::fs::remove_file(clausters::dsp::region::Region::path_for(&path, 1, 1));
+}

@@ -459,6 +459,16 @@ pub struct Engine {
     /// Which audio bus each segment tap ring records (`-1` = off), indexed by
     /// tap. Pre-allocated to the segment's tap count; `/bus_tap` flips entries.
     tap_buses: Vec<i32>,
+    /// Whether this engine publishes **time** into the segment: the clocks,
+    /// the taps and the per-bus levels.
+    ///
+    /// They belong to the process running an audio device, because they say
+    /// where playback *is* — and an on-demand session has no device and no
+    /// clock, only frames it was asked to run. Two engines on one segment is
+    /// the arrangement this exists for (an editor's session owns the material,
+    /// the RT server owns the devices): a session that published here would
+    /// jog the playhead every time somebody applied a fade.
+    publishes_time: bool,
     cmd_rx: Consumer<Cmd>,
     garbage_tx: Producer<Garbage>,
     pending_garbage: Vec<Garbage>,
@@ -605,6 +615,7 @@ pub fn engine_pair_full(
         sample_clock: Arc::clone(&sample_clock),
         ipc,
         tap_buses,
+        publishes_time: true,
         cmd_rx,
         garbage_tx,
         pending_garbage: Vec::with_capacity(PENDING_GARBAGE_CAPACITY),
@@ -765,6 +776,16 @@ impl Engine {
     ///
     /// Same RT discipline as `process_block`: no allocation, no locking. It
     /// is safe to call from the audio thread, and nothing there needs to.
+    /// Stops this engine publishing **time** into the segment — the clocks,
+    /// the taps and the per-bus levels (see `publishes_time`).
+    ///
+    /// What it keeps publishing is the material and the control buses, which
+    /// are the data plane proper: state a peer reads and writes, rather than a
+    /// report of where a device is.
+    pub fn silence_time_publication(&mut self) {
+        self.publishes_time = false;
+    }
+
     pub fn drain(&mut self) {
         self.drain_commands();
         self.flush_pending_garbage();
@@ -934,7 +955,7 @@ impl Engine {
         self.position_clock
             .store(self.position_here().get(), Ordering::Relaxed);
         self.sample_clock.store(block_end, Ordering::Relaxed);
-        if let Some(segment) = &self.ipc {
+        if let Some(segment) = self.ipc.as_ref().filter(|_| self.publishes_time) {
             // Audio taps first, then the clock: a reader that sees clock N
             // sees every tap sample of block N. One memcpy + one Release
             // store per active tap — no allocation, no lock (RT-safe).
