@@ -152,3 +152,53 @@ mod tests {
         );
     }
 }
+
+/// An in-process **on-demand session**: the same server with no audio device.
+///
+/// The peer of [`EmbedServer`], and the difference is what each one holds. That
+/// one holds the machine's input and output; this one holds nothing but
+/// computation and — given a segment path — the **material**. An editor sends
+/// it allocations, the editing verbs and renders, and lets a separate process
+/// hold the devices and play what it owns.
+///
+/// The reason to separate them is not tidiness: an editor that owns its takes
+/// through a real-time server holds an audio device it does not need, cannot
+/// be restarted without taking the material with it, and pays the whole
+/// real-time surface to run three verbs.
+pub struct EmbedSession {
+    inner: clausters::embed::ClaustersSession,
+}
+
+impl EmbedSession {
+    /// Opens a session whose material lives beside the segment at `shm`, at
+    /// `sample_rate` and `channels`. A peer — this host included — maps every
+    /// buffer it installs.
+    pub fn open(shm: &Path, sample_rate: f64, channels: usize) -> Result<EmbedSession, String> {
+        Ok(EmbedSession {
+            inner: clausters::embed::ClaustersSession::open(
+                &clausters::server::nrtsession::SessionConfig {
+                    sample_rate,
+                    channels,
+                    shm: Some(shm.to_path_buf()),
+                    ..Default::default()
+                },
+            )?,
+        })
+    }
+
+    /// Delivers one complete OSC packet; `false` means the ring was full.
+    pub fn send(&self, packet: &[u8]) -> bool {
+        self.inner.send(packet)
+    }
+
+    /// Pops one pending reply into `buf`, returning its length.
+    pub fn poll_into(&self, buf: &mut [u8]) -> Option<usize> {
+        self.inner.poll_into(buf)
+    }
+
+    /// Where this session's segment is — what a player is pointed at and what
+    /// the host maps its material from.
+    pub fn shm_path(&self) -> Option<&Path> {
+        self.inner.shm_path()
+    }
+}

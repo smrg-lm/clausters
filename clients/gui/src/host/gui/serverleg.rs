@@ -9,6 +9,8 @@ use std::time::Instant;
 use clausters_core::osc::{OscMessage, OscPacket, OscType};
 use tracing::{debug, info, warn};
 
+#[cfg(feature = "standalone")]
+use crate::host::ServerLink;
 use crate::host::fetch::{FetchStep, WaveWant};
 use crate::host::frame;
 use crate::host::graphics::nodetree::NodeTree;
@@ -25,11 +27,43 @@ impl App {
     /// `(widget_id, bufnum)`.
     pub(super) fn start_buffer_fetches(&mut self, def_id: i32, refs: Vec<(i32, i32)>) {
         for (widget_id, bufnum) in refs {
+            // **Mapped material needs no conversation.** When the take is in a
+            // region this host can open, its samples are read straight out of
+            // it — no `/buffer_query`, no chunked `/buffer_getRange`, no
+            // waiting. The fetch machine below stays exactly as it is for
+            // everybody else: a remote server, a page, a host with no segment.
+            #[cfg(unix)]
+            if self.place_mapped_buffer(def_id, widget_id, bufnum) {
+                continue;
+            }
             debug!("gui_def {def_id}: widget {widget_id} waits on server buffer {bufnum}");
             if let Some(query) = self.fetches.want(def_id, widget_id, bufnum) {
                 self.send_to_server(query);
             }
         }
+    }
+
+    /// Reads a take out of the mapped material and places it, returning
+    /// whether it was there. The zero-message half of
+    /// [`Self::start_buffer_fetches`].
+    #[cfg(unix)]
+    fn place_mapped_buffer(&mut self, def_id: i32, widget_id: i32, bufnum: i32) -> bool {
+        let Ok(index) = usize::try_from(bufnum) else {
+            return false;
+        };
+        let Some(take) = self.host.material().and_then(|m| m.map(index)) else {
+            return false;
+        };
+        let (channels, _, sample_rate) = take.shape();
+        debug!("gui_def {def_id}: widget {widget_id} maps buffer {bufnum}, nothing sent");
+        self.finalize_buffer(
+            bufnum,
+            take.read_all().into(),
+            channels,
+            sample_rate,
+            vec![WaveWant { def_id, widget_id }],
+        );
+        true
     }
 
     /// Sends one fetch-machine message over the client leg (`/buffer_query`,
@@ -68,13 +102,19 @@ impl App {
     /// no-op (see the stub below).
     #[cfg(feature = "standalone")]
     pub(super) fn drain_embed_replies(&mut self) {
-        if self.host.server().and_then(|s| s.embed()).is_none() {
-            return;
-        }
         let mut packets: Vec<Vec<u8>> = Vec::new();
-        if let Some(embed) = self.host.server().and_then(|s| s.embed()) {
-            let mut buf = vec![0u8; 65536];
+        let mut buf = vec![0u8; 65536];
+        // Both in-process links are polled here: the embedded server's ring and
+        // the session's. An editor has the second and not the first, and the
+        // replies it waits on -- a `/done` per edit, per render -- come back
+        // exactly the same way.
+        if let Some(embed) = self.host.server().and_then(ServerLink::embed) {
             while let Some(n) = embed.poll_into(&mut buf) {
+                packets.push(buf[..n].to_vec());
+            }
+        }
+        if let Some(session) = self.host.server().and_then(ServerLink::session) {
+            while let Some(n) = session.poll_into(&mut buf) {
                 packets.push(buf[..n].to_vec());
             }
         }

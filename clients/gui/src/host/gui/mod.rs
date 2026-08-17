@@ -230,6 +230,43 @@ pub fn open_shm(path: Option<String>) -> Option<Arc<dyn BusSource>> {
     }
 }
 
+/// Maps a segment **and its material**: the buses a meter reads, and the takes
+/// a peer draws and edits without asking for them.
+///
+/// The two travel together because they come from one path — the server's own
+/// `--shm` — and separating them at the call site would mean opening the file
+/// twice to answer two halves of the same question.
+#[cfg(unix)]
+pub fn open_shm_material(
+    path: Option<String>,
+    head: super::shm::HeadClock,
+) -> (
+    Option<Arc<dyn BusSource>>,
+    Option<super::material::SharedMaterial>,
+) {
+    let Some(path) = path else {
+        return (None, None);
+    };
+    match super::shm::SharedSegment::open(std::path::Path::new(&path)) {
+        Ok(seg) => {
+            let seg = Arc::new(seg.with_head(head));
+            info!(
+                "shared segment mapped at {path} ({} control buses, {} buffer row(s)): \
+                 zero-message meters, and material read and written in place",
+                seg.control_buses(),
+                seg.buffer_rows(),
+            );
+            let material =
+                super::material::SharedMaterial::new(Arc::clone(&seg), path.clone().into());
+            (Some(seg as Arc<dyn BusSource>), Some(material))
+        }
+        Err(e) => {
+            warn!("cannot map shared segment {path}: {e}; meters will read zero");
+            (None, None)
+        }
+    }
+}
+
 #[cfg(not(unix))]
 pub fn open_shm(path: Option<String>) -> Option<Arc<dyn BusSource>> {
     if path.is_some() {

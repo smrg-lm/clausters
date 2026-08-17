@@ -117,6 +117,12 @@ pub mod ws;
 #[cfg(unix)]
 pub mod shm;
 
+// The material behind that segment's directory: a take's samples, mapped
+// read/write, so drawing one costs no conversation and editing one costs no
+// message. Unix-only, like `shm`.
+#[cfg(unix)]
+pub mod material;
+
 // The in-process embedded server for the standalone mode, a direct dependency on
 // the `clausters` crate behind the optional `standalone` feature (off by default,
 // since it pulls the engine + audio backend). Native-only.
@@ -225,6 +231,12 @@ pub enum ServerLink {
     /// (standalone boot; the `standalone` feature).
     #[cfg(feature = "standalone")]
     Embed(embed::EmbedServer),
+    /// An in-process **on-demand session**: the same server with no audio
+    /// device, which performs the editing verbs and owns the material. What an
+    /// editor sends its allocations, its edits and its renders to, while the
+    /// sound goes to a player that is another process entirely.
+    #[cfg(feature = "standalone")]
+    Session(embed::EmbedSession),
     /// A browser WebSocket to a `--ws` audio server (the only carrier a browser
     /// can open to a separate process). Bound widgets forward through it.
     #[cfg(target_arch = "wasm32")]
@@ -254,6 +266,17 @@ impl ServerLink {
                     Err(std::io::Error::other("embed command ring full"))
                 }
             }
+            #[cfg(feature = "standalone")]
+            ServerLink::Session(session) => {
+                let bytes = clausters_core::osc::encode(&OscPacket::Message(msg)).map_err(|e| {
+                    std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string())
+                })?;
+                if session.send(&bytes) {
+                    Ok(())
+                } else {
+                    Err(std::io::Error::other("session command ring full"))
+                }
+            }
             #[cfg(target_arch = "wasm32")]
             ServerLink::Ws(link) => link.send(msg),
             #[cfg(target_arch = "wasm32")]
@@ -268,7 +291,7 @@ impl ServerLink {
         match self {
             ServerLink::Udp(leg) => Some(leg.socket()),
             #[cfg(feature = "standalone")]
-            ServerLink::Embed(_) => None,
+            ServerLink::Embed(_) | ServerLink::Session(_) => None,
         }
     }
 
@@ -277,6 +300,17 @@ impl ServerLink {
     pub fn embed(&self) -> Option<&embed::EmbedServer> {
         match self {
             ServerLink::Embed(srv) => Some(srv),
+            #[allow(unreachable_patterns)]
+            _ => None,
+        }
+    }
+
+    /// The in-process session behind this link, if any — polled for replies
+    /// exactly as the embedded server is.
+    #[cfg(feature = "standalone")]
+    pub fn session(&self) -> Option<&embed::EmbedSession> {
+        match self {
+            ServerLink::Session(session) => Some(session),
             #[allow(unreachable_patterns)]
             _ => None,
         }
@@ -502,6 +536,28 @@ pub struct Host {
     /// embedded server; [`forward`](Self::forward) sends bound-widget values
     /// through it.
     server: Option<ServerLink>,
+    /// The server that **makes sound**, when it is not the one that holds the
+    /// material.
+    ///
+    /// In an editor's arrangement they are two processes on purpose: the
+    /// on-demand session owns the document's takes and computes, the RT server
+    /// holds the machine's input and output and can be killed and restarted
+    /// without the material moving. Playing, sounding a key, the transport and
+    /// the bus taps go here; allocation, the editing verbs and the renders go
+    /// to [`Self::server`]. With nothing attached here the two are one server
+    /// and everything takes the leg it always took.
+    player: Option<ServerLink>,
+    /// The **material** the host can reach without asking for it: the takes of
+    /// a shared segment, mapped read/write.
+    ///
+    /// Present when the host was pointed at a segment whose material it may
+    /// touch — its own session's, or an external server's `--shm` path. With
+    /// it a take is drawn from memory rather than fetched, and a stroke is a
+    /// store rather than a `/buffer_setRangeChannel`; without it both go over
+    /// the wire exactly as they always have, which is what every remote client
+    /// and every page keeps doing.
+    #[cfg(unix)]
+    material: Option<material::SharedMaterial>,
     /// Widget id -> the audio-server destination its value forwards to
     /// (`/gui_bind`). A bound widget bypasses the script: its value goes
     /// straight to the audio server instead of emitting a `/gui_event`.
@@ -596,6 +652,9 @@ impl Host {
             window_defs: HashMap::new(),
             watched_buses: Vec::new(),
             server: None,
+            player: None,
+            #[cfg(unix)]
+            material: None,
             bindings: HashMap::new(),
             def_json: HashMap::new(),
             store: None,
@@ -653,6 +712,39 @@ impl Host {
     /// leg on demand).
     pub fn set_server_link(&mut self, link: ServerLink) {
         self.server = Some(link);
+    }
+
+    /// Points the host at the **material** of a shared segment: from here a
+    /// take is drawn from the mapped region and a stroke is stored into it,
+    /// with nothing sent either way.
+    ///
+    /// The host must be entitled to write it, which in this design means it is
+    /// the owner of the document those takes belong to (its own session's
+    /// material, or a server it was explicitly pointed at). A host that is a
+    /// guest on somebody else's document keeps sending intents and waiting for
+    /// the acknowledgement — that machinery answers *may I*, and this changes
+    /// only how the samples get there.
+    #[cfg(unix)]
+    pub fn set_material(&mut self, material: material::SharedMaterial) {
+        self.material = Some(material);
+    }
+
+    /// The mapped material, when the host has any.
+    #[cfg(unix)]
+    pub fn material(&self) -> Option<&material::SharedMaterial> {
+        self.material.as_ref()
+    }
+
+    /// Attaches the server that makes sound, when it is a different one from
+    /// the server that holds the material (see the `player` field).
+    pub fn set_player_link(&mut self, link: ServerLink) {
+        self.player = Some(link);
+    }
+
+    /// The link everything audible goes out of: the player when one was
+    /// attached, otherwise the ordinary server leg.
+    pub fn player(&self) -> Option<&ServerLink> {
+        self.player.as_ref().or(self.server.as_ref())
     }
 
     /// Attaches the GuiDef store (named GuiDefs auto-persist; `/gui_load` reads
@@ -1511,7 +1603,14 @@ impl Host {
                 start + len as u64,
             ));
         }
-        if self.server.is_none() {
+        // Either somebody holds the material for us, or we hold it ourselves.
+        // The second case is the editor's: the take is mapped, so a stroke
+        // lands whether or not anything is currently playing it.
+        #[cfg(unix)]
+        let held = self.server.is_some() || self.material.is_some();
+        #[cfg(not(unix))]
+        let held = self.server.is_some();
+        if !held {
             return Err("no audio server holds this material".into());
         }
         if self.buffer_of(def_id, widget_id).is_none() {
@@ -1576,6 +1675,20 @@ impl Host {
         // and the document all speak. The flat `/buffer_setRange` cannot say
         // this: a channel of interleaved storage is a strided span, which is
         // why a stereo take used to be refused here.
+        // **The mapped path: a store, and nothing sent.** The cells this
+        // writes are the cells the engine reads on its next block — this
+        // process's engine or the RT server attached to the same segment, it
+        // makes no difference to the write. What used to happen instead was a
+        // blob out, a job on the server, a reply, and this host reconciling its
+        // own picture with what it had just sent.
+        #[cfg(unix)]
+        if let Some(take) = self.material.as_ref().and_then(|m| m.map(bufnum as usize)) {
+            take.write_channel(channel, start, values);
+            if let Some(tree) = self.window_def_mut(def_id) {
+                write_buffer_views(tree, bufnum, channel, start, values);
+            }
+            return;
+        }
         let mut blob = Vec::with_capacity(values.len() * 4);
         for v in values {
             blob.extend_from_slice(&v.to_le_bytes());
@@ -1924,7 +2037,7 @@ impl Host {
         self.voice_off(widget_id, pitch);
         let node = voices::ID_BASE + self.voice_counter;
         self.voice_counter = (self.voice_counter + 1) % voices::ID_SPAN;
-        self.send_to_server(voices::on_msg(&name, node, pitch, velocity, &extra));
+        self.send_to_player(voices::on_msg(&name, node, pitch, velocity, &extra));
         self.voices
             .entry(widget_id)
             .or_default()
@@ -1952,7 +2065,7 @@ impl Host {
             self.voices.remove(&widget_id);
         }
         for node in nodes {
-            self.send_to_server(voices::off_msg(node));
+            self.send_to_player(voices::off_msg(node));
         }
     }
 
@@ -1974,7 +2087,7 @@ impl Host {
         for id in stale {
             if let Some(list) = self.voices.remove(&id) {
                 for (_, node) in list {
-                    self.send_to_server(voices::off_msg(node));
+                    self.send_to_player(voices::off_msg(node));
                 }
             }
         }
@@ -1995,21 +2108,28 @@ impl Host {
         }
         for bus in &wanted {
             if !self.watched_buses.contains(bus) {
-                self.send_to_server(watch_msg(*bus, true));
+                self.send_to_player(watch_msg(*bus, true));
             }
         }
         for bus in &self.watched_buses {
             if !wanted.contains(bus) {
-                self.send_to_server(watch_msg(*bus, false));
+                self.send_to_player(watch_msg(*bus, false));
             }
         }
         self.watched_buses = wanted;
     }
 
-    fn send_to_server(&self, msg: OscMessage) {
-        if let Some(server) = self.server.as_ref()
-            && let Err(e) = server.send(msg)
-        {
+    /// Sends one message to the server that **makes sound**: the player.
+    ///
+    /// Playing a take, sounding a key, rolling the transport and recording a
+    /// bus are all addressed to whoever holds the audio device, which is not
+    /// always the server that holds the material. With no separate player
+    /// attached the two are the same server and this is the leg it always was.
+    fn send_to_player(&self, msg: OscMessage) {
+        let Some(link) = self.player.as_ref().or(self.server.as_ref()) else {
+            return;
+        };
+        if let Err(e) = link.send(msg) {
             warn!("cannot send to the audio server: {e}");
         }
     }

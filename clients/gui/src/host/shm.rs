@@ -45,8 +45,13 @@ const MAGIC: u32 = 0x5541_4C43;
 /// number change and nothing else. v8 added the transport **position** in the
 /// last of that same reserved space -- a second quantity beside the clock, not
 /// a redefinition of it (see [`SharedSegment::transport_position`]) -- so no
-/// offset moved here either.
+/// offset moved here either. v9 grew a **trailing** region this reader does
+/// map: the buffer directory (see [`SharedSegment::buffer_info`]).
 const SUPPORTED_ABI_VERSION: u32 = 9;
+/// Bytes of one buffer-directory row: a `u64` generation, a `u32` frame count,
+/// a `u32` channel count and a `u64` sample rate. Mirrors
+/// `server::ipc::BufferRow`.
+const BUFFER_ROW_SIZE: usize = 24;
 
 // Byte offsets of the fields we read inside the `#[repr(C)]` Header.
 const OFF_ABI: usize = 4;
@@ -120,6 +125,12 @@ pub struct SharedSegment {
     taps: usize,
     tap_frames: usize,
     taps_offset: usize,
+    /// The buffer directory (v9), the segment's tail: one row per pool buffer
+    /// saying what shape it is and which generation of it this is. It does not
+    /// hold the samples — those are a file beside the segment, which is what
+    /// [`crate::host::material`] opens.
+    buffer_rows: usize,
+    buffers_offset: usize,
 }
 
 // SAFETY: the segment is only ever read here, through atomic loads of fields the
@@ -232,10 +243,17 @@ impl SharedSegment {
         let buses_offset = controls_offset + control_count * size_of::<u32>();
         let buses_end = buses_offset + 2 * audio_count * size_of::<u32>();
         let taps_offset = buses_end.div_ceil(TAP_ALIGN) * TAP_ALIGN;
-        let expected = taps_offset + taps * (TAP_ALIGN + tap_frames * size_of::<f32>());
-        if len != expected {
+        let buffers_offset = taps_offset + taps * (TAP_ALIGN + tap_frames * size_of::<f32>());
+        // The buffer directory is the segment's **tail**, and how many rows it
+        // has is what remains of the mapped length rather than a header field
+        // (the header had no room left for a count). So the size check is a
+        // floor plus whole rows, not an equality — which is what it was, and
+        // is why a reader pinned to v9 by its number alone refuses every real
+        // v9 segment.
+        if len < buffers_offset || !(len - buffers_offset).is_multiple_of(BUFFER_ROW_SIZE) {
             return Err("segment size does not match its header".into());
         }
+        let buffer_rows = (len - buffers_offset) / BUFFER_ROW_SIZE;
         Ok(SharedSegment {
             ptr,
             len,
@@ -248,6 +266,8 @@ impl SharedSegment {
             taps,
             tap_frames,
             taps_offset,
+            buffer_rows,
+            buffers_offset,
         })
     }
 
@@ -359,6 +379,53 @@ impl SharedSegment {
     /// ring, or the tap has not yet written a full window. Mirrors the
     /// server's reader: the half-ring cap plus a cursor double-check make a
     /// torn window a checked retry instead of silent garbage.
+    /// **What the directory says about pool buffer `bufnum`**: its generation,
+    /// frame count, channel count and sample rate, or `None` when that slot
+    /// holds nothing.
+    ///
+    /// The generation does three jobs with one number, and this reads all
+    /// three: it is *odd while the buffer is live*, it *names the region file*
+    /// beside the segment (which is where the samples actually are), and it is
+    /// a *seqlock* — a row that moved while it was being read describes a
+    /// buffer this is not, so the read is retried.
+    pub fn buffer_info(&self, bufnum: usize) -> Option<(u64, usize, usize, f64)> {
+        if bufnum >= self.buffer_rows {
+            return None;
+        }
+        let row = self.buffers_offset + bufnum * BUFFER_ROW_SIZE;
+        for _ in 0..8 {
+            // SAFETY: in-range offsets into the directory region, all written
+            // by the server as atomics.
+            let before =
+                unsafe { (*(self.ptr.add(row) as *const AtomicU64)).load(Ordering::Acquire) };
+            if before.is_multiple_of(2) {
+                return None; // an empty slot
+            }
+            let (frames, channels, rate) = unsafe {
+                (
+                    (*(self.ptr.add(row + 8) as *const AtomicU32)).load(Ordering::Relaxed) as usize,
+                    (*(self.ptr.add(row + 12) as *const AtomicU32)).load(Ordering::Relaxed)
+                        as usize,
+                    f64::from_bits(
+                        (*(self.ptr.add(row + 16) as *const AtomicU64)).load(Ordering::Relaxed),
+                    ),
+                )
+            };
+            let after =
+                unsafe { (*(self.ptr.add(row) as *const AtomicU64)).load(Ordering::Acquire) };
+            if after == before {
+                return Some((before, frames, channels, rate));
+            }
+        }
+        None
+    }
+
+    /// How many buffers the directory can describe — the pool's size, as the
+    /// segment's own length reports it.
+    pub fn buffer_rows(&self) -> usize {
+        self.buffer_rows
+    }
+
     pub fn tap_read_latest(&self, i: usize, out: &mut [f32]) -> Option<u64> {
         let frames = self.tap_frames;
         let want = out.len();

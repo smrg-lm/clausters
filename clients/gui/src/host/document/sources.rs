@@ -65,6 +65,13 @@ impl Takes {
         self.map.get(&source).copied()
     }
 
+    /// Every buffer number the sources resolved to, in source order. What a
+    /// **player** has to be told about: it maps the material directory once,
+    /// when it starts, and these takes were read after that.
+    pub fn bufnums(&self) -> Vec<i32> {
+        self.map.values().map(|take| take.bufnum).collect()
+    }
+
     /// How many sources were resolved.
     pub fn len(&self) -> usize {
         self.map.len()

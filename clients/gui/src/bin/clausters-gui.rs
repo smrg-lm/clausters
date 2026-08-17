@@ -35,8 +35,8 @@ use clausters_gui::host::ServerLink;
 #[cfg(feature = "standalone")]
 use clausters_gui::host::bundle;
 #[cfg(feature = "standalone")]
-use clausters_gui::host::embed::EmbedServer;
-#[cfg(all(feature = "standalone", unix))]
+use clausters_gui::host::embed::{EmbedServer, EmbedSession};
+#[cfg(unix)]
 use clausters_gui::host::shm::HeadClock;
 
 const USAGE: &str = "\
@@ -64,9 +64,14 @@ usage:
                             Needed for waveform widgets that reference a
                             server buffer number, and for bound widgets
                             (/gui_bind) to forward their value to the server.
-      --shm <path>          map the audio server's shared-memory segment (its
-                            own --shm path) for zero-message meters/scopes;
-                            Unix only, default off
+      --shm <path>          the shared-memory segment: zero-message
+                            meters/scopes, and the **material** — a take is
+                            drawn by mapping it and edited by storing into it,
+                            with nothing sent either way. Point it at the audio
+                            server's own --shm path. With --session it is where
+                            this editor's own material goes, and what a player
+                            is started against (`clausters --shm <path>`);
+                            without one a path is picked and logged. Unix only
       --data-dir <dir>      data directory for the GuiDef store (named GuiDefs
                             persist there; /gui_load reads from it). Defaults to
                             the same place the server uses ($CLAUSTERS_DATA_DIR,
@@ -76,6 +81,10 @@ usage:
                             **this host as its owner**: gestures are applied
                             here, undone here and saved here, with no language
                             client anywhere. The third writer.
+                            It opens an on-demand server in this process to own
+                            the material, and plays through the server --server
+                            points at -- which is a separate process holding
+                            the devices, and the only one that can record.
       --save-to <file>      write the session back here when the window closes.
                             Without it nothing is written: overwriting the file
                             you opened is a decision, not a default
@@ -369,7 +378,7 @@ fn run(args: &[String]) -> Result<(), String> {
     // separates this from `--standalone` and is named in the plan rather than
     // implied here.
     if let Some(path) = session_path {
-        return run_session(&path, save_to.as_deref(), port, look);
+        return run_session(&path, save_to.as_deref(), port, look, shm, server);
     }
 
     // Standalone: boot a saved GuiDef against an embedded server, no separate
@@ -464,10 +473,23 @@ fn run(args: &[String]) -> Result<(), String> {
         };
         transport::serve(host, socket, hub, ws_hub).map_err(|e| e.to_string())
     } else {
+        // The segment carries two things this host wants and they come from
+        // one path: the buses its meters read, and the **material** it draws
+        // and edits in place rather than fetching and sending back.
+        #[cfg(unix)]
+        let bus = {
+            let (bus, material) = gui::open_shm_material(shm, HeadClock::Device);
+            if let Some(material) = material {
+                host.set_material(material);
+            }
+            bus
+        };
+        #[cfg(not(unix))]
+        let bus = gui::open_shm(shm);
         gui::run(
             host,
             Arc::new(socket),
-            gui::open_shm(shm),
+            bus,
             tcp_port.map(|p| (p, max_frame)),
             ws_port.map(|p| (p, max_frame)),
         )
@@ -538,7 +560,14 @@ fn open_store(dir: &Path) -> Option<GuiStore> {
 /// parses the format, decides what an edit means or remembers an inverse —
 /// those are the crate's, which is the whole reason a session survives being
 /// passed between writers.
-fn run_session(path: &str, save_to: Option<&str>, port: u16, look: Look) -> Result<(), String> {
+fn run_session(
+    path: &str,
+    save_to: Option<&str>,
+    port: u16,
+    look: Look,
+    #[cfg_attr(not(feature = "standalone"), allow(unused_variables))] shm: Option<String>,
+    #[cfg_attr(not(feature = "standalone"), allow(unused_variables))] player: Option<String>,
+) -> Result<(), String> {
     use clausters_gui::host::document::{Owner, sources, tree};
 
     let mut owner = Owner::open(path)?;
@@ -561,7 +590,7 @@ fn run_session(path: &str, save_to: Option<&str>, port: u16, look: Look) -> Resu
 
     let mut host = Host::new();
     #[cfg(feature = "standalone")]
-    let bus = attach_server(&mut host, &load)?;
+    let bus = attach_server(&mut host, &load, shm, player)?;
     #[cfg(not(feature = "standalone"))]
     let bus: Option<Arc<dyn clausters_gui::host::BusSource>> = None;
     #[cfg(not(feature = "standalone"))]
@@ -643,7 +672,20 @@ fn run_session(path: &str, save_to: Option<&str>, port: u16, look: Look) -> Resu
     gui::run(host, Arc::new(socket), bus, None, None)
 }
 
-/// Gives a session host a server, and its material to it.
+/// **Gives a session host its two servers.** The arrangement this whole mode
+/// exists for, and the three roles it splits into.
+///
+/// - The **on-demand session**, in this process: it owns the material. Every
+///   take is a region beside its segment, so this host draws them by mapping
+///   and edits them by storing, with nothing sent either way. It has no audio
+///   device and needs none — it computes.
+/// - The **player**, another process (`clausters --shm <path>`): it holds the
+///   machine's input and output, and it is therefore the only one that can
+///   record or make a sound. It attaches to the same segment, so what it plays
+///   is the very material being edited; killing it takes no take with it, and
+///   the next one adopts what is there.
+/// - The **editor**, this host: it performs the actions. Which is why it owns
+///   the transport, allocates through the session and plays through the player.
 ///
 /// **A failed boot is not a failed session.** The document, its edits, its undo
 /// and its save need no server at all; what needs one is the sound and the
@@ -654,69 +696,158 @@ fn run_session(path: &str, save_to: Option<&str>, port: u16, look: Look) -> Resu
 fn attach_server(
     host: &mut Host,
     load: &clausters_gui::host::document::sources::Load,
+    shm: Option<String>,
+    player: Option<String>,
 ) -> Result<Option<Arc<dyn clausters_gui::host::BusSource>>, String> {
-    let embed = match EmbedServer::open() {
-        Ok(embed) => embed,
+    let path = std::path::PathBuf::from(shm.unwrap_or_else(default_segment_path));
+    let session = match EmbedSession::open(&path, 48_000.0, 2) {
+        Ok(session) => session,
         Err(e) => {
             tracing::warn!(
-                "session: no audio server ({e}) — the document opens and edits, but takes will \
-                 not draw or sound"
+                "session: no on-demand server ({e}) — the document opens and edits, but takes \
+                 will not draw or sound"
             );
             return Ok(None);
         }
     };
-    // The monitor's def goes with the material: a take is data, and what sounds
-    // it is an instrument. Sent before the reads so it is loaded well before a
-    // hand can press the space bar.
-    send_osc(&embed, clausters_gui::host::play::take_def_message())?;
-    // The monitor's own group, bound to the transport: what `/transport_stop`
-    // freezes and `/transport_play` thaws. It is created stopped, so a reader
-    // added to it stands still until a hand asks for sound.
-    for msg in clausters_gui::host::play::take_group_messages() {
-        send_osc(&embed, msg)?;
-    }
-    // Bound, so from here this host is the one that drives the transport — the
-    // sweep places the head, the space bar rolls it, and both are refused in a
-    // host that is a guest on somebody else's server.
-    host.set_owns_transport(true);
+    tracing::info!(
+        "session: material at {} — an on-demand server owns it, and a player attaches to it",
+        path.display()
+    );
+
+    // **The material goes to its owner.** A take is read into a buffer of the
+    // session, which puts it in a region beside the segment; from there the
+    // player maps it and this host draws it.
     for msg in &load.messages {
-        send_osc(&embed, msg.clone())?;
+        send_session(&session, msg.clone())?;
     }
     if !load.messages.is_empty() {
         // **Waited for, not fired and forgotten.** A buffer read is
         // asynchronous, and a clip's fetch starts the moment the tree reaches
         // the host: without this the window would ask for the shape of a buffer
         // that is still empty, once, and draw nothing forever.
-        await_reads(&embed, load.messages.len());
+        await_reads(&session, load.messages.len());
     }
-    // **The data plane, before the link takes the server.** The playhead is
-    // drawn from the piece's position, read straight out of the embedded
-    // server's own segment each frame — the in-process twin of mapping a
-    // `--shm` file, and the reason a session needs no message per frame to
-    // move a line.
+
+    // **The picture, from the memory the material is in.** The same file the
+    // player attaches to: the segment for the clocks and the buses, the
+    // regions beside it for the samples.
     #[cfg(unix)]
-    let bus = embed.bus_source(HeadClock::Piece);
+    let bus = {
+        let (bus, material) =
+            gui::open_shm_material(Some(path.display().to_string()), HeadClock::Piece);
+        match material {
+            Some(material) => host.set_material(material),
+            None => tracing::warn!("session: the material could not be mapped; takes will fetch"),
+        }
+        bus
+    };
     #[cfg(not(unix))]
     let bus: Option<Arc<dyn clausters_gui::host::BusSource>> = None;
     if bus.is_none() {
         tracing::warn!("session: no data plane — the playhead will stand still");
     }
-    host.set_server_link(ServerLink::Embed(embed));
+
+    // **The player**, given one: what sounds, records and moves the transport.
+    match attach_player(host, &path, player, &load.takes.bufnums()) {
+        Ok(true) => host.set_owns_transport(true),
+        Ok(false) => tracing::warn!(
+            "session: no player attached — the document opens, draws and edits, and nothing \
+             sounds. Start one with `clausters --shm {}` and pass --server 127.0.0.1:57110",
+            path.display()
+        ),
+        Err(e) => tracing::warn!("session: the player is not usable ({e}); nothing will sound"),
+    }
+    host.set_server_link(ServerLink::Session(session));
     Ok(bus)
+}
+
+/// Attaches the player and hands it what it needs to sound a take: the
+/// monitor's def, its transport-bound group, and a `/buffer_attach` per take
+/// the session just read — because the player maps the directory once, at
+/// startup, and these arrived after it.
+///
+/// Returns whether one was attached at all.
+#[cfg(feature = "standalone")]
+fn attach_player(
+    host: &mut Host,
+    segment: &Path,
+    player: Option<String>,
+    takes: &[i32],
+) -> Result<bool, String> {
+    let Some(spec) = player else {
+        return Ok(false);
+    };
+    let target = resolve(&spec)?;
+    let leg = ServerLeg::connect(target).map_err(|e| format!("player leg: {e}"))?;
+    tracing::info!(
+        "session: player at {} (it holds the devices; the material stays at {})",
+        leg.target(),
+        segment.display()
+    );
+    // The monitor's def goes with the material: a take is data, and what sounds
+    // it is an instrument. Sent before anything can press the space bar.
+    leg.send(clausters_gui::host::play::take_def_message())
+        .map_err(|e| e.to_string())?;
+    // The monitor's own group, bound to the transport: what `/transport_stop`
+    // freezes and `/transport_play` thaws. Created stopped, so a reader added
+    // to it stands still until a hand asks for sound.
+    for msg in clausters_gui::host::play::take_group_messages() {
+        leg.send(msg).map_err(|e| e.to_string())?;
+    }
+    // **The takes, by number and not by sample.** A player maps the material
+    // directory when it starts, and these were read into it afterwards — so it
+    // is pointed at them, which is the whole message: no blob, no copy, and
+    // the very cells this editor is about to draw.
+    for &bufnum in takes {
+        leg.send(OscMessage {
+            addr: "/buffer_attach".into(),
+            args: vec![OscType::Int(bufnum)],
+        })
+        .map_err(|e| e.to_string())?;
+    }
+    host.set_player_link(ServerLink::Udp(leg));
+    Ok(true)
+}
+
+/// Where an editor puts its segment when nobody said: a memory filesystem if
+/// there is one, the temp directory otherwise, named for this process so two
+/// editors never share one.
+#[cfg(feature = "standalone")]
+fn default_segment_path() -> String {
+    let dir = if Path::new("/dev/shm").is_dir() {
+        std::path::PathBuf::from("/dev/shm")
+    } else {
+        std::env::temp_dir()
+    };
+    dir.join(format!("clausters-editor-{}", std::process::id()))
+        .display()
+        .to_string()
+}
+
+/// Sends one message to the session that owns the material.
+#[cfg(feature = "standalone")]
+fn send_session(session: &EmbedSession, msg: OscMessage) -> Result<(), String> {
+    let addr = msg.addr.clone();
+    let bytes = encode(&OscPacket::Message(msg)).map_err(|e| e.to_string())?;
+    if !session.send(&bytes) {
+        tracing::warn!("session: {addr} dropped (the session's command ring is full)");
+    }
+    Ok(())
 }
 
 /// Waits for `n` buffer reads to answer, reporting each failure by its own
 /// words. Bounded: a read that never answers costs a few seconds and a line,
 /// not a window that never opens.
 #[cfg(feature = "standalone")]
-fn await_reads(embed: &EmbedServer, n: usize) {
+fn await_reads(session: &EmbedSession, n: usize) {
     use std::time::{Duration, Instant};
 
     let deadline = Instant::now() + Duration::from_secs(10);
     let mut answered = 0;
     let mut buf = vec![0u8; 65536];
     while answered < n && Instant::now() < deadline {
-        let Some(len) = embed.poll_into(&mut buf) else {
+        let Some(len) = session.poll_into(&mut buf) else {
             std::thread::sleep(Duration::from_millis(5));
             continue;
         };
