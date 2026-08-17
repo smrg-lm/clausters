@@ -275,6 +275,12 @@ pub struct Shape {
 /// A mapped segment: the address, its length, and everything either end does
 /// with it.
 ///
+/// The accessors the **audio thread** reaches — the levels it publishes per
+/// bus per block, the tap ring it appends to, the clocks it stores — are
+/// `#[inline]`, because they were inlined inside one crate before this module
+/// existed and a cross-crate call per bus per block is a cost the move should
+/// not have introduced.
+///
 /// It owns no memory and frees none — whoever mapped it keeps it alive, which
 /// is the one thing this type trusts its caller for. Every access is an atomic
 /// load or store on a word the layout above places, so a `View` is safe to
@@ -432,16 +438,19 @@ impl View {
     }
 
     /// The device clock: samples processed since boot, never stopping.
+    #[inline]
     pub fn clock(&self) -> &AtomicU64 {
         &self.header().sample_clock
     }
 
     /// Samples elapsed under the transport, held while it is stopped.
+    #[inline]
     pub fn transport_clock(&self) -> &AtomicU64 {
         &self.header().transport_clock
     }
 
     /// Where the piece *is*: the position a playhead draws.
+    #[inline]
     pub fn transport_position(&self) -> &AtomicU64 {
         &self.header().transport_position
     }
@@ -496,6 +505,7 @@ impl View {
     }
 
     /// The control-bus array — *the* buses, the words `InCtl` reads.
+    #[inline]
     pub fn controls(&self) -> &[AtomicU32] {
         // SAFETY: the region is `control_buses` words at `controls_offset`,
         // inside the mapping the shape was derived from.
@@ -507,12 +517,14 @@ impl View {
         }
     }
 
+    #[inline]
     pub fn control(&self, index: usize) -> f32 {
         self.controls()
             .get(index)
             .map_or(0.0, |cell| f32::from_bits(cell.load(Ordering::Relaxed)))
     }
 
+    #[inline]
     pub fn set_control(&self, index: usize, value: f32) {
         if let Some(cell) = self.controls().get(index) {
             cell.store(value.to_bits(), Ordering::Relaxed);
@@ -534,6 +546,7 @@ impl View {
         })
     }
 
+    #[inline]
     fn bus_level_cell(&self, bus: usize) -> Option<&AtomicU32> {
         let count = self.audio_buses();
         (bus < count).then(|| {
@@ -564,6 +577,7 @@ impl View {
     /// or `0.0` where the bus is silent or out of range. What a meter reads —
     /// one number per block instead of a ring, so metering every bus costs no
     /// tap at all.
+    #[inline]
     pub fn level(&self, bus: usize) -> f32 {
         self.bus_level_cell(bus)
             .map_or(0.0, |cell| f32::from_bits(cell.load(Ordering::Relaxed)))
@@ -571,6 +585,7 @@ impl View {
 
     /// Publishes audio bus `bus`'s block level. **Audio-thread safe**: one
     /// relaxed store, no allocation, no lock.
+    #[inline]
     pub fn set_level(&self, bus: usize, peak: f32) {
         if let Some(cell) = self.bus_level_cell(bus) {
             cell.store(peak.to_bits(), Ordering::Relaxed);
@@ -587,6 +602,7 @@ impl View {
         self.shape.tap_frames as usize
     }
 
+    #[inline]
     fn tap_slot_ptr(&self, i: usize) -> *const u8 {
         debug_assert!(i < self.taps());
         let at = self.shape.taps_offset as usize + i * tap_slot_size(self.tap_frames());
@@ -596,12 +612,14 @@ impl View {
 
     /// Tap `i`'s cursor: total samples ever written (monotonic). The ring holds
     /// samples `[cursor - tap_frames, cursor)`.
+    #[inline]
     fn tap_cursor(&self, i: usize) -> &AtomicU64 {
         // SAFETY: the slot starts 64-byte aligned and its first word is the
         // cursor.
         unsafe { &*(self.tap_slot_ptr(i) as *const AtomicU64) }
     }
 
+    #[inline]
     fn tap_data_ptr(&self, i: usize) -> *const f32 {
         // SAFETY: the ring starts one alignment line into the slot.
         unsafe { self.tap_slot_ptr(i).add(TAP_ALIGN) as *const f32 }
@@ -612,6 +630,7 @@ impl View {
     /// writer only. The block never wraps: the ring capacity is a power of two
     /// ≥ the block size and the cursor only advances by whole blocks, so every
     /// write lands block-aligned inside the ring.
+    #[inline]
     pub fn tap_write(&self, i: usize, samples: &[f32]) {
         if i >= self.taps() {
             return;
