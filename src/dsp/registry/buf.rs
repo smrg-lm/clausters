@@ -51,7 +51,7 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
             inp("chan", 0.0),
             inp("phase", 0.0),
             inp("loop", 0.0),
-            inp("in", 0.0),
+            inp("signal", 0.0),
         ],
         Ar,
         R_AR,
@@ -66,7 +66,7 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         &[
             inp("bufnum", 0.0),
             inp("chan", 0.0),
-            inp("in", 0.0),
+            inp("signal", 0.0),
             inp("offset", 0.0),
             inp("rec_level", 1.0),
             inp("pre_level", 0.0),

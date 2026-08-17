@@ -260,46 +260,46 @@ def var_lag(signal, up=0.1, down=0.1) -> Ugen:
 # being inputs means a line can be moved between buffers with a ``node.set``.
 
 
-def buf_delay_n(bufnum, signal, delaytime=0.2, chan=0.0) -> Ugen:
+def buf_delay_n(bufnum, chan, signal, delaytime=0.2) -> Ugen:
     """`delay_n` over a channel of a pool buffer."""
     return Ugen("BufDelayN", [bufnum, chan, signal, delaytime])
 
 
-def buf_delay_l(bufnum, signal, delaytime=0.2, chan=0.0) -> Ugen:
+def buf_delay_l(bufnum, chan, signal, delaytime=0.2) -> Ugen:
     """`delay_l` over a channel of a pool buffer."""
     return Ugen("BufDelayL", [bufnum, chan, signal, delaytime])
 
 
-def buf_delay_c(bufnum, signal, delaytime=0.2, chan=0.0) -> Ugen:
+def buf_delay_c(bufnum, chan, signal, delaytime=0.2) -> Ugen:
     """`delay_c` over a channel of a pool buffer."""
     return Ugen("BufDelayC", [bufnum, chan, signal, delaytime])
 
 
-def buf_comb_n(bufnum, signal, delaytime=0.2, decaytime=1.0, chan=0.0) -> Ugen:
+def buf_comb_n(bufnum, chan, signal, delaytime=0.2, decaytime=1.0) -> Ugen:
     """`comb_n` over a channel of a pool buffer."""
     return Ugen("BufCombN", [bufnum, chan, signal, delaytime, decaytime])
 
 
-def buf_comb_l(bufnum, signal, delaytime=0.2, decaytime=1.0, chan=0.0) -> Ugen:
+def buf_comb_l(bufnum, chan, signal, delaytime=0.2, decaytime=1.0) -> Ugen:
     """`comb_l` over a channel of a pool buffer."""
     return Ugen("BufCombL", [bufnum, chan, signal, delaytime, decaytime])
 
 
-def buf_comb_c(bufnum, signal, delaytime=0.2, decaytime=1.0, chan=0.0) -> Ugen:
+def buf_comb_c(bufnum, chan, signal, delaytime=0.2, decaytime=1.0) -> Ugen:
     """`comb_c` over a channel of a pool buffer."""
     return Ugen("BufCombC", [bufnum, chan, signal, delaytime, decaytime])
 
 
-def buf_allpass_n(bufnum, signal, delaytime=0.2, decaytime=1.0, chan=0.0) -> Ugen:
+def buf_allpass_n(bufnum, chan, signal, delaytime=0.2, decaytime=1.0) -> Ugen:
     """`allpass_n` over a channel of a pool buffer."""
     return Ugen("BufAllpassN", [bufnum, chan, signal, delaytime, decaytime])
 
 
-def buf_allpass_l(bufnum, signal, delaytime=0.2, decaytime=1.0, chan=0.0) -> Ugen:
+def buf_allpass_l(bufnum, chan, signal, delaytime=0.2, decaytime=1.0) -> Ugen:
     """`allpass_l` over a channel of a pool buffer."""
     return Ugen("BufAllpassL", [bufnum, chan, signal, delaytime, decaytime])
 
 
-def buf_allpass_c(bufnum, signal, delaytime=0.2, decaytime=1.0, chan=0.0) -> Ugen:
+def buf_allpass_c(bufnum, chan, signal, delaytime=0.2, decaytime=1.0) -> Ugen:
     """`allpass_c` over a channel of a pool buffer."""
     return Ugen("BufAllpassC", [bufnum, chan, signal, delaytime, decaytime])

@@ -38,14 +38,14 @@ export const bufRd = (
 ): Ugen => new Ugen("BufRd", [bufnum, chan, phase, loop]);
 
 /**
- * **Writes** `source` into a buffer at `phase` (frames) — `bufRd`'s write-side
+ * **Writes** `signal` into a buffer at `phase` (frames) — `bufRd`'s write-side
  * twin, and stateless in the same way.
  *
  * No interpolation: the write lands on the frame the phase names, truncated.
  * Spreading one sample over two frames would store a value the signal never
  * had, and consecutive writes would fight over the same cells.
  *
- * Passes `source` through as its output, so a chain can go on using what it
+ * Passes `signal` through as its output, so a chain can go on using what it
  * just recorded without a second wire. Out-of-range phases wrap with `loop`
  * and write nothing otherwise.
  */
@@ -53,23 +53,23 @@ export const bufWr = (
     bufnum: Channel,
     chan: Channel,
     phase: Channel,
-    source: Channel,
-    loop: Channel = 0.0,
-): Ugen => new Ugen("BufWr", [bufnum, chan, phase, loop, source]);
+    loop: Channel,
+    signal: Channel,
+): Ugen => new Ugen("BufWr", [bufnum, chan, phase, loop, signal]);
 
 /**
- * **Records** `source` into a buffer, one frame per sample — the
+ * **Records** `signal` into a buffer, one frame per sample — the
  * self-advancing writer, as `playBuf` is the self-advancing reader.
  *
  * `recLevel` and `preLevel` are what make it a looper rather than a tape head:
- * each frame becomes `source*recLevel + old*preLevel`, so `(1, 0)` overwrites,
+ * each frame becomes `signal*recLevel + old*preLevel`, so `(1, 0)` overwrites,
  * `(1, 1)` overdubs onto what is there and `(1, 0.5)` overdubs with the older
  * layers fading.
  *
  * `run` at 0 holds the position and writes nothing, so a recording can be gated
  * without losing its place; a rising `trigger` re-cues to `offset`; without
  * `loop`, reaching the end stops the recording and fires `doneAction`. Passes
- * `source` through.
+ * `signal` through.
  *
  * Recording into a buffer another node is playing is the ordinary case — a
  * buffer's contents are mutable and only its shape is fixed.
@@ -77,7 +77,7 @@ export const bufWr = (
 export const recordBuf = (
     bufnum: Channel,
     chan: Channel,
-    source: Channel,
+    signal: Channel,
     opts: {
         offset?: Channel;
         recLevel?: Channel;
@@ -91,7 +91,7 @@ export const recordBuf = (
     new Ugen("RecordBuf", [
         bufnum,
         chan,
-        source,
+        signal,
         opts.offset ?? 0.0,
         opts.recLevel ?? 1.0,
         opts.preLevel ?? 0.0,

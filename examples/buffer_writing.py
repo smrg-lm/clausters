@@ -150,7 +150,7 @@ def echo_def():
     """
     bufnum = control("bufnum", 0.0)
     src = sine(control("freq", 660.0)) * env_gen(Env.perc(0.01, 0.3), gate=1.0) * 0.3
-    sig = buf_comb_c(bufnum, src, delaytime=0.18, decaytime=2.5)
+    sig = buf_comb_c(bufnum, 0.0, src, delaytime=0.18, decaytime=2.5)
     return SynthDef(
         "buffer-echo",
         out(0, sig), out(1, sig),

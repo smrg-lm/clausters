@@ -299,77 +299,77 @@ export const varLag = (
 /** `delayN` over a channel of a pool buffer. */
 export const bufDelayN = (
     bufnum: Channel,
+    chan: Channel,
     signal: Channel,
     delaytime: Channel = 0.2,
-    chan: Channel = 0.0,
 ): Ugen => new Ugen("BufDelayN", [bufnum, chan, signal, delaytime]);
 
 /** `delayL` over a channel of a pool buffer. */
 export const bufDelayL = (
     bufnum: Channel,
+    chan: Channel,
     signal: Channel,
     delaytime: Channel = 0.2,
-    chan: Channel = 0.0,
 ): Ugen => new Ugen("BufDelayL", [bufnum, chan, signal, delaytime]);
 
 /** `delayC` over a channel of a pool buffer. */
 export const bufDelayC = (
     bufnum: Channel,
+    chan: Channel,
     signal: Channel,
     delaytime: Channel = 0.2,
-    chan: Channel = 0.0,
 ): Ugen => new Ugen("BufDelayC", [bufnum, chan, signal, delaytime]);
 
 /** `combN` over a channel of a pool buffer. */
 export const bufCombN = (
     bufnum: Channel,
+    chan: Channel,
     signal: Channel,
     delaytime: Channel = 0.2,
     decaytime: Channel = 1.0,
-    chan: Channel = 0.0,
 ): Ugen => new Ugen("BufCombN", [bufnum, chan, signal, delaytime, decaytime]);
 
 /** `combL` over a channel of a pool buffer. */
 export const bufCombL = (
     bufnum: Channel,
+    chan: Channel,
     signal: Channel,
     delaytime: Channel = 0.2,
     decaytime: Channel = 1.0,
-    chan: Channel = 0.0,
 ): Ugen => new Ugen("BufCombL", [bufnum, chan, signal, delaytime, decaytime]);
 
 /** `combC` over a channel of a pool buffer. */
 export const bufCombC = (
     bufnum: Channel,
+    chan: Channel,
     signal: Channel,
     delaytime: Channel = 0.2,
     decaytime: Channel = 1.0,
-    chan: Channel = 0.0,
 ): Ugen => new Ugen("BufCombC", [bufnum, chan, signal, delaytime, decaytime]);
 
 /** `allpassN` over a channel of a pool buffer. */
 export const bufAllpassN = (
     bufnum: Channel,
+    chan: Channel,
     signal: Channel,
     delaytime: Channel = 0.2,
     decaytime: Channel = 1.0,
-    chan: Channel = 0.0,
 ): Ugen => new Ugen("BufAllpassN", [bufnum, chan, signal, delaytime, decaytime]);
 
 /** `allpassL` over a channel of a pool buffer. */
 export const bufAllpassL = (
     bufnum: Channel,
+    chan: Channel,
     signal: Channel,
     delaytime: Channel = 0.2,
     decaytime: Channel = 1.0,
-    chan: Channel = 0.0,
 ): Ugen => new Ugen("BufAllpassL", [bufnum, chan, signal, delaytime, decaytime]);
 
 /** `allpassC` over a channel of a pool buffer. */
 export const bufAllpassC = (
     bufnum: Channel,
+    chan: Channel,
     signal: Channel,
     delaytime: Channel = 0.2,
     decaytime: Channel = 1.0,
-    chan: Channel = 0.0,
 ): Ugen => new Ugen("BufAllpassC", [bufnum, chan, signal, delaytime, decaytime]);
