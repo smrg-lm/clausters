@@ -251,6 +251,25 @@ pub struct Shape {
     pub buses_offset: u64,
     pub taps_offset: u64,
     pub buffers_offset: u64,
+    /// Where each live header counter sits. They are constants of the layout
+    /// rather than of a segment, and they are here for the same reason the
+    /// region offsets are: a foreign reader should ask for every number it
+    /// needs, not carry half of them and pin the other half.
+    pub sample_rate_offset: u64,
+    pub clock_offset: u64,
+    pub transport_clock_offset: u64,
+    pub transport_position_offset: u64,
+    /// Bytes of one directory row, and of one tap slot: what a foreign reader
+    /// strides by.
+    pub buffer_row_size: u64,
+    pub tap_slot_size: u64,
+    /// The ring pair: where each one starts, its capacity, and the bytes each
+    /// frame carries before its payload.
+    pub c2s_offset: u64,
+    pub s2c_offset: u64,
+    pub ring_capacity: u64,
+    pub ring_prefix: u64,
+    pub frame_header: u64,
 }
 
 /// A mapped segment: the address, its length, and everything either end does
@@ -358,6 +377,17 @@ impl View {
             buses_offset: bus_region_offset(control_buses) as u64,
             taps_offset: tap_region_offset(control_buses) as u64,
             buffers_offset: buffers_offset as u64,
+            sample_rate_offset: std::mem::offset_of!(Header, sample_rate_bits) as u64,
+            clock_offset: std::mem::offset_of!(Header, sample_clock) as u64,
+            transport_clock_offset: std::mem::offset_of!(Header, transport_clock) as u64,
+            transport_position_offset: std::mem::offset_of!(Header, transport_position) as u64,
+            buffer_row_size: size_of::<BufferRow>() as u64,
+            tap_slot_size: tap_slot_size(tap_frames) as u64,
+            c2s_offset: std::mem::offset_of!(Layout, c2s) as u64,
+            s2c_offset: std::mem::offset_of!(Layout, s2c) as u64,
+            ring_capacity: RING_CAPACITY as u64,
+            ring_prefix: std::mem::offset_of!(Ring, data) as u64,
+            frame_header: FRAME_HEADER as u64,
         })
     }
 

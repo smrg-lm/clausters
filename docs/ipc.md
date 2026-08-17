@@ -45,6 +45,14 @@ An attached server maps every live row at startup, and a buffer the owner alloca
 
 **And the clocks belong to the device.** The header's sample clock and transport counters are written by the process running an audio device; a session with no device never writes them, whether or not it owns the segment. So in an editor's arrangement the owner (the on-demand session) publishes the material and the attached RT server publishes the time, and a playhead reads a counter that means what it says.
 
+### One definition, and the readers that follow it
+
+The layout above is **`clausters-core`'s** (`clausters_core::shm`), and every process that touches a segment reads it from there: the server that writes it, the GUI host, and — through the C ABI (`clausters_core_shm_*`, see [`bindings.md`](bindings.md)) — a `ctypes` or N-API client. What each one still does for itself is *getting* the memory: `mmap` of a file, a heap allocation, Python's `mmap`. That is the genuinely platform-shaped part, and it is the only part.
+
+It was not always so, and the reason it is now is worth keeping. Three readers used to mirror the `#[repr(C)]` by hand with the version counter as the only tie between them, and that failed twice in one week in two different ways: a mirror that agreed on the version number and not on the size check refused every valid segment, and another declared 1024 control buses against a server that had had 16 384 for months — wrong, unused, and invisible to every test. A number cannot check a layout.
+
+So a foreign reader asks for the **shape** (every count and every byte offset, in one call) and for the things that are logic rather than arithmetic: the directory's seqlock, the ring's framing, the name a region file carries. What is left in each binding is one struct declaration.
+
 For two processes, put the segment on a memory filesystem (`/dev/shm/...`). The server polls the ring on a 2 ms tick instead of a cross-process semaphore — command latency is bounded by that tick; the data plane has no latency at all. (Semaphore wakeups and Windows named mappings are explicitly future work.)
 
 ### Several clients on one segment

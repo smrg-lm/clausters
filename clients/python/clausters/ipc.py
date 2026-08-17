@@ -18,9 +18,18 @@ Boundary rule (project-wide): only flat data crosses — ``bytes`` in,
 ``array('f')``/floats/ints out. A numpy user can wrap the results without
 copying (``numpy.frombuffer``), but nothing here imports anything heavy.
 
-Caveats of the pure-Python shm path: Python has no atomics, so cursor reads
-and writes rely on x86-TSO-style ordering of aligned 32-bit accesses — fine
-on the supported platforms, documented in docs/ipc.md.
+The one exception to "standard library only" is the segment's **layout**:
+`ShmClient` maps the file with `mmap` and asks the shared core
+(`clausters-ffi`, through `clausters._native`) where everything in it is, for
+the directory's seqlock and for the ring's framing. Those used to be
+transcribed here, which is how this binding came to declare 1024 control buses
+against a server that had had 16 384 for months — wrong, unused, and caught by
+nothing. A layout mirrored by hand is a layout that drifts, so it is asked for
+rather than restated.
+
+Caveats of the shm path: Python has no atomics, so what it reads through the
+mapping relies on x86-TSO-style ordering of aligned accesses — fine on the
+supported platforms, documented in docs/ipc.md.
 """
 
 import ctypes
@@ -30,7 +39,7 @@ import struct
 import time
 from array import array
 
-from . import _libpath
+from . import _libpath, _native
 from .errors import (
     AbiMismatchError,
     CommandRingFull,
@@ -53,165 +62,25 @@ SEED_STRIDE = 0x9E37_79B9_7F4A_7C15
 # embed cdylib file names across platforms (Linux / macOS / Windows).
 _EMBED_NAMES = ("libclausters.so", "libclausters.dylib", "clausters.dll")
 
-# ---- segment layout (must match src/server/ipc.rs; pinned by tests) ----
-# Fixed prefix: the header, then the c2s and s2c rings. The control-bus array
-# is a trailing, dynamically-sized region after the rings (its length lives in
-# the header), so `--control-buses` changes the segment size but not these
-# ring offsets. ABI v3 adds a trailing **audio-tap region** after the control
-# buses (`--taps` slots of a 64-byte cursor line + a `--tap-frames` sample
-# ring, the region 64-byte aligned); this client reads the counts from the
-# header but does not map-read the rings — headless tap capture goes over
-# `/bus_tapStream` (see `Server.stream_taps`), the recorded G18 decision. ABI v4
-# inserts the **audio-bus region** between the control buses and the taps: two
-# words per audio bus, the bus -> tap directory then the per-bus block level, so
-# a reader names a bus rather than a ring. The whole file is mmap'd, so any
-# control/tap count is supported.
+# ---- segment layout ---------------------------------------------------------
+#
+# There is none here, and that is the point. `clausters_core::shm` is the one
+# definition of the segment's layout; this client maps the file and asks it for
+# every offset and count (`_native.shm_shape`), for the buffer directory's
+# seqlock and for the ring's framing. What used to sit here was a copy of the
+# arithmetic, kept honest by a version number — which cannot check a layout,
+# and did not.
 
-_MAGIC = 0x5541_4C43  # "CLAU"
-_HEADER_SIZE = 64
-_OFF_MAGIC = 0
-_OFF_VERSION = 4
-_OFF_SAMPLE_RATE = 8  # f64 bits
-_OFF_CLOCK = 16  # u64
-_OFF_CONTROL_BUSES = 28  # u32: number of slots in the trailing control region
-_OFF_TAPS = 32  # u32: audio-tap ring count (ABI v3)
-_OFF_TAP_FRAMES = 36  # u32: per-tap ring capacity in samples (ABI v3)
-_OFF_AUDIO_BUSES = 40  # u32: audio-bus count of the bus region (ABI v4)
-# u64: the transport clock (ABI v6) -- samples elapsed *under the transport*,
-# held while it is stopped, where `_OFF_CLOCK` never stops. It sits in what was
-# reserved header space, so v6 moved no other offset and did not change the
-# segment size.
-_OFF_TRANSPORT_CLOCK = 48
-# u64: the transport **position** (ABI v8) -- where the transport is in the
-# piece, in samples of the material. Not the clock above: that one is elapsed
-# time and is monotonic, this one jumps wherever `/transport_locate` puts it
-# and wraps at a loop's end. It spends the last of the reserved header space,
-# so v8 moved no offset either; the next field added here will. ABI v9 appends
-# the **buffer directory** as the segment's tail -- one row per pool buffer,
-# saying what shape it is and which generation it is, so a local peer can map a
-# buffer's samples by name (`server::ipc::BufferRow`). It is a trailing region,
-# so again no offset here moved; what changed is the segment's total size, and
-# the row count is what remains of the mapped length rather than a header field
-# -- the header has no reserved space left.
-_OFF_TRANSPORT_POSITION = 56
-_RING_CAPACITY = 64 * 1024
-_RING_HEADER = 64  # head u32, tail u32, padding
-# Each frame inside a ring: the payload length and the peer tag, both u32 LE
-# (ABI v7). The tag says who authored the packet on the way in and who the
-# reply is for on the way out, which is what lets one segment carry several
-# independent clients. The payload is padded to 4, so a frame stays 4-aligned.
-_FRAME_HEADER = 8
+_MAGIC = 0x5541_4C43  # "CLAU", read only to say "this is not a segment" nicely
+
 #: The peer tag a client sends under when it does not pick one -- the single
 #: client a segment used to have (``ipc::DEFAULT_PEER``).
 DEFAULT_PEER = 0
-_OFF_C2S = _HEADER_SIZE  # 64; rings come right after the header
-_OFF_S2C = _OFF_C2S + _RING_HEADER + _RING_CAPACITY  # 65664
-_OFF_CONTROLS = _OFF_S2C + _RING_HEADER + _RING_CAPACITY  # 131264 (trailing)
-#: The server's own default (`dsp::NUM_CONTROL_BUSES`). It said 1024 until
-#: 2026-08-17 -- a drift nothing caught, because a client maps the *file* and
-#: only `SEGMENT_SIZE` below is derived from this. Pinned by a test now, since
-#: the number is documentation and documentation that is wrong is worse than
-#: none.
-_DEFAULT_CONTROL_BUSES = 16384
-_DEFAULT_TAPS = 8
-_DEFAULT_TAP_FRAMES = 16384
-_TAP_ALIGN = 64  # each tap slot: a 64-byte cursor line + the sample ring
-_NUM_AUDIO_BUSES = 128  # the bus region is always sized for the engine's cap
 
-
-def _bus_region_offset(control_buses: int) -> int:
-    """Byte offset of the audio-bus region: right after the control slots."""
-    return _OFF_CONTROLS + 4 * control_buses
-
-
-def _buffer_region_offset(control_buses: int, taps: int, tap_frames: int) -> int:
-    """Byte offset of the **buffer directory** (ABI v9): the tap region's end.
-
-    The directory is the segment's tail, so how many rows it has is what is
-    left of the mapped length rather than a field in the header — the header
-    has no reserved space, and a count there would move the rings.
-    """
-    return _tap_region_offset(control_buses) + taps * (_TAP_ALIGN + 4 * tap_frames)
-
-
-def _tap_region_offset(control_buses: int, audio_buses: int = _NUM_AUDIO_BUSES) -> int:
-    buses_end = _bus_region_offset(control_buses) + 8 * audio_buses
-    return (buses_end + _TAP_ALIGN - 1) // _TAP_ALIGN * _TAP_ALIGN
-
-
-#: Bytes per **buffer-directory** row (ABI v9): the generation, the frames, the
-#: channels and the sample rate — `server::ipc::BufferRow`.
-_BUFFER_ROW = 24
-#: Default directory rows: the server's default buffer count.
-_DEFAULT_BUFFERS = 4096
-
-# Segment size for the default control-bus, tap and buffer counts (the actual
-# size is the file's length; the server sizes it from `--control-buses`/
-# `--taps`/`--tap-frames`, and the directory is what remains of the length).
-# Mirrors `src/server/ipc.rs::SEGMENT_SIZE`.
-SEGMENT_SIZE = (
-    _tap_region_offset(_DEFAULT_CONTROL_BUSES)
-    + _DEFAULT_TAPS * (_TAP_ALIGN + 4 * _DEFAULT_TAP_FRAMES)
-    + _DEFAULT_BUFFERS * _BUFFER_ROW)
-
-
-class _Ring:
-    """One SPSC byte ring inside the mapped segment (each frame a length and a
-    peer tag, then the payload padded to 4). ``produce``/``consume`` depend on
-    which side of the pair we are."""
-
-    def __init__(self, mm: mmap.mmap, base: int):
-        self.mm, self.base = mm, base
-
-    def _cursor(self, off: int) -> int:
-        return struct.unpack_from("<I", self.mm, self.base + off)[0]
-
-    def _set_cursor(self, off: int, value: int):
-        struct.pack_into("<I", self.mm, self.base + off, value & 0xFFFFFFFF)
-
-    def push(self, packet: bytes, peer: int = DEFAULT_PEER) -> bool:
-        head, tail = self._cursor(0), self._cursor(4)
-        padded = (len(packet) + 3) // 4 * 4
-        total = _FRAME_HEADER + padded
-        if not packet or total > _RING_CAPACITY:
-            return False
-        if _RING_CAPACITY - ((head - tail) & 0xFFFFFFFF) < total:
-            return False  # backpressure: retry later
-        self._write(head, struct.pack("<II", len(packet), peer))
-        self._write(head + _FRAME_HEADER, packet)
-        self._set_cursor(0, head + total)  # publish last
-        return True
-
-    def pop(self) -> "tuple[int, bytes] | None":
-        """The next frame as ``(peer, packet)``, or ``None`` when the ring is
-        empty. ``peer`` is who authored it (inbound) or who it is for
-        (outbound)."""
-        head, tail = self._cursor(0), self._cursor(4)
-        used = (head - tail) & 0xFFFFFFFF
-        if used == 0:
-            return None
-        length, peer = struct.unpack("<II", self._read(tail, _FRAME_HEADER))
-        total = _FRAME_HEADER + (length + 3) // 4 * 4
-        if length == 0 or total > used:
-            self._set_cursor(4, head)  # resync: drop garbage
-            return None
-        packet = self._read(tail + _FRAME_HEADER, length)
-        self._set_cursor(4, tail + total)
-        return peer, packet
-
-    def _write(self, at: int, data: bytes):
-        start = at % _RING_CAPACITY
-        first = min(len(data), _RING_CAPACITY - start)
-        base = self.base + _RING_HEADER
-        self.mm[base + start : base + start + first] = data[:first]
-        self.mm[base : base + len(data) - first] = data[first:]
-
-    def _read(self, at: int, n: int) -> bytes:
-        start = at % _RING_CAPACITY
-        first = min(n, _RING_CAPACITY - start)
-        base = self.base + _RING_HEADER
-        out = self.mm[base + start : base + start + first]
-        return out + self.mm[base : base + n - first]
+#: Which end of the ring pair this side holds, as the core's C door takes it:
+#: a client writes commands and drains replies.
+_ROLE_SERVER = 0
+_ROLE_CLIENT = 1
 
 
 class MappedBuffer:
@@ -265,39 +134,61 @@ class ShmClient:
 
     def __init__(self, path: str):
         self._file = open(path, "r+b")
-        # Map the whole file: its length is the server's --control-buses count.
+        # Map the whole file: the server sized it from its own --control-buses,
+        # --taps and --tap-frames, and the buffer directory is what remains of
+        # that length.
         self.mm = mmap.mmap(self._file.fileno(), 0)
-        magic, version = struct.unpack_from("<II", self.mm, 0)
+        # The address the core reads through. `from_buffer` keeps the mapping
+        # pinned for as long as this object holds it, which is what makes
+        # handing the pointer across the boundary safe.
+        self._cell = (ctypes.c_char * len(self.mm)).from_buffer(self.mm)
+        self._addr = ctypes.addressof(self._cell)
+        magic = struct.unpack_from("<I", self.mm, 0)[0]
         if magic != _MAGIC:
+            self._release()
             raise SegmentError(f"{path} is not a clausters segment")
-        if version != ABI_VERSION:
-            raise SegmentError(f"segment ABI v{version}, this client speaks v{ABI_VERSION}")
+        #: Where everything in this segment is, as the shared core reports it —
+        #: the one place the layout is known.
+        self.shape = _native.shm_shape(self._addr, len(self.mm))
+        if self.shape is None:
+            version = struct.unpack_from("<I", self.mm, 4)[0]
+            self._release()
+            raise SegmentError(
+                f"segment ABI v{version}, this client speaks v{ABI_VERSION}"
+                if version != ABI_VERSION else f"{path} is not a valid segment")
         #: control-bus count the server created the segment with.
-        self.control_buses = struct.unpack_from("<I", self.mm, _OFF_CONTROL_BUSES)[0]
-        #: audio-tap ring count and per-tap capacity in samples (ABI v3). The
-        #: rings themselves are read by the GUI host; capture them from Python
-        #: over ``/bus_tapStream`` (``Server.stream_taps``) instead.
-        self.taps = struct.unpack_from("<I", self.mm, _OFF_TAPS)[0]
-        self.tap_frames = struct.unpack_from("<I", self.mm, _OFF_TAP_FRAMES)[0]
-        #: audio-bus count of the bus region (ABI v4), the length of both the
-        #: bus -> tap directory and the level table.
-        self.audio_buses = struct.unpack_from("<I", self.mm, _OFF_AUDIO_BUSES)[0]
-        self._buses_at = _bus_region_offset(self.control_buses)
-        #: Byte offset and row count of the buffer directory (ABI v9): where
-        #: this server's material is, buffer by buffer.
-        self._buffers_at = _buffer_region_offset(
-            self.control_buses, self.taps, self.tap_frames)
-        self.buffers = max(0, (len(self.mm) - self._buffers_at) // _BUFFER_ROW)
+        self.control_buses = self.shape.control_buses
+        #: audio-tap ring count and per-tap capacity in samples. The rings
+        #: themselves are read by the GUI host; capture them from Python over
+        #: ``/bus_tapStream`` (``Server.stream_taps``) instead.
+        self.taps = self.shape.taps
+        self.tap_frames = self.shape.tap_frames
+        #: audio-bus count of the bus region, the length of both the bus -> tap
+        #: directory and the level table.
+        self.audio_buses = self.shape.audio_buses
+        #: How many buffers this segment's directory can describe.
+        self.buffers = self.shape.buffer_rows
         self._path = path
-        self._c2s = _Ring(self.mm, _OFF_C2S)  # we produce here
-        self._s2c = _Ring(self.mm, _OFF_S2C)  # we consume here
+
+    def _release(self):
+        """Drops the pinning view and then the mapping, in that order — a
+        `mmap` refuses to close while an exported buffer is outstanding, and
+        the view is what exports it. Nothing may hold a *local* reference to it
+        either, which is why this drops the attribute and never names it."""
+        self._cell = None
+        if getattr(self, "mm", None) is not None:
+            self.mm.close()
+            self.mm = None
+        if getattr(self, "_file", None) is not None:
+            self._file.close()
+            self._file = None
 
     # -- data plane: no commands, just shared memory --
 
     @property
     def clock(self) -> int:
         """The engine's sample counter, mirrored every block (64 samples)."""
-        return struct.unpack_from("<Q", self.mm, _OFF_CLOCK)[0]
+        return struct.unpack_from("<Q", self.mm, self.shape.clock_offset)[0]
 
     @property
     def transport_clock(self) -> int:
@@ -308,7 +199,7 @@ class ShmClient:
         The two only differ while a transport with a governed group is
         stopped.
         """
-        return struct.unpack_from("<Q", self.mm, _OFF_TRANSPORT_CLOCK)[0]
+        return struct.unpack_from("<Q", self.mm, self.shape.transport_clock_offset)[0]
 
     @property
     def transport_position(self) -> int:
@@ -319,22 +210,22 @@ class ShmClient:
         `/transport_locate` puts it and wraps at the end of a loop. A playhead
         reads this one.
         """
-        return struct.unpack_from("<Q", self.mm, _OFF_TRANSPORT_POSITION)[0]
+        return struct.unpack_from("<Q", self.mm, self.shape.transport_position_offset)[0]
 
     @property
     def sample_rate(self) -> float:
-        return struct.unpack_from("<d", self.mm, _OFF_SAMPLE_RATE)[0]
+        return struct.unpack_from("<d", self.mm, self.shape.sample_rate_offset)[0]
 
     def ctl_get(self, index: int) -> float:
         if not 0 <= index < self.control_buses:
             raise IndexError(f"control bus {index} out of range 0..{self.control_buses}")
-        return struct.unpack_from("<f", self.mm, _OFF_CONTROLS + 4 * index)[0]
+        return struct.unpack_from("<f", self.mm, self.shape.controls_offset + 4 * index)[0]
 
     def ctl_set(self, index: int, value: float):
         """Writes the very atomic the engine's InCtl reads next block."""
         if not 0 <= index < self.control_buses:
             raise IndexError(f"control bus {index} out of range 0..{self.control_buses}")
-        struct.pack_into("<f", self.mm, _OFF_CONTROLS + 4 * index, value)
+        struct.pack_into("<f", self.mm, self.shape.controls_offset + 4 * index, value)
 
     def level(self, bus: int) -> float:
         """Audio bus `bus`'s level: the peak magnitude of the engine's last
@@ -343,7 +234,8 @@ class ShmClient:
         """
         if not 0 <= bus < self.audio_buses:
             raise IndexError(f"audio bus {bus} out of range 0..{self.audio_buses}")
-        return struct.unpack_from("<f", self.mm, self._buses_at + 4 * self.audio_buses + 4 * bus)[0]
+        return struct.unpack_from(
+            "<f", self.mm, self.shape.buses_offset + 4 * (self.audio_buses + bus))[0]
 
     def tap_of_bus(self, bus: int) -> "int | None":
         """Which tap ring is recording audio bus `bus`, or ``None``. The ring
@@ -351,7 +243,7 @@ class ShmClient:
         """
         if not 0 <= bus < self.audio_buses:
             raise IndexError(f"audio bus {bus} out of range 0..{self.audio_buses}")
-        tap = struct.unpack_from("<i", self.mm, self._buses_at + 4 * bus)[0]
+        tap = struct.unpack_from("<i", self.mm, self.shape.buses_offset + 4 * bus)[0]
         return tap if tap >= 0 else None
 
     def buffer_info(self, bufnum: int) -> "tuple[int, int, int, float] | None":
@@ -360,21 +252,11 @@ class ShmClient:
 
         The **generation** is the number that does three jobs: it is odd while
         the buffer is live and even when the slot is empty, it names the region
-        file, and it is the seqlock this read is taken under — a row caught
-        mid-write is re-read rather than believed.
+        file, and it is the seqlock the read is taken under — a row caught
+        mid-write is re-read rather than believed. The retry is the shared
+        core's, not a second implementation of it here.
         """
-        if not 0 <= bufnum < self.buffers:
-            return None
-        at = self._buffers_at + _BUFFER_ROW * bufnum
-        for _ in range(8):
-            before = struct.unpack_from("<Q", self.mm, at)[0]
-            if before % 2 == 0:
-                return None
-            frames, channels = struct.unpack_from("<II", self.mm, at + 8)
-            rate = struct.unpack_from("<d", self.mm, at + 16)[0]
-            if struct.unpack_from("<Q", self.mm, at)[0] == before:
-                return before, frames, channels, rate
-        return None
+        return _native.shm_buffer_info(self._addr, len(self.mm), bufnum)
 
     def map_buffer(self, bufnum: int) -> "MappedBuffer | None":
         """Maps buffer `bufnum`'s **samples**, or ``None`` when there is no such
@@ -396,7 +278,7 @@ class ShmClient:
         if info is None:
             return None
         generation, frames, channels, rate = info
-        path = f"{self._path}.buf{bufnum}.{generation}"
+        path = self._path + _native.shm_region_suffix(bufnum, generation)
         try:
             handle = open(path, "r+b")
         except OSError:
@@ -417,7 +299,7 @@ class ShmClient:
         assign — the server only has to tell its clients apart, not name them —
         and a client that never picks one is the single client a segment used to
         have (`DEFAULT_PEER`)."""
-        return self._c2s.push(packet, peer)
+        return _native.shm_push(self._addr, len(self.mm), _ROLE_CLIENT, peer, packet)
 
     def poll(self, peer: int = DEFAULT_PEER) -> bytes | None:
         """The next reply addressed to `peer`, or ``None``.
@@ -428,7 +310,7 @@ class ShmClient:
         which is what the browser page does. With one client -- what a Python
         process has -- there is nothing to route and this is the whole story.
         """
-        frame = self._s2c.pop()
+        frame = self.poll_any()
         if frame is None:
             return None
         to, packet = frame
@@ -437,7 +319,7 @@ class ShmClient:
     def poll_any(self) -> "tuple[int, bytes] | None":
         """The next reply as ``(peer, packet)``, whoever it is for — the door a
         process holding several clients over one segment routes with."""
-        return self._s2c.pop()
+        return _native.shm_pop(self._addr, len(self.mm), _ROLE_CLIENT)
 
     def request(self, packet: bytes, timeout: float = 2.0) -> bytes:
         """The synchronous facade: send, then block (the *client* blocks,
@@ -453,8 +335,8 @@ class ShmClient:
         raise ReplyTimeout("no reply through the ring")
 
     def close(self):
-        self.mm.close()
-        self._file.close()
+        """Unmaps the segment. Idempotent."""
+        self._release()
 
 
 # ---- the embed cdylib (feature `embed`) ----

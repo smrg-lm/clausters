@@ -263,6 +263,30 @@ engraving asks a server for it.
 | `clausters_score_can_undo` | — | `n/a` — as above |
 | `clausters_score_can_redo` | — | `n/a` — as above |
 
+## The shared-memory segment
+
+A peer maps the segment in its own language — that part is the language's — and
+then needs to know where everything is. These are the numbers and the small
+pieces of *logic* it would otherwise transcribe, which is how one binding came
+to declare 1024 control buses against a server that had had 16 384 for months:
+wrong, unused, and invisible to every test.
+
+Nothing here reaches wasm, and the reason is the same for every row: **a browser
+cannot map a file**. A page has no segment to attach to, so it keeps talking OSC
+over the WebSocket carrier and fetching what it needs to draw — the same split
+every bulk path already has, recorded in `docs/ipc.md`.
+
+| C ABI | wasm | Note |
+|---|---|---|
+| `clausters_core_shm_abi_version` | — | `n/a` — the segment layout version; a page has no segment to check it against |
+| `clausters_core_shm_shape` | — | `n/a` — every count and byte offset in one call, so a binding stops carrying half the layout |
+| `clausters_core_shm_segment_size` | — | `n/a` — how big a segment with these counts is, for a peer sizing a file to create one |
+| `clausters_core_shm_init` | — | `n/a` — writes a fresh header, for a peer that **creates** a segment rather than attaching; the editor's arrangement makes that ordinary, since whoever owns the material owns the segment |
+| `clausters_core_shm_buffer_info` | — | `n/a` — the buffer directory's row, read under its seqlock |
+| `clausters_core_shm_region_suffix` | — | `n/a` — the name a buffer's region file carries; three processes name that file |
+| `clausters_core_shm_push` | — | `n/a` — the command ring's framing (length, peer tag, padding) |
+| `clausters_core_shm_pop` | — | `n/a` — the same, inbound, including the resync a malformed frame forces |
+
 ## Transport and versioning
 
 | C ABI | wasm | Note |

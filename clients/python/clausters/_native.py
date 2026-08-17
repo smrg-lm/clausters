@@ -24,10 +24,42 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 20
+CORE_ABI_VERSION = 21
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
+
+
+class ShmShape(ctypes.Structure):
+    """Where everything is in a mapped segment, as the shared core reports it.
+
+    Mirrors ``clausters_core::shm::Shape`` — and mirroring *this* one struct is
+    the whole point: every other number a reader needs is derived from it, so a
+    binding carries one declaration instead of a transcription of the layout.
+    """
+
+    _fields_ = [
+        ("control_buses", ctypes.c_uint64),
+        ("audio_buses", ctypes.c_uint64),
+        ("taps", ctypes.c_uint64),
+        ("tap_frames", ctypes.c_uint64),
+        ("buffer_rows", ctypes.c_uint64),
+        ("controls_offset", ctypes.c_uint64),
+        ("buses_offset", ctypes.c_uint64),
+        ("taps_offset", ctypes.c_uint64),
+        ("buffers_offset", ctypes.c_uint64),
+        ("sample_rate_offset", ctypes.c_uint64),
+        ("clock_offset", ctypes.c_uint64),
+        ("transport_clock_offset", ctypes.c_uint64),
+        ("transport_position_offset", ctypes.c_uint64),
+        ("buffer_row_size", ctypes.c_uint64),
+        ("tap_slot_size", ctypes.c_uint64),
+        ("c2s_offset", ctypes.c_uint64),
+        ("s2c_offset", ctypes.c_uint64),
+        ("ring_capacity", ctypes.c_uint64),
+        ("ring_prefix", ctypes.c_uint64),
+        ("frame_header", ctypes.c_uint64),
+    ]
 
 
 class BinaryOp(IntEnum):
@@ -155,6 +187,7 @@ def _find_library() -> str:
 
 def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     f32p = ctypes.POINTER(ctypes.c_float)
+    f64p_early = ctypes.POINTER(ctypes.c_double)
     lib.clausters_core_stats.argtypes = [
         ctypes.POINTER(ctypes.c_float), ctypes.c_size_t, ctypes.c_size_t,
         ctypes.c_size_t, ctypes.POINTER(ctypes.c_float),
@@ -211,7 +244,43 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_core_degree_to_midinote.argtypes = [
         ctypes.c_double, ctypes.c_double, ctypes.c_double, f32p, ctypes.c_size_t,
     ]
+    # The shared-memory segment (ABI v21): a peer maps the file itself and asks
+    # here for every offset, for the directory's seqlock and for the ring
+    # framing — the numbers this binding used to transcribe.
     u64p = ctypes.POINTER(ctypes.c_uint64)
+    u8p = ctypes.POINTER(ctypes.c_uint8)
+    lib.clausters_core_shm_abi_version.restype = ctypes.c_uint32
+    lib.clausters_core_shm_abi_version.argtypes = []
+    lib.clausters_core_shm_shape.restype = ctypes.c_int32
+    lib.clausters_core_shm_shape.argtypes = [
+        ctypes.c_void_p, ctypes.c_size_t, ctypes.POINTER(ShmShape),
+    ]
+    lib.clausters_core_shm_segment_size.restype = ctypes.c_size_t
+    lib.clausters_core_shm_segment_size.argtypes = [ctypes.c_size_t] * 4
+    lib.clausters_core_shm_init.restype = ctypes.c_int32
+    lib.clausters_core_shm_init.argtypes = [
+        ctypes.c_void_p, ctypes.c_size_t, ctypes.c_size_t, ctypes.c_size_t,
+        ctypes.c_size_t,
+    ]
+    lib.clausters_core_shm_buffer_info.restype = ctypes.c_int32
+    lib.clausters_core_shm_buffer_info.argtypes = [
+        ctypes.c_void_p, ctypes.c_size_t, ctypes.c_size_t,
+        u64p, u64p, u64p, f64p_early,
+    ]
+    lib.clausters_core_shm_region_suffix.restype = ctypes.c_int32
+    lib.clausters_core_shm_region_suffix.argtypes = [
+        ctypes.c_size_t, ctypes.c_uint64, u8p, ctypes.c_size_t,
+    ]
+    lib.clausters_core_shm_push.restype = ctypes.c_int32
+    lib.clausters_core_shm_push.argtypes = [
+        ctypes.c_void_p, ctypes.c_size_t, ctypes.c_uint32, ctypes.c_uint32,
+        u8p, ctypes.c_size_t,
+    ]
+    lib.clausters_core_shm_pop.restype = ctypes.c_int32
+    lib.clausters_core_shm_pop.argtypes = [
+        ctypes.c_void_p, ctypes.c_size_t, ctypes.c_uint32, u8p, ctypes.c_size_t,
+        ctypes.POINTER(ctypes.c_uint32), ctypes.POINTER(ctypes.c_size_t),
+    ]
     lib.clausters_rng_seed.restype = ctypes.c_uint64
     lib.clausters_rng_seed.argtypes = [ctypes.c_uint64]
     lib.clausters_rng_next_f64.restype = ctypes.c_double
@@ -1573,3 +1642,93 @@ class WsClient:
             self.close()
         except Exception:
             pass
+
+
+# ---- the shared-memory segment ----------------------------------------------
+#
+# A peer maps the file with `mmap` — that part is Python's — and asks the core
+# for everything else: where each region is, the directory's seqlock, the ring
+# framing, the name a region file carries. What used to live here instead was a
+# transcription of the layout, which is how this binding came to declare 1024
+# control buses against a server that had had 16 384 for months: wrong, unused,
+# and caught by nothing.
+
+
+def shm_shape(address: int, length: int) -> "ShmShape | None":
+    """Every count and byte offset of the segment mapped at `address`, or
+    ``None`` when that memory is not a segment of this layout version."""
+    out = ShmShape()
+    rc = lib().clausters_core_shm_shape(ctypes.c_void_p(address), length, ctypes.byref(out))
+    return out if rc == 0 else None
+
+
+def shm_segment_size(control_buses: int, taps: int, tap_frames: int, buffers: int) -> int:
+    """How big a segment carrying these counts is — what a peer sizes a file to
+    before creating one."""
+    return lib().clausters_core_shm_segment_size(control_buses, taps, tap_frames, buffers)
+
+
+def shm_init(address: int, length: int, control_buses: int, taps: int,
+             tap_frames: int) -> bool:
+    """Writes a fresh header over the mapping at `address`, making it a segment.
+
+    For a peer that **creates** one rather than attaching: in the editor's
+    arrangement the process that owns the material owns the segment, and every
+    server attaches to it. Nothing else may have attached yet.
+    """
+    return lib().clausters_core_shm_init(
+        ctypes.c_void_p(address), length, control_buses, taps, tap_frames) == 0
+
+
+def shm_buffer_info(address: int, length: int,
+                    bufnum: int) -> "tuple[int, int, int, float] | None":
+    """What the directory says buffer `bufnum` is — ``(generation, frames,
+    channels, sample_rate)`` — read under the generation twice, so a row caught
+    mid-write is re-read rather than believed. ``None`` when the slot is empty.
+    """
+    generation = ctypes.c_uint64()
+    frames = ctypes.c_uint64()
+    channels = ctypes.c_uint64()
+    rate = ctypes.c_double()
+    rc = lib().clausters_core_shm_buffer_info(
+        ctypes.c_void_p(address), length, bufnum,
+        ctypes.byref(generation), ctypes.byref(frames),
+        ctypes.byref(channels), ctypes.byref(rate))
+    if rc != 0:
+        return None
+    return generation.value, frames.value, channels.value, rate.value
+
+
+def shm_region_suffix(bufnum: int, generation: int) -> str:
+    """The suffix a buffer's region file carries beside the segment's own path.
+    Three processes name that file, so the name is built in one place."""
+    buf = (ctypes.c_uint8 * 64)()
+    n = lib().clausters_core_shm_region_suffix(bufnum, generation, buf, len(buf))
+    if n < 0:
+        raise ValueError(f"region suffix for buffer {bufnum} did not fit")
+    return bytes(buf[:n]).decode()
+
+
+def shm_push(address: int, length: int, role: int, peer: int, packet: bytes) -> bool:
+    """Pushes one OSC packet into the segment's outbound ring, tagged for
+    `peer`. ``False`` means the ring is momentarily full — backpressure, and the
+    caller may retry, since nothing was dropped."""
+    data = (ctypes.c_uint8 * len(packet)).from_buffer_copy(packet)
+    rc = lib().clausters_core_shm_push(
+        ctypes.c_void_p(address), length, role, peer, data, len(packet))
+    return rc == 0
+
+
+def shm_pop(address: int, length: int, role: int,
+            cap: int = 65536) -> "tuple[int, bytes] | None":
+    """The next frame of the segment's inbound ring as ``(peer, packet)``, or
+    ``None`` when it is empty (or held garbage, which resyncs it)."""
+    buf = (ctypes.c_uint8 * cap)()
+    peer = ctypes.c_uint32()
+    got = ctypes.c_size_t()
+    rc = lib().clausters_core_shm_pop(
+        ctypes.c_void_p(address), length, role, buf, cap,
+        ctypes.byref(peer), ctypes.byref(got))
+    if rc != 0:
+        return None
+    return peer.value, bytes(buf[:got.value])

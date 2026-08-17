@@ -90,7 +90,11 @@ def main():
         # holding a picture of this take learns the span changed.
         c.send(osc.message("/buffer_touch", BUFNUM, 0, 0, take.frames))
 
-    c.send(osc.message("/buffer_free", BUFNUM))
+    # Freed with `request`, not `send`: it is asynchronous like every other
+    # buffer command, and a script that exits without reading its `/done`
+    # leaves that reply in the ring for whoever attaches next.
+    addr, _ = osc.decode(c.request(osc.message("/buffer_free", BUFNUM)))
+    assert addr == "/done", addr
     print("done — the server is still running (quit it with /server_quit or Ctrl-C).")
     c.close()
 

@@ -42,6 +42,7 @@ mod registry;
 mod rng;
 mod scale;
 mod sched;
+pub mod shm;
 mod time;
 pub mod ws;
 
@@ -107,8 +108,13 @@ pub use time::*;
 /// cache the `clausters_core_peaks_*` builders emit is CLPK v3, which carries a
 /// mean square beside each bucket's min/max, so a cache built by this surface is
 /// longer than a v18 one and a reader that predates it cannot parse it (the
-/// converse holds: v1 and v2 caches still load).
-pub const CORE_ABI_VERSION: u32 = 20;
+/// converse holds: v1 and v2 caches still load). v21 the shared-memory segment
+/// (`clausters_core_shm_*`): a peer maps the file in its own language and asks
+/// here for every offset and count, for the directory's seqlock, for the ring
+/// framing and for a region file's name — the numbers a binding used to
+/// transcribe, which is how one of them came to declare 1024 control buses
+/// against a server that had 16 384.
+pub const CORE_ABI_VERSION: u32 = 21;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]
