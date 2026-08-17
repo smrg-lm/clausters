@@ -91,6 +91,7 @@ pub mod pvprog;
 pub mod registry;
 pub mod rng;
 pub mod scale;
+pub mod shm;
 pub mod spectrum;
 pub mod tempoclock;
 pub mod window;
