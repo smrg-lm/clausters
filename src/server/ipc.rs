@@ -36,6 +36,8 @@ use std::io;
 // `Path` is not gated: `remove_segment` takes one on every target, and only
 // its unix face has a filesystem to unlink from.
 use std::path::Path;
+
+use crate::dsp::buffer::Frontier;
 #[cfg(unix)]
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -507,7 +509,7 @@ impl Segment {
     /// compares it against the row to learn its material is history.
     #[cfg(unix)]
     pub fn map_buffer(
-        &self,
+        self: &Arc<Self>,
         at: &Path,
         bufnum: usize,
     ) -> Option<(u64, Arc<crate::dsp::buffer::Buffer>)> {
@@ -522,13 +524,35 @@ impl Segment {
         }
         Some((
             shape.generation,
-            Arc::new(crate::dsp::buffer::Buffer::shared(
-                Arc::new(region),
-                shape.channels,
-                shape.frames,
-                shape.sample_rate,
-            )),
+            Arc::new(
+                crate::dsp::buffer::Buffer::shared(
+                    Arc::new(region),
+                    shape.channels,
+                    shape.frames,
+                    shape.sample_rate,
+                )
+                // **An attached server publishes the frontier too**, and it is
+                // the one that matters most: the process holding the input
+                // device is the only one that can record, and it is never the
+                // owner of the material. The row belongs to the owner, the
+                // number in it belongs to whoever wrote.
+                .with_frontier(self.frontier_sink(bufnum)),
+            ),
         ))
+    }
+
+    /// A [`Frontier`] sink over buffer `bufnum`'s directory row: where a
+    /// writing UGen says how far it has filled the material.
+    ///
+    /// It holds the segment rather than a pointer into it, so the mapping
+    /// cannot go out from under a buffer the engine is still writing — and the
+    /// write itself is one relaxed read-modify-write, which is what makes it
+    /// callable from the audio thread.
+    pub fn frontier_sink(self: &Arc<Self>, bufnum: usize) -> Arc<dyn Frontier> {
+        Arc::new(SegmentFrontier {
+            segment: Arc::clone(self),
+            bufnum,
+        })
     }
 
     /// How many control buses this segment carries — the header's own count,
@@ -627,5 +651,17 @@ impl IpcPeer {
     /// whole ring contents and return `None`.
     pub fn try_pop(&self, buf: &mut [u8]) -> Option<(u32, usize)> {
         self.segment.view.try_pop(self.role, buf)
+    }
+}
+
+/// One buffer's row, as a [`Frontier`] sink.
+struct SegmentFrontier {
+    segment: Arc<Segment>,
+    bufnum: usize,
+}
+
+impl Frontier for SegmentFrontier {
+    fn raise(&self, frame: u64) {
+        self.segment.raise_buffer_frontier(self.bufnum, frame);
     }
 }
