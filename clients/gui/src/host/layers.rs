@@ -427,6 +427,30 @@ mod tests {
         assert!(!sel.set_hidden("take"));
     }
 
+    /// **Two automations over one clip**, which is what the stack being the
+    /// container's contents buys: they are two layers, named apart, and one of
+    /// them is edited at a time. Nothing here counts kinds — the second curve
+    /// is the second curve because it is declared second.
+    #[test]
+    fn a_container_may_hold_two_layers_of_one_role() {
+        let w = clip(concat!(
+            r#""data":[0.0,1.0],"children":["#,
+            r#"{"type":"curve","points":[0.0,0.0,1,0.0,100.0,1.0,1,0.0],"#,
+            r##""min":0.0,"max":1.0,"color":"#ff6666"},"##,
+            r#"{"type":"curve","points":[0.0,1.0,1,0.0,100.0,0.0,1,0.0],"#,
+            r##""min":0.0,"max":1.0,"color":"#66aaff"}]"##,
+        ));
+        assert_eq!(
+            stack(&w),
+            vec![BodyRole::Take, BodyRole::Curve, BodyRole::Curve]
+        );
+        assert_eq!(Layer::Content(1).name(&w), "points");
+        assert_eq!(Layer::Content(2).name(&w), "points:1");
+        // ...and each carries its own colour, since a layer is a node.
+        assert!(w.children[1].color.is_some() && w.children[2].color.is_some());
+        assert_ne!(w.children[1].color, w.children[2].color);
+    }
+
     /// Setting reports whether it changed, and a stale index reads back as the
     /// placement.
     #[test]
