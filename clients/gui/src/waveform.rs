@@ -128,11 +128,6 @@ impl Samples {
     }
 }
 
-/// How wide a column has to be, in buckets, before its partial edges stop
-/// being read from the samples: past this the bucket rounding is a fraction of
-/// a pixel and the reads buy nothing.
-const EDGE_EXACT_COLUMNS: usize = 8;
-
 /// How many samples a shared source is read in at a time when a column is
 /// measured. One cache line's worth of columns: big enough that the per-call
 /// cost disappears, small enough to sit on the stack in a draw path.
@@ -417,23 +412,27 @@ impl WaveformData {
             let (lo, hi, ms) = channel.samples.stats(a, b)?;
             return Some((lo, hi, Some(ms)));
         }
-        // **Which buckets belong to this column.** With the edges read from
-        // the samples, the whole buckets are the ones strictly inside and the
-        // rest is measured exactly. Without them, the span is rounded down at
-        // both ends instead — so consecutive columns *tile* the buckets and a
-        // bucket straddling a boundary lands in exactly one of them. Asking
-        // for the strictly-inside buckets and then not reading the edges would
-        // drop it from both, which loses a transient rather than displacing it.
-        let exact_edges = raw && (b - a) < base * EDGE_EXACT_COLUMNS;
-        let (qa, qb) = if exact_edges {
-            (a, b)
-        } else {
-            (a - a % base, b - b % base)
-        };
+        // **Which buckets belong to this column**, and it is a *tiling*: the
+        // span is rounded down at both ends, so consecutive columns cover
+        // every bucket exactly once. A bucket straddling a boundary lands in
+        // one of them rather than in both (which duplicates and widens — the
+        // defect this replaced) or in neither (which loses a transient
+        // outright). What is left is a **position error of under a bucket**,
+        // one pixel at the zoom where a column *is* a bucket and shrinking
+        // from there, which is the resolution the summary has.
+        //
+        // Reading the two partial edges out of the samples instead would make
+        // it exact, and that is what this did first — measured at 700 µs per
+        // frame of 900 columns against 10 µs for the fold, because a column of
+        // two buckets is 500 samples of edge. Exactness bought by reading the
+        // material at every zoom is not exactness a picture can afford; the
+        // regime that *does* read every sample is the one below, where a
+        // column is finer than a bucket and there is nothing else to read.
+        let (qa, qb) = (a - a % base, b - b % base);
         let Some(whole) = channel.pyramid.aligned_stats(qa, qb) else {
-            // No whole bucket fits: the column straddles a boundary and is
-            // narrower than two buckets, so the samples are the only exact
-            // answer and they are a short read.
+            // No whole bucket fits: the column straddles one boundary and is
+            // narrower than two buckets, so the samples are the only answer
+            // and they are a short read.
             if raw && let Some((lo, hi, ms)) = channel.samples.stats(a, b) {
                 return Some((lo, hi, Some(ms)));
             }
@@ -444,24 +443,8 @@ impl WaveformData {
             let ms = channel.pyramid.column_ms(0, a as f64, b as f64);
             return Some((lo, hi, ms));
         };
-        let (mut lo, mut hi) = (whole.min, whole.max);
-        let mut sum_sq = whole.sum_sq;
-        let mut count = whole.count;
-        // The two partial edges, from the samples — the difference between a
-        // column and the buckets inside it, which is the whole of the step
-        // this replaced.
-        if exact_edges {
-            for (from, to) in [(a, whole.start.min(b)), (whole.end.max(a), b)] {
-                if to > from
-                    && let Some((elo, ehi, ems)) = channel.samples.stats(from, to)
-                {
-                    lo = lo.min(elo);
-                    hi = hi.max(ehi);
-                    sum_sq += ems as f64 * (to - from) as f64;
-                    count += to - from;
-                }
-            }
-        }
+        let (lo, hi) = (whole.min, whole.max);
+        let (sum_sq, count) = (whole.sum_sq, whole.count);
         let ms = (whole.measured && count > 0).then(|| (sum_sq / count as f64) as f32);
         Some((lo, hi, ms))
     }
@@ -899,26 +882,89 @@ mod tests {
         assert_eq!(baseline_of(-1.0, 0.0), None, "wholly negative");
     }
 
-    /// **A column is the samples in it, at every zoom.** What this replaced
-    /// was a level read whole-bucket-wise, which drew a transient a hundred
-    /// samples outside the column and stepped as the zoom crossed a bucket.
+    /// **A transient lands in exactly one column, within a bucket of where it
+    /// is.** What this replaced drew it in *two* — a column read every bucket
+    /// overlapping it, so a spike a hundred samples outside was drawn inside,
+    /// and the picture stepped as the zoom crossed a bucket. The buckets are
+    /// tiled now: no duplication, no loss, and a position good to the
+    /// resolution the summary has.
     #[test]
-    fn a_column_measures_its_own_span_at_every_zoom() {
+    fn a_transient_lands_in_one_column_within_a_bucket_of_itself() {
         let n = 1 << 16;
         let mut samples = vec![0.0f32; n];
-        samples[900] = 1.0; // inside bucket 3, outside every column below
+        let spike = 900usize;
+        samples[spike] = 1.0;
         let data = WaveformData::new(Arc::from(samples.as_slice()), 256);
-        let s0 = 1_004.0;
-        for spp in [255.9, 256.1, 300.0, 512.0, 1_000.0] {
-            let (lo, hi) = data.column(0, spp, s0, s0 + spp);
-            assert_eq!((lo, hi), (0.0, 0.0), "spp {spp} must not reach the spike");
+        for spp in [256.1f64, 300.0, 512.0, 1_000.0, 4_000.0] {
+            let hits: Vec<usize> = (0..40)
+                .filter(|c| {
+                    let s0 = *c as f64 * spp;
+                    data.column(0, spp, s0, s0 + spp).1 > 0.5
+                })
+                .collect();
+            assert_eq!(hits.len(), 1, "spp {spp}: drawn in {hits:?}");
+            let s0 = hits[0] as f64 * spp;
+            let off = if (spike as f64) < s0 {
+                s0 - spike as f64
+            } else {
+                (spike as f64 - (s0 + spp)).max(0.0)
+            };
+            assert!(
+                off <= 256.0,
+                "spp {spp}: {off} samples away from its column"
+            );
         }
-        // And it does reach it when the column is over it.
-        let (_, hi) = data.column(0, 256.1, 800.0, 1_056.1);
-        assert_eq!(hi, 1.0);
     }
 
-    /// The envelope moves continuously through the zoom the pyramid's regimes
+    /// Below a bucket there is nothing to summarize with, so the column is the
+    /// samples in it and the answer is exact — envelope and body alike, since
+    /// two pictures of one column must be about the same samples.
+    #[test]
+    fn a_column_finer_than_a_bucket_is_exact() {
+        let samples: Vec<f32> = (0..20_000).map(|i| (i as f32 * 0.01).sin() * 0.5).collect();
+        let data = WaveformData::new(Arc::from(samples.as_slice()), 256);
+        for spp in [4.0, 60.0, 255.0] {
+            let (s0, s1) = (3_333.0, 3_333.0 + spp);
+            let (lo, hi) = data.column(0, spp, s0, s1);
+            let ms = data
+                .column_ms(0, spp, s0, s1)
+                .expect("a built pyramid measures");
+            let brute = &samples[s0 as usize..(s1.ceil() as usize).min(20_000)];
+            let (blo, bhi) = peaks::min_max(brute).unwrap();
+            let bms = peaks::mean_square(brute).unwrap();
+            assert!(
+                (lo - blo).abs() < 1e-6 && (hi - bhi).abs() < 1e-6,
+                "spp {spp}"
+            );
+            assert!((ms - bms).abs() < 1e-6, "spp {spp}: {ms} vs {bms}");
+        }
+    }
+
+    /// And above it the two pictures still agree with **each other**: the
+    /// envelope and the measured body read one set of buckets, so a body can
+    /// never sit outside the trace around it.
+    #[test]
+    fn the_body_and_the_envelope_read_one_set_of_buckets() {
+        let samples: Vec<f32> = (0..200_000)
+            .map(|i| (i as f32 * 0.003).sin() * (0.2 + 0.8 * (i as f32 * 0.00002).sin().abs()))
+            .collect();
+        let data = WaveformData::new(Arc::from(samples.as_slice()), 256);
+        for spp in [300.0, 533.0, 2_000.0, 20_000.0] {
+            let cols = ((200_000.0 / spp) as usize).min(20);
+            for c in 0..cols {
+                let s0 = c as f64 * spp;
+                let (lo, hi) = data.column(0, spp, s0, s0 + spp);
+                let ms = data.column_ms(0, spp, s0, s0 + spp).expect("measured");
+                let rms = ms.sqrt();
+                assert!(
+                    rms <= hi.max(-lo) + 1e-6,
+                    "spp {spp}, column {c}: body {rms} outside envelope ({lo}, {hi})"
+                );
+            }
+        }
+    }
+
+    /// The envelope moves continuously through the zoom the pyramid's regimes    /// The envelope moves continuously through the zoom the pyramid's regimes
     /// used to switch at: there is no switch left, so the only test worth
     /// keeping is that the answer is the same one either side of it.
     #[test]
@@ -941,39 +987,15 @@ mod tests {
         }
     }
 
-    /// The measured body reads the same span the envelope around it does, at
-    /// every zoom — two pictures of one column cannot be about different
-    /// samples.
-    #[test]
-    fn the_body_and_the_envelope_measure_one_span() {
-        let samples: Vec<f32> = (0..20_000).map(|i| (i as f32 * 0.01).sin() * 0.5).collect();
-        let data = WaveformData::new(Arc::from(samples.as_slice()), 256);
-        for spp in [4.0, 255.0, 257.0, 900.0, 2_000.0] {
-            let (s0, s1) = (3_333.0, 3_333.0 + spp);
-            let (lo, hi) = data.column(0, spp, s0, s1);
-            let ms = data
-                .column_ms(0, spp, s0, s1)
-                .expect("a built pyramid measures");
-            let brute: Vec<f32> = samples[s0 as usize..(s1.ceil() as usize).min(20_000)].to_vec();
-            let (blo, bhi) = peaks::min_max(&brute).unwrap();
-            let bms = peaks::mean_square(&brute).unwrap();
-            assert!(
-                (lo - blo).abs() < 1e-6 && (hi - bhi).abs() < 1e-6,
-                "spp {spp}"
-            );
-            assert!((ms - bms).abs() < 1e-6, "spp {spp}: {ms} vs {bms}");
-        }
-    }
-
-    /// Past the zoom where the edges are read, a column is measured over the
-    /// buckets it tiles rather than the samples it spans — so the picture may
-    /// displace a transient by a fraction of a pixel, and must never **lose**
-    /// one. Consecutive columns cover every bucket exactly once.
+    /// Consecutive columns cover every bucket **exactly once**, so a bucket
+    /// that straddles a column boundary is displaced and never lost. It is the
+    /// property the whole tiling rests on, and the one a naive "buckets
+    /// strictly inside" would break in the direction that costs a transient.
     #[test]
     fn no_column_drops_a_bucket_at_a_coarse_zoom() {
         let n = 1 << 18;
         let mut samples = vec![0.0f32; n];
-        let spp = 256.0 * 16.0; // past EDGE_EXACT_COLUMNS: the edges are not read
+        let spp = 256.0 * 16.0;
         let boundary = 10.0 * spp;
         let straddling = boundary as usize + 4; // inside the bucket that edge cuts
         samples[straddling] = 1.0;

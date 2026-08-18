@@ -108,6 +108,10 @@ pub(super) struct App {
     pub(super) frontiers: HashMap<(i32, i32), u64>,
     /// Next scheduled re-query of the server's node tree (the `/node_set` poll).
     pub(super) next_query: Instant,
+    /// Next check of the write frontiers — the recording tick, on the frame
+    /// cadence and separate from the animated one because it redraws only
+    /// when the material actually grew.
+    pub(super) next_follow: Instant,
     /// Standalone mode: the host booted a pre-loaded GuiDef with no script front
     /// (`--standalone`). Closing the last window then quits the app, so the
     /// embedded audio server is dropped (and `/server_quit`ed) instead of left running.
@@ -146,6 +150,7 @@ impl App {
             notified: false,
             frontiers: HashMap::new(),
             next_query: Instant::now(),
+            next_follow: Instant::now(),
             standalone: false,
             #[cfg(feature = "midi")]
             midi_in: None,
@@ -255,7 +260,7 @@ impl App {
         self.host.window_def(def_id).is_some_and(|tree| {
             tree_animates(tree)
                 || (self.shm.is_some() && tree_has_live_widget(tree, self.host.timelines()))
-        }) || self.window_follows_a_recording(def_id)
+        })
     }
 
     pub(super) fn apply(
@@ -556,13 +561,32 @@ impl ApplicationHandler<UserEvent> for App {
 
         // **A recording is drawn as it fills.** The material is mapped, so the
         // samples need nothing; what moves is the frontier its writer
-        // publishes, and the summary over the frames it added. Costs a handful
-        // of relaxed loads when nothing is recording, and redraws only what
-        // actually grew.
-        for def_id in self.follow_recordings() {
-            if let Some(ws) = self.windows.get(&def_id) {
-                ws.gpu.window.request_redraw();
+        // publishes, and the summary over the frames it added.
+        //
+        // It keeps the loop waking at the frame cadence and **redraws only
+        // what actually grew**, which is why it is not folded into the
+        // animated set below: a meter repaints every tick because its value
+        // may have changed and nothing says so, while a recording says
+        // exactly when it changed and by how much. Joining them would repaint
+        // a still take thirty times a second for a number that did not move.
+        let mut recording = false;
+        if now >= self.next_follow {
+            for def_id in self.follow_recordings() {
+                if let Some(ws) = self.windows.get(&def_id) {
+                    ws.gpu.window.request_redraw();
+                }
             }
+            self.next_follow = now + FRAME;
+        }
+        if self
+            .windows
+            .keys()
+            .any(|id| self.window_follows_a_recording(*id))
+        {
+            recording = true;
+        }
+        if recording {
+            next_wake = Some(self.next_follow);
         }
 
         // Meter/scope animation, driven from the shared segment.

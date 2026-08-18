@@ -2067,6 +2067,8 @@ What deliberately stays out: DR14 and the other publisher-specific scores (they 
 
   **What shipped is the live picture.** `SharedMaterial::frontier` reads the row; `App::follow_recordings` runs on the frame tick, compares each drawn buffer's frontier against the one that view was last summarized at, and re-reads **only the frames between them** (`Element::refresh_material`, H7's door for a write this host did not make). A window redraws only if something actually grew. The wake condition is deliberately narrow — `window_follows_a_recording` is true only while a frontier is past zero and short of the buffer's end — so a session window holding loaded takes still sleeps, and one holding a take being filled ticks.
 
+  **And it is its own tick, not the animated set** *(corrected 2026-08-18, measuring where the CPU went)*. Folding the recording into `window_is_animated` had it repainting **every** frame while a take filled, which is what that set is for — a meter's value may have changed and nothing says so — and exactly what a recording does not need, since the frontier says when it changed and by how much. Separated, with its own `next_follow` cadence and a redraw only for what grew, the host's cost while recording went from **12.6% of a core to 3.0%**; after the recording ends both sleep at 0%, because the frontier stops moving at the buffer's end.
+
   **The wire half is the server's** (S20's `/buffer_stream`), and both clients can now ask for it: `Server.stream_buffers` in Python, `Server.streamBuffers` in TypeScript. **What no page does yet is consume it** — folding streamed buckets into a pyramid it holds needs a way to write buckets into one, which the core does not expose. Recorded below rather than half-built.
 
   **The example is `clients/python/examples/gui_recording.py`**: one server owning a segment, one host mapping it, an empty ten-second take and a sweep recorded into it — the trace fills from the left with nothing about the audio crossing the wire. It is by-eye, like every other `gui_*`, and it is what the acceptance below is checked with.
@@ -2168,9 +2170,19 @@ finished work, where a pending item reads as done.
 
   It is small, it is not H7's, and H7 is what makes the edge reads cheap — so it is taken after it, and it wants the eye as much as the test: a spike appearing and disappearing across one zoom step is exactly the artifact a unit test can confirm and only a person can judge the size of.
 
-  **Fixed 2026-08-18, and it deleted more than it added.** `peaks::aligned_stats` folds the whole buckets inside a span — the largest aligned block at each position, a segment tree's own walk, so it costs the logarithm of the span rather than its buckets and the answer no longer depends on which level it came from. `WaveformData::column` closes the two partial edges from the samples while a bucket is a meaningful part of the column, which makes it exact; **the LOD crossfade went with the approximation it was hiding**, since there is no level to switch between any more.
+  **Fixed 2026-08-18, and it deleted more than it added.** `peaks::aligned_stats` folds the whole buckets inside a span — the largest aligned block at each position, a segment tree's own walk, so it costs the logarithm of the span rather than its buckets and the answer no longer depends on which level it came from. The buckets are **tiled**: the span is rounded down at both ends, so consecutive columns cover every bucket exactly once — a bucket that straddles a boundary lands in one of them rather than in both (which duplicated and widened, the defect) or in neither (which would lose a transient outright). **The LOD crossfade went with the approximation it was hiding**, since there is no level to switch between any more.
 
-  **One thing the entry had not seen, and it is why the cutoff is not simply a skip.** Past the zoom where the edges are worth reading, taking only the buckets *strictly inside* each column would drop a bucket that straddles a boundary from **both** neighbours — losing a transient rather than displacing it, which is worse than what this fixed. So beyond the cutoff the span is rounded down at both ends and consecutive columns *tile* the buckets: every bucket lands in exactly one column, and the error is a sub-pixel displacement. A test pins it.
+  **What is left is a position error under one bucket** — one pixel at the zoom where a column *is* a bucket, shrinking from there — and that is the resolution the summary has. Two tests pin it: a transient is drawn in exactly one column and within a bucket of itself, and no column drops a bucket at a coarse zoom.
+
+  **The first version of this fix read the two partial edges from the samples, which made it exact and cost forty times more** *(measured 2026-08-18, after the user asked where the CPU was going)*. A column of two buckets is ~500 samples of edge, so a 900-column frame over a ten-second take cost **703 µs** against **17 µs** for the fold — per frame, per channel, at every zoom between one bucket and eight. Exactness bought by reading the material on every frame is not exactness a picture can afford, and the regime that *does* read every sample is the one below, where a column is finer than a bucket and there is nothing else to read. The edges are gone; what they were buying is now a sub-pixel displacement.
+
+  ```
+  900 columns of a 10 s take, per frame      owned      mapped
+  spp 200 (raw samples, exact)              153 us      528 us
+  spp 533 (was: fold + sample edges)        210 us      703 us
+  spp 533 (now: fold, tiled)                 18 us       18 us
+  spp 8000                                    7 us        6 us
+  ```
 
   The two tests that named the crossfade were rewritten around what is now true: a column measures its own span at every zoom, and the envelope is continuous where the regimes meet — trivially, because they do not switch.
 
