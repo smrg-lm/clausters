@@ -21,14 +21,16 @@ it rather than against taste: **a functionally complete example of the
 arrangement, the document and the GUI together** — a composition built in
 Python, drawn as a multitrack editor, edited by hand, heard, undone, redone,
 saved and reopened — on a model that is **usable and correct at real sizes**,
-not only at an example's. Both halves are load-bearing, and both are now behind
-the list rather than in it: the loop runs, a saved piece comes back as the piece
-that was saved, the editor is an application with its own processes, a clip has
-interaction rules, and the taxes every session paid — an async command's 100 ms
-floor, a killed editor's segments, a persisted def that would not load and could
-not be named — are paid. **What is left is not on the path to the destination at
-all**: a port that the destination does not wait on, and a track that is
-genuinely later.
+not only at an example's. Both halves are load-bearing, and most of both are now
+behind the list rather than in it: the loop runs, a saved piece comes back as the
+piece that was saved, the editor is an application with its own processes, a clip
+has interaction rules, and the taxes every session paid — an async command's
+100 ms floor, a killed editor's segments, a persisted def that would not load and
+could not be named — are paid. **One thing on the path is still open and it is
+the second half's**: the editor's picture copies the material it already maps, so
+what a stroke costs still grows with the take. It is first. What follows it is
+not on the path at all — a port the destination does not wait on, and a track
+that is genuinely later.
 
 Where the work lives:
 
@@ -51,13 +53,21 @@ right — that is the normal failure, not a sign the work vanished.
 
 ---
 
-## Phase 1 — the packages move together: the arrangement reaches the web client
+## Phase 1 — the picture reads the material
+
+*What it buys: the half H6 left behind, and it is the one place in the editor where a cost is still proportional to the material rather than to the work. The take is mapped and the widget copies it anyway — once to open it, and twice more on every stroke, over samples the store already wrote. Taken first because it is small, because everything it needs has shipped (S18, S19, H6), and because it is the last asymmetry between what the server promises about a write and what the editor pays for one. The rest of the phase is the same sentence in the other direction: a picture that reads the material follows an edit anybody makes, including the engine's own while it records, which is the one write in the system nothing announces.*
+
+- ⬜ **H7 — The picture reads the material, and a write costs its span.** It also closes the freshness half — the host announces a write and does not listen for anybody else's — and it puts one door in `clausters-core`: a peak pyramid summarizes a reader, not only a slice. The plan carries the placement analysis and the three callers it rests on (the mapped region, the Python cache updater, a render's streamed statistics).
+- ⬜ **S20 — A buffer publishes what was written into it, and its overview is a file beside it** (root `PLAN.md`) and **H8 — The take fills while it records, and the overview is read rather than built** (`clients/gui/PLAN.md`), the two halves of one thing, read together the way S19 and H6 were: the engine's own writes announce nothing, so the material that changes continuously is the one no picture can follow. The overview becomes a volatile file beside the region, as every multitrack editor's does, and the page watches it as buckets rather than samples. S20 moves the segment layout, so it carries an ABI bump with it.
+- ⬜ **The crossfade covers the levels and not the regime** *(`clients/gui/PLAN.md`, Found by use)* — after H7, which is what makes its fix cheap.
+
+## Phase 2 — the packages move together: the arrangement reaches the web client
 
 *What it buys: the rule the project already states, applied to the largest
 outstanding violation. `form/`, `gui/editor.py`, `gui/transport.py` and
 `gui/notation.py` have **no TypeScript counterpart at all** — the whole
-arrangement, document and editor layer exists in one client. First now, and still
-for the same reason it was last: it is a port, and porting is cheapest once the
+arrangement, document and editor layer exists in one client. It waits only on the phase above, and is
+still here for the same reason it was last: it is a port, and porting is cheapest once the
 layer has stopped moving — which is what the closed phases did to it.*
 
 - ⬜ **W16 — Example parity with the Python client**, and its named track: the
@@ -70,7 +80,7 @@ layer has stopped moving — which is what the closed phases did to it.*
 - ⬜ **W7** (the Faust surfaces), **W9** (MIDI), **W15** (the bundle writer) —
   unported features, each owned, none on the path to the complete example.
 
-## Phase 2 — the spectral editor
+## Phase 3 — the spectral editor
 
 *Everything here is genuinely later: it needs the A track's descriptors, it is
 partly experimental, and none of it is on the path to the complete example.*
@@ -117,7 +127,7 @@ example, and none blocks anything that is.
   bridge, the host's vocabulary, the composition chapter, the examples,
   `CLAUDE.md`'s arrangement-vocabulary section and the web port — and that it
   rides alone rather than inside a milestone about something else, which is why
-  it is here and not folded into Phase 1.
+  it is here and not folded into the port phase.
 - **The three open questions of the Python plan** *(`clients/python/PLAN.md`,
   Found by use)* — "Acceptable equivalence level for higher math vs Faust",
   "Whether a separate `cdylib` for `clausters-ffi` is preferable" and "The
@@ -140,12 +150,6 @@ example, and none blocks anything that is.
   The last of those is the one the user asked to have thought through and built
   next, and it is a track's worth: the same layer mechanism with richer
   contents, visualization layers kept separate from edit layers.
-- **A mapped take is still copied into the widget before it is drawn**
-  *(`clients/gui/PLAN.md`, Found by use)*. What the editor phase deliberately
-  did not do: the round trip is gone, the copy is not. It is a design over
-  `waveform`/`peaks` — the pyramid's source, the LOD crossfade, and a browser
-  that has no mapping and must keep the owned copy — rather than a change to
-  the material module, and nothing is waiting on it.
 - **The larger "Future directions"** in each plan — the free arrangement plane,
   the in-page shared-memory path, an interpreter inside a standalone host,
   per-node staleness, more than one owner of one document, IME text, a Tauri
