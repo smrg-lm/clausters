@@ -145,6 +145,35 @@ pub(super) fn layer_under_pointer(
     Some(crate::host::layers::under_pointer(widget, (cx, cy), &input))
 }
 
+/// **The rectangle and the axis the layer `at` names stands on** — the
+/// container's when the layer fills it, its own stretch when it names one
+/// ([`crate::host::layers::layer_input`]). The press and the drag both address
+/// a layer through this, so a note dragged inside a clip's second segment is
+/// grabbed on the pixels it was drawn on.
+pub(super) fn layer_frame(host: &Host, ctx: &GestureCtx, at: At) -> At {
+    let Some(Layer::Content(n)) = at.layer else {
+        return at;
+    };
+    let metrics = host.metrics_for(ctx.def_id).at(at.scale);
+    let Some(container) = host.window_def(ctx.def_id).and_then(|t| t.find(at.id)) else {
+        return at;
+    };
+    let Some(child) = container
+        .children
+        .iter()
+        .filter(|c| c.kind.body_role().is_some())
+        .nth(n)
+    else {
+        return at;
+    };
+    let derived = crate::host::layers::layer_input(&input(&metrics, ctx, at, at.time), child);
+    At {
+        rect: derived.rect,
+        time: derived.time,
+        ..at
+    }
+}
+
 /// **Offers a press to the element `at` addresses, if the point is on it.**
 ///
 /// The one place an element's declared shape ([`Element::hit_area`]) is

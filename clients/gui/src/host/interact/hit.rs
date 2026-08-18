@@ -325,15 +325,10 @@ pub(crate) fn clip_hit(
     let (id, local) = clip;
     let rect = local.body;
     let widget = host.window_def(def_id)?.find(id)?;
-    let WidgetKind::Clip {
-        offset,
-        dur,
-        window,
-        ..
-    } = widget.kind
-    else {
+    let WidgetKind::Clip { offset, dur, .. } = widget.kind else {
         return None;
     };
+    let window = widget.window.unwrap_or_default();
     // What the clip is a window **onto**: the take's own length, asked of the
     // body that holds it. A clip with no material — a roll, a bare automation —
     // has no window to run off, and its edges are bounded by nothing but the

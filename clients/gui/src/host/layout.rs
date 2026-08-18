@@ -505,6 +505,27 @@ fn place_on_time<'a>(
                     crate::host::graphics::track::clip_local_view(body, &nav, *offset, *dur, rect);
                 (rect, space.on_time(local))
             }
+            // **A body that names a stretch is placed on it**, exactly as a
+            // clip is placed on its lane: same mapping, one level down, so a
+            // clip whose take is three segments of three files holds three
+            // bodies, each over its own part of the clip and each reading its
+            // own window. The clip is the lane, its own axis is the window.
+            (WidgetKind::Clip { .. }, _) if child.span.is_some() => {
+                let (at, len) = child.span.unwrap_or((0.0, 0.0));
+                let rect = match crate::host::graphics::track::clip_x_range(
+                    body,
+                    &nav,
+                    at,
+                    len,
+                    space.metrics.divider_w,
+                ) {
+                    Some((x0, x1)) => Rect::new(x0, body.y, x1 - x0, body.h),
+                    None => Rect::new(body.x, body.y, 0.0, 0.0),
+                };
+                let local =
+                    crate::host::graphics::track::clip_local_view(body, &nav, at, len, rect);
+                (rect, space.on_time(local))
+            }
             // Anything else a time container holds fills its body: a clip's
             // layered bodies, and a lane's own non-clip chrome.
             _ => (body, space.on_time(nav)),

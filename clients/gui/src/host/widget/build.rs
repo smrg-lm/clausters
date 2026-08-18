@@ -98,7 +98,6 @@ pub(super) fn build_kind(
             offset: number_f64(props, "offset", 0.0).max(0.0),
             dur: number_f64(props, "dur", 0.0).max(0.0),
             label: label(props),
-            window: SourceWindow::parse(props),
         },
         "field" if is_bare_ruler(props, has_children) => WidgetKind::TimeRuler {
             editor: EditorProps::parse(props, RulerY::Off),
@@ -185,6 +184,8 @@ pub(super) fn body_widget(kind: WidgetKind) -> Widget {
         theme: None,
         alpha: 1.0,
         visible: true,
+        span: None,
+        window: None,
         layer: crate::host::layers::Layer::Placement,
         children: Vec::new(),
     }

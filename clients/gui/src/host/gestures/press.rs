@@ -503,11 +503,17 @@ impl Gestures {
         if !matches!(layer, layers::Layer::Content(_)) {
             return false;
         }
-        let at = element::At {
-            layer: Some(layer),
-            time: Some(time),
-            ..at
-        };
+        // Delivered on the layer's **own** frame: the container's rectangle
+        // and axis when the layer fills it, its own stretch when it names one.
+        let at = element::layer_frame(
+            host,
+            ctx,
+            element::At {
+                layer: Some(layer),
+                time: Some(time),
+                ..at
+            },
+        );
         self.element_at(host, ctx, at, cx, cy, grab, out)
     }
 

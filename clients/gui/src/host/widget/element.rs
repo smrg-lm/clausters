@@ -803,6 +803,7 @@ impl fmt::Debug for SlotFill {
 /// timeline groups, the queried node trees), so nothing can hold both at once.
 /// An element reads the outside when it draws, and moves itself when it is
 /// dragged.
+#[derive(Clone, Copy)]
 pub struct Input<'a> {
     /// The size roles of this placement, resolved at its scale — the same table
     /// the renderer drew the element with, so a grab lands on the groove that

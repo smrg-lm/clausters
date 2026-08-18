@@ -1048,6 +1048,17 @@ impl Default for SourceWindow {
 }
 
 impl SourceWindow {
+    /// The window a placement's props declare, or `None` when they declare
+    /// none — which is what "the container's window, or the identity" means and
+    /// the difference between a body that reads its own segment and one that is
+    /// drawn through the clip's.
+    pub(crate) fn declared(props: &serde_json::Map<String, Value>) -> Option<Self> {
+        ["start", "loop", "fit"]
+            .iter()
+            .any(|k| props.contains_key(*k))
+            .then(|| Self::parse(props))
+    }
+
     /// The window a placement's props declare.
     pub(crate) fn parse(props: &serde_json::Map<String, Value>) -> Self {
         Self {

@@ -207,11 +207,6 @@ pub enum WidgetKind {
         offset: f64,
         dur: f64,
         label: Option<String>,
-        /// **What of the material behind it this clip shows**: where its own
-        /// time zero reads in the source, whether the window loops, whether the
-        /// picture is fitted instead of read frame for sample. A clip is a
-        /// window onto a segment of data, and this is that window.
-        window: SourceWindow,
     },
     /// A **registered element**: a leaf this build renders through the
     /// [`Element`] trait rather than through an arm of this enum, built by the
@@ -296,6 +291,25 @@ pub struct Widget {
     /// the gap close, or stay? — and the answer belongs with the pass that
     /// hands it out, on the day something needs it.
     pub visible: bool,
+    /// **Where on its container's time axis this node sits**, when it occupies
+    /// a stretch of it rather than the whole: `(at, dur)` in the container's
+    /// own units, from the `at`/`dur` props. `None` — the ordinary case — fills
+    /// whatever the container gives it.
+    ///
+    /// It is what makes a body a **placement** rather than an overlay: a clip
+    /// whose take is three segments of three different files holds three take
+    /// bodies, each over its own stretch of the clip, each with its own window
+    /// onto its own source. The clip's own `offset`/`dur` are the same idea one
+    /// level up, which is why the words are the same one level down.
+    pub span: Option<(f64, f64)>,
+    /// **What of the material behind it this node shows**: where its own time
+    /// zero reads in the source, whether the window loops, whether the picture
+    /// is fitted instead of read frame for sample ([`SourceWindow`]).
+    ///
+    /// `None` means *the container's* — a body with no window of its own is
+    /// drawn through the clip's, which is every clip written as flat props. A
+    /// clip's own `None` is the identity window (from the first frame, once).
+    pub window: Option<SourceWindow>,
     /// The **active edit layer** of this widget's layered contents: the
     /// placement (the default), or one of the children that fills a
     /// [`BodyRole`](element::BodyRole).
@@ -443,11 +457,30 @@ impl Widget {
                 .iter()
                 .map(|c| Self::build(None, c, blobs))
                 .collect::<Result<Vec<_>, _>>()?,
-            // A clip is a container too, but its children are not on the wire:
-            // the wire still describes a clip as a thing with bodies, so the
-            // bodies are built from its own props (see `build::clip_bodies`).
-            // Anything nested under a `clip` node is ignored, as under a leaf.
-            WidgetKind::Clip { .. } => build::clip_bodies(props, blobs)?,
+            // **A clip's contents are children, and its own props are the
+            // shorthand.** A node's children are built as bodies, in the order
+            // they are declared — which is the order they are drawn in and the
+            // order they are addressed as layers — after the ones its flat
+            // props describe (`buffer`, `notes`, `points`: one of each, the
+            // form every clip took before a clip could hold two of anything).
+            // The two compose rather than exclude, so a script that declares a
+            // take by prop and two automations as children gets three bodies in
+            // that order.
+            WidgetKind::Clip { .. } => {
+                let mut bodies = build::clip_bodies(props, blobs)?;
+                for child in &node.children {
+                    let body = Self::build(None, child, blobs)?;
+                    // Only a body is a body: a node the clip cannot layer (a
+                    // control, a container, a type this build does not know) is
+                    // dropped rather than drawn over the material, which is the
+                    // same answer the wire gives everywhere else for something
+                    // in a place it does not belong.
+                    if body.kind.body_role().is_some() {
+                        bodies.push(body);
+                    }
+                }
+                bodies
+            }
             _ => Vec::new(),
         };
         let gestures = props.get("gestures").and_then(|v| {
@@ -468,7 +501,9 @@ impl Widget {
             radius: props.get("radius").and_then(radius_value),
             theme: None,
             alpha: 1.0,
-            visible: props.get("visible").and_then(parse::truthy).unwrap_or(true),
+            visible: true,
+            span: parse::span(props),
+            window: SourceWindow::declared(props),
             layer: super::layers::Layer::Placement,
             children,
         };

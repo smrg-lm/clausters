@@ -1989,8 +1989,9 @@ fn first_emit(effects: &[GestureEffect], id: i32) -> Option<Vec<OscType>> {
 /// A clip's window over its material: where it starts reading, and how long it
 /// reads for.
 fn clip_window(host: &Host, id: i32) -> (f64, f64) {
-    match &host.window_def(1).unwrap().find(id).unwrap().kind {
-        WidgetKind::Clip { dur, window, .. } => (window.start, *dur),
+    let w = host.window_def(1).unwrap().find(id).unwrap();
+    match &w.kind {
+        WidgetKind::Clip { dur, .. } => (w.window.unwrap_or_default().start, *dur),
         other => panic!("not a clip: {other:?}"),
     }
 }

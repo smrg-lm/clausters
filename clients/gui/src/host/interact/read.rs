@@ -78,13 +78,10 @@ pub(crate) fn lane_event_args(
 /// forward). Flat OSC primitives, the same pattern as the `bpf` `"points"`
 /// payload.
 pub(crate) fn clip_event_args(tree: &Widget, id: i32) -> Option<Vec<OscType>> {
-    match &tree.find(id)?.kind {
-        WidgetKind::Clip {
-            offset,
-            dur,
-            window,
-            ..
-        } => Some(vec![
+    let widget = tree.find(id)?;
+    let window = widget.window.unwrap_or_default();
+    match &widget.kind {
+        WidgetKind::Clip { offset, dur, .. } => Some(vec![
             OscType::String("clip".into()),
             OscType::Float(*offset as f32),
             OscType::Float(*dur as f32),

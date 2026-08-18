@@ -323,3 +323,19 @@ pub(super) fn inline_samples(
     // resource) is loaded later by the windowed front; start empty.
     Ok(Arc::from([] as [f32; 0]))
 }
+
+/// The **stretch of its container's time axis** a node declares, from `at` and
+/// `dur` — `None` when it declares neither, which is a node filling whatever
+/// the container gives it.
+///
+/// A node that names one and not the other still gets a span: `at` alone runs
+/// to the end of the container (a segment that finishes it), `dur` alone starts
+/// at zero. A negative length is no span at all rather than a backwards one.
+pub(crate) fn span(props: &serde_json::Map<String, Value>) -> Option<(f64, f64)> {
+    if !props.contains_key("at") && !props.contains_key("dur") {
+        return None;
+    }
+    let at = number_f64(props, "at", 0.0).max(0.0);
+    let dur = number_f64(props, "dur", f64::INFINITY);
+    (dur > 0.0).then_some((at, dur))
+}

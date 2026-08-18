@@ -226,8 +226,19 @@ pub(super) fn collect_widgets(
         // holding it. That is what the containment buys, and it is decided
         // here — once — rather than by each element asking where it is.
         if let Some(parent) = p.parent
-            && let WidgetKind::Clip { dur, window, .. } = placed[parent].widget.kind
+            && let WidgetKind::Clip { dur, .. } = placed[parent].widget.kind
         {
+            // **The body's own span and window when it has them**, the clip's
+            // otherwise: a body that names a stretch of the clip is drawn
+            // against that stretch and reads its own segment of material, and
+            // one that names neither is the whole-clip body every clip written
+            // as flat props holds.
+            let dur = p.widget.span.map_or(dur, |(_, len)| len);
+            let window = p
+                .widget
+                .window
+                .or(placed[parent].widget.window)
+                .unwrap_or_default();
             // The one body whose picture is not geometry: a time-frequency take
             // samples an uploaded texture, so it goes to the GPU pass with the
             // clip's own axis and the clip's id (the slot's key).

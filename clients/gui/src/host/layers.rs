@@ -39,7 +39,9 @@
 //! against the container that actually holds the layers, so a script names a
 //! layer by what it is rather than by a number.
 
-use crate::host::widget::element::{BodyRole, Input};
+use crate::host::graphics::track;
+use crate::host::layout::Rect;
+use crate::host::widget::element::{BodyRole, Input, TimeSpace};
 use crate::host::widget::{Widget, WidgetKind};
 
 /// The **active edit layer** of a container: what a press on it means.
@@ -213,6 +215,53 @@ impl<'a> Selection<'a> {
     }
 }
 
+/// **The rectangle and the axis one layer stands on**, given the container's.
+///
+/// A layer that names no stretch fills the container, which is what a layered
+/// body has always been. One that names a stretch (`Widget::span`) is placed on
+/// it exactly as a clip is placed on its lane — the same mapping, one level
+/// down — and reads its own window onto its own material, which is what lets a
+/// clip hold three segments of three different files and still be one clip.
+///
+/// The **one** derivation, so the layout, the drawing, the hit-test and the
+/// press cannot disagree about where a layer is.
+pub fn layer_input<'a>(container: &Input<'a>, child: &Widget) -> Input<'a> {
+    let Some(time) = container.time else {
+        return *container;
+    };
+    let window = child.window.or(Some(time.window));
+    let Some((at, len)) = child.span else {
+        return Input {
+            time: Some(TimeSpace {
+                window: window.unwrap_or_default(),
+                ..time
+            }),
+            ..*container
+        };
+    };
+    let rect = match track::clip_x_range(
+        container.rect,
+        &time.view,
+        at,
+        len,
+        container.metrics.divider_w,
+    ) {
+        Some((x0, x1)) => Rect::new(x0, container.rect.y, x1 - x0, container.rect.h),
+        None => Rect::new(container.rect.x, container.rect.y, 0.0, 0.0),
+    };
+    let local = track::clip_local_view(container.rect, &time.view, at, len, rect);
+    Input {
+        rect,
+        time: Some(TimeSpace {
+            view: local,
+            span: len,
+            window: window.unwrap_or_default(),
+            ..time
+        }),
+        ..*container
+    }
+}
+
 /// The layer `widget` is being edited on, resolved against the stack as it
 /// stands — the read every pass makes, and the one a caller with no
 /// [`Selection`] in hand (a draw pass, a hit-test) uses.
@@ -282,12 +331,19 @@ pub fn under_pointer(widget: &Widget, at: (f64, f64), input: &Input) -> Layer {
     // does not lose a point because a note sits under it. Only where the active
     // layer draws nothing does the question become which of the others is
     // there.
+    let on = |child: &Widget| {
+        // A layer that is not drawn is not pointed at: the pixels belong to
+        // whatever *is* drawn there. And it is asked on **its own** rectangle
+        // and axis, which is the container's unless it names a stretch of it.
+        child.visible
+            && child
+                .kind
+                .as_element()
+                .is_some_and(|el| el.layer_hit(at, &layer_input(input, child)))
+    };
     if let Layer::Content(n) = active(widget)
         && let Some((_, child)) = content(widget).nth(n)
-        && child
-            .kind
-            .as_element()
-            .is_some_and(|el| el.layer_hit(at, input))
+        && on(child)
     {
         return Layer::Content(n);
     }
@@ -296,12 +352,7 @@ pub fn under_pointer(widget: &Widget, at: (f64, f64), input: &Input) -> Layer {
         .collect::<Vec<_>>()
         .into_iter()
         .rev()
-        .find_map(|(n, (_, child))| {
-            // A layer that is not drawn is not pointed at: the pixels belong to
-            // whatever *is* drawn there.
-            let el = child.visible.then(|| child.kind.as_element())??;
-            el.layer_hit(at, input).then_some(Layer::Content(n))
-        })
+        .find_map(|(n, (_, child))| on(child).then_some(Layer::Content(n)))
         .unwrap_or(Layer::Placement)
 }
 

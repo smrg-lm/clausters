@@ -1416,6 +1416,71 @@ mod tests {
         assert!((right - total).abs() < 5.0);
     }
 
+    /// **A clip's take may be several segments**, each over its own stretch of
+    /// the clip and each reading its own window onto its own material — which
+    /// is what joining fragments of two different files makes. The placement is
+    /// the same mapping a lane uses for a clip, one level down, so each segment
+    /// is drawn on its own part of the rectangle rather than over the whole of
+    /// it.
+    #[test]
+    fn a_take_of_two_segments_draws_each_on_its_own_stretch() {
+        use crate::host::widget::element::TimeSpace;
+        use crate::host::widget::{SourceWindow, Widget};
+
+        // A clip 400 long holding two takes, each over half of it.
+        let node = crate::host::guidef::GuiNode::parse(
+            br#"{"id":1,"type":"field","offset":0.0,"dur":400.0,"children":[
+                 {"type":"signal","view":"trace","at":0.0,"dur":200.0,
+                  "data":[0.0,1.0,0.0,-1.0]},
+                 {"type":"signal","view":"trace","at":200.0,"dur":200.0,
+                  "start":2.0,"data":[0.0,0.5,1.0,0.5]}]}"#,
+        )
+        .unwrap();
+        let clip = Widget::from_node(1, &node, &[]).unwrap();
+        assert_eq!(clip.children.len(), 2, "two takes, two layers");
+        assert_eq!(clip.children[0].span, Some((0.0, 200.0)));
+        assert_eq!(clip.children[1].span, Some((200.0, 200.0)));
+        // The second reads its own window; the first says nothing and is drawn
+        // through the clip's.
+        assert_eq!(
+            clip.children[1].window,
+            Some(SourceWindow {
+                start: 2.0,
+                looping: false,
+                fit: false
+            })
+        );
+        assert_eq!(clip.children[0].window, None);
+
+        // Each draws into its own half of the clip's rectangle.
+        let (cr, local) = placed(0.0, 400.0, &View::full(400));
+        let halves: Vec<Mesh> = clip
+            .children
+            .iter()
+            .map(|child| {
+                let (at, len) = child.span.unwrap();
+                let (x0, x1) =
+                    clip_x_range(cr, &local, at, len, Metrics::default().divider_w).unwrap();
+                let rect = Rect::new(x0, cr.y, x1 - x0, cr.h);
+                let view = clip_local_view(cr, &local, at, len, rect);
+                let mut mesh = Mesh::new();
+                draw_body_widget(
+                    &mut Draw::new(&mut mesh, &Metrics::default(), &Theme::default()),
+                    &child.kind,
+                    rect,
+                    &TimeSpace::of(view, len).with_window(child.window.unwrap_or_default()),
+                );
+                mesh
+            })
+            .collect();
+        assert!(halves.iter().all(|m| !m.is_empty()), "both draw");
+        assert_ne!(
+            halves[0].vertex_count(),
+            0,
+            "the first segment fills the left half"
+        );
+    }
+
     #[test]
     fn a_layered_clip_draws_every_body_and_each_keeps_its_own_axis() {
         // An envelope drawn over the event it shapes is *one* clip: both bodies

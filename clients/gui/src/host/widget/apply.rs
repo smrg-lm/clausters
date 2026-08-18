@@ -43,6 +43,15 @@ pub(super) fn apply_widget(widget: &mut Widget, key: &str, v: &Value) -> bool {
             sel.set(layer);
             return true;
         }
+        // The **window** onto the material is the node's, not the kind's: a
+        // body may have one of its own, so it is set where both can be set the
+        // same way.
+        if matches!(key, "start" | "loop" | "fit") {
+            return widget
+                .window
+                .get_or_insert_with(SourceWindow::default)
+                .apply(key, v);
+        }
         if !CLIP_OWN.contains(&key) {
             return apply_clip_body(widget, key, v);
         }
@@ -190,16 +199,11 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
         // A clip's own props are its placement and its name; its bodies are
         // children, and their props route there — see `apply_clip`, which is
         // reached through `Widget::apply_kind` because it needs them.
-        WidgetKind::Clip {
-            offset,
-            dur,
-            label,
-            window,
-        } => match key {
+        WidgetKind::Clip { offset, dur, label } => match key {
             "offset" => v.as_f64().map(|x| *offset = x.max(0.0)).is_some(),
             "dur" => v.as_f64().map(|x| *dur = x.max(0.0)).is_some(),
             "label" => set_label(label, v),
-            _ => window.apply(key, v),
+            _ => false,
         },
         // A free-standing ruler is its editor chrome and nothing else: the
         // unit it labels (`ruler`), the rate and the beat grid, the link that

@@ -125,18 +125,18 @@ pub(crate) fn header_set(
 pub(crate) fn clip_set(host: &mut Host, def_id: i32, clip_id: i32, placed: super::ClipPlacement) {
     if let Some(tree) = host.window_def_mut(def_id)
         && let Some(w) = tree.find_mut(clip_id)
-        && let WidgetKind::Clip {
-            offset,
-            dur,
-            window,
-            ..
-        } = &mut w.kind
     {
-        *offset = placed.offset.max(0.0);
-        *dur = placed.dur.max(0.0);
+        if let WidgetKind::Clip { offset, dur, .. } = &mut w.kind {
+            *offset = placed.offset.max(0.0);
+            *dur = placed.dur.max(0.0);
+        } else {
+            return;
+        }
         // The window travels with the placement: a trimmed start shows less of
         // the material from further in, which is the whole difference between
         // trimming a clip and squeezing it.
-        window.start = placed.start;
+        w.window
+            .get_or_insert_with(crate::host::widget::SourceWindow::default)
+            .start = placed.start;
     }
 }
