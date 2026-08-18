@@ -55,9 +55,10 @@ right — that is the normal failure, not a sign the work vanished.
 
 ## Phase 1 — the picture reads the material
 
-*What it buys: a picture that reads the material rather than a copy of it. **H7 has shipped** — the copies are gone and a write costs its span — so what is left is the same sentence in the other direction: a picture that reads the material can follow an edit anybody makes, including the engine's own while it records, which is the one write in the system nothing announces.*
+*What it buys: a picture that reads the material rather than a copy of it. **H7, S20 and H8 have shipped** — the copies are gone, a write costs its span, a buffer publishes how far it has been written and a take is drawn as it fills. What is left of the phase is what those three deliberately did not infer or half-build.*
 
-- ⬜ **S20 — A buffer publishes what was written into it, and its overview is a file beside it** (root `PLAN.md`) and **H8 — The take fills while it records, and the overview is read rather than built** (`clients/gui/PLAN.md`), the two halves of one thing, read together the way S19 and H6 were: the engine's own writes announce nothing, so the material that changes continuously is the one no picture can follow. The overview becomes a volatile file beside the region, as every multitrack editor's does, and the page watches it as buckets rather than samples. S20 moves the segment layout, so it carries an ABI bump with it.
+- ⬜ **A recording's unwritten remainder draws as silence** and **a page cannot fold a streamed overview into the picture it holds** *(`clients/gui/PLAN.md`, Found by use)* — what S20 and H8 left standing, each with the reason it was not inferred or half-built. The first is a prop and a small milestone's worth of wire; the second is one door in `clausters-core`.
+- ⬜ **A take's overview could be a file beside its region** *(root `PLAN.md`, Future directions)* — dropped from S20 when the frontier turned out to answer the live question on its own; it buys the opening pass and brings a second writer of derived state.
 
 ## Phase 2 — the packages move together: the arrangement reaches the web client
 

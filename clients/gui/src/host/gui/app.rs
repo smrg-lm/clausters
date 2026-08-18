@@ -101,6 +101,11 @@ pub(super) struct App {
     /// Whether the client leg has registered for node notifications
     /// (`/server_notify 1`), so it is sent once even with several node-tree windows.
     pub(super) notified: bool,
+    /// The write frontier last drawn, per `(def_id, widget_id)`: how far the
+    /// material of that view had been written when its summary was last
+    /// refreshed. What moves it is a recording (the server's S20), and the
+    /// difference is exactly the span to re-read.
+    pub(super) frontiers: HashMap<(i32, i32), u64>,
     /// Next scheduled re-query of the server's node tree (the `/node_set` poll).
     pub(super) next_query: Instant,
     /// Standalone mode: the host booted a pre-loaded GuiDef with no script front
@@ -139,6 +144,7 @@ impl App {
             fetches: BufferFetches::default(),
             node_trees: HashMap::new(),
             notified: false,
+            frontiers: HashMap::new(),
             next_query: Instant::now(),
             standalone: false,
             #[cfg(feature = "midi")]
@@ -249,7 +255,7 @@ impl App {
         self.host.window_def(def_id).is_some_and(|tree| {
             tree_animates(tree)
                 || (self.shm.is_some() && tree_has_live_widget(tree, self.host.timelines()))
-        })
+        }) || self.window_follows_a_recording(def_id)
     }
 
     pub(super) fn apply(
@@ -547,6 +553,17 @@ impl ApplicationHandler<UserEvent> for App {
         // standing cursor, so it needs the frame tick exactly as an animated
         // window does — and it must run before the repaint below.
         self.advance_edge_scroll(FRAME.as_secs_f64());
+
+        // **A recording is drawn as it fills.** The material is mapped, so the
+        // samples need nothing; what moves is the frontier its writer
+        // publishes, and the summary over the frames it added. Costs a handful
+        // of relaxed loads when nothing is recording, and redraws only what
+        // actually grew.
+        for def_id in self.follow_recordings() {
+            if let Some(ws) = self.windows.get(&def_id) {
+                ws.gpu.window.request_redraw();
+            }
+        }
 
         // Meter/scope animation, driven from the shared segment.
         let animated: Vec<i32> = self

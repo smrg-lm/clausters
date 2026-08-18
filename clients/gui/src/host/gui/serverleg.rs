@@ -489,6 +489,123 @@ impl App {
         }
     }
 
+    /// Whether this window draws material that is **still being written** —
+    /// a frontier that has moved and has not reached the end of the buffer.
+    ///
+    /// It is the wake condition for a recording, and it is deliberately narrow
+    /// so an ordinary session window still sleeps: a take read from a file has
+    /// no frontier at all (nothing wrote it here), and a finished recording
+    /// has one that stopped moving at the buffer's end. What is left is a
+    /// take being filled right now.
+    #[cfg(unix)]
+    pub(super) fn window_follows_a_recording(&self, def_id: i32) -> bool {
+        let Some(material) = self.host.material() else {
+            return false;
+        };
+        let Some(tree) = self.host.window_def(def_id) else {
+            return false;
+        };
+        tree.descendants().any(|w| {
+            let Some(el) = w.kind.as_element() else {
+                return false;
+            };
+            let (Some(bufnum), Some((_, frames))) = (el.material_buffer(), el.material_shape())
+            else {
+                return false;
+            };
+            usize::try_from(bufnum)
+                .ok()
+                .and_then(|index| material.frontier(index))
+                .is_some_and(|frontier| frontier > 0 && frontier < frames)
+        })
+    }
+
+    /// Off Unix nothing here is mapped, so nothing fills under the window.
+    #[cfg(not(unix))]
+    pub(super) fn window_follows_a_recording(&self, _def_id: i32) -> bool {
+        false
+    }
+
+    /// **Follows the recordings**: for every view of mapped material whose
+    /// write frontier has moved, re-summarizes what was added and redraws.
+    ///
+    /// This is the half of a live picture that a mapping cannot give by
+    /// itself. The samples are already the engine's own cells, so a zoomed-in
+    /// view is current with nothing done at all — but the *overview* is a
+    /// summary of what was there when it was taken, and nothing announces an
+    /// engine write (a `RecordBuf` filling a take says nothing on the wire,
+    /// correctly). What the writer does publish is how far it has got, and
+    /// that is exactly the span to re-read.
+    ///
+    /// Called on the frame tick. Costs one relaxed load per drawn buffer while
+    /// nothing is recording, and the summary of the new frames when something
+    /// is — never the take.
+    #[cfg(unix)]
+    pub(super) fn follow_recordings(&mut self) -> Vec<i32> {
+        let Some(material) = self.host.material() else {
+            return Vec::new();
+        };
+        // Read every frontier first: the borrow of the material ends before
+        // the trees are touched, and the answer is a handful of loads.
+        let mut moved: Vec<(i32, i32, usize, u64, u64)> = Vec::new();
+        for def_id in self.host.window_def_ids() {
+            let Some(tree) = self.host.window_def(def_id) else {
+                continue;
+            };
+            for w in tree.descendants() {
+                // A body carries no id of its own, so what is followed is the
+                // widget that does — the same addressing every other material
+                // path here uses.
+                let (Some(id), Some(el)) = (w.id, w.kind.as_element()) else {
+                    continue;
+                };
+                let (Some(bufnum), Some((channels, _))) =
+                    (el.material_buffer(), el.material_shape())
+                else {
+                    continue;
+                };
+                let Ok(index) = usize::try_from(bufnum) else {
+                    continue;
+                };
+                let Some(frontier) = material.frontier(index) else {
+                    continue;
+                };
+                let seen = self.frontiers.get(&(def_id, id)).copied().unwrap_or(0);
+                if frontier > seen {
+                    moved.push((def_id, id, channels, seen, frontier));
+                }
+            }
+        }
+        let mut redraw = Vec::new();
+        for (def_id, widget_id, channels, seen, frontier) in moved {
+            self.frontiers.insert((def_id, widget_id), frontier);
+            let Some(tree) = self.host.window_def_mut(def_id) else {
+                continue;
+            };
+            let Some(w) = tree.find_mut(widget_id) else {
+                continue;
+            };
+            let Some(el) = w.kind.as_element_mut() else {
+                continue;
+            };
+            let mut followed = false;
+            for ch in 0..channels {
+                followed |= el.refresh_material(ch, seen, (frontier - seen) as usize);
+            }
+            if followed && !redraw.contains(&def_id) {
+                redraw.push(def_id);
+            }
+        }
+        redraw
+    }
+
+    /// Off Unix there is no mapped material to follow — the picture arrives by
+    /// message there, and so does the news that it changed.
+    #[cfg(not(unix))]
+    pub(super) fn follow_recordings(&mut self) -> Vec<i32> {
+        Vec::new()
+    }
+
     /// What a placed buffer leaves behind whichever way it arrived: its extent
     /// joins the widget's navigation group, and a widget that knew no sample
     /// rate takes the material's so its ruler can label real time.

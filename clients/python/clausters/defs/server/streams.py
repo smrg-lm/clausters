@@ -28,6 +28,37 @@ class ServerStreams:
         return self.request("/bus_stream", int(period_ms), *indices,
                             timeout=timeout, expect=("/done", "/fail"))
 
+    def stream_buffers(self, period_ms: int, *buffers, bucket: int = 256,
+                       timeout: "float | None" = None):
+        """Subscribes this client to the **overview of material as it is
+        written** (``/buffer_stream``): every ``period_ms`` (floor 10 ms) the
+        server sends, per watched buffer whose write frontier moved, one
+        ``/buffer_stream.reply bufnum startFrame bucket blob`` -- and nothing
+        for one that did not, so a still buffer costs no traffic.
+
+        The blob is **bucket-major, channel-minor**: for each bucket of
+        ``bucket`` frames in order, for each channel, ``min``, ``max`` and
+        **mean square** as raw little-endian ``float32``. That is the peak
+        pyramid's own summary, so a client folds it into a picture without
+        converting anything, and it is two orders of magnitude smaller than the
+        audio it describes.
+
+        What moves the frontier is a writing UGen (`RecordBuf`, `BufWr`): each
+        publishes how far it has filled the buffer. A peer that can map the
+        server's shared segment reads that number directly and needs no
+        subscription; this is the same reading for whoever cannot.
+
+        At most 32 buffers per subscription and 4096 buckets per report (the
+        rest arrives in the next one); one subscription per client, replaced on
+        each call; ``period_ms <= 0`` (or no buffers) cancels. A subscription
+        watches what happens **next** -- it reports from the frontier as it
+        stands now, not the overview of what is already there, which is a fetch
+        (`get_range`). Receive the reports with an `OscFunc` on
+        ``/buffer_stream.reply``. Blocks on the ``/done`` ack."""
+        return self.request("/buffer_stream", int(period_ms), int(bucket),
+                            *[b.bufnum if hasattr(b, "bufnum") else int(b) for b in buffers],
+                            timeout=timeout, expect=("/done", "/fail"))
+
     def stream_taps(self, period_ms: int, frames: int, *buses, timeout: "float | None" = None):
         """Subscribes this client to a periodic ``/bus_tapStream.reply`` snapshot of the
         given audio **buses** (``/bus_tapStream``): every ``period_ms`` (floor

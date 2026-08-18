@@ -218,6 +218,68 @@ fn a_view_of_a_published_take_reads_the_region_it_is_drawn_from() {
     let _ = std::fs::remove_file(&path);
 }
 
+/// **A recording is drawn as it fills**, and the whole of what the picture
+/// needs from the server is one number: the samples are already in memory it
+/// maps, and what it cannot otherwise know is how far the material now goes.
+#[test]
+fn a_view_follows_the_frontier_of_a_take_being_recorded() {
+    use clausters_gui::host::material::MappedChannel;
+    use clausters_gui::waveform::WaveformData;
+
+    let path = scratch("recording");
+    let _ = std::fs::remove_file(&path);
+    let server = Segment::create(&path).expect("segment");
+
+    let frames = 8_192;
+    let generation = server
+        .publish_buffer(2, frames, 1, 48_000.0)
+        .expect("a row");
+    let region_path = Region::path_for(&path, 2, generation);
+    let region = Region::create(&region_path, frames).expect("region");
+
+    let material = SharedMaterial::new(
+        Arc::new(SharedSegment::open(&path).expect("segment")),
+        path.clone(),
+    );
+    let take = Arc::new(material.map(2).expect("the host maps the take"));
+    let mut view = WaveformData::from_sources(MappedChannel::channels_of(take), 256);
+    assert_eq!(
+        material.frontier(2),
+        Some(0),
+        "an allocated take has recorded nothing"
+    );
+
+    // The engine records a block: the cells first, then the frontier — the
+    // order a writing UGen publishes in.
+    let record = |from: usize, to: usize, v: f32| {
+        for i in from..to {
+            region.cells()[i].store(v.to_bits(), std::sync::atomic::Ordering::Relaxed);
+        }
+        server.raise_buffer_frontier(2, to as u64);
+    };
+    record(0, 1_024, 0.4);
+    let frontier = material.frontier(2).expect("a live row");
+    assert_eq!(frontier, 1_024);
+
+    // The overview is what has to be told, and the span is the difference.
+    assert!(view.resummarize(0, 0, frontier as usize));
+    assert_eq!(view.column(0, 1_000.0, 0.0, 1_000.0), (0.4, 0.4));
+
+    // It keeps up, and only the new frames are re-read.
+    record(1_024, 2_048, -0.9);
+    let next = material.frontier(2).expect("a live row");
+    assert!(view.resummarize(0, frontier as usize, (next - frontier) as usize));
+    assert_eq!(view.column(0, 1_000.0, 1_100.0, 2_000.0), (-0.9, -0.9));
+    assert_eq!(
+        view.column(0, 1_000.0, 0.0, 1_000.0),
+        (0.4, 0.4),
+        "what was already drawn is not re-read and does not move"
+    );
+
+    let _ = std::fs::remove_file(&region_path);
+    let _ = std::fs::remove_file(&path);
+}
+
 #[test]
 fn a_write_past_the_end_writes_nothing_rather_than_the_next_channel() {
     let path = scratch("clamp");

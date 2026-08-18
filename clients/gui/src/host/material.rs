@@ -88,6 +88,16 @@ impl SharedMaterial {
         Some(take)
     }
 
+    /// **How far buffer `bufnum` has been written**, in frames — the number a
+    /// picture of a recording needs and cannot get any other way, since the
+    /// samples arrive with nothing said about them (the server's S20).
+    ///
+    /// Zero for material that arrived whole, which is every take read from a
+    /// file: nothing wrote it here.
+    pub fn frontier(&self, bufnum: usize) -> Option<u64> {
+        self.segment.buffer_frontier(bufnum)
+    }
+
     /// Whether the directory holds a live buffer under `bufnum` — the cheap
     /// question, asked before deciding whether a take needs fetching at all.
     pub fn holds(&self, bufnum: usize) -> bool {

@@ -67,4 +67,43 @@ export class ServerStreams {
         for (const bus of buses) args.push(["i", busIndex(bus)]);
         await this.command("/bus_tapStream", args, timeout);
     }
+
+    /**
+     * Subscribes this client to the **overview of material as it is written**
+     * (`/buffer_stream`): every `periodMs` (10 ms floor) the server sends, per
+     * watched buffer whose write frontier moved, one
+     * `/buffer_stream.reply bufnum startFrame bucket blob` — and nothing for
+     * one that did not, so a still buffer costs no traffic.
+     *
+     * The blob is **bucket-major, channel-minor**: for each bucket of `bucket`
+     * frames in order, for each channel, `min`, `max` and mean square as raw
+     * little-endian `f32`. That is the peak pyramid's own summary, so a page
+     * folds it into a picture without converting anything, and it is two
+     * orders of magnitude smaller than the audio it describes — which is the
+     * whole reason a page can watch a take record at all.
+     *
+     * What moves the frontier is a writing UGen (`RecordBuf`, `BufWr`). A peer
+     * that can map the server's segment reads that number directly; a page
+     * cannot map anything, and this is the same reading for it. At most 32
+     * buffers and 4096 buckets per report; one subscription per client,
+     * replaced by each call, `periodMs <= 0` (or no buffers) cancels. A
+     * subscription watches what happens **next**, not what is already there
+     * (that is `getRange`). Resolves on the `/done` ack.
+     */
+    async streamBuffers(
+        this: Server,
+        periodMs: number,
+        buffers: readonly (number | { bufnum: number })[],
+        bucket = 256,
+        timeout?: number,
+    ): Promise<void> {
+        const args: MsgArg[] = [
+            ["i", Math.trunc(periodMs)],
+            ["i", Math.trunc(bucket)],
+        ];
+        for (const b of buffers) {
+            args.push(["i", typeof b === "number" ? b : b.bufnum]);
+        }
+        await this.command("/buffer_stream", args, timeout);
+    }
 }

@@ -246,6 +246,17 @@ impl SharedSegment {
         self.view.buffer_info(bufnum)
     }
 
+    /// **How far pool buffer `bufnum` has been written**, in frames: the
+    /// frontier its writing UGens publish once per block (the server's S20).
+    ///
+    /// Zero for material nothing recorded into, which is every take that
+    /// arrived whole. It is a hint and not a promise: several writers may
+    /// share a buffer, and what it answers is only how far the material now
+    /// goes.
+    pub fn buffer_frontier(&self, bufnum: usize) -> Option<u64> {
+        self.view.buffer_frontier(bufnum)
+    }
+
     /// How many buffers the directory can describe — the pool's size, as the
     /// segment's own length reports it.
     pub fn buffer_rows(&self) -> usize {
