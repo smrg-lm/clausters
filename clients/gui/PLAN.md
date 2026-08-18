@@ -2069,6 +2069,8 @@ What deliberately stays out: DR14 and the other publisher-specific scores (they 
 
   **The wire half is the server's** (S20's `/buffer_stream`), and both clients can now ask for it: `Server.stream_buffers` in Python, `Server.streamBuffers` in TypeScript. **What no page does yet is consume it** — folding streamed buckets into a pyramid it holds needs a way to write buckets into one, which the core does not expose. Recorded below rather than half-built.
 
+  **The example is `clients/python/examples/gui_recording.py`**: one server owning a segment, one host mapping it, an empty ten-second take and a sweep recorded into it — the trace fills from the left with nothing about the audio crossing the wire. It is by-eye, like every other `gui_*`, and it is what the acceptance below is checked with.
+
   **Acceptance:** the standalone session records a take and draws it filling, with the cost per frame flat in the take's length; the view draws nothing past the frontier and its axis does not move while it fills; the page draws the same recording over `/buffer_stream` and agrees with the native one; and an example records, draws, stops and edits the take it just made — which is also the first time the editor's own capture is exercised by eye.
 
 **What stays out of the track**: the log itself and everything about its contents (the crate's O5); undo of node-tree commands (playing a synth is not an edit) and of navigation (a view is not data); a history that outlives its session; and any merge or conflict machinery, which only a persisted, two-writer history would need — this one has neither.
