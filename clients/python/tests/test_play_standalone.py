@@ -243,11 +243,11 @@ def test_free_play_plays_a_timeline(clean_default):
     assert len(server.interface.score.bundles) == 4   # two notes, two releases
 
 
-def test_play_rejects_a_form_element_with_a_pointer_to_render(clean_default):
-    from clausters.form import Event as FormEvent
+def test_play_rejects_an_arrangement_element_with_a_pointer_to_render(clean_default):
+    from clausters.form import Clang
 
     with pytest.raises(TypeError, match="render"):
-        play(FormEvent(Event(degree=0)))
+        play(Clang(Event(degree=0)))
 
 
 def test_free_play_sounds_a_buffer_through_the_stock_instrument(clean_default):

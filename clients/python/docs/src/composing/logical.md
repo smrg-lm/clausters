@@ -1,11 +1,11 @@
 # The logical side: groups as signal graphs
 
-Every group so far has been **concrete**: a relation in time between
+Every aggregate so far has been **concrete**: a relation in time between
 contents placed in time. The other kind is **logical**: the members relate by
 *processing* — a signal chain wired through buses — and time has nothing to do
-with it. Same `Group`, different kind, and a different render: a logical
-group does not flatten into a timeline, it translates into a `GraphDef` — the
-server's own notion of a named configuration of nodes wired by buses.
+with it. Same `Aggregate`, different kind, and a different render: a logical
+aggregate does not flatten into a timeline, it translates into a `GraphDef` —
+the server's own notion of a named configuration of nodes wired by buses.
 
 ## Two defs that wire
 
@@ -28,14 +28,14 @@ gain.send(server)
 
 `tone` writes a sine onto whatever bus its `out` control names; `gain` reads
 its `in` bus, scales it, and puts it on the hardware outputs. Neither def
-knows the other exists — the wiring is the group's business.
+knows the other exists — the wiring is the aggregate's business.
 
-## The logical group
+## The logical aggregate
 
 ```python
-from clausters.form import Generator, Group
+from clausters.form import Aggregate, Generator
 
-chain = Group(kind="logical", name="chain", buses=["mix"])
+chain = Aggregate(kind="logical", name="chain", buses=["mix"])
 chain.add(Generator("tone", controls={"out": "mix", "freq": 220.0}))
 chain.add(Generator("tone", controls={"out": "mix", "freq": 331.0}))
 chain.add(Generator("gain", controls={"in": "mix"}))
@@ -43,10 +43,10 @@ chain.add(Generator("gain", controls={"in": "mix"}))
 
 The members are `Generator` elements — the *Function* kind, wrapping a def by
 name. A control's value is a number (set at creation), the name of one of the
-group's **buses** (`"mix"`, a private internal audio bus each instance
+aggregate's **buses** (`"mix"`, a private internal audio bus each instance
 allocates for itself), or the reserved `"OUT"` (the hardware). Placement
-offsets exist but are **ignored** here: a logical group is a signal graph, not
-a timeline.
+offsets exist but are **ignored** here: a logical aggregate is a signal graph,
+not a timeline.
 
 The translation is pure — inspect it before it goes anywhere:
 
@@ -56,7 +56,7 @@ print(json.dumps(chain.to_graphdef().spec(), indent=2))
 ```
 
 Two tones summed on `mix`, one gain stage reading it: the 1:1 mapping of the
-group onto a `GraphDef`. Render it — for a logical group that means
+aggregate onto a `GraphDef`. Render it — for a logical aggregate that means
 *send and instance*, not flatten and play:
 
 ```python
@@ -70,14 +70,15 @@ running configuration, not a scheduled event. It lives until you free it:
 inst.free()                # the instance group and its private buses
 ```
 
-One boundary, stated plainly: a logical group is rendered **on its own**. It
+One boundary, stated plainly: a logical aggregate is rendered **on its own**. It
 is not placed inside the concrete song and flattened with it — the two
 kinds answer different questions (*what sounds when* versus *what is wired to
 what*), and `render` routes each to its own path.
 
 ## The patcher
 
-A logical group has a view too, and it is not a lane — its shape is not time.
+A logical aggregate has a view too, and it is not a lane — its shape is not
+time.
 Open an editor on the chain itself:
 
 ```python
@@ -111,7 +112,7 @@ inst = chain.render(server)
 ```
 
 ```python
-patcher.poll()                     # the edit lands on the group
+patcher.poll()                     # the edit lands on the aggregate
 print(chain.members[2][2].controls)   # {} — 'in' no longer names a bus
 ```
 
@@ -142,7 +143,7 @@ gui.close(pwin)
 
 The piece itself never needed the logical side — but a real composition grows
 one the moment two nodes share a bus: a send, a master chain, a layered
-instrument. It is the same `Group`, the same five primitives, and the same
+instrument. It is the same `Aggregate`, the same five primitives, and the same
 loop: build in code, see it drawn, edit either side, render.
 
 Next: [Bouncing: the piece as a file](bounce.md).

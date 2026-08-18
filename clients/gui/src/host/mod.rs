@@ -3376,7 +3376,7 @@ mod write_tests {
 
         let mut owner = Owner::new(Document::new(Node::new(
             NodeId(2),
-            Body::Buffer {
+            Body::Vector {
                 source: SourceRef {
                     source: clausters_document::SourceId(1),
                     lifetime: Lifetime::Session,

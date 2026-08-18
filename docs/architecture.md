@@ -338,11 +338,11 @@ of the Python client's book; the reasoning behind it is in
 | Concept | What it already was | Where |
 |---|---|---|
 | Element (onset, duration) | a placed item on a timeline | `clients/python/clausters/form/element.py`, `seq/timeline.py` |
-| Group, concrete | a `Timeline` (client) projected onto server groups and timetagged bundles | `form/group.py`, `seq/timeline.py`, `src/node/mod.rs` |
-| Group, logical | a `GraphDef` — the bus-wired configuration the server already expresses | `form/group.py` (`to_graphdef`), `defs/graphdef.py`, `src/osc/graphdef.rs` |
-| Event | `seq.Event` (parameters in one action) | `seq/event.py` |
+| Aggregate, concrete | a `Timeline` (client) projected onto server groups and timetagged bundles | `form/aggregate.py`, `seq/timeline.py`, `src/node/mod.rs` |
+| Aggregate, logical | a `GraphDef` — the bus-wired configuration the server already expresses | `form/aggregate.py` (`to_graphdef`), `defs/graphdef.py`, `src/osc/graphdef.rs` |
+| Clang | `seq.Event` (parameters in one action) | `seq/event.py` |
 | List (order, no concrete time) | a Python list, or a `Pattern` | `seq/pattern.py` |
-| Buffer (a list at constant time) | `defs.Buffer` over the server's pool buffers | `defs/buffer.py`, `src/dsp/buffer.rs` |
+| Vector (a list at constant time) | `defs.Buffer` over the server's pool buffers | `defs/buffer.py`, `src/dsp/buffer.rs` |
 | Set (mixed placement — a track) | `seq.Timeline` | `seq/timeline.py` |
 | Function (a process) | a def (`SynthDef`/`FaustDef`/`GraphDef`) **or** a `Pbind`/`Routine` | `defs/`, `seq/pattern.py`, `base/stream.py` |
 | Automation (a curve) | an `Env` discretized into a control buffer, read onto a bus | `seq/automation.py`, `/buffer_gen "env"`, `src/dsp/io.rs` (`OutCtl`) |

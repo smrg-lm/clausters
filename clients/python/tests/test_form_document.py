@@ -9,7 +9,7 @@ import json
 
 import pytest
 
-from clausters.form import Buffer, Event, Generator, Group, Sequence, Track
+from clausters.form import Aggregate, Generator, Clang, Sequence, Track, Vector
 from clausters.form.document import (FIRST_VERSION, ID_ATTR, from_document, from_session,
                                       to_document, to_session)
 from clausters.seq import Event as SeqEvent
@@ -17,35 +17,35 @@ from clausters.seq import Timeline
 
 
 class FakeBuffer:
-    """A buffer element wraps `clausters.defs.Buffer`, of which the document
-    keeps only the slot number -- so a stand-in with a `bufnum` is the whole of
-    what this conversion touches."""
+    """A vector wraps `clausters.defs.Buffer`, of which the document keeps only
+    the slot number -- so a stand-in with a `bufnum` is the whole of what this
+    conversion touches."""
 
     def __init__(self, bufnum):
         self.bufnum = bufnum
 
 
-def a_group() -> Group:
+def an_aggregate() -> Aggregate:
     """A composition with one of everything the conversion has a body for."""
-    group = Group()
-    group.add(Event(SeqEvent(midinote=60, dur=1.0)), offset=0.0, dur=1.0)
-    group.add(
+    aggregate = Aggregate()
+    aggregate.add(Clang(SeqEvent(midinote=60, dur=1.0)), offset=0.0, dur=1.0)
+    aggregate.add(
         Track(Timeline([(0.0, SeqEvent(midinote=64)), (1.5, SeqEvent(midinote=67))])),
         offset=1.0,
     )
-    group.add(
-        Buffer(FakeBuffer(7), instrument="take", controls={"amp": 0.4}),
+    aggregate.add(
+        Vector(FakeBuffer(7), instrument="take", controls={"amp": 0.4}),
         offset=4.0,
         dur=2.0,
     )
-    inner = Group(kind="logical")
+    inner = Aggregate(kind="logical")
     inner.add(Generator("rlpf", controls={"cutoff": 900.0}), offset=0.0)
-    group.add(inner, offset=8.0)
-    return group
+    aggregate.add(inner, offset=8.0)
+    return aggregate
 
 
 def test_a_composition_round_trips_through_the_document():
-    original = a_group()
+    original = an_aggregate()
     doc = to_document(original)
     back = from_document(doc)
 
@@ -56,15 +56,15 @@ def test_a_composition_round_trips_through_the_document():
 
 
 def test_the_document_is_json_and_says_so():
-    doc = to_document(a_group())
+    doc = to_document(an_aggregate())
     assert json.loads(json.dumps(doc)) == doc
     assert doc["version"] == FIRST_VERSION, "an unedited document is version one, not zero"
-    assert doc["root"]["kind"] == "set"
+    assert doc["root"]["kind"] == "aggregate"
     assert doc["root"]["grouping"] == "concrete"
 
 
 def test_placements_and_grouping_survive():
-    doc = to_document(a_group())
+    doc = to_document(an_aggregate())
     members = doc["root"]["members"]
     assert [m["offset"] for m in members] == [0.0, 1.0, 4.0, 8.0]
     assert members[0]["dur"] == 1.0
@@ -72,14 +72,14 @@ def test_placements_and_grouping_survive():
     assert members[3]["node"]["grouping"] == "logical"
 
 
-def test_a_tracks_notes_become_placed_events():
+def test_a_tracks_notes_become_placed_clangs():
     # Decision A: a note is an addressable node, not an opaque blob inside a
     # track -- which is what lets an edit name it and a log invert it.
-    doc = to_document(a_group())
+    doc = to_document(an_aggregate())
     track = doc["root"]["members"][1]["node"]
-    assert track["kind"] == "set"
+    assert track["kind"] == "aggregate"
     assert [m["offset"] for m in track["members"]] == [0.0, 1.5]
-    assert track["members"][0]["node"]["kind"] == "event"
+    assert track["members"][0]["node"]["kind"] == "clang"
     assert track["members"][0]["node"]["config"]["midinote"] == 64
 
 
@@ -88,7 +88,7 @@ def test_a_generator_travels_by_reference_and_comes_back_frozen():
     # a plugin. Without a resolver it comes back as the reference itself, which
     # `Generator` accepts -- the frozen case, and the floor rather than a
     # failure.
-    doc = to_document(a_group())
+    doc = to_document(an_aggregate())
     generator = doc["root"]["members"][3]["node"]["members"][0]["node"]
     assert generator["kind"] == "generator"
     assert generator["config"] == {"generator": "rlpf", "controls": {"cutoff": 900.0}}
@@ -100,7 +100,7 @@ def test_a_generator_travels_by_reference_and_comes_back_frozen():
 
 
 def test_a_resolver_supplies_what_the_document_only_names():
-    doc = to_document(a_group())
+    doc = to_document(an_aggregate())
     resolved = from_document(
         doc, resolve=lambda kind, config: "RESOLVED" if kind == "generator" else None
     )
@@ -116,7 +116,7 @@ def test_a_body_this_client_does_not_know_is_carried_rather_than_dropped():
         "version": 3,
         "root": {
             "id": 1,
-            "kind": "set",
+            "kind": "aggregate",
             "grouping": "concrete",
             "members": [
                 {"offset": 0.0, "node": {"id": 2, "kind": "constellation", "seeds": [1, 2]}}
@@ -130,24 +130,24 @@ def test_a_body_this_client_does_not_know_is_carried_rather_than_dropped():
 def test_ids_are_stable_across_conversions():
     # An edit made against one conversion has to still name the right node in
     # the next, so a second conversion cannot renumber the tree.
-    group = a_group()
-    first = to_document(group)
-    assert to_document(group) == first
+    aggregate = an_aggregate()
+    first = to_document(aggregate)
+    assert to_document(aggregate) == first
 
     # And an element added afterwards takes a fresh id rather than one already
     # in use.
     used = _ids(first["root"])
-    group.add(Event(SeqEvent(midinote=72)), offset=12.0)
-    second = to_document(group)
+    aggregate.add(Clang(SeqEvent(midinote=72)), offset=12.0)
+    second = to_document(aggregate)
     new = [i for i in _ids(second["root"]) if i not in used]
     assert len(new) == 1
     assert new[0] > max(used)
 
 
 def test_the_temporal_metadata_crosses_both_ways():
-    element = Event(SeqEvent(midinote=60), onset=2.0, duration=0.5)
+    element = Clang(SeqEvent(midinote=60), onset=2.0, duration=0.5)
     element.resident = True
-    doc = to_document(Group(children=[element]))
+    doc = to_document(Aggregate(children=[element]))
     node = doc["root"]["members"][0]["node"]
     assert node["onset"] == 2.0 and node["duration"] == 0.5 and node["resident"] is True
 
@@ -160,13 +160,13 @@ def test_the_temporal_metadata_crosses_both_ways():
 
 
 def test_a_sequence_of_elements_is_members_and_a_pattern_is_a_reference():
-    of_elements = Sequence([Event(SeqEvent(midinote=60)), Event(SeqEvent(midinote=62))])
-    body = to_document(Group(children=[of_elements]))["root"]["members"][0]["node"]
+    of_elements = Sequence([Clang(SeqEvent(midinote=60)), Clang(SeqEvent(midinote=62))])
+    body = to_document(Aggregate(children=[of_elements]))["root"]["members"][0]["node"]
     assert len(body["members"]) == 2
     assert "config" not in body
 
     of_a_pattern = Sequence("Pseq([1, 2, 3])")
-    body = to_document(Group(children=[of_a_pattern]))["root"]["members"][0]["node"]
+    body = to_document(Aggregate(children=[of_a_pattern]))["root"]["members"][0]["node"]
     assert body["config"] == {"sequence": "Pseq([1, 2, 3])"}
 
 
@@ -183,7 +183,7 @@ def test_a_session_carries_the_document_and_its_source_table():
     from clausters.form.document import SESSION_FORMAT, from_session, to_session
 
     session = to_session(
-        a_group(),
+        an_aggregate(),
         sources={
             7: {
                 "location": {"at": "file", "path": "takes/vocal.wav"},
@@ -208,7 +208,7 @@ def test_a_session_saved_mid_edit_reopens_with_the_edit_still_open():
     from clausters.form.document import from_session, to_session
 
     session = to_session(
-        a_group(),
+        an_aggregate(),
         sources={
             # The take the composition plays, and the working copy of it that an
             # unconfirmed edit is writing. Both are in the table because a
@@ -235,7 +235,7 @@ def test_a_session_saved_mid_edit_reopens_with_the_edit_still_open():
 def test_a_newer_session_format_is_refused_rather_than_half_read():
     from clausters.form.document import SESSION_FORMAT, from_session, to_session
 
-    session = to_session(a_group(), sources={7: {"location": {"at": "file", "path": "t.wav"},
+    session = to_session(an_aggregate(), sources={7: {"location": {"at": "file", "path": "t.wav"},
                                                  "lifetime": "session", "generation": 0}})
     session["format"] = SESSION_FORMAT + 1
     with pytest.raises(ValueError, match="newer than this build"):
@@ -250,13 +250,13 @@ def test_a_generators_last_rendered_result_round_trips_as_ordinary_tree():
 
     rendered = Track(Timeline([(0.0, SeqEvent(midinote=62))]), duration=2.0)
     generator = Generator("melody", rendered=rendered)
-    group = Group()
-    group.add(generator, offset=0.0, dur=2.0)
+    aggregate = Aggregate()
+    aggregate.add(generator, offset=0.0, dur=2.0)
 
-    doc = to_document(group)
+    doc = to_document(aggregate)
     node = doc["root"]["members"][0]["node"]
     assert node["kind"] == "generator"
-    assert node["rendered"]["kind"] == "set"
+    assert node["rendered"]["kind"] == "aggregate"
     assert node["rendered"]["duration"] == 2.0
 
     back = from_document(doc)
@@ -273,11 +273,11 @@ def test_a_rendered_result_keeps_its_ids_across_two_conversions():
     from clausters.seq import Timeline
 
     rendered = Track(Timeline([(0.0, SeqEvent(midinote=62))]), duration=2.0)
-    group = Group()
-    group.add(Generator("melody", rendered=rendered), offset=0.0, dur=2.0)
+    aggregate = Aggregate()
+    aggregate.add(Generator("melody", rendered=rendered), offset=0.0, dur=2.0)
 
-    first = to_document(group)
-    second = to_document(group)
+    first = to_document(aggregate)
+    second = to_document(aggregate)
     assert first == second
     assert getattr(rendered, ID_ATTR) is not None
 
@@ -291,8 +291,8 @@ def test_an_edit_applied_through_the_crate_is_the_crates_edit():
     same edit if only one of them implements it."""
     from clausters import _native
 
-    group = a_group()
-    doc = to_document(group)
+    aggregate = an_aggregate()
+    doc = to_document(aggregate)
     node = doc["root"]["members"][0]["node"]["id"]
 
     result = _native.document_apply(
@@ -309,7 +309,7 @@ def test_an_edit_applied_through_the_crate_is_the_crates_edit():
 def test_an_edit_against_a_superseded_version_comes_back_stale():
     from clausters import _native
 
-    doc = to_document(a_group())
+    doc = to_document(an_aggregate())
     node = doc["root"]["members"][0]["node"]["id"]
     result = _native.document_apply(
         doc, {"intent": "place", "node": node, "offset": 4.0},
@@ -326,7 +326,7 @@ def test_the_edited_document_reads_back_into_the_arrangement():
     same converter it wrote one with."""
     from clausters import _native
 
-    doc = to_document(a_group())
+    doc = to_document(an_aggregate())
     node = doc["root"]["members"][0]["node"]["id"]
     edited = _native.document_apply(
         doc, {"intent": "place", "node": node, "offset": 7.0}
@@ -344,11 +344,11 @@ def test_a_selection_resolves_to_the_span_underneath_it_through_the_crate():
     doc = {
         "version": 1,
         "root": {
-            "id": 1, "kind": "set", "grouping": "concrete",
+            "id": 1, "kind": "aggregate", "grouping": "concrete",
             "members": [{
                 "offset": 2.0, "dur": 4.0,
                 "node": {
-                    "id": 2, "kind": "buffer",
+                    "id": 2, "kind": "vector",
                     "source": {
                         "source": 100, "lifetime": "external", "generation": 2,
                         "range": {"start": 480000, "end": 672000},
@@ -370,7 +370,7 @@ def test_nothing_underneath_is_an_empty_list_and_not_a_failure():
     from clausters import _native
 
     spans = _native.document_resolve(
-        to_document(a_group()), {"start": 0.0, "len": 1.0},
+        to_document(an_aggregate()), {"start": 0.0, "len": 1.0},
         frames_per_beat=48000.0, in_beats=True,
     )
     assert spans == []
@@ -384,7 +384,7 @@ def test_a_run_of_gestures_inverts_back_to_where_it_started():
     only the edits it made, which is what O5 exists to prevent."""
     from clausters._native import Document, Log
 
-    start = to_document(a_group())
+    start = to_document(an_aggregate())
     with Log() as log, Document(start) as doc:
         for node, offset in [(2, 1.0), (2, 5.0), (2, 2.5)]:
             log.apply(doc, {"intent": "place", "node": node, "offset": offset},
@@ -402,7 +402,7 @@ def test_a_run_of_gestures_inverts_back_to_where_it_started():
 def test_a_redo_puts_back_exactly_what_the_undo_took():
     from clausters._native import Document, Log
 
-    document = to_document(a_group())
+    document = to_document(an_aggregate())
     with Log() as log, Document(document) as doc:
         log.apply(doc, {"intent": "place", "node": 2, "offset": 3.0}, label="move")
         edited = doc.snapshot()
@@ -419,7 +419,7 @@ def test_what_the_grid_did_is_what_gets_replayed():
     idempotent."""
     from clausters._native import Document, Log
 
-    with Log() as log, Document(to_document(a_group())) as doc:
+    with Log() as log, Document(to_document(an_aggregate())) as doc:
         outcome = log.apply(
             doc, {"intent": "place", "node": 2, "offset": 4.3},
             quant=1.0, label="move",
@@ -433,7 +433,7 @@ def test_what_the_grid_did_is_what_gets_replayed():
 def test_a_refused_edit_leaves_nothing_to_undo():
     from clausters._native import Document, Log
 
-    with Log() as log, Document(to_document(a_group())) as doc:
+    with Log() as log, Document(to_document(an_aggregate())) as doc:
         log.apply(doc, {"intent": "place", "node": 999, "offset": 1.0})
         assert len(log) == 0
         assert not log.can_undo
@@ -448,7 +448,7 @@ def test_a_destructive_inverse_is_recorded_by_the_caller():
     document = {
         "version": 1,
         "root": {
-            "id": 1, "kind": "buffer",
+            "id": 1, "kind": "vector",
             "source": {"source": 7, "lifetime": "temporary", "generation": 4},
         },
     }
@@ -473,7 +473,7 @@ def test_a_deterministic_operation_comes_back_for_the_owner_to_re_run():
     document = {
         "version": 1,
         "root": {
-            "id": 1, "kind": "buffer",
+            "id": 1, "kind": "vector",
             "source": {"source": 7, "lifetime": "temporary", "generation": 4},
         },
     }
@@ -494,7 +494,7 @@ def test_a_continuing_run_of_adjustments_is_one_undo():
     caller decides where the hand stopped, because only the caller knows."""
     from clausters._native import Document, Log
 
-    with Log() as log, Document(to_document(a_group())) as doc:
+    with Log() as log, Document(to_document(an_aggregate())) as doc:
         for i, offset in enumerate([1.0, 1.5, 2.0]):
             previous = 0.0 if i == 0 else offset - 0.5
             log.record(
@@ -521,7 +521,7 @@ def test_the_document_handle_edits_in_place_and_hands_back_only_the_outcome():
     `snapshot` is how the JSON leaves — asked for rather than paid per edit."""
     from clausters import _native
 
-    doc_json = to_document(a_group())
+    doc_json = to_document(an_aggregate())
     node = doc_json["root"]["members"][0]["node"]["id"]
     with _native.Document(doc_json) as doc:
         assert doc.version == doc_json["version"]
@@ -542,7 +542,7 @@ def test_the_handle_and_the_by_value_form_agree():
     script keeps and the surface an editor uses cannot drift."""
     from clausters import _native
 
-    doc_json = to_document(a_group())
+    doc_json = to_document(an_aggregate())
     node = doc_json["root"]["members"][0]["node"]["id"]
     intent = {"intent": "place", "node": node, "offset": 2.5}
 
@@ -556,7 +556,7 @@ def test_the_handle_and_the_by_value_form_agree():
 def test_a_refused_edit_leaves_the_document_where_it_was():
     from clausters import _native
 
-    doc_json = to_document(a_group())
+    doc_json = to_document(an_aggregate())
     with _native.Document(doc_json) as doc:
         outcome = doc.apply({"intent": "place", "node": 9999, "offset": 1.0})
         assert outcome["applied"] is False
@@ -572,7 +572,7 @@ def test_opening_something_that_is_not_a_document_is_an_error_not_an_empty_one()
         _native.Document({"not": "a document"})
     with _native.Document() as empty:
         assert empty.version == FIRST_VERSION
-        assert empty.snapshot()["root"]["kind"] == "set"
+        assert empty.snapshot()["root"]["kind"] == "aggregate"
 
 
 def test_an_element_used_in_two_compositions_does_not_carry_a_number_the_second_one_holds():
@@ -582,11 +582,11 @@ def test_an_element_used_in_two_compositions_does_not_carry_a_number_the_second_
     # different element here already had. An intent naming it then reached
     # whichever node the crate found first while the editor's index kept the
     # last: one gesture, two destinations.
-    shared = Event(SeqEvent(midinote=60))
-    first = Group([(0.0, shared), (1.0, Event(SeqEvent(midinote=62)))])
+    shared = Clang(SeqEvent(midinote=60))
+    first = Aggregate([(0.0, shared), (1.0, Clang(SeqEvent(midinote=62)))])
     to_document(first)
 
-    second = Group([(0.0, Event(SeqEvent(midinote=64))), (1.0, Event(SeqEvent(midinote=67)))])
+    second = Aggregate([(0.0, Clang(SeqEvent(midinote=64))), (1.0, Clang(SeqEvent(midinote=67)))])
     to_document(second)
     second.add(shared, 2.0)
 
@@ -601,26 +601,27 @@ def test_a_leaf_that_references_its_material_may_be_placed_twice():
     # O14: a clip is a window onto material and the identity is the material, so
     # two placements are two nodes naming one source -- which is the multitrack's
     # own semantics and what the defect at the foot of the crate's plan was about.
-    take = Buffer(FakeBuffer(7))
-    doc = to_document(Group([(0.0, take), (4.0, take)]))
+    take = Vector(FakeBuffer(7))
+    doc = to_document(Aggregate([(0.0, take), (4.0, take)]))
     windows = [m["node"] for m in doc["root"]["members"]]
     assert windows[0]["id"] != windows[1]["id"], "two windows, two names"
     assert windows[0]["source"] == windows[1]["source"], "one material behind them"
 
 
 def test_an_element_whose_material_is_in_the_node_is_not_placed_twice():
-    # The other half of the rule: an event carries its material *inside* the
+    # The other half of the rule: a clang carries its material *inside* the
     # node, so two placements would be two copies that diverge on the first
     # edit -- which is the answer the decision rejected, so it is refused rather
     # than made silently.
-    twice = Event(SeqEvent(midinote=60))
+    twice = Clang(SeqEvent(midinote=60))
     with pytest.raises(ValueError, match="placed more than once"):
-        to_document(Group([(0.0, twice), (4.0, twice)]))
+        to_document(Aggregate([(0.0, twice), (4.0, twice)]))
 
 
 def test_a_tree_converted_on_its_own_is_numbered_as_it_always_was():
-    group = Group([(0.0, Event(SeqEvent(midinote=60))), (1.0, Event(SeqEvent(midinote=62)))])
-    assert _ids(to_document(group)["root"]) == [1, 2, 3]
+    aggregate = Aggregate([(0.0, Clang(SeqEvent(midinote=60))),
+                           (1.0, Clang(SeqEvent(midinote=62)))])
+    assert _ids(to_document(aggregate)["root"]) == [1, 2, 3]
 
 
 def test_the_crate_refuses_a_document_whose_id_names_two_different_nodes():
@@ -636,28 +637,29 @@ def test_the_crate_refuses_a_document_whose_id_names_two_different_nodes():
     except OSError as e:
         pytest.skip(f"clausters-ffi not built: {e}")
 
-    document = to_document(a_group())
+    document = to_document(an_aggregate())
     root = document["root"]
     root["members"][0]["node"]["id"] = root["members"][1]["node"]["id"]
     with pytest.raises(ValueError, match="names two different nodes"):
         _native.Document(document)
 
 
-def test_a_group_keeps_its_name_through_the_document():
+def test_an_aggregate_keeps_its_name_through_the_document():
     # The multitrack labels its lanes from the name, so a piece that loses it
     # reopens anonymous -- and the document had no field for one at all.
-    song = Group([(0.0, Event(SeqEvent(midinote=60)))], name="melody")
+    song = Aggregate([(0.0, Clang(SeqEvent(midinote=60)))], name="melody")
     back = from_document(to_document(song))
     assert back.name == "melody"
 
 
-def test_a_track_comes_back_a_track_and_not_a_group_of_events():
-    # It went out as a set because there is one set kind; what says it was a
-    # track is the body's own config, which the document carries and never
-    # reads. Rebuilding it as a group is what grew a level of nesting nobody
-    # wrote, and left the editor drawing clips where there had been a roll.
+def test_a_track_comes_back_a_track_and_not_an_aggregate_of_clangs():
+    # It went out as an aggregate because there is one aggregate kind; what says
+    # it was a track is the body's own config, which the document carries and
+    # never reads. Rebuilding it as an aggregate is what grew a level of
+    # nesting nobody wrote, and left the editor drawing clips where there had
+    # been a roll.
     track = Track(Timeline([(0.0, SeqEvent(midinote=60)), (1.0, SeqEvent(midinote=64))]))
-    back = from_document(to_document(Group([(0.0, track)])))
+    back = from_document(to_document(Aggregate([(0.0, track)])))
     inner = back.members[0][2]
     assert isinstance(inner, Track)
     assert [beat for beat, _ in inner.wraps] == [0.0, 1.0]
@@ -667,7 +669,7 @@ def test_the_song_survives_a_session_round_trip_structurally_identical():
     # The acceptance, and the thing the example's "open it again" step was
     # really testing: the same composition by identity -- same kinds, same
     # nesting, same names -- compared tree against tree rather than by eye.
-    song = a_group()
+    song = an_aggregate()
     song.name = "song"
     song.add(Track(Timeline([(0.0, SeqEvent(midinote=67))])), offset=16.0)
 
@@ -695,7 +697,7 @@ def test_an_unnamed_leaf_is_written_with_no_reference_rather_than_an_address():
     from clausters.seq import Pbind, Pseq
 
     lane = Sequence(Pbind(midinote=Pseq([48, 55], 2), dur=0.5))
-    node = to_document(Group([(0.0, lane)]))["root"]["members"][0]["node"]
+    node = to_document(Aggregate([(0.0, lane)]))["root"]["members"][0]["node"]
     assert "0x" not in json.dumps(node), node
     assert not (node.get("config") or {}).get("sequence")
 
@@ -707,7 +709,7 @@ def test_a_named_pattern_lane_is_handed_back_and_plays_again():
     from clausters.seq import Pbind, Pseq
 
     pattern = Pbind(midinote=Pseq([48, 55], 1), dur=0.5)
-    song = Group([(0.0, Sequence(pattern, name="bassline"))], name="bass")
+    song = Aggregate([(0.0, Sequence(pattern, name="bassline"))], name="bass")
 
     written = json.loads(json.dumps(to_session(song)))
     back, _ = from_session(
@@ -733,11 +735,11 @@ def test_the_same_script_run_twice_writes_the_same_bytes():
 
     script = (
         "import json;"
-        "from clausters.form import Group, Sequence;"
+        "from clausters.form import Aggregate, Sequence;"
         "from clausters.form.document import to_session;"
         "from clausters.seq import Pbind, Pseq;"
         "lane = Sequence(Pbind(midinote=Pseq([48, 55], 2), dur=0.5), name='bassline');"
-        "print(json.dumps(to_session(Group([(0.0, lane)], name='bass')), sort_keys=True))"
+        "print(json.dumps(to_session(Aggregate([(0.0, lane)], name='bass')), sort_keys=True))"
     )
     runs = {
         subprocess.run([sys.executable, "-c", script], capture_output=True,
@@ -753,7 +755,7 @@ def test_a_session_whose_table_does_not_cover_its_document_is_refused():
     # stops covering the composition it is saved with, and the reopened piece
     # draws nothing where the take was -- with nothing said anywhere.
     with pytest.raises(ValueError, match="does not cover this document"):
-        to_session(a_group(), sources={99: {"location": {"at": "file", "path": "x.wav"},
+        to_session(an_aggregate(), sources={99: {"location": {"at": "file", "path": "x.wav"},
                                             "lifetime": "session", "generation": 0}})
     # A composition with no material needs no table at all.
-    assert to_session(Group([(0.0, Event(SeqEvent(midinote=60)))]))["sources"] == {}
+    assert to_session(Aggregate([(0.0, Clang(SeqEvent(midinote=60)))]))["sources"] == {}

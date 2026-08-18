@@ -38,12 +38,12 @@ in the next.
 The id is on the *element*, so placing one element at two offsets writes two
 nodes with one id, and an edit naming that id cannot say which of the two it
 means. Give each appearance its own element over the same material — two
-`Buffer` leaves over one server buffer — until the addressing settles.
+`Vector` leaves over one server buffer — until the addressing settles.
 """
 
-from .element import (Buffer, Element, Event, Generator, Segments, Sequence,
+from .element import (Vector, Element, Clang, Generator, Segments, Sequence,
                       Track)
-from .group import CONCRETE, LOGICAL, Group
+from .aggregate import CONCRETE, LOGICAL, Aggregate
 
 #: The attribute `to_document` stamps a node id onto. Private by name because it
 #: is bookkeeping for the bridge, not part of the arrangement's own surface.
@@ -64,7 +64,7 @@ def to_document(element, *, version: int = FIRST_VERSION) -> dict:
     """The whole arrangement as a document, ready for ``serde``.
 
     Args:
-        element: the root `clausters.form.Element` (usually a `Group`).
+        element: the root `clausters.form.Element` (usually an `Aggregate`).
         version: the document version to stamp (see the crate: the document's
             half of the two counters). Defaults to `FIRST_VERSION`; zero means
             *unstated* and is never a document's own version.
@@ -260,7 +260,7 @@ class _Ids:
                 # Another object in this tree claimed the number first, so this
                 # one was numbered against a tree that is not this one.
                 self._renumber.add(id(holder))
-        if isinstance(element, Group):
+        if isinstance(element, Aggregate):
             for handle in element.handles:
                 self._scan(handle.element, handle)
             return
@@ -294,7 +294,7 @@ def _children(element) -> list:
     document (decision A: a note is addressable, or no edit could name it and no
     log could invert it), so they take ids the same way — and the scan has to see
     them, or a second conversion would hand them numbers the first did not."""
-    if isinstance(element, Group):
+    if isinstance(element, Aggregate):
         return [m.element for m in element.handles]
     if isinstance(element, Track):
         return [item for _, item in _timeline_items(element.wraps)]
@@ -315,7 +315,7 @@ def _node(element, ids: _Ids, member=None) -> dict:
     name = getattr(element, "name", None)
     if isinstance(name, str) and name:
         # A referenceable label, never a second identity -- the server's own
-        # rule for a group's name, and the reason a reopened piece can still
+        # rule for an aggregate's name, and the reason a reopened piece can still
         # label its lanes the way it was authored.
         node["name"] = name
     if element.onset is not None:
@@ -345,9 +345,9 @@ def _body(element, ids: _Ids) -> dict:
     if preserved is not None:
         # A body this build does not know, on its way back out untouched.
         return {k: v for k, v in preserved.items() if k not in _TEMPORAL}
-    if isinstance(element, Group):
+    if isinstance(element, Aggregate):
         return {
-            "kind": "set",
+            "kind": "aggregate",
             "grouping": LOGICAL if element.kind == LOGICAL else CONCRETE,
             "members": [_member(handle, ids) for handle in element.handles],
         }
@@ -358,15 +358,15 @@ def _body(element, ids: _Ids) -> dict:
         # restrictions those are is the client's own business, so it rides in
         # the body's opaque config and the document never reads it.
         return _with_config({
-            "kind": "set",
+            "kind": "aggregate",
             "grouping": CONCRETE,
             "members": [
                 _timeline_member(beat, item, ids)
                 for beat, item in _timeline_items(element.wraps)
             ],
         }, {"form": FORM_TRACK})
-    if isinstance(element, Event):
-        return _with_config({"kind": "event"}, _plain(element.wraps))
+    if isinstance(element, Clang):
+        return _with_config({"kind": "clang"}, _plain(element.wraps))
     if isinstance(element, Sequence):
         items = element.wraps
         if isinstance(items, (list, tuple)) and all(
@@ -407,8 +407,8 @@ def _body(element, ids: _Ids) -> dict:
         if element.controls:
             config["controls"] = _plain(element.controls)
         return _with_config(body, config or None)
-    if isinstance(element, Buffer):
-        body = {"kind": "buffer", "source": _source(element.wraps)}
+    if isinstance(element, Vector):
+        body = {"kind": "vector", "source": _source(element.wraps)}
         config = {}
         if element.instrument is not None:
             instrument = _reference(element.instrument)
@@ -480,7 +480,7 @@ def _placeable_twice(handle, ids: _Ids):
 
     Two windows share material only when the node **references** it — a buffer
     names a source, a generator names a recipe, and both placements point at the
-    one thing. An event, a track or a group carries its material *inside* the
+    one thing. A clang, a track or an aggregate carries its material *inside* the
     node, so a second placement is a second **copy**: they diverge on the first
     edit, which is the answer the open decision rejected. Refused with the
     distinction rather than copied in silence.
@@ -489,23 +489,23 @@ def _placeable_twice(handle, ids: _Ids):
     if id(element) not in ids.placed:
         ids.placed.add(id(element))
         return
-    if isinstance(element, (Buffer, Generator)) or (
+    if isinstance(element, (Vector, Generator)) or (
             isinstance(element, Sequence) and not isinstance(element.wraps, (list, tuple))):
         return  # a window onto material the node only names
     raise ValueError(
         f"{type(element).__name__} is placed more than once, and its material is "
         "in the node rather than named by it — two placements would be two "
         "copies that diverge on the first edit. Place a leaf that *references* "
-        "its material (a Buffer over one server buffer, a Generator over one "
+        "its material (a Vector over one server buffer, a Generator over one "
         "recipe), or give each placement its own element."
     )
 
 
 def _timeline_member(beat, item, ids: _Ids) -> dict:
-    """A timeline item as a placed event, with an id stamped on the item itself
+    """A timeline item as a placed clang, with an id stamped on the item itself
     so it survives to the next conversion."""
     node = {"id": ids.of(item)}
-    node.update(_with_config({"kind": "event"}, _plain(item)))
+    node.update(_with_config({"kind": "clang"}, _plain(item)))
     return {"offset": float(beat), "node": node}
 
 
@@ -525,7 +525,7 @@ def _timeline_items(timeline) -> list:
 class FrozenSource:
     """Material a document names and this process does not hold.
 
-    A `Buffer` element wraps `clausters.defs.Buffer`; reading a document written
+    A `Vector` element wraps `clausters.defs.Buffer`; reading a document written
     elsewhere (or written here before the buffer was allocated) gives the
     reference and not the object. Rather than losing it, the element wraps this:
     the same `bufnum` a real buffer answers with, plus the lifetime and
@@ -674,9 +674,9 @@ def _element(node: dict, resolve, *, placed: bool = False):
     onset = node.get("onset")
     duration = node.get("duration")
 
-    if kind == "set" and config.get("form") == FORM_TRACK:
+    if kind == "aggregate" and config.get("form") == FORM_TRACK:
         # A set the author wrote as a `Track`, said by the body's own config.
-        # Rebuilding it as a `Group` is what made a reopened piece grow a level
+        # Rebuilding it as an `Aggregate` is what made a reopened piece grow a level
         # of nesting nobody wrote, and left the editor drawing a lane of clips
         # where there had been a roll.
         from ..seq.timeline import Timeline
@@ -695,15 +695,15 @@ def _element(node: dict, resolve, *, placed: bool = False):
                 setattr(item, ID_ATTR, int(child["id"]))
             timeline.add(member.get("offset", 0.0), item)
         built = Track(timeline, onset=onset, duration=duration)
-    elif kind == "set":
-        group = Group(
+    elif kind == "aggregate":
+        aggregate = Aggregate(
             kind=LOGICAL if node.get("grouping") == LOGICAL else CONCRETE,
             onset=onset,
             duration=duration,
         )
         for member in node.get("members", []):
             child = member["node"]
-            handle = group.add(
+            handle = aggregate.add(
                 _element(child, resolve, placed=True),
                 offset=member.get("offset", 0.0),
                 dur=member.get("dur"),
@@ -712,11 +712,11 @@ def _element(node: dict, resolve, *, placed: bool = False):
                 # The placement's id, on the placement: a second window onto the
                 # same material is a second handle with a number of its own.
                 setattr(handle, ID_ATTR, int(child["id"]))
-        built = group
-    elif kind == "event":
+        built = aggregate
+    elif kind == "clang":
         from ..seq import Event as SeqEvent
 
-        built = Event(SeqEvent(config), onset=onset, duration=duration)
+        built = Clang(SeqEvent(config), onset=onset, duration=duration)
     elif kind == "sequence":
         members = node.get("members")
         if members:
@@ -728,7 +728,7 @@ def _element(node: dict, resolve, *, placed: bool = False):
         built = Segments(
             [
                 (
-                    _resolved(resolve, "buffer", seg.get("source"))
+                    _resolved(resolve, "vector", seg.get("source"))
                     or FrozenSource(seg.get("source") or {}),
                     seg.get("start", 0.0),
                     seg.get("duration", 0.0),
@@ -740,9 +740,9 @@ def _element(node: dict, resolve, *, placed: bool = False):
             instrument=config.get("instrument"),
             controls=config.get("controls"),
         )
-    elif kind == "buffer":
-        built = Buffer(
-            _resolved(resolve, "buffer", node.get("source"))
+    elif kind == "vector":
+        built = Vector(
+            _resolved(resolve, "vector", node.get("source"))
             or FrozenSource(node.get("source") or {}),
             onset=onset,
             duration=duration,
@@ -773,7 +773,7 @@ def _element(node: dict, resolve, *, placed: bool = False):
         built = Element(dict(node), onset=onset, duration=duration)
 
     # The document is the authority on temporal metadata: an element's own
-    # constructor may derive a duration (a `form.Event` takes the event's `dur`
+    # constructor may derive a duration (a `form.Clang` takes the event's `dur`
     # when none is given), and letting that win would make a document say
     # something the document did not say.
     built.onset = None if onset is None else float(onset)

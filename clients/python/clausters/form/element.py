@@ -6,20 +6,20 @@ is an arbitrarily delimited entity that produces a unit of meaning and can be
 decomposed or combined — *generated* (the rendered thing, editable and
 random-access) or a *generator* (the algorithm that renders it, forward-only),
 with the change of state between them. It is a **thin adornment** over the objects the client
-already has (`clausters.seq.Event`, `clausters.seq.Timeline`, a `Buffer`, a
+already has (`clausters.seq.Event`, `clausters.seq.Timeline`, a `Vector`, a
 `Pattern`, a def): it carries the temporal metadata (`onset`, `duration`, and the
-derived temporal *character*) and belongs to a `Group`, while it **delegates
+derived temporal *character*) and belongs to an `Aggregate`, while it **delegates
 playing** to the wrapped item's ``play(destination)`` — the double-dispatch
 seam every leaf item in the client already shares. The arrangement does not
 reimplement or subclass those objects.
 
 The five primitives map one-to-one onto what the client already has:
 
-- `Event`     — *event/clip*: parameters grouped into one action (internally
+- `Clang`     — *event/clip*: parameters grouped into one action (internally
   simultaneous), with its own onset/duration. Wraps `clausters.seq.Event`.
 - `Sequence`  — *List*: strict order with no concrete time, only sequence.
   Wraps a Python list or a `Pattern`.
-- `Buffer`    — *Buffer*: a list at constant time (audio or control samples).
+- `Vector`    — *Vector*: a list at constant time (audio or control samples).
   Wraps `clausters.defs.Buffer`. `Segments` is the same primitive assembled from
   **several** windows — which buffer, from which frame, for how long — read as
   one thing; it is not a sixth primitive, it is what a list at constant time
@@ -29,7 +29,7 @@ The five primitives map one-to-one onto what the client already has:
 - `Generator` — *Function*: a generator element — server DSP (a def) or a
   sequence generator (`Pbind`/`Routine`).
 
-Grouping and rendering live in `clausters.form.group` and
+Grouping and rendering live in `clausters.form.aggregate` and
 `clausters.form.render`. This module is pure and transport-agnostic (factorable
 into ``clausters-core`` in a future port).
 """
@@ -64,12 +64,12 @@ class Element:
     An element carries an optional ``onset`` and ``duration`` (in beats, relative
     to its context) and wraps an underlying client object it delegates to. The
     concrete onset of an element typically comes from its *placement* inside a
-    `clausters.form.group.Group`, not from the element itself, so a standalone
+    `clausters.form.aggregate.Aggregate`, not from the element itself, so a standalone
     leaf commonly has a duration but no onset (a ``relative`` character).
 
     Args:
         wraps: the underlying object playing delegates to (or ``None`` for a
-            pure container like a `Group`).
+            pure container like an `Aggregate`).
         onset: start in beats relative to the context, or ``None``.
         duration: length in beats, or ``None``.
         name: a label for this element — what a lane is called in the editor,
@@ -123,7 +123,7 @@ class Element:
         `clausters.seq.timeline.OscEvent`/`MidiEvent` and
         `clausters.seq.Automation`.
 
-        Container and pattern-backed elements (`Group`, `Track`, a `Sequence`
+        Container and pattern-backed elements (`Aggregate`, `Track`, a `Sequence`
         wrapping a `Pattern`) are **not** directly playable this way — they are
         rendered by ``render()``. Delegating here requires the wrapped
         object to follow the ``play(destination)`` protocol.
@@ -148,19 +148,19 @@ class Element:
         """Render this element onto ``destination`` — the change of state to
         sound. A concrete element flattens and plays through a
         `clausters.seq.Playhead` over ``clock`` (returns the playhead); a logical
-        `Group` sends and instances a `GraphDef` on the server (returns the
+        `Aggregate` sends and instances a `GraphDef` on the server (returns the
         instance). See `clausters.form.render.render`."""
         from .render import render
 
         return render(self, destination, clock, at=at, quant=quant, ports=ports)
 
 
-class Event(Element):
+class Clang(Element):
     """*event/clip*: parameters grouped into one action, internally simultaneous.
 
     Wraps a `clausters.seq.Event` (or a plain ``dict`` of parameters). Its
     ``duration`` defaults to the event's ``dur`` when not given explicitly; its
-    ``onset`` usually comes from its placement in a `Group`.
+    ``onset`` usually comes from its placement in an `Aggregate`.
     """
 
     def __init__(self, event, onset=None, duration=None, *, name=None):
@@ -188,11 +188,11 @@ class Sequence(Element):
         super().__init__(wraps=items, onset=onset, duration=duration, name=name)
 
 
-class Buffer(Element):
-    """*Buffer*: a list at constant time — audio or control samples.
+class Vector(Element):
+    """*Vector*: a list at constant time — audio or control samples.
 
     Wraps a `clausters.defs.Buffer`. An automation sampled at a constant interval
-    is a control buffer (the List/Buffer duality of the arrangement).
+    is a control buffer (the List/Vector duality of the arrangement).
 
     A buffer is *data*, so rendering it as an **audio clip** needs an instrument:
     the def that plays it, named by ``instrument`` (a synth whose ``buf`` control
@@ -255,8 +255,8 @@ class Buffer(Element):
 
         if self.instrument is None:
             raise NotImplementedError(
-                "a Buffer needs an instrument to be rendered as an audio clip "
-                "(Buffer(buf, instrument='take'): a def whose `buf` control plays it)"
+                "a Vector needs an instrument to be rendered as an audio clip "
+                "(Vector(buf, instrument='take'): a def whose `buf` control plays it)"
             )
         params = dict(instrument=self.instrument, buf=self.wraps.bufnum,
                       legato=1.0, amp=1.0)
@@ -277,7 +277,7 @@ class Segments(Element):
     """*Several windows read as one*: material assembled from segments of one or
     more buffers, which sound as a single thing.
 
-    A `Buffer` is one window onto one buffer. This is what a **join** makes when
+    A `Vector` is one window onto one buffer. This is what a **join** makes when
     the fragments do not come from one place: a list of
     ``(buffer, start, duration)`` — the buffer to read, the frame to read it
     from, and how long that segment lasts in beats — read back to back. It is
@@ -294,7 +294,7 @@ class Segments(Element):
             plain ``(buffer, duration)`` reads that buffer from its first
             frame). ``start`` is in frames, ``duration`` in beats.
         instrument: the def that plays them — one def for all of them, since
-            what this element *is* is one thing to play (see `Buffer`).
+            what this element *is* is one thing to play (see `Vector`).
         controls: extra event parameters passed to that def.
         onset: start in beats relative to the context, or ``None``.
         duration: length in beats; the sum of the segments' when not given.
@@ -327,7 +327,7 @@ class Segments(Element):
     def to_events(self) -> list:
         """One ``(offset, event)`` per segment: the instrument playing that
         buffer, from that frame, for that long. The offsets are relative to the
-        element, exactly as a group's members' are."""
+        element, exactly as an aggregate's members' are."""
         from ..seq.event import Event as SeqEvent
 
         if self.instrument is None:
@@ -349,7 +349,7 @@ class Segments(Element):
 
 class Segment:
     """One segment of a `Segments`: which buffer, from which frame, for how
-    long. A window, named the same way a `Buffer` element's is."""
+    long. A window, named the same way a `Vector` element's is."""
 
     __slots__ = ("buffer", "start", "duration")
 
@@ -406,13 +406,13 @@ class Generator(Element):
     or a sequence generator (a `Pbind`/`Routine`). Its *change of state* —
     evaluating the generator into a generated element — happens at rendering: a
     contained event pattern is bounced to a timeline; a def member of a
-    logical `Group` becomes a wired GraphDef member.
+    logical `Aggregate` becomes a wired GraphDef member.
 
     Args:
         generator: the wrapped def (name or object) or sequence generator.
         controls: control values for a logical-graph member — numbers, an
-            internal-bus name (a ``str`` matching a `Group` bus), or ``"OUT"``
-            (hardware). Used by `Group.to_graphdef`.
+            internal-bus name (a ``str`` matching an `Aggregate` bus), or ``"OUT"``
+            (hardware). Used by `Aggregate.to_graphdef`.
         maps: control-bus bindings for a logical-graph member
             (``/node_map``), as a ``{control: bus_name}`` dict.
         rendered: what this generator **last produced**, as an ordinary

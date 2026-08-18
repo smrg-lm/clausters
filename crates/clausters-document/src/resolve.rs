@@ -126,7 +126,7 @@ pub struct Resolved {
 /// axis, and then everything under it resolves.
 ///
 /// Elements the selection touches but that hold no material are skipped rather
-/// than reported: a group and a generator have no span to give, and the caller
+/// than reported: an aggregate and a generator have no span to give, and the caller
 /// asked what is underneath, not what is in the way.
 pub fn resolve(document: &Document, selection: &Selection, mapping: &Mapping) -> Vec<Resolved> {
     if selection.is_empty() {
@@ -197,8 +197,8 @@ fn piece(
     start: Beats,
     end: Beats,
 ) -> Option<Resolved> {
-    let Body::Buffer { source, .. } = &member.node.body else {
-        // No material, no span. A group or a generator is in the way of the
+    let Body::Vector { source, .. } = &member.node.body else {
+        // No material, no span. An aggregate or a generator is in the way of the
         // selection, not underneath it.
         return None;
     };

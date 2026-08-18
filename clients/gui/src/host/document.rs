@@ -239,7 +239,7 @@ impl Owner {
             _ => return None,
         };
         match tag {
-            // A clip moved or resized: where it now sits inside the set that
+            // A clip moved or resized: where it now sits inside the aggregate that
             // holds it. Absolute, so applying it twice is applying it once.
             // **The payload is in timeline units and the document is in
             // beats**, so this is where the two meet. A clip reports where the
@@ -433,20 +433,20 @@ mod tests {
     use super::*;
     use clausters_document::{Body, Grouping, Member, Node, Opaque};
 
-    fn event(id: u64) -> Node {
+    fn clang(id: u64) -> Node {
         Node::new(
             NodeId(id),
-            Body::Event {
+            Body::Clang {
                 config: Opaque::default(),
                 fires: None,
             },
         )
     }
 
-    fn set(id: u64, members: Vec<Member>) -> Node {
+    fn aggregate(id: u64, members: Vec<Member>) -> Node {
         Node::new(
             NodeId(id),
-            Body::Set {
+            Body::Aggregate {
                 grouping: Grouping::Concrete,
                 members,
                 config: Opaque::none(),
@@ -456,12 +456,12 @@ mod tests {
 
     #[test]
     fn an_edit_applies_through_the_log_and_undoes_out_of_the_document() {
-        let root = set(
+        let root = aggregate(
             1,
             vec![Member {
                 offset: 0.0,
                 dur: None,
-                node: event(2),
+                node: clang(2),
             }],
         );
         let mut owner = Owner::new(Document::new(root));
@@ -496,12 +496,12 @@ mod tests {
     /// a redone edit the same edit rather than a new one.
     #[test]
     fn redo_puts_back_what_undo_took() {
-        let root = set(
+        let root = aggregate(
             1,
             vec![Member {
                 offset: 0.0,
                 dur: None,
-                node: event(2),
+                node: clang(2),
             }],
         );
         let mut owner = Owner::new(Document::new(root));
@@ -531,7 +531,7 @@ mod tests {
     fn a_payload_becomes_an_intent_only_where_it_can_be_read() {
         // One unit to the beat, so the payload's numbers *are* beats and the
         // test is about the translation rather than about the scale.
-        let mut owner = Owner::new(Document::new(event(1))).with_units_per_beat(1.0);
+        let mut owner = Owner::new(Document::new(clang(1))).with_units_per_beat(1.0);
         let clip = vec![
             OscType::String("clip".into()),
             OscType::Float(4.0),
@@ -561,7 +561,7 @@ mod tests {
     /// which is what makes one owner answer both.
     #[test]
     fn a_sample_and_a_stroke_are_one_intent() {
-        let mut owner = Owner::new(Document::new(event(1)));
+        let mut owner = Owner::new(Document::new(clang(1)));
         owner.bind(50, NodeId(9));
 
         let (one, label) = owner
@@ -613,12 +613,12 @@ mod tests {
     /// format the crate defines and nothing here re-implements.
     #[test]
     fn a_session_opens_is_edited_undone_redone_and_saved() {
-        let root = set(
+        let root = aggregate(
             1,
             vec![Member {
                 offset: 0.0,
                 dur: None,
-                node: event(2),
+                node: clang(2),
             }],
         );
         let dir = std::env::temp_dir();
@@ -651,8 +651,8 @@ mod tests {
         let out = dir.join(format!("clausters_h3_out_{}.json", std::process::id()));
         owner.save(&out).expect("it saves");
         let reopened = Owner::open(&out).expect("and reopens");
-        let Body::Set { members, .. } = &reopened.document.root.body else {
-            panic!("a set")
+        let Body::Aggregate { members, .. } = &reopened.document.root.body else {
+            panic!("an aggregate")
         };
         assert_eq!(
             members[0].offset, 4.0,
@@ -668,7 +668,7 @@ mod tests {
 
     #[test]
     fn a_widget_addresses_the_node_the_tree_bound_it_to() {
-        let mut owner = Owner::new(Document::new(event(1)));
+        let mut owner = Owner::new(Document::new(clang(1)));
         assert_eq!(owner.node_of(50), None, "nothing is inferred");
         owner.bind(50, NodeId(7));
         assert_eq!(owner.node_of(50), Some(NodeId(7)));
@@ -686,14 +686,14 @@ mod wiring_tests {
     fn doc() -> Document {
         Document::new(Node::new(
             NodeId(1),
-            Body::Set {
+            Body::Aggregate {
                 grouping: Grouping::Concrete,
                 members: vec![Member {
                     offset: 0.0,
                     dur: None,
                     node: Node::new(
                         NodeId(2),
-                        Body::Event {
+                        Body::Clang {
                             config: Opaque::default(),
                             fires: None,
                         },
@@ -727,8 +727,8 @@ mod wiring_tests {
         assert!(host.answer_own(1, 50, seq, &args), "and with one, it does");
 
         let owner = host.owner.as_ref().expect("still there");
-        let Body::Set { members, .. } = &owner.document.root.body else {
-            panic!("a set")
+        let Body::Aggregate { members, .. } = &owner.document.root.body else {
+            panic!("an aggregate")
         };
         assert_eq!(members[0].offset, 4.0, "the edit landed in the document");
         assert!(owner.can_undo(), "through the log, so it can be taken back");
@@ -769,14 +769,14 @@ mod window_verb_tests {
         // One unit to the beat: these tests are about the verbs, not the scale.
         let mut owner = Owner::new(Document::new(Node::new(
             NodeId(1),
-            Body::Set {
+            Body::Aggregate {
                 grouping: Grouping::Concrete,
                 members: vec![Member {
                     offset: 0.0,
                     dur: None,
                     node: Node::new(
                         NodeId(2),
-                        Body::Event {
+                        Body::Clang {
                             config: Opaque::default(),
                             fires: None,
                         },
@@ -791,8 +791,8 @@ mod window_verb_tests {
     }
 
     fn offset(owner: &Owner) -> f64 {
-        let Body::Set { members, .. } = &owner.document.root.body else {
-            panic!("a set")
+        let Body::Aggregate { members, .. } = &owner.document.root.body else {
+            panic!("an aggregate")
         };
         members[0].offset
     }
@@ -840,14 +840,14 @@ mod window_verb_tests {
         let def_id = 1;
         let doc = Document::new(Node::new(
             NodeId(1),
-            Body::Set {
+            Body::Aggregate {
                 grouping: Grouping::Concrete,
                 members: vec![Member {
                     offset: 0.0,
                     dur: Some(1.0),
                     node: Node::new(
                         NodeId(2),
-                        Body::Event {
+                        Body::Clang {
                             config: Opaque::default(),
                             fires: None,
                         },

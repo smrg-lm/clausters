@@ -179,7 +179,7 @@ fn referenced(session: &Session) -> Vec<SourceId> {
         // Assembled material names one source per window; a reader that took
         // only the first would open a joined clip with the rest of it silent.
         let named: Vec<SourceId> = match &node.body {
-            Body::Buffer { source, .. } => vec![source.source],
+            Body::Vector { source, .. } => vec![source.source],
             Body::Segments { segments, .. } => segments.iter().map(|s| s.source.source).collect(),
             _ => Vec::new(),
         };
@@ -201,7 +201,7 @@ mod tests {
     fn take_node(id: u64, source: u64) -> Node {
         Node::new(
             NodeId(id),
-            Body::Buffer {
+            Body::Vector {
                 source: SourceRef {
                     source: SourceId(source),
                     lifetime: Lifetime::Session,
@@ -213,10 +213,10 @@ mod tests {
         )
     }
 
-    fn set(id: u64, members: Vec<Member>) -> Node {
+    fn aggregate(id: u64, members: Vec<Member>) -> Node {
         Node::new(
             NodeId(id),
-            Body::Set {
+            Body::Aggregate {
                 grouping: clausters_document::Grouping::Concrete,
                 members,
                 config: Opaque::none(),
@@ -251,7 +251,7 @@ mod tests {
     fn a_relative_path_resolves_against_the_sessions_own_folder() {
         let dir = tmp("relative");
         let name = wav(&dir, "take.wav");
-        let session = Session::new(Document::new(set(1, vec![at(0.0, take_node(2, 7))])))
+        let session = Session::new(Document::new(aggregate(1, vec![at(0.0, take_node(2, 7))])))
             .with_source(SourceId(7), Source::file(name, Lifetime::Session));
         let load = plan(&session, &dir, 0);
         assert!(load.unresolved.is_empty(), "{:?}", load.unresolved);
@@ -272,7 +272,7 @@ mod tests {
         let dir = tmp("unused");
         let used = wav(&dir, "used.wav");
         let unused = wav(&dir, "unused.wav");
-        let session = Session::new(Document::new(set(1, vec![at(0.0, take_node(2, 1))])))
+        let session = Session::new(Document::new(aggregate(1, vec![at(0.0, take_node(2, 1))])))
             .with_source(SourceId(1), Source::file(used, Lifetime::Session))
             .with_source(SourceId(2), Source::file(unused, Lifetime::Session));
         let load = plan(&session, &dir, 0);
@@ -286,7 +286,7 @@ mod tests {
     #[test]
     fn what_cannot_be_resolved_is_reported_with_why() {
         let dir = tmp("missing");
-        let session = Session::new(Document::new(set(
+        let session = Session::new(Document::new(aggregate(
             1,
             vec![
                 at(0.0, take_node(2, 1)),
@@ -312,7 +312,7 @@ mod tests {
         let dir = tmp("order");
         let a = wav(&dir, "a.wav");
         let b = wav(&dir, "b.wav");
-        let session = Session::new(Document::new(set(
+        let session = Session::new(Document::new(aggregate(
             1,
             // Named out of order in the tree, on purpose.
             vec![at(0.0, take_node(2, 9)), at(1.0, take_node(3, 4))],

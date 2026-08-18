@@ -11,10 +11,10 @@ fn node(id: u64, body: Body) -> Node {
     Node::new(NodeId(id), body)
 }
 
-fn event(id: u64) -> Node {
+fn clang(id: u64) -> Node {
     node(
         id,
-        Body::Event {
+        Body::Clang {
             config: Opaque::none(),
             fires: None,
         },
@@ -25,10 +25,10 @@ fn placed(offset: Beats, dur: Option<Beats>, node: Node) -> Member {
     Member { offset, dur, node }
 }
 
-fn set(id: u64, members: Vec<Member>) -> Node {
+fn aggregate(id: u64, members: Vec<Member>) -> Node {
     node(
         id,
-        Body::Set {
+        Body::Aggregate {
             grouping: Grouping::Concrete,
             members,
             config: Opaque::none(),
@@ -44,16 +44,16 @@ fn reparse(doc: &Document) -> serde_json::Value {
 
 #[test]
 fn a_tree_round_trips_unchanged() {
-    let doc = Document::new(set(
+    let doc = Document::new(aggregate(
         1,
         vec![
-            placed(0.0, Some(2.0), event(2)),
+            placed(0.0, Some(2.0), clang(2)),
             placed(
                 2.0,
                 None,
                 node(
                     3,
-                    Body::Buffer {
+                    Body::Vector {
                         source: SourceRef {
                             source: SourceId(7),
                             lifetime: Lifetime::Session,
@@ -117,21 +117,21 @@ fn a_leaf_config_is_carried_and_never_read() {
 #[test]
 fn a_generators_output_is_ordinary_tree() {
     // Nothing about being generated makes a subtree a second kind of thing: the
-    // events a generator produced are events, placed in a set, indistinguishable
+    // clangs a generator produced are clangs, placed in an aggregate, indistinguishable
     // from ones a hand wrote.
-    let produced = set(10, vec![placed(0.0, Some(1.0), event(11))]);
+    let produced = aggregate(10, vec![placed(0.0, Some(1.0), clang(11))]);
     let json = serde_json::to_string(&produced).unwrap();
     let back: Node = serde_json::from_str(&json).unwrap();
     assert_eq!(produced, back);
 }
 
 #[test]
-fn a_punctual_event_can_reference_the_generator_it_fires() {
+fn a_punctual_clang_can_reference_the_generator_it_fires() {
     // Structure resolved at run time rather than at render time: no flattening
     // pass expands this, and the reference has to survive the format.
-    let mut trigger = event(5);
+    let mut trigger = clang(5);
     trigger.onset = Some(4.0);
-    trigger.body = Body::Event {
+    trigger.body = Body::Clang {
         config: Opaque::none(),
         fires: Some(NodeId(9)),
     };
@@ -143,7 +143,7 @@ fn a_punctual_event_can_reference_the_generator_it_fires() {
 
 #[test]
 fn the_temporal_character_is_derived_from_what_is_present() {
-    let mut n = event(1);
+    let mut n = clang(1);
     assert_eq!(n.character(), Character::Abstract);
     n.duration = Some(2.0);
     assert_eq!(n.character(), Character::Relative);
@@ -171,54 +171,54 @@ fn a_resident_generator_is_not_locatable() {
 fn the_temporal_relation_reads_the_placements_and_nothing_else() {
     // Simultaneous: shared start and shared end -- the container that can be
     // reinterpreted, which is what the recursion rests on.
-    let simultaneous = set(
+    let simultaneous = aggregate(
         1,
         vec![
-            placed(0.0, Some(4.0), event(2)),
-            placed(0.0, Some(4.0), event(3)),
+            placed(0.0, Some(4.0), clang(2)),
+            placed(0.0, Some(4.0), clang(3)),
         ],
     );
     assert_eq!(simultaneous.body.relation(), Some(Relation::Simultaneous));
 
     // A single member is simultaneous with itself.
-    let one = set(1, vec![placed(1.0, Some(2.0), event(2))]);
+    let one = aggregate(1, vec![placed(1.0, Some(2.0), clang(2))]);
     assert_eq!(one.body.relation(), Some(Relation::Simultaneous));
 
     // Successive: tiling contiguously, in any order of declaration.
-    let successive = set(
+    let successive = aggregate(
         1,
         vec![
-            placed(2.0, Some(2.0), event(3)),
-            placed(0.0, Some(2.0), event(2)),
+            placed(2.0, Some(2.0), clang(3)),
+            placed(0.0, Some(2.0), clang(2)),
         ],
     );
     assert_eq!(successive.body.relation(), Some(Relation::Successive));
 
     // A gap makes it mixed -- silence between two members is a relation, not a
     // rounding error.
-    let gap = set(
+    let gap = aggregate(
         1,
         vec![
-            placed(0.0, Some(1.0), event(2)),
-            placed(2.0, Some(1.0), event(3)),
+            placed(0.0, Some(1.0), clang(2)),
+            placed(2.0, Some(1.0), clang(3)),
         ],
     );
     assert_eq!(gap.body.relation(), Some(Relation::Mixed));
 
     // And a body that holds no members has no relation to report.
-    assert_eq!(event(1).body.relation(), None);
-    assert_eq!(set(1, vec![]).body.relation(), None);
+    assert_eq!(clang(1).body.relation(), None);
+    assert_eq!(aggregate(1, vec![]).body.relation(), None);
 }
 
 #[test]
 fn a_members_duration_falls_back_to_the_elements_own() {
     // The placement's `dur` trims; without one the element's own length is what
     // the relation reads, or the two would disagree about the same tiling.
-    let mut first = event(2);
+    let mut first = clang(2);
     first.duration = Some(2.0);
-    let mut second = event(3);
+    let mut second = clang(3);
     second.duration = Some(2.0);
-    let s = set(1, vec![placed(0.0, None, first), placed(2.0, None, second)]);
+    let s = aggregate(1, vec![placed(0.0, None, first), placed(2.0, None, second)]);
     assert_eq!(s.body.relation(), Some(Relation::Successive));
 }
 
@@ -226,13 +226,13 @@ fn a_members_duration_falls_back_to_the_elements_own() {
 fn placements_that_round_tripped_through_floats_still_read_as_simultaneous() {
     // The wire is f32 in places and beats are computed; an exact comparison
     // would call this mixed, which is the kind of thing that is only ever found
-    // by a user wondering why a group stopped being one.
+    // by a user wondering why an aggregate stopped being one.
     let drift = 0.1 + 0.2 - 0.3; // not exactly zero
-    let s = set(
+    let s = aggregate(
         1,
         vec![
-            placed(0.0, Some(4.0), event(2)),
-            placed(drift, Some(4.0 - drift), event(3)),
+            placed(0.0, Some(4.0), clang(2)),
+            placed(drift, Some(4.0 - drift), clang(3)),
         ],
     );
     assert_eq!(s.body.relation(), Some(Relation::Simultaneous));
@@ -240,12 +240,12 @@ fn placements_that_round_tripped_through_floats_still_read_as_simultaneous() {
 
 #[test]
 fn a_node_is_found_and_the_ids_in_use_are_known() {
-    let doc = Document::new(set(
+    let doc = Document::new(aggregate(
         1,
         vec![placed(
             0.0,
             None,
-            set(2, vec![placed(0.0, None, event(30))]),
+            aggregate(2, vec![placed(0.0, None, clang(30))]),
         )],
     ));
     assert_eq!(doc.find(NodeId(30)).map(|n| n.id), Some(NodeId(30)));
@@ -260,7 +260,7 @@ fn the_tree_carries_no_lane_and_no_vertical_position() {
     // The restriction belongs to the view: a multitrack lane is a projection.
     // If this ever fails it is because the model grew track-ness to make a view
     // easier to write, which is the one thing the shape is meant to refuse.
-    let json = serde_json::to_string(&set(1, vec![placed(0.0, None, event(2))])).unwrap();
+    let json = serde_json::to_string(&aggregate(1, vec![placed(0.0, None, clang(2))])).unwrap();
     for forbidden in ["track", "lane", "\"y\"", "row", "height"] {
         assert!(
             !json.contains(forbidden),
@@ -274,17 +274,17 @@ fn an_id_that_names_two_different_nodes_is_refused_at_the_door() {
     // The failure this rules out: an intent naming node 2 reaches whichever the
     // lookup finds first while the client that sent it keeps the other, so one
     // gesture writes two places and the picture springs back.
-    let doc = Document::new(set(
+    let doc = Document::new(aggregate(
         1,
         vec![
-            placed(0.0, None, event(2)),
-            placed(4.0, None, set(2, vec![])),
+            placed(0.0, None, clang(2)),
+            placed(4.0, None, aggregate(2, vec![])),
         ],
     ));
     let message = doc.duplicate_id().expect("a duplicate id");
     assert!(message.contains("node id 2"), "{message}");
-    assert!(message.contains("event"), "{message}");
-    assert!(message.contains("set"), "{message}");
+    assert!(message.contains("clang"), "{message}");
+    assert!(message.contains("aggregate"), "{message}");
 
     // And it is refused on the way in, which is the door every writer passes
     // through -- a client, a host, a file written by either.
@@ -298,9 +298,9 @@ fn one_element_placed_twice_is_carried_rather_than_refused() {
     // Ambiguous and consistent: which placement an intent names is an open
     // question with three answers, and refusing here would pick the one that
     // forbids it -- from inside a check about something else.
-    let doc = Document::new(set(
+    let doc = Document::new(aggregate(
         1,
-        vec![placed(0.0, None, event(2)), placed(4.0, None, event(2))],
+        vec![placed(0.0, None, clang(2)), placed(4.0, None, clang(2))],
     ));
     assert_eq!(doc.duplicate_id(), None);
     let json = serde_json::to_string(&doc).unwrap();
@@ -311,7 +311,7 @@ fn one_element_placed_twice_is_carried_rather_than_refused() {
 fn a_rendering_is_walked_for_ids_like_the_rest_of_the_tree() {
     // A generator's last rendered result is ordinary tree, so its nodes take
     // ids like any other and collide like any other.
-    let doc = Document::new(set(
+    let doc = Document::new(aggregate(
         1,
         vec![placed(
             0.0,
@@ -320,7 +320,7 @@ fn a_rendering_is_walked_for_ids_like_the_rest_of_the_tree() {
                 2,
                 Body::Generator {
                     config: Opaque::none(),
-                    rendered: Some(Box::new(set(3, vec![placed(0.0, None, event(2))]))),
+                    rendered: Some(Box::new(aggregate(3, vec![placed(0.0, None, clang(2))]))),
                 },
             ),
         )],
@@ -333,26 +333,27 @@ fn a_rendering_is_walked_for_ids_like_the_rest_of_the_tree() {
 fn a_name_is_a_label_that_survives_a_round_trip_and_addresses_nothing() {
     // The server's own rule for a group's name, taken rather than invented: the
     // id stays what an intent addresses, and the name says what the node is.
-    let doc = Document::new(set(1, vec![placed(0.0, None, event(2).named("kick"))]).named("drums"));
+    let doc =
+        Document::new(aggregate(1, vec![placed(0.0, None, clang(2).named("kick"))]).named("drums"));
     let back: Document = serde_json::from_str(&serde_json::to_string(&doc).unwrap()).unwrap();
     assert_eq!(back.root.name.as_deref(), Some("drums"));
     assert_eq!(back.find(NodeId(2)).unwrap().name.as_deref(), Some("kick"));
     // Nothing addresses by name, so an anonymous node is reachable exactly as
     // before -- and an anonymous one writes no key at all.
-    let anonymous = Document::new(set(1, vec![]));
+    let anonymous = Document::new(aggregate(1, vec![]));
     assert!(!serde_json::to_string(&anonymous).unwrap().contains("name"));
 }
 
 #[test]
-fn a_sets_own_restrictions_are_carried_and_never_read() {
-    // One set kind, and a view's restrictions are the writer's business: a
-    // multitrack's track is a set with restrictions, and this is how it gets
+fn an_aggregates_own_restrictions_are_carried_and_never_read() {
+    // One aggregate kind, and a view's restrictions are the writer's business: a
+    // multitrack's track is an aggregate with restrictions, and this is how it gets
     // back to the writer that had it without the tree growing track-ness.
     let node = Node::new(
         NodeId(1),
-        Body::Set {
+        Body::Aggregate {
             grouping: Grouping::Concrete,
-            members: vec![placed(0.0, None, event(2))],
+            members: vec![placed(0.0, None, clang(2))],
             config: Opaque(serde_json::json!({"form": "track"})),
         },
     );
@@ -360,8 +361,8 @@ fn a_sets_own_restrictions_are_carried_and_never_read() {
     let json = serde_json::to_string(&doc).unwrap();
     let back: Document = serde_json::from_str(&json).unwrap();
     assert_eq!(back, doc, "carried whole, byte for byte");
-    // And it is carried, not read: the typed tree still says only what a set
+    // And it is carried, not read: the typed tree still says only what an aggregate
     // is, and the relation is derived from the placements as it always was.
     assert_eq!(back.root.body.members().len(), 1);
-    assert!(matches!(back.root.body, Body::Set { .. }));
+    assert!(matches!(back.root.body, Body::Aggregate { .. }));
 }

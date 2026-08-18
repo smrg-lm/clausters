@@ -36,12 +36,12 @@
 //! Two properties the shape has to admit, because they belong to the
 //! arrangement rather than to the document: a generator's *code* is opaque but
 //! **its output is ordinary tree**, so nothing about being generated makes a
-//! subtree a second kind of thing; and an event may **reference** a generator
+//! subtree a second kind of thing; and a clang may **reference** a generator
 //! to fire it live, so the document expresses structure resolved at run time
 //! and not only at render time.
 //!
 //! Nothing derived is stored. The temporal character of a node and the temporal
-//! relation of a set are pure functions of what is already there
+//! relation of an aggregate are pure functions of what is already there
 //! ([`Node::character`], [`Body::relation`]), exactly as they are in the
 //! client, so no edit can leave them stale.
 
@@ -182,29 +182,29 @@ pub struct SegmentRef {
     pub duration: Beats,
 }
 
-/// How a [`Body::Set`]'s members relate to each other.
+/// How a [`Body::Aggregate`]'s members relate to each other.
 ///
-/// Named `Grouping` rather than `SetKind` because `kind` is the body's own
+/// Named `Grouping` rather than `AggregateKind` because `kind` is the body's own
 /// discriminant on the wire, and one word meaning two things in one object is
 /// how a format grows a bug nobody can read.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Grouping {
     /// The members relate **in time** — a section holding clips, a melody
-    /// holding note events. No processing relation.
+    /// holding note clangs. No processing relation.
     Concrete,
     /// The members relate by **processing or generation** — a bus-wired chain
     /// on the server, a generative dependency on the client.
     Logical,
 }
 
-/// One placed member of a [`Body::Set`]: an element, and where it sits.
+/// One placed member of a [`Body::Aggregate`]: an element, and where it sits.
 ///
-/// The offset is relative to the set that holds it, which is what makes the
+/// The offset is relative to the aggregate that holds it, which is what makes the
 /// recursion work — a subtree can be moved by moving one number.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Member {
-    /// Start, in beats, relative to the enclosing set.
+    /// Start, in beats, relative to the enclosing aggregate.
     pub offset: Beats,
     /// Length in beats, or the element's own when `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -219,16 +219,16 @@ pub struct Member {
 /// each names a way material can be organized rather than a widget or a file
 /// format:
 ///
-/// - [`Body::Event`] — parameters or actions that happen **together**. One or
-///   more, simultaneous. A punctual event (no duration) may reference a
+/// - [`Body::Clang`] — parameters or actions that happen **together**. One or
+///   more, simultaneous. A punctual clang (no duration) may reference a
 ///   generator and fire it live.
 /// - [`Body::Sequence`] — a **fixed, non-simultaneous** succession. It may
-///   contain sets, so a sequence of sections is a sequence.
-/// - [`Body::Buffer`] — a succession of data at **constant rate**: a vector.
+///   contain aggregates, so a sequence of sections is a sequence.
+/// - [`Body::Vector`] — a succession of data at **constant rate**.
 ///   [`Body::Segments`] is the same primitive assembled from several windows,
 ///   not a sixth kind.
 ///   Audio or control, and the only body that names material directly.
-/// - [`Body::Set`] — the **recursive container**. Its job is to group elements,
+/// - [`Body::Aggregate`] — the **recursive container**. Its job is to group elements,
 ///   of mixed kinds, and it is what a multitrack lane is a restricted
 ///   projection *of*.
 /// - [`Body::Generator`] — a **program that produces** any of the others,
@@ -241,11 +241,11 @@ pub struct Member {
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum Body {
     /// Simultaneous parameters or actions.
-    Event {
-        /// The event itself, in the client's terms.
+    Clang {
+        /// The clang itself, in the client's terms.
         #[serde(default, skip_serializing_if = "Opaque::is_empty")]
         config: Opaque,
-        /// The generator this event fires when it happens, if any — the
+        /// The generator this clang fires when it happens, if any — the
         /// reference that makes structure resolvable at run time rather than
         /// only at render time.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -262,10 +262,10 @@ pub enum Body {
         members: Vec<Member>,
     },
     /// Data at constant rate: a vector of samples or control values.
-    Buffer {
+    Vector {
         /// The material.
         source: SourceRef,
-        /// How this material is meant to sound — a buffer is *data*, so what
+        /// How this material is meant to sound — a vector is *data*, so what
         /// plays it (an instrument, its controls) is configuration, and
         /// configuration is the client's to interpret.
         #[serde(default, skip_serializing_if = "Opaque::is_empty")]
@@ -274,10 +274,10 @@ pub enum Body {
     /// Data at constant rate, assembled from **several windows**: which source,
     /// from which frame, for how long — read back to back as one thing.
     ///
-    /// It is the same primitive [`Body::Buffer`] is, over more than one piece
+    /// It is the same primitive [`Body::Vector`] is, over more than one piece
     /// of material: joining fragments of two files makes one, and cutting one
     /// apart gives back the windows it was made of. Nothing is copied, which is
-    /// the whole point — the segments are references, exactly as a buffer's own
+    /// the whole point — the segments are references, exactly as a vector's own
     /// is.
     Segments {
         /// The material, in reading order.
@@ -288,22 +288,22 @@ pub enum Body {
         config: Opaque,
     },
     /// The recursive container: elements of mixed kinds, placed.
-    Set {
+    Aggregate {
         /// Whether the members relate in time or by processing.
         grouping: Grouping,
         /// The placed members.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         members: Vec<Member>,
-        /// The writer's own restrictions on this set, carried and **never
+        /// The writer's own restrictions on this aggregate, carried and **never
         /// interpreted** — the same door a generator's code goes through.
         ///
-        /// There is one set kind here and there will go on being one: a
-        /// multitrack's track is *a set with the restrictions of a view*, and
+        /// There is one aggregate kind here and there will go on being one: a
+        /// multitrack's track is *an aggregate with the restrictions of a view*, and
         /// putting those restrictions in the tree is what the layer's own rule
         /// refuses ("the tree stays general; a view carries its own
-        /// restrictions"). But a writer that has such a set must be able to get
+        /// restrictions"). But a writer that has such an aggregate must be able to get
         /// it back, or a round trip through this format silently promotes a
-        /// track to a plain set and the piece reopens with a level of nesting
+        /// track to a plain aggregate and the piece reopens with a level of nesting
         /// nobody wrote. So the *restriction* travels as opaque configuration,
         /// exactly as a leaf's code does: the document knows something is
         /// there, and not what it means.
@@ -339,7 +339,7 @@ pub enum Body {
     Unknown(serde_json::Value),
 }
 
-/// How a set's members relate in time. Derived, never stored.
+/// How an aggregate's members relate in time. Derived, never stored.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Relation {
     /// Duration-only members tiling contiguously.
@@ -484,11 +484,11 @@ impl Body {
     /// message about a node says it is.
     pub fn kind(&self) -> &'static str {
         match self {
-            Body::Event { .. } => "event",
+            Body::Clang { .. } => "clang",
             Body::Sequence { .. } => "sequence",
-            Body::Buffer { .. } => "buffer",
+            Body::Vector { .. } => "vector",
             Body::Segments { .. } => "segments",
-            Body::Set { .. } => "set",
+            Body::Aggregate { .. } => "aggregate",
             Body::Generator { .. } => "generator",
             Body::Unknown(_) => "unknown",
         }
@@ -497,7 +497,7 @@ impl Body {
     /// The placed members, empty for the bodies that hold none.
     pub fn members(&self) -> &[Member] {
         match self {
-            Body::Set { members, .. } | Body::Sequence { members, .. } => members,
+            Body::Aggregate { members, .. } | Body::Sequence { members, .. } => members,
             _ => &[],
         }
     }
@@ -512,7 +512,7 @@ impl Body {
     /// [`Relation::Mixed`].
     pub fn relation(&self) -> Option<Relation> {
         let members = match self {
-            Body::Set { members, .. } | Body::Sequence { members, .. } => members,
+            Body::Aggregate { members, .. } | Body::Sequence { members, .. } => members,
             _ => return None,
         };
         if members.is_empty() {
@@ -686,7 +686,7 @@ impl Document {
 }
 
 /// Beats compare with a tolerance, since a placement round-trips through the
-/// wire's floats and an exact equality would call a simultaneous group mixed.
+/// wire's floats and an exact equality would call a simultaneous aggregate mixed.
 const EPSILON: Beats = 1e-9;
 
 fn close(a: Beats, b: Beats) -> bool {

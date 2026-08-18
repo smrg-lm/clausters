@@ -1075,7 +1075,7 @@ impl JsDocument {
             }
             None => clausters_document::Document::new(clausters_document::Node::new(
                 clausters_document::NodeId(1),
-                clausters_document::Body::Set {
+                clausters_document::Body::Aggregate {
                     grouping: clausters_document::Grouping::Concrete,
                     members: Vec::new(),
                     config: clausters_document::Opaque::none(),

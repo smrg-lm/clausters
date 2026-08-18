@@ -10,7 +10,7 @@ fn note(id: u64, offset: Beats) -> Member {
         dur: Some(1.0),
         node: Node::new(
             NodeId(id),
-            Body::Event {
+            Body::Clang {
                 config: Opaque(serde_json::json!({"midinote": 60 + id})),
                 fires: None,
             },

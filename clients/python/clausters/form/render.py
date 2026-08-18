@@ -1,6 +1,6 @@
 """Rendering — the *change of state* from the arrangement to sound.
 
-A concrete `Group` is rendered by **flattening** it: a tree-walk that
+A concrete `Aggregate` is rendered by **flattening** it: a tree-walk that
 accumulates the nested placement offsets into absolute beats, producing a flat
 `clausters.seq.Timeline` of items that each know how to `play(destination)`. That
 timeline is then played by a `clausters.seq.Playhead` — RT (timetagged bundles)
@@ -11,29 +11,30 @@ duplicating it.
 
 Scope of this phase (the concrete path):
 
-- `Group{concrete}` — flattened recursively; each member's ``offset`` (and
-  any nested group's) accumulates into the child's absolute beat.
+- `Aggregate{concrete}` — flattened recursively; each member's ``offset`` (and
+  any nested aggregate's) accumulates into the child's absolute beat.
 - `Track` — its `Timeline`'s items are shifted by the placement beat.
-- `Event` — placed as a single item at its beat.
+- `Clang` — placed as a single item at its beat.
 - `Sequence`/`Generator` wrapping an **event pattern** (a `Pbind`) — *bounced*
   in the same pass (its change of state); a `Sequence` of elements is laid out
   successively by their durations.
 - An **abstract** element (no onset/duration, no content) contributes context,
   not an event.
 
-A `Buffer` is *data*: it sounds through the **instrument** that plays it (a def
-whose ``buf`` control takes the buffer number), so a `Buffer` with an
+A `Vector` is *data*: it sounds through the **instrument** that plays it (a def
+whose ``buf`` control takes the buffer number), so a `Vector` with an
 ``instrument`` emits one event playing it — the audio clip — and one without
 contributes structure only. A `Segments` is the same rule over several windows:
 one event per segment, at its own offset inside the element, so material
-assembled from pieces of different buffers sounds continuous on one instrument. A `Group{logical}` takes the other path entirely (it
+assembled from pieces of different buffers sounds continuous on one instrument. An `Aggregate{logical}` takes the other path entirely (it
 becomes a `GraphDef`); instancing a bare def still needs an instrument of its own
 and raises a clear `NotImplementedError` here.
 """
 
 from ..defs.node import Group as NodeGroup
-from .group import CONCRETE, LOGICAL, Group
-from .element import Buffer, Element, Event, Generator, Segments, Sequence, Track
+from .aggregate import CONCRETE, LOGICAL, Aggregate
+from .element import (Element, Generator, Clang, Segments, Sequence, Track,
+                      Vector)
 
 
 def flatten(element, base: float = 0.0) -> list:
@@ -61,22 +62,22 @@ def render(element, destination, clock=None, *, at: float = 0.0, quant=None,
            ports=None):
     """Render ``element`` onto ``destination``.
 
-    A **concrete** element (a `Group`, `Track`, `Event`, …) is flattened to
+    A **concrete** element (an `Aggregate`, `Track`, `Clang`, …) is flattened to
     a timeline and played through a `Playhead` over ``clock`` — RT (start/run the
     clock) or NRT (`clock.render()` then ``destination.render()``, or
     `Session.render`), sample-identical; returns the `Playhead`.
 
-    A **logical** `Group` is translated to a `clausters.defs.GraphDef`, sent
+    A **logical** `Aggregate` is translated to a `clausters.defs.GraphDef`, sent
     (``/def_send graph``) and instanced (``/graph_new``, with ``ports`` overriding the
     surface defaults) on the `Server` ``destination``; returns the instance
     group. The seam is the destination, not the element.
     """
-    if isinstance(element, Group) and element.kind == LOGICAL:
+    if isinstance(element, Aggregate) and element.kind == LOGICAL:
         return render_logical(element, destination, ports=ports)
 
     from ..seq.timeline import Playhead
 
-    if not isinstance(element, Group) and element.wraps is None:
+    if not isinstance(element, Aggregate) and element.wraps is None:
         raise ValueError(
             "an abstract element (no content) is pure context; it has nothing to render"
         )
@@ -86,11 +87,11 @@ def render(element, destination, clock=None, *, at: float = 0.0, quant=None,
     return playhead
 
 
-def render_logical(group, server, *, ports=None):
-    """Send a logical group's `GraphDef` (`Group.to_graphdef`) and instance it on
-    ``server``. Returns the instance group (the handle from
-    `clausters.defs.Group.graph`)."""
-    gdef = group.to_graphdef()
+def render_logical(aggregate, server, *, ports=None):
+    """Send a logical aggregate's `GraphDef` (`Aggregate.to_graphdef`) and
+    instance it on ``server``. Returns the instance group — a node-tree group,
+    the handle from `clausters.defs.Group.graph`."""
+    gdef = aggregate.to_graphdef()
     gdef.send(server)
     return NodeGroup.graph(gdef.name, ports, server=server)
 
@@ -99,7 +100,7 @@ def render_logical(group, server, *, ports=None):
 
 def _emit(element, base: float, out: list, dur=None):
     """Flatten ``element`` at ``base``, honouring the **placement length** its
-    group gave it: a placement ``dur`` *trims* what the element plays (the DAW
+    aggregate gave it: a placement ``dur`` *trims* what the element plays (the DAW
     rule — a clip's length is what you hear of it), so events past the placement's
     end are dropped and a single-event element sounds for exactly that long. A
     placement with no length lets the element be its own."""
@@ -124,17 +125,17 @@ def _sized(item, dur: float):
 
 
 def _emit_element(element, base: float, out: list):
-    if isinstance(element, Group):
+    if isinstance(element, Aggregate):
         if element.kind != CONCRETE:
             raise NotImplementedError(
-                "a logical Group is rendered as a GraphDef, not flattened"
+                "a logical Aggregate is rendered as a GraphDef, not flattened"
             )
         for member in element.handles:
             _emit(member.element, base + member.offset, out, member.dur)
     elif isinstance(element, Track):
         for beat, item in element.wraps:
             out.append((base + beat, item))
-    elif isinstance(element, Event):
+    elif isinstance(element, Clang):
         out.append((base, element.wraps))
     elif isinstance(element, (Sequence, Generator)):
         _emit_sequence(element.wraps, base, out)
@@ -142,11 +143,11 @@ def _emit_element(element, base: float, out: list):
         # Several windows read as one thing: one event per segment, each at its
         # own offset inside the element and each carrying its own window, so
         # what sounds is continuous even though the material is not one buffer.
-        # Without an instrument it is structure, exactly as a `Buffer` is.
+        # Without an instrument it is structure, exactly as a `Vector` is.
         if element.instrument is not None:
             for offset, event in element.to_events():
                 out.append((base + offset, event))
-    elif isinstance(element, Buffer):
+    elif isinstance(element, Vector):
         # A buffer is data; the instrument is what makes it sound (a def whose
         # `buf` control plays it). Without one it is structure only — it draws in
         # the editor and contributes its extent, but emits no event.

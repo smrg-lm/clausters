@@ -1,7 +1,7 @@
 # The multitrack editor: the arrangement on screen
 
 `Editor` draws the song tree as a multitrack window — one lane per member of
-the root group, each holding its members as clips on one shared time axis —
+the root aggregate, each holding its members as clips on one shared time axis —
 and, on the next page, applies the window's edits back onto that tree. It is
 the one module that knows both worlds: `clausters.form` never imports the GUI.
 
@@ -30,30 +30,30 @@ bottom one. What each argument fixed:
 
 The mapping from the tree to the window is one rule, not a heuristic per case:
 
-- the **root group's members are the lanes** — top to bottom, in order;
+- the **root aggregate's members are the lanes** — top to bottom, in order;
 - a **lane's members are its clips**, at their placements on the shared axis;
-- a **`Buffer` clip draws its take**: the clip names the server buffer, and
+- a **`Vector` clip draws its take**: the clip names the server buffer, and
   the host fetches it and decimates it to the clip's pixel width — a long
   take costs nothing on the wire;
 - an **element of events draws a piano-roll**: each note a bar, high pitches
   up. The bass lane shows its notes too — the *pattern was bounced to draw
   it*, the same change of state that rendering performs, now on screen: a
   generator lane shows the notes it is about to play;
-- a **group nested inside a lane draws as a labeled rectangle** — its summary
-  — until you expand it. (The root's members are already lanes; the rule is
+- an **aggregate nested inside a lane draws as a labeled rectangle** — its
+  summary — until you expand it. (The root's members are already lanes; the rule is
   about the level below them.)
 
-That last rule is the arrangement's **base level** — the zoom that summarizes a
-group or resolves it — and it is an editor call, not a protocol. The piece has
-no nested group yet, so make one — a two-note fill dropped into the lead lane
-— and watch each step in the window:
+That last rule is the arrangement's **base level** — the zoom that summarizes
+an aggregate or resolves it — and it is an editor call, not a protocol. The
+piece has no nested aggregate yet, so make one — a two-note fill dropped into
+the lead lane — and watch each step in the window:
 
 ```python
-from clausters.form import Event, Group
+from clausters.form import Aggregate, Clang
 from clausters.seq.event import Event as SeqEvent
 
-fill = Group([(0.0, Event(SeqEvent(midinote=84, dur=0.5))),
-              (0.5, Event(SeqEvent(midinote=88, dur=0.5)))], name="fill")
+fill = Aggregate([(0.0, Clang(SeqEvent(midinote=84, dur=0.5))),
+                  (0.5, Clang(SeqEvent(midinote=88, dur=0.5)))], name="fill")
 handle = lead_lane.add(fill, offset=6.0)
 editor.update()          # a structural change: push the re-rendered tree
 ```
@@ -78,7 +78,7 @@ editor.update()
 ```
 
 `update()` is a whole-tree redefine — the honest way to show a *structural*
-change (an element added or removed, a group expanded). You will use it again
+change (an element added or removed, an aggregate expanded). You will use it again
 on the automation page when the piece grows a lane. A mere placement change
 needs no redefine: when you drag a clip, the host already moved it.
 

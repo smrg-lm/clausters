@@ -10,7 +10,7 @@ const FPB: f64 = 48_000.0;
 fn take(id: u64, source: u64, trim: Option<Range>) -> Node {
     Node::new(
         NodeId(id),
-        Body::Buffer {
+        Body::Vector {
             source: SourceRef {
                 source: SourceId(source),
                 lifetime: Lifetime::External,
@@ -26,10 +26,10 @@ fn placed(offset: Beats, dur: Option<Beats>, node: Node) -> Member {
     Member { offset, dur, node }
 }
 
-fn set(members: Vec<Member>) -> Node {
+fn aggregate(members: Vec<Member>) -> Node {
     Node::new(
         NodeId(1),
-        Body::Set {
+        Body::Aggregate {
             grouping: Grouping::Concrete,
             members,
             config: Opaque::none(),
@@ -41,7 +41,7 @@ fn set(members: Vec<Member>) -> Node {
 /// 480 000 (ten beats in) -- so placement and trim are different numbers and a
 /// test cannot pass by confusing them.
 fn one_clip() -> Document {
-    Document::new(set(vec![placed(
+    Document::new(aggregate(vec![placed(
         2.0,
         Some(4.0),
         take(
@@ -157,12 +157,12 @@ fn a_selection_that_misses_the_clip_resolves_to_nothing() {
 
 // ---- more than one element ----
 
-/// Two takes, in a group placed at beat 10 -- so a nested base has to be
+/// Two takes, in an aggregate placed at beat 10 -- so a nested base has to be
 /// accumulated or the whole thing lands ten beats early.
 fn nested() -> Document {
     let inner = Node::new(
         NodeId(10),
-        Body::Set {
+        Body::Aggregate {
             grouping: Grouping::Concrete,
             members: vec![
                 placed(0.0, Some(2.0), take(11, 100, None)),
@@ -171,7 +171,7 @@ fn nested() -> Document {
             config: Opaque::none(),
         },
     );
-    Document::new(set(vec![placed(10.0, None, inner)]))
+    Document::new(aggregate(vec![placed(10.0, None, inner)]))
 }
 
 #[test]
@@ -228,9 +228,9 @@ fn asking_about_one_element_gives_that_elements_span() {
 
 #[test]
 fn an_element_with_no_material_is_skipped_rather_than_reported() {
-    // A group and a generator are in the way of the selection, not underneath
+    // An aggregate and a generator are in the way of the selection, not underneath
     // it. The caller asked what is underneath.
-    let document = Document::new(set(vec![
+    let document = Document::new(aggregate(vec![
         placed(
             0.0,
             Some(4.0),
@@ -257,7 +257,7 @@ fn an_element_with_no_material_is_skipped_rather_than_reported() {
 fn a_placement_with_no_length_takes_it_from_the_trim() {
     // A clip dropped without an explicit length reads what its trim says, which
     // is the only other thing that knows how long it is.
-    let document = Document::new(set(vec![placed(
+    let document = Document::new(aggregate(vec![placed(
         0.0,
         None,
         take(
@@ -288,7 +288,7 @@ fn a_placement_with_no_length_takes_it_from_the_trim() {
 fn a_placement_with_neither_a_length_nor_a_trim_gives_no_span() {
     // There is nothing to bound the read with, and guessing "the whole file"
     // would be an operation reading material the composition never used.
-    let document = Document::new(set(vec![placed(0.0, None, take(2, 100, None))]));
+    let document = Document::new(aggregate(vec![placed(0.0, None, take(2, 100, None))]));
     assert!(
         resolve(
             &document,

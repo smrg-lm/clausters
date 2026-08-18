@@ -41,7 +41,7 @@
 //! An absolute intent needs no rebase — that is what makes it absolute — but it
 //! still needs to know whether the document moved underneath the picture it was
 //! made against, because "absolute" and "safe" are not the same thing: a
-//! [`Intent::SetMembers`] states a set's contents *whole*, so one made against a
+//! [`Intent::SetMembers`] states an aggregate's contents *whole*, so one made against a
 //! stale picture silently deletes whatever arrived in between. The document can
 //! move by routes that are not gestures at all — a script editing the
 //! arrangement, a second editor, a re-render — and none of them is visible to a
@@ -101,8 +101,8 @@ impl Rules {
 ///
 /// The two counters, named by whoever is proposing the edit. They are separate
 /// because they answer different questions and one number cannot do both: the
-/// **document version** moves when the description changes (a clip is placed, a
-/// set is rewritten), the **source generation** moves when material's *content*
+/// **document version** moves when the description changes (a clip is placed, an
+/// aggregate is rewritten), the **source generation** moves when material's *content*
 /// changes while its identity stays put (a pencil stroke). A reader that holds
 /// no document at all — a waveform view over one source — can name a generation
 /// and nothing else, which is why the generation is optional rather than a
@@ -150,7 +150,7 @@ impl Against {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "intent", rename_all = "lowercase")]
 pub enum Intent {
-    /// Where a node sits inside the set that holds it.
+    /// Where a node sits inside the aggregate that holds it.
     ///
     /// The node names itself rather than its index, so a placement survives its
     /// siblings moving — which is what an edit made against a picture drawn a
@@ -175,13 +175,13 @@ pub enum Intent {
         /// Its configuration, replacing whatever was there.
         config: Opaque,
     },
-    /// What a set contains now, whole.
+    /// What an aggregate contains now, whole.
     ///
     /// The roll's edit: notes added, moved and removed arrive as the resulting
     /// list. Members keep their ids, so what survived an edit is still the same
     /// node to a log and to a view.
     SetMembers {
-        /// The set being rewritten.
+        /// The aggregate being rewritten.
         node: NodeId,
         /// Its members, in whatever order the owner keeps them.
         members: Vec<Member>,
@@ -388,7 +388,7 @@ pub(crate) fn current(document: &Document, intent: &Intent) -> Option<Intent> {
         Intent::SetMembers { .. } => {
             let node = document.find(id)?;
             match &node.body {
-                Body::Set { members, .. } | Body::Sequence { members, .. } => {
+                Body::Aggregate { members, .. } | Body::Sequence { members, .. } => {
                     Some(Intent::SetMembers {
                         node: id,
                         members: members.clone(),
@@ -402,7 +402,7 @@ pub(crate) fn current(document: &Document, intent: &Intent) -> Option<Intent> {
         // generation in the acknowledgement is what tells the caller to re-read.
         Intent::WriteSamples { channel, start, .. } => {
             let node = document.find(id)?;
-            matches!(node.body, Body::Buffer { .. }).then_some(Intent::WriteSamples {
+            matches!(node.body, Body::Vector { .. }).then_some(Intent::WriteSamples {
                 node: id,
                 channel: *channel,
                 start: *start,
@@ -415,7 +415,7 @@ pub(crate) fn current(document: &Document, intent: &Intent) -> Option<Intent> {
 /// The generation of the material a node names, for the nodes that name any.
 fn generation(document: &Document, id: NodeId) -> Option<u64> {
     match &document.find(id)?.body {
-        Body::Buffer { source, .. } => Some(source.generation),
+        Body::Vector { source, .. } => Some(source.generation),
         // Assembled material is as fresh as its **stalest** piece: an edit made
         // against it was made against every window it shows, so any one of them
         // being rewritten is what a staleness check has to catch.
@@ -558,7 +558,7 @@ fn write_samples(
     let Some(node) = find_mut(&mut document.root, id) else {
         return refuse("no such node");
     };
-    let Body::Buffer { source, .. } = &mut node.body else {
+    let Body::Vector { source, .. } = &mut node.body else {
         return refuse("only material can be written");
     };
     if values.is_empty() {
@@ -596,12 +596,12 @@ fn find_member(node: &Node, id: NodeId) -> Option<&Member> {
 
 fn config(body: &Body) -> Option<&Opaque> {
     match body {
-        Body::Event { config, .. }
+        Body::Clang { config, .. }
         | Body::Sequence { config, .. }
-        | Body::Buffer { config, .. }
+        | Body::Vector { config, .. }
         | Body::Segments { config, .. }
         | Body::Generator { config, .. } => Some(config),
-        Body::Set { .. } | Body::Unknown(_) => None,
+        Body::Aggregate { .. } | Body::Unknown(_) => None,
     }
 }
 
@@ -626,19 +626,19 @@ fn find_member_mut(node: &mut Node, id: NodeId) -> Option<&mut Member> {
 
 fn members_mut(body: &mut Body) -> Option<&mut Vec<Member>> {
     match body {
-        Body::Set { members, .. } | Body::Sequence { members, .. } => Some(members),
+        Body::Aggregate { members, .. } | Body::Sequence { members, .. } => Some(members),
         _ => None,
     }
 }
 
 fn config_mut(body: &mut Body) -> Option<&mut Opaque> {
     match body {
-        Body::Event { config, .. }
+        Body::Clang { config, .. }
         | Body::Sequence { config, .. }
-        | Body::Buffer { config, .. }
+        | Body::Vector { config, .. }
         | Body::Segments { config, .. }
         | Body::Generator { config, .. } => Some(config),
-        Body::Set { .. } | Body::Unknown(_) => None,
+        Body::Aggregate { .. } | Body::Unknown(_) => None,
     }
 }
 

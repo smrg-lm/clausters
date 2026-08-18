@@ -11,7 +11,7 @@ the crate's own log and saves it back. No Python anywhere in that loop.
 
 What it shows, in the order the cells run:
 
-- **Writing one.** An arrangement built the ordinary way (`Group`, `Track`,
+- **Writing one.** An arrangement built the ordinary way (`Aggregate`, `Track`,
   `Timeline`) becomes a session with `to_session` — the same call
   `gui_composer.py` makes when it saves.
 - **Handing it over.** The command to open it in the standalone host is printed
@@ -67,7 +67,7 @@ import subprocess
 import sys
 import wave
 
-from clausters.form import Buffer, Group, Track
+from clausters.form import Aggregate, Track, Vector
 from clausters.form.document import FrozenSource, from_session, to_session
 from clausters.seq import Timeline
 from clausters.seq.event import Event as SeqEvent
@@ -77,8 +77,8 @@ SAMPLE_RATE = 48_000
 # %% [markdown]
 # ## An arrangement, built the ordinary way
 #
-# Nothing here knows about sessions or hosts: it is the same `Group` of `Track`s
-# any other example builds. Two lanes, so the window has two to draw.
+# Nothing here knows about sessions or hosts: it is the same `Aggregate` of
+# `Track`s any other example builds. Two lanes, so the window has two to draw.
 
 # %%
 melody = Track(Timeline([
@@ -140,7 +140,7 @@ take_frames = write_take(take_path)
 #: document reader hands back for a source it has not resolved to a live server
 #: buffer, and it is exactly what writing one from a file needs — the id, and
 #: the table beside it.
-take = Buffer(FrozenSource({"source": 1, "lifetime": "session"}),
+take = Vector(FrozenSource({"source": 1, "lifetime": "session"}),
               duration=take_frames / SAMPLE_RATE)
 
 #: Where source 1 is. A **relative** path, resolved against the session file's
@@ -156,10 +156,10 @@ sources = {
     },
 }
 
-piece = Group([
-    (0.0, Group([(0.0, melody)], name="melody")),
-    (0.0, Group([(0.0, bass)], name="bass")),
-    (1.0, Group([(0.0, take)], name="take")),
+piece = Aggregate([
+    (0.0, Aggregate([(0.0, melody)], name="melody")),
+    (0.0, Aggregate([(0.0, bass)], name="bass")),
+    (1.0, Aggregate([(0.0, take)], name="take")),
 ], name="piece")
 
 # %% [markdown]

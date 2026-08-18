@@ -120,10 +120,9 @@ def test_render_bounces_a_timeline():
 
 def test_render_bounces_an_arrangement_element():
     _embed_or_skip()
-    from clausters.form import Event as FormEvent
+    from clausters.form import Clang
 
-    _st4 = render(FormEvent(Event(degree=0, dur=0.5)),
-                             sample_rate=SR)
+    _st4 = render(Clang(Event(degree=0, dur=0.5)), sample_rate=SR)
     samples, frames = _st4.samples, _st4.frames
     assert frames > 0.3 * SR
 

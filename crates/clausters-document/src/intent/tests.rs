@@ -5,10 +5,10 @@
 use super::*;
 use crate::{Grouping, Lifetime, SourceId, SourceRef};
 
-fn event(id: u64) -> Node {
+fn clang(id: u64) -> Node {
     Node::new(
         NodeId(id),
-        Body::Event {
+        Body::Clang {
             config: Opaque::none(),
             fires: None,
         },
@@ -26,9 +26,9 @@ fn placed(offset: Beats, node: Node) -> Member {
 fn doc() -> Document {
     Document::new(Node::new(
         NodeId(1),
-        Body::Set {
+        Body::Aggregate {
             grouping: Grouping::Concrete,
-            members: vec![placed(0.0, event(2)), placed(4.0, event(3))],
+            members: vec![placed(0.0, clang(2)), placed(4.0, clang(3))],
             config: Opaque::none(),
         },
     ))
@@ -153,7 +153,7 @@ fn a_refusal_hands_back_the_previous_value_rather_than_an_error() {
         &mut d,
         &Intent::SetMembers {
             node: NodeId(1),
-            members: vec![placed(2.0, event(9))],
+            members: vec![placed(2.0, clang(9))],
         },
         &Against::unstated(),
         &Rules::none(),
@@ -208,7 +208,7 @@ fn every_intent_is_absolute_and_reports_an_effective_value() {
         },
         Intent::SetMembers {
             node: NodeId(1),
-            members: vec![placed(0.0, event(2))],
+            members: vec![placed(0.0, clang(2))],
         },
         Intent::WriteSamples {
             node: NodeId(2),
@@ -260,8 +260,8 @@ fn a_configuration_is_replaced_whole_rather_than_patched() {
         &Rules::none(),
     );
     assert!(outcome.applied);
-    let Body::Event { config: now, .. } = &d.find(NodeId(2)).unwrap().body else {
-        panic!("not an event")
+    let Body::Clang { config: now, .. } = &d.find(NodeId(2)).unwrap().body else {
+        panic!("not a clang")
     };
     assert_eq!(
         now.0,
@@ -293,7 +293,7 @@ fn a_transposition_travels_as_the_pitch_it_became() {
 }
 
 #[test]
-fn a_set_keeps_the_ids_of_the_members_that_survived_an_edit() {
+fn an_aggregate_keeps_the_ids_of_the_members_that_survived_an_edit() {
     // A roll edit arrives as the resulting list. What was already there has to
     // come out the same node, or a log would invert the wrong one and a view
     // would redraw something it never had.
@@ -302,7 +302,7 @@ fn a_set_keeps_the_ids_of_the_members_that_survived_an_edit() {
         &mut d,
         &Intent::SetMembers {
             node: NodeId(1),
-            members: vec![placed(1.0, event(3)), placed(2.0, event(7))],
+            members: vec![placed(1.0, clang(3)), placed(2.0, clang(7))],
         },
         &Against::unstated(),
         &Rules::none(),
@@ -319,7 +319,7 @@ fn writing_material_bumps_the_sources_generation_and_not_the_samples() {
     // writing the samples is the owner's next step, against the working buffer.
     let mut d = Document::new(Node::new(
         NodeId(1),
-        Body::Buffer {
+        Body::Vector {
             source: SourceRef {
                 source: SourceId(4),
                 lifetime: Lifetime::Temporary,
@@ -341,7 +341,7 @@ fn writing_material_bumps_the_sources_generation_and_not_the_samples() {
         &Rules::none(),
     );
     assert!(outcome.applied);
-    let Body::Buffer { source, .. } = &d.root.body else {
+    let Body::Vector { source, .. } = &d.root.body else {
         panic!()
     };
     assert_eq!(source.generation, 3);
@@ -386,15 +386,15 @@ fn an_intent_round_trips_through_the_wire_form() {
 fn a_nested_node_is_reached_wherever_it_sits() {
     let mut d = Document::new(Node::new(
         NodeId(1),
-        Body::Set {
+        Body::Aggregate {
             grouping: Grouping::Concrete,
             members: vec![placed(
                 0.0,
                 Node::new(
                     NodeId(2),
-                    Body::Set {
+                    Body::Aggregate {
                         grouping: Grouping::Concrete,
-                        members: vec![placed(0.0, event(3))],
+                        members: vec![placed(0.0, clang(3))],
                         config: Opaque::none(),
                     },
                 ),
@@ -418,11 +418,11 @@ fn a_nested_node_is_reached_wherever_it_sits() {
 
 // ---- O4: the version, and staleness ----
 
-/// A buffer node at a known generation, for the destructive-edit cases.
+/// A vector node at a known generation, for the destructive-edit cases.
 fn material(generation: u64) -> Document {
     Document::new(Node::new(
         NodeId(1),
-        Body::Buffer {
+        Body::Vector {
             source: SourceRef {
                 source: SourceId(4),
                 lifetime: Lifetime::Temporary,
@@ -505,7 +505,7 @@ fn a_stale_rewrite_does_not_delete_what_arrived_in_between() {
     let mut d = doc();
     let seen = d.version;
     let mut grown: Vec<Member> = d.root.members().to_vec();
-    grown.push(placed(9.0, event(7)));
+    grown.push(placed(9.0, clang(7)));
     apply(
         &mut d,
         &Intent::SetMembers {
@@ -521,7 +521,7 @@ fn a_stale_rewrite_does_not_delete_what_arrived_in_between() {
         &mut d,
         &Intent::SetMembers {
             node: NodeId(1),
-            members: vec![placed(1.0, event(2)), placed(4.0, event(3))],
+            members: vec![placed(1.0, clang(2)), placed(4.0, clang(3))],
         },
         &Against::at(seen),
         &Rules::none(),

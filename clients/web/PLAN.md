@@ -1321,6 +1321,19 @@ the MIDI half of `responders.py` (**W9** — its OSC half is ported),
 `_cli.py`, `config.py`, `_midi.py`, `_libpath.py`), which is a process-shaped
 surface a page has no counterpart for.
 
+**The names the arrangement's port must use, decided on the Python side
+2026-08-18 rather than re-derived here.** The three primitives that collided
+with something else were renamed at every end at once, so a TypeScript port
+starts from the new vocabulary and never has to migrate: `Clang` (was `Event`,
+which the arrangement's element and `clausters.seq.Event` both answered to),
+`Vector` (was `Buffer`, the name of the server resource it wraps) and
+`Aggregate` (was `Group`, which is scsynth's node-tree group). The `kind`
+strings of the saved format moved with them - `"clang"`, `"vector"`,
+`"aggregate"` - so `document-vectors.json` already carries them and a port that
+spells one the old way fails the parity suite rather than drifting. The rationale
+is in `docs/decisions.md`; `grouping`, `Sequence`, `Segments`, `Track` and
+`Generator` are unchanged.
+
 **The shape the arrangement's port must follow on the clip, decided on the
 Python side 2026-08-18 rather than re-derived here.** The `clip` builder already
 carries the props (`start`, `loop`, `fit`, `layer`, `hidden` — the props test

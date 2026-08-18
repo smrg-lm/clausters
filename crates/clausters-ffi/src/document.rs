@@ -144,7 +144,7 @@ pub unsafe extern "C" fn clausters_document_open(json: *const u8, len: usize) ->
         },
         None => Document::new(Node::new(
             NodeId(1),
-            Body::Set {
+            Body::Aggregate {
                 grouping: Grouping::Concrete,
                 members: Vec::new(),
                 config: Opaque::none(),
@@ -413,8 +413,8 @@ pub unsafe extern "C" fn clausters_document_resolve(
 mod tests {
     use super::*;
 
-    const DOC: &str = r#"{"version":1,"root":{"id":1,"kind":"set","grouping":"concrete",
-        "members":[{"offset":0.0,"node":{"id":2,"kind":"event"}}]}}"#;
+    const DOC: &str = r#"{"version":1,"root":{"id":1,"kind":"aggregate","grouping":"concrete",
+        "members":[{"offset":0.0,"node":{"id":2,"kind":"clang"}}]}}"#;
 
     /// A handle that frees itself, so a failing assertion does not leak.
     struct Doc(*mut FfiDocument);
@@ -598,7 +598,7 @@ mod tests {
     #[test]
     fn a_sizing_pass_over_a_destructive_write_edits_nothing_either() {
         let doc = Doc::new(
-            r#"{"version":1,"root":{"id":1,"kind":"buffer",
+            r#"{"version":1,"root":{"id":1,"kind":"vector",
             "source":{"source":7,"lifetime":"temporary","generation":4}}}"#,
         );
         let intent = r#"{"intent":"writesamples","node":1,"start":0,"values":[0.5,0.5]}"#;
@@ -676,8 +676,8 @@ mod tests {
     #[test]
     fn a_selection_resolves_across_the_abi() {
         let doc = Doc::new(
-            r#"{"version":1,"root":{"id":1,"kind":"set","grouping":"concrete",
-            "members":[{"offset":2.0,"dur":4.0,"node":{"id":2,"kind":"buffer",
+            r#"{"version":1,"root":{"id":1,"kind":"aggregate","grouping":"concrete",
+            "members":[{"offset":2.0,"dur":4.0,"node":{"id":2,"kind":"vector",
             "source":{"source":100,"lifetime":"external","generation":2,
             "range":{"start":480000,"end":672000}}}}]}}"#,
         );

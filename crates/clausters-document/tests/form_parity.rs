@@ -42,21 +42,21 @@ fn the_arrangements_bodies_all_arrive_as_themselves() {
     let doc = vector();
     let members = doc.root.members();
 
-    // A set of one of everything, in the order the generator places them.
+    // An aggregate of one of everything, in the order the generator places them.
     assert!(matches!(
         doc.root.body,
-        Body::Set {
+        Body::Aggregate {
             grouping: Grouping::Concrete,
             ..
         }
     ));
-    assert!(matches!(members[0].node.body, Body::Event { .. }));
-    assert!(matches!(members[1].node.body, Body::Set { .. })); // the track
-    assert!(matches!(members[2].node.body, Body::Buffer { .. }));
+    assert!(matches!(members[0].node.body, Body::Clang { .. }));
+    assert!(matches!(members[1].node.body, Body::Aggregate { .. })); // the track
+    assert!(matches!(members[2].node.body, Body::Vector { .. }));
     assert!(matches!(members[3].node.body, Body::Sequence { .. }));
     assert!(matches!(
         members[4].node.body,
-        Body::Set {
+        Body::Aggregate {
             grouping: Grouping::Logical,
             ..
         }
@@ -65,7 +65,7 @@ fn the_arrangements_bodies_all_arrive_as_themselves() {
 }
 
 #[test]
-fn a_track_arrives_as_a_set_whose_notes_are_placed_nodes() {
+fn a_track_arrives_as_an_aggregate_whose_notes_are_placed_nodes() {
     // Decision A, seen from the other side: a note is an addressable node with
     // an id, which is what will let an intent name it and a log invert it.
     let doc = vector();
@@ -74,8 +74,8 @@ fn a_track_arrives_as_a_set_whose_notes_are_placed_nodes() {
     assert_eq!(notes.len(), 2);
     assert_eq!(notes[0].offset, 0.0);
     assert_eq!(notes[1].offset, 1.5);
-    let Body::Event { config, .. } = &notes[0].node.body else {
-        panic!("not an event")
+    let Body::Clang { config, .. } = &notes[0].node.body else {
+        panic!("not a clang")
     };
     assert_eq!(config.0["midinote"], 64);
     assert_ne!(notes[0].node.id, notes[1].node.id);
@@ -104,12 +104,12 @@ fn a_resident_generator_arrives_unlocatable() {
 #[test]
 fn material_arrives_with_its_lifetime() {
     let doc = vector();
-    let Body::Buffer { source, config } = &doc.root.members()[2].node.body else {
-        panic!("not a buffer")
+    let Body::Vector { source, config } = &doc.root.members()[2].node.body else {
+        panic!("not a vector")
     };
     assert_eq!(source.source, SourceId(7));
     assert_eq!(source.lifetime, Lifetime::Session);
-    // A buffer is data; what plays it is configuration, and configuration is
+    // A vector is data; what plays it is configuration, and configuration is
     // the client's to interpret.
     assert_eq!(config.0["instrument"], "take");
 }
@@ -151,7 +151,7 @@ fn a_generators_last_rendered_result_crosses_as_ordinary_tree() {
     let rendered = generator.rendered().unwrap();
     assert_eq!(rendered.duration, Some(2.0));
     assert_eq!(rendered.members().len(), 2);
-    assert!(matches!(rendered.body, Body::Set { .. }));
+    assert!(matches!(rendered.body, Body::Aggregate { .. }));
 
     // And a reader walks into it: an id inside a rendering is reachable and
     // counted, so a client continuing to allocate cannot collide with one.

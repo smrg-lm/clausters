@@ -66,7 +66,7 @@ loaders:
       - clausters.defs.clocksync
       - clausters.form
       - clausters.form.element
-      - clausters.form.group
+      - clausters.form.aggregate
       - clausters.form.render
       - clausters.gui
       - clausters.gui.guidef

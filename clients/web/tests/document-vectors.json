@@ -3,7 +3,7 @@
     "version": 1,
     "root": {
       "id": 1,
-      "kind": "set",
+      "kind": "aggregate",
       "grouping": "concrete",
       "members": [
         {
@@ -11,7 +11,7 @@
           "node": {
             "id": 2,
             "duration": 1.0,
-            "kind": "event",
+            "kind": "clang",
             "config": {
               "type": "note",
               "instrument": "default",
@@ -42,7 +42,7 @@
           "offset": 2.0,
           "node": {
             "id": 3,
-            "kind": "buffer",
+            "kind": "vector",
             "source": {
               "source": 100,
               "lifetime": "session",
@@ -58,7 +58,7 @@
           "offset": 8.0,
           "node": {
             "id": 4,
-            "kind": "set",
+            "kind": "aggregate",
             "grouping": "concrete",
             "members": [
               {
@@ -66,7 +66,7 @@
                 "node": {
                   "id": 5,
                   "duration": 0.5,
-                  "kind": "event",
+                  "kind": "clang",
                   "config": {
                     "type": "note",
                     "instrument": "default",
@@ -116,7 +116,7 @@
         "version": 2,
         "root": {
           "id": 1,
-          "kind": "set",
+          "kind": "aggregate",
           "grouping": "concrete",
           "members": [
             {
@@ -124,7 +124,7 @@
               "node": {
                 "id": 2,
                 "duration": 1.0,
-                "kind": "event",
+                "kind": "clang",
                 "config": {
                   "add_action": 1,
                   "amp": 0.1,
@@ -155,7 +155,7 @@
               "dur": 4.0,
               "node": {
                 "id": 3,
-                "kind": "buffer",
+                "kind": "vector",
                 "source": {
                   "source": 100,
                   "lifetime": "session",
@@ -171,7 +171,7 @@
               "dur": 2.0,
               "node": {
                 "id": 4,
-                "kind": "set",
+                "kind": "aggregate",
                 "grouping": "concrete",
                 "members": [
                   {
@@ -180,7 +180,7 @@
                     "node": {
                       "id": 5,
                       "duration": 0.5,
-                      "kind": "event",
+                      "kind": "clang",
                       "config": {
                         "add_action": 1,
                         "amp": 0.1,
@@ -238,7 +238,7 @@
         "version": 3,
         "root": {
           "id": 1,
-          "kind": "set",
+          "kind": "aggregate",
           "grouping": "concrete",
           "members": [
             {
@@ -246,7 +246,7 @@
               "node": {
                 "id": 2,
                 "duration": 1.0,
-                "kind": "event",
+                "kind": "clang",
                 "config": {
                   "add_action": 1,
                   "amp": 0.1,
@@ -277,7 +277,7 @@
               "dur": 4.0,
               "node": {
                 "id": 3,
-                "kind": "buffer",
+                "kind": "vector",
                 "source": {
                   "source": 100,
                   "lifetime": "session",
@@ -293,7 +293,7 @@
               "dur": 2.0,
               "node": {
                 "id": 4,
-                "kind": "set",
+                "kind": "aggregate",
                 "grouping": "concrete",
                 "members": [
                   {
@@ -302,7 +302,7 @@
                     "node": {
                       "id": 5,
                       "duration": 0.5,
-                      "kind": "event",
+                      "kind": "clang",
                       "config": {
                         "add_action": 1,
                         "amp": 0.1,
@@ -361,7 +361,7 @@
         "version": 4,
         "root": {
           "id": 1,
-          "kind": "set",
+          "kind": "aggregate",
           "grouping": "concrete",
           "members": [
             {
@@ -369,7 +369,7 @@
               "node": {
                 "id": 2,
                 "duration": 1.0,
-                "kind": "event",
+                "kind": "clang",
                 "config": {
                   "add_action": 1,
                   "amp": 0.1,
@@ -400,7 +400,7 @@
               "dur": 4.0,
               "node": {
                 "id": 3,
-                "kind": "buffer",
+                "kind": "vector",
                 "source": {
                   "source": 100,
                   "lifetime": "session",
@@ -416,7 +416,7 @@
               "dur": 3.0,
               "node": {
                 "id": 4,
-                "kind": "set",
+                "kind": "aggregate",
                 "grouping": "concrete",
                 "members": [
                   {
@@ -425,7 +425,7 @@
                     "node": {
                       "id": 5,
                       "duration": 0.5,
-                      "kind": "event",
+                      "kind": "clang",
                       "config": {
                         "add_action": 1,
                         "amp": 0.1,
@@ -487,7 +487,7 @@
         "version": 5,
         "root": {
           "id": 1,
-          "kind": "set",
+          "kind": "aggregate",
           "grouping": "concrete",
           "members": [
             {
@@ -495,7 +495,7 @@
               "node": {
                 "id": 2,
                 "duration": 1.0,
-                "kind": "event",
+                "kind": "clang",
                 "config": {
                   "amp": 0.4,
                   "midinote": 72
@@ -507,7 +507,7 @@
               "dur": 4.0,
               "node": {
                 "id": 3,
-                "kind": "buffer",
+                "kind": "vector",
                 "source": {
                   "source": 100,
                   "lifetime": "session",
@@ -523,7 +523,7 @@
               "dur": 3.0,
               "node": {
                 "id": 4,
-                "kind": "set",
+                "kind": "aggregate",
                 "grouping": "concrete",
                 "members": [
                   {
@@ -532,7 +532,7 @@
                     "node": {
                       "id": 5,
                       "duration": 0.5,
-                      "kind": "event",
+                      "kind": "clang",
                       "config": {
                         "add_action": 1,
                         "amp": 0.1,
@@ -593,7 +593,7 @@
         "version": 5,
         "root": {
           "id": 1,
-          "kind": "set",
+          "kind": "aggregate",
           "grouping": "concrete",
           "members": [
             {
@@ -601,7 +601,7 @@
               "node": {
                 "id": 2,
                 "duration": 1.0,
-                "kind": "event",
+                "kind": "clang",
                 "config": {
                   "amp": 0.4,
                   "midinote": 72
@@ -613,7 +613,7 @@
               "dur": 4.0,
               "node": {
                 "id": 3,
-                "kind": "buffer",
+                "kind": "vector",
                 "source": {
                   "source": 100,
                   "lifetime": "session",
@@ -629,7 +629,7 @@
               "dur": 3.0,
               "node": {
                 "id": 4,
-                "kind": "set",
+                "kind": "aggregate",
                 "grouping": "concrete",
                 "members": [
                   {
@@ -638,7 +638,7 @@
                     "node": {
                       "id": 5,
                       "duration": 0.5,
-                      "kind": "event",
+                      "kind": "clang",
                       "config": {
                         "add_action": 1,
                         "amp": 0.1,
@@ -696,7 +696,7 @@
         "version": 5,
         "root": {
           "id": 1,
-          "kind": "set",
+          "kind": "aggregate",
           "grouping": "concrete",
           "members": [
             {
@@ -704,7 +704,7 @@
               "node": {
                 "id": 2,
                 "duration": 1.0,
-                "kind": "event",
+                "kind": "clang",
                 "config": {
                   "amp": 0.4,
                   "midinote": 72
@@ -716,7 +716,7 @@
               "dur": 4.0,
               "node": {
                 "id": 3,
-                "kind": "buffer",
+                "kind": "vector",
                 "source": {
                   "source": 100,
                   "lifetime": "session",
@@ -732,7 +732,7 @@
               "dur": 3.0,
               "node": {
                 "id": 4,
-                "kind": "set",
+                "kind": "aggregate",
                 "grouping": "concrete",
                 "members": [
                   {
@@ -741,7 +741,7 @@
                     "node": {
                       "id": 5,
                       "duration": 0.5,
-                      "kind": "event",
+                      "kind": "clang",
                       "config": {
                         "add_action": 1,
                         "amp": 0.1,
@@ -798,7 +798,7 @@
         "version": 6,
         "root": {
           "id": 1,
-          "kind": "set",
+          "kind": "aggregate",
           "grouping": "concrete",
           "members": [
             {
@@ -806,7 +806,7 @@
               "node": {
                 "id": 2,
                 "duration": 1.0,
-                "kind": "event",
+                "kind": "clang",
                 "config": {
                   "amp": 0.4,
                   "midinote": 72
@@ -818,7 +818,7 @@
               "dur": 4.0,
               "node": {
                 "id": 3,
-                "kind": "buffer",
+                "kind": "vector",
                 "source": {
                   "source": 100,
                   "lifetime": "session",
@@ -833,7 +833,7 @@
               "offset": 9.0,
               "node": {
                 "id": 4,
-                "kind": "set",
+                "kind": "aggregate",
                 "grouping": "concrete",
                 "members": [
                   {
@@ -842,7 +842,7 @@
                     "node": {
                       "id": 5,
                       "duration": 0.5,
-                      "kind": "event",
+                      "kind": "clang",
                       "config": {
                         "add_action": 1,
                         "amp": 0.1,
@@ -904,7 +904,7 @@
         "version": 7,
         "root": {
           "id": 1,
-          "kind": "set",
+          "kind": "aggregate",
           "grouping": "concrete",
           "members": [
             {
@@ -912,7 +912,7 @@
               "node": {
                 "id": 2,
                 "duration": 1.0,
-                "kind": "event",
+                "kind": "clang",
                 "config": {
                   "amp": 0.4,
                   "midinote": 72
@@ -924,7 +924,7 @@
               "dur": 4.0,
               "node": {
                 "id": 3,
-                "kind": "buffer",
+                "kind": "vector",
                 "source": {
                   "source": 100,
                   "lifetime": "session",
@@ -939,7 +939,7 @@
               "offset": 9.0,
               "node": {
                 "id": 4,
-                "kind": "set",
+                "kind": "aggregate",
                 "grouping": "concrete",
                 "members": [
                   {
@@ -948,7 +948,7 @@
                     "node": {
                       "id": 5,
                       "duration": 0.5,
-                      "kind": "event",
+                      "kind": "clang",
                       "config": {
                         "add_action": 1,
                         "amp": 0.1,
@@ -1012,7 +1012,7 @@
         "version": 7,
         "root": {
           "id": 1,
-          "kind": "set",
+          "kind": "aggregate",
           "grouping": "concrete",
           "members": [
             {
@@ -1020,7 +1020,7 @@
               "node": {
                 "id": 2,
                 "duration": 1.0,
-                "kind": "event",
+                "kind": "clang",
                 "config": {
                   "amp": 0.4,
                   "midinote": 72
@@ -1032,7 +1032,7 @@
               "dur": 4.0,
               "node": {
                 "id": 3,
-                "kind": "buffer",
+                "kind": "vector",
                 "source": {
                   "source": 100,
                   "lifetime": "session",
@@ -1047,7 +1047,7 @@
               "offset": 9.0,
               "node": {
                 "id": 4,
-                "kind": "set",
+                "kind": "aggregate",
                 "grouping": "concrete",
                 "members": [
                   {
@@ -1056,7 +1056,7 @@
                     "node": {
                       "id": 5,
                       "duration": 0.5,
-                      "kind": "event",
+                      "kind": "clang",
                       "config": {
                         "add_action": 1,
                         "amp": 0.1,
@@ -1106,7 +1106,7 @@
     "version": 7,
     "root": {
       "id": 1,
-      "kind": "set",
+      "kind": "aggregate",
       "grouping": "concrete",
       "members": [
         {
@@ -1114,7 +1114,7 @@
           "node": {
             "id": 2,
             "duration": 1.0,
-            "kind": "event",
+            "kind": "clang",
             "config": {
               "amp": 0.4,
               "midinote": 72
@@ -1126,7 +1126,7 @@
           "dur": 4.0,
           "node": {
             "id": 3,
-            "kind": "buffer",
+            "kind": "vector",
             "source": {
               "source": 100,
               "lifetime": "session",
@@ -1141,7 +1141,7 @@
           "offset": 9.0,
           "node": {
             "id": 4,
-            "kind": "set",
+            "kind": "aggregate",
             "grouping": "concrete",
             "members": [
               {
@@ -1150,7 +1150,7 @@
                 "node": {
                   "id": 5,
                   "duration": 0.5,
-                  "kind": "event",
+                  "kind": "clang",
                   "config": {
                     "add_action": 1,
                     "amp": 0.1,
@@ -1267,7 +1267,7 @@
           "version": 2,
           "root": {
             "id": 1,
-            "kind": "set",
+            "kind": "aggregate",
             "grouping": "concrete",
             "members": [
               {
@@ -1275,7 +1275,7 @@
                 "node": {
                   "id": 2,
                   "duration": 1.0,
-                  "kind": "event",
+                  "kind": "clang",
                   "config": {
                     "add_action": 1,
                     "amp": 0.1,
@@ -1306,7 +1306,7 @@
                 "dur": 4.0,
                 "node": {
                   "id": 3,
-                  "kind": "buffer",
+                  "kind": "vector",
                   "source": {
                     "source": 100,
                     "lifetime": "session",
@@ -1322,7 +1322,7 @@
                 "dur": 2.0,
                 "node": {
                   "id": 4,
-                  "kind": "set",
+                  "kind": "aggregate",
                   "grouping": "concrete",
                   "members": [
                     {
@@ -1331,7 +1331,7 @@
                       "node": {
                         "id": 5,
                         "duration": 0.5,
-                        "kind": "event",
+                        "kind": "clang",
                         "config": {
                           "add_action": 1,
                           "amp": 0.1,
@@ -1388,7 +1388,7 @@
           "version": 3,
           "root": {
             "id": 1,
-            "kind": "set",
+            "kind": "aggregate",
             "grouping": "concrete",
             "members": [
               {
@@ -1396,7 +1396,7 @@
                 "node": {
                   "id": 2,
                   "duration": 1.0,
-                  "kind": "event",
+                  "kind": "clang",
                   "config": {
                     "add_action": 1,
                     "amp": 0.1,
@@ -1426,7 +1426,7 @@
                 "offset": 6.0,
                 "node": {
                   "id": 3,
-                  "kind": "buffer",
+                  "kind": "vector",
                   "source": {
                     "source": 100,
                     "lifetime": "session",
@@ -1442,7 +1442,7 @@
                 "dur": 2.0,
                 "node": {
                   "id": 4,
-                  "kind": "set",
+                  "kind": "aggregate",
                   "grouping": "concrete",
                   "members": [
                     {
@@ -1451,7 +1451,7 @@
                       "node": {
                         "id": 5,
                         "duration": 0.5,
-                        "kind": "event",
+                        "kind": "clang",
                         "config": {
                           "add_action": 1,
                           "amp": 0.1,
@@ -1508,7 +1508,7 @@
           "version": 4,
           "root": {
             "id": 1,
-            "kind": "set",
+            "kind": "aggregate",
             "grouping": "concrete",
             "members": [
               {
@@ -1516,7 +1516,7 @@
                 "node": {
                   "id": 2,
                   "duration": 1.0,
-                  "kind": "event",
+                  "kind": "clang",
                   "config": {
                     "add_action": 1,
                     "amp": 0.1,
@@ -1546,7 +1546,7 @@
                 "offset": 6.0,
                 "node": {
                   "id": 3,
-                  "kind": "buffer",
+                  "kind": "vector",
                   "source": {
                     "source": 100,
                     "lifetime": "session",
@@ -1562,7 +1562,7 @@
                 "dur": 2.0,
                 "node": {
                   "id": 4,
-                  "kind": "set",
+                  "kind": "aggregate",
                   "grouping": "concrete",
                   "members": [
                     {
@@ -1571,7 +1571,7 @@
                       "node": {
                         "id": 5,
                         "duration": 0.5,
-                        "kind": "event",
+                        "kind": "clang",
                         "config": {
                           "add_action": 1,
                           "amp": 0.1,
@@ -1630,7 +1630,7 @@
           "version": 5,
           "root": {
             "id": 1,
-            "kind": "set",
+            "kind": "aggregate",
             "grouping": "concrete",
             "members": [
               {
@@ -1638,7 +1638,7 @@
                 "node": {
                   "id": 2,
                   "duration": 1.0,
-                  "kind": "event",
+                  "kind": "clang",
                   "config": {
                     "midinote": 65
                   }
@@ -1648,7 +1648,7 @@
                 "offset": 6.0,
                 "node": {
                   "id": 3,
-                  "kind": "buffer",
+                  "kind": "vector",
                   "source": {
                     "source": 100,
                     "lifetime": "session",
@@ -1664,7 +1664,7 @@
                 "dur": 2.0,
                 "node": {
                   "id": 4,
-                  "kind": "set",
+                  "kind": "aggregate",
                   "grouping": "concrete",
                   "members": [
                     {
@@ -1673,7 +1673,7 @@
                       "node": {
                         "id": 5,
                         "duration": 0.5,
-                        "kind": "event",
+                        "kind": "clang",
                         "config": {
                           "add_action": 1,
                           "amp": 0.1,
@@ -1756,7 +1756,7 @@
           "version": 6,
           "root": {
             "id": 1,
-            "kind": "set",
+            "kind": "aggregate",
             "grouping": "concrete",
             "members": [
               {
@@ -1764,7 +1764,7 @@
                 "node": {
                   "id": 2,
                   "duration": 1.0,
-                  "kind": "event",
+                  "kind": "clang",
                   "config": {
                     "add_action": 1,
                     "amp": 0.1,
@@ -1794,7 +1794,7 @@
                 "offset": 6.0,
                 "node": {
                   "id": 3,
-                  "kind": "buffer",
+                  "kind": "vector",
                   "source": {
                     "source": 100,
                     "lifetime": "session",
@@ -1810,7 +1810,7 @@
                 "dur": 2.0,
                 "node": {
                   "id": 4,
-                  "kind": "set",
+                  "kind": "aggregate",
                   "grouping": "concrete",
                   "members": [
                     {
@@ -1819,7 +1819,7 @@
                       "node": {
                         "id": 5,
                         "duration": 0.5,
-                        "kind": "event",
+                        "kind": "clang",
                         "config": {
                           "add_action": 1,
                           "amp": 0.1,
@@ -1864,7 +1864,7 @@
           "version": 7,
           "root": {
             "id": 1,
-            "kind": "set",
+            "kind": "aggregate",
             "grouping": "concrete",
             "members": [
               {
@@ -1872,7 +1872,7 @@
                 "node": {
                   "id": 2,
                   "duration": 1.0,
-                  "kind": "event",
+                  "kind": "clang",
                   "config": {
                     "add_action": 1,
                     "amp": 0.1,
@@ -1902,7 +1902,7 @@
                 "offset": 6.0,
                 "node": {
                   "id": 3,
-                  "kind": "buffer",
+                  "kind": "vector",
                   "source": {
                     "source": 100,
                     "lifetime": "session",
@@ -1918,7 +1918,7 @@
                 "dur": 2.0,
                 "node": {
                   "id": 4,
-                  "kind": "set",
+                  "kind": "aggregate",
                   "grouping": "concrete",
                   "members": [
                     {
@@ -1927,7 +1927,7 @@
                       "node": {
                         "id": 5,
                         "duration": 0.5,
-                        "kind": "event",
+                        "kind": "clang",
                         "config": {
                           "add_action": 1,
                           "amp": 0.1,
@@ -1973,7 +1973,7 @@
           "version": 8,
           "root": {
             "id": 1,
-            "kind": "set",
+            "kind": "aggregate",
             "grouping": "concrete",
             "members": [
               {
@@ -1981,7 +1981,7 @@
                 "node": {
                   "id": 2,
                   "duration": 1.0,
-                  "kind": "event",
+                  "kind": "clang",
                   "config": {
                     "add_action": 1,
                     "amp": 0.1,
@@ -2012,7 +2012,7 @@
                 "dur": 4.0,
                 "node": {
                   "id": 3,
-                  "kind": "buffer",
+                  "kind": "vector",
                   "source": {
                     "source": 100,
                     "lifetime": "session",
@@ -2028,7 +2028,7 @@
                 "dur": 2.0,
                 "node": {
                   "id": 4,
-                  "kind": "set",
+                  "kind": "aggregate",
                   "grouping": "concrete",
                   "members": [
                     {
@@ -2037,7 +2037,7 @@
                       "node": {
                         "id": 5,
                         "duration": 0.5,
-                        "kind": "event",
+                        "kind": "clang",
                         "config": {
                           "add_action": 1,
                           "amp": 0.1,
@@ -2083,7 +2083,7 @@
           "version": 9,
           "root": {
             "id": 1,
-            "kind": "set",
+            "kind": "aggregate",
             "grouping": "concrete",
             "members": [
               {
@@ -2092,7 +2092,7 @@
                 "node": {
                   "id": 2,
                   "duration": 1.0,
-                  "kind": "event",
+                  "kind": "clang",
                   "config": {
                     "add_action": 1,
                     "amp": 0.1,
@@ -2123,7 +2123,7 @@
                 "dur": 4.0,
                 "node": {
                   "id": 3,
-                  "kind": "buffer",
+                  "kind": "vector",
                   "source": {
                     "source": 100,
                     "lifetime": "session",
@@ -2139,7 +2139,7 @@
                 "dur": 2.0,
                 "node": {
                   "id": 4,
-                  "kind": "set",
+                  "kind": "aggregate",
                   "grouping": "concrete",
                   "members": [
                     {
@@ -2148,7 +2148,7 @@
                       "node": {
                         "id": 5,
                         "duration": 0.5,
-                        "kind": "event",
+                        "kind": "clang",
                         "config": {
                           "add_action": 1,
                           "amp": 0.1,
@@ -2196,7 +2196,7 @@
           "version": 10,
           "root": {
             "id": 1,
-            "kind": "set",
+            "kind": "aggregate",
             "grouping": "concrete",
             "members": [
               {
@@ -2204,7 +2204,7 @@
                 "node": {
                   "id": 2,
                   "duration": 1.0,
-                  "kind": "event",
+                  "kind": "clang",
                   "config": {
                     "add_action": 1,
                     "amp": 0.1,
@@ -2235,7 +2235,7 @@
                 "dur": 4.0,
                 "node": {
                   "id": 3,
-                  "kind": "buffer",
+                  "kind": "vector",
                   "source": {
                     "source": 100,
                     "lifetime": "session",
@@ -2251,7 +2251,7 @@
                 "dur": 2.0,
                 "node": {
                   "id": 4,
-                  "kind": "set",
+                  "kind": "aggregate",
                   "grouping": "concrete",
                   "members": [
                     {
@@ -2260,7 +2260,7 @@
                       "node": {
                         "id": 5,
                         "duration": 0.5,
-                        "kind": "event",
+                        "kind": "clang",
                         "config": {
                           "add_action": 1,
                           "amp": 0.1,
@@ -2306,7 +2306,7 @@
           "version": 11,
           "root": {
             "id": 1,
-            "kind": "set",
+            "kind": "aggregate",
             "grouping": "concrete",
             "members": [
               {
@@ -2314,7 +2314,7 @@
                 "node": {
                   "id": 2,
                   "duration": 1.0,
-                  "kind": "event",
+                  "kind": "clang",
                   "config": {
                     "add_action": 1,
                     "amp": 0.1,
@@ -2344,7 +2344,7 @@
                 "offset": 6.0,
                 "node": {
                   "id": 3,
-                  "kind": "buffer",
+                  "kind": "vector",
                   "source": {
                     "source": 100,
                     "lifetime": "session",
@@ -2360,7 +2360,7 @@
                 "dur": 2.0,
                 "node": {
                   "id": 4,
-                  "kind": "set",
+                  "kind": "aggregate",
                   "grouping": "concrete",
                   "members": [
                     {
@@ -2369,7 +2369,7 @@
                       "node": {
                         "id": 5,
                         "duration": 0.5,
-                        "kind": "event",
+                        "kind": "clang",
                         "config": {
                           "add_action": 1,
                           "amp": 0.1,
@@ -2415,7 +2415,7 @@
           "version": 12,
           "root": {
             "id": 1,
-            "kind": "set",
+            "kind": "aggregate",
             "grouping": "concrete",
             "members": [
               {
@@ -2423,7 +2423,7 @@
                 "node": {
                   "id": 2,
                   "duration": 1.0,
-                  "kind": "event",
+                  "kind": "clang",
                   "config": {
                     "add_action": 1,
                     "amp": 0.1,
@@ -2453,7 +2453,7 @@
                 "offset": 6.0,
                 "node": {
                   "id": 3,
-                  "kind": "buffer",
+                  "kind": "vector",
                   "source": {
                     "source": 100,
                     "lifetime": "session",
@@ -2469,7 +2469,7 @@
                 "dur": 2.0,
                 "node": {
                   "id": 4,
-                  "kind": "set",
+                  "kind": "aggregate",
                   "grouping": "concrete",
                   "members": [
                     {
@@ -2478,7 +2478,7 @@
                       "node": {
                         "id": 5,
                         "duration": 0.5,
-                        "kind": "event",
+                        "kind": "clang",
                         "config": {
                           "add_action": 1,
                           "amp": 0.1,
@@ -2526,7 +2526,7 @@
           "version": 13,
           "root": {
             "id": 1,
-            "kind": "set",
+            "kind": "aggregate",
             "grouping": "concrete",
             "members": [
               {
@@ -2534,7 +2534,7 @@
                 "node": {
                   "id": 2,
                   "duration": 1.0,
-                  "kind": "event",
+                  "kind": "clang",
                   "config": {
                     "midinote": 65
                   }
@@ -2544,7 +2544,7 @@
                 "offset": 6.0,
                 "node": {
                   "id": 3,
-                  "kind": "buffer",
+                  "kind": "vector",
                   "source": {
                     "source": 100,
                     "lifetime": "session",
@@ -2560,7 +2560,7 @@
                 "dur": 2.0,
                 "node": {
                   "id": 4,
-                  "kind": "set",
+                  "kind": "aggregate",
                   "grouping": "concrete",
                   "members": [
                     {
@@ -2569,7 +2569,7 @@
                       "node": {
                         "id": 5,
                         "duration": 0.5,
-                        "kind": "event",
+                        "kind": "clang",
                         "config": {
                           "add_action": 1,
                           "amp": 0.1,
@@ -2607,7 +2607,7 @@
       "version": 9,
       "root": {
         "id": 1,
-        "kind": "set",
+        "kind": "aggregate",
         "grouping": "concrete",
         "members": [
           {
@@ -2616,7 +2616,7 @@
             "node": {
               "id": 2,
               "duration": 1.0,
-              "kind": "event",
+              "kind": "clang",
               "config": {
                 "add_action": 1,
                 "amp": 0.1,
@@ -2647,7 +2647,7 @@
             "dur": 4.0,
             "node": {
               "id": 3,
-              "kind": "buffer",
+              "kind": "vector",
               "source": {
                 "source": 100,
                 "lifetime": "session",
@@ -2663,7 +2663,7 @@
             "dur": 2.0,
             "node": {
               "id": 4,
-              "kind": "set",
+              "kind": "aggregate",
               "grouping": "concrete",
               "members": [
                 {
@@ -2672,7 +2672,7 @@
                   "node": {
                     "id": 5,
                     "duration": 0.5,
-                    "kind": "event",
+                    "kind": "clang",
                     "config": {
                       "add_action": 1,
                       "amp": 0.1,
@@ -2708,7 +2708,7 @@
       "version": 13,
       "root": {
         "id": 1,
-        "kind": "set",
+        "kind": "aggregate",
         "grouping": "concrete",
         "members": [
           {
@@ -2716,7 +2716,7 @@
             "node": {
               "id": 2,
               "duration": 1.0,
-              "kind": "event",
+              "kind": "clang",
               "config": {
                 "midinote": 65
               }
@@ -2726,7 +2726,7 @@
             "offset": 6.0,
             "node": {
               "id": 3,
-              "kind": "buffer",
+              "kind": "vector",
               "source": {
                 "source": 100,
                 "lifetime": "session",
@@ -2742,7 +2742,7 @@
             "dur": 2.0,
             "node": {
               "id": 4,
-              "kind": "set",
+              "kind": "aggregate",
               "grouping": "concrete",
               "members": [
                 {
@@ -2751,7 +2751,7 @@
                   "node": {
                     "id": 5,
                     "duration": 0.5,
-                    "kind": "event",
+                    "kind": "clang",
                     "config": {
                       "add_action": 1,
                       "amp": 0.1,

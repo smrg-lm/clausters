@@ -46,13 +46,13 @@ loop — is `examples/gui_composer.py`; the tutorial points at it at the end.)
 A four-lane piece, eight beats long:
 
 - **drums** — an audio *take*, bounced offline and loaded from disk, placed
-  twice (a `Buffer` element);
+  twice (a `Vector` element);
 - **bass** — a `Pbind` pattern: a *generator* the editor bounces to draw and
   the render bounces to play (a `Sequence` element);
 - **lead** — a melody of events placed by hand on a timeline (a `Track`
   element);
 - **sweep** — a frequency envelope *and the voice it drives*, grouped so they
-  are one clip (an `Automation` inside a `Group`).
+  are one clip (an `Automation` inside an `Aggregate`).
 
 Along the way you will play elements alone, inspect the flattened score,
 open the piece as a multitrack window, move clips by hand and hear the edits,
@@ -66,8 +66,8 @@ what you heard.
    session, the defs the piece needs, and a take bounced offline.
 2. [Elements: the five primitives](composing/elements.md) — what an element
    is, and the piece's elements built one by one.
-3. [Grouping: placing elements in time](composing/grouping.md) — the `Group`,
-   placements, and the song tree.
+3. [Grouping: placing elements in time](composing/grouping.md) — the
+   `Aggregate`, placements, and the song tree.
 4. [Rendering: hearing the arrangement](composing/render.md) — flattening,
    the playhead, and why every play re-reads the tree.
 5. [The multitrack editor: the arrangement on screen](composing/editor.md) — the

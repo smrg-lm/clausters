@@ -4,7 +4,7 @@ The arrangement's unit is the **element**: any bounded thing that produces a
 unit of meaning — a note, a phrase, a take, a whole section — and can be
 decomposed or combined. An element is a *thin adornment* over an object you
 already use (an event, a timeline, a buffer, a pattern): it adds temporal
-metadata and membership in a group, and delegates the actual playing to what
+metadata and membership in an aggregate, and delegates the actual playing to what
 it wraps. It never reimplements it.
 
 One axis organizes everything (the full argument is in
@@ -33,34 +33,36 @@ print(temporal_character(None, None))  # 'abstract'  — pure context
 ```
 
 In practice a standalone element usually has a duration and no onset —
-*relative*: it has a length, and its concrete place will come from where a
-group puts it, not from the element itself.
+*relative*: it has a length, and its concrete place will come from where an
+aggregate puts it, not from the element itself.
 
 ## The five kinds
 
 | Element     | Conceptual name | What it is                                     | Wraps                          |
 | ----------- | --------------- | ---------------------------------------------- | ------------------------------ |
-| `Event`     | *event/clip*    | parameters grouped into one action             | `clausters.seq.Event`          |
+| `Clang`     | *event/clip*    | parameters grouped into one action             | `clausters.seq.Event`          |
 | `Sequence`  | *List*          | strict order, no concrete time — only sequence | a list, or a `Pattern`         |
-| `Buffer`    | *Buffer*        | a list at constant time (samples)              | `clausters.defs.Buffer`        |
+| `Vector`    | *buffer*        | a list at constant time (samples)              | `clausters.defs.Buffer`        |
 | `Track`     | *Set*           | mixed placement of elements — a DAW track      | `clausters.seq.Timeline`       |
 | `Generator` | *Function*      | a *process*: server DSP, or a sequence generator | a def, or a `Pbind`/`Routine` |
 
 The class names are what you type; the conceptual names (*event/clip, List,
-Buffer, Set, Function*) say what each kind *is*, and the
-[glossary](glossary.md) keeps both. Now build the piece's three melodic
-elements.
+buffer, Set, Function*) say what each kind *is* — and where a name in the last
+column repeats one of them, it is the object being wrapped, never the element:
+a `Vector` *holds* a `clausters.defs.Buffer`, a `Clang` *holds* a
+`clausters.seq.Event`. The [glossary](glossary.md) keeps both. Now build the
+piece's three melodic elements.
 
-## The take: a `Buffer`
+## The take: a `Vector`
 
 ```python
-from clausters.form import Buffer
+from clausters.form import Vector
 
-take = Buffer(buf, duration=2.0, instrument="take")
+take = Vector(buf, duration=2.0, instrument="take")
 print(take.temporal_character)     # 'relative' — a length, no place yet
 ```
 
-The rule from the setup page, now in its proper home: a `Buffer` element is
+The rule from the setup page, now in its proper home: a `Vector` element is
 **data**, so it has no sound of its own — it sounds through the
 **instrument** named to play it, a def whose `buf` control takes the buffer
 number. Ask it for the event it will emit:
@@ -116,14 +118,14 @@ the change of state, both times, from the same element.
 
 ## The other two kinds, briefly
 
-You will meet them later in the piece, so just their shape for now. An
-`Event` element wraps one `clausters.seq.Event` and defaults its `duration`
+You will meet them later in the piece, so just their shape for now. A
+`Clang` wraps one `clausters.seq.Event` and defaults its `duration`
 from the event's `dur`:
 
 ```python
-from clausters.form import Event
+from clausters.form import Clang
 
-hit = Event(SeqEvent(midinote=60, dur=1.0))
+hit = Clang(SeqEvent(midinote=60, dur=1.0))
 print(hit.duration, hit.temporal_character)    # 1.0 'relative'
 ```
 

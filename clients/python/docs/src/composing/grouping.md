@@ -1,23 +1,23 @@
 # Grouping: placing elements in time
 
-The five primitives adorn things the client already had. The **`Group`** is
-the one genuinely new structure of the arrangement: it places elements by an
-offset, recursively — a group is itself an element, so a phrase sits inside a
-section inside a piece, and the same operations work at every level.
+The five primitives adorn things the client already had. The **`Aggregate`**
+is the one genuinely new structure of the arrangement: it places elements by an
+offset, recursively — an aggregate is itself an element, so a phrase sits inside
+a section inside a piece, and the same operations work at every level.
 
 ## The song tree
 
-Each lane of the piece is a group placing one element (the drums place the
-take twice), and the song is a group placing the lanes:
+Each lane of the piece is an aggregate placing one element (the drums place
+the take twice), and the song is an aggregate placing the lanes:
 
 ```python
-from clausters.form import Group
+from clausters.form import Aggregate
 
-drums = Group([(0.0, take), (4.0, take)], name="drums")
-bass_lane = Group([(0.0, bass)], name="bass")
-lead_lane = Group([(0.0, melody)], name="lead")
+drums = Aggregate([(0.0, take), (4.0, take)], name="drums")
+bass_lane = Aggregate([(0.0, bass)], name="bass")
+lead_lane = Aggregate([(0.0, melody)], name="lead")
 
-song = Group([
+song = Aggregate([
     (0.0, drums),
     (0.0, bass_lane),
     (2.0, lead_lane),       # the lead enters two beats in
@@ -27,20 +27,20 @@ song = Group([
 A child is seeded as a `(offset, element)` pair, a bare `Element` (placed at
 offset 0), or a `(offset, dur, element)` triple — the third form also fixes a
 **placement length**, which you will meet below. Every offset is in beats,
-*relative to the group*: the melody sits at 0.0 inside its lane, and the lane
+*relative to the aggregate*: the melody sits at 0.0 inside its lane, and the lane
 at 2.0 inside the song, so the melody starts at absolute beat 2.0. Nothing in
 the tree is absolute until rendering adds the offsets up.
 
 ## Placements are edits: the member handle
 
-A group is not frozen. `add` places an element and returns a **handle** — a
+An aggregate is not frozen. `add` places an element and returns a **handle** — a
 stable identity you can `move` or `remove` later, however much else has
 changed around it:
 
 ```python
 member = drums.handles[1]        # the second take (the handles of the seeds)
 drums.move(member, 6.0)          # push it two beats later
-print(drums.members)             # [(0.0, None, <Buffer>), (6.0, None, <Buffer>)]
+print(drums.members)             # [(0.0, None, <Vector>), (6.0, None, <Vector>)]
 drums.move(member, 4.0)          # and back
 ```
 
@@ -76,12 +76,12 @@ simply do not play.
 
 ## The derived temporal relation
 
-From how its members sit in time, a group *derives* its temporal **relation**
+From how its members sit in time, an aggregate *derives* its temporal **relation**
 — you never set it, you read it:
 
 ```python
 print(drums.temporal_relation())     # 'mixed' — a gap between the two takes
-print(Group([(0.0, 2.0, take), (2.0, 2.0, take)]).temporal_relation())
+print(Aggregate([(0.0, 2.0, take), (2.0, 2.0, take)]).temporal_relation())
                                      # 'successive' — they tile contiguously
 print(song.temporal_relation())      # 'mixed'
 ```
@@ -93,7 +93,7 @@ together are one thing on the timeline, which is how an envelope gets attached
 to the voice it shapes — [the automation page](automation.md) uses it.
 
 (There is a second grouping **kind** besides the default `concrete`: a
-`logical` group, whose members relate by processing rather than by time. It
+`logical` aggregate, whose members relate by processing rather than by time. It
 gets [its own page](logical.md).)
 
 ## Inspecting the whole piece: `flatten`

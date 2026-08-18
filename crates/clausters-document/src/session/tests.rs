@@ -28,7 +28,7 @@ fn placed(offset: Beats, node: Node) -> Member {
 fn take(id: u64, source: u64) -> Node {
     Node::new(
         NodeId(id),
-        Body::Buffer {
+        Body::Vector {
             source: source_ref(source, 0, Lifetime::External),
             config: Opaque(serde_json::json!({"instrument": "playbuf"})),
         },
@@ -36,7 +36,7 @@ fn take(id: u64, source: u64) -> Node {
 }
 
 /// A composition with material, a generator holding its last rendered result,
-/// and a plain event -- one of everything the format has to carry.
+/// and a plain clang -- one of everything the format has to carry.
 fn composition() -> Document {
     let rendered = Node {
         id: NodeId(20),
@@ -51,7 +51,7 @@ fn composition() -> Document {
                     0.0,
                     Node::new(
                         NodeId(21),
-                        Body::Event {
+                        Body::Clang {
                             config: Opaque(serde_json::json!({"midinote": 60})),
                             fires: None,
                         },
@@ -61,7 +61,7 @@ fn composition() -> Document {
                     1.0,
                     Node::new(
                         NodeId(22),
-                        Body::Event {
+                        Body::Clang {
                             config: Opaque(serde_json::json!({"midinote": 64})),
                             fires: None,
                         },
@@ -72,7 +72,7 @@ fn composition() -> Document {
     };
     Document::new(Node::new(
         NodeId(1),
-        Body::Set {
+        Body::Aggregate {
             grouping: Grouping::Concrete,
             members: vec![
                 placed(0.0, take(2, 100)),

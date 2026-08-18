@@ -210,8 +210,8 @@ on trust, so that is where drift accumulates:
   evaluated), with the *change of state* between them. The verb for that change of
   state to sound is **render** (`Element.render`, `Editor.render`), never
   "realize"; the editor's *graphic* direction is **draw** (`Editor.draw`, the
-  GuiDef). A `Group` has two **kinds**: **concrete** (its members relate in time)
-  and **logical** (they relate by processing). Its documentation:
+  GuiDef). An `Aggregate` has two **kinds**: **concrete** (its members relate in
+  time) and **logical** (they relate by processing). Its documentation:
   - **User** — the composition chapter of the Python client's book
     (`clients/python/docs/src/composition.md`): elements, grouping, rendering,
     and how the editor maps and edits them.

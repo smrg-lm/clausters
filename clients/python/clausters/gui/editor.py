@@ -21,12 +21,12 @@ lane's drag grid, so the grid a clip is dropped on is the grid the arrangement
 re-schedules on. The arithmetic itself is the core's (`beats_to_secs` →
 `secs_to_samples`), not a second implementation.
 
-**One mapping rule, not a heuristic per case.** The root `Group`'s members are
-the *lanes*; a lane's members are its *clips*; a `Buffer` clip draws its take, a
-element of events draws a piano-roll, and a nested `Group` draws as a labeled
+**One mapping rule, not a heuristic per case.** The root `Aggregate`'s members are
+the *lanes*; a lane's members are its *clips*; a `Vector` clip draws its take, a
+element of events draws a piano-roll, and a nested `Aggregate` draws as a labeled
 rectangle — its summary — until it is `expand`ed into lanes of its own. That
 collapse/expand *is* the arrangement's base level (the zoom that summarizes a
-group or resolves it), so it needs no protocol of its own.
+aggregate or resolves it), so it needs no protocol of its own.
 """
 
 import copy
@@ -36,9 +36,8 @@ from .. import _native
 from .handle import WindowHandle
 from ..form.document import (FIRST_VERSION, ID_ATTR, leaf_config, leaf_node,
                              next_node_id, to_document)
-from ..form.group import CONCRETE, LOGICAL, SIMULTANEOUS, Group
-from ..form.element import (Buffer, Element, Event as FormEvent, Segment,
-                            Segments)
+from ..form.aggregate import CONCRETE, LOGICAL, SIMULTANEOUS, Aggregate
+from ..form.element import (Element, Clang, Segment, Segments, Vector)
 from ..defs.ugens import points_to_env
 from ..form.render import flatten
 from ..seq.automation import Automation
@@ -58,10 +57,10 @@ PITCH_PAD = 2.0
 
 
 class _Placed:
-    """What a clip widget was drawn from: the placement it shows (``owner`` group
+    """What a clip widget was drawn from: the placement it shows (``owner`` aggregate
     and ``member`` handle, the arrangement's stable identity), the ``base`` in beats its
-    group sits at (a clip's offset is absolute on the shared axis, a placement is
-    relative to its group — this bridges the two), and the ``offset``/``dur`` in
+    aggregate sits at (a clip's offset is absolute on the shared axis, a placement is
+    relative to its aggregate — this bridges the two), and the ``offset``/``dur`` in
     timeline units it was drawn with (so an edit-back can tell what actually
     moved)."""
 
@@ -80,7 +79,7 @@ class Editor:
     editable back into the tree.
 
     Args:
-        element: the composition — a `clausters.form.group.Group` (its members
+        element: the composition — a `clausters.form.aggregate.Aggregate` (its members
             become the lanes) or any single `Element` (one lane).
         sample_rate: the engine's sample rate; with ``tempo`` it fixes the
             beats↔timeline-samples conversion.
@@ -130,7 +129,7 @@ class Editor:
         self._base_id = int(base_id)
         self._fallback_ids = itertools.count(self._base_id)
         #: The elements shown as lanes of their own instead of a summary clip
-        #: (the base level: a group resolved rather than collapsed).
+        #: (the base level: an aggregate resolved rather than collapsed).
         self._expanded: set[int] = set()
         #: widget id -> `_Placed` — where the clip came from in the arrangement and
         #: what was drawn for it, which is what an edit-back writes through.
@@ -207,12 +206,12 @@ class Editor:
         #: composition does not change when it moves, and the document is
         #: explicit that what a view is currently editing is never part of it.
         self._edit_layer: dict = {}
-        #: patch widget id -> (logical `Group`, its box-order member handles) —
-        #: the directed-patch view of a logical group, for its edit-back route.
+        #: patch widget id -> (logical `Aggregate`, its box-order member handles) —
+        #: the directed-patch view of a logical aggregate, for its edit-back route.
         self._patches: dict = {}
-        #: id(group) -> {box index: (x, y)} — a patch's box placements, presentation
-        #: only (a logical group is a signal graph, so positions live here, not in
-        #: the arrangement). Keyed by group identity, so they survive a redraw.
+        #: id(aggregate) -> {box index: (x, y)} — a patch's box placements, presentation
+        #: only (a logical aggregate is a signal graph, so positions live here, not in
+        #: the arrangement). Keyed by aggregate identity, so they survive a redraw.
         self._patch_geometry: dict = {}
         self._host = None
         self._window = None
@@ -256,13 +255,13 @@ class Editor:
     # ---- the base level: collapse (a summary rectangle) vs expand (lanes) ----
 
     def expand(self, element) -> "Editor":
-        """Resolve a nested `Group` into lanes of its own (instead of the labeled
+        """Resolve a nested `Aggregate` into lanes of its own (instead of the labeled
         rectangle that summarizes it). The arrangement's *base level*, made an edit."""
         self._expanded.add(id(element))
         return self
 
     def collapse(self, element) -> "Editor":
-        """Summarize a nested `Group` back into one labeled rectangle."""
+        """Summarize a nested `Aggregate` back into one labeled rectangle."""
         self._expanded.discard(id(element))
         return self
 
@@ -289,11 +288,11 @@ class Editor:
 
     def draw(self) -> dict:
         """The composition as a ``window``-rooted GuiDef: one `track` lane per
-        member of the root group, each holding its members as clips on the shared
+        member of the root aggregate, each holding its members as clips on the shared
         time axis. Pure — it builds the tree and the id registry, and sends
         nothing.
 
-        A **logical** group draws as a directed `patch` (a server patch, not
+        A **logical** aggregate draws as a directed `patch` (a server patch, not
         a timeline lane): a box per member, its typed ports derived from the
         `SynthDef` the member wraps, cords from the members' shared internal-bus
         controls (`_logical_patch`). A member wrapping a bare def *name* draws
@@ -311,13 +310,13 @@ class Editor:
 
         lanes: list = []
         root = self.element
-        if isinstance(root, Group) and root.kind == CONCRETE:
+        if isinstance(root, Aggregate) and root.kind == CONCRETE:
             for member in root.handles:
-                if isinstance(member.element, Group) and member.element.kind == LOGICAL:
+                if isinstance(member.element, Aggregate) and member.element.kind == LOGICAL:
                     lanes.append(self._patch_lane(member.element))
                 else:
                     lanes += self._lanes_for(member.element, member.offset, root, member)
-        elif isinstance(root, Group) and root.kind == LOGICAL:
+        elif isinstance(root, Aggregate) and root.kind == LOGICAL:
             lanes.append(self._patch_lane(root))
         else:
             lanes += self._lanes_for(root, float(root.onset or 0.0), None, None)
@@ -336,16 +335,16 @@ class Editor:
         return window(*lanes, *ruler, *self.extra, title=self.title,
                       w=self.size[0], h=self.size[1], layout="col")
 
-    def _patch_lane(self, group) -> dict:
-        """A logical group drawn as a directed `patch` inside a pan/zoom `scroll`
+    def _patch_lane(self, aggregate) -> dict:
+        """A logical aggregate drawn as a directed `patch` inside a pan/zoom `scroll`
         workspace — a server patch among the timeline lanes. Registers the patch
-        widget id so an edit-back resolves to the group it draws."""
-        p, handles = _logical_patch(group)
+        widget id so an edit-back resolves to the aggregate it draws."""
+        p, handles = _logical_patch(aggregate)
         wid = self._new_id()
-        self._patches[wid] = (group, handles)
-        geometry = self._patch_geometry.get(id(group), {})
+        self._patches[wid] = (aggregate, handles)
+        geometry = self._patch_geometry.get(id(aggregate), {})
         content = (900.0, 700.0)
-        view = patch(id=wid, **p.to_widget(geometry), label=_name(group),
+        view = patch(id=wid, **p.to_widget(geometry), label=_name(aggregate),
                      x=0.0, y=0.0, w=content[0], h=content[1])
         return scroll(view, id=self._new_id(),
                       content_w=content[0], content_h=content[1])
@@ -610,12 +609,12 @@ class Editor:
     def update(self):
         """Push the current arrangement back to the open window — a whole-tree
         redefine (`GuiHost.define`), the honest way to show a structural edit (an
-        element added, a group expanded). A mere placement change needs no redefine: the
+        element added, an aggregate expanded). A mere placement change needs no redefine: the
         host already moved the clip that was dragged.
 
         A redefine **moves the version**, and that is the point rather than a
         side effect: this is the route a change the editor did not apply arrives
-        by — a script adding an element, a group expanded, a re-render — and it
+        by — a script adding an element, an aggregate expanded, a re-render — and it
         is the case an edit log cannot see. It also rebuilds the widgets, so a
         gesture still in flight was made against a picture that no longer
         exists; the bump is what makes that edit come back as stale instead of
@@ -636,9 +635,9 @@ class Editor:
 
         The clip edit-back (``/gui_event <id> "clip" <offset> <dur>``, the payload
         a drag or a resize sends) is resolved through the widget registry to the
-        placement it came from and written with `Group.move`. The clip's offset is
+        placement it came from and written with `Aggregate.move`. The clip's offset is
         **absolute** on the shared axis while a placement is relative to its
-        group, so the position converts back through the base the clip was drawn
+        aggregate, so the position converts back through the base the clip was drawn
         at; and only what actually moved is written — a drag carries the clip's
         unchanged ``dur`` along, and snapping *that* to the grid would silently
         shorten the element. ``/gui_closed`` drops the window (its own — the
@@ -648,7 +647,7 @@ class Editor:
         through this editor's own registries, so another window's events fall
         through untouched.
 
-        A logical group's directed patch routes here too: a ``"wire"`` rewrites the
+        A logical aggregate's directed patch routes here too: a ``"wire"`` rewrites the
         two members' controls onto a shared bus (`_apply_patch`), a ``"move"``
         persists a box's canvas position.
         """
@@ -756,13 +755,13 @@ class Editor:
                 "this clip draws what a generator produced; render it to a "
                 "track to edit its notes"
                 if _editable_timeline(element) is None
-                and not isinstance(element, FormEvent)
+                and not isinstance(element, Clang)
                 else "this clip is one placed event; drag the clip to move it, "
                      "a track is what holds editable notes")
             self._correct(int(args[0]), notes=_flat_notes(self._notes(element)))
             return False
         if int(args[0]) in self._patches:
-            # A logical group's directed patch: a cord drawn (rewire) or a box
+            # A logical aggregate's directed patch: a cord drawn (rewire) or a box
             # moved (presentation).
             return self._apply_patch(int(args[0]), args[1], args[2:])
         placed = self._clips.get(int(args[0]))
@@ -979,7 +978,7 @@ class Editor:
 
         **What this editor cuts is a placement**, because that is what it owns:
         an arrangement is elements placed in time, and a clip the selection
-        covers entirely leaves the group it was in — undoably, through the
+        covers entirely leaves the aggregate it was in — undoably, through the
         crate, like every other edit here. What it does *not* do is trim: a
         selection cutting across a clip implies a new length for the material
         under it, and writing material is the owner of that material's business
@@ -994,7 +993,7 @@ class Editor:
         end = start + self.units_to_beats(float(values[1]))
         member = placed.member
         # The clip's span on the **shared** axis: a placement is relative to its
-        # group, and the selection is absolute, which is the same bridge a drag
+        # aggregate, and the selection is absolute, which is the same bridge a drag
         # crosses in the other direction.
         at = placed.base + member.offset
         span = at, at + (member.length or 0.0)
@@ -1077,7 +1076,7 @@ class Editor:
         if start is None or placed.member is None:
             return False
         element = placed.member.element
-        return (isinstance(element, Buffer)
+        return (isinstance(element, Vector)
                 and abs(float(start) - float(element.start)) >= 0.5)
 
     def _trim(self, placed, offset: float, dur: float, start: float) -> bool:
@@ -1137,9 +1136,9 @@ class Editor:
         if member is None or owner is None:
             return False
         element = member.element
-        if not isinstance(element, (Buffer, Segments)):
+        if not isinstance(element, (Vector, Segments)):
             # Only a window onto material can be cut into windows. Splitting a
-            # pattern or a group would have to say what half of an algorithm
+            # pattern or an aggregate would have to say what half of an algorithm
             # is, which is a different question and not this one.
             self._reason = ("only a clip over material can be split: this one "
                             "holds " + _name(element))
@@ -1183,7 +1182,7 @@ class Editor:
         The first half is not built at all — it is the element it always was,
         with its placement shortened, which is the arrangement's own rule (a
         placement is a window onto an element, never a rewrite of it) and what
-        makes an undo of a split one step. A `Buffer` gives a window that starts
+        makes an undo of a split one step. A `Vector` gives a window that starts
         further in; a `Segments` gives the segments past the cut, with the one
         the cut falls inside cut into two.
         """
@@ -1199,7 +1198,7 @@ class Editor:
                                          seg.start + self.beats_to_units(head),
                                          seg.duration - head))
             return self._joined_element([element], after)
-        return Buffer(element.wraps, duration=length - at,
+        return Vector(element.wraps, duration=length - at,
                       instrument=element.instrument, controls=element.controls,
                       start=element.start + self.beats_to_units(at),
                       loop=element.loop, name=element.name)
@@ -1244,10 +1243,10 @@ class Editor:
             return False
         run.sort(key=lambda p: p.member.offset)
         elements = [p.member.element for p in run]
-        if not all(isinstance(e, (Buffer, Segments)) for e in elements):
+        if not all(isinstance(e, (Vector, Segments)) for e in elements):
             self._reason = "only clips over material can be joined"
             return False
-        # The segments the run holds, in reading order: a `Buffer` is one, a
+        # The segments the run holds, in reading order: a `Vector` is one, a
         # `Segments` is however many it already carries.
         segments: list = []
         for p, element in zip(run, elements):
@@ -1312,7 +1311,7 @@ class Editor:
                 break
             expected += self.beats_to_units(seg.duration)
         if contiguous:
-            return Buffer(segments[0].buffer,
+            return Vector(segments[0].buffer,
                           duration=sum(seg.duration for seg in segments),
                           instrument=instrument, controls=controls,
                           start=segments[0].start,
@@ -1361,7 +1360,7 @@ class Editor:
         """Notes edited in a roll — a clip's body or the dedicated piano-roll
         alike, since both send it (the flat ``"notes"`` payload,
         `start dur pitch velocity channel` quintuples): rebuilt onto the element's
-        editable `clausters.seq.Timeline` as `Event`s, times converted to beats,
+        editable `clausters.seq.Timeline` as `clausters.seq.Event`s, times converted to beats,
         preserving any OSC/MIDI items already on it. Returns ``False`` for a
         forward-only generator element (read-only), so the edit is a no-op."""
         timeline = _editable_timeline(element)
@@ -1394,7 +1393,7 @@ class Editor:
         for i, (beat, event) in enumerate(new):
             nid = kept[i] if i < len(kept) and kept[i] is not None else self._mint_id()
             members.append({"offset": float(beat),
-                            "node": {"id": int(nid), "kind": "event",
+                            "node": {"id": int(nid), "kind": "clang",
                                      "config": dict(event)}})
         outcome = self._record({"intent": "setmembers", "node": node,
                                 "members": members}, "edit the notes")
@@ -1413,25 +1412,25 @@ class Editor:
         return nid
 
     def _apply_patch(self, wid: int, tag, values) -> bool:
-        """One edit on a logical group's directed patch. A ``"wire"`` (``src_box
+        """One edit on a logical aggregate's directed patch. A ``"wire"`` (``src_box
         outlet dst_box inlet``) rewrites the two members' controls so they share a
-        bus — the connection *is* a bus, the same fact `Group.to_graphdef` reads,
+        bus — the connection *is* a bus, the same fact `Aggregate.to_graphdef` reads,
         so the next render wires the GraphDef the way the cord is drawn. A ``"move"``
         (``box x y``) only persists the box's canvas position (a signal graph has
         no timeline, so positions are the editor's, not the arrangement's)."""
-        group, handles = self._patches[wid]
+        aggregate, handles = self._patches[wid]
         if tag == "wire" and len(values) >= 4:
-            return self._apply_wire(group, handles, values[:4])
+            return self._apply_wire(aggregate, handles, values[:4])
         if tag == "move" and len(values) >= 3:
-            self._patch_geometry.setdefault(id(group), {})[int(values[0])] = (
+            self._patch_geometry.setdefault(id(aggregate), {})[int(values[0])] = (
                 float(values[1]), float(values[2]))
             return False
         return False
 
-    def _apply_wire(self, group, handles, values) -> bool:
+    def _apply_wire(self, aggregate, handles, values) -> bool:
         """Draw a cord ``src.outlet -> dst.inlet`` onto the arrangement: name the
         bus the connection implies (reusing one either end already writes/reads,
-        else a fresh name declared on the group) and point both members' controls
+        else a fresh name declared on the aggregate) and point both members' controls
         at it. The bus rate comes from the source outlet's def."""
         src_box, outlet, dst_box, inlet = int(values[0]), str(values[1]), int(values[2]), str(values[3])
         if not (0 <= src_box < len(handles) and 0 <= dst_box < len(handles)):
@@ -1443,10 +1442,10 @@ class Editor:
         src_ctls = dict(src.controls or {})
         dst_ctls = dict(dst.controls or {})
         bus = _named_bus(src_ctls.get(outlet)) or _named_bus(dst_ctls.get(inlet)) \
-            or self._fresh_bus(group)
+            or self._fresh_bus(aggregate)
         src_ctls[outlet], dst_ctls[inlet] = bus, bus
         src.controls, dst.controls = src_ctls, dst_ctls
-        group.declare_bus(bus, rate=rate)
+        aggregate.declare_bus(bus, rate=rate)
         # The one gesture left that writes the arrangement *directly*: a cord is
         # a pair of controls naming a bus, which no intent describes yet. The
         # held document is behind after it, and says so.
@@ -1470,10 +1469,10 @@ class Editor:
                 return port[1] if isinstance(port, tuple) else "audio"
         return None
 
-    def _fresh_bus(self, group) -> str:
-        """A bus name not yet declared on ``group`` (``w0``, ``w1``, …) — the
+    def _fresh_bus(self, aggregate) -> str:
+        """A bus name not yet declared on ``aggregate`` (``w0``, ``w1``, …) — the
         private wire a brand-new cord introduces."""
-        taken = set(group.bus_names)
+        taken = set(aggregate.bus_names)
         i = 0
         while f"w{i}" in taken:
             i += 1
@@ -1485,7 +1484,7 @@ class Editor:
         a `MidiEvent` with a short tag. Display only: a marker carries the time and
         a label, not the full message, so it is not written back (see
         `open_pianoroll`)."""
-        if isinstance(element, (Group, Buffer)):
+        if isinstance(element, (Aggregate, Vector)):
             return []
         try:
             events = flatten(element, 0.0)
@@ -1542,8 +1541,8 @@ class Editor:
     def _index(self, element, owner=None, member=None):
         """Walk the arrangement collecting node id -> what an intent writes to.
 
-        A `place` needs the owning group and the member handle (a placement is
-        the group's, not the element's); everything else needs the element. The
+        A `place` needs the owning aggregate and the member handle (a placement is
+        the aggregate's, not the element's); everything else needs the element. The
         walk mirrors `clausters.form.document`'s own, which is what keeps the
         two agreeing about what has an id."""
         # The id belongs to the **placement** when there is one: a clip is a
@@ -1551,7 +1550,7 @@ class Editor:
         node = getattr(member if member is not None else element, ID_ATTR, None)
         if node is not None:
             self._by_node[int(node)] = (owner, member, element)
-        if isinstance(element, Group):
+        if isinstance(element, Aggregate):
             for handle in element.handles:
                 self._index(handle.element, element, handle)
 
@@ -1574,9 +1573,9 @@ class Editor:
                 self._history()
                 node = getattr(member, ID_ATTR, None)
             return None if node is None else int(node)
-        # **The index first, the stamp second.** A group's id is the
+        # **The index first, the stamp second.** An aggregate's id is the
         # *placement's* -- the handle that holds it in its parent -- so the
-        # number on the group object is not the document's answer, and it is a
+        # number on the aggregate object is not the document's answer, and it is a
         # number some other conversion left there: converting a subtree on its
         # own (which is how a cut, a split and a join read the members they are
         # about to state) numbers that subtree as a root and stamps its top. The
@@ -1643,10 +1642,10 @@ class Editor:
         elif kind == "setmembers":
             members = intent.get("members", [])
             # Two things carry members and they are not the same thing: a
-            # `Group`'s placements, and the notes of an editable timeline. The
+            # `Aggregate`'s placements, and the notes of an editable timeline. The
             # element decides which, because the intent names a node and the
             # node is whichever of the two it is.
-            if isinstance(element, Group):
+            if isinstance(element, Aggregate):
                 if not self._set_placements(element, members):
                     return None
             elif not self._set_notes(element, members):
@@ -1662,7 +1661,7 @@ class Editor:
         redone document and the edit itself all land here, so the envelope the
         script holds, the buffer it sounds through and the picture cannot
         disagree about which of the three happened."""
-        if isinstance(element, Buffer):
+        if isinstance(element, Vector):
             # A take's configuration is the **window** it reads: which frame of
             # its material it begins at, and whether that window wraps. The
             # configuration is written whole, so a key the intent does not carry
@@ -1697,8 +1696,8 @@ class Editor:
                 placed.dur = self.beats_to_units(float(length))
         return wid
 
-    def _set_placements(self, group, members: list) -> bool:
-        """A `setmembers` onto a `Group`: the placements as the document states
+    def _set_placements(self, aggregate, members: list) -> bool:
+        """A `setmembers` onto an `Aggregate`: the placements as the document states
         them, whole.
 
         **Only what the document still names survives**, which is what makes a
@@ -1710,13 +1709,13 @@ class Editor:
         """
         keep = {int(m["node"]["id"]) for m in members if "id" in (m.get("node") or {})}
         by_id = {}
-        for handle in list(group.handles):
+        for handle in list(aggregate.handles):
             node = getattr(handle, ID_ATTR, None)
             if node is None:
                 continue
             by_id[int(node)] = handle
             if int(node) not in keep:
-                group.remove(handle)
+                aggregate.remove(handle)
         # ...and the offsets the document states, for the ones that stayed —
         # plus the ones that are **back**, which is what an undo of a cut is.
         # The element itself outlives its placement (the node index still names
@@ -1739,7 +1738,7 @@ class Editor:
                 if found is not None:
                     self._configure(found[2], config)
             if handle is not None:
-                group.move(handle, offset)
+                aggregate.move(handle, offset)
                 # ...and the length the document states, which a split, a join
                 # and an undo of either all change. Without this a placement
                 # that came back the right length on paper stayed the length
@@ -1748,11 +1747,11 @@ class Editor:
                 continue
             found = self._by_node.get(int(node))
             if found is not None:
-                restored = group.add(found[2], offset, m.get("dur"))
+                restored = aggregate.add(found[2], offset, m.get("dur"))
                 # **The placement keeps the id the document gave it.** A handle
                 # that came back unstamped is a new node to the next conversion,
                 # which renumbers the tree under every intent still naming the
-                # old one -- and the group holding it stops being found at all.
+                # old one -- and the aggregate holding it stops being found at all.
                 if restored is not None:
                     setattr(restored, ID_ATTR, int(node))
         return True
@@ -2030,12 +2029,12 @@ class Editor:
     # ---- the tree walk ----
 
     def _lanes_for(self, element, base: float, owner, member) -> list:
-        """The lanes an element contributes: a concrete `Group` becomes one
+        """The lanes an element contributes: a concrete `Aggregate` becomes one
         lane holding its members as clips (plus a lane of its own for every
-        *expanded* nested group); anything else becomes a lane with one clip.
+        *expanded* nested aggregate); anything else becomes a lane with one clip.
         ``base`` is its start in beats, ``owner``/``member`` the placement an
         edit-back writes through."""
-        if (isinstance(element, Group) and element.kind == CONCRETE
+        if (isinstance(element, Aggregate) and element.kind == CONCRETE
                 and len(element) > 1
                 and element.temporal_relation() == SIMULTANEOUS
                 and not self.is_expanded(element)):
@@ -2044,11 +2043,11 @@ class Editor:
             # clips that must be dragged one by one.
             return [self._lane([self._clip_for(element, base, owner, member)],
                                _name(element))]
-        if isinstance(element, Group) and element.kind == CONCRETE:
+        if isinstance(element, Aggregate) and element.kind == CONCRETE:
             clips, extra = [], []
             for child in element.handles:
                 child_base = base + child.offset
-                if isinstance(child.element, Group) and self.is_expanded(child.element):
+                if isinstance(child.element, Aggregate) and self.is_expanded(child.element):
                     extra += self._lanes_for(child.element, child_base, element, child)
                 else:
                     clips.append(self._clip_for(child.element, child_base, element, child))
@@ -2087,7 +2086,7 @@ class Editor:
             dur = self.beats_to_units(dur_beats)
 
         # The placement's own base: a clip's offset is absolute on the shared axis,
-        # a member's offset is relative to its group.
+        # a member's offset is relative to its aggregate.
         parent_base = base - (member.offset if member is not None else 0.0)
         self._clips[wid] = _Placed(owner, member, parent_base, offset, dur)
         # A roll body is the `notes` element itself, and it edits: a body carries
@@ -2100,7 +2099,7 @@ class Editor:
         return clip(id=wid, offset=offset, dur=dur, label=_name(element), **body)
 
     def _body_for(self, element, limit=None) -> dict:
-        """The clip-body props an element draws with — and a **simultaneous** group
+        """The clip-body props an element draws with — and a **simultaneous** aggregate
         draws with *all of its members'*, layered in one clip.
 
         ``limit`` is the **placement's** length in beats when it has one: a
@@ -2109,15 +2108,15 @@ class Editor:
         no longer reaches.
 
         That is the arrangement's own answer to "attach an envelope to the event it
-        shapes": a group whose members start and end together *is* one thing on the
+        shapes": an aggregate whose members start and end together *is* one thing on the
         timeline (its temporal relation says so), so it is one clip — dragging it
-        moves the whole group, and the bodies overlay instead of hiding each other.
+        moves the whole aggregate, and the bodies overlay instead of hiding each other.
         The curve keeps its own value axis (`points_min`/`points_max`), since an
         envelope's units are not the pitches under it.
         """
-        # A simultaneous group first: it is one thing on the timeline, and its
+        # A simultaneous aggregate first: it is one thing on the timeline, and its
         # members' bodies layer (each keeps its own value axis).
-        if (isinstance(element, Group) and len(element) > 1
+        if (isinstance(element, Aggregate) and len(element) > 1
                 and element.temporal_relation() == SIMULTANEOUS):
             body: dict = {}
             for m in element.handles:
@@ -2154,7 +2153,7 @@ class Editor:
                 children.append(signal(**take))
             return {"children": children} if children else {}
 
-        if isinstance(element, Buffer):
+        if isinstance(element, Vector):
             buf = element.wraps
             # The take rides the bulk path: the host fetches the server buffer and
             # decimates it through its peak pyramid.
@@ -2196,19 +2195,19 @@ class Editor:
             if _editable_timeline(element) is None:
                 body["editable"] = False
             return body
-        # No body: a collapsed group (or an element with nothing to draw) is the
+        # No body: a collapsed aggregate (or an element with nothing to draw) is the
         # labeled rectangle — the summary of the level above it.
         return {}
 
     def _notes(self, element) -> list:
         """The ``(start, dur, pitch)`` note events of an element, in timeline
-        units relative to the element — the piano-roll body. A `Group` is a
+        units relative to the element — the piano-roll body. An `Aggregate` is a
         summary, not a roll (it collapses to a rectangle), and a note is any
         flattened event that resolves a pitch: the *change of state* of a
         contained generator happens right here (a pattern is bounced by
         `clausters.form.render.flatten`), so a generator lane shows the notes it
         will play."""
-        if isinstance(element, (Group, Buffer)):
+        if isinstance(element, (Aggregate, Vector)):
             return []
         try:
             events = flatten(element, 0.0)
@@ -2226,7 +2225,7 @@ class Editor:
 
     def _extent(self, element) -> float:
         """An element's length in beats: its own ``duration`` when it has one,
-        else what it spans — a group over its placed members, an envelope over its
+        else what it spans — an aggregate over its placed members, an envelope over its
         curve, anything else over its flattened events (a bounced pattern
         included)."""
         if isinstance(element, Element) and element.duration is not None:
@@ -2234,14 +2233,14 @@ class Editor:
         auto = _automation(element)
         if auto is not None:
             return auto.duration()
-        if isinstance(element, Group):
+        if isinstance(element, Aggregate):
             return max((m.offset + (m.dur if m.dur is not None
                                     else self._extent(m.element))
                         for m in element.handles), default=0.0)
         if isinstance(element, Segments):
             # Its material is a list, and its extent is the whole of it.
             return sum(seg.duration for seg in element.segments)
-        if isinstance(element, Buffer):
+        if isinstance(element, Vector):
             buf = element.wraps
             rate = buf.sample_rate or self.sample_rate
             return self.units_to_beats(buf.frames * (self.sample_rate / rate))
@@ -2252,12 +2251,12 @@ class Editor:
         return max((beat + _event_dur(item) for beat, item in events), default=0.0)
 
 
-def _logical_patch(group):
-    """A logical `Group` as a `clausters.defs.GraphPatch`, through the headless
-    decode `GraphPatch.from_graphdef`: the group renders to a `GraphDef` (its
+def _logical_patch(aggregate):
+    """A logical `Aggregate` as a `clausters.defs.GraphPatch`, through the headless
+    decode `GraphPatch.from_graphdef`: the aggregate renders to a `GraphDef` (its
     members and their shared-bus controls — the arrangement's 1:1 logical mapping),
     and the decode reads that back into a directed patch, typing each box's ports
-    from the `SynthDef` the member wraps. The `Group -> patch` mapping itself lives
+    from the `SynthDef` the member wraps. The `Aggregate -> patch` mapping itself lives
     in `clausters.defs`, not here — the editor is only a consumer of it.
 
     A member wrapping a bare def *name* (not a `SynthDef` object) draws port-less —
@@ -2267,8 +2266,8 @@ def _logical_patch(group):
     from ..defs import GraphPatch
     from ..defs.synthdef import SynthDef
 
-    handles = list(group.handles)
-    gdef = group.to_graphdef(name=getattr(group, "name", None) or "_patch")
+    handles = list(aggregate.handles)
+    gdef = aggregate.to_graphdef(name=getattr(aggregate, "name", None) or "_patch")
     defs = {
         h.element.def_name: h.element.wraps
         for h in handles
@@ -2303,7 +2302,7 @@ def _measure(name: str) -> str:
 
 
 def _name(element) -> str:
-    """An element's display name: its own ``name`` when it has one (a group names
+    """An element's display name: its own ``name`` when it has one (an aggregate names
     itself, an automation names the control it drives), else what it *is* — an
     automation is an "envelope", not the `Element` that happens to wrap it."""
     name = getattr(element, "name", None)
@@ -2317,15 +2316,15 @@ def _name(element) -> str:
 
 def _automation(element):
     """The `clausters.seq.Automation` an element carries, or ``None``. An automation
-    is a *curve* — the List/Buffer duality of the arrangement — so it needs no primitive
+    is a *curve* — the List/Vector duality of the arrangement — so it needs no primitive
     of its own: any element wrapping one draws (and edits) as an envelope.
 
-    A **simultaneous** group is searched too: an envelope attached to the event it
+    A **simultaneous** aggregate is searched too: an envelope attached to the event it
     shapes is one clip, and a curve edited on it must find the automation inside.
     """
     if isinstance(getattr(element, "wraps", None), Automation):
         return element.wraps
-    if (isinstance(element, Group) and len(element) > 1
+    if (isinstance(element, Aggregate) and len(element) > 1
             and element.temporal_relation() == SIMULTANEOUS):
         for _offset, _dur, child in element.members:
             auto = _automation(child)
@@ -2355,11 +2354,11 @@ def _roll_owner(element):
 
     Usually the element itself (a generator among them: it registers and the
     edit is refused later, which is where read-only is decided). A
-    **simultaneous** group is the one that needs asking: it draws as one clip
+    **simultaneous** aggregate is the one that needs asking: it draws as one clip
     with its members' bodies layered, so the notes under the cursor belong to
-    the member that carries them, not to the group. ``None`` when no member
+    the member that carries them, not to the aggregate. ``None`` when no member
     has an editable timeline — a layered roll nobody can write to."""
-    if (isinstance(element, Group) and len(element) > 1
+    if (isinstance(element, Aggregate) and len(element) > 1
             and element.temporal_relation() == SIMULTANEOUS):
         for m in element.handles:
             if _editable_timeline(m.element) is not None:

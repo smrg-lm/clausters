@@ -69,20 +69,20 @@ The voice is an event **in the composition** — not a synth held by your
 session — reading the automation's bus:
 
 ```python
-from clausters.form import Element, Event, Group
+from clausters.form import Aggregate, Element, Clang
 from clausters.seq.event import Event as SeqEvent
 
-voice = Event(SeqEvent(instrument="drone", freq_bus=sweep.bus.index,
+voice = Clang(SeqEvent(instrument="drone", freq_bus=sweep.bus.index,
                        dur=SWEEP, legato=1.0, amp=0.12, has_gate=True))
-sweep_clip = Group([(0.0, voice), (0.0, Element(sweep, duration=SWEEP))],
-                   name="sweep")
+sweep_clip = Aggregate([(0.0, voice), (0.0, Element(sweep, duration=SWEEP))],
+                       name="sweep")
 print(sweep_clip.temporal_relation())    # 'simultaneous'
 ```
 
 Look at what was just said in model terms: two members that start and end
-together — the group's derived relation is **simultaneous**, and the grouping
-page promised this moment. A simultaneous group is *one thing on the
-timeline*, so the editor draws it as **one clip with layered bodies**: the
+together — the aggregate's derived relation is **simultaneous**, and the
+grouping page promised this moment. A simultaneous aggregate is *one thing on
+the timeline*, so the editor draws it as **one clip with layered bodies**: the
 curve over the note, dragging as one. The voice cannot outlive its envelope,
 and the envelope cannot be left behind.
 
@@ -93,7 +93,7 @@ adorning it with a duration is enough — no sixth primitive needed.)
 Add the lane and show it:
 
 ```python
-song.add(Group([(0.0, sweep_clip)], name="sweep"), offset=0.0)
+song.add(Aggregate([(0.0, sweep_clip)], name="sweep"), offset=0.0)
 editor.update()      # a structural change: the window grows a fourth lane
 ```
 

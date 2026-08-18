@@ -25,12 +25,13 @@
 //!
 //! # A clip's body, and the one thing this cannot know
 //!
-//! A set of pitched events draws as a **roll** from the tree alone, because the
-//! pitches are in the tree. A **take** cannot: the document names a source and
-//! never says where the material is, so drawing one needs the session's table
-//! resolved to something a host can read — which is [`super::sources`], and is
-//! why `Look` takes the resolved [`Takes`] rather than the session. Given none,
-//! a take is still drawn: its placement and its name, honest about the rest.
+//! An aggregate of pitched clangs draws as a **roll** from the tree alone,
+//! because the pitches are in the tree. A **take** cannot: the document names a
+//! source and never says where the material is, so drawing one needs the
+//! session's table resolved to something a host can read — which is
+//! [`super::sources`], and is why `Look` takes the resolved [`Takes`] rather
+//! than the session. Given none, a take is still drawn: its placement and its
+//! name, honest about the rest.
 
 use clausters_document::{Beats, Body, Document, Member, Node, NodeId};
 use serde_json::{Map, Value, json};
@@ -102,11 +103,12 @@ pub struct Drawn {
 
 /// Draws `document` as a window of lanes.
 ///
-/// One lane per top-level member: a **set** becomes a lane of its members'
-/// clips (which is what a track is), and anything else becomes a lane holding
-/// one clip. Nesting deeper than that is drawn flat for now — a set inside a
-/// set is one lane of its own, in document order — because an expanded/collapsed
-/// state is a thing the *editor* holds and this has nowhere yet to keep one.
+/// One lane per top-level member: an **aggregate** becomes a lane of its
+/// members' clips (which is what a track is), and anything else becomes a lane
+/// holding one clip. Nesting deeper than that is drawn flat for now — an
+/// aggregate inside an aggregate is one lane of its own, in document order —
+/// because an expanded/collapsed state is a thing the *editor* holds and this
+/// has nowhere yet to keep one.
 pub fn draw(document: &Document, look: &Look<'_>, title: &str) -> Drawn {
     let mut ids = Ids {
         next: look.first_id,
@@ -115,7 +117,7 @@ pub fn draw(document: &Document, look: &Look<'_>, title: &str) -> Drawn {
     let mut lanes: Vec<Value> = Vec::new();
 
     match &document.root.body {
-        Body::Set { members, .. } => {
+        Body::Aggregate { members, .. } => {
             for member in members {
                 lane_of(member, 0.0, look, &mut ids, &mut bindings, &mut lanes);
             }
@@ -201,18 +203,19 @@ impl Ids {
     }
 }
 
-/// Turns one member into lanes, **recursing while it is sets all the way down**.
+/// Turns one member into lanes, **recursing while it is aggregates all the way
+/// down**.
 ///
-/// The rule is the shape of the material rather than a depth: a set whose
-/// members are leaves is a lane of clips (that is what a lane *is*), and a set
-/// of sets is not one lane but each of theirs. A composition is nested as deeply
-/// as the author nested it — a piece of groups of tracks of events is three
-/// deep before a single note is reached — so anything that stops at a fixed
-/// depth draws the containers and calls it a picture, which is an empty clip
-/// where the music was.
+/// The rule is the shape of the material rather than a depth: an aggregate
+/// whose members are leaves is a lane of clips (that is what a lane *is*), and
+/// an aggregate of aggregates is not one lane but each of theirs. A composition
+/// is nested as deeply as the author nested it — a piece of aggregates of
+/// tracks of clangs is three deep before a single note is reached — so anything
+/// that stops at a fixed depth draws the containers and calls it a picture,
+/// which is an empty clip where the music was.
 ///
 /// `base` accumulates the offsets on the way down, because a clip's offset is
-/// absolute on the shared axis while a member's is relative to its set.
+/// absolute on the shared axis while a member's is relative to its aggregate.
 fn lane_of(
     member: &Member,
     base: Beats,
@@ -222,10 +225,10 @@ fn lane_of(
     lanes: &mut Vec<Value>,
 ) {
     let here = base + member.offset;
-    if let Body::Set { members, .. } = &member.node.body
+    if let Body::Aggregate { members, .. } = &member.node.body
         && members
             .iter()
-            .any(|inner| matches!(inner.node.body, Body::Set { .. }))
+            .any(|inner| matches!(inner.node.body, Body::Aggregate { .. }))
     {
         for inner in members {
             lane_of(inner, here, look, ids, bindings, lanes);
@@ -234,16 +237,16 @@ fn lane_of(
     }
     let label = label_of(&member.node);
     let clips = match &member.node.body {
-        // **A set of events is one clip with a roll in it**, not a lane of
+        // **An aggregate of clangs is one clip with a roll in it**, not a lane of
         // clips: that is what a track *is* in every editor, and drawing each
         // note as its own clip gives a row of empty rectangles where the music
         // was. The notes go in the clip's own axis, so their starts are
         // relative to it.
-        Body::Set { members, .. } if !members.is_empty() && notes_of(members).is_some() => {
+        Body::Aggregate { members, .. } if !members.is_empty() && notes_of(members).is_some() => {
             let notes = notes_of(members).expect("checked");
             vec![roll_clip(member, here, notes, look, ids, bindings)]
         }
-        Body::Set { members, .. } => members
+        Body::Aggregate { members, .. } => members
             .iter()
             .map(|inner| clip_of(inner, here, look, ids, bindings))
             .collect(),
@@ -373,7 +376,7 @@ fn take_editors(
         // joined clip is edited piece by piece, since a piece is what a file
         // is.
         let sources: Vec<clausters_document::SourceId> = match &node.body {
-            Body::Buffer { source, .. } => vec![source.source],
+            Body::Vector { source, .. } => vec![source.source],
             Body::Segments { segments, .. } => segments.iter().map(|s| s.source.source).collect(),
             _ => return,
         };
@@ -427,23 +430,23 @@ fn take_editors(
 
 /// The material a node draws, when it names some and somebody resolved it.
 fn take_of(node: &Node, look: &Look<'_>) -> Option<super::sources::Take> {
-    let Body::Buffer { source, .. } = &node.body else {
+    let Body::Vector { source, .. } = &node.body else {
         return None;
     };
     look.takes?.get(source.source)
 }
 
-/// The `notes` body of a set of events — the flat `start dur pitch velocity
+/// The `notes` body of an aggregate of clangs — the flat `start dur pitch velocity
 /// channel` quintuples the roll reads, in **beats** here and scaled by the
 /// caller.
 ///
-/// `None` unless *every* member is an event carrying a pitch: a set holding
+/// `None` unless *every* member is a clang carrying a pitch: an aggregate holding
 /// takes, generators or anything else is a lane of clips and not a roll, and
 /// half a roll would be a picture that leaves material out without saying so.
 fn notes_of(members: &[Member]) -> Option<Vec<(Beats, Beats, f32)>> {
     let mut out = Vec::with_capacity(members.len());
     for m in members {
-        let Body::Event { config, .. } = &m.node.body else {
+        let Body::Clang { config, .. } = &m.node.body else {
             return None;
         };
         // The configuration is the client's own opaque object: this reads two
@@ -455,7 +458,7 @@ fn notes_of(members: &[Member]) -> Option<Vec<(Beats, Beats, f32)>> {
             .get("midinote")
             .and_then(Value::as_f64)
             .or_else(|| config.0.get("note").and_then(Value::as_f64))?;
-        // The sounding length: the event's own `dur`, the placement's, or a
+        // The sounding length: the clang's own `dur`, the placement's, or a
         // beat — a note with no length would be a line.
         let dur = m
             .dur
@@ -468,7 +471,7 @@ fn notes_of(members: &[Member]) -> Option<Vec<(Beats, Beats, f32)>> {
     (!out.is_empty()).then_some(out)
 }
 
-/// One clip drawing a set of events as a roll.
+/// One clip drawing an aggregate of clangs as a roll.
 fn roll_clip(
     member: &Member,
     base: Beats,
@@ -478,7 +481,7 @@ fn roll_clip(
     bindings: &mut Vec<Bound>,
 ) -> Value {
     let widget = ids.take();
-    // The clip draws the **set**, so a drag on it moves the track: a note
+    // The clip draws the **aggregate**, so a drag on it moves the track: a note
     // inside it edits through the roll's own payload, which addresses the note.
     bindings.push(Bound {
         widget,
@@ -520,11 +523,11 @@ fn roll_clip(
 /// a picture drawn by a host that was handed a file.
 fn label_of(node: &Node) -> String {
     match &node.body {
-        Body::Event { .. } => format!("event {}", node.id.0),
+        Body::Clang { .. } => format!("clang {}", node.id.0),
         Body::Sequence { .. } => format!("sequence {}", node.id.0),
-        Body::Buffer { .. } => format!("take {}", node.id.0),
+        Body::Vector { .. } => format!("take {}", node.id.0),
         Body::Segments { segments, .. } => format!("take {} ({})", node.id.0, segments.len()),
-        Body::Set { grouping, .. } => format!("{grouping:?} {}", node.id.0).to_lowercase(),
+        Body::Aggregate { grouping, .. } => format!("{grouping:?} {}", node.id.0).to_lowercase(),
         Body::Generator { .. } => format!("generator {}", node.id.0),
         // A body this build does not know: drawn as what it is rather than
         // refused, which is the same courtesy an older host shows a newer
@@ -539,10 +542,10 @@ mod tests {
     use super::*;
     use clausters_document::{Grouping, Opaque};
 
-    fn event(id: u64) -> Node {
+    fn clang(id: u64) -> Node {
         Node::new(
             NodeId(id),
-            Body::Event {
+            Body::Clang {
                 config: Opaque::default(),
                 fires: None,
             },
@@ -553,10 +556,10 @@ mod tests {
         Member { offset, dur, node }
     }
 
-    fn set(id: u64, members: Vec<Member>) -> Node {
+    fn aggregate(id: u64, members: Vec<Member>) -> Node {
         Node::new(
             NodeId(id),
-            Body::Set {
+            Body::Aggregate {
                 grouping: Grouping::Concrete,
                 members,
                 config: Opaque::none(),
@@ -569,12 +572,20 @@ mod tests {
     }
 
     #[test]
-    fn a_set_of_sets_draws_one_lane_each_and_a_ruler_under_them() {
-        let doc = Document::new(set(
+    fn an_aggregate_of_aggregates_draws_one_lane_each_and_a_ruler_under_them() {
+        let doc = Document::new(aggregate(
             1,
             vec![
-                placed(0.0, None, set(2, vec![placed(0.0, Some(2.0), event(3))])),
-                placed(0.0, None, set(4, vec![placed(1.0, Some(1.0), event(5))])),
+                placed(
+                    0.0,
+                    None,
+                    aggregate(2, vec![placed(0.0, Some(2.0), clang(3))]),
+                ),
+                placed(
+                    0.0,
+                    None,
+                    aggregate(4, vec![placed(1.0, Some(1.0), clang(5))]),
+                ),
             ],
         ));
         let drawn = draw(&doc, &Look::default(), "session");
@@ -590,16 +601,16 @@ mod tests {
     }
 
     /// A clip's offset is **absolute on the shared axis** while a member's is
-    /// relative to its set: the two are added once, here, or every lane after
+    /// relative to its aggregate: the two are added once, here, or every lane after
     /// the first would draw in the wrong place.
     #[test]
     fn a_nested_placement_is_absolute_on_the_shared_axis() {
-        let doc = Document::new(set(
+        let doc = Document::new(aggregate(
             1,
             vec![placed(
                 4.0, // the lane starts at beat 4
                 None,
-                set(2, vec![placed(1.0, Some(2.0), event(3))]), // the clip at 1 within it
+                aggregate(2, vec![placed(1.0, Some(2.0), clang(3))]), // the clip at 1 within it
             )],
         ));
         let look = Look {
@@ -616,14 +627,14 @@ mod tests {
     /// tree can know, and what an intent needs to name.
     #[test]
     fn every_clip_is_bound_to_the_node_it_draws() {
-        let doc = Document::new(set(
+        let doc = Document::new(aggregate(
             1,
             vec![placed(
                 0.0,
                 None,
-                set(
+                aggregate(
                     2,
-                    vec![placed(0.0, None, event(7)), placed(1.0, None, event(8))],
+                    vec![placed(0.0, None, clang(7)), placed(1.0, None, clang(8))],
                 ),
             )],
         ));
@@ -647,8 +658,8 @@ mod tests {
     /// A document that is one thing is still a window: a host handed a file
     /// draws what it was given rather than refusing a shape.
     #[test]
-    fn a_document_that_is_not_a_set_still_draws() {
-        let doc = Document::new(event(1));
+    fn a_document_that_is_not_an_aggregate_still_draws() {
+        let doc = Document::new(clang(1));
         let drawn = draw(&doc, &Look::default(), "one thing");
         let kids = children(&drawn.def);
         assert_eq!(kids.len(), 2, "one lane and the ruler");
@@ -658,7 +669,7 @@ mod tests {
 
     #[test]
     fn a_grid_reaches_the_lane_and_nothing_reaches_it_when_there_is_none() {
-        let doc = Document::new(set(1, vec![placed(0.0, None, event(2))]));
+        let doc = Document::new(aggregate(1, vec![placed(0.0, None, clang(2))]));
         let plain = draw(&doc, &Look::default(), "t");
         assert!(children(&plain.def)[0].get("snap").is_none());
         let snapped = draw(
@@ -684,7 +695,7 @@ mod take_tests {
     fn take(id: u64, source: u64) -> Node {
         Node::new(
             NodeId(id),
-            Body::Buffer {
+            Body::Vector {
                 source: SourceRef {
                     source: SourceId(source),
                     lifetime: Lifetime::Session,
@@ -699,7 +710,7 @@ mod take_tests {
     fn one_take(source: u64) -> Document {
         Document::new(Node::new(
             NodeId(1),
-            Body::Set {
+            Body::Aggregate {
                 grouping: Grouping::Concrete,
                 members: vec![Member {
                     offset: 0.0,
@@ -770,7 +781,7 @@ mod take_tests {
         );
         let document = Document::new(Node::new(
             NodeId(1),
-            Body::Set {
+            Body::Aggregate {
                 grouping: Grouping::Concrete,
                 members: vec![Member {
                     offset: 0.0,
@@ -901,10 +912,10 @@ mod registry_tests {
     }
 
     fn doc() -> Document {
-        let event = |id: u64| {
+        let clang = |id: u64| {
             Node::new(
                 NodeId(id),
-                Body::Event {
+                Body::Clang {
                     config: Opaque::default(),
                     fires: None,
                 },
@@ -912,25 +923,25 @@ mod registry_tests {
         };
         Document::new(Node::new(
             NodeId(1),
-            Body::Set {
+            Body::Aggregate {
                 grouping: Grouping::Concrete,
                 members: vec![Member {
                     offset: 0.0,
                     dur: None,
                     node: Node::new(
                         NodeId(2),
-                        Body::Set {
+                        Body::Aggregate {
                             grouping: Grouping::Concrete,
                             members: vec![
                                 Member {
                                     offset: 0.0,
                                     dur: Some(2.0),
-                                    node: event(3),
+                                    node: clang(3),
                                 },
                                 Member {
                                     offset: 4.0,
                                     dur: Some(1.0),
-                                    node: event(4),
+                                    node: clang(4),
                                 },
                             ],
                             config: Opaque::none(),
@@ -1025,20 +1036,20 @@ mod depth_tests {
     use super::*;
     use clausters_document::{Grouping, Member, Opaque};
 
-    fn event(id: u64) -> Node {
+    fn clang(id: u64) -> Node {
         Node::new(
             NodeId(id),
-            Body::Event {
+            Body::Clang {
                 config: Opaque::default(),
                 fires: None,
             },
         )
     }
 
-    fn set(id: u64, members: Vec<Member>) -> Node {
+    fn aggregate(id: u64, members: Vec<Member>) -> Node {
         Node::new(
             NodeId(id),
-            Body::Set {
+            Body::Aggregate {
                 grouping: Grouping::Concrete,
                 members,
                 config: Opaque::none(),
@@ -1056,23 +1067,29 @@ mod depth_tests {
 
     /// **A composition is nested as deeply as its author nested it**, and this
     /// draws the leaves wherever they are. The shape that found the bug is the
-    /// ordinary one: a piece of groups of tracks of events, three sets deep
-    /// before a single note — and a walk that stopped at two drew the
-    /// containers and called it a picture, which is an empty clip where the
-    /// music was.
+    /// ordinary one: a piece of aggregates of tracks of clangs, three
+    /// aggregates deep before a single note — and a walk that stopped at two
+    /// drew the containers and called it a picture, which is an empty clip
+    /// where the music was.
     #[test]
-    fn a_piece_of_groups_of_tracks_draws_the_notes_and_not_the_containers() {
-        let doc = Document::new(set(
+    fn a_piece_of_aggregates_of_tracks_draws_the_notes_and_not_the_containers() {
+        let doc = Document::new(aggregate(
             1,
             vec![
                 at(
                     0.0,
-                    set(
+                    aggregate(
                         2,
-                        vec![at(0.0, set(3, vec![at(0.0, event(4)), at(2.0, event(5))]))],
+                        vec![at(
+                            0.0,
+                            aggregate(3, vec![at(0.0, clang(4)), at(2.0, clang(5))]),
+                        )],
                     ),
                 ),
-                at(0.0, set(6, vec![at(0.0, set(7, vec![at(0.0, event(8))]))])),
+                at(
+                    0.0,
+                    aggregate(6, vec![at(0.0, aggregate(7, vec![at(0.0, clang(8))]))]),
+                ),
             ],
         ));
         let drawn = draw(&doc, &Look::default(), "piece");
@@ -1080,7 +1097,7 @@ mod depth_tests {
         assert_eq!(
             nodes,
             vec![4, 5, 8],
-            "the clips are the events, not the tracks that hold them"
+            "the clips are the clangs, not the tracks that hold them"
         );
         let kids = drawn.def["children"].as_array().unwrap();
         assert_eq!(kids.len(), 3, "one lane per track, and the ruler");
@@ -1095,11 +1112,11 @@ mod depth_tests {
     /// that starts four beats into the piece sits at six on the shared axis.
     #[test]
     fn offsets_accumulate_through_every_level() {
-        let doc = Document::new(set(
+        let doc = Document::new(aggregate(
             1,
             vec![at(
                 4.0,
-                set(2, vec![at(0.0, set(3, vec![at(2.0, event(4))]))]),
+                aggregate(2, vec![at(0.0, aggregate(3, vec![at(2.0, clang(4))]))]),
             )],
         ));
         let look = Look {
@@ -1120,17 +1137,17 @@ mod roll_tests {
     fn note(id: u64, midinote: f64, dur: f64) -> Node {
         Node::new(
             NodeId(id),
-            Body::Event {
+            Body::Clang {
                 config: Opaque(json!({ "midinote": midinote, "dur": dur })),
                 fires: None,
             },
         )
     }
 
-    fn set(id: u64, members: Vec<Member>) -> Node {
+    fn aggregate(id: u64, members: Vec<Member>) -> Node {
         Node::new(
             NodeId(id),
-            Body::Set {
+            Body::Aggregate {
                 grouping: Grouping::Concrete,
                 members,
                 config: Opaque::none(),
@@ -1147,15 +1164,15 @@ mod roll_tests {
     }
 
     /// **A track is one clip with a roll in it**, which is what a track is in
-    /// every editor — and what a document of events has to become to be read as
+    /// every editor — and what a document of clangs has to become to be read as
     /// music rather than as a row of empty rectangles.
     #[test]
-    fn a_set_of_events_is_one_clip_carrying_the_notes() {
-        let doc = Document::new(set(
+    fn an_aggregate_of_clangs_is_one_clip_carrying_the_notes() {
+        let doc = Document::new(aggregate(
             1,
             vec![at(
                 0.0,
-                set(
+                aggregate(
                     2,
                     vec![at(0.0, note(3, 72.0, 1.0)), at(2.0, note(4, 76.0, 1.0))],
                 ),
@@ -1184,21 +1201,21 @@ mod roll_tests {
             "the clip spans to the last note's end"
         );
 
-        // The clip draws the **set**, so a drag on it moves the track; a note
+        // The clip draws the **aggregate**, so a drag on it moves the track; a note
         // inside edits through the roll's own payload.
         assert_eq!(drawn.bindings.len(), 1);
         assert_eq!(drawn.bindings[0].node, NodeId(2));
     }
 
-    /// A set that is **not** all pitched events stays a lane of clips: a roll
-    /// drawn over half a set would leave material out without saying so.
+    /// An aggregate that is **not** all pitched clangs stays a lane of clips: a roll
+    /// drawn over half an aggregate would leave material out without saying so.
     #[test]
-    fn a_set_that_is_not_all_notes_stays_a_lane_of_clips() {
-        let doc = Document::new(set(
+    fn an_aggregate_that_is_not_all_notes_stays_a_lane_of_clips() {
+        let doc = Document::new(aggregate(
             1,
             vec![at(
                 0.0,
-                set(
+                aggregate(
                     2,
                     vec![
                         at(0.0, note(3, 72.0, 1.0)),
@@ -1207,7 +1224,7 @@ mod roll_tests {
                             2.0,
                             Node::new(
                                 NodeId(4),
-                                Body::Event {
+                                Body::Clang {
                                     config: Opaque::none(),
                                     fires: None,
                                 },

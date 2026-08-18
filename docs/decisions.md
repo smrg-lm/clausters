@@ -599,7 +599,7 @@ considering the buses; the directed patcher adds no server ordering logic and ne
 no new verb (the port directions come from the def the client already has). The
 **client** contributes one small, language-agnostic pass — directed cords → one bus
 named per net, summing fan-in — which lives in `clausters-core` beside the patch
-document, so every client shares it. The Python arrangement model (`Group`/
+document, so every client shares it. The Python arrangement model (`Aggregate`/
 `Generator` → `GraphDef`) is unchanged; the new work is GUI-side (the directed
 `patch` widget).
 
@@ -711,8 +711,8 @@ Two consequences of the shape are load-bearing:
 
 **Consequence.** The layer is pure and transport-agnostic: no DSP, no protocol, no
 GUI — the piece a future client factors into the shared core. It carries the
-temptations too: a `Buffer` is data and sounds only through the *instrument* named
-to play it, and a logical group emits the bus-wired configuration the server
+temptations too: a `Vector` is data and sounds only through the *instrument* named
+to play it, and a logical aggregate emits the bus-wired configuration the server
 already expresses (a `GraphDef`) rather than a wiring language of its own. Both
 exceptions were resolved in the algebra's favour, and both are recorded above.
 
@@ -1676,9 +1676,9 @@ the `clausters.plot` posture. The **editor does not own it**: the editor is the
 gui-side *representation of the arrangement model* (`clausters.form` is pure and
 never imports the GUI, so the dependency runs editor → form, never the reverse),
 and it merely *orchestrates* — embedding an autonomous Def-view as a lane when a
-composition holds a logical group, the way it embeds the piano-roll. The already
+composition holds a logical aggregate, the way it embeds the piano-roll. The already
 shipped level-1 edit-back (P3d) is reclassified into phase B, ahead of its
-representation work, and its `Group → patch` mapping is lifted out of `editor.py`
+representation work, and its `Aggregate → patch` mapping is lifted out of `editor.py`
 into `defs`.
 
 This is sharpened by a plain fact about the **current state of development** (not
@@ -5491,8 +5491,8 @@ repeat: identical nodes are *ambiguous but consistent* — the document says the
 same thing twice, and which placement an intent means is the open question —
 while different nodes are *incoherent*, since no answer to that question makes a
 document well-formed in which one id names two different things. The message
-says which two it found (`node id 2 names two different nodes, a set and an
-event`), because the id alone does not tell an author where to look.
+says which two it found (`node id 2 names two different nodes, an aggregate
+and a clang`), because the id alone does not tell an author where to look.
 
 **One asymmetry, recorded rather than smoothed over.** The C ABI's
 `clausters_document_open` answers with a null handle and has no channel for the
@@ -5501,7 +5501,7 @@ Python client looks for the collision itself once the handle comes back null,
 and only then — nothing is validated twice on the path where the document is
 fine.
 
-## A node carries a name, and a set carries the restrictions its writer put on it
+## A node carries a name, and an aggregate carries the restrictions its writer put on it
 
 A session did not round-trip. A piece authored with named lanes and a track in
 each reopened anonymous, with a level of nesting nobody wrote and the rolls gone
@@ -5517,14 +5517,15 @@ addresses by name, so an anonymous one is reachable exactly as before. The
 alternative — keeping the label in each client — is what had been happening, and
 it means a piece labelled in one writer opens unlabelled in the next.
 
-**The track is the harder half, and the answer is that there is still one set
-kind.** A multitrack's track is *a set with the restrictions of a view*, and the
+**The track is the harder half, and the answer is that there is still one
+aggregate kind.** A multitrack's track is *an aggregate with the restrictions of
+a view*, and the
 layer's own rule says the tree stays general — no lane, no vertical position, no
 type per container — because a view is a projection and may decline what its
-shape does not admit. But a writer that has such a set has to get it back, or
-the format silently promotes every track to a plain set. So the **restriction
+shape does not admit. But a writer that has such an aggregate has to get it back, or
+the format silently promotes every track to a plain aggregate. So the **restriction
 travels as opaque configuration**, through the same door a generator's code goes
-through: `Body::Set` gains a `config` the document carries and never reads, the
+through: `Body::Aggregate` gains a `config` the document carries and never reads, the
 Python client writes `{"form": "track"}` into it, and the crate is not one line
 wiser about what a track is.
 
@@ -5914,3 +5915,58 @@ leaning on the fill sounds like, where before all of them were free metadata.
 Clients are unaffected and keep materialising every default before the last
 input the caller gave: the wire is positional and has no sparse form.
 
+
+## The arrangement's primitives are named for what they are, not for what they wrap
+
+**Problem.** Three of the arrangement's primitives carried names another part of
+the project had already taken, and two of them had been taken by the very object
+the element wraps. `clausters.form.Buffer` wrapped a `clausters.defs.Buffer`, so
+the sentence describing it was circular and the two could not both be imported
+into one script. `clausters.form.Event` wrapped a `clausters.seq.Event`, and the
+editor had to alias one of them at every call site (`Event as FormEvent` beside
+`Event as SeqEvent`) to keep them apart. `clausters.form.Group` was not the
+server's `Group` at all — that one is scsynth's node-tree group, named by every
+`/group_*` command and every reply — and prose about "a group" had to say which
+one it meant every time.
+
+Shadowing is the visible cost, but it is the smaller one. The larger is that a
+name repeated across two layers stops carrying information: a reader who sees
+`Buffer` learns nothing about whether they are holding material or a placement
+of it.
+
+**Decision.** The three are renamed for what they are, and the rename reaches
+every end of every wire in one move — the Python classes, the `Body` variants of
+`clausters-document`, and the `kind` strings of the saved format:
+
+| was | is | what it is |
+|---|---|---|
+| `Event` / `Body::Event` / `"event"` | `Clang` / `Body::Clang` / `"clang"` | parameters or actions that happen together, internally simultaneous |
+| `Buffer` / `Body::Buffer` / `"buffer"` | `Vector` / `Body::Vector` / `"vector"` | a succession of data at constant rate |
+| `Group` / `Body::Set` / `"set"` | `Aggregate` / `Body::Aggregate` / `"aggregate"` | the recursive container of placed members |
+
+**Why these words.** `Vector` was already the crate's own gloss for the body
+(*"a succession of data at constant rate: a vector"*), so it is adopted rather
+than invented. `Aggregate` names the container without `Set`'s collision with
+Python's builtin, and the arrangement's is the one that moves because the
+server's `Group` is scsynth's and is what the protocol already calls that thing.
+`Clang` is James Tenney's term, from *Meta+Hodos*: a **gestalt unit**, a
+sound-configuration perceived as a single thing, which he derived from the
+German *Klang*. That is precisely what this element is, and it is the one name
+here that names the object rather than describing it.
+
+**Two words it is not, and neither is an objection.** SuperCollider has
+`Klang`/`Klank` UGens (banks of sines and resonators) — a different spelling, a
+different layer, and Clausters ships neither, having declined to port scsynth's
+UGen catalog wholesale. And `clang` is the C compiler this repo's build
+instructions install for bindgen — a different domain entirely, never a type in
+any namespace of ours. A word can belong to more than one domain; what it may
+not do is name two things in the same one, which is the whole reason these three
+moved.
+
+**Consequences.** The saved format changed, and there is no compatibility
+shim: a document written before this reads its three renamed bodies as
+`Body::Unknown` and round-trips intact but is not understood. That is acceptable
+pre-1.0 and would not have been after. The `grouping` field keeps its name, as
+do `Sequence`, `Segments`, `Track`, `Generator`, and the `CONCRETE`/`LOGICAL`
+kinds. `Vector.to_event()` and `Segments.to_events()` keep theirs too, because
+what they return really is a `clausters.seq.Event`.

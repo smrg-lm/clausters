@@ -24,7 +24,7 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "python"))
 from clausters import _native  # noqa: E402
 from clausters._native import Log  # noqa: E402
-from clausters.form import Buffer, Event, Group, to_document  # noqa: E402
+from clausters.form import Aggregate, Clang, Vector, to_document  # noqa: E402
 from clausters.seq import Event as SeqEvent  # noqa: E402
 
 
@@ -35,11 +35,11 @@ class _Buffer:
 
 
 def composition() -> dict:
-    piece = Group()
-    piece.add(Event(SeqEvent(midinote=60, dur=1.0)), offset=0.0, dur=1.0)
-    piece.add(Buffer(_Buffer(), instrument="take"), offset=2.0, dur=4.0)
-    inner = Group()
-    inner.add(Event(SeqEvent(midinote=67, dur=0.5)), offset=0.0, dur=0.5)
+    piece = Aggregate()
+    piece.add(Clang(SeqEvent(midinote=60, dur=1.0)), offset=0.0, dur=1.0)
+    piece.add(Vector(_Buffer(), instrument="take"), offset=2.0, dur=4.0)
+    inner = Aggregate()
+    inner.add(Clang(SeqEvent(midinote=67, dur=0.5)), offset=0.0, dur=0.5)
     piece.add(inner, offset=8.0, dur=2.0)
     return to_document(piece)
 

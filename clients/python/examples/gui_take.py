@@ -52,7 +52,7 @@ from clausters.defs import (
     out,
     play_buf,
 )
-from clausters.form import Buffer, Sequence
+from clausters.form import Sequence, Vector
 from clausters.gui import Editor, button, panel, toggle
 from clausters.seq.pattern import Pbind, Pseq
 
@@ -62,7 +62,7 @@ TEMPO = 2.0          # beats per second (120 bpm)
 # %% [markdown]
 # ## A server, and the instrument a take sounds through
 # A buffer is *data*, so it sounds through the def **named to play it** — the
-# arrangement's own rule, and the reason a `Buffer` element carries an
+# arrangement's own rule, and the reason a `Vector` element carries an
 # ``instrument``.
 
 # %%
@@ -105,7 +105,7 @@ offline = Session.nrt(tempo=TEMPO)
 offline.play(Pbind(midinote=Pseq(PHRASE, 1), dur=1.0, legato=0.9, amp=0.35))
 offline.render(sample_rate=SR, channels=1, path=str(wav))
 buf = ServerBuffer.read(str(wav), server=server)
-take = Buffer(buf, duration=BEATS, instrument="take")
+take = Vector(buf, duration=BEATS, instrument="take")
 print(f"bounced and loaded {wav.name}: buffer {buf.bufnum}, {buf.frames} frames")
 
 # %% [markdown]

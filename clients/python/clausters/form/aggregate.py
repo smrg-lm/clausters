@@ -1,6 +1,6 @@
 """The arrangement — grouping, and the derived temporal relation.
 
-A `Group` is the one genuinely new structure of the arrangement: the recursive
+A `Aggregate` is the one genuinely new structure of the arrangement: the recursive
 placement of elements with an offset, and the temporal *relation* derived from
 how the members sit in time. Everything else (the five primitives) already
 exists and is merely adorned by `clausters.form.element.Element`.
@@ -19,11 +19,11 @@ temporal-relation derivation (a pure function over the members' placements).
 
 import math
 
-#: The kind of a `Group`.
+#: The kind of an `Aggregate`.
 CONCRETE = "concrete"
 LOGICAL = "logical"
 
-#: The temporal relation between a group's members, derived from their placements
+#: The temporal relation between an aggregate's members, derived from their placements
 #: ``successive`` — duration-only, tiling contiguously; ``simultaneous``
 #: — all starting and ending together (a container that can be reinterpreted,
 #: enabling recursion); ``mixed`` — any other combination.
@@ -35,10 +35,10 @@ from .element import Element  # noqa: E402  (constants first for the docstring)
 
 
 class _Member:
-    """One placed member of a `Group`. A stable object so it can be ``remove``d
+    """One placed member of an `Aggregate`. A stable object so it can be ``remove``d
     or ``move``d by identity after other edits shift things.
 
-    ``offset`` is the member's start in beats relative to the group's context;
+    ``offset`` is the member's start in beats relative to the aggregate's context;
     ``dur`` is an explicit placement length that overrides the element's own
     ``duration`` when set.
 
@@ -63,35 +63,35 @@ class _Member:
         return self.dur if self.dur is not None else self.element.duration
 
 
-class Group(Element):
+class Aggregate(Element):
     """A composite element: a set of placed members with a grouping ``kind``.
 
-    Members are placed by an ``offset`` (beats relative to the group's context)
+    Members are placed by an ``offset`` (beats relative to the aggregate's context)
     and an optional placement ``dur``. Edit freely — `add`, `remove`, `move`; a
     handle returned by `add` stays valid across other edits (like
     `clausters.seq.Timeline`).
 
-    A `LOGICAL` group additionally names the composition and may declare internal
+    A `LOGICAL` aggregate additionally names the composition and may declare internal
     buses; `to_graphdef` translates it into a `clausters.defs.GraphDef` (the
     bus-wired configuration the server already expresses).
 
     Args:
-        children: optional iterable seeding the group. Each item is a
+        children: optional iterable seeding the aggregate. Each item is a
             ``(offset, element)`` pair, a ``(offset, dur, element)`` triple, or
             a bare `Element` (placed at offset 0).
         kind: `CONCRETE` (default) or `LOGICAL`.
-        name: the composition's name — the GraphDef name for a logical group.
-        buses: internal buses for a logical group — each a ``name`` (audio,
+        name: the composition's name — the GraphDef name for a logical aggregate.
+        buses: internal buses for a logical aggregate — each a ``name`` (audio,
             1 channel) or a ``(name, rate)`` / ``(name, rate, channels)`` tuple.
-        onset: the group's own onset in its parent context, or ``None``.
-        duration: the group's own duration, or ``None``.
+        onset: the aggregate's own onset in its parent context, or ``None``.
+        duration: the aggregate's own duration, or ``None``.
     """
 
     def __init__(self, children=None, kind=CONCRETE, *, name=None,
                  buses=None, onset=None, duration=None):
         super().__init__(wraps=None, onset=onset, duration=duration, name=name)
         if kind not in (CONCRETE, LOGICAL):
-            raise ValueError(f"unknown group kind: {kind!r}")
+            raise ValueError(f"unknown aggregate kind: {kind!r}")
         self.kind = kind
         self._bus_specs = [_bus_spec(b) for b in (buses or [])]
         self._members = []
@@ -104,10 +104,10 @@ class Group(Element):
 
     @property
     def locatable(self) -> bool:
-        """A group is locatable only when every member is.
+        """An aggregate is locatable only when every member is.
 
         One resident generator inside it makes the whole placement unlocatable:
-        a position on the group would be a position on that member too, and it
+        a position on the aggregate would be a position on that member too, and it
         has none. See `clausters.form.element.Element.locatable`."""
         return all(handle.element.locatable for handle in self.handles)
 
@@ -171,7 +171,7 @@ class Group(Element):
     # ---- the derived temporal relation ----
 
     def temporal_relation(self):
-        """Derive this group's temporal relation (`SUCCESSIVE`/`SIMULTANEOUS`/
+        """Derive this aggregate's temporal relation (`SUCCESSIVE`/`SIMULTANEOUS`/
         `MIXED`) from its members' placements, or ``None`` when empty.
 
         - `SIMULTANEOUS`: every member starts and ends together (a single member
@@ -204,15 +204,15 @@ class Group(Element):
 
         return MIXED
 
-    # ---- the internal buses (a logical group's private wires) ----
+    # ---- the internal buses (a logical aggregate's private wires) ----
 
     @property
     def bus_names(self) -> list:
-        """The names of the internal buses this (logical) group declares."""
+        """The names of the internal buses this (logical) aggregate declares."""
         return [spec["name"] for spec in self._bus_specs]
 
     def declare_bus(self, name, rate: str = "audio", channels: int = 1):
-        """Declare an internal bus — a logical group's private wire between
+        """Declare an internal bus — a logical aggregate's private wire between
         members. Idempotent by name: re-declaring an existing bus updates its
         ``rate``/``channels``. This is what a patcher edit (a cord drawn between
         two members) calls to name the bus the connection implies."""
@@ -227,14 +227,14 @@ class Group(Element):
     # ---- the logical rendering: a GraphDef ----
 
     def to_graphdef(self, name=None):
-        """Translate this **logical** group into a `clausters.defs.GraphDef` — the
+        """Translate this **logical** aggregate into a `clausters.defs.GraphDef` — the
         1:1 mapping of the arrangement's logical grouping (nodes wired by sender/
         receiver buses) onto the configuration the server already expresses.
 
         Each member must be a `clausters.form.element.Generator` (its
         ``def_name`` is the member def; its ``controls`` — numbers, an internal
-        bus name, or ``"OUT"`` — and ``maps`` wire it). The group's `buses` become
-        the private internal buses. Placement offsets are ignored (a logical group
+        bus name, or ``"OUT"`` — and ``maps`` wire it). The aggregate's `buses` become
+        the private internal buses. Placement offsets are ignored (a logical aggregate
         is a signal graph, not a timeline). Returns the `GraphDef`; sending and
         instancing it is `clausters.form.render`.
         """
@@ -243,7 +243,7 @@ class Group(Element):
 
         gname = name or self.name
         if gname is None:
-            raise ValueError("a logical Group needs a name to become a GraphDef")
+            raise ValueError("a logical Aggregate needs a name to become a GraphDef")
         gdef = GraphDef(gname)
         refs = {
             spec["name"]: gdef.bus(
@@ -254,7 +254,7 @@ class Group(Element):
         for _offset, _dur, child in self.members:
             if not isinstance(child, Generator):
                 raise TypeError(
-                    "a logical Group member must be a Generator, "
+                    "a logical Aggregate member must be a Generator, "
                     f"got {type(child).__name__}"
                 )
             controls = {
@@ -266,7 +266,7 @@ class Group(Element):
 
 
 def _bus_spec(bus) -> dict:
-    """Normalize a `Group` bus declaration (a name, or a ``(name, rate[,
+    """Normalize an `Aggregate` bus declaration (a name, or a ``(name, rate[,
     channels])`` tuple) into the dict `to_graphdef` consumes."""
     if isinstance(bus, str):
         name, rate, channels = bus, "audio", 1

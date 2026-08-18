@@ -86,8 +86,8 @@ editor.poll()          # -> True: the composition changed
 print(drums.members)   # the second take's offset is where you dropped it
 ```
 
-The drag became a `Group.move` on the member handle — the same edit you made
-in code two pages ago, arriving through the window. Hear it:
+The drag became an `Aggregate.move` on the member handle — the same edit you
+made in code two pages ago, arriving through the window. Hear it:
 
 ```python
 editor.play(at=0.0)
@@ -99,7 +99,7 @@ Pull the second take's right edge in to one beat, then:
 
 ```python
 editor.poll()
-print(drums.members)          # (offset, 1.0, <Buffer>) — trimmed
+print(drums.members)          # (offset, 1.0, <Vector>) — trimmed
 print(take.to_event()["dur"]) # 2.0 — the element, untouched as ever
 editor.play(at=0.0)           # you hear one beat of it
 ```

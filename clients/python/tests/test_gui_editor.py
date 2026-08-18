@@ -11,8 +11,8 @@ import pytest
 
 from clausters.defs import SynthDef, control, in_, out, sine
 from clausters.defs.buffer import Buffer as ServerBuffer
-from clausters.form import Buffer, Event, Generator, Group, Sequence, Track
-from clausters.form.group import LOGICAL
+from clausters.form import Aggregate, Generator, Clang, Sequence, Track, Vector
+from clausters.form.aggregate import LOGICAL
 from clausters.form.document import FIRST_VERSION
 from clausters.gui.editor import Editor, _logical_patch
 from clausters.seq.event import Event as SeqEvent
@@ -32,29 +32,29 @@ TEMPO = 2.0          # beats per second (120 bpm)
 BEAT = SR / TEMPO    # 24000 timeline samples per beat
 
 
-def song() -> Group:
+def song() -> Aggregate:
     """A two-lane composition: a take on one lane, a melody on another."""
-    take = Buffer(ServerBuffer(bufnum=7, frames=int(4 * BEAT), channels=1,
+    take = Vector(ServerBuffer(bufnum=7, frames=int(4 * BEAT), channels=1,
                                sample_rate=SR), duration=4.0)
-    audio = Group([(0.0, take)], name="audio")
+    audio = Aggregate([(0.0, take)], name="audio")
     melody = Track(Timeline([(0.0, SeqEvent(midinote=60, dur=1.0)),
                              (1.0, SeqEvent(midinote=64, dur=1.0)),
                              (2.0, SeqEvent(midinote=67, dur=2.0))]))
-    lead = Group([(2.0, melody)], name="lead")
-    return Group([(0.0, audio), (0.0, lead)], name="song")
+    lead = Aggregate([(2.0, melody)], name="lead")
+    return Aggregate([(0.0, audio), (0.0, lead)], name="song")
 
 
 def editor(element=None, **kwargs) -> Editor:
     return Editor(element or song(), sample_rate=SR, tempo=TEMPO, **kwargs)
 
 
-def fx_chain() -> Group:
-    """A logical group: a source writing bus ``mix``, a terminal sink reading it
+def fx_chain() -> Aggregate:
+    """A logical aggregate: a source writing bus ``mix``, a terminal sink reading it
     (and writing hardware bus 0 itself). The members carry SynthDefs, so their
     ports derive from the def; the shared bus name is the cord."""
     src = SynthDef("gsrc", out(control("out"), sine(control("freq", 220.0))))
     sink = SynthDef("gsink", out(0, in_(control("in")) * control("amp", 0.3)))
-    g = Group(kind=LOGICAL, name="chain", buses=[("mix", "audio")])
+    g = Aggregate(kind=LOGICAL, name="chain", buses=[("mix", "audio")])
     g.add(Generator(src, controls={"out": "mix"}))
     g.add(Generator(sink, controls={"in": "mix"}))
     return g
@@ -117,7 +117,7 @@ def test_each_root_member_becomes_a_lane_named_after_its_material():
     assert "ruler" not in lanes(tree)[0]
 
 
-def test_a_buffer_clip_names_the_server_buffer_and_spans_its_frames():
+def test_a_vector_clip_names_the_server_buffer_and_spans_its_frames():
     audio = lanes(editor().draw())[0]
     (take,) = clips(audio)
     assert take["type"] == "field" and "dur" in take
@@ -126,17 +126,17 @@ def test_a_buffer_clip_names_the_server_buffer_and_spans_its_frames():
     assert take["offset"] == 0.0
 
 
-def test_a_buffer_spans_its_frames_only_when_it_has_no_duration():
+def test_a_vector_spans_its_frames_only_when_it_has_no_duration():
     """A buffer read but never queried has no frame count client-side; its
     element's `duration` is what places it, and must win over the frames."""
-    unqueried = Buffer(ServerBuffer(bufnum=3), duration=2.0)   # frames unknown (0)
-    (lane,) = lanes(editor(Group([(0.0, unqueried)], name="take")).draw())
+    unqueried = Vector(ServerBuffer(bufnum=3), duration=2.0)   # frames unknown (0)
+    (lane,) = lanes(editor(Aggregate([(0.0, unqueried)], name="take")).draw())
     (c,) = clips(lane)
     assert c["dur"] == pytest.approx(2 * BEAT)
 
     # With no duration either, the take's own frames are its length.
-    sized = Buffer(ServerBuffer(bufnum=3, frames=int(1.5 * BEAT)))
-    (lane,) = lanes(editor(Group([(0.0, sized)], name="take")).draw())
+    sized = Vector(ServerBuffer(bufnum=3, frames=int(1.5 * BEAT)))
+    (lane,) = lanes(editor(Aggregate([(0.0, sized)], name="take")).draw())
     assert clips(lane)[0]["dur"] == pytest.approx(1.5 * BEAT)
 
 
@@ -161,7 +161,7 @@ def test_a_generator_lane_shows_the_notes_its_pattern_will_play():
     from clausters.seq.pattern import Pbind, Pseq
 
     seq = Sequence(Pbind(midinote=Pseq([60, 62], 1), dur=1.0))
-    (lane,) = lanes(editor(Group([(0.0, seq)], name="gen")).draw())
+    (lane,) = lanes(editor(Aggregate([(0.0, seq)], name="gen")).draw())
     (roll,) = clips(lane)
     # Pitch is the 3rd of each (start, dur, pitch, velocity, channel) quintuple.
     assert [roll["notes"][i] for i in (2, 7)] == [60.0, 62.0]
@@ -200,7 +200,7 @@ def test_a_rendered_element_opens_as_one_measured_waveform():
     on one rectangle are not layers, the second hides the first. One view is
     also one axis, one ruler, one selection, one playhead and one upload.
     """
-    take = Buffer(ServerBuffer(bufnum=7, frames=int(4 * BEAT), channels=2,
+    take = Vector(ServerBuffer(bufnum=7, frames=int(4 * BEAT), channels=2,
                                sample_rate=SR), duration=4.0)
     ed = Editor(take, sample_rate=SR, tempo=TEMPO)
     ed._mode, ed._signal_element = "signal", take
@@ -219,7 +219,7 @@ def test_a_rendered_element_opens_as_one_measured_waveform():
 
 
 def test_the_bare_envelope_is_a_shorter_stack():
-    take = Buffer(ServerBuffer(bufnum=7, frames=1000, channels=1, sample_rate=SR))
+    take = Vector(ServerBuffer(bufnum=7, frames=1000, channels=1, sample_rate=SR))
     ed = Editor(take, sample_rate=SR, tempo=TEMPO)
     ed._mode, ed._signal_element = "signal", take
     ed.layers = ("peak",)
@@ -227,7 +227,7 @@ def test_the_bare_envelope_is_a_shorter_stack():
 
 
 def test_a_selection_swept_on_a_signal_view_is_of_that_element():
-    take = Buffer(ServerBuffer(bufnum=7, frames=int(4 * BEAT), channels=1,
+    take = Vector(ServerBuffer(bufnum=7, frames=int(4 * BEAT), channels=1,
                                sample_rate=SR), duration=4.0)
     ed = Editor(take, sample_rate=SR, tempo=TEMPO)
     ed._mode, ed._signal_element = "signal", take
@@ -260,7 +260,7 @@ def test_a_generator_has_no_samples_and_the_refusal_says_so():
 
 
 def test_an_unknown_measure_is_refused_by_name():
-    take = Buffer(ServerBuffer(bufnum=7, frames=1000, channels=1, sample_rate=SR))
+    take = Vector(ServerBuffer(bufnum=7, frames=1000, channels=1, sample_rate=SR))
     ed = Editor(take, sample_rate=SR, tempo=TEMPO)
     with pytest.raises(ValueError, match="loudness"):
         ed.open_signal(None, take, layers=("peak", "loudness"))
@@ -301,7 +301,7 @@ def test_a_note_edited_in_a_clip_body_reaches_the_arrangement():
     **clip's** — and the multitrack must resolve that to the element the body
     draws, or the note moves on screen and nowhere else."""
     track, tl = _track_material()
-    ed = editor(Group([(0.0, Group([(2.0, track)], name="lead"))], name="song"))
+    ed = editor(Aggregate([(0.0, Aggregate([(2.0, track)], name="lead"))], name="song"))
     (lane,) = lanes(ed.draw())
     (roll,) = clips(lane)
     assert roll["notes"]                                  # it is a roll body
@@ -322,7 +322,7 @@ def test_a_generator_clip_body_is_read_only_and_the_refusal_says_why():
     from clausters.seq.pattern import Pbind, Pseq
 
     gen = Sequence(Pbind(midinote=Pseq([60, 62], 1), dur=1.0))
-    ed = editor(Group([(0.0, Group([(0.0, gen)], name="bass"))], name="song"))
+    ed = editor(Aggregate([(0.0, Aggregate([(0.0, gen)], name="bass"))], name="song"))
     host = _FakeHost()
     ed.open(host)
     (lane,) = lanes(ed.draw())
@@ -338,17 +338,18 @@ def test_a_generator_clip_body_is_read_only_and_the_refusal_says_why():
 
 
 def test_a_layered_clip_routes_a_note_edit_to_the_member_that_carries_it():
-    """A simultaneous group draws as one clip with layered bodies, so the notes
-    under the cursor belong to a *member* — the editable one, not the group."""
+    """A simultaneous aggregate draws as one clip with layered bodies, so the
+    notes under the cursor belong to a *member* — the editable one, not the
+    aggregate."""
     from clausters.form import Element
     from clausters.seq import Automation
 
     env = Automation.from_points([(0, 200.0, 1, 0.0), (4, 900.0, 2, 0.0)],
                                  target=None, name="sweep")
     tl = Timeline([(0.0, SeqEvent(midinote=60, dur=4.0))])
-    attached = Group([(0.0, Track(tl, duration=4.0)),
+    attached = Aggregate([(0.0, Track(tl, duration=4.0)),
                       (0.0, Element(env, duration=4.0))], name="sweep")
-    ed = editor(Group([(0.0, Group([(0.0, attached)], name="sweep"))], name="song"))
+    ed = editor(Aggregate([(0.0, Aggregate([(0.0, attached)], name="sweep"))], name="song"))
     (lane,) = lanes(ed.draw())
     (c,) = clips(lane)
     assert c["notes"] and c["points"]
@@ -357,13 +358,13 @@ def test_a_layered_clip_routes_a_note_edit_to_the_member_that_carries_it():
     assert [it.get("midinote") for _b, it in tl.range(0.0, float("inf"))] == [67]
 
 
-# ---- the base level: a nested group collapses to a summary, or expands ----
+# ---- the base level: a nested aggregate collapses to a summary, or expands ----
 
-def test_a_nested_group_is_a_labeled_rectangle_until_it_is_expanded():
-    inner = Group([(0.0, Event(SeqEvent(midinote=60, dur=1.0))),
-                   (1.0, Event(SeqEvent(midinote=62, dur=1.0)))], name="motif")
-    outer = Group([(0.0, inner)], name="section")
-    ed = editor(Group([(0.0, outer)], name="song"))
+def test_a_nested_aggregate_is_a_labeled_rectangle_until_it_is_expanded():
+    inner = Aggregate([(0.0, Clang(SeqEvent(midinote=60, dur=1.0))),
+                   (1.0, Clang(SeqEvent(midinote=62, dur=1.0)))], name="motif")
+    outer = Aggregate([(0.0, inner)], name="section")
+    ed = editor(Aggregate([(0.0, outer)], name="song"))
 
     (lane,) = lanes(ed.draw())
     (summary,) = clips(lane)
@@ -371,7 +372,8 @@ def test_a_nested_group_is_a_labeled_rectangle_until_it_is_expanded():
     assert "notes" not in summary and "buffer" not in summary  # a bare rectangle
     assert summary["dur"] == pytest.approx(2 * BEAT)           # it spans its members
 
-    # Expanded, the group resolves into a lane of its own with its members as clips.
+    # Expanded, the aggregate resolves into a lane of its own with its members
+    # as clips.
     ed.expand(inner)
     expanded = lanes(ed.draw())
     assert [lane["label"] for lane in expanded] == ["motif"]
@@ -427,13 +429,14 @@ def test_an_edit_snaps_to_the_musical_grid():
     assert member.offset == pytest.approx(3.5)
 
 
-def test_a_clip_in_a_placed_group_converts_back_through_its_base():
+def test_a_clip_in_a_placed_aggregate_converts_back_through_its_base():
     """A clip's offset is absolute on the shared axis; a placement is relative to
-    its group. Dragging a clip inside a group that starts at beat 4 must move it
+    its aggregate. Dragging a clip inside an aggregate that starts at beat 4 must
+    move it
     by the delta, not stamp the absolute position onto the member."""
-    note = Event(SeqEvent(midinote=60, dur=1.0))
-    section = Group([(1.0, note)], name="section")        # the note at beat 1 of it
-    ed = editor(Group([(4.0, section)], name="song"))     # the section at beat 4
+    note = Clang(SeqEvent(midinote=60, dur=1.0))
+    section = Aggregate([(1.0, note)], name="section")        # the note at beat 1 of it
+    ed = editor(Aggregate([(4.0, section)], name="song"))     # the section at beat 4
     (c,) = clips(lanes(ed.draw())[0])
     assert c["offset"] == pytest.approx(5 * BEAT)         # absolute: 4 + 1
 
@@ -755,7 +758,7 @@ def automation_song() -> tuple:
     auto = Automation.from_points(
         [(0, 200.0, 1, 0.0), (2, 4000.0, 2, 0.0), (4, 800.0, 1, 0.0)],
         target=None, name="cutoff")
-    song = Group([(2.0, Group([(0.0, Element(auto))], name="filter"))], name="song")
+    song = Aggregate([(2.0, Aggregate([(0.0, Element(auto))], name="filter"))], name="song")
     return song, auto
 
 
@@ -817,20 +820,20 @@ def test_editing_the_curve_refills_the_control_buffer_it_is_played_from():
 
 
 def test_an_envelope_attached_to_its_event_is_one_clip_that_moves_as_one():
-    """A group whose members start and end together *is* one thing on the timeline
+    """An aggregate whose members start and end together *is* one thing on the timeline
     (its temporal relation says so), so it draws as one clip with **layered**
-    bodies — the envelope over the event it shapes — and dragging it moves the
-    whole group, not one of its parts."""
+    bodies — the envelope over the clang it shapes — and dragging it moves the
+    whole aggregate, not one of its parts."""
     from clausters.form import Element
     from clausters.seq import Automation
 
     env = Automation.from_points([(0, 200.0, 1, 0.0), (4, 900.0, 2, 0.0)],
                                  target=None, name="sweep")
-    voice = Event(SeqEvent(midinote=60, dur=4.0))
-    attached = Group([(0.0, voice), (0.0, Element(env, duration=4.0))], name="sweep")
+    voice = Clang(SeqEvent(midinote=60, dur=4.0))
+    attached = Aggregate([(0.0, voice), (0.0, Element(env, duration=4.0))], name="sweep")
     assert attached.temporal_relation() == "simultaneous"
 
-    ed = editor(Group([(2.0, attached)], name="song"))
+    ed = editor(Aggregate([(2.0, attached)], name="song"))
     (lane,) = lanes(ed.draw())
     (c,) = clips(lane)
     # One clip, both bodies — and each on its own value axis.
@@ -838,7 +841,7 @@ def test_an_envelope_attached_to_its_event_is_one_clip_that_moves_as_one():
     assert c["min"] < 60.0 < c["max"]                     # the notes' pitch axis
     assert c["points_min"] < 200.0 and c["points_max"] > 900.0   # the curve's
 
-    # Dragging it moves the group: the event and its envelope stay together.
+    # Dragging it moves the aggregate: the clang and its envelope stay together.
     ed.apply(*clip_event(c["id"], 6 * BEAT, c["dur"]))
     placed = ed._clips[c["id"]]
     assert placed.member.element is attached
@@ -848,20 +851,20 @@ def test_an_envelope_attached_to_its_event_is_one_clip_that_moves_as_one():
     assert min(b for b, _ in flatten(ed.element)) == pytest.approx(6.0)
 
 
-# ---- the logical group: deferred to the directed patcher driver ----
+# ---- the logical aggregate: deferred to the directed patcher driver ----
 
-def test_a_logical_group_is_skipped_until_the_directed_driver():
-    """A logical group draws as a directed `graph` patch, which needs the members'
+def test_a_logical_aggregate_is_skipped_until_the_directed_driver():
+    """A logical aggregate draws as a directed `graph` patch, which needs the members'
     port directions from their defs — the directed patcher's Python driver (P3).
     Until then the Editor skips it rather than draw the old bus-as-node view; a
     directed patch is built directly with `clausters.defs.GraphPatch` (see
     `examples/gui_patch1.py`)."""
     from clausters.form import Generator
-    from clausters.form.group import LOGICAL
+    from clausters.form.aggregate import LOGICAL
 
-    chain = Group([Generator("gsrc", controls={"out": "mix"})], kind=LOGICAL,
+    chain = Aggregate([Generator("gsrc", controls={"out": "mix"})], kind=LOGICAL,
                   name="chain", buses=["mix"])
-    tree = editor(Group([(0.0, chain)], name="song")).draw()
+    tree = editor(Aggregate([(0.0, chain)], name="song")).draw()
     children = tree.get("children", [])
     assert [c for c in children if is_patch(c)] == []
     assert [c for c in children if is_lane(c)] == [], \
@@ -907,8 +910,8 @@ def test_the_edited_composition_renders_where_it_was_dropped():
                       if _inner_addr(raw) == "/synth_new")
 
     def edited(server, clock):
-        note = Event(SeqEvent(instrument="default", freq=440.0, dur=1.0))
-        song = Group([(0.0, Group([(0.0, note)], name="lead"))], name="song")
+        note = Clang(SeqEvent(instrument="default", freq=440.0, dur=1.0))
+        song = Aggregate([(0.0, Aggregate([(0.0, note)], name="lead"))], name="song")
         ed = Editor(song, sample_rate=SR, tempo=TEMPO, quant=1.0)
         lane = lanes(ed.draw())[0]
         (c,) = clips(lane)
@@ -920,7 +923,7 @@ def test_the_edited_composition_renders_where_it_was_dropped():
     assert starts(edited) == [3.0 / TEMPO]
 
 
-# ---- logical groups: a directed graph patch, not a timeline lane ----
+# ---- logical aggregates: a directed graph patch, not a timeline lane ----
 
 def test_logical_patch_derives_boxes_and_cords_from_the_defs():
     patch, handles = _logical_patch(fx_chain())
@@ -933,23 +936,23 @@ def test_logical_patch_derives_boxes_and_cords_from_the_defs():
     assert len(handles) == 2
 
 
-def test_editor_draws_a_root_logical_group_as_a_graph():
+def test_editor_draws_a_root_logical_aggregate_as_a_graph():
     ed = Editor(fx_chain(), sample_rate=SR, tempo=TEMPO)
     tree = ed.draw()
     scrolls = [c for c in tree["children"] if is_plane(c)]
-    assert len(scrolls) == 1, "the logical group is a pan/zoom graph workspace"
+    assert len(scrolls) == 1, "the logical aggregate is a pan/zoom graph workspace"
     view = scrolls[0]["children"][0]
     assert is_patch(view)
     assert view["cords"] == [0, 0, 1, 0]
-    # Registered so an edit-back resolves to the group it draws.
+    # Registered so an edit-back resolves to the aggregate it draws.
     assert view["id"] in ed._patches
     assert ed._patches[view["id"]][0] is ed.element
 
 
-def test_a_logical_group_among_concrete_lanes_draws_as_a_patch_lane():
-    # A concrete root with a track lane and a logical group beside it.
+def test_a_logical_aggregate_among_concrete_lanes_draws_as_a_patch_lane():
+    # A concrete root with a track lane and a logical aggregate beside it.
     melody = Track(Timeline([(0.0, SeqEvent(midinote=60, dur=1.0))]))
-    root = Group([(0.0, Group([(0.0, melody)], name="lead")),
+    root = Aggregate([(0.0, Aggregate([(0.0, melody)], name="lead")),
                   (0.0, fx_chain())], name="song")
     tree = Editor(root, sample_rate=SR, tempo=TEMPO).draw()
     kids = tree["children"]
@@ -966,7 +969,7 @@ def test_a_wire_edit_rewrites_the_members_controls_onto_a_shared_bus():
     # Two unconnected members (no controls): wire src.out -> sink.in.
     src = SynthDef("gsrc", out(control("out"), sine(control("freq", 220.0))))
     sink = SynthDef("gsink", out(0, in_(control("in")) * control("amp", 0.3)))
-    g = Group(kind=LOGICAL, name="chain")
+    g = Aggregate(kind=LOGICAL, name="chain")
     hs = g.add(Generator(src))
     hk = g.add(Generator(sink))
     ed = Editor(g, sample_rate=SR, tempo=TEMPO)
@@ -974,7 +977,7 @@ def test_a_wire_edit_rewrites_the_members_controls_onto_a_shared_bus():
     wid = [c for c in tree["children"] if is_plane(c)][0]["children"][0]["id"]
 
     assert ed.apply("/gui_event", [wid, SEQ, UNSTATED, "wire", 0, "out", 1, "in"]) is True
-    # Both members now name one internal bus; the group declares it (audio).
+    # Both members now name one internal bus; the aggregate declares it (audio).
     bus = hs.element.controls["out"]
     assert bus and hk.element.controls["in"] == bus
     assert bus in g.bus_names
@@ -988,7 +991,7 @@ def test_a_wire_edit_rewrites_the_members_controls_onto_a_shared_bus():
 def test_a_wire_reuses_an_existing_bus_for_fan_out():
     src = SynthDef("gsrc", out(control("out"), sine(control("freq", 220.0))))
     sink = SynthDef("gsink", out(0, in_(control("in"))))
-    g = Group(kind=LOGICAL, name="chain", buses=[("mix", "audio")])
+    g = Aggregate(kind=LOGICAL, name="chain", buses=[("mix", "audio")])
     g.add(Generator(src, controls={"out": "mix"}))   # already writes "mix"
     hk = g.add(Generator(sink))                       # unwired sink
     ed = Editor(g, sample_rate=SR, tempo=TEMPO)
@@ -1006,7 +1009,7 @@ def test_a_graph_box_move_persists_its_position_across_a_redraw():
     wid = [c for c in tree["children"] if is_plane(c)][0]["children"][0]["id"]
     # A move is presentation only: the composition did not change.
     assert ed.apply("/gui_event", [wid, SEQ, UNSTATED, "move", 1, 300.0, 120.0]) is False
-    # It survives a redraw (keyed by the group, not the widget id).
+    # It survives a redraw (keyed by the aggregate, not the widget id).
     view = [c for c in ed.draw()["children"] if is_plane(c)][0]["children"][0]
     assert view["boxes"][1]["x"] == pytest.approx(300.0)
     assert view["boxes"][1]["y"] == pytest.approx(120.0)
@@ -1024,7 +1027,7 @@ def test_a_refused_note_edit_sends_the_notes_back_rather_than_saying_nothing():
     from clausters.seq.pattern import Pbind, Pseq
 
     gen = Sequence(Pbind(midinote=Pseq([60, 62], 1), dur=1.0))
-    ed = editor(Group([(0.0, Group([(0.0, gen)], name="bass"))], name="song"))
+    ed = editor(Aggregate([(0.0, Aggregate([(0.0, gen)], name="bass"))], name="song"))
     host = _FakeHost()
     ed.open(host)
     (lane,) = lanes(ed.draw())
@@ -1045,7 +1048,7 @@ def test_a_snapped_clip_answers_with_where_it_actually_landed():
     musical grid, the host drew it where it was released, and nothing used to
     say so -- the two disagreed by up to half a grid step, silently."""
     ed = editor(
-        Group([(0.0, Group([(0.0, Event(SeqEvent(dur=1.0), duration=1.0))],
+        Aggregate([(0.0, Aggregate([(0.0, Clang(SeqEvent(dur=1.0), duration=1.0))],
                            name="lead"))], name="song"),
         quant=1.0,
     )
@@ -1068,7 +1071,7 @@ def test_an_edit_taken_as_given_is_still_answered():
     retires the host's pending drawing, and an edit that is never answered is one
     the host waits on forever."""
     ed = editor(
-        Group([(0.0, Group([(0.0, Event(SeqEvent(dur=1.0), duration=1.0))],
+        Aggregate([(0.0, Aggregate([(0.0, Clang(SeqEvent(dur=1.0), duration=1.0))],
                            name="lead"))], name="song")
     )
     host = _FakeHost()
@@ -1084,7 +1087,7 @@ def test_an_event_from_another_editors_window_is_not_answered():
     """A poll loop may be shared between two editors, and an editor that answered
     for a window it does not own would retire a pending edit the real owner has
     not applied."""
-    ed = editor(Group([(0.0, Group([(0.0, Event(SeqEvent(dur=1.0)))], name="lead"))],
+    ed = editor(Aggregate([(0.0, Aggregate([(0.0, Clang(SeqEvent(dur=1.0)))], name="lead"))],
                       name="song"))
     host = _FakeHost()
     ed.open(host)
@@ -1102,9 +1105,9 @@ def two_clips() -> Editor:
     """Two lanes, one clip each -- the smallest composition in which one edit
     can supersede another."""
     return editor(
-        Group([
-            (0.0, Group([(0.0, Event(SeqEvent(dur=1.0), duration=1.0))], name="lead")),
-            (0.0, Group([(0.0, Event(SeqEvent(dur=1.0), duration=1.0))], name="bass")),
+        Aggregate([
+            (0.0, Aggregate([(0.0, Clang(SeqEvent(dur=1.0), duration=1.0))], name="lead")),
+            (0.0, Aggregate([(0.0, Clang(SeqEvent(dur=1.0), duration=1.0))], name="bass")),
         ], name="song"),
         quant=1.0,
     )
@@ -1196,9 +1199,9 @@ def test_a_stale_note_edit_is_answered_with_the_notes_as_they_stand():
     """The same gate in the roll's own terms: what goes back is the widget's
     kind of value, so the host adopts it with the one drop-and-adopt rule."""
     tl = Timeline([(0.0, SeqEvent(midinote=60, dur=1.0))])
-    ed = editor(Group([
-        (0.0, Group([(0.0, Track(tl, duration=1.0))], name="lead")),
-        (0.0, Group([(0.0, Event(SeqEvent(dur=1.0), duration=1.0))], name="bass")),
+    ed = editor(Aggregate([
+        (0.0, Aggregate([(0.0, Track(tl, duration=1.0))], name="lead")),
+        (0.0, Aggregate([(0.0, Clang(SeqEvent(dur=1.0), duration=1.0))], name="bass")),
     ], name="song"))
     host = _FakeHost()
     ed.open(host)
@@ -1414,8 +1417,8 @@ def test_a_break_point_edited_on_a_curve_is_undoable_and_redoable():
     from clausters.seq.automation import Automation
 
     auto = Automation(Env([100.0, 400.0], [2.0]), "freq", name="sweep")
-    lane = Group([(0.0, Element(auto, duration=2.0))], name="sweep")
-    ed = editor(Group([(0.0, lane)], name="song"), quant=0.0)
+    lane = Aggregate([(0.0, Element(auto, duration=2.0))], name="sweep")
+    ed = editor(Aggregate([(0.0, lane)], name="song"), quant=0.0)
     ed._history()
     before = list(auto.to_points())
 
@@ -1450,7 +1453,7 @@ def test_a_script_editing_behind_the_editor_says_so_with_refresh():
     ed = editor(piece, quant=0.0)
     _, first = ed._history()
 
-    piece.add(Event(SeqEvent(midinote=48)), offset=8.0)
+    piece.add(Clang(SeqEvent(midinote=48)), offset=8.0)
     ed.refresh()
     _, after = ed._history()
     assert after is not first, "re-derived, so the new node is nameable"
@@ -1462,10 +1465,10 @@ def test_dragging_the_second_of_two_windows_moves_the_second():
     write two members carrying one id, so the crate applied the edit to the
     first match while the editor's index kept the last — two writes, two
     destinations, and the clip the hand moved came back to where it was."""
-    take = Buffer(ServerBuffer(bufnum=7, frames=int(4 * BEAT), channels=1,
+    take = Vector(ServerBuffer(bufnum=7, frames=int(4 * BEAT), channels=1,
                                sample_rate=SR), duration=4.0)
-    lane = Group([(0.0, take), (4.0, take)], name="drums")
-    ed = editor(Group([(0.0, lane)], name="song"), quant=0.0)
+    lane = Aggregate([(0.0, take), (4.0, take)], name="drums")
+    ed = editor(Aggregate([(0.0, lane)], name="song"), quant=0.0)
     ed._history()
 
     first, second = lane.handles
@@ -1489,18 +1492,18 @@ def test_a_clip_over_a_generator_draws_its_notes_read_only():
     and unwinding it when the owner declines."""
     from clausters.seq.pattern import Pbind, Pseq
 
-    lane = Group([(0.0, Sequence(Pbind(midinote=Pseq([60, 64], 1), dur=1.0),
+    lane = Aggregate([(0.0, Sequence(Pbind(midinote=Pseq([60, 64], 1), dur=1.0),
                                  name="line"))], name="pattern")
-    ed = editor(Group([(0.0, lane)], name="song"))
+    ed = editor(Aggregate([(0.0, lane)], name="song"))
     clip = _find(ed.draw(), lambda n: "notes" in n)
     assert clip is not None, "a pattern lane draws its bounced notes"
     assert clip.get("editable") == 0, "and says they are read-only"
 
     # A track's own notes are editable, which is what says the flag is the
     # material's and not the widget's.
-    track = Group([(0.0, Track(Timeline([(0.0, SeqEvent(midinote=60, dur=1.0))])))],
+    track = Aggregate([(0.0, Track(Timeline([(0.0, SeqEvent(midinote=60, dur=1.0))])))],
                   name="lead")
-    ed2 = editor(Group([(0.0, track)], name="song"))
+    ed2 = editor(Aggregate([(0.0, track)], name="song"))
     editable = _find(ed2.draw(), lambda n: "notes" in n)
     assert editable is not None and "editable" not in editable
 
@@ -1521,10 +1524,10 @@ def _find(node, pred):
 
 def _take_song(**window) -> tuple:
     """A one-lane composition holding one four-beat take, and its element."""
-    take = Buffer(ServerBuffer(bufnum=7, frames=int(4 * BEAT), channels=1,
+    take = Vector(ServerBuffer(bufnum=7, frames=int(4 * BEAT), channels=1,
                                sample_rate=SR), duration=4.0, instrument="take",
                   **window)
-    return Group([(0.0, Group([(0.0, take)], name="audio"))], name="song"), take
+    return Aggregate([(0.0, Aggregate([(0.0, take)], name="audio"))], name="song"), take
 
 
 def test_a_take_draws_the_window_it_reads():
@@ -1612,11 +1615,11 @@ def test_clips_over_different_material_join_into_one_element():
     draws one take per segment over its own stretch."""
     from clausters.form import Segments
 
-    a = Buffer(ServerBuffer(bufnum=7, frames=int(BEAT), channels=1, sample_rate=SR),
+    a = Vector(ServerBuffer(bufnum=7, frames=int(BEAT), channels=1, sample_rate=SR),
                duration=1.0, instrument="take")
-    b = Buffer(ServerBuffer(bufnum=8, frames=int(BEAT), channels=1, sample_rate=SR),
+    b = Vector(ServerBuffer(bufnum=8, frames=int(BEAT), channels=1, sample_rate=SR),
                duration=1.0, instrument="take", start=100.0)
-    song = Group([(0.0, Group([(0.0, a), (1.0, b)], name="audio"))], name="song")
+    song = Aggregate([(0.0, Aggregate([(0.0, a), (1.0, b)], name="audio"))], name="song")
     ed = editor(song)
     (lane,) = lanes(ed.draw())
     first, second = clips(lane)
@@ -1665,7 +1668,7 @@ def test_a_join_of_one_run_of_one_buffer_is_the_window_it_was_cut_from():
     (lane,) = lanes(ed.draw())
     (joined,) = clips(lane)
     element = ed._clips[joined["id"]].member.element
-    assert isinstance(element, Buffer) and not isinstance(element, Segments)
+    assert isinstance(element, Vector) and not isinstance(element, Segments)
     assert joined["dur"] == pytest.approx(4 * BEAT)
 
 
@@ -1687,11 +1690,11 @@ def test_a_joined_clip_cuts_apart_into_the_windows_it_was_made_of():
     what it read before — nothing was copied, so nothing can be lost."""
     from clausters.form import Segments
 
-    a = Buffer(ServerBuffer(bufnum=7, frames=int(2 * BEAT), channels=1, sample_rate=SR),
+    a = Vector(ServerBuffer(bufnum=7, frames=int(2 * BEAT), channels=1, sample_rate=SR),
                duration=1.0, instrument="take")
-    b = Buffer(ServerBuffer(bufnum=8, frames=int(2 * BEAT), channels=1, sample_rate=SR),
+    b = Vector(ServerBuffer(bufnum=8, frames=int(2 * BEAT), channels=1, sample_rate=SR),
                duration=1.0, instrument="take", start=200.0)
-    song = Group([(0.0, Group([(0.0, a), (1.0, b)], name="audio"))], name="song")
+    song = Aggregate([(0.0, Aggregate([(0.0, a), (1.0, b)], name="audio"))], name="song")
     ed = editor(song)
     (lane,) = lanes(ed.draw())
     first, second = clips(lane)
@@ -1708,7 +1711,7 @@ def test_a_joined_clip_cuts_apart_into_the_windows_it_was_made_of():
     # plain window rather than a list of one -- which is what makes a cut and a
     # join inverses instead of a pile of wrappers.
     tail = ed._clips[right["id"]].member.element
-    assert isinstance(tail, Buffer) and not isinstance(tail, Segments)
+    assert isinstance(tail, Vector) and not isinstance(tail, Segments)
     assert (right["buffer"], right["start"]) == (8, pytest.approx(200.0))
     # The **head** is the element it always was, with its placement shortened:
     # it draws the one segment it now reaches...
@@ -1732,9 +1735,9 @@ def test_a_segments_clip_shows_and_plays_only_what_its_placement_covers():
     a = ServerBuffer(bufnum=7, frames=int(2 * BEAT), channels=1, sample_rate=SR)
     b = ServerBuffer(bufnum=8, frames=int(2 * BEAT), channels=1, sample_rate=SR)
     seg = Segments([(a, 0.0, 1.0), (b, 0.0, 1.0)], instrument="take")
-    group = Group(name="audio")
-    group.add(seg, 0.0, 1.5)                       # a placement of 1.5 beats
-    ed = editor(Group([(0.0, group)], name="song"))
+    audio = Aggregate(name="audio")
+    audio.add(seg, 0.0, 1.5)                       # a placement of 1.5 beats
+    ed = editor(Aggregate([(0.0, audio)], name="song"))
     (lane,) = lanes(ed.draw())
     (clip,) = clips(lane)
     takes = clip["children"]

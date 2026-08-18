@@ -73,7 +73,7 @@ identical flattening accumulates a score instead of sounding —
 sample-identical to the live playback, because it is the same walk feeding the
 same engine. The [bounce page](bounce.md) closes the tutorial with it.
 
-One more dispatch hides in the same verb: a **logical** group (the other
+One more dispatch hides in the same verb: a **logical** aggregate (the other
 grouping kind) does not flatten at all — `render` sends it to the server as a
 signal-graph definition instead. That is [the logical page](logical.md); the
 piece does not need it yet.

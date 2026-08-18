@@ -4,10 +4,10 @@
 
 use super::*;
 
-const DOC: &str = r#"{"version":1,"root":{"id":1,"kind":"set","grouping":"concrete",
+const DOC: &str = r#"{"version":1,"root":{"id":1,"kind":"aggregate","grouping":"concrete",
     "members":[
-      {"offset":0.0,"node":{"id":2,"kind":"event"}},
-      {"offset":4.0,"node":{"id":3,"kind":"event"}}
+      {"offset":0.0,"node":{"id":2,"kind":"clang"}},
+      {"offset":4.0,"node":{"id":3,"kind":"clang"}}
     ]}}"#;
 
 /// A handle that frees itself, so a failing assertion does not leak.
@@ -181,7 +181,7 @@ fn a_destructive_inverse_is_recorded_by_the_caller_and_undone_here() {
     // The one edit the document cannot supply the inverse for: its samples are
     // not in the tree, so the caller reads the span it is about to overwrite
     // and hands the pair over.
-    let document = r#"{"version":1,"root":{"id":1,"kind":"buffer",
+    let document = r#"{"version":1,"root":{"id":1,"kind":"vector",
         "source":{"source":7,"lifetime":"temporary","generation":4}}}"#;
     let log = Held::new();
     let forward = r#"{"edit":{"intent":"writesamples","node":1,"start":10,"values":[0.5,0.5]}}"#;
@@ -216,7 +216,7 @@ fn a_destructive_inverse_is_recorded_by_the_caller_and_undone_here() {
 fn a_deterministic_operation_comes_back_for_the_owner_to_re_run() {
     // The asymmetry, across the ABI: going back is data, going forward may be a
     // recipe -- and the crate holds no algorithms, so it hands the recipe out.
-    let document = r#"{"version":1,"root":{"id":1,"kind":"buffer",
+    let document = r#"{"version":1,"root":{"id":1,"kind":"vector",
         "source":{"source":7,"lifetime":"temporary","generation":4}}}"#;
     let log = Held::new();
     let forward = r#"{"recompute":{"op":"normalize","peak":1.0}}"#;
@@ -245,8 +245,8 @@ fn a_deterministic_operation_comes_back_for_the_owner_to_re_run() {
 #[test]
 fn a_continuing_run_of_adjustments_is_one_undo() {
     // The caller decides where the hand stopped, because only the caller knows.
-    let document = r#"{"version":1,"root":{"id":1,"kind":"set","grouping":"concrete",
-        "members":[{"offset":0.0,"node":{"id":2,"kind":"event"}}]}}"#;
+    let document = r#"{"version":1,"root":{"id":1,"kind":"aggregate","grouping":"concrete",
+        "members":[{"offset":0.0,"node":{"id":2,"kind":"clang"}}]}}"#;
     let log = Held::new();
     for (i, offset) in [1.0, 1.5, 2.0].into_iter().enumerate() {
         let forward = format!(r#"{{"edit":{}}}"#, place(2, offset));

@@ -6,10 +6,10 @@ use super::*;
 use crate::intent::apply;
 use crate::{Beats, Body, Grouping, Member, Node, NodeId};
 
-fn event(id: u64) -> Node {
+fn clang(id: u64) -> Node {
     Node::new(
         NodeId(id),
-        Body::Event {
+        Body::Clang {
             config: Opaque::none(),
             fires: None,
         },
@@ -27,9 +27,9 @@ fn placed(offset: Beats, node: Node) -> Member {
 fn doc() -> Document {
     Document::new(Node::new(
         NodeId(1),
-        Body::Set {
+        Body::Aggregate {
             grouping: Grouping::Concrete,
-            members: vec![placed(0.0, event(2)), placed(4.0, event(3))],
+            members: vec![placed(0.0, clang(2)), placed(4.0, clang(3))],
             config: Opaque::none(),
         },
     ))

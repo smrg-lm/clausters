@@ -18,7 +18,8 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "clients/python"))
 
-from clausters.form import Buffer, Event, Generator, Group, Sequence, Track  # noqa: E402
+from clausters.form import (Aggregate, Generator, Clang, Sequence, Track,  # noqa: E402
+                            Vector)
 from clausters.form.document import to_document, to_session  # noqa: E402
 from clausters.seq import Event as SeqEvent  # noqa: E402
 from clausters.seq import Timeline  # noqa: E402
@@ -31,25 +32,25 @@ class _Buffer:
     bufnum = 7
 
 
-def composition() -> Group:
+def composition() -> Aggregate:
     """One of everything the conversion has a body for, nested, so the vector
     exercises the recursion rather than a flat list."""
-    piece = Group()
-    piece.add(Event(SeqEvent(midinote=60, dur=1.0)), offset=0.0, dur=1.0)
+    piece = Aggregate()
+    piece.add(Clang(SeqEvent(midinote=60, dur=1.0)), offset=0.0, dur=1.0)
     piece.add(
         Track(Timeline([(0.0, SeqEvent(midinote=64)), (1.5, SeqEvent(midinote=67))])),
         offset=1.0,
         dur=4.0,
     )
     piece.add(
-        Buffer(_Buffer(), instrument="take", controls={"amp": 0.4}),
+        Vector(_Buffer(), instrument="take", controls={"amp": 0.4}),
         offset=4.0,
         dur=2.0,
     )
-    piece.add(Sequence([Event(SeqEvent(midinote=72)), Event(SeqEvent(midinote=74))]),
+    piece.add(Sequence([Clang(SeqEvent(midinote=72)), Clang(SeqEvent(midinote=74))]),
               offset=6.0)
 
-    chain = Group(kind="logical")
+    chain = Aggregate(kind="logical")
     chain.add(Generator("rlpf", controls={"cutoff": 900.0}), offset=0.0)
     piece.add(chain, offset=8.0)
 

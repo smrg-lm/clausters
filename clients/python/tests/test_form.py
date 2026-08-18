@@ -1,8 +1,9 @@
 """The concrete model (Fase 1A) — pure structure and temporal algebra.
 
 No server: these check the temporal *character* of an element (from its
-onset/duration), the temporal *relation* derived from a `Group`'s member
-placements, the thin-wrapper delegation of `play`, and group editing by handle.
+onset/duration), the temporal *relation* derived from an `Aggregate`'s member
+placements, the thin-wrapper delegation of `play`, and aggregate editing by
+handle.
 Rendering onto the server/NRT is a later phase.
 """
 
@@ -21,13 +22,13 @@ from clausters.form import (
     SEGMENT,
     SIMULTANEOUS,
     SUCCESSIVE,
-    Buffer,
-    Event,
-    Generator,
-    Group,
+    Aggregate,
     Element,
+    Generator,
+    Clang,
     Sequence,
     Track,
+    Vector,
     flatten,
     temporal_character,
 )
@@ -57,17 +58,17 @@ def test_onset_duration_are_floats():
 
 # ---- the five primitives are thin wrappers ----
 
-def test_event_duration_defaults_from_dur():
-    # A bare event has an intrinsic duration but its onset comes from context,
-    # so a standalone event is `relative`.
-    ev = Event({"freq": 440, "dur": 2.0})
+def test_clang_duration_defaults_from_dur():
+    # A bare clang has an intrinsic duration but its onset comes from context,
+    # so a standalone clang is `relative`.
+    ev = Clang({"freq": 440, "dur": 2.0})
     assert ev.duration == 2.0
     assert ev.onset is None
     assert ev.temporal_character == RELATIVE
 
 
-def test_event_explicit_duration_wins():
-    ev = Event({"freq": 440, "dur": 2.0}, onset=1.0, duration=0.5)
+def test_clang_explicit_duration_wins():
+    ev = Clang({"freq": 440, "dur": 2.0}, onset=1.0, duration=0.5)
     assert ev.onset == 1.0 and ev.duration == 0.5
     assert ev.temporal_character == SEGMENT
 
@@ -85,7 +86,7 @@ def test_wrappers_carry_their_object():
     seq = Sequence([1, 2, 3])
     assert seq.wraps == [1, 2, 3]
     sentinel = object()
-    assert Buffer(sentinel).wraps is sentinel
+    assert Vector(sentinel).wraps is sentinel
     assert Generator(sentinel).wraps is sentinel
 
 
@@ -96,8 +97,8 @@ class _Dest:
         self.played = []
 
 
-def test_event_play_delegates_to_wrapped_event(monkeypatch):
-    ev = Event({"freq": 440})
+def test_clang_play_delegates_to_wrapped_event(monkeypatch):
+    ev = Clang({"freq": 440})
     seen = {}
     monkeypatch.setattr(ev.wraps, "play", lambda dest: seen.setdefault("dest", dest))
     dest = _Dest()
@@ -107,30 +108,30 @@ def test_event_play_delegates_to_wrapped_event(monkeypatch):
 
 def test_container_material_is_not_directly_playable():
     with pytest.raises(NotImplementedError):
-        Group().play(_Dest())
+        Aggregate().play(_Dest())
     with pytest.raises(NotImplementedError):
         Element().play(_Dest())
 
 
-# ---- Group editing by handle ----
+# ---- Aggregate editing by handle ----
 
-def test_group_kind_validated():
-    assert Group(kind=LOGICAL).kind == LOGICAL
+def test_aggregate_kind_validated():
+    assert Aggregate(kind=LOGICAL).kind == LOGICAL
     with pytest.raises(ValueError):
-        Group(kind="bogus")
+        Aggregate(kind="bogus")
 
 
-def test_group_seed_forms():
+def test_aggregate_seed_forms():
     a, b = Element(duration=1.0), Element(duration=1.0)
-    g = Group([a, (2.0, b), (4.0, 1.0, Element(duration=9.0))])
+    g = Aggregate([a, (2.0, b), (4.0, 1.0, Element(duration=9.0))])
     offsets = [off for off, _dur, _mat in g.members]
     assert offsets == [0.0, 2.0, 4.0]
     # the (offset, dur, element) triple overrides the element's own duration
     assert g.members[2][1] == 1.0
 
 
-def test_group_add_remove_move_by_handle():
-    g = Group()
+def test_aggregate_add_remove_move_by_handle():
+    g = Aggregate()
     h1 = g.add(Element(duration=1.0), 0.0)
     h2 = g.add(Element(duration=1.0), 1.0)
     assert len(g) == 2
@@ -144,30 +145,30 @@ def test_group_add_remove_move_by_handle():
 
 # ---- the derived temporal relation ----
 
-def _grp(*placements):
-    """A group of members at the given (offset, dur) placements."""
-    g = Group()
+def _agg(*placements):
+    """An aggregate of members at the given (offset, dur) placements."""
+    g = Aggregate()
     for offset, dur in placements:
         g.add(Element(duration=dur), offset)
     return g
 
 
 def test_relation_empty_is_none():
-    assert Group().temporal_relation() is None
+    assert Aggregate().temporal_relation() is None
 
 
 def test_relation_single_member_is_simultaneous():
-    assert _grp((0.0, 2.0)).temporal_relation() == SIMULTANEOUS
+    assert _agg((0.0, 2.0)).temporal_relation() == SIMULTANEOUS
 
 
 def test_relation_simultaneous():
     # same start and same end
-    assert _grp((0.0, 2.0), (0.0, 2.0), (0.0, 2.0)).temporal_relation() == SIMULTANEOUS
+    assert _agg((0.0, 2.0), (0.0, 2.0), (0.0, 2.0)).temporal_relation() == SIMULTANEOUS
 
 
 def test_relation_simultaneous_durationless():
     # all start together and all have unknown (None) length -> still simultaneous
-    g = Group()
+    g = Aggregate()
     g.add(Element(), 3.0)
     g.add(Element(), 3.0)
     assert g.temporal_relation() == SIMULTANEOUS
@@ -175,21 +176,21 @@ def test_relation_simultaneous_durationless():
 
 def test_relation_successive():
     # tiling contiguously: 0-2, 2-3, 3-5 (order-independent)
-    assert _grp((2.0, 1.0), (0.0, 2.0), (3.0, 2.0)).temporal_relation() == SUCCESSIVE
+    assert _agg((2.0, 1.0), (0.0, 2.0), (3.0, 2.0)).temporal_relation() == SUCCESSIVE
 
 
 def test_relation_mixed_gap():
     # a gap between members -> neither simultaneous nor contiguous
-    assert _grp((0.0, 2.0), (3.0, 2.0)).temporal_relation() == MIXED
+    assert _agg((0.0, 2.0), (3.0, 2.0)).temporal_relation() == MIXED
 
 
 def test_relation_mixed_overlap():
-    assert _grp((0.0, 2.0), (1.0, 2.0)).temporal_relation() == MIXED
+    assert _agg((0.0, 2.0), (1.0, 2.0)).temporal_relation() == MIXED
 
 
 def test_relation_placement_dur_drives_derivation():
     # element durations differ, but the placement dur makes them tile
-    g = Group(kind=CONCRETE)
+    g = Aggregate(kind=CONCRETE)
     g.add(Element(duration=99.0), 0.0, dur=2.0)
     g.add(Element(duration=99.0), 2.0, dur=2.0)
     assert g.temporal_relation() == SUCCESSIVE
@@ -200,8 +201,8 @@ def test_relation_placement_dur_drives_derivation():
 def test_flatten_accumulates_nested_offsets():
     from clausters.seq.event import Event as SeqEvent
 
-    inner = Group([(0.0, Event({"dur": 1.0})), (2.0, Event({"dur": 1.0}))])
-    outer = Group([(10.0, inner), (5.0, Event({"dur": 1.0}))])
+    inner = Aggregate([(0.0, Clang({"dur": 1.0})), (2.0, Clang({"dur": 1.0}))])
+    outer = Aggregate([(10.0, inner), (5.0, Clang({"dur": 1.0}))])
     flat = flatten(outer)
     assert [beat for beat, _ in flat] == [5.0, 10.0, 12.0]  # sorted; 5, 10+0, 10+2
     # the items are the wrapped seq.Events (the play(destination) seam)
@@ -213,46 +214,46 @@ def test_flatten_track_shifts_its_timeline():
 
     a, b = OscEvent("/x", "a"), OscEvent("/x", "b")
     track = Track(Timeline([(0.0, a), (1.0, b)]))
-    flat = flatten(Group([(4.0, track)]))
+    flat = flatten(Aggregate([(4.0, track)]))
     assert flat == [(4.0, a), (5.0, b)]
 
 
 def test_sequence_of_materials_is_laid_out_successively():
-    flat = flatten(Sequence([Event({"dur": 2.0}), Event({"dur": 3.0}), Event({"dur": 1.0})]))
+    flat = flatten(Sequence([Clang({"dur": 2.0}), Clang({"dur": 3.0}), Clang({"dur": 1.0})]))
     assert [beat for beat, _ in flat] == [0.0, 2.0, 5.0]
 
 
-def test_abstract_material_yields_no_event():
-    flat = flatten(Group([(0.0, Element()), (1.0, Event({"dur": 1.0}))]))
+def test_abstract_material_yields_no_clang():
+    flat = flatten(Aggregate([(0.0, Element()), (1.0, Clang({"dur": 1.0}))]))
     assert [beat for beat, _ in flat] == [1.0]
 
 
 def test_to_timeline_is_sorted():
-    tl = Group([(2.0, Event({"dur": 1.0})), (0.0, Event({"dur": 1.0}))]).to_timeline()
+    tl = Aggregate([(2.0, Clang({"dur": 1.0})), (0.0, Clang({"dur": 1.0}))]).to_timeline()
     assert [beat for beat, _ in tl] == [0.0, 2.0]
 
 
-def test_flatten_logical_group_is_deferred():
+def test_flatten_logical_aggregate_is_deferred():
     with pytest.raises(NotImplementedError):
-        flatten(Group(kind=LOGICAL))
+        flatten(Aggregate(kind=LOGICAL))
 
 
-def test_a_buffer_without_an_instrument_has_no_sound_of_its_own():
+def test_a_vector_without_an_instrument_has_no_sound_of_its_own():
     # Data, not an audio clip: it contributes structure (and draws in the editor),
     # but nothing plays it, so flattening emits no event — and asking for the
     # event it would play says exactly what is missing.
-    assert flatten(Group([(0.0, Buffer(object()))])) == []
+    assert flatten(Aggregate([(0.0, Vector(object()))])) == []
     with pytest.raises(NotImplementedError, match="instrument"):
-        Buffer(object()).to_event()
+        Vector(object()).to_event()
 
 
 def test_a_frozen_generator_is_structure_and_emits_nothing():
     # What a session reopened somewhere the script is not running holds: the
     # document named an algorithm and nobody could supply one, so the element
     # carries the reference (or nothing). It draws and contributes its extent
-    # like a buffer with no instrument, and flattening it emits no event --
+    # like a vector with no instrument, and flattening it emits no event --
     # raising instead would make the whole piece unplayable over one lane.
-    frozen = Group([(0.0, Sequence("<Pbind object>")), (0.0, Generator(None))])
+    frozen = Aggregate([(0.0, Sequence("<Pbind object>")), (0.0, Generator(None))])
     assert flatten(frozen) == []
 
 
@@ -266,8 +267,8 @@ def test_a_resolved_leaf_plays_the_same_whichever_element_holds_it():
             pass
 
     material = _Plays()
-    assert (flatten(Group([(1.0, Generator(material))]))
-            == flatten(Group([(1.0, Element(material))])))
+    assert (flatten(Aggregate([(1.0, Generator(material))]))
+            == flatten(Aggregate([(1.0, Element(material))])))
 
 
 def test_render_bare_abstract_is_an_error():
@@ -296,7 +297,7 @@ def _inner_addr(raw: bytes) -> str:
 
 
 def test_render_matches_handbuilt_timeline_nrt():
-    """A concrete group rendered through the arrangement produces the same score
+    """A concrete aggregate rendered through the arrangement produces the same score
     (the same /synth_new start beats) as the equivalent flat timeline played by a
     Playhead by hand — proving the flatten is correct and the change of state
     deterministic. NRT only (OscNrtInterface), so no socket and no port clash."""
@@ -318,11 +319,11 @@ def test_render_matches_handbuilt_timeline_nrt():
         )
 
     def by_model(server, clock):
-        Group([
-            (0.0, Event(SeqEvent(instrument="default", freq=440.0, dur=1.0))),
-            (2.0, Group([
-                (0.0, Event(SeqEvent(instrument="default", freq=550.0, dur=1.0))),
-                (1.0, Event(SeqEvent(instrument="default", freq=660.0, dur=1.0))),
+        Aggregate([
+            (0.0, Clang(SeqEvent(instrument="default", freq=440.0, dur=1.0))),
+            (2.0, Aggregate([
+                (0.0, Clang(SeqEvent(instrument="default", freq=550.0, dur=1.0))),
+                (1.0, Clang(SeqEvent(instrument="default", freq=660.0, dur=1.0))),
             ])),
         ]).render(server, clock)
 
@@ -337,16 +338,17 @@ def test_render_matches_handbuilt_timeline_nrt():
     assert _starts(by_model) == _starts(by_hand) == [0.0, 2.0, 3.0]
 
 
-def test_a_buffer_sounds_through_the_instrument_that_plays_it():
-    """A buffer is data: it needs an instrument (a def whose `buf` control plays
-    it) to become an audio clip. With one, flattening emits the event that plays
-    it; without one it is structure only — it contributes no event."""
+def test_a_vector_sounds_through_the_instrument_that_plays_it():
+    """A vector wraps a buffer, and a buffer is data: it needs an instrument (a
+    def whose `buf` control plays it) to become an audio clip. With one,
+    flattening emits the event that plays it; without one it is structure only —
+    it contributes no event."""
     from clausters.defs.buffer import Buffer as ServerBuffer
 
     buf = ServerBuffer(bufnum=5, frames=1000)
-    clip = Buffer(buf, duration=2.0, instrument="sampler", controls={"amp": 0.5})
+    clip = Vector(buf, duration=2.0, instrument="sampler", controls={"amp": 0.5})
 
-    ((beat, event),) = flatten(Group([(4.0, clip)]))
+    ((beat, event),) = flatten(Aggregate([(4.0, clip)]))
     assert beat == 4.0
     assert event["instrument"] == "sampler"
     assert event["buf"] == 5
@@ -356,7 +358,7 @@ def test_a_buffer_sounds_through_the_instrument_that_plays_it():
     assert event.sustain() == 2.0
 
     # Data with no instrument: no event, no error.
-    assert flatten(Group([(0.0, Buffer(buf, duration=2.0))])) == []
+    assert flatten(Aggregate([(0.0, Vector(buf, duration=2.0))])) == []
 
 
 def test_a_placement_length_trims_what_the_material_plays():
@@ -371,25 +373,25 @@ def test_a_placement_length_trims_what_the_material_plays():
     # fall outside it and are not played.
     notes = Track(Timeline([(float(i), SeqEvent(midinote=60 + i, dur=1.0))
                             for i in range(4)]))
-    group = Group()
-    member = group.add(notes, 0.0, dur=2.0)
-    assert [beat for beat, _ in flatten(group)] == [0.0, 1.0]
+    lane = Aggregate()
+    member = lane.add(notes, 0.0, dur=2.0)
+    assert [beat for beat, _ in flatten(lane)] == [0.0, 1.0]
 
     # Lengthened, the whole track sounds again.
-    group.move(member, 0.0, dur=4.0)
-    assert len(flatten(group)) == 4
+    lane.move(member, 0.0, dur=4.0)
+    assert len(flatten(lane)) == 4
 
     # A take shortened by its placement sounds for exactly that long (its own
     # event is untouched — a placement never rewrites the element).
-    take = Buffer(ServerBuffer(bufnum=1, frames=100), duration=4.0,
+    take = Vector(ServerBuffer(bufnum=1, frames=100), duration=4.0,
                   instrument="sampler")
-    song = Group([(0.0, 1.5, take)])
+    song = Aggregate([(0.0, 1.5, take)])
     ((_beat, event),) = flatten(song)
     assert event["dur"] == 1.5
     assert take.to_event()["dur"] == 4.0
 
 
-# ---- render: logical group -> GraphDef (Fase 1C, pure) ----
+# ---- render: logical aggregate -> GraphDef (Fase 1C, pure) ----
 
 def test_generator_def_name_from_string_or_object():
     class _Def:
@@ -399,12 +401,12 @@ def test_generator_def_name_from_string_or_object():
     assert Generator(_Def()).def_name == "foo"
 
 
-def test_logical_group_translates_to_the_same_graphdef():
-    """A logical group of two nodes (source -> sink through an internal bus)
+def test_logical_aggregate_translates_to_the_same_graphdef():
+    """A logical aggregate of two nodes (source -> sink through an internal bus)
     produces the same GraphDef spec as building it directly — the 1:1 mapping."""
     from clausters.defs import GraphDef
 
-    g = Group(kind=LOGICAL, name="chain", buses=[("mix", "audio")])
+    g = Aggregate(kind=LOGICAL, name="chain", buses=[("mix", "audio")])
     g.add(Generator("gsrc", controls={"out": "mix", "level": 1.0}))
     g.add(Generator("gsink", controls={"in": "mix", "out": "OUT"}))
     model_spec = g.to_graphdef().spec()
@@ -419,11 +421,11 @@ def test_logical_group_translates_to_the_same_graphdef():
 
 def test_to_graphdef_requires_a_name():
     with pytest.raises(ValueError):
-        Group(kind=LOGICAL).to_graphdef()
+        Aggregate(kind=LOGICAL).to_graphdef()
 
 
 def test_declare_bus_adds_and_is_idempotent_by_name():
-    g = Group(kind=LOGICAL, name="x", buses=[("mix", "audio")])
+    g = Aggregate(kind=LOGICAL, name="x", buses=[("mix", "audio")])
     assert g.bus_names == ["mix"]
     g.declare_bus("w0", rate="control")           # a new bus
     assert g.bus_names == ["mix", "w0"]
@@ -434,8 +436,8 @@ def test_declare_bus_adds_and_is_idempotent_by_name():
 
 
 def test_logical_member_must_be_a_generator():
-    g = Group(kind=LOGICAL, name="x")
-    g.add(Event({"dur": 1.0}))
+    g = Aggregate(kind=LOGICAL, name="x")
+    g.add(Clang({"dur": 1.0}))
     with pytest.raises(TypeError):
         g.to_graphdef()
 
@@ -461,8 +463,8 @@ class _StubServer:
         return 1000
 
 
-def test_render_routes_a_logical_group_to_graphdef():
-    g = Group(kind=LOGICAL, name="chain", buses=["mix"])
+def test_render_routes_a_logical_aggregate_to_graphdef():
+    g = Aggregate(kind=LOGICAL, name="chain", buses=["mix"])
     g.add(Generator("gsrc", controls={"out": "mix"}))
     server = _StubServer()
     instance = g.render(server, ports={"gain": 0.5})
@@ -493,13 +495,13 @@ def test_a_resident_generator_is_not_locatable():
     assert not Element(SeqEvent(instrument="default"), resident=True).locatable
 
 
-def test_a_group_is_locatable_only_if_every_member_is():
+def test_an_aggregate_is_locatable_only_if_every_member_is():
     """One resident generator makes the whole placement unlocatable: a position
-    on the group would be a position on it too."""
-    from clausters.form import Element, Group
+    on the aggregate would be a position on it too."""
+    from clausters.form import Aggregate, Element
     from clausters.seq import Event as SeqEvent
 
-    g = Group([Element(SeqEvent(instrument="default"))])
+    g = Aggregate([Element(SeqEvent(instrument="default"))])
     assert g.locatable
     g.add(Element(SeqEvent(instrument="default"), resident=True))
     assert not g.locatable

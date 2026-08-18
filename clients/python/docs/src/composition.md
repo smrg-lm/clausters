@@ -38,44 +38,44 @@ alone is **relative** (it has a length but no place yet), neither is **abstract*
 — pure context, which only a parent gives concrete time.
 
 There are five kinds, and they map one to one onto objects you already use
-(`Segments` is not a sixth: it is the `Buffer` primitive — a list at constant
+(`Segments` is not a sixth: it is the `Vector` primitive — a list at constant
 time — assembled from more than one window):
 
 | Element     | What it is                                       | Wraps                                   |
 | ----------- | ------------------------------------------------ | --------------------------------------- |
-| `Event`     | parameters grouped into one action               | `clausters.seq.Event`                   |
+| `Clang`     | parameters grouped into one action               | `clausters.seq.Event`                   |
 | `Sequence`  | strict order, no concrete time — only sequence   | a list, or a `Pattern`                  |
-| `Buffer`    | a list at constant time (samples)                | `clausters.defs.Buffer`                 |
+| `Vector`    | a list at constant time (samples)                | `clausters.defs.Buffer`                 |
 | `Segments`  | several windows onto material, read as one       | a list of `(buffer, start, duration)`   |
 | `Track`     | mixed placement of elements — a DAW track        | `clausters.seq.Timeline`                |
 | `Generator` | a *process*: server DSP, or a sequence generator | a def, or a `Pbind`/`Routine`           |
 
-A `Buffer` is *data*, so it has no sound of its own: it sounds through the
+A `Vector` is *data*, so it has no sound of its own: it sounds through the
 **instrument** named to play it — a def whose `buf` control takes the buffer
 number. That is the whole rule for an audio clip. A `Segments` is the same rule
 over several of them: it is what assembling material out of pieces looks like
 when nothing is copied (see the editor's join, below).
 
 ```python
-from clausters.form import Buffer, Group, Sequence, Track
+from clausters.form import Aggregate, Sequence, Track, Vector
 
-take = Buffer(buf, duration=2.0, instrument="take")   # a def that plays a buffer
+take = Vector(buf, duration=2.0, instrument="take")   # a def that plays a buffer
 ```
 
 ## Grouping: the one new structure
 
-A `Group` places elements by an offset, recursively — and that recursion is the
-whole idea. It comes in two kinds. A **concrete** group is a relation *in time*
-between its members (a section holding clips, a melody holding notes). A
-**logical** group is a relation of *processing*: the members are wired to each
-other through buses, which is exactly what a `GraphDef` expresses, so
-`Group.to_graphdef()` translates one into it.
+An `Aggregate` places elements by an offset, recursively — and that recursion is
+the whole idea. It comes in two kinds. A **concrete** aggregate is a relation *in
+time* between its members (a section holding clips, a melody holding notes). A
+**logical** aggregate is a relation of *processing*: the members are wired to
+each other through buses, which is exactly what a `GraphDef` expresses, so
+`Aggregate.to_graphdef()` translates one into it.
 
 ```python
-song = Group([
-    (0.0, Group([(0.0, take), (4.0, take)], name="drums")),
-    (0.0, Group([(0.0, bass)], name="bass")),
-    (2.0, Group([(0.0, melody)], name="lead")),
+song = Aggregate([
+    (0.0, Aggregate([(0.0, take), (4.0, take)], name="drums")),
+    (0.0, Aggregate([(0.0, bass)], name="bass")),
+    (2.0, Aggregate([(0.0, melody)], name="lead")),
 ], name="song")
 ```
 
@@ -83,15 +83,16 @@ The `take` above is placed **twice**, which is the ordinary thing to write and
 means what it says: two clips, one take. A placement is a **window onto
 material** — editing the samples through either window edits the one take, and
 moving one clip moves that clip. What can be placed twice is material the
-element only *names*: a `Buffer` over a server buffer, a `Generator` over a
-pattern or a def. An element that carries its material *inside* it — an `Event`,
-a `Track`, a `Group` — is refused, because two placements of one of those would
-be two copies that diverge the moment you edit one; write two of them, or one
-element the two clips share.
+element only *names*: a `Vector` over a server buffer, a `Generator` over a
+pattern or a def. An element that carries its material *inside* it — a `Clang`,
+a `Track`, an `Aggregate` — is refused, because two placements of one of those
+would be two copies that diverge the moment you edit one; write two of them, or
+one element the two clips share.
 
-From how its members sit in time, a group *derives* its temporal **relation**:
-`successive` when they tile contiguously, `simultaneous` when they start and end
-together, `mixed` otherwise. You do not set it; it is read from the placements.
+From how its members sit in time, an aggregate *derives* its temporal
+**relation**: `successive` when they tile contiguously, `simultaneous` when they
+start and end together, `mixed` otherwise. You do not set it; it is read from
+the placements.
 
 ## Rendering: the change of state
 
@@ -122,9 +123,9 @@ flat `Timeline`, being already generated, is playable
 `Editor` draws that tree as the multitrack view and applies its edits back onto
 the tree. The mapping is one rule, not a heuristic per case:
 
-- the root group's members are the **lanes**;
+- the root aggregate's members are the **lanes**;
 - a lane's members are its **clips**;
-- a `Buffer` clip names its server buffer and shows a **window** onto it — the
+- a `Vector` clip names its server buffer and shows a **window** onto it — the
   host fetches the take and decimates it to the clip's pixel width, so a long
   take costs nothing on the wire, and trimming the clip shows less of the
   material rather than squeezing it (see below);
@@ -137,8 +138,8 @@ the tree. The mapping is one rule, not a heuristic per case:
   editor-grade `clausters.gui.pianoroll` widget — a keyboard, an editable note
   grid, a velocity lane and an OSC-event lane — when you want to author them
   directly rather than through the multitrack.)
-- a nested group draws as the labeled rectangle that **summarizes** it, until you
-  `expand` it into lanes of its own. That collapse/expand is the arrangement's
+- a nested aggregate draws as the labeled rectangle that **summarizes** it,
+  until you `expand` it into lanes of its own. That collapse/expand is the arrangement's
   *base level*: the same structure, seen coarser or finer.
 
 ```python
@@ -160,7 +161,7 @@ keeps sounding.
 
 ### A clip is a window onto its material
 
-A clip over a `Buffer` shows a **segment** of it, not the whole of it squeezed
+A clip over a `Vector` shows a **segment** of it, not the whole of it squeezed
 into a rectangle. One timeline sample is one frame of the material, so:
 
 - **trimming** a clip — dragging its edge — hides frames rather than compressing
@@ -175,9 +176,9 @@ into a rectangle. One timeline sample is one frame of the material, so:
 The window is the element's, and you can state it yourself:
 
 ```python
-from clausters.form import Buffer
+from clausters.form import Vector
 
-take = Buffer(buf, duration=2.0, instrument="take",
+take = Vector(buf, duration=2.0, instrument="take",
               start=48_000,        # read from one second in
               loop=True)           # and wrap when the window runs past the end
 ```
@@ -321,20 +322,20 @@ drag a point, Ctrl+click to add one or remove the one under the cursor. The edit
 lands on the automation's `Env`, which is what the next render plays, so the
 curve you draw is the curve you hear.
 
-A **logical** group is not a timeline at all: its members relate by processing, so
+A **logical** aggregate is not a timeline at all: its members relate by processing, so
 it draws as a `patch` **patcher** — a box per member, with **inlets on top and
 outlets on the bottom**, and a **cord** per `outlet -> inlet` connection. The buses
 are not drawn: a cord *is* a bus. Direction is not a guess — it is read from the
 def (a control feeding an `In` is an inlet, one feeding an `Out` an outlet), so the
 picture reads as signal flow. Dragging an outlet onto an inlet draws a cord (a rate
 mismatch is refused; onto empty space unwires it), and the edit rewrites the
-group — so the next render sends a GraphDef wired the way the patch is drawn.
+aggregate — so the next render sends a GraphDef wired the way the patch is drawn.
 
 The same patcher draws a def **on its own**, as a way to *look at its structure*.
 `some_def.plot_def()` opens one window per call showing the def as a directed
 patch — distinct from `plot(some_def)`, which shows the def's *sound* (its rendered
 waveform). It reads at **two levels**: a `GraphDef` draws as its member nodes wired
-by buses (the same picture the logical group shows); a `SynthDef` or `FaustDef`
+by buses (the same picture the logical aggregate shows); a `SynthDef` or `FaustDef`
 draws one level deeper, as its **internal graph** — every UGen (or Faust signal op)
 a box, every input a cord, the def's controls the source boxes and its literals
 small value boxes. A cord is coloured by rate — contrasting primaries at one
@@ -367,9 +368,9 @@ doc = to_document(song)          # {"version": 1, "root": {...}}
 song_again = from_document(doc)
 ```
 
-The conversion is lossless for concrete material — events, placements, sets,
-buffers by reference — and carries a **generator by reference**, the way a
-project file references a plugin rather than serializing it. A generator *is
+The conversion is lossless for concrete material — clangs, placements,
+aggregates, vectors by reference — and carries a **generator by reference**, the
+way a project file references a plugin rather than serializing it. A generator *is
 code*, in the language that wrote it, so no format owns one; what the document
 guarantees is that it does not lose it. Node ids are stamped onto the elements,
 so converting the same tree twice gives the same ids and an edit made against
@@ -473,8 +474,8 @@ editor.selection    # {"start": 0.0, "len": 2.0, "value": {"min": -0.5, "max": 0
 one, and nothing at all when it was across a lane, which is a selection of the
 shared time axis. `resolve_selection` turns that into the material underneath —
 one entry per leaf, with the placement's base, the element's trim and the clamp
-at both ends already applied — and returns nothing where a group or a generator
-is in the way rather than under it.
+at both ends already applied — and returns nothing where an aggregate or a
+generator is in the way rather than under it.
 
 The value band travels with the selection and does not narrow that answer: what
 lies under a range of amplitudes is the same material as what lies under the

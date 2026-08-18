@@ -9,16 +9,16 @@ arrangement tree as a GuiDef, applies the clip edit-backs the host sends *onto
 the arrangement*, and re-renders it. So the thing you drag is not a picture of
 the music: it is the music, and the score follows.
 
-What the mapping does, in one paragraph. The root group's members are the
-**lanes**; a lane's members are its **clips**. A `Buffer` clip names its server
+What the mapping does, in one paragraph. The root aggregate's members are the
+**lanes**; a lane's members are its **clips**. A `Vector` clip names its server
 buffer and spans its frames (the host fetches it and decimates it — a real take
-never rides the wire as JSON). An element of *events* draws a **piano-roll**, and
+never rides the wire as JSON). An element of *clangs* draws a **piano-roll**, and
 a contained generator is bounced in the same pass, so a `Pbind` lane shows the
 notes it is about to play — the *change of state*, on screen. An `Automation`
-draws its **curve** as the clip body, editable in place. A nested group draws as
-the labeled rectangle that summarizes it, until you ``expand`` it into lanes of
-its own: that collapse/expand is the **base level**, the zoom that summarizes or
-resolves.
+draws its **curve** as the clip body, editable in place. A nested aggregate
+draws as the labeled rectangle that summarizes it, until you ``expand`` it into
+lanes of its own: that collapse/expand is the **base level**, the zoom that
+summarizes or resolves.
 
 The axis is navigable: the wheel zooms and Shift+drag pans, and every lane moves
 with it (they share one axis).
@@ -109,7 +109,7 @@ from clausters.defs import (
     sine,
 )
 from clausters.gui import Editor, button, label, panel
-from clausters.form import Buffer, Element, Event, Group, Sequence, Track
+from clausters.form import Aggregate, Element, Clang, Sequence, Track, Vector
 from clausters.form.document import from_session, to_session
 from clausters.seq import Automation, Timeline
 from clausters.seq.event import Event as SeqEvent
@@ -122,7 +122,7 @@ QUANT = 0.5          # the drag grid: half a beat
 # %% [markdown]
 # ## The instrument that plays a buffer
 # The notes use the server's stock ``default`` def; the **take** needs an
-# instrument of its own, because a buffer is *data* — a `Buffer` material sounds
+# instrument of its own, because a buffer is *data* — a `Vector` element sounds
 # through the def named to play it, which reads the buffer number from its ``buf``
 # control. That is the arrangement's rule, and this is the def that satisfies it.
 #
@@ -195,20 +195,20 @@ other_buf = ServerBuffer.read(str(other_wav), server=server)
 
 # %% [markdown]
 # ## The material
-# Three elements, three of the five primitives: the take is a **Buffer** (data
+# Three elements, three of the five primitives: the take is a **Vector** (data
 # — it sounds through the *instrument* named to play it), the melody a **Track**
-# (a set of events placed in time), the bass a **Sequence** wrapping a pattern — a
-# **Function**, a generator the editor bounces to draw and the render bounces
-# to play. Same tree, both times.
+# (an aggregate of clangs placed in time), the bass a **Sequence** wrapping a
+# pattern — a **Function**, a generator the editor bounces to draw and the render
+# bounces to play. Same tree, both times.
 
 # %%
 # Two **elements** over one server buffer, since this lane places the take
 # twice: the material is shared, the placements are not. One object in two
 # places would be one name for two positions, and an edit-back could not say
 # which of them it meant.
-take = Buffer(buf, duration=2.0, instrument="take")       # the element over it
-take_again = Buffer(other_buf, duration=2.0, instrument="take")   # the other file
-melody = Track(Timeline([                                 # a Set of events
+take = Vector(buf, duration=2.0, instrument="take")       # the element over it
+take_again = Vector(other_buf, duration=2.0, instrument="take")   # the other file
+melody = Track(Timeline([                                 # an aggregate of clangs
     (0.0, SeqEvent(midinote=72, dur=1.0)),
     (1.0, SeqEvent(midinote=76, dur=1.0)),
     (2.0, SeqEvent(midinote=79, dur=2.0)),
@@ -225,7 +225,7 @@ bass = Sequence(Pbind(midinote=Pseq([48, 48, 55, 53], 2),  # a Function (generat
 # flows back onto the `Automation`, whose `Env` is what the next render
 # plays, so the curve you draw is the curve you hear.
 #
-# The voice it drives is **in the composition**, not held by the script: an event
+# The voice it drives is **in the composition**, not held by the script: a clang
 # with a length, placed beside the curve. It reads the automation's control bus
 # straight (`in_ctl`), so nothing has to be `/node_map`-ed to a node that outlives its
 # clip — the voice starts when the playhead reaches the clip and ends with it. Seek
@@ -265,22 +265,22 @@ sweep = Automation.from_points(
     target=None, name="freq")    # no target node: it just writes its bus
 sweep.prepare(server)            # the control buffer + bus, off the clock thread
 
-# The envelope **attached to the voice it shapes**: a group whose members start
-# and end together. The model already says what that is — its temporal relation is
+# The envelope **attached to the voice it shapes**: an aggregate whose members
+# start and end together. The model already says what that is — its temporal relation is
 # *simultaneous* — and the editor draws it as **one clip with layered bodies** (the
 # curve over the note), which drags as one. The voice cannot outlive its envelope,
 # and the envelope cannot be left behind.
-voice = Event(SeqEvent(instrument="drone", freq_bus=sweep.bus.index,
+voice = Clang(SeqEvent(instrument="drone", freq_bus=sweep.bus.index,
                        dur=SWEEP, legato=1.0, amp=0.12, has_gate=True))
-sweep_clip = Group([(0.0, voice), (0.0, Element(sweep, duration=SWEEP))],
+sweep_clip = Aggregate([(0.0, voice), (0.0, Element(sweep, duration=SWEEP))],
                    name="sweep")
 
-# The composition: four lanes, each a group placing one material in time.
-song = Group([
-    (0.0, Group([(0.0, take), (4.0, take_again)], name="drums")),
-    (0.0, Group([(0.0, bass)], name="bass")),
-    (2.0, Group([(0.0, melody)], name="lead")),
-    (0.0, Group([(0.0, sweep_clip)], name="sweep")),
+# The composition: four lanes, each an aggregate placing one material in time.
+song = Aggregate([
+    (0.0, Aggregate([(0.0, take), (4.0, take_again)], name="drums")),
+    (0.0, Aggregate([(0.0, bass)], name="bass")),
+    (2.0, Aggregate([(0.0, melody)], name="lead")),
+    (0.0, Aggregate([(0.0, sweep_clip)], name="sweep")),
 ], name="song")
 
 # %% [markdown]
@@ -306,13 +306,13 @@ def takes_of(element):
     holds are not the ones the script read at startup, because resolving a
     session reads each take again into a buffer of its own.
     """
-    from clausters.form import Buffer as BufferElement, Segments
+    from clausters.form import Segments, Vector
 
     found = {}
     stack = [element]
     while stack:
         current = stack.pop()
-        if isinstance(current, BufferElement) and getattr(current.wraps, "bufnum", None) is not None:
+        if isinstance(current, Vector) and getattr(current.wraps, "bufnum", None) is not None:
             found[current.wraps.bufnum] = current.wraps
         # A joined clip reads **several** buffers as one element, and a table
         # that named only the first would reopen with the rest missing.
@@ -377,7 +377,7 @@ def reopen():
 
     def resolve(kind, config):
         config = config or {}
-        if kind == "buffer":
+        if kind == "vector":
             entry = table.get(int(config.get("source", -1)))
             path = ((entry or {}).get("location") or {}).get("path")
             return (None if path is None
@@ -450,7 +450,7 @@ print(f"opened window {win} — drag a clip to move it, an edge to resize it")
 # re-reads the arrangement, so an edit made meanwhile is simply played.
 #
 # Nothing here silences anything, and nothing needs to: every voice in the
-# composition is an event with a length, so it ends with its clip.
+# composition is a clang with a length, so it ends with its clip.
 
 # %%
 session.start()                       # the clock runs the routines
