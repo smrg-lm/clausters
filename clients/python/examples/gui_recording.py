@@ -39,6 +39,7 @@ stays up between cells, or run it as a plain script.
 """
 
 # %%
+import sys
 import time
 
 from clausters import Buffer, Session, Synth, SynthDef
@@ -110,10 +111,24 @@ print("recording: the trace fills from the left, one frame tick at a time")
 # ``/buffer_stream.reply``, which carries the summary and not the samples.
 
 # %%
-started = time.monotonic()
-while not _closed and time.monotonic() - started < SECONDS + 2.0:
-    time.sleep(0.5)
-print("done recording" if not _closed else "window closed")
+def watch(seconds: "float | None" = None) -> None:
+    """Keeps the script alive while the picture fills, until the window is
+    closed (or ``seconds`` pass, which is what a notebook wants so the prompt
+    comes back).
+
+    `clausters.gui.GuiHost.pump` is what makes closing the window end this:
+    the host's messages — a widget's events, and the ``/gui_closed`` a closed
+    window sends — are dispatched to the handlers from **the script's own
+    loop**, never from a thread of their own. A loop that only sleeps is a
+    script that never hears anything.
+    """
+    start = time.monotonic()
+    while not _closed and (seconds is None or time.monotonic() - start < seconds):
+        gui.pump(timeout=0.05)
+
+
+watch(SECONDS + 2.0)
+print("window closed" if _closed else "done recording")
 
 # %% [markdown]
 # ## And it is ordinary material afterwards
@@ -122,13 +137,16 @@ print("done recording" if not _closed else "window closed")
 # session stops everything it started.
 
 # %%
-if not _closed:
-    print("zoom with the wheel, sweep a selection, then close the window")
-    while not _closed:
-        time.sleep(0.2)
-# The recorder freed itself when it reached the end of the buffer
-# (``done_action=2``), which is what stopped the picture from filling; nothing
-# here has to free it.
-take.free()
-gui.close_all()
-session.close()
+if __name__ == "__main__" and not hasattr(sys, "ps1"):
+    try:
+        if not _closed:
+            print("zoom with the wheel, sweep a selection, then close the window")
+            watch()
+    finally:
+        # The recorder freed itself when it reached the end of the buffer
+        # (``done_action=2``), which is what stopped the picture from filling;
+        # nothing here has to free it. Closing the session stops the server and
+        # the GUI host it started.
+        session.close()
+else:
+    print("the take is up - watch() to hold it open, session.close() to end")
