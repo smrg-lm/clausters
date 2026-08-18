@@ -1646,7 +1646,7 @@ finished work, where a pending item reads as done.
   write path copies. **S19** is the other half the user named the same day: with
   the samples in the shared segment a local peer's edit costs no message at all.
 
-- ⬜ **A finished async command waits up to 100 ms to be reported** *(found
+- ✅ **A finished async command waits up to 100 ms to be reported** *(found
   2026-08-15, measuring the write cost above: every single write round-tripped
   in ~104 ms whatever its size, which is not a cost any buffer work explains)*.
   The network loop blocks in `recv_from` under a 100 ms read timeout
@@ -1662,3 +1662,19 @@ finished work, where a pending item reads as done.
   result*: the fix is a wakeup when a result lands (the NRT thread poking the
   socket, as the TCP leg already does with a zero-length datagram) or a short
   timeout while jobs are in flight, not a smaller `GC_INTERVAL` for everyone.
+
+  **Fixed 2026-08-18 with the wakeup, and the tick left where it was.** The NRT
+  runner and the Faust compiler take a `Waker` (`src/osc/wake.rs`) — the same
+  zero-length datagram to the server's own address that the TCP, WebSocket and
+  MIDI readers already sent, packaged so a worker thread carries the socket
+  rather than the address — and poke it *after* queueing a result, so the woken
+  loop finds it. One thing had to move with it, and it is the part that would
+  have made the fix look like it did nothing: the loop's zero-length branch
+  `continue`d straight back to the top, which drains the carriers but collects
+  nothing, so the wake arrived and the result still waited. The three collectors
+  are now one `collect_async()` called from every path out of the recv — a
+  packet, an idle tick, a wake. `GC_INTERVAL` is untouched and stays what it was
+  written to be: housekeeping without traffic. The acceptance is a timed round
+  trip with nothing else talking to the server
+  (`tests/buffers.rs::a_finished_job_is_reported_without_waiting_for_the_idle_tick`),
+  which measured 104 ms before and under 1 ms after.

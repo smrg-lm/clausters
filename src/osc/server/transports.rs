@@ -21,21 +21,29 @@ impl OscServer {
             .ok_or_else(|| io::Error::other("headless server: no UDP front"))
     }
 
+    /// The address a thread sends its zero-length wake datagram to
+    /// ([`crate::osc::wake`]): our own UDP address, with an unspecified bind
+    /// address read as loopback on the same port, since a datagram has to be
+    /// aimed somewhere reachable.
+    pub(in crate::osc::server) fn wake_target(&self) -> io::Result<SocketAddr> {
+        let mut target = self.udp()?.local_addr()?;
+        if target.ip().is_unspecified() {
+            target.set_ip(match target {
+                SocketAddr::V4(_) => std::net::Ipv4Addr::LOCALHOST.into(),
+                SocketAddr::V6(_) => std::net::Ipv6Addr::LOCALHOST.into(),
+            });
+        }
+        Ok(target)
+    }
+
     /// Starts accepting length-prefixed OSC over TCP on `addr` (server track M /
     /// a stream client). The run loop drains the connections every iteration and a
     /// zero-length UDP datagram to our own address wakes it the moment a frame
     /// arrives, so TCP requests don't wait for the GC tick. Returns the bound
     /// TCP address.
     pub fn listen_tcp(&mut self, addr: impl ToSocketAddrs) -> io::Result<SocketAddr> {
-        // Reader threads wake the loop by pinging the UDP socket; if we bound to
-        // an unspecified address, ping loopback on the same port.
-        let mut wake_target = self.udp()?.local_addr()?;
-        if wake_target.ip().is_unspecified() {
-            wake_target.set_ip(match wake_target {
-                SocketAddr::V4(_) => std::net::Ipv4Addr::LOCALHOST.into(),
-                SocketAddr::V6(_) => std::net::Ipv6Addr::LOCALHOST.into(),
-            });
-        }
+        // Reader threads wake the loop by pinging the UDP socket.
+        let wake_target = self.wake_target()?;
         let slots = self.client_slots();
         let hub = crate::osc::tcp::TcpHub::bind(addr, wake_target, self.max_frame, slots)?;
         let bound = hub.local_addr();
@@ -50,13 +58,7 @@ impl OscServer {
     /// browser with `ws://<addr>/`.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn listen_ws(&mut self, addr: impl ToSocketAddrs) -> io::Result<SocketAddr> {
-        let mut wake_target = self.udp()?.local_addr()?;
-        if wake_target.ip().is_unspecified() {
-            wake_target.set_ip(match wake_target {
-                SocketAddr::V4(_) => std::net::Ipv4Addr::LOCALHOST.into(),
-                SocketAddr::V6(_) => std::net::Ipv6Addr::LOCALHOST.into(),
-            });
-        }
+        let wake_target = self.wake_target()?;
         let slots = self.client_slots();
         let hub = crate::osc::ws::WsHub::bind(addr, wake_target, self.max_frame, slots)?;
         let bound = hub.local_addr();
@@ -70,13 +72,7 @@ impl OscServer {
     /// GC tick. See [`crate::midi::live`].
     #[cfg(feature = "midi")]
     pub fn listen_midi(&mut self, port_name: &str) -> io::Result<()> {
-        let mut wake_target = self.udp()?.local_addr()?;
-        if wake_target.ip().is_unspecified() {
-            wake_target.set_ip(match wake_target {
-                SocketAddr::V4(_) => std::net::Ipv4Addr::LOCALHOST.into(),
-                SocketAddr::V6(_) => std::net::Ipv6Addr::LOCALHOST.into(),
-            });
-        }
+        let wake_target = self.wake_target()?;
         let hub =
             crate::midi::live::MidiHub::open(port_name, wake_target).map_err(io::Error::other)?;
         self.midi = Some(hub);

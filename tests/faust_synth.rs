@@ -39,7 +39,7 @@ process = sin(6.283185307179586 * phasor) * amp;
 const GAIN_SRC: &str = r#"process = _ * hslider("gain", 0.5, 0.0, 1.0, 0.001);"#;
 
 fn compile_def(name: &str, src: &str) -> Arc<FaustDef> {
-    let compiler = CompilerThread::spawn();
+    let compiler = CompilerThread::spawn(None);
     compiler
         .submit(CompileRequest {
             name: name.into(),

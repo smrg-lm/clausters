@@ -25,7 +25,7 @@ const COMPILE_DEADLINE: Duration = Duration::from_secs(10);
 
 #[test]
 fn compiler_thread_compiles_and_reports_back() {
-    let compiler = CompilerThread::spawn();
+    let compiler = CompilerThread::spawn(None);
     compiler
         .submit(CompileRequest {
             name: "sine".into(),
@@ -45,7 +45,7 @@ fn compiler_thread_compiles_and_reports_back() {
 
 #[test]
 fn compiler_thread_reports_readable_errors() {
-    let compiler = CompilerThread::spawn();
+    let compiler = CompilerThread::spawn(None);
     compiler
         .submit(CompileRequest {
             name: "broken".into(),
@@ -65,7 +65,7 @@ fn compiler_thread_reports_readable_errors() {
 
 #[test]
 fn requests_are_serialized_in_order() {
-    let compiler = CompilerThread::spawn();
+    let compiler = CompilerThread::spawn(None);
     for name in ["a", "b", "c"] {
         compiler
             .submit(CompileRequest {

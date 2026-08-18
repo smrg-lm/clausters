@@ -33,7 +33,7 @@ fn tmp_path(name: &str, ext: &str) -> String {
 }
 
 fn run_nrt(job: NrtJob) -> Result<NrtAction, String> {
-    let nrt = NrtThread::spawn();
+    let nrt = NrtThread::spawn(None);
     nrt.submit(NrtRequest {
         cmd: "/b_test",
         index: 0,
@@ -1586,6 +1586,66 @@ mod osc {
 
         send("/node_free", vec![OscType::Int(1000)]);
         render_channel(&mut engine, 2, 0);
+        send("/server_quit", vec![]);
+        recv_until("/done");
+        server_thread.join().unwrap().unwrap();
+    }
+
+    /// A job that finishes in a millisecond is reported in a millisecond: the
+    /// NRT thread wakes the command loop instead of letting the reply wait for
+    /// the loop's next idle tick. Before the wake every async command — an
+    /// alloc, a read, a def compile, any `wait=True` — cost the whole 100 ms
+    /// interval whenever no other traffic happened to drain the pipes.
+    #[test]
+    fn a_finished_job_is_reported_without_waiting_for_the_idle_tick() {
+        let (_engine, engine_handle) = engine_pair(SR, CHANNELS);
+        let info = ServerInfo {
+            nominal_sample_rate: SR as f64,
+            actual_sample_rate: SR as f64,
+        };
+        let mut server = OscServer::bind(("127.0.0.1", 0), info, engine_handle).unwrap();
+        let addr = server.local_addr().unwrap();
+        let server_thread = std::thread::spawn(move || server.run());
+        let client = UdpSocket::bind(("127.0.0.1", 0)).unwrap();
+        client.set_read_timeout(Some(NRT_DEADLINE)).unwrap();
+
+        let send = |addr_str: &str, args: Vec<OscType>| {
+            let packet = OscPacket::Message(OscMessage {
+                addr: addr_str.into(),
+                args,
+            });
+            client
+                .send_to(&encoder::encode(&packet).unwrap(), addr)
+                .unwrap();
+        };
+        let recv_until = |want: &str| -> OscMessage {
+            let mut buf = [0u8; 65536];
+            for _ in 0..100 {
+                let (len, _) = client.recv_from(&mut buf).expect("reply timed out");
+                if let (_, OscPacket::Message(msg)) = decoder::decode_udp(&buf[..len]).unwrap()
+                    && msg.addr == want
+                {
+                    return msg;
+                }
+            }
+            panic!("never received {want}");
+        };
+
+        // Nothing else is talking to this server, which is the case the tick
+        // used to hide behind: a small alloc, timed end to end.
+        let start = std::time::Instant::now();
+        send(
+            "/buffer_alloc",
+            vec![OscType::Int(0), OscType::Int(64), OscType::Int(1)],
+        );
+        let done = recv_until("/done");
+        let elapsed = start.elapsed();
+        assert_eq!(done.args[0], OscType::String("/buffer_alloc".into()));
+        assert!(
+            elapsed < std::time::Duration::from_millis(50),
+            "the reply waited for the idle tick: {elapsed:?}"
+        );
+
         send("/server_quit", vec![]);
         recv_until("/done");
         server_thread.join().unwrap().unwrap();

@@ -8,6 +8,7 @@
 //! `/done`/`/fail` reply to the requesting client.
 
 use crate::osc::ClientId;
+use crate::osc::wake::Waker;
 use std::ffi::{CStr, CString, c_char, c_int};
 use std::path::PathBuf;
 use std::sync::{Mutex, mpsc};
@@ -95,7 +96,10 @@ pub struct CompilerThread {
 }
 
 impl CompilerThread {
-    pub fn spawn() -> Self {
+    /// Spawns the worker. `waker`, when the server has a socket front, is
+    /// poked after each finished compilation so the command loop replies at
+    /// once instead of at its next idle tick (see [`crate::osc::wake`]).
+    pub fn spawn(waker: Option<Waker>) -> Self {
         let (req_tx, req_rx) = mpsc::channel::<CompileRequest>();
         let (res_tx, res_rx) = mpsc::channel();
         let handle = std::thread::Builder::new()
@@ -110,6 +114,10 @@ impl CompilerThread {
                     };
                     if res_tx.send(result).is_err() {
                         break; // receiver gone: we are shutting down
+                    }
+                    // After the send, so the woken loop finds the result.
+                    if let Some(waker) = &waker {
+                        waker.wake();
                     }
                 }
             })

@@ -29,7 +29,7 @@ fn dummy_client() -> clausters::osc::ClientId {
 }
 
 fn compile(name: &str, payload: CompilePayload) -> Result<FaustDef, String> {
-    let compiler = CompilerThread::spawn();
+    let compiler = CompilerThread::spawn(None);
     compiler
         .submit(CompileRequest {
             name: name.into(),
@@ -273,7 +273,7 @@ fn validation_errors_point_at_the_offending_node() {
             "`rdtable` takes 2 to 3 in \"in\"",
         ),
     ];
-    let compiler = CompilerThread::spawn();
+    let compiler = CompilerThread::spawn(None);
     for (graph, _) in &cases {
         compiler
             .submit(CompileRequest {

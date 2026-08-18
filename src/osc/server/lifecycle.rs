@@ -18,6 +18,16 @@ impl OscServer {
         let socket = UdpSocket::bind(addr)?;
         // Periodic wakeups so garbage gets collected even without traffic.
         socket.set_read_timeout(Some(GC_INTERVAL))?;
+        // The async workers end that wait the moment a result lands, so the
+        // interval above is housekeeping and not the latency of a reply.
+        let mut wake_target = socket.local_addr()?;
+        if wake_target.ip().is_unspecified() {
+            wake_target.set_ip(match wake_target {
+                SocketAddr::V4(_) => std::net::Ipv4Addr::LOCALHOST.into(),
+                SocketAddr::V6(_) => std::net::Ipv6Addr::LOCALHOST.into(),
+            });
+        }
+        let waker = crate::osc::wake::Waker::to(wake_target).ok();
         let translator = CmdTranslator::with_limits(
             handle.sample_rate,
             handle.audio_buses,
@@ -29,7 +39,7 @@ impl OscServer {
             info,
             handle,
             translator,
-            nrt: NrtRunner::spawn(),
+            nrt: NrtRunner::spawn(waker.clone()),
             clients: Vec::new(),
             streams: Vec::new(),
             tap_streams: Vec::new(),
@@ -52,7 +62,7 @@ impl OscServer {
             store: None,
             recv_buf: vec![0; RECV_BUF_SIZE],
             #[cfg(feature = "faust")]
-            faust_compiler: CompilerThread::spawn(),
+            faust_compiler: CompilerThread::spawn(waker),
             nrt_submitted: 0,
             nrt_in_flight: Default::default(),
             nrt_drained: 0,
@@ -115,7 +125,7 @@ impl OscServer {
             store: None,
             recv_buf: vec![0; RECV_BUF_SIZE],
             #[cfg(feature = "faust")]
-            faust_compiler: CompilerThread::spawn(),
+            faust_compiler: CompilerThread::spawn(None),
             nrt_submitted: 0,
             nrt_in_flight: Default::default(),
             nrt_drained: 0,
@@ -263,10 +273,7 @@ impl OscServer {
                         io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
                     ) =>
                 {
-                    self.collect_garbage();
-                    self.collect_nrt_results();
-                    #[cfg(feature = "faust")]
-                    self.collect_faust_results();
+                    self.collect_async();
                     continue;
                 }
                 // A previous send to a now-closed client port can surface as
@@ -279,8 +286,11 @@ impl OscServer {
                 Err(e) => return Err(e),
             };
             if len == 0 {
-                // A zero-length datagram is a TCP wake (a reader queued a frame
-                // or a disconnect): loop back to drain TCP/ring promptly.
+                // A zero-length datagram is a wake: a reader queued a TCP frame
+                // or a disconnect, or a worker thread finished a job
+                // (`crate::osc::wake`). Collect before looping back, since a
+                // finished result is reported from here and nowhere else.
+                self.collect_async();
                 continue;
             }
             // The single decode entry point for every transport (`crate::osc`).
@@ -292,10 +302,7 @@ impl OscServer {
                 }
             };
             let flow = self.handle_packet(packet, ClientId::Udp(from));
-            self.collect_garbage();
-            self.collect_nrt_results();
-            #[cfg(feature = "faust")]
-            self.collect_faust_results();
+            self.collect_async();
             if let Flow::Quit = flow {
                 return Ok(());
             }
@@ -313,11 +320,19 @@ impl OscServer {
         }
         self.pump_streams();
         self.pump_tap_streams();
+        self.collect_async();
+        false
+    }
+
+    /// One housekeeping pass: the garbage the audio thread handed back, and
+    /// whatever the async workers finished. Every path out of the recv runs
+    /// it — a packet, an idle tick, and a wake datagram alike — so a result is
+    /// reported as soon as the loop learns of it.
+    pub(in crate::osc::server) fn collect_async(&mut self) {
         self.collect_garbage();
         self.collect_nrt_results();
         #[cfg(feature = "faust")]
         self.collect_faust_results();
-        false
     }
 
     /// Drops what the audio thread discarded, keeps the def mirror in sync

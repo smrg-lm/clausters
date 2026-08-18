@@ -30,7 +30,7 @@ const CHANNELS: usize = 2;
 const COMPILE_DEADLINE: Duration = Duration::from_secs(10);
 
 fn compile_faust(name: &str, payload: CompilePayload) -> Arc<FaustDef> {
-    let compiler = CompilerThread::spawn();
+    let compiler = CompilerThread::spawn(None);
     compiler
         .submit(CompileRequest {
             name: name.into(),

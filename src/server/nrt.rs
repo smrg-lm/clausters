@@ -19,6 +19,7 @@
 //! change a buffer wholesale and off the audio thread, and not of the buffer.
 
 use crate::osc::ClientId;
+use crate::osc::wake::Waker;
 use std::sync::Arc;
 use std::sync::mpsc;
 use std::thread::JoinHandle;
@@ -273,7 +274,11 @@ pub struct NrtThread {
 }
 
 impl NrtThread {
-    pub fn spawn() -> Self {
+    /// Spawns the worker. `waker`, when the server has a socket front, is
+    /// poked after each finished job so the command loop reports it at once
+    /// instead of at its next idle tick — a job that took 2 ms was answered
+    /// 100 ms later without it.
+    pub fn spawn(waker: Option<Waker>) -> Self {
         let (req_tx, req_rx) = mpsc::channel::<NrtRequest>();
         let (res_tx, res_rx) = mpsc::channel();
         let handle = std::thread::Builder::new()
@@ -289,6 +294,10 @@ impl NrtThread {
                     };
                     if res_tx.send(result).is_err() {
                         break; // receiver gone: we are shutting down
+                    }
+                    // After the send, so the woken loop finds the result.
+                    if let Some(waker) = &waker {
+                        waker.wake();
                     }
                 }
             })
@@ -346,8 +355,8 @@ pub enum NrtRunner {
 }
 
 impl NrtRunner {
-    pub fn spawn() -> Self {
-        NrtRunner::Thread(NrtThread::spawn())
+    pub fn spawn(waker: Option<Waker>) -> Self {
+        NrtRunner::Thread(NrtThread::spawn(waker))
     }
 
     pub fn inline() -> Self {
