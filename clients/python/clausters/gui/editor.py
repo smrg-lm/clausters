@@ -1224,21 +1224,25 @@ class Editor:
         node = self._node_id(owner)
         if node is None:
             return False
-        keep, dropped = run[0].member, [p.member for p in run[1:]]
-        was = keep.dur
-        keep.dur = sum(lengths)
-        for handle in dropped:
-            owner.remove(handle)
+        # The members as they would stand -- the document's own serialization,
+        # with the run's first taking the whole length and the rest gone. Built
+        # rather than mutated, which is the cut's shape too: nothing on this
+        # side moves until the crate has said what the edit becomes.
+        keep, dropped = run[0].member, {id(p.member) for p in run[1:]}
         whole = to_document(owner, version=self._version)["root"]
+        members = []
+        for handle, m in zip(owner.handles, whole.get("members", [])):
+            if id(handle) in dropped:
+                continue
+            m = dict(m)
+            if handle is keep:
+                m["dur"] = sum(lengths)
+            members.append(m)
         outcome = self._record({"intent": "setmembers", "node": node,
-                                "members": whole.get("members", [])},
-                               "join the clips")
+                                "members": members}, "join the clips")
         if outcome is None or not outcome["applied"]:
-            keep.dur = was
-            for handle in dropped:
-                owner._members.append(handle)
             return False
-        self._rederive = True
+        self._project(outcome["effective"])
         return self._changed()
 
     def _apply_points(self, placed, values) -> bool:
