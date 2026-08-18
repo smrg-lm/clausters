@@ -1321,6 +1321,27 @@ the MIDI half of `responders.py` (**W9** — its OSC half is ported),
 `_cli.py`, `config.py`, `_midi.py`, `_libpath.py`), which is a process-shaped
 surface a page has no counterpart for.
 
+**The shape the arrangement's port must follow on the clip, decided on the
+Python side 2026-08-18 rather than re-derived here.** The `clip` builder already
+carries the props (`start`, `loop`, `fit`, `layer`, `hidden` — the props test
+would fail otherwise); what has no TypeScript counterpart is the **editor** that
+answers them, and these are the three payloads it will have to route:
+
+- `"clip" offset dur start` — the third argument is the window's head, and a
+  **trim** moves all three. It is one edit, not two: where a clip sits is its
+  placement's and what it reads is its element's, so the Python editor states
+  the result of the whole gesture as one `setmembers` over the parent's members
+  (a member carries both) rather than a `place` plus a `configure`, or one undo
+  would leave a clip showing frames it does not play.
+- `"split" t` — the second half is **built by the client** (same material, a
+  window that begins where the first stops) rather than left for a projection to
+  invent from the document node, and it is stamped with an id before any
+  conversion sees it.
+- `"join" id…` — only the run of windows onto **one** buffer that continue each
+  other; anything else is an element reading several segments, which the
+  arrangement has no element for and which the Python editor refuses by name
+  (`clients/python/PLAN.md`, Found by use).
+
 **The shape `gui/notation.py`'s port must follow, decided on the Python side
 2026-08-09 rather than re-derived here.** The reference is a *package* now
 (`clausters/gui/notation/`), split by what each part knows, and the port takes
