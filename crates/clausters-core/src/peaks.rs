@@ -47,6 +47,104 @@ const VERSION: u32 = 1;
 const VERSION_MULTI: u32 = 2;
 const VERSION_MEASURE: u32 = 3;
 
+/// A read-only sequence of samples a pyramid can summarize **without owning
+/// it** — the door that lets a summary be taken over material that lives
+/// somewhere else.
+///
+/// The pyramid used to be a function of a `&[f32]`, which quietly required
+/// every caller to have the whole take in memory at once: a host drawing a
+/// mapped region read it out first, a client rewriting one span of a cache
+/// handed over the entire buffer to do it, and a renderer could not summarize
+/// what it was streaming because the samples were gone by the end. A source
+/// asks for two things instead — how long it is, and a span copied into a
+/// caller-sized window — and a bounded scratch buffer is all a build needs.
+///
+/// It is **mono**: one source is one channel, because that is what a pyramid
+/// summarizes. Interleaved material is read through [`Interleaved`], which is
+/// the adapter and not a second shape of the trait.
+pub trait Source {
+    /// How many samples this source holds.
+    fn len(&self) -> usize;
+
+    /// Copies `out.len()` samples starting at `start` into `out`. A read past
+    /// the end fills the remainder with zeros rather than panicking — the
+    /// callers here never ask for one, and a summary of silence is a better
+    /// failure than a crash in a draw path.
+    fn read_into(&self, start: usize, out: &mut [f32]);
+
+    /// Whether the source holds no samples.
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
+impl Source for [f32] {
+    fn len(&self) -> usize {
+        <[f32]>::len(self)
+    }
+
+    fn read_into(&self, start: usize, out: &mut [f32]) {
+        let end = start.saturating_add(out.len()).min(<[f32]>::len(self));
+        let n = end.saturating_sub(start);
+        out[..n].copy_from_slice(&self[start..end]);
+        out[n..].fill(0.0);
+    }
+}
+
+impl<S: Source + ?Sized> Source for &S {
+    fn len(&self) -> usize {
+        (**self).len()
+    }
+
+    fn read_into(&self, start: usize, out: &mut [f32]) {
+        (**self).read_into(start, out);
+    }
+}
+
+/// One channel of an interleaved buffer, read with a stride rather than
+/// de-interleaved into a buffer of its own.
+///
+/// That is its whole reason: copying a channel out to summarize one span of it
+/// costs the take, which is exactly what summarizing a span exists to avoid.
+pub struct Interleaved<'a> {
+    data: &'a [f32],
+    channels: usize,
+    channel: usize,
+}
+
+impl<'a> Interleaved<'a> {
+    /// Channel `channel` of `data`, which holds `channels` interleaved
+    /// channels. A trailing partial frame is ignored, as everywhere else here.
+    pub fn new(data: &'a [f32], channels: usize, channel: usize) -> Self {
+        Self {
+            data,
+            channels: channels.max(1),
+            channel,
+        }
+    }
+}
+
+impl Source for Interleaved<'_> {
+    fn len(&self) -> usize {
+        if self.channel >= self.channels {
+            return 0;
+        }
+        self.data.len() / self.channels
+    }
+
+    fn read_into(&self, start: usize, out: &mut [f32]) {
+        let frames = Source::len(self);
+        for (i, slot) in out.iter_mut().enumerate() {
+            let f = start + i;
+            *slot = if f < frames {
+                self.data[f * self.channels + self.channel]
+            } else {
+                0.0
+            };
+        }
+    }
+}
+
 /// Min/max over a slice, or `None` if empty.
 pub fn min_max(samples: &[f32]) -> Option<(f32, f32)> {
     let (&first, rest) = samples.split_first()?;
@@ -111,14 +209,29 @@ impl Pyramid {
     /// bucket size (e.g. 256). Smaller buckets give finer detail before the
     /// renderer must fall back to raw samples, at the cost of more storage.
     pub fn build(samples: &[f32], base_bucket: usize) -> Self {
+        Self::build_from(samples, base_bucket)
+    }
+
+    /// [`Self::build`] over any [`Source`] — the general form, which the slice
+    /// one calls.
+    ///
+    /// Level 0 is filled a bucket at a time through **one scratch window**, so
+    /// building a summary of a ten-minute take over a mapped region allocates
+    /// the summary and a kilobyte, not the take.
+    pub fn build_from<S: Source + ?Sized>(source: &S, base_bucket: usize) -> Self {
         assert!(base_bucket >= 1);
-        let total_samples = samples.len();
+        let total_samples = source.len();
 
         let n0 = total_samples.div_ceil(base_bucket);
         let mut min0 = vec![0.0f32; n0];
         let mut max0 = vec![0.0f32; n0];
         let mut ms0 = vec![0.0f32; n0];
-        for (b, chunk) in samples.chunks(base_bucket).enumerate() {
+        let mut window = vec![0.0f32; base_bucket];
+        for b in 0..n0 {
+            let from = b * base_bucket;
+            let n = bucket_count(total_samples, base_bucket, b);
+            let chunk = &mut window[..n];
+            source.read_into(from, chunk);
             let (lo, hi) = min_max(chunk).unwrap_or((0.0, 0.0));
             min0[b] = lo;
             max0[b] = hi;
@@ -199,28 +312,24 @@ impl Pyramid {
     /// keeps its min/max updated and stays without a measure rather than
     /// gaining an invented one.
     pub fn update_range(&mut self, samples: &[f32], start: usize, len: usize) -> bool {
-        if samples.len() != self.total_samples {
-            return false;
-        }
-        self.update_strided(samples, 1, 0, start, len)
+        self.update_range_from(&samples, start, len)
     }
 
-    /// [`Self::update_range`] over one channel of an interleaved buffer, read
-    /// with a stride instead of being de-interleaved first.
+    /// [`Self::update_range`] over any [`Source`] — the general form, and the
+    /// one an editor wants: the samples are already where they belong (a
+    /// server buffer, a mapped region), and what is left is the summary of the
+    /// span that moved.
     ///
-    /// That is the whole reason it exists: a take is interleaved, and copying
-    /// every channel out of it to update one span would cost the buffer —
-    /// exactly what updating a range is for avoiding. `start` and `len` are in
-    /// **frames**, since that is what the caller's span is.
-    pub(crate) fn update_strided(
+    /// Refuses, changing nothing, when the source is not the length this
+    /// pyramid describes, for the reason the slice form gives: a length change
+    /// is a rebuild, not an update.
+    pub fn update_range_from<S: Source + ?Sized>(
         &mut self,
-        data: &[f32],
-        stride: usize,
-        offset: usize,
+        source: &S,
         start: usize,
         len: usize,
     ) -> bool {
-        if stride == 0 || data.len() < offset + self.total_samples.saturating_sub(1) * stride + 1 {
+        if source.len() != self.total_samples {
             return false;
         }
         let end = start.saturating_add(len).min(self.total_samples);
@@ -232,28 +341,32 @@ impl Pyramid {
 
         // Level 0, from the samples themselves.
         let base = self.base_bucket;
-        let (mut lo, mut hi) = (start / base, (end - 1) / base);
+        let (lo, hi) = (start / base, (end - 1) / base);
         {
             let total = self.total_samples;
             let level = &mut self.levels[0];
             let last = level.min.len().saturating_sub(1);
-            let mut window: Vec<f32> = Vec::with_capacity(base);
+            let mut window = vec![0.0f32; base];
             for b in lo..=hi.min(last) {
-                let from = b * base;
-                let to = (from + base).min(total);
-                window.clear();
-                window.extend((from..to).map(|i| data[offset + i * stride]));
-                let (mn, mx) = min_max(&window).unwrap_or((0.0, 0.0));
+                let n = bucket_count(total, base, b);
+                let chunk = &mut window[..n];
+                source.read_into(b * base, chunk);
+                let (mn, mx) = min_max(chunk).unwrap_or((0.0, 0.0));
                 level.min[b] = mn;
                 level.max[b] = mx;
                 if let Some(ms) = level.ms.as_mut() {
-                    ms[b] = mean_square(&window).unwrap_or(0.0);
+                    ms[b] = mean_square(chunk).unwrap_or(0.0);
                 }
             }
         }
+        self.recombine_above(lo, hi);
+        true
+    }
 
-        // Every level above, each from the one below — the builder's own
-        // combination applied to the buckets whose children moved.
+    /// Rebuilds every level above 0 whose children moved, from the one below —
+    /// the builder's own combination, applied to the buckets `lo..=hi` of level
+    /// 0 and to their parents upward.
+    fn recombine_above(&mut self, mut lo: usize, mut hi: usize) {
         for l in 1..self.levels.len() {
             lo /= 2;
             hi /= 2;
@@ -281,7 +394,24 @@ impl Pyramid {
                 }
             }
         }
-        true
+    }
+
+    /// [`Self::update_range`] over one channel of an interleaved buffer, read
+    /// with a stride instead of being de-interleaved first.
+    ///
+    /// That is the whole reason it exists: a take is interleaved, and copying
+    /// every channel out of it to update one span would cost the buffer —
+    /// exactly what updating a range is for avoiding. `start` and `len` are in
+    /// **frames**, since that is what the caller's span is.
+    pub(crate) fn update_interleaved(
+        &mut self,
+        data: &[f32],
+        channels: usize,
+        channel: usize,
+        start: usize,
+        len: usize,
+    ) -> bool {
+        self.update_range_from(&Interleaved::new(data, channels, channel), start, len)
     }
 
     pub fn base_bucket(&self) -> usize {
@@ -459,15 +589,13 @@ impl MultiPyramid {
     /// Builds one pyramid per channel from `samples` holding `channels`
     /// interleaved channels (`channels >= 1`; a trailing partial frame is
     /// ignored). The de-interleave lives here — core-side — so every client
-    /// builds the identical multichannel cache from the same flat buffer.
+    /// builds the identical multichannel cache from the same flat buffer, and
+    /// it is a **stride** rather than a copy ([`Interleaved`]): a channel is
+    /// read where it lies.
     pub fn build_interleaved(samples: &[f32], channels: usize, base_bucket: usize) -> Self {
         let channels = channels.max(1);
-        let frames = samples.len() / channels;
         let pyramids = (0..channels)
-            .map(|ch| {
-                let one: Vec<f32> = (0..frames).map(|f| samples[f * channels + ch]).collect();
-                Pyramid::build(&one, base_bucket)
-            })
+            .map(|ch| Pyramid::build_from(&Interleaved::new(samples, channels, ch), base_bucket))
             .collect();
         Self { channels: pyramids }
     }
@@ -489,7 +617,7 @@ impl MultiPyramid {
             return false;
         }
         for (ch, pyr) in self.channels.iter_mut().enumerate() {
-            if !pyr.update_strided(interleaved, channels, ch, start, len) {
+            if !pyr.update_interleaved(interleaved, channels, ch, start, len) {
                 return false;
             }
         }
@@ -916,6 +1044,109 @@ mod tests {
             let built = Pyramid::build(&ramp(n), base).to_bytes().len();
             assert_eq!(cache_size(n, base), built, "n={n} base={base}");
         }
+    }
+}
+
+#[cfg(test)]
+mod source_tests {
+    use super::*;
+
+    /// A source that owns nothing the caller can see — the shape a mapped
+    /// region has, so the test proves the door works for something that is not
+    /// a slice in disguise.
+    struct Generated {
+        len: usize,
+    }
+
+    impl Source for Generated {
+        fn len(&self) -> usize {
+            self.len
+        }
+
+        fn read_into(&self, start: usize, out: &mut [f32]) {
+            for (i, slot) in out.iter_mut().enumerate() {
+                let f = start + i;
+                *slot = if f < self.len { value(f) } else { 0.0 };
+            }
+        }
+    }
+
+    fn value(i: usize) -> f32 {
+        (i as f32 * 0.013).sin() * 0.8 + (i % 11) as f32 * 0.02
+    }
+
+    fn materialized(n: usize) -> Vec<f32> {
+        (0..n).map(value).collect()
+    }
+
+    #[test]
+    fn a_pyramid_over_a_source_equals_one_over_the_samples() {
+        let n = 9_000;
+        let from_source = Pyramid::build_from(&Generated { len: n }, 256);
+        let from_slice = Pyramid::build(&materialized(n), 256);
+        assert_eq!(from_source.num_levels(), from_slice.num_levels());
+        for level in 0..from_slice.num_levels() {
+            for b in 0..40 {
+                let s0 = (b * 137) as f64;
+                let s1 = s0 + 500.0;
+                assert_eq!(
+                    from_source.column(level, s0, s1),
+                    from_slice.column(level, s0, s1),
+                    "level {level}, column {b}"
+                );
+                assert_eq!(
+                    from_source.column_ms(level, s0, s1),
+                    from_slice.column_ms(level, s0, s1),
+                    "level {level}, column {b} (measure)"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_span_updated_through_a_source_equals_a_rebuild() {
+        let n = 9_000;
+        let mut samples = materialized(n);
+        let mut pyramid = Pyramid::build(&samples, 256);
+        // The material moves where it lies, as a store into a mapped region
+        // does, and only the summary is told about it.
+        for s in samples.iter_mut().skip(3_000).take(1_500) {
+            *s = -0.75;
+        }
+        assert!(pyramid.update_range_from(&samples.as_slice(), 3_000, 1_500));
+        let rebuilt = Pyramid::build(&samples, 256);
+        for level in 0..rebuilt.num_levels() {
+            for b in 0..40 {
+                let s0 = (b * 211) as f64;
+                let s1 = s0 + 400.0;
+                assert_eq!(
+                    pyramid.column(level, s0, s1),
+                    rebuilt.column(level, s0, s1),
+                    "level {level}, column {b}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_source_of_another_length_is_refused() {
+        let mut pyramid = Pyramid::build(&materialized(4_000), 256);
+        assert!(!pyramid.update_range_from(&Generated { len: 4_001 }, 0, 10));
+    }
+
+    #[test]
+    fn an_interleaved_channel_reads_its_own_samples() {
+        let frames = 1_000;
+        let interleaved: Vec<f32> = (0..frames).flat_map(|f| [value(f), -value(f)]).collect();
+        let right = Interleaved::new(&interleaved, 2, 1);
+        assert_eq!(Source::len(&right), frames);
+        let mut out = [0.0f32; 4];
+        right.read_into(10, &mut out);
+        assert_eq!(out, [-value(10), -value(11), -value(12), -value(13)]);
+        // Past the end is silence rather than a panic: the pyramid never asks
+        // for one, and a draw path is the wrong place to learn that.
+        right.read_into(frames - 2, &mut out);
+        assert_eq!(out, [-value(frames - 2), -value(frames - 1), 0.0, 0.0]);
     }
 }
 
