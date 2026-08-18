@@ -132,12 +132,17 @@ mod tests {
         send("/transport_group", vec![OscType::Int(77)]);
         send("/transport_locateSample", vec![OscType::Long(12_345)]);
 
-        // The engine publishes once a block; a few milliseconds is many.
-        std::thread::sleep(std::time::Duration::from_millis(120));
-        assert_eq!(
-            bus.sample_clock(),
-            12_345.0,
-            "located, and stopped: the piece stands exactly where it was put"
+        // **Waited for, not slept through.** The engine publishes once a block,
+        // which is a fraction of a millisecond of work — but the first block
+        // arrives when the *device* starts, and on a loaded machine that is
+        // not within any fixed number of milliseconds. A single sleep made this
+        // fail about one run in five, which is the worst kind of red: it says
+        // nothing about the code and it trains a reader to re-run.
+        assert!(
+            settles(|| bus.sample_clock() == 12_345.0),
+            "located, and stopped: the piece stands exactly where it was put \
+             (read {})",
+            bus.sample_clock()
         );
         assert!(
             device.sample_clock() > 0.0,
@@ -145,11 +150,27 @@ mod tests {
         );
 
         send("/transport_play", vec![]);
-        std::thread::sleep(std::time::Duration::from_millis(120));
         assert!(
-            bus.sample_clock() > 12_345.0,
-            "and it moves once the transport rolls"
+            settles(|| bus.sample_clock() > 12_345.0),
+            "and it moves once the transport rolls (read {})",
+            bus.sample_clock()
         );
+    }
+
+    /// Whether `check` becomes true within a couple of seconds, polled.
+    ///
+    /// The deadline is generous and the poll is short, which is the shape a
+    /// wait on another thread wants: it costs one poll interval when the
+    /// machine is idle and it does not fail when the machine is not.
+    fn settles(mut check: impl FnMut() -> bool) -> bool {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while std::time::Instant::now() < deadline {
+            if check() {
+                return true;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        check()
     }
 }
 
