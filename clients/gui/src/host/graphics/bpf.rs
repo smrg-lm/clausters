@@ -235,6 +235,24 @@ impl Axes {
         best.map(|(i, _)| i)
     }
 
+    /// Whether `(cx, cy)` is **on the drawn line** — within the grab slop of
+    /// the curve's own y at that x, rather than anywhere in its column.
+    ///
+    /// The distinction is what makes a curve one **layer** among several over
+    /// the same rectangle: [`hit_segment`](Self::hit_segment) answers the
+    /// column, which is right for a bend already in hand (a vertical drag has
+    /// no y to be near), and wrong for deciding whether the hand is pointing at
+    /// this curve at all — a column claim would leave the container underneath
+    /// no pixels of its own anywhere along the curve.
+    pub fn on_line(&self, points: &[BpfPoint], cx: f64, cy: f64, m: &Metrics) -> bool {
+        if points.is_empty() {
+            return false;
+        }
+        let slop = (m.point_radius + m.hit_slop).max(6.0) as f64;
+        let y = self.y(value_at(points, self.t(cx))) as f64;
+        (cy - y).abs() <= slop
+    }
+
     /// The segment under x pixel `cx`: the index of the point it leaves from,
     /// when the cursor sits strictly between two breakpoints.
     pub fn hit_segment(&self, points: &[BpfPoint], cx: f64) -> Option<usize> {

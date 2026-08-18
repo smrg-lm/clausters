@@ -56,6 +56,10 @@ pub mod clipboard;
 pub mod document;
 pub mod elements;
 pub mod guidef;
+// Which of a container's layered contents a hand is editing — the one rule
+// that decides between claimants over the same pixels, read by the drawing,
+// the press and the wire alike.
+pub mod layers;
 pub mod play;
 pub mod registry;
 pub mod voices;

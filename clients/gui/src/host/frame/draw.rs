@@ -665,7 +665,7 @@ pub(super) fn draw_static_meshes(
                     indent: 0.0,
                     clip: item.clip,
                     scale: item.scale,
-                    time: Some(TimeSpace::of(item.local, item.dur)),
+                    time: Some(TimeSpace::of(item.local, item.dur).with_active(item.active)),
                     // A body carries no id, so nothing can address the keyboard
                     // at it: the focus is the clip's or nobody's.
                     focused: false,
@@ -702,7 +702,12 @@ pub(super) fn draw_static_meshes(
             .rposition(|item| item.rect.contains(x, y))
     });
     for (i, item) in collected.clip_items.iter().enumerate() {
+        // **A grip is the placement layer's affordance**, so it is drawn while
+        // that layer is the one a hand is editing and not while the hand is
+        // inside the clip: an automation being edited must not be surrounded by
+        // marks offering to move the rectangle under it.
         let grip = match inputs.grab {
+            _ if !item.placement_active => None,
             // Something else has the pointer: no clip offers anything.
             Grab::Other => None,
             // The held clip keeps the edge it is being resized by, wherever the

@@ -30,8 +30,8 @@ use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
 use crate::host::widget::element::BodyRole;
 use crate::host::widget::element::{
-    Ctx, Element, FreqAxis, Live, Loaded, Needs, SampleBlock, SlotFill, SlotFrame, TextureLook,
-    ValueAxis,
+    Ctx, Element, FreqAxis, Input, Live, Loaded, Needs, SampleBlock, SlotFill, SlotFrame,
+    TextureLook, ValueAxis,
 };
 use crate::host::widget::{EditorProps, GestureMap};
 
@@ -237,6 +237,20 @@ impl Element for SignalElement {
 
     fn body_role(&self) -> Option<BodyRole> {
         Some(BodyRole::Take)
+    }
+
+    /// **A take's material is the whole of the box it fills** — samples run
+    /// edge to edge, so there is no empty space inside one — and it is claimed
+    /// only when the take can actually be edited (`editable`).
+    ///
+    /// That gate is what keeps a clip draggable: a clip's take is built with
+    /// every capability off, so it never takes the press and the background
+    /// stays the clip's. A take a script *did* make editable is a different
+    /// statement — the material is what the hand is there for, the way it is in
+    /// an editor's own view — and the clip is then moved from its grips or by
+    /// naming its layer.
+    fn layer_hit(&self, at: (f64, f64), input: &Input) -> bool {
+        self.caps.editable && input.rect.contains(at.0, at.1)
     }
 
     fn draw_body(&self, d: &mut Draw, rect: Rect, local: &crate::viewport::View, dur: f64) {

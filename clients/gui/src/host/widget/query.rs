@@ -25,6 +25,13 @@ use super::element::BodyRole;
 use super::element::Element;
 use super::{EditorProps, GestureMap, Widget, WidgetKind, build};
 
+/// The names of a container's hidden layers, space-separated — the value its
+/// own `/gui_set hidden` would take back.
+fn hidden_names(widget: &Widget) -> String {
+    let mut w = widget.clone();
+    crate::host::layers::Selection::of(&mut w).map_or_else(String::new, |s| s.hidden())
+}
+
 impl Widget {
     /// This widget's gesture table: the `gestures` prop when it carries one,
     /// else the default its kind implies. The one door the press walk reads, so
@@ -505,11 +512,50 @@ impl Widget {
     pub fn info(&self) -> Vec<(String, Value)> {
         let mut out = self.kind.info();
         if matches!(self.kind, WidgetKind::Clip { .. }) {
+            // Which layer a hand is editing is state a gesture moves, so it is
+            // reported like every other edit: the name resolves against the
+            // stack this clip actually holds.
+            out.push((
+                "layer".into(),
+                Value::from(crate::host::layers::active(self).name(self)),
+            ));
+            // What is *drawn*, beside what is edited: reported only when
+            // something is hidden, so an ordinary clip answers what it always
+            // did.
+            let any_hidden = self
+                .children
+                .iter()
+                .any(|c| c.kind.body_role().is_some() && !c.visible);
+            if any_hidden {
+                out.push(("hidden".into(), Value::from(hidden_names(self))));
+            }
             for body in &self.children {
                 out.extend(body.kind.info());
             }
         }
         out
+    }
+
+    /// The body a **layer address** names among this container's layered
+    /// contents, mutably — the door a press on a layer and a drag holding one
+    /// both write through.
+    ///
+    /// `None` for the placement layer (which is the container itself, not one
+    /// of its contents) and for an address the container no longer has, which
+    /// a drag whose body was freed under it produces and which every caller
+    /// already survives.
+    pub(crate) fn layer_body_mut(
+        &mut self,
+        layer: crate::host::layers::Layer,
+    ) -> Option<&mut WidgetKind> {
+        let crate::host::layers::Layer::Content(n) = layer else {
+            return None;
+        };
+        self.children
+            .iter_mut()
+            .filter(|c| c.kind.body_role().is_some())
+            .nth(n)
+            .map(|c| &mut c.kind)
     }
 
     /// The body filling `role` among a clip's children, mutably — the door a

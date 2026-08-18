@@ -16,15 +16,43 @@ use super::*;
 /// body prop naming a body the clip does not have **creates** it, which is how
 /// a script draws a curve over a take without rebuilding the def.
 pub(super) fn apply_widget(widget: &mut Widget, key: &str, v: &Value) -> bool {
-    if matches!(widget.kind, WidgetKind::Clip { .. }) && !CLIP_OWN.contains(&key) {
-        return apply_clip_body(widget, key, v);
+    if matches!(widget.kind, WidgetKind::Clip { .. }) {
+        // The **active edit layer** is the one clip prop that is neither the
+        // clip's own scalar nor a body's: it names one of the bodies, so it is
+        // resolved against the container that holds them.
+        // Which layers are **drawn**, the visualization half of the same
+        // question: named the same way, resolved against the same stack.
+        if key == "hidden" {
+            let Some(names) = v.as_str() else {
+                return false;
+            };
+            let Some(mut sel) = crate::host::layers::Selection::of(widget) else {
+                return false;
+            };
+            sel.set_hidden(names);
+            return true;
+        }
+        if key == "layer" {
+            let Some(name) = v.as_str() else { return false };
+            let Some(mut sel) = crate::host::layers::Selection::of(widget) else {
+                return false;
+            };
+            let Some(layer) = sel.parse(name) else {
+                return false;
+            };
+            sel.set(layer);
+            return true;
+        }
+        if !CLIP_OWN.contains(&key) {
+            return apply_clip_body(widget, key, v);
+        }
     }
     apply_kind(&mut widget.kind, key, v)
 }
 
 /// The keys a `clip` answers for itself; everything else it accepts belongs to
 /// one of its bodies.
-const CLIP_OWN: [&str; 3] = ["offset", "dur", "label"];
+const CLIP_OWN: [&str; 5] = ["offset", "dur", "label", "layer", "hidden"];
 
 /// Routes a body prop into the child that owns it, building that child first
 /// when the clip does not have it yet. The **value axis** props are the awkward

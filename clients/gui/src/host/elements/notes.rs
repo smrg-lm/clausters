@@ -561,6 +561,23 @@ impl Element for Notes {
         Some(GestureMap::of_plans(&[El], &[Pan], &[El], &[El]))
     }
 
+    /// **The roll's own material is its notes** — a note's rectangle, and the
+    /// velocity bar that belongs to one. The grid between them is the
+    /// container's, which is what leaves a clip's empty roll to the clip's own
+    /// move.
+    ///
+    /// A read-only roll answers `false` everywhere: pointing at the notes of a
+    /// rendering is not a request to edit them, so the press goes to the clip
+    /// and the clip moves. The refusal in [`press`](Self::press) stays for the
+    /// layer a script activated on purpose.
+    fn layer_hit(&self, at: (f64, f64), input: &Input) -> bool {
+        if !self.editable {
+            return false;
+        }
+        let h = self.hit(at, input);
+        matches!(h.region, Region::Grid | Region::Velocity) && h.note.is_some()
+    }
+
     fn press(&mut self, at: (f64, f64), input: &Input) -> Claim {
         let h = self.hit(at, input);
         // **Read-only is answered before the drag, not after it.** The press is

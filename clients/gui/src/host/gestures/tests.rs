@@ -1687,8 +1687,14 @@ fn clip_offset(host: &Host, id: i32) -> f64 {
 /// at once, and the second is the one the port nearly lost — a body claims its
 /// break-points and *declines* everywhere else, so the clip it shares a
 /// rectangle with still moves.
+/// **The interaction rule between a clip's two levels**, on the case that used
+/// to have none: a clip carrying an automation. Pressing the curve's own
+/// material — a break-point, or the line between two of them — selects that
+/// layer and edits it; pressing anywhere the curve draws nothing is the clip's,
+/// which moves and takes the active layer back. Nothing here is a precedence
+/// between claimants: each press asks what is drawn under it.
 #[test]
-fn a_clips_curve_body_takes_its_points_and_leaves_the_clip_its_drag() {
+fn a_press_selects_the_layer_it_lands_on_and_the_background_is_the_clips() {
     let mut host = host_from(
         r#"{"type":"window","margin":0,"children":[
             {"id":80,"type":"field","label":"automation","children":[
@@ -1711,8 +1717,37 @@ fn a_clips_curve_body_takes_its_points_and_leaves_the_clip_its_drag() {
         .rect;
     let peak = ((lane.x + lane.w * 0.5) as f64, lane.y as f64 + 1.0);
 
-    // On the point: the body takes the press and the drag reports the whole
-    // list in the envelope's own units, tagged `points`.
+    // On the **line** between two points — the rising half sits at value 0.5
+    // over the middle of the lane's height at a quarter of its width: the curve
+    // takes the press and bends, which is the gesture the lit segment offers
+    // and which inside a clip used to be lit and then not delivered.
+    let on_line = (
+        (lane.x + lane.w * 0.25) as f64,
+        (lane.y + lane.h * 0.5) as f64,
+    );
+    let selected = g.press(&mut host, &ctx, on_line.0, on_line.1, &mut || false);
+    assert!(g.dragging(), "the segment took the press");
+    // Selecting is announced, once, in the same word a `/gui_set layer` takes:
+    // a script that follows the hand hears where it went.
+    assert!(
+        selected.iter().any(|e| matches!(e,
+            GestureEffect::Emit { widget_id: 81, args, .. }
+                if args.first() == Some(&OscType::String("layer".into()))
+                    && args.get(1) == Some(&OscType::String("points".into())))),
+        "{selected:?}"
+    );
+    let effects = g.drag_to(&mut host, &ctx, on_line.0, on_line.1 - 20.0);
+    assert!(has_emit_tag(&effects, 81, "points"), "{effects:?}");
+    g.release(&mut host, &ctx, on_line.0, on_line.1 - 20.0);
+    assert_eq!(clip_offset(&host, 81), 0.0, "the clip did not move");
+    assert_eq!(
+        active_layer(&host, 81),
+        "points",
+        "the curve is what is held"
+    );
+
+    // On a point: the same layer, and the drag reports the whole list in the
+    // envelope's own units, tagged `points`.
     g.press(&mut host, &ctx, peak.0, peak.1, &mut || false);
     assert!(g.dragging());
     let effects = g.drag_to(&mut host, &ctx, peak.0, (lane.y + lane.h) as f64 - 1.0);
@@ -1720,9 +1755,13 @@ fn a_clips_curve_body_takes_its_points_and_leaves_the_clip_its_drag() {
     g.release(&mut host, &ctx, peak.0, (lane.y + lane.h) as f64 - 1.0);
     assert_eq!(clip_offset(&host, 81), 0.0, "the clip itself did not move");
 
-    // Off the points: the press falls through to the clip, which moves.
+    // Off the curve altogether — the clip's own background, where the
+    // automation draws nothing: the clip moves, and the placement is the layer
+    // in hand again, so its grips are back. (The peak has just been dragged to
+    // the floor, so the curve's second half runs along the bottom edge and the
+    // middle of the lane is empty.)
     let away = (
-        (lane.x + lane.w * 0.25) as f64,
+        (lane.x + lane.w * 0.75) as f64,
         (lane.y + lane.h * 0.5) as f64,
     );
     g.press(&mut host, &ctx, away.0, away.1, &mut || false);
@@ -1731,6 +1770,89 @@ fn a_clips_curve_body_takes_its_points_and_leaves_the_clip_its_drag() {
     assert!(
         clip_offset(&host, 81) > 0.0,
         "the clip moved under the curve"
+    );
+    assert_eq!(active_layer(&host, 81), "placement");
+}
+
+/// The wire name of the layer a container is being edited on — what a
+/// `/gui_query` would report and what the `"layer"` payload announces.
+fn active_layer(host: &Host, id: i32) -> String {
+    let w = host.window_def(1).unwrap().find(id).unwrap();
+    crate::host::layers::active(w).name(w)
+}
+
+/// **A locked body is not a layer a hand can take, so the clip is what moves.**
+///
+/// The defect this closes, in one press: `editable=false` used to be answered
+/// by *consuming* the press with a refusal, so a clip whose contents were
+/// locked could not be moved either — and where material sits is the
+/// composition's while what it holds is the material's, which is precisely the
+/// distinction that was missing. A layer that cannot be edited is never
+/// selected by pointing at it, so the press lands where it always should have.
+#[test]
+fn a_locked_layer_hands_the_press_to_the_clip_it_is_drawn_in() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"children":[
+            {"id":80,"type":"field","label":"pattern","children":[
+                {"id":81,"type":"field","offset":0.0,"dur":1000.0,
+                 "min":48.0,"max":72.0,"editable":false,
+                 "notes":[0.0,1000.0,60.0,100,0]}]}]}"#,
+    );
+    host.sync_track_totals();
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 800, 200);
+    let clip = placed_rect(&host, &ctx, 81);
+    // Squarely on the note, which fills the clip: the one press that used to be
+    // eaten by the refusal.
+    let on_note = (
+        (clip.x + clip.w * 0.5) as f64,
+        (clip.y + clip.h * 0.5) as f64,
+    );
+    g.press(&mut host, &ctx, on_note.0, on_note.1, &mut || false);
+    let effects = g.drag_to(&mut host, &ctx, on_note.0 + 60.0, on_note.1);
+    g.release(&mut host, &ctx, on_note.0 + 60.0, on_note.1);
+    assert!(
+        !has_emit_tag(&effects, 81, "notes"),
+        "the locked notes did not move: {effects:?}"
+    );
+    assert!(clip_offset(&host, 81) > 0.0, "the clip did");
+    assert_eq!(active_layer(&host, 81), "placement");
+}
+
+/// **Selecting a layer is an operation, not a gesture**: `/gui_set layer` puts
+/// a hand on the automation without a pointer anywhere near it, and a query
+/// answers with the same word. The press rule is one caller of the same door.
+#[test]
+fn a_script_selects_a_layer_and_the_query_answers_with_it() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"children":[
+            {"id":80,"type":"field","children":[
+                {"id":81,"type":"field","offset":0.0,"dur":1000.0,
+                 "data":[0.0,1.0,0.0],
+                 "points":[0.0,0.0,1,0.0, 1000.0,1.0,1,0.0],
+                 "points_min":0.0,"points_max":1.0}]}]}"#,
+    );
+    host.sync_track_totals();
+    assert_eq!(active_layer(&host, 81), "placement", "the default");
+    set_layer(&mut host, 81, "points");
+    assert_eq!(active_layer(&host, 81), "points");
+    // A name this clip has no layer for changes nothing, the way any unusable
+    // value does.
+    set_layer(&mut host, 81, "nonsense");
+    assert_eq!(active_layer(&host, 81), "points");
+    // ...and back to the placement, which is what a clip's own layer is called
+    // on the way in as well.
+    set_layer(&mut host, 81, "clip");
+    assert_eq!(active_layer(&host, 81), "placement");
+}
+
+/// `/gui_set layer`, as the wire sends it.
+fn set_layer(host: &mut Host, id: i32, name: &str) {
+    let mut effects = Vec::new();
+    host.set_props(
+        id,
+        vec![("layer".into(), serde_json::json!(name))],
+        &mut effects,
     );
 }
 

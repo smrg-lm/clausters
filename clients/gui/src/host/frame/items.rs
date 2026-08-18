@@ -66,6 +66,10 @@ pub(super) struct ClipItem {
     /// drawn where the clip actually ends
     /// (`track::clip_ends_on_screen`).
     pub(super) ends: (bool, bool),
+    /// Whether the clip's **placement** is its active edit layer — the grips
+    /// are its affordance, so they are drawn while it is and not while a hand
+    /// is editing something inside the clip.
+    pub(super) placement_active: bool,
     pub(super) clip: Option<Rect>,
     /// The opacity and corner radius this widget draws with
     /// ([`super::ink_of`]).
@@ -93,6 +97,10 @@ pub(super) struct ClipBodyItem {
     /// them exactly as it does anywhere else.
     pub(super) metrics: Metrics,
     pub(super) scale: f32,
+    /// Whether this body is its container's **active edit layer** — what it is
+    /// told so it draws affordances only when they are promises it can keep
+    /// (see [`crate::host::layers`]).
+    pub(super) active: bool,
     pub(super) kind: WidgetKind,
 }
 
@@ -235,10 +243,22 @@ pub(super) fn collect_widgets(
                 });
                 continue;
             }
+            // Which layer this body is, asked of the container that placed it:
+            // the child's own index among the clip's children, which is the
+            // address the whole model uses.
+            let active = placed[parent]
+                .widget
+                .children
+                .iter()
+                .position(|c| std::ptr::eq(c, p.widget))
+                .is_some_and(|index| {
+                    crate::host::layers::child_is_active(placed[parent].widget, index)
+                });
             clip_bodies.push(ClipBodyItem {
                 rect: p.rect,
                 local: p.time.unwrap_or_else(|| View::full(1)),
                 dur,
+                active,
                 clip: p.clip,
                 ink,
                 theme: p.widget.theme.clone(),
@@ -299,6 +319,8 @@ pub(super) fn collect_widgets(
                     ends: p.time.as_ref().map_or((true, true), |local| {
                         crate::host::graphics::track::clip_ends_on_screen(local, *dur)
                     }),
+                    placement_active: crate::host::layers::active(p.widget)
+                        == crate::host::layers::Layer::Placement,
                     clip: p.clip,
                     ink,
                     theme: p.widget.theme.clone(),

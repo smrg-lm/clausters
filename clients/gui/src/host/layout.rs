@@ -473,6 +473,13 @@ fn place_on_time<'a>(
         _ => return,
     };
     for child in &widget.children {
+        // A **hidden layer** is not placed at all: a container's contents are
+        // a stack of pictures, and one that is turned off is neither drawn nor
+        // hit. Skipping it costs the siblings nothing, since a container's
+        // layered contents all fill the same box (see `Widget::visible`).
+        if !child.visible && child.kind.body_role().is_some() {
+            continue;
+        }
         let (rect, inner) = match (&widget.kind, &child.kind) {
             (WidgetKind::Track { .. }, WidgetKind::Clip { offset, dur, .. }) => {
                 // The floor a clip is drawn no thinner than is the **hairline**

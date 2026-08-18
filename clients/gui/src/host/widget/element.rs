@@ -614,18 +614,42 @@ pub struct TimeSpace {
     /// carries the position in a [`Ctx`]. Nothing a drag decides depends on
     /// where the playhead is.
     pub head: Option<f64>,
+    /// Whether this element is the container's **active edit layer** — the one
+    /// layer that acts and offers affordances
+    /// ([`crate::host::layers`]).
+    ///
+    /// It rides here because it is exactly the same kind of fact as the axis:
+    /// something the container decided and the element is told, rather than
+    /// something the element can work out. An inactive layer still **draws** —
+    /// it is part of the picture — it simply draws no affordance and takes no
+    /// press, so what is lit is always what a press would take.
+    ///
+    /// `true` for an element standing on its own (a `None` [`TimeSpace`] never
+    /// reaches this field): outside a container an element is its own layer.
+    pub active: bool,
 }
 
 impl TimeSpace {
     /// A bare axis: a window over a span, with no selection and no transport on
     /// it — what a container hands a body, and what a test draws against.
+    ///
+    /// **Active**, because that is what a caller with nothing to say about
+    /// layers means: the one-body case, and every test that draws a body to see
+    /// what it looks like. A container that layers several says which is which
+    /// with [`with_active`](Self::with_active).
     pub fn of(view: crate::viewport::View, span: f64) -> Self {
         Self {
             view,
             span,
             sel: None,
             head: None,
+            active: true,
         }
+    }
+
+    /// The same axis, with this element named as the active layer or not.
+    pub fn with_active(self, active: bool) -> Self {
+        Self { active, ..self }
     }
 }
 
@@ -1638,6 +1662,30 @@ pub trait Element: fmt::Debug {
     /// its own geometry.
     fn hit_area(&self, input: &Input) -> HitArea {
         HitArea::Rect(input.rect)
+    }
+
+    /// Whether the pointer at `at` is on this element's **own material** — the
+    /// things it holds and can be asked to change (a curve's break-points and
+    /// the segments between them, a note's rectangle), and never the rectangle
+    /// it shares with the container that layered it.
+    ///
+    /// It is the question a container asks to decide **which of its layers a
+    /// press belongs to** ([`layers::under_pointer`](crate::host::layers::under_pointer)),
+    /// which is why the distinction is exactly that one: the pixels an element
+    /// draws nothing on are the container's, and that is what leaves a clip's
+    /// background to the clip's own move. An element standing on its own is
+    /// never asked.
+    ///
+    /// **A layer that cannot be edited answers `false`**, the same answer as
+    /// empty space: pointing at material this editor may not write is not a
+    /// request to edit it, so the press falls through to the container instead
+    /// of being consumed by a refusal. The refusal itself stays in
+    /// [`press`](Element::press), for the layer a script activated deliberately.
+    ///
+    /// The default is `false`: an element is a picture inside its container
+    /// until it says otherwise, which is what an unported leaf should be.
+    fn layer_hit(&self, _at: (f64, f64), _input: &Input) -> bool {
+        false
     }
 
     /// The press landed on this element at `at`, in the window's pixels.

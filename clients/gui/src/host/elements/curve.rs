@@ -216,8 +216,13 @@ impl Element for Curve {
         // What a bend would take: the segment being held, or the one under the
         // pointer when nothing is. Only where the curve can be edited at all —
         // an affordance over a read-only body would announce a gesture that is
-        // about to be refused.
-        let lit = if !self.editable {
+        // about to be refused — and only while this curve is the **active edit
+        // layer** of whatever placed it. That is the defect this closes: inside
+        // a clip the segment used to light up whether or not the curve was the
+        // layer in hand, and a press there moved the clip, which is exactly the
+        // promise a lit affordance must not make. Active, the bend *is* the
+        // gesture, so the mark and the press agree again.
+        let lit = if !self.editable || !ctx.time.is_none_or(|t| t.active) {
             None
         } else {
             match self.grab {
@@ -244,6 +249,25 @@ impl Element for Curve {
 
     fn body_role(&self) -> Option<BodyRole> {
         Some(BodyRole::Curve)
+    }
+
+    /// **A curve's own material is its break-points and the segments between
+    /// them** — the line, not the field it is drawn over. Everything else in
+    /// the rectangle is the container's, which is how an automation drawn
+    /// across a whole clip still leaves the clip draggable.
+    ///
+    /// A read-only curve answers `false`, the same as empty space: the press
+    /// falls through to the clip instead of being consumed by a refusal.
+    fn layer_hit(&self, at: (f64, f64), input: &Input) -> bool {
+        if !self.editable {
+            return false;
+        }
+        let ax = self.axes(input.rect, input.metrics, input.time);
+        ax.body.contains(at.0, at.1)
+            && (ax
+                .hit_point(&self.points, at.0, at.1, input.metrics)
+                .is_some()
+                || ax.on_line(&self.points, at.0, at.1, input.metrics))
     }
 
     fn press(&mut self, at: (f64, f64), input: &Input) -> Claim {
@@ -275,12 +299,14 @@ impl Element for Curve {
             self.grab = Some(Grab::Point(i));
             return Claim::take();
         }
-        // Bending a **segment** is the view's gesture and not a body's: a body
-        // shares its rectangle with its container, whose own drag is what the
-        // rest of that rectangle means (moving a clip, resizing it), so a body
-        // claims its break-points and nothing else. Standing on its own the
-        // whole field is the element's, and there a segment bends.
-        if input.time.is_none()
+        // Bending a **segment** is the gesture of whoever holds the layer.
+        // Standing on its own the whole field is the element's; inside a
+        // container it is the element's while this curve is the **active**
+        // layer — which is what selecting the curve means, and what the lit
+        // segment says is on offer. Inactive, the rectangle means the
+        // container's own drag (moving a clip, resizing it), so the press goes
+        // back to it.
+        if input.time.is_none_or(|t| t.active)
             && let Some(index) = ax.hit_segment(&self.points, at.0)
         {
             self.grab = Some(Grab::Segment {

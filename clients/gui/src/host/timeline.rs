@@ -356,6 +356,9 @@ impl TimelineGroups {
             span: self.total_of(id) as f64,
             sel: state.selection(),
             head: clock.and_then(|c| state.head_at(c)),
+            // A member of a navigation group stands on its own rectangle: it is
+            // its own layer, and nothing above it is deciding between claimants.
+            active: true,
         })
     }
 }

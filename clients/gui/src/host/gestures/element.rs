@@ -9,9 +9,10 @@
 //! questions that have one.
 
 use super::super::Host;
+use super::super::layers::Layer;
 use super::super::layout::Rect;
 use super::super::widget::WidgetKind;
-use super::super::widget::element::{BodyRole, Claim, Element, Events, Input, Mods, TimeSpace};
+use super::super::widget::element::{Claim, Element, Events, Input, Mods, TimeSpace};
 use super::effects::{deliver, deliver_args};
 use super::{GestureCtx, GestureEffect};
 
@@ -20,15 +21,16 @@ use super::{GestureCtx, GestureEffect};
 /// coordinate system it was placed on.
 ///
 /// The body half is what a container's routing costs. A clip's bodies carry no
-/// id (a script addresses the clip), so a body's address is its container's
-/// id plus the [`BodyRole`] it fills: the same routing a `/gui_set` of a body
-/// prop already takes, rather than a second way to name the same child.
+/// id (a script addresses the clip), so a body's address is its container's id
+/// plus the **layer** it is ([`Layer::Content`]) — the same address the
+/// selection, the drawing gate and the wire name all use, rather than a second
+/// way to name the same child.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct At {
     /// The widget the press was addressed to — a clip, for a body.
     pub id: i32,
-    /// Which body of that widget, or `None` for the widget itself.
-    pub body: Option<BodyRole>,
+    /// Which **layer** of that widget, or `None` for the widget itself.
+    pub layer: Option<Layer>,
     pub rect: Rect,
     /// Where the shared axis begins inside `rect` (see [`Input::indent`]).
     pub indent: f32,
@@ -51,7 +53,7 @@ impl At {
     pub(super) fn widget(id: i32, rect: Rect, scale: f32, indent: f32) -> Self {
         Self {
             id,
-            body: None,
+            layer: None,
             rect,
             indent,
             scale,
@@ -93,7 +95,7 @@ pub(super) fn input<'a>(
 /// The playhead is deliberately absent — the engine clock is the front's, and
 /// no gesture is decided by where the line is (see [`TimeSpace::head`]).
 fn time_of(host: &Host, ctx: &GestureCtx, at: At) -> Option<TimeSpace> {
-    if at.body.is_some() {
+    if at.layer.is_some() {
         return at.time;
     }
     let link = host.widget_kind(ctx.def_id, at.id)?.editor()?.link;
@@ -114,14 +116,33 @@ pub(super) fn with<R>(
     let time = time_of(host, ctx, at);
     let input = input(&metrics, ctx, at, time);
     let widget = host.window_def_mut(ctx.def_id)?.find_mut(at.id)?;
-    let kind = match at.body {
-        Some(role) => widget.clip_body_mut(role)?,
+    let kind = match at.layer {
+        Some(layer) => widget.layer_body_mut(layer)?,
         None => &mut widget.kind,
     };
     match kind {
         WidgetKind::Custom(el) => Some(f(&mut **el, &input)),
         _ => None,
     }
+}
+
+/// **Which layer of the container `at` addresses the pointer is on** — the
+/// rule in [`crate::host::layers`], asked with the [`Input`] the container's
+/// own placement implies, so a layer answers about the pixels it was drawn on.
+///
+/// `None` when the widget is gone or layers nothing; the placement layer
+/// otherwise, which is what empty material means.
+pub(super) fn layer_under_pointer(
+    host: &Host,
+    ctx: &GestureCtx,
+    at: At,
+    cx: f64,
+    cy: f64,
+) -> Option<Layer> {
+    let metrics = host.metrics_for(ctx.def_id).at(at.scale);
+    let input = input(&metrics, ctx, at, at.time);
+    let widget = host.window_def(ctx.def_id)?.find(at.id)?;
+    Some(crate::host::layers::under_pointer(widget, (cx, cy), &input))
 }
 
 /// **Offers a press to the element `at` addresses, if the point is on it.**

@@ -195,6 +195,14 @@ pub enum WidgetKind {
     /// a thing with bodies; moving the wire onto the containment is a separate
     /// step. So they carry **no id**: a script addresses the clip, and a
     /// `/gui_set` of a body prop routes into the child that owns it.
+    ///
+    /// **One of those layers is what a hand is editing**, and it is the only
+    /// one that acts or offers an affordance — the rule the whole
+    /// [`layers`](crate::host::layers) module states, and the reason four
+    /// claimants over one set of pixels resolve without any of them knowing
+    /// about the others. Which one is active is [`Widget::layer`], not a field
+    /// here: a clip is the first container that layers its contents and it is
+    /// not meant to be the last.
     Clip {
         offset: f64,
         dur: f64,
@@ -264,6 +272,35 @@ pub struct Widget {
     /// it does not inherit and because it is logical: the frame resolves it
     /// against the placement's scale.
     pub alpha: f32,
+    /// Whether this widget is **drawn**. `true` unless a `visible` prop says
+    /// otherwise.
+    ///
+    /// It is the visualization half of the same idea the active layer is the
+    /// editing half of: the layered contents of a container are a stack of
+    /// pictures, and which of them are shown is a separate question from which
+    /// one a hand is editing — several drawn at once, one edited. A hidden
+    /// layer is not placed, so it is neither drawn nor hit nor selectable by
+    /// pointing at it, and it keeps its address in the stack
+    /// ([`crate::host::layers`]) so showing it again changes nothing else.
+    ///
+    /// **Honored for a container's layered contents**, which is where the
+    /// question comes from. Elsewhere the prop is read and kept but nothing
+    /// consults it yet: hiding a widget that a layout gives space to is a
+    /// question about that space, and the answer belongs with the pass that
+    /// hands it out.
+    pub visible: bool,
+    /// The **active edit layer** of this widget's layered contents: the
+    /// placement (the default), or one of the children that fills a
+    /// [`BodyRole`](element::BodyRole).
+    ///
+    /// It is on the node rather than in a [`WidgetKind`] variant because
+    /// layering is not one widget's idea. A `clip` is the first container that
+    /// draws several editable things on one rectangle; an audio editor's view
+    /// is the next, and a container that grows contents later grows layers
+    /// with them. The rules — one layer acts at a time, and only it offers an
+    /// affordance — are [`crate::host::layers`], and this is where the answer
+    /// is kept.
+    pub layer: super::layers::Layer,
     pub children: Vec<Widget>,
 }
 
@@ -410,7 +447,7 @@ impl Widget {
             let mut map = GestureMap::of_kind(&kind);
             map.overlay(v).then_some(map)
         });
-        Ok(Widget {
+        let mut widget = Widget {
             id,
             kind,
             place: Place::parse(props),
@@ -424,12 +461,31 @@ impl Widget {
             radius: props.get("radius").and_then(radius_value),
             theme: None,
             alpha: 1.0,
+            visible: props.get("visible").and_then(parse::truthy).unwrap_or(true),
+            layer: super::layers::Layer::Placement,
             children,
-        })
+        };
+        // The active **edit layer**, last: it is named by what the container
+        // holds, so it can only be resolved once the bodies are built. A name
+        // nothing answers to leaves the placement active, the way an unknown
+        // prop leaves the widget as it was.
+        if let Some(mut sel) = super::layers::Selection::of(&mut widget) {
+            if let Some(names) = props.get("hidden").and_then(Value::as_str) {
+                sel.set_hidden(names);
+            }
+            if let Some(layer) = props
+                .get("layer")
+                .and_then(Value::as_str)
+                .and_then(|name| sel.parse(name))
+            {
+                sel.set(layer);
+            }
+        }
+        Ok(widget)
     }
 
     /// Applies a `/gui_set` of the style props (`theme`, `color`, `opacity`,
-    /// `radius`) to this widget. A `theme` value rides as a JSON object or its
+    /// `radius`, `visible`) to this widget. A `theme` value rides as a JSON object or its
     /// string carrier (the scalar wire, like `points`); an empty string (or
     /// empty object) clears the group, an empty `color` clears the accent, and
     /// a negative `opacity`/`radius` clears that prop back to the default.
@@ -477,6 +533,10 @@ impl Widget {
             // range means "say nothing".
             "opacity" => set_style_number(&mut self.opacity, v, opacity_value),
             "radius" => set_style_number(&mut self.radius, v, radius_value),
+            // Whether this widget is drawn at all — a **visualization layer**
+            // being turned on or off, which is the one style key that is not
+            // about how something looks but about whether it is there.
+            "visible" => parse::truthy(v).map(|on| self.visible = on).is_some(),
             _ => false,
         }
     }

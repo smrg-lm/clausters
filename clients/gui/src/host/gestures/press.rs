@@ -15,6 +15,7 @@
 
 use super::super::Host;
 use super::super::interact::{self, Hit};
+use super::super::layers;
 use super::super::widget::element::{PendingEdit, TimeSpace};
 use super::super::widget::{Claim, GestureStep, WidgetKind};
 use super::effects::*;
@@ -427,13 +428,22 @@ impl Gestures {
         true
     }
 
-    /// Offers a press to a clip's **element bodies**, topmost first.
+    /// **Which layer a press on a container belongs to, and the press given to
+    /// it** — the whole of the interaction rule, in one place.
     ///
-    /// The container resolves the address and the coordinate system — a body
-    /// fills the clip's rectangle and reads the clip's own axis, which is what
-    /// the layout placed it on — and learns nothing else about what it holds.
+    /// The layer is resolved from what is drawn under the pointer
+    /// ([`layers::under_pointer`]), made active, and then — and only then —
+    /// offered the press. A container that layers editable things has as many
+    /// claimants as it has layers plus its own placement, and this is the one
+    /// decision between them: everything else in the machine acts on the layer
+    /// that came back, so no pass has to know what kinds of thing the container
+    /// holds.
+    ///
+    /// Returns `true` when a **content** layer took the press. The placement
+    /// layer's own gesture (the move, the edges) is the caller's, because it is
+    /// the container's and not an element's.
     #[allow(clippy::too_many_arguments)] // a hit, the context, a cursor, the grab
-    fn clip_body_press(
+    fn clip_layer_press(
         &mut self,
         host: &mut Host,
         ctx: &GestureCtx,
@@ -443,32 +453,62 @@ impl Gestures {
         grab: &mut dyn FnMut() -> bool,
         out: &mut Vec<GestureEffect>,
     ) -> bool {
-        let Some(widget) = host.window_def(ctx.def_id).and_then(|t| t.find(h.id)) else {
+        // The clip's own axis, which is the coordinate system every layer of it
+        // is drawn and grabbed against.
+        let time = TimeSpace::of(h.local, h.dur);
+        let at = element::At {
+            id: h.id,
+            layer: None,
+            rect: h.rect,
+            indent: 0.0,
+            scale: 1.0,
+            time: Some(time),
+        };
+        // **The placement layer keeps the pixels it draws its own affordance
+        // on**, which is the same rule the content layers get from
+        // `layers::under_pointer` (the active layer is asked first): a grip is
+        // drawn only while the placement is active, and what is lit is what the
+        // press takes — a note under the end of a roll clip does not steal the
+        // edge from the cursor sitting on the arrow that promised otherwise.
+        let placement_active = host
+            .window_def(ctx.def_id)
+            .and_then(|t| t.find(h.id))
+            .is_some_and(|w| layers::active(w) == layers::Layer::Placement);
+        if placement_active && h.part != interact::ClipPart::Body {
+            return false;
+        }
+        let Some(layer) = element::layer_under_pointer(host, ctx, at, cx, cy) else {
             return false;
         };
-        // Collected before the offer, because the press mutates the tree the
-        // roles were read out of.
-        let roles: Vec<_> = widget
-            .children
-            .iter()
-            .rev()
-            .filter(|c| matches!(c.kind, WidgetKind::Custom(_)))
-            .filter_map(|c| c.kind.body_role())
-            .collect();
-        for body in roles {
-            let at = element::At {
-                id: h.id,
-                body: Some(body),
-                rect: h.rect,
-                indent: 0.0,
-                scale: 1.0,
-                time: Some(TimeSpace::of(h.local, h.dur)),
-            };
-            if self.element_at(host, ctx, at, cx, cy, grab, out) {
-                return true;
-            }
+        // Selecting is its own operation and says so when it changed: a script
+        // that follows the selection (to show a layer's own inspector, to move
+        // a menu) hears the same word it would have sent.
+        let announced = host
+            .window_def_mut(ctx.def_id)
+            .and_then(|t| t.find_mut(h.id))
+            .and_then(|w| {
+                let mut sel = layers::Selection::of(w)?;
+                sel.set(layer).then(|| layer.name(w))
+            });
+        if let Some(name) = announced {
+            deliver_args(
+                host,
+                out,
+                ctx.def_id,
+                h.id,
+                Some(vec![OscType::String("layer".into()), OscType::String(name)]),
+            );
+            out.push(GestureEffect::Redraw(ctx.def_id));
         }
-        false
+        if !matches!(layer, layers::Layer::Content(_)) {
+            return false;
+        }
+        let at = element::At {
+            layer: Some(layer),
+            time: Some(time),
+            ..at
+        };
+        self.element_at(host, ctx, at, cx, cy, grab, out)
     }
 
     /// The press the containers handed down: what the widget under the cursor
@@ -537,25 +577,21 @@ impl Gestures {
                     return false;
                 };
                 if let Some(h) = interact::clip_hit(host, def_id, lane, local, cx) {
-                    // The clip's **bodies** get the press first, topmost first:
-                    // an element drawn on the clip's axis (an envelope's
-                    // break-points) is what the pointer is on, and the clip's
-                    // own move is what is under it. A body that declines hands
-                    // it straight back, exactly as an element declining
-                    // anywhere else does.
+                    // **Which layer the press belongs to is decided first**,
+                    // and everything below this line is the placement layer's
+                    // — the move and the edges. A press on a content layer's
+                    // own material (an envelope's break-points, a note) selects
+                    // that layer and is that layer's; a press on the clip's
+                    // background is on no layer's material, which is what
+                    // leaves it, and the grips with it, to the clip itself.
                     //
-                    // **Except on a grip.** The strip at a clip's end is lit
-                    // under the pointer precisely to say the press there
-                    // resizes the clip, and an affordance that is drawn has to
-                    // be the one that acts: offered to the bodies first, those
-                    // dozen pixels went to whatever the body found under them
-                    // — a note at the end of a roll clip moved instead of the
-                    // clip's edge, from a cursor sitting on the arrow that
-                    // promised otherwise. The body keeps everything that is not
-                    // a grip, which is the whole clip whenever its ends are off
-                    // screen or it is too narrow to carry one.
-                    let on_grip = h.part != interact::ClipPart::Body;
-                    if !on_grip && self.clip_body_press(host, ctx, &h, cx, cy, grab, out) {
+                    // The grips need no exception here any more, and that is
+                    // the point of the rule: they are drawn only while the
+                    // placement is the active layer, so the pixels that light
+                    // up and the pixels that resize are the same pixels by
+                    // construction rather than by a precedence written down
+                    // twice.
+                    if self.clip_layer_press(host, ctx, &h, cx, cy, grab, out) {
                         return true;
                     }
                     let press_sample = interact::sample_at(

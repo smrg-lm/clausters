@@ -183,6 +183,8 @@ pub(super) fn body_widget(kind: WidgetKind) -> Widget {
         radius: None,
         theme: None,
         alpha: 1.0,
+        visible: true,
+        layer: crate::host::layers::Layer::Placement,
         children: Vec::new(),
     }
 }

@@ -1299,14 +1299,25 @@ mod tests {
         let py = cr.y as f64;
         assert!(matches!(el.press((px, py), &input), Claim::Take(_)));
 
-        // Anywhere that is not one of its points, a body **declines**: it
-        // shares its rectangle with the clip, whose own drag is what the rest
-        // of it means, so the press falls back to the container's move.
+        // Anywhere that is not this curve's own material, a body **declines**:
+        // it shares its rectangle with the clip, whose own drag is what the
+        // rest of it means, so the press falls back to the container's move.
+        // Held as the **active layer** the curve also bends the segment under
+        // the cursor, which is why the declining press is made with the layer
+        // handed to somebody else.
         let mut el2 = el.clone();
+        let inactive = Input {
+            time: input.time.map(|t| t.with_active(false)),
+            ..input
+        };
         assert!(matches!(
-            el2.press((px + 40.0, py + 20.0), &input),
+            el2.press((px + 40.0, py + 20.0), &inactive),
             Claim::Decline
         ));
+        assert!(
+            matches!(el2.press((px + 40.0, py + 20.0), &input), Claim::Take(_)),
+            "the layer in hand bends the segment it is over"
+        );
 
         // The drag maps pixels back through the same axis: dropping the peak on
         // the clip's left edge takes it to t=0, where it is grabbed next time.
