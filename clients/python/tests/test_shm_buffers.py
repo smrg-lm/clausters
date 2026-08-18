@@ -29,10 +29,11 @@ def test_the_segment_size_is_the_one_the_server_builds():
     """Pinned on both sides: `tests/ipc.rs` asserts the same number in Rust.
 
     It is the default-count instance of the layout — 16384 control buses, the
-    audio-bus region, 8 taps of 16384 samples, and 4096 directory rows — and it
-    comes from the core rather than from arithmetic repeated here.
+    audio-bus region, 8 taps of 16384 samples, and 4096 directory rows of 32
+    bytes (24 until ABI v10 gave each buffer a write frontier) — and it comes
+    from the core rather than from arithmetic repeated here.
     """
-    assert _native.shm_segment_size(16384, 8, 16384, 4096) == 722_624 + 4096 * 24
+    assert _native.shm_segment_size(16384, 8, 16384, 4096) == 722_624 + 4096 * 32
 
 
 def _segment(tmp_path, control_buses=4, taps=1, tap_frames=64, buffers=4):
