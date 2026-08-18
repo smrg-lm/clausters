@@ -13,7 +13,8 @@
 //! that is what makes a level exact rather than approximate: mean squares
 //! combine (a weighted mean over the samples each bucket actually holds) while
 //! roots do not, so a bucket at any level equals the direct mean square of its
-//! samples and a renderer cross-fading between two levels blends without bias.
+//! samples, and a renderer folding several levels into one span sums energies
+//! without bias.
 //! The square root belongs to whoever displays it.
 //!
 //! This is **general Clausters client functionality**, not real-time audio
@@ -197,6 +198,28 @@ fn bucket_count(total_samples: usize, bucket: usize, index: usize) -> usize {
 /// A min/max pyramid over a mono buffer. Total storage is ~2x the level-0 size,
 /// i.e. a small constant fraction of the source (e.g. ~0.8% at `base_bucket`
 /// 256), so it is cheap to keep resident or cache to disk.
+/// What [`Pyramid::aligned_stats`] folded: the statistics over the whole
+/// buckets inside a span, and the sample bounds they cover.
+///
+/// The energy is a **sum of squares with its count** rather than a mean, so a
+/// caller can fold the partial edges in and divide once. Combining means would
+/// need the counts anyway, and doing it here would round twice.
+#[derive(Clone, Copy, Debug)]
+pub struct BucketStats {
+    pub min: f32,
+    pub max: f32,
+    pub sum_sq: f64,
+    pub count: usize,
+    /// First sample the buckets cover.
+    pub start: usize,
+    /// One past the last sample they cover.
+    pub end: usize,
+    /// Whether every bucket carried the mean square — false for a cache
+    /// written before the statistic existed, which is an absent measure and
+    /// not a zero one.
+    pub measured: bool,
+}
+
 #[derive(Clone)]
 pub struct Pyramid {
     base_bucket: usize,
@@ -414,6 +437,71 @@ impl Pyramid {
         self.update_range_from(&Interleaved::new(data, channels, channel), start, len)
     }
 
+    /// Min, max, energy and sample count over the level-0 buckets **fully
+    /// contained** in `[a, b)`, folded through the pyramid rather than read at
+    /// one level — and the sample bounds of what it covers, so a caller with
+    /// the samples can close the two partial edges itself.
+    ///
+    /// **Why this exists rather than [`Self::column`].** Reading a column at
+    /// one level takes every bucket *overlapping* it, so an unaligned column
+    /// one bucket wide reads two: a transient a hundred samples outside the
+    /// column is drawn inside it, and it appears the moment a zoom crosses
+    /// into the pyramid's regime. Folding instead of reading makes the answer
+    /// independent of the level it came from, which is what removes the step —
+    /// the walk takes the largest aligned block at each position, a segment
+    /// tree's own walk, so it costs the logarithm of the span rather than its
+    /// buckets.
+    ///
+    /// `None` when no whole bucket fits: the span is all edge, and the edge is
+    /// the samples' business.
+    pub fn aligned_stats(&self, a: usize, b: usize) -> Option<BucketStats> {
+        let base = self.base_bucket;
+        let level0 = self.levels.first()?;
+        let buckets = level0.min.len();
+        let first = a.div_ceil(base);
+        let last = (b / base).min(buckets);
+        if last <= first {
+            return None;
+        }
+        let mut stats = BucketStats {
+            min: f32::INFINITY,
+            max: f32::NEG_INFINITY,
+            sum_sq: 0.0,
+            count: 0,
+            start: first * base,
+            end: (last * base).min(self.total_samples),
+            measured: true,
+        };
+        let mut i = first;
+        while i < last {
+            // The largest level whose bucket starts here and still fits. A
+            // block of 2^level level-0 buckets is aligned exactly when the
+            // index has that many trailing zeros.
+            let mut level = 0;
+            while level + 1 < self.levels.len()
+                && (i >> level).is_multiple_of(2)
+                && i + (2usize << level) <= last
+            {
+                level += 1;
+            }
+            let lvl = &self.levels[level];
+            let index = i >> level;
+            if index >= lvl.min.len() {
+                break;
+            }
+            stats.min = stats.min.min(lvl.min[index]);
+            stats.max = stats.max.max(lvl.max[index]);
+            let n = bucket_count(self.total_samples, lvl.bucket, index);
+            stats.count += n;
+            match lvl.ms.as_ref() {
+                Some(ms) => stats.sum_sq += ms[index] as f64 * n as f64,
+                None => stats.measured = false,
+            }
+            i += 1usize << level;
+        }
+        (stats.count > 0).then_some(stats)
+    }
+
     pub fn base_bucket(&self) -> usize {
         self.base_bucket
     }
@@ -427,7 +515,7 @@ impl Pyramid {
     }
 
     /// The bucket size (source samples per entry) of `level`, if it exists.
-    /// A renderer cross-fading between adjacent levels uses it to weight the
+    /// A renderer folding levels into one span uses it to weight the
     /// blend by where `samples_per_px` sits between the two buckets.
     pub fn level_bucket(&self, level: usize) -> Option<usize> {
         self.levels.get(level).map(|l| l.bucket)

@@ -9,9 +9,14 @@
 //! stacked lanes or overlaid traces from one [`WaveformData`].
 //!
 //! [`WaveformData::column`] is the one place the regimes below the screen's
-//! resolution are decided: raw samples while they are finer than the pyramid's
-//! base bucket, and the pyramid otherwise — **cross-faded** between the two
-//! levels adjacent to the zoom, so switching levels never pops.
+//! resolution are decided, and what it measures is **the column and nothing
+//! else** at every zoom: the samples while they are finer than the pyramid's
+//! base bucket; the pyramid's whole buckets *folded* for everything inside a
+//! wider column, which costs the logarithm of the span rather than its
+//! buckets; and the samples again for the two partial edges while they are
+//! worth reading. There is no level to switch and so nothing to cross-fade —
+//! what the fade used to hide was a level read whole-bucket-wise, which drew a
+//! transient that was outside the column.
 //!
 //! [`WaveformView`] adds what a *navigable* view keeps between frames and the
 //! data does not: the vertical (amplitude) window, the value domain, and the
@@ -122,6 +127,11 @@ impl Samples {
         }
     }
 }
+
+/// How wide a column has to be, in buckets, before its partial edges stop
+/// being read from the samples: past this the bucket rounding is a fraction of
+/// a pixel and the reads buy nothing.
+const EDGE_EXACT_COLUMNS: usize = 8;
 
 /// How many samples a shared source is read in at a time when a column is
 /// measured. One cache line's worth of columns: big enough that the per-call
@@ -354,51 +364,106 @@ impl WaveformData {
         )
     }
 
-    /// Min/max of channel `ch` for a pixel column spanning `[s0, s1)`, choosing
-    /// the cheapest accurate source for the given `samples_per_px`: raw samples
-    /// when finer than the pyramid's base bucket, the pyramid otherwise —
-    /// **cross-faded** between the two adjacent levels so zooming never pops
-    /// when the level selection switches.
+    /// Min/max of channel `ch` for a pixel column spanning `[s0, s1)`,
+    /// measured over **exactly** that span whatever the zoom.
+    ///
+    /// Three sources, in the order that costs least for the same answer: the
+    /// samples alone while a column is finer than a bucket; the pyramid's
+    /// whole buckets folded ([`Pyramid::aligned_stats`]) for everything
+    /// inside; and the samples again for the two partial edges, while they are
+    /// worth reading. Nothing is cross-faded, because nothing is approximated
+    /// — the picture is the same function of the span at every zoom, so there
+    /// is no level to switch and no step to hide.
     pub fn column(&self, ch: usize, samples_per_px: f64, s0: f64, s1: f64) -> (f32, f32) {
-        let Some(channel) = self.channels.get(ch) else {
-            return (0.0, 0.0);
-        };
-        let pyramid = &channel.pyramid;
-        if samples_per_px < pyramid.base_bucket() as f64 && self.has_raw() {
-            let a = (s0.floor().max(0.0) as usize).min(channel.samples.len());
-            let b = (s1.ceil() as usize).clamp(a, channel.samples.len());
-            channel
-                .samples
-                .stats(a, b)
-                .map_or((0.0, 0.0), |(lo, hi, _)| (lo, hi))
-        } else {
-            // At or above the base bucket, or whenever there is no raw buffer to
-            // resolve finer (a cache-only view): read the pyramid. `level_for`
-            // clamps to level 0, so zooming past the cache shows its finest
-            // overview rather than collapsing to a flat line.
-            level_crossfade(pyramid, samples_per_px, s0, s1)
-        }
+        self.measure(ch, samples_per_px, s0, s1)
+            .map_or((0.0, 0.0), |(lo, hi, _)| (lo, hi))
     }
 
     /// The **mean square** of channel `ch` over a pixel column spanning
-    /// `[s0, s1)`, from the cheapest accurate source exactly as [`Self::column`]
-    /// takes its min/max: the raw samples when the zoom is finer than the base
-    /// bucket, the cross-faded pyramid otherwise.
+    /// `[s0, s1)`, from the same three sources [`Self::column`] takes its
+    /// min/max from and in one pass with them.
     ///
     /// `None` when the source cannot answer — a cache written before the
     /// pyramid carried the statistic. That absence is the whole reason this
     /// returns an option: zeros would be a measurement (silence), and a body
     /// drawn from them would be a flat line across material that is not flat.
     pub fn column_ms(&self, ch: usize, samples_per_px: f64, s0: f64, s1: f64) -> Option<f32> {
+        self.measure(ch, samples_per_px, s0, s1)
+            .and_then(|(_, _, ms)| ms)
+    }
+
+    /// Min, max and mean square of one column, measured once — the one place
+    /// the regimes are decided, so the envelope and the body it holds can
+    /// never disagree about which samples they are about.
+    fn measure(
+        &self,
+        ch: usize,
+        samples_per_px: f64,
+        s0: f64,
+        s1: f64,
+    ) -> Option<(f32, f32, Option<f32>)> {
         let channel = self.channels.get(ch)?;
-        let pyramid = &channel.pyramid;
-        if samples_per_px < pyramid.base_bucket() as f64 && self.has_raw() {
-            let a = (s0.floor().max(0.0) as usize).min(channel.samples.len());
-            let b = (s1.ceil() as usize).clamp(a, channel.samples.len());
-            Some(channel.samples.stats(a, b).map_or(0.0, |(_, _, ms)| ms))
-        } else {
-            level_crossfade_ms(pyramid, samples_per_px, s0, s1)
+        let total = channel.pyramid.total_samples();
+        let a = (s0.floor().max(0.0) as usize).min(total);
+        let b = (s1.ceil() as usize).clamp(a, total);
+        if b <= a {
+            return None;
         }
+        let base = channel.pyramid.base_bucket();
+        let raw = !channel.samples.is_empty();
+        // Finer than a bucket: the samples are the only thing that can answer,
+        // and they answer exactly.
+        if samples_per_px < base as f64 && raw {
+            let (lo, hi, ms) = channel.samples.stats(a, b)?;
+            return Some((lo, hi, Some(ms)));
+        }
+        // **Which buckets belong to this column.** With the edges read from
+        // the samples, the whole buckets are the ones strictly inside and the
+        // rest is measured exactly. Without them, the span is rounded down at
+        // both ends instead — so consecutive columns *tile* the buckets and a
+        // bucket straddling a boundary lands in exactly one of them. Asking
+        // for the strictly-inside buckets and then not reading the edges would
+        // drop it from both, which loses a transient rather than displacing it.
+        let exact_edges = raw && (b - a) < base * EDGE_EXACT_COLUMNS;
+        let (qa, qb) = if exact_edges {
+            (a, b)
+        } else {
+            (a - a % base, b - b % base)
+        };
+        let Some(whole) = channel.pyramid.aligned_stats(qa, qb) else {
+            // No whole bucket fits: the column straddles a boundary and is
+            // narrower than two buckets, so the samples are the only exact
+            // answer and they are a short read.
+            if raw && let Some((lo, hi, ms)) = channel.samples.stats(a, b) {
+                return Some((lo, hi, Some(ms)));
+            }
+            // A cache-only view zoomed past its own resolution shows the
+            // bucket it has rather than nothing, which is the finest overview
+            // it can honestly draw.
+            let (lo, hi) = channel.pyramid.column(0, a as f64, b as f64)?;
+            let ms = channel.pyramid.column_ms(0, a as f64, b as f64);
+            return Some((lo, hi, ms));
+        };
+        let (mut lo, mut hi) = (whole.min, whole.max);
+        let mut sum_sq = whole.sum_sq;
+        let mut count = whole.count;
+        // The two partial edges, from the samples — the difference between a
+        // column and the buckets inside it, which is the whole of the step
+        // this replaced.
+        if exact_edges {
+            for (from, to) in [(a, whole.start.min(b)), (whole.end.max(a), b)] {
+                if to > from
+                    && let Some((elo, ehi, ems)) = channel.samples.stats(from, to)
+                {
+                    lo = lo.min(elo);
+                    hi = hi.max(ehi);
+                    sum_sq += ems as f64 * (to - from) as f64;
+                    count += to - from;
+                }
+            }
+        }
+        let ms = (whole.measured && count > 0).then(|| (sum_sq / count as f64) as f32);
+        Some((lo, hi, ms))
     }
 
     /// Single-sample access for the line regime, clamped to bounds. A
@@ -432,44 +497,6 @@ impl WaveformData {
         }
         Some(out)
     }
-}
-
-/// A pyramid column blended between the level matching `samples_per_px` and
-/// the next coarser one, weighted by the fractional position of the zoom
-/// between their bucket sizes (log2). At exactly a level's bucket the blend is
-/// pure fine; approaching the next level's bucket it converges to pure coarse
-/// — which is where `level_for` switches — so the min/max envelope is
-/// continuous across the switch instead of popping.
-fn level_crossfade(pyramid: &Pyramid, samples_per_px: f64, s0: f64, s1: f64) -> (f32, f32) {
-    let level = pyramid.level_for(samples_per_px);
-    let (lo, hi) = pyramid.column(level, s0, s1).unwrap_or((0.0, 0.0));
-    let Some(bucket) = pyramid.level_bucket(level) else {
-        return (lo, hi);
-    };
-    if samples_per_px <= bucket as f64 || level + 1 >= pyramid.num_levels() {
-        return (lo, hi);
-    }
-    let t = (samples_per_px / bucket as f64).log2().clamp(0.0, 1.0) as f32;
-    let (clo, chi) = pyramid.column(level + 1, s0, s1).unwrap_or((lo, hi));
-    (lo + (clo - lo) * t, hi + (chi - hi) * t)
-}
-
-/// The energy sibling of [`level_crossfade`], blended by the same weight so a
-/// measured body and the envelope around it switch levels together — two
-/// pictures of one span cannot pop at different zooms without reading as a
-/// glitch in the data.
-fn level_crossfade_ms(pyramid: &Pyramid, samples_per_px: f64, s0: f64, s1: f64) -> Option<f32> {
-    let level = pyramid.level_for(samples_per_px);
-    let fine = pyramid.column_ms(level, s0, s1)?;
-    let Some(bucket) = pyramid.level_bucket(level) else {
-        return Some(fine);
-    };
-    if samples_per_px <= bucket as f64 || level + 1 >= pyramid.num_levels() {
-        return Some(fine);
-    }
-    let t = (samples_per_px / bucket as f64).log2().clamp(0.0, 1.0) as f32;
-    let coarse = pyramid.column_ms(level + 1, s0, s1).unwrap_or(fine);
-    Some(fine + (coarse - fine) * t)
 }
 
 /// The vertical margin the trace leaves inside its lane: the value domain's
@@ -872,35 +899,92 @@ mod tests {
         assert_eq!(baseline_of(-1.0, 0.0), None, "wholly negative");
     }
 
+    /// **A column is the samples in it, at every zoom.** What this replaced
+    /// was a level read whole-bucket-wise, which drew a transient a hundred
+    /// samples outside the column and stepped as the zoom crossed a bucket.
     #[test]
-    fn lod_crossfade_is_continuous_across_a_level_switch() {
-        // A signal whose envelope shrinks with time makes adjacent pyramid
-        // levels disagree, so a hard level switch would jump. Sample the column
-        // just below and just above the switch point (spp = 2 * base_bucket):
-        // the cross-faded values must be close.
-        let n = 65536;
-        let samples: Vec<f32> = (0..n)
+    fn a_column_measures_its_own_span_at_every_zoom() {
+        let n = 1 << 16;
+        let mut samples = vec![0.0f32; n];
+        samples[900] = 1.0; // inside bucket 3, outside every column below
+        let data = WaveformData::new(Arc::from(samples.as_slice()), 256);
+        let s0 = 1_004.0;
+        for spp in [255.9, 256.1, 300.0, 512.0, 1_000.0] {
+            let (lo, hi) = data.column(0, spp, s0, s0 + spp);
+            assert_eq!((lo, hi), (0.0, 0.0), "spp {spp} must not reach the spike");
+        }
+        // And it does reach it when the column is over it.
+        let (_, hi) = data.column(0, 256.1, 800.0, 1_056.1);
+        assert_eq!(hi, 1.0);
+    }
+
+    /// The envelope moves continuously through the zoom the pyramid's regimes
+    /// used to switch at: there is no switch left, so the only test worth
+    /// keeping is that the answer is the same one either side of it.
+    #[test]
+    fn the_envelope_is_continuous_where_the_regimes_meet() {
+        let samples: Vec<f32> = (0..1 << 16)
             .map(|i| {
-                let env = 1.0 - i as f32 / n as f32;
-                if i % 2 == 0 { env } else { -env }
+                let t = i as f32 / 1_000.0;
+                (t * 6.0).sin() * (1.0 - i as f32 / (1 << 16) as f32)
             })
             .collect();
-        let data = WaveformData::new(Arc::from(samples), 64);
+        let data = WaveformData::new(Arc::from(samples.as_slice()), 64);
         let (s0, s1) = (40_000.0, 40_256.0);
-        let switch = 128.0; // 2 * base_bucket: level_for flips from 0 to 1 here
-        let (lo_a, hi_a) = data.column(0, switch - 1e-3, s0, s1);
-        let (lo_b, hi_b) = data.column(0, switch + 1e-3, s0, s1);
-        assert!(
-            (lo_a - lo_b).abs() < 1e-3 && (hi_a - hi_b).abs() < 1e-3,
-            "envelope must be continuous at the level switch: ({lo_a},{hi_a}) vs ({lo_b},{hi_b})"
-        );
-        // And in between the blend moves monotonically toward the coarse level.
-        let (_, hi_mid) = data.column(0, 64.0 * 1.5, s0, s1);
-        let (_, hi_fine) = data.column(0, 64.0 + 1e-3, s0, s1);
-        assert!(
-            hi_mid >= hi_fine - 1e-6,
-            "blend widens toward the coarse level"
-        );
+        for switch in [64.0, 128.0, 256.0] {
+            let (lo_a, hi_a) = data.column(0, switch - 1e-3, s0, s1);
+            let (lo_b, hi_b) = data.column(0, switch + 1e-3, s0, s1);
+            assert!(
+                (lo_a - lo_b).abs() < 1e-3 && (hi_a - hi_b).abs() < 1e-3,
+                "at {switch}: ({lo_a},{hi_a}) vs ({lo_b},{hi_b})"
+            );
+        }
+    }
+
+    /// The measured body reads the same span the envelope around it does, at
+    /// every zoom — two pictures of one column cannot be about different
+    /// samples.
+    #[test]
+    fn the_body_and_the_envelope_measure_one_span() {
+        let samples: Vec<f32> = (0..20_000).map(|i| (i as f32 * 0.01).sin() * 0.5).collect();
+        let data = WaveformData::new(Arc::from(samples.as_slice()), 256);
+        for spp in [4.0, 255.0, 257.0, 900.0, 2_000.0] {
+            let (s0, s1) = (3_333.0, 3_333.0 + spp);
+            let (lo, hi) = data.column(0, spp, s0, s1);
+            let ms = data
+                .column_ms(0, spp, s0, s1)
+                .expect("a built pyramid measures");
+            let brute: Vec<f32> = samples[s0 as usize..(s1.ceil() as usize).min(20_000)].to_vec();
+            let (blo, bhi) = peaks::min_max(&brute).unwrap();
+            let bms = peaks::mean_square(&brute).unwrap();
+            assert!(
+                (lo - blo).abs() < 1e-6 && (hi - bhi).abs() < 1e-6,
+                "spp {spp}"
+            );
+            assert!((ms - bms).abs() < 1e-6, "spp {spp}: {ms} vs {bms}");
+        }
+    }
+
+    /// Past the zoom where the edges are read, a column is measured over the
+    /// buckets it tiles rather than the samples it spans — so the picture may
+    /// displace a transient by a fraction of a pixel, and must never **lose**
+    /// one. Consecutive columns cover every bucket exactly once.
+    #[test]
+    fn no_column_drops_a_bucket_at_a_coarse_zoom() {
+        let n = 1 << 18;
+        let mut samples = vec![0.0f32; n];
+        let spp = 256.0 * 16.0; // past EDGE_EXACT_COLUMNS: the edges are not read
+        let boundary = 10.0 * spp;
+        let straddling = boundary as usize + 4; // inside the bucket that edge cuts
+        samples[straddling] = 1.0;
+        let data = WaveformData::new(Arc::from(samples.as_slice()), 256);
+        let hit = (0..40)
+            .map(|c| {
+                let s0 = c as f64 * spp;
+                data.column(0, spp, s0, s0 + spp).1
+            })
+            .fold(f32::NEG_INFINITY, f32::max);
+        assert_eq!(hit, 1.0, "the spike is in exactly one column, not in none");
     }
 }
 

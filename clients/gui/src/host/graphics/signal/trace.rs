@@ -532,7 +532,7 @@ mod tests {
         for c in 0..16 {
             let (s0, s1) = (c as f64 * 256.0, (c + 1) as f64 * 256.0);
             // Below the base bucket both read the raw samples, so they agree
-            // exactly; the crossfade above it is the pyramid's own business.
+            // exactly; what a wider column reads is the pyramid's own business.
             let a = raw.column(0, 128.0, s0, s0 + 128.0);
             let b = pyr.column(0, 128.0, s0, s0 + 128.0);
             assert_eq!(a, b, "column {c} over [{s0}, {s1})");

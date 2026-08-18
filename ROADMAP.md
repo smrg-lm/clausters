@@ -58,7 +58,6 @@ right — that is the normal failure, not a sign the work vanished.
 *What it buys: a picture that reads the material rather than a copy of it. **H7 has shipped** — the copies are gone and a write costs its span — so what is left is the same sentence in the other direction: a picture that reads the material can follow an edit anybody makes, including the engine's own while it records, which is the one write in the system nothing announces.*
 
 - ⬜ **S20 — A buffer publishes what was written into it, and its overview is a file beside it** (root `PLAN.md`) and **H8 — The take fills while it records, and the overview is read rather than built** (`clients/gui/PLAN.md`), the two halves of one thing, read together the way S19 and H6 were: the engine's own writes announce nothing, so the material that changes continuously is the one no picture can follow. The overview becomes a volatile file beside the region, as every multitrack editor's does, and the page watches it as buckets rather than samples. S20 moves the segment layout, so it carries an ABI bump with it.
-- ⬜ **The crossfade covers the levels and not the regime** *(`clients/gui/PLAN.md`, Found by use)* — after H7, which is what makes its fix cheap.
 
 ## Phase 2 — the packages move together: the arrangement reaches the web client
 
