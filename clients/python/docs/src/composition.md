@@ -37,19 +37,24 @@ Which of the two properties are present gives an element its temporal
 alone is **relative** (it has a length but no place yet), neither is **abstract**
 — pure context, which only a parent gives concrete time.
 
-There are five kinds, and they map one to one onto objects you already use:
+There are five kinds, and they map one to one onto objects you already use
+(`Segments` is not a sixth: it is the `Buffer` primitive — a list at constant
+time — assembled from more than one window):
 
 | Element     | What it is                                       | Wraps                                   |
 | ----------- | ------------------------------------------------ | --------------------------------------- |
 | `Event`     | parameters grouped into one action               | `clausters.seq.Event`                   |
 | `Sequence`  | strict order, no concrete time — only sequence   | a list, or a `Pattern`                  |
 | `Buffer`    | a list at constant time (samples)                | `clausters.defs.Buffer`                 |
+| `Segments`  | several windows onto material, read as one       | a list of `(buffer, start, duration)`   |
 | `Track`     | mixed placement of elements — a DAW track        | `clausters.seq.Timeline`                |
 | `Generator` | a *process*: server DSP, or a sequence generator | a def, or a `Pbind`/`Routine`           |
 
 A `Buffer` is *data*, so it has no sound of its own: it sounds through the
 **instrument** named to play it — a def whose `buf` control takes the buffer
-number. That is the whole rule for an audio clip.
+number. That is the whole rule for an audio clip. A `Segments` is the same rule
+over several of them: it is what assembling material out of pieces looks like
+when nothing is copied (see the editor's join, below).
 
 ```python
 from clausters.form import Buffer, Group, Sequence, Track
@@ -196,9 +201,26 @@ beginning.
 the time cursor (at the pointer when no cursor is inside it) and `j` joins it
 with the clips that touch it on its lane. A split gives each half a window over
 the same material, which is why a join can put back exactly what the cut
-separated. Clips over *different* material — or with a gap between them — would
-be one element reading several segments, and an element wraps one thing: that is
-refused, and the editor says so.
+separated.
+
+Joining clips over *different* material gives a `Segments`: an element whose
+material is a **list of windows** — which buffer, from which frame, for how long
+— read back to back. It plays as one thing (one event per segment, on one
+instrument), draws as one clip (one take per segment, each over its own stretch
+of it), and cuts apart again into the windows it was made of, because nothing
+was ever copied. You can write one directly, which is what makes an edit
+programmable:
+
+```python
+from clausters.form import Segments
+
+phrase = Segments([(take_a, 0, 2.0),          # two beats of one file...
+                   (take_b, 48_000, 1.0)],    # ...then one of another, from 1 s in
+                  instrument="take")
+```
+
+And the placement rule holds over it like everything else: shorten the clip and
+it draws and plays the segments it reaches; lengthen it and the rest come back.
 
 ### Editing what a clip holds: one layer at a time
 

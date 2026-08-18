@@ -1,7 +1,8 @@
 """The **arrangement** — the client-side layer under the multitrack editor.
 
 A recursive algebra of elements for composing music: the five primitives
-(`Event`, `Sequence`, `Buffer`, `Track`, `Generator`) as thin adornments over
+(`Event`, `Sequence`, `Buffer` — with `Segments`, the same primitive over
+several windows — `Track`, `Generator`) as thin adornments over
 the objects the client already has, and `Group` — the one new structure —
 placing elements recursively with an offset and deriving their temporal
 relation. An element is *generated* (the rendered thing: random-access, editable)

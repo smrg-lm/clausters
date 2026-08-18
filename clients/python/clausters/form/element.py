@@ -20,7 +20,10 @@ The five primitives map one-to-one onto what the client already has:
 - `Sequence`  — *List*: strict order with no concrete time, only sequence.
   Wraps a Python list or a `Pattern`.
 - `Buffer`    — *Buffer*: a list at constant time (audio or control samples).
-  Wraps `clausters.defs.Buffer`.
+  Wraps `clausters.defs.Buffer`. `Segments` is the same primitive assembled from
+  **several** windows — which buffer, from which frame, for how long — read as
+  one thing; it is not a sixth primitive, it is what a list at constant time
+  looks like when the constant time comes from more than one place.
 - `Track`     — *Set*: mixed placement of elements, a DAW track. Wraps
   `clausters.seq.Timeline`.
 - `Generator` — *Function*: a generator element — server DSP (a def) or a
