@@ -1,7 +1,8 @@
 # Roadmap — the order the open work is taken in
 
-*Rewritten 2026-08-17 (twice that day: once against the plans and the last month
-of history, then again once the autonomous editor closed). A rewrite
+*Rewritten 2026-08-18, once the clip's interaction rules closed (and before that
+twice on 2026-08-17: against the plans and the last month of history, then again
+once the autonomous editor closed). A rewrite
 **drops what is done** and reorganizes what is left: this file is not a record
 of anything, and the record of what shipped is the git history and each plan's
 own checkbox.*
@@ -21,9 +22,11 @@ arrangement, the document and the GUI together** — a composition built in
 Python, drawn as a multitrack editor, edited by hand, heard, undone, redone,
 saved and reopened — on a model that is **usable and correct at real sizes**,
 not only at an example's. Both halves are load-bearing, and what is left of the
-list is almost entirely the second one: the loop runs, a saved piece comes back
-as the piece that was saved, and the editor is now an application with its own
-processes rather than a window on a script's server.
+list is now **entirely** the second one: the loop runs, a saved piece comes back
+as the piece that was saved, the editor is an application with its own processes
+rather than a window on a script's server, and a clip has interaction rules —
+one layer edited at a time, an edge that trims a window onto material rather
+than stretching a picture.
 
 Where the work lives:
 
@@ -46,53 +49,7 @@ right — that is the normal failure, not a sign the work vanished.
 
 ---
 
-## Phase 1 — a clip's interaction rules, defined before more of them are built
-
-*What it buys: the thing three reverted attempts on 2026-08-17 turned out to
-need. First now that the editor's own processes are settled, because it is the
-one open item a person meets by using the thing rather than by measuring it.
-A clip is two levels — the **rectangle** (where it sits, how long it is)
-and its **internal elements** (notes, break-points, samples) — and four
-claimants race over the same pixels: the rectangle's move, the grip's resize,
-the roll's notes, the BPF's points and segments. There is no rule saying which
-one a press belongs to, and every attempt to add one changed what the clip
-itself does.*
-
-- ⬜ **A clip has two levels of editing and no interaction rules between them**
-  *(`clients/gui/PLAN.md`, Found by use)*. The entry carries the context the
-  rules follow from, in the user's own terms: a clip is a **window onto a
-  segment of data** (audio or MIDI) that can be trimmed and cut into pieces;
-  **time-stretch is a separate story and is not implemented** (an audio clip
-  stretches its *drawing* today and plays the original buffer's length), so what
-  an edge drag *means* is itself undecided; a clip may carry **automations that
-  act on its own content only**; and a MIDI clip is usually edited in a
-  **dedicated window** a DAW opens, which does not exist here — editing notes in
-  the multitrack is a good option to keep, but it is an option and not the given.
-
-  **It is a design pass with the drawing in front of it, not a defect to patch.**
-  What it must define: what a press means on each part of a clip, in which mode;
-  whether "not editable" is one statement or two (the contents, and the
-  rectangle); what an edge drag is; and how a dedicated editor changes all of it.
-  Scheduled here rather than sooner because it is the kind of decision that has
-  to be looked at, and because everything before it is either measurable or
-  already run by hand.
-
-- ⬜ **E23 — the rest of the chrome answering on what it draws**
-  *(`clients/gui/PLAN.md`, the E track)*. Moved here from the editor phase on
-  2026-08-17, because it is the same work: every remaining light widget states
-  its drawn shape through `hit_area` and **each one is checked by eye on the
-  example that shows it** — which is exactly the kind of pass that went wrong
-  three times when it was not. And one of the two questions it carries is an
-  interaction rule the entry above has to settle anyway: whether **hover and the
-  wheel** read the same shape as the press, which today they do not.
-
-- ⬜ **The lit segment inside a clip** — the defect Phase 4 left standing: a
-  curve's segment is lit where a bend is not available, so the affordance
-  promises a drag that moves the clip. The one-line guard is known; it waits
-  here so that what a press means on each part of a clip is decided once rather
-  than three times.
-
-## Phase 2 — the second half of the destination: real sizes
+## Phase 1 — the second half of the destination: real sizes
 
 *What it buys: "usable and correct at real sizes". Entries rather than
 milestones, in the root plan's **Found by use** list except where marked, none of
@@ -123,8 +80,12 @@ phase rather than a list.*
   so** *(`clients/python/PLAN.md`, Found by use)*. Their audible half has never run — a
   mechanical fix each, plus one decision about whether playing onto a stopped
   clock should stay silent at all.
+- ⬜ **The by-eye pass the hit-test work is owed** *(`clients/gui/PLAN.md`, the E
+  track, inside the closed `E23`)*. `number`, `menu` and `text` answer on the
+  field they draw now; the example that shows them (`gui_panel`) has not been
+  looked at since. Small, and it is the half of that milestone a test cannot do.
 
-## Phase 3 — the packages move together: the arrangement reaches the web client
+## Phase 2 — the packages move together: the arrangement reaches the web client
 
 *What it buys: the rule the project already states, applied to the largest
 outstanding violation. `form/`, `gui/editor.py`, `gui/transport.py` and
@@ -143,7 +104,7 @@ stopped moving, which is what the phases before it do to it.*
 - ⬜ **W7** (the Faust surfaces), **W9** (MIDI), **W15** (the bundle writer) —
   unported features, each owned, none on the path to the complete example.
 
-## Phase 4 — the spectral editor
+## Phase 3 — the spectral editor
 
 *Everything here is genuinely later: it needs the A track's descriptors, it is
 partly experimental, and none of it is on the path to the complete example.*
@@ -151,7 +112,11 @@ partly experimental, and none of it is on the path to the complete example.*
 - ⬜ **A3 — Band-limited reconstruction and true peak.**
 - ⬜ **A4 — K-weighting and the loudness family.**
 - ⬜ **A5 — The loudness layer and its read-out.**
-- ⬜ **A6 — The layer stack becomes explicit.**
+- ⬜ **A6 — The layer stack becomes explicit.** It now has a mechanism to be
+  explicit *with*: the edit-layer rule shipped general (`host::layers`), and what
+  A6 grows is the contents — a view whose automation is a body rather than a
+  widget beside it (`clients/gui/PLAN.md`, Future directions, "The layer stack is
+  one container's, and an audio editor's view has one too").
 - ⬜ **A7 — The layer stack's rules from the clients, and the books.** What is
   left of it once D8 took the client half: it rides with A6, whose rules it
   publishes.
@@ -186,8 +151,12 @@ example, and none blocks anything that is.
   is given**; **the other text over pictures has no plate yet**; **persistence
   saves the document, not what the user did to it** — `clients/gui/PLAN.md`,
   Found by use, each with its record of what was seen; **many channels are drawn
-  and not yet readable, and a take cannot be created empty** is in that plan's
-  Future directions instead, being a design rather than a fix.
+  and not yet readable, and a take cannot be created empty**, **time-stretch: an
+  edge that changes the material rather than the window** and **the layer stack
+  is one container's** are in that plan's Future directions instead, being
+  designs rather than fixes — as is **an element reads one thing, so two
+  fragments over different material cannot be joined**
+  (`clients/python/PLAN.md`, Found by use).
 - **A mapped take is still copied into the widget before it is drawn**
   *(`clients/gui/PLAN.md`, Found by use)*. What the editor phase deliberately
   did not do: the round trip is gone, the copy is not. It is a design over

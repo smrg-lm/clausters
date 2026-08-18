@@ -119,9 +119,10 @@ the tree. The mapping is one rule, not a heuristic per case:
 
 - the root group's members are the **lanes**;
 - a lane's members are its **clips**;
-- a `Buffer` clip names its server buffer and spans its frames — the host fetches
-  the take and decimates it to the clip's pixel width, so a long take costs
-  nothing on the wire;
+- a `Buffer` clip names its server buffer and shows a **window** onto it — the
+  host fetches the take and decimates it to the clip's pixel width, so a long
+  take costs nothing on the wire, and trimming the clip shows less of the
+  material rather than squeezing it (see below);
 - an element of *events* draws a **piano-roll** — each note placed in pitch and
   time, shaded by its velocity (an explicit `velocity`, else the event's `amp`) —
   and since a contained pattern is bounced to draw it, a generator lane shows the
@@ -147,10 +148,82 @@ while editor.window is not None:
 ```
 
 `poll` drains the host's events into the arrangement — drag a clip to move it, an
-edge to resize it — and with `follow=True` the composition is re-scheduled from the
+edge to trim it — and with `follow=True` the composition is re-scheduled from the
 playhead, so you hear it where you dropped it. The semantics there are honest:
 *re-schedule from here*, not a sample-exact splice, so a synth already sounding
 keeps sounding.
+
+### A clip is a window onto its material
+
+A clip over a `Buffer` shows a **segment** of it, not the whole of it squeezed
+into a rectangle. One timeline sample is one frame of the material, so:
+
+- **trimming** a clip — dragging its edge — hides frames rather than compressing
+  them, and the ones it hides are still there: stretch the edge back and they
+  come out again;
+- the **head** trim moves the window with the edge, so the material stands still
+  while the clip shows less of it;
+- an edge stops where the material does, unless the element **loops** — where
+  past the last frame the buffer begins again and before the first comes its own
+  tail.
+
+The window is the element's, and you can state it yourself:
+
+```python
+from clausters.form import Buffer
+
+take = Buffer(buf, duration=2.0, instrument="take",
+              start=48_000,        # read from one second in
+              loop=True)           # and wrap when the window runs past the end
+```
+
+A window that is not the whole buffer travels to the instrument as the
+`start`/`loop` event parameters, so a def that reads them plays exactly the
+segment the editor draws:
+
+```python
+def sampler(name="take"):
+    buf = control("buf", 0.0, "ir")
+    start = control("start", 0.0, "ir")     # the window's head, in frames
+    loop = control("loop", 0.0, "ir")
+    return SynthDef(name, out(0.0, play_buf(buf, 0.0, 1.0, loop, 0.0, start)))
+```
+
+A def that names neither is sent what it always was, and plays from the
+beginning.
+
+**Splitting and joining.** With the pointer over a clip, `e` cuts it in two at
+the time cursor (at the pointer when no cursor is inside it) and `j` joins it
+with the clips that touch it on its lane. A split gives each half a window over
+the same material, which is why a join can put back exactly what the cut
+separated. Clips over *different* material — or with a gap between them — would
+be one element reading several segments, and an element wraps one thing: that is
+refused, and the editor says so.
+
+### Editing what a clip holds: one layer at a time
+
+A clip draws its contents over each other — the take, the notes over it, an
+automation over both — and **one of them is what your hand is on**. The rule is
+short:
+
+> One layer is edited at a time, and it is the only one that acts or shows an
+> affordance.
+
+So pressing a curve's line selects that curve and edits it — its break-points,
+and the bend of the segment between two of them — and while you are on it the
+clip shows no grips. Pressing the clip's own background, where nothing else is
+drawn, hands the clip back: it moves, and its grips are there again. A layer
+whose material cannot be edited (the notes of a pattern, which are a *rendering*
+of an algorithm) is never selected by pointing at it, so a clip over one still
+moves and trims like any other.
+
+Nothing about this is the mouse's: a script can put the hand on a layer itself,
+and hide the ones it does not want drawn.
+
+```python
+gui.set(clip_id, layer="points")     # edit the automation
+gui.set(clip_id, hidden="notes")     # ...and stop drawing the roll under it
+```
 
 ### The dedicated piano-roll
 

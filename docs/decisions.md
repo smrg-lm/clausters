@@ -5750,3 +5750,107 @@ server instead.
 **What this does not do.** It does not make the layout versionless: `ABI_VERSION`
 still gates attaching, because two *builds* can still disagree. What it removes
 is the second kind of disagreement, the one a version cannot see.
+
+## One layer is edited at a time, and it is the only one that acts
+
+**Context.** A container that layers editable things — a clip today — draws
+several of them on one rectangle: the placement (where it sits, how long it
+is), the material under it, the events over that, an automation over both. Four
+claimants over the same pixels, with no rule saying which one a press belongs
+to. Three attempts at something as small as a read-only body were written and
+reverted in one day, each of them changing what the clip itself does, because
+every attempt was really a fourth ad-hoc precedence added to three that already
+disagreed.
+
+**Decision.** One sentence, in `host::layers`: **one layer is active at a time,
+and it is the only one that acts or offers an affordance.** A press resolves the
+layer from what is drawn under it — the active layer first, then the topmost
+layer whose *own material* is there, then the container's placement — and
+selecting a layer is an operation of its own, with the pointer rule as one
+caller, `/gui_set layer` as another, and a key binding or a menu as the next.
+
+Three things make it a rule rather than a table:
+
+- **A layer's material is not its rectangle.** An element answers
+  `Element::layer_hit` for the things it holds — a break-point, the line
+  between two of them, a note — and never for the rectangle it shares with its
+  container. That is the whole of why the clip's background, and the grips drawn
+  on it, stay the clip's.
+- **The stack is the container's contents**, read off the children that fill a
+  body role, in the order they are drawn. Nothing in the module names a widget
+  type, so a container that grows a fourth kind of content grows a fourth layer.
+- **The active layer is a field of the node**, not of the `Clip` variant. A clip
+  is the first container here that layers editable things and deliberately not
+  the last: an audio editor's view is the same picture — material, a selection
+  over it, an automation over both, later a spectral layer.
+
+**Consequence.** Two standing defects closed without being touched directly. A
+clip whose contents are locked **moves again**: a layer that cannot be edited is
+never selected by pointing at it, so the press falls through to the placement
+instead of being consumed by a refusal — where material sits is the
+composition's, what it holds is the material's. And a curve's **lit segment** is
+lit exactly when the curve is the layer in hand, where the bend is the gesture;
+inside a clip it used to be lit whether or not the curve was in hand, and the
+press there moved the clip.
+
+The grips followed from the same rule rather than from a second one: they are
+the placement layer's affordance, so they are drawn while it is active, and the
+pixels that light up are the pixels that act — by construction now, instead of
+by a precedence written down in two places.
+
+**What is drawn is a second question**, and it is answered the same way:
+`visible` on a node, `hidden` on the container, naming which layers are drawn.
+Several are drawn at once and one is edited. The two meet in one rule: what is
+not drawn is not edited either, since a window taking presses for a picture it
+is not showing is the one combination a reader cannot see.
+
+## A clip is a window onto a segment of data, so its edges trim it
+
+**Context.** A clip's take was fitted to whatever rectangle the clip had, so
+shortening a clip squeezed its picture — while playback kept reading the buffer
+from its first frame for as long as the event lasted. The picture said one
+thing and the sound another, and what the picture said was *time stretch*, which
+is a rendering nobody had asked for and which this project does not implement.
+
+**Decision.** The multitrack model: a clip is a **window onto a segment of its
+material**, the memory-view idea. `SourceWindow` says where a placement's own
+time zero reads (`start`), whether the window wraps (`loop`), and — as an
+explicit opt-in — whether the picture is fitted instead (`fit`, the prop a time
+stretch will set when there is one). **One timeline sample is one source
+frame**: trimming hides frames rather than compressing them, and opening the
+window again brings them back.
+
+Everything the definition of a clip carries falls out of that one property:
+
+- **The start grip is a trim**: the offset, the duration and the window's head
+  advance together, so the material stands still while the clip shows less of
+  it.
+- **The edges stop where the material does**, unless the clip loops — where past
+  the end is the beginning again and before frame zero is the tail of the
+  iteration before, which is what stretching an edge means on a loop.
+- **A split is two windows over one source**, and a **join** is the inverse; the
+  frames neither half shows are still there, which is why a join can put back
+  exactly what a split cut.
+
+**Consequence.** A take is drawn a **run at a time**, one run per pass over the
+material: the wrap lives in the run list rather than in the coordinate maps, so
+one affine renderer draws a looping clip, a plain one, and the part of a clip
+that reaches past material it does not loop — which stops there instead of
+clamping into a flat line nobody recorded.
+
+The window travels with the axis (`TimeSpace`) because it is the other half of
+the same mapping: the container decides which part of the data its time covers,
+and the element is told rather than working it out.
+
+**On the client side a trim is one edit, not two.** Where a clip sits is its
+placement's and what it reads is its element's, so a trim touches both — and a
+gesture recorded as two log entries takes two undos to reverse, the first of
+which leaves a clip showing frames it does not play. A parent's members carry
+both (a member is a placement *and* the node it holds), so one `SetMembers`
+states the result of the whole gesture.
+
+**What the arrangement cannot express**, stated because the join meets it: an
+element reading **several segments** — two different files, or two windows with
+a gap between them, read as one thing. An element wraps one thing. Such a join
+is refused by name rather than approximated, because approximating it silently
+drops material.
