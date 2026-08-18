@@ -36,6 +36,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
+use clausters_core::peaks::Source;
+
 use super::shm::SharedSegment;
 
 /// The material of one segment: its directory, and the path its regions are
@@ -177,10 +179,32 @@ impl MappedTake {
         (self.channels, self.frames, self.sample_rate)
     }
 
-    /// Every sample, interleaved — one read of the whole take, which is what
-    /// building a picture of it costs.
+    /// Every sample, interleaved — one read of the whole take.
+    ///
+    /// **A picture does not need this** and no longer asks for it: a view reads
+    /// the region where it lies ([`MappedChannel`]). What is left here is the
+    /// caller that genuinely consumes every sample — an analysis, which is a
+    /// reading of the whole signal by definition.
     pub fn read_all(&self) -> Vec<f32> {
         (0..self.cells).map(|i| self.at(i)).collect()
+    }
+
+    /// Copies `out.len()` frames of `channel`, from frame `start`, out of the
+    /// mapping. Past the end is silence — the readers here never ask for one,
+    /// and a draw path is the wrong place to learn that.
+    pub fn read_channel_into(&self, channel: usize, start: usize, out: &mut [f32]) {
+        if channel >= self.channels {
+            out.fill(0.0);
+            return;
+        }
+        for (i, slot) in out.iter_mut().enumerate() {
+            let frame = start + i;
+            *slot = if frame < self.frames {
+                self.at(frame * self.channels + channel)
+            } else {
+                0.0
+            };
+        }
     }
 
     /// Writes `values` into `channel` starting at frame `start`. Out-of-range
@@ -214,5 +238,44 @@ impl MappedTake {
         }
         // SAFETY: in-range cell of the mapping this value owns.
         unsafe { (*self.ptr.add(cell)).store(value.to_bits(), Ordering::Relaxed) };
+    }
+}
+
+/// One channel of a mapped take, as a peak pyramid's [`Source`] — **the
+/// picture's door to the material**.
+///
+/// It holds the mapping alive and reads through it; nothing is copied out. A
+/// read may cross a writer and see some old samples and some new, which is the
+/// buffer model's promise since the cells became atomic and is exactly what a
+/// picture can live with — the alternative is a lock on the audio thread's own
+/// memory.
+pub struct MappedChannel {
+    take: Arc<MappedTake>,
+    channel: usize,
+}
+
+impl MappedChannel {
+    /// Channel `channel` of `take`.
+    pub fn new(take: Arc<MappedTake>, channel: usize) -> Self {
+        Self { take, channel }
+    }
+
+    /// One source per channel of `take`, in channel order — what a
+    /// multichannel view is built from.
+    pub fn channels_of(take: Arc<MappedTake>) -> Vec<Arc<dyn Source + Send + Sync>> {
+        let (channels, _, _) = take.shape();
+        (0..channels.max(1))
+            .map(|ch| Arc::new(Self::new(Arc::clone(&take), ch)) as Arc<dyn Source + Send + Sync>)
+            .collect()
+    }
+}
+
+impl Source for MappedChannel {
+    fn len(&self) -> usize {
+        self.take.frames
+    }
+
+    fn read_into(&self, start: usize, out: &mut [f32]) {
+        self.take.read_channel_into(self.channel, start, out);
     }
 }

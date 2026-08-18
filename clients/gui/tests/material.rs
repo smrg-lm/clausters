@@ -165,6 +165,59 @@ fn a_take_the_server_published_is_drawn_and_edited_in_place() {
     let _ = std::fs::remove_file(&path);
 }
 
+/// The picture is built **over the mapping** — the whole of H7 against a real
+/// segment: the summary follows the server's own cells, and a write by anybody
+/// is a write to what is drawn.
+#[test]
+fn a_view_of_a_published_take_reads_the_region_it_is_drawn_from() {
+    use clausters_gui::host::material::MappedChannel;
+    use clausters_gui::waveform::WaveformData;
+
+    let path = scratch("shared-view");
+    let _ = std::fs::remove_file(&path);
+    let server = Segment::create(&path).expect("segment");
+
+    let frames = 4_096;
+    let generation = server
+        .publish_buffer(6, frames, 1, 48_000.0)
+        .expect("a row");
+    let region_path = Region::path_for(&path, 6, generation);
+    let region = Region::create(&region_path, frames).expect("region");
+    let store = |i: usize, v: f32| {
+        region.cells()[i].store(v.to_bits(), std::sync::atomic::Ordering::Relaxed);
+    };
+    for i in 0..frames {
+        store(i, 0.2);
+    }
+
+    let material = SharedMaterial::new(
+        Arc::new(SharedSegment::open(&path).expect("segment")),
+        path.clone(),
+    );
+    let take = Arc::new(material.map(6).expect("the host maps the take"));
+    let view = WaveformData::from_sources(MappedChannel::channels_of(take), 256);
+    assert!(view.is_shared());
+    assert_eq!(view.total_samples(), frames);
+    assert_eq!(view.column(0, 4.0, 0.0, 4.0), (0.2, 0.2));
+
+    // The engine's own memory changes under the picture. The zoomed-in regime
+    // reads the cells, so it is already the new one with nothing told to it.
+    for i in 1_000..1_004 {
+        store(i, -0.9);
+    }
+    assert_eq!(view.column(0, 4.0, 1_000.0, 1_004.0), (-0.9, -0.9));
+
+    // The overview is the part that has to be told, and it re-reads the span
+    // out of the region rather than out of a copy nobody kept.
+    let mut view = view;
+    assert_eq!(view.column(0, 1_000.0, 0.0, 2_000.0), (0.2, 0.2));
+    assert!(view.resummarize(0, 1_000, 4));
+    assert_eq!(view.column(0, 1_000.0, 0.0, 2_000.0).0, -0.9);
+
+    let _ = std::fs::remove_file(&region_path);
+    let _ = std::fs::remove_file(&path);
+}
+
 #[test]
 fn a_write_past_the_end_writes_nothing_rather_than_the_next_channel() {
     let path = scratch("clamp");

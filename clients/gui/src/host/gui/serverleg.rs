@@ -43,9 +43,14 @@ impl App {
         }
     }
 
-    /// Reads a take out of the mapped material and places it, returning
-    /// whether it was there. The zero-message half of
-    /// [`Self::start_buffer_fetches`].
+    /// Places a take out of the mapped material, returning whether it was
+    /// there. The zero-message half of [`Self::start_buffer_fetches`].
+    ///
+    /// **Nothing is read out.** The picture is built over the mapping itself —
+    /// one [`crate::host::material::MappedChannel`] per channel, summarized
+    /// where it lies — so opening a ten-minute take allocates its pyramid and
+    /// no copy of the material. What the analysis path needs is the one
+    /// exception, and it says so where it takes it.
     #[cfg(unix)]
     fn place_mapped_buffer(&mut self, def_id: i32, widget_id: i32, bufnum: i32) -> bool {
         let Ok(index) = usize::try_from(bufnum) else {
@@ -56,14 +61,99 @@ impl App {
         };
         let (channels, _, sample_rate) = take.shape();
         debug!("gui_def {def_id}: widget {widget_id} maps buffer {bufnum}, nothing sent");
-        self.finalize_buffer(
-            bufnum,
-            take.read_all().into(),
+        self.place_mapped_take(
+            Arc::new(take),
             channels,
             sample_rate,
             vec![WaveWant { def_id, widget_id }],
         );
         true
+    }
+
+    /// [`Self::finalize_buffer`] for material that is **mapped** rather than
+    /// downloaded: the views share one `WaveformData` reading the region, and
+    /// the pyramid over it is built once for every want.
+    #[cfg(unix)]
+    fn place_mapped_take(
+        &mut self,
+        take: Arc<crate::host::material::MappedTake>,
+        channels: usize,
+        sample_rate: f64,
+        wants: Vec<WaveWant>,
+    ) {
+        let channels = channels.max(1);
+        let (_, frames, _) = take.shape();
+        let mut shared: Option<Arc<WaveformData>> = None;
+        for want in wants {
+            let Some(slot) = self
+                .host
+                .window_def(want.def_id)
+                .and_then(|t| t.find(want.widget_id))
+                .map(|w| w.bulk_target().kind.needs().slot)
+            else {
+                continue;
+            };
+            let Some(ws) = self.windows.get_mut(&want.def_id) else {
+                continue;
+            };
+            // The one form that cannot read the material where it lies: an
+            // analysis consumes every sample by definition, so the transform
+            // reads the take once and the picture it makes is its own.
+            if let Some(SlotKind::Texture {
+                window_size,
+                hop,
+                sample_rate: declared,
+            }) = slot
+            {
+                let rate = if declared > 0.0 {
+                    declared
+                } else {
+                    sample_rate
+                };
+                let stfts = frame::stft_lanes(
+                    frame::deinterleave(&take.read_all(), channels),
+                    window_size,
+                    hop,
+                    rate,
+                );
+                if let Some(slot) = frame::spectrogram_slot(stfts, &ws.gpu, &ws.renderers) {
+                    ws.spectrograms.insert(want.widget_id, slot);
+                }
+                ws.gpu.window.request_redraw();
+                self.finish_placement(want, frames, sample_rate);
+                continue;
+            }
+            // The bucket is the element's own, as it is on every other path:
+            // a navigable trace declares it with its slot, and anything else
+            // takes the default the signal element uses.
+            let base_bucket = match slot {
+                Some(SlotKind::Geometry { base_bucket }) => base_bucket,
+                _ => crate::host::elements::signal::DEFAULT_BASE_BUCKET,
+            };
+            let data = shared
+                .get_or_insert_with(|| {
+                    Arc::new(WaveformData::from_sources(
+                        crate::host::material::MappedChannel::channels_of(Arc::clone(&take)),
+                        base_bucket,
+                    ))
+                })
+                .clone();
+            if matches!(slot, Some(SlotKind::Geometry { .. })) {
+                ws.waveforms
+                    .insert(want.widget_id, frame::waveform_slot(data.clone()));
+            }
+            ws.gpu.window.request_redraw();
+            if let Some(w) = self
+                .host
+                .window_def_mut(want.def_id)
+                .and_then(|t| t.find_mut(want.widget_id))
+            {
+                w.take_bulk(|| Loaded::Shared(data.clone()));
+            }
+            if matches!(slot, Some(SlotKind::Geometry { .. })) {
+                self.finish_placement(want, frames, sample_rate);
+            }
+        }
     }
 
     /// Sends one fetch-machine message over the client leg (`/buffer_query`,
@@ -160,6 +250,22 @@ impl App {
             "/buffer_getRange.reply" => {
                 let step = self.fetches.on_data(&msg.args);
                 self.apply_fetch_step(step);
+            }
+            // **Somebody else wrote this material.** A peer editing a shared
+            // buffer stores into the cells and announces the span; the server
+            // broadcasts it to everyone but the writer. A picture reading the
+            // mapping is already the new one — what it needs is to be told
+            // which columns to re-summarize.
+            "/buffer_touched" => {
+                if let [
+                    OscType::Int(bufnum),
+                    OscType::Int(channel),
+                    OscType::Int(start),
+                    OscType::Int(frames),
+                ] = msg.args.as_slice()
+                {
+                    self.refresh_material(*bufnum, *channel, *start, *frames);
+                }
             }
             "/group_queryTree.reply" => self.on_query_tree_reply(&msg.args),
             // A node was created or freed (on any client): refresh the tree
@@ -346,20 +452,57 @@ impl App {
                 }
             }
             ws.gpu.window.request_redraw();
-            // The fetched buffer's extent joins the widget's navigation group.
-            self.host
-                .set_timeline_total(want.widget_id, samples.len() / channels);
-            // Let the ruler label real time when the widget knew no rate.
-            if sample_rate > 0.0
-                && let Some(w) = self
-                    .host
-                    .window_def_mut(want.def_id)
-                    .and_then(|t| t.find_mut(want.widget_id))
-                && let Some(editor) = w.kind.editor_mut()
-                && editor.sample_rate <= 0.0
-            {
-                editor.sample_rate = sample_rate;
+            self.finish_placement(want, samples.len() / channels, sample_rate);
+        }
+    }
+
+    /// Re-summarizes the span another writer announced, in every view of that
+    /// buffer, and redraws the windows that hold one.
+    ///
+    /// **Only a view that reads the material can follow this**, and that is
+    /// the honest half: its samples are the ones that changed, so the summary
+    /// is all that is stale. A view holding its own copy (a fetched buffer,
+    /// a page) would have to fetch the span back, which is the fetch machine's
+    /// work and not this one's.
+    fn refresh_material(&mut self, bufnum: i32, channel: i32, start: i32, frames: i32) {
+        let (Ok(channel), Ok(start), Ok(frames)) = (
+            usize::try_from(channel),
+            u64::try_from(start),
+            usize::try_from(frames),
+        ) else {
+            return;
+        };
+        let mut touched = Vec::new();
+        let open = self.host.window_def_ids();
+        for def_id in open {
+            let Some(tree) = self.host.window_def_mut(def_id) else {
+                continue;
+            };
+            if crate::host::refresh_buffer_views(tree, bufnum, channel, start, frames) > 0 {
+                touched.push(def_id);
             }
+        }
+        for def_id in touched {
+            if let Some(ws) = self.windows.get(&def_id) {
+                ws.gpu.window.request_redraw();
+            }
+        }
+    }
+
+    /// What a placed buffer leaves behind whichever way it arrived: its extent
+    /// joins the widget's navigation group, and a widget that knew no sample
+    /// rate takes the material's so its ruler can label real time.
+    fn finish_placement(&mut self, want: WaveWant, frames: usize, sample_rate: f64) {
+        self.host.set_timeline_total(want.widget_id, frames);
+        if sample_rate > 0.0
+            && let Some(w) = self
+                .host
+                .window_def_mut(want.def_id)
+                .and_then(|t| t.find_mut(want.widget_id))
+            && let Some(editor) = w.kind.editor_mut()
+            && editor.sample_rate <= 0.0
+        {
+            editor.sample_rate = sample_rate;
         }
     }
 }

@@ -28,11 +28,117 @@ use crate::peaks::{self, MultiPyramid, Pyramid};
 use crate::view::TimelineView;
 use crate::viewport::{Axis, Unit, View};
 
+/// Where a channel's raw samples are — **owned here, or read where they live**.
+///
+/// The distinction is the whole of H7: a take the host has mapped is the
+/// server's own memory, and a picture of it has no business holding a second
+/// copy. A page has no mapping and keeps the owned form, which is also what a
+/// fetched buffer, an inline blob and a test all produce.
+#[derive(Clone)]
+pub enum Samples {
+    /// A buffer this view owns. Empty for a cache-only view, which has an
+    /// overview and no samples.
+    Owned(Arc<[f32]>),
+    /// The material where it lies: one channel of a mapped region, read
+    /// through [`peaks::Source`] so this module never learns what a mapping
+    /// is. Reading it may cross a writer, which is the buffer model's own
+    /// promise and exactly what a picture can live with.
+    Shared(Arc<dyn peaks::Source + Send + Sync>),
+}
+
+impl Samples {
+    /// How many samples the channel holds.
+    pub fn len(&self) -> usize {
+        match self {
+            Self::Owned(s) => s.len(),
+            Self::Shared(s) => s.len(),
+        }
+    }
+
+    /// Whether there are no samples — a cache-only view, which renders every
+    /// regime from its pyramid.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// One sample, clamped to bounds; silence when there is none to give.
+    fn at(&self, i: usize) -> f32 {
+        match self {
+            Self::Owned(s) => s.get(i).copied().unwrap_or(0.0),
+            Self::Shared(s) => {
+                if i >= s.len() {
+                    return 0.0;
+                }
+                let mut one = [0.0f32];
+                s.read_into(i, &mut one);
+                one[0]
+            }
+        }
+    }
+
+    /// Min, max and mean square over `[a, b)` — the three statistics a column
+    /// of the fine regime needs, measured in one pass so a shared source is
+    /// read once rather than three times.
+    ///
+    /// A shared source is read through a **fixed stack window**: the fine
+    /// regime's columns are smaller than a bucket by definition, and folding
+    /// the statistics as they arrive means a column costs no allocation at any
+    /// span.
+    fn stats(&self, a: usize, b: usize) -> Option<(f32, f32, f32)> {
+        if b <= a {
+            return None;
+        }
+        match self {
+            Self::Owned(s) => {
+                let a = a.min(s.len());
+                let b = b.clamp(a, s.len());
+                let span = &s[a..b];
+                let (lo, hi) = peaks::min_max(span)?;
+                Some((lo, hi, peaks::mean_square(span).unwrap_or(0.0)))
+            }
+            Self::Shared(src) => {
+                let a = a.min(src.len());
+                let b = b.clamp(a, src.len());
+                if b <= a {
+                    return None;
+                }
+                let mut window = [0.0f32; STAT_WINDOW];
+                let (mut lo, mut hi) = (f32::INFINITY, f32::NEG_INFINITY);
+                let mut sum = 0.0f64;
+                let mut i = a;
+                while i < b {
+                    let n = STAT_WINDOW.min(b - i);
+                    let chunk = &mut window[..n];
+                    src.read_into(i, chunk);
+                    for &v in chunk.iter() {
+                        lo = lo.min(v);
+                        hi = hi.max(v);
+                        sum += (v as f64) * (v as f64);
+                    }
+                    i += n;
+                }
+                Some((lo, hi, (sum / (b - a) as f64) as f32))
+            }
+        }
+    }
+}
+
+/// How many samples a shared source is read in at a time when a column is
+/// measured. One cache line's worth of columns: big enough that the per-call
+/// cost disappears, small enough to sit on the stack in a draw path.
+const STAT_WINDOW: usize = 256;
+
+impl From<Arc<[f32]>> for Samples {
+    fn from(samples: Arc<[f32]>) -> Self {
+        Self::Owned(samples)
+    }
+}
+
 /// One channel's data: its raw samples (possibly empty, for a cache-only view)
 /// plus its peak pyramid.
 #[derive(Clone)]
 struct Channel {
-    samples: Arc<[f32]>,
+    samples: Samples,
     pyramid: Pyramid,
 }
 
@@ -62,8 +168,36 @@ impl WaveformData {
     pub fn new(samples: Arc<[f32]>, base_bucket: usize) -> Self {
         let pyramid = Pyramid::build(&samples, base_bucket);
         Self {
-            channels: vec![Channel { samples, pyramid }],
+            channels: vec![Channel {
+                samples: samples.into(),
+                pyramid,
+            }],
         }
+    }
+
+    /// A multichannel view over material the host **maps**: one
+    /// [`peaks::Source`] per channel, each summarized where it lies.
+    ///
+    /// This is the editor's own case since H7 — the take is the server's
+    /// memory, the picture reads it, and the only thing allocated here is the
+    /// summary. Building it streams through a bounded window, so opening a
+    /// ten-minute take costs its pyramid and a kilobyte.
+    pub fn from_sources(
+        sources: Vec<Arc<dyn peaks::Source + Send + Sync>>,
+        base_bucket: usize,
+    ) -> Self {
+        assert!(!sources.is_empty());
+        let channels = sources
+            .into_iter()
+            .map(|source| {
+                let pyramid = Pyramid::build_from(&*source, base_bucket);
+                Channel {
+                    samples: Samples::Shared(source),
+                    pyramid,
+                }
+            })
+            .collect();
+        Self { channels }
     }
 
     /// A multichannel waveform from `samples` holding `channels` interleaved
@@ -76,7 +210,10 @@ impl WaveformData {
                 let one: Vec<f32> = (0..frames).map(|f| samples[f * channels + ch]).collect();
                 let samples: Arc<[f32]> = one.into();
                 let pyramid = Pyramid::build(&samples, base_bucket);
-                Channel { samples, pyramid }
+                Channel {
+                    samples: samples.into(),
+                    pyramid,
+                }
             })
             .collect();
         Self { channels: built }
@@ -90,7 +227,10 @@ impl WaveformData {
     /// finer to show.
     pub fn with_pyramid(samples: Arc<[f32]>, pyramid: Pyramid) -> Self {
         Self {
-            channels: vec![Channel { samples, pyramid }],
+            channels: vec![Channel {
+                samples: samples.into(),
+                pyramid,
+            }],
         }
     }
 
@@ -102,7 +242,10 @@ impl WaveformData {
         assert!(!parts.is_empty());
         let channels = parts
             .into_iter()
-            .map(|(samples, pyramid)| Channel { samples, pyramid })
+            .map(|(samples, pyramid)| Channel {
+                samples: samples.into(),
+                pyramid,
+            })
             .collect();
         Self { channels }
     }
@@ -114,7 +257,7 @@ impl WaveformData {
             .into_channels()
             .into_iter()
             .map(|pyramid| Channel {
-                samples: Arc::from([] as [f32; 0]),
+                samples: Samples::Owned(Arc::from([] as [f32; 0])),
                 pyramid,
             })
             .collect();
@@ -158,11 +301,40 @@ impl WaveformData {
         if values.is_empty() || start + values.len() > channel.samples.len() {
             return false;
         }
-        let mut samples = channel.samples.to_vec();
-        samples[start..start + values.len()].copy_from_slice(values);
-        let ok = channel.pyramid.update_range(&samples, start, values.len());
-        channel.samples = samples.into();
-        ok
+        match &mut channel.samples {
+            // **Shared material is already written**: the store went into the
+            // cells before anything asked the picture to follow, so there is
+            // no copy to make and nothing to write here — only the summary of
+            // the span, read back out of the material itself.
+            Samples::Shared(_) => self.resummarize(ch, start, values.len()),
+            // An owned buffer is this widget's own, so the write lands here
+            // first. It still costs the channel: a page has no other place to
+            // put the samples, and that is the trade the browser leg takes.
+            Samples::Owned(owned) => {
+                let mut samples = owned.to_vec();
+                samples[start..start + values.len()].copy_from_slice(values);
+                let ok = channel.pyramid.update_range(&samples, start, values.len());
+                *owned = samples.into();
+                ok
+            }
+        }
+    }
+
+    /// **Re-reads the summary of a span out of shared material** — what a
+    /// picture does when the samples changed underneath it and nobody handed
+    /// it any: this host's own store, or a span another writer announced.
+    ///
+    /// Refuses for an owned buffer, which has no material to re-read: its
+    /// samples are the picture's own, so whoever changed them writes them
+    /// here ([`Self::write_range`]).
+    pub fn resummarize(&mut self, ch: usize, start: usize, len: usize) -> bool {
+        let Some(channel) = self.channels.get_mut(ch) else {
+            return false;
+        };
+        let Samples::Shared(source) = &channel.samples else {
+            return false;
+        };
+        channel.pyramid.update_range_from(&**source, start, len)
     }
 
     /// Whether raw samples are present. A cache-only view (`with_pyramid` with an
@@ -171,6 +343,15 @@ impl WaveformData {
     /// instead collapse the wave to a flat line (it "disappears" on zoom-in).
     pub fn has_raw(&self) -> bool {
         !self.channels[0].samples.is_empty()
+    }
+
+    /// Whether this view reads its material where it lives rather than owning
+    /// a copy of it — what a mapped take gives and a page never can.
+    pub fn is_shared(&self) -> bool {
+        matches!(
+            self.channels.first().map(|c| &c.samples),
+            Some(Samples::Shared(_))
+        )
     }
 
     /// Min/max of channel `ch` for a pixel column spanning `[s0, s1)`, choosing
@@ -186,7 +367,10 @@ impl WaveformData {
         if samples_per_px < pyramid.base_bucket() as f64 && self.has_raw() {
             let a = (s0.floor().max(0.0) as usize).min(channel.samples.len());
             let b = (s1.ceil() as usize).clamp(a, channel.samples.len());
-            peaks::min_max(&channel.samples[a..b]).unwrap_or((0.0, 0.0))
+            channel
+                .samples
+                .stats(a, b)
+                .map_or((0.0, 0.0), |(lo, hi, _)| (lo, hi))
         } else {
             // At or above the base bucket, or whenever there is no raw buffer to
             // resolve finer (a cache-only view): read the pyramid. `level_for`
@@ -211,7 +395,7 @@ impl WaveformData {
         if samples_per_px < pyramid.base_bucket() as f64 && self.has_raw() {
             let a = (s0.floor().max(0.0) as usize).min(channel.samples.len());
             let b = (s1.ceil() as usize).clamp(a, channel.samples.len());
-            peaks::mean_square(&channel.samples[a..b]).or(Some(0.0))
+            Some(channel.samples.stats(a, b).map_or(0.0, |(_, _, ms)| ms))
         } else {
             level_crossfade_ms(pyramid, samples_per_px, s0, s1)
         }
@@ -221,11 +405,7 @@ impl WaveformData {
     /// cache-only view has no sample to give and answers silence, which is why
     /// the renderer asks [`Self::has_raw`] before entering that regime.
     pub fn samples_at(&self, ch: usize, i: usize) -> f32 {
-        self.channels
-            .get(ch)
-            .and_then(|c| c.samples.get(i))
-            .copied()
-            .unwrap_or(0.0)
+        self.channels.get(ch).map_or(0.0, |c| c.samples.at(i))
     }
 
     /// `frames` frames from `start`, **interleaved** — the shape a block of
@@ -721,5 +901,106 @@ mod tests {
             hi_mid >= hi_fine - 1e-6,
             "blend widens toward the coarse level"
         );
+    }
+}
+
+/// The material a view shares rather than owns: the picture reads it where it
+/// lies, so a write by anyone is a write to what is drawn.
+#[cfg(test)]
+mod shared_tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    /// Stands in for a mapped region: samples somebody else may write while
+    /// the picture is reading them.
+    struct Cells(Mutex<Vec<f32>>);
+
+    impl peaks::Source for Cells {
+        fn len(&self) -> usize {
+            self.0.lock().unwrap().len()
+        }
+
+        fn read_into(&self, start: usize, out: &mut [f32]) {
+            let cells = self.0.lock().unwrap();
+            for (i, slot) in out.iter_mut().enumerate() {
+                *slot = cells.get(start + i).copied().unwrap_or(0.0);
+            }
+        }
+    }
+
+    fn material(n: usize) -> Vec<f32> {
+        (0..n).map(|i| (i as f32 * 0.01).sin() * 0.7).collect()
+    }
+
+    fn shared(cells: &Arc<Cells>) -> WaveformData {
+        WaveformData::from_sources(
+            vec![Arc::clone(cells) as Arc<dyn peaks::Source + Send + Sync>],
+            256,
+        )
+    }
+
+    /// A view over a source draws exactly what a view over the same samples
+    /// draws — at every regime, so the mapped path is not a second picture.
+    #[test]
+    fn a_shared_view_draws_what_an_owned_one_draws() {
+        let samples = material(20_000);
+        let cells = Arc::new(Cells(Mutex::new(samples.clone())));
+        let mapped = shared(&cells);
+        let owned = WaveformData::new(samples.into(), 256);
+        assert!(mapped.is_shared() && !owned.is_shared());
+        for spp in [0.5, 8.0, 100.0, 255.0, 256.0, 1_000.0, 5_000.0] {
+            for c in 0..30 {
+                let s0 = (c * 613) as f64;
+                let s1 = s0 + spp;
+                assert_eq!(
+                    mapped.column(0, spp, s0, s1),
+                    owned.column(0, spp, s0, s1),
+                    "spp {spp}, column {c}"
+                );
+                assert_eq!(
+                    mapped.column_ms(0, spp, s0, s1),
+                    owned.column_ms(0, spp, s0, s1),
+                    "spp {spp}, column {c} (measure)"
+                );
+            }
+        }
+        assert_eq!(mapped.samples_at(0, 777), owned.samples_at(0, 777));
+        assert_eq!(mapped.block(100, 50), owned.block(100, 50));
+    }
+
+    /// **The point of the whole thing**: somebody else writes the material and
+    /// the zoomed-in picture is already the new one, with nothing told to it.
+    #[test]
+    fn a_write_by_somebody_else_is_already_in_the_picture() {
+        let cells = Arc::new(Cells(Mutex::new(material(20_000))));
+        let view = shared(&cells);
+        let fine = 4.0; // finer than a bucket: the raw regime, read from the source
+        let before = view.column(0, fine, 5_000.0, 5_004.0);
+        cells.0.lock().unwrap()[5_000..5_004].fill(-0.9);
+        let after = view.column(0, fine, 5_000.0, 5_004.0);
+        assert_ne!(before, after);
+        assert_eq!(after.0, -0.9);
+    }
+
+    /// A stroke over shared material re-summarizes its span and copies
+    /// nothing: the samples were already written where they live.
+    #[test]
+    fn a_stroke_moves_the_summary_and_not_the_samples() {
+        let cells = Arc::new(Cells(Mutex::new(material(20_000))));
+        let mut view = shared(&cells);
+        let coarse = 2_000.0; // the pyramid's regime, which a stroke must refresh
+        let before = view.column(0, coarse, 4_096.0, 6_096.0);
+        // The writer's half, exactly as the host does it: the material first.
+        cells.0.lock().unwrap()[4_500..4_700].fill(0.99);
+        assert!(view.write_range(0, 4_500, &[0.99; 200]));
+        let after = view.column(0, coarse, 4_096.0, 6_096.0);
+        assert_ne!(before, after);
+        assert!(
+            (after.1 - 0.99).abs() < 1e-6,
+            "the summary followed: {after:?}"
+        );
+        // And it equals a pyramid built from scratch over the same material.
+        let rebuilt = shared(&cells);
+        assert_eq!(after, rebuilt.column(0, coarse, 4_096.0, 6_096.0));
     }
 }

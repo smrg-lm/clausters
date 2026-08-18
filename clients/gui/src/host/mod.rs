@@ -778,8 +778,10 @@ impl Host {
         self.store.as_deref()
     }
 
-    /// The ids of the currently-defined window GuiDefs (for the standalone front
-    /// to open a pre-loaded def on resume).
+    /// The ids of the currently-defined window GuiDefs — for the standalone
+    /// front to open a pre-loaded def on resume, and for a pass that has to
+    /// visit every tree (a broadcast the host is a consumer of rather than the
+    /// addressee of).
     pub fn window_def_ids(&self) -> Vec<i32> {
         self.window_defs.keys().copied().collect()
     }
@@ -2300,6 +2302,33 @@ fn material_element(widget: &widget::Widget) -> Option<&dyn widget::element::Ele
         .chain(widget.children.iter())
         .filter_map(|w| w.kind.as_element())
         .find(|el| el.material_shape().is_some())
+}
+
+/// Re-reads the summary of a span in **every element in this tree drawing
+/// server buffer `bufnum`**, returning how many did.
+///
+/// The sibling of [`write_buffer_views`] for a write this host did not make:
+/// another peer stored into the shared cells and announced the span
+/// (`/buffer_touched`), so the samples are already the new ones and only the
+/// summary over them is stale.
+pub(crate) fn refresh_buffer_views(
+    widget: &mut widget::Widget,
+    bufnum: i32,
+    channel: usize,
+    start: u64,
+    frames: usize,
+) -> usize {
+    let mut refreshed = 0;
+    if let Some(el) = widget.kind.as_element_mut()
+        && el.material_buffer() == Some(bufnum)
+        && el.refresh_material(channel, start, frames)
+    {
+        refreshed += 1;
+    }
+    for child in &mut widget.children {
+        refreshed += refresh_buffer_views(child, bufnum, channel, start, frames);
+    }
+    refreshed
 }
 
 /// Writes a run of samples into **every element in this tree drawing server

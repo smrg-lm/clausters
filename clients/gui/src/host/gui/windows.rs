@@ -155,7 +155,14 @@ impl App {
             ws.gpu.window.request_redraw();
         }
         // Kick off fetches for any waveform that references a server buffer.
+        let draws_material = !buffer_refs.is_empty();
         self.start_buffer_fetches(id, buffer_refs);
+        // A window drawing a server buffer registers too: `/buffer_touched` is
+        // how it hears that another peer edited the material under it, and it
+        // rides the same `/server_notify` the node tree uses.
+        if draws_material && self.host.server().is_some() {
+            self.ensure_notify();
+        }
         // A node-tree view drives the client leg: register for notifications and
         // query at once, so it shows the tree without waiting for the first poll.
         if self.host.window_def(id).is_some_and(tree_has_node_tree) && self.host.server().is_some()

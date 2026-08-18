@@ -517,6 +517,16 @@ pub enum Loaded {
     Stfts(Vec<crate::spectrogram::Stft>),
     /// Interleaved samples, kept whole.
     Samples(std::sync::Arc<[f32]>),
+    /// **Material the host reads where it lives** — a view over a mapped
+    /// region, its pyramid already built over the mapping.
+    ///
+    /// It is `Peaks`' sibling and not a duplicate of it: a pyramid *is* the
+    /// material for a view that draws an overview, and this one carries the
+    /// samples too, without a copy of them existing anywhere. An element that
+    /// draws from samples rather than from a summary (a plot keeps its run
+    /// whole) reads them out of it and owns what it read, which is the one
+    /// copy the form cannot avoid.
+    Shared(std::sync::Arc<crate::waveform::WaveformData>),
 }
 
 /// The GPU slot an element claims because it cannot draw into the window's one
@@ -1602,6 +1612,16 @@ pub trait Element: fmt::Debug {
     /// material as it was before the stroke. What is written stays the
     /// element's own picture; the *material* is the server's buffer, and the
     /// host sends that write itself.
+    /// **Re-reads the summary of a span** of material this element draws
+    /// where it lies, returning whether it did. The default is not to: an
+    /// element holding its own samples has nothing to re-read.
+    ///
+    /// It is [`Self::write_samples`]' sibling for a write this host did not
+    /// make — another peer's, announced as a span and nothing more.
+    fn refresh_material(&mut self, _ch: usize, _start: u64, _frames: usize) -> bool {
+        false
+    }
+
     fn write_samples(&mut self, _ch: usize, _start: u64, _values: &[f32]) -> bool {
         false
     }

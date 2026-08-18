@@ -122,9 +122,11 @@ pub(crate) fn spectrogram_slot(
 /// analysis is a reading of a signal, not the signal, and what a copy would owe
 /// the clipboard is samples.
 pub(crate) fn keep_material(widget: &mut Widget, data: &Loaded) {
-    if let Loaded::Peaks(peaks) = data {
-        widget.take_bulk(|| Loaded::Peaks(peaks.clone()));
-    }
+    match data {
+        Loaded::Peaks(peaks) => widget.take_bulk(|| Loaded::Peaks(peaks.clone())),
+        Loaded::Shared(shared) => widget.take_bulk(|| Loaded::Shared(shared.clone())),
+        _ => false,
+    };
 }
 
 /// **Puts a resolved bulk resource into the slot its element claimed**, keyed
@@ -146,7 +148,9 @@ pub(crate) fn place_in_slot(
     spectrograms: &mut HashMap<i32, SpectrogramSlot>,
 ) -> Option<usize> {
     match data {
-        Loaded::Peaks(data) => {
+        // A pyramid fills the geometry slot whether it summarizes a copy or a
+        // mapping — the slot draws a picture and does not care which.
+        Loaded::Peaks(data) | Loaded::Shared(data) => {
             let slot = waveform_slot(data);
             let total = slot.view.total_samples();
             waveforms.insert(id, slot);

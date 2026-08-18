@@ -233,6 +233,40 @@ impl WebApp {
                 let step = self.fetches.on_data(&msg.args);
                 self.apply_fetch_step(step);
             }
+            // Another peer wrote a span of material this page may be drawing.
+            // A page holds its **own copy** of the samples — it cannot map
+            // anything — so there is no summary to re-read and the honest
+            // outcome is to say the picture is behind rather than to redraw
+            // the same stale thing. Following it means fetching the span back,
+            // which the fetch machine does not do yet.
+            "/buffer_touched" => {
+                if let [
+                    OscType::Int(bufnum),
+                    OscType::Int(channel),
+                    OscType::Int(start),
+                    OscType::Int(frames),
+                ] = msg.args.as_slice()
+                {
+                    let mut refreshed = 0;
+                    let ids = self.host.window_def_ids();
+                    for def_id in ids {
+                        if let Some(tree) = self.host.window_def_mut(def_id) {
+                            refreshed += crate::host::refresh_buffer_views(
+                                tree,
+                                *bufnum,
+                                (*channel).max(0) as usize,
+                                (*start).max(0) as u64,
+                                (*frames).max(0) as usize,
+                            );
+                        }
+                    }
+                    if refreshed == 0 {
+                        log(&format!(
+                            "buffer {bufnum} was edited by another peer; this page's copy is behind"
+                        ));
+                    }
+                }
+            }
             "/bus_tapStream.reply" => {
                 // (tap, stream position, raw LE f32 blob): the newest window
                 // of one tap; store it for the tick to align and draw.

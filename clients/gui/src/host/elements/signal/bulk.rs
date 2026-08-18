@@ -172,6 +172,31 @@ impl SignalElement {
         self.source.data()?.buffer
     }
 
+    /// **Re-reads the summary of a span** of shared material, returning
+    /// whether this element draws any. The other half of
+    /// [`Self::write_samples`]: there the host wrote the samples, here
+    /// somebody else did and only said where.
+    pub fn refresh_material(&mut self, ch: usize, start: u64, frames: usize) -> bool {
+        let Some(data) = self.source.data_mut() else {
+            return false;
+        };
+        let Some(body) = &data.body else {
+            return false;
+        };
+        if !body.is_shared() {
+            return false;
+        }
+        // Replaced rather than patched, for the reason the write path gives:
+        // the pyramid is shared with whatever slot is drawing it.
+        let mut copy = (**body).clone();
+        if !copy.resummarize(ch, start as usize, frames) {
+            return false;
+        }
+        data.body = Some(Arc::new(copy));
+        self.slot_dirty = true;
+        true
+    }
+
     /// **Writes a run of samples into the material**, returning whether it
     /// landed. `start` is a frame index in channel `ch`.
     ///
@@ -276,6 +301,23 @@ impl SignalElement {
                 self.slot_dirty = true;
                 true
             }
+            // Material read where it lives. A take draws the summary and
+            // takes the whole thing as it is; a run of samples has to be read
+            // out, because that is what it draws from.
+            Loaded::Shared(data) => {
+                if source.bulk {
+                    source.body = Some(data);
+                } else {
+                    source.channels = data.num_channels().max(1);
+                    source.samples = data
+                        .block(0, data.total_samples())
+                        .unwrap_or_default()
+                        .into();
+                    self.refresh_analysis();
+                }
+                self.slot_dirty = true;
+                true
+            }
             Loaded::Stfts(_) => false,
         }
     }
@@ -361,5 +403,57 @@ mod tests {
             r#"{"id":1,"type":"signal","view":"spectrogram","bus":0,"retention":4.0,"navigable":1}"#,
         );
         assert_eq!(waterfall.want(), None);
+    }
+
+    /// Shared material: the samples move where they live and only the summary
+    /// is told, which is what makes a second peer's edit visible here at all.
+    #[test]
+    fn a_take_reading_shared_material_refreshes_a_span() {
+        use std::sync::Mutex;
+
+        struct Cells(Mutex<Vec<f32>>);
+
+        impl clausters_core::peaks::Source for Cells {
+            fn len(&self) -> usize {
+                self.0.lock().unwrap().len()
+            }
+
+            fn read_into(&self, start: usize, out: &mut [f32]) {
+                let cells = self.0.lock().unwrap();
+                for (i, slot) in out.iter_mut().enumerate() {
+                    *slot = cells.get(start + i).copied().unwrap_or(0.0);
+                }
+            }
+        }
+
+        let cells = Arc::new(Cells(Mutex::new(vec![0.1f32; 4_000])));
+        let shared = Arc::new(crate::waveform::WaveformData::from_sources(
+            vec![Arc::clone(&cells) as Arc<dyn clausters_core::peaks::Source + Send + Sync>],
+            256,
+        ));
+        let mut take =
+            element(r#"{"id":1,"type":"signal","view":"trace","path":"t.f32","bulk":true}"#);
+        assert!(take.take(Loaded::Shared(shared)));
+
+        let column = |el: &SignalElement| {
+            el.source
+                .data()
+                .and_then(|d| d.body.as_ref())
+                .map(|b| b.column(0, 1_000.0, 0.0, 1_000.0))
+                .unwrap()
+        };
+        assert_eq!(column(&take), (0.1, 0.1));
+        // Somebody else's write: the cells first, then the span announced.
+        cells.0.lock().unwrap()[100..200].fill(-0.8);
+        assert!(take.refresh_material(0, 100, 100));
+        assert_eq!(column(&take).0, -0.8);
+
+        // An owned body has nothing to re-read: its samples are its own.
+        let mut owned =
+            element(r#"{"id":1,"type":"signal","view":"trace","path":"t.f32","bulk":true}"#);
+        assert!(owned.take(Loaded::Peaks(Arc::new(
+            crate::waveform::WaveformData::from_interleaved(&[0.0, 1.0, 0.5, -1.0], 1, 2)
+        ))));
+        assert!(!owned.refresh_material(0, 0, 2));
     }
 }
