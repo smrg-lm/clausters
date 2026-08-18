@@ -44,7 +44,9 @@ written in Rust and controlled over OSC (UDP, default port 57110).
   Keep all three current. Where each book lives, how it builds, and how its API
   reference is generated (rustdoc, pydoc-markdown, TypeDoc) are in the
   `documentation` skill; doc comments in `clients/web/src` are TSDoc (`/** */`),
-  never Rust-style `///`, which TypeScript tooling does not read.
+  never Rust-style `///`, which TypeScript tooling does not read. All three
+  build locally in one command: `scripts/check-docs.sh` (optionally
+  `server`/`python`/`web` to pick).
   - **Docstrings and published docs are plain Markdown**: **no Sphinx/RST
     directives** in docstrings (no `:role:` cross-refs, no `:param:` field lists
     — use backticks / Google-style sections), and **no milestone labels
@@ -146,7 +148,15 @@ on trust, so that is where drift accumulates:
   Python package (`scripts/refresh-bin.sh`) and the web package's `dist/`.
 - **The books drift last and loudest.** A concept renamed in one client is
   renamed in all three books, and a command's reference page changes with the
-  command.
+  command. And the doc build is the one check the compiler cannot help with at
+  all: a dangling TSDoc `{@link}`, a page missing from a `SUMMARY.md`, a
+  docstring pydoc-markdown chokes on — all of it compiles, tests and lints
+  clean, and only CI's `docs` job (minutes after the push, in a job nobody
+  watches) says otherwise. **Run `scripts/check-docs.sh` before committing
+  anything a book reads** — its own pages, a Python docstring, a TSDoc comment:
+  it runs the same three builds CI does, with the same pinned tools, in about
+  five seconds. The pre-commit hook runs it for the books the tree touches, but
+  it is a convenience, not a gate.
 
 ## Language conventions
 

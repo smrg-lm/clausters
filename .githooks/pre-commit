@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# No commit touching Rust without fmt + clippy clean.
+# No commit touching Rust without fmt + clippy clean, and none touching a book's
+# sources without that book building.
 #
 # CLAUDE.md's commit workflow: "Before generating any commit that touches Rust,
 # run `cargo fmt` ... the tree must be `cargo fmt --check`-clean" and "Clippy
@@ -25,10 +26,20 @@
 #     git config core.hooksPath .githooks
 #
 # Only the workspaces the working tree actually touches are linted (root,
-# clients/gui, fuzz -- three separate workspaces), so a Python- or docs-only
-# commit pays nothing. The def-family matrix is NOT run here (five more builds);
-# when the diff touches feature-gated code the hook points at the feature-matrix
-# skill instead, pass or fail.
+# clients/gui, fuzz -- three separate workspaces), and only the books whose
+# sources it touches are built, so a commit pays for what it changed and
+# nothing else.
+#
+# The books are here for the same reason as clippy, and are the check with the
+# least local coverage of all: a dangling TSDoc `{@link}`, a page missing from a
+# SUMMARY.md or a docstring pydoc-markdown chokes on compiles fine, tests fine,
+# and is seen by nothing until CI's `docs` job -- which is where nearly every
+# red build has come from. scripts/check-docs.sh runs the same three builds CI
+# does, in about five seconds.
+#
+# The def-family matrix is NOT run here (five more builds); when the diff
+# touches feature-gated code the hook points at the feature-matrix skill
+# instead, pass or fail.
 #
 # Deliberately *not* a per-edit check: clippy is a compile, not a reformat. Per
 # edit it would cost tens of seconds each time and fail constantly on
@@ -58,19 +69,14 @@ root="$(git rev-parse --show-toplevel)"
 # the component is installed in the active toolchain, and cargo resolves its
 # subcommands out of the toolchain directory anyway -- so `command -v` answers
 # neither question. `--version` is a process spawn and no build.
+# The verdict is deferred rather than acted on here: a missing toolchain must
+# not silence the *book* legs below, which need none of it.
 missing=""
 if ! command -v cargo >/dev/null 2>&1; then
     missing=" cargo"
 else
     cargo fmt --version >/dev/null 2>&1 || missing="$missing rustfmt"
     cargo clippy --version >/dev/null 2>&1 || missing="$missing clippy"
-fi
-if [ -n "$missing" ]; then
-    echo "clausters: pre-commit is inert -- not available:$missing." >&2
-    echo "Commits touching Rust are NOT being checked for fmt/clippy warnings." >&2
-    echo "The components come from rustup: rustup component add rustfmt clippy." >&2
-    echo "See docs/contributing.md, \"The commit hook\"." >&2
-    exit 0
 fi
 
 # --- Which workspaces does the working tree touch? ---------------------------
@@ -92,11 +98,26 @@ fi
 want_root=0
 want_gui=0
 want_fuzz=0
+books=""
 while IFS= read -r -d '' entry; do
     case "${entry:0:1}" in
         R | C) IFS= read -r -d '' _orig ;;
     esac
     path=${entry:3}
+    # Which book reads this path? A book's sources are its own pages plus
+    # whatever its API generator parses -- the Python package's docstrings for
+    # pydoc-markdown, the web package's TypeScript for TypeDoc -- so a change to
+    # a docstring is a change to a book. The root book has no generator: its
+    # pages are all there is (rustdoc is a separate build, covered by the
+    # feature-matrix skill, not by CI's `docs` job).
+    case "$path" in
+        clients/python/docs/* | clients/python/pydoc-markdown.yml | clients/python/clausters/*.py)
+            case " $books " in *" python "*) ;; *) books="$books python" ;; esac ;;
+        clients/web/docs/* | clients/web/typedoc.json | clients/web/tsconfig*.json | clients/web/src/*)
+            case " $books " in *" web "*) ;; *) books="$books web" ;; esac ;;
+        docs/* | book.toml)
+            case " $books " in *" server "*) ;; *) books="$books server" ;; esac ;;
+    esac
     case "$path" in
         *.rs | Cargo.toml | Cargo.lock | */Cargo.toml | */Cargo.lock) ;;
         *) continue ;;
@@ -109,7 +130,22 @@ while IFS= read -r -d '' entry; do
     esac
 done < <(git -C "$root" status --porcelain -z --untracked-files=all 2>/dev/null)
 
-[ "$want_root$want_gui$want_fuzz" = "000" ] && exit 0
+[ "$want_root$want_gui$want_fuzz" = "000" ] && [ -z "$books" ] && exit 0
+
+# Said now that it is known whether any Rust leg was even wanted: an inert
+# toolchain is worth a warning when it stops a check, not when there was
+# nothing for it to check.
+if [ -n "$missing" ]; then
+    if [ "$want_root$want_gui$want_fuzz" != "000" ]; then
+        echo "clausters: pre-commit's Rust legs are inert -- not available:$missing." >&2
+        echo "Commits touching Rust are NOT being checked for fmt/clippy warnings." >&2
+        echo "The components come from rustup: rustup component add rustfmt clippy." >&2
+        echo "See docs/contributing.md, \"The commit hook\"." >&2
+    fi
+    want_root=0
+    want_gui=0
+    want_fuzz=0
+fi
 
 # --- Lint them ---------------------------------------------------------------
 
@@ -136,6 +172,22 @@ fi
 if [ "$want_fuzz" = 1 ]; then
     check "fmt(fuzz)" "$root/fuzz" cargo fmt --check
     check "clippy(fuzz)" "$root/fuzz" cargo clippy --all-targets -- -D warnings
+fi
+if [ -n "$books" ]; then
+    # shellcheck disable=SC2086 -- $books is a list of literal words.
+    "$root/scripts/check-docs.sh" $books >>"$out" 2>&1
+    status=$?
+    # Exit 2 is "a generator is not installed": a check that did not run, not a
+    # book that failed, so it warns and stands down -- the same fail-open rule
+    # as the toolchain above. The script says which tool on its own stderr,
+    # which is inside "$out" and only printed when something fails, so the note
+    # is repeated here where it will actually be read.
+    if [ "$status" = 2 ]; then
+        echo "clausters: pre-commit's book legs are inert -- a doc generator is" >&2
+        echo "missing. Run scripts/check-docs.sh to see which one." >&2
+    elif [ "$status" != 0 ]; then
+        failed="$failed books(${books# })"
+    fi
 fi
 
 # --- Report -------------------------------------------------------------------
@@ -164,15 +216,29 @@ matrix_note() {
 
 if [ -n "$failed" ]; then
     {
-        echo "Commit blocked --$failed failed. CLAUDE.md: the tree must be"
-        echo "\`cargo fmt --check\`-clean and clippy must come back clean, always"
-        echo "(zero warnings, not \"no new ones\" -- fix the ones this change did not"
-        echo "introduce too, in their own commit so the feature's diff stays readable)."
+        echo "Commit blocked --$failed failed."
+        case "$failed" in
+            *fmt* | *clippy*)
+                echo
+                echo "CLAUDE.md: the tree must be \`cargo fmt --check\`-clean and clippy"
+                echo "must come back clean, always (zero warnings, not \"no new ones\" --"
+                echo "fix the ones this change did not introduce too, in their own commit"
+                echo "so the feature's diff stays readable). A warning that is genuinely"
+                echo "wrong gets a scoped #[allow(...)] with a comment saying why."
+                ;;
+        esac
+        case "$failed" in
+            *books*)
+                echo
+                echo "A book that does not build here does not build on Read the Docs"
+                echo "either, and CI's \`docs\` job will say so minutes from now. Rerun"
+                echo "just that leg with scripts/check-docs.sh."
+                ;;
+        esac
         echo
         tail -60 "$out"
         echo
-        echo "A warning that is genuinely wrong gets a scoped #[allow(...)] with a"
-        echo "comment saying why. To bypass: git commit --no-verify"
+        echo "To bypass: git commit --no-verify"
     } >&2
     matrix_note
     exit 1
