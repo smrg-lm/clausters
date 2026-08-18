@@ -280,7 +280,6 @@ pub(crate) struct ClipHit {
     /// member — the *lane* is — so anything that has to reach the shared axis
     /// (the drag's cursor mapping, the edge scroll) asks through this id.
     pub lane: i32,
-    pub offset: f64,
     pub dur: f64,
     pub body: Rect,
     /// The clip's own rectangle — the box its bodies fill, so a body's edits
@@ -294,6 +293,12 @@ pub(crate) struct ClipHit {
     /// through.
     pub local: View,
     pub part: ClipPart,
+    /// The placement the press found, as one value — the snapshot a drag is
+    /// measured against.
+    pub placement: super::ClipPlacement,
+    /// What the material behind the clip allows its edges to do (how many
+    /// frames it has, whether the window loops off them).
+    pub material: super::Material,
 }
 
 /// The [`ClipHit`] of the `clip` the pointer landed on: the clip the layout
@@ -320,18 +325,42 @@ pub(crate) fn clip_hit(
     let (id, local) = clip;
     let rect = local.body;
     let widget = host.window_def(def_id)?.find(id)?;
-    let WidgetKind::Clip { offset, dur, .. } = widget.kind else {
+    let WidgetKind::Clip {
+        offset,
+        dur,
+        window,
+        ..
+    } = widget.kind
+    else {
         return None;
     };
+    // What the clip is a window **onto**: the take's own length, asked of the
+    // body that holds it. A clip with no material — a roll, a bare automation —
+    // has no window to run off, and its edges are bounded by nothing but the
+    // clip's own floor.
+    let total = widget
+        .clip_body(crate::host::widget::element::BodyRole::Take)
+        .and_then(|k| k.as_element())
+        .and_then(|el| el.material_shape())
+        .map(|(_, frames)| frames as f64)
+        .filter(|f| *f > 0.0);
     Some(ClipHit {
         id,
         lane: lane_id,
-        offset,
         dur,
         body,
         rect,
         nav,
         local: local.nav,
+        placement: super::ClipPlacement {
+            offset,
+            dur,
+            start: window.start,
+        },
+        material: super::Material {
+            total,
+            looping: window.looping,
+        },
         // The grips the renderer drew: the same rectangle, the same ends, the
         // same size table.
         part: clip_part(

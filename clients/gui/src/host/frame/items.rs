@@ -97,6 +97,9 @@ pub(super) struct ClipBodyItem {
     /// them exactly as it does anywhere else.
     pub(super) metrics: Metrics,
     pub(super) scale: f32,
+    /// What of its material the container is showing (the clip's own
+    /// [`SourceWindow`](crate::host::widget::SourceWindow)).
+    pub(super) window: crate::host::widget::SourceWindow,
     /// Whether this body is its container's **active edit layer** — what it is
     /// told so it draws affordances only when they are promises it can keep
     /// (see [`crate::host::layers`]).
@@ -223,7 +226,7 @@ pub(super) fn collect_widgets(
         // holding it. That is what the containment buys, and it is decided
         // here — once — rather than by each element asking where it is.
         if let Some(parent) = p.parent
-            && let WidgetKind::Clip { dur, .. } = placed[parent].widget.kind
+            && let WidgetKind::Clip { dur, window, .. } = placed[parent].widget.kind
         {
             // The one body whose picture is not geometry: a time-frequency take
             // samples an uploaded texture, so it goes to the GPU pass with the
@@ -255,6 +258,7 @@ pub(super) fn collect_widgets(
                     crate::host::layers::child_is_active(placed[parent].widget, index)
                 });
             clip_bodies.push(ClipBodyItem {
+                window,
                 rect: p.rect,
                 local: p.time.unwrap_or_else(|| View::full(1)),
                 dur,

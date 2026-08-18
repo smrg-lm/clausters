@@ -9,12 +9,10 @@
 //! with **no chrome at all** — no ruler, no gutter, no navigation — against the
 //! clip's own local span, because the clip is what says where in time it sits.
 
-use crate::viewport::View;
-
 use super::SignalElement;
 use crate::host::layout::Rect;
 use crate::host::paint::Draw;
-use crate::host::widget::element::TextureLook;
+use crate::host::widget::element::{TextureLook, TimeSpace};
 use crate::host::widget::{GestureMap, GestureStep};
 
 impl SignalElement {
@@ -45,7 +43,7 @@ impl SignalElement {
     /// the summarized trace between the element's own value bounds. An element
     /// whose data has not arrived draws nothing, and the clip's frame stands
     /// alone until it does.
-    pub fn draw_body(&self, d: &mut Draw, rect: Rect, local: &View, dur: f64) {
+    pub fn draw_body(&self, d: &mut Draw, rect: Rect, time: &TimeSpace) {
         let Some(data) = self.source.data() else {
             return;
         };
@@ -53,8 +51,9 @@ impl SignalElement {
         crate::host::graphics::track::draw_take(
             d,
             rect,
-            local,
-            dur,
+            &time.view,
+            &time.window,
+            time.span,
             &data.trace(),
             min,
             max,

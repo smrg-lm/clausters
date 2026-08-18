@@ -52,7 +52,9 @@ pub(super) fn apply_widget(widget: &mut Widget, key: &str, v: &Value) -> bool {
 
 /// The keys a `clip` answers for itself; everything else it accepts belongs to
 /// one of its bodies.
-const CLIP_OWN: [&str; 5] = ["offset", "dur", "label", "layer", "hidden"];
+const CLIP_OWN: [&str; 8] = [
+    "offset", "dur", "label", "layer", "hidden", "start", "loop", "fit",
+];
 
 /// Routes a body prop into the child that owns it, building that child first
 /// when the clip does not have it yet. The **value axis** props are the awkward
@@ -188,11 +190,16 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
         // A clip's own props are its placement and its name; its bodies are
         // children, and their props route there — see `apply_clip`, which is
         // reached through `Widget::apply_kind` because it needs them.
-        WidgetKind::Clip { offset, dur, label } => match key {
+        WidgetKind::Clip {
+            offset,
+            dur,
+            label,
+            window,
+        } => match key {
             "offset" => v.as_f64().map(|x| *offset = x.max(0.0)).is_some(),
             "dur" => v.as_f64().map(|x| *dur = x.max(0.0)).is_some(),
             "label" => set_label(label, v),
-            _ => false,
+            _ => window.apply(key, v),
         },
         // A free-standing ruler is its editor chrome and nothing else: the
         // unit it labels (`ruler`), the rate and the beat grid, the link that

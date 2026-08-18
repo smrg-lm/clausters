@@ -627,6 +627,17 @@ pub struct TimeSpace {
     /// `true` for an element standing on its own (a `None` [`TimeSpace`] never
     /// reaches this field): outside a container an element is its own layer.
     pub active: bool,
+    /// **What of its material the container is showing** — where its time zero
+    /// reads in the source, whether the window loops
+    /// ([`SourceWindow`](super::SourceWindow)).
+    ///
+    /// It belongs with the axis for the same reason the axis does: it is half
+    /// of the mapping between the container's time and the element's data, and
+    /// an element that worked it out for itself would be re-deriving what the
+    /// container already decided. The default window (from time zero, no loop,
+    /// no fit) is the identity, so an element handed a bare axis draws what it
+    /// always drew.
+    pub window: super::SourceWindow,
 }
 
 impl TimeSpace {
@@ -644,7 +655,13 @@ impl TimeSpace {
             sel: None,
             head: None,
             active: true,
+            window: super::SourceWindow::default(),
         }
+    }
+
+    /// The same axis, over the part of the material `window` names.
+    pub fn with_window(self, window: super::SourceWindow) -> Self {
+        Self { window, ..self }
     }
 
     /// The same axis, with this element named as the active layer or not.
@@ -1425,7 +1442,7 @@ pub trait Element: fmt::Debug {
     /// from [`draw`](Element::draw) because a body carries **no chrome** — no
     /// ruler, no gutter, no navigation of its own — so the two are different
     /// pictures of the same data. The default draws nothing.
-    fn draw_body(&self, _d: &mut Draw, _rect: Rect, _local: &crate::viewport::View, _dur: f64) {}
+    fn draw_body(&self, _d: &mut Draw, _rect: Rect, _time: &TimeSpace) {}
 
     /// **Where the shared time axis lies inside this element's rect**, and
     /// whether it offers a vertical gesture surface beside it — or `None` (the

@@ -79,10 +79,19 @@ pub(crate) fn lane_event_args(
 /// payload.
 pub(crate) fn clip_event_args(tree: &Widget, id: i32) -> Option<Vec<OscType>> {
     match &tree.find(id)?.kind {
-        WidgetKind::Clip { offset, dur, .. } => Some(vec![
+        WidgetKind::Clip {
+            offset,
+            dur,
+            window,
+            ..
+        } => Some(vec![
             OscType::String("clip".into()),
             OscType::Float(*offset as f32),
             OscType::Float(*dur as f32),
+            // Where the clip now reads its material: a trim moves it, and an
+            // owner told only the offset and the duration would re-cut the
+            // wrong part of the source.
+            OscType::Float(window.start as f32),
         ]),
         _ => None,
     }

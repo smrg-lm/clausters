@@ -357,8 +357,10 @@ impl TimelineGroups {
             sel: state.selection(),
             head: clock.and_then(|c| state.head_at(c)),
             // A member of a navigation group stands on its own rectangle: it is
-            // its own layer, and nothing above it is deciding between claimants.
+            // its own layer, over its own material — nothing above it is
+            // deciding between claimants or showing a window of it.
             active: true,
+            window: crate::host::widget::SourceWindow::default(),
         })
     }
 }

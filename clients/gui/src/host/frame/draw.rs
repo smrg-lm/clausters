@@ -665,7 +665,11 @@ pub(super) fn draw_static_meshes(
                     indent: 0.0,
                     clip: item.clip,
                     scale: item.scale,
-                    time: Some(TimeSpace::of(item.local, item.dur).with_active(item.active)),
+                    time: Some(
+                        TimeSpace::of(item.local, item.dur)
+                            .with_active(item.active)
+                            .with_window(item.window),
+                    ),
                     // A body carries no id, so nothing can address the keyboard
                     // at it: the focus is the clip's or nobody's.
                     focused: false,
@@ -675,8 +679,9 @@ pub(super) fn draw_static_meshes(
                 &mut Draw::new(mesh, m, th),
                 kind,
                 item.rect,
-                &item.local,
-                item.dur,
+                &TimeSpace::of(item.local, item.dur)
+                    .with_active(item.active)
+                    .with_window(item.window),
             ),
         }
     }

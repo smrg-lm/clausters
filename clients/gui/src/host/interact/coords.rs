@@ -236,33 +236,97 @@ pub(crate) fn sample_at(nav_start: f64, nav_len: f64, body_x: f64, body_w: f64, 
 /// the drawing's job ([`track::clip_x_range`]).
 const MIN_CLIP_DUR: f64 = 1.0;
 
+/// **What a clip drag produces**: where the clip sits, how long it is, and
+/// which part of its material it shows.
+///
+/// The three move together and that is the whole of what an edge drag means: a
+/// clip is a window onto a segment of data, so pulling its **start** edge to
+/// the right hides the material's head rather than compressing it — the offset,
+/// the duration and the window's `start` all advance by the same amount. Its
+/// **end** edge changes only the duration, since the head of the window has not
+/// moved.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct ClipPlacement {
+    pub offset: f64,
+    pub dur: f64,
+    /// The source frame the clip's own time zero reads.
+    pub start: f64,
+}
+
+/// What the material behind a clip allows a drag to do: how many frames there
+/// are, and whether the window may run off them.
+///
+/// `total` is `None` for a clip with no material to run off — a roll, a bare
+/// automation — and then an edge drag is bounded by nothing but the clip's own
+/// floor, which is what it always was.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub(crate) struct Material {
+    pub total: Option<f64>,
+    pub looping: bool,
+}
+
+impl Material {
+    /// Whether an edge may be pulled past the material — a **looping** clip's
+    /// may, because past the end is the beginning again and before the start is
+    /// the tail of the iteration before.
+    fn unbounded(&self) -> bool {
+        self.looping || self.total.is_none()
+    }
+}
+
 /// The clip placement one drag step produces, against the press-time snapshot
-/// (`press_sample`, `orig_offset`, `orig_dur`) so a clamped edge never drifts:
-/// a body drag moves the offset, an edge drag resizes — never below
-/// [`MIN_CLIP_DUR`], and the start stays within `[0, end]` — snapped to `grid`.
+/// (`press_sample`, `orig`) so a clamped edge never drifts: a body drag moves
+/// the offset, an edge drag trims — never below [`MIN_CLIP_DUR`], never past
+/// the material unless the clip loops, and the start stays within `[0, end]` —
+/// snapped to `grid`.
 pub(crate) fn clip_drag_placement(
     part: ClipPart,
     sample: f64,
     press_sample: f64,
-    orig_offset: f64,
-    orig_dur: f64,
+    orig: ClipPlacement,
+    material: Material,
     grid: f64,
-) -> (f64, f64) {
+) -> ClipPlacement {
     let delta = sample - press_sample;
-    let end = orig_offset + orig_dur;
+    let end = orig.offset + orig.dur;
     // A clip already shorter than the floor is not *grown* to it — a drag moves
     // the edge it was given hold of, and snapping the far end out to a minimum
     // nobody asked for is an edit of its own. It simply cannot shrink further.
-    let floor = MIN_CLIP_DUR.min(orig_dur.max(0.0));
+    let floor = MIN_CLIP_DUR.min(orig.dur.max(0.0));
     match part {
-        ClipPart::Body => (snap(orig_offset + delta, grid), orig_dur),
+        ClipPart::Body => ClipPlacement {
+            offset: snap(orig.offset + delta, grid),
+            ..orig
+        },
         ClipPart::End => {
-            let new_end = snap(end + delta, grid).max(orig_offset + floor);
-            (orig_offset, new_end - orig_offset)
+            let mut new_end = snap(end + delta, grid).max(orig.offset + floor);
+            // The material runs out where the window does: without a loop the
+            // end edge stops at the last frame, because past it there is
+            // nothing to show and nothing to play.
+            if let Some(total) = material.total.filter(|_| !material.unbounded()) {
+                new_end = new_end.min(orig.offset + (total - orig.start).max(floor));
+            }
+            ClipPlacement {
+                dur: new_end - orig.offset,
+                ..orig
+            }
         }
         ClipPart::Start => {
-            let new_off = snap(orig_offset + delta, grid).min(end - floor).max(0.0);
-            (new_off, end - new_off)
+            let mut new_off = snap(orig.offset + delta, grid).min(end - floor).max(0.0);
+            // ...and the same at the head: the window cannot begin before the
+            // material does unless the clip loops, where what lies before frame
+            // zero is the tail of the iteration before it.
+            if !material.unbounded() {
+                new_off = new_off.max(orig.offset - orig.start);
+            }
+            ClipPlacement {
+                offset: new_off,
+                dur: end - new_off,
+                // The trim: the window's head travels with the edge, which is
+                // what makes the material stand still while the clip shows less
+                // of it.
+                start: orig.start + (new_off - orig.offset),
+            }
         }
     }
 }

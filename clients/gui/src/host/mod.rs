@@ -2554,7 +2554,16 @@ mod tests {
 
         // The clip's placement is the clip's own, edited by its container drag.
         assert_eq!(live(&host, 21, "offset"), Some(Value::from(0.0)));
-        interact::clip_set(&mut host, 1, 21, Some(40.0), None);
+        interact::clip_set(
+            &mut host,
+            1,
+            21,
+            interact::ClipPlacement {
+                offset: 40.0,
+                dur: 100.0,
+                start: 0.0,
+            },
+        );
         assert_eq!(live(&host, 21, "offset"), Some(Value::from(40.0)));
 
         // The curve is a body, so the clip is what a script addresses — and the

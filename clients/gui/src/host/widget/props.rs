@@ -1001,3 +1001,235 @@ impl Range {
         self.value = self.min + t.clamp(0.0, 1.0) * (self.max - self.min);
     }
 }
+
+/// **The window a placement shows of the data behind it**: where in the source
+/// its own time zero reads, and what happens where the window runs off the
+/// material.
+///
+/// This is what makes a clip *a view of the data* rather than a rectangle the
+/// material is stretched into. A clip is a window onto a segment of a
+/// buffer — the memory-view idea, and the reason trimming one hides samples
+/// instead of squeezing them: shortening the window leaves the material
+/// exactly as it is and shows less of it, and lengthening it again brings the
+/// hidden samples back. Splitting a clip in two is the same statement twice,
+/// with two windows over one source.
+///
+/// One timeline sample is one source frame, deliberately: making it anything
+/// else is a **time stretch**, which resamples or re-synthesizes the material
+/// and is a rendering rather than a placement. [`fit`](Self::fit) is where that
+/// will land when it exists, and until then it is what a picture deliberately
+/// scaled into its rectangle asks for.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SourceWindow {
+    /// The source frame this placement's time zero reads (`start`). Negative
+    /// values are as meaningful as positive ones on a **looping** window: they
+    /// are the tail of the iteration before this one.
+    pub start: f64,
+    /// Whether the window **wraps** around the material: past the end it
+    /// begins again, and before the beginning it shows the material's own tail
+    /// — which is what stretching an edge past the source means when a loop is
+    /// what the placement is. Off, the window shows the material where it has
+    /// any and nothing where it has none.
+    pub looping: bool,
+    /// Whether the material is **fitted** to the placement's span instead of
+    /// read frame for sample — the picture a time stretch would produce,
+    /// which nothing here produces yet. Off by default: an edge drag is a trim.
+    pub fit: bool,
+}
+
+impl Default for SourceWindow {
+    fn default() -> Self {
+        Self {
+            start: 0.0,
+            looping: false,
+            fit: false,
+        }
+    }
+}
+
+impl SourceWindow {
+    /// The window a placement's props declare.
+    pub(crate) fn parse(props: &serde_json::Map<String, Value>) -> Self {
+        Self {
+            start: number_f64(props, "start", 0.0),
+            looping: props.get("loop").and_then(truthy).unwrap_or(false),
+            fit: props.get("fit").and_then(truthy).unwrap_or(false),
+        }
+    }
+
+    /// Applies one `/gui_set` key, returning whether it was one of these.
+    pub(crate) fn apply(&mut self, key: &str, v: &Value) -> bool {
+        match key {
+            "start" => v.as_f64().map(|x| self.start = x).is_some(),
+            "loop" => truthy(v).map(|b| self.looping = b).is_some(),
+            "fit" => truthy(v).map(|b| self.fit = b).is_some(),
+            _ => false,
+        }
+    }
+
+    /// The source frame a placement-local time `t` reads, over `total` frames
+    /// of material and a placement spanning `dur`.
+    ///
+    /// `None` where the window is off the material — which only a window that
+    /// neither loops nor fits can be, and which is the honest answer there:
+    /// nothing was recorded at that time, so nothing is drawn and nothing is
+    /// read.
+    pub fn source_at(&self, t: f64, dur: f64, total: f64) -> Option<f64> {
+        if total <= 0.0 {
+            return None;
+        }
+        if self.fit {
+            return (dur > 0.0).then(|| (t / dur * total).clamp(0.0, total));
+        }
+        let s = self.start + t;
+        if self.looping {
+            return Some(s.rem_euclid(total));
+        }
+        (s >= 0.0 && s <= total).then_some(s)
+    }
+
+    /// The placement-local time a source frame is drawn at — the inverse of
+    /// [`source_at`](Self::source_at) **within one pass over the material**,
+    /// which is what a looping window is drawn as (see [`runs`](Self::runs)).
+    pub fn time_at(&self, source: f64, dur: f64, total: f64) -> f64 {
+        match self.fit {
+            true if total > 0.0 => source / total * dur,
+            true => 0.0,
+            false => source - self.start,
+        }
+    }
+
+    /// The **runs** a placement's `[from, to]` local span breaks into, each one
+    /// a stretch of time over which the window stays inside the material: the
+    /// local time it begins at, the local time it ends at, and the source frame
+    /// its beginning reads.
+    ///
+    /// A window that fits, or one that stays inside the material, is one run.
+    /// A **looping** one is a run per iteration, which is what lets the same
+    /// affine drawing be used for all of them; a window running off material it
+    /// does not loop contributes only the part that is on it, so the picture
+    /// stops where the material does instead of clamping into a flat line
+    /// nothing recorded.
+    pub fn runs(&self, from: f64, to: f64, dur: f64, total: f64) -> Vec<(f64, f64, f64)> {
+        if total <= 0.0 || to <= from {
+            return Vec::new();
+        }
+        if self.fit {
+            return vec![(from, to, self.source_at(from, dur, total).unwrap_or(0.0))];
+        }
+        if !self.looping {
+            // The part of the window that is on the material, and nothing else.
+            let lo = from.max(-self.start);
+            let hi = to.min(total - self.start);
+            return if hi > lo {
+                vec![(lo, hi, self.start + lo)]
+            } else {
+                Vec::new()
+            };
+        }
+        let mut runs = Vec::new();
+        let mut t = from;
+        // A window whose span is many iterations long is drawn as many; the
+        // count is bounded by the pixels the caller will draw it into, since a
+        // run thinner than a pixel is still one run.
+        while t < to && runs.len() < MAX_LOOP_RUNS {
+            let source = (self.start + t).rem_euclid(total);
+            let end = (t + (total - source)).min(to);
+            runs.push((t, end, source));
+            t = end;
+        }
+        runs
+    }
+}
+
+/// The most iterations a looping window is drawn as. A placement stretched over
+/// thousands of loops of a short buffer is a picture of a texture, not of the
+/// material: past this it is drawn as far as it goes and the rest is left
+/// blank, which is visible and cheap, rather than pretending to draw a million
+/// runs of two pixels each.
+const MAX_LOOP_RUNS: usize = 512;
+
+#[cfg(test)]
+mod window_tests {
+    use super::*;
+
+    /// **A clip is a window onto a segment of data.** Trimming it shows less of
+    /// the material and moves nothing; the frames it hides are still there and
+    /// come back when the window is opened again — which is the property split
+    /// and join are built on.
+    #[test]
+    fn a_window_reads_the_material_frame_for_sample() {
+        let w = SourceWindow {
+            start: 200.0,
+            ..SourceWindow::default()
+        };
+        assert_eq!(w.source_at(0.0, 300.0, 1000.0), Some(200.0));
+        assert_eq!(w.source_at(300.0, 300.0, 1000.0), Some(500.0));
+        // Off the material: nothing was recorded there, so there is no frame to
+        // name — not the last one over and over.
+        assert_eq!(w.source_at(900.0, 300.0, 1000.0), None);
+        // A **fitted** window is the other statement: the material scaled into
+        // the span, which is the picture a time stretch would make.
+        let fitted = SourceWindow {
+            fit: true,
+            ..SourceWindow::default()
+        };
+        assert_eq!(fitted.source_at(150.0, 300.0, 1000.0), Some(500.0));
+    }
+
+    /// A **looping** window wraps both ways: past the end is the beginning
+    /// again, and before frame zero is the material's own tail — the samples of
+    /// the iteration before this one.
+    #[test]
+    fn a_looping_window_wraps_at_both_ends() {
+        let w = SourceWindow {
+            start: -100.0,
+            looping: true,
+            fit: false,
+        };
+        assert_eq!(w.source_at(0.0, 400.0, 1000.0), Some(900.0));
+        assert_eq!(w.source_at(100.0, 400.0, 1000.0), Some(0.0));
+        assert_eq!(w.source_at(1200.0, 400.0, 1000.0), Some(100.0));
+    }
+
+    /// The **runs** are what makes one affine renderer draw all of it: a run per
+    /// pass over the material, the part that is on it when there is no loop, and
+    /// nothing at all where there is no material under the window.
+    #[test]
+    fn the_runs_break_a_window_where_the_material_does() {
+        let plain = SourceWindow::default();
+        assert_eq!(
+            plain.runs(0.0, 500.0, 500.0, 1000.0),
+            vec![(0.0, 500.0, 0.0)]
+        );
+        // Past the end without a loop: only the part that is on the material.
+        let late = SourceWindow {
+            start: 800.0,
+            ..plain
+        };
+        assert_eq!(
+            late.runs(0.0, 500.0, 500.0, 1000.0),
+            vec![(0.0, 200.0, 800.0)]
+        );
+        // Entirely past it: no runs, so nothing is drawn.
+        let past = SourceWindow {
+            start: 2000.0,
+            ..plain
+        };
+        assert!(past.runs(0.0, 500.0, 500.0, 1000.0).is_empty());
+        // Looping: one run per iteration, each starting where the material does.
+        let looped = SourceWindow {
+            start: 900.0,
+            looping: true,
+            fit: false,
+        };
+        assert_eq!(
+            looped.runs(0.0, 2100.0, 2100.0, 1000.0),
+            vec![
+                (0.0, 100.0, 900.0),
+                (100.0, 1100.0, 0.0),
+                (1100.0, 2100.0, 0.0)
+            ]
+        );
+    }
+}

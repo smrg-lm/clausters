@@ -272,7 +272,9 @@ fn track_carries_clips_with_their_placement() {
     assert_eq!(track.children.len(), 2, "a track carries its clips");
     let clip = &track.children[0];
     match &clip.kind {
-        WidgetKind::Clip { offset, dur, label } => {
+        WidgetKind::Clip {
+            offset, dur, label, ..
+        } => {
             assert_eq!((*offset, *dur), (0.0, 100.0));
             assert_eq!(label.as_deref(), Some("a"));
         }

@@ -161,34 +161,110 @@ fn sample_at_inverts_the_body_pixel_map() {
 }
 
 #[test]
-fn clip_drag_placement_moves_and_resizes_from_the_snapshot() {
-    // Body: the offset follows the delta, snapped; the duration is kept.
-    let (off, dur) = clip_drag_placement(ClipPart::Body, 730.0, 500.0, 400.0, 300.0, 100.0);
-    assert_eq!((off, dur), (600.0, 300.0));
+fn clip_drag_placement_moves_and_trims_from_the_snapshot() {
+    // A clip at 400, 300 long, showing its material from frame 0 — and no
+    // material behind it, so nothing bounds the edges but the clip's own floor.
+    let at = |offset, dur, start| ClipPlacement { offset, dur, start };
+    let free = Material::default();
+    let drag = |part, sample, press, orig, material| {
+        clip_drag_placement(part, sample, press, orig, material, 100.0)
+    };
+    // Body: the offset follows the delta, snapped; the duration and the window
+    // are kept — moving a clip changes where it sounds, never what it holds.
+    let moved = drag(ClipPart::Body, 730.0, 500.0, at(400.0, 300.0, 0.0), free);
+    assert_eq!(moved, at(600.0, 300.0, 0.0));
     // **End: a resize never shrinks the clip away.** Dragged far past the
     // start it stops **one sample** long -- a clip dragged to nothing draws no
     // rectangle, so there is nothing left to press and it is gone for good.
     // The floor is the sample and not the grid, at every grid: the grid says
     // where an edge lands, not how short a clip may be, and a floor of one
     // step refuses to trim below what a zoomed-in axis plainly resolves.
-    let (off, dur) = clip_drag_placement(ClipPart::End, 0.0, 690.0, 400.0, 300.0, 100.0);
-    assert_eq!((off, dur), (400.0, 1.0), "one sample, and the start held");
-    let (off, dur) = clip_drag_placement(ClipPart::End, 0.0, 690.0, 400.0, 300.0, 0.0);
-    assert_eq!((off, dur), (400.0, 1.0), "the same floor with no grid");
-    // Start: the onset stays within [0, end - floor], the end fixed.
-    let (off, dur) = clip_drag_placement(ClipPart::Start, 0.0, 900.0, 400.0, 300.0, 100.0);
-    assert_eq!((off, dur), (0.0, 700.0));
-    let (off, dur) = clip_drag_placement(ClipPart::Start, 950.0, 400.0, 400.0, 300.0, 100.0);
+    let short = drag(ClipPart::End, 0.0, 690.0, at(400.0, 300.0, 0.0), free);
+    assert_eq!(short, at(400.0, 1.0, 0.0), "one sample, and the start held");
     assert_eq!(
-        (off, dur),
-        (699.0, 1.0),
+        clip_drag_placement(ClipPart::End, 0.0, 690.0, at(400.0, 300.0, 0.0), free, 0.0),
+        at(400.0, 1.0, 0.0),
+        "the same floor with no grid"
+    );
+    // Start: the onset stays within [0, end - floor], the end fixed — and the
+    // **window travels with it**, which is what makes an edge drag a trim: the
+    // clip begins 300 later and so does the material it shows.
+    let trimmed = drag(ClipPart::Start, 500.0, 400.0, at(400.0, 300.0, 0.0), free);
+    assert_eq!(trimmed, at(500.0, 200.0, 100.0), "trimmed, not squeezed");
+    let to_origin = drag(ClipPart::Start, 0.0, 900.0, at(400.0, 300.0, 0.0), free);
+    assert_eq!(to_origin, at(0.0, 700.0, -400.0));
+    let stopped = drag(ClipPart::Start, 950.0, 400.0, at(400.0, 300.0, 0.0), free);
+    assert_eq!(
+        stopped,
+        at(699.0, 1.0, 299.0),
         "it stops one sample short of the end"
     );
     // A clip a *script* made shorter than a sample is not grown to one: a drag
     // moves the edge it was given hold of, and stretching the far end out to a
     // minimum nobody asked for is an edit of its own. It just cannot shrink.
-    let (off, dur) = clip_drag_placement(ClipPart::End, 0.0, 690.0, 400.0, 0.5, 100.0);
-    assert_eq!((off, dur), (400.0, 0.5));
+    let tiny = drag(ClipPart::End, 0.0, 690.0, at(400.0, 0.5, 0.0), free);
+    assert_eq!(tiny, at(400.0, 0.5, 0.0));
+}
+
+/// **The material is what bounds an edge**, and a loop is what unbounds it.
+/// Without a loop there is nothing to show past the end of a buffer and nothing
+/// before its first frame, so the edges stop there; with one, past the end is
+/// the beginning again and before the start is the tail of the iteration
+/// before, so both edges run free.
+#[test]
+fn an_edge_stops_at_the_material_unless_the_clip_loops() {
+    let at = |offset, dur, start| ClipPlacement { offset, dur, start };
+    // A 1000-frame take, shown whole from the origin.
+    let held = Material {
+        total: Some(1000.0),
+        looping: false,
+    };
+    let looped = Material {
+        looping: true,
+        ..held
+    };
+    // The end edge pulled far right: it stops where the material does.
+    let stretched = clip_drag_placement(
+        ClipPart::End,
+        3000.0,
+        1000.0,
+        at(0.0, 1000.0, 0.0),
+        held,
+        0.0,
+    );
+    assert_eq!(stretched, at(0.0, 1000.0, 0.0), "there is nothing past it");
+    // ...and with a loop it keeps going, because what follows is the material
+    // again.
+    let looping = clip_drag_placement(
+        ClipPart::End,
+        3000.0,
+        1000.0,
+        at(0.0, 1000.0, 0.0),
+        looped,
+        0.0,
+    );
+    assert_eq!(looping, at(0.0, 3000.0, 0.0), "three iterations of it");
+    // The start edge pulled left out of a clip already trimmed by 200: it stops
+    // at the material's first frame...
+    let head = clip_drag_placement(
+        ClipPart::Start,
+        0.0,
+        400.0,
+        at(400.0, 600.0, 200.0),
+        held,
+        0.0,
+    );
+    assert_eq!(head, at(200.0, 800.0, 0.0), "back to the take's own start");
+    // ...and with a loop it carries on into the tail of the iteration before.
+    let head = clip_drag_placement(
+        ClipPart::Start,
+        0.0,
+        400.0,
+        at(400.0, 600.0, 200.0),
+        looped,
+        0.0,
+    );
+    assert_eq!(head, at(0.0, 1000.0, -200.0));
 }
 
 #[test]
@@ -303,14 +379,35 @@ fn the_hit_lands_on_the_placed_clip_and_names_the_part_under_the_cursor() {
 #[test]
 fn clip_set_and_event_args_move_and_report() {
     let mut host = track_host();
-    clip_set(&mut host, 1, 10, Some(150.0), Some(250.0));
+    clip_set(
+        &mut host,
+        1,
+        10,
+        ClipPlacement {
+            offset: 150.0,
+            dur: 250.0,
+            start: 40.0,
+        },
+    );
     // A negative offset clamps to 0.
-    clip_set(&mut host, 1, 11, Some(-5.0), None);
+    clip_set(
+        &mut host,
+        1,
+        11,
+        ClipPlacement {
+            offset: -5.0,
+            dur: 100.0,
+            start: 0.0,
+        },
+    );
     let tree = host.window_def(1).unwrap();
     let args = clip_event_args(tree, 10).unwrap();
     assert_eq!(args[0], OscType::String("clip".into()));
     assert_eq!(args[1], OscType::Float(150.0));
     assert_eq!(args[2], OscType::Float(250.0));
+    // ...and what of its material it now shows, which a trim moves and an
+    // owner has to be told.
+    assert_eq!(args[3], OscType::Float(40.0));
     assert_eq!(clip_event_args(tree, 11).unwrap()[1], OscType::Float(0.0));
 }
 

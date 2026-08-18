@@ -22,7 +22,7 @@ use crate::host::layout::Rect;
 use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
 use crate::host::timeline;
-use crate::host::widget::{Widget, WidgetKind};
+use crate::host::widget::{SourceWindow, Widget, WidgetKind};
 use crate::viewport::View;
 
 /// A piano-roll note. Re-exported from [`super::pianoroll`], the module that
@@ -579,26 +579,45 @@ pub fn draw_clip_label(d: &mut Draw, cr: Rect, label: &str) {
 /// placed them in: the take, the events over it, the envelope over both — an
 /// automation drawn on top of the material it shapes is one clip, not two, and
 /// each body keeps its own value axis.
-pub fn draw_body_widget(d: &mut Draw, kind: &WidgetKind, cr: Rect, local: &View, dur: f64) {
+pub fn draw_body_widget(
+    d: &mut Draw,
+    kind: &WidgetKind,
+    cr: Rect,
+    time: &crate::host::widget::element::TimeSpace,
+) {
     let (mesh, m, theme) = d.parts();
     // Every leaf answers for itself; a widget that fills no body role draws
     // nothing here.
     if let WidgetKind::Custom(el) = kind {
-        el.draw_body(&mut Draw::new(mesh, m, theme), cr, local, dur);
+        el.draw_body(&mut Draw::new(mesh, m, theme), cr, time);
     }
 }
 
 /// The **source** sample position an x pixel of a clip's body falls on: the
 /// pixel maps back through the clip's own axis to a clip-local time, and that
-/// through the clip's span to a fraction of its data. This is the whole reason a
-/// waveform body scrolls and stretches *with* the view instead of squashing into
-/// whatever slice of the clip is on screen: it is drawn from the source, per
-/// visible pixel, exactly as the piano-roll and the curve are.
-pub fn clip_source_at(cr: Rect, local: &View, dur: f64, total: f64, x: f32) -> f64 {
+/// through the clip's **window** onto the material ([`SourceWindow`]).
+///
+/// `None` where the window is off the material — a clip stretched past the end
+/// of a buffer it does not loop. Nothing was recorded there, so nothing is
+/// drawn and nothing is read; the alternative is a flat line that looks like
+/// silence somebody recorded.
+///
+/// This is the whole reason a take's picture scrolls and trims *with* the clip
+/// instead of squashing into whatever rectangle the clip currently has: it is
+/// drawn from the source, per visible pixel, through a window that says which
+/// part of the source that is.
+pub fn clip_source_at(
+    cr: Rect,
+    local: &View,
+    window: &SourceWindow,
+    dur: f64,
+    total: f64,
+    x: f32,
+) -> Option<f64> {
     if dur <= 0.0 {
-        return 0.0;
+        return None;
     }
-    (local_t(cr, local, x as f64) / dur * total).clamp(0.0, total)
+    window.source_at(local_t(cr, local, x as f64), dur, total)
 }
 
 /// Draws a clip's signal body inside the *visible* part of the clip (`cr`),
@@ -618,6 +637,7 @@ pub(crate) fn draw_take(
     d: &mut Draw,
     cr: Rect,
     local: &View,
+    window: &SourceWindow,
     dur: f64,
     trace: &Trace,
     min: f32,
@@ -638,6 +658,14 @@ pub(crate) fn draw_take(
     // way (the element's own prop), so the two never disagree about what a
     // channel is.
     let lanes = if overlay { 1 } else { trace.channels().max(1) };
+    // **The window is drawn a run at a time**, each run a stretch of clip time
+    // over which it stays inside the material — one run for the ordinary case,
+    // one per iteration for a looping clip, and none at all where a clip
+    // reaches past material it does not loop. Each run is an *affine* window,
+    // which is what lets one renderer draw all of them: the wrap lives in the
+    // run list rather than in the maps, so nothing downstream has to know
+    // whether a clip loops.
+    let runs = window.runs(local.start, local.start + local.len, dur, total);
     for ch in 0..trace.channels().max(1) {
         let lane = crate::host::frame::lane_rect(cr, lanes, if overlay { 0 } else { ch });
         if lane.h <= 0.0 {
@@ -655,25 +683,44 @@ pub(crate) fn draw_take(
                 theme.baseline,
             );
         }
-        // One picture per measure, the envelope first and the level body inside it.
-        for measure in measures.iter() {
-            trace::draw_channel(
-                mesh,
-                lane,
-                trace,
-                ch,
-                |x| clip_source_at(cr, local, dur, total, x),
-                // The inverse placement: a source frame sits at its own fraction of
-                // the clip's span, seen through the clip's visible window.
-                |s| local_x(cr, local, s / total * dur),
-                y_at,
-                TraceStyle::new(
-                    trace::measure_color(theme, measure, theme.selection),
-                    m.divider_w,
-                )
-                .with_dots(m.point_radius)
-                .with_measure(measure),
-            );
+        for &(from, to, source0) in &runs {
+            // The run's own rectangle: the pixels its stretch of clip time
+            // covers, which is what bounds the drawing to it.
+            let (x0, x1) = (local_x(cr, local, from), local_x(cr, local, to));
+            let run_rect = Rect::new(x0, lane.y, (x1 - x0).max(0.0), lane.h);
+            if run_rect.w < 0.5 {
+                continue;
+            }
+            // Inside a run the window is affine, whichever kind it is: the
+            // source frame at its start plus the time since, or the fitted
+            // mapping over the whole span.
+            let src = move |x: f32| match window.fit {
+                true => (local_t(cr, local, x as f64) / dur * total).clamp(0.0, total),
+                false => source0 + (local_t(cr, local, x as f64) - from),
+            };
+            let x_of = move |s: f64| match window.fit {
+                true => local_x(cr, local, s / total * dur),
+                false => local_x(cr, local, from + (s - source0)),
+            };
+            // One picture per measure, the envelope first and the level body
+            // inside it.
+            for measure in measures.iter() {
+                trace::draw_channel(
+                    mesh,
+                    run_rect,
+                    trace,
+                    ch,
+                    src,
+                    x_of,
+                    y_at,
+                    TraceStyle::new(
+                        trace::measure_color(theme, measure, theme.selection),
+                        m.divider_w,
+                    )
+                    .with_dots(m.point_radius)
+                    .with_measure(measure),
+                );
+            }
         }
     }
 }
@@ -918,8 +965,7 @@ mod tests {
             &mut Draw::new(&mut mesh, &Metrics::default(), &Theme::default()),
             kind,
             cr,
-            &local,
-            dur,
+            &crate::host::widget::element::TimeSpace::of(local, dur),
         );
         mesh
     }
@@ -1200,12 +1246,14 @@ mod tests {
         let samples: Vec<f32> = (0..100_000).map(|i| (i as f32 * 0.01).sin()).collect();
         let mut data = inline_take(Vec::new());
         data.body = Some(Arc::new(WaveformData::new(samples.into(), 256)));
-        let drawn = body_mesh(&take_body(data), 400.0);
+        // Placed 1:1 — one timeline sample per source frame, which is what a
+        // clip's window is — so the whole take is what the clip shows.
+        let drawn = body_mesh(&take_body(data), 100_000.0);
         assert!(!drawn.is_empty(), "the take draws a body");
 
         // One min/max column per pixel of the clip rect, not one per sample: the
         // 100k-sample take costs the same as the lane is wide.
-        let (cr, _) = placed(0.0, 400.0, &View::full(400));
+        let (cr, _) = placed(0.0, 100_000.0, &View::full(100_000));
         let cols = cr.w as usize;
         let per_line = 6u32; // two triangles per column line
         assert!(
@@ -1338,10 +1386,17 @@ mod tests {
         let lane_rect = lane_body(lane(), false, m.header_w, &m);
         let (dur, total) = (400.0, 1000.0);
 
-        // Fully zoomed out: the clip's ends map to the take's ends.
+        // A **fitted** clip: 400 units of timeline showing 1000 frames of
+        // material, which is the picture a time stretch would make. Fully
+        // zoomed out its ends map to the take's ends.
+        let fit = SourceWindow {
+            fit: true,
+            ..SourceWindow::default()
+        };
+        let at = |cr, local: &View, x| clip_source_at(cr, local, &fit, dur, total, x).unwrap();
         let (cr, local) = placed(0.0, dur, &View::full(400));
-        assert!(clip_source_at(cr, &local, dur, total, cr.x) < 1.0);
-        assert!(clip_source_at(cr, &local, dur, total, cr.x + cr.w) > total - 1.0);
+        assert!(at(cr, &local, cr.x) < 1.0);
+        assert!(at(cr, &local, cr.x + cr.w) > total - 1.0);
 
         // Zoomed into the clip's second half: the lane's left edge is now the
         // middle of the take, and the visible span is the half after it. The
@@ -1352,8 +1407,8 @@ mod tests {
         };
         let (zcr, zlocal) = placed(0.0, dur, &zoomed);
         assert!((zlocal.start - 200.0).abs() < 1.0 && (zlocal.len - 200.0).abs() < 1.0);
-        let left = clip_source_at(zcr, &zlocal, dur, total, lane_rect.x);
-        let right = clip_source_at(zcr, &zlocal, dur, total, lane_rect.x + lane_rect.w);
+        let left = at(zcr, &zlocal, lane_rect.x);
+        let right = at(zcr, &zlocal, lane_rect.x + lane_rect.w);
         assert!(
             (left - 500.0).abs() < 5.0,
             "the left edge is mid-take, not 0"
@@ -1388,16 +1443,14 @@ mod tests {
             &mut Draw::new(&mut roll_only, &metrics, &theme),
             &roll,
             cr,
-            &local,
-            400.0,
+            &TimeSpace::of(local, 400.0),
         );
         let mut both = Mesh::new();
         draw_body_widget(
             &mut Draw::new(&mut both, &metrics, &theme),
             &roll,
             cr,
-            &local,
-            400.0,
+            &TimeSpace::of(local, 400.0),
         );
         let world = World::default();
         curve.draw(

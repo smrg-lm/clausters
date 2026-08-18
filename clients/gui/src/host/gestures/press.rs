@@ -610,8 +610,8 @@ impl Gestures {
                         nav_start: h.nav.start,
                         nav_len: h.nav.len,
                         press_sample,
-                        orig_offset: h.offset,
-                        orig_dur: h.dur,
+                        orig: h.placement,
+                        material: h.material,
                         grid: snap,
                     });
                 }

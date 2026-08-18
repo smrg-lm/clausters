@@ -547,8 +547,9 @@ impl Element for Notes {
 
     /// A clip's body: the same notes over the clip's own axis, with no keyboard,
     /// no strips and no chrome.
-    fn draw_body(&self, d: &mut Draw, rect: Rect, local: &View, _dur: f64) {
+    fn draw_body(&self, d: &mut Draw, rect: Rect, time: &TimeSpace) {
         let (lo, hi) = (self.min, self.max);
+        let local = &time.view;
         pianoroll::draw_notes(d, rect, rect, local, 0.0, &self.notes, lo, hi, false, &[]);
         pianoroll::draw_pitch_labels(d, rect, lo, hi);
     }

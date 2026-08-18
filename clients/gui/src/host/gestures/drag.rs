@@ -70,8 +70,8 @@ impl Gestures {
             nav_start,
             nav_len,
             press_sample,
-            orig_offset,
-            orig_dur,
+            orig,
+            material,
             grid,
         }) = self.drag
         else {
@@ -102,8 +102,8 @@ impl Gestures {
                 nav_start,
                 nav_len,
                 press_sample,
-                orig_offset,
-                orig_dur,
+                orig,
+                material,
                 grid,
             },
             cx,
@@ -338,8 +338,8 @@ impl Gestures {
                 nav_start,
                 nav_len,
                 press_sample,
-                orig_offset,
-                orig_dur,
+                orig,
+                material,
                 grid,
             } => {
                 apply_clip_drag(
@@ -355,8 +355,8 @@ impl Gestures {
                         nav_start,
                         nav_len,
                         press_sample,
-                        orig_offset,
-                        orig_dur,
+                        orig,
+                        material,
                         grid,
                     },
                     cx,

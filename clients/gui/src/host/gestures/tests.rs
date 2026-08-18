@@ -1781,6 +1781,78 @@ fn active_layer(host: &Host, id: i32) -> String {
     crate::host::layers::active(w).name(w)
 }
 
+/// **An edge drag is a trim**: the clip shows less of its material and the
+/// material stands still. Pulling the start edge right advances the placement,
+/// the duration *and* the window over the source by the same amount, and the
+/// edit-back says all three — an owner told only where the clip sits would
+/// re-cut the wrong part of the take.
+#[test]
+fn trimming_a_clips_head_moves_its_window_over_the_material() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"children":[
+            {"id":80,"type":"field","label":"takes","children":[
+                {"id":81,"type":"field","offset":0.0,"dur":8.0,
+                 "data":[0.0,0.2,0.4,0.6,0.8,1.0,0.5,0.0]}]}]}"#,
+    );
+    host.sync_track_totals();
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 800, 200);
+    let clip = placed_rect(&host, &ctx, 81);
+    let grip_w = host.metrics_for(1).grip_w;
+    let midy = (clip.y + clip.h * 0.5) as f64;
+    let on_start_grip = (clip.x + grip_w * 0.5) as f64;
+    // A quarter of the way in: two of the eight frames.
+    let quarter = (clip.x + clip.w * 0.25) as f64;
+
+    g.press(&mut host, &ctx, on_start_grip, midy, &mut || false);
+    let effects = g.drag_to(&mut host, &ctx, quarter, midy);
+    g.release(&mut host, &ctx, quarter, midy);
+    let args = effects
+        .iter()
+        .find_map(|e| match e {
+            GestureEffect::Emit {
+                widget_id: 81,
+                args,
+                ..
+            } if args.first() == Some(&OscType::String("clip".into())) => Some(args.clone()),
+            _ => None,
+        })
+        .expect("the trim reported");
+    let value = |i: usize| match args[i] {
+        OscType::Float(f) => f,
+        _ => panic!("not a number: {:?}", args[i]),
+    };
+    assert!(value(1) > 0.0, "the clip begins later: {}", value(1));
+    assert!(value(2) < 8.0, "and is shorter: {}", value(2));
+    assert!(
+        (value(3) - value(1)).abs() < 0.01,
+        "the window moved with the edge: start {} for offset {}",
+        value(3),
+        value(1)
+    );
+
+    // ...and the end edge stops where the material does, because this clip
+    // does not loop: there is nothing past the eighth frame to show or play.
+    let on_end_grip = (clip.x + clip.w - grip_w * 0.5) as f64;
+    g.press(&mut host, &ctx, on_end_grip, midy, &mut || false);
+    g.drag_to(&mut host, &ctx, (clip.x + clip.w) as f64 + 400.0, midy);
+    g.release(&mut host, &ctx, (clip.x + clip.w) as f64 + 400.0, midy);
+    let (start, dur) = clip_window(&host, 81);
+    assert!(
+        (start + dur - 8.0).abs() < 0.01,
+        "the window ends at the take's end: {start} + {dur}"
+    );
+}
+
+/// A clip's window over its material: where it starts reading, and how long it
+/// reads for.
+fn clip_window(host: &Host, id: i32) -> (f64, f64) {
+    match &host.window_def(1).unwrap().find(id).unwrap().kind {
+        WidgetKind::Clip { dur, window, .. } => (window.start, *dur),
+        other => panic!("not a clip: {other:?}"),
+    }
+}
+
 /// **A locked body is not a layer a hand can take, so the clip is what moves.**
 ///
 /// The defect this closes, in one press: `editable=false` used to be answered

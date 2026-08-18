@@ -31,7 +31,7 @@ use crate::host::paint::Draw;
 use crate::host::widget::element::BodyRole;
 use crate::host::widget::element::{
     Ctx, Element, FreqAxis, Input, Live, Loaded, Needs, SampleBlock, SlotFill, SlotFrame,
-    TextureLook, ValueAxis,
+    TextureLook, TimeSpace, ValueAxis,
 };
 use crate::host::widget::{EditorProps, GestureMap};
 
@@ -64,7 +64,7 @@ impl Element for SignalElement {
             && matches!(self.source, Source::Data(_))
             && !self.caps.navigable
         {
-            SignalElement::draw_body(self, d, rect, &time.view, time.span);
+            SignalElement::draw_body(self, d, rect, &time);
             return;
         }
         match (self.presentation, &self.source) {
@@ -253,8 +253,8 @@ impl Element for SignalElement {
         self.caps.editable && input.rect.contains(at.0, at.1)
     }
 
-    fn draw_body(&self, d: &mut Draw, rect: Rect, local: &crate::viewport::View, dur: f64) {
-        SignalElement::draw_body(self, d, rect, local, dur);
+    fn draw_body(&self, d: &mut Draw, rect: Rect, time: &TimeSpace) {
+        SignalElement::draw_body(self, d, rect, time);
     }
 
     fn texture_body(&self) -> Option<TextureLook> {

@@ -98,6 +98,7 @@ pub(super) fn build_kind(
             offset: number_f64(props, "offset", 0.0).max(0.0),
             dur: number_f64(props, "dur", 0.0).max(0.0),
             label: label(props),
+            window: SourceWindow::parse(props),
         },
         "field" if is_bare_ruler(props, has_children) => WidgetKind::TimeRuler {
             editor: EditorProps::parse(props, RulerY::Off),

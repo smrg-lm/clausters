@@ -122,22 +122,21 @@ pub(crate) fn header_set(
 
 /// Writes a clip's placement (`offset`/`dur`, each clamped `>= 0`) in the host
 /// tree — the drag's mutation.
-pub(crate) fn clip_set(
-    host: &mut Host,
-    def_id: i32,
-    clip_id: i32,
-    new_offset: Option<f64>,
-    new_dur: Option<f64>,
-) {
+pub(crate) fn clip_set(host: &mut Host, def_id: i32, clip_id: i32, placed: super::ClipPlacement) {
     if let Some(tree) = host.window_def_mut(def_id)
         && let Some(w) = tree.find_mut(clip_id)
-        && let WidgetKind::Clip { offset, dur, .. } = &mut w.kind
+        && let WidgetKind::Clip {
+            offset,
+            dur,
+            window,
+            ..
+        } = &mut w.kind
     {
-        if let Some(o) = new_offset {
-            *offset = o.max(0.0);
-        }
-        if let Some(d) = new_dur {
-            *dur = d.max(0.0);
-        }
+        *offset = placed.offset.max(0.0);
+        *dur = placed.dur.max(0.0);
+        // The window travels with the placement: a trimmed start shows less of
+        // the material from further in, which is the whole difference between
+        // trimming a clip and squeezing it.
+        window.start = placed.start;
     }
 }

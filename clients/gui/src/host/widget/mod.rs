@@ -70,7 +70,7 @@ pub(super) use axes::{AXES, flatten as flatten_axes, flatten_tree as flatten_tre
 pub use element::{Claim, Element, Needs};
 pub use props::{
     Align, Axis, EditorProps, Flow, GestureMap, GesturePlan, GestureStep, Layout, Place, Range,
-    Rate, Ruler, RulerY, ScrollView,
+    Rate, Ruler, RulerY, ScrollView, SourceWindow,
 };
 pub use size::Natural;
 
@@ -207,6 +207,11 @@ pub enum WidgetKind {
         offset: f64,
         dur: f64,
         label: Option<String>,
+        /// **What of the material behind it this clip shows**: where its own
+        /// time zero reads in the source, whether the window loops, whether the
+        /// picture is fitted instead of read frame for sample. A clip is a
+        /// window onto a segment of data, and this is that window.
+        window: SourceWindow,
     },
     /// A **registered element**: a leaf this build renders through the
     /// [`Element`] trait rather than through an arm of this enum, built by the

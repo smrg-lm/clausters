@@ -332,8 +332,12 @@ pub(super) struct ClipDrag {
     pub(super) nav_start: f64,
     pub(super) nav_len: f64,
     pub(super) press_sample: f64,
-    pub(super) orig_offset: f64,
-    pub(super) orig_dur: f64,
+    /// The placement the press found: where the clip sat, how long it was, and
+    /// which part of its material it showed.
+    pub(super) orig: interact::ClipPlacement,
+    /// What the material behind it allows — how many frames there are, and
+    /// whether the window loops off them.
+    pub(super) material: interact::Material,
     pub(super) grid: f64,
 }
 
@@ -357,15 +361,9 @@ pub(super) fn apply_clip_drag(
         .map(|(start, len, _)| (start, len))
         .unwrap_or((d.nav_start, d.nav_len));
     let sample = interact::sample_at(nav_start, nav_len, d.body_x, d.body_w, cx);
-    let (new_offset, new_dur) = interact::clip_drag_placement(
-        d.part,
-        sample,
-        d.press_sample,
-        d.orig_offset,
-        d.orig_dur,
-        d.grid,
-    );
-    interact::clip_set(host, def_id, d.id, Some(new_offset), Some(new_dur));
+    let placed =
+        interact::clip_drag_placement(d.part, sample, d.press_sample, d.orig, d.material, d.grid);
+    interact::clip_set(host, def_id, d.id, placed);
     // The lane's extent moved with the clip: re-register it, so the shared axis
     // grows when a clip is dragged past the end — keeping the window's length,
     // so the axis *scrolls* under the drag rather than zooming out from under

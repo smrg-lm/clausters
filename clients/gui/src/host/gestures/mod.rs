@@ -248,8 +248,12 @@ enum Drag {
         nav_start: f64,
         nav_len: f64,
         press_sample: f64,
-        orig_offset: f64,
-        orig_dur: f64,
+        /// The placement the press found — where the clip sat, how long it was
+        /// and which part of its material it showed, so a clamped edge is
+        /// measured against the press rather than against the last step.
+        orig: interact::ClipPlacement,
+        /// What the material behind the clip allows the edges to do.
+        material: interact::Material,
         grid: f64,
     },
     /// Dragging a lane header's level fader: the cursor's x over the fader's
