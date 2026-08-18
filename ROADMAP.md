@@ -1,9 +1,9 @@
 # Roadmap — the order the open work is taken in
 
-*Rewritten 2026-08-18, once the clip's interaction rules closed (and before that
-twice on 2026-08-17: against the plans and the last month of history, then again
-once the autonomous editor closed). A rewrite
-**drops what is done** and reorganizes what is left: this file is not a record
+*Rewritten 2026-08-18, twice: once when the clip's interaction rules closed and
+again when the real-sizes phase did, taking its six entries with it (and before
+that twice on 2026-08-17: against the plans and the last month of history, then
+again once the autonomous editor closed). A rewrite **drops what is done** and reorganizes what is left: this file is not a record
 of anything, and the record of what shipped is the git history and each plan's
 own checkbox.*
 
@@ -21,12 +21,14 @@ it rather than against taste: **a functionally complete example of the
 arrangement, the document and the GUI together** — a composition built in
 Python, drawn as a multitrack editor, edited by hand, heard, undone, redone,
 saved and reopened — on a model that is **usable and correct at real sizes**,
-not only at an example's. Both halves are load-bearing, and what is left of the
-list is now **entirely** the second one: the loop runs, a saved piece comes back
-as the piece that was saved, the editor is an application with its own processes
-rather than a window on a script's server, and a clip has interaction rules —
-one layer edited at a time, an edge that trims a window onto material rather
-than stretching a picture.
+not only at an example's. Both halves are load-bearing, and both are now behind
+the list rather than in it: the loop runs, a saved piece comes back as the piece
+that was saved, the editor is an application with its own processes, a clip has
+interaction rules, and the taxes every session paid — an async command's 100 ms
+floor, a killed editor's segments, a persisted def that would not load and could
+not be named — are paid. **What is left is not on the path to the destination at
+all**: a port that the destination does not wait on, and a track that is
+genuinely later.
 
 Where the work lives:
 
@@ -49,46 +51,14 @@ right — that is the normal failure, not a sign the work vanished.
 
 ---
 
-## Phase 1 — the second half of the destination: real sizes
-
-*What it buys: "usable and correct at real sizes". Entries rather than
-milestones, in the root plan's **Found by use** list except where marked, none of
-them blocking, each of them a tax paid by every session — which is why they are a
-phase rather than a list.*
-
-- ⬜ **A finished async command waits up to 100 ms to be reported.** Every
-  async command pays it — a `/buffer_alloc`, a `/buffer_read`, a def compile,
-  any `wait=True`. **First of the phase, and it came forward from the editor
-  phase without being taken**: with the sample traffic gone, this floor is
-  exactly what a standalone editor pays per operation, and it no longer hides
-  behind batched writes. The fix is a wakeup when a result lands rather than a
-  smaller `GC_INTERVAL` for everyone.
-- ⬜ **A killed editor leaves its segment and its takes in `/dev/shm`**
-  *(`clients/gui/PLAN.md`, Found by use)*. A region is the take's whole size, so
-  a few crashes fill a memory filesystem with files nothing can tell live from
-  dead. The claim already knows how to spot a stale pid; who sweeps, and whether
-  an editor may remove a segment it did not create, is the decision.
-- ⬜ **A persisted def that no longer compiles warns on every boot, forever.**
-  Seven of them on the author's machine since S17 changed `PlayBuf`'s arity.
-- ⬜ **A UGen's trailing inputs could be declared optional, so a def survives
-  one growing** *(root `PLAN.md`, **Future directions**)*. The cause behind the
-  entry above, and the one that deletes the class rather than the noise.
-- ⬜ **`transport_group` takes an id where the rest of the Python client takes a
-  node** *(root `PLAN.md`, Found by use, though the fix is the Python
-  client's)*. A couple of lines; the TS client's `nodeId(...)` is the shape.
-- ⬜ **Ten examples play routines on a clock nobody started, and nothing says
-  so** *(`clients/python/PLAN.md`, Found by use)*. Their audible half has never run — a
-  mechanical fix each, plus one decision about whether playing onto a stopped
-  clock should stay silent at all.
-
-## Phase 2 — the packages move together: the arrangement reaches the web client
+## Phase 1 — the packages move together: the arrangement reaches the web client
 
 *What it buys: the rule the project already states, applied to the largest
 outstanding violation. `form/`, `gui/editor.py`, `gui/transport.py` and
 `gui/notation.py` have **no TypeScript counterpart at all** — the whole
-arrangement, document and editor layer exists in one client. Last of the phases
-on the path because it is a port, and porting is cheapest once the layer has
-stopped moving, which is what the phases before it do to it.*
+arrangement, document and editor layer exists in one client. First now, and still
+for the same reason it was last: it is a port, and porting is cheapest once the
+layer has stopped moving — which is what the closed phases did to it.*
 
 - ⬜ **W16 — Example parity with the Python client**, and its named track: the
   arrangement layer and the editor. The shape `gui/notation.py`'s port follows
@@ -100,7 +70,7 @@ stopped moving, which is what the phases before it do to it.*
 - ⬜ **W7** (the Faust surfaces), **W9** (MIDI), **W15** (the bundle writer) —
   unported features, each owned, none on the path to the complete example.
 
-## Phase 3 — the spectral editor
+## Phase 2 — the spectral editor
 
 *Everything here is genuinely later: it needs the A track's descriptors, it is
 partly experimental, and none of it is on the path to the complete example.*
