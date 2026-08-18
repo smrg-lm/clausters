@@ -98,6 +98,46 @@ impl TestServer {
         panic!("never received {addr}");
     }
 
+    /// Waits briefly for a message with this address, returning `None` when
+    /// none arrives — for asserting that something is **not** sent, which a
+    /// blocking receive cannot do.
+    fn try_recv_matching(&self, addr: &str) -> Option<OscMessage> {
+        self.client
+            .set_read_timeout(Some(Duration::from_millis(120)))
+            .unwrap();
+        let mut buf = [0u8; 65536];
+        let found = loop {
+            let Ok((len, _)) = self.client.recv_from(&mut buf) else {
+                break None;
+            };
+            if let Ok((_, OscPacket::Message(msg))) = decoder::decode_udp(&buf[..len])
+                && msg.addr == addr
+            {
+                break Some(msg);
+            }
+        };
+        self.client
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .unwrap();
+        found
+    }
+
+    /// A `/server_sync` round trip, **ticking the engine while it waits**:
+    /// what a caller does before assuming an asynchronous buffer command has
+    /// landed. The engine has to run for the command FIFO to be drained, and
+    /// in this harness the test is the audio thread.
+    fn sync(&mut self) {
+        self.send("/server_sync", vec![OscType::Int(4242)]);
+        let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+        for _ in 0..200 {
+            self.engine.process_block(&mut out);
+            if self.try_recv_matching("/server_sync.reply").is_some() {
+                return;
+            }
+        }
+        panic!("the server never answered /server_sync.reply");
+    }
+
     /// Collects the `addr` replies of a multi-reply query (M30's `/def_query`,
     /// `/ugen_query`) until the batch's `/done` terminator arrives.
     fn recv_batch(&self, addr: &str, cmd: &str) -> Vec<OscMessage> {
@@ -579,6 +619,105 @@ fn c_stream_rejects_bad_arguments() {
 /// `/bus_tap` routes a live bus into a segment tap ring and `/bus_tapStream` streams
 /// windows of it: ack, immediate snapshot (index + stream position + raw LE
 /// `f32` blob), audible content, cancel, and the /fail cases.
+#[test]
+fn buffer_stream_reports_the_overview_of_what_was_recorded() {
+    let segment = Segment::in_memory_full(1024, 0, 0);
+    let mut server = TestServer::spawn_with(engine_pair_full(
+        48_000.0,
+        2,
+        0,
+        Some(Arc::clone(&segment)),
+        128,
+        1024,
+        Limits::default(),
+    ));
+
+    // A published row is what a stream watches: the buffer's shape, and the
+    // frontier its writers move. Publishing it here stands in for the
+    // allocation path, which needs a segment on disk to share a region.
+    segment
+        .publish_buffer(7, 4_096, 1, 48_000.0)
+        .expect("a row");
+    server.send(
+        "/buffer_stream",
+        vec![OscType::Int(20), OscType::Int(256), OscType::Int(7)],
+    );
+    let done = server.recv_until("/done");
+    assert_eq!(done.args[0], OscType::String("/buffer_stream".into()));
+
+    // Nothing has been written, so nothing is reported: a still buffer costs
+    // no traffic, which is what makes a subscription per take affordable.
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+    for _ in 0..8 {
+        server.engine.process_block(&mut out);
+    }
+    assert!(
+        server.try_recv_matching("/buffer_stream.reply").is_none(),
+        "an unwritten buffer reports nothing"
+    );
+
+    // The material appears and the frontier says how far it goes. (In a real
+    // recording the writing UGen does both; here the two halves are done by
+    // hand so the test is about the stream and not about a synth.)
+    server.send(
+        "/buffer_alloc",
+        vec![OscType::Int(7), OscType::Int(4_096), OscType::Int(1)],
+    );
+    server.sync();
+    let run: Vec<u8> = (0..1_024)
+        .flat_map(|i| (if i % 2 == 0 { 0.5f32 } else { -0.5 }).to_le_bytes())
+        .collect();
+    server.send(
+        "/buffer_setRange",
+        vec![OscType::Int(7), OscType::Int(0), OscType::Blob(run)],
+    );
+    server.sync();
+    segment.raise_buffer_frontier(7, 1_024);
+
+    for _ in 0..8 {
+        server.engine.process_block(&mut out);
+    }
+    let reply = server.recv_until("/buffer_stream.reply");
+    assert_eq!(reply.args[0], OscType::Int(7));
+    assert_eq!(
+        reply.args[1],
+        OscType::Long(0),
+        "it starts where it left off"
+    );
+    assert_eq!(reply.args[2], OscType::Int(256));
+    let OscType::Blob(bytes) = &reply.args[3] else {
+        panic!("expected the overview blob, got {:?}", reply.args);
+    };
+    // Four buckets, one channel, three statistics each, four bytes apiece.
+    assert_eq!(bytes.len(), 4 * 3 * 4);
+    let values: Vec<f32> = bytes
+        .chunks_exact(4)
+        .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
+        .collect();
+    for bucket in values.chunks_exact(3) {
+        assert_eq!((bucket[0], bucket[1]), (-0.5, 0.5), "min and max");
+        assert!(
+            (bucket[2] - 0.25).abs() < 1e-6,
+            "mean square: {}",
+            bucket[2]
+        );
+    }
+
+    // A report carries what is **new**: nothing moved, so nothing follows.
+    for _ in 0..8 {
+        server.engine.process_block(&mut out);
+    }
+    assert!(
+        server.try_recv_matching("/buffer_stream.reply").is_none(),
+        "a frontier that did not move reports nothing"
+    );
+
+    // Period 0 cancels, acked like the other two streams.
+    server.send("/buffer_stream", vec![OscType::Int(0), OscType::Int(256)]);
+    let done = server.recv_until("/done");
+    assert_eq!(done.args[0], OscType::String("/buffer_stream".into()));
+}
+
 #[test]
 fn tap_and_tap_stream_snapshot_audio() {
     let segment = Segment::in_memory_full(1024, 2, 4096);

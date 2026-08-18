@@ -271,12 +271,18 @@ impl OscServer {
             );
         }
         self.shared_buffers[index] = Some(region_path);
-        Arc::new(crate::dsp::buffer::Buffer::shared(
-            region,
-            buffer.channels(),
-            buffer.frames(),
-            buffer.sample_rate(),
-        ))
+        // Shared material is material somebody may be drawing, so it publishes
+        // how far it has been written: a recording fills a picture in another
+        // process with one relaxed store per block and no message at all.
+        Arc::new(
+            crate::dsp::buffer::Buffer::shared(
+                region,
+                buffer.channels(),
+                buffer.frames(),
+                buffer.sample_rate(),
+            )
+            .with_frontier(Arc::new(SegmentFrontier { segment, index })),
+        )
     }
 
     /// Sharing material needs a mapped region, and a region is a file
@@ -367,5 +373,24 @@ impl OscServer {
                 buffer: Some(buffer),
             })
             .map_err(|_| "command FIFO full".to_string())
+    }
+}
+
+/// The buffer directory's own frontier, as a [`Frontier`] sink.
+///
+/// It holds the segment rather than a pointer into it, so the mapping cannot
+/// go out from under a buffer the engine is still writing — and the write
+/// itself is one relaxed read-modify-write, which is what makes it callable
+/// from the audio thread.
+#[cfg(unix)]
+struct SegmentFrontier {
+    segment: Arc<crate::server::ipc::Segment>,
+    index: usize,
+}
+
+#[cfg(unix)]
+impl crate::dsp::buffer::Frontier for SegmentFrontier {
+    fn raise(&self, frame: u64) {
+        self.segment.raise_buffer_frontier(self.index, frame);
     }
 }

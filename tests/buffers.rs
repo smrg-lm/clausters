@@ -1723,6 +1723,69 @@ fn a_synth_records_into_a_buffer_while_another_plays_it() {
     );
 }
 
+/// **A recording says how far it has got.** The writers publish a frontier
+/// once per block, and that number is the whole of what lets another process
+/// draw a take as it fills — the samples are already in memory it can map, and
+/// what it cannot know is where the material now ends.
+#[test]
+fn a_recorder_publishes_how_far_it_has_written() {
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    /// The directory row's stand-in: the server puts the segment behind this,
+    /// and what the audio thread does either way is one relaxed max-store.
+    struct Recorded(AtomicU64);
+
+    impl clausters::dsp::buffer::Frontier for Recorded {
+        fn raise(&self, frame: u64) {
+            self.0.fetch_max(frame, Ordering::Relaxed);
+        }
+    }
+
+    let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+    let frontier = Arc::new(Recorded(AtomicU64::new(0)));
+    let buffer = Arc::new(
+        Buffer::zeroed(BLOCK_SIZE * 8, 1, SR as f64).with_frontier(Arc::clone(&frontier) as _),
+    );
+    handle
+        .send(Cmd::SetBuffer {
+            index: 4,
+            buffer: Some(Arc::clone(&buffer)),
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(add_synth(
+            20,
+            spec_synth(json!({
+                "name": "recorder",
+                "ugens": [
+                    {"kind": "RecordBuf", "inputs": [
+                        {"const": 4.0}, {"const": 0.0}, {"const": 0.5}, {"const": 0.0},
+                        {"const": 1.0}, {"const": 0.0}, {"const": 1.0}, {"const": 0.0},
+                        {"const": 0.0}, {"const": 0.0}
+                    ]}
+                ]
+            })),
+        ))
+        .ok()
+        .unwrap();
+
+    // Nothing has been recorded before the first block runs.
+    assert_eq!(frontier.0.load(Ordering::Relaxed), 0);
+    render_channel(&mut engine, 1, 0);
+    let after_one = frontier.0.load(Ordering::Relaxed);
+    assert_eq!(
+        after_one, BLOCK_SIZE as u64,
+        "one block of recording is one block of material"
+    );
+    render_channel(&mut engine, 3, 0);
+    assert_eq!(
+        frontier.0.load(Ordering::Relaxed),
+        BLOCK_SIZE as u64 * 4,
+        "and it keeps up with the recording"
+    );
+}
+
 /// `RecordBuf`'s `pre_level` is what makes it a looper rather than a tape head:
 /// a second pass over the same span **adds** to what is there.
 #[test]

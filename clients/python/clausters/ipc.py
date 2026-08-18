@@ -51,7 +51,7 @@ from .errors import (
     ServerError,
 )
 
-ABI_VERSION = 9
+ABI_VERSION = 10
 
 #: The stride between successive stochastic-UGen seeds within one render —
 #: ``SEED_STRIDE`` in ``clausters_core::rng``. A client needs it to reproduce a

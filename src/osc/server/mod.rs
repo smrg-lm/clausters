@@ -90,6 +90,16 @@ const MAX_STREAM_BUSES: usize = 128;
 /// blob goes out per tap per period, so this bounds the reply traffic.
 const MAX_STREAM_TAPS: usize = 8;
 
+/// Ceiling on buffers per `/buffer_stream` subscription — a session draws a
+/// handful of takes at once, and a client that wants more takes two.
+const MAX_STREAM_BUFFERS: usize = 32;
+
+/// Ceiling on buckets in one `/buffer_stream.reply`, so a subscription that
+/// stalled does not answer with the whole recording in one message. What is
+/// left over is sent by the next report, since the frontier is where the
+/// report ended and not where the material is.
+const MAX_STREAM_BUCKETS: usize = 4096;
+
 /// Largest `/bus_tapStream` window in samples for a **datagram-bounded** client
 /// (UDP, and the 64 KiB IPC reply ring): a 32 KB blob (8192 × `f32`) leaves
 /// room for the OSC envelope. A stream client (TCP/WebSocket) is bounded by
@@ -153,6 +163,10 @@ pub struct OscServer {
     /// Active `/bus_tapStream` subscriptions, at most one per client: the same
     /// network counterpart for the audio-tap rings. Pumped by the run loop.
     tap_streams: Vec<TapStream>,
+    /// Active `/buffer_stream` subscriptions, at most one per client: the
+    /// **overview** of material as it is written, for a client that cannot map
+    /// the region and watch it fill. Pumped by the run loop.
+    buffer_streams: Vec<BufferStream>,
     /// Which audio bus each tap ring is recording (`-1` = free), and how many
     /// watchers asked for it. **The server owns the rings**: a client names a
     /// bus and never an index, so this table is the whole of the bus -> ring
@@ -310,6 +324,24 @@ struct TapStream {
     /// The audio buses this subscription watches. It holds a watch on each for
     /// its lifetime, so a streaming client never issues `/bus_tap` itself.
     buses: Vec<i32>,
+    /// In [`OscServer::mono_secs`] seconds (wall or sample time).
+    next_due: f64,
+}
+
+/// One client's `/buffer_stream` subscription: which buffers it watches, how
+/// far each has been reported, and when the next report is due.
+///
+/// What it carries is the **summary** and not the samples: the buckets a
+/// recording produced since the last report, which is what a picture of it
+/// needs and is two orders of magnitude smaller than the audio.
+struct BufferStream {
+    client: ClientId,
+    period: Duration,
+    /// The buffers this subscription watches, each with the frame its last
+    /// report ended at — so a report carries what is new and nothing else.
+    buffers: Vec<(i32, u64)>,
+    /// Samples per bucket, the pyramid's own level-0 granularity.
+    bucket: usize,
     /// In [`OscServer::mono_secs`] seconds (wall or sample time).
     next_due: f64,
 }

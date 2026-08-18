@@ -14,7 +14,7 @@ resolver = "3"
 
 [package]
 name = "clausters"
-version = "0.9.0"
+version = "0.10.0"
 edition = "2024"
 license = "GPL-3.0-or-later"
 description = "A real-time audio synthesis server in the style of SuperCollider's scsynth, controlled over OSC, with Faust JIT-compiled synth definitions."

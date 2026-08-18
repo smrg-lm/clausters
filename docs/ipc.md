@@ -57,6 +57,7 @@ An attached server maps every live row at startup, and a buffer the owner alloca
 | 6 | the **transport clock** beside the sample clock, so a local peer reads what the transport has elapsed with a load. In what was reserved header space, so no offset moved |
 | 7 | a **peer tag** on every ring frame, so one segment carries several independent clients. Nothing in the header or the data plane moved — only the framing inside the rings |
 | 8 | the **transport position** beside the transport clock: a second quantity, not a redefinition (see above). The last of the reserved header space, so again no offset moved |
+| 10 | a **write frontier** in each buffer directory row: how far that buffer has been written, published by the writing UGens once per block and read by a peer drawing a recording as it fills. A row grew from 24 to 32 bytes, which moves nothing before the directory — it is the tail — but changes the row size every reader divides by |
 | 9 | the **buffer directory** as the segment's tail, and the **control-plane owner** in the word that kept `transport_clock` aligned. A trailing region and a repurposed pad, so nothing before either moved — and the header had no room left for a row count, which is why the count is what remains of the mapped length |
 
 ### One definition, and the readers that follow it

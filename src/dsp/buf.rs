@@ -199,6 +199,11 @@ impl UGen for BufWr {
             return;
         };
         let frames = buf.frames() as f64;
+        // The furthest frame this block reached, published once at the end
+        // rather than per sample: a peer drawing the material wants to know
+        // how far it goes, and asking that question 64 times a block would
+        // answer it no better.
+        let mut reached = 0usize;
         for (i, s) in output.iter_mut().enumerate() {
             let x = at(inputs[4], i);
             let raw = at(inputs[2], i) as f64;
@@ -208,9 +213,14 @@ impl UGen for BufWr {
                 raw
             };
             if pos >= 0.0 && pos < frames {
-                buf.set_sample(pos as usize, channel, x);
+                let frame = pos as usize;
+                buf.set_sample(frame, channel, x);
+                reached = reached.max(frame + 1);
             }
             *s = x;
+        }
+        if reached > 0 {
+            buf.raise_frontier(reached);
         }
     }
 }
@@ -283,6 +293,7 @@ impl UGen for RecordBuf {
             return;
         };
         let frames = buf.frames();
+        let mut wrote = false;
         for (i, s) in output.iter_mut().enumerate() {
             let x = at(inputs[2], i);
             *s = x;
@@ -312,6 +323,13 @@ impl UGen for RecordBuf {
                 x * at(inputs[4], i) + old * at(inputs[5], i),
             );
             self.pos += 1;
+            wrote = true;
+        }
+        // How far the material now goes, once per block. A looping recorder
+        // that wrapped does not pull it back: the frontier only rises, so what
+        // it says is how much of the buffer has ever been recorded.
+        if wrote {
+            buf.raise_frontier(self.pos);
         }
     }
 

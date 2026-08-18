@@ -51,6 +51,7 @@ impl OscServer {
             clients: Vec::new(),
             streams: Vec::new(),
             tap_streams: Vec::new(),
+            buffer_streams: Vec::new(),
             tap_rings: Vec::new(),
             tap_refs: Vec::new(),
             tap_buf: Vec::new(),
@@ -117,6 +118,7 @@ impl OscServer {
             clients: Vec::new(),
             streams: Vec::new(),
             tap_streams: Vec::new(),
+            buffer_streams: Vec::new(),
             tap_rings: Vec::new(),
             tap_refs: Vec::new(),
             tap_buf: Vec::new(),
@@ -322,6 +324,7 @@ impl OscServer {
             self.prune_disconnected();
             self.pump_streams();
             self.pump_tap_streams();
+            self.pump_buffer_streams();
             let socket = self.socket.as_ref().expect("run() checked the socket");
             let (len, from) = match socket.recv_from(&mut self.recv_buf) {
                 Ok(ok) => ok,
@@ -378,6 +381,7 @@ impl OscServer {
         }
         self.pump_streams();
         self.pump_tap_streams();
+        self.pump_buffer_streams();
         self.collect_async();
         false
     }
@@ -533,6 +537,7 @@ impl OscServer {
             .iter()
             .map(|s| s.period)
             .chain(self.tap_streams.iter().map(|s| s.period))
+            .chain(self.buffer_streams.iter().map(|s| s.period))
             .min()
             .map_or(GC_INTERVAL, |p| p.min(GC_INTERVAL));
         let Some(socket) = &self.socket else {
@@ -562,6 +567,7 @@ impl OscServer {
         }
         self.streams.retain(|s| !gone.contains(&s.client));
         self.drop_tap_streams(|s| gone.contains(&s.client));
+        self.buffer_streams.retain(|s| !gone.contains(&s.client));
         self.clients.retain(|c| !gone.contains(c));
         self.retune_timeout();
     }

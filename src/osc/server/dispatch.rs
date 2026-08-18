@@ -375,6 +375,10 @@ pub(super) static COMMANDS: &[(&str, Command)] = &[
         s.handle_buffer_cmd(addr, m, f);
         Ok(())
     }),
+    ("/buffer_stream", |s, _, m, f| {
+        s.handle_buffer_stream(m, f);
+        Ok(())
+    }),
     ("/buffer_touch", |s, _, m, f| {
         s.handle_buffer_touch(Args::new(m), f)
     }),

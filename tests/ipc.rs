@@ -124,8 +124,10 @@ fn file_segments_validate_magic_and_version() {
     // which is what reserved space is for. v9 appends the **buffer directory**
     // as the tail -- 4096 default rows of 24 bytes -- which is why the size
     // moved and no offset did: the header had no reserved space left for a row
-    // count, so the count is what remains of the mapped length.
-    assert_eq!(SEGMENT_SIZE, 722_624 + 4096 * 24);
+    // count, so the count is what remains of the mapped length. v10 widened a
+    // row to 32 bytes for the **write frontier** -- how far a buffer has been
+    // written, which is what lets a peer draw a recording as it fills.
+    assert_eq!(SEGMENT_SIZE, 722_624 + 4096 * 32);
 }
 
 /// The audio-bus region (ABI v4): the bus is the key. A reader names the audio

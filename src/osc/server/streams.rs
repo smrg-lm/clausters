@@ -357,4 +357,166 @@ impl OscServer {
             );
         }
     }
+
+    /// `/buffer_stream periodMs bucket bufnum...`: subscribes this client to
+    /// the **overview of material as it is written** — what a peer that can
+    /// map the region reads for free, for a client that cannot.
+    ///
+    /// The server acks `/done "/buffer_stream"` and then sends, every
+    /// `periodMs`, one `/buffer_stream.reply bufnum startFrame bucket blob`
+    /// per watched buffer whose write frontier has moved past a whole bucket
+    /// since the last report — and nothing at all for one that has not moved,
+    /// so a still buffer costs no traffic.
+    ///
+    /// **The unit is the summary and not the samples**, which is the whole
+    /// argument for the command: min, max and mean square per `bucket` frames
+    /// per channel is 2.2 kB/s for one channel at 48 kHz, against 192 kB/s for
+    /// the audio it describes. A page can watch a stereo take record for the
+    /// price of a meter.
+    ///
+    /// Same posture as the other two: one subscription per client, replaced on
+    /// each call, `periodMs <= 0` (or no buffers) cancels, it dies with a
+    /// TCP/WebSocket connection, and it is not schedulable in a bundle.
+    pub(in crate::osc::server) fn handle_buffer_stream(
+        &mut self,
+        msg: &OscMessage,
+        from: ClientId,
+    ) {
+        let (Some(OscType::Int(period_ms)), Some(OscType::Int(bucket))) =
+            (msg.args.first(), msg.args.get(1))
+        else {
+            return self.fail(from, "/buffer_stream", "expected int periodMs, int bucket");
+        };
+        let mut buffers = Vec::with_capacity(msg.args.len().saturating_sub(2));
+        for arg in &msg.args[2..] {
+            let OscType::Int(bufnum) = arg else {
+                return self.fail(from, "/buffer_stream", "expected int buffer numbers");
+            };
+            if *bufnum < 0 {
+                return self.fail(from, "/buffer_stream", "buffer number must be non-negative");
+            }
+            // The frontier a report starts from is where the buffer *is* now:
+            // a subscription is a watch on what happens next, not a request
+            // for the overview of what is already there (that is a fetch, and
+            // `/buffer_getRange` is how it is spelled).
+            let from_frame = self
+                .handle
+                .segment()
+                .and_then(|seg| seg.buffer_frontier(*bufnum as usize))
+                .unwrap_or(0);
+            buffers.push((*bufnum, from_frame));
+        }
+        if buffers.len() > MAX_STREAM_BUFFERS {
+            return self.fail(
+                from,
+                "/buffer_stream",
+                format!("at most {MAX_STREAM_BUFFERS} buffers per subscription"),
+            );
+        }
+        let bucket = (*bucket).max(1) as usize;
+        self.buffer_streams.retain(|s| s.client != from);
+        self.reply(
+            from,
+            "/done",
+            vec![OscType::String("/buffer_stream".into())],
+        );
+        if *period_ms > 0 && !buffers.is_empty() {
+            let period = Duration::from_millis(*period_ms as u64).max(MIN_STREAM_PERIOD);
+            self.buffer_streams.push(BufferStream {
+                client: from,
+                period,
+                buffers,
+                bucket,
+                next_due: self.mono_secs() + period.as_secs_f64(),
+            });
+        }
+        self.retune_timeout();
+    }
+
+    /// Sends every due buffer stream what its material grew since the last
+    /// report. Called once per run-loop iteration, like the other two pumps.
+    pub(in crate::osc::server) fn pump_buffer_streams(&mut self) {
+        if self.buffer_streams.is_empty() {
+            return;
+        }
+        let now = self.mono_secs();
+        for i in 0..self.buffer_streams.len() {
+            if now < self.buffer_streams[i].next_due {
+                continue;
+            }
+            self.send_buffer_overviews(i);
+            let period = self.buffer_streams[i].period;
+            self.buffer_streams[i].next_due = now + period.as_secs_f64();
+        }
+    }
+
+    /// One `/buffer_stream.reply bufnum startFrame bucket blob` per buffer of
+    /// stream `i` that grew by at least one whole bucket.
+    ///
+    /// The blob is bucket-major and channel-minor: for each bucket in order,
+    /// for each channel, `min`, `max` and **mean square** as raw little-endian
+    /// `f32` — the same three statistics the peak pyramid stores, in the same
+    /// energy form, so a client folds them into its own summary without
+    /// converting anything.
+    ///
+    /// Summarizing here reads the buffer's cells while the engine may be
+    /// writing them, which is the buffer model's own promise (some old samples
+    /// and some new, never half of one) and is what every reader of a live
+    /// take gets.
+    fn send_buffer_overviews(&mut self, i: usize) {
+        let client = self.buffer_streams[i].client;
+        let bucket = self.buffer_streams[i].bucket;
+        for k in 0..self.buffer_streams[i].buffers.len() {
+            let (bufnum, reported) = self.buffer_streams[i].buffers[k];
+            let frontier = self
+                .handle
+                .segment()
+                .and_then(|seg| seg.buffer_frontier(bufnum as usize))
+                .unwrap_or(0);
+            let start = (reported / bucket as u64) * bucket as u64;
+            let whole = frontier.saturating_sub(start) / bucket as u64;
+            if whole == 0 {
+                continue;
+            }
+            let Some(buffer) = self
+                .translator
+                .buffers
+                .get(bufnum as usize)
+                .and_then(|b| b.as_ref())
+            else {
+                continue;
+            };
+            let channels = buffer.channels().max(1);
+            let whole = whole.min(MAX_STREAM_BUCKETS as u64) as usize;
+            let mut bytes = Vec::with_capacity(whole * channels * 3 * 4);
+            for b in 0..whole {
+                let from = start as usize + b * bucket;
+                for ch in 0..channels {
+                    let (mut lo, mut hi, mut sum) = (f32::INFINITY, f32::NEG_INFINITY, 0.0f64);
+                    for f in from..from + bucket {
+                        let v = buffer.sample(f, ch);
+                        lo = lo.min(v);
+                        hi = hi.max(v);
+                        sum += (v as f64) * (v as f64);
+                    }
+                    let ms = (sum / bucket as f64) as f32;
+                    for value in [lo, hi, ms] {
+                        bytes.extend_from_slice(&value.to_le_bytes());
+                    }
+                }
+            }
+            let end = start + (whole * bucket) as u64;
+            self.buffer_streams[i].buffers[k] = (bufnum, end);
+            self.reply(
+                client,
+                "/buffer_stream.reply",
+                vec![
+                    OscType::Int(bufnum),
+                    OscType::Long(start as i64),
+                    OscType::Int(bucket as i32),
+                    OscType::Blob(bytes),
+                ],
+            );
+        }
+    }
 }

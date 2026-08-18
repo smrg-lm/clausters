@@ -48,7 +48,7 @@ pub const MAGIC: u32 = 0x5541_4C43;
 /// versioned and refused on mismatch (the scsynth plugin-ABI lesson); what each
 /// version changed is recorded in `docs/ipc.md`, not here — a changelog in a
 /// constant is a changelog nobody updates.
-pub const ABI_VERSION: u32 = 9;
+pub const ABI_VERSION: u32 = 10;
 
 /// The peer tag an embedder gets when it never asks for one: the single client
 /// a segment has always had.
@@ -167,6 +167,16 @@ struct BufferRow {
     frames: AtomicU32,
     channels: AtomicU32,
     sample_rate_bits: AtomicU64,
+    /// **The write frontier**: the highest frame any writer has filled, or 0.
+    ///
+    /// It is a *hint* and not a promise. A buffer may have several writers and
+    /// nothing here says which of them wrote what, or that everything before
+    /// it is final — what it answers is the one question a picture of a
+    /// recording has to ask and cannot otherwise: how far does the material go
+    /// now. Outside the seqlock deliberately: it moves every block while the
+    /// shape does not move at all, and folding it into the row's version would
+    /// spin every reader of the shape against a recorder.
+    frontier: AtomicU64,
 }
 
 /// Which end of the ring pair a peer holds.
@@ -720,6 +730,9 @@ impl View {
         row.channels.store(channels as u32, Ordering::Relaxed);
         row.sample_rate_bits
             .store(sample_rate.to_bits(), Ordering::Relaxed);
+        // A new take starts unwritten: the frontier is the *material's*, so
+        // the previous tenant's would claim samples this one never got.
+        row.frontier.store(0, Ordering::Relaxed);
         row.generation.store(odd, Ordering::Release);
         Some(odd)
     }
@@ -846,6 +859,29 @@ pub struct BufferShape {
     pub sample_rate: f64,
 }
 
+impl View {
+    /// **How far a buffer has been written**: the frontier its writers
+    /// published, in frames. Zero for a buffer nobody has recorded into, which
+    /// is every buffer that arrived whole.
+    pub fn buffer_frontier(&self, bufnum: usize) -> Option<u64> {
+        Some(self.row(bufnum)?.frontier.load(Ordering::Relaxed))
+    }
+
+    /// Raises the frontier of `bufnum` to `frame` — **the highest wins**, so
+    /// two writers on one buffer cannot pull it backwards and a looping
+    /// recorder does not either.
+    ///
+    /// Called from the audio thread, so it is one relaxed read-modify-write
+    /// and nothing else: no allocation, no lock, and no ordering with the
+    /// samples it describes (a reader crossing a write sees some old and some
+    /// new, which is what the cells promise anyway).
+    pub fn raise_buffer_frontier(&self, bufnum: usize, frame: u64) {
+        if let Some(row) = self.row(bufnum) {
+            row.frontier.fetch_max(frame, Ordering::Relaxed);
+        }
+    }
+}
+
 /// The suffix a buffer's region file carries beside the segment's own path:
 /// the buffer number and the generation, so a freed buffer's file and its
 /// replacement can never share a name.
@@ -951,6 +987,32 @@ mod tests {
         let mut out = [0.0f32; 16];
         assert_eq!(view.tap_read_latest(0, &mut out), Some(BLOCK as u64));
         assert!(out.iter().all(|&s| s == 0.75));
+    }
+
+    #[test]
+    fn a_frontier_only_rises_and_a_new_take_starts_at_none() {
+        let mut heap = Heap::new(8, 0, 128, 3);
+        let view = heap.view(8, 0, 128);
+        let first = view.publish_buffer(1, 480_000, 1, 48_000.0).expect("a row");
+        assert_eq!(view.buffer_frontier(1), Some(0), "nothing recorded yet");
+
+        view.raise_buffer_frontier(1, 1_024);
+        view.raise_buffer_frontier(1, 4_096);
+        // A second writer behind the first, and a looping recorder that wrapped:
+        // neither pulls the material back.
+        view.raise_buffer_frontier(1, 512);
+        assert_eq!(view.buffer_frontier(1), Some(4_096));
+
+        // The row's shape is unaffected by the frontier moving under it.
+        assert_eq!(
+            view.buffer_info(1).map(|s| (s.generation, s.frames)),
+            Some((first, 480_000))
+        );
+
+        // A new take in the same slot is unwritten, whatever the last one did.
+        view.publish_buffer(1, 96_000, 2, 48_000.0).expect("a row");
+        assert_eq!(view.buffer_frontier(1), Some(0));
+        assert_eq!(view.buffer_frontier(9), None, "no such row");
     }
 
     #[test]

@@ -67,6 +67,21 @@ pub struct Buffer {
     channels: usize,
     frames: usize,
     sample_rate: f64,
+    /// Where to publish how far this buffer has been written, when anybody is
+    /// in a position to read it. `None` is a buffer that is nobody else's.
+    frontier: Option<std::sync::Arc<dyn Frontier>>,
+}
+
+/// Where a buffer says **how far it has been written**.
+///
+/// A trait rather than a segment handle because `dsp` knows nothing about the
+/// IPC layer and must not learn: the server implements this over the buffer
+/// directory's row, an offline render implements nothing, and the audio thread
+/// calls one method that stores a number.
+pub trait Frontier: Send + Sync {
+    /// Raises the published frontier to `frame` — the highest wins, so two
+    /// writers on one buffer cannot pull it backwards.
+    fn raise(&self, frame: u64);
 }
 
 /// Where a buffer's cells live.
@@ -125,6 +140,7 @@ impl Buffer {
             channels,
             frames,
             sample_rate,
+            frontier: None,
         }
     }
 
@@ -143,6 +159,32 @@ impl Buffer {
             channels,
             frames,
             sample_rate,
+            frontier: None,
+        }
+    }
+
+    /// The same buffer, publishing **how far it has been written** to whoever
+    /// gave it a sink — the directory row a peer reads to draw a recording as
+    /// it fills.
+    ///
+    /// A buffer with no sink (every buffer with no segment behind it) records
+    /// exactly as it always did and tells nobody, which is the same split
+    /// every other shared-material path has.
+    pub fn with_frontier(mut self, frontier: std::sync::Arc<dyn Frontier>) -> Self {
+        self.frontier = Some(frontier);
+        self
+    }
+
+    /// **Publishes the write frontier**, if this buffer has somewhere to
+    /// publish it: the highest frame a writer has filled.
+    ///
+    /// Called from the audio thread once per block by whoever wrote — one
+    /// relaxed read-modify-write into the mapping and nothing else. A picture
+    /// of a recording is the only reader, and what it does with a frame that
+    /// is being written as it reads is what it does with every other one.
+    pub fn raise_frontier(&self, frame: usize) {
+        if let Some(sink) = &self.frontier {
+            sink.raise(frame as u64);
         }
     }
 

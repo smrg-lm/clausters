@@ -473,6 +473,18 @@ impl Segment {
             .publish_buffer(bufnum, frames, channels, sample_rate)
     }
 
+    /// **Raises a buffer's write frontier** — how far its writers have
+    /// filled it, in frames, highest wins. Called from the audio thread.
+    pub fn raise_buffer_frontier(&self, bufnum: usize, frame: u64) {
+        self.view.raise_buffer_frontier(bufnum, frame);
+    }
+
+    /// How far buffer `bufnum` has been written, in frames, or `None` when the
+    /// directory has no row for it.
+    pub fn buffer_frontier(&self, bufnum: usize) -> Option<u64> {
+        self.view.buffer_frontier(bufnum)
+    }
+
     /// Marks a slot empty. The region's file is unlinked by whoever owns it;
     /// this is what a peer reads to learn that what it holds is history.
     pub fn retire_buffer(&self, bufnum: usize) {
