@@ -77,7 +77,7 @@ server.sync()
 
 piece = Group(server=server)
 server.set_transport(0, 2.0)
-server.transport_group(piece.id)
+server.transport_group(piece)
 print(f"governing group {piece.id}")
 
 # %% [markdown]

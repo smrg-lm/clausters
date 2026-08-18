@@ -161,7 +161,7 @@ their memory, phasors their phase, envelopes their position. So a resume
 ```python
 piece = Group(server=server)
 server.set_transport(0, 2.0)
-server.transport_group(piece.id)
+server.transport_group(piece)
 server.transport_play()
 ...
 server.transport_stop()    # the subtree freezes, mid-gesture
@@ -200,7 +200,7 @@ continues the frozen sound.
 
 | You want to… | Do this |
 | --- | --- |
-| Let the engine enforce the transport | `server.transport_group(group.id)` |
+| Let the engine enforce the transport | `server.transport_group(group)` |
 | Give it back | `server.transport_group(None)` (thaws what it governed) |
 | Freeze / carry on | `server.transport_stop()` / `server.transport_play()` |
 | Read the piece's own clock | `server.transport_state()["transport_sample"]` |

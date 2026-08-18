@@ -8,6 +8,7 @@ server is generating rather than a convention the clients observe.
 
 from ...base import _osclib
 from ...errors import CommandError
+from ..node import _target_id
 
 
 class ServerTransport:
@@ -79,7 +80,8 @@ class ServerTransport:
 
     def transport_group(self, group, timeout: "float | None" = None):
         """Bind the group the transport governs (``/transport_group``), or
-        unbind with ``None``.
+        unbind with ``None``. ``group`` is a `clausters.defs.node.Group` or its
+        raw id, like every other place a node is named.
 
         This is what gives the transport its teeth. With no group bound it is a
         shared beat grid plus a rolling state that clients obey by choice. With
@@ -91,7 +93,7 @@ class ServerTransport:
 
         Freeing the group unbinds the transport, and unbinding thaws whatever it
         governed, so no frozen subtree is left with nobody to resume it."""
-        arg = -1 if group is None else int(group)
+        arg = -1 if group is None else _target_id(group)
         addr, args = self.request("/transport_group", arg,
                                   timeout=timeout, expect=("/done", "/fail"))
         if addr == "/fail":

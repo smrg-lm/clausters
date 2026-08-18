@@ -112,7 +112,7 @@ def main():
         # on the server, which is the whole session.
         monitor = Group()
         Synth("transport-follower", {"bufnum": buf.bufnum, "amp": 0.8}, target=monitor)
-        server.transport_group(monitor.id)
+        server.transport_group(monitor)
 
         print("four one-second tones; every move below should be audible at once")
 

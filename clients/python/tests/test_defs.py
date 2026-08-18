@@ -336,6 +336,21 @@ def test_a_target_is_a_node_or_its_id():
     assert by_object[1][2:] == by_id[1][2:]
 
 
+def test_the_governed_group_is_a_node_or_its_id():
+    # transport_group used to be the one call that took the bare integer, so
+    # `server.transport_group(monitor)` raised a TypeError where every other
+    # place a node is named accepts the object.
+    iface = _FakeInterface()
+    srv = Server(interface=iface)
+    group = Group(server=srv)
+    iface.queue_reply("/done", "/transport_group")
+    srv.transport_group(group)
+    assert iface.sent[-1] == ("/transport_group", [group.id])
+    iface.queue_reply("/done", "/transport_group")
+    srv.transport_group(None)
+    assert iface.sent[-1] == ("/transport_group", [-1])
+
+
 def test_records_print_readably_and_agree_with_their_container():
     # str is the readable line, repr stays the dataclass form -- and a Tree
     # draws a synth by printing its own NodeInfo, so the two cannot drift.
