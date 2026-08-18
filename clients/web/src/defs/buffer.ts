@@ -419,7 +419,7 @@ export class Buffer {
      * A page never writes that way — a browser cannot map a file — so this is
      * here as the **listening** end's counterpart: a page holding a picture of
      * a take that a native editor is editing hears `/buffer_touched` and
-     * re-reads that span with {@link getRange}.
+     * re-reads that span with {@link getSamples}.
      *
      * There is no reply: it is a notification, not a command.
      */
