@@ -29,6 +29,7 @@ collapse/expand *is* the arrangement's base level (the zoom that summarizes a
 group or resolves it), so it needs no protocol of its own.
 """
 
+import copy
 import itertools
 
 from .. import _native
@@ -200,6 +201,11 @@ class Editor:
         #: node id -> the arrangement object an intent naming it writes to. Built
         #: with the document, since `to_document` is what stamps the ids.
         self._by_node: dict = {}
+        #: Which **edit layer** of each clip the hand is on, by widget id -- the
+        #: placement, a roll, a curve. Screen state like a selection: the
+        #: composition does not change when it moves, and the document is
+        #: explicit that what a view is currently editing is never part of it.
+        self._edit_layer: dict = {}
         #: patch widget id -> (logical `Group`, its box-order member handles) —
         #: the directed-patch view of a logical group, for its edit-back route.
         self._patches: dict = {}
@@ -763,16 +769,44 @@ class Editor:
             return False
         if args[1] == "points":
             return self._apply_points(placed, args[2:])
+        if args[1] == "layer":
+            # Which layer of a clip the hand is on is **screen state**, like a
+            # selection: the composition did not change, and the document is
+            # explicit that what a view is currently editing is never part of
+            # it. It is kept so a driver can ask.
+            self._edit_layer[int(args[0])] = str(args[2])
+            return False
+        if args[1] == "split":
+            return self._apply_split(placed, float(args[2]))
+        if args[1] == "join":
+            return self._apply_join(placed, [int(a) for a in args[2:]])
         if args[1] != "clip" or len(args) < 4:
             return False
         if placed.member is None:
             return False  # the root element itself: nothing places it
 
         offset, dur = float(args[2]), float(args[3])
+        # The **window** the trim left behind, when the host stated one: where
+        # in its material the clip now reads. A host older than windows sends
+        # three arguments and means "from the beginning", which is what a take
+        # with no window has always been.
+        window = float(args[4]) if len(args) > 4 else None
         moved = abs(offset - placed.offset) >= 0.5      # half a sample: a real edit
         resized = abs(dur - placed.dur) >= 0.5
-        if not (moved or resized):
+        trimmed = self._window_moved(placed, window)
+        if not (moved or resized or trimmed):
             return False
+        if trimmed:
+            # A trim is a gesture of its own -- the placement *and* the window
+            # over the material, in one edit -- so it does not go through the
+            # placement road below.
+            if not self._trim(placed, offset, dur, window):
+                return False
+            placed.offset, placed.dur = offset, dur
+            self._version = self._document.version
+            self.dirty = True
+            self._follow_render()
+            return True
 
         member = placed.member
         # Absolute (the axis) -> relative (the placement). The **grid is not
@@ -1035,6 +1069,178 @@ class Editor:
                                 frames_per_beat=self.units_per_beat,
                                 in_beats=True)
 
+    def _window_moved(self, placed, start) -> bool:
+        """Whether the host reported a **window** that is not the one the
+        element already reads — half a frame's worth, the same threshold a move
+        uses."""
+        if start is None or placed.member is None:
+            return False
+        element = placed.member.element
+        return (isinstance(element, Buffer)
+                and abs(float(start) - float(element.start)) >= 0.5)
+
+    def _trim(self, placed, offset: float, dur: float, start: float) -> bool:
+        """A **trim**: the clip begins later or ends earlier, and the window over
+        its material moves with the edge.
+
+        One intent, not two. Where a clip sits is its placement's and what it
+        reads is its element's, so a trim touches both -- and a gesture that
+        recorded them separately would take two undos to reverse, the first of
+        which leaves a clip showing frames it does not play. The parent's
+        members carry both (each member is a placement *and* the node it holds),
+        so `setmembers` states the result of the whole gesture and an undo puts
+        back the frames the trim hid.
+        """
+        member, owner = placed.member, placed.owner
+        if member is None or owner is None:
+            return False
+        node = self._node_id(owner)
+        index = next((i for i, h in enumerate(owner.handles) if h is member), None)
+        if node is None or index is None:
+            return False
+        whole = to_document(owner, version=self._version)["root"]
+        members = [dict(m) for m in whole.get("members", [])]
+        if index >= len(members):
+            return False
+        edited = members[index]
+        edited["offset"] = self.units_to_beats(offset) - placed.base
+        edited["dur"] = self.units_to_beats(dur)
+        edited["node"] = dict(edited["node"])
+        config = dict(edited["node"].get("config") or {})
+        config["start"] = float(start)
+        edited["node"]["config"] = config
+        outcome = self._record({"intent": "setmembers", "node": node,
+                                "members": members}, "trim the clip")
+        if outcome is None or not outcome["applied"]:
+            self._resync(self._widget_of(member.element, member) or 0)
+            return False
+        self._project(outcome["effective"])
+        return True
+
+    def _apply_split(self, placed, at_units: float) -> bool:
+        """A clip cut in two at ``at_units`` of its own time.
+
+        Both halves keep the **same material** and take a window of it: the
+        first reads what it always did and stops early, the second begins where
+        the first left off. That is the whole of what a split is on a memory
+        view, and it is why the frames neither of them shows are still there --
+        stretching either half back brings them out again.
+
+        The second half is built here rather than left for the projection to
+        invent, because an element is an object this client holds and a document
+        node only *describes* one. What goes into the log is **one** intent over
+        the parent's members, so an undo puts the clip back whole rather than
+        leaving half of it behind.
+        """
+        member, owner = placed.member, placed.owner
+        if member is None or owner is None:
+            return False
+        element = member.element
+        if not isinstance(element, Buffer):
+            # Only a window onto material can be cut into windows. Splitting a
+            # pattern or a group would have to say what half of an algorithm
+            # is, which is a different question and not this one.
+            self._reason = ("only a clip over material can be split: this one "
+                            "holds " + _name(element))
+            return False
+        length = member.length if member.length is not None else element.duration
+        at = self.units_to_beats(at_units)
+        if length is None or not (0.0 < at < float(length)):
+            return False
+        node = self._node_id(owner)
+        if node is None:
+            return False
+        second_element = Buffer(element.wraps,
+                                duration=float(length) - float(at),
+                                instrument=element.instrument,
+                                controls=element.controls,
+                                start=float(element.start) + self.beats_to_units(at),
+                                loop=element.loop,
+                                name=element.name)
+        # The cut, on the arrangement: the first half stops early and the second
+        # is placed where it stops. Stamped with an id of its own **before** any
+        # conversion sees it, or the next one would renumber the tree around it.
+        member.dur = float(at)
+        handle = owner.add(second_element, member.offset + float(at),
+                           float(length) - float(at))
+        setattr(handle, ID_ATTR, self._mint_id())
+        whole = to_document(owner, version=self._version)["root"]
+        outcome = self._record({"intent": "setmembers", "node": node,
+                                "members": whole.get("members", [])},
+                               "split the clip")
+        if outcome is None or not outcome["applied"]:
+            # Put the arrangement back: the log refused, so nothing happened.
+            owner.remove(handle)
+            member.dur = None if length is None else float(length)
+            self._resync(self._widget_of(element, member) or 0)
+            return False
+        # No projection: the tree already *is* what the intent says. What the
+        # index has to learn is the element that was not there a moment ago.
+        self._rederive = True
+        return self._changed()
+
+    def _apply_join(self, placed, ids: list) -> bool:
+        """Clips read as one.
+
+        What the arrangement can express is the case the split makes: **windows
+        onto one buffer that continue each other**, which join back into the one
+        window they were cut from -- the first keeps its head and takes the
+        others' length. Anything else -- two different files, two windows that
+        overlap or leave a gap -- is a single element reading several segments,
+        and the arrangement has no such element: an element wraps one thing.
+        That is a model question and it is refused by name rather than
+        approximated, since approximating it would silently drop material.
+        """
+        member, owner = placed.member, placed.owner
+        if member is None or owner is None:
+            return False
+        run = [self._clips.get(i) for i in ids]
+        run = [p for p in run
+               if p is not None and p.member is not None and p.owner is owner]
+        if len(run) < 2:
+            return False
+        run.sort(key=lambda p: p.member.offset)
+        elements = [p.member.element for p in run]
+        if not all(isinstance(e, Buffer) for e in elements):
+            self._reason = "only clips over material can be joined"
+            return False
+        if any(e.wraps is not elements[0].wraps for e in elements):
+            self._reason = ("these clips read different material: an element "
+                            "reading several sources is not something the "
+                            "arrangement has yet")
+            return False
+        # Contiguous in the *source*, which is what makes them one window.
+        expected = float(elements[0].start)
+        lengths = []
+        for p, element in zip(run, elements):
+            length = p.member.length if p.member.length is not None else element.duration
+            if length is None or abs(float(element.start) - expected) >= 0.5:
+                self._reason = ("these clips are not one run of the material: "
+                                "an element reading several segments is not "
+                                "something the arrangement has yet")
+                return False
+            lengths.append(float(length))
+            expected += self.beats_to_units(float(length))
+        node = self._node_id(owner)
+        if node is None:
+            return False
+        keep, dropped = run[0].member, [p.member for p in run[1:]]
+        was = keep.dur
+        keep.dur = sum(lengths)
+        for handle in dropped:
+            owner.remove(handle)
+        whole = to_document(owner, version=self._version)["root"]
+        outcome = self._record({"intent": "setmembers", "node": node,
+                                "members": whole.get("members", [])},
+                               "join the clips")
+        if outcome is None or not outcome["applied"]:
+            keep.dur = was
+            for handle in dropped:
+                owner._members.append(handle)
+            return False
+        self._rederive = True
+        return self._changed()
+
     def _apply_points(self, placed, values) -> bool:
         """A curve edited in place on an automation clip (the flat ``"points"``
         payload the `bpf` view also sends): the break-points go back onto the
@@ -1288,14 +1494,24 @@ class Editor:
                 self._history()
                 node = getattr(member, ID_ATTR, None)
             return None if node is None else int(node)
+        # **The index first, the stamp second.** A group's id is the
+        # *placement's* -- the handle that holds it in its parent -- so the
+        # number on the group object is not the document's answer, and it is a
+        # number some other conversion left there: converting a subtree on its
+        # own (which is how a cut, a split and a join read the members they are
+        # about to state) numbers that subtree as a root and stamps its top. The
+        # index is derived from the whole tree, so it is the one that knows.
+        # Through the current document: an index left over from before an
+        # element arrived would answer for a tree that is one gesture old.
+        self._history()
+        found = [nid for nid, (_, _, held) in self._by_node.items() if held is element]
+        if len(found) == 1:
+            return int(found[0])
         node = getattr(element, ID_ATTR, None)
         if node is None:
             self._history()
             node = getattr(element, ID_ATTR, None)
-        if node is not None:
-            return int(node)
-        found = [nid for nid, (_, _, held) in self._by_node.items() if held is element]
-        return int(found[0]) if len(found) == 1 else None
+        return None if node is None else int(node)
 
     def _record(self, intent: dict, label: str) -> "dict | None":
         """Apply one edit **through the crate**, recording its inverse.
@@ -1366,6 +1582,14 @@ class Editor:
         redone document and the edit itself all land here, so the envelope the
         script holds, the buffer it sounds through and the picture cannot
         disagree about which of the three happened."""
+        if isinstance(element, Buffer):
+            # A take's configuration is the **window** it reads: which frame of
+            # its material it begins at, and whether that window wraps. The
+            # configuration is written whole, so a key the intent does not carry
+            # is the default -- reading from the first frame, once.
+            element.start = float(config.get("start", 0.0))
+            element.loop = bool(config.get("loop", False))
+            return True
         auto = _automation(element)
         flat = config.get("points")
         if auto is None or flat is None:
@@ -1425,12 +1649,32 @@ class Editor:
                 continue
             handle = by_id.get(int(node))
             offset = float(m.get("offset", 0.0))
+            config = (m.get("node") or {}).get("config")
+            if config is not None:
+                # A member carries its node, and a node carries what the leaf
+                # is configured as: a trimmed take's window, an edited curve's
+                # points. Written here so one `setmembers` can state the whole
+                # of what a gesture did -- and so an undo of it restores both.
+                found = self._by_node.get(int(node))
+                if found is not None:
+                    self._configure(found[2], config)
             if handle is not None:
                 group.move(handle, offset)
+                # ...and the length the document states, which a split, a join
+                # and an undo of either all change. Without this a placement
+                # that came back the right length on paper stayed the length
+                # the gesture had left it.
+                handle.dur = None if m.get("dur") is None else float(m["dur"])
                 continue
             found = self._by_node.get(int(node))
             if found is not None:
-                group.add(found[2], offset, m.get("dur"))
+                restored = group.add(found[2], offset, m.get("dur"))
+                # **The placement keeps the id the document gave it.** A handle
+                # that came back unstamped is a new node to the next conversion,
+                # which renumbers the tree under every intent still naming the
+                # old one -- and the group holding it stops being found at all.
+                if restored is not None:
+                    setattr(restored, ID_ATTR, int(node))
         return True
 
     def _set_notes(self, element, members: list) -> bool:
@@ -1817,7 +2061,17 @@ class Editor:
             channels = getattr(buf, "channels", None)
             if channels is None:
                 return {}
-            return dict(buffer=buf.bufnum, channels=max(1, channels))
+            body = dict(buffer=buf.bufnum, channels=max(1, channels))
+            # The **window** onto that material: a clip shows the segment its
+            # element reads, so a trimmed take draws the frames it plays and
+            # not the buffer squeezed into a rectangle. Sent only when there is
+            # a window to state, which keeps a whole-take clip's props exactly
+            # what they were.
+            if element.start:
+                body["start"] = float(element.start)
+            if element.loop:
+                body["loop"] = True
+            return body
 
         notes = self._notes(element)
         if notes:

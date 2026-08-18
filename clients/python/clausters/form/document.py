@@ -386,6 +386,14 @@ def _body(element, ids: _Ids) -> dict:
                 config["instrument"] = instrument
         if element.controls:
             config["controls"] = _plain(element.controls)
+        # The **window** onto the material, written only when it is not the
+        # whole of it: a document saying nothing about a window means one that
+        # reads the buffer from its first frame, which is every take written
+        # before windows existed.
+        if element.start:
+            config["start"] = float(element.start)
+        if element.loop:
+            config["loop"] = True
         return _with_config(body, config or None)
     if isinstance(element, Generator):
         config = _named({"generator": _reference(element.wraps, element)})
@@ -678,6 +686,8 @@ def _element(node: dict, resolve, *, placed: bool = False):
             duration=duration,
             instrument=config.get("instrument"),
             controls=config.get("controls"),
+            start=config.get("start", 0.0),
+            loop=config.get("loop", False),
         )
     elif kind == "generator":
         rendered = node.get("rendered")

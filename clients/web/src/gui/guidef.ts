@@ -1472,7 +1472,7 @@ export function track(
  * Its body is a **take** (reached exactly as the heavy `waveform`'s samples
  * are — `cache`/`path`/`buffer`/`data`/`blob`), a **piano-roll** of `notes`,
  * or an **automation curve** of `points` editable in place. Dragging the clip
- * (move) or its edge (resize) flows back as a `"clip"` event carrying the new
+ * (move) or its edge (a trim) flows back as a `"clip"` event carrying the new
  * `offset`/`dur`.
  *
  * The take is drawn in the presentation `view` names: `"trace"` (the default)
@@ -1513,13 +1513,46 @@ export function clip(
          * move and resize are untouched.
          */
         editable?: boolean;
+        /**
+         * The source frame this clip's own time zero reads (default 0). A clip
+         * is a **window onto a segment of its material**: one timeline sample
+         * is one source frame, so trimming one hides frames rather than
+         * compressing them, and opening the window again brings them back.
+         */
+        start?: number;
+        /**
+         * Whether that window **wraps** around the material: past the last
+         * frame it begins again, and before the first comes the material's own
+         * tail. It is what lets an edge be pulled past the material at all.
+         */
+        loop?: boolean;
+        /**
+         * Draw the material **fitted** to the clip's span instead of read frame
+         * for sample — the picture a time stretch would make, which nothing
+         * here makes yet. Off by default.
+         */
+        fit?: boolean;
+        /**
+         * The **edit layer** a hand is on: `"clip"` (the placement — where it
+         * sits, how long it is), `"take"`, `"notes"` or `"points"`. Only the
+         * active layer acts or shows an affordance, so a clip whose curve is
+         * being edited shows no grips. A press picks the layer under it and
+         * reports the change as a `"layer"` event.
+         */
+        layer?: string;
+        /**
+         * The layers that are **not drawn**, space-separated (`"notes
+         * points"`); empty draws them all. What is hidden is not edited either.
+         */
+        hidden?: string;
         label?: string;
     },
 ): GuiNode {
     const {
         offset = 0.0, dur, cache, path, buffer, data, blob, channels,
         baseBucket, view, windowSize, hop, dbFloor, dbCeil, freqScale, colormap,
-        notes, points, exp, min, max, editable, label: text, ...rest
+        notes, points, exp, min, max, editable, start, loop, fit, layer, hidden,
+        label: text, ...rest
     } = options;
     return node("field", {
         ...rest,
@@ -1541,6 +1574,11 @@ export function clip(
             ["min", min],
             ["max", max],
             ["editable", flag(editable)],
+            ["start", start],
+            ["loop", flag(loop)],
+            ["fit", flag(fit)],
+            ["layer", layer],
+            ["hidden", hidden],
             ["label", text],
         ]),
     });

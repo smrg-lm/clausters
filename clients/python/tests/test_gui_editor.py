@@ -1515,3 +1515,124 @@ def _find(node, pred):
             if found is not None:
                 return found
     return None
+
+
+# ---- a clip is a window onto a segment of its material ----
+
+def _take_song(**window) -> tuple:
+    """A one-lane composition holding one four-beat take, and its element."""
+    take = Buffer(ServerBuffer(bufnum=7, frames=int(4 * BEAT), channels=1,
+                               sample_rate=SR), duration=4.0, instrument="take",
+                  **window)
+    return Group([(0.0, Group([(0.0, take)], name="audio"))], name="song"), take
+
+
+def test_a_take_draws_the_window_it_reads():
+    """A clip shows the segment its element reads. A whole-take clip says
+    nothing about a window -- that is what reading from the first frame is --
+    and a trimmed one says where it now begins."""
+    song, _ = _take_song()
+    (lane,) = lanes(editor(song).draw())
+    (clip,) = clips(lane)
+    assert "start" not in clip and "loop" not in clip
+
+    song, _ = _take_song(start=2 * BEAT, loop=True)
+    (lane,) = lanes(editor(song).draw())
+    (clip,) = clips(lane)
+    assert clip["start"] == pytest.approx(2 * BEAT)
+    assert clip["loop"]
+
+
+def test_a_trim_moves_the_window_and_is_undone_as_one():
+    """The head trim the host reports: the clip begins later, is shorter, and
+    reads its material from further in -- and an undo gives back the frames it
+    hid, because the window is a leaf's configuration and went through the log
+    like every other edit."""
+    song, take = _take_song()
+    ed = editor(song)
+    (lane,) = lanes(ed.draw())
+    (clip,) = clips(lane)
+    # Trimmed one beat off the head: offset, duration and window all move by it.
+    assert ed.apply("/gui_event", [clip["id"], SEQ, UNSTATED, "clip",
+                                   BEAT, 3 * BEAT, BEAT]) is True
+    assert take.start == pytest.approx(BEAT)
+    assert ed.undo() is True
+    assert take.start == pytest.approx(0.0)
+
+
+def test_a_split_gives_two_windows_over_one_buffer():
+    """The cut: the first half keeps the head it had and stops early, the second
+    begins where it left off -- one material, two windows -- and it is one edit,
+    so an undo puts the clip back whole."""
+    song, take = _take_song()
+    ed = editor(song)
+    (lane,) = lanes(ed.draw())
+    (clip,) = clips(lane)
+    assert ed.apply("/gui_event", [clip["id"], SEQ, UNSTATED, "split", 1.0 * BEAT]) is True
+
+    (lane,) = lanes(ed.draw())
+    first, second = clips(lane)
+    assert first["dur"] == pytest.approx(BEAT)
+    assert second["offset"] == pytest.approx(BEAT)
+    assert second["dur"] == pytest.approx(3 * BEAT)
+    # The second reads on from where the first stops, over the same buffer.
+    assert second["start"] == pytest.approx(BEAT)
+    assert second["buffer"] == first["buffer"] == 7
+
+    assert ed.undo() is True
+    (lane,) = lanes(ed.draw())
+    (whole,) = clips(lane)
+    assert whole["dur"] == pytest.approx(4 * BEAT)
+
+
+def test_a_join_puts_a_split_clip_back_together():
+    """The inverse of the cut, and the case the arrangement can express: windows
+    onto one buffer that continue each other become the one window they were cut
+    from."""
+    song, _ = _take_song()
+    ed = editor(song)
+    (lane,) = lanes(ed.draw())
+    (clip,) = clips(lane)
+    ed.apply("/gui_event", [clip["id"], SEQ, UNSTATED, "split", 1.0 * BEAT])
+    (lane,) = lanes(ed.draw())
+    first, second = clips(lane)
+
+    assert ed.apply("/gui_event", [first["id"], SEQ, UNSTATED, "join",
+                                   first["id"], second["id"]]) is True
+    (lane,) = lanes(ed.draw())
+    (joined,) = clips(lane)
+    assert joined["dur"] == pytest.approx(4 * BEAT)
+    assert "start" not in joined
+
+
+def test_clips_over_different_material_are_refused_by_name():
+    """Two windows onto *different* buffers read as one thing would be an
+    element reading several segments, and an element wraps one thing. Refused
+    with the reason rather than approximated, since approximating it drops
+    material."""
+    a = Buffer(ServerBuffer(bufnum=7, frames=int(BEAT), channels=1, sample_rate=SR),
+               duration=1.0, instrument="take")
+    b = Buffer(ServerBuffer(bufnum=8, frames=int(BEAT), channels=1, sample_rate=SR),
+               duration=1.0, instrument="take")
+    song = Group([(0.0, Group([(0.0, a), (1.0, b)], name="audio"))], name="song")
+    ed = editor(song)
+    host = _FakeHost()
+    ed.open(host)
+    (lane,) = lanes(ed.draw())
+    first, second = clips(lane)
+    assert ed.apply("/gui_event", [first["id"], SEQ, UNSTATED, "join",
+                                   first["id"], second["id"]]) is False
+    _, _, reason = host.answers[-1]
+    assert reason and "several sources" in reason
+
+
+def test_which_layer_a_hand_is_on_is_screen_state():
+    """Selecting a layer changes nothing in the composition -- it is what a view
+    is currently editing, which the document is explicit is never part of it --
+    and it is kept so a driver can ask."""
+    song, _ = _take_song()
+    ed = editor(song)
+    (lane,) = lanes(ed.draw())
+    (clip,) = clips(lane)
+    assert ed.apply("/gui_event", [clip["id"], SEQ, UNSTATED, "layer", "points"]) is False
+    assert ed.dirty is False

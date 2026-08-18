@@ -1342,7 +1342,8 @@ def clip(*, offset: float = 0.0, dur: float, data=None, blob: int | None = None,
          db_ceil: float | None = None, freq_scale: str | None = None,
          colormap: int | None = None, notes=None, points=None,
          exp: bool | None = None, min: float | None = None, max: float | None = None,
-         editable: bool | None = None,
+         editable: bool | None = None, start: float | None = None, loop: bool | None = None,
+         fit: bool | None = None, layer: str | None = None, hidden: str | None = None,
          label: str | None = None, color: str | None = None, id: int | None = None, **props
          ) -> dict:
     """One ``clip`` on a `track`: a placed rectangle spanning ``[offset, offset +
@@ -1406,9 +1407,36 @@ def clip(*, offset: float = 0.0, dur: float, data=None, blob: int | None = None,
       edit into a selection. It says nothing about the clip's own drag: a
       read-only body still moves and resizes as a placement.
 
-    Dragging a clip (move) or its edge (resize) flows back as a ``"clip"``
-    event carrying the new ``offset``/``dur`` — the edit-back path — so a driver
-    can update the arrangement and re-render."""
+    A clip is a **window onto a segment of its material**, not a rectangle the
+    material is stretched into:
+
+    - ``start`` — the source frame the clip's own time zero reads (default 0).
+      One timeline sample is one source frame, so trimming a clip hides frames
+      rather than compressing them, and opening the window again brings them
+      back.
+    - ``loop`` — whether that window wraps: past the last frame the material
+      begins again, and before its first frame comes its own tail. It is what
+      lets an edge be pulled past the material at all.
+    - ``fit`` — draw the material *fitted* to the clip's span instead, which is
+      the picture a time stretch would make and is not one. Off by default.
+
+    **Layers.** A clip draws its bodies over each other and one of them is what
+    a hand is editing:
+
+    - ``layer`` — which one: ``"clip"`` (the placement — where it sits, how long
+      it is), ``"take"``, ``"notes"`` or ``"points"``. Only the active layer
+      acts or shows an affordance, so a clip whose curve is being edited shows
+      no grips. A press picks the layer under it and reports the change as a
+      ``"layer"`` event.
+    - ``hidden`` — the layers that are **not drawn**, space-separated
+      (``"notes points"``); an empty string draws them all. What is hidden is
+      not edited either.
+
+    Dragging a clip (move) or its edge (trim) flows back as a ``"clip"``
+    event carrying the new ``offset``/``dur``/``start`` — the edit-back path —
+    so a driver can update the arrangement and re-render. The clip's own edit
+    verbs report the same way: ``"split" t`` (cut it at that clip-local time)
+    and ``"join" id…`` (read these clips as one)."""
     extra = _drop_none(offset=offset, view=view, window_size=window_size, hop=hop,
                        db_floor=db_floor, db_ceil=db_ceil, freq_scale=freq_scale,
                        colormap=colormap,
@@ -1417,11 +1445,11 @@ def clip(*, offset: float = 0.0, dur: float, data=None, blob: int | None = None,
                        channels=channels, base_bucket=base_bucket,
                        notes=_flat_notes(notes) if notes is not None else None,
                        points=_flat_points(points) if points is not None else None,
-                       min=min, max=max, label=label, color=color)
-    if exp is not None:
-        extra["exp"] = 1 if exp else 0
-    if editable is not None:
-        extra["editable"] = 1 if editable else 0
+                       min=min, max=max, start=start, layer=layer, hidden=hidden,
+                       label=label, color=color)
+    for key, flag in (("exp", exp), ("editable", editable), ("loop", loop), ("fit", fit)):
+        if flag is not None:
+            extra[key] = 1 if flag else 0
     return node("field", id=id, dur=dur, **extra, **props)
 
 

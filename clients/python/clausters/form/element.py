@@ -206,13 +206,35 @@ class Buffer(Element):
         onset: start in beats relative to the context, or ``None``.
         duration: length in beats — how long the clip sounds. Give it for a take
             placed in time (an event's default length is used otherwise).
+        start: the first frame of the buffer this element reads. An element is a
+            **window onto a segment** of its material, not the whole of it: a
+            trimmed take reads from further in and the frames before it are
+            still there, which is what lets a trim be undone and a split give
+            two windows over one buffer.
+        loop: whether that window wraps around the buffer — past the last frame
+            it begins again.
+
+    A window that is not the whole buffer travels to the instrument as the
+    ``start``/``loop`` event parameters, so a def that reads them (a sampler
+    whose ``PlayBuf`` takes a ``start_pos`` and a ``loop``) plays exactly the
+    segment the editor draws. An element reading its buffer from the beginning
+    sends neither, so a def written before windows existed is sent what it
+    always was.
     """
 
     def __init__(self, buffer, onset=None, duration=None, *, instrument=None,
-                 controls=None, name=None):
+                 controls=None, start=0.0, loop=False, name=None):
         super().__init__(wraps=buffer, onset=onset, duration=duration, name=name)
         self.instrument = instrument
         self.controls = dict(controls or {})
+        #: The **first frame of the buffer this element reads** — the head of
+        #: its window onto the material. Trimming a clip moves it; splitting one
+        #: in two gives each half a window of its own over the same buffer.
+        self.start = float(start)
+        #: Whether the window **wraps** around the material: past the last frame
+        #: it begins again, which is what stretching an element beyond the
+        #: buffer means when a loop is what it is.
+        self.loop = bool(loop)
 
     def to_event(self):
         """The event that plays this buffer: the `instrument` def with the buffer
@@ -235,6 +257,13 @@ class Buffer(Element):
             )
         params = dict(instrument=self.instrument, buf=self.wraps.bufnum,
                       legato=1.0, amp=1.0)
+        # The window, so what is heard is the segment that is drawn — and only
+        # when there is one to state, so a def that never heard of windows is
+        # sent exactly what it was always sent.
+        if self.start:
+            params["start"] = float(self.start)
+        if self.loop:
+            params["loop"] = 1.0
         if self.duration is not None:
             params["dur"] = float(self.duration)
         params.update(self.controls)
