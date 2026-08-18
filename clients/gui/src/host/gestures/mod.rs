@@ -358,7 +358,7 @@ mod focus;
 mod keys;
 mod nav;
 
-pub use keys::ClipVerb;
+pub use keys::{ClipEdit, ClipVerb};
 mod press;
 mod wheel;
 

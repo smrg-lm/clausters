@@ -22,7 +22,7 @@ use crate::canvas::CanvasView;
 use crate::gpu::Gpu;
 use crate::host::fetch::BufferFetches;
 use crate::host::frame::{self, SpectrogramSlot, WaveformSlot};
-use crate::host::gestures::{ClipVerb, Gestures};
+use crate::host::gestures::{ClipEdit, ClipVerb, Gestures};
 use crate::host::graphics::nodetree::NodeTree;
 use crate::host::live::{self, tree_animates, tree_has_live_widget};
 use crate::host::paint::Painter;
@@ -763,6 +763,16 @@ impl ApplicationHandler<UserEvent> for App {
                     }
                     Key::Character(ref c) if c.eq_ignore_ascii_case("r") => {
                         self.reset_timelines(def_id)
+                    }
+                    // A clip's own edit verbs, over the clip under the cursor:
+                    // cut it at the time cursor, or read it and what touches it
+                    // as one. Plain letters, like `r`, and reached only by a
+                    // key nothing focused wanted.
+                    Key::Character(ref c) if c.eq_ignore_ascii_case("e") => {
+                        self.clip_verb(def_id, ClipEdit::Split);
+                    }
+                    Key::Character(ref c) if c.eq_ignore_ascii_case("j") => {
+                        self.clip_verb(def_id, ClipEdit::Join);
                     }
                     // The monitor: the space bar plays what the cursor is over
                     // and stops what is playing. Last among the window's own

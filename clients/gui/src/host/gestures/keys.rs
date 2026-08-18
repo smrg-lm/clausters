@@ -24,6 +24,57 @@ use super::effects::{emit, emit_view, redraw_all};
 use super::nav::{freq_nav_ids, hit, set_x_view, set_y_view, timeline_ids};
 use super::{GestureCtx, GestureEffect, Gestures, element, focus};
 
+/// The two edit verbs a clip's **placement** answers to: cutting one in two,
+/// and reading two as one. Named here rather than taken as a bool because the
+/// front spells them out and a bool at a call site says nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClipEdit {
+    Split,
+    Join,
+}
+
+/// The clips on `lane` that **touch** the clip `id` — the ones whose spans meet
+/// its own, in the order they sit on the axis, `id` among them.
+///
+/// `None` when nothing touches it, which is what makes a join over a lone clip
+/// fall through instead of reporting an operation with one operand.
+fn touching_clips(host: &Host, def_id: i32, lane: i32, id: i32) -> Option<Vec<i32>> {
+    use crate::host::widget::WidgetKind;
+    let tree = host.window_def(def_id)?;
+    let span = |w: &crate::host::widget::Widget| match w.kind {
+        WidgetKind::Clip { offset, dur, .. } => Some((offset, offset + dur)),
+        _ => None,
+    };
+    let lane_widget = tree.find(lane)?;
+    let mut clips: Vec<(f64, f64, i32)> = lane_widget
+        .children
+        .iter()
+        .filter_map(|c| {
+            let (from, to) = span(c)?;
+            Some((from, to, c.id?))
+        })
+        .collect();
+    clips.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let me = clips.iter().position(|(_, _, cid)| *cid == id)?;
+    // A pixel of slack has no meaning on a sample axis: touching is touching,
+    // and two clips a sample apart are two clips.
+    let touches = |a: &(f64, f64, i32), b: &(f64, f64, i32)| a.1 >= b.0 && b.1 >= a.0;
+    let mut run = vec![clips[me]];
+    for c in clips[..me].iter().rev() {
+        match touches(c, run.first()?) {
+            true => run.insert(0, *c),
+            false => break,
+        }
+    }
+    for c in &clips[me + 1..] {
+        match touches(run.last()?, c) {
+            true => run.push(*c),
+            false => break,
+        }
+    }
+    (run.len() > 1).then(|| run.into_iter().map(|(_, _, cid)| cid).collect())
+}
+
 impl Gestures {
     /// A key arriving at this window: Tab walks the focus ring, anything else
     /// goes to the focused element's
@@ -202,6 +253,80 @@ impl Gestures {
             .map(|(from, len)| (from.max(0.0) as u64, (from + len).max(0.0) as u64));
         host.play_material(ctx.def_id, id, start, span)
             .then(Vec::new)
+    }
+
+    /// **Cutting a clip in two, and joining two into one** — the placement
+    /// layer's own edit verbs, addressed by the pointer like every other verb
+    /// over a view.
+    ///
+    /// Both are **intents**, because both change what the composition holds and
+    /// the host holds nothing: `"split" <t>` names the clip-local time to cut
+    /// at, and `"join" <id…>` names the clips to read as one. What the owner
+    /// makes of them is its own — two windows over one source for a split, one
+    /// element reading several segments for a join — and it answers with the
+    /// tree that now stands, exactly as it answers a drag.
+    ///
+    /// **Where the cut falls is the time cursor**, which is what a multitrack
+    /// means by splitting a clip: the axis' selection start when it lies inside
+    /// the clip, and the pointer when it does not — so the gesture works with
+    /// or without a placed cursor, and the cut is always somewhere the reader
+    /// can see. A join takes the clip under the pointer and the clips that
+    /// **touch** it on the same lane, which is the "two juxtaposed clips" the
+    /// operation is described in terms of, without a second selection model to
+    /// keep in step.
+    ///
+    /// Returns `None` when the pointer is not over a clip, so the key falls
+    /// through to whatever else the window does with it.
+    pub fn clip_verb(
+        &self,
+        host: &mut Host,
+        ctx: &GestureCtx,
+        verb: ClipEdit,
+        cx: f64,
+        cy: f64,
+    ) -> Option<Vec<GestureEffect>> {
+        let h = hit(host, ctx, cx, cy)?;
+        let lane = crate::host::interact::time_of(&h.chain)?;
+        let local = crate::host::interact::local_time_of(&h.chain)?;
+        let clip = crate::host::interact::clip_hit(host, ctx.def_id, lane, local, cx)?;
+        let mut out = Vec::new();
+        let args = match verb {
+            ClipEdit::Split => {
+                // The cursor's own timeline position, turned into the clip's
+                // time: a cut is stated in the clip's terms, because that is
+                // what the owner cuts.
+                let head = host
+                    .timeline_key(lane.0)
+                    .and_then(|key| host.timelines().state(key))
+                    .map(|s| s.sel_start)
+                    .filter(|t| {
+                        *t > clip.placement.offset && *t < clip.placement.offset + clip.dur
+                    });
+                let at = head.unwrap_or_else(|| {
+                    crate::host::interact::sample_at(
+                        clip.nav.start,
+                        clip.nav.len,
+                        clip.body.x as f64,
+                        clip.body.w as f64,
+                        cx,
+                    )
+                }) - clip.placement.offset;
+                // A cut at either edge is not a cut: it would leave a clip of
+                // nothing beside the one that was already there.
+                if at <= 0.0 || at >= clip.dur {
+                    return None;
+                }
+                vec![OscType::String("split".into()), OscType::Float(at as f32)]
+            }
+            ClipEdit::Join => {
+                let others = touching_clips(host, ctx.def_id, lane.0, clip.id)?;
+                std::iter::once(OscType::String("join".into()))
+                    .chain(others.into_iter().map(OscType::Int))
+                    .collect()
+            }
+        };
+        emit(host, &mut out, ctx.def_id, clip.id, args);
+        Some(out)
     }
 
     /// **Copy, cut and paste over the selection**, addressed to the view under

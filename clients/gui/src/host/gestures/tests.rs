@@ -1844,6 +1844,76 @@ fn trimming_a_clips_head_moves_its_window_over_the_material() {
     );
 }
 
+/// **Split and join are the placement layer's edit verbs**, and both leave as
+/// intents: the host holds no composition, so it says where the cut falls and
+/// which clips are to be read as one, and the owner answers with the tree that
+/// then stands.
+#[test]
+fn a_clip_is_cut_at_the_cursor_and_joined_with_what_touches_it() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"children":[
+            {"id":80,"type":"field","label":"takes","children":[
+                {"id":81,"type":"field","offset":0.0,"dur":400.0,"data":[0.0,1.0]},
+                {"id":82,"type":"field","offset":400.0,"dur":400.0,"data":[0.0,1.0]},
+                {"id":83,"type":"field","offset":900.0,"dur":100.0,"data":[0.0,1.0]}]}]}"#,
+    );
+    host.sync_track_totals();
+    let g = Gestures::default();
+    let ctx = GestureCtx::new(1, 800, 200);
+    let clip = placed_rect(&host, &ctx, 81);
+    let midy = (clip.y + clip.h * 0.5) as f64;
+    let quarter = (clip.x + clip.w * 0.25) as f64;
+
+    // No time cursor placed: the pointer is where the cut falls, stated in the
+    // clip's own time.
+    let effects = g
+        .clip_verb(&mut host, &ctx, ClipEdit::Split, quarter, midy)
+        .expect("the pointer is over a clip");
+    let args = first_emit(&effects, 81).expect("the split reported");
+    assert_eq!(args[0], OscType::String("split".into()));
+    match args[1] {
+        OscType::Float(t) => assert!(
+            (t - 100.0).abs() < 4.0,
+            "a quarter of the way into a 400-long clip: {t}"
+        ),
+        ref other => panic!("not a time: {other:?}"),
+    }
+
+    // Join: the clip under the pointer and what touches it — the third clip
+    // starts a hundred samples later, so it is a different run and stays out.
+    let effects = g
+        .clip_verb(&mut host, &ctx, ClipEdit::Join, quarter, midy)
+        .expect("the pointer is over a clip");
+    let args = first_emit(&effects, 81).expect("the join reported");
+    assert_eq!(
+        args,
+        vec![
+            OscType::String("join".into()),
+            OscType::Int(81),
+            OscType::Int(82)
+        ]
+    );
+
+    // A clip nothing touches has nothing to be joined with, so the key falls
+    // through to whatever else the window does with it.
+    let alone = placed_rect(&host, &ctx, 83);
+    let on_alone = ((alone.x + alone.w * 0.5) as f64, midy);
+    assert!(
+        g.clip_verb(&mut host, &ctx, ClipEdit::Join, on_alone.0, on_alone.1)
+            .is_none()
+    );
+}
+
+/// The arguments of the first `/gui_event` a verb emitted for `id`.
+fn first_emit(effects: &[GestureEffect], id: i32) -> Option<Vec<OscType>> {
+    effects.iter().find_map(|e| match e {
+        GestureEffect::Emit {
+            widget_id, args, ..
+        } if *widget_id == id => Some(args.clone()),
+        _ => None,
+    })
+}
+
 /// A clip's window over its material: where it starts reading, and how long it
 /// reads for.
 fn clip_window(host: &Host, id: i32) -> (f64, f64) {
