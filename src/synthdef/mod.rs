@@ -338,14 +338,33 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
     for (i, u) in spec.ugens.iter().enumerate() {
         let desc =
             lookup(&u.kind).ok_or_else(|| format!("ugens[{i}]: unknown kind '{}'", u.kind))?;
+        // Arity, and the one way a def may be short: the kind's **declared
+        // optional tail** (`UGenInput::optional`), which the fill below
+        // completes from the descriptor's defaults. A kind with no tail —
+        // which is most of them, and every operator — still needs its inputs
+        // exactly, so a truncated `Mul` fails here rather than compiling to
+        // silence.
+        let mut fill_from = None;
         if let Arity::Fixed(want) = desc.arity
             && u.inputs.len() != want
         {
-            return Err(format!(
-                "ugens[{i}] ({}): expected {want} inputs, got {}",
-                u.kind,
-                u.inputs.len()
-            ));
+            let least = desc.required_inputs();
+            if u.inputs.len() > want || u.inputs.len() < least {
+                return Err(if least == want {
+                    format!(
+                        "ugens[{i}] ({}): expected {want} inputs, got {}",
+                        u.kind,
+                        u.inputs.len()
+                    )
+                } else {
+                    format!(
+                        "ugens[{i}] ({}): expected {least} to {want} inputs, got {}",
+                        u.kind,
+                        u.inputs.len()
+                    )
+                });
+            }
+            fill_from = Some(u.inputs.len());
         }
         if u.inputs.len() > MAX_UGEN_INPUTS {
             return Err(format!(
@@ -475,6 +494,16 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
                     InputRef::Wire(w as usize)
                 }
             });
+        }
+        // The optional tail the def stopped before, filled from the
+        // descriptor's declared defaults. It happens here, on the network
+        // thread, once per def: the compiled def is byte-identical to one a
+        // complete client sent, so the audio thread never learns of it.
+        if let Some(from) = fill_from {
+            for slot in &desc.inputs[from..] {
+                constants.push(slot.default);
+                inputs.push(InputRef::Const(constants.len() - 1));
+            }
         }
 
         // Spectral chain. A `Source` (`FFT`) opens a new chain: validate

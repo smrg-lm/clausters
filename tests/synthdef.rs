@@ -278,6 +278,78 @@ fn rejects_wrong_arity() {
     assert!(err.contains("expected 1 inputs"), "{err}");
 }
 
+/// **A def survives the UGen it was written against growing a tail.** Arity is
+/// exact, so `PlayBuf` going from four inputs to seven made every stored def
+/// that used it unloadable. The declared optional tail is what makes growth by
+/// the tail non-breaking: a short def compiles, filled from the descriptor's
+/// defaults, and comes out **identical** to one a complete client sent.
+#[test]
+fn a_short_def_is_filled_from_the_declared_optional_tail() {
+    // The four-input PlayBuf every def written before the change carries.
+    let short = r#"{
+        "name": "x",
+        "ugens": [
+            {"kind": "PlayBuf", "inputs": [
+                {"const": 0.0}, {"const": 0.0}, {"const": 1.0}, {"const": 0.0}
+            ]},
+            {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 0}]}
+        ]
+    }"#;
+    let long = r#"{
+        "name": "x",
+        "ugens": [
+            {"kind": "PlayBuf", "inputs": [
+                {"const": 0.0}, {"const": 0.0}, {"const": 1.0}, {"const": 0.0},
+                {"const": 0.0}, {"const": 0.0}, {"const": 0.0}
+            ]},
+            {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 0}]}
+        ]
+    }"#;
+    let filled = compile(spec_from_json(short)).expect("the tail is optional");
+    let explicit = compile(spec_from_json(long)).expect("and the long form still compiles");
+    assert_eq!(
+        filled.ugens[0].inputs.len(),
+        7,
+        "the compiled def carries every input"
+    );
+    let values = |def: &clausters::synthdef::SynthDef| -> Vec<f32> {
+        def.ugens[0]
+            .inputs
+            .iter()
+            .map(|i| match i {
+                clausters::synthdef::InputRef::Const(k) => def.constants[*k],
+                other => panic!("expected constants, got {other:?}"),
+            })
+            .collect()
+    };
+    assert_eq!(
+        values(&filled),
+        values(&explicit),
+        "and the same values, so the audio thread never learns of the fill"
+    );
+}
+
+/// The cheap version of the feature — "fill whatever is missing" — is the
+/// dangerous one: a `Mul` truncated to one input would compile, fill `b=0` and
+/// silence the chain with no `/fail` and no name. A kind with no declared tail
+/// still needs its inputs exactly.
+#[test]
+fn a_kind_without_a_declared_tail_is_still_exact() {
+    let json = r#"{"kind":"Mul","inputs":[{"const":1.0}]}"#;
+    let json = format!(r#"{{"name":"x","ugens":[{json}]}}"#);
+    let err = compile(spec_from_json(&json)).unwrap_err();
+    assert!(err.contains("expected 2 inputs"), "{err}");
+
+    // And a def cannot go the other way: a tail is where a def may stop, not
+    // room for inputs the kind does not have.
+    let json = r#"{"name":"x","ugens":[{"kind":"PlayBuf","inputs":[
+        {"const":0.0},{"const":0.0},{"const":1.0},{"const":0.0},
+        {"const":0.0},{"const":0.0},{"const":0.0},{"const":0.0}
+    ]}]}"#;
+    let err = compile(spec_from_json(json)).unwrap_err();
+    assert!(err.contains("expected 1 to 7 inputs"), "{err}");
+}
+
 #[test]
 fn rejects_empty_def() {
     let json = r#"{"name":"x","ugens":[]}"#;

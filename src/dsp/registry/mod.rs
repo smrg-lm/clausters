@@ -168,21 +168,66 @@ pub enum Arity {
 /// in the def's `inputs` array.
 ///
 /// The wire itself stays positional (a def names a `kind` and lists values; no
-/// input is ever addressed by name), so this is descriptive metadata, not a new
-/// contract: it exists so `/ugen_query` can report a UGen's signature and a client
-/// palette can label an inlet instead of copying the names into its own table.
+/// input is ever addressed by name), so the *name* is descriptive metadata: it
+/// exists so `/ugen_query` can report a UGen's signature and a client palette
+/// can label an inlet instead of copying the names into its own table. The
+/// `optional` flag is not — see below.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct UGenInput {
     pub name: &'static str,
-    /// The value a client should offer when the user leaves the slot alone.
-    /// Advisory: the server applies no default of its own — a def that omits an
-    /// input is simply short, and the compiler rejects it by arity.
+    /// The value a client should offer when the user leaves the slot alone —
+    /// and, for an [`optional`](Self::optional) slot, the value the compiler
+    /// fills in when a def stops before it.
     pub default: f32,
+    /// Whether this slot is part of the kind's **declared optional tail**: a
+    /// def may stop before it, and `synthdef::compile` fills what is missing
+    /// from `default`. The optional slots are always a *suffix* of the input
+    /// list (`tests` in this module enforces it), so "how many inputs are
+    /// required" is one number and a short def is never ambiguous.
+    ///
+    /// **What this is for.** Arity is exact, so a UGen that grows an input
+    /// breaks every def ever written against it — including the ones persisted
+    /// on disk and the ones inside a saved bundle. `PlayBuf` going from four
+    /// inputs to seven made every stored def that used it unloadable. A
+    /// declared tail makes growth **by the tail** non-breaking; it does nothing
+    /// for an input inserted in the middle, which stays breaking.
+    ///
+    /// **Why not simply fill whatever is missing.** That would make a short def
+    /// legal in every slot of the catalog, and `BinaryOpUGen` is `a=0, b=0` — a
+    /// `Mul` truncated to one input would compile, fill `b=0` and silence the
+    /// chain with no `/fail` and no name. So a slot is optional only when
+    /// **its default is inert**: the value that makes the UGen behave as if the
+    /// slot were not there (0 for a trigger, an offset, a phase, a channel, a
+    /// done action; 1 for a level or a rate scale). A slot whose default is a
+    /// *choice* — `freq=440`, `delaytime=0.2`, `width=0.5`, `max=7` — stays
+    /// required, because omitting it would not be "leave it alone" but "pick a
+    /// number for me". Neither is a slot the UGen reads its **signal, source,
+    /// position or chain** from, whatever its default: silence and frame 0 are
+    /// legal values, so a def missing one would run and be wrong.
+    ///
+    /// The declared default is therefore **wire contract**: changing it later
+    /// changes what every def leaning on the fill sounds like.
+    pub optional: bool,
 }
 
-/// A named input slot (keeps the `UGENS` rows readable).
+/// A named input slot the def must give (keeps the `UGENS` rows readable).
 const fn inp(name: &'static str, default: f32) -> UGenInput {
-    UGenInput { name, default }
+    UGenInput {
+        name,
+        default,
+        optional: false,
+    }
+}
+
+/// A named slot of the kind's **optional tail**: a def may stop before it, and
+/// the compiler fills `default` in. See [`UGenInput::optional`] for the rule
+/// that decides which slots earn this.
+const fn inp_opt(name: &'static str, default: f32) -> UGenInput {
+    UGenInput {
+        name,
+        default,
+        optional: true,
+    }
 }
 
 /// How the synth runs a UGen that needs coordination the plain `process` path
@@ -303,6 +348,13 @@ impl UGenDescriptor {
     /// Whether this kind may be instantiated at `rate`.
     pub fn allows(&self, rate: Rate) -> bool {
         self.rates.contains(&rate)
+    }
+
+    /// How many inputs a def must actually give: every slot before the
+    /// declared optional tail (see [`UGenInput::optional`]). Equal to the
+    /// arity for a kind with no tail, which is every kind by default.
+    pub fn required_inputs(&self) -> usize {
+        self.inputs.iter().take_while(|i| !i.optional).count()
     }
 }
 
@@ -455,7 +507,7 @@ const I_ABC: &[UGenInput] = &[inp("a", 0.0), inp("b", 0.0), inp("c", 0.0)];
 /// The non-band-limited modulation shapes. The two with a duty cycle
 /// declare a third input; the two without do not, so `/ugen_query` never reports
 /// an inlet the UGen ignores.
-const I_LF: &[UGenInput] = &[inp("freq", 440.0), inp("iphase", 0.0)];
+const I_LF: &[UGenInput] = &[inp("freq", 440.0), inp_opt("iphase", 0.0)];
 const I_LF_WIDTH: &[UGenInput] = &[inp("freq", 440.0), inp("iphase", 0.0), inp("width", 0.5)];
 /// The one-segment ramps. `start`, `end` and `dur` are read once, on the
 /// first sample, as scsynth reads them: the ramp's geometry is fixed at birth
@@ -466,7 +518,7 @@ const I_LINE: &[UGenInput] = &[
     inp("start", 0.0),
     inp("end", 1.0),
     inp("dur", 1.0),
-    inp("done_action", 0.0),
+    inp_opt("done_action", 0.0),
 ];
 /// `XLine`'s only difference is where it starts: an exponential ramp from zero
 /// is degenerate, so the value a client offers must not be one.
@@ -474,7 +526,7 @@ const I_XLINE: &[UGenInput] = &[
     inp("start", 0.01),
     inp("end", 1.0),
     inp("dur", 1.0),
-    inp("done_action", 0.0),
+    inp_opt("done_action", 0.0),
 ];
 /// The noise family. The three spectral shapes and the two bit sources
 /// take no input at all; the held ones take a frequency, and `Dust` a mean
@@ -490,35 +542,35 @@ const I_CHAOS: &[UGenInput] = &[inp("chaos", 1.5)];
 /// in scsynth's order.
 const I_PAN2: &[UGenInput] = &[
     inp("signal", 0.0),
-    inp("pos", 0.0),
-    inp("level", 1.0),
-    inp("chan", 0.0),
+    inp_opt("pos", 0.0),
+    inp_opt("level", 1.0),
+    inp_opt("chan", 0.0),
 ];
 const I_BALANCE2: &[UGenInput] = &[
     inp("left", 0.0),
     inp("right", 0.0),
-    inp("pos", 0.0),
-    inp("level", 1.0),
-    inp("chan", 0.0),
+    inp_opt("pos", 0.0),
+    inp_opt("level", 1.0),
+    inp_opt("chan", 0.0),
 ];
 const I_XFADE2: &[UGenInput] = &[
     inp("a", 0.0),
     inp("b", 0.0),
-    inp("pan", 0.0),
-    inp("level", 1.0),
+    inp_opt("pan", 0.0),
+    inp_opt("level", 1.0),
 ];
 const I_ROTATE2: &[UGenInput] = &[
     inp("x", 0.0),
     inp("y", 0.0),
-    inp("pos", 0.0),
-    inp("chan", 0.0),
+    inp_opt("pos", 0.0),
+    inp_opt("chan", 0.0),
 ];
-const I_MIDSIDE: &[UGenInput] = &[inp("a", 0.0), inp("b", 0.0), inp("chan", 0.0)];
+const I_MIDSIDE: &[UGenInput] = &[inp("a", 0.0), inp("b", 0.0), inp_opt("chan", 0.0)];
 const I_WIDTH: &[UGenInput] = &[
     inp("left", 0.0),
     inp("right", 0.0),
-    inp("width", 1.0),
-    inp("chan", 0.0),
+    inp_opt("width", 1.0),
+    inp_opt("chan", 0.0),
 ];
 const I_PAN_AZ: &[UGenInput] = &[
     inp("signal", 0.0),
@@ -527,7 +579,7 @@ const I_PAN_AZ: &[UGenInput] = &[
     inp("width", 2.0),
     inp("orientation", 0.5),
     inp("numchans", 2.0),
-    inp("chan", 0.0),
+    inp_opt("chan", 0.0),
 ];
 /// `Select`/`SelectX`: the index, then an unbounded run of sources.
 const I_WHICH: &[UGenInput] = &[inp("which", 0.0)];
@@ -547,14 +599,14 @@ const I_DUTY: &[UGenInput] = &[
     inp("dur", 1.0),
     inp("reset", 0.0),
     inp("level", 1.0),
-    inp("done_action", 0.0),
+    inp_opt("done_action", 0.0),
 ];
 const I_TDUTY: &[UGenInput] = &[
     inp("dur", 1.0),
     inp("reset", 0.0),
     inp("level", 1.0),
-    inp("done_action", 0.0),
-    inp("gap_first", 0.0),
+    inp_opt("done_action", 0.0),
+    inp_opt("gap_first", 0.0),
 ];
 /// The trigger family. A kind that takes only triggers has no signal
 /// input at all — but it still defaults to `ar`, because a `kr` consumer
@@ -564,17 +616,17 @@ const I_HOLD: &[UGenInput] = &[inp("signal", 0.0), inp("trig", 0.0)];
 const I_SCHMIDT: &[UGenInput] = &[inp("signal", 0.0), inp("lo", 0.0), inp("hi", 1.0)];
 const I_TRIG: &[UGenInput] = &[inp("trig", 0.0)];
 const I_TRIG_RESET: &[UGenInput] = &[inp("trig", 0.0), inp("reset", 0.0)];
-const I_DIVIDER: &[UGenInput] = &[inp("trig", 0.0), inp("div", 2.0), inp("start", 0.0)];
+const I_DIVIDER: &[UGenInput] = &[inp("trig", 0.0), inp("div", 2.0), inp_opt("start", 0.0)];
 const I_STEPPER: &[UGenInput] = &[
     inp("trig", 0.0),
     inp("reset", 0.0),
     inp("min", 0.0),
     inp("max", 7.0),
-    inp("step", 1.0),
-    inp("resetval", 0.0),
+    inp_opt("step", 1.0),
+    inp_opt("resetval", 0.0),
 ];
-const I_SWEEP: &[UGenInput] = &[inp("trig", 0.0), inp("rate", 1.0)];
-const I_CHANGED: &[UGenInput] = &[inp("signal", 0.0), inp("threshold", 0.0)];
+const I_SWEEP: &[UGenInput] = &[inp("trig", 0.0), inp_opt("rate", 1.0)];
+const I_CHANGED: &[UGenInput] = &[inp("signal", 0.0), inp_opt("threshold", 0.0)];
 const I_DECAY: &[UGenInput] = &[inp("signal", 0.0), inp("decaytime", 1.0)];
 const I_DECAY2: &[UGenInput] = &[
     inp("signal", 0.0),
@@ -585,7 +637,7 @@ const I_SILENCE: &[UGenInput] = &[
     inp("signal", 0.0),
     inp("amp", 0.0001),
     inp("time", 0.1),
-    inp("done_action", 0.0),
+    inp_opt("done_action", 0.0),
 ];
 /// The node-control rows: `FreeSelf`/`PauseSelf` watch a signal,
 /// `Done`/`FreeSelfWhenDone` watch the UGen wired into `source`. The names
@@ -630,11 +682,19 @@ const I_INTEGRATE: &[UGenInput] = &[inp("signal", 0.0), inp("coef", 0.999)];
 const I_BUS: &[UGenInput] = &[inp("bus", 0.0)];
 const I_BUS_SIGNAL: &[UGenInput] = &[inp("bus", 0.0), inp("signal", 0.0)];
 const I_BUFNUM: &[UGenInput] = &[inp("bufnum", 0.0)];
-const I_TABLE_OSC: &[UGenInput] = &[inp("bufnum", 0.0), inp("freq", 440.0), inp("phase", 0.0)];
+const I_TABLE_OSC: &[UGenInput] = &[
+    inp("bufnum", 0.0),
+    inp("freq", 440.0),
+    inp_opt("phase", 0.0),
+];
 const I_CHAIN: &[UGenInput] = &[inp("chain", 0.0)];
 const I_CHAIN_AB: &[UGenInput] = &[inp("chain_a", 0.0), inp("chain_b", 0.0)];
-const I_CHAIN_THRESHOLD: &[UGenInput] = &[inp("chain", 0.0), inp("threshold", 0.0)];
-const I_CHAIN_SHIFT: &[UGenInput] = &[inp("chain", 0.0), inp("stretch", 1.0), inp("shift", 0.0)];
+const I_CHAIN_THRESHOLD: &[UGenInput] = &[inp("chain", 0.0), inp_opt("threshold", 0.0)];
+const I_CHAIN_SHIFT: &[UGenInput] = &[
+    inp("chain", 0.0),
+    inp_opt("stretch", 1.0),
+    inp_opt("shift", 0.0),
+];
 
 mod arith;
 mod buf;
@@ -727,6 +787,36 @@ mod tests {
                     "{} repeats the input name {:?}",
                     d.name,
                     a.name
+                );
+            }
+        }
+    }
+
+    /// **The optional slots are a suffix, and a variadic kind has none.**
+    /// The compiler completes a short def by filling from the first missing
+    /// slot to the end, so a required slot *after* an optional one would be
+    /// filled with a default the kind says is not safe to guess. And a
+    /// variadic kind's tail is an unbounded run of like-typed values, so a
+    /// short def there is genuinely ambiguous and nothing may be filled.
+    #[test]
+    fn the_optional_inputs_are_a_tail() {
+        for d in all() {
+            let least = d.required_inputs();
+            for (i, slot) in d.inputs.iter().enumerate() {
+                assert_eq!(
+                    slot.optional,
+                    i >= least,
+                    "{}: input {i} ({}) breaks the optional tail",
+                    d.name,
+                    slot.name
+                );
+            }
+            if matches!(d.arity, Arity::Variadic) {
+                assert_eq!(
+                    least,
+                    d.inputs.len(),
+                    "{} is variadic: its fixed head cannot be optional",
+                    d.name
                 );
             }
         }

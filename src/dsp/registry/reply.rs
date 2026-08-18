@@ -12,7 +12,7 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
     desc(
         "SendTrig",
         Fixed(3),
-        &[inp("trig", 0.0), inp("id", 0.0), inp("value", 0.0)],
+        &[inp("trig", 0.0), inp_opt("id", 0.0), inp_opt("value", 0.0)],
         Kr,
         R_KR_AR,
         Normal,
@@ -35,7 +35,11 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
     desc(
         "Poll",
         Fixed(3),
-        &[inp("trig", 0.0), inp("signal", 0.0), inp("trig_id", -1.0)],
+        &[
+            inp("trig", 0.0),
+            inp("signal", 0.0),
+            inp_opt("trig_id", -1.0),
+        ],
         Kr,
         R_KR_AR,
         Normal,

@@ -118,7 +118,7 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
             inp("rate", 1.0),
             inp("start", 0.0),
             inp("end", 1.0),
-            inp("reset_pos", 0.0),
+            inp_opt("reset_pos", 0.0),
         ],
         Ar,
         R_KR_AR,

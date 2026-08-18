@@ -271,6 +271,12 @@ The `kind` field is an **opaque string** as far as the protocol is concerned: th
 
 A client does not *have* to enumerate the catalog — naming a kind and letting the server validate remains the normal path — but it **can**, with [`/ugen_query`](#def-buffer-and-ugen-introspection): the same descriptors as a typed reply, so a palette or completion list derives from the server's own truth (and from the build it is actually talking to) instead of a copy of this table that would drift. Input names below are given in **wire order**, which is what `/ugen_query` reports.
 
+**A def is short only where the kind says it may be.** Inputs are positional and arity is exact, so a UGen that gains an input would break every def ever written against it — including the ones persisted on disk and the ones inside a saved bundle (`PlayBuf` going from four inputs to seven did exactly that). Some kinds therefore declare an **optional tail**: a run of trailing inputs a def may stop before, which the server fills from the catalog's own defaults while compiling. The compiled def is identical to one a complete client sent, so nothing about playing it changes.
+
+Which slots earn it is a property of the *kind*, not a general permission: a slot is optional only when its default is **inert** — the value that makes the UGen behave as if the slot were not there (0 for a trigger, an offset, a phase, a channel, a done action; 1 for a level or a rate scale). A slot whose default is a *choice* (`freq`, `delaytime`, `width`, `max`) stays required, because omitting it would not be leaving it alone; so does any slot the UGen reads its signal, source, position or chain from, since silence and frame 0 are legal values a wrong def would run with. `BinaryOpUGen` is `a=0, b=0` and has **no** optional tail at all — filling a truncated `Mul` would silence the chain with no `/fail` and no name. A def that is short of the tail, or longer than the kind, still fails with `expected … inputs`.
+
+This makes growth **by the tail** non-breaking and does nothing for an input inserted in the middle, which stays breaking. And the declared default of an optional slot is **wire contract**: changing it later changes what every def leaning on the fill sounds like.
+
 | kind | inputs | output |
 |---|---|---|
 | `Sine` | freq (Hz) | sine by f64 phase accumulation, starts at phase 0 |

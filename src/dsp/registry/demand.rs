@@ -187,8 +187,8 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         &[
             inp("bufnum", 0.0),
             inp("phase", 0.0),
-            inp("loop", 1.0),
-            inp("channel", 0.0),
+            inp_opt("loop", 1.0),
+            inp_opt("channel", 0.0),
         ],
         Dr,
         R_DR,

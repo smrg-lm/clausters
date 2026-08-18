@@ -5872,3 +5872,45 @@ element reading **several segments** — two different files, or two windows wit
 a gap between them, read as one thing. An element wraps one thing. Such a join
 is refused by name rather than approximated, because approximating it silently
 drops material.
+
+## A UGen's trailing inputs may be declared optional, and only where the default is inert
+
+**Context.** Inputs are positional and arity is exact, so a UGen that grows an
+input breaks every def ever written against it: `PlayBuf` going from four inputs
+to seven made every persisted def that used it fail to compile, and the server
+warned about them at every boot. The same break reaches a saved bundle, which is
+material a person made.
+
+**The cheap version is refused.** "Fill whatever is missing from the catalog's
+defaults" would make a short def legal in every input slot of the catalog, and
+`BinaryOpUGen` is `a=0, b=0` — a `Mul` truncated to one input would compile,
+fill `b=0`, and silence the chain with no `/fail` and no name. That is precisely
+the failure the unusual input order of `PlayBuf` was chosen to avoid.
+
+**Decision.** A kind declares an **optional tail**: the trailing slots a def may
+stop before, marked on the slot itself (`UGenInput::optional`), which
+`synthdef::compile` fills from the declared defaults. The optional slots are
+always a suffix, enforced by a test, so "how many inputs are required" is one
+number and a short def is never ambiguous. A kind with no tail — which is most
+of them, and every operator — still needs its inputs exactly.
+
+**What earns a slot the tail**, which is the whole audit and the part worth
+writing down: its default must be **inert**, the value that makes the UGen
+behave as if the slot were not there — 0 for a trigger, an offset, a phase, a
+channel, a done action; 1 for a level or a rate scale. A default that is a
+*choice* (`freq=440`, `delaytime=0.2`, `width=0.5`, `max=7`) keeps its slot
+required, because omitting it would not be "leave it alone" but "pick a number
+for me". So does any slot the UGen reads its **signal, source, position or
+chain** from, whatever its default, since silence and frame 0 are legal values
+that a def missing one would run with, wrongly and quietly.
+
+**Consequences.** Growth **by the tail** is non-breaking; an input inserted in
+the middle stays breaking and stays silent, and nothing here pretends otherwise.
+The fill happens in `compile`, on the network thread, once per def, and the
+compiled def is byte-identical to one a complete client sent — so there is no
+runtime cost and the audio thread never learns of it. And a declared default
+becomes **wire contract**: changing one afterwards changes what every def
+leaning on the fill sounds like, where before all of them were free metadata.
+Clients are unaffected and keep materialising every default before the last
+input the caller gave: the wire is positional and has no sparse form.
+

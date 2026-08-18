@@ -13,7 +13,7 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
     desc_spectral(
         "FFT",
         Fixed(2),
-        &[inp("source", 0.0), inp("active", 1.0)],
+        &[inp("source", 0.0), inp_opt("active", 1.0)],
         Kr,
         R_KR,
         SpectralRole::Source,
@@ -49,7 +49,7 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
     desc_spectral(
         "PV_BrickWall",
         Fixed(2),
-        &[inp("chain", 0.0), inp("wipe", 0.0)],
+        &[inp("chain", 0.0), inp_opt("wipe", 0.0)],
         Kr,
         R_KR,
         SpectralRole::Filter,
@@ -126,7 +126,7 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
     desc_spectral(
         "PV_MagFreeze",
         Fixed(2),
-        &[inp("chain", 0.0), inp("freeze", 0.0)],
+        &[inp("chain", 0.0), inp_opt("freeze", 0.0)],
         Kr,
         R_KR,
         SpectralRole::Filter,
@@ -135,7 +135,7 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
     desc_spectral(
         "PV_MagSmear",
         Fixed(2),
-        &[inp("chain", 0.0), inp("bins", 0.0)],
+        &[inp("chain", 0.0), inp_opt("bins", 0.0)],
         Kr,
         R_KR,
         SpectralRole::Filter,
