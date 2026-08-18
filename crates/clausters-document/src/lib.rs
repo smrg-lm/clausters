@@ -162,6 +162,26 @@ pub struct SourceRef {
     pub range: Option<Range>,
 }
 
+/// One window of a [`Body::Segments`]: which material, from which frame, for how
+/// long.
+///
+/// The length is in **beats**, like every other length in this format, and the
+/// frame is the client's own coordinate — the two are bridged by whoever knows
+/// the rate, which is never this crate. [`SourceRef::range`] says the same
+/// thing in frames alone and is what a writer that knows the frame count uses
+/// instead; a segment states its length in beats because a length here is a
+/// placement length.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SegmentRef {
+    /// The material this window is onto.
+    pub source: SourceRef,
+    /// The first frame it reads.
+    #[serde(default)]
+    pub start: f64,
+    /// How long it lasts, in beats.
+    pub duration: Beats,
+}
+
 /// How a [`Body::Set`]'s members relate to each other.
 ///
 /// Named `Grouping` rather than `SetKind` because `kind` is the body's own
@@ -205,6 +225,8 @@ pub struct Member {
 /// - [`Body::Sequence`] — a **fixed, non-simultaneous** succession. It may
 ///   contain sets, so a sequence of sections is a sequence.
 /// - [`Body::Buffer`] — a succession of data at **constant rate**: a vector.
+///   [`Body::Segments`] is the same primitive assembled from several windows,
+///   not a sixth kind.
 ///   Audio or control, and the only body that names material directly.
 /// - [`Body::Set`] — the **recursive container**. Its job is to group elements,
 ///   of mixed kinds, and it is what a multitrack lane is a restricted
@@ -246,6 +268,22 @@ pub enum Body {
         /// How this material is meant to sound — a buffer is *data*, so what
         /// plays it (an instrument, its controls) is configuration, and
         /// configuration is the client's to interpret.
+        #[serde(default, skip_serializing_if = "Opaque::is_empty")]
+        config: Opaque,
+    },
+    /// Data at constant rate, assembled from **several windows**: which source,
+    /// from which frame, for how long — read back to back as one thing.
+    ///
+    /// It is the same primitive [`Body::Buffer`] is, over more than one piece
+    /// of material: joining fragments of two files makes one, and cutting one
+    /// apart gives back the windows it was made of. Nothing is copied, which is
+    /// the whole point — the segments are references, exactly as a buffer's own
+    /// is.
+    Segments {
+        /// The material, in reading order.
+        segments: Vec<SegmentRef>,
+        /// How it is meant to sound — one configuration for the whole of it,
+        /// because what this element *is* is one thing to play.
         #[serde(default, skip_serializing_if = "Opaque::is_empty")]
         config: Opaque,
     },
@@ -449,6 +487,7 @@ impl Body {
             Body::Event { .. } => "event",
             Body::Sequence { .. } => "sequence",
             Body::Buffer { .. } => "buffer",
+            Body::Segments { .. } => "segments",
             Body::Set { .. } => "set",
             Body::Generator { .. } => "generator",
             Body::Unknown(_) => "unknown",

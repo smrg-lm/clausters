@@ -307,6 +307,36 @@ fn clip_of(
             props.insert("channels".into(), json!(channels));
         }
     }
+    // **Assembled material draws a take per window**, each over its own stretch
+    // of the clip: one clip, because that is what the element is, and one body
+    // per piece, because each reads a different part of different material.
+    if let Body::Segments { segments, .. } = &member.node.body {
+        let mut children = Vec::new();
+        let mut cursor = 0.0f64;
+        for segment in segments {
+            let (at, len) = (cursor, segment.duration);
+            cursor += segment.duration;
+            let Some(take) = look.takes.and_then(|t| t.get(segment.source.source)) else {
+                continue;
+            };
+            let mut body = Map::new();
+            body.insert("type".into(), json!("signal"));
+            body.insert("view".into(), json!("trace"));
+            body.insert("buffer".into(), json!(take.bufnum));
+            if let Some(channels) = take.channels {
+                body.insert("channels".into(), json!(channels));
+            }
+            body.insert("at".into(), json!(at * look.units_per_beat));
+            body.insert("dur".into(), json!(len * look.units_per_beat));
+            if segment.start != 0.0 {
+                body.insert("start".into(), json!(segment.start));
+            }
+            children.push(Value::Object(body));
+        }
+        if !children.is_empty() {
+            props.insert("children".into(), json!(children));
+        }
+    }
     Value::Object(props)
 }
 
@@ -339,51 +369,58 @@ fn take_editors(
     let mut seen: Vec<clausters_document::SourceId> = Vec::new();
     let mut out = Vec::new();
     document.root.walk(&mut |node| {
-        let Body::Buffer { source, .. } = &node.body else {
-            return;
+        // One pane per **source**, and assembled material names several: a
+        // joined clip is edited piece by piece, since a piece is what a file
+        // is.
+        let sources: Vec<clausters_document::SourceId> = match &node.body {
+            Body::Buffer { source, .. } => vec![source.source],
+            Body::Segments { segments, .. } => segments.iter().map(|s| s.source.source).collect(),
+            _ => return,
         };
-        if seen.contains(&source.source) {
-            return;
+        for source in sources {
+            if seen.contains(&source) {
+                continue;
+            }
+            let Some(take) = takes.get(source) else {
+                continue;
+            };
+            seen.push(source);
+            let widget = ids.take();
+            bindings.push(Bound {
+                widget,
+                node: node.id,
+            });
+            let mut props = Map::new();
+            props.insert("id".into(), json!(widget));
+            props.insert("type".into(), json!("signal"));
+            props.insert("view".into(), json!("trace"));
+            props.insert("buffer".into(), json!(take.bufnum));
+            if let Some(channels) = take.channels {
+                props.insert("channels".into(), json!(channels));
+            }
+            props.insert("label".into(), json!(label_of(node)));
+            props.insert("h".into(), json!(editor_height(take.channels)));
+            props.insert("sample_rate".into(), json!(look.sample_rate));
+            props.insert("ruler".into(), json!("samples"));
+            // **The head is anchored at 0, and that is the whole of drawing it.**
+            // A session's clock is the *piece's position* rather than the device's
+            // (`HeadClock::Piece`), so the sweep from an anchor of 0 is the
+            // position itself: it stands still while the transport is stopped,
+            // jumps where a locate puts it and wraps where the engine wraps it.
+            // No `playhead_loop` here for the same reason — the loop is the
+            // transport's, and wrapping an already-wrapped number would double it.
+            props.insert("playhead_at".into(), json!(0.0));
+            // The plan, and it is three gestures rather than a mode: a plain drag
+            // sweeps a selection (what an editor does by default), Alt draws over
+            // the samples and Ctrl grabs one. `draw` refuses out loud below the
+            // zoom where a pixel is one sample, so it never silently paints what
+            // the eye cannot check.
+            props.insert(
+                "gestures".into(),
+                json!({"drag": "select", "alt": "draw", "ctrl": "sample"}),
+            );
+            out.push(Value::Object(props));
         }
-        let Some(take) = takes.get(source.source) else {
-            return;
-        };
-        seen.push(source.source);
-        let widget = ids.take();
-        bindings.push(Bound {
-            widget,
-            node: node.id,
-        });
-        let mut props = Map::new();
-        props.insert("id".into(), json!(widget));
-        props.insert("type".into(), json!("signal"));
-        props.insert("view".into(), json!("trace"));
-        props.insert("buffer".into(), json!(take.bufnum));
-        if let Some(channels) = take.channels {
-            props.insert("channels".into(), json!(channels));
-        }
-        props.insert("label".into(), json!(label_of(node)));
-        props.insert("h".into(), json!(editor_height(take.channels)));
-        props.insert("sample_rate".into(), json!(look.sample_rate));
-        props.insert("ruler".into(), json!("samples"));
-        // **The head is anchored at 0, and that is the whole of drawing it.**
-        // A session's clock is the *piece's position* rather than the device's
-        // (`HeadClock::Piece`), so the sweep from an anchor of 0 is the
-        // position itself: it stands still while the transport is stopped,
-        // jumps where a locate puts it and wraps where the engine wraps it.
-        // No `playhead_loop` here for the same reason — the loop is the
-        // transport's, and wrapping an already-wrapped number would double it.
-        props.insert("playhead_at".into(), json!(0.0));
-        // The plan, and it is three gestures rather than a mode: a plain drag
-        // sweeps a selection (what an editor does by default), Alt draws over
-        // the samples and Ctrl grabs one. `draw` refuses out loud below the
-        // zoom where a pixel is one sample, so it never silently paints what
-        // the eye cannot check.
-        props.insert(
-            "gestures".into(),
-            json!({"drag": "select", "alt": "draw", "ctrl": "sample"}),
-        );
-        out.push(Value::Object(props));
     });
     out
 }
@@ -486,6 +523,7 @@ fn label_of(node: &Node) -> String {
         Body::Event { .. } => format!("event {}", node.id.0),
         Body::Sequence { .. } => format!("sequence {}", node.id.0),
         Body::Buffer { .. } => format!("take {}", node.id.0),
+        Body::Segments { segments, .. } => format!("take {} ({})", node.id.0, segments.len()),
         Body::Set { grouping, .. } => format!("{grouping:?} {}", node.id.0).to_lowercase(),
         Body::Generator { .. } => format!("generator {}", node.id.0),
         // A body this build does not know: drawn as what it is rather than
@@ -699,6 +737,76 @@ mod take_tests {
             clip["dur"], 96_000.0,
             "as long as the material, in timeline units"
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// **Assembled material draws one clip and a take per window**, each over
+    /// its own stretch of it — the standalone host reading what a joined clip
+    /// was saved as, which is the one path a script is not there to draw.
+    #[test]
+    fn segments_draw_one_clip_with_a_take_per_window() {
+        use clausters_document::SegmentRef;
+
+        let dir = std::env::temp_dir().join(format!("clausters_gui_segs_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("mkdir");
+        std::fs::write(dir.join("a.wav"), b"one").expect("write");
+        std::fs::write(dir.join("b.wav"), b"two").expect("write");
+        let segment = |source: u64, start: f64, duration: f64| SegmentRef {
+            source: SourceRef {
+                source: SourceId(source),
+                lifetime: Lifetime::Session,
+                generation: 0,
+                range: None,
+            },
+            start,
+            duration,
+        };
+        let node = Node::new(
+            NodeId(2),
+            Body::Segments {
+                segments: vec![segment(3, 0.0, 1.0), segment(4, 480.0, 2.0)],
+                config: Default::default(),
+            },
+        );
+        let document = Document::new(Node::new(
+            NodeId(1),
+            Body::Set {
+                grouping: Grouping::Concrete,
+                members: vec![Member {
+                    offset: 0.0,
+                    dur: None,
+                    node,
+                }],
+                config: Opaque::none(),
+            },
+        ));
+        let session = Session::new(document)
+            .with_source(
+                SourceId(3),
+                Source::file("a.wav", Lifetime::Session).shaped(1, 48_000, 48_000.0),
+            )
+            .with_source(
+                SourceId(4),
+                Source::file("b.wav", Lifetime::Session).shaped(1, 48_000, 48_000.0),
+            );
+        let load = sources::plan(&session, &dir, 7);
+        let look = Look {
+            takes: Some(&load.takes),
+            ..Look::default()
+        };
+        let drawn = draw(&session.document, &look, "joined");
+        let clip = &drawn.def["children"][0]["children"][0];
+        let takes = clip["children"].as_array().expect("a body per window");
+        assert_eq!(takes.len(), 2);
+        assert_eq!(takes[0]["buffer"], 7, "the first window's material");
+        assert_eq!(takes[1]["buffer"], 8, "and the second's, a different file");
+        // Each on its own stretch of the clip, in timeline units.
+        assert_eq!(takes[0]["at"], 0.0);
+        assert_eq!(takes[1]["at"], look.units_per_beat);
+        assert_eq!(takes[1]["dur"], 2.0 * look.units_per_beat);
+        // ...and the second reads its own frame, which the first does not name.
+        assert_eq!(takes[1]["start"], 480.0);
+        assert!(takes[0].get("start").is_none());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -416,6 +416,10 @@ pub(crate) fn current(document: &Document, intent: &Intent) -> Option<Intent> {
 fn generation(document: &Document, id: NodeId) -> Option<u64> {
     match &document.find(id)?.body {
         Body::Buffer { source, .. } => Some(source.generation),
+        // Assembled material is as fresh as its **stalest** piece: an edit made
+        // against it was made against every window it shows, so any one of them
+        // being rewritten is what a staleness check has to catch.
+        Body::Segments { segments, .. } => segments.iter().map(|s| s.source.generation).max(),
         _ => None,
     }
 }
@@ -595,6 +599,7 @@ fn config(body: &Body) -> Option<&Opaque> {
         Body::Event { config, .. }
         | Body::Sequence { config, .. }
         | Body::Buffer { config, .. }
+        | Body::Segments { config, .. }
         | Body::Generator { config, .. } => Some(config),
         Body::Set { .. } | Body::Unknown(_) => None,
     }
@@ -631,6 +636,7 @@ fn config_mut(body: &mut Body) -> Option<&mut Opaque> {
         Body::Event { config, .. }
         | Body::Sequence { config, .. }
         | Body::Buffer { config, .. }
+        | Body::Segments { config, .. }
         | Body::Generator { config, .. } => Some(config),
         Body::Set { .. } | Body::Unknown(_) => None,
     }

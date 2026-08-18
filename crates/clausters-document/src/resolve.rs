@@ -180,6 +180,11 @@ fn walk(
         {
             out.push(resolved);
         }
+        // **Assembled material resolves per window**: one entry per segment the
+        // selection reaches, because each of them is a different part of a
+        // different source and a caller that copied them as one span would be
+        // copying frames nobody placed there.
+        pieces_of_segments(member, at, mapping, start, end, out);
         walk(&member.node, at, selection, mapping, start, end, out);
     }
 }
@@ -238,6 +243,60 @@ fn piece(
         },
         at: mapping.to_frames(from - start).round().max(0.0) as u64,
     })
+}
+
+/// Every window of a [`Body::Segments`] the selection lands on, in reading
+/// order.
+///
+/// The same arithmetic [`piece`] does, once per segment, against the stretch of
+/// the placement that segment occupies — and bounded by the placement, which is
+/// a window onto the element like every other placement here.
+fn pieces_of_segments(
+    member: &Member,
+    at: Beats,
+    mapping: &Mapping,
+    start: Beats,
+    end: Beats,
+    out: &mut Vec<Resolved>,
+) {
+    let Body::Segments { segments, .. } = &member.node.body else {
+        return;
+    };
+    let placed = member.dur.or(member.node.duration);
+    let mut cursor = 0.0;
+    for segment in segments {
+        let (from_beat, to_beat) = (at + cursor, at + cursor + segment.duration);
+        cursor += segment.duration;
+        // Past what the placement shows: the rest of the material is there and
+        // is not being played, so it is not under anything.
+        let to_beat = match placed {
+            Some(dur) if to_beat > at + dur => at + dur,
+            _ => to_beat,
+        };
+        if to_beat <= from_beat {
+            break;
+        }
+        let (from, to) = (start.max(from_beat), end.min(to_beat));
+        if to <= from {
+            continue;
+        }
+        let into = mapping.to_frames(from - from_beat).round().max(0.0) as u64;
+        let length = mapping.to_frames(to - from).round().max(0.0) as u64;
+        if length == 0 {
+            continue;
+        }
+        let range_start = segment.start.max(0.0).round() as u64 + into;
+        out.push(Resolved {
+            node: member.node.id,
+            source: segment.source.source,
+            generation: segment.source.generation,
+            range: Range {
+                start: range_start,
+                end: range_start + length,
+            },
+            at: mapping.to_frames(from - start).round().max(0.0) as u64,
+        });
+    }
 }
 
 /// How long the placement is, in beats: what was written on it, or what the

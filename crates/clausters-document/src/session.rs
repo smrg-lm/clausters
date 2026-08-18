@@ -249,11 +249,19 @@ impl Session {
     pub fn dangling(&self) -> Vec<SourceId> {
         let mut missing = Vec::new();
         self.document.root.walk(&mut |node| {
-            if let crate::Body::Buffer { source, .. } = &node.body
-                && !self.sources.contains_key(&source.source)
-                && !missing.contains(&source.source)
-            {
-                missing.push(source.source);
+            let named: Vec<crate::SourceId> = match &node.body {
+                crate::Body::Buffer { source, .. } => vec![source.source],
+                // Assembled material names one source per window, and a table
+                // covering only the first would reopen with the rest missing.
+                crate::Body::Segments { segments, .. } => {
+                    segments.iter().map(|s| s.source.source).collect()
+                }
+                _ => Vec::new(),
+            };
+            for source in named {
+                if !self.sources.contains_key(&source) && !missing.contains(&source) {
+                    missing.push(source);
+                }
             }
         });
         missing
