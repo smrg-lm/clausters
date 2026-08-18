@@ -42,7 +42,7 @@ stays up between cells, or run it as a plain script.
 import time
 
 from clausters import Buffer, Session, Synth, SynthDef
-from clausters.defs.ugens import line, out, record_buf, sin_osc
+from clausters.defs.ugens import line, out, record_buf, sine
 from clausters.gui import waveform, window
 
 # %% [markdown]
@@ -91,7 +91,7 @@ SynthDef(
     "recorder",
     out(0.0, record_buf(
         float(take.bufnum), 0.0,
-        sin_osc(line(120.0, 900.0, SECONDS)) * line(0.05, 0.3, SECONDS),
+        sine(line(120.0, 900.0, SECONDS)) * line(0.05, 0.3, SECONDS),
         done_action=2,
     )),
 ).send(server)
