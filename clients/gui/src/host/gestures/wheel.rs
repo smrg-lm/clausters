@@ -56,8 +56,17 @@ impl Gestures {
         // it has none, and the container gets its turn below.
         if let WidgetKind::Custom(_) = kind {
             let at = element::At::widget(id, rect, found_scale, indent);
+            // **On the shape it draws, like the press.** An element states one
+            // hit shape and every pointer question reads it: the wheel over the
+            // corner of a knob's cell used to reach the element rather than the
+            // axis drawn behind it, which is the same mistake the press made
+            // before it was filtered — and worse to meet, since a wheel is not
+            // even aimed, it is where the hand happened to leave the pointer.
             let reported = element::with(host, ctx, at, |el, input| {
-                el.wheel((cx, cy), (0.0, steps), input)
+                el.hit_area(input)
+                    .hit(cx, cy, input.metrics.hit_slop)
+                    .then(|| el.wheel((cx, cy), (0.0, steps), input))
+                    .flatten()
             })
             .flatten();
             if let Some(events) = reported {

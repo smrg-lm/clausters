@@ -1844,6 +1844,78 @@ fn trimming_a_clips_head_moves_its_window_over_the_material() {
     );
 }
 
+/// **Every pointer question reads the shape the element draws**, not just the
+/// press: an element drawn rounder or smaller than its cell answers the wheel
+/// only where it is drawn, and the air around it belongs to whatever the
+/// container puts there. A wheel is worse to get wrong than a press, since it
+/// is not aimed at all — it is where the hand happened to leave the pointer.
+#[test]
+fn the_wheel_reads_the_same_shape_the_press_does() {
+    /// A leaf drawn as the disc inscribed in its cell, answering both the press
+    /// and the wheel — the two questions that must agree on where it is.
+    #[derive(Debug, Clone)]
+    struct Dial;
+    impl crate::host::widget::Element for Dial {
+        fn set(&mut self, _key: &str, _v: &serde_json::Value) -> bool {
+            false
+        }
+        fn draw(
+            &self,
+            _d: &mut crate::host::paint::Draw,
+            _ctx: &crate::host::widget::element::Ctx,
+        ) {
+        }
+        fn hit_area(
+            &self,
+            input: &crate::host::widget::element::Input,
+        ) -> crate::host::widget::element::HitArea {
+            let r = input.rect;
+            crate::host::widget::element::HitArea::Disc {
+                cx: r.x + r.w * 0.5,
+                cy: r.y + r.h * 0.5,
+                r: r.w.min(r.h) * 0.5,
+            }
+        }
+        fn wheel(
+            &mut self,
+            _at: (f64, f64),
+            _delta: (f64, f64),
+            _input: &crate::host::widget::element::Input,
+        ) -> Option<crate::host::widget::element::Events> {
+            Some(crate::host::widget::element::Events::value(OscType::Int(1)))
+        }
+        fn clone_box(&self) -> Box<dyn crate::host::widget::Element> {
+            Box::new(self.clone())
+        }
+    }
+    crate::host::widget::element::register("test_dial", |_props, _blobs| Ok(Box::new(Dial)));
+
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"children":[
+            {"id":90,"type":"test_dial","w":200,"h":200}]}"#,
+    );
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 400, 400);
+    let cell = placed_rect(&host, &ctx, 90);
+    let centre = (
+        (cell.x + cell.w * 0.5) as f64,
+        (cell.y + cell.h * 0.5) as f64,
+    );
+    let effects = g.wheel(&mut host, &ctx, centre.0, centre.1, 1.0);
+    assert!(
+        first_emit(&effects, 90).is_some(),
+        "the dial answered where it is drawn: {effects:?}"
+    );
+    // The corner of the same cell is outside the disc — and outside the hit
+    // slop around it, which is a few pixels and not a hundred.
+    let corner = (cell.x as f64 + 1.0, cell.y as f64 + 1.0);
+    let effects = g.wheel(&mut host, &ctx, corner.0, corner.1, 1.0);
+    assert!(
+        first_emit(&effects, 90).is_none(),
+        "the corner is the window's: {effects:?}"
+    );
+}
+
 /// **Split and join are the placement layer's edit verbs**, and both leave as
 /// intents: the host holds no composition, so it says where the cut falls and
 /// which clips are to be read as one, and the owner answers with the tree that

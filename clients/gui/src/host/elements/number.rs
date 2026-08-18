@@ -13,7 +13,7 @@ use crate::host::graphics::controls::field_h;
 use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
 use crate::host::widget::Range;
-use crate::host::widget::element::{Claim, Ctx, Element, Events, Input};
+use crate::host::widget::element::{Claim, Ctx, Element, Events, HitArea, Input};
 use crate::host::widget::size::Natural;
 
 use super::control::{self, Dial};
@@ -59,6 +59,13 @@ impl Element for Number {
 
     fn info(&self) -> Vec<(String, Value)> {
         control::info(&self.range)
+    }
+
+    /// **The field, not the cell.** A number is a strip under its label, and
+    /// the run of the cell a row stretched around it is the window's: a drag
+    /// begun on that air used to turn the value.
+    fn hit_area(&self, input: &Input) -> HitArea {
+        HitArea::Rect(control::body(&self.range, input))
     }
 
     fn press(&mut self, at: (f64, f64), input: &Input) -> Claim {

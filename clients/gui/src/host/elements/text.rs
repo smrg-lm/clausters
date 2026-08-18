@@ -31,7 +31,7 @@ use crate::host::graphics::controls;
 use crate::host::graphics::textedit::{self, Caret};
 use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
-use crate::host::widget::element::{Claim, Ctx, Element, Events, Input, Key, KeyInput};
+use crate::host::widget::element::{Claim, Ctx, Element, Events, HitArea, Input, Key, KeyInput};
 use crate::host::widget::parse;
 use crate::host::widget::size::{Natural, body_inset, control_box, label_strip};
 
@@ -155,6 +155,19 @@ impl Element for Text {
 
     fn accepts_focus(&self) -> bool {
         true
+    }
+
+    /// **The field, not the cell.** A field is the body drawn under its label,
+    /// single-line or multiline alike, and a press on the label strip or on the
+    /// air a row stretched around it used to focus the field and land a caret
+    /// in text nobody pointed at.
+    fn hit_area(&self, input: &Input) -> HitArea {
+        HitArea::Rect(controls::body_rect_at(
+            input.rect,
+            self.label.is_some(),
+            self.text_size * input.scale,
+            input.metrics,
+        ))
     }
 
     fn press(&mut self, at: (f64, f64), input: &Input) -> Claim {

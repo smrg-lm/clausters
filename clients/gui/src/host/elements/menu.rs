@@ -22,7 +22,7 @@ use crate::host::graphics::controls;
 use crate::host::layout::Rect;
 use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
-use crate::host::widget::element::{Claim, Ctx, Element, Input};
+use crate::host::widget::element::{Claim, Ctx, Element, HitArea, Input};
 use crate::host::widget::parse;
 use crate::host::widget::size::{Natural, body_inset, control_box, field_w, label_strip, text_box};
 
@@ -130,6 +130,17 @@ impl Element for Menu {
 
     fn info(&self) -> Vec<(String, Value)> {
         vec![("index".into(), Value::from(self.index))]
+    }
+
+    /// **The field the chosen option is drawn in**, which is also what the list
+    /// hangs off — never the label strip over it or the cell around it.
+    ///
+    /// The **open** list is the exception, and it is the same exception the
+    /// press already makes: while a menu is up, a press anywhere at all is the
+    /// list's (a click outside closes it), and the machine routes it through
+    /// the overlay rather than through this shape.
+    fn hit_area(&self, input: &Input) -> HitArea {
+        HitArea::Rect(self.body(input))
     }
 
     fn press(&mut self, at: (f64, f64), input: &Input) -> Claim {
