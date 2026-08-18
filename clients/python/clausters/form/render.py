@@ -24,14 +24,16 @@ Scope of this phase (the concrete path):
 A `Buffer` is *data*: it sounds through the **instrument** that plays it (a def
 whose ``buf`` control takes the buffer number), so a `Buffer` with an
 ``instrument`` emits one event playing it — the audio clip — and one without
-contributes structure only. A `Group{logical}` takes the other path entirely (it
+contributes structure only. A `Segments` is the same rule over several windows:
+one event per segment, at its own offset inside the element, so material
+assembled from pieces of different buffers sounds continuous on one instrument. A `Group{logical}` takes the other path entirely (it
 becomes a `GraphDef`); instancing a bare def still needs an instrument of its own
 and raises a clear `NotImplementedError` here.
 """
 
 from ..defs.node import Group as NodeGroup
 from .group import CONCRETE, LOGICAL, Group
-from .element import Buffer, Element, Event, Generator, Sequence, Track
+from .element import Buffer, Element, Event, Generator, Segments, Sequence, Track
 
 
 def flatten(element, base: float = 0.0) -> list:
@@ -136,6 +138,14 @@ def _emit_element(element, base: float, out: list):
         out.append((base, element.wraps))
     elif isinstance(element, (Sequence, Generator)):
         _emit_sequence(element.wraps, base, out)
+    elif isinstance(element, Segments):
+        # Several windows read as one thing: one event per segment, each at its
+        # own offset inside the element and each carrying its own window, so
+        # what sounds is continuous even though the material is not one buffer.
+        # Without an instrument it is structure, exactly as a `Buffer` is.
+        if element.instrument is not None:
+            for offset, event in element.to_events():
+                out.append((base + offset, event))
     elif isinstance(element, Buffer):
         # A buffer is data; the instrument is what makes it sound (a def whose
         # `buf` control plays it). Without one it is structure only — it draws in

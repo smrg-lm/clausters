@@ -530,14 +530,30 @@ export function signal(
          * zeros.
          */
         measure?: "peak" | "rms" | "peak rms" | "rms peak";
+        /**
+         * **Inside a `clip`**, and only there: where on the clip's own time
+         * this body sits (`at`) and how much of it it covers (`dur`). A clip
+         * holding three segments of three files holds three takes, each over
+         * its own third. A body that names neither fills the clip.
+         */
+        at?: number;
+        dur?: number;
+        /**
+         * **Inside a `clip`**: this body's own window onto its material — the
+         * source frame it reads from, and whether that window wraps. A body
+         * that names neither reads through the clip's own window, which is
+         * every take written as a clip prop.
+         */
+        start?: number;
+        loop?: boolean;
         axes?: { x?: Props; y?: Props };
         label?: string;
     } = {},
 ): GuiNode {
     const {
         view, cache, path, buffer, data, blob, channels, bus, rate, retention,
-        baseBucket, navigable, selectable, editable, overlay, measure, axes: pair,
-        label: text, ...rest
+        baseBucket, navigable, selectable, editable, overlay, measure, at, dur,
+        start, loop, axes: pair, label: text, ...rest
     } = options;
     return node("signal", {
         ...rest,
@@ -554,6 +570,10 @@ export function signal(
             ["editable", flag(editable)],
             ["overlay", flag(overlay)],
             ["measure", measure],
+            ["at", at],
+            ["dur", dur],
+            ["start", start],
+            ["loop", flag(loop)],
             ["label", text],
         ]),
     });

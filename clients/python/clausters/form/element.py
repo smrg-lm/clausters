@@ -270,6 +270,116 @@ class Buffer(Element):
         return SeqEvent(params)
 
 
+class Segments(Element):
+    """*Several windows read as one*: material assembled from segments of one or
+    more buffers, which sound as a single thing.
+
+    A `Buffer` is one window onto one buffer. This is what a **join** makes when
+    the fragments do not come from one place: a list of
+    ``(buffer, start, duration)`` — the buffer to read, the frame to read it
+    from, and how long that segment lasts in beats — read back to back. It is
+    the same memory-view idea one level up: nothing is copied, and cutting one
+    of these apart again gives back windows over the same buffers.
+
+    Rendering emits **one event per segment**, each at its own offset inside the
+    element and each carrying its own window, so the segments sound continuous
+    on one instrument. The editor draws it as **one clip** holding one take per
+    segment, each over its own stretch of the clip.
+
+    Args:
+        segments: the material, as ``(buffer, start, duration)`` triples (a
+            plain ``(buffer, duration)`` reads that buffer from its first
+            frame). ``start`` is in frames, ``duration`` in beats.
+        instrument: the def that plays them — one def for all of them, since
+            what this element *is* is one thing to play (see `Buffer`).
+        controls: extra event parameters passed to that def.
+        onset: start in beats relative to the context, or ``None``.
+        duration: length in beats; the sum of the segments' when not given.
+    """
+
+    def __init__(self, segments, onset=None, duration=None, *, instrument=None,
+                 controls=None, name=None):
+        parsed = [Segment.of(s) for s in segments]
+        if duration is None and parsed:
+            duration = sum(seg.duration for seg in parsed)
+        super().__init__(wraps=parsed, onset=onset, duration=duration, name=name)
+        self.instrument = instrument
+        self.controls = dict(controls or {})
+
+    @property
+    def segments(self) -> list:
+        """The segments, in reading order — the element's own material."""
+        return list(self.wraps or ())
+
+    def placed(self) -> list:
+        """The segments with the beat each one **starts at** inside this
+        element: ``(offset, segment)`` pairs, which is what both rendering and
+        drawing lay out from."""
+        out, cursor = [], 0.0
+        for seg in self.segments:
+            out.append((cursor, seg))
+            cursor += seg.duration
+        return out
+
+    def to_events(self) -> list:
+        """One ``(offset, event)`` per segment: the instrument playing that
+        buffer, from that frame, for that long. The offsets are relative to the
+        element, exactly as a group's members' are."""
+        from ..seq.event import Event as SeqEvent
+
+        if self.instrument is None:
+            raise NotImplementedError(
+                "a Segments needs an instrument to be rendered as audio "
+                "(Segments(..., instrument='take'): a def whose `buf` control "
+                "plays a buffer, reading `start` for the window)"
+            )
+        out = []
+        for offset, seg in self.placed():
+            params = dict(instrument=self.instrument, buf=seg.buffer.bufnum,
+                          legato=1.0, amp=1.0, dur=float(seg.duration))
+            if seg.start:
+                params["start"] = float(seg.start)
+            params.update(self.controls)
+            out.append((offset, SeqEvent(params)))
+        return out
+
+
+class Segment:
+    """One segment of a `Segments`: which buffer, from which frame, for how
+    long. A window, named the same way a `Buffer` element's is."""
+
+    __slots__ = ("buffer", "start", "duration")
+
+    def __init__(self, buffer, start=0.0, duration=None):
+        self.buffer = buffer
+        self.start = float(start)
+        self.duration = 0.0 if duration is None else float(duration)
+
+    @classmethod
+    def of(cls, spec) -> "Segment":
+        """A segment from a triple ``(buffer, start, duration)``, a pair
+        ``(buffer, duration)``, or one of these."""
+        if isinstance(spec, Segment):
+            return spec
+        items = tuple(spec)
+        if len(items) == 3:
+            return cls(items[0], items[1], items[2])
+        if len(items) == 2:
+            return cls(items[0], 0.0, items[1])
+        raise TypeError(
+            "a segment is (buffer, start, duration) or (buffer, duration), "
+            f"not {spec!r}"
+        )
+
+    def __repr__(self) -> str:
+        return (f"Segment({self.buffer!r}, start={self.start}, "
+                f"duration={self.duration})")
+
+    def __eq__(self, other) -> bool:
+        return (isinstance(other, Segment) and other.buffer is self.buffer
+                and other.start == self.start and other.duration == self.duration)
+
+
 class Track(Element):
     """*Set*: mixed placement of elements — a DAW track.
 

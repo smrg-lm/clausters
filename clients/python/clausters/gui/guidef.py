@@ -346,6 +346,8 @@ def signal(*, view: str | None = None, data=None, blob: int | None = None,
            base_bucket: int | None = None, navigable: bool | None = None,
            selectable: bool | None = None, editable: bool | None = None,
            overlay: bool | None = None, measure: str | None = None,
+           at: float | None = None, dur: float | None = None,
+           start: float | None = None, loop: bool | None = None,
            axes: dict | None = None, label: str | None = None,
            color: str | None = None, id: int | None = None, **props) -> dict:
     """**Every view of a signal**, as the one element they are: a presentation
@@ -397,14 +399,23 @@ def signal(*, view: str | None = None, data=None, blob: int | None = None,
 
     ``axes`` is the axis pair the rulers, the navigation window, the selection,
     the playhead and the value range belong to (see `field`).
+
+    **Inside a `clip`** four more mean something, and only there: ``at`` and
+    ``dur`` place this body on a **stretch** of the clip's own time (a clip
+    holding three segments of three files holds three takes, each over its own
+    third), and ``start``/``loop`` are that body's own **window** onto its
+    material — the frame it reads from, and whether it wraps. A body that names
+    none of them fills the clip and reads through the clip's own window, which
+    is every take written as a clip prop.
     """
     extra = _drop_none(view=view, data=list(data) if data is not None else None,
                        blob=blob, buffer=buffer, path=path, cache=cache,
                        retention=retention,
                        bus=bus, rate=rate, channels=channels, base_bucket=base_bucket,
-                       measure=measure, label=label, color=color)
+                       measure=measure, at=at, dur=dur, start=start,
+                       label=label, color=color)
     for key, flag in (("navigable", navigable), ("selectable", selectable),
-                      ("editable", editable), ("overlay", overlay)):
+                      ("editable", editable), ("overlay", overlay), ("loop", loop)):
         if flag is not None:
             extra[key] = 1 if flag else 0
     extra.update(_axes(axes))

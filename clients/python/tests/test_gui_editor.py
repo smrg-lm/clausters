@@ -1605,25 +1605,68 @@ def test_a_join_puts_a_split_clip_back_together():
     assert "start" not in joined
 
 
-def test_clips_over_different_material_are_refused_by_name():
-    """Two windows onto *different* buffers read as one thing would be an
-    element reading several segments, and an element wraps one thing. Refused
-    with the reason rather than approximated, since approximating it drops
-    material."""
+def test_clips_over_different_material_join_into_one_element():
+    """Two windows onto *different* buffers read as one thing: the arrangement
+    has an element for exactly that — a list of windows onto whatever buffers
+    they come from, read back to back — so the join makes one, and the clip
+    draws one take per segment over its own stretch."""
+    from clausters.form import Segments
+
     a = Buffer(ServerBuffer(bufnum=7, frames=int(BEAT), channels=1, sample_rate=SR),
                duration=1.0, instrument="take")
     b = Buffer(ServerBuffer(bufnum=8, frames=int(BEAT), channels=1, sample_rate=SR),
-               duration=1.0, instrument="take")
+               duration=1.0, instrument="take", start=100.0)
     song = Group([(0.0, Group([(0.0, a), (1.0, b)], name="audio"))], name="song")
     ed = editor(song)
-    host = _FakeHost()
-    ed.open(host)
     (lane,) = lanes(ed.draw())
     first, second = clips(lane)
     assert ed.apply("/gui_event", [first["id"], SEQ, UNSTATED, "join",
-                                   first["id"], second["id"]]) is False
-    _, _, reason = host.answers[-1]
-    assert reason and "several sources" in reason
+                                   first["id"], second["id"]]) is True
+
+    (lane,) = lanes(ed.draw())
+    (joined,) = clips(lane)
+    assert joined["dur"] == pytest.approx(2 * BEAT)
+    # One clip, one take per segment, each on its own half and reading its own
+    # buffer from its own frame.
+    takes = joined["children"]
+    assert [t["buffer"] for t in takes] == [7, 8]
+    assert [t["at"] for t in takes] == pytest.approx([0.0, BEAT])
+    assert [t["dur"] for t in takes] == pytest.approx([BEAT, BEAT])
+    assert "start" not in takes[0] and takes[1]["start"] == pytest.approx(100.0)
+
+    # ...and it plays as one thing: one event per segment, at its own offset.
+    element = ed._clips[joined["id"]].member.element
+    assert isinstance(element, Segments)
+    events = element.to_events()
+    assert [o for o, _ in events] == pytest.approx([0.0, 1.0])
+    assert [dict(e)["buf"] for _, e in events] == [7, 8]
+
+    # An undo puts the two clips back: what was joined was never copied.
+    assert ed.undo() is True
+    (lane,) = lanes(ed.draw())
+    assert len(clips(lane)) == 2
+
+
+def test_a_join_of_one_run_of_one_buffer_is_the_window_it_was_cut_from():
+    """The other shape of the same verb, and it is what makes a join the inverse
+    of a split: fragments that are one run of one buffer come back as the single
+    window, not as a list of one."""
+    from clausters.form import Segments
+
+    song, _ = _take_song()
+    ed = editor(song)
+    (lane,) = lanes(ed.draw())
+    (clip,) = clips(lane)
+    ed.apply("/gui_event", [clip["id"], SEQ, UNSTATED, "split", 1.0 * BEAT])
+    (lane,) = lanes(ed.draw())
+    first, second = clips(lane)
+    ed.apply("/gui_event", [first["id"], SEQ, UNSTATED, "join",
+                            first["id"], second["id"]])
+    (lane,) = lanes(ed.draw())
+    (joined,) = clips(lane)
+    element = ed._clips[joined["id"]].member.element
+    assert isinstance(element, Buffer) and not isinstance(element, Segments)
+    assert joined["dur"] == pytest.approx(4 * BEAT)
 
 
 def test_which_layer_a_hand_is_on_is_screen_state():
@@ -1636,3 +1679,67 @@ def test_which_layer_a_hand_is_on_is_screen_state():
     (clip,) = clips(lane)
     assert ed.apply("/gui_event", [clip["id"], SEQ, UNSTATED, "layer", "points"]) is False
     assert ed.dirty is False
+
+
+def test_a_joined_clip_cuts_apart_into_the_windows_it_was_made_of():
+    """The cut and the join are inverses over segments too: joining two buffers
+    and cutting the result where they meet gives back two clips, each reading
+    what it read before — nothing was copied, so nothing can be lost."""
+    from clausters.form import Segments
+
+    a = Buffer(ServerBuffer(bufnum=7, frames=int(2 * BEAT), channels=1, sample_rate=SR),
+               duration=1.0, instrument="take")
+    b = Buffer(ServerBuffer(bufnum=8, frames=int(2 * BEAT), channels=1, sample_rate=SR),
+               duration=1.0, instrument="take", start=200.0)
+    song = Group([(0.0, Group([(0.0, a), (1.0, b)], name="audio"))], name="song")
+    ed = editor(song)
+    (lane,) = lanes(ed.draw())
+    first, second = clips(lane)
+    ed.apply("/gui_event", [first["id"], SEQ, UNSTATED, "join",
+                            first["id"], second["id"]])
+
+    # Cut it exactly where the two buffers meet.
+    (lane,) = lanes(ed.draw())
+    (joined,) = clips(lane)
+    assert ed.apply("/gui_event", [joined["id"], SEQ, UNSTATED, "split", BEAT]) is True
+    (lane,) = lanes(ed.draw())
+    left, right = clips(lane)
+    # Each half reads one buffer again, from its own frame. The **tail** is a
+    # plain window rather than a list of one -- which is what makes a cut and a
+    # join inverses instead of a pile of wrappers.
+    tail = ed._clips[right["id"]].member.element
+    assert isinstance(tail, Buffer) and not isinstance(tail, Segments)
+    assert (right["buffer"], right["start"]) == (8, pytest.approx(200.0))
+    # The **head** is the element it always was, with its placement shortened:
+    # it draws the one segment it now reaches...
+    assert [t["buffer"] for t in left["children"]] == [7]
+    head = ed._clips[left["id"]].member
+    assert isinstance(head.element, Segments)
+    assert [s.duration for s in head.element.segments] == pytest.approx([1.0, 1.0])
+    # ...and lengthening it again brings the other one back, exactly as
+    # lengthening a trimmed take brings its frames back.
+    head.dur = 2.0
+    (lane,) = lanes(ed.draw())
+    assert [t["buffer"] for t in clips(lane)[0]["children"]] == [7, 8]
+
+
+def test_a_segments_clip_shows_and_plays_only_what_its_placement_covers():
+    """A placement is a window onto an element, and that holds for material made
+    of several segments: a clip shortened over it draws — and plays — the
+    segments it reaches, and lengthening it again brings the rest back."""
+    from clausters.form import Segments
+
+    a = ServerBuffer(bufnum=7, frames=int(2 * BEAT), channels=1, sample_rate=SR)
+    b = ServerBuffer(bufnum=8, frames=int(2 * BEAT), channels=1, sample_rate=SR)
+    seg = Segments([(a, 0.0, 1.0), (b, 0.0, 1.0)], instrument="take")
+    group = Group(name="audio")
+    group.add(seg, 0.0, 1.5)                       # a placement of 1.5 beats
+    ed = editor(Group([(0.0, group)], name="song"))
+    (lane,) = lanes(ed.draw())
+    (clip,) = clips(lane)
+    takes = clip["children"]
+    assert [t["buffer"] for t in takes] == [7, 8]
+    assert [t["dur"] for t in takes] == pytest.approx([BEAT, 0.5 * BEAT])
+
+    # The whole material is still there: the placement is what was shortened.
+    assert [s.duration for s in seg.segments] == pytest.approx([1.0, 1.0])

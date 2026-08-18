@@ -41,7 +41,8 @@ means. Give each appearance its own element over the same material — two
 `Buffer` leaves over one server buffer — until the addressing settles.
 """
 
-from .element import Buffer, Element, Event, Generator, Sequence, Track
+from .element import (Buffer, Element, Event, Generator, Segments, Sequence,
+                      Track)
 from .group import CONCRETE, LOGICAL, Group
 
 #: The attribute `to_document` stamps a node id onto. Private by name because it
@@ -147,6 +148,12 @@ def _source_ids(node: dict) -> set:
         source = current.get("source")
         if isinstance(source, dict) and "source" in source:
             found.add(int(source["source"]))
+        # A `segments` node names one source per segment, and a session whose
+        # table covered only the first would reopen with the rest of the
+        # material missing.
+        for seg in current.get("segments") or ():
+            if isinstance(seg, dict):
+                stack.append(seg)
         for member in current.get("members") or ():
             if isinstance(member, dict):
                 stack.append(member.get("node"))
@@ -377,6 +384,29 @@ def _body(element, ids: _Ids) -> dict:
         # same bytes on every run of the same script.
         return _with_config({"kind": "sequence"},
                             _named({"sequence": _reference(items, element)}))
+    if isinstance(element, Segments):
+        # Several windows read as one: the material is the **list**, each entry
+        # naming its own source and its own window into it. One node, because
+        # what this element is is one thing to play.
+        body = {
+            "kind": "segments",
+            "segments": [
+                {
+                    "source": _source(seg.buffer),
+                    "start": float(seg.start),
+                    "duration": float(seg.duration),
+                }
+                for seg in element.segments
+            ],
+        }
+        config = {}
+        if element.instrument is not None:
+            instrument = _reference(element.instrument)
+            if instrument is not None:
+                config["instrument"] = instrument
+        if element.controls:
+            config["controls"] = _plain(element.controls)
+        return _with_config(body, config or None)
     if isinstance(element, Buffer):
         body = {"kind": "buffer", "source": _source(element.wraps)}
         config = {}
@@ -531,6 +561,22 @@ def leaf_config(element) -> dict:
     return dict((_body(element, _Ids(element)).get("config") or {}))
 
 
+def leaf_node(element) -> dict:
+    """A leaf's **whole node body**, exactly as `to_document` writes it — its
+    kind, its material and its configuration, with no id (the id belongs to the
+    placement that holds it).
+
+    Public for the same reason `leaf_config` is, one step further out: an edit
+    that replaces *what a placement holds* — a run of clips joined into one
+    element — states the result as a member list, and a member carries the node.
+    Re-deriving that in the editor would be a second description of what a leaf
+    is written as.
+    """
+    body = dict(_body(element, _Ids(element)))
+    body.pop("id", None)
+    return body
+
+
 def next_node_id(element) -> int:
     """The first node id no element in this arrangement holds.
 
@@ -678,6 +724,22 @@ def _element(node: dict, resolve, *, placed: bool = False):
         else:
             items = _resolved(resolve, "sequence", config) or config.get("sequence")
         built = Sequence(items, onset=onset, duration=duration)
+    elif kind == "segments":
+        built = Segments(
+            [
+                (
+                    _resolved(resolve, "buffer", seg.get("source"))
+                    or FrozenSource(seg.get("source") or {}),
+                    seg.get("start", 0.0),
+                    seg.get("duration", 0.0),
+                )
+                for seg in node.get("segments") or ()
+            ],
+            onset=onset,
+            duration=duration,
+            instrument=config.get("instrument"),
+            controls=config.get("controls"),
+        )
     elif kind == "buffer":
         built = Buffer(
             _resolved(resolve, "buffer", node.get("source"))

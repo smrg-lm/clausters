@@ -34,16 +34,17 @@ import itertools
 
 from .. import _native
 from .handle import WindowHandle
-from ..form.document import (FIRST_VERSION, ID_ATTR, leaf_config,
+from ..form.document import (FIRST_VERSION, ID_ATTR, leaf_config, leaf_node,
                              next_node_id, to_document)
 from ..form.group import CONCRETE, LOGICAL, SIMULTANEOUS, Group
-from ..form.element import Buffer, Element, Event as FormEvent
+from ..form.element import (Buffer, Element, Event as FormEvent, Segment,
+                            Segments)
 from ..defs.ugens import points_to_env
 from ..form.render import flatten
 from ..seq.automation import Automation
 from ..seq.event import Event as SeqEvent
 from ..seq.timeline import MidiEvent, OscEvent, Timeline
-from .guidef import (_flat_notes, _flat_points, clip, patch, pianoroll,
+from .guidef import (_flat_notes, _flat_points, clip, patch, pianoroll, signal,
                      scroll, timeruler, track, waveform, window)
 from .transport import Transport
 
@@ -1136,7 +1137,7 @@ class Editor:
         if member is None or owner is None:
             return False
         element = member.element
-        if not isinstance(element, Buffer):
+        if not isinstance(element, (Buffer, Segments)):
             # Only a window onto material can be cut into windows. Splitting a
             # pattern or a group would have to say what half of an algorithm
             # is, which is a different question and not this one.
@@ -1150,16 +1151,12 @@ class Editor:
         node = self._node_id(owner)
         if node is None:
             return False
-        second_element = Buffer(element.wraps,
-                                duration=float(length) - float(at),
-                                instrument=element.instrument,
-                                controls=element.controls,
-                                start=float(element.start) + self.beats_to_units(at),
-                                loop=element.loop,
-                                name=element.name)
-        # The cut, on the arrangement: the first half stops early and the second
-        # is placed where it stops. Stamped with an id of its own **before** any
+        second_element = self._tail(element, float(at), float(length))
+        # The cut, on the arrangement: the first half stops early — its
+        # *placement* does, the element is untouched — and the second is placed
+        # where it stops. Stamped with an id of its own **before** any
         # conversion sees it, or the next one would renumber the tree around it.
+        was_dur = member.dur
         member.dur = float(at)
         handle = owner.add(second_element, member.offset + float(at),
                            float(length) - float(at))
@@ -1171,7 +1168,7 @@ class Editor:
         if outcome is None or not outcome["applied"]:
             # Put the arrangement back: the log refused, so nothing happened.
             owner.remove(handle)
-            member.dur = None if length is None else float(length)
+            member.dur = was_dur
             self._resync(self._widget_of(element, member) or 0)
             return False
         # No projection: the tree already *is* what the intent says. What the
@@ -1179,17 +1176,63 @@ class Editor:
         self._rederive = True
         return self._changed()
 
+    def _tail(self, element, at: float, length: float):
+        """The element the **second half** of a cut reads: the same material,
+        from ``at`` beats in.
+
+        The first half is not built at all — it is the element it always was,
+        with its placement shortened, which is the arrangement's own rule (a
+        placement is a window onto an element, never a rewrite of it) and what
+        makes an undo of a split one step. A `Buffer` gives a window that starts
+        further in; a `Segments` gives the segments past the cut, with the one
+        the cut falls inside cut into two.
+        """
+        if isinstance(element, Segments):
+            after = []
+            for offset, seg in element.placed():
+                end = offset + seg.duration
+                if offset >= at - 1e-9:
+                    after.append(seg)
+                elif end > at + 1e-9:
+                    head = at - offset
+                    after.append(Segment(seg.buffer,
+                                         seg.start + self.beats_to_units(head),
+                                         seg.duration - head))
+            return self._joined_element([element], after)
+        return Buffer(element.wraps, duration=length - at,
+                      instrument=element.instrument, controls=element.controls,
+                      start=element.start + self.beats_to_units(at),
+                      loop=element.loop, name=element.name)
+
+    def _segments_within(self, element, length) -> list:
+        """The segments a placement of ``length`` beats actually shows of a
+        `Segments` — the placement being a window onto the material like every
+        other placement here, so a half whose placement was shortened by a split
+        holds the material it *plays*, not everything the element still knows
+        about.
+        """
+        if length is None:
+            return element.segments
+        out = []
+        for offset, seg in element.placed():
+            if offset >= float(length) - 1e-9:
+                break
+            room = float(length) - offset
+            out.append(seg if seg.duration <= room + 1e-9
+                       else Segment(seg.buffer, seg.start, room))
+        return out
+
     def _apply_join(self, placed, ids: list) -> bool:
         """Clips read as one.
 
-        What the arrangement can express is the case the split makes: **windows
-        onto one buffer that continue each other**, which join back into the one
-        window they were cut from -- the first keeps its head and takes the
-        others' length. Anything else -- two different files, two windows that
-        overlap or leave a gap -- is a single element reading several segments,
-        and the arrangement has no such element: an element wraps one thing.
-        That is a model question and it is refused by name rather than
-        approximated, since approximating it would silently drop material.
+        Two shapes, one verb, and which one it takes is a fact about the
+        material rather than a mode: fragments that are **one run of one
+        buffer** (what a split makes) join back into the single window they were
+        cut from, and anything else becomes a `Segments` — the element whose
+        material is a list of windows onto whatever buffers they come from, read
+        back to back. The second is what a multitrack means by joining in
+        general: nothing is copied, and cutting it apart again gives the same
+        windows back.
         """
         member, owner = placed.member, placed.owner
         if member is None or owner is None:
@@ -1201,34 +1244,31 @@ class Editor:
             return False
         run.sort(key=lambda p: p.member.offset)
         elements = [p.member.element for p in run]
-        if not all(isinstance(e, Buffer) for e in elements):
+        if not all(isinstance(e, (Buffer, Segments)) for e in elements):
             self._reason = "only clips over material can be joined"
             return False
-        if any(e.wraps is not elements[0].wraps for e in elements):
-            self._reason = ("these clips read different material: an element "
-                            "reading several sources is not something the "
-                            "arrangement has yet")
-            return False
-        # Contiguous in the *source*, which is what makes them one window.
-        expected = float(elements[0].start)
-        lengths = []
+        # The segments the run holds, in reading order: a `Buffer` is one, a
+        # `Segments` is however many it already carries.
+        segments: list = []
         for p, element in zip(run, elements):
             length = p.member.length if p.member.length is not None else element.duration
-            if length is None or abs(float(element.start) - expected) >= 0.5:
-                self._reason = ("these clips are not one run of the material: "
-                                "an element reading several segments is not "
-                                "something the arrangement has yet")
+            if length is None:
+                self._reason = "a clip with no length has no material to join"
                 return False
-            lengths.append(float(length))
-            expected += self.beats_to_units(float(length))
+            if isinstance(element, Segments):
+                segments += self._segments_within(element, length)
+            else:
+                segments.append(Segment(element.wraps, element.start, float(length)))
         node = self._node_id(owner)
         if node is None:
             return False
-        # The members as they would stand -- the document's own serialization,
-        # with the run's first taking the whole length and the rest gone. Built
-        # rather than mutated, which is the cut's shape too: nothing on this
-        # side moves until the crate has said what the edit becomes.
+        joined = self._joined_element(elements, segments)
         keep, dropped = run[0].member, {id(p.member) for p in run[1:]}
+        total = sum(seg.duration for seg in segments)
+        # The members as they would stand -- the document's own serialization,
+        # with the run's first holding the joined material and the rest gone.
+        # Built rather than mutated, which is the cut's shape too: nothing on
+        # this side moves until the crate has said what the edit becomes.
         whole = to_document(owner, version=self._version)["root"]
         members = []
         for handle, m in zip(owner.handles, whole.get("members", [])):
@@ -1236,14 +1276,50 @@ class Editor:
                 continue
             m = dict(m)
             if handle is keep:
-                m["dur"] = sum(lengths)
+                m["dur"] = total
+                m["node"] = dict(m["node"])
+                m["node"].update(leaf_node(joined))
             members.append(m)
         outcome = self._record({"intent": "setmembers", "node": node,
                                 "members": members}, "join the clips")
         if outcome is None or not outcome["applied"]:
             return False
+        # The kept placement now holds a different element, which the projection
+        # cannot invent from a node: it is written here, where the object is.
+        keep.element = joined
+        keep.dur = total
         self._project(outcome["effective"])
+        self._rederive = True
         return self._changed()
+
+    def _joined_element(self, elements: list, segments: list):
+        """What a run of clips joins **into**: the single window they were cut
+        from when they are one run of one buffer, else the `Segments` that reads
+        their windows back to back.
+
+        The first case is not an optimization — it is what makes a join the
+        inverse of a split, so cutting and rejoining leaves the composition it
+        started with rather than a list of one.
+        """
+        first = elements[0]
+        instrument = getattr(first, "instrument", None)
+        controls = getattr(first, "controls", None)
+        contiguous = True
+        expected = segments[0].start
+        for seg in segments:
+            if seg.buffer is not segments[0].buffer or abs(seg.start - expected) >= 0.5:
+                contiguous = False
+                break
+            expected += self.beats_to_units(seg.duration)
+        if contiguous:
+            return Buffer(segments[0].buffer,
+                          duration=sum(seg.duration for seg in segments),
+                          instrument=instrument, controls=controls,
+                          start=segments[0].start,
+                          loop=getattr(first, "loop", False),
+                          name=first.name)
+        return Segments(segments, instrument=instrument, controls=controls,
+                        name=first.name)
 
     def _apply_points(self, placed, values) -> bool:
         """A curve edited in place on an automation clip (the flat ``"points"``
@@ -2003,7 +2079,7 @@ class Editor:
         if dur_beats is None:
             dur_beats = self._extent(element)
 
-        body = self._body_for(element)
+        body = self._body_for(element, dur_beats)
         # A take with no duration given is as long as it is (1 unit = 1 sample).
         if "buffer" in body and dur_beats <= 0.0:
             dur = float(element.wraps.frames)
@@ -2023,9 +2099,14 @@ class Editor:
             self._rolls[wid] = roll
         return clip(id=wid, offset=offset, dur=dur, label=_name(element), **body)
 
-    def _body_for(self, element) -> dict:
+    def _body_for(self, element, limit=None) -> dict:
         """The clip-body props an element draws with — and a **simultaneous** group
         draws with *all of its members'*, layered in one clip.
+
+        ``limit`` is the **placement's** length in beats when it has one: a
+        placement is a window onto an element, so a clip shortened over material
+        assembled from segments draws the segments it plays and not the ones it
+        no longer reaches.
 
         That is the arrangement's own answer to "attach an envelope to the event it
         shapes": a group whose members start and end together *is* one thing on the
@@ -2040,7 +2121,7 @@ class Editor:
                 and element.temporal_relation() == SIMULTANEOUS):
             body: dict = {}
             for m in element.handles:
-                body.update(self._body_for(m.element))
+                body.update(self._body_for(m.element, limit))
             return body
 
         auto = _automation(element)
@@ -2049,6 +2130,29 @@ class Editor:
                       for t, v, shape, curve in _quads(auto.to_points())]
             lo, hi = _curve_range(points)
             return dict(points=points, points_min=lo, points_max=hi)
+
+        if isinstance(element, Segments):
+            segments = self._segments_within(element, limit)
+            # **One clip, one take per segment.** The material is several
+            # windows read as one thing, so the clip holds one body per segment,
+            # each over its own stretch of the clip and each reading its own
+            # buffer from its own frame — which is what makes a joined clip draw
+            # the pieces it actually plays instead of the first of them.
+            children, cursor = [], 0.0
+            for seg in segments:
+                offset, cursor = cursor, cursor + seg.duration
+                buf = seg.buffer
+                channels = getattr(buf, "channels", None)
+                if channels is None:
+                    continue
+                take = dict(view="trace", buffer=buf.bufnum,
+                            channels=max(1, channels),
+                            at=self.beats_to_units(offset),
+                            dur=self.beats_to_units(seg.duration))
+                if seg.start:
+                    take["start"] = float(seg.start)
+                children.append(signal(**take))
+            return {"children": children} if children else {}
 
         if isinstance(element, Buffer):
             buf = element.wraps
@@ -2134,6 +2238,9 @@ class Editor:
             return max((m.offset + (m.dur if m.dur is not None
                                     else self._extent(m.element))
                         for m in element.handles), default=0.0)
+        if isinstance(element, Segments):
+            # Its material is a list, and its extent is the whole of it.
+            return sum(seg.duration for seg in element.segments)
         if isinstance(element, Buffer):
             buf = element.wraps
             rate = buf.sample_rate or self.sample_rate

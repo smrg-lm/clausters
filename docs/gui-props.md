@@ -74,6 +74,8 @@ measured, so a row that becomes half-true fails rather than rotting.
 
 | widget | prop | surfaces | verdict |
 |---|---|---|---|
+| `signal` | `at` | python web | **reader** — the host reads both, and not in a place this test can see them: `at`/`dur` are a **node**'s placement on its container's time axis (`Widget::span`, parsed in `Widget::build` for any node), not an element's prop, because any body kind can be a segment of a clip. The reader here is per widget — it walks each element's own file — so a prop every kind takes through the node pass reads as absent from all of them. Both clients offer it on the builders that can be a body |
+| `signal` | `dur` | python web | **reader** — as above |
 | `window` | `layout` | python web | **idiom** — the arrangement is `flow` on the wire: the model spends the word `layout` on the container type itself. Both builders still take `layout=` as its old name and emit `flow`, so a script written before the rename keeps building — a client-side courtesy the host knows nothing about |
 | `layout` | `layout` | python web | **idiom** — as above |
 | `plane` | `layout` | python web | **idiom** — as above |
