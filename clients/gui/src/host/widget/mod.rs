@@ -277,8 +277,8 @@ pub struct Widget {
     /// it does not inherit and because it is logical: the frame resolves it
     /// against the placement's scale.
     pub alpha: f32,
-    /// Whether this widget is **drawn**. `true` unless a `visible` prop says
-    /// otherwise.
+    /// Whether this widget is **drawn**. `true` for everything a container has
+    /// not hidden.
     ///
     /// It is the visualization half of the same idea the active layer is the
     /// editing half of: the layered contents of a container are a stack of
@@ -288,11 +288,13 @@ pub struct Widget {
     /// pointing at it, and it keeps its address in the stack
     /// ([`crate::host::layers`]) so showing it again changes nothing else.
     ///
-    /// **Honored for a container's layered contents**, which is where the
-    /// question comes from. Elsewhere the prop is read and kept but nothing
-    /// consults it yet: hiding a widget that a layout gives space to is a
-    /// question about that space, and the answer belongs with the pass that
-    /// hands it out.
+    /// **Only a container writes it**, through its `hidden` prop
+    /// ([`layers::Selection::set_hidden`](crate::host::layers::Selection::set_hidden)),
+    /// and that is deliberate rather than incidental: a container's contents
+    /// share one rectangle, so hiding one costs the others nothing. Hiding a
+    /// widget a *layout* gave space to is a question about that space — does
+    /// the gap close, or stay? — and the answer belongs with the pass that
+    /// hands it out, on the day something needs it.
     pub visible: bool,
     /// The **active edit layer** of this widget's layered contents: the
     /// placement (the default), or one of the children that fills a
@@ -490,7 +492,7 @@ impl Widget {
     }
 
     /// Applies a `/gui_set` of the style props (`theme`, `color`, `opacity`,
-    /// `radius`, `visible`) to this widget. A `theme` value rides as a JSON object or its
+    /// `radius`) to this widget. A `theme` value rides as a JSON object or its
     /// string carrier (the scalar wire, like `points`); an empty string (or
     /// empty object) clears the group, an empty `color` clears the accent, and
     /// a negative `opacity`/`radius` clears that prop back to the default.
@@ -538,10 +540,6 @@ impl Widget {
             // range means "say nothing".
             "opacity" => set_style_number(&mut self.opacity, v, opacity_value),
             "radius" => set_style_number(&mut self.radius, v, radius_value),
-            // Whether this widget is drawn at all — a **visualization layer**
-            // being turned on or off, which is the one style key that is not
-            // about how something looks but about whether it is there.
-            "visible" => parse::truthy(v).map(|on| self.visible = on).is_some(),
             _ => false,
         }
     }
