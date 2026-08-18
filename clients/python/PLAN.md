@@ -331,7 +331,7 @@ work, where a pending item reads as done.)*
 
   What this leaves genuinely open is nothing — but it does leave a **capability** named: a gesture that *materializes* a generator into its rendered notes would be a real editing verb, and it belongs under "Future directions" as one rather than inside the meaning of a resize.
 
-- ⬜ **Ten examples play routines on a clock nobody started, and nothing says
+- ✅ **Ten examples play routines on a clock nobody started, and nothing says
   so** *(found 2026-08-15 while adding the server-side edit verbs to
   `buffer_edit.py`: the new cell printed nothing and changed nothing, and the
   cause was not the new code)*. `Routine(f).play(session.clock)` **queues
@@ -351,3 +351,7 @@ work, where a pending item reads as done.)*
   would have caught all eleven the day each was written, and the ambient form
   (`Routine(f).play()`) starts its clock on first use, so the two doors already
   disagree about what a caller means.
+
+  **Checked 2026-08-18, and the count is zero: the ten were never broken.** Every one of them is an **NRT** session that ends in `session.render(...)`, and `render` *is* a drive — it drains the queue in beat order without sleeping, which is what a stopped clock's driver thread would have done. All ten were run headlessly and all ten write audio (rms 0.04 to 0.20 over 1.5 to 6 seconds); nothing was mechanical to fix. What made `buffer_edit` fail was that it is **live**, and the entry generalised from it. The three examples named as proof that "the idiom is right" are live too, which is why they start the clock — so the pattern the entry spotted is real, and its population was one.
+
+  **The other half was the real one, and it is taken.** Playing onto a stopped clock stops being silent at the one moment it can only be a mistake: a program that **ends** with a session's clock still queued and never driven prints one line on stderr naming `session.start()`, `session.run(seconds)` and `session.render()`. Not at `play` time, which was the tempting shape and is wrong — queueing before the drive starts is the normal way to build a score, offline *and* live, so a warning there would fire on almost every correct script. And only a **session's** clock: a bare `TempoClock` belongs to whoever built it (a transport, a test, another library object), and items left on its queue are that owner's business. `tests/test_session.py::test_a_score_left_on_a_clock_nobody_drove_says_so` runs both halves in a subprocess, since an exit warning cannot be observed from inside the program that would emit it.

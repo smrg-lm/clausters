@@ -2,6 +2,7 @@
 Server and a clock explicitly, and several coexist (no globals)."""
 
 import pytest
+from pathlib import Path
 
 from clausters import Session
 from clausters.base import MonotonicTimebase, TempoClock
@@ -459,3 +460,36 @@ def test_ugen_catalog_matches_the_python_callables():
             assert name in by_kind, f"{name} has no Python callable any more"
     finally:
         s.close()
+
+
+def _run_script(body: str) -> str:
+    """Runs `body` in a fresh interpreter and answers its stderr — the exit
+    warning below only exists at the end of a program, so it cannot be observed
+    from inside this one."""
+    import subprocess
+    import sys
+
+    done = subprocess.run([sys.executable, "-c", body], capture_output=True,
+                          text=True, cwd=str(Path(__file__).resolve().parents[1]))
+    assert done.returncode == 0, done.stderr
+    return done.stderr
+
+
+def test_a_score_left_on_a_clock_nobody_drove_says_so():
+    # `Routine(f).play(session.clock)` only *schedules*: the clock's driver is
+    # started by session.start()/run(), and offline by session.render(). A
+    # program that never does either ends with its routines still queued, and
+    # the failure looks exactly like silence — no exception, nothing logged.
+    queued = """
+from clausters import Session
+from clausters.base import Routine
+s = Session.nrt(tempo=1.0)
+def f():
+    yield 1.0
+Routine(f).play(s.clock)
+"""
+    assert "never started" in _run_script(queued)
+
+    # Driven, so there is nothing to say — and a queue built before the drive
+    # is the normal shape, which is why the warning waits for the exit.
+    assert "never started" not in _run_script(queued + "s.clock.render()\n")

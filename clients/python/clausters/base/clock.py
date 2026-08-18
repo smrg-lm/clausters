@@ -24,6 +24,8 @@ routine being resumed (the clock sets ``routine.clock`` and
 the seam — and it lives on the Server, not here.
 """
 
+import atexit
+import sys
 import threading
 import time
 import traceback
@@ -89,6 +91,11 @@ class TempoClock:
         self._unix_start = None       # wall-clock origin for OSC timetags
         self._running = False
         self._thread = None
+        #: whether anything ever drove this clock (`start`, `run` or `render`).
+        #: A queued routine on a clock nobody drives never runs and says
+        #: nothing, which looks exactly like silence — see `_warn_if_undriven`.
+        self._driven = False
+        self._exit_hook = False
         self._sample_clock = None     # the master-clock tracker, set by lock_to()
         self._transport = None        # joined shared beat grid, set by join_transport()
         #: The timebase reading at which `freeze` stopped the beat, or ``None``
@@ -372,6 +379,38 @@ class TempoClock:
             del self._items[key]
         return entry[0]
 
+    def _watch_for_an_undriven_clock(self):
+        """Arms the exit warning the first time something is queued on a clock
+        nobody has driven yet.
+
+        Queueing before the drive starts is the **normal** shape — an offline
+        score is built and then `render`ed, and a live one may be scheduled and
+        then `start`ed — so there is nothing to say at `sched` time. What is
+        always a mistake is reaching the end of the program with a queue and no
+        drive: the routines never ran, no exception was raised and nothing was
+        logged, which is indistinguishable from silence.
+
+        Only a **session's** clock is watched. That is the one a score is
+        played onto (`Routine(f).play(session.clock)`), and the one whose
+        lifecycle ends with the program; a bare `TempoClock` belongs to
+        whoever built it — a transport, a test, another library object — and
+        leaving items on its queue is that owner's business."""
+        if self._driven or self._exit_hook or self.session is None:
+            return
+        self._exit_hook = True
+        atexit.register(self._warn_if_undriven)
+
+    def _warn_if_undriven(self):
+        if self._driven or self._queue.peek_time() is None:
+            return
+        print(
+            "clausters: this program ends with routines queued on a clock that was "
+            "never started — `Routine(f).play(clock)` only schedules; a session runs "
+            "them with session.start(), session.run(seconds) or, offline, "
+            "session.render()",
+            file=sys.stderr,
+        )
+
     def sched(self, delay_beats: float, item):
         """Schedule ``item`` to run ``delay_beats`` from the current beat.
 
@@ -384,6 +423,7 @@ class TempoClock:
         with self._cond:
             self._push(self.beats() + delay_beats, item)
             self._cond.notify()
+        self._watch_for_an_undriven_clock()
 
     def sched_abs(self, beat: float, item):
         """Schedule ``item`` at an absolute ``beat``, rather than relative to
@@ -391,6 +431,7 @@ class TempoClock:
         with self._cond:
             self._push(beat, item)
             self._cond.notify()
+        self._watch_for_an_undriven_clock()
 
     def play(self, routine, quant=None):
         """Schedule a routine (or callable), snapping its start to a beat grid.
@@ -472,6 +513,7 @@ class TempoClock:
         ``until_beat``). Whatever the routines emit (through a Server) lands in
         that Server's interface — here we only advance time and resume them."""
         self._mode = "nrt"
+        self._driven = True
         self._logical_beat = 0.0
         try:
             while True:
@@ -497,6 +539,7 @@ class TempoClock:
         if self._running:
             return self
         self._mode = "rt"
+        self._driven = True
         self._running = True
         held = self.beats2secs(self._logical_beat)
         self._mono_start = self._now() - held    # pacing origin (monotonic)

@@ -37,6 +37,7 @@ def test_sessions_are_order_independent():
     a.play(Pbind(instrument="default", freq=Pwhite(100.0, 200.0, length=4), dur=0.5))
     a.clock.render()
     assert a.server.interface.score.bytes() == _score(7)
+    b.clock.clear()  # b was played and deliberately never rendered
 
 
 def test_seeding_one_session_does_not_touch_another():
