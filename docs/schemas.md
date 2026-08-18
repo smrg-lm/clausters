@@ -957,6 +957,7 @@ The real-time server can persist loaded defs to a data directory and reload them
 ```text
 clausters --data-dir <dir>   # where defs are stored/reloaded
 clausters --no-persist       # disable for this run
+clausters --prune-defs       # drop the ones that no longer load
 ```
 
 With no `--data-dir`, the directory is `$CLAUSTERS_DATA_DIR` if set, else `$XDG_DATA_HOME/clausters`, else `~/.local/share/clausters`. Persistence applies to the real-time server only; offline `--nrt` renders never read or write it.
@@ -977,6 +978,8 @@ directory itself is free for other persistent aspects); `midi.json` and
 | `<dir>/boot.json` | *authored by the user/client* | the boot preset: standalone GraphDefs to instantiate at startup |
 
 GraphDefs reload after the synth/faust defs (their members reference those names); validation is structural only, so a member def that is still missing at load is caught later, at `/graph_new`.
+
+**A def that no longer loads is named, and dropped only when asked.** A UGen that gains an input makes every stored def written against the old shape uncompilable, and the reload warns and skips each one — the right call, since a def may also fail because *this build* lacks its family (a `--no-default-features` server would otherwise eat the library on sight). So the warning names the def and, once, the directory it is in, and `--prune-defs` is the one door that removes them: it drops exactly the defs that failed to load in the families the running build has.
 
 ### MIDI-standalone: bindings + boot preset
 

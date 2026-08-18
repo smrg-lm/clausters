@@ -23,7 +23,7 @@ documented in [the Python client book](https://clausters-python.readthedocs.io/)
 
 ```
 clausters [--port <n>] [--workers <n>] [--shm <path>] [--data-dir <dir>]
-          [--no-persist] [--udp [port]] [--tcp [port] | --no-tcp] [--ws [port]]
+          [--no-persist] [--prune-defs] [--udp [port]] [--tcp [port] | --no-tcp] [--ws [port]]
           [--midi [name]] [--sample-rate <hz>]
 ```
 
@@ -83,6 +83,7 @@ allocators from these, so a server launched with other numbers is worth
 | `--shm` | path | off | The shared-memory segment local clients map — put it on `/dev/shm`. A segment that already exists is **attached to**, not truncated: the first server on it owns the command plane and the material, and any later one plays what the owner published. See [Local transports & embedding](ipc.md). |
 | `--data-dir` | dir | the XDG data dir | Where defs are persisted and reloaded. Several servers may share one. |
 | `--no-persist` | — | — | Disables def persistence for this run. |
+| `--prune-defs` | — | — | Drops the persisted defs that no longer load, instead of warning about them. Only the families this build has are pruned, so a build without a def family never eats its library. |
 | `--midi` | name (optional) | `clausters` | Opens a virtual MIDI input port. A server off the default OSC port carries the port in the default name (`clausters:57130`), so two on one machine stay distinguishable. |
 | `-v`, `-vv`, `-vvv` | — | warn | Log verbosity: info, debug, trace. `-q` for errors only; `RUST_LOG` overrides both (`RUST_LOG=clausters::osc=trace`). A client retunes it live with `/server_verbosity` and `/server_dumpOsc`. Logs go to stderr. |
 

@@ -202,6 +202,11 @@ pub struct OscServer {
     /// loaded from it on startup; `/def_send` write to it,
     /// `/def_free` deletes from it.
     store: Option<DefStore>,
+    /// Whether a persisted def that will not load is dropped from the store
+    /// (`--prune-defs`) instead of warned about. Off by default: a build
+    /// missing a def family fails to load one for a reason that is the
+    /// build's, not the def's.
+    prune_dead_defs: bool,
     /// The compiler thread is owned here and dies with the server.
     #[cfg(feature = "faust")]
     faust_compiler: CompilerThread,

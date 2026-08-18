@@ -37,7 +37,25 @@ impl OscServer {
                 }
                 Err(error) => match result.client {
                     Some(client) => self.fail(client, "/def_send", error),
-                    None => warn!("persisted Faust def '{}' failed: {error}", result.name),
+                    // No client: this is the startup reload, and a def that no
+                    // longer compiles would warn here at every boot. Same rule
+                    // as the synchronous families (`retire_dead_defs`): named
+                    // by default, dropped under `--prune-defs`.
+                    None => {
+                        warn!("persisted Faust def '{}' failed: {error}", result.name);
+                        match (self.prune_dead_defs, &self.store) {
+                            (true, Some(store)) => {
+                                crate::faust::cache::remove(store.faustdefs_dir(), &result.name);
+                                warn!("pruned the persisted def '{}'", result.name);
+                            }
+                            (false, Some(store)) => warn!(
+                                "it will warn again at every boot; it is in {} — drop the dead \
+                                 ones with `clausters --prune-defs`",
+                                store.defs_dir().display()
+                            ),
+                            _ => {}
+                        }
+                    }
                 },
             }
         }

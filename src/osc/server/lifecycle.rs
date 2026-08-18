@@ -9,6 +9,14 @@
 
 use super::*;
 
+/// The def's name as the store spells it: the file stem, which is what
+/// `DefStore` writes a def under.
+fn def_name(path: &std::path::Path) -> std::borrow::Cow<'_, str> {
+    path.file_stem()
+        .map(|s| s.to_string_lossy())
+        .unwrap_or_else(|| path.to_string_lossy())
+}
+
 impl OscServer {
     pub fn bind(
         addr: impl ToSocketAddrs,
@@ -60,6 +68,7 @@ impl OscServer {
             #[cfg(feature = "midi")]
             midi: None,
             store: None,
+            prune_dead_defs: false,
             recv_buf: vec![0; RECV_BUF_SIZE],
             #[cfg(feature = "faust")]
             faust_compiler: CompilerThread::spawn(waker),
@@ -123,6 +132,7 @@ impl OscServer {
             #[cfg(feature = "midi")]
             midi: None,
             store: None,
+            prune_dead_defs: false,
             recv_buf: vec![0; RECV_BUF_SIZE],
             #[cfg(feature = "faust")]
             faust_compiler: CompilerThread::spawn(None),
@@ -141,16 +151,28 @@ impl OscServer {
         }
     }
 
+    /// Drops a persisted def that will not load instead of warning about it
+    /// (`--prune-defs`). Set it **before** [`Self::attach_store`], which is
+    /// where the reload happens.
+    pub fn prune_dead_defs(&mut self, on: bool) {
+        self.prune_dead_defs = on;
+    }
+
     /// Enables on-disk persistence and reloads whatever defs the store
     /// already holds. SynthDefs are recompiled inline (cheap); Faust defs are
     /// queued on the compiler thread, restoring from the bitcode cache when
     /// possible, so the socket starts serving immediately and the library
     /// loads incrementally.
     pub fn attach_store(&mut self, store: DefStore) {
+        let mut dead: Vec<std::path::PathBuf> = Vec::new();
         #[cfg(feature = "synth")]
-        for spec in store.load_synthdef_specs() {
+        for (path, spec) in store.load_synthdef_specs() {
             if let Err(e) = self.translator.d_recv(&[OscType::Blob(spec)]) {
-                warn!("persisted SynthDef failed to load: {e}");
+                warn!(
+                    "persisted SynthDef '{}' failed to load: {e}",
+                    def_name(&path)
+                );
+                dead.push(path);
             }
         }
         // Same courtesy as the Faust case below: a build without the `synth`
@@ -196,11 +218,16 @@ impl OscServer {
         // GraphDefs load after the synth/faust defs (their members may
         // reference those names); validation is structural, so any still-
         // missing member only fails later at /graph_new.
-        for spec in store.load_graphdef_specs() {
+        for (path, spec) in store.load_graphdef_specs() {
             if let Err(e) = self.translator.d_graph(&[OscType::Blob(spec)]) {
-                warn!("persisted GraphDef failed to load: {e}");
+                warn!(
+                    "persisted GraphDef '{}' failed to load: {e}",
+                    def_name(&path)
+                );
+                dead.push(path);
             }
         }
+        self.retire_dead_defs(&dead, store.defs_dir());
         // Boot order: defs -> graphdefs -> bindings -> boot preset, so a
         // binding's instrument and a boot graph's name already resolve.
         for pb in store.load_bindings() {
@@ -233,6 +260,37 @@ impl OscServer {
             }
         }
         self.store = Some(store);
+    }
+
+    /// What a reload does with the defs that did not load: name them, or —
+    /// under `--prune-defs` — drop them.
+    ///
+    /// Failing to load is **not** by itself a reason to delete: a def whose
+    /// family this build lacks fails too, and a `--no-default-features` boot
+    /// would eat the library. So the default is to say which def and where the
+    /// library is, once, with the one command that clears it — the warnings
+    /// were repeating every boot forever with no way to tell what they were
+    /// about (a `PlayBuf` that grew from four inputs to seven left seven of
+    /// them on the author's machine).
+    fn retire_dead_defs(&self, dead: &[std::path::PathBuf], defs_dir: &std::path::Path) {
+        if dead.is_empty() {
+            return;
+        }
+        if !self.prune_dead_defs {
+            warn!(
+                "{} persisted def(s) did not load, and will warn again at every boot; they are in \
+                 {} — drop them with `clausters --prune-defs`",
+                dead.len(),
+                defs_dir.display()
+            );
+            return;
+        }
+        for path in dead {
+            match std::fs::remove_file(path) {
+                Ok(()) => warn!("pruned the persisted def '{}'", def_name(path)),
+                Err(e) => warn!("cannot prune {}: {e}", path.display()),
+            }
+        }
     }
 
     /// Ships commands produced during the boot reload (binding restore / boot

@@ -62,7 +62,8 @@ fn synthdef_specs_round_trip_through_disk() {
 
     let loaded = store.load_synthdef_specs();
     assert_eq!(loaded.len(), 1);
-    assert_eq!(loaded[0], spec);
+    assert_eq!(loaded[0].1, spec);
+    assert_eq!(loaded[0].0.file_stem().unwrap(), "foo", "named by its file");
 
     store.remove_synthdef("foo");
     assert!(store.load_synthdef_specs().is_empty());
@@ -176,24 +177,169 @@ fn a_name_belongs_to_one_kind_and_the_last_def_wins() {
     assert_eq!(store.load_graphdef_specs().len(), 1, "the GraphDef kept it");
 }
 
-#[cfg(feature = "faust")]
-mod faust {
-    use super::TempDir;
+// ---- the shared end-to-end harness: a server over a data directory ----
+
+/// A live server bound to an ephemeral port with persistence rooted at a data
+/// directory, reloading whatever it already holds. Shared by the reload tests
+/// and (with the `faust` feature) by the bitcode ones.
+mod harness {
     use std::net::{SocketAddr, UdpSocket};
     use std::time::Duration;
 
-    use clausters::faust::cache;
-    use clausters::faust::compiler::{self, CompilePayload};
-    use clausters::faust::ffi;
-    use clausters::faust::synth::FaustDef;
     use clausters::osc::server::{OscServer, ServerInfo};
     use clausters::rosc::{OscMessage, OscPacket, OscType, decoder, encoder};
     use clausters::server::defstore::DefStore;
     use clausters::server::engine::engine_pair;
 
+    pub const SR: f32 = 48_000.0;
+    pub const DEADLINE: Duration = Duration::from_secs(10);
+
+    pub struct TestServer {
+        addr: SocketAddr,
+        handle: std::thread::JoinHandle<std::io::Result<()>>,
+        client: UdpSocket,
+    }
+
+    impl TestServer {
+        /// Binds a server with persistence rooted at `data_dir`, reloading
+        /// whatever it already holds, and runs it on its own thread.
+        pub fn spawn(data_dir: &std::path::Path) -> Self {
+            Self::spawn_with(data_dir, false)
+        }
+
+        /// The same, under `--prune-defs`: a persisted def that will not load
+        /// is dropped from the store instead of warned about.
+        pub fn spawn_pruning(data_dir: &std::path::Path) -> Self {
+            Self::spawn_with(data_dir, true)
+        }
+
+        pub fn spawn_with(data_dir: &std::path::Path, prune: bool) -> Self {
+            let (_engine, engine_handle) = engine_pair(SR, 2);
+            let info = ServerInfo {
+                nominal_sample_rate: SR as f64,
+                actual_sample_rate: SR as f64,
+            };
+            let mut server = OscServer::bind(("127.0.0.1", 0), info, engine_handle).unwrap();
+            server.prune_dead_defs(prune);
+            server.attach_store(DefStore::open(data_dir).unwrap());
+            let addr = server.local_addr().unwrap();
+            let handle = std::thread::spawn(move || server.run());
+            let client = UdpSocket::bind(("127.0.0.1", 0)).unwrap();
+            client.set_read_timeout(Some(DEADLINE)).unwrap();
+            Self {
+                addr,
+                handle,
+                client,
+            }
+        }
+
+        pub fn send(&self, addr: &str, args: Vec<OscType>) {
+            let packet = OscPacket::Message(OscMessage {
+                addr: addr.into(),
+                args,
+            });
+            self.client
+                .send_to(&encoder::encode(&packet).unwrap(), self.addr)
+                .unwrap();
+        }
+
+        pub fn recv_until(&self, addr: &str) -> OscMessage {
+            let mut buf = [0u8; 65536];
+            for _ in 0..200 {
+                let (len, _) = self.client.recv_from(&mut buf).expect("reply timed out");
+                if let (_, OscPacket::Message(msg)) = decoder::decode_udp(&buf[..len]).unwrap()
+                    && msg.addr == addr
+                {
+                    return msg;
+                }
+            }
+            panic!("never received {addr}");
+        }
+
+        /// `/server_status.reply` def count (arg index 4).
+        pub fn def_count(&self) -> i32 {
+            self.send("/server_status", vec![]);
+            let status = self.recv_until("/server_status.reply");
+            match status.args[4] {
+                OscType::Int(n) => n,
+                ref other => panic!("unexpected def count arg: {other:?}"),
+            }
+        }
+
+        /// Polls `/server_status` until the def count reaches `want` (defs reload
+        /// incrementally on the compiler thread) or the deadline passes.
+        pub fn wait_for_def_count(&self, want: i32) {
+            let start = std::time::Instant::now();
+            while start.elapsed() < DEADLINE {
+                if self.def_count() == want {
+                    return;
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            panic!("def count never reached {want} (last {})", self.def_count());
+        }
+
+        pub fn quit(self) {
+            self.send("/server_quit", vec![]);
+            self.recv_until("/done");
+            self.handle.join().unwrap().unwrap();
+        }
+    }
+}
+
+/// **A def that no longer loads is nameable, and there is one way to drop it.**
+/// Changing a UGen's arity makes every persisted def written against the old
+/// one unloadable, and the reload warned about it at every boot without saying
+/// which def or where — seven of them on the author's machine after `PlayBuf`
+/// grew from four inputs to seven.
+#[test]
+fn a_def_that_no_longer_loads_is_named_and_dropped_only_on_request() {
+    use harness::TestServer;
+
+    let dir = TempDir::new("stale");
+    let store = DefStore::open(dir.path()).unwrap();
+    // One def that compiles, and one written against a `Sine` of a shape the
+    // server does not have — an arity change, as a stored spec sees it.
+    let good = br#"{"name":"alive","ugens":[{"kind":"Sine","inputs":[{"const":440.0}]},{"kind":"Out","inputs":[{"const":0.0},{"ugen":0}]}]}"#;
+    let stale = br#"{"name":"stale","ugens":[{"kind":"Sine","inputs":[]},{"kind":"Out","inputs":[{"const":0.0},{"ugen":0}]}]}"#;
+    store.save_synthdef("alive", good).unwrap();
+    store.save_synthdef("stale", stale).unwrap();
+    let synthdefs = dir.path().join("defs").join("synthdefs");
+
+    // A plain boot loads what it can and keeps what it could not: a def that
+    // fails because this build lacks its family must survive the next boot.
+    let a = TestServer::spawn(dir.path());
+    a.wait_for_def_count(2); // the built-in default, plus `alive`
+    a.quit();
+    assert!(
+        synthdefs.join("stale.json").exists(),
+        "nothing is deleted behind the user's back"
+    );
+
+    // `--prune-defs` is the one door that drops it, and it takes only the dead.
+    let b = TestServer::spawn_pruning(dir.path());
+    b.wait_for_def_count(2);
+    b.quit();
+    assert!(!synthdefs.join("stale.json").exists(), "the dead def went");
+    assert!(
+        synthdefs.join("alive.json").exists(),
+        "and only the dead one"
+    );
+}
+
+#[cfg(feature = "faust")]
+mod faust {
+    use super::TempDir;
+    use super::harness::TestServer;
+
+    use clausters::faust::cache;
+    use clausters::faust::compiler::{self, CompilePayload};
+    use clausters::faust::ffi;
+    use clausters::faust::synth::FaustDef;
+    use clausters::rosc::OscType;
+
     const SR: f32 = 48_000.0;
     const BLOCK: usize = 64;
-    const DEADLINE: Duration = Duration::from_secs(10);
 
     /// A fixed-frequency sine: 0 inputs, 1 output, fully deterministic, so two
     /// instances of the same compiled DSP are sample-identical.
@@ -300,87 +446,6 @@ mod faust {
     }
 
     // ---- end-to-end reload across two server instances ----
-
-    struct TestServer {
-        addr: SocketAddr,
-        handle: std::thread::JoinHandle<std::io::Result<()>>,
-        client: UdpSocket,
-    }
-
-    impl TestServer {
-        /// Binds a server with persistence rooted at `data_dir`, reloading
-        /// whatever it already holds, and runs it on its own thread.
-        fn spawn(data_dir: &std::path::Path) -> Self {
-            let (_engine, engine_handle) = engine_pair(SR, 2);
-            let info = ServerInfo {
-                nominal_sample_rate: SR as f64,
-                actual_sample_rate: SR as f64,
-            };
-            let mut server = OscServer::bind(("127.0.0.1", 0), info, engine_handle).unwrap();
-            server.attach_store(DefStore::open(data_dir).unwrap());
-            let addr = server.local_addr().unwrap();
-            let handle = std::thread::spawn(move || server.run());
-            let client = UdpSocket::bind(("127.0.0.1", 0)).unwrap();
-            client.set_read_timeout(Some(DEADLINE)).unwrap();
-            Self {
-                addr,
-                handle,
-                client,
-            }
-        }
-
-        fn send(&self, addr: &str, args: Vec<OscType>) {
-            let packet = OscPacket::Message(OscMessage {
-                addr: addr.into(),
-                args,
-            });
-            self.client
-                .send_to(&encoder::encode(&packet).unwrap(), self.addr)
-                .unwrap();
-        }
-
-        fn recv_until(&self, addr: &str) -> OscMessage {
-            let mut buf = [0u8; 65536];
-            for _ in 0..200 {
-                let (len, _) = self.client.recv_from(&mut buf).expect("reply timed out");
-                if let (_, OscPacket::Message(msg)) = decoder::decode_udp(&buf[..len]).unwrap()
-                    && msg.addr == addr
-                {
-                    return msg;
-                }
-            }
-            panic!("never received {addr}");
-        }
-
-        /// `/server_status.reply` def count (arg index 4).
-        fn def_count(&self) -> i32 {
-            self.send("/server_status", vec![]);
-            let status = self.recv_until("/server_status.reply");
-            match status.args[4] {
-                OscType::Int(n) => n,
-                ref other => panic!("unexpected def count arg: {other:?}"),
-            }
-        }
-
-        /// Polls `/server_status` until the def count reaches `want` (defs reload
-        /// incrementally on the compiler thread) or the deadline passes.
-        fn wait_for_def_count(&self, want: i32) {
-            let start = std::time::Instant::now();
-            while start.elapsed() < DEADLINE {
-                if self.def_count() == want {
-                    return;
-                }
-                std::thread::sleep(Duration::from_millis(20));
-            }
-            panic!("def count never reached {want} (last {})", self.def_count());
-        }
-
-        fn quit(self) {
-            self.send("/server_quit", vec![]);
-            self.recv_until("/done");
-            self.handle.join().unwrap().unwrap();
-        }
-    }
 
     #[test]
     fn faust_def_survives_a_restart() {

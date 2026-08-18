@@ -2,7 +2,7 @@ use clausters::server::render::{RenderConfig, Score, render_to_wav};
 
 const USAGE: &str = "\
 usage:
-  clausters [--port <n>] [--workers <n>] [--shm <path>] [--data-dir <dir>] [--no-persist] [--udp [port]] [--tcp [port] | --no-tcp] [--ws [port]] [--midi [name]] [--sample-rate <hz>]
+  clausters [--port <n>] [--workers <n>] [--shm <path>] [--data-dir <dir>] [--no-persist] [--prune-defs] [--udp [port]] [--tcp [port] | --no-tcp] [--ws [port]] [--midi [name]] [--sample-rate <hz>]
                                                real-time server (OSC on UDP + TCP 57110)
       --port <n>           the base OSC port, default 57110: UDP binds it and
                            TCP follows it, so one flag moves the whole server
@@ -79,6 +79,11 @@ usage:
       --data-dir <dir>     where defs are persisted/reloaded (RT only;
                            default $CLAUSTERS_DATA_DIR or the XDG data dir)
       --no-persist         disable def persistence for this run (RT only)
+      --prune-defs         drop the persisted defs that no longer load, instead
+                           of warning about them (they warn at every boot, and
+                           a UGen that grew an input makes every def written
+                           against it unloadable). Only the families this build
+                           has are pruned
   -v, -vv, -vvv            log verbosity: warn (default) -> info -> debug ->
                            trace; -q for errors only. RUST_LOG overrides it
                            (e.g. RUST_LOG=clausters::osc=trace); a client can
@@ -246,6 +251,7 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     // `persist = false` in config is the same as `--no-persist`; the flag can
     // still force it off, there is no flag to force it back on.
     let mut no_persist = cfg.persist == Some(false);
+    let mut prune_defs = false;
     // The base OSC port, which UDP binds and the other transports follow. Every
     // transport's port is settled in two steps — the config and the flags record
     // *what was asked for* (follow the base, sit at a number, stay off) and the
@@ -398,6 +404,7 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 data_dir = Some(value.clone());
             }
             "--no-persist" => no_persist = true,
+            "--prune-defs" => prune_defs = true,
             "--sample-rate" => {
                 let value = it
                     .next()
@@ -628,6 +635,7 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     if !no_persist && let Some(dir) = resolve_data_dir(data_dir.as_deref()) {
         match DefStore::open(&dir) {
             Ok(store) => {
+                osc.prune_dead_defs(prune_defs);
                 osc.attach_store(store);
                 tracing::info!("persisting defs in {}", dir.display());
             }

@@ -140,6 +140,13 @@ impl DefStore {
         &self.synthdefs_dir
     }
 
+    /// The `defs` directory the three kinds live under — what a warning about
+    /// a def that will not load names, so the reader knows which library it is
+    /// being told about.
+    pub fn defs_dir(&self) -> &Path {
+        self.synthdefs_dir.parent().unwrap_or(&self.synthdefs_dir)
+    }
+
     fn synthdef_path(&self, name: &str) -> PathBuf {
         self.synthdefs_dir
             .join(format!("{}.json", sanitize_name(name)))
@@ -156,14 +163,13 @@ impl DefStore {
         let _ = std::fs::remove_file(self.synthdef_path(name));
     }
 
-    /// Reads every persisted SynthDef spec (raw JSON bytes), to be fed back
-    /// through the normal `/def_send synth` path on startup. Unreadable entries are
-    /// skipped.
-    pub fn load_synthdef_specs(&self) -> Vec<Vec<u8>> {
+    /// Reads every persisted SynthDef spec as `(path, raw JSON bytes)`, to be
+    /// fed back through the normal `/def_send synth` path on startup.
+    /// Unreadable entries are skipped. The path travels with the bytes because
+    /// a spec that no longer compiles has to be nameable — both in the warning
+    /// and to whoever drops it.
+    pub fn load_synthdef_specs(&self) -> Vec<(PathBuf, Vec<u8>)> {
         read_json_files(&self.synthdefs_dir)
-            .into_iter()
-            .map(|(_, bytes)| bytes)
-            .collect()
     }
 
     fn graphdef_path(&self, name: &str) -> PathBuf {
@@ -203,13 +209,10 @@ impl DefStore {
         }
     }
 
-    /// Reads every persisted GraphDef spec (raw JSON bytes) for the startup
-    /// reload, fed back through the normal `/def_send graph` path.
-    pub fn load_graphdef_specs(&self) -> Vec<Vec<u8>> {
+    /// Reads every persisted GraphDef spec as `(path, raw JSON bytes)` for the
+    /// startup reload, fed back through the normal `/def_send graph` path.
+    pub fn load_graphdef_specs(&self) -> Vec<(PathBuf, Vec<u8>)> {
         read_json_files(&self.graphdefs_dir)
-            .into_iter()
-            .map(|(_, bytes)| bytes)
-            .collect()
     }
 
     /// Writes the MIDI bindings to `midi.json`. Best-effort: the caller
