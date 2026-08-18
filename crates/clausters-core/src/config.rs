@@ -165,6 +165,17 @@ pub struct GuiConfig {
     /// window and nothing per widget, and a count the GPU does not offer for
     /// the surface format falls back to `1` with a warning.
     pub msaa: Option<u32>,
+    /// How much recorded material a picture waits for before it re-reads its
+    /// summary, in **seconds** (`--follow-block`, default 1).
+    ///
+    /// A take being recorded grows continuously and nothing announces it: the
+    /// host reads the buffer's write frontier and re-summarizes what appeared.
+    /// Doing that on every frame costs a copy of the take's *summary* per
+    /// refresh, which is what scales badly when many channels record at once —
+    /// so the picture grows in blocks instead, and this is the block. Larger is
+    /// cheaper and choppier; the sound and any playhead over it are unaffected,
+    /// since neither reads this.
+    pub follow_block: Option<f64>,
     /// `[gui.theme]` — color-role overrides for the host's look, each entry
     /// `role = "#rrggbb[aa]"`. A partial table: unlisted roles keep the
     /// default theme. The role names are the GUI host's `Theme` fields
@@ -419,6 +430,7 @@ impl GuiConfig {
             headless: pick(self.headless, h.headless),
             font: pick(self.font, h.font),
             msaa: pick(self.msaa, h.msaa),
+            follow_block: pick(self.follow_block, h.follow_block),
             // The theme and metrics tables merge per key (the overlay
             // semantics): the higher layer's roles win, its unlisted roles fall
             // through.

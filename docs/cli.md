@@ -116,6 +116,7 @@ clausters-gui [--port <n>] [--server <host:port>] [--shm <path>] [--headless]
               [--tcp [port] | --no-tcp] [--ws [port]] [--max-frame <bytes>]
               [--data-dir <dir>] [--standalone [name]] [--config <path>]
               [--theme <path>] [--font <path>] [--msaa <n>]
+              [--follow-block <seconds>]
 ```
 
 The host has two legs: a **server front** a script sends `/gui_*` to, and an
@@ -136,6 +137,7 @@ optional **client leg** into a running audio server. What travels over each is
 | `--config` | path | the user+project chain | Read the configuration from this TOML file instead. |
 | `--theme` | path | — | Read the color theme from this TOML file, laid over `[gui.theme]`. A flat, partial table of `role = "#rrggbb[aa]"`. |
 | `--font` | path | — | Draw text with this typeface (TrueType/OpenType) instead of the embedded bitmap face. Read only by a host built with a rasterizer (its optional `font-atlas` feature); any other build warns and keeps its bitmap face. With the feature and no path, one of the system's own faces is used when there is one. |
+| `--follow-block` | seconds | `1` | How much recorded material a picture waits for before it re-reads its summary. A take being recorded grows with nothing announcing it, so the host follows the buffer's **write frontier** (see [`ipc.md`](ipc.md)) and redraws in blocks; larger is cheaper and choppier, `0` follows every frame. Neither the sound nor a playhead over it is affected — it is only how often the picture catches up. It is what makes many tracks recording at once affordable: with thirty-two, one-second blocks cost about a tenth of what every frame costs. |
 | `--msaa` | count | `1` (off) | Antialias every window with n-sample multisampling; `4` is the usual smoothing. It is the render pass's attachment that is multisampled, so it costs one attachment per window and nothing per widget; a count this GPU does not offer for the surface format falls back to `1` with a warning. |
 | `--headless` | — | — | Run the protocol with no display, for tests and machines with no GPU. The default opens windows. |
 | `-v`, `-vv`, `-vvv` | — | warn | Log verbosity, as the server's. |

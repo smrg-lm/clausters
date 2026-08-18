@@ -1617,8 +1617,13 @@ pub trait Element: fmt::Debug {
     /// element holding its own samples has nothing to re-read.
     ///
     /// It is [`Self::write_samples`]' sibling for a write this host did not
-    /// make — another peer's, announced as a span and nothing more.
-    fn refresh_material(&mut self, _ch: usize, _start: u64, _frames: usize) -> bool {
+    /// make — another peer's, announced as a span and nothing more, or a
+    /// recording's, which announces only how far it has got.
+    ///
+    /// `ch` is `None` for **every channel**, which is what a recording wants:
+    /// the write frontier is the buffer's and they all advance together, and
+    /// asking per channel would copy the whole summary once per channel.
+    fn refresh_material(&mut self, _ch: Option<usize>, _start: u64, _frames: usize) -> bool {
         false
     }
 

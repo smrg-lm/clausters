@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 use std::net::{TcpStream, UdpSocket};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use clausters_core::osc::{OscMessage, OscPacket, OscType, encode};
 use tracing::warn;
@@ -101,8 +101,8 @@ pub(super) struct App {
     /// Whether the client leg has registered for node notifications
     /// (`/server_notify 1`), so it is sent once even with several node-tree windows.
     pub(super) notified: bool,
-    /// The write frontier last drawn, per `(def_id, widget_id)`: how far the
-    /// material of that view had been written when its summary was last
+    /// The write frontier last **drawn**, per `(def_id, widget_id)`: how far
+    /// the material of that view had been written when its summary was last
     /// refreshed. What moves it is a recording (the server's S20), and the
     /// difference is exactly the span to re-read.
     pub(super) frontiers: HashMap<(i32, i32), u64>,
@@ -563,29 +563,34 @@ impl ApplicationHandler<UserEvent> for App {
         // samples need nothing; what moves is the frontier its writer
         // publishes, and the summary over the frames it added.
         //
-        // It keeps the loop waking at the frame cadence and **redraws only
-        // what actually grew**, which is why it is not folded into the
-        // animated set below: a meter repaints every tick because its value
-        // may have changed and nothing says so, while a recording says
-        // exactly when it changed and by how much. Joining them would repaint
-        // a still take thirty times a second for a number that did not move.
-        let mut recording = false;
+        // It keeps the loop waking while a take fills and **redraws only what
+        // actually grew**, which is why it is not folded into the animated set
+        // below: a meter repaints every tick because its value may have
+        // changed and nothing says so, while a recording says exactly when it
+        // changed and by how much. Joining them would repaint a still take
+        // thirty times a second for a number that did not move.
         if now >= self.next_follow {
             for def_id in self.follow_recordings() {
                 if let Some(ws) = self.windows.get(&def_id) {
                     ws.gpu.window.request_redraw();
                 }
             }
-            self.next_follow = now + FRAME;
+            // **The block is the tick, and it is one tick for every view.**
+            // Letting each view wait for its own block would be the same
+            // amount of summarizing and a repaint per view per block — with
+            // thirty-two takes recording at once, thirty-two window repaints a
+            // second instead of one, which is a cost that grows with the
+            // square of the track count and was measured doing exactly that.
+            // On a shared tick every take that grew is caught up together and
+            // the window is repainted once, whatever the count.
+            let follow = Duration::from_secs_f64(self.host.follow_block.max(0.0)).max(FRAME);
+            self.next_follow = now + follow;
         }
         if self
             .windows
             .keys()
             .any(|id| self.window_follows_a_recording(*id))
         {
-            recording = true;
-        }
-        if recording {
             next_wake = Some(self.next_follow);
         }
 

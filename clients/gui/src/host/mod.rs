@@ -626,6 +626,15 @@ pub struct Host {
     /// comes up, and a window already open keeps the pass it was built with,
     /// since every pipeline in a pass agrees on the count.
     pub msaa: u32,
+    /// **How much recorded material a picture waits for** before it re-reads
+    /// its summary, in seconds (`--follow-block`, default 1).
+    ///
+    /// A recording announces nothing — the host reads the buffer's write
+    /// frontier and re-summarizes what appeared — and the refresh costs a copy
+    /// of the take's summary, which is what scales when many channels record
+    /// at once. So the picture grows in blocks: larger is cheaper and
+    /// choppier, and neither the sound nor a playhead over it reads this.
+    pub follow_block: f64,
     /// The resolved (physical) metrics of each window, by def id — this table
     /// at that window's `ui_scale`. Written when a shell reports a scale
     /// ([`set_ui_scale`](Self::set_ui_scale)), which is the only side that may
@@ -672,6 +681,7 @@ impl Host {
             theme: theme::Theme::default(),
             metrics: metrics::Metrics::default(),
             msaa: 1,
+            follow_block: 1.0,
             resolved_metrics: HashMap::new(),
             focused: None,
         }
@@ -2321,7 +2331,7 @@ pub(crate) fn refresh_buffer_views(
     let mut refreshed = 0;
     if let Some(el) = widget.kind.as_element_mut()
         && el.material_buffer() == Some(bufnum)
-        && el.refresh_material(channel, start, frames)
+        && el.refresh_material(Some(channel), start, frames)
     {
         refreshed += 1;
     }

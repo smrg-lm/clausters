@@ -98,6 +98,12 @@ impl SharedMaterial {
         self.segment.buffer_frontier(bufnum)
     }
 
+    /// The sample rate the directory reports for `bufnum` — what turns a
+    /// block of *seconds* into frames without mapping anything.
+    pub fn rate(&self, bufnum: usize) -> Option<f64> {
+        Some(self.segment.buffer_info(bufnum)?.sample_rate)
+    }
+
     /// Whether the directory holds a live buffer under `bufnum` — the cheap
     /// question, asked before deciding whether a take needs fetching at all.
     pub fn holds(&self, bufnum: usize) -> bool {

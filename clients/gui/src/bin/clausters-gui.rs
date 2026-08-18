@@ -46,6 +46,7 @@ usage:
                 [--data-dir <dir>] [--standalone [name]] [--config <path>]
                 [--session <file> [--save-to <file>]]
                 [--theme <path>] [--font <path>] [--msaa <n>]
+                [--follow-block <seconds>]
       --port <n>            port for the GUI host's server front
                             (script -> host, UDP and TCP); default 57210
       --tcp [port]          length-prefixed OSC over TCP — on by default at the
@@ -107,6 +108,14 @@ usage:
                             other build warns and keeps its bitmap face. With
                             the feature and no path, one of the system's own
                             faces is used when there is one.
+      --follow-block <s>    how much recorded material a picture waits for
+                            before it re-reads its summary, in seconds
+                            (default 1). A take being recorded grows with
+                            nothing announcing it, so the host follows the
+                            buffer's write frontier and redraws in blocks;
+                            larger is cheaper and choppier, and neither the
+                            sound nor a playhead over it is affected. 0 follows
+                            every frame.
       --msaa <n>            antialias every window with n-sample multisampling
                             (1 = off, the default; 4 is the usual smoothing).
                             One multisampled attachment per window and nothing
@@ -133,6 +142,10 @@ struct Look {
     theme: Theme,
     metrics: Metrics,
     msaa: u32,
+    /// Seconds of recorded material a picture waits for before re-reading its
+    /// summary (`--follow-block`). Not a *look*, strictly — it is here because
+    /// it is resolved and applied with the rest, on both launch paths.
+    follow_block: f64,
 }
 
 impl Look {
@@ -140,6 +153,7 @@ impl Look {
         host.theme = self.theme;
         host.metrics = self.metrics;
         host.msaa = self.msaa;
+        host.follow_block = self.follow_block;
     }
 }
 
@@ -189,6 +203,7 @@ fn run(args: &[String]) -> Result<(), String> {
     let mut theme_path: Option<String> = None;
     let mut font_path: Option<String> = None;
     let mut cli_msaa: Option<u32> = None;
+    let mut cli_follow_block: Option<f64> = None;
     let mut it = args.iter().peekable();
     while let Some(arg) = it.next() {
         match arg.as_str() {
@@ -260,6 +275,12 @@ fn run(args: &[String]) -> Result<(), String> {
                         .ok_or_else(|| format!("--font needs a path\n{USAGE}"))?
                         .clone(),
                 );
+            }
+            "--follow-block" => {
+                let v = it
+                    .next()
+                    .ok_or_else(|| format!("--follow-block needs seconds\n{USAGE}"))?;
+                cli_follow_block = Some(v.parse().map_err(|e| format!("--follow-block: {e}"))?);
             }
             "--msaa" => {
                 let v = it
@@ -356,10 +377,15 @@ fn run(args: &[String]) -> Result<(), String> {
             tracing::warn!("{w} (config [gui.metrics])");
         }
     }
+    // How much recorded material a picture waits for before it re-reads its
+    // summary. Zero or less means every tick, which is what it did before the
+    // block existed and what a measurement wants.
+    let follow_block = cli_follow_block.or(cfg.gui.follow_block).unwrap_or(1.0);
     let look = Look {
         theme,
         metrics,
         msaa,
+        follow_block,
     };
     // The data directory: an explicit flag wins; otherwise the standalone
     // section (when booting one) then the gui section provide it; finally the

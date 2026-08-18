@@ -176,7 +176,7 @@ impl SignalElement {
     /// whether this element draws any. The other half of
     /// [`Self::write_samples`]: there the host wrote the samples, here
     /// somebody else did and only said where.
-    pub fn refresh_material(&mut self, ch: usize, start: u64, frames: usize) -> bool {
+    pub fn refresh_material(&mut self, ch: Option<usize>, start: u64, frames: usize) -> bool {
         let Some(data) = self.source.data_mut() else {
             return false;
         };
@@ -186,10 +186,20 @@ impl SignalElement {
         if !body.is_shared() {
             return false;
         }
-        // Replaced rather than patched, for the reason the write path gives:
-        // the pyramid is shared with whatever slot is drawing it.
+        // **One copy, however many channels.** Replaced rather than patched,
+        // for the reason the write path gives — the pyramid is shared with
+        // whatever slot is drawing it — so the copy is what the refresh costs
+        // and taking one per channel is what made following a multichannel
+        // recording scale with the square of nothing useful.
         let mut copy = (**body).clone();
-        if !copy.resummarize(ch, start as usize, frames) {
+        let start = start as usize;
+        let done = match ch {
+            Some(ch) => copy.resummarize(ch, start, frames),
+            None => (0..copy.num_channels())
+                .map(|ch| copy.resummarize(ch, start, frames))
+                .fold(false, |acc, ok| acc | ok),
+        };
+        if !done {
             return false;
         }
         data.body = Some(Arc::new(copy));
@@ -445,8 +455,14 @@ mod tests {
         assert_eq!(column(&take), (0.1, 0.1));
         // Somebody else's write: the cells first, then the span announced.
         cells.0.lock().unwrap()[100..200].fill(-0.8);
-        assert!(take.refresh_material(0, 100, 100));
+        assert!(take.refresh_material(Some(0), 100, 100));
         assert_eq!(column(&take).0, -0.8);
+
+        // Every channel at once is what a recording asks for, and it is one
+        // copy of the summary rather than one per channel.
+        cells.0.lock().unwrap()[400..500].fill(0.6);
+        assert!(take.refresh_material(None, 400, 100));
+        assert_eq!(column(&take).1, 0.6);
 
         // An owned body has nothing to re-read: its samples are its own.
         let mut owned =
@@ -454,6 +470,6 @@ mod tests {
         assert!(owned.take(Loaded::Peaks(Arc::new(
             crate::waveform::WaveformData::from_interleaved(&[0.0, 1.0, 0.5, -1.0], 1, 2)
         ))));
-        assert!(!owned.refresh_material(0, 0, 2));
+        assert!(!owned.refresh_material(Some(0), 0, 2));
     }
 }

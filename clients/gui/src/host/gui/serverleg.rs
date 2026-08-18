@@ -546,8 +546,8 @@ impl App {
             return Vec::new();
         };
         // Read every frontier first: the borrow of the material ends before
-        // the trees are touched, and the answer is a handful of loads.
-        let mut moved: Vec<(i32, i32, usize, u64, u64)> = Vec::new();
+        // the trees are touched, and the answer is a handful of relaxed loads.
+        let mut moved: Vec<(i32, i32, u64, u64)> = Vec::new();
         for def_id in self.host.window_def_ids() {
             let Some(tree) = self.host.window_def(def_id) else {
                 continue;
@@ -559,9 +559,7 @@ impl App {
                 let (Some(id), Some(el)) = (w.id, w.kind.as_element()) else {
                     continue;
                 };
-                let (Some(bufnum), Some((channels, _))) =
-                    (el.material_buffer(), el.material_shape())
-                else {
+                let Some(bufnum) = el.material_buffer() else {
                     continue;
                 };
                 let Ok(index) = usize::try_from(bufnum) else {
@@ -570,14 +568,14 @@ impl App {
                 let Some(frontier) = material.frontier(index) else {
                     continue;
                 };
-                let seen = self.frontiers.get(&(def_id, id)).copied().unwrap_or(0);
-                if frontier > seen {
-                    moved.push((def_id, id, channels, seen, frontier));
+                let drawn = self.frontiers.get(&(def_id, id)).copied().unwrap_or(0);
+                if frontier > drawn {
+                    moved.push((def_id, id, drawn, frontier));
                 }
             }
         }
         let mut redraw = Vec::new();
-        for (def_id, widget_id, channels, seen, frontier) in moved {
+        for (def_id, widget_id, drawn, frontier) in moved {
             self.frontiers.insert((def_id, widget_id), frontier);
             let Some(tree) = self.host.window_def_mut(def_id) else {
                 continue;
@@ -588,11 +586,13 @@ impl App {
             let Some(el) = w.kind.as_element_mut() else {
                 continue;
             };
-            let mut followed = false;
-            for ch in 0..channels {
-                followed |= el.refresh_material(ch, seen, (frontier - seen) as usize);
-            }
-            if followed && !redraw.contains(&def_id) {
+            // **Every channel in one refresh.** The frontier is the buffer's,
+            // not a channel's, so they all advance together — and a refresh
+            // per channel would copy the whole view's summary once per
+            // channel, which is the quadratic shape this had first.
+            if el.refresh_material(None, drawn, (frontier - drawn) as usize)
+                && !redraw.contains(&def_id)
+            {
                 redraw.push(def_id);
             }
         }

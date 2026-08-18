@@ -201,7 +201,7 @@ impl Element for SignalElement {
         SignalElement::write_samples(self, ch, start, values)
     }
 
-    fn refresh_material(&mut self, ch: usize, start: u64, frames: usize) -> bool {
+    fn refresh_material(&mut self, ch: Option<usize>, start: u64, frames: usize) -> bool {
         SignalElement::refresh_material(self, ch, start, frames)
     }
 
