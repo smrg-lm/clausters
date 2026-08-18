@@ -56,8 +56,24 @@ The loop, and why each step needs the one before it:
 placement model rests on: shorten a clip over its own notes. You hear fewer
 notes and the element keeps all of them — lengthen it again and they come back.
 A placement is a **window onto** an element, never a rewrite of it, which is why
-this is reversible and why a resize is not the same act as *rendering* the
+this is reversible and why a trim is not the same act as *rendering* the
 element down to what it produced.
+
+**Two more, on the take.** An edge drag is a **trim**, so dragging the head of
+the audio clip to the right hides the take's first frames and the waveform stops
+moving — the material stands still and the clip shows less of it; drag the edge
+back and the frames come out again. And with the pointer over a clip, **`e`**
+cuts it in two at the time cursor and **`j`** joins it back with what touches it:
+the two halves are two windows onto one buffer, which is why the join can put
+back exactly what the cut separated.
+
+**And one about what your hand is on.** A clip draws its contents over each
+other and *one* of them is being edited: press the sweep's curve and you edit the
+curve (its points, and the bend between two of them) while the clip's grips
+disappear; press the clip's own background and the clip is back in hand, grips
+and all. A clip whose notes are a pattern's — a rendering of an algorithm —
+hands the press straight to the clip, so it still moves and trims like any
+other.
 
 Needs an audio device, a display and a GPU adapter; the install bundles the GUI
 binary (see ``gui_editor.py`` for the setup notes). Run it as a script
@@ -101,14 +117,23 @@ QUANT = 0.5          # the drag grid: half a beat
 # instrument of its own, because a buffer is *data* — a `Buffer` material sounds
 # through the def named to play it, which reads the buffer number from its ``buf``
 # control. That is the arrangement's rule, and this is the def that satisfies it.
+#
+# It also reads the element's **window**: a clip is a window onto a segment of its
+# material, so ``start`` says which frame to begin at and ``loop`` whether to wrap
+# — the two the arrangement sends when the window is not the whole buffer. A def
+# that named neither would play from the beginning whatever the clip drew, which
+# is a picture and a sound disagreeing.
 
 # %%
 def sampler(name: str = "take") -> SynthDef:
-    """Plays a buffer once. The event frees the synth after its `sustain`, which
-    is the clip's length — so the take stops when the clip ends."""
+    """Plays the segment of a buffer a clip shows. The event frees the synth
+    after its `sustain`, which is the clip's length — so the take stops when the
+    clip ends."""
     buf = control("buf", 0.0, "ir")
     amp = control("amp", 0.8, "ir")
-    sig = play_buf(buf, 0.0, 1.0, 0.0) * amp
+    start = control("start", 0.0, "ir")     # the window's first frame
+    loop = control("loop", 0.0, "ir")       # ...and whether it wraps
+    sig = play_buf(buf, 0.0, 1.0, loop, 0.0, start) * amp
     return SynthDef(name, out(0.0, sig), out(1.0, sig))
 
 
