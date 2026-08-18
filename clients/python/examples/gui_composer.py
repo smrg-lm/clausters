@@ -67,6 +67,14 @@ cuts it in two at the time cursor and **`j`** joins it back with what touches it
 the two halves are two windows onto one buffer, which is why the join can put
 back exactly what the cut separated.
 
+The drums lane holds **two different files** for that reason. Drag the second
+take against the first and press `j`: what you get is one clip that reads both,
+back to back — you hear the two notes in a row from a single clip, and the clip
+draws a waveform per piece. Press `e` inside it and it comes apart into the two
+windows it was made of, because nothing was copied. That element is a
+`Segments`, and you can write one directly:
+``Segments([(buf, 0, 2.0), (other_buf, 0, 2.0)], instrument="take")``.
+
 **And one about what your hand is on.** A clip draws its contents over each
 other and *one* of them is being edited: press the sweep's curve and you edit the
 curve (its points, and the bend between two of them) while the clip's grips
@@ -161,14 +169,14 @@ BEAT = SR / TEMPO
 folder = Path(tempfile.mkdtemp(prefix="clausters-"))
 
 
-def bounce_take(path: str, beats: float = 2.0) -> str:
+def bounce_take(path: str, beats: float = 2.0, note: int = 60) -> str:
     """Render a two-beat bass note offline and write it to a WAV — the take a
     composition loads from disk. (The event closes the score: it schedules the
     ``/node_free`` that ends it.)"""
     offline = Session.nrt(tempo=TEMPO)
     # One octave under the melody rather than three: the take has to be *heard*
     # moving when a clip is dragged, and a low C mostly makes the speaker move.
-    offline.play(Pbind(midinote=Pseq([60], 1), dur=beats, legato=1.0, amp=0.3))
+    offline.play(Pbind(midinote=Pseq([note], 1), dur=beats, legato=1.0, amp=0.3))
     stats = offline.render(sample_rate=SR, channels=1, path=path)
     print(f"bounced {stats.frames} frames of take -> {path}")
     return path
@@ -177,6 +185,13 @@ def bounce_take(path: str, beats: float = 2.0) -> str:
 wav = folder / "take.wav"
 bounce_take(str(wav))
 buf = ServerBuffer.read(str(wav), server=server)    # on the server, shape known
+
+# A **second** take, from a second file: two different materials on one lane, so
+# that joining them is a real join — an element that reads both, back to back,
+# rather than two placements of one buffer.
+other_wav = folder / "take_low.wav"
+bounce_take(str(other_wav), note=48)
+other_buf = ServerBuffer.read(str(other_wav), server=server)
 
 # %% [markdown]
 # ## The material
@@ -192,7 +207,7 @@ buf = ServerBuffer.read(str(wav), server=server)    # on the server, shape known
 # places would be one name for two positions, and an edit-back could not say
 # which of them it meant.
 take = Buffer(buf, duration=2.0, instrument="take")       # the element over it
-take_again = Buffer(buf, duration=2.0, instrument="take")
+take_again = Buffer(other_buf, duration=2.0, instrument="take")   # the other file
 melody = Track(Timeline([                                 # a Set of events
     (0.0, SeqEvent(midinote=72, dur=1.0)),
     (1.0, SeqEvent(midinote=76, dur=1.0)),
@@ -291,7 +306,7 @@ def takes_of(element):
     holds are not the ones the script read at startup, because resolving a
     session reads each take again into a buffer of its own.
     """
-    from clausters.form import Buffer as BufferElement
+    from clausters.form import Buffer as BufferElement, Segments
 
     found = {}
     stack = [element]
@@ -299,6 +314,12 @@ def takes_of(element):
         current = stack.pop()
         if isinstance(current, BufferElement) and getattr(current.wraps, "bufnum", None) is not None:
             found[current.wraps.bufnum] = current.wraps
+        # A joined clip reads **several** buffers as one element, and a table
+        # that named only the first would reopen with the rest missing.
+        if isinstance(current, Segments):
+            for seg in current.segments:
+                if getattr(seg.buffer, "bufnum", None) is not None:
+                    found[seg.buffer.bufnum] = seg.buffer
         stack.extend(child for _, _, child in getattr(current, "members", []) or [])
     return list(found.values())
 

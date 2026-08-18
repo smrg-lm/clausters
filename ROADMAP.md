@@ -80,10 +80,6 @@ phase rather than a list.*
   so** *(`clients/python/PLAN.md`, Found by use)*. Their audible half has never run — a
   mechanical fix each, plus one decision about whether playing onto a stopped
   clock should stay silent at all.
-- ⬜ **The by-eye pass the hit-test work is owed** *(`clients/gui/PLAN.md`, the E
-  track, inside the closed `E23`)*. `number`, `menu` and `text` answer on the
-  field they draw now; the example that shows them (`gui_panel`) has not been
-  looked at since. Small, and it is the half of that milestone a test cannot do.
 
 ## Phase 2 — the packages move together: the arrangement reaches the web client
 
@@ -152,11 +148,12 @@ example, and none blocks anything that is.
   saves the document, not what the user did to it** — `clients/gui/PLAN.md`,
   Found by use, each with its record of what was seen; **many channels are drawn
   and not yet readable, and a take cannot be created empty**, **time-stretch: an
-  edge that changes the material rather than the window** and **the layer stack
-  is one container's** are in that plan's Future directions instead, being
-  designs rather than fixes — as is **an element reads one thing, so two
-  fragments over different material cannot be joined**
-  (`clients/python/PLAN.md`, Found by use).
+  edge that changes the material rather than the window** and **the audio
+  editor's layers: the view is the next container, and it is the richer one**
+  are in that plan's Future directions instead, being designs rather than fixes.
+  The last of those is the one the user asked to have thought through and built
+  next, and it is a track's worth: the same layer mechanism with richer
+  contents, visualization layers kept separate from edit layers.
 - **A mapped take is still copied into the widget before it is drawn**
   *(`clients/gui/PLAN.md`, Found by use)*. What the editor phase deliberately
   did not do: the round trip is gone, the copy is not. It is a design over
