@@ -33,8 +33,11 @@
 use std::fs::OpenOptions;
 #[cfg(unix)]
 use std::io;
+// `Path` is not gated: `remove_segment` takes one on every target, and only
+// its unix face has a filesystem to unlink from.
+use std::path::Path;
 #[cfg(unix)]
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 
@@ -109,6 +112,15 @@ pub fn remove_segment(path: &Path) {
         }
     }
     let _ = std::fs::remove_file(path);
+}
+
+/// Where there is no shared filesystem to unlink from, dropping the mapping is
+/// the whole of it. The twin exists so `NrtSession`'s `Drop` reads the same on
+/// every target -- wasm32 among them, where the engine is compiled for the
+/// browser and a segment is a heap allocation nobody else can name.
+#[cfg(not(unix))]
+pub fn remove_segment(path: &Path) {
+    let _ = path;
 }
 
 /// Collects the segments in `dir` that **no process is serving any more**,
