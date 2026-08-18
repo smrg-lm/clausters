@@ -8,8 +8,11 @@
 #
 # Checks `--lib` only (the binary is native by definition), three feature sets:
 # the bare engine core, the SynthDef family, and the browser build proper
-# (`synth,embed` — what `crates/clausters-web` links), plus the wasm shell
-# crate itself.
+# (`synth,embed` — what `crates/clausters-web` links), plus the two wasm shell
+# crates the web package stages: the engine's and the shared core's. Between
+# them and `clients/gui/check-wasm.sh` (the GUI host's) that is every bundle
+# `clients/web/build.sh` compiles, which is what makes a pass here mean the
+# package still builds.
 #
 # One-time setup: `rustup target add wasm32-unknown-unknown`.
 set -euo pipefail
@@ -26,3 +29,4 @@ cargo check --lib --target "$TARGET" --no-default-features "$@"
 cargo check --lib --target "$TARGET" --no-default-features --features synth "$@"
 cargo check --lib --target "$TARGET" --no-default-features --features synth,embed "$@"
 cargo check -p clausters-web --target "$TARGET" "$@"
+cargo check -p clausters-core-web --target "$TARGET" "$@"

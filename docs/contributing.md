@@ -98,8 +98,12 @@ is reproducible with the same line:
 - **test** — `cargo test --workspace` across the def-family feature matrix:
   default, `--no-default-features`, `--no-default-features --features synth`,
   and default plus `embed`.
-- **gui** — `cargo test` in `clients/gui` plus the wasm build gate
-  (`clients/gui/check-wasm.sh`). Both run with the crate's **default**
+- **gui** — `cargo test` in `clients/gui` plus the two wasm build gates: the
+  GUI host's (`clients/gui/check-wasm.sh`) and the engine's
+  (`scripts/check-wasm.sh`, which also covers the shared core's codec crate).
+  Between them they compile every bundle `clients/web/build.sh` stages, so the
+  web package's build is proved here rather than in the release workflow.
+  The `cargo test` and the host gate run with the crate's **default**
   features, which is the whole of what CI knows about it: the host's own
   feature matrix (a family compiled out, `font-atlas`, `standalone`) is
   covered by `clients/gui/check-features.sh` and by nothing else — run it
