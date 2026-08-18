@@ -385,21 +385,6 @@ impl Drop for NrtSession {
         let Some(path) = self.owned_segment.take() else {
             return;
         };
-        if let Some(dir) = path.parent()
-            && let Some(prefix) = path.file_name().and_then(|n| n.to_str())
-            && let Ok(entries) = std::fs::read_dir(dir)
-        {
-            let region = format!("{prefix}.buf");
-            for entry in entries.flatten() {
-                if entry
-                    .file_name()
-                    .to_str()
-                    .is_some_and(|n| n.starts_with(&region))
-                {
-                    let _ = std::fs::remove_file(entry.path());
-                }
-            }
-        }
-        let _ = std::fs::remove_file(&path);
+        crate::server::ipc::remove_segment(&path);
     }
 }

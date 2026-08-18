@@ -34,7 +34,7 @@ use std::fs::OpenOptions;
 #[cfg(unix)]
 use std::io;
 #[cfg(unix)]
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 
@@ -84,6 +84,78 @@ fn process_alive(pid: u32) -> bool {
         let _ = pid;
         true
     }
+}
+
+/// Removes a segment's name and the name of every region beside it.
+///
+/// Unlinking leaves each mapping somebody still holds valid until it is
+/// dropped — the same property freeing one buffer relies on — so this ends the
+/// material rather than pulling it out from under a reader.
+#[cfg(unix)]
+pub fn remove_segment(path: &Path) {
+    if let Some(dir) = path.parent()
+        && let Some(prefix) = path.file_name().and_then(|n| n.to_str())
+        && let Ok(entries) = std::fs::read_dir(dir)
+    {
+        let region = format!("{prefix}.buf");
+        for entry in entries.flatten() {
+            if entry
+                .file_name()
+                .to_str()
+                .is_some_and(|n| n.starts_with(&region))
+            {
+                let _ = std::fs::remove_file(entry.path());
+            }
+        }
+    }
+    let _ = std::fs::remove_file(path);
+}
+
+/// Collects the segments in `dir` that **no process is serving any more**,
+/// regions and all, and answers with the paths it removed.
+///
+/// A segment is left behind whenever its owner dies without running `Drop` — a
+/// `kill`, a crash, a `timeout` in a script — and one region is a whole take,
+/// so a few crashes fill a memory filesystem with files nothing can tell live
+/// from dead. The claim is what tells them apart: a header that is ours
+/// (`MAGIC`/`ABI_VERSION`), naming a pid that no longer exists, is a segment
+/// whose command plane nobody serves.
+///
+/// **Two rules make this safe to do to a file this process never created.**
+/// A claim of *nobody* (a segment created a moment ago, or one released on a
+/// clean exit so it can be adopted) is never swept — only a pid that answered
+/// once and does not now. And `except` — the path the caller is about to open
+/// — is never swept, which is what keeps a killed owner's material
+/// recoverable: starting a server against **the same path** adopts what is
+/// there, exactly as it did before this existed.
+#[cfg(unix)]
+pub fn sweep_dead_segments(dir: &Path, except: Option<&Path>) -> Vec<PathBuf> {
+    let mut swept = Vec::new();
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return swept;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if except.is_some_and(|keep| keep == path) || !entry.file_type().is_ok_and(|t| t.is_file())
+        {
+            continue;
+        }
+        // Anything that is not one of ours — another program's file, or one of
+        // our own region files — fails the header check and is left alone.
+        let Ok(segment) = Segment::open(&path) else {
+            continue;
+        };
+        let Some(owner) = segment.control_owner() else {
+            continue;
+        };
+        if process_alive(owner) {
+            continue;
+        }
+        drop(segment);
+        remove_segment(&path);
+        swept.push(path);
+    }
+    swept
 }
 
 fn check_tap_params(taps: usize, tap_frames: usize) {
@@ -218,6 +290,10 @@ impl Segment {
     /// one is described by its own header, and disagreeing with it is not a
     /// reason to destroy it.
     ///
+    /// **Creating one sweeps the directory** of segments whose owner no longer
+    /// exists ([`sweep_dead_segments`]), which is where the ones a killed
+    /// editor leaves behind are collected.
+    ///
     /// A file that exists and is *not* a valid segment is an error rather than
     /// something to overwrite. Racing creators are not arbitrated here: two
     /// servers started at the same instant against a path with nothing on it
@@ -234,6 +310,20 @@ impl Segment {
         match Self::open(path) {
             Ok(seg) => Ok((seg, false)),
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                // Creating one is also the moment to collect the ones nobody
+                // serves any more: an editor killed rather than closed leaves
+                // its segment and a file per take behind, and this is the only
+                // point where a process is provably starting fresh. It never
+                // touches `path` itself, so adopting a dead owner's material
+                // by name keeps working.
+                if let Some(dir) = path.parent() {
+                    for swept in sweep_dead_segments(dir, Some(path)) {
+                        tracing::info!(
+                            "swept the shared segment at {} — its owner is gone",
+                            swept.display()
+                        );
+                    }
+                }
                 Self::create_full(path, control_buses, taps, tap_frames).map(|seg| (seg, true))
             }
             Err(e) => Err(e),

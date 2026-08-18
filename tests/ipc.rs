@@ -873,3 +873,75 @@ fn a_session_owns_the_material_and_a_player_attaches_to_it() {
     assert!(!region.exists(), "and so is the region beside it");
     assert_eq!(played.at(9), 0.25, "what was mapped is still readable");
 }
+
+/// **What a killed editor leaves behind is collected, and nothing else is.**
+/// `Drop` does not run on a signal, so a segment and one file per take stay in
+/// `/dev/shm` with nothing able to tell them from live ones. The claim is that
+/// test: a header that is ours naming a pid nobody answers to.
+#[test]
+fn a_dead_owners_segment_is_swept_and_a_live_one_is_left_alone() {
+    use clausters::server::ipc::{remove_segment, sweep_dead_segments};
+
+    let dir = std::env::temp_dir().join(format!("clausters-sweep-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+
+    // Three segments in one directory: one whose owner is gone (with a take
+    // beside it), one this process is serving, and one nobody has claimed.
+    let dead = dir.join("dead");
+    let take = dead.with_extension("buf1.0");
+    let live = dir.join("live");
+    let unclaimed = dir.join("unclaimed");
+    for path in [&dead, &live, &unclaimed] {
+        Segment::create_full(path, 1024, 2, 1024).unwrap();
+    }
+    std::fs::write(&take, [0u8; 64]).unwrap();
+
+    // A pid that answers to nothing. Claiming under a predicate of our own is
+    // how a dead owner is written down without killing a real process.
+    let dead_pid = u32::MAX / 2;
+    assert!(
+        Segment::open(&dead)
+            .unwrap()
+            .view()
+            .claim_control(dead_pid, |_| false)
+    );
+    assert!(Segment::open(&live).unwrap().claim_control());
+
+    let swept = sweep_dead_segments(&dir, None);
+    assert_eq!(swept, vec![dead.clone()]);
+    assert!(!dead.exists(), "the segment went");
+    assert!(!take.exists(), "and the take beside it");
+    assert!(live.exists(), "a segment being served stays");
+    assert!(
+        unclaimed.exists(),
+        "a claim of nobody is not a dead owner: it is one that has not started yet"
+    );
+
+    // The path a caller is about to open is never swept, which is what keeps
+    // adopting a killed owner's material by name working.
+    let orphan = dir.join("orphan");
+    Segment::create_full(&orphan, 1024, 2, 1024).unwrap();
+    assert!(
+        Segment::open(&orphan)
+            .unwrap()
+            .view()
+            .claim_control(dead_pid, |_| false)
+    );
+    assert!(sweep_dead_segments(&dir, Some(&orphan)).is_empty());
+    assert!(orphan.exists());
+
+    // And the sweep is where a segment is created, so the collection happens
+    // without anybody remembering to ask for it.
+    let fresh = dir.join("fresh");
+    let (_, created) = Segment::open_or_create_full(&fresh, 1024, 2, 1024).unwrap();
+    assert!(created);
+    assert!(
+        !orphan.exists(),
+        "creating one collects the ones nobody serves"
+    );
+
+    for path in [&live, &unclaimed, &fresh] {
+        remove_segment(path);
+    }
+    let _ = std::fs::remove_dir(&dir);
+}

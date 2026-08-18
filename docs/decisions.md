@@ -5676,6 +5676,24 @@ follow from it and are stated where they bite: the clocks belong to whoever runs
 a device (a session publishes none), and attaching restores the material and not
 the routing, since ports and patches live with the process.
 
+**And the claim is also what collects the dead.** The property above has a cost
+nobody paid at first: material *outliving* its process is the design, so a
+segment left by an editor that was killed rather than closed is indistinguishable
+from one being kept, and a region is a whole take — a few crashes fill a memory
+filesystem with files nothing can tell live from dead. The claim answers that
+question too, so **creating a segment sweeps its directory** of segments whose
+owner no longer exists. Three things make a sweep that removes a file this
+process never created the right shape rather than a dangerous one. Unlinking a
+name never invalidates a mapping somebody holds — the same property freeing one
+buffer relies on — so the sweep ends a name, not a reader. A claim of *nobody*
+is never swept: `0` is a segment created a moment ago as much as one released on
+a clean exit, and neither is dead. And the path being opened is never swept, so
+recovery keeps its exact meaning — start a server against the same path and it
+adopts what is there, which is the case where a dead owner's material is wanted.
+What is *not* offered is recovering it under a different name: an editor names
+its segment for its pid, so its next run is a new path, and the previous run's
+take is a file the sweep is right to collect.
+
 ## A peer writes material, announces the span, and asks for every operation
 
 **Context.** With a take mapped, an editor stores a stroke into the very cells

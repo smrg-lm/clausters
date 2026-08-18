@@ -17,6 +17,11 @@
 # Samples never travel; allocation and lifetime always do, which is what
 # /buffer_attach is.
 #
+# The last section shows the other side of that property: material outliving
+# its process means a segment left by an owner that was *killed* looks exactly
+# like one being kept, so the claim answers that too -- creating a segment
+# sweeps the ones whose owner no longer exists.
+#
 # Needs: a built server (cargo build --release) and an audio device for the
 # player. Everything is on 127.0.0.1 and cleans up after itself.
 set -u
@@ -24,6 +29,7 @@ set -u
 here="$(cd "$(dirname "$0")/.." && pwd)"
 bin="$here/target/release/clausters"
 seg="/dev/shm/clausters-editor-demo-$$"
+seg2="/dev/shm/clausters-editor-demo-$$-next"
 owner_port=57410
 player_port=57411
 py="${PYTHON:-python3}"
@@ -31,9 +37,9 @@ py="${PYTHON:-python3}"
 [ -x "$bin" ] || { echo "build it first: cargo build --release"; exit 1; }
 
 cleanup() {
-  kill "${owner_pid:-0}" "${player_pid:-0}" "${player2_pid:-0}" 2>/dev/null
+  kill "${owner_pid:-0}" "${player_pid:-0}" "${player2_pid:-0}" "${owner2_pid:-0}" 2>/dev/null
   sleep 0.3
-  rm -f "$seg" "$seg".buf* 2>/dev/null
+  rm -f "$seg" "$seg".buf* "$seg2" "$seg2".buf* 2>/dev/null
 }
 trap cleanup EXIT
 
@@ -110,3 +116,20 @@ echo "== what a restart does NOT bring back is the routing"
 echo "   the ports and the connections a person made live with the process."
 echo "   --client-name is what makes them come back under the same name, so a"
 echo "   patchbay can reconnect them; the material needed nothing."
+
+echo
+echo "== and what a *killed owner* leaves behind is collected by the next one"
+# SIGKILL, so nothing runs on the way out: the segment and one file per take
+# stay in /dev/shm exactly as a crashed editor leaves them.
+kill "${player2_pid}" 2>/dev/null; wait "$player2_pid" 2>/dev/null
+kill -9 "$owner_pid"; wait "$owner_pid" 2>/dev/null
+echo "   left behind: $(ls -1 "$seg" "$seg".buf* 2>/dev/null | wc -l) file(s), $(du -ch "$seg" "$seg".buf* 2>/dev/null | tail -1 | cut -f1) in a memory filesystem"
+# An editor names its segment for its pid, so its next run is a new path --
+# and creating one sweeps the segments whose owner no longer exists.
+"$bin" --shm "$seg2" --port "$owner_port" -v >/tmp/clausters-owner2.log 2>&1 &
+owner2_pid=$!
+sleep 1.5
+grep -o "swept the shared segment.*" /tmp/clausters-owner2.log || echo "   (nothing swept -- see /tmp/clausters-owner2.log)"
+echo "   left behind now: $(ls -1 "$seg" "$seg".buf* 2>/dev/null | wc -l) file(s)"
+echo "   (a claim naming a pid nobody answers to is what says the segment is dead;"
+echo "    a segment being served, and the path being opened, are never touched)"
