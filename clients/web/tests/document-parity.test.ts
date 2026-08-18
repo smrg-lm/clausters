@@ -191,6 +191,12 @@ test("the same edits logged here reach the same states", async () => {
         for (const expected of vectors.logged.redos) {
             const step = log.redo(doc);
             assert.ok(step, "a redo that the vector says happened");
+            // The intents, like the undo branch above: a redo reports what it
+            // applied so a view projects it the way it projects an undo, and
+            // that report is a second answer the two faces have to agree on --
+            // the document matching says the states met, not that both sides
+            // said how they got there.
+            assert.deepEqual(step.redone, expected.redone);
             assert.deepEqual(step.remaining, [], "nothing for the owner to re-run");
             assert.deepEqual(doc.snapshot(), expected.document);
         }
