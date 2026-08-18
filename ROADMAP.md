@@ -109,6 +109,22 @@ example, and none blocks anything that is.
   question it was flagged with still stands: `T5` put a position in samples on
   the engine, which crosses the beats↔samples conversion `T2` says is anchored
   on the wrong axis.
+- **`Group` names two different things in one package, and one of them is the
+  server's** *(`clients/python/PLAN.md`, Found by use)*. The arrangement's
+  `Group` is the one that moves, to the document's own word (`set`); the
+  server's is scsynth's and stays. The plan says what the rename costs — the
+  class and its module, `clausters.form`'s exports, the editor and the document
+  bridge, the host's vocabulary, the composition chapter, the examples,
+  `CLAUDE.md`'s arrangement-vocabulary section and the web port — and that it
+  rides alone rather than inside a milestone about something else, which is why
+  it is here and not folded into Phase 1.
+- **The three open questions of the Python plan** *(`clients/python/PLAN.md`,
+  Found by use)* — "Acceptable equivalence level for higher math vs Faust",
+  "Whether a separate `cdylib` for `clausters-ffi` is preferable" and "The
+  FFI-overhead threshold at which the scalar builtin uses a pure-language
+  fallback". Each is a number or a decision that nothing currently waits on;
+  they are named so that "unanswered" reads as a decision rather than an
+  oversight.
 - **The builders could be generated from the catalog instead of contrasted
   against it** *(root `PLAN.md`, Future directions)* — the contrast tests caught
   eleven drifted builders, which is strictly weaker than not hand-writing the mirrors.

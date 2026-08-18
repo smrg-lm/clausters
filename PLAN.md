@@ -1592,7 +1592,7 @@ finished work, where a pending item reads as done.
 
   **Fixed 2026-08-18.** `transport_group` coerces with `defs.node._target_id`, the helper `target=` already used, so the object and the bare id are the same call and the coercion lives in one place rather than two. The two examples and the book's transport chapter drop the `.id` they had to spell; the acceptance is a unit test over the fake interface (`test_defs.py::test_the_governed_group_is_a_node_or_its_id`). The web client needed nothing: it has coerced with `nodeId(...)` since it was written.
 
-- ⬜ **A sample write costs the whole buffer, not the samples written**
+- ✅ **A sample write costs the whole buffer, not the samples written**
   *(noticed 2026-08-14, costing the message-passing design against a monolithic
   audio editor before opening the document crate's O4)*. `/buffer_setRange`
   lays its runs into a **copy that replaces the buffer whole**
@@ -1656,6 +1656,19 @@ finished work, where a pending item reads as done.
   architecture and survives untouched; what does not survive is the reason the
   write path copies. **S19** is the other half the user named the same day: with
   the samples in the shared segment a local peer's edit costs no message at all.
+
+  **Fixed 2026-08-17 by S18**, which is where the whole record of the fix lives:
+  `Set`, `Fill` and `Edit` write through S14's cells and install nothing, so the
+  cost is flat in the material (3.3-3.5 ms through the wire on takes from ten
+  seconds to ten minutes, and that is the `/server_sync` round trip, not the
+  write). The correctness half went with it — a copy-and-swap no longer discards
+  what a `RecordBuf` wrote since the snapshot. The workaround this entry named,
+  a client-side working copy pushed on confirmation, is therefore no longer
+  forced by the write path, and the document crate has since settled that it is
+  not wanted either (`crates/clausters-document/PLAN.md`, Open decisions, "Does
+  the working copy still lead, now that a write costs the span?" - taken: a
+  loaded take is edited where it lies, and a copy stays mandatory only for
+  material reached by reference to the user's own file).
 
 - ✅ **A finished async command waits up to 100 ms to be reported** *(found
   2026-08-15, measuring the write cost above: every single write round-tripped
