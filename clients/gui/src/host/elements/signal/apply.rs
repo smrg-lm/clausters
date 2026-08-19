@@ -118,6 +118,20 @@ impl SignalElement {
                 .is_some(),
             // The chrome.
             "overlay" => truthy(v).map(|b| self.display.overlay = b).is_some(),
+            // **Live, and both ways.** A client arms it when it starts
+            // recording into the buffer and clears it when the take is
+            // finished — and clearing it is what turns the picture back into
+            // the whole of the material, which is right: what was written is
+            // now all there is, and a frontier stopped at the buffer's end
+            // would have said the same thing only by accident.
+            "fills" => truthy(v)
+                .map(|b| {
+                    self.fills = b;
+                    if !b {
+                        self.written = 0;
+                    }
+                })
+                .is_some(),
             // Live, because a picture is read by turning its measures on and
             // off: the same element shows peaks, level, or both between two
             // frames, with nothing rebuilt.

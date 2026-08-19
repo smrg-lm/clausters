@@ -346,6 +346,7 @@ def signal(*, view: str | None = None, data=None, blob: int | None = None,
            base_bucket: int | None = None, navigable: bool | None = None,
            selectable: bool | None = None, editable: bool | None = None,
            overlay: bool | None = None, measure: str | None = None,
+           fills: bool | None = None,
            at: float | None = None, dur: float | None = None,
            start: float | None = None, loop: bool | None = None,
            axes: dict | None = None, label: str | None = None,
@@ -371,6 +372,16 @@ def signal(*, view: str | None = None, data=None, blob: int | None = None,
       ``data``/``blob``/``buffer``/``path``/``cache`` are addressable samples,
       which is what lets a view navigate, slice and select. ``channels``
       de-interleaves it, ``base_bucket`` sizes the peak pyramid.
+    ``fills`` says the material is **being written into as it is drawn** — a
+    take you are recording. The view then draws it up to the buffer's write
+    frontier and leaves the axis past it empty, instead of drawing a flat line
+    across the buffer's own zeros: past the frontier there is no silence, there
+    is no material yet. The host cannot infer this and does not try, because a
+    frontier alone does not distinguish a recording from a loaded take that one
+    write touched — you allocated the buffer, so you are what knows. Clear it
+    (``set(fills=False)``) when the take is finished and the whole of the
+    material is drawn again.
+
     - the **capabilities** — ``navigable`` (zooms and pans its axes, and joins
       the navigation group its x axis names), ``selectable``, ``editable``.
       Over ``view="spectrum"`` it means the **frequency** axis instead: that x
@@ -415,7 +426,8 @@ def signal(*, view: str | None = None, data=None, blob: int | None = None,
                        measure=measure, at=at, dur=dur, start=start,
                        label=label, color=color)
     for key, flag in (("navigable", navigable), ("selectable", selectable),
-                      ("editable", editable), ("overlay", overlay), ("loop", loop)):
+                      ("editable", editable), ("overlay", overlay), ("loop", loop),
+                      ("fills", fills)):
         if flag is not None:
             extra[key] = 1 if flag else 0
     extra.update(_axes(axes))
@@ -655,7 +667,8 @@ def menu(options=(), *, index: int | None = None, label: str | None = None,
 def waveform(*, data=None, blob: int | None = None, buffer: int | None = None,
              path: str | None = None, cache: str | None = None, channels: int | None = None,
              base_bucket: int | None = None, overlay: bool | None = None,
-             measure: str | None = None, ruler: str | None = None,
+             measure: str | None = None, fills: bool | None = None,
+             ruler: str | None = None,
              ruler_y: str | None = None, bit_depth: int | None = None,
              min: float | None = None, max: float | None = None,
              sample_rate: float | None = None, tempo: float | None = None,
@@ -778,6 +791,8 @@ def waveform(*, data=None, blob: int | None = None, buffer: int | None = None,
                        y_start=y_start, y_len=y_len, link=link))
     if overlay is not None:
         extra["overlay"] = 1 if overlay else 0
+    if fills is not None:
+        extra["fills"] = 1 if fills else 0
     return node("signal", id=id, view="trace", **extra, **props)
 
 

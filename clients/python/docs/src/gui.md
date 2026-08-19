@@ -291,6 +291,20 @@ Three things follow from what the measure is:
 - The body costs no second pass over the samples. The mean square rides in the
   peak cache beside the min and max, at every resolution level, so the body
   reads the same mapped file the envelope does.
+
+A take you are **recording into** wants one more prop, `fills`:
+
+```python
+waveform(buffer=take.bufnum, sample_rate=rate, fills=True)   # ...and fills=False when it stops
+```
+
+It says the material is being written as it is drawn, so the view stops at the
+buffer's write frontier and leaves the axis past it empty. Without it the
+buffer's own zeros are drawn — the minimum-ink rule puts a flat line across the
+whole take before anything has been recorded into it — because past the frontier
+there is no silence, there is no material yet. The host cannot work this out for
+itself: a frontier alone does not tell a recording from a loaded take that one
+write touched, and you are the one who allocated the buffer.
 - **A cache built before the measure existed draws no body.** Its energy was
   never measured, and zeros would say silence over material that is not
   silent — so the layer is simply absent, and rebuilding the cache

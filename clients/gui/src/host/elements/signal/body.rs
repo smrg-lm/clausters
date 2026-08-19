@@ -60,6 +60,7 @@ impl SignalElement {
             self.measures,
             self.display.overlay,
             self.editor.sample_rate,
+            self.written_frames(),
         );
     }
 }

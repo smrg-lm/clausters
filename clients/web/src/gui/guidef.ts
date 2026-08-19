@@ -515,6 +515,17 @@ export function signal(
         retention?: number;
         baseBucket?: number;
         navigable?: boolean;
+        /**
+         * The material is **being written into as it is drawn** — a take you
+         * are recording. The view draws it up to the buffer's write frontier
+         * and leaves the axis past it empty, rather than drawing a flat line
+         * across the buffer's own zeros: past the frontier there is no
+         * silence, there is no material yet. The host cannot infer it — a
+         * frontier alone does not tell a recording from a loaded take one
+         * write touched — so the client that allocated the buffer says so.
+         * Clear it when the take is finished.
+         */
+        fills?: boolean;
         selectable?: boolean;
         editable?: boolean;
         overlay?: boolean;
@@ -552,7 +563,7 @@ export function signal(
 ): GuiNode {
     const {
         view, cache, path, buffer, data, blob, channels, bus, rate, retention,
-        baseBucket, navigable, selectable, editable, overlay, measure, at, dur,
+        baseBucket, navigable, selectable, editable, overlay, measure, fills, at, dur,
         start, loop, axes: pair, label: text, ...rest
     } = options;
     return node("signal", {
@@ -566,10 +577,12 @@ export function signal(
             ["retention", retention],
             ["base_bucket", baseBucket],
             ["navigable", flag(navigable)],
+            ["fills", flag(fills)],
             ["selectable", flag(selectable)],
             ["editable", flag(editable)],
             ["overlay", flag(overlay)],
             ["measure", measure],
+            ["fills", flag(fills)],
             ["at", at],
             ["dur", dur],
             ["start", start],
@@ -944,11 +957,17 @@ export function waveform(
          * `signal`.
          */
         measure?: "peak" | "rms";
+        /**
+         * The material is **being written into as it is drawn** — a take you
+         * are recording. The picture stops at the buffer's write frontier and
+         * the axis past it stays empty; see `signal`.
+         */
+        fills?: boolean;
     } = {},
 ): GuiNode {
     const {
         cache, path, buffer, data, blob, channels, baseBucket, overlay,
-        rulerY, bitDepth, min, max, measure, ...timeline
+        rulerY, bitDepth, min, max, measure, fills, ...timeline
     } = options;
     return node("signal", {
         view: "trace",

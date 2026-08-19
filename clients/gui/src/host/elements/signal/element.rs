@@ -177,6 +177,19 @@ impl Element for SignalElement {
         self.take(data)
     }
 
+    fn written(&self) -> Option<u64> {
+        self.written_frames()
+    }
+
+    fn set_written(&mut self, frames: u64) -> bool {
+        if !self.fills || self.written == frames {
+            return false;
+        }
+        self.written = frames;
+        self.slot_dirty = true;
+        true
+    }
+
     fn material_shape(&self) -> Option<(usize, u64)> {
         SignalElement::material_shape(self)
     }
@@ -389,6 +402,7 @@ impl SignalElement {
             x_view: self.freq_window(sample_rate),
             label: self.display.label.as_deref(),
             measures: self.measures,
+            written: self.written_frames(),
         }
     }
 }

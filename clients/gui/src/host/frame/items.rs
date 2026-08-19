@@ -165,6 +165,9 @@ pub(super) struct TimelineItem {
     /// it has not changed and must not be re-summarized to show an edit that
     /// nobody has applied yet.
     pub(super) pending: Option<crate::host::widget::element::PendingEdit>,
+    /// How far the material exists, for a take being written into as it is
+    /// drawn (`fills`); `None` when all of it does.
+    pub(super) written: Option<u64>,
 }
 
 /// A placed `canvas` widget, copied out of the host tree: its viewport body, the
@@ -386,6 +389,7 @@ pub(super) fn collect_widgets(
                                 kind,
                                 editor: editor.clone(),
                                 pending: el.pending_edit().cloned(),
+                                written: el.written(),
                             });
                         }
                     };

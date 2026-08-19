@@ -155,6 +155,13 @@ impl SignalElement {
     /// It is the shape and not the samples because the one caller is a
     /// **write**, which has to know what it may address before it addresses it:
     /// handing out the data to measure it would be a copy of a take per stroke.
+    /// **How far this element's material exists**, in frames, or `None` when
+    /// all of it does — the drawing's half of the `fills` prop, asked wherever
+    /// a picture of the material is built.
+    pub fn written_frames(&self) -> Option<u64> {
+        self.fills.then_some(self.written)
+    }
+
     pub fn material_shape(&self) -> Option<(usize, u64)> {
         let data = self.source.data()?;
         if let Some(body) = &data.body {

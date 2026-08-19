@@ -613,12 +613,24 @@ export class GuiHost {
 function setArgs(props: Record<string, PropValue>): MsgArg[] {
     const args: MsgArg[] = [];
     for (const [key, value] of Object.entries(props)) {
-        args.push(
-            wireProp(key),
-            typeof value === "object" && value !== null ? JSON.stringify(value) : value,
-        );
+        args.push(wireProp(key), wireValue(value));
     }
     return args;
+}
+
+/**
+ * One `/gui_set` value as the wire takes it.
+ *
+ * A **structural** value has no OSC type at all and rides as its JSON string.
+ * A **boolean** rides as `1`/`0`: OSC's own boolean tags carry no argument, so
+ * a flag prop has always been an int there and the builders emit one —
+ * `set({ fills: false })` is what a reader of `fills: true` in a builder will
+ * write, so it has to mean the same thing.
+ */
+function wireValue(value: PropValue): MsgArg {
+    if (typeof value === "boolean") return ["i", value ? 1 : 0];
+    if (typeof value === "object" && value !== null) return JSON.stringify(value);
+    return value;
 }
 
 /** A `/gui_ack`'s arguments: the stamp, the document version, the source

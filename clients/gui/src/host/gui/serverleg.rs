@@ -590,7 +590,13 @@ impl App {
             // not a channel's, so they all advance together — and a refresh
             // per channel would copy the whole view's summary once per
             // channel, which is the quadratic shape this had first.
-            if el.refresh_material(None, drawn, (frontier - drawn) as usize)
+            // **How far it is written is a fact the element is told**, beside
+            // the summary being refreshed: whether it draws only that far is
+            // its own answer to its own props, since a frontier alone cannot
+            // tell a take being recorded from a loaded one a single write
+            // touched.
+            let told = el.set_written(frontier);
+            if (el.refresh_material(None, drawn, (frontier - drawn) as usize) || told)
                 && !redraw.contains(&def_id)
             {
                 redraw.push(def_id);

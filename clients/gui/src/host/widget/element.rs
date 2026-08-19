@@ -1608,6 +1608,35 @@ pub trait Element: fmt::Debug {
         false
     }
 
+    /// **How far this element's material exists**, in frames, or `None` when
+    /// all of it does — what a picture of the material is cut to.
+    ///
+    /// It is the drawing's half of [`set_written`](Element::set_written): the
+    /// frontier goes in as a fact, and what comes back out is the element's own
+    /// answer over its own props, which is where a take being recorded and a
+    /// loaded one a single write touched part company.
+    fn written(&self) -> Option<u64> {
+        None
+    }
+
+    /// **How far the material has been written**, in frames — a buffer's write
+    /// frontier, pushed in by the host that reads it from the shared segment.
+    /// Returns whether anything changed, which is what asks for a redraw.
+    ///
+    /// It is a *fact* and not an instruction: whether an element draws only up
+    /// to it is the element's own answer to its own props, because the frontier
+    /// alone cannot say what the picture is. A take being recorded is material
+    /// up to the frontier and nothing past it; a take read from a file that one
+    /// `BufWr` dropped a sample into has a frontier too and is material
+    /// everywhere. Only the client knows which it allocated, so the client says
+    /// so (`fills`) and the host supplies the number.
+    ///
+    /// The default ignores it: an element that draws no material has nothing to
+    /// be told.
+    fn set_written(&mut self, _frames: u64) -> bool {
+        false
+    }
+
     /// **The shape of the material this element holds** — `(channels, frames)`
     /// per channel — or `None` when it draws no material.
     ///

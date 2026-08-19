@@ -348,6 +348,16 @@ pub struct TraceStyle {
     /// rate, has nothing better to offer and nothing that moves under a zoom
     /// it does not have.
     pub body_window: f64,
+    /// **How much of the material exists**, in frames — `None` for the
+    /// ordinary case, where all of it does.
+    ///
+    /// It is set for a take that is being **written into as it is drawn**: past
+    /// the write frontier a recording's buffer holds its own zeros, which are
+    /// not silence in the material but the absence of material, and the
+    /// minimum-ink rule would otherwise draw a flat line across a stretch
+    /// nothing has happened in yet. So the picture stops, and the axis past it
+    /// stays empty until the writer gets there.
+    pub written: Option<f64>,
 }
 
 /// Whether sample dots are drawn at `spacing` pixels apart: they need to read
@@ -367,6 +377,7 @@ impl TraceStyle {
             dot_radius: 0.0,
             measure: Measure::Peak,
             body_window: 0.0,
+            written: None,
         }
     }
 
@@ -379,6 +390,13 @@ impl TraceStyle {
     /// The same trace, measuring `measure` instead of the envelope.
     pub fn with_measure(mut self, measure: Measure) -> Self {
         self.measure = measure;
+        self
+    }
+
+    /// The same trace over material that only exists as far as `frames` — a
+    /// take being recorded. `None` (the default) is all of it.
+    pub fn with_written(mut self, frames: Option<u64>) -> Self {
+        self.written = frames.map(|f| f as f64);
         self
     }
 
@@ -460,6 +478,12 @@ pub fn draw_channel(
     if columns {
         for c in 0..cols {
             let x = rect.x + c as f32 * cw;
+            // Past the written frontier there is no material yet, so there is
+            // no column: the axis is drawn and left empty rather than inked
+            // over the buffer's own zeros.
+            if style.written.is_some_and(|w| src(x) >= w) {
+                break;
+            }
             let (lo, hi) = trace.column(ch, per_px, src(x), src(x + cw));
             if lo > hi {
                 continue;
@@ -484,7 +508,14 @@ pub fn draw_channel(
         // Few enough samples per pixel that individual ones matter: step by
         // sample, not by pixel, so nothing visible is skipped.
         let first = src(rect.x).floor().max(0.0) as usize;
-        let last = (src(rect.x + rect.w).ceil().max(0.0) as usize).min(frames - 1);
+        let end = style
+            .written
+            .map_or(frames, |w| (w.max(0.0) as usize).min(frames));
+        if end == 0 {
+            mesh.set_clip(outer);
+            return;
+        }
+        let last = (src(rect.x + rect.w).ceil().max(0.0) as usize).min(end - 1);
         // Where the samples land decides whether each one is marked: the line
         // is an interpolation the drawing invents, and a dot is what says which
         // points of it are data.
@@ -595,6 +626,9 @@ fn draw_body(
     let color = style.color;
     for c in 0..cols {
         let x = rect.x + c as f32 * cw;
+        if style.written.is_some_and(|w| src(x) >= w) {
+            break;
+        }
         // A source with no measure draws nothing at all — the column is
         // skipped rather than inked at zero, so an old cache shows the
         // envelope it does have and no body it never measured.
@@ -998,6 +1032,59 @@ mod tests {
         // be wrong about: each column averages its own span, as it always did.
         let (_, plain) = draw_measures(&sine, rect, (0.0, 400_000.0));
         assert!(!plain.is_empty());
+    }
+
+    /// **A take being written is drawn up to its frontier and no further.**
+    /// Past it a recording's buffer holds its own zeros, which are not silence
+    /// in the material but the absence of material — and the minimum-ink rule
+    /// would draw a flat line across them, which is a picture of a stretch that
+    /// has not happened yet. Both regimes stop: the columns break at the
+    /// frontier, and the polyline's last sample is the last one written.
+    #[test]
+    fn a_written_frontier_cuts_the_picture_and_leaves_the_axis_empty() {
+        let rect = Rect::new(0.0, 0.0, 100.0, 100.0);
+        // Ten thousand frames of signal in a buffer of forty thousand: the
+        // first quarter is the take, the rest is what has not been recorded.
+        let mut samples = vec![0.0f32; 40_000];
+        for (i, v) in samples.iter_mut().enumerate().take(10_000) {
+            *v = (i as f32 * 0.05).sin() * 0.8;
+        }
+        let right = |written: Option<u64>| {
+            let mut mesh = Mesh::new();
+            draw_channel(
+                &mut mesh,
+                rect,
+                &Trace::samples(&samples, 1),
+                0,
+                |x| (x - rect.x) as f64 / rect.w as f64 * 40_000.0,
+                |s| rect.x + (s / 40_000.0) as f32 * rect.w,
+                |v| rect.y + rect.h * 0.5 * (1.0 - v),
+                TraceStyle::new([1.0, 1.0, 1.0, 1.0], 1.0).with_written(written),
+            );
+            mesh.positions().fold(0.0f32, |a, (x, _)| a.max(x))
+        };
+        // Uncut, the flat tail is inked to the right edge by the minimum-ink
+        // rule -- which is the picture this prop exists to stop drawing.
+        assert!(right(None) > 90.0, "{}", right(None));
+        // Cut, nothing is drawn past the quarter the take reaches.
+        let cut = right(Some(10_000));
+        assert!(
+            (24.0..=27.0).contains(&cut),
+            "the picture stops at the frontier: {cut}"
+        );
+        // Nothing written yet is nothing drawn, not a line across the buffer.
+        let mut mesh = Mesh::new();
+        draw_channel(
+            &mut mesh,
+            rect,
+            &Trace::samples(&samples, 1),
+            0,
+            |x| (x - rect.x) as f64 / rect.w as f64 * 40_000.0,
+            |s| rect.x + (s / 40_000.0) as f32 * rect.w,
+            |v| rect.y + rect.h * 0.5 * (1.0 - v),
+            TraceStyle::new([1.0, 1.0, 1.0, 1.0], 1.0).with_written(Some(0)),
+        );
+        assert!(mesh.is_empty());
     }
 
     /// **A source that cannot measure draws no body at all.** The column is

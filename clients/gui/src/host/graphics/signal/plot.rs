@@ -166,6 +166,9 @@ pub struct PlotParams<'a> {
     pub label: Option<&'a str>,
     /// What each column measures — the envelope, or the level inside it.
     pub measures: Measures,
+    /// How far the material exists, for a take being written into as it is
+    /// drawn; `None` when all of it does.
+    pub written: Option<u64>,
 }
 
 /// The plot's inner geometry: the traced `body` after the label strip and the
@@ -341,7 +344,8 @@ fn draw_signal(d: &mut Draw, g: &Geom, p: &PlotParams) {
                 )
                 .with_dots(m.point_radius)
                 .with_measure(measure)
-                .with_rate(p.sample_rate),
+                .with_rate(p.sample_rate)
+                .with_written(p.written),
             );
         }
     }
@@ -597,6 +601,7 @@ mod tests {
             x_view: (0.0, 1.0),
             label: None,
             measures: Measures::default(),
+            written: None,
         }
     }
 

@@ -303,10 +303,18 @@ class GuiHost:
         all, so it rides as its JSON string; pass the object and it is
         serialized here, or pass the string yourself and it goes through
         untouched.
+
+        A ``bool`` rides as ``1``/``0``, which is what a flag prop is on the
+        wire: OSC's own boolean tags carry no argument, so a flag has always
+        been an int there, and the builders emit one. Writing
+        ``set(fills=False)`` is what a reader of ``fills=True`` in a `guidef`
+        builder will type, so it means the same thing here.
         """
         args = []
         for k, v in props.items():
-            if isinstance(v, (dict, list, tuple)):
+            if isinstance(v, bool):
+                v = int(v)
+            elif isinstance(v, (dict, list, tuple)):
                 v = json.dumps(list(v) if isinstance(v, tuple) else v)
             args += [k, v]
         self._osc.send_msg(self.target, "/gui_set", id, *args)

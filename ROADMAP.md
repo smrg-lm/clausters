@@ -57,7 +57,7 @@ right — that is the normal failure, not a sign the work vanished.
 
 *What it buys: a picture that reads the material rather than a copy of it. **H7, S20 and H8 have shipped** — the copies are gone, a write costs its span, a buffer publishes how far it has been written and a take is drawn as it fills. What is left of the phase is what those three deliberately did not infer or half-build.*
 
-- ⬜ **A recording's unwritten remainder draws as silence** and **a page cannot fold a streamed overview into the picture it holds** *(`clients/gui/PLAN.md`, Found by use)* — what S20 and H8 left standing, each with the reason it was not inferred or half-built. The first is a prop and a small milestone's worth of wire; the second is one door in `clausters-core`.
+- ⬜ **A page cannot fold a streamed overview into the picture it holds** *(`clients/gui/PLAN.md`, Found by use)* — what S20 and H8 left standing, with the reason it was not half-built: it is one door in `clausters-core`, a `Pyramid` taking level-0 buckets at an offset. Its sibling, **a recording's unwritten remainder**, shipped as the `fills` prop. **And the native host is now named as a consumer too**: following a recording by polling the frontier every `follow_block` puts the last block up to a second late, and the stream carries the summary the poll is re-deriving — see the plan entry.
 - ⬜ **A take's overview could be a file beside its region** *(root `PLAN.md`, Future directions)* — dropped from S20 when the frontier turned out to answer the live question on its own; it buys the opening pass and brings a second writer of derived state.
 
 ## Phase 2 — the packages move together: the arrangement reaches the web client

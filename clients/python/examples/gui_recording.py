@@ -102,15 +102,20 @@ print(f"takes: buffers {takes[0].bufnum}..{takes[-1].bufnum}, "
 # they zoom and pan together and one ruler labels them all. The ruler is a
 # `clausters.gui.timeruler` with a box of its own rather than a lane's own
 # ``ruler`` strip, which would come out of *that* lane's height and leave it
-# shorter than the rest. Nothing here says "recording": these are the same
-# views that draw a take read from a file, and what makes them live is that the
-# material is mapped and its frontier moves.
+# shorter than the rest. One prop *does* say recording, and it is the one thing
+# the host cannot work out for itself: `fills=True` says this material is being
+# written as it is drawn, so a lane stops at the buffer's write frontier and
+# leaves the axis past it empty. Without it the buffer's own zeros are drawn --
+# a flat line across the whole take before anything has been recorded into it --
+# because past the frontier there is no silence, there is no material yet. A
+# frontier alone cannot say this: a take read from a file that one write touched
+# has one too, and is material everywhere. We allocated the buffers, so we know.
 
 # %%
 LANES = 1  # the navigation group every lane and the ruler share
 win = gui.open(window(
     *[waveform(name=f"take{i}", buffer=t.bufnum, sample_rate=rate,
-               ruler="off", ruler_y="off", link=LANES)
+               fills=True, ruler="off", ruler_y="off", link=LANES)
       for i, t in enumerate(takes)],
     timeruler(ruler="time", sample_rate=rate, link=LANES),
     title=f"{TRACKS} takes, while they record",
@@ -120,7 +125,8 @@ win = gui.open(window(
     w=900, h=min(40 + 24 * TRACKS, 760), layout="col"))
 _closed = False
 win.on_closed(lambda: globals().__setitem__("_closed", True))
-print("the window is empty: nothing has been recorded into the takes yet")
+print("the window is empty: nothing has been recorded into the takes yet, "
+      "and `fills` is what makes that read as empty rather than as silence")
 
 # %% [markdown]
 # ## Record into them
@@ -189,7 +195,18 @@ print("window closed" if _closed else "done recording")
 # %% [markdown]
 # ## And they are ordinary material afterwards
 # The frontiers stop moving when the recorders free themselves, and what is
-# left is takes like any others — zoom them, sweep a selection, play them.
+# left is takes like any others — zoom them, sweep a selection, play them. So
+# `fills` is cleared: the take is finished, what was written is all there is,
+# and the lane goes back to drawing the whole of its material. It is the same
+# prop live, which is why this is a `set` and not a second window.
+
+# %%
+if not _closed:
+    for i in range(TRACKS):
+        win[f"take{i}"].set(fills=False)
+    print("takes finished: the lanes draw the whole of what they hold")
+
+# %% [markdown]
 # Closing the session stops everything it started.
 
 # %%

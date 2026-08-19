@@ -457,6 +457,19 @@ by turning its measures on and off.
   the format carried the mean square (CLPK v1/v2) has an envelope and no
   energy, and zeros would be a measurement — silence — over material that is
   not silent.
+- **`fills` says the material is being written as it is drawn**, and it is a
+  prop because the host cannot infer it. A take being recorded is material up
+  to the buffer's write frontier and *nothing* past it; a take read from a file
+  that one `BufWr` dropped a sample into has a frontier too and is material
+  everywhere. One number, two pictures — so the client that allocated the empty
+  buffer is what says which. Set, the view draws up to the frontier the host
+  reads from the shared segment and leaves the axis past it **empty**, rather
+  than inking the buffer's own zeros (which the minimum-ink rule would draw as
+  a flat line across a stretch nothing has happened in yet). Live both ways:
+  clear it when the take is finished and the whole of the material is drawn
+  again. Native today — the frontier is published in the shm segment, which a
+  page does not map; in a page the prop is accepted and the picture is whatever
+  the samples it holds say.
 
 An `axes` pair works on `/gui_def` and on `/gui_set` alike (there it rides as
 its JSON string, the `theme` convention). Everything the container does **not**

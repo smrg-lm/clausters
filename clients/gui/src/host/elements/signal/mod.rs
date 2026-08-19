@@ -338,6 +338,28 @@ pub struct SignalElement {
     /// body, one axis, one ruler, one upload, a picture per measure
     /// ([`Measures`]).
     pub measures: Measures,
+    /// **Whether this material is being written right now** — the `fills` prop.
+    ///
+    /// The host cannot infer it and must not try. A buffer publishes a write
+    /// frontier, but a frontier is not the question: a `BufWr` dropping one
+    /// sample into the middle of a take read from a file raises one too, and a
+    /// view that stopped drawing past it would erase the rest of the file.
+    /// What separates the two cases is *intent* — the client allocated an empty
+    /// buffer to record into — so the client is what says so.
+    ///
+    /// Set, the view draws its material up to [`Self::written`] and nothing
+    /// past it: a recording is material up to its frontier and **nothing**
+    /// beyond, where the buffer's own zeros are silence the picture would
+    /// otherwise draw a flat line across.
+    pub fills: bool,
+    /// **How far the material has been written**, in frames — the buffer's
+    /// write frontier, read by the host from the shared segment and pushed in
+    /// through [`Element::set_written`](crate::host::widget::element::Element::set_written).
+    ///
+    /// Only consulted while [`Self::fills`] is set, and `0` until the first
+    /// frontier arrives, so a take that has not been written into yet draws
+    /// nothing rather than drawing its own emptiness.
+    pub written: u64,
     pub caps: Caps,
     pub value: ValueRange,
     pub spectral: Spectral,
@@ -383,6 +405,8 @@ impl SignalElement {
         SignalElement {
             presentation: p.presentation,
             measures: Measures::default(),
+            fills: false,
+            written: 0,
             pending: None,
             source: if p.live {
                 Source::Bus(Bus {
