@@ -1775,6 +1775,31 @@ def peaks_cache_update_file(path: str, samples, start: int, frames: int) -> str:
     return path
 
 
+def peaks_cache_stream_file(path: str, start_frame: int, bucket: int, stats) -> str:
+    """Folds a ``/buffer_stream.reply`` report into the cache at `path` — the
+    listener's half of a recording being drawn, for a client that hears about
+    the material rather than mapping it.
+
+    `stats` is the reply's blob read as floats, **bucket-major and
+    channel-minor**: for each bucket of `bucket` frames in order, for each
+    channel, ``min``, ``max`` and mean square. `start_frame` is where the report
+    begins on the buffer's own sample axis. Nothing is measured here — the
+    writer measured — so a picture mapping this file grows as the take does,
+    at about 2 kB/s per channel against the 190 the audio would cost.
+
+    Returns `path`. Raises `ValueError` when the report is on another grid than
+    the cache (a different bucket size, a start off a bucket boundary, or a run
+    that does not fit)."""
+    from .._native import peaks_cache_write_buckets  # lazy: only needs the cdylib if used
+
+    with open(path, "rb") as f:
+        cache = f.read()
+    updated = peaks_cache_write_buckets(cache, start_frame, bucket, stats)
+    with open(path, "wb") as f:
+        f.write(updated)
+    return path
+
+
 def correlation(left, right) -> float | None:
     """The stereo **correlation** (Pearson's r) of two equal-length channels,
     in ``[-1, 1]`` — ``+1`` mono/in-phase, ``0`` decorrelated, ``-1`` anti-phase

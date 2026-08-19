@@ -398,7 +398,12 @@ precedence order:
 | `blob` | a binary blob carried beside the JSON in the same message |
 
 `samples_to_file` and `peaks_cache_file` write the first two from a Python
-sequence; `samples_to_blob` packs the last.
+sequence; `samples_to_blob` packs the last. A cache follows its material rather
+than being rebuilt: `peaks_cache_update_file` re-summarizes the frame span an
+edit touched, and `peaks_cache_stream_file` folds a `/buffer_stream.reply`
+report into it — the overview of a take being recorded, measured by the writer
+and sent instead of the samples, so a picture mapping the file grows as the take
+does.
 
 ### The axes carry the chrome
 

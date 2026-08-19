@@ -69,6 +69,57 @@ export class Peaks {
         return inner ? new Peaks(inner) : undefined;
     }
 
+    /**
+     * Folds a `/buffer_stream.reply` report into this pyramid — how a page
+     * follows a recording it cannot map.
+     *
+     * The server sends the *overview* of what was written rather than the
+     * material (about 2 kB/s a channel where the audio is 190), and the
+     * measuring already happened at the writer's end: this puts the buckets
+     * where they belong and rebuilds the levels above them, so the picture
+     * grows into the one the samples would have built.
+     *
+     * `stats` is the reply's blob — pass it as it arrived, or as `f32`s if you
+     * already read them. Either way it is **bucket-major and channel-minor**:
+     * for each bucket of `bucket` frames in order, for each channel, `min`,
+     * `max` and mean square. `startFrame` is where the report begins on the
+     * buffer's own sample axis.
+     *
+     * Returns `false`, changing nothing, when the report is on another grid
+     * than this cache: another bucket size, a start off a bucket boundary, or
+     * a run that does not fit. Subscribe with this cache's `baseBucket` and
+     * they agree by construction.
+     *
+     * ```ts
+     * const peaks = Peaks.build(new Float32Array(frames * channels), { channels });
+     * new OscFunc((msg) => {
+     *     const [bufnum, startFrame, bucket, blob] = msg.args;
+     *     if (bufnum === take.bufnum) {
+     *         peaks.writeBuckets(startFrame as number, bucket as number, blob as Uint8Array);
+     *     }
+     * }, "/buffer_stream.reply", { recv: server.receiver });
+     * await server.streamBuffers(50, [take], peaks.baseBucket);
+     * ```
+     */
+    writeBuckets(
+        startFrame: number,
+        bucket: number,
+        stats: ArrayLike<number> | Uint8Array,
+    ): boolean {
+        let flat: Float32Array;
+        if (stats instanceof Uint8Array) {
+            // The blob as the wire carries it: little-endian `f32`s, at
+            // whatever offset the datagram left them — which is why this is a
+            // `DataView` read and not a `Float32Array` over the same buffer.
+            const view = new DataView(stats.buffer, stats.byteOffset, stats.byteLength);
+            flat = new Float32Array(Math.floor(stats.byteLength / 4));
+            for (let i = 0; i < flat.length; i++) flat[i] = view.getFloat32(i * 4, true);
+        } else {
+            flat = stats instanceof Float32Array ? stats : Float32Array.from(stats);
+        }
+        return this.inner.writeBuckets(Math.trunc(startFrame), Math.trunc(bucket), flat);
+    }
+
     /** This cache's bytes, in the format every client reads. */
     toBytes(): Uint8Array {
         return this.inner.toBytes();

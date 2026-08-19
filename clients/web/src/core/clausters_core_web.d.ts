@@ -169,6 +169,22 @@ export class Pyramid {
      * which is an edit that changed the *length* and therefore a rebuild.
      */
     updateRange(samples: Float32Array, start: number, frames: number): boolean;
+    /**
+     * Folds a run of **already-summarized buckets** into this pyramid — the
+     * receiving half of `/buffer_stream`, which is how a page follows a
+     * recording it cannot map: the server sends the overview of what was
+     * written (2 kB/s where the audio is 190) and this puts it in the
+     * picture.
+     *
+     * `stats` is the reply's blob read as `f32`s, **bucket-major and
+     * channel-minor**: for each bucket of `bucket` frames in order, for each
+     * channel, `min`, `max` and mean square. `startFrame` is where the report
+     * begins on the buffer's own sample axis. Returns whether it applied —
+     * `false`, changing nothing, when the report is on another grid than this
+     * cache (another bucket size, a start off a bucket boundary, or a run
+     * that does not fit).
+     */
+    writeBuckets(start_frame: number, bucket: number, stats: Float32Array): boolean;
     readonly baseBucket: number;
     readonly channels: number;
     /**
@@ -598,6 +614,7 @@ export interface InitOutput {
     readonly pyramid_numLevels: (a: number) => number;
     readonly pyramid_toBytes: (a: number) => [number, number];
     readonly pyramid_updateRange: (a: number, b: number, c: number, d: number, e: number) => number;
+    readonly pyramid_writeBuckets: (a: number, b: number, c: number, d: number, e: number) => number;
     readonly quant_delay: (a: number, b: number) => number;
     readonly registry_alloc: (a: number, b: number) => [number, number];
     readonly registry_base: (a: number) => number;

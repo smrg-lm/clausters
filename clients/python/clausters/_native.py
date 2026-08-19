@@ -347,6 +347,18 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_core_peaks_multi_build.argtypes = [
         f32p, ctypes.c_size_t, ctypes.c_size_t, ctypes.c_size_t, u8p, ctypes.c_size_t,
     ]
+    # The receiving half of /buffer_stream (ABI v21): buckets the writer
+    # measured, folded into a cache at an offset -- for whoever hears about a
+    # recording rather than mapping the memory it fills.
+    lib.clausters_core_peaks_multi_write_buckets.restype = ctypes.c_size_t
+    lib.clausters_core_peaks_multi_write_buckets.argtypes = [
+        ctypes.POINTER(ctypes.c_ubyte),
+        ctypes.c_size_t,
+        ctypes.c_size_t,
+        ctypes.c_size_t,
+        ctypes.POINTER(ctypes.c_float),
+        ctypes.c_size_t,
+    ]
     # Stereo-field measurements (ABI v7): the correlation and Lissajous/goniometer
     # geometry the GUI phasescope reads, shared so a headless capture matches it.
     lib.clausters_core_correlation.restype = ctypes.c_int32
@@ -1554,6 +1566,37 @@ def peaks_cache_update(cache: bytes, samples, start: int, frames: int) -> bytes:
             "clausters_core_peaks_multi_update refused: the samples are not the "
             "buffer this cache describes (a length change is a rebuild)")
     return bytes(buf)
+
+def peaks_cache_write_buckets(cache: bytes, start_frame: int, bucket: int, stats) -> bytes:
+    """Folds a run of **already-summarized buckets** into a peak cache,
+    returning the new bytes — the receiving half of ``/buffer_stream``, which
+    sends the overview of material as it is written instead of the material.
+
+    ``stats`` is the reply's blob read as floats, **bucket-major and
+    channel-minor**: for each bucket of ``bucket`` frames in order, for each
+    channel, ``min``, ``max`` and mean square — the pyramid's own three
+    statistics in its own energy form, so nothing is converted here.
+    ``start_frame`` is where the report begins on the buffer's own sample axis.
+
+    Nothing is measured: the writer measured, and this puts the buckets where
+    they belong and rebuilds the levels above them. So a client that never sees
+    the samples ends up with the cache the samples would have built.
+
+    Raises `ValueError` when the report is on another grid than the cache — a
+    different bucket size, a start off a bucket boundary, a run past the end,
+    or a length that is not whole buckets across every channel. A refused
+    report changes nothing.
+    """
+    a, _ = _as_array(stats)
+    buf = (ctypes.c_ubyte * len(cache)).from_buffer_copy(cache)
+    written = lib().clausters_core_peaks_multi_write_buckets(
+        buf, len(cache), start_frame, bucket, _ptr(a), len(a))
+    if written != len(cache):
+        raise ValueError(
+            "clausters_core_peaks_multi_write_buckets refused: the report is not "
+            "on this cache's grid (bucket size, start alignment, or length)")
+    return bytes(buf)
+
 
 def correlation(left, right) -> float | None:
     """The stereo **correlation** (Pearson's r) of two equal-length channels,

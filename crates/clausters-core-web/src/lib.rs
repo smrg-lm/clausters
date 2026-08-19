@@ -867,6 +867,24 @@ impl JsPyramid {
         self.0.update_range(samples, start, frames)
     }
 
+    /// Folds a run of **already-summarized buckets** into this pyramid — the
+    /// receiving half of `/buffer_stream`, which is how a page follows a
+    /// recording it cannot map: the server sends the overview of what was
+    /// written (2 kB/s where the audio is 190) and this puts it in the
+    /// picture.
+    ///
+    /// `stats` is the reply's blob read as `f32`s, **bucket-major and
+    /// channel-minor**: for each bucket of `bucket` frames in order, for each
+    /// channel, `min`, `max` and mean square. `startFrame` is where the report
+    /// begins on the buffer's own sample axis. Returns whether it applied —
+    /// `false`, changing nothing, when the report is on another grid than this
+    /// cache (another bucket size, a start off a bucket boundary, or a run
+    /// that does not fit).
+    #[wasm_bindgen(js_name = writeBuckets)]
+    pub fn write_buckets(&mut self, start_frame: usize, bucket: usize, stats: &[f32]) -> bool {
+        self.0.write_buckets(start_frame, bucket, stats)
+    }
+
     /// The cache's bytes, in the format every client reads: the mono layout
     /// for a single channel and the multichannel one above it — the choice
     /// the Python client's door makes, so the same samples serialize to the

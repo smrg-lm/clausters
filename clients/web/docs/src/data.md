@@ -188,6 +188,32 @@ writes the same bytes the GUI host maps and the Python client produces, and
 `Peaks.fromBytes` reads one back. When a page is done with a pyramid,
 `peaks.free()` returns its wasm memory.
 
+### Watching a take record
+
+A recording is the one material a page cannot fetch as it grows: the samples are
+being written into the server's own memory, and a page maps nothing. So the
+server sends the **overview** instead — `streamBuffers` subscribes, and every
+report carries what the writer measured over the frames that appeared, at about
+2 kB/s a channel where the audio would be 190. `writeBuckets` puts a report into
+the pyramid the picture already holds:
+
+```js
+const peaks = data.Peaks.build(new Float32Array(frames * channels), { channels });
+
+new OscFunc((msg) => {
+    const [bufnum, startFrame, bucket, blob] = msg.args;
+    if (bufnum === take.bufnum) peaks.writeBuckets(startFrame, bucket, blob);
+}, "/buffer_stream.reply", { recv: server.receiver });
+
+await server.streamBuffers(50, [take], peaks.baseBucket);
+```
+
+Nothing is measured on this side, so the picture it grows into is the picture the
+samples would have built — the same bytes, asserted against the other clients.
+Subscribe with the pyramid's own `baseBucket`: a report on another grid is
+refused (`writeBuckets` returns `false`) rather than smeared across buckets
+nobody measured.
+
 ## The measurements
 
 Beside the paths sit the figures the views are made of, each the core's own

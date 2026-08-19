@@ -245,6 +245,61 @@ pub unsafe extern "C" fn clausters_core_peaks_multi_update(
     cache_len
 }
 
+/// Folds a run of **already-summarized buckets** into an existing multichannel
+/// cache, in place — the receiving half of `/buffer_stream`, which sends the
+/// overview of material as it is written instead of the material.
+///
+/// `stats` is the reply's blob read as `n` `f32`s, **bucket-major and
+/// channel-minor**: for each bucket of `bucket` frames in order, for each
+/// channel, `min`, `max` and mean square. `start_frame` is where the report
+/// begins on the buffer's own sample axis. Nothing here measures anything: the
+/// writer measured, and this puts the buckets where they belong and rebuilds
+/// the levels above them, so a client that cannot reach the samples still
+/// draws the picture the samples would have built.
+///
+/// Returns the bytes written, or 0 on a null pointer, an unparseable cache, a
+/// report on another grid (a `bucket` that is not the cache's own, a
+/// `start_frame` off a bucket boundary, a run past the end, or a length that
+/// is not whole buckets across every channel), or a re-serialization that does
+/// not fit — which cannot happen for an unchanged shape and is checked rather
+/// than trusted. A refused report changes nothing.
+///
+/// # Safety
+/// `cache` must be readable and writable for `cache_len` bytes, and `stats`
+/// readable for `n` `f32`s.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_core_peaks_multi_write_buckets(
+    cache: *mut u8,
+    cache_len: usize,
+    start_frame: usize,
+    bucket: usize,
+    stats: *const f32,
+    n: usize,
+) -> usize {
+    if cache.is_null() || stats.is_null() || cache_len == 0 {
+        return 0;
+    }
+    // SAFETY: caller guarantees the two ranges.
+    let (bytes, s) = unsafe {
+        (
+            std::slice::from_raw_parts_mut(cache, cache_len),
+            std::slice::from_raw_parts(stats, n),
+        )
+    };
+    let Some(mut pyr) = MultiPyramid::from_bytes(bytes) else {
+        return 0;
+    };
+    if !pyr.write_buckets(start_frame, bucket, s) {
+        return 0;
+    }
+    let out = pyr.to_bytes();
+    if out.len() != cache_len {
+        return 0;
+    }
+    bytes.copy_from_slice(&out);
+    cache_len
+}
+
 /// The stereo **correlation** (Pearson's r) of channels `left` and `right`
 /// (each `n` `f32`s): `+1` mono/in-phase, `0` decorrelated, `-1` anti-phase —
 /// the same measurement the GUI phasescope shows. Writes the coefficient into
@@ -403,6 +458,70 @@ mod tests {
             },
             0
         );
+    }
+
+    #[test]
+    fn peaks_multi_write_buckets_folds_a_report_into_a_cache() {
+        // A take being recorded: the cache starts as the silence the buffer was
+        // allocated as, and the reports are all this side ever sees of the
+        // material. What it ends up with must be the cache the samples build.
+        let (frames, channels, base) = (512, 2, 64);
+        let inter: Vec<f32> = (0..frames * channels)
+            .map(|i| ((i / channels) as f32 * 0.021 + (i % channels) as f32).sin() * 0.7)
+            .collect();
+        let silent = vec![0.0f32; frames * channels];
+        let mut cache = MultiPyramid::build_interleaved(&silent, channels, base).to_bytes();
+
+        // The writer's own measurement of two buckets, bucket-major and
+        // channel-minor -- the layout of `/buffer_stream.reply`'s blob.
+        let mut stats: Vec<f32> = Vec::new();
+        for b in 0..frames / base {
+            for ch in 0..channels {
+                let chunk: Vec<f32> = (b * base..(b + 1) * base)
+                    .map(|f| inter[f * channels + ch])
+                    .collect();
+                let (lo, hi) = peaks::min_max(&chunk).unwrap();
+                stats.extend([lo, hi, peaks::mean_square(&chunk).unwrap()]);
+            }
+        }
+
+        let n = cache.len();
+        let written = unsafe {
+            clausters_core_peaks_multi_write_buckets(
+                cache.as_mut_ptr(),
+                n,
+                0,
+                base,
+                stats.as_ptr(),
+                stats.len(),
+            )
+        };
+        assert_eq!(written, n, "the cache keeps its shape, so its length too");
+        assert_eq!(
+            cache,
+            MultiPyramid::build_interleaved(&inter, channels, base).to_bytes(),
+            "a streamed picture is the picture the samples would have built"
+        );
+
+        // A report on another grid is refused, and leaves the bytes alone.
+        let keep = cache.clone();
+        for (start, bucket) in [(0, base * 2), (base / 2, base), (frames, base)] {
+            assert_eq!(
+                unsafe {
+                    clausters_core_peaks_multi_write_buckets(
+                        cache.as_mut_ptr(),
+                        n,
+                        start,
+                        bucket,
+                        stats.as_ptr(),
+                        channels * 3,
+                    )
+                },
+                0,
+                "start {start}, bucket {bucket}"
+            );
+        }
+        assert_eq!(cache, keep, "a refused report changes nothing");
     }
 
     #[test]

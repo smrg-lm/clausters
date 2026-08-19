@@ -53,6 +53,15 @@ interface Vectors {
         bytes: number;
         sha256: string;
     }[];
+    peaksStream: {
+        signal: string;
+        channels: number;
+        baseBucket: number;
+        startFrame: number;
+        stats: number[];
+        bytes: number;
+        sha256: string;
+    }[];
     stereoField: {
         case: string;
         correlation: number | null;
@@ -123,6 +132,76 @@ test("a cache written by the Python client reads back here", () => {
     assert.equal(Peaks.fromBytes(new Uint8Array([1, 2, 3, 4])), undefined, "not a cache");
     written.free();
     read.free();
+});
+
+// ---- parity: the streamed overview ----
+
+test("a cache filled from stream reports matches the Python client's", () => {
+    for (const vector of vectors.peaksStream) {
+        const frames = signalFor(vector.signal).length / vector.channels;
+        const peaks = Peaks.build(new Float32Array(frames * vector.channels), {
+            channels: vector.channels,
+            baseBucket: vector.baseBucket,
+        });
+        const what = `${vector.signal} x${vector.channels} @${vector.startFrame}`;
+        assert.ok(
+            peaks.writeBuckets(
+                vector.startFrame,
+                vector.baseBucket,
+                Float32Array.from(vector.stats),
+            ),
+            `${what}: the report applies`,
+        );
+        const bytes = peaks.toBytes();
+        assert.equal(bytes.length, vector.bytes, `${what}: cache size`);
+        assert.equal(
+            createHash("sha256").update(bytes).digest("hex"),
+            vector.sha256,
+            `${what}: cache bytes`,
+        );
+        peaks.free();
+    }
+});
+
+test("the report can be handed over as the blob it arrived as", () => {
+    // What a page actually holds is `/buffer_stream.reply`'s blob: little-endian
+    // f32s at whatever offset the datagram left them, which is why the door
+    // takes bytes as readily as floats.
+    const vector = vectors.peaksStream[0];
+    const frames = signalFor(vector.signal).length / vector.channels;
+    const build = () =>
+        Peaks.build(new Float32Array(frames * vector.channels), {
+            channels: vector.channels,
+            baseBucket: vector.baseBucket,
+        });
+    const floats = Float32Array.from(vector.stats);
+    // Deliberately misaligned: one byte in, the way a blob sits in a packet.
+    const blob = new Uint8Array(floats.byteLength + 1);
+    blob.set(new Uint8Array(floats.buffer, floats.byteOffset, floats.byteLength), 1);
+
+    const fromFloats = build();
+    fromFloats.writeBuckets(vector.startFrame, vector.baseBucket, floats);
+    const fromBytes = build();
+    fromBytes.writeBuckets(vector.startFrame, vector.baseBucket, blob.subarray(1));
+    assert.deepEqual(fromBytes.toBytes(), fromFloats.toBytes(), "the same picture");
+    fromFloats.free();
+    fromBytes.free();
+});
+
+test("a report on another grid is refused and changes nothing", () => {
+    const vector = vectors.peaksStream[0];
+    const frames = signalFor(vector.signal).length / vector.channels;
+    const peaks = Peaks.build(new Float32Array(frames * vector.channels), {
+        channels: vector.channels,
+        baseBucket: vector.baseBucket,
+    });
+    const before = peaks.toBytes();
+    const stats = Float32Array.from(vector.stats);
+    assert.equal(peaks.writeBuckets(0, vector.baseBucket * 2, stats), false, "coarser");
+    assert.equal(peaks.writeBuckets(1, vector.baseBucket, stats), false, "unaligned");
+    assert.equal(peaks.writeBuckets(frames, vector.baseBucket, stats), false, "past the end");
+    assert.deepEqual(peaks.toBytes(), before, "a refused report leaves the cache alone");
+    peaks.free();
 });
 
 // ---- parity: the stereo field ----

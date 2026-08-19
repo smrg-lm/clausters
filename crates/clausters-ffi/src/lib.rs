@@ -113,7 +113,11 @@ pub use time::*;
 /// here for every offset and count, for the directory's seqlock, for the ring
 /// framing and for a region file's name — the numbers a binding used to
 /// transcribe, which is how one of them came to declare 1024 control buses
-/// against a server that had 16 384.
+/// against a server that had 16 384. **v21 also carries**
+/// `clausters_core_peaks_multi_write_buckets`, the receiving half of
+/// `/buffer_stream`: a run of buckets somebody else measured, folded into a
+/// cache in place, so a client that cannot map the memory a recording is
+/// filling still draws it.
 pub const CORE_ABI_VERSION: u32 = 21;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.

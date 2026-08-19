@@ -220,6 +220,25 @@ pub struct BucketStats {
     pub measured: bool,
 }
 
+/// One level-0 bucket **somebody else measured** — min, max and mean square
+/// over `base_bucket` samples, the pyramid's own three statistics in its own
+/// energy form.
+///
+/// It exists because a summary does not always come from samples the holder
+/// has. A page cannot map the memory a recording is filling, so the server
+/// sends it the overview instead (`/buffer_stream.reply`, whose payload is
+/// exactly a run of these): the measuring already happened, at the writer's
+/// end, and what is left for the receiver is to put the buckets where they
+/// belong and recombine the levels above them.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Bucket {
+    pub min: f32,
+    pub max: f32,
+    /// Mean square (energy) over the bucket's samples, never RMS — see the
+    /// module note: means combine and roots do not.
+    pub ms: f32,
+}
+
 #[derive(Clone)]
 pub struct Pyramid {
     base_bucket: usize,
@@ -383,6 +402,52 @@ impl Pyramid {
             }
         }
         self.recombine_above(lo, hi);
+        true
+    }
+
+    /// Writes level-0 buckets **already summarized elsewhere** at `first` and
+    /// recombines the levels above them — the pyramid's door for a summary
+    /// that arrives instead of being taken.
+    ///
+    /// This is [`Self::update_range_from`] with the measuring skipped, and the
+    /// reason it is a separate door rather than a `Source` of buckets is that
+    /// there are no samples anywhere in it: the caller holds a picture and
+    /// receives an overview of material it will never see (`/buffer_stream`,
+    /// which sends 2 kB/s where the audio is 190). Level 0 takes the buckets
+    /// as given and every level above is recombined the way the builder
+    /// combines them, so a pyramid filled this way answers exactly as one
+    /// built from the samples would.
+    ///
+    /// `first` is a **bucket index**, not a sample position, because that is
+    /// the only unit in which this is well defined — a bucket that started
+    /// somewhere else is a different bucket.
+    ///
+    /// Returns `false`, changing nothing, when the run does not fit: level 0
+    /// has as many buckets as the buffer this pyramid describes, and writing
+    /// past them would either grow the summary past its material or wrap it.
+    /// A pyramid parsed from a v1/v2 cache keeps its min/max updated and stays
+    /// without a measure, like every other write here.
+    pub fn write_buckets(&mut self, first: usize, buckets: &[Bucket]) -> bool {
+        let Some(level0) = self.levels.first_mut() else {
+            return false;
+        };
+        let last = first.saturating_add(buckets.len());
+        if last > level0.min.len() {
+            return false;
+        }
+        if buckets.is_empty() {
+            // Nothing to do rather than a failure, as an empty span is: a
+            // report that carried no whole bucket is a report about nothing.
+            return true;
+        }
+        for (i, b) in buckets.iter().enumerate() {
+            level0.min[first + i] = b.min;
+            level0.max[first + i] = b.max;
+            if let Some(ms) = level0.ms.as_mut() {
+                ms[first + i] = b.ms;
+            }
+        }
+        self.recombine_above(first, last - 1);
         true
     }
 
@@ -706,6 +771,66 @@ impl MultiPyramid {
         }
         for (ch, pyr) in self.channels.iter_mut().enumerate() {
             if !pyr.update_interleaved(interleaved, channels, ch, start, len) {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// [`Pyramid::write_buckets`] across every channel, from one run of
+    /// buckets in the layout the wire uses: **bucket-major, channel-minor** —
+    /// for each bucket in order, for each channel, `min`, `max` and `ms`.
+    ///
+    /// That is `/buffer_stream.reply`'s payload read as `f32`s, so a client
+    /// folding a recording into the picture it holds converts nothing: it
+    /// hands over the numbers as they arrived. `start_frame` is where the
+    /// report begins on the buffer's own sample axis, which is what the reply
+    /// carries.
+    ///
+    /// Returns `false`, changing nothing, when the report and this cache do
+    /// not describe the same grid:
+    ///
+    /// - `bucket` differs from this cache's `base_bucket`. A coarser report
+    ///   would have to be spread over buckets it never measured separately,
+    ///   and a finer one folded in groups that straddle report boundaries —
+    ///   both are answers this cannot give honestly, and the caller chooses
+    ///   the bucket when it subscribes, so agreeing is free.
+    /// - `start_frame` is not on a bucket boundary, for the same reason.
+    /// - the run does not fit the buffer, or its length is not a whole number
+    ///   of buckets across every channel.
+    pub fn write_buckets(&mut self, start_frame: usize, bucket: usize, stats: &[f32]) -> bool {
+        let channels = self.channels.len();
+        if channels == 0 || bucket == 0 || bucket != self.base_bucket() {
+            return false;
+        }
+        if !start_frame.is_multiple_of(bucket) {
+            return false;
+        }
+        let stride = channels * 3;
+        if !stats.len().is_multiple_of(stride) {
+            return false;
+        }
+        let first = start_frame / bucket;
+        let n = stats.len() / stride;
+        // Checked once, before anything is written: every channel shares this
+        // cache's length and grid, so a run that fits one fits all — and a
+        // refusal halfway would leave the channels describing different
+        // material, which is the one state this format promises cannot happen.
+        if first + n > self.frames().div_ceil(bucket) {
+            return false;
+        }
+        let mut run: Vec<Bucket> = Vec::with_capacity(n);
+        for (ch, pyr) in self.channels.iter_mut().enumerate() {
+            run.clear();
+            run.extend((0..n).map(|b| {
+                let at = b * stride + ch * 3;
+                Bucket {
+                    min: stats[at],
+                    max: stats[at + 1],
+                    ms: stats[at + 2],
+                }
+            }));
+            if !pyr.write_buckets(first, &run) {
                 return false;
             }
         }
@@ -1448,5 +1573,162 @@ mod multi_update_tests {
             !pyr.update_range(&interleaved(frames, 3), 0, 10),
             "wrong width"
         );
+    }
+}
+
+#[cfg(test)]
+mod stream_tests {
+    use super::*;
+
+    fn interleaved(frames: usize, channels: usize) -> Vec<f32> {
+        (0..frames * channels)
+            .map(|i| {
+                let f = (i / channels) as f32;
+                let c = (i % channels) as f32;
+                ((f * 0.017 + c * 1.7).sin() * 0.9) - c * 0.03
+            })
+            .collect()
+    }
+
+    /// The report a server sends for `[start, start + n * bucket)`: whole
+    /// buckets only, bucket-major and channel-minor, exactly the layout of
+    /// `/buffer_stream.reply`'s blob. Measured here from the samples the way
+    /// the writer measures them, which is the point of the test below — the
+    /// receiver never sees these samples.
+    fn report(data: &[f32], channels: usize, bucket: usize, start: usize, n: usize) -> Vec<f32> {
+        let mut out = Vec::with_capacity(n * channels * 3);
+        for b in 0..n {
+            for ch in 0..channels {
+                let from = start + b * bucket;
+                let chunk: Vec<f32> = (from..from + bucket)
+                    .map(|f| data[f * channels + ch])
+                    .collect();
+                let (lo, hi) = min_max(&chunk).unwrap();
+                out.push(lo);
+                out.push(hi);
+                out.push(mean_square(&chunk).unwrap());
+            }
+        }
+        out
+    }
+
+    /// The claim the door exists for: a picture filled **only** from reports —
+    /// no samples on this side at all — is the picture the samples would have
+    /// built. That is what makes a page's recording view agree with the host's
+    /// rather than merely look similar.
+    #[test]
+    fn a_streamed_pyramid_equals_one_built_from_the_samples() {
+        let base = 32;
+        for channels in [1usize, 2, 3] {
+            let frames = base * 40; // whole buckets: what a stream reports
+            let data = interleaved(frames, channels);
+            // The receiver's side: an allocated buffer, still silent.
+            let mut pyr =
+                MultiPyramid::build_interleaved(&vec![0.0f32; frames * channels], channels, base);
+            // The reports, as they arrive: uneven runs, in order.
+            let mut at = 0;
+            for n in [1usize, 7, 12, 20] {
+                assert!(
+                    pyr.write_buckets(
+                        at * base,
+                        base,
+                        &report(&data, channels, base, at * base, n)
+                    ),
+                    "{channels} ch, {n} buckets at {at}"
+                );
+                at += n;
+            }
+            assert_eq!(at, frames / base, "the whole take was reported");
+
+            let fresh = MultiPyramid::build_interleaved(&data, channels, base);
+            for ch in 0..channels {
+                let a = pyr.channel(ch).unwrap();
+                let b = fresh.channel(ch).unwrap();
+                for (l, (x, y)) in a.levels.iter().zip(&b.levels).enumerate() {
+                    assert_eq!(x.min, y.min, "{channels} ch, channel {ch}, level {l} min");
+                    assert_eq!(x.max, y.max, "{channels} ch, channel {ch}, level {l} max");
+                    assert_eq!(x.ms, y.ms, "{channels} ch, channel {ch}, level {l} measure");
+                }
+            }
+        }
+    }
+
+    /// A recording is drawn while it is short of its buffer, so the levels
+    /// above a partial report have to be right at every step — not only once
+    /// the take is complete.
+    #[test]
+    fn every_level_is_true_while_the_take_is_still_filling() {
+        let (base, channels) = (16, 2);
+        let frames = base * 25;
+        let data = interleaved(frames, channels);
+        let mut pyr =
+            MultiPyramid::build_interleaved(&vec![0.0f32; frames * channels], channels, base);
+        for n in 1..=frames / base {
+            assert!(pyr.write_buckets(0, base, &report(&data, channels, base, 0, n)));
+            // What has arrived is summarized as the samples would be; what has
+            // not is still the silence the buffer was allocated as.
+            let mut so_far = vec![0.0f32; frames * channels];
+            so_far[..n * base * channels].copy_from_slice(&data[..n * base * channels]);
+            let fresh = MultiPyramid::build_interleaved(&so_far, channels, base);
+            for ch in 0..channels {
+                let a = pyr.channel(ch).unwrap();
+                let b = fresh.channel(ch).unwrap();
+                for (l, (x, y)) in a.levels.iter().zip(&b.levels).enumerate() {
+                    assert_eq!(x.min, y.min, "{n} buckets, channel {ch}, level {l} min");
+                    assert_eq!(x.max, y.max, "{n} buckets, channel {ch}, level {l} max");
+                    assert_eq!(x.ms, y.ms, "{n} buckets, channel {ch}, level {l} measure");
+                }
+            }
+        }
+    }
+
+    /// The refusals, and the one thing they all share: nothing is written.
+    #[test]
+    fn a_report_on_another_grid_is_refused_whole() {
+        let (base, channels) = (32, 2);
+        let frames = base * 10;
+        let data = interleaved(frames, channels);
+        let mut pyr =
+            MultiPyramid::build_interleaved(&vec![0.0f32; frames * channels], channels, base);
+        let before = pyr.channel(0).unwrap().levels[0].max.clone();
+        let one = report(&data, channels, base, 0, 1);
+
+        assert!(!pyr.write_buckets(0, base * 2, &one), "a coarser bucket");
+        assert!(!pyr.write_buckets(0, base / 2, &one), "a finer one");
+        assert!(
+            !pyr.write_buckets(base / 2, base, &one),
+            "an unaligned start"
+        );
+        assert!(!pyr.write_buckets(frames, base, &one), "past the end");
+        assert!(
+            !pyr.write_buckets(0, base, &one[..one.len() - 1]),
+            "a ragged run"
+        );
+        assert_eq!(
+            pyr.channel(0).unwrap().levels[0].max,
+            before,
+            "a refused report changes nothing"
+        );
+
+        // And the run that reaches exactly the last bucket is not past the end.
+        assert!(pyr.write_buckets(
+            frames - base,
+            base,
+            &report(&data, channels, base, frames - base, 1)
+        ));
+    }
+
+    /// The tail bucket a stream never reports stays as it was, rather than
+    /// being invented from the buckets around it.
+    #[test]
+    fn a_ragged_tail_is_left_alone() {
+        let base = 64;
+        let frames = base * 4 + 5; // five frames nobody will ever report
+        let data = interleaved(frames, 1);
+        let mut pyr = MultiPyramid::build_interleaved(&vec![0.0f32; frames], 1, base);
+        assert!(pyr.write_buckets(0, base, &report(&data, 1, base, 0, 4)));
+        let level0 = &pyr.channel(0).unwrap().levels[0];
+        assert_eq!(level0.min.len(), 5, "four whole buckets and the remainder");
+        assert_eq!((level0.min[4], level0.max[4]), (0.0, 0.0), "still silent");
     }
 }
