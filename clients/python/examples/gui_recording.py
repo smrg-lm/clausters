@@ -24,12 +24,11 @@ Pass a track count::
 
     python clients/python/examples/gui_recording.py 16
 
-**The knob it is here to show.** Re-reading a summary costs a copy of it, so
-doing it every frame is a copy per frame per view — which is what scales badly
-when many tracks record at once. The host waits for a **block** of material
-instead and redraws in steps: ``--follow-block <seconds>``, one second by
-default. Pass it as a second argument here and watch the host's CPU with
-``top`` while it records::
+**The knob it is here to show.** Re-summarizing what appeared costs the span it
+names and not the take, so the picture follows **every frame** and a trace grows
+with the sound. The knob is how much material it may wait for instead:
+``--follow-block <seconds>``, ``0`` by default. Pass it as a second argument
+here and watch the host's CPU with ``top`` while it records::
 
     python clients/python/examples/gui_recording.py 16 0     # every frame
     python clients/python/examples/gui_recording.py 16 1     # one-second blocks
@@ -39,10 +38,11 @@ often the *picture* catches up with the material.
 
 Two things worth watching for:
 
-- The traces grow in steps, and the part they have not reached yet draws as the
-  silence an allocated buffer is. The host cannot tell "not written yet" from
-  "recorded silence" — the client is what knows, since it allocated the empty
-  buffer — so that distinction is a prop the widget does not have yet.
+- Each trace grows into an **empty** axis rather than across a flat line: the
+  part not written yet is drawn as nothing at all. The host cannot tell "not
+  written yet" from "recorded silence" — the client is what knows, since it
+  allocated the empty buffer — so that is the ``fills`` prop, set on each lane
+  here and cleared in the last cell once the takes are finished.
 - Zoom into the part already recorded (**wheel**) and it is sample-exact
   immediately: the zoomed-in regimes read the cells themselves, so they are
   current with nothing told to them at all.
@@ -74,7 +74,7 @@ from clausters.gui import timeruler, waveform, window
 TRACKS = int(sys.argv[1]) if len(sys.argv) > 1 else 8
 SECONDS = 10.0
 #: Seconds of material a picture waits for before catching up — the host's
-#: ``--follow-block``. ``None`` leaves the host's own default (1 s).
+#: ``--follow-block``. ``None`` leaves the host's own default (0 - the frame).
 BLOCK = float(sys.argv[2]) if len(sys.argv) > 2 else None
 
 # %% [markdown]

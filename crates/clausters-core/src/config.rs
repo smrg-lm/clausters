@@ -166,15 +166,13 @@ pub struct GuiConfig {
     /// the surface format falls back to `1` with a warning.
     pub msaa: Option<u32>,
     /// How much recorded material a picture waits for before it re-reads its
-    /// summary, in **seconds** (`--follow-block`, default 1).
+    /// summary, in **seconds** (`--follow-block`, default 0 — every frame).
     ///
     /// A take being recorded grows continuously and nothing announces it: the
     /// host reads the buffer's write frontier and re-summarizes what appeared.
-    /// Doing that on every frame costs a copy of the take's *summary* per
-    /// refresh, which is what scales badly when many channels record at once —
-    /// so the picture grows in blocks instead, and this is the block. Larger is
-    /// cheaper and choppier; the sound and any playhead over it are unaffected,
-    /// since neither reads this.
+    /// That costs the span it names rather than the take, so the default is to
+    /// follow every frame; a larger block is cheaper and choppier, and neither
+    /// the sound nor any playhead over it reads this.
     pub follow_block: Option<f64>,
     /// `[gui.theme]` — color-role overrides for the host's look, each entry
     /// `role = "#rrggbb[aa]"`. A partial table: unlisted roles keep the

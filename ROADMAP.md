@@ -26,11 +26,12 @@ behind the list rather than in it: the loop runs, a saved piece comes back as th
 piece that was saved, the editor is an application with its own processes, a clip
 has interaction rules, and the taxes every session paid — an async command's
 100 ms floor, a killed editor's segments, a persisted def that would not load and
-could not be named — are paid. **One thing on the path is still open and it is
-the second half's**: the editor's picture copies the material it already maps, so
-what a stroke costs still grows with the take. It is first. What follows it is
-not on the path at all — a port the destination does not wait on, and a track
-that is genuinely later.
+could not be named — are paid. **The second half is paid too**: the picture
+reads the material it maps instead of copying it, and following a recording
+costs the block rather than the take, so a take grows with the sound at the
+frame. **Nothing left below is a defect anybody sees** — what remains of the
+first phase is a saving, and what follows it is not on the path at all: a port
+the destination does not wait on, and a track that is genuinely later.
 
 Where the work lives:
 
@@ -55,9 +56,9 @@ right — that is the normal failure, not a sign the work vanished.
 
 ## Phase 1 — the picture reads the material
 
-*What it buys: a picture that reads the material rather than a copy of it. **H7, S20 and H8 have shipped** — the copies are gone, a write costs its span, a buffer publishes how far it has been written and a take is drawn as it fills. What is left of the phase is what those three deliberately did not infer or half-build.*
+*What it buys: a picture that reads the material rather than a copy of it. **H7, S20 and H8 have shipped**, and with them the `fills` prop and the last copy — the summary a refresh cloned because the slot drawing it held it (2026-08-19). The copies are gone, a write costs its span, a buffer publishes how far it has been written, and a take is drawn as it fills, at the frame. What is left of the phase is what those deliberately did not infer or half-build.*
 
-- ⬜ **A page cannot fold a streamed overview into the picture it holds** *(`clients/gui/PLAN.md`, Found by use)* — what S20 and H8 left standing, with the reason it was not half-built: it is one door in `clausters-core`, a `Pyramid` taking level-0 buckets at an offset. Its sibling, **a recording's unwritten remainder**, shipped as the `fills` prop. **And the native host is now named as a consumer too**: following a recording by polling the frontier every `follow_block` puts the last block up to a second late, and the stream carries the summary the poll is re-deriving — see the plan entry.
+- ⬜ **A page cannot fold a streamed overview into the picture it holds** *(`clients/gui/PLAN.md`, Found by use)* — what S20 and H8 left standing, with the reason it was not half-built: it is one door in `clausters-core`, a `Pyramid` taking level-0 buckets at an offset. Its sibling, **a recording's unwritten remainder**, shipped as the `fills` prop. **And the native host is named as a consumer too**, now for the weaker of the two reasons it was named for: the lateness it was found through is fixed (a step costs the step, so the poll runs at the frame), and what stands is that the poll re-derives the summary the stream already carries — a host that subscribed would be told rather than asking. See the plan entry.
 - ⬜ **A take's overview could be a file beside its region** *(root `PLAN.md`, Future directions)* — dropped from S20 when the frontier turned out to answer the live question on its own; it buys the opening pass and brings a second writer of derived state.
 
 ## Phase 2 — the packages move together: the arrangement reaches the web client

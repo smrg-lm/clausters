@@ -5452,6 +5452,23 @@ place would rewrite a picture under a renderer that never asked. The element
 marks its slot dirty instead, and the next frame refills it — keeping the view's
 navigation, since where the eye is is not part of what was edited.
 
+**Amended for the refresh, once the sharing was measured: the holder lets go
+first.** Replacing means the element clones the pyramid before it patches it,
+and that clone is proportional to the **take** while the patch is proportional
+to the **span**. A stroke can afford it — one gesture, one copy — but a picture
+that *follows* a recording re-summarizes on every step, so it paid for the whole
+take each time and only a coarse cadence made that affordable. What the sharing
+defends against is a **borrow**, not a race: the front is single-threaded and
+the only other holder is the slot. So the leg that follows the frontier has the
+view **give the material back before the write** (`WaveformView::release_data`;
+`WaveformData::nothing` is what a released view holds) and take it again on the
+next fill, which a repaint runs first. In between the element is the sole owner
+and `Arc::make_mut` hands it `&mut` with no copy at all — and where a slot *is*
+still holding it, the same call copies first, which is the old rule unchanged.
+The invariant above is what makes this safe rather than a shortcut around it:
+the write leaves the slot dirty, and nothing draws from a released view, so no
+renderer is ever patched under.
+
 **One channel of a multichannel take needed a command that did not exist.**
 `/buffer_setRange` writes a contiguous run of *flat, interleaved* samples, so
 one channel of a stereo buffer is a **strided** write. Sending it as N
