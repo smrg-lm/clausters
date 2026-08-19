@@ -663,45 +663,69 @@ updates this table in the same change** (step 8 of the recipe below).
 Take a hypothetical `meterbar`. The steps are always the same.
 
 **First check that it is a widget at all.** A new view *of a signal* is
-usually not a kind but a configuration of the signal element — another
+usually not a widget but a configuration of the signal element — another
 presentation, another source, another capability — and lands as a point in
-`host/elements/signal/`, with no new variant, no new parse arm and no new apply arm.
-The steps below are for a widget that is genuinely something else.
+`host/elements/signal/`, with no new file, no new row in the table and no new
+element. And if what you are adding wants to place children on an axis of its
+own, that is not this recipe either: a **container** is not extensible, because
+the layout pass has to know every coordinate system it places into. The steps
+below are for a leaf that is genuinely something else.
 
-1. **The typed kind** — a `WidgetKind::MeterBar { … }` variant in
-   `host/widget/mod.rs`, its arm in the JSON parse (`Widget::build`) and, for
-   every live-updatable prop, an arm in `WidgetKind::apply` (that is
-   `/gui_set`).
-2. **Its natural size** — an arm in `host/widget/size.rs` if the widget is
-   *content* that knows its own extent, nothing at all if it is a *surface*
-   whose extent is the caller's (the default). Derive it from the metrics
-   roles, never from a fresh literal — and never from the widget's data, or a
-   `/gui_set` relayouts the window. What its content *does* size is the
-   separate `Element::hug`, asked only inside a container carrying `hug`, and
-   only over props that settle at a mutation point: a caption, an option list —
-   never a value being written. **And say what you keep when there is less
-   room than that**: `Element::floor` is the smallest size the widget still
-   says what it is at, and the difference from the natural size is what a
-   short strip may take back. Declaring none means giving none, which is the
-   right answer for a widget with no part it can drop; a widget that has one
-   names it there and drops it in its drawing at the same threshold, so the
-   reservation and the picture agree.
-3. **The view** — a module `host/meterbar.rs`, pure over a `Draw`: layout, draw,
-   and (if it is interactive) a hit-test. A draw function takes that one context
-   — the batch plus the size and color roles (`host/paint.rs`) — never the three
-   as separate parameters, and never a size or a color of its own. No GPU, no platform: that is what makes
-   it unit-testable, and the tests go beside it. A *heavy* view (one that needs a
-   texture or a vertex buffer) instead gets a GPU slot in `frame/mod.rs` and follows
-   the LOD rule above.
-4. **The frame** — collect the placed widget in `frame::render` and draw it. Base
-   mesh for the view, overlay mesh for chrome that must read on top (selection,
-   playhead, wires in flight).
-5. **Interaction, if any** — the hit-test and the mutation go in
-   `host/interact/` (shared, so both fronts behave the same) — the hit-test in
-   `hit.rs`, the mutation in `edit.rs`; the *gesture*
-   (which button, which drag state) belongs to the front. If the widget writes
-   data back, add its flat event payload here — never a new OSC address.
-6. **The two builders** — a function in
+1. **One file, one trait** — `host/elements/meterbar.rs`: a struct implementing
+   `Element` (`host/widget/element.rs`), with its tests beside it. Three
+   methods are required — `set`, which is `/gui_set` and returns whether the
+   key was this element's; `draw`; and `clone_box` — and every other capability
+   is a method you *may* override, where not overriding it is exactly the same
+   as not having the arm — which is why the steps below read as a list of
+   choices rather than a list of files.
+2. **One row in the table** — `elements::builtin` in `host/elements/mod.rs`,
+   mapping the wire `type` name onto the constructor. That table is consulted
+   **before** the registry, so a built-in can never be shadowed; a name that
+   means two different constructions (`plane`, which is both the scroll
+   workspace and the patcher) is resolved by the schema instead and never
+   reaches the table.
+3. **Its natural size** — `Element::natural` if the widget is *content* that
+   knows its own extent, nothing at all if it is a *surface* whose extent is
+   the caller's (the default). Derive it from the metrics roles, never from a
+   fresh literal — and never from the widget's data, or a `/gui_set` relayouts
+   the window. What its content *does* size is the separate `Element::hug`,
+   asked only inside a container carrying `hug`, and only over props that
+   settle at a mutation point: a caption, an option list — never a value being
+   written. **And say what you keep when there is less room than that**:
+   `Element::floor` is the smallest size the widget still says what it is at,
+   and the difference from the natural size is what a short strip may take
+   back. Declaring none means giving none, which is the right answer for a
+   widget with no part it can drop; a widget that has one names it there and
+   drops it in its drawing at the same threshold, so the reservation and the
+   picture agree.
+4. **The model, in the other tree** — `host/graphics/meterbar.rs`, pure over a
+   `Draw`: the shape, the drawing, and (if it is interactive) the hit-test that
+   inverts it. A draw function takes that one context — the batch plus the size
+   and color roles (`host/paint.rs`) — never the three as separate parameters,
+   and never a size or a color of its own. The boundary is stated negatively
+   and that is what makes it useful: a model names no `Host`, no `Element`, no
+   props map, no OSC and no device, so it unit-tests without a window, and the
+   tests go beside it. The two trees stay parallel rather than nested because
+   the cardinality does not match — `controls` draws eight elements, `pianoroll`
+   draws the `notes` leaf *and* a clip's roll body, and `track` draws a
+   container and no element at all.
+5. **The frame, only if the view is heavy** — an ordinary element is drawn in
+   the frame's one walk and needs nothing here. One that needs a texture or a
+   vertex buffer **claims a GPU slot** in its `Needs`, describes it per frame in
+   `slot`, is fed through `fill`, and follows the LOD rule above. The slot kinds
+   are a closed set belonging to the frame, so an element chooses among them and
+   cannot invent one.
+6. **Interaction, if any** — `press`/`drag`/`release`/`wheel` on the element
+   itself: the **drag's state lives in the element** and the one gesture machine
+   keeps only the sequence, which is what makes a gesture behave identically on
+   both fronts. What comes back is `Events` — the edit in the *owner's* terms,
+   never the screen's — plus the two things an element cannot do for itself: a
+   `Voice` (sounding a key needs the host's leg to the audio server) and
+   `and_select` (a shared time selection belongs to the navigation group). The
+   hit chain and the coordinate arithmetic stay in `host/interact/`, which is
+   the **containers'** business. A widget that writes data back does it as a
+   flat `/gui_event` payload — never a new OSC address.
+7. **The two builders** — a function in
    `clients/python/clausters/gui/guidef.py` returning the node dict, with the
    docstring that *is* the widget's user reference (the API page is generated
    from it), and its counterpart in `clients/web/src/gui/guidef.ts`. A prop that
@@ -709,14 +733,15 @@ The steps below are for a widget that is genuinely something else.
    prop manifest `docs/gui-props.md` saying why —
    `clients/python/tests/test_gui_props.py` reads all three surfaces and fails
    on a divergence nobody declared.
-7. **Tests and an example** — pure tests for the layout/hit-test/edit, and a
-   `clients/python/examples/gui_*.py` when the widget is user-facing.
-8. **The maps** — a row in [the widget map](#the-widget-map) above and one in
+8. **Tests and an example** — pure tests for the model, the hit-test and the
+   edit, and a `clients/python/examples/gui_*.py` when the widget is
+   user-facing.
+9. **The maps** — a row in [the widget map](#the-widget-map) above and one in
    the [widget catalog](gui-protocol.md#the-widget-catalog), in the same change.
 
-**The second door: an element from outside the crate.** The steps above are how a *built-in* is added, and they are eight files because `WidgetKind` is a closed sum type — which is right for the containers, since the layout pass has to know each coordinate system it places into, and wrong for a leaf, since a program that merely *links* the crate cannot add one at all. So a leaf has a second door: `host/widget/element.rs` declares an object-safe `Element` trait whose methods are exactly the passes above (`set` is the apply arm, `natural` the size arm — with `hug` beside it, what it wants when a container is fitted to its content — `draw` the frame's flat draw, `value`/`info` the query, `press` the element step of a gesture, `needs` what the tree collectors gather, `tap_frames` how wide a read of the buses it taps has to be), plus a thread-local registry mapping a wire type name onto a constructor. A leaf placed on somebody else's axis has a second group of them, each replacing a match the passes used to make on the one leaf that answered: what it draws as a **clip's body** (`draw_body`, or `texture_body` for a picture the frame must route to the GPU pass itself, since a body is keyed by its clip's id), what it reserves left of that axis (`gutter`, and `measured_gutter` for chrome whose width is a property of the data), the drag table it wants when the wire declares none (`gesture_map`), how it stacks the channels the front uploaded (`lanes`) and where a vertical zoom anchors (`centres_y_zoom`) — plus, for the one element that measures its *own* x rather than joining the window's time, its frequency axis (`navigates_freq`, `freq_axis`, `freq_window_of`, `freq_min_span`). And one thing an element can *ask the host for* rather than answer: a **voice** — sounding a held key is a `/synth_new` on the audio server and only the host has a leg to it, so the element names the pitch in what it returns (a `Voice` beside its events) and declares the def in `voice`, the same shape as the pointer grab a knob asks for. What crosses that boundary is deliberately narrow: `draw` is handed a `Ctx` carrying the placement and the `World` (`host/world.rs`) — what the frame reads and no widget owns — and `Needs` is the *whole* declaration the tree collectors read, so adding an element teaches no collector anything. A program registers one with `clausters_gui::register(name, ctor)` and every def naming it — sent over OSC or built in Rust — gets it, as `WidgetKind::Custom`.
+**The same door, from outside the crate.** Adding a leaf used to be eight files, one arm per pass, because `WidgetKind` was a closed sum type — which is right for the containers and wrong for a leaf, since a program that merely *links* the crate cannot add a variant at all. It is one object now, and the recipe above is the *whole* recipe for either kind of author: `host/widget/element.rs` declares an object-safe `Element` trait whose methods **are** the passes that used to match (`set` is the apply arm, `natural` the size arm — with `hug` beside it, what it wants when a container is fitted to its content, and `floor` what it keeps when a strip is short — `draw` the frame's flat draw, `value`/`info` the query, `press` the element step of a gesture, `needs` what the tree collectors gather, `tap_frames` how wide a read of the buses it taps has to be). Only **step 2** differs by author: a built-in takes a row in `elements::builtin`, and everyone else registers a constructor in a thread-local registry keyed by the wire type name. A leaf placed on somebody else's axis has a second group of them, each replacing a match the passes used to make on the one leaf that answered: what it draws as a **clip's body** (`draw_body`, or `texture_body` for a picture the frame must route to the GPU pass itself, since a body is keyed by its clip's id), what it reserves left of that axis (`gutter`, and `measured_gutter` for chrome whose width is a property of the data), the drag table it wants when the wire declares none (`gesture_map`), how it stacks the channels the front uploaded (`lanes`) and where a vertical zoom anchors (`centres_y_zoom`) — plus, for the one element that measures its *own* x rather than joining the window's time, its frequency axis (`navigates_freq`, `freq_axis`, `freq_window_of`, `freq_min_span`). And one thing an element can *ask the host for* rather than answer: a **voice** — sounding a held key is a `/synth_new` on the audio server and only the host has a leg to it, so the element names the pitch in what it returns (a `Voice` beside its events) and declares the def in `voice`, the same shape as the pointer grab a knob asks for. What crosses that boundary is deliberately narrow: `draw` is handed a `Ctx` carrying the placement and the `World` (`host/world.rs`) — what the frame reads and no widget owns — and `Needs` is the *whole* declaration the tree collectors read, so adding an element teaches no collector anything. A program registers one with `clausters_gui::register(name, ctor)` and every def naming it — sent over OSC or built in Rust — gets it, as `WidgetKind::Custom`.
 
-**The built-in leaves come through the same door.** `host/elements/` holds one file per leaf implementing that trait, named in a table (`elements::builtin`) the schema consults *before* the registry, so a registration can never shadow a built-in. The signal element is the last and heaviest of them, and it is what proves the trait carries a real view rather than a control: it draws its four self-contained presentations in `draw`, describes in `slot` the two that read a resource the frame keeps for them (a `SlotFrame::Waveform`, whose samples and pyramid the frame traces into the window's mesh, or a `::Spectrogram`, whose texture the frame's pipeline samples), and answers the axis it was placed on through the doors above. What stays with the frame is what belongs to the **axis** and not to the picture on it — the rulers, the playhead, the selection, the cursor readout — because a lane, a roll and a free-standing ruler draw the same chrome.
+**And the built-in leaves prove the trait carries a real view.** The signal element is the last and heaviest of them, and it is what proves the trait carries a real view rather than a control: it draws its four self-contained presentations in `draw`, describes in `slot` the two that read a resource the frame keeps for them (a `SlotFrame::Waveform`, whose samples and pyramid the frame traces into the window's mesh, or a `::Spectrogram`, whose texture the frame's pipeline samples), and answers the axis it was placed on through the doors above. What stays with the frame is what belongs to the **axis** and not to the picture on it — the rulers, the playhead, the selection, the cursor readout — because a lane, a roll and a free-standing ruler draw the same chrome.
 
 **The enum is the containers, and nothing else.** With the last leaf ported, `WidgetKind` holds `Window`, `Panel`, `Stack`, `Scroll`, `Track`, `TimeRuler`, `Clip`, `Custom` and `Unknown` — nine variants, from twenty-five. What the split now says is the boundary itself: a container **arranges and defines a space**, which the layout pass has to know because it places into it; an element **draws in one**, which nothing outside it has to know at all. The patcher is the leaf that proves the drag shape is general rather than control-shaped — a cord that means something only where it is let go, a whole selection moved by a delta, and a marquee that selects nothing but the element's own boxes — and all three are ordinary `press`/`drag`/`release`, holding their state in the element with the machine keeping only the sequence. And the boundary is a **test**, not a convention: one reads the enum out of its own source and pins the nine names, so a variant added fails until its author has read why; the other builds one widget of each container and asserts every one of them answers the neutral value through every door — no element, no `Needs`, no focus, no body role, no overlay, no value, no taps. A convention nobody checks is how the eight passes grew in the first place.
 
