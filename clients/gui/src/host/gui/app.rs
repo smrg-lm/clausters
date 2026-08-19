@@ -546,6 +546,12 @@ impl ApplicationHandler<UserEvent> for App {
     /// animated (meter/scope) windows so their shared-memory values keep moving,
     /// and a low-rate re-query for node-tree windows so `/node_set` changes show.
     /// With neither, windows stay event-driven (`Wait`).
+    ///
+    /// **Every source of a wake-up asks for its own time and the soonest wins.**
+    /// Two of them used to assign instead of taking the minimum, so whichever
+    /// ran last decided and the other's deadline was dropped — a window
+    /// following a recording *and* animating would keep only one of the two,
+    /// depending on the order this function happens to be written in.
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         let now = Instant::now();
         let mut next_wake: Option<Instant> = None;
@@ -591,7 +597,7 @@ impl ApplicationHandler<UserEvent> for App {
             .keys()
             .any(|id| self.window_follows_a_recording(*id))
         {
-            next_wake = Some(self.next_follow);
+            next_wake = Some(next_wake.map_or(self.next_follow, |t| t.min(self.next_follow)));
         }
 
         // Meter/scope animation, driven from the shared segment.
@@ -616,7 +622,7 @@ impl ApplicationHandler<UserEvent> for App {
                 }
                 self.next_frame = now + FRAME;
             }
-            next_wake = Some(self.next_frame);
+            next_wake = Some(next_wake.map_or(self.next_frame, |t| t.min(self.next_frame)));
         }
 
         // Live MIDI input: while any open window holds an element that

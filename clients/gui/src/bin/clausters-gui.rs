@@ -110,12 +110,12 @@ usage:
                             faces is used when there is one.
       --follow-block <s>    how much recorded material a picture waits for
                             before it re-reads its summary, in seconds
-                            (default 1). A take being recorded grows with
-                            nothing announcing it, so the host follows the
-                            buffer's write frontier and redraws in blocks;
-                            larger is cheaper and choppier, and neither the
-                            sound nor a playhead over it is affected. 0 follows
-                            every frame.
+                            (default 0, every frame). A take being recorded
+                            grows with nothing announcing it, so the host
+                            follows the buffer's write frontier and redraws
+                            what appeared; larger is cheaper and choppier, and
+                            neither the sound nor a playhead over it is
+                            affected.
       --msaa <n>            antialias every window with n-sample multisampling
                             (1 = off, the default; 4 is the usual smoothing).
                             One multisampled attachment per window and nothing
@@ -380,7 +380,7 @@ fn run(args: &[String]) -> Result<(), String> {
     // How much recorded material a picture waits for before it re-reads its
     // summary. Zero or less means every tick, which is what it did before the
     // block existed and what a measurement wants.
-    let follow_block = cli_follow_block.or(cfg.gui.follow_block).unwrap_or(1.0);
+    let follow_block = cli_follow_block.or(cfg.gui.follow_block).unwrap_or(0.0);
     let look = Look {
         theme,
         metrics,

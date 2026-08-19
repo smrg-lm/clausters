@@ -577,6 +577,22 @@ impl App {
         let mut redraw = Vec::new();
         for (def_id, widget_id, drawn, frontier) in moved {
             self.frontiers.insert((def_id, widget_id), frontier);
+            // **The slot gives the material back before the element writes to
+            // it.** A pyramid a slot is holding cannot be written in place —
+            // the element would be patching a picture under a renderer that
+            // never asked — so the refresh below would have to copy it first,
+            // and that copy is the size of the whole take rather than of the
+            // block that just arrived. Letting go is a refcount, the write is
+            // then the block's own cost, and the slot is refilled before the
+            // next draw: a repaint runs `refresh_slots_for` first, and the
+            // write leaves the element dirty, which is what a fill answers to.
+            if let Some(slot) = self
+                .windows
+                .get_mut(&def_id)
+                .and_then(|ws| ws.waveforms.get_mut(&widget_id))
+            {
+                slot.view.release_data();
+            }
             let Some(tree) = self.host.window_def_mut(def_id) else {
                 continue;
             };

@@ -161,7 +161,7 @@ for take in takes:
         {"buf": float(take.bufnum), "from": START, "to": START * 2.0**octaves},
         server=server,
     )
-print("recording: the traces grow in steps, one block of material at a time")
+print("recording: the traces grow with the sound, a frame of material at a time")
 
 # %% [markdown]
 # ## Watch them fill

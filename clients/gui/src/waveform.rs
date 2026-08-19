@@ -169,6 +169,18 @@ impl std::fmt::Debug for WaveformData {
 }
 
 impl WaveformData {
+    /// **Nothing to draw** — no channels, no summary, no allocation.
+    ///
+    /// It exists so a view can *give the material back* without becoming an
+    /// `Option` everywhere it is read: a slot holds this between the frame it
+    /// drew and the frame it is refilled for, which is what leaves the element
+    /// the sole owner of the pyramid it is writing into.
+    pub fn nothing() -> Self {
+        Self {
+            channels: Vec::new(),
+        }
+    }
+
     /// A mono waveform from `samples`, building its pyramid at `base_bucket`.
     pub fn new(samples: Arc<[f32]>, base_bucket: usize) -> Self {
         let pyramid = Pyramid::build(&samples, base_bucket);
@@ -271,9 +283,12 @@ impl WaveformData {
 
     /// The buffer length the view spans, in per-channel samples. Taken from the
     /// pyramid (which is built over the whole buffer), so a cache-only view with
-    /// no raw `samples` still reports the right length.
+    /// no raw `samples` still reports the right length. Zero for
+    /// [`nothing`](Self::nothing), which spans nothing.
     pub fn total_samples(&self) -> usize {
-        self.channels[0].pyramid.total_samples()
+        self.channels
+            .first()
+            .map_or(0, |c| c.pyramid.total_samples())
     }
 
     /// How many channels this waveform holds.
@@ -282,6 +297,11 @@ impl WaveformData {
     }
 
     /// Channel 0's pyramid (the persistable cache of a mono view).
+    ///
+    /// # Panics
+    /// On [`nothing`](Self::nothing), which has no channel to have one. Every
+    /// caller holds material it has just been given; the released state is the
+    /// slot's own and is never asked.
     pub fn pyramid(&self) -> &Pyramid {
         &self.channels[0].pyramid
     }
@@ -347,7 +367,7 @@ impl WaveformData {
     /// zoomed-in ones — must render from it; reading the empty raw buffer would
     /// instead collapse the wave to a flat line (it "disappears" on zoom-in).
     pub fn has_raw(&self) -> bool {
-        !self.channels[0].samples.is_empty()
+        self.channels.first().is_some_and(|c| !c.samples.is_empty())
     }
 
     /// Whether this view reads its material where it lives rather than owning
@@ -601,6 +621,22 @@ impl WaveformView {
     /// sample is drawn.
     pub fn set_data(&mut self, data: impl Into<Arc<WaveformData>>) {
         self.data = data.into();
+    }
+
+    /// **Gives the material back**, keeping every navigation state.
+    ///
+    /// A slot draws the element's pyramid through a shared `Arc`, and while it
+    /// holds one the element cannot write into the pyramid without copying it
+    /// first — a copy proportional to the whole take, paid once per step by
+    /// anything following a recording. So the holder lets go before the write
+    /// and is refilled before the next draw (`Element::fill`, which the repaint
+    /// runs first), and in between the element is the only owner and writes in
+    /// place.
+    ///
+    /// A view that draws before it is refilled draws nothing, which is why the
+    /// two are ordered rather than merely near each other.
+    pub fn release_data(&mut self) {
+        self.data = Arc::new(WaveformData::nothing());
     }
 
     /// Sets the **value domain** the trace maps through — the element's

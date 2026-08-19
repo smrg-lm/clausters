@@ -627,13 +627,23 @@ pub struct Host {
     /// since every pipeline in a pass agrees on the count.
     pub msaa: u32,
     /// **How much recorded material a picture waits for** before it re-reads
-    /// its summary, in seconds (`--follow-block`, default 1).
+    /// its summary, in seconds (`--follow-block`, default `0` — every frame).
     ///
-    /// A recording announces nothing — the host reads the buffer's write
-    /// frontier and re-summarizes what appeared — and the refresh costs a copy
-    /// of the take's summary, which is what scales when many channels record
-    /// at once. So the picture grows in blocks: larger is cheaper and
-    /// choppier, and neither the sound nor a playhead over it reads this.
+    /// A recording announces nothing: the host reads the buffer's write
+    /// frontier and re-summarizes what appeared. That work is the **block's**,
+    /// not the take's — the summary of a span touches the buckets over it and
+    /// their parents — so following at the frame is what the picture should
+    /// do, and does. The number is here for the case where it should not: a
+    /// bigger block is cheaper and choppier, and neither the sound nor a
+    /// playhead over it reads this.
+    ///
+    /// It was one second, and the second was buying back a **copy**. A slot
+    /// holds the pyramid it draws, so a refresh could not write in place and
+    /// copied the whole take first — a cost that does not shrink with the
+    /// block, which is why the block had to grow instead. The slot gives the
+    /// material back before the write now
+    /// ([`crate::waveform::WaveformView::release_data`]), so what a step costs
+    /// is the step.
     pub follow_block: f64,
     /// The resolved (physical) metrics of each window, by def id — this table
     /// at that window's `ui_scale`. Written when a shell reports a scale
@@ -681,7 +691,7 @@ impl Host {
             theme: theme::Theme::default(),
             metrics: metrics::Metrics::default(),
             msaa: 1,
-            follow_block: 1.0,
+            follow_block: 0.0,
             resolved_metrics: HashMap::new(),
             focused: None,
         }

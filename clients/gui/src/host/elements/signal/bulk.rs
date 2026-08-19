@@ -193,23 +193,32 @@ impl SignalElement {
         if !body.is_shared() {
             return false;
         }
-        // **One copy, however many channels.** Replaced rather than patched,
-        // for the reason the write path gives — the pyramid is shared with
-        // whatever slot is drawing it — so the copy is what the refresh costs
-        // and taking one per channel is what made following a multichannel
+        // **Patched where nobody else is looking, copied where they are.** The
+        // work of a refresh is proportional to the span — `resummarize` touches
+        // the buckets over it and their parents — while a *copy* is
+        // proportional to the whole take, so a picture that follows a recording
+        // closely pays for the take once per step instead of for the step. The
+        // front is single-threaded (this runs between frames and the draw runs
+        // in one), so what the sharing has to defend against is a borrow and
+        // not a race: where the element is the only holder there is nothing to
+        // defend and the pyramid is written in place.
+        //
+        // `Arc::make_mut` is that rule and nothing else: `&mut` when this is
+        // the sole owner, a copy first when a slot is still holding the
+        // material it draws. **One copy, however many channels** either way —
+        // taking one per channel is what made following a multichannel
         // recording scale with the square of nothing useful.
-        let mut copy = (**body).clone();
+        let body = Arc::make_mut(data.body.as_mut().expect("just matched"));
         let start = start as usize;
         let done = match ch {
-            Some(ch) => copy.resummarize(ch, start, frames),
-            None => (0..copy.num_channels())
-                .map(|ch| copy.resummarize(ch, start, frames))
+            Some(ch) => body.resummarize(ch, start, frames),
+            None => (0..body.num_channels())
+                .map(|ch| body.resummarize(ch, start, frames))
                 .fold(false, |acc, ok| acc | ok),
         };
         if !done {
             return false;
         }
-        data.body = Some(Arc::new(copy));
         self.slot_dirty = true;
         true
     }
