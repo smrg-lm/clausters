@@ -477,9 +477,14 @@ by turning its measures on and off.
   subscription covers every such view of every window, so a script sharing the
   connection (a page, where the host and the script are one client) must not
   open its own beside it — the server keeps one per client and the second call
-  replaces the first. What arrives is the summary and not the audio, so a view
-  fed this way resolves to the report's bucket and no finer: zoom past it and
-  the picture is the copy the page holds, which is the silence it allocated.
+  replaces the first. What arrives is the summary and not the audio, so while
+  the take is filling the picture resolves to the report's bucket. **Past that
+  it reads**: once the material stops moving (`fills` cleared), a view zoomed
+  finer than its summary asks for the span it is showing (`/buffer_getRange`)
+  and draws the samples there — so the picture is the same at every zoom
+  whichever way the host got it, which is the rule the platform seam is judged
+  by. A take still being written asks for nothing: there is nothing past the
+  frontier to read, and behind it the next block would make a run stale.
 
 An `axes` pair works on `/gui_def` and on `/gui_set` alike (there it rides as
 its JSON string, the `theme` convention). Everything the container does **not**

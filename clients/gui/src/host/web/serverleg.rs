@@ -486,7 +486,80 @@ impl WebApp {
                     self.request_redraw(want.def_id);
                 }
             }
+            FetchStep::Window {
+                bufnum,
+                want,
+                start_frame,
+                channels,
+                samples,
+            } => {
+                log(&format!(
+                    "buffer {bufnum}: {} frame(s) at {start_frame} read back for widget {}",
+                    samples.len() / channels.max(1),
+                    want.widget_id
+                ));
+                if let Some(slot) = self
+                    .canvases
+                    .get_mut(&want.def_id)
+                    .and_then(|c| c.render.as_mut())
+                    .and_then(|r| r.waveforms.get_mut(&want.widget_id))
+                {
+                    slot.view.release_data();
+                }
+                let took =
+                    self.host
+                        .window_def_mut(want.def_id)
+                        .and_then(|t| t.find_mut(want.widget_id))
+                        .is_some_and(|w| {
+                            w.bulk_target_mut().kind.as_element_mut().is_some_and(|el| {
+                                el.set_window(start_frame as u64, channels, &samples)
+                            })
+                        });
+                if took {
+                    self.request_redraw(want.def_id);
+                }
+            }
             FetchStep::None => {}
+        }
+    }
+
+    /// **Asks for the spans the last frame could not draw** on this canvas: a
+    /// view zoomed finer than its summary left the span it was asked for on
+    /// its slot, and this turns that note into a `/buffer_getRange`.
+    ///
+    /// One download per buffer is in flight at a time (the fetch machine's own
+    /// bound), and nothing is asked while the zoom stays above the bucket —
+    /// where the summary is the right answer and already on screen.
+    pub(super) fn fetch_wanted_spans(&mut self, def_id: i32) {
+        let mut asked: Vec<(i32, i32, usize, usize, usize)> = Vec::new();
+        if let Some(render) = self.canvases.get(&def_id).and_then(|c| c.render.as_ref()) {
+            for (widget_id, slot) in &render.waveforms {
+                let Some((a, b)) = slot.wanted_span.take() else {
+                    continue;
+                };
+                let Some(el) = self
+                    .host
+                    .window_def(def_id)
+                    .and_then(|t| t.find(*widget_id))
+                    .and_then(|w| w.bulk_target().kind.as_element())
+                else {
+                    continue;
+                };
+                let (Some(bufnum), Some((channels, _))) =
+                    (el.material_buffer(), el.material_shape())
+                else {
+                    continue;
+                };
+                asked.push((*widget_id, bufnum, a, b - a, channels));
+            }
+        }
+        for (widget_id, bufnum, start, frames, channels) in asked {
+            if let Some(msg) = self
+                .fetches
+                .want_span(def_id, widget_id, bufnum, start, frames, channels)
+            {
+                self.send_to_server(msg);
+            }
         }
     }
 

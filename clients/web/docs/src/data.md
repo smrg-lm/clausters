@@ -218,12 +218,14 @@ pyramids.
 
 Two limits worth knowing, both of them the wire's rather than this class's. The
 summary is the resolution: zoomed inside one bucket the picture is that bucket,
-and the samples are still the page's own copy — read the take back with
-`getSamples` once it is finished to edit or play it. And the server keeps **one
-buffer subscription per client**, replacing it on every call: on a page where
-the GUI host is already following a recording of its own (a `waveform` with
-`fills`), opening this beside it cancels the host's. Following a take is either
-the host's job or the script's.
+so a script drawing its own canvas reads the take back with `getSamples` for the
+span it wants to show in detail. (A **host-drawn** view does that for itself —
+it asks the server for the span it is zoomed into, which is how a page resolves
+to the sample where a desktop host reads the material it mapped.) And the server
+keeps **one buffer subscription per client**, replacing it on every call: on a
+page where the GUI host is already following a recording of its own (a
+`waveform` with `fills`), opening this beside it cancels the host's. Following a
+take is either the host's job or the script's.
 
 ## The measurements
 

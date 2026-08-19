@@ -194,6 +194,10 @@ impl Element for SignalElement {
         SignalElement::write_buckets(self, start_frame, bucket, stats)
     }
 
+    fn set_window(&mut self, start: u64, channels: usize, samples: &[f32]) -> bool {
+        SignalElement::set_window(self, start, channels, samples)
+    }
+
     fn stream_want(&self) -> Option<(i32, usize)> {
         SignalElement::stream_want(self)
     }

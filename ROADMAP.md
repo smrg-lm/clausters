@@ -56,7 +56,7 @@ right — that is the normal failure, not a sign the work vanished.
 
 ## Phase 1 — the picture reads the material
 
-*What it buys: a picture that reads the material rather than a copy of it. **The phase is one entry from done**: H7, S20 and H8 shipped, and with them the `fills` prop, the last copy (the summary a refresh cloned because the slot drawing it held it) and the streamed overview a page can now fold into the picture it holds — which also fixed a wire that had never reported anything on a server with no segment. What is left is the one thing S20 dropped on purpose.*
+*What it buys: a picture that reads the material rather than a copy of it. **The phase is one entry from done**: H7, S20, H8 and H9 shipped, and with them the `fills` prop, the last copy (the summary a refresh cloned because the slot drawing it held it), the streamed overview a page folds into the picture it holds — which also fixed a wire that had never reported anything on a server with no segment — and the span a zoomed-in page reads back, which is what makes the browser draw what the native window draws at every zoom rather than down to a bucket. What is left is the one thing S20 dropped on purpose.*
 
 - ⬜ **A take's overview could be a file beside its region** *(root `PLAN.md`, Future directions)* — dropped from S20 when the frontier turned out to answer the live question on its own; it buys the opening pass and brings a second writer of derived state.
 

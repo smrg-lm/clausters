@@ -44,10 +44,12 @@ subscribes for the views that need it.
 Nothing is downloaded either. A take allocated to be recorded into holds
 silence, so the host asks only what <b>shape</b> it is and builds an empty
 summary of that length — the picture is the whole of the box it will fill, which
-is why the axis does not move while it fills. Zoom in (<b>wheel</b>) and the
-picture stops resolving at the report's bucket: the wire carried the overview
-and not the samples, which is the one difference from a desktop host reading the
-engine's memory.
+is why the axis does not move while it fills.
+
+And once the takes are finished, <b>zoom in</b> (wheel): past what the overview
+can resolve, the host reads back <i>the span you are looking at</i> and draws
+the samples themselves. So the picture is the same here as in a desktop window,
+which reads the memory it mapped — the route differs, the drawing does not.
 
 Everything runs on the <b>in-page engine</b>: no server process, no
 socket.</div>

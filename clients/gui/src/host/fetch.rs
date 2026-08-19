@@ -40,9 +40,16 @@ pub(crate) struct WaveWant {
 struct BufferFetch {
     channels: usize,
     sample_rate: f64,
+    /// Where in the buffer this download starts, as a **flat** index — `0` for
+    /// a whole buffer, and the span's own origin for a window.
+    origin: usize,
+    /// How many samples are being downloaded from `origin` (flat).
     total: usize,
     samples: Vec<f32>,
     received: usize,
+    /// The one widget a **window** is for, and the frame it starts at. `None`
+    /// is the whole buffer, which is for everybody waiting on it.
+    window: Option<(WaveWant, usize)>,
 }
 
 /// What one protocol step asks the driving front to do.
@@ -58,6 +65,15 @@ pub(crate) enum FetchStep {
         channels: usize,
         sample_rate: f64,
         wants: Vec<WaveWant>,
+    },
+    /// A **span** of a buffer arrived, for the one view that asked: put it
+    /// under that view's summary as a window.
+    Window {
+        bufnum: i32,
+        want: WaveWant,
+        start_frame: usize,
+        channels: usize,
+        samples: Vec<f32>,
     },
     /// A buffer's **shape** answered a shape-only want: build an empty summary
     /// of this length and place it, with nothing fetched.
@@ -178,9 +194,11 @@ impl BufferFetches {
             BufferFetch {
                 channels,
                 sample_rate,
+                origin: 0,
                 total,
                 samples: vec![0.0; total],
                 received: 0,
+                window: None,
             },
         );
         FetchStep::Request(request_chunk(bufnum, 0, total))
@@ -211,9 +229,14 @@ impl BufferFetches {
                     continue;
                 };
                 let start = (*start).max(0) as usize;
-                let n = (bytes.len() / 4).min(fetch.total.saturating_sub(start));
+                // The reply's `start` is the buffer's own flat index; a window
+                // stores it where the window begins.
+                let Some(at) = start.checked_sub(fetch.origin) else {
+                    continue;
+                };
+                let n = (bytes.len() / 4).min(fetch.total.saturating_sub(at));
                 for (i, word) in bytes.chunks_exact(4).take(n).enumerate() {
-                    fetch.samples[start + i] =
+                    fetch.samples[at + i] =
                         f32::from_le_bytes([word[0], word[1], word[2], word[3]]);
                 }
                 fetch.received += n;
@@ -222,16 +245,72 @@ impl BufferFetches {
             }
             (
                 landed == 0 || fetch.received >= fetch.total,
-                fetch.total,
+                fetch.origin + fetch.total,
                 next,
             )
         };
         if done {
             let fetch = self.fetches.remove(&bufnum).unwrap();
+            if let Some((want, start_frame)) = fetch.window {
+                return FetchStep::Window {
+                    bufnum,
+                    want,
+                    start_frame,
+                    channels: fetch.channels,
+                    samples: fetch.samples,
+                };
+            }
             self.finish(bufnum, fetch.samples, fetch.channels, fetch.sample_rate)
         } else {
             FetchStep::Request(request_chunk(bufnum, next, total))
         }
+    }
+
+    /// **Asks for one span of a buffer**, for the view that has zoomed past
+    /// what its summary can answer. `start` and `frames` are per channel.
+    ///
+    /// Returns the first `/buffer_getRange` to send, or `None` when nothing
+    /// should be asked: a download for that buffer is already in flight (a
+    /// whole one will cover this span; another window's is one in flight per
+    /// buffer, which is the bound this path keeps), or the request is empty.
+    ///
+    /// A window is **one view's**, not a buffer's: two views of one take are at
+    /// two zooms over two spans, and what makes this affordable is that each
+    /// asks only for what it is showing.
+    pub(crate) fn want_span(
+        &mut self,
+        def_id: i32,
+        widget_id: i32,
+        bufnum: i32,
+        start: usize,
+        frames: usize,
+        channels: usize,
+    ) -> Option<OscMessage> {
+        let channels = channels.max(1);
+        if frames == 0 || self.fetches.contains_key(&bufnum) {
+            return None;
+        }
+        let (origin, total) = (start * channels, frames * channels);
+        self.fetches.insert(
+            bufnum,
+            BufferFetch {
+                channels,
+                sample_rate: 0.0,
+                origin,
+                total,
+                samples: vec![0.0; total],
+                received: 0,
+                window: Some((
+                    WaveWant {
+                        def_id,
+                        widget_id,
+                        shape_only: false,
+                    },
+                    start,
+                )),
+            },
+        );
+        Some(request_chunk(bufnum, origin, origin + total))
     }
 
     /// Forgets every want of a closed (or rebuilt) window, so a finished fetch
@@ -346,6 +425,58 @@ mod tests {
     /// read to what the buffer holds, so a buffer that shrank between the
     /// query and the read answers with nothing — and re-asking for the same
     /// chunk would spin forever against a server that is already right.
+    /// **A span is read like a buffer and lands as a window**: the chunks walk
+    /// the run and nothing outside it, and what comes back is addressed to the
+    /// one view that asked.
+    #[test]
+    fn a_span_walks_its_own_chunks_and_lands_as_a_window() {
+        let mut f = BufferFetches::default();
+        let (start, frames, channels) = (10_000usize, 6_000usize, 2usize);
+        let msg = f
+            .want_span(1, 7, 3, start, frames, channels)
+            .expect("a span is asked for");
+        // Flat indices: the run starts where the frames start, times channels.
+        assert_eq!(
+            ints(&msg),
+            vec![
+                3,
+                (start * channels) as i32,
+                BUFFER_CHUNK.min(frames * channels) as i32
+            ]
+        );
+
+        // A second view's span is not asked for while this one is in flight —
+        // one download per buffer is the bound.
+        assert!(f.want_span(1, 8, 3, 0, 100, channels).is_none());
+
+        let total = frames * channels;
+        let mut at = start * channels;
+        let mut step = f.on_data(&range_reply(3, at, &vec![0.5; BUFFER_CHUNK]));
+        at += BUFFER_CHUNK;
+        while let FetchStep::Request(msg) = step {
+            let args = ints(&msg);
+            assert_eq!(args[1], at as i32, "the next chunk continues the run");
+            let n = args[2] as usize;
+            assert!(at + n <= start * channels + total, "and never past its end");
+            step = f.on_data(&range_reply(3, at, &vec![0.5; n]));
+            at += n;
+        }
+        let FetchStep::Window {
+            bufnum,
+            want,
+            start_frame,
+            channels: got_channels,
+            samples,
+        } = step
+        else {
+            panic!("a finished span is a window");
+        };
+        assert_eq!((bufnum, start_frame, got_channels), (3, start, channels));
+        assert_eq!((want.def_id, want.widget_id), (1, 7));
+        assert_eq!(samples.len(), total);
+        assert!(samples.iter().all(|s| *s == 0.5));
+    }
+
     #[test]
     fn a_range_that_carries_nothing_finishes_the_download() {
         let mut fetches = BufferFetches::default();

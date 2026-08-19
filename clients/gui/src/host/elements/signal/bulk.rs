@@ -270,6 +270,29 @@ impl SignalElement {
         true
     }
 
+    /// **Puts a fetched run of the material under the summary**, returning
+    /// whether this element took it.
+    ///
+    /// The other half of a zoom that went past the overview: the picture said
+    /// which span it could not answer, the leg fetched it, and this is where
+    /// it lands. Only a body that holds no material of its own takes one — a
+    /// mapped body reads the material where it lies, and a wholly owned one
+    /// already has it.
+    pub fn set_window(&mut self, start: u64, channels: usize, samples: &[f32]) -> bool {
+        let Some(data) = self.source.data_mut() else {
+            return false;
+        };
+        if data.body.is_none() {
+            return false;
+        }
+        let body = Arc::make_mut(data.body.as_mut().expect("just checked"));
+        if !body.set_window(start as usize, channels, samples) {
+            return false;
+        }
+        self.slot_dirty = true;
+        true
+    }
+
     /// **The stream this element wants to be told about**, as
     /// `(buffer, bucket)`, or `None` when it wants none.
     ///

@@ -485,6 +485,22 @@ impl Widget {
         self.children.iter().find(|c| declares(c)).unwrap_or(self)
     }
 
+    /// [`Self::bulk_target`] for a write — the same routing, mutably: a run of
+    /// samples fetched for a clip's take lands in the body that asked for it.
+    pub fn bulk_target_mut(&mut self) -> &mut Widget {
+        let declares = |w: &Widget| {
+            let needs = w.kind.needs();
+            needs.bulk.is_some() || needs.slot.is_some()
+        };
+        if declares(self) {
+            return self;
+        }
+        match self.children.iter().position(declares) {
+            Some(i) => &mut self.children[i],
+            None => self,
+        }
+    }
+
     /// Hands a loaded resource to whichever of this widget **or its bodies**
     /// takes it, returning whether one did.
     ///

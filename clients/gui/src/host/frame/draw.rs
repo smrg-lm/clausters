@@ -412,6 +412,20 @@ pub(super) fn draw_timeline_meshes(
                 // through the one signal renderer, placed on the *local* window
                 // (a member of a group draws its own samples where it sits).
                 let local = placed_nav(&nav, item.editor.offset);
+                // **The picture says when it has stopped resolving.** A column
+                // finer than the summary's bucket can only be drawn from
+                // samples, and a view that holds none for this span draws the
+                // bucket instead — which is correct and is not what the eye
+                // asked for. This is the one place that knows both numbers, so
+                // it leaves the span for the leg to fetch; a view that can
+                // answer (mapped material, a whole owned buffer, a window
+                // already over this span) leaves nothing.
+                slot.wanted_span.set(missing_span(
+                    &slot.view,
+                    &local,
+                    body.w as f64,
+                    item.written,
+                ));
                 let trace = crate::host::graphics::signal::trace::Trace::Data(slot.view.data());
                 // One picture per measure, into the one body: the envelope the
                 // signal reached, then the level it held drawn inside it.

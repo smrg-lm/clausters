@@ -1708,6 +1708,16 @@ pub trait Element: fmt::Debug {
         false
     }
 
+    /// **Puts a fetched run of the material under this element's summary**,
+    /// returning whether it took it. The default is not to.
+    ///
+    /// The landing of a zoom past the overview: `samples` is interleaved, every
+    /// channel of the frames `[start, start + n)`, and it answers exactly
+    /// there while the pyramid goes on answering everywhere else.
+    fn set_window(&mut self, _start: u64, _channels: usize, _samples: &[f32]) -> bool {
+        false
+    }
+
     /// **The stream this element wants to be told about**, `(buffer, bucket)`,
     /// or `None` (the default) for one that wants none.
     ///

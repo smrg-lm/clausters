@@ -71,12 +71,23 @@ pub(crate) fn clear_color(theme: &Theme) -> wgpu::Color {
 /// the window's mesh like every other widget's, so nothing here is GPU state.
 pub(crate) struct WaveformSlot {
     pub(crate) view: WaveformView,
+    /// **The span this view was drawn over and could not answer** — a zoom
+    /// finer than the summary's bucket, over material the picture holds no
+    /// samples for. `(start, end)` in frames.
+    ///
+    /// It is set by the draw pass, which is the only place that knows the zoom
+    /// *and* the span, and read (and cleared) by the leg after the frame,
+    /// which is the only place that can ask the server for it. A `Cell`
+    /// because the draw pass borrows the slots immutably — the front is single
+    /// threaded, and this is a note left on the way past rather than state.
+    pub(crate) wanted_span: std::cell::Cell<Option<(usize, usize)>>,
 }
 
 /// A `WaveformSlot` for ready data.
 pub(crate) fn waveform_slot(data: impl Into<Arc<WaveformData>>) -> WaveformSlot {
     WaveformSlot {
         view: WaveformView::new(data),
+        wanted_span: std::cell::Cell::new(None),
     }
 }
 
@@ -466,6 +477,48 @@ fn placed_nav(nav: &View, offset: f64) -> View {
         start: nav.start - offset,
         len: nav.len,
     }
+}
+
+/// **The span a view was asked to draw and could not answer**, or `None` when
+/// it could — the fetch this frame is owed.
+///
+/// A column finer than the summary's base bucket can only come from samples;
+/// a view holding none for that span draws the bucket, which is the honest
+/// picture and one the eye has stopped getting anything new from. So the
+/// answer is the visible span, clamped to the material, and it is `None` in
+/// every other case: zoomed out (the summary *is* the answer), or covered
+/// already (mapped material, a whole owned buffer, a window over this span).
+///
+/// The span is the window as drawn and not a margin around it: a window is
+/// fetched because somebody is looking at it, and guessing where they will
+/// look next is a cache policy this deliberately does not have.
+///
+/// **Material that is still being written asks for nothing** (`written`, the
+/// `fills` prop's frontier): there is nothing to read past the frontier, and
+/// reading behind it would install a run that the next block makes stale. A
+/// take being recorded is *told* what it looks like; it reads the material
+/// once it is finished, which is what clearing `fills` says.
+fn missing_span(
+    view: &WaveformView,
+    nav: &View,
+    width: f64,
+    written: Option<u64>,
+) -> Option<(usize, usize)> {
+    if written.is_some() {
+        return None;
+    }
+    let data = view.data();
+    let total = data.total_samples();
+    if width <= 0.0 || nav.len <= 0.0 || total == 0 {
+        return None;
+    }
+    if nav.len / width >= data.base_bucket() as f64 {
+        return None; // the summary answers at this zoom, exactly as it should
+    }
+    let a = (nav.start.floor().max(0.0) as usize).min(total);
+    let b = (nav.start + nav.len).ceil().max(0.0) as usize;
+    let b = b.clamp(a, total);
+    (b > a && !data.covers(a, b)).then_some((a, b))
 }
 
 /// Maps sample position `s` into `body`'s x range through `nav`.
@@ -1321,6 +1374,53 @@ mod tests {
         // lane starts its clips — the indent is the axis', not the widget's.
         let shared = timeline_body(rect, &editor(Ruler::Off, RulerY::Norm), m.header_w, &m);
         assert_eq!(shared.x, 10.0 + m.header_w);
+    }
+
+    /// **The note the draw pass leaves**: a zoom past the summary over a span
+    /// nothing covers is a fetch owed, and every other case is silence.
+    #[test]
+    fn only_a_zoom_past_the_summary_over_uncovered_material_asks_for_a_span() {
+        use crate::waveform::WaveformData;
+        // Long enough that the whole of it, over 800 px, is coarser than a
+        // bucket — which is what "zoomed out" means for this question.
+        let (bucket, frames) = (256usize, 256 * 4_000);
+        let told = WaveformView::new(WaveformData::with_multi_pyramid(
+            clausters_core::peaks::MultiPyramid::empty(frames, 1, bucket),
+        ));
+        let wide = View {
+            start: 0.0,
+            len: frames as f64,
+        };
+        assert_eq!(
+            missing_span(&told, &wide, 800.0, None),
+            None,
+            "zoomed out, the summary is the answer"
+        );
+        let close = View {
+            start: 1_000.0,
+            len: 2_000.0,
+        };
+        assert_eq!(
+            missing_span(&told, &close, 800.0, None),
+            Some((1_000, 3_000)),
+            "past the bucket over material it cannot answer for"
+        );
+
+        // The same view once the run has arrived: nothing more is owed.
+        let mut data = WaveformData::with_multi_pyramid(
+            clausters_core::peaks::MultiPyramid::empty(frames, 1, bucket),
+        );
+        assert!(data.set_window(1_000, 1, &vec![0.0; 2_000]));
+        let covered = WaveformView::new(data);
+        assert_eq!(missing_span(&covered, &close, 800.0, None), None);
+
+        // And a view that owns its material never asks.
+        let owned = WaveformView::new(WaveformData::from_interleaved(
+            &vec![0.0; frames],
+            1,
+            bucket,
+        ));
+        assert_eq!(missing_span(&owned, &close, 800.0, None), None);
     }
 
     #[test]

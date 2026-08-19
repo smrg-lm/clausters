@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: a take drawn by the host while it records, and zoomed after</title>
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            max-width: 44rem; white-space: pre-wrap; }
+      /* Narrow on purpose: the take has to be longer than the view can
+         resolve, or the whole of it is already past the summary. */
+      #stage { width: 200px; height: 160px; }
+      #stage canvas { display: block; width: 100%; height: 100%; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div>a take recorded by the engine in this page and drawn by the
+        <b>GUI host</b>: the overview arrives over <code>/buffer_stream</code>
+        while it fills, and zooming past the overview afterwards reads the span
+        back.</div>
+      <button id="boot">boot + record</button>
+      <div id="stage"></div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The acceptance behind examples/recording.html, and the one that says the
+      two platforms behave alike (clients/web/test.sh, headless Chrome;
+      ?smoke=1 auto-runs). What is asserted is what the host *did*, read off
+      its own console:
+
+      - a take being recorded into is not downloaded, only asked its shape
+        ("being recorded into"), so a lane opens at once and empty;
+      - the picture grows from the stream while it records, with nothing in
+        this script asking for it (the `fills` prop is the whole request);
+      - and once it is finished, a zoom past the summary makes the host read
+        that span back ("read back for widget"), which is how a page resolves
+        to the sample where a native host reads the mapped cells.
+    -->
+    <script type="module">
+      // The host logs through the console, which is the only window a page has
+      // onto what it decided: captured before the module boots so nothing is
+      // missed.
+      const seen = [];
+      const passthrough = console.log.bind(console);
+      console.log = (...args) => {
+        seen.push(args.join(" "));
+        passthrough(...args);
+      };
+      const saw = (needle) => seen.some((line) => line.includes(needle));
+
+      const {
+        loadOsc, loadCore, pageConnection, server: engine, Server,
+        Buffer, Synth, SynthDef, GuiHost, guiHost, gui,
+      } = await import("../dist/index.js");
+      const { control, out, recordBuf, sine } = await import("../dist/defs/index.js");
+
+      const smoke = new URLSearchParams(location.search).has("smoke");
+      const log = (line) => {
+        document.getElementById("log").textContent += line + "\n";
+      };
+      const verdict = (text) => {
+        log(text);
+        document.title = text.split("\n")[0];
+        fetch(`/smoke-verdict-${encodeURIComponent(text.split("\n")[0])}`)
+          .catch(() => {});
+      };
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+      const RATE = 48000;
+      // Long enough that the whole take, on this canvas, is coarser than the
+      // 256-frame bucket: 260 buckets over 200 px is 333 samples a pixel, so
+      // the opening view is the summary's to answer and a zoom is a real one.
+      const FRAMES = 256 * 260;   // 1.39 s
+
+      async function run() {
+        await loadOsc();
+        await loadCore();
+        const raw = await engine({ channels: 2 });
+        await raw.resume();
+        const server = await Server.open(await pageConnection());
+        const host = await GuiHost.page();
+        const page = await guiHost();
+        document.getElementById("stage").append(page.canvas);
+
+        await new SynthDef("host_recording",
+          out(0.0, recordBuf(control("buf", 0.0, "ir"), 0.0,
+            sine(220.0).mul(0.5), { doneAction: 2 }))).send(server);
+        const take = await Buffer.alloc(FRAMES, 1, { server });
+        await server.sync();
+
+        const win = host.open(gui.window(
+          { title: "recording", layout: "col", margin: 8.0 },
+          gui.waveform({
+            name: "take", buffer: take.bufnum, sampleRate: RATE,
+            fills: true, ruler: "time", rulerY: "off",
+          }),
+        ));
+        page.fit(win.id, document.getElementById("stage"));
+        await sleep(600);
+
+        // **Nothing was downloaded**: a take being recorded into holds
+        // silence, so the host asked for its shape and drew an empty summary.
+        if (!saw("being recorded into")) {
+          throw new Error("the host downloaded the take instead of asking its shape");
+        }
+        if (saw("loaded into")) throw new Error("the take's samples were pulled anyway");
+
+        new Synth("host_recording", { buf: take.bufnum }, { server });
+        await sleep(2000);
+        log("recorded");
+
+        // The take is finished: `fills` is cleared, exactly as a client says
+        // "what was written is all there is".
+        win.widget("take").set({ fills: false });
+        await sleep(400);
+
+        // **Zoomed out, nothing is read**: at 333 samples a pixel the summary
+        // is the answer, and it is already on screen.
+        const before = seen.length;
+        await sleep(300);
+        if (seen.slice(before).some((line) => line.includes("read back"))) {
+          throw new Error("it read the take without being zoomed into it");
+        }
+
+        // **Zoom past the summary.** A window of 2000 frames over 200 px is
+        // ten samples a pixel — far finer than the 256-frame bucket — so the
+        // picture can only be drawn from samples this view does not hold, and
+        // the host has to read them back.
+        win.widget("take").set({ view_start: 4000, view_len: 2000 });
+        await sleep(800);
+        const read = seen.slice(before).find((line) => line.includes("read back for widget"));
+        if (!read) {
+          throw new Error("zooming past the summary read nothing back | "
+            + seen.slice(before).join(" ; ").slice(0, 300));
+        }
+        log(read);
+
+        // And it asked for the span it was showing, not for the take.
+        const frames = Number(read.match(/(\d+) frame\(s\)/)?.[1] ?? 0);
+        if (!(frames > 0 && frames <= 4000)) {
+          throw new Error(`it read ${frames} frames for a 2000-frame window`);
+        }
+
+        // Zoomed back out, nothing more is asked: the summary is the answer
+        // there and it is already on screen.
+        const quiet = seen.length;
+        win.widget("take").set({ view_start: 0, view_len: FRAMES });
+        await sleep(500);
+        if (seen.slice(quiet).some((line) => line.includes("read back for widget"))) {
+          throw new Error("zoomed out, it read a span it did not need");
+        }
+
+        verdict(`PASS: the take drew from the stream without being downloaded, `
+          + `and a zoom past the summary read ${frames} frames back — `
+          + "the span on screen, not the take");
+      }
+
+      document.getElementById("boot").onclick = () =>
+        run().catch((err) => verdict(`FAIL: ${err}`));
+      if (smoke) run().catch((err) => verdict(`FAIL: ${err}`));
+    </script>
+  </body>
+</html>

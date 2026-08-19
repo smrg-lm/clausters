@@ -199,6 +199,13 @@ impl App {
                 sample_rate,
                 wants,
             } => self.place_empty_take(bufnum, frames, channels, sample_rate, wants),
+            FetchStep::Window {
+                bufnum,
+                want,
+                start_frame,
+                channels,
+                samples,
+            } => self.place_window(bufnum, want, start_frame, channels, &samples),
             FetchStep::None => {}
         }
     }
@@ -480,6 +487,92 @@ impl App {
             }
             ws.gpu.window.request_redraw();
             self.finish_placement(want, samples.len() / channels, sample_rate);
+        }
+    }
+
+    /// **The span a view had zoomed past its summary into**, landed: the
+    /// samples go under that view's overview as a window, and it draws them.
+    ///
+    /// The slot lets the material go first, as every other write here does —
+    /// the element is then the sole owner and the window costs the run rather
+    /// than a copy of the summary.
+    fn place_window(
+        &mut self,
+        bufnum: i32,
+        want: WaveWant,
+        start_frame: usize,
+        channels: usize,
+        samples: &[f32],
+    ) {
+        debug!(
+            "gui: buffer {bufnum} window of {} frame(s) at {start_frame} for widget {}",
+            samples.len() / channels.max(1),
+            want.widget_id
+        );
+        if let Some(slot) = self
+            .windows
+            .get_mut(&want.def_id)
+            .and_then(|ws| ws.waveforms.get_mut(&want.widget_id))
+        {
+            slot.view.release_data();
+        }
+        let took = self
+            .host
+            .window_def_mut(want.def_id)
+            .and_then(|t| t.find_mut(want.widget_id))
+            .is_some_and(|w| {
+                w.bulk_target_mut()
+                    .kind
+                    .as_element_mut()
+                    .is_some_and(|el| el.set_window(start_frame as u64, channels, samples))
+            });
+        if took && let Some(ws) = self.windows.get(&want.def_id) {
+            ws.gpu.window.request_redraw();
+        }
+    }
+
+    /// **Asks for the spans the last frame could not draw.** A view zoomed
+    /// finer than its summary leaves the span it was asked for on its slot;
+    /// this is where that note becomes a `/buffer_getRange`.
+    ///
+    /// Called after drawing, once per pass: the note is this frame's, and a
+    /// span already in flight is not asked for again (the fetch machine keeps
+    /// one download per buffer, which is what bounds this).
+    pub(super) fn fetch_wanted_spans(&mut self) {
+        let mut asked: Vec<(i32, i32, i32, usize, usize, usize)> = Vec::new();
+        for (def_id, ws) in &self.windows {
+            for (widget_id, slot) in &ws.waveforms {
+                let Some((a, b)) = slot.wanted_span.take() else {
+                    continue;
+                };
+                let Some((channels, _)) = self
+                    .host
+                    .window_def(*def_id)
+                    .and_then(|t| t.find(*widget_id))
+                    .and_then(|w| w.bulk_target().kind.as_element())
+                    .and_then(|el| el.material_shape())
+                else {
+                    continue;
+                };
+                let Some(bufnum) = self
+                    .host
+                    .window_def(*def_id)
+                    .and_then(|t| t.find(*widget_id))
+                    .and_then(|w| w.bulk_target().kind.as_element())
+                    .and_then(|el| el.material_buffer())
+                else {
+                    continue;
+                };
+                asked.push((*def_id, *widget_id, bufnum, a, b - a, channels));
+            }
+        }
+        for (def_id, widget_id, bufnum, start, frames, channels) in asked {
+            if let Some(msg) = self
+                .fetches
+                .want_span(def_id, widget_id, bufnum, start, frames, channels)
+            {
+                self.send_to_server(msg);
+            }
         }
     }
 

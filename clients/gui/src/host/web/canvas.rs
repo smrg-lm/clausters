@@ -282,6 +282,11 @@ impl WebApp {
             &inputs,
             theme,
         );
+        // **What this frame could not draw.** A view zoomed finer than its
+        // summary left the span it was asked for on its slot; a page cannot
+        // map the material, so it reads exactly that span back — which is what
+        // makes the picture resolve to the sample here as it does natively.
+        self.fetch_wanted_spans(def);
     }
 
     /// Schedules a repaint of one canvas through winit's redraw request

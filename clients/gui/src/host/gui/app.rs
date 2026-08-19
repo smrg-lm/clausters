@@ -565,6 +565,12 @@ impl ApplicationHandler<UserEvent> for App {
         // window does — and it must run before the repaint below.
         self.advance_edge_scroll(FRAME.as_secs_f64());
 
+        // **What the last frame could not draw.** A view zoomed finer than its
+        // summary leaves the span it was asked for on its slot; here that note
+        // becomes a read of exactly that span, so a picture that cannot map
+        // the material still resolves to the sample where the eye is.
+        self.fetch_wanted_spans();
+
         // **A recording is drawn as it fills.** The material is mapped, so the
         // samples need nothing; what moves is the frontier its writer
         // publishes, and the summary over the frames it added.
