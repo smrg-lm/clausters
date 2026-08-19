@@ -90,10 +90,12 @@ folder = Path(tempfile.mkdtemp(prefix="clausters-take-"))
 # what the signal *reached* against what it *held*, which is the whole reason an
 # editor draws both.
 #
-# **Its length is part of the point.** A level is an average, and an average
-# needs samples: a column of pixels covering a fraction of a cycle measures the
-# wave's phase, not its loudness, so the body fades out as you zoom past that —
-# the same rule an audio editor's RMS layer follows. Six seconds across a
+# **Its length is part of the point.** A level is an average over a duration,
+# and the duration is the signal's, not the view's: the body averages a fixed
+# 50 ms of source (2400 samples at 48 kHz) whatever the zoom, so its values
+# stand still while you navigate. What ends it is the envelope, which does
+# narrow as you zoom in — once it has come down onto the level the two are
+# saying the same thing and the layer goes, in one step. Six seconds across a
 # window is a few hundred samples a column, which is where the two measures
 # have something different to say.
 

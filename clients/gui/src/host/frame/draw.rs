@@ -435,7 +435,8 @@ pub(super) fn draw_timeline_meshes(
                                 m.trace_w,
                             )
                             .with_dots(m.point_radius)
-                            .with_measure(measure),
+                            .with_measure(measure)
+                            .with_rate(item.editor.sample_rate),
                         );
                     }
                 }

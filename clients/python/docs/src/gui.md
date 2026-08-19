@@ -271,8 +271,23 @@ one axis, one ruler, one selection, one playhead, one upload of the samples —
 and the order is the host's: the envelope is the outer shape, so it goes under
 whatever order you name them in.
 
-Two things follow from what the measure is:
+Three things follow from what the measure is:
 
+- **The level is averaged over a fixed 50 ms of the source**, not over the pixel
+  column it is drawn in — 2400 samples at 48 kHz, the RMS window an audio editor
+  defaults to. A root-mean-square is an average over a *duration*, so a window
+  that followed the column would make the body's own values follow the **zoom**:
+  the level would move while you navigated material that had not changed. This
+  way it stands still. (A live bus view, whose window is already stated in
+  milliseconds and whose rate the host does not know, averages what each column
+  covers.)
+- **The body disappears when the envelope comes down onto it.** The envelope
+  narrows as you zoom in, since a column covers less of the wave; once it is
+  within a fifth of the level the two are saying the same thing, so the layer
+  goes — at full weight, in one step, rather than fading. That is also what
+  keeps it from ever showing outside the envelope that contains it. It is the
+  behavior an audio editor's RMS layer has: it is a reading of the overview, and
+  zooming in to work leaves you the wave.
 - The body costs no second pass over the samples. The mean square rides in the
   peak cache beside the min and max, at every resolution level, so the body
   reads the same mapped file the envelope does.

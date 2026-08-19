@@ -435,10 +435,24 @@ by turning its measures on and off.
   two of them on one rectangle are not layers, the second hides the first. One
   element is also one axis, one ruler, one selection, one playhead and one
   upload of the samples.
-- **A body fades out at sample zoom instead of switching off.** Past the
-  polyline threshold the level over one sample *is* that sample, so the body
-  would restate the trace; it follows the zoom out with the same weight the
-  level crossfade uses, and the samples themselves are what remain.
+- **A level is averaged over a fixed 50 ms of the source, not over the pixel
+  column.** A root-mean-square is an average over a *duration*, so averaging
+  whatever a column happens to cover would make the body's own values follow the
+  **zoom** — moving over material that did not change. The window is the
+  signal's (50 ms, the RMS window an audio editor defaults to; at 48 kHz, 2400
+  samples), and where a column is narrower than that the reading reaches out to
+  it around the column's centre. So the body stands still while the view moves.
+  A source whose rate the host does not know (a live bus window, already
+  measured in milliseconds) averages each column's own span.
+- **And it goes when the envelope has come down onto it — one weight, then
+  gone.** The envelope *does* narrow with the zoom, since a column covers less
+  of the wave; once it is within a fifth of the level there are no longer two
+  readings, so the body is not drawn at all. That is what keeps it from ever
+  poking out of the shape that contains it, and it is a **cut** at full weight
+  rather than a fade, because a body drawn at a third of its weight reads as a
+  quiet passage rather than as a distant one. Past the polyline threshold there
+  is no envelope left to be a reading of, and the samples themselves are what
+  remain.
 - **A source that cannot measure draws no body.** A peak cache written before
   the format carried the mean square (CLPK v1/v2) has an envelope and no
   energy, and zeros would be a measurement — silence — over material that is

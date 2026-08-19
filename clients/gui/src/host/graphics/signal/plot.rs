@@ -340,7 +340,8 @@ fn draw_signal(d: &mut Draw, g: &Geom, p: &PlotParams) {
                     m.trace_w,
                 )
                 .with_dots(m.point_radius)
-                .with_measure(measure),
+                .with_measure(measure)
+                .with_rate(p.sample_rate),
             );
         }
     }

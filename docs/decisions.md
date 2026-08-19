@@ -1,4 +1,43 @@
-# Design decisions & findings
+**The window is fixed, and what ends the body is the envelope** (settled
+2026-08-19, by eye, after three answers that were not). Two rules, one picture:
+
+- **A level is averaged over a fixed 50 ms of the source** (`BODY_WINDOW_SECS`;
+  2400 samples at 48 kHz), reaching out around a pixel column's centre wherever
+  the column is narrower than that. A root-mean-square is an average over a
+  *duration*, so a window that followed the column would make the body's own
+  values follow the **zoom** — the level moving over material that did not
+  change, which is the defect that decided this. 50 ms is WaveLab's default RMS
+  window (adjustable to 999 ms); it sits below the ear's own integration —
+  energy integrates over something like 200 ms, a VU meter's window is 300 ms —
+  so it is the floor of what still reads as a level rather than the window a
+  meter would pick. A caller with no rate (a live bus window, already measured
+  in milliseconds) averages each column's own span, having no zoom of its own to
+  be wrong about.
+- **The body goes when the envelope has come down onto it** (`BODY_MERGE_RATIO`
+  = 0.8, over the span on screen, weighted by the peak so the loud part decides).
+  The envelope *does* narrow with the zoom, since a column covers less of the
+  wave; once it is within a fifth of the level there are no longer two readings.
+  This is also what keeps a fixed-window level from ever poking **outside** the
+  envelope, which is the one thing a body must never do. One weight throughout
+  and then a cut, which is the manual's own word: Audacity's RMS "will
+  disappear" as you zoom in.
+
+**Three answers were tried first, and each is recorded because each was wrong in
+its own way.** The original ramped **opacity linearly in samples-per-pixel** down
+to `RMS_FLOOR = 256` samples a column: the floor was the pyramid's summarizing
+bucket and the order of a cycle of the lowest musical pitches — reasoning, not
+evidence — and the ramp was measured against nothing, so the body's weight
+tracked the *zoom* and a body at a third of its weight could be read as a quiet
+passage. The second cut it where the level **met** the envelope but kept
+averaging the column, which is measured and does track the signal, yet still let
+the level's values move under a zoom — and watching them climb toward the peaks
+is itself the artefact. The third made the threshold a **duration of the column**
+(50 ms, then 10 ms): right about what the quantity is made of, and an order of
+magnitude coarser than a working zoom — six seconds across a window is under
+seven milliseconds a column, so any floor that reads as perceptual removes the
+body from the place it is looked at. Only the fourth separates the two roles the
+duration was being asked to play at once: it is the **averaging window**, and the
+thing that ends the layer is the envelope.# Design decisions & findings
 
 The non-obvious choices behind Clausters, and the upstream bugs we had to work
 around — the "why it is this way" that the code alone cannot explain. Each entry
@@ -5326,27 +5365,47 @@ samples"). A fixed averaging time was tried and is wrong twice over: it smears
 the level across a transient, and it pushes the body **outside** the envelope
 that is supposed to contain it.
 
-**The body fades out where a column stops holding a meaningful average.** The
-measure stays exact at any span; what a short span stops being is *informative*.
-Below a cycle, root-mean-square and peak converge — measured on the example's
-own bounce at 88 samples a column, the ratio runs 0.6 to 0.9, so the body simply
-retraces the envelope — and on the way there it reads the wave's **phase**,
-beating against the period in a lattice nobody can interpret. Editors answer
-this the same way: Audacity's RMS "will disappear" as you zoom in, "because
-there are not enough samples to provide a meaningful average in the region being
-displayed".
+**The body is drawn where the envelope is and nowhere else.** The measure stays
+exact at any span; what a short span stops being is *informative*. Below a
+cycle, root-mean-square and peak converge — measured on the example's own bounce
+at 88 samples a column, the ratio runs 0.6 to 0.9, so the body simply retraces
+the envelope — and on the way there it reads the wave's **phase**, beating
+against the period in a lattice nobody can interpret. Editors answer this the
+same way: Audacity's RMS "will disappear" as you zoom in, "because there are not
+enough samples to provide a meaningful average in the region being displayed".
 
-**Two halves of that are ours, and one of them wants revisiting.** The manual
-names no threshold, so the floor is `RMS_FLOOR = 256` samples a column — the
-bucket the pyramid summarizes energy at, and the order of a cycle of the lowest
-musical pitches. And the manual says *disappear*, a cut: **the gradual fade is
-our choice**, so the picture does not pop at a zoom step. ⬜ **The alpha
-mechanism needs review**: ramping opacity linearly in samples-per-pixel is a
-guess at what reads well, it is not measured against anything, and it makes the
-body's weight a function of the zoom rather than of the signal — a body at a
-third of its weight can be mistaken for a quiet passage. The alternatives are a
-cut at the floor (the editors' own answer), a ramp in a perceptual rather than a
-linear parameter, or leaving the colour alone and narrowing the body instead.
+**The floor is a duration, and it is the editors' own** (revised 2026-08-19,
+after two answers that were not). A root-mean-square is an average *over a
+duration*, so what ends it is a duration: below `BODY_MIN_SECS = 50 ms` the
+reading is dominated by the peaks — the body creeping onto the envelope it is
+supposed to sit inside, which is the one thing it must never look like — and it
+reads the wave's phase rather than its level. 50 ms is WaveLab's default RMS
+window (adjustable to 999 ms), and the reason given there for not going shorter
+is exactly that peak contamination. It sits below the ear's own integration —
+energy integrates over something like 200 ms, a VU meter's window is 300 ms — so
+it is the *floor* of what still reads as a level, not the window a meter would
+pick. The trace works in samples and only the caller knows the rate, so the
+duration reaches it as `TraceStyle::with_rate`; a caller with no rate (a live
+window measured in milliseconds, a demo harness) gets no duration floor and
+keeps the one the picture has on its own, the crossing to the polyline.
+
+**What follows is that the level body is an overview reading.** At 48 kHz the
+floor is 2400 samples a pixel column, so the body is drawn while the screen
+holds tens of seconds and goes as soon as you zoom in to work — which is what
+Audacity's RMS does, and what the layer is for.
+
+**Two answers were tried first and are recorded because each was wrong in its
+own way.** The original ramped **opacity linearly in samples-per-pixel** down to
+`RMS_FLOOR = 256` samples a column: the floor was the pyramid's summarizing
+bucket and the order of a cycle of the lowest musical pitches — reasoning, not
+evidence — and the ramp was measured against nothing, so the body's weight
+tracked the *zoom* rather than the signal and a body at a third of its weight
+could be read as a quiet passage. The second cut it where the level **met** the
+envelope (the ratio of body to peak over the span on screen), which is measured
+and does track the signal — but watching the body climb toward the peaks before
+vanishing is itself the artefact, so the criterion arrived too late by
+construction. The manual says *disappear*, a cut, and all three agree on that
+much.
 
 **A source that cannot measure draws nothing.** A peak cache written before the
 format carried the mean square has an envelope and no energy, and the layer is

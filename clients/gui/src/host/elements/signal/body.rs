@@ -59,6 +59,7 @@ impl SignalElement {
             max,
             self.measures,
             self.display.overlay,
+            self.editor.sample_rate,
         );
     }
 }

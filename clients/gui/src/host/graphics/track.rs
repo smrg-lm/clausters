@@ -644,6 +644,7 @@ pub(crate) fn draw_take(
     max: f32,
     measures: Measures,
     overlay: bool,
+    sample_rate: f64,
 ) {
     let (mesh, m, theme) = d.parts();
     let total = trace.frames() as f64;
@@ -718,7 +719,8 @@ pub(crate) fn draw_take(
                         m.divider_w,
                     )
                     .with_dots(m.point_radius)
-                    .with_measure(measure),
+                    .with_measure(measure)
+                    .with_rate(sample_rate),
                 );
             }
         }
