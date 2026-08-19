@@ -112,7 +112,6 @@ example, and none blocks anything that is.
   nothing; costs a decision about a fourth mdBook that the project's three-book
   rule does not currently allow.
 - **`G31g`** — engraving refinements (tuplets, full polyphony, spelling).
-- **The K track's group-aware port** — `keys`, `notes`, `patch` (item 3 of K7).
 - **Server transport items** `T2`–`T4`, and `R12` (a release verifies
   something). `T2` did not stop being optional when `T5` landed, and the
   question it was flagged with still stands: `T5` put a position in samples on
