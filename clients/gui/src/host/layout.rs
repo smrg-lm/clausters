@@ -732,36 +732,78 @@ fn free_rect(inner: Rect, p: Place, space: Space) -> Rect {
 /// taken as given; an explicit `weight` takes that share of the leftover; a
 /// widget with a natural size on this axis takes exactly that; everything else
 /// shares the leftover at weight 1. The cross axis fills.
+///
+/// **And when the strip is shorter than what its children asked for**, the
+/// order runs backwards through the naturally-sized ones: each is squeezed
+/// toward its floor ([`Widget::floor_size`]), in proportion to what it offered
+/// to give. That is the difference between a widget being *asked* what it does
+/// with less room and a container deciding for it — a labelled control gives up
+/// its label strip and keeps its body, a button that has nothing shorter than
+/// itself gives nothing, and what a widget declined to give it keeps even
+/// though the strip still overflows. Overflowing visibly beats silently
+/// truncating a widget nobody asked to shrink.
+///
+/// Two things are deliberately outside it. An **explicit** `w`/`h` is a number
+/// the script wrote and stays given: squeezing it would make the one way to
+/// pin a size stop pinning it. And an **elastic** child is already the give in
+/// the strip — it shares whatever is left, down to nothing — so it needs no
+/// floor to be squeezable and gets none, which is what keeps this one pass and
+/// not a solver.
 fn strip(inner: Rect, children: &[Widget], gap: f32, horizontal: bool, space: Space) -> Vec<Rect> {
     let gaps = gap * (children.len() as f32 - 1.0);
     let main = if horizontal { inner.w } else { inner.h };
-    let fixed_of = |c: &Widget| {
+    let axis = |(w, h): (Option<f32>, Option<f32>)| if horizontal { w } else { h };
+    // What a naturally-sized child wants and the most of that it will give
+    // back; `None` for a child that is not sized by its own nature at all.
+    let wanted_of = |c: &Widget| {
         let p = c.place;
-        let explicit = if horizontal { p.w } else { p.h };
-        explicit.map(|s| space.px(s)).or_else(|| {
-            // An explicit weight overrides the natural size — "stretch this
-            // button" stays expressible.
-            p.weight.is_none().then(|| {
-                // Measured in this space's own coordinates, at the scale its
-                // text will draw at — one table, one scale.
-                let (nw, nh) = c.natural_size(&space.metrics, space.unit);
-                if horizontal { nw } else { nh }
-            })?
-        })
+        // An explicit weight overrides the natural size — "stretch this
+        // button" stays expressible.
+        if p.weight.is_some() {
+            return None;
+        }
+        // Measured in this space's own coordinates, at the scale its text will
+        // draw at — one table, one scale.
+        let want = axis(c.natural_size(&space.metrics, space.unit))?.max(0.0);
+        let floor = axis(c.floor_size(&space.metrics, space.unit))
+            .unwrap_or(want)
+            .clamp(0.0, want);
+        Some((want, want - floor))
     };
-    let fixed: f32 = children
-        .iter()
-        .filter_map(fixed_of)
-        .map(|s| s.max(0.0))
-        .sum();
+    let explicit_of = |c: &Widget| {
+        let p = c.place;
+        if horizontal { p.w } else { p.h }.map(|s| space.px(s).max(0.0))
+    };
+    let fixed_of = |c: &Widget| explicit_of(c).or_else(|| wanted_of(c).map(|(want, _)| want));
+    let fixed: f32 = children.iter().filter_map(fixed_of).sum();
     let total_weight: f32 = children
         .iter()
         .filter(|c| fixed_of(c).is_none())
         .map(|c| c.place.weight.unwrap_or(1.0).max(0.0))
         .sum();
     let leftover = (main - gaps - fixed).max(0.0);
+    // The room the fixed children are over by, and what they collectively
+    // offered to give: whichever is smaller is what actually comes back, so a
+    // strip short by more than the give still overflows rather than cutting
+    // into floors.
+    let deficit = (gaps + fixed - main).max(0.0);
+    let offered: f32 = children
+        .iter()
+        .filter(|c| explicit_of(c).is_none())
+        .filter_map(wanted_of)
+        .map(|(_, give)| give)
+        .sum();
+    let taken = deficit.min(offered);
+    let squeeze = |c: &Widget| match (explicit_of(c), wanted_of(c)) {
+        (Some(px), _) => px,
+        (None, Some((want, give))) if taken > 0.0 && offered > 0.0 => {
+            (want - taken * give / offered).max(0.0)
+        }
+        (None, Some((want, _))) => want,
+        (None, None) => 0.0,
+    };
     let share = |c: &Widget| match fixed_of(c) {
-        Some(px) => px.max(0.0),
+        Some(_) => squeeze(c),
         None if total_weight > 0.0 => {
             leftover * c.place.weight.unwrap_or(1.0).max(0.0) / total_weight
         }
@@ -1166,6 +1208,102 @@ mod tests {
         );
         // The cross axis fills regardless.
         assert!(placed[1..].iter().all(|p| p.rect.w == 600.0));
+    }
+
+    /// **A strip short of room asks its children for it back.** Four labelled
+    /// knobs want more than the column has, so each gives up its label strip —
+    /// what it offered and no more — instead of the last of them being placed
+    /// off the bottom edge.
+    #[test]
+    fn a_squeezed_strip_takes_back_what_its_children_offered() {
+        let m = Metrics::default();
+        let json = r#"{"type":"window","flow":"col","margin":0,"gap":0,"children":[
+            {"id":1,"type":"knob","label":"a"},
+            {"id":2,"type":"knob","label":"b"},
+            {"id":3,"type":"knob","label":"c"},
+            {"id":4,"type":"knob","label":"d"}]}"#;
+        let w = tree(json);
+        let want = w.children[0]
+            .natural_size(&m, 1.0)
+            .1
+            .expect("a knob knows its height");
+        let floor = w.children[0]
+            .floor_size(&m, 1.0)
+            .1
+            .expect("and what it keeps of it");
+        assert!(floor < want, "a labelled knob has a strip to give");
+
+        // Roomy: everyone gets what they asked for.
+        let roomy = layout(Rect::new(0.0, 0.0, 600.0, 4.0 * want), &w, &m);
+        assert!(roomy[1..].iter().all(|p| (p.rect.h - want).abs() < 1e-3));
+
+        // Short by exactly one strip: the four split it evenly, since they
+        // offered the same.
+        let deficit = want - floor;
+        let placed = layout(Rect::new(0.0, 0.0, 600.0, 4.0 * want - deficit), &w, &m);
+        for p in &placed[1..] {
+            assert!(
+                (p.rect.h - (want - deficit / 4.0)).abs() < 1e-3,
+                "each gives a quarter of the deficit"
+            );
+        }
+        let last = placed[4].rect;
+        assert!(
+            (last.y + last.h - (4.0 * want - deficit)).abs() < 1e-3,
+            "and the column ends where the area does"
+        );
+    }
+
+    /// The floor is a floor: past it the strip overflows rather than cutting
+    /// into what a widget said it keeps, and a widget with nothing to give
+    /// (an unlabelled knob) is not squeezed at all.
+    #[test]
+    fn a_squeeze_stops_at_the_floor_and_skips_what_offered_nothing() {
+        let m = Metrics::default();
+        let w = tree(
+            r#"{"type":"window","flow":"col","margin":0,"gap":0,"children":[
+            {"id":1,"type":"knob","label":"a"},
+            {"id":2,"type":"knob"}]}"#,
+        );
+        let (labelled, bare) = (&w.children[0], &w.children[1]);
+        let want = labelled.natural_size(&m, 1.0).1.unwrap();
+        let floor = labelled.floor_size(&m, 1.0).1.unwrap();
+        let bare_h = bare.natural_size(&m, 1.0).1.unwrap();
+        assert_eq!(
+            bare.floor_size(&m, 1.0).1,
+            Some(bare_h),
+            "no label, nothing to give"
+        );
+
+        // Half the room the two want: the give runs out and the rest overflows.
+        let placed = layout(Rect::new(0.0, 0.0, 600.0, (want + bare_h) * 0.5), &w, &m);
+        assert!(
+            (placed[1].rect.h - floor).abs() < 1e-3,
+            "the labelled one lands on its floor and stops"
+        );
+        assert!(
+            (placed[2].rect.h - bare_h).abs() < 1e-3,
+            "the bare one keeps what it asked for"
+        );
+    }
+
+    /// An explicit `h` is a number the script wrote: it is never squeezed, or
+    /// the one way to pin a size would stop pinning it.
+    #[test]
+    fn an_explicit_size_is_not_squeezed() {
+        let m = Metrics::default();
+        let w = tree(
+            r#"{"type":"window","flow":"col","margin":0,"gap":0,"children":[
+            {"id":1,"type":"knob","label":"a","h":200},
+            {"id":2,"type":"knob","label":"b"}]}"#,
+        );
+        let floor = w.children[1].floor_size(&m, 1.0).1.unwrap();
+        let placed = layout(Rect::new(0.0, 0.0, 600.0, 120.0), &w, &m);
+        assert_eq!(placed[1].rect.h, 200.0, "the pinned one keeps its 200");
+        assert!(
+            (placed[2].rect.h - floor).abs() < 1e-3,
+            "the whole deficit comes out of the one that offered"
+        );
     }
 
     #[test]

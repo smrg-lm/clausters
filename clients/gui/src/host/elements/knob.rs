@@ -60,6 +60,17 @@ impl Element for Knob {
         (None, Some(knob_h(&self.range, m, scale)))
     }
 
+    /// Squeezed, a knob gives up its **label strip** and keeps disc and
+    /// read-out: a knob with no caption is terser, a knob with no number is a
+    /// control you cannot read, and a disc cut into is a control you cannot
+    /// aim. Unlabelled it has nothing to give and floors where it stands.
+    fn floor(&self, m: &Metrics, scale: f32) -> Natural {
+        (
+            None,
+            Some(knob_h(&self.range, m, scale) - controls::label_give(&self.range, m, scale)),
+        )
+    }
+
     /// Asked to be fitted, it has a width after all, and it is the width of the
     /// **whole** control: a knob is a label strip over a disc over a read-out,
     /// all three drawn by one element into one cell, so fitting it to the disc

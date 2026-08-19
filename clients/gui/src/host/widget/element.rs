@@ -1236,6 +1236,32 @@ pub trait Element: fmt::Debug {
         self.natural(m, scale)
     }
 
+    /// The smallest extent at which this element still says what it is — what
+    /// it keeps when the strip holding it cannot give everyone what they want.
+    ///
+    /// [`natural`](Element::natural) is the wanted size and this is its floor,
+    /// so the two answer the same question from either end and the layout has
+    /// a range instead of a single number. A strip short of room takes the
+    /// difference back ([`super::super::layout`]), proportionally to what each
+    /// child offered, and an element that offers nothing keeps what it asked
+    /// for — being squeezed is a thing a widget **consents** to, one part at a
+    /// time, not something the container does to it.
+    ///
+    /// What is given up is the element's own answer and the reason the door
+    /// exists: a labelled control drops its **label strip** and keeps its body,
+    /// which is the same order `graphics::controls::label_height` already stops
+    /// drawing in, so the reservation and the drawing cannot disagree. A
+    /// control with nothing to drop floors at its natural size and says so by
+    /// returning it.
+    ///
+    /// Pure over the metrics and the scale, exactly like `natural` — a floor
+    /// that read the data would relayout on a `/gui_set` just as surely.
+    /// Elastic on both axes by default: an element that never declared a
+    /// wanted size has nothing to floor.
+    fn floor(&self, m: &Metrics, scale: f32) -> Natural {
+        self.natural(m, scale)
+    }
+
     /// This element's current value, for `/gui_event` and `/gui_query`.
     fn value(&self) -> Option<OscType> {
         None

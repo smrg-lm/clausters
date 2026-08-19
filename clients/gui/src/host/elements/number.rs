@@ -53,6 +53,16 @@ impl Element for Number {
         (None, Some(field_h(&self.range, m, scale)))
     }
 
+    /// Squeezed, a field gives up its **label strip** and keeps its box: the
+    /// value is the whole widget, and a box shorter than the glyphs inside it
+    /// is a drawing that lies.
+    fn floor(&self, m: &Metrics, scale: f32) -> Natural {
+        (
+            None,
+            Some(field_h(&self.range, m, scale) - controls::label_give(&self.range, m, scale)),
+        )
+    }
+
     fn value(&self) -> Option<OscType> {
         control::value(&self.range)
     }

@@ -86,6 +86,25 @@ impl Element for Slider {
         }
     }
 
+    /// A horizontal slider gives up its **label strip** across the track and
+    /// keeps the groove, the grip and the read-out under them — the three that
+    /// are the control. A vertical one is sized by its *grip* across the track
+    /// and its label rides above the axis rather than across it, so there is
+    /// nothing on that axis to give.
+    fn floor(&self, m: &Metrics, scale: f32) -> Natural {
+        if self.vertical {
+            (Some(slider_across(m)), None)
+        } else {
+            (
+                None,
+                Some(
+                    slider_thick(&self.range, m, scale)
+                        - controls::label_give(&self.range, m, scale),
+                ),
+            )
+        }
+    }
+
     fn value(&self) -> Option<OscType> {
         control::value(&self.range)
     }

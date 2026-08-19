@@ -128,9 +128,8 @@ example, and none blocks anything that is.
   against it** *(root `PLAN.md`, Future directions)* — the contrast tests caught
   eleven drifted builders, which is strictly weaker than not hand-writing the mirrors.
 - **The level body's fade is a guess**; **a take is drawn in amplitude
-  and heard in decibels**; **an element's look does not answer for the space it
-  is given**; **the other text over pictures has no plate yet**; **persistence
-  saves the document, not what the user did to it** — `clients/gui/PLAN.md`,
+  and heard in decibels**; **the other text over pictures has no plate yet**;
+  **persistence saves the document, not what the user did to it** — `clients/gui/PLAN.md`,
   Found by use, each with its record of what was seen; **many channels are drawn
   and not yet readable, and a take cannot be created empty**, **time-stretch: an
   edge that changes the material rather than the window** and **the audio

@@ -44,6 +44,22 @@
 //! [`Widget::natural_size`], not the kind's, because a **container** may be
 //! sized by what it holds — see [`Widget::hug_size`], which is still one
 //! bottom-up walk over these same pure functions and not a measurement pass.
+//!
+//! **A wanted size has a floor, and that is the other direction.** A strip
+//! shorter than what its children asked for used to place them at full size
+//! anyway, so the last of them was drawn off the edge — the container had no
+//! way to ask for room back and no way to know what asking would cost. So a
+//! widget answers at both ends: [`Widget::floor_size`] is the smallest it
+//! still says what it is at, the layout takes the deficit out of the
+//! difference in proportion to what each offered, and a widget that offers
+//! nothing keeps what it asked for even though the strip still overflows.
+//! What is given up is the widget's own choice and never the container's
+//! guess — a labelled control drops its **label strip** and keeps its body,
+//! which is the same term the drawing stops reserving
+//! (`graphics::controls::label_height`), so the two cannot disagree about how
+//! much room the strip took. Still one pass and still no solver: the floor is
+//! as pure over the metrics as the wanted size, and an elastic child needs no
+//! floor because sharing the leftover already takes it to nothing.
 
 use super::super::font;
 use super::super::metrics::{Metrics, snap_px};
@@ -113,6 +129,25 @@ impl WidgetKind {
             _ => (None, None),
         }
     }
+
+    /// The smallest extent this widget still says what it is at — the floor of
+    /// [`natural_size`](WidgetKind::natural_size), and the other end of the
+    /// range the layout resolves a squeezed strip over.
+    ///
+    /// A container is a surface and floors at nothing, which is what it always
+    /// answered. A **ruler** floors at its own thickness: the strip is one row
+    /// of labels over a row of ticks, and there is no shorter form of it. A
+    /// registered element answers for itself
+    /// ([`Element::floor`](super::Element::floor)), and answering the natural
+    /// size — the default — means "nothing to give", which is the answer that
+    /// keeps today's behavior for a widget that never thought about it.
+    pub fn floor_size(&self, m: &Metrics, scale: f32) -> Natural {
+        match self {
+            WidgetKind::TimeRuler { .. } => (None, Some(m.ruler_h)),
+            WidgetKind::Custom(el) => el.floor(m, scale),
+            _ => (None, None),
+        }
+    }
 }
 
 impl Widget {
@@ -131,6 +166,33 @@ impl Widget {
         } else {
             self.kind.natural_size(m, scale)
         }
+    }
+
+    /// The smallest size this widget still says what it is at, in the layout
+    /// that places it — the floor of [`Widget::natural_size`], and the second
+    /// half of the range [`super::super::layout`] resolves a **squeezed** strip
+    /// over.
+    ///
+    /// The answer is normalized here so no caller has to defend against a
+    /// widget's own arithmetic: an axis the widget left unanswered floors at
+    /// what it wanted (nothing to give, which is what an element that never
+    /// overrode the door is saying), and a floor above the wanted size is
+    /// clamped down to it. So `floor_size <= natural_size` on every axis, by
+    /// construction, and the difference between them is exactly what the
+    /// layout may take back.
+    ///
+    /// A hugging container floors at the composition of its children's floors,
+    /// the same bottom-up walk `hug` already makes: a hugging panel gives up
+    /// what the controls inside it are willing to give up and not a pixel
+    /// more.
+    pub fn floor_size(&self, m: &Metrics, scale: f32) -> Natural {
+        let wanted = self.natural_size(m, scale);
+        let floor = if self.hugs() {
+            self.fitted(m, scale, Want::Floor)
+        } else {
+            self.kind.floor_size(m, scale)
+        };
+        (settle(floor.0, wanted.0), settle(floor.1, wanted.1))
     }
 
     /// Whether this container carries the `hug` prop.
@@ -164,9 +226,17 @@ impl Widget {
     /// lane, a heavy view) cannot know its own, so it hands the axis back to
     /// the layout rather than guessing at it.
     pub fn hug_size(&self, m: &Metrics, scale: f32) -> Natural {
+        self.fitted(m, scale, Want::Content)
+    }
+
+    /// The one walk both fitted questions take, told apart by `want`: the
+    /// composition is the same arrangement arithmetic either way, and only what
+    /// a **leaf** is asked differs — what its content wants, or the floor it
+    /// keeps of it.
+    fn fitted(&self, m: &Metrics, scale: f32, want: Want) -> Natural {
         match &self.kind {
             WidgetKind::Window { layout, flow, .. } | WidgetKind::Panel { layout, flow, .. } => {
-                compose(&self.children, *layout, *flow, m, scale)
+                compose(&self.children, *layout, *flow, m, scale, want)
             }
             // A stack arranges nothing: every page fills it, so its content is
             // the largest of them, inset by its own margin.
@@ -175,30 +245,77 @@ impl Widget {
                 let (w, h) = self
                     .children
                     .iter()
-                    .map(|c| c.hug_size(m, scale))
+                    .map(|c| c.fitted(m, scale, want))
                     .fold((Some(0.0f32), Some(0.0f32)), |(aw, ah), (w, h)| {
                         (largest(aw, w), largest(ah, h))
                     });
                 (w.map(|w| w + pad), h.map(|h| h + pad))
             }
-            WidgetKind::Custom(el) => el.hug(m, scale),
+            WidgetKind::Custom(el) => {
+                let content = el.hug(m, scale);
+                match want {
+                    Want::Content => content,
+                    // A leaf that declared no floor on an axis gives nothing
+                    // there, so its floor is what it wanted — settled against
+                    // the *content* size, since that is what is being composed.
+                    Want::Floor => {
+                        let floor = el.floor(m, scale);
+                        (settle(floor.0, content.0), settle(floor.1, content.1))
+                    }
+                }
+            }
             // Everything else wants what it always wanted: a `scroll` is a
             // viewport onto a content area of its own (`content_w`/`content_h`
             // is where a plane's extent is named), a time container's span is
             // its axis', and a built-in leaf has no content prop to read.
-            _ => self.kind.natural_size(m, scale),
+            _ => match want {
+                Want::Content => self.kind.natural_size(m, scale),
+                Want::Floor => {
+                    let wanted = self.kind.natural_size(m, scale);
+                    let floor = self.kind.floor_size(m, scale);
+                    (settle(floor.0, wanted.0), settle(floor.1, wanted.1))
+                }
+            },
         }
+    }
+}
+
+/// Which end of a widget's range a fitting walk is asking for.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Want {
+    /// How big the content is — what a `hug` fits itself to.
+    Content,
+    /// The smallest the content still says what it is at — what a squeezed
+    /// strip may take a widget down to.
+    Floor,
+}
+
+/// One axis of a floor, settled against what the widget wanted on it: an axis
+/// left unanswered floors at the wanted size (nothing to give), and a floor
+/// above it is clamped down. Elastic stays elastic.
+fn settle(floor: Option<f32>, wanted: Option<f32>) -> Option<f32> {
+    match (floor, wanted) {
+        (_, None) => None,
+        (None, w) => w,
+        (Some(f), Some(w)) => Some(f.clamp(0.0, w)),
     }
 }
 
 /// The composition of `children`'s content sizes under one arrangement — the
 /// whole of what a hugging container adds, and one bottom-up walk over
 /// functions that were already pure.
-fn compose(children: &[Widget], layout: Layout, flow: Flow, m: &Metrics, scale: f32) -> Natural {
+fn compose(
+    children: &[Widget],
+    layout: Layout,
+    flow: Flow,
+    m: &Metrics,
+    scale: f32,
+    want: Want,
+) -> Natural {
     let pad = 2.0 * flow.margin.map_or(m.margin, |v| snap_px(v, scale)).max(0.0);
     let gap = flow.gap.map_or(m.gap, |v| snap_px(v, scale)).max(0.0);
     let gaps = gap * (children.len().max(1) - 1) as f32;
-    let sizes: Vec<Natural> = children.iter().map(|c| c.hug_size(m, scale)).collect();
+    let sizes: Vec<Natural> = children.iter().map(|c| c.fitted(m, scale, want)).collect();
     let (w, h) = match layout {
         // Along the axis the children are strung on, the container is their
         // sum plus the gaps between them; across it, the largest of them.
@@ -283,6 +400,85 @@ mod tests {
     /// density and outside any workspace.
     fn wants(json: &str) -> Natural {
         tree(json).natural_size(&Metrics::default(), 1.0)
+    }
+
+    /// The smallest size it still says what it is at, same conditions.
+    fn keeps(json: &str) -> Natural {
+        tree(json).floor_size(&Metrics::default(), 1.0)
+    }
+
+    /// **A floor is settled against what was wanted**, so no caller has to
+    /// defend against a widget's own arithmetic: an unanswered axis floors at
+    /// the wanted size, and elastic stays elastic.
+    #[test]
+    fn a_floor_never_passes_the_size_it_is_the_floor_of() {
+        assert_eq!(
+            settle(None, Some(30.0)),
+            Some(30.0),
+            "unanswered gives none"
+        );
+        assert_eq!(settle(Some(10.0), Some(30.0)), Some(10.0));
+        assert_eq!(settle(Some(40.0), Some(30.0)), Some(30.0), "clamped down");
+        assert_eq!(settle(Some(-5.0), Some(30.0)), Some(0.0), "never negative");
+        assert_eq!(settle(Some(10.0), None), None, "elastic stays elastic");
+    }
+
+    /// A widget that never overrode the door floors where it stands, which is
+    /// what keeps a squeeze from touching anything that did not consent to it.
+    #[test]
+    fn a_widget_with_nothing_to_give_floors_at_its_natural_size() {
+        for json in [
+            r#"{"id":1,"type":"button","label":"go"}"#,
+            r#"{"id":1,"type":"label","text":"hello"}"#,
+            r#"{"id":1,"type":"knob"}"#,
+            r#"{"id":1,"type":"timeruler"}"#,
+            r#"{"id":1,"type":"panel"}"#,
+        ] {
+            assert_eq!(keeps(json), wants(json), "{json}");
+        }
+    }
+
+    /// A labelled control gives up exactly its label strip — the term the
+    /// drawing stops reserving — and nothing else.
+    #[test]
+    fn a_labelled_control_gives_up_its_label_strip() {
+        let m = Metrics::default();
+        for json in [
+            r#"{"id":1,"type":"knob","label":"cutoff"}"#,
+            r#"{"id":1,"type":"number","label":"gain"}"#,
+            r#"{"id":1,"type":"slider","label":"mix"}"#,
+            r#"{"id":1,"type":"menu","label":"wave","options":["a","b"]}"#,
+            r#"{"id":1,"type":"text","label":"name"}"#,
+        ] {
+            let size = crate::host::widget::Range::parse(&Default::default()).text_size;
+            let strip = label_strip(true, size, &m);
+            let (want, floor) = (wants(json).1.unwrap(), keeps(json).1.unwrap());
+            assert!(
+                (want - floor - strip).abs() < 1e-3,
+                "{json}: gives {} where the strip is {strip}",
+                want - floor
+            );
+        }
+    }
+
+    /// A hugging container floors at the composition of its children's floors:
+    /// it gives up what the controls inside it are willing to give up, and a
+    /// panel of controls that offer nothing offers nothing.
+    #[test]
+    fn a_hugging_container_floors_at_what_it_holds() {
+        let labelled = r#"{"id":9,"type":"layout","hug":1,"flow":"col","margin":0,"gap":0,
+            "children":[{"id":1,"type":"knob","label":"a"},{"id":2,"type":"knob","label":"b"}]}"#;
+        let (want, floor) = (wants(labelled).1.unwrap(), keeps(labelled).1.unwrap());
+        let one = wants(r#"{"id":1,"type":"knob","label":"a"}"#).1.unwrap()
+            - keeps(r#"{"id":1,"type":"knob","label":"a"}"#).1.unwrap();
+        assert!(
+            (want - floor - 2.0 * one).abs() < 1e-3,
+            "the panel offers both strips"
+        );
+
+        let bare = r#"{"id":9,"type":"layout","hug":1,"flow":"col","margin":0,"gap":0,
+            "children":[{"id":1,"type":"knob"},{"id":2,"type":"knob"}]}"#;
+        assert_eq!(keeps(bare), wants(bare), "nothing inside it to give");
     }
 
     /// The size a widget wants when a container is being fitted to it.

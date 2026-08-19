@@ -108,6 +108,13 @@ impl Element for Menu {
         )
     }
 
+    /// Squeezed, a menu gives up its **label strip** and keeps the box with
+    /// the chosen option in it — the caption names the choice, the box *is* it.
+    fn floor(&self, m: &Metrics, scale: f32) -> Natural {
+        let size = self.text_size * scale;
+        (None, Some(body_inset(m) + control_box(size, m)))
+    }
+
     /// The **options**, not the chosen one: the set is a prop and the choice is
     /// a value, so a hugged menu is as wide as its widest option and does not
     /// resize when the reader picks a shorter one. Its marker gutter rides

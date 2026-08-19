@@ -145,6 +145,18 @@ impl Element for Text {
         )
     }
 
+    /// Squeezed, a single-line field gives up its **label strip** and keeps
+    /// its box: a field shorter than the row it is typed into cannot show the
+    /// caret it is being typed with. A multiline field is elastic and floors
+    /// at nothing, the same answer its natural size gives.
+    fn floor(&self, m: &Metrics, scale: f32) -> Natural {
+        let size = self.text_size * scale;
+        (
+            None,
+            (!self.multiline).then(|| body_inset(m) + control_box(size, m)),
+        )
+    }
+
     fn value(&self) -> Option<OscType> {
         Some(OscType::String(self.value.clone()))
     }

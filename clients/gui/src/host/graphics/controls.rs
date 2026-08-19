@@ -25,7 +25,7 @@ use crate::host::widget::{Align, Range};
 /// clear of their own background), while a value with no caption is merely
 /// terser. Every geometry here goes through this, so the strip that is not
 /// reserved is also not drawn.
-fn label_height(rect_h: f32, has_label: bool, text_size: f32, m: &Metrics) -> f32 {
+pub fn label_height(rect_h: f32, has_label: bool, text_size: f32, m: &Metrics) -> f32 {
     let strip = font::height(text_size) + m.pad;
     if has_label && rect_h - strip - 2.0 * m.pad >= font::height(text_size) {
         strip
@@ -724,6 +724,21 @@ fn fmt(v: f32) -> String {
 // the drawing and by the size. They lived apart, which is how the size pass came
 // to import this module; they are one section now, and an element's `natural`
 // calls straight into it.
+
+/// What a labelled control gives up first when the strip holding it is short:
+/// its **label strip**, and nothing else. Subtracted from a natural height it
+/// is that control's floor
+/// ([`Element::floor`](crate::host::widget::element::Element::floor)).
+///
+/// It is the same term [`label_height`] stops reserving once the cell cannot
+/// hold both, read from one place so the floor a widget offers and the drawing
+/// that follows cannot name different numbers — offer a strip the drawing
+/// keeps and the body is cut instead; keep one the drawing drops and the
+/// control floats in dead space. Unlabelled, there is nothing to give and this
+/// is zero.
+pub fn label_give(r: &Range, m: &Metrics, scale: f32) -> f32 {
+    size::label_strip(r.label.is_some(), r.text_size * scale, m)
+}
 
 /// A labelled field's height: its label strip, its body inset and one control
 /// line (the read-out row).
