@@ -489,24 +489,14 @@ impl App {
         }
     }
 
-    /// Whether this window has material **it has not drawn yet** — a write
-    /// frontier standing ahead of the one this leg last summarized.
+    /// Whether this window draws material that is **still being written** —
+    /// a frontier that has moved and has not reached the end of the buffer.
     ///
-    /// It is the wake condition for a recording, and the question it asks is
-    /// *is there anything to catch up on*, not *is something still writing*.
-    /// Those come apart in exactly the case that matters. The condition is
-    /// evaluated after the tick has already followed, so a writer that finishes
-    /// in between — the last block of a take, published and undrawn — would
-    /// leave "still writing" false with material outstanding: the loop would
-    /// schedule no wake, and the final block would sit there until something
-    /// unrelated repainted the window. That is a take that stops one block
-    /// short of itself for as long as nobody touches the mouse.
-    ///
-    /// Asked this way it is still narrow enough that an ordinary session window
-    /// sleeps: a take read from a file has no frontier at all (nothing wrote it
-    /// here), and one that a single write touched is caught up on the next tick
-    /// and then answers false like everything else. What it costs is a relaxed
-    /// load per drawn buffer, which is what it always cost.
+    /// It is the wake condition for a recording, and it is deliberately narrow
+    /// so an ordinary session window still sleeps: a take read from a file has
+    /// no frontier at all (nothing wrote it here), and a finished recording
+    /// has one that stopped moving at the buffer's end. What is left is a
+    /// take being filled right now.
     #[cfg(unix)]
     pub(super) fn window_follows_a_recording(&self, def_id: i32) -> bool {
         let Some(material) = self.host.material() else {
@@ -516,17 +506,17 @@ impl App {
             return false;
         };
         tree.descendants().any(|w| {
-            let (Some(id), Some(el)) = (w.id, w.kind.as_element()) else {
+            let Some(el) = w.kind.as_element() else {
                 return false;
             };
-            let Some(bufnum) = el.material_buffer() else {
+            let (Some(bufnum), Some((_, frames))) = (el.material_buffer(), el.material_shape())
+            else {
                 return false;
             };
-            let drawn = self.frontiers.get(&(def_id, id)).copied().unwrap_or(0);
             usize::try_from(bufnum)
                 .ok()
                 .and_then(|index| material.frontier(index))
-                .is_some_and(|frontier| frontier > drawn)
+                .is_some_and(|frontier| frontier > 0 && frontier < frames)
         })
     }
 
