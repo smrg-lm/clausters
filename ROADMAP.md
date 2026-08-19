@@ -1,11 +1,11 @@
 # Roadmap — the order the open work is taken in
 
-*Rewritten 2026-08-18, twice: once when the clip's interaction rules closed and
-again when the real-sizes phase did, taking its six entries with it (and before
-that twice on 2026-08-17: against the plans and the last month of history, then
-again once the autonomous editor closed). A rewrite **drops what is done** and reorganizes what is left: this file is not a record
-of anything, and the record of what shipped is the git history and each plan's
-own checkbox.*
+*Rewritten 2026-08-19, when the picture-reads-the-material phase closed and took
+its entries with it (before that: twice on 2026-08-18, when the clip's
+interaction rules and the real-sizes phase closed, and twice on 2026-08-17,
+against the plans and once the autonomous editor closed). A rewrite **drops what
+is done** and reorganizes what is left: this file is not a record of anything,
+and the record of what shipped is the git history and each plan's own checkbox.*
 
 **This file is temporary, and it defines nothing.** It is a working sequence
 over pending work that lives, already written, across several `PLAN.md` files —
@@ -21,17 +21,22 @@ it rather than against taste: **a functionally complete example of the
 arrangement, the document and the GUI together** — a composition built in
 Python, drawn as a multitrack editor, edited by hand, heard, undone, redone,
 saved and reopened — on a model that is **usable and correct at real sizes**,
-not only at an example's. Both halves are load-bearing, and most of both are now
-behind the list rather than in it: the loop runs, a saved piece comes back as the
-piece that was saved, the editor is an application with its own processes, a clip
-has interaction rules, and the taxes every session paid — an async command's
-100 ms floor, a killed editor's segments, a persisted def that would not load and
-could not be named — are paid. **The second half is paid too**: the picture
-reads the material it maps instead of copying it, and following a recording
-costs the block rather than the take, so a take grows with the sound at the
-frame. **Nothing left below is a defect anybody sees** — what remains of the
-first phase is a saving, and what follows it is not on the path at all: a port
-the destination does not wait on, and a track that is genuinely later.
+not only at an example's.
+
+**Both halves are behind the list now.** The loop runs, a saved piece comes back
+as the piece that was saved, the editor is an application with its own
+processes, a clip has interaction rules, and the taxes every session paid — an
+async command's 100 ms floor, a killed editor's segments, a persisted def that
+would not load and could not be named — are paid. The picture reads the material
+it maps instead of copying it; a recording is drawn as it fills, at the frame,
+on any server and in a page as well as in a window; and a page zoomed past its
+summary reads the span it is looking at, so the browser draws what the native
+window draws rather than stopping at a bucket.
+
+**So what is left below is not on the path to that example.** One port the
+destination does not wait on, and one track that is genuinely later. Everything
+else is in the section after them, named so that "not scheduled" reads as a
+decision.
 
 Where the work lives:
 
@@ -54,20 +59,15 @@ right — that is the normal failure, not a sign the work vanished.
 
 ---
 
-## Phase 1 — the picture reads the material
-
-*What it buys: a picture that reads the material rather than a copy of it. **The phase is one entry from done**: H7, S20, H8 and H9 shipped, and with them the `fills` prop, the last copy (the summary a refresh cloned because the slot drawing it held it), the streamed overview a page folds into the picture it holds — which also fixed a wire that had never reported anything on a server with no segment — and the span a zoomed-in page reads back, which is what makes the browser draw what the native window draws at every zoom rather than down to a bucket. What is left is the one thing S20 dropped on purpose.*
-
-- ⬜ **A take's overview could be a file beside its region** *(root `PLAN.md`, Future directions)* — dropped from S20 when the frontier turned out to answer the live question on its own; it buys the opening pass and brings a second writer of derived state.
-
-## Phase 2 — the packages move together: the arrangement reaches the web client
+## Phase 1 — the packages move together: the arrangement reaches the web client
 
 *What it buys: the rule the project already states, applied to the largest
 outstanding violation. `form/`, `gui/editor.py`, `gui/transport.py` and
 `gui/notation.py` have **no TypeScript counterpart at all** — the whole
-arrangement, document and editor layer exists in one client. It waits only on the phase above, and is
-still here for the same reason it was last: it is a port, and porting is cheapest once the
-layer has stopped moving — which is what the closed phases did to it.*
+arrangement, document and editor layer exists in one client. It waits on
+nothing now, and it is still here for the reason it always was: it is a port,
+and porting is cheapest once the layer has stopped moving, which is what the
+closed phases did to it.*
 
 - ⬜ **W16 — Example parity with the Python client**, and its named track: the
   arrangement layer and the editor. The shape `gui/notation.py`'s port follows
@@ -79,7 +79,15 @@ layer has stopped moving — which is what the closed phases did to it.*
 - ⬜ **W7** (the Faust surfaces), **W9** (MIDI), **W15** (the bundle writer) —
   unported features, each owned, none on the path to the complete example.
 
-## Phase 3 — the spectral editor
+**Two debts this phase should collect on the way**, both opened 2026-08-19 and
+both cheap while a port is already touching those files: **a bulk read of more
+than one chunk gets no reply on the in-page carrier** (`clients/web/PLAN.md`,
+Found by use — `getSamples` fails by default and works when a chunk size nobody
+should have to know is passed), and **following a recording has a class in the
+web client and a primitive here** (`clients/python/PLAN.md`, Found by use — the
+reference client is the one that ended up with less, which is backwards).
+
+## Phase 2 — the spectral editor
 
 *Everything here is genuinely later: it needs the A track's descriptors, it is
 partly experimental, and none of it is on the path to the complete example.*
@@ -107,6 +115,31 @@ partly experimental, and none of it is on the path to the complete example.*
 Named so "not scheduled" reads as a decision rather than an oversight. Each is
 in its own plan with its own reasoning; none is on the path to the complete
 example, and none blocks anything that is.
+
+**What the material work left behind** (2026-08-19, closing that phase):
+
+- **A take's overview could be a file beside its region** *(root `PLAN.md`,
+  Future directions)* — dropped from S20 when the frontier answered the live
+  question on its own. It buys the opening pass, brings a second writer of
+  derived state, and **it is what unblocks the fork below**.
+- **A view of a server buffer has two ways of getting its material, and what
+  chooses between them is the wrong question** *(`clients/gui/PLAN.md`, Future
+  directions)* — the whole buffer downloaded, or shape plus summary plus the
+  spans a zoom asks for, with `fills` choosing: a question about recording
+  standing in for one about cost. Blocked on the entry above (or on anything
+  else that lets a client ask for a summary without reading the material), and
+  deliberately not half-fixed before there is one.
+- **A page cannot follow another peer's edit, and now says so instead of showing
+  it** *(`clients/gui/PLAN.md`, Found by use)* — the span-fetch machine it wanted
+  now exists (H9); what is left is the trigger and re-summarizing the announced
+  buckets.
+- **The in-page shared-memory path — a track to open** *(`clients/gui/PLAN.md`,
+  Future directions)* — a `SharedArrayBuffer` would make a page's host read the
+  engine's memory as the native one reads the segment (zoom to the sample while
+  a take records, no messages at all). Left out by requirement: SAB needs
+  COOP/COEP, which an embeddable component cannot demand of its page.
+
+**The rest**, unchanged:
 
 - **The GUI host's own documentation** — `K16`/`K16a`/`K16b`/`K16c`. Waits on
   nothing; costs a decision about a fourth mdBook that the project's three-book
@@ -139,9 +172,9 @@ example, and none blocks anything that is.
   next, and it is a track's worth: the same layer mechanism with richer
   contents, visualization layers kept separate from edit layers.
 - **The larger "Future directions"** in each plan — the free arrangement plane,
-  the in-page shared-memory path, an interpreter inside a standalone host,
-  per-node staleness, more than one owner of one document, IME text, a Tauri
-  wrapper, the heavy families as features, a steady goniometer.
+  an interpreter inside a standalone host, per-node staleness, more than one
+  owner of one document, IME text, a Tauri wrapper, the heavy families as
+  features, a steady goniometer.
 
 ## Revising this file
 
