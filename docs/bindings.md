@@ -283,7 +283,7 @@ every bulk path already has, recorded in `docs/ipc.md`.
 | `clausters_core_shm_abi_version` | — | `n/a` — the segment layout version; a page has no segment to check it against |
 | `clausters_core_shm_shape` | — | `n/a` — every count and byte offset in one call, so a binding stops carrying half the layout |
 | `clausters_core_shm_segment_size` | — | `n/a` — how big a segment with these counts is, for a peer sizing a file to create one |
-| `clausters_core_shm_init` | — | `n/a` — writes a fresh header, for a peer that **creates** a segment rather than attaching; the editor's arrangement makes that ordinary, since whoever owns the material owns the segment |
+| `clausters_core_shm_init` | — | `n/a` — writes a fresh header, for a peer that **creates** a segment rather than attaching; the editor's arrangement makes that ordinary, since whoever owns the samples owns the segment |
 | `clausters_core_shm_buffer_info` | — | `n/a` — the buffer directory's row, read under its seqlock |
 | `clausters_core_shm_region_suffix` | — | `n/a` — the name a buffer's region file carries; three processes name that file |
 | `clausters_core_shm_push` | — | `n/a` — the command ring's framing (length, peer tag, padding) |

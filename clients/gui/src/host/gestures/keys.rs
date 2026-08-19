@@ -196,7 +196,7 @@ impl Gestures {
         out
     }
 
-    /// **Plays the material under the cursor, or stops what is playing** — the
+    /// **Plays the contents under the cursor, or stops what is playing** — the
     /// editor's monitor, on the space bar.
     ///
     /// Addressed by the pointer for the same reason a copy is: a window may
@@ -235,7 +235,7 @@ impl Gestures {
         if let Some(loaded) = host.monitor()
             && over.is_none_or(|id| id == loaded.widget)
         {
-            host.pause_material();
+            host.pause_playback();
             return Some(Vec::new());
         }
         let id = over?;
@@ -251,8 +251,7 @@ impl Gestures {
         let span = state
             .and_then(|s| s.selection())
             .map(|(from, len)| (from.max(0.0) as u64, (from + len).max(0.0) as u64));
-        host.play_material(ctx.def_id, id, start, span)
-            .then(Vec::new)
+        host.play_buffer(ctx.def_id, id, start, span).then(Vec::new)
     }
 
     /// **Cutting a clip in two, and joining two into one** — the placement
@@ -336,7 +335,7 @@ impl Gestures {
     ///
     /// The three verbs split exactly where the host's authority does. A **copy**
     /// is a read, and the host may honestly do it: it takes the selected span
-    /// out of the material it has *mapped* and puts it on the clipboard. A
+    /// out of the contents it has *mapped* and puts it on the clipboard. A
     /// source it cannot read — a mapped pyramid is an overview, a live view has
     /// no addressable past — **declines, visibly**, because putting silence on
     /// the clipboard is the one answer worse than saying no. A **cut** and a
@@ -374,7 +373,7 @@ impl Gestures {
                 // The selection is in **timeline** samples and an element reads
                 // its own frames: a clip placed late holds sample 0 at its
                 // offset, which is the one conversion between the axis and the
-                // material on it.
+                // contents on it.
                 let from = (start - offset).max(0.0) as u64;
                 let block = element_block(host, ctx, id, from, len as u64);
                 match block {
@@ -495,7 +494,7 @@ pub enum ClipVerb {
     Paste,
 }
 
-/// The material behind widget `id` over `frames` of its own frames from
+/// The contents behind widget `id` over `frames` of its own frames from
 /// `start` — the element's own answer ([`crate::host::widget::element::Element::sample_block`]), since only
 /// it knows what it holds and whether it may be read.
 fn element_block(

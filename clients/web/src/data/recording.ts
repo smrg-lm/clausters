@@ -1,6 +1,6 @@
 // A recording, followed from the page: the overview arrives, the samples never do.
 //
-// Every other way material reaches a picture announces itself — a client sends
+// Every other way samples reaches a picture announces itself — a client sends
 // samples, a peer edits a span and says so. A recording does not: a `RecordBuf`
 // fills a buffer block by block from the audio thread, which is the one place
 // that must never send a message. What the writer publishes instead is how far
@@ -81,7 +81,7 @@ export class RecordingStream {
 
     /**
      * Subscribes to `takes` and resolves once the server has acked. A
-     * subscription watches what happens **next**: material already recorded is
+     * subscription watches what happens **next**: samples already recorded is
      * a read (`Server.getSamples`), not a stream.
      */
     static async open(

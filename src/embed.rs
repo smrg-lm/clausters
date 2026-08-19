@@ -328,7 +328,7 @@ impl ClaustersHeadless {
     }
 }
 
-/// An in-process **on-demand session**: engine, network loop and material,
+/// An in-process **on-demand session**: engine, network loop and buffers,
 /// with **no audio device** — the mode an editor works in.
 ///
 /// `Clausters` below is the other door and the difference is the whole point:
@@ -336,12 +336,12 @@ impl ClaustersHeadless {
 /// output. (Named rather than linked: it is behind the `realtime` feature, and
 /// a link would resolve only in the builds that compile it in.) This one holds nothing but computation. It performs the editing
 /// verbs, renders on demand ([`/buffer_render`](crate::server::nrtsession)),
-/// and — given a `shm` path — **owns the material**: every buffer it installs
+/// and — given a `shm` path — **owns the buffers**: every buffer it installs
 /// lives in a region beside the segment, where a peer draws it, a peer edits
 /// it, and a separate RT server plays it.
 ///
 /// That separation is what a host needs to be an application rather than a
-/// window on a server: the editor and its material outlive the process that
+/// window on a server: the editor and its buffers outlive the process that
 /// happens to be making sound, and killing the player takes no take with it.
 ///
 /// It is driven exactly like `Clausters` — [`send`](Self::send) an OSC packet,
@@ -400,7 +400,7 @@ impl ClaustersSession {
         self.peer.try_pop(buf).map(|(_, len)| len)
     }
 
-    /// The segment this session publishes into — the material's directory,
+    /// The segment this session publishes into — the buffers' directory,
     /// the control buses, and the clocks somebody *else* writes.
     pub fn segment(&self) -> &Arc<Segment> {
         &self.segment

@@ -48,7 +48,7 @@ export type Intent =
     | {
         intent: "writesamples";
         node: NodeId;
-        /** Which channel of the node's material the span belongs to (0 when omitted). */
+        /** Which channel of the node's samples the span belongs to (0 when omitted). */
         channel?: number;
         start: number;
         values: number[];
@@ -102,13 +102,13 @@ export interface Applied {
     outcome: Outcome;
 }
 
-/** One piece of material a selection landed on. */
+/** One piece of samples a selection landed on. */
 export interface Resolved {
     /** The element the span belongs to. */
     node: NodeId;
-    /** Its material. */
+    /** Its samples. */
     source: number;
-    /** Which generation of that material this was resolved against. */
+    /** Which generation of that samples this was resolved against. */
     generation: number;
     /** The span within the source, in frames: trim and placement both applied. */
     range: { start: number; end: number };
@@ -198,16 +198,16 @@ export class Document {
     }
 
     /**
-     * Resolve a selection to the spans of material underneath it — placement,
+     * Resolve a selection to the spans of samples underneath it — placement,
      * trim and the clamp at both ends already applied.
      *
      * @param selection - what is selected.
      * @param framesPerBeat - the bridge between the arrangement's beats and the
-     *   material's frames. Supplied rather than derived: tempo is the caller's,
+     *   samples's frames. Supplied rather than derived: tempo is the caller's,
      *   the arithmetic is the crate's.
      * @param inBeats - whether the selection's numbers are beats rather than
      *   frames on the shared axis.
-     * @returns the spans, in tree order. Empty when nothing material was
+     * @returns the spans, in tree order. Empty when nothing samples was
      *   underneath — a group and a generator are in the way of a selection, not
      *   under it.
      */

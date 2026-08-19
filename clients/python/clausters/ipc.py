@@ -84,7 +84,7 @@ _ROLE_CLIENT = 1
 
 
 class MappedBuffer:
-    """One pool buffer's samples, mapped — the material itself, not a copy.
+    """One pool buffer's samples, mapped — the samples itself, not a copy.
 
     ``samples`` is a writable ``memoryview`` of ``f32`` in the buffer's own
     interleaved order, so reading is a memory read and writing is what the
@@ -203,7 +203,7 @@ class ShmClient:
 
     @property
     def transport_position(self) -> int:
-        """Where the transport is **in the piece**, in samples of the material.
+        """Where the transport is **in the piece**, in samples of the samples.
 
         Not a clock. `transport_clock` counts what has elapsed and only goes
         forward; this says where the piece is, so it jumps to wherever
@@ -269,7 +269,7 @@ class ShmClient:
         `clausters.defs.Buffer.get_samples` is a *fetch* only for a client that
         cannot map the segment.
 
-        **What may be written here is material, not computation**: samples a
+        **What may be written here is data, not computation**: samples a
         caller already holds (a drawn stroke, a pasted block). Every operation
         over samples — a gain, a fade, a reverse, a render — stays a command,
         because one place performs audio processing and it is the server.

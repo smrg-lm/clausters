@@ -138,7 +138,7 @@ pub(super) fn set_pending(
 ///
 /// **The samples between two motion events are what this is for.** A pointer
 /// reports where it is, not where it went, so a fast stroke arrives as a few
-/// widely spaced positions; writing only those would leave the material combed
+/// widely spaced positions; writing only those would leave the contents combed
 /// with holes. Filling them by interpolation is what makes the stroke a stroke.
 ///
 /// The run stays contiguous and may grow either way — a stroke that doubles
@@ -245,7 +245,7 @@ pub(super) fn set_selection(
 /// **Two conditions, and neither is "something is playing".** The host must be
 /// the one that bound the governed group (`Host::owns_transport`) — a script
 /// owns its own transport, and a sweep in a window it happens to be drawing is
-/// not a request to seek it. And the view must draw **material**: the
+/// not a request to seek it. And the view must draw **contents**: the
 /// transport's position is in frames of the piece, so a sweep on a lane
 /// measuring beats would send a number that means something else on an axis it
 /// does not belong to.
@@ -333,11 +333,11 @@ pub(super) struct ClipDrag {
     pub(super) nav_len: f64,
     pub(super) press_sample: f64,
     /// The placement the press found: where the clip sat, how long it was, and
-    /// which part of its material it showed.
+    /// which part of its contents it showed.
     pub(super) orig: interact::ClipPlacement,
-    /// What the material behind it allows — how many frames there are, and
+    /// What the contents behind it allows — how many frames there are, and
     /// whether the window loops off them.
-    pub(super) material: interact::Material,
+    pub(super) contents: interact::Contents,
     pub(super) grid: f64,
 }
 
@@ -362,7 +362,7 @@ pub(super) fn apply_clip_drag(
         .unwrap_or((d.nav_start, d.nav_len));
     let sample = interact::sample_at(nav_start, nav_len, d.body_x, d.body_w, cx);
     let placed =
-        interact::clip_drag_placement(d.part, sample, d.press_sample, d.orig, d.material, d.grid);
+        interact::clip_drag_placement(d.part, sample, d.press_sample, d.orig, d.contents, d.grid);
     interact::clip_set(host, def_id, d.id, placed);
     // The lane's extent moved with the clip: re-register it, so the shared axis
     // grows when a clip is dragged past the end — keeping the window's length,

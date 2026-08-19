@@ -516,11 +516,11 @@ export function signal(
         baseBucket?: number;
         navigable?: boolean;
         /**
-         * The material is **being written into as it is drawn** — a take you
+         * The samples are **being written into as they are drawn** — a take you
          * are recording. The view draws it up to the buffer's write frontier
          * and leaves the axis past it empty, rather than drawing a flat line
          * across the buffer's own zeros: past the frontier there is no
-         * silence, there is no material yet. The host cannot infer it — a
+         * silence, there is nothing yet. The host cannot infer it — a
          * frontier alone does not tell a recording from a loaded take one
          * write touched — so the client that allocated the buffer says so.
          * Clear it when the take is finished.
@@ -550,7 +550,7 @@ export function signal(
         at?: number;
         dur?: number;
         /**
-         * **Inside a `clip`**: this body's own window onto its material — the
+         * **Inside a `clip`**: this body's own window onto its buffer — the
          * source frame it reads from, and whether that window wraps. A body
          * that names neither reads through the clip's own window, which is
          * every take written as a clip prop.
@@ -958,7 +958,7 @@ export function waveform(
          */
         measure?: "peak" | "rms";
         /**
-         * The material is **being written into as it is drawn** — a take you
+         * The samples are **being written into as they are drawn** — a take you
          * are recording. The picture stops at the buffer's write frontier and
          * the axis past it stays empty; see `signal`.
          */
@@ -1555,19 +1555,19 @@ export function clip(
         editable?: boolean;
         /**
          * The source frame this clip's own time zero reads (default 0). A clip
-         * is a **window onto a segment of its material**: one timeline sample
+         * is a **window onto a segment of its buffer**: one timeline sample
          * is one source frame, so trimming one hides frames rather than
          * compressing them, and opening the window again brings them back.
          */
         start?: number;
         /**
-         * Whether that window **wraps** around the material: past the last
-         * frame it begins again, and before the first comes the material's own
-         * tail. It is what lets an edge be pulled past the material at all.
+         * Whether that window **wraps** around the buffer: past the last
+         * frame it begins again, and before the first comes the buffer's own
+         * tail. It is what lets an edge be pulled past the buffer at all.
          */
         loop?: boolean;
         /**
-         * Draw the material **fitted** to the clip's span instead of read frame
+         * Draw the samples **fitted** to the clip's span instead of read frame
          * for sample — the picture a time stretch would make, which nothing
          * here makes yet. Off by default.
          */

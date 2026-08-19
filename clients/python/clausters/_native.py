@@ -844,12 +844,12 @@ class Document:
 
     def resolve(self, selection: dict, *, frames_per_beat: float,
                 in_beats: bool = False) -> list:
-        """Resolve a selection to the spans of material underneath it.
+        """Resolve a selection to the spans of samples underneath it.
 
         Args:
             selection: ``{"start", "len", …}`` — see the crate's ``Selection``.
             frames_per_beat: the bridge between the arrangement's beats and the
-                material's frames. Supplied rather than derived: tempo is the
+                samples's frames. Supplied rather than derived: tempo is the
                 caller's, the arithmetic is the crate's.
             in_beats: whether the selection's numbers are beats rather than
                 frames on the shared axis.
@@ -857,7 +857,7 @@ class Document:
         Returns:
             ``[{"node", "source", "generation", "range", "at"}, …]`` in tree
             order, with the placement's base, the element's trim and the clamp
-            at both ends already applied. Empty when nothing material was
+            at both ends already applied. Empty when nothing samples was
             underneath — a group and a generator are in the way of a selection,
             not under it.
         """
@@ -1555,7 +1555,7 @@ def peaks_cache_update(cache: bytes, samples, start: int, frames: int) -> bytes:
 
     ``samples`` is the **whole** buffer as it now stands (interleaved), not the
     span: a bucket at either edge of it holds untouched samples too. The result
-    is identical to rebuilding the cache from the edited material, so an
+    is identical to rebuilding the cache from the edited samples, so an
     updated overview and a fresh one cannot drift apart over a session.
 
     Raises `ValueError` when the buffer is not the one the cache describes — an
@@ -1595,7 +1595,7 @@ def peaks_cache_empty(frames: int, channels: int = 1, base_bucket: int = 256) ->
 def peaks_cache_write_buckets(cache: bytes, start_frame: int, bucket: int, stats) -> bytes:
     """Folds a run of **already-summarized buckets** into a peak cache,
     returning the new bytes — the receiving half of ``/buffer_stream``, which
-    sends the overview of material as it is written instead of the material.
+    sends the overview of samples as it is written instead of the samples.
 
     ``stats`` is the reply's blob read as floats, **bucket-major and
     channel-minor**: for each bucket of ``bucket`` frames in order, for each
@@ -1741,7 +1741,7 @@ def shm_init(address: int, length: int, control_buses: int, taps: int,
     """Writes a fresh header over the mapping at `address`, making it a segment.
 
     For a peer that **creates** one rather than attaching: in the editor's
-    arrangement the process that owns the material owns the segment, and every
+    arrangement the process that owns the samples owns the segment, and every
     server attaches to it. Nothing else may have attached yet.
     """
     return lib().clausters_core_shm_init(

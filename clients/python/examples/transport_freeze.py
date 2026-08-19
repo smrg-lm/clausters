@@ -2,8 +2,8 @@
 """Freeze a generative piece and hear that it *continued* rather than restarted.
 
 A def running a stochastic process is the case no DAW transport covers. A DAW's
-material exists before you press play, so a position is an index into it; here
-the material is produced as it sounds, so the piece's position **is** the state
+samples exists before you press play, so a position is an index into it; here
+the samples is produced as it sounds, so the piece's position **is** the state
 of the running nodes and no number moves it. The only thing a transport can
 honestly do to such a piece is stop it and let it carry on.
 

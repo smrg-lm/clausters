@@ -79,7 +79,7 @@ BEAT = int(SR / TEMPO)         # timeline samples per beat: the axis unit is the
                                # audio sample, so a take's frames place 1:1
 
 # %% [markdown]
-# ## The material, as three kinds of resource
+# ## The take, as three kinds of resource
 # A take is written to a file of raw little-endian ``f32`` — the bulk path a real
 # minutes-long take needs, and the one a clip reads by ``path``. The lead is a
 # list of ``(start, dur, pitch)`` events, drawn as a piano-roll. The spectral
@@ -116,7 +116,7 @@ EXTENT = 10.0                       # the piece at rest, in beats (`extent`
                                     # reads the live one off the clips)
 
 # The spectral lane's own take: a **sweep**, not one of the tones above. A clip
-# shown as a spectrogram is worth looking at only if its material moves in
+# shown as a spectrogram is worth looking at only if its samples moves in
 # frequency, and it has to be its own recording — a clip is a clip, so this one
 # starts where it starts and ends where it ends, like the takes beside it.
 SWEEP_AT, SWEEP_BEATS = 1.0, 6.0
@@ -145,7 +145,7 @@ print(f"wrote {len(TAKES)} takes and a {SWEEP_BEATS:.0f}-beat sweep under {tmp}"
 
 # %% [markdown]
 # ## The instruments
-# The lanes draw the material; these are what sound it. One decaying sine for the
+# The lanes draw the samples; these are what sound it. One decaying sine for the
 # tones and the lead notes, and one glide for the sweep the spectral clip shows —
 # both freed by their own envelope, and both shaped like the file drawn beside
 # them: an instrument whose envelope is not the picture's makes the take look
@@ -167,7 +167,7 @@ def voice(name: str = "multi_tone") -> SynthDef:
     the clip's span, exponentiated — with ``decay`` arriving as a control the
     way ``secs`` does. Written with a ready-made percussive envelope instead
     (which is what it was), the two disagree: at the end of a four-beat take
-    the picture is at 0.30 and the sound at 0.001, so the eye sees material
+    the picture is at 0.30 and the sound at 0.001, so the eye sees samples
     where the ear hears none and the take reads as ending early."""
     freq = control("freq", 440.0, "ir")
     amp = control("amp", 0.2, "ir")
@@ -396,7 +396,7 @@ win = gui.open(window(
         # **spectrogram**: `view="spectrogram"` picks the presentation, and
         # everything else about it is a clip. It is placed at an offset, it ends
         # at its duration, it drags and resizes with the same handle, and the
-        # STFT stops where the material does instead of spanning the lane. The
+        # STFT stops where the samples does instead of spanning the lane. The
         # trace and the texture are two views of one signal, and this is where
         # the model says so.
         track(clip(name="sweep", offset=SWEEP_AT * BEAT, dur=len(sweep_samples),

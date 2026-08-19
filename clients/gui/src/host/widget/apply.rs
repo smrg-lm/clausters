@@ -43,7 +43,7 @@ pub(super) fn apply_widget(widget: &mut Widget, key: &str, v: &Value) -> bool {
             sel.set(layer);
             return true;
         }
-        // The **window** onto the material is the node's, not the kind's: a
+        // The **window** onto the samples is the node's, not the kind's: a
         // body may have one of its own, so it is set where both can be set the
         // same way.
         if matches!(key, "start" | "loop" | "fit") {

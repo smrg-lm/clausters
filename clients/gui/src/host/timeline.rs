@@ -199,7 +199,7 @@ impl GroupState {
         // clock and **false of a transport position**: 0 is where a piece
         // sits before anyone has moved it, and a session that opens there
         // would draw no line at all until something played. A sweep is never
-        // left of the material either way, so the clamp costs the device case
+        // left of the contents either way, so the clamp costs the device case
         // nothing but the block before its clock first ticks.
         let swept = (sample_clock - self.playhead_at).max(0.0);
         Some(match self.playhead_loop() {
@@ -357,7 +357,7 @@ impl TimelineGroups {
             sel: state.selection(),
             head: clock.and_then(|c| state.head_at(c)),
             // A member of a navigation group stands on its own rectangle: it is
-            // its own layer, over its own material — nothing above it is
+            // its own layer, over its own contents — nothing above it is
             // deciding between claimants or showing a window of it.
             active: true,
             window: crate::host::widget::SourceWindow::default(),
@@ -448,7 +448,7 @@ impl Host {
     /// blank however much is written. Four bars of 4/4, read off its own grid.
     ///
     /// It is a **floor on the axis, not on the content**: `timeline_total` stays
-    /// the honest extent of what is there, so nothing that measures the material
+    /// the honest extent of what is there, so nothing that measures the contents
     /// (a lane's clips, a hit-test) sees this number.
     const EMPTY_BEATS: f64 = 16.0;
 
@@ -759,7 +759,7 @@ impl Host {
     ///
     /// The pointer is the addressee whenever it is over a view, and that is
     /// unchanged: a selection is where the pointer has been. But a sweep that
-    /// ends at the very start or end of the material leaves the pointer in the
+    /// ends at the very start or end of the contents leaves the pointer in the
     /// window's margin — or off the window, where there is no pointer at all —
     /// and there a copy answered nothing at all, silently, over a selection
     /// plainly drawn on screen. So the selection itself names the addressee,
@@ -1190,7 +1190,7 @@ mod tests {
         assert_eq!(e.head_at(9000.0), Some(8000.0));
         // A clock at 0 draws at the start rather than not at all: 0 is a real
         // place on a transport position, where it was only ever "not started
-        // yet" on a device clock. Left of the material is what is refused, and
+        // yet" on a device clock. Left of the contents is what is refused, and
         // the anchor is what says whether there is a head at all.
         assert_eq!(e.head_at(0.0), Some(0.0));
         assert_eq!(e.head_at(-1.0), None, "a clock going backwards is nothing");

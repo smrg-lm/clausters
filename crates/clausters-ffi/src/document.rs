@@ -343,10 +343,10 @@ fn outcome_bytes(outcome: &clausters_document::Outcome) -> Vec<u8> {
     .unwrap_or_default()
 }
 
-/// Resolve a selection to the spans of material underneath it.
+/// Resolve a selection to the spans of samples underneath it.
 ///
 /// `selection` is JSON; `frames_per_beat` is the bridge between the
-/// arrangement's beats and the material's frames, supplied rather than derived
+/// arrangement's beats and the buffer's frames, supplied rather than derived
 /// because tempo is the caller's; `in_beats` says whether the selection's
 /// numbers are beats (non-zero) or frames on the shared axis (zero).
 ///

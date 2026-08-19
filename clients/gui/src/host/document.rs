@@ -80,7 +80,7 @@ pub struct Owner {
     /// rather than remembered by the gesture that made it.
     pub log: Log,
     /// The session this document came from, when it came from one: the sources
-    /// its material lives in, which is what a save has to write back.
+    /// its samples lives in, which is what a save has to write back.
     pub session: Option<Session>,
     /// How an edit is transformed on the way in (the grid a placement snaps
     /// to). The host states where the hand put something; this decides.
@@ -102,7 +102,7 @@ pub struct Owner {
     /// The one thing this module adds to the crate, and the one thing only a
     /// host can know: a widget is a picture *of* a node, and an intent names
     /// the node. Nothing infers it — the tree that built the widgets records
-    /// it, so a picture and the material under it cannot drift apart.
+    /// it, so a picture and the samples under it cannot drift apart.
     nodes: HashMap<i32, NodeId>,
 }
 
@@ -194,7 +194,7 @@ impl Owner {
     /// Writes the session back, with the document as it now stands.
     ///
     /// The sources travel unchanged: what an editing session edits is the
-    /// arrangement and the material, and where the material *lives* is the
+    /// arrangement and the samples, and where the samples *lives* is the
     /// session's own bookkeeping, which this host has no business rewriting.
     pub fn save(&self, path: impl AsRef<std::path::Path>) -> Result<(), String> {
         let mut session = self
@@ -343,7 +343,7 @@ impl Owner {
     ///
     /// There is exactly one such edit and the crate says so: a destructive
     /// write's previous samples are not in the document (the document describes
-    /// where material is, never what it holds), so `apply_logged` records an
+    /// where samples is, never what it holds), so `apply_logged` records an
     /// empty write as the inverse and an undo would restore nothing. What was
     /// there is known to whoever was **drawing** it — the gesture carried the
     /// span it painted over, which is why the payload has a `previous` half —

@@ -166,7 +166,7 @@ pub struct PlotParams<'a> {
     pub label: Option<&'a str>,
     /// What each column measures — the envelope, or the level inside it.
     pub measures: Measures,
-    /// How far the material exists, for a take being written into as it is
+    /// How far the samples exists, for a take being written into as it is
     /// drawn; `None` when all of it does.
     pub written: Option<u64>,
 }

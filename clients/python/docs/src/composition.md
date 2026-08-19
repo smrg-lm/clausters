@@ -46,14 +46,14 @@ time — assembled from more than one window):
 | `Clang`     | parameters grouped into one action               | `clausters.seq.Event`                   |
 | `Sequence`  | strict order, no concrete time — only sequence   | a list, or a `Pattern`                  |
 | `Vector`    | a list at constant time (samples)                | `clausters.defs.Buffer`                 |
-| `Segments`  | several windows onto material, read as one       | a list of `(buffer, start, duration)`   |
+| `Segments`  | several windows onto samples, read as one       | a list of `(buffer, start, duration)`   |
 | `Track`     | mixed placement of elements — a DAW track        | `clausters.seq.Timeline`                |
 | `Generator` | a *process*: server DSP, or a sequence generator | a def, or a `Pbind`/`Routine`           |
 
 A `Vector` is *data*, so it has no sound of its own: it sounds through the
 **instrument** named to play it — a def whose `buf` control takes the buffer
 number. That is the whole rule for an audio clip. A `Segments` is the same rule
-over several of them: it is what assembling material out of pieces looks like
+over several of them: it is what assembling samples out of pieces looks like
 when nothing is copied (see the editor's join, below).
 
 ```python
@@ -81,10 +81,10 @@ song = Aggregate([
 
 The `take` above is placed **twice**, which is the ordinary thing to write and
 means what it says: two clips, one take. A placement is a **window onto
-material** — editing the samples through either window edits the one take, and
-moving one clip moves that clip. What can be placed twice is material the
+samples** — editing the samples through either window edits the one take, and
+moving one clip moves that clip. What can be placed twice is samples the
 element only *names*: a `Vector` over a server buffer, a `Generator` over a
-pattern or a def. An element that carries its material *inside* it — a `Clang`,
+pattern or a def. An element that carries its samples *inside* it — a `Clang`,
 a `Track`, an `Aggregate` — is refused, because two placements of one of those
 would be two copies that diverge the moment you edit one; write two of them, or
 one element the two clips share.
@@ -128,7 +128,7 @@ the tree. The mapping is one rule, not a heuristic per case:
 - a `Vector` clip names its server buffer and shows a **window** onto it — the
   host fetches the take and decimates it to the clip's pixel width, so a long
   take costs nothing on the wire, and trimming the clip shows less of the
-  material rather than squeezing it (see below);
+  samples rather than squeezing it (see below);
 - an element of *events* draws a **piano-roll** — each note placed in pitch and
   time, shaded by its velocity (an explicit `velocity`, else the event's `amp`) —
   and since a contained pattern is bounced to draw it, a generator lane shows the
@@ -159,17 +159,17 @@ playhead, so you hear it where you dropped it. The semantics there are honest:
 *re-schedule from here*, not a sample-exact splice, so a synth already sounding
 keeps sounding.
 
-### A clip is a window onto its material
+### A clip is a window onto its samples
 
 A clip over a `Vector` shows a **segment** of it, not the whole of it squeezed
-into a rectangle. One timeline sample is one frame of the material, so:
+into a rectangle. One timeline sample is one frame of the samples, so:
 
 - **trimming** a clip — dragging its edge — hides frames rather than compressing
   them, and the ones it hides are still there: stretch the edge back and they
   come out again;
-- the **head** trim moves the window with the edge, so the material stands still
+- the **head** trim moves the window with the edge, so the samples stands still
   while the clip shows less of it;
-- an edge stops where the material does, unless the element **loops** — where
+- an edge stops where the samples does, unless the element **loops** — where
   past the last frame the buffer begins again and before the first comes its own
   tail.
 
@@ -201,11 +201,11 @@ beginning.
 **Splitting and joining.** With the pointer over a clip, `e` cuts it in two at
 the time cursor (at the pointer when no cursor is inside it) and `j` joins it
 with the clips that touch it on its lane. A split gives each half a window over
-the same material, which is why a join can put back exactly what the cut
+the same samples, which is why a join can put back exactly what the cut
 separated.
 
-Joining clips over *different* material gives a `Segments`: an element whose
-material is a **list of windows** — which buffer, from which frame, for how long
+Joining clips over *different* samples gives a `Segments`: an element whose
+data is a **list of windows** — which buffer, from which frame, for how long
 — read back to back. It plays as one thing (one event per segment, on one
 instrument), draws as one clip (one take per segment, each over its own stretch
 of it), and cuts apart again into the windows it was made of, because nothing
@@ -236,7 +236,7 @@ So pressing a curve's line selects that curve and edits it — its break-points,
 and the bend of the segment between two of them — and while you are on it the
 clip shows no grips. Pressing the clip's own background, where nothing else is
 drawn, hands the clip back: it moves, and its grips are there again. A layer
-whose material cannot be edited (the notes of a pattern, which are a *rendering*
+whose samples cannot be edited (the notes of a pattern, which are a *rendering*
 of an algorithm) is never selected by pointing at it, so a clip over one still
 moves and trims like any other.
 
@@ -368,7 +368,7 @@ doc = to_document(song)          # {"version": 1, "root": {...}}
 song_again = from_document(doc)
 ```
 
-The conversion is lossless for concrete material — clangs, placements,
+The conversion is lossless for concrete samples — clangs, placements,
 aggregates, vectors by reference — and carries a **generator by reference**, the
 way a project file references a plugin rather than serializing it. A generator *is
 code*, in the language that wrote it, so no format owns one; what the document
@@ -472,13 +472,13 @@ editor.selection    # {"start": 0.0, "len": 2.0, "value": {"min": -0.5, "max": 0
 
 `nodes` says what the selection is *of*: the element when the sweep was inside
 one, and nothing at all when it was across a lane, which is a selection of the
-shared time axis. `resolve_selection` turns that into the material underneath —
+shared time axis. `resolve_selection` turns that into the samples underneath —
 one entry per leaf, with the placement's base, the element's trim and the clamp
 at both ends already applied — and returns nothing where an aggregate or a
 generator is in the way rather than under it.
 
 The value band travels with the selection and does not narrow that answer: what
-lies under a range of amplitudes is the same material as what lies under the
+lies under a range of amplitudes is the same samples as what lies under the
 whole span. Reading *only* those samples is an operation over the range, not a
 resolution of it.
 
@@ -495,13 +495,13 @@ editor.can_undo              # True: a cut is an edit, so it inverts
 
 A cut whose selection **covers a clip** removes that placement, through the
 document, undoably. A cut running **across** one implies a new length for the
-material under it, and a paste of a block of samples is material with neither a
+samples under it, and a paste of a block of samples is audio with neither a
 source nor a source's owner — both are refused, with the reason travelling back
 so the window can say why rather than appearing to ignore the key. Writing
-material is the job of whoever owns that material, against a working copy, which
+samples is the job of whoever owns them, against a working copy, which
 is a different thing from placing elements in time.
 
-### Saving: the document plus where its material is
+### Saving: the document plus where its sources are
 
 A document says what plays when and deliberately not where a source lives — in a
 running system a source is a server buffer, a mapped file or a rendered result,

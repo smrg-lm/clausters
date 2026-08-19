@@ -241,7 +241,7 @@ time arithmetic. ([The editor](editor.md))
 
 **vector (element)** — the `Vector` primitive: a list at constant time
 (samples). Wraps a `clausters.defs.Buffer` — the server buffer holds the
-material, the element places a window onto it. ([Elements](elements.md))
+samples, the element places a window onto it. ([Elements](elements.md))
 
 **wire** — one `(member, control) ↔ bus` connection of a patch. Rewiring on
 screen rewrites the member `Generator`'s controls; the next render sends the

@@ -34,7 +34,7 @@
 //!
 //! # The unit is whatever the selected thing is measured in
 //!
-//! Frames over material, beats over an arrangement — and the crate does not
+//! Frames over samples, beats over an arrangement — and the crate does not
 //! convert between them, because the beats↔samples bridge belongs to whoever
 //! renders. Both travel as `f64`, which holds a frame index exactly past any
 //! length a session will have, and which is what the wire already sends.

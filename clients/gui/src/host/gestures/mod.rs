@@ -183,7 +183,7 @@ enum Drag {
     /// destructive edit, and the one that proves the whole route.
     ///
     /// The axis is snapshotted at the press, unlike a selection's: a sample is
-    /// a fixed position in the material, so a view scrolling under the drag
+    /// a fixed position in the contents, so a view scrolling under the drag
     /// must not move which sample the hand is holding. Only the *value*
     /// follows the pointer.
     Sample {
@@ -193,7 +193,7 @@ enum Drag {
         frame: usize,
         previous: f32,
     },
-    /// Drawing over the material: a stroke that writes every sample it passes.
+    /// Drawing over the contents: a stroke that writes every sample it passes.
     ///
     /// The run itself lives in the element's pending, where the drawing can
     /// find it; what is held here is where the last motion event left the
@@ -249,11 +249,11 @@ enum Drag {
         nav_len: f64,
         press_sample: f64,
         /// The placement the press found — where the clip sat, how long it was
-        /// and which part of its material it showed, so a clamped edge is
+        /// and which part of its contents it showed, so a clamped edge is
         /// measured against the press rather than against the last step.
         orig: interact::ClipPlacement,
-        /// What the material behind the clip allows the edges to do.
-        material: interact::Material,
+        /// What the contents behind the clip allows the edges to do.
+        contents: interact::Contents,
         grid: f64,
     },
     /// Dragging a lane header's level fader: the cursor's x over the fader's

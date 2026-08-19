@@ -121,7 +121,7 @@ impl SignalElement {
             // **Live, and both ways.** A client arms it when it starts
             // recording into the buffer and clears it when the take is
             // finished — and clearing it is what turns the picture back into
-            // the whole of the material, which is right: what was written is
+            // the whole of the samples, which is right: what was written is
             // now all there is, and a frontier stopped at the buffer's end
             // would have said the same thing only by accident.
             "fills" => truthy(v)
@@ -140,7 +140,7 @@ impl SignalElement {
                 .and_then(super::Measures::parse)
                 .map(|m| self.measures = m)
                 .is_some(),
-            // **The material, live.** An owner that applied an edit pushes the
+            // **The samples, live.** An owner that applied an edit pushes the
             // samples that now hold, and the picture becomes the document's
             // again — which is what "the acknowledgement corrects the picture"
             // means for an inline source, and what lets a pending drawing be
@@ -169,14 +169,14 @@ impl SignalElement {
                 }
                 _ => false,
             },
-            // **The material changed where it lives; read it again.** Bulk
+            // **The samples changed where it lives; read it again.** Bulk
             // resolution is idempotent by design — a resolved source stops
             // asking — so re-reading is the element *forgetting* what it
             // resolved, and the loader picking it up on the next pass. One door
             // for every form: a mapped file, a peaks cache, a server buffer.
             //
             // It is the mapped sibling of a `/gui_set data`: an owner that
-            // applied an edit says either *the material is now this* (inline)
+            // applied an edit says either *the samples are now these* (inline)
             // or *it is where it always was, and it moved* (mapped). A source
             // with nothing behind it ignores this rather than erasing itself.
             "reload" => truthy(v)
@@ -235,7 +235,7 @@ mod data_tests {
     /// the picture is the document's again. Without this the pending drawing
     /// could never be dropped — letting go of it would take the edit with it.
     #[test]
-    fn inline_material_can_be_replaced_live() {
+    fn inline_samples_can_be_replaced_live() {
         use crate::host::widget::element::Element;
         let mut e = el(r#"{"id":1,"type":"signal","view":"trace","data":[0.0,1.0,-1.0,0.5]}"#);
         assert!(e.set("data", &serde_json::json!([0.0, 0.25, -0.25, 0.5])));
@@ -271,7 +271,7 @@ mod data_tests {
     }
 
     /// A source with nothing behind it is left alone: reloading it would erase
-    /// the material rather than refresh it.
+    /// the samples rather than refresh it.
     #[test]
     fn an_inline_source_ignores_a_reload() {
         use crate::host::widget::element::Element;

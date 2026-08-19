@@ -28,7 +28,7 @@ impl App {
     /// take being recorded into and wants its length rather than its silence.
     pub(super) fn start_buffer_fetches(&mut self, def_id: i32, refs: Vec<(i32, i32, bool)>) {
         for (widget_id, bufnum, shape_only) in refs {
-            // **Mapped material needs no conversation.** When the take is in a
+            // **Mapped samples needs no conversation.** When the take is in a
             // region this host can open, its samples are read straight out of
             // it — no `/buffer_query`, no chunked `/buffer_getRange`, no
             // waiting. The fetch machine below stays exactly as it is for
@@ -49,25 +49,25 @@ impl App {
         }
     }
 
-    /// Places a take out of the mapped material, returning whether it was
+    /// Places a take out of the mapped samples, returning whether it was
     /// there. The zero-message half of [`Self::start_buffer_fetches`].
     ///
     /// **Nothing is read out.** The picture is built over the mapping itself —
-    /// one [`crate::host::material::MappedChannel`] per channel, summarized
+    /// one [`crate::host::mapped::MappedChannel`] per channel, summarized
     /// where it lies — so opening a ten-minute take allocates its pyramid and
-    /// no copy of the material. What the analysis path needs is the one
+    /// no copy of the samples. What the analysis path needs is the one
     /// exception, and it says so where it takes it.
     #[cfg(unix)]
     fn place_mapped_buffer(&mut self, def_id: i32, widget_id: i32, bufnum: i32) -> bool {
         let Ok(index) = usize::try_from(bufnum) else {
             return false;
         };
-        let Some(take) = self.host.material().and_then(|m| m.map(index)) else {
+        let Some(take) = self.host.shared_buffers().and_then(|m| m.map(index)) else {
             return false;
         };
         let (channels, _, sample_rate) = take.shape();
         debug!("gui_def {def_id}: widget {widget_id} maps buffer {bufnum}, nothing sent");
-        self.place_mapped_take(
+        self.place_mapped_buffer_data(
             Arc::new(take),
             channels,
             sample_rate,
@@ -80,13 +80,13 @@ impl App {
         true
     }
 
-    /// [`Self::finalize_buffer`] for material that is **mapped** rather than
+    /// [`Self::finalize_buffer`] for samples that is **mapped** rather than
     /// downloaded: the views share one `WaveformData` reading the region, and
     /// the pyramid over it is built once for every want.
     #[cfg(unix)]
-    fn place_mapped_take(
+    fn place_mapped_buffer_data(
         &mut self,
-        take: Arc<crate::host::material::MappedTake>,
+        take: Arc<crate::host::mapped::MappedBuffer>,
         channels: usize,
         sample_rate: f64,
         wants: Vec<WaveWant>,
@@ -106,7 +106,7 @@ impl App {
             let Some(ws) = self.windows.get_mut(&want.def_id) else {
                 continue;
             };
-            // The one form that cannot read the material where it lies: an
+            // The one form that cannot read the samples where it lies: an
             // analysis consumes every sample by definition, so the transform
             // reads the take once and the picture it makes is its own.
             if let Some(SlotKind::Texture {
@@ -143,7 +143,7 @@ impl App {
             let data = shared
                 .get_or_insert_with(|| {
                     Arc::new(WaveformData::from_sources(
-                        crate::host::material::MappedChannel::channels_of(Arc::clone(&take)),
+                        crate::host::mapped::MappedChannel::channels_of(Arc::clone(&take)),
                         base_bucket,
                     ))
                 })
@@ -275,7 +275,7 @@ impl App {
                 let step = self.fetches.on_data(&msg.args);
                 self.apply_fetch_step(step);
             }
-            // **Somebody else wrote this material.** A peer editing a shared
+            // **Somebody else wrote this samples.** A peer editing a shared
             // buffer stores into the cells and announces the span; the server
             // broadcasts it to everyone but the writer. A picture reading the
             // mapping is already the new one — what it needs is to be told
@@ -288,12 +288,12 @@ impl App {
                     OscType::Int(frames),
                 ] = msg.args.as_slice()
                 {
-                    self.refresh_material(*bufnum, *channel, *start, *frames);
+                    self.resummarize(*bufnum, *channel, *start, *frames);
                 }
             }
             // **A recording this host cannot read, reported by the server.**
             // The overview of the frames that appeared, for a view holding its
-            // own copy of the material — the wire's answer to the frontier a
+            // own copy of the samples — the wire's answer to the frontier a
             // mapping reads for free.
             "/buffer_stream.reply" => {
                 if let Some((bufnum, start, bucket, stats)) = crate::host::stream_report(&msg.args)
@@ -436,13 +436,13 @@ impl App {
                     ws.waveforms
                         .insert(want.widget_id, frame::waveform_slot(data.clone()));
                     // ...and the element keeps the same pyramid, so a copy over
-                    // a fetched buffer reads the material it is drawing.
+                    // a fetched buffer reads the samples it is drawing.
                     if let Some(w) = self
                         .host
                         .window_def_mut(want.def_id)
                         .and_then(|t| t.find_mut(want.widget_id))
                     {
-                        frame::keep_material(w, &Loaded::Peaks(data));
+                        frame::keep_data(w, &Loaded::Peaks(data));
                     }
                 }
                 Some(SlotKind::Texture {
@@ -493,7 +493,7 @@ impl App {
     /// **The span a view had zoomed past its summary into**, landed: the
     /// samples go under that view's overview as a window, and it draws them.
     ///
-    /// The slot lets the material go first, as every other write here does —
+    /// The slot lets the samples go first, as every other write here does —
     /// the element is then the sole owner and the window costs the run rather
     /// than a copy of the summary.
     fn place_window(
@@ -550,7 +550,7 @@ impl App {
                     .window_def(*def_id)
                     .and_then(|t| t.find(*widget_id))
                     .and_then(|w| w.bulk_target().kind.as_element())
-                    .and_then(|el| el.material_shape())
+                    .and_then(|el| el.sample_shape())
                 else {
                     continue;
                 };
@@ -559,7 +559,7 @@ impl App {
                     .window_def(*def_id)
                     .and_then(|t| t.find(*widget_id))
                     .and_then(|w| w.bulk_target().kind.as_element())
-                    .and_then(|el| el.material_buffer())
+                    .and_then(|el| el.source_buffer())
                 else {
                     continue;
                 };
@@ -581,7 +581,7 @@ impl App {
     ///
     /// The picture is the whole of the box the take will fill — so the axis
     /// does not move while it fills — and what fills it is the overview the
-    /// server streams (`fills`, `/buffer_stream`). Pulling the material here
+    /// server streams (`fills`, `/buffer_stream`). Pulling the samples here
     /// would be a download of silence at the take's full length, to draw over
     /// it a moment later.
     fn place_empty_take(
@@ -626,7 +626,7 @@ impl App {
                 .window_def_mut(want.def_id)
                 .and_then(|t| t.find_mut(want.widget_id))
             {
-                frame::keep_material(w, &Loaded::Peaks(data));
+                frame::keep_data(w, &Loaded::Peaks(data));
             }
             self.finish_placement(want, frames, sample_rate);
         }
@@ -635,12 +635,12 @@ impl App {
     /// Re-summarizes the span another writer announced, in every view of that
     /// buffer, and redraws the windows that hold one.
     ///
-    /// **Only a view that reads the material can follow this**, and that is
+    /// **Only a view that reads the samples can follow this**, and that is
     /// the honest half: its samples are the ones that changed, so the summary
     /// is all that is stale. A view holding its own copy (a fetched buffer,
     /// a page) would have to fetch the span back, which is the fetch machine's
     /// work and not this one's.
-    fn refresh_material(&mut self, bufnum: i32, channel: i32, start: i32, frames: i32) {
+    fn resummarize(&mut self, bufnum: i32, channel: i32, start: i32, frames: i32) {
         let (Ok(channel), Ok(start), Ok(frames)) = (
             usize::try_from(channel),
             u64::try_from(start),
@@ -668,7 +668,7 @@ impl App {
     /// Folds one `/buffer_stream.reply` into every view of that buffer and
     /// repaints the windows that took it.
     ///
-    /// The slots let the material go first, for the reason the mapped path
+    /// The slots let the samples go first, for the reason the mapped path
     /// gives: a pyramid a slot is holding cannot be written in place, so the
     /// element would copy the whole take before patching the buckets that
     /// arrived. Released, the element is the sole owner and the write costs
@@ -684,7 +684,7 @@ impl App {
                         .filter(|w| {
                             w.kind
                                 .as_element()
-                                .and_then(|el| el.material_buffer())
+                                .and_then(|el| el.source_buffer())
                                 .is_some_and(|b| b == bufnum)
                         })
                         .filter_map(|w| w.id)
@@ -714,7 +714,7 @@ impl App {
         }
     }
 
-    /// Whether this window draws material that is **still being written** —
+    /// Whether this window draws samples that is **still being written** —
     /// a frontier that has moved and has not reached the end of the buffer.
     ///
     /// It is the wake condition for a recording, and it is deliberately narrow
@@ -724,7 +724,7 @@ impl App {
     /// take being filled right now.
     #[cfg(unix)]
     pub(super) fn window_follows_a_recording(&self, def_id: i32) -> bool {
-        let Some(material) = self.host.material() else {
+        let Some(samples) = self.host.shared_buffers() else {
             return false;
         };
         let Some(tree) = self.host.window_def(def_id) else {
@@ -734,13 +734,12 @@ impl App {
             let Some(el) = w.kind.as_element() else {
                 return false;
             };
-            let (Some(bufnum), Some((_, frames))) = (el.material_buffer(), el.material_shape())
-            else {
+            let (Some(bufnum), Some((_, frames))) = (el.source_buffer(), el.sample_shape()) else {
                 return false;
             };
             usize::try_from(bufnum)
                 .ok()
-                .and_then(|index| material.frontier(index))
+                .and_then(|index| samples.frontier(index))
                 .is_some_and(|frontier| frontier > 0 && frontier < frames)
         })
     }
@@ -751,7 +750,7 @@ impl App {
         false
     }
 
-    /// **Follows the recordings**: for every view of mapped material whose
+    /// **Follows the recordings**: for every view of mapped samples whose
     /// write frontier has moved, re-summarizes what was added and redraws.
     ///
     /// This is the half of a live picture that a mapping cannot give by
@@ -767,10 +766,10 @@ impl App {
     /// is — never the take.
     #[cfg(unix)]
     pub(super) fn follow_recordings(&mut self) -> Vec<i32> {
-        let Some(material) = self.host.material() else {
+        let Some(samples) = self.host.shared_buffers() else {
             return Vec::new();
         };
-        // Read every frontier first: the borrow of the material ends before
+        // Read every frontier first: the borrow of the samples ends before
         // the trees are touched, and the answer is a handful of relaxed loads.
         let mut moved: Vec<(i32, i32, u64, u64)> = Vec::new();
         for def_id in self.host.window_def_ids() {
@@ -779,18 +778,18 @@ impl App {
             };
             for w in tree.descendants() {
                 // A body carries no id of its own, so what is followed is the
-                // widget that does — the same addressing every other material
+                // widget that does — the same addressing every other samples
                 // path here uses.
                 let (Some(id), Some(el)) = (w.id, w.kind.as_element()) else {
                     continue;
                 };
-                let Some(bufnum) = el.material_buffer() else {
+                let Some(bufnum) = el.source_buffer() else {
                     continue;
                 };
                 let Ok(index) = usize::try_from(bufnum) else {
                     continue;
                 };
-                let Some(frontier) = material.frontier(index) else {
+                let Some(frontier) = samples.frontier(index) else {
                     continue;
                 };
                 let drawn = self.frontiers.get(&(def_id, id)).copied().unwrap_or(0);
@@ -802,7 +801,7 @@ impl App {
         let mut redraw = Vec::new();
         for (def_id, widget_id, drawn, frontier) in moved {
             self.frontiers.insert((def_id, widget_id), frontier);
-            // **The slot gives the material back before the element writes to
+            // **The slot gives the samples back before the element writes to
             // it.** A pyramid a slot is holding cannot be written in place —
             // the element would be patching a picture under a renderer that
             // never asked — so the refresh below would have to copy it first,
@@ -837,7 +836,7 @@ impl App {
             // tell a take being recorded from a loaded one a single write
             // touched.
             let told = el.set_written(frontier);
-            if (el.refresh_material(None, drawn, (frontier - drawn) as usize) || told)
+            if (el.resummarize(None, drawn, (frontier - drawn) as usize) || told)
                 && !redraw.contains(&def_id)
             {
                 redraw.push(def_id);
@@ -846,7 +845,7 @@ impl App {
         redraw
     }
 
-    /// Off Unix there is no mapped material to follow — the picture arrives by
+    /// Off Unix there is no mapped samples to follow — the picture arrives by
     /// message there, and so does the news that it changed.
     #[cfg(not(unix))]
     pub(super) fn follow_recordings(&mut self) -> Vec<i32> {
@@ -855,10 +854,10 @@ impl App {
 
     /// What a placed buffer leaves behind whichever way it arrived: its extent
     /// joins the widget's navigation group, and a widget that knew no sample
-    /// rate takes the material's so its ruler can label real time.
+    /// rate takes the samples' so its ruler can label real time.
     fn finish_placement(&mut self, want: WaveWant, frames: usize, sample_rate: f64) {
         self.host.set_timeline_total(want.widget_id, frames);
-        // The material just arrived, so whether this view can follow its own
+        // The samples just arrived, so whether this view can follow its own
         // recording is only answerable now: a mapped body reads the frontier,
         // an owned one has to be told.
         self.host.sync_buffer_streams();

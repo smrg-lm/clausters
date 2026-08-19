@@ -313,9 +313,9 @@ fn an_aggregate_keeps_the_ids_of_the_members_that_survived_an_edit() {
 }
 
 #[test]
-fn writing_material_bumps_the_sources_generation_and_not_the_samples() {
-    // The document describes where material is, never what it holds. What
-    // applying does is move the counter every reader of that material watches;
+fn writing_samples_bumps_the_sources_generation_and_not_the_node() {
+    // The document describes where samples is, never what it holds. What
+    // applying does is move the counter every reader of that samples watches;
     // writing the samples is the owner's next step, against the working buffer.
     let mut d = Document::new(Node::new(
         NodeId(1),
@@ -348,7 +348,7 @@ fn writing_material_bumps_the_sources_generation_and_not_the_samples() {
 }
 
 #[test]
-fn only_material_can_be_written() {
+fn only_samples_can_be_written() {
     let mut d = doc();
     let outcome = apply(
         &mut d,
@@ -364,7 +364,7 @@ fn only_material_can_be_written() {
     assert!(!outcome.applied);
     assert_eq!(
         outcome.reason.as_deref(),
-        Some("only material can be written")
+        Some("only samples can be written")
     );
 }
 
@@ -419,7 +419,7 @@ fn a_nested_node_is_reached_wherever_it_sits() {
 // ---- O4: the version, and staleness ----
 
 /// A vector node at a known generation, for the destructive-edit cases.
-fn material(generation: u64) -> Document {
+fn samples(generation: u64) -> Document {
     Document::new(Node::new(
         NodeId(1),
         Body::Vector {
@@ -583,7 +583,7 @@ fn an_unstated_claim_skips_the_check() {
 /// wire: a document written before it — and every mono edit — means channel 0.
 #[test]
 fn a_write_names_its_channel_and_an_absent_one_is_the_first() {
-    let mut d = material(2);
+    let mut d = samples(2);
     let write = Intent::WriteSamples {
         node: NodeId(1),
         channel: 1,
@@ -618,8 +618,8 @@ fn a_write_names_its_channel_and_an_absent_one_is_the_first() {
 }
 
 #[test]
-fn material_rewritten_underneath_makes_a_write_stale() {
-    let mut d = material(2);
+fn samples_rewritten_underneath_make_a_write_stale() {
+    let mut d = samples(2);
     let write = Intent::WriteSamples {
         node: NodeId(1),
         channel: 0,
@@ -628,7 +628,7 @@ fn material_rewritten_underneath_makes_a_write_stale() {
     };
     apply(&mut d, &write, &Against::unstated(), &Rules::none());
 
-    // The editor drew over generation 2; the material is at 3 now.
+    // The editor drew over generation 2; the samples is at 3 now.
     let drew_over = Against::at(d.version).with_generation(2);
     let outcome = apply(&mut d, &write, &drew_over, &Rules::none());
     assert!(outcome.stale && !outcome.applied);
@@ -647,9 +647,9 @@ fn material_rewritten_underneath_makes_a_write_stale() {
 #[test]
 fn a_generation_can_be_claimed_without_a_document_version() {
     // A waveform view over one source holds no document at all. It can still
-    // say which generation of the material it drew, which is the only claim
+    // say which generation of the samples it drew, which is the only claim
     // that means anything to it -- and it is enough to catch the conflict.
-    let mut d = material(2);
+    let mut d = samples(2);
     let write = Intent::WriteSamples {
         node: NodeId(1),
         channel: 0,

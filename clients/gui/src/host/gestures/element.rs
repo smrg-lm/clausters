@@ -131,7 +131,7 @@ pub(super) fn with<R>(
 /// own placement implies, so a layer answers about the pixels it was drawn on.
 ///
 /// `None` when the widget is gone or layers nothing; the placement layer
-/// otherwise, which is what empty material means.
+/// otherwise, which is what empty contents means.
 pub(super) fn layer_under_pointer(
     host: &Host,
     ctx: &GestureCtx,

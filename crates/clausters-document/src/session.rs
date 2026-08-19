@@ -1,4 +1,4 @@
-//! The document written to a file, and the table that says where its material
+//! The document written to a file, and the table that says where its samples
 //! is.
 //!
 //! A [`crate::Document`] describes *what plays when*; it deliberately does not
@@ -16,7 +16,7 @@
 //!
 //! # A source is named, located and dated
 //!
-//! [`Source`] carries where the material is ([`Location`]), whether it outlives
+//! [`Source`] carries where the samples is ([`Location`]), whether it outlives
 //! the session ([`crate::Lifetime`]), which generation of its content this is,
 //! and its shape. Two fields are the ones a naive format leaves out and then
 //! cannot add:
@@ -26,7 +26,7 @@
 //!   how*: the recipe is in the language that wrote it, and the session only
 //!   has to not lose it.
 //! - **An open edit** ([`OpenEdit`]) — a destructive edit session over this
-//!   material that has not been confirmed. A save never blocks on a
+//!   samples that has not been confirmed. A save never blocks on a
 //!   confirmation, so a saved session can and must be able to say *this is a
 //!   working copy of that, and the person has not decided yet*. Without the
 //!   field, saving mid-edit either silently confirms the edit or refuses to
@@ -54,7 +54,7 @@ use crate::{Document, Lifetime, Opaque, SourceId};
 /// newer one defaults. So far there has been one.
 pub const FORMAT: u32 = 1;
 
-/// Where material actually is.
+/// Where samples actually is.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "at", rename_all = "lowercase")]
 pub enum Location {
@@ -69,7 +69,7 @@ pub enum Location {
     /// exported, a result never written down.
     ///
     /// A session may hold one, because saving must not be blocked by it, but a
-    /// reader that finds one knows the material is not there: it opens with
+    /// reader that finds one knows the samples is not there: it opens with
     /// that element unresolved rather than pretending. [`Session::volatile`]
     /// is what a save consults before promising the file is complete.
     Volatile,
@@ -82,7 +82,7 @@ pub enum Location {
 /// blocking or deciding for the person.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OpenEdit {
-    /// The material this working copy was made from. Untouched — the original
+    /// The samples this working copy was made from. Untouched — the original
     /// is never written — so discarding is dropping the copy.
     pub from: SourceId,
     /// Whether the person has confirmed the edit. `false` in a saved session
@@ -113,7 +113,7 @@ pub struct Source {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sample_rate: Option<f64>,
     /// What produced it, carried opaquely and never interpreted. Absent for
-    /// material the user imported, which was produced by nothing here.
+    /// samples the user imported, which was produced by nothing here.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provenance: Option<Opaque>,
     /// The destructive edit open over it, if one is.
@@ -167,18 +167,18 @@ impl Source {
         self
     }
 
-    /// Whether a destructive edit is open and undecided over this material.
+    /// Whether a destructive edit is open and undecided over this samples.
     pub fn is_being_edited(&self) -> bool {
         self.editing.as_ref().is_some_and(|e| !e.confirmed)
     }
 
-    /// Whether the material is somewhere a reader could find it.
+    /// Whether the samples is somewhere a reader could find it.
     pub fn is_resolvable(&self) -> bool {
         matches!(&self.location, Location::File { path } if !path.is_empty())
     }
 }
 
-/// A composition, saved: the document, and where its material is.
+/// A composition, saved: the document, and where its samples is.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Session {
     /// The format this was written in. See [`FORMAT`].
@@ -225,7 +225,7 @@ impl Session {
         self.sources.get(&id)
     }
 
-    /// Sources whose material is not written down anywhere — what a save
+    /// Sources whose samples is not written down anywhere — what a save
     /// consults before promising the file is complete.
     pub fn volatile(&self) -> Vec<SourceId> {
         self.sources
@@ -251,7 +251,7 @@ impl Session {
         self.document.root.walk(&mut |node| {
             let named: Vec<crate::SourceId> = match &node.body {
                 crate::Body::Vector { source, .. } => vec![source.source],
-                // Assembled material names one source per window, and a table
+                // Assembled samples names one source per window, and a table
                 // covering only the first would reopen with the rest missing.
                 crate::Body::Segments { segments, .. } => {
                     segments.iter().map(|s| s.source.source).collect()
@@ -287,7 +287,7 @@ impl Session {
     }
 
     /// Confirms the edit open over a source: the working copy becomes the
-    /// material, and there is nothing left undecided about it.
+    /// samples, and there is nothing left undecided about it.
     pub fn confirm(&mut self, id: SourceId) -> bool {
         let Some(source) = self.sources.get_mut(&id) else {
             return false;

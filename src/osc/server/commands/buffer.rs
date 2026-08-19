@@ -16,7 +16,7 @@ impl OscServer {
     /// already reads, but a take that did not exist when this server started
     /// has to be pointed at. It is the RT server's half of the editor's
     /// arrangement — the editor allocates through the session that owns the
-    /// material, then tells the player where it is.
+    /// samples, then tells the player where it is.
     pub(in crate::osc::server) fn handle_buffer_attach(
         &mut self,
         mut args: Args,

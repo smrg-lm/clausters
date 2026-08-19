@@ -162,12 +162,12 @@ fn sample_at_inverts_the_body_pixel_map() {
 
 #[test]
 fn clip_drag_placement_moves_and_trims_from_the_snapshot() {
-    // A clip at 400, 300 long, showing its material from frame 0 — and no
-    // material behind it, so nothing bounds the edges but the clip's own floor.
+    // A clip at 400, 300 long, showing its contents from frame 0 — and no
+    // contents behind it, so nothing bounds the edges but the clip's own floor.
     let at = |offset, dur, start| ClipPlacement { offset, dur, start };
-    let free = Material::default();
-    let drag = |part, sample, press, orig, material| {
-        clip_drag_placement(part, sample, press, orig, material, 100.0)
+    let free = Contents::default();
+    let drag = |part, sample, press, orig, contents| {
+        clip_drag_placement(part, sample, press, orig, contents, 100.0)
     };
     // Body: the offset follows the delta, snapped; the duration and the window
     // are kept — moving a clip changes where it sounds, never what it holds.
@@ -188,7 +188,7 @@ fn clip_drag_placement_moves_and_trims_from_the_snapshot() {
     );
     // Start: the onset stays within [0, end - floor], the end fixed — and the
     // **window travels with it**, which is what makes an edge drag a trim: the
-    // clip begins 300 later and so does the material it shows.
+    // clip begins 300 later and so does the contents it shows.
     let trimmed = drag(ClipPart::Start, 500.0, 400.0, at(400.0, 300.0, 0.0), free);
     assert_eq!(trimmed, at(500.0, 200.0, 100.0), "trimmed, not squeezed");
     let to_origin = drag(ClipPart::Start, 0.0, 900.0, at(400.0, 300.0, 0.0), free);
@@ -206,24 +206,24 @@ fn clip_drag_placement_moves_and_trims_from_the_snapshot() {
     assert_eq!(tiny, at(400.0, 0.5, 0.0));
 }
 
-/// **The material is what bounds an edge**, and a loop is what unbounds it.
+/// **The contents are what bound an edge**, and a loop is what unbounds it.
 /// Without a loop there is nothing to show past the end of a buffer and nothing
 /// before its first frame, so the edges stop there; with one, past the end is
 /// the beginning again and before the start is the tail of the iteration
 /// before, so both edges run free.
 #[test]
-fn an_edge_stops_at_the_material_unless_the_clip_loops() {
+fn an_edge_stops_at_the_contents_unless_the_clip_loops() {
     let at = |offset, dur, start| ClipPlacement { offset, dur, start };
     // A 1000-frame take, shown whole from the origin.
-    let held = Material {
+    let held = Contents {
         total: Some(1000.0),
         looping: false,
     };
-    let looped = Material {
+    let looped = Contents {
         looping: true,
         ..held
     };
-    // The end edge pulled far right: it stops where the material does.
+    // The end edge pulled far right: it stops where the contents does.
     let stretched = clip_drag_placement(
         ClipPart::End,
         3000.0,
@@ -233,7 +233,7 @@ fn an_edge_stops_at_the_material_unless_the_clip_loops() {
         0.0,
     );
     assert_eq!(stretched, at(0.0, 1000.0, 0.0), "there is nothing past it");
-    // ...and with a loop it keeps going, because what follows is the material
+    // ...and with a loop it keeps going, because what follows is the contents
     // again.
     let looping = clip_drag_placement(
         ClipPart::End,
@@ -245,7 +245,7 @@ fn an_edge_stops_at_the_material_unless_the_clip_loops() {
     );
     assert_eq!(looping, at(0.0, 3000.0, 0.0), "three iterations of it");
     // The start edge pulled left out of a clip already trimmed by 200: it stops
-    // at the material's first frame...
+    // at the contents's first frame...
     let head = clip_drag_placement(
         ClipPart::Start,
         0.0,
@@ -284,7 +284,7 @@ fn clip_part_splits_body_from_edges() {
     );
     // An end off screen has no grip: the rectangle's edge there is the
     // window's, not the clip's, so a press on it grabs the body and pans or
-    // moves like any other pixel of the material.
+    // moves like any other pixel of the contents.
     assert_eq!(clip_part(wide, (false, true), &m, 102.0), ClipPart::Body);
     assert_eq!(clip_part(wide, (true, false), &m, 297.0), ClipPart::Body);
 }
@@ -405,7 +405,7 @@ fn clip_set_and_event_args_move_and_report() {
     assert_eq!(args[0], OscType::String("clip".into()));
     assert_eq!(args[1], OscType::Float(150.0));
     assert_eq!(args[2], OscType::Float(250.0));
-    // ...and what of its material it now shows, which a trim moves and an
+    // ...and what of its contents it now shows, which a trim moves and an
     // owner has to be told.
     assert_eq!(args[3], OscType::Float(40.0));
     assert_eq!(clip_event_args(tree, 11).unwrap()[1], OscType::Float(0.0));

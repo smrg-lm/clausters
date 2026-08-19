@@ -95,7 +95,7 @@ fn process_alive(pid: u32) -> bool {
 ///
 /// Unlinking leaves each mapping somebody still holds valid until it is
 /// dropped — the same property freeing one buffer relies on — so this ends the
-/// material rather than pulling it out from under a reader.
+/// samples rather than pulling it out from under a reader.
 #[cfg(unix)]
 pub fn remove_segment(path: &Path) {
     if let Some(dir) = path.parent()
@@ -139,7 +139,7 @@ pub fn remove_segment(path: &Path) {
 /// A claim of *nobody* (a segment created a moment ago, or one released on a
 /// clean exit so it can be adopted) is never swept — only a pid that answered
 /// once and does not now. And `except` — the path the caller is about to open
-/// — is never swept, which is what keeps a killed owner's material
+/// — is never swept, which is what keeps a killed owner's samples
 /// recoverable: starting a server against **the same path** adopts what is
 /// there, exactly as it did before this existed.
 #[cfg(unix)]
@@ -297,7 +297,7 @@ impl Segment {
     ///
     /// [`create_full`](Self::create_full) truncates, which was right while a
     /// segment was one server's own transport and is wrong now that it indexes
-    /// the **material**: the process most likely to be restarted — the one
+    /// the **samples**: the process most likely to be restarted — the one
     /// holding the audio device — would wipe what everybody else is editing.
     /// So a server opens what is there and creates only what is not, and the
     /// sizes it was asked for apply **to a segment it creates**: an existing
@@ -311,7 +311,7 @@ impl Segment {
     /// A file that exists and is *not* a valid segment is an error rather than
     /// something to overwrite. Racing creators are not arbitrated here: two
     /// servers started at the same instant against a path with nothing on it
-    /// may both create, and the loser's material would be the one that
+    /// may both create, and the loser's samples would be the one that
     /// vanishes — the arrangement this exists for starts the owner first (see
     /// `docs/ipc.md`).
     #[cfg(unix)]
@@ -328,7 +328,7 @@ impl Segment {
                 // serves any more: an editor killed rather than closed leaves
                 // its segment and a file per take behind, and this is the only
                 // point where a process is provably starting fresh. It never
-                // touches `path` itself, so adopting a dead owner's material
+                // touches `path` itself, so adopting a dead owner's samples
                 // by name keeps working.
                 if let Some(dir) = path.parent() {
                     for swept in sweep_dead_segments(dir, Some(path)) {
@@ -499,14 +499,14 @@ impl Segment {
         self.view.buffer_info(bufnum)
     }
 
-    /// **Maps buffer `bufnum`'s samples** — the peer's door to the material.
+    /// **Maps buffer `bufnum`'s samples** — the peer's door to the samples.
     ///
     /// `at` is the segment's own path, which is what the region is named from.
     /// `None` when the slot is empty, when the row is out of range, or when the
     /// region cannot be opened — which is the ordinary answer for a buffer that
     /// was freed between reading the directory and opening the file, and is why
     /// this returns the generation it mapped: a caller that keeps the mapping
-    /// compares it against the row to learn its material is history.
+    /// compares it against the row to learn its samples is history.
     #[cfg(unix)]
     pub fn map_buffer(
         self: &Arc<Self>,
@@ -534,7 +534,7 @@ impl Segment {
                 // **An attached server publishes the frontier too**, and it is
                 // the one that matters most: the process holding the input
                 // device is the only one that can record, and it is never the
-                // owner of the material. The row belongs to the owner, the
+                // owner of the samples. The row belongs to the owner, the
                 // number in it belongs to whoever wrote.
                 .with_frontier(self.frontier_sink(bufnum)),
             ),
@@ -542,7 +542,7 @@ impl Segment {
     }
 
     /// A [`Frontier`] sink over buffer `bufnum`'s directory row: where a
-    /// writing UGen says how far it has filled the material.
+    /// writing UGen says how far it has filled the samples.
     ///
     /// It holds the segment rather than a pointer into it, so the mapping
     /// cannot go out from under a buffer the engine is still writing — and the

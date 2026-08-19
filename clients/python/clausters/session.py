@@ -51,7 +51,7 @@ class Session(Environment):
     session (`clausters.default_session`) extends — so a named session and the
     default one are the same kind of thing. That makes it its **own random
     context** (`seed` / ``rng``): ``session.seed(n)`` reproduces *this* session's
-    material without touching another's, so two sessions -- even both offline --
+    events without touching another's, so two sessions -- even both offline --
     stay reproducible independently. Material created while the session drives
     (``play`` / ``render``) or inside a ``with`` block draws from this root.
 
@@ -319,7 +319,7 @@ class Session(Environment):
         the session's life is the block's, and the wrong one for an environment
         that outlives every statement that uses it — a REPL, a driver whose
         cells each run on their own — where there is no block to be inside of.
-        After this, material created with no session named (`clausters.play`, a
+        After this, anything created with no session named (`clausters.play`, a
         bare `clausters.Synth`) resolves to *this* session's server, clock and
         random root.
 
@@ -347,7 +347,7 @@ class Session(Environment):
     @contextmanager
     def _active(self):
         """Mark this session active on the calling thread for the duration of a
-        driving call, so material created in it (a played routine, a top-level
+        driving call, so anything created in it (a played routine, a top-level
         draw) resolves to *this* session's server/clock/rng — not the default
         session's. Save/restore, so nesting and other threads are unaffected."""
         prev = main.current_session
@@ -492,7 +492,7 @@ class Session(Environment):
         self.server.close()    # stops a launched server process too
 
     def __enter__(self):
-        # Activate for the whole block, so material created inside (patterns,
+        # Activate for the whole block, so anything created inside (patterns,
         # routines, top-level draws) resolves to this session's server/clock/rng.
         self._prev_session = main.current_session
         main.current_session = self

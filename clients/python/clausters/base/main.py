@@ -72,7 +72,7 @@ class Main(Environment):
     def current_session(self):
         """The explicit `clausters.Session` active on **this thread**
         (thread-local), set by a session while it plays/renders or as a context
-        manager, so material created outside any routine still resolves to that
+        manager, so anything played outside a routine still resolves to that
         session's server/clock/rng. ``None`` means the default session (`main`)
         itself — the fallback when no session was named."""
         return getattr(self._local, "current_session", None)

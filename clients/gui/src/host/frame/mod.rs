@@ -72,7 +72,7 @@ pub(crate) fn clear_color(theme: &Theme) -> wgpu::Color {
 pub(crate) struct WaveformSlot {
     pub(crate) view: WaveformView,
     /// **The span this view was drawn over and could not answer** — a zoom
-    /// finer than the summary's bucket, over material the picture holds no
+    /// finer than the summary's bucket, over samples the picture holds no
     /// samples for. `(start, end)` in frames.
     ///
     /// It is set by the draw pass, which is the only place that knows the zoom
@@ -122,7 +122,7 @@ pub(crate) fn spectrogram_slot(
 
 /// **What a slot-backed element keeps of the resource that filled its slot.**
 ///
-/// A pyramid is not only a picture: it is the material the element named, and
+/// A pyramid is not only a picture: it is the samples the element named, and
 /// [`Element::sample_block`](crate::host::widget::element::Element::sample_block)
 /// reads a copy back out of it. Routing it to the slot alone left the element
 /// holding nothing, so a copy over a mapped take — the very source the clipboard
@@ -132,7 +132,7 @@ pub(crate) fn spectrogram_slot(
 /// Every other form is the picture alone and the element keeps nothing: an
 /// analysis is a reading of a signal, not the signal, and what a copy would owe
 /// the clipboard is samples.
-pub(crate) fn keep_material(widget: &mut Widget, data: &Loaded) {
+pub(crate) fn keep_data(widget: &mut Widget, data: &Loaded) {
     match data {
         Loaded::Peaks(peaks) => widget.take_bulk(|| Loaded::Peaks(peaks.clone())),
         Loaded::Shared(shared) => widget.take_bulk(|| Loaded::Shared(shared.clone())),
@@ -485,9 +485,9 @@ fn placed_nav(nav: &View, offset: f64) -> View {
 /// A column finer than the summary's base bucket can only come from samples;
 /// a view holding none for that span draws the bucket, which is the honest
 /// picture and one the eye has stopped getting anything new from. So the
-/// answer is the visible span, clamped to the material, and it is `None` in
+/// answer is the visible span, clamped to the samples, and it is `None` in
 /// every other case: zoomed out (the summary *is* the answer), or covered
-/// already (mapped material, a whole owned buffer, a window over this span).
+/// already (mapped samples, a whole owned buffer, a window over this span).
 ///
 /// The span is the window as drawn and not a margin around it: a window is
 /// fetched because somebody is looking at it, and guessing where they will
@@ -496,7 +496,7 @@ fn placed_nav(nav: &View, offset: f64) -> View {
 /// **Material that is still being written asks for nothing** (`written`, the
 /// `fills` prop's frontier): there is nothing to read past the frontier, and
 /// reading behind it would install a run that the next block makes stale. A
-/// take being recorded is *told* what it looks like; it reads the material
+/// take being recorded is *told* what it looks like; it reads the samples
 /// once it is finished, which is what clearing `fills` says.
 fn missing_span(
     view: &WaveformView,
@@ -1188,7 +1188,7 @@ mod tests {
             tip < b.x + m.grip_w * 0.5,
             "the arrow is the top clip's start grip, not the covered clip's end"
         );
-        // And the other half of the rule: a pointer over the clip's material,
+        // And the other half of the rule: a pointer over the clip's samples,
         // clear of both strips, lights **nothing** — there is no resize there,
         // and the press goes to whatever the clip's bodies make of it.
         let middle = ((a.x + a.w * 0.5) as f64, (a.y + a.h * 0.5) as f64);
@@ -1379,7 +1379,7 @@ mod tests {
     /// **The note the draw pass leaves**: a zoom past the summary over a span
     /// nothing covers is a fetch owed, and every other case is silence.
     #[test]
-    fn only_a_zoom_past_the_summary_over_uncovered_material_asks_for_a_span() {
+    fn only_a_zoom_past_the_summary_over_uncovered_samples_asks_for_a_span() {
         use crate::waveform::WaveformData;
         // Long enough that the whole of it, over 800 px, is coarser than a
         // bucket — which is what "zoomed out" means for this question.
@@ -1403,7 +1403,7 @@ mod tests {
         assert_eq!(
             missing_span(&told, &close, 800.0, None),
             Some((1_000, 3_000)),
-            "past the bucket over material it cannot answer for"
+            "past the bucket over samples it cannot answer for"
         );
 
         // The same view once the run has arrived: nothing more is owed.
@@ -1414,7 +1414,7 @@ mod tests {
         let covered = WaveformView::new(data);
         assert_eq!(missing_span(&covered, &close, 800.0, None), None);
 
-        // And a view that owns its material never asks.
+        // And a view that owns its samples never asks.
         let owned = WaveformView::new(WaveformData::from_interleaved(
             &vec![0.0; frames],
             1,

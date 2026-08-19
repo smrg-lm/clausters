@@ -69,7 +69,7 @@ export class ServerStreams {
     }
 
     /**
-     * Subscribes this client to the **overview of material as it is written**
+     * Subscribes this client to the **overview of the audio as it is written**
      * (`/buffer_stream`): every `periodMs` (10 ms floor) the server sends, per
      * watched buffer whose write frontier moved, one
      * `/buffer_stream.reply bufnum startFrame bucket blob` — and nothing for

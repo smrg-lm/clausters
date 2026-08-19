@@ -190,7 +190,7 @@ writes the same bytes the GUI host maps and the Python client produces, and
 
 ### Watching a take record
 
-A recording is the one material a page cannot fetch as it grows: the samples are
+A recording is the one samples a page cannot fetch as it grows: the samples are
 being written into the server's own memory, and a page maps nothing. So the
 server sends the **overview** instead — what the writer measured over the frames
 that appeared, at about 2 kB/s a channel where the audio would be 190.
@@ -221,7 +221,7 @@ summary is the resolution: zoomed inside one bucket the picture is that bucket,
 so a script drawing its own canvas reads the take back with `getSamples` for the
 span it wants to show in detail. (A **host-drawn** view does that for itself —
 it asks the server for the span it is zoomed into, which is how a page resolves
-to the sample where a desktop host reads the material it mapped.) And the server
+to the sample where a desktop host reads the samples it mapped.) And the server
 keeps **one buffer subscription per client**, replacing it on every call: on a
 page where the GUI host is already following a recording of its own (a
 `waveform` with `fills`), opening this beside it cancels the host's. Following a

@@ -71,11 +71,11 @@ pub struct Buffer {
     /// counter, always here.
     ///
     /// It used to live only in the shared segment's directory row, which made
-    /// it a fact about *sharing* rather than about the material: a server with
+    /// it a fact about *sharing* rather than about the samples: a server with
     /// no segment recorded exactly as it does now and could not say how far it
     /// had got, so `/buffer_stream` — the command for clients that cannot map
     /// anything, which is most of them — had nothing to report. The frontier
-    /// is the material's, so it is kept with the material and published from
+    /// is the samples's, so it is kept with the samples and published from
     /// here to whoever else wants it.
     written: AtomicU64,
     /// Where else to publish it: the directory row a mapping peer reads
@@ -109,7 +109,7 @@ pub enum Storage {
     /// The server's own memory: what a buffer is with no segment attached.
     Owned(Vec<AtomicU32>),
     /// A region a peer can map by name, for a server that has an IPC segment —
-    /// the material an editor draws and writes without a message
+    /// the samples an editor draws and writes without a message
     /// (`dsp::region`).
     #[cfg(unix)]
     Shared(std::sync::Arc<crate::dsp::region::Region>),
@@ -182,7 +182,7 @@ impl Buffer {
     ///
     /// A buffer with no sink (every buffer with no segment behind it) records
     /// exactly as it always did and tells nobody, which is the same split
-    /// every other shared-material path has.
+    /// every other shared-samples path has.
     pub fn with_frontier(mut self, frontier: std::sync::Arc<dyn Frontier>) -> Self {
         self.frontier = Some(frontier);
         self
@@ -204,7 +204,7 @@ impl Buffer {
     }
 
     /// **How far this buffer has been written**, in frames, or `0` for one
-    /// nothing recorded into — a buffer that arrived whole is material
+    /// nothing recorded into — a buffer that arrived whole is samples
     /// everywhere and has no frontier at all.
     ///
     /// It is a *hint*, like the row a peer reads: several writers may share a

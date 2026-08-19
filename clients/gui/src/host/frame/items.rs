@@ -97,7 +97,7 @@ pub(super) struct ClipBodyItem {
     /// as it does anywhere else. Its **zoom** is not here because a body's
     /// door takes no context: what a zoom resolves is already in the table.
     pub(super) metrics: Metrics,
-    /// What of its material the container is showing (the clip's own
+    /// What of its samples the container is showing (the clip's own
     /// [`SourceWindow`](crate::host::widget::SourceWindow)).
     pub(super) window: crate::host::widget::SourceWindow,
     /// Whether this body is its container's **active edit layer** — what it is
@@ -161,11 +161,11 @@ pub(super) struct TimelineItem {
     pub(super) kind: TimelineKind,
     pub(super) editor: EditorProps,
     /// The sample the hand is holding on this view, copied out with the rest —
-    /// the overlay pass draws it *over* the picture, since the material under
+    /// the overlay pass draws it *over* the picture, since the samples under
     /// it has not changed and must not be re-summarized to show an edit that
     /// nobody has applied yet.
     pub(super) pending: Option<crate::host::widget::element::PendingEdit>,
-    /// How far the material exists, for a take being written into as it is
+    /// How far the samples exists, for a take being written into as it is
     /// drawn (`fills`); `None` when all of it does.
     pub(super) written: Option<u64>,
 }
@@ -233,7 +233,7 @@ pub(super) fn collect_widgets(
         {
             // **The body's own span and window when it has them**, the clip's
             // otherwise: a body that names a stretch of the clip is drawn
-            // against that stretch and reads its own segment of material, and
+            // against that stretch and reads its own segment of samples, and
             // one that names neither is the whole-clip body every clip written
             // as flat props holds.
             let dur = p.widget.span.map_or(dur, |(_, len)| len);

@@ -1167,7 +1167,7 @@ impl JsDocument {
         .map_err(|e| JsError::new(&e.to_string()))
     }
 
-    /// Resolve a selection to the spans of material underneath it.
+    /// Resolve a selection to the spans of samples underneath it.
     /// `resolve(requestJson) -> resolvedJson`, the request carrying
     /// `{ selection, framesPerBeat, inBeats? }`.
     pub fn resolve(&self, request: &str) -> Result<String, JsError> {

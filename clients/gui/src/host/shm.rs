@@ -45,7 +45,7 @@ pub enum HeadClock {
     Device,
     /// The transport's **position in the piece**: it holds while stopped,
     /// jumps on a locate and wraps in a loop. What an editor wants, because it
-    /// is the time of the material rather than of the machine.
+    /// is the time of the samples rather than of the machine.
     Piece,
 }
 
@@ -95,7 +95,7 @@ impl SharedSegment {
     /// shared reader is one type with one set of accessors, and a read-only
     /// mapping would turn a later zero-message write into a fault rather than
     /// a compile error. The file is the server's, and opening it read/write is
-    /// the same permission a peer needs to edit the material beside it.
+    /// the same permission a peer needs to edit the samples beside it.
     pub fn open(path: &Path) -> io::Result<Self> {
         let file = OpenOptions::new().read(true).write(true).open(path)?;
         let len = file.metadata()?.len() as usize;
@@ -207,7 +207,7 @@ impl SharedSegment {
         self.view.transport_clock().load(Ordering::Relaxed)
     }
 
-    /// Where the transport is **in the piece**, in samples of the material —
+    /// Where the transport is **in the piece**, in samples of the samples —
     /// what a playhead draws.
     ///
     /// Not a clock: it advances with the transport clock while rolling, holds
@@ -240,7 +240,7 @@ impl SharedSegment {
     ///
     /// The generation does three jobs with one number: it is *odd while the
     /// buffer is live*, it *names the region file* beside the segment (which is
-    /// where the samples actually are — see [`crate::host::material`]), and it
+    /// where the samples actually are — see [`crate::host::mapped`]), and it
     /// is a *seqlock* the shared reader retries under.
     pub fn buffer_info(&self, bufnum: usize) -> Option<clausters_core::shm::BufferShape> {
         self.view.buffer_info(bufnum)
@@ -249,9 +249,9 @@ impl SharedSegment {
     /// **How far pool buffer `bufnum` has been written**, in frames: the
     /// frontier its writing UGens publish once per block (the server's S20).
     ///
-    /// Zero for material nothing recorded into, which is every take that
+    /// Zero for samples nothing recorded into, which is every take that
     /// arrived whole. It is a hint and not a promise: several writers may
-    /// share a buffer, and what it answers is only how far the material now
+    /// share a buffer, and what it answers is only how far the samples now
     /// goes.
     pub fn buffer_frontier(&self, bufnum: usize) -> Option<u64> {
         self.view.buffer_frontier(bufnum)

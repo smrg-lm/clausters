@@ -233,7 +233,7 @@ impl WebApp {
                 let step = self.fetches.on_data(&msg.args);
                 self.apply_fetch_step(step);
             }
-            // Another peer wrote a span of material this page may be drawing.
+            // Another peer wrote a span of samples this page may be drawing.
             // A page holds its **own copy** of the samples — it cannot map
             // anything — so there is no summary to re-read and the honest
             // outcome is to say the picture is behind rather than to redraw
@@ -364,13 +364,13 @@ impl WebApp {
                                 base_bucket,
                             ));
                             // The same pyramid to the slot and to the element,
-                            // as everywhere else (`frame::keep_material`).
+                            // as everywhere else (`frame::keep_data`).
                             if let Some(w) = self
                                 .host
                                 .window_def_mut(want.def_id)
                                 .and_then(|t| t.find_mut(want.widget_id))
                             {
-                                frame::keep_material(w, &Loaded::Peaks(data.clone()));
+                                frame::keep_data(w, &Loaded::Peaks(data.clone()));
                             }
                             self.place_bulk(want.def_id, want.widget_id, Loaded::Peaks(data));
                         }
@@ -422,7 +422,7 @@ impl WebApp {
                     {
                         editor.sample_rate = sample_rate;
                     }
-                    // The material just arrived, so whether this view has to
+                    // The samples just arrived, so whether this view has to
                     // be told about its own recording is only answerable now.
                     self.host.sync_buffer_streams();
                     self.request_redraw(want.def_id);
@@ -430,7 +430,7 @@ impl WebApp {
             }
             // A take being recorded into: its shape is the answer, and the
             // overview the server streams is what fills the picture. Nothing
-            // is downloaded — the material is silence until something records
+            // is downloaded — the samples are silence until something records
             // into it, and by then the reports are already drawing it.
             FetchStep::Empty {
                 bufnum,
@@ -468,7 +468,7 @@ impl WebApp {
                         .window_def_mut(want.def_id)
                         .and_then(|t| t.find_mut(want.widget_id))
                     {
-                        crate::host::frame::keep_material(w, &Loaded::Peaks(data.clone()));
+                        crate::host::frame::keep_data(w, &Loaded::Peaks(data.clone()));
                     }
                     self.place_bulk(want.def_id, want.widget_id, Loaded::Peaks(data));
                     self.host.set_timeline_total(want.widget_id, frames);
@@ -545,8 +545,7 @@ impl WebApp {
                 else {
                     continue;
                 };
-                let (Some(bufnum), Some((channels, _))) =
-                    (el.material_buffer(), el.material_shape())
+                let (Some(bufnum), Some((channels, _))) = (el.source_buffer(), el.sample_shape())
                 else {
                     continue;
                 };
@@ -566,7 +565,7 @@ impl WebApp {
     /// Folds one `/buffer_stream.reply` into every view of that buffer and
     /// repaints the canvases that took it.
     ///
-    /// The slots let the material go first, the way the mapped path does: a
+    /// The slots let the samples go first, the way the mapped path does: a
     /// pyramid a slot is holding cannot be written in place, so the element
     /// would copy the whole take before patching the buckets that arrived.
     pub(super) fn on_stream_report(
@@ -586,7 +585,7 @@ impl WebApp {
                         .filter(|w| {
                             w.kind
                                 .as_element()
-                                .and_then(|el| el.material_buffer())
+                                .and_then(|el| el.source_buffer())
                                 .is_some_and(|b| b == bufnum)
                         })
                         .filter_map(|w| w.id)

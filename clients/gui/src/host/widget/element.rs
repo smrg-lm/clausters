@@ -165,7 +165,7 @@ pub struct FreqAxis {
     pub sample_rate: f64,
 }
 
-/// A block of material an element handed over: interleaved samples, how many
+/// A block of samples an element handed over: interleaved samples, how many
 /// channels they interleave, and the rate they were taken at.
 ///
 /// The rate travels with the block and **nothing here converts it**: resampling
@@ -518,7 +518,7 @@ pub enum Loaded {
     /// buffers arrive as.
     Raw { samples: Vec<f32>, channels: usize },
     /// A peak pyramid, from a cache or summarized from raw samples. It is
-    /// **shared**: the element keeps it as the material it may be asked to read
+    /// **shared**: the element keeps it as the samples it may be asked to read
     /// back, and the slot it claimed draws the same one — a pyramid is a picture
     /// *and* a body, and copying it would have made those two things.
     Peaks(std::sync::Arc<crate::waveform::WaveformData>),
@@ -530,7 +530,7 @@ pub enum Loaded {
     /// region, its pyramid already built over the mapping.
     ///
     /// It is `Peaks`' sibling and not a duplicate of it: a pyramid *is* the
-    /// material for a view that draws an overview, and this one carries the
+    /// samples for a view that draws an overview, and this one carries the
     /// samples too, without a copy of them existing anywhere. An element that
     /// draws from samples rather than from a summary (a plot keeps its run
     /// whole) reads them out of it and owns what it read, which is the one
@@ -580,7 +580,7 @@ pub enum SlotKind {
 }
 
 /// The role an element fills as one of a **container's bodies** — the layered
-/// contents of a `clip`: the material, the events over it, the automation over
+/// contents of a `clip`: the samples, the events over it, the automation over
 /// both.
 ///
 /// **The set is closed and belongs to the container**, which owns the layering,
@@ -593,10 +593,10 @@ pub enum SlotKind {
 ///
 /// The declaration order **is** the layering order, back to front: a curve set
 /// on a clip that already has a take is drawn over it, which is what makes an
-/// envelope over its material one clip rather than two.
+/// envelope over its samples one clip rather than two.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum BodyRole {
-    /// The material itself — a clip's sound, drawn as a signal.
+    /// The samples itself — a clip's sound, drawn as a signal.
     Take,
     /// The events over it — the notes of a roll.
     Notes,
@@ -646,7 +646,7 @@ pub struct TimeSpace {
     /// `true` for an element standing on its own (a `None` [`TimeSpace`] never
     /// reaches this field): outside a container an element is its own layer.
     pub active: bool,
-    /// **What of its material the container is showing** — where its time zero
+    /// **What of its samples the container is showing** — where its time zero
     /// reads in the source, whether the window loops
     /// ([`SourceWindow`](super::SourceWindow)).
     ///
@@ -678,7 +678,7 @@ impl TimeSpace {
         }
     }
 
-    /// The same axis, over the part of the material `window` names.
+    /// The same axis, over the part of the samples `window` names.
     pub fn with_window(self, window: super::SourceWindow) -> Self {
         Self { window, ..self }
     }
@@ -1370,14 +1370,14 @@ pub trait Element: fmt::Debug {
         None
     }
 
-    /// **The material this element holds over a span of its own frames**, as
+    /// **The samples this element holds over a span of its own frames**, as
     /// interleaved samples with the rate they were taken at — what a copy puts
     /// on the clipboard.
     ///
     /// `None` where the element has nothing it could honestly hand over: a
     /// picture with no samples behind it (a mapped pyramid is an overview, and
     /// a block of silence is worse than declining), a live view whose data is
-    /// gone the moment it is drawn, an element that is not material at all.
+    /// gone the moment it is drawn, an element that is not samples at all.
     /// **Read-only, and it is the host's whole part in a copy**: writing the
     /// span back is an edit, and an edit belongs to whoever owns the data.
     /// `server_rate` is what the block is stamped with when the element names
@@ -1396,7 +1396,7 @@ pub trait Element: fmt::Debug {
     /// kind that can. `None` clears it, which is what an acknowledgement does
     /// once the owner has answered.
     ///
-    /// The value it holds is deliberately **not** written into the material:
+    /// The value it holds is deliberately **not** written into the samples:
     /// the host owns no data, and a pending value that entered the summary
     /// would make the overview disagree with the samples until the edit landed
     /// — besides costing a re-summarize per motion event.
@@ -1404,7 +1404,7 @@ pub trait Element: fmt::Debug {
         false
     }
 
-    /// The value of one sample of this element's material, in its own domain —
+    /// The value of one sample of this element's samples, in its own domain —
     /// what a grab reads so the intent it later emits can carry the value it
     /// started from.
     fn sample_value(&self, _channel: usize, _frame: usize) -> Option<f32> {
@@ -1617,8 +1617,8 @@ pub trait Element: fmt::Debug {
         false
     }
 
-    /// **How far this element's material exists**, in frames, or `None` when
-    /// all of it does — what a picture of the material is cut to.
+    /// **How far this element's samples exists**, in frames, or `None` when
+    /// all of it does — what a picture of the samples is cut to.
     ///
     /// It is the drawing's half of [`set_written`](Element::set_written): the
     /// frontier goes in as a fact, and what comes back out is the element's own
@@ -1628,55 +1628,55 @@ pub trait Element: fmt::Debug {
         None
     }
 
-    /// **How far the material has been written**, in frames — a buffer's write
+    /// **How far the samples has been written**, in frames — a buffer's write
     /// frontier, pushed in by the host that reads it from the shared segment.
     /// Returns whether anything changed, which is what asks for a redraw.
     ///
     /// It is a *fact* and not an instruction: whether an element draws only up
     /// to it is the element's own answer to its own props, because the frontier
-    /// alone cannot say what the picture is. A take being recorded is material
+    /// alone cannot say what the picture is. A take being recorded is samples
     /// up to the frontier and nothing past it; a take read from a file that one
-    /// `BufWr` dropped a sample into has a frontier too and is material
+    /// `BufWr` dropped a sample into has a frontier too and is samples
     /// everywhere. Only the client knows which it allocated, so the client says
     /// so (`fills`) and the host supplies the number.
     ///
-    /// The default ignores it: an element that draws no material has nothing to
+    /// The default ignores it: an element that draws no samples has nothing to
     /// be told.
     fn set_written(&mut self, _frames: u64) -> bool {
         false
     }
 
-    /// **The shape of the material this element holds** — `(channels, frames)`
-    /// per channel — or `None` when it draws no material.
+    /// **The shape of the samples this element holds** — `(channels, frames)`
+    /// per channel — or `None` when it draws no samples.
     ///
     /// The measuring half of [`Element::bulk`], and it exists for one caller: a
     /// destructive edit has to know what it may address before it addresses it.
     /// It answers the *shape* and not the data, because measuring by handing
     /// the samples over would copy a take per stroke.
-    fn material_shape(&self) -> Option<(usize, u64)> {
+    fn sample_shape(&self) -> Option<(usize, u64)> {
         None
     }
 
-    /// **The server buffer that material *is***, when the element named one.
+    /// **The server buffer that samples *is***, when the element named one.
     ///
     /// Not [`Needs::bulk`]: that is a *request*, and it goes quiet the moment
     /// the samples land — which is exactly when a destructive edit becomes
     /// possible. What the write needs is the buffer number the source keeps,
     /// which outlives the load.
-    fn material_buffer(&self) -> Option<i32> {
+    fn source_buffer(&self) -> Option<i32> {
         None
     }
 
-    /// **Writes a run of samples into the material**, at frame `start` of
+    /// **Writes a run of samples into the samples**, at frame `start` of
     /// channel `ch`; returns whether it landed.
     ///
     /// The element writes rather than the host because only it knows which form
-    /// its material is in — a pyramid, inline samples, or both — and a host
+    /// its samples is in — a pyramid, inline samples, or both — and a host
     /// that patched one form left every view holding the other showing the
-    /// material as it was before the stroke. What is written stays the
-    /// element's own picture; the *material* is the server's buffer, and the
+    /// samples as it was before the stroke. What is written stays the
+    /// element's own picture; the *samples* is the server's buffer, and the
     /// host sends that write itself.
-    /// **Re-reads the summary of a span** of material this element draws
+    /// **Re-reads the summary of a span** of samples this element draws
     /// where it lies, returning whether it did. The default is not to: an
     /// element holding its own samples has nothing to re-read.
     ///
@@ -1687,7 +1687,7 @@ pub trait Element: fmt::Debug {
     /// `ch` is `None` for **every channel**, which is what a recording wants:
     /// the write frontier is the buffer's and they all advance together, and
     /// asking per channel would copy the whole summary once per channel.
-    fn refresh_material(&mut self, _ch: Option<usize>, _start: u64, _frames: usize) -> bool {
+    fn resummarize(&mut self, _ch: Option<usize>, _start: u64, _frames: usize) -> bool {
         false
     }
 
@@ -1698,8 +1698,8 @@ pub trait Element: fmt::Debug {
     /// **Folds a run of already-measured buckets** into this element's
     /// summary, returning whether it did. The default is not to.
     ///
-    /// The sibling of [`Self::refresh_material`] for the picture that cannot
-    /// re-read anything: its material is a copy, and the material itself is
+    /// The sibling of [`Self::resummarize`] for the picture that cannot
+    /// re-read anything: its samples is a copy, and the samples itself is
     /// being written somewhere it has no access to (a page and a server
     /// buffer). So the *overview* of what was written arrives instead —
     /// `stats` is `/buffer_stream.reply`'s payload, bucket-major and
@@ -1708,7 +1708,7 @@ pub trait Element: fmt::Debug {
         false
     }
 
-    /// **Puts a fetched run of the material under this element's summary**,
+    /// **Puts a fetched run of the samples under this element's summary**,
     /// returning whether it took it. The default is not to.
     ///
     /// The landing of a zoom past the overview: `samples` is interleaved, every
@@ -1805,7 +1805,7 @@ pub trait Element: fmt::Debug {
         HitArea::Rect(input.rect)
     }
 
-    /// Whether the pointer at `at` is on this element's **own material** — the
+    /// Whether the pointer at `at` is on this element's **own samples** — the
     /// things it holds and can be asked to change (a curve's break-points and
     /// the segments between them, a note's rectangle), and never the rectangle
     /// it shares with the container that layered it.
@@ -1818,7 +1818,7 @@ pub trait Element: fmt::Debug {
     /// never asked.
     ///
     /// **A layer that cannot be edited answers `false`**, the same answer as
-    /// empty space: pointing at material this editor may not write is not a
+    /// empty space: pointing at samples this editor may not write is not a
     /// request to edit it, so the press falls through to the container instead
     /// of being consumed by a refusal. The refusal itself stays in
     /// [`press`](Element::press), for the layer a script activated deliberately.

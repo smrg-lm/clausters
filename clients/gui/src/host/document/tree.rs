@@ -27,7 +27,7 @@
 //!
 //! An aggregate of pitched clangs draws as a **roll** from the tree alone,
 //! because the pitches are in the tree. A **take** cannot: the document names a
-//! source and never says where the material is, so drawing one needs the
+//! source and never says where the samples is, so drawing one needs the
 //! session's table resolved to something a host can read — which is
 //! [`super::sources`], and is why `Look` takes the resolved [`Takes`] rather
 //! than the session. Given none, a take is still drawn: its placement and its
@@ -69,11 +69,11 @@ pub struct Look<'a> {
     /// itself, and the registry drops the whole subtree — which looks like an
     /// empty window and one line in the log.
     pub first_id: i32,
-    /// The session's material, once somebody has resolved it to buffers.
+    /// The session's samples, once somebody has resolved it to buffers.
     ///
     /// `None` — or a source missing from it — draws a take as its placement and
     /// its name, which is what a host with no server can honestly show: the
-    /// document holds no samples, so an empty clip here means *the material is
+    /// document holds no samples, so an empty clip here means *the samples is
     /// elsewhere*, not that there is none.
     pub takes: Option<&'a Takes>,
 }
@@ -171,7 +171,7 @@ const EDITOR_LANE_H: f64 = 120.0;
 /// push the arrangement off the screen, which is worse than a cramped lane.
 const EDITOR_MAX_H: f64 = 360.0;
 
-/// **The pane a take opens in is as tall as the take is wide**: material with
+/// **The pane a take opens in is as tall as the take is wide**: samples with
 /// four channels is four lanes, and a view that shows two of them is a picture
 /// of half the file — the same argument that makes a clip draw every channel.
 ///
@@ -206,7 +206,7 @@ impl Ids {
 /// Turns one member into lanes, **recursing while it is aggregates all the way
 /// down**.
 ///
-/// The rule is the shape of the material rather than a depth: an aggregate
+/// The rule is the shape of the samples rather than a depth: an aggregate
 /// whose members are leaves is a lane of clips (that is what a lane *is*), and
 /// an aggregate of aggregates is not one lane but each of theirs. A composition
 /// is nested as deeply as the author nested it — a piece of aggregates of
@@ -279,7 +279,7 @@ fn clip_of(
     });
     let take = take_of(&member.node, look);
     // The length shown: the placement's where it overrides, else the element's
-    // own, else **the material's** — a take placed 1:1 is as long as it is,
+    // own, else **the samples's** — a take placed 1:1 is as long as it is,
     // which is the one length nobody has to state — else a beat, because a clip
     // with no length at all would be a line.
     let dur = member
@@ -300,7 +300,7 @@ fn clip_of(
     );
     props.insert("dur".into(), json!(dur * look.units_per_beat));
     props.insert("label".into(), json!(label_of(&member.node)));
-    // The material, as a **server buffer**: the clip's take body fetches it
+    // The samples, as a **server buffer**: the clip's take body fetches it
     // over the host's client leg, which is the same route a script's clip
     // takes. What is drawn is then what an edit writes — one copy, not a
     // picture of one and a write to another.
@@ -310,9 +310,9 @@ fn clip_of(
             props.insert("channels".into(), json!(channels));
         }
     }
-    // **Assembled material draws a take per window**, each over its own stretch
+    // **Assembled samples draws a take per window**, each over its own stretch
     // of the clip: one clip, because that is what the element is, and one body
-    // per piece, because each reads a different part of different material.
+    // per piece, because each reads a different part of different samples.
     if let Body::Segments { segments, .. } = &member.node.body {
         let mut children = Vec::new();
         let mut cursor = 0.0f64;
@@ -343,10 +343,10 @@ fn clip_of(
     Value::Object(props)
 }
 
-/// **One editor per take**, under the tracks: the material as a navigable
+/// **One editor per take**, under the tracks: the samples as a navigable
 /// picture of itself, where it can be zoomed to the sample and drawn over.
 ///
-/// The arrangement says *where* material is and the editor is where material is
+/// The arrangement says *where* samples is and the editor is where samples is
 /// *edited*, and the two views are of one thing — the same server buffer, the
 /// same node — so a stroke here moves the clip's picture above it without
 /// anything being told. That is the whole reason a take opens as a second view
@@ -358,7 +358,7 @@ fn clip_of(
 /// is, and joining them would make drawing a sample scroll the whole session.
 ///
 /// A source drawn by several clips opens once (the first node that names it):
-/// the material is one, and editing it twice would be two pictures of the same
+/// the samples is one, and editing it twice would be two pictures of the same
 /// samples disagreeing while the hand is down.
 fn take_editors(
     document: &Document,
@@ -372,7 +372,7 @@ fn take_editors(
     let mut seen: Vec<clausters_document::SourceId> = Vec::new();
     let mut out = Vec::new();
     document.root.walk(&mut |node| {
-        // One pane per **source**, and assembled material names several: a
+        // One pane per **source**, and assembled samples names several: a
         // joined clip is edited piece by piece, since a piece is what a file
         // is.
         let sources: Vec<clausters_document::SourceId> = match &node.body {
@@ -428,7 +428,7 @@ fn take_editors(
     out
 }
 
-/// The material a node draws, when it names some and somebody resolved it.
+/// The samples a node draws, when it names some and somebody resolved it.
 fn take_of(node: &Node, look: &Look<'_>) -> Option<super::sources::Take> {
     let Body::Vector { source, .. } = &node.body else {
         return None;
@@ -442,7 +442,7 @@ fn take_of(node: &Node, look: &Look<'_>) -> Option<super::sources::Take> {
 ///
 /// `None` unless *every* member is a clang carrying a pitch: an aggregate holding
 /// takes, generators or anything else is a lane of clips and not a roll, and
-/// half a roll would be a picture that leaves material out without saying so.
+/// half a roll would be a picture that leaves samples out without saying so.
 fn notes_of(members: &[Member]) -> Option<Vec<(Beats, Beats, f32)>> {
     let mut out = Vec::with_capacity(members.len());
     for m in members {
@@ -722,11 +722,11 @@ mod take_tests {
         ))
     }
 
-    /// A resolved take draws the **buffer**, which is the same material an edit
+    /// A resolved take draws the **buffer**, which is the same samples an edit
     /// writes: the picture and the samples are one thing, or the host is
     /// showing one copy and editing another.
     #[test]
-    fn a_resolved_take_draws_its_buffer_and_is_as_long_as_its_material() {
+    fn a_resolved_take_draws_its_buffer_and_is_as_long_as_its_samples() {
         let dir = std::env::temp_dir().join(format!("clausters_gui_take_{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("mkdir");
         std::fs::write(dir.join("t.wav"), b"there").expect("write");
@@ -746,12 +746,12 @@ mod take_tests {
         assert_eq!(clip["channels"], 2);
         assert_eq!(
             clip["dur"], 96_000.0,
-            "as long as the material, in timeline units"
+            "as long as the samples, in timeline units"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// **Assembled material draws one clip and a take per window**, each over
+    /// **Assembled samples draws one clip and a take per window**, each over
     /// its own stretch of it — the standalone host reading what a joined clip
     /// was saved as, which is the one path a script is not there to draw.
     #[test]
@@ -809,7 +809,7 @@ mod take_tests {
         let clip = &drawn.def["children"][0]["children"][0];
         let takes = clip["children"].as_array().expect("a body per window");
         assert_eq!(takes.len(), 2);
-        assert_eq!(takes[0]["buffer"], 7, "the first window's material");
+        assert_eq!(takes[0]["buffer"], 7, "the first window's samples");
         assert_eq!(takes[1]["buffer"], 8, "and the second's, a different file");
         // Each on its own stretch of the clip, in timeline units.
         assert_eq!(takes[0]["at"], 0.0);
@@ -822,7 +822,7 @@ mod take_tests {
     }
 
     /// A resolved take also **opens as an editor**, on its own axis and bound
-    /// to the same node the clip is: the arrangement is where the material is
+    /// to the same node the clip is: the arrangement is where the samples is
     /// placed and this is where it is drawn over, and both write the one buffer.
     #[test]
     fn a_resolved_take_opens_an_editor_bound_to_the_same_node() {
@@ -1208,7 +1208,7 @@ mod roll_tests {
     }
 
     /// An aggregate that is **not** all pitched clangs stays a lane of clips: a roll
-    /// drawn over half an aggregate would leave material out without saying so.
+    /// drawn over half an aggregate would leave samples out without saying so.
     #[test]
     fn an_aggregate_that_is_not_all_notes_stays_a_lane_of_clips() {
         let doc = Document::new(aggregate(

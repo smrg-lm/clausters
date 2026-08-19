@@ -1,6 +1,6 @@
 //! Coordinate systems: a bounded domain seen through a window.
 //!
-//! Two types, one of which is the other's raw material. A [`View`] is the
+//! Two types, one of which is the other's raw input. A [`View`] is the
 //! **window** — a `start` and a `len` in `f64`, so deep zoom stays precise over
 //! multi-million-sample buffers — and zoom and pan are pure transforms on it
 //! that never touch the data, which is what makes navigation independent of

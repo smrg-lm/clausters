@@ -31,7 +31,7 @@ pub(crate) struct WaveWant {
     pub widget_id: i32,
     /// Whether this widget asked for the buffer's **shape** rather than its
     /// samples — a take being recorded into, whose picture is filled by the
-    /// overview the server streams and whose material is silence until then.
+    /// overview the server streams and whose samples are silence until then.
     pub shape_only: bool,
 }
 
@@ -111,7 +111,7 @@ impl BufferFetches {
     /// changes is that the reply finishes it, with no samples pulled.
     ///
     /// A buffer wanted both ways downloads: one view being told about a
-    /// recording does not excuse another that has to draw the material.
+    /// recording does not excuse another that has to draw the samples.
     pub(crate) fn want_shape(
         &mut self,
         def_id: i32,
@@ -174,7 +174,7 @@ impl BufferFetches {
             return self.finish(bufnum, Vec::new(), channels, sample_rate);
         }
         // Every waiter wants the shape: the shape is the answer, and nothing
-        // is downloaded. (Any waiter that wants the material downloads for all
+        // is downloaded. (Any waiter that wants the samples downloads for all
         // of them — the samples serve both.)
         if self
             .wants

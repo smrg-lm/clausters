@@ -182,7 +182,7 @@ over HTTP (<code>python3 -m http.server</code>) and open
         // reference client's render-then-load, with the file taken out of the
         // middle — it bounces to a WAV and reads that back, and a page has no
         // filesystem, so the samples go straight into a buffer on the page's
-        // engine. Either way the render is *material* now: random-access
+        // engine. Either way the render is *samples* now: random-access
         // audio, sounded through an instrument like any other.
         const session = (await Session.page({ channels: 2 })).adoptDefault();
         const buffer = await Buffer.fromSamples(

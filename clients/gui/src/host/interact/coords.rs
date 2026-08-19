@@ -237,11 +237,11 @@ pub(crate) fn sample_at(nav_start: f64, nav_len: f64, body_x: f64, body_w: f64, 
 const MIN_CLIP_DUR: f64 = 1.0;
 
 /// **What a clip drag produces**: where the clip sits, how long it is, and
-/// which part of its material it shows.
+/// which part of its contents it shows.
 ///
 /// The three move together and that is the whole of what an edge drag means: a
 /// clip is a window onto a segment of data, so pulling its **start** edge to
-/// the right hides the material's head rather than compressing it — the offset,
+/// the right hides the contents's head rather than compressing it — the offset,
 /// the duration and the window's `start` all advance by the same amount. Its
 /// **end** edge changes only the duration, since the head of the window has not
 /// moved.
@@ -253,20 +253,20 @@ pub(crate) struct ClipPlacement {
     pub start: f64,
 }
 
-/// What the material behind a clip allows a drag to do: how many frames there
+/// What the contents behind a clip allows a drag to do: how many frames there
 /// are, and whether the window may run off them.
 ///
-/// `total` is `None` for a clip with no material to run off — a roll, a bare
+/// `total` is `None` for a clip with no contents to run off — a roll, a bare
 /// automation — and then an edge drag is bounded by nothing but the clip's own
 /// floor, which is what it always was.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub(crate) struct Material {
+pub(crate) struct Contents {
     pub total: Option<f64>,
     pub looping: bool,
 }
 
-impl Material {
-    /// Whether an edge may be pulled past the material — a **looping** clip's
+impl Contents {
+    /// Whether an edge may be pulled past the contents — a **looping** clip's
     /// may, because past the end is the beginning again and before the start is
     /// the tail of the iteration before.
     fn unbounded(&self) -> bool {
@@ -277,14 +277,14 @@ impl Material {
 /// The clip placement one drag step produces, against the press-time snapshot
 /// (`press_sample`, `orig`) so a clamped edge never drifts: a body drag moves
 /// the offset, an edge drag trims — never below [`MIN_CLIP_DUR`], never past
-/// the material unless the clip loops, and the start stays within `[0, end]` —
+/// the contents unless the clip loops, and the start stays within `[0, end]` —
 /// snapped to `grid`.
 pub(crate) fn clip_drag_placement(
     part: ClipPart,
     sample: f64,
     press_sample: f64,
     orig: ClipPlacement,
-    material: Material,
+    contents: Contents,
     grid: f64,
 ) -> ClipPlacement {
     let delta = sample - press_sample;
@@ -300,10 +300,10 @@ pub(crate) fn clip_drag_placement(
         },
         ClipPart::End => {
             let mut new_end = snap(end + delta, grid).max(orig.offset + floor);
-            // The material runs out where the window does: without a loop the
+            // The contents runs out where the window does: without a loop the
             // end edge stops at the last frame, because past it there is
             // nothing to show and nothing to play.
-            if let Some(total) = material.total.filter(|_| !material.unbounded()) {
+            if let Some(total) = contents.total.filter(|_| !contents.unbounded()) {
                 new_end = new_end.min(orig.offset + (total - orig.start).max(floor));
             }
             ClipPlacement {
@@ -314,16 +314,16 @@ pub(crate) fn clip_drag_placement(
         ClipPart::Start => {
             let mut new_off = snap(orig.offset + delta, grid).min(end - floor).max(0.0);
             // ...and the same at the head: the window cannot begin before the
-            // material does unless the clip loops, where what lies before frame
+            // contents does unless the clip loops, where what lies before frame
             // zero is the tail of the iteration before it.
-            if !material.unbounded() {
+            if !contents.unbounded() {
                 new_off = new_off.max(orig.offset - orig.start);
             }
             ClipPlacement {
                 offset: new_off,
                 dur: end - new_off,
                 // The trim: the window's head travels with the edge, which is
-                // what makes the material stand still while the clip shows less
+                // what makes the contents stand still while the clip shows less
                 // of it.
                 start: orig.start + (new_off - orig.offset),
             }

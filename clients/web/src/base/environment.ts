@@ -24,7 +24,7 @@ import type { Server } from "../defs/server/index.ts";
  * Each environment is its own random context, so each reproduces
  * **independently**: `seed(n)` on one never touches another's stream. A
  * `Stream` created while a context is active derives its own generator from
- * that context's root (see `./rand.ts`), so two sessions' material stays
+ * that context's root (see `./rand.ts`), so two sessions stay
  * reproducible per session regardless of interleaving.
  */
 export class RandomContext {

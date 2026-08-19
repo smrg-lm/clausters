@@ -68,7 +68,7 @@ export class Main extends Environment {
 
     /**
      * The explicit `Session` active right now, set by a session while it
-     * plays or for the duration of a `with`-style block, so material created
+     * plays or for the duration of a `with`-style block, so anything created
      * outside any routine still resolves to that session. `null` means the
      * default session (`main`) itself.
      */

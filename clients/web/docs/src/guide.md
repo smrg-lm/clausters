@@ -102,7 +102,7 @@ const s = await Session.page({ tempo: 2.0 });       // this tab's engine
 const s = await Session.connect(url);               // a `clausters --ws` server
 ```
 
-That one call opens the connection, opens the `Server`, builds a clock at that tempo and anchors it to the server's own sample counter — the four lines a page used to write by hand. It is also the unit of **isolation**: its own random root (`s.seed(1)` reproduces this session's material and no other's), and, with `Session.page({ own: true })`, its own engine, so its nodes, buses and buffers share nothing with the rest of the document. Several coexist, which is why this exists at all: since the engines and hosts became instances, an environment is a thing a page has more than one of.
+That one call opens the connection, opens the `Server`, builds a clock at that tempo and anchors it to the server's own sample counter — the four lines a page used to write by hand. It is also the unit of **isolation**: its own random root (`s.seed(1)` reproduces this session's samples and no other's), and, with `Session.page({ own: true })`, its own engine, so its nodes, buses and buffers share nothing with the rest of the document. Several coexist, which is why this exists at all: since the engines and hosts became instances, an environment is a thing a page has more than one of.
 
 `s.close()` releases what the session owns — its GUI host, its server client, its clock, and an engine it opened for itself. The page's shared engine is not a session's to stop.
 
@@ -128,7 +128,7 @@ play(new seq.Pbind({ degree: new seq.Pseq([0, 2, 4]), dur: 0.5 }));
 new Synth("beep", { freq: 440 });           // and the bare constructor too
 ```
 
-`play` dispatches by kind — an `Event` or a plain object of event keys, an event pattern, a `Routine` or a bare generator, a def or a bare expression, a `Timeline`, a `Buffer`, an `Automation` — and returns something that knows how to end what just started. `examples/verbs.html` visits every kind. Its siblings take the same material and do something else with it: `plot` draws it and `render` evaluates it offline, while `scope` watches the buses whatever is playing writes to — all covered in [The ambient verbs](verbs.md).
+`play` dispatches by kind — an `Event` or a plain object of event keys, an event pattern, a `Routine` or a bare generator, a def or a bare expression, a `Timeline`, a `Buffer`, an `Automation` — and returns something that knows how to end what just started. `examples/verbs.html` visits every kind. Its siblings take the same samples and do something else with it: `plot` draws it and `render` evaluates it offline, while `scope` watches the buses whatever is playing writes to — all covered in [The ambient verbs](verbs.md).
 
 Resolution is one ladder, and it is worth knowing because it is what makes several sessions safe on one page:
 

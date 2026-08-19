@@ -56,7 +56,7 @@ export interface TransportState {
      */
     transportSample: number;
     /**
-     * Where the transport is **in the piece**, in samples of the material —
+     * Where the transport is **in the piece**, in samples of the piece —
      * what a playhead draws. Not a clock: it jumps to wherever a locate puts
      * it and wraps inside `loop`. Read from the engine as of its last
      * completed block, so a query issued in the same breath as a locate may
@@ -150,7 +150,7 @@ export class ServerTransport {
      * subtree and the server's transport clock, `transportPlay` thaws them.
      * Every node in the subtree keeps its internal state across the freeze, so
      * a resume continues the sound rather than restarting it — which is the
-     * only thing a pause can mean for material the server generates itself.
+     * only thing a pause can mean for a piece the server generates itself.
      *
      * Freeing the group unbinds the transport, and unbinding thaws whatever it
      * governed, so no frozen subtree is left with nobody to resume it.

@@ -121,11 +121,11 @@ pub mod ws;
 #[cfg(unix)]
 pub mod shm;
 
-// The material behind that segment's directory: a take's samples, mapped
+// The samples behind that segment's directory: a take's samples, mapped
 // read/write, so drawing one costs no conversation and editing one costs no
 // message. Unix-only, like `shm`.
 #[cfg(unix)]
-pub mod material;
+pub mod mapped;
 
 // The in-process embedded server for the standalone mode, a direct dependency on
 // the `clausters` crate behind the optional `standalone` feature (off by default,
@@ -236,7 +236,7 @@ pub enum ServerLink {
     #[cfg(feature = "standalone")]
     Embed(embed::EmbedServer),
     /// An in-process **on-demand session**: the same server with no audio
-    /// device, which performs the editing verbs and owns the material. What an
+    /// device, which performs the editing verbs and owns the samples. What an
     /// editor sends its allocations, its edits and its renders to, while the
     /// sound goes to a player that is another process entirely.
     #[cfg(feature = "standalone")]
@@ -549,27 +549,27 @@ pub struct Host {
     /// through it.
     server: Option<ServerLink>,
     /// The server that **makes sound**, when it is not the one that holds the
-    /// material.
+    /// samples.
     ///
     /// In an editor's arrangement they are two processes on purpose: the
     /// on-demand session owns the document's takes and computes, the RT server
     /// holds the machine's input and output and can be killed and restarted
-    /// without the material moving. Playing, sounding a key, the transport and
+    /// without the samples moving. Playing, sounding a key, the transport and
     /// the bus taps go here; allocation, the editing verbs and the renders go
     /// to [`Self::server`]. With nothing attached here the two are one server
     /// and everything takes the leg it always took.
     player: Option<ServerLink>,
-    /// The **material** the host can reach without asking for it: the takes of
+    /// The **samples** the host can reach without asking for it: the takes of
     /// a shared segment, mapped read/write.
     ///
-    /// Present when the host was pointed at a segment whose material it may
+    /// Present when the host was pointed at a segment whose samples it may
     /// touch — its own session's, or an external server's `--shm` path. With
     /// it a take is drawn from memory rather than fetched, and a stroke is a
     /// store rather than a `/buffer_setRangeChannel`; without it both go over
     /// the wire exactly as they always have, which is what every remote client
     /// and every page keeps doing.
     #[cfg(unix)]
-    material: Option<material::SharedMaterial>,
+    shared_buffers: Option<mapped::SharedBuffers>,
     /// Widget id -> the audio-server destination its value forwards to
     /// (`/gui_bind`). A bound widget bypasses the script: its value goes
     /// straight to the audio server instead of emitting a `/gui_event`.
@@ -634,7 +634,7 @@ pub struct Host {
     /// comes up, and a window already open keeps the pass it was built with,
     /// since every pipeline in a pass agrees on the count.
     pub msaa: u32,
-    /// **How much recorded material a picture waits for** before it re-reads
+    /// **How much recorded samples a picture waits for** before it re-reads
     /// its summary, in seconds (`--follow-block`, default `0` — every frame).
     ///
     /// A recording announces nothing: the host reads the buffer's write
@@ -649,7 +649,7 @@ pub struct Host {
     /// holds the pyramid it draws, so a refresh could not write in place and
     /// copied the whole take first — a cost that does not shrink with the
     /// block, which is why the block had to grow instead. The slot gives the
-    /// material back before the write now
+    /// samples back before the write now
     /// ([`crate::waveform::WaveformView::release_data`]), so what a step costs
     /// is the step.
     pub follow_block: f64,
@@ -686,7 +686,7 @@ impl Host {
             server: None,
             player: None,
             #[cfg(unix)]
-            material: None,
+            shared_buffers: None,
             bindings: HashMap::new(),
             def_json: HashMap::new(),
             store: None,
@@ -747,29 +747,29 @@ impl Host {
         self.server = Some(link);
     }
 
-    /// Points the host at the **material** of a shared segment: from here a
+    /// Points the host at the **samples** of a shared segment: from here a
     /// take is drawn from the mapped region and a stroke is stored into it,
     /// with nothing sent either way.
     ///
     /// The host must be entitled to write it, which in this design means it is
     /// the owner of the document those takes belong to (its own session's
-    /// material, or a server it was explicitly pointed at). A host that is a
+    /// samples, or a server it was explicitly pointed at). A host that is a
     /// guest on somebody else's document keeps sending intents and waiting for
     /// the acknowledgement — that machinery answers *may I*, and this changes
     /// only how the samples get there.
     #[cfg(unix)]
-    pub fn set_material(&mut self, material: material::SharedMaterial) {
-        self.material = Some(material);
+    pub fn set_shared_buffers(&mut self, samples: mapped::SharedBuffers) {
+        self.shared_buffers = Some(samples);
     }
 
-    /// The mapped material, when the host has any.
+    /// The mapped samples, when the host has any.
     #[cfg(unix)]
-    pub fn material(&self) -> Option<&material::SharedMaterial> {
-        self.material.as_ref()
+    pub fn shared_buffers(&self) -> Option<&mapped::SharedBuffers> {
+        self.shared_buffers.as_ref()
     }
 
     /// Attaches the server that makes sound, when it is a different one from
-    /// the server that holds the material (see the `player` field).
+    /// the server that holds the samples (see the `player` field).
     pub fn set_player_link(&mut self, link: ServerLink) {
         self.player = Some(link);
     }
@@ -1343,8 +1343,8 @@ impl Host {
             .iter()
             .any(|k| matches!(k.as_str(), "bus" | "rate" | "channels"));
         // And a set can start or stop a *recording* being followed: `fills` is
-        // the client saying this material is being written, and `buffer` is
-        // which material it is.
+        // the client saying this samples is being written, and `buffer` is
+        // which samples it is.
         let touches_stream = keys
             .iter()
             .any(|k| matches!(k.as_str(), "fills" | "buffer"));
@@ -1464,7 +1464,7 @@ impl Host {
     /// the previous value.
     ///
     /// Trailing pairs are source generations, which is the only thing that can
-    /// say a destructive edit changed material whose identity did not move. A
+    /// say a destructive edit changed samples whose identity did not move. A
     /// Retires everything an acknowledgement covers and lets go of what it was
     /// drawing — the two halves of *drop every pending at or below the stamp,
     /// and adopt what arrived*.
@@ -1481,7 +1481,7 @@ impl Host {
             return false;
         }
         debug!("retired {} pending edit(s)", settled.len());
-        // What the owner pushed is already in the material, so letting go is
+        // What the owner pushed is already in the samples, so letting go is
         // what makes the picture the document's again rather than the hand's.
         for p in &settled {
             if let Some(w) = self
@@ -1560,7 +1560,7 @@ impl Host {
             return false;
         };
         // A **destructive** edit is the one that reaches past the document: the
-        // samples are not in it, so they are written to the material itself and
+        // samples are not in it, so they are written to the samples itself and
         // the inverse comes from the hand that drew over them.
         let write = match &intent {
             clausters_document::Intent::WriteSamples {
@@ -1577,7 +1577,7 @@ impl Host {
         {
             // Refused, and said so: the pending drawing is dropped by the same
             // acknowledgement an applied edit sends, so the picture snaps back
-            // to the material rather than keeping a stroke nobody stored.
+            // to the samples rather than keeping a stroke nobody stored.
             warn!("refusing to write {} sample(s): {why}", values.len());
             let version = self.owner.as_ref().map_or(0, |o| o.document.version as i64);
             self.settle(ack::Acked {
@@ -1600,7 +1600,7 @@ impl Host {
         if applied.applied
             && let Some((channel, start, values)) = write
         {
-            self.write_material(def_id, widget_id, channel, start, &values);
+            self.write_buffer_samples(def_id, widget_id, channel, start, &values);
         }
         self.adopt(def_id, &[applied]);
         self.settle(ack::Acked {
@@ -1611,11 +1611,11 @@ impl Host {
         true
     }
 
-    /// Whether a destructive write can land on this widget's material, or why
+    /// Whether a destructive write can land on this widget's samples, or why
     /// it cannot.
     ///
     /// Checked **before** the document is touched, because a write that the
-    /// material refuses must not bump the source's generation: that number is
+    /// samples refuses must not bump the source's generation: that number is
     /// what tells every reader its copy is stale, and moving it for an edit
     /// nothing performed would send them all back to the server for nothing.
     fn can_write(
@@ -1629,15 +1629,15 @@ impl Host {
         let Some((channels, frames)) = self
             .window_def(def_id)
             .and_then(|t| t.find(widget_id))
-            .and_then(material_element)
-            .and_then(widget::element::Element::material_shape)
+            .and_then(element_with_samples)
+            .and_then(widget::element::Element::sample_shape)
         else {
-            return Err("this widget is not drawing any material".into());
+            return Err("this widget is not drawing any samples".into());
         };
         // The span is **frames of one channel** on both sides of the seam — the
         // picture is drawn per channel and the server is written per channel
         // (`/buffer_setRangeChannel`) — so this is the same check whatever the
-        // material's shape, which is what it took to stop refusing stereo.
+        // samples's shape, which is what it took to stop refusing stereo.
         if channel >= channels {
             return Err(format!(
                 "the take has {channels} channel(s); there is no channel {channel}"
@@ -1645,19 +1645,19 @@ impl Host {
         }
         if start + len as u64 > frames {
             return Err(format!(
-                "the span ends at frame {} and the material is {frames} frame(s) long",
+                "the span ends at frame {} and the samples is {frames} frame(s) long",
                 start + len as u64,
             ));
         }
-        // Either somebody holds the material for us, or we hold it ourselves.
+        // Either somebody holds the samples for us, or we hold it ourselves.
         // The second case is the editor's: the take is mapped, so a stroke
         // lands whether or not anything is currently playing it.
         #[cfg(unix)]
-        let held = self.server.is_some() || self.material.is_some();
+        let held = self.server.is_some() || self.shared_buffers.is_some();
         #[cfg(not(unix))]
         let held = self.server.is_some();
         if !held {
-            return Err("no audio server holds this material".into());
+            return Err("no audio server holds this samples".into());
         }
         if self.buffer_of(def_id, widget_id).is_none() {
             return Err("this widget draws no server buffer".into());
@@ -1665,30 +1665,30 @@ impl Host {
         Ok(())
     }
 
-    /// **How many frames of material a widget draws**, if it draws any.
+    /// **How many frames of samples a widget draws**, if it draws any.
     ///
     /// What a gesture clamps against: the right edge of a fully zoomed-out view
     /// maps to *one past* the last sample (a window of 8 samples is 8 wide),
-    /// and a stroke that reaches it would carry a frame the material does not
+    /// and a stroke that reaches it would carry a frame the samples does not
     /// have — which the owner refuses, taking the whole stroke with it.
-    pub(crate) fn material_frames(&self, def_id: i32, widget_id: i32) -> Option<u64> {
-        material_element(self.window_def(def_id)?.find(widget_id)?)?
-            .material_shape()
+    pub(crate) fn buffer_frames(&self, def_id: i32, widget_id: i32) -> Option<u64> {
+        element_with_samples(self.window_def(def_id)?.find(widget_id)?)?
+            .sample_shape()
             .map(|(_, frames)| frames)
     }
 
-    /// How many channels of material a widget draws, if it draws any — what the
+    /// How many channels of samples a widget draws, if it draws any — what the
     /// monitor starts one reader per.
-    pub(crate) fn material_channels(&self, def_id: i32, widget_id: i32) -> Option<usize> {
-        material_element(self.window_def(def_id)?.find(widget_id)?)?
-            .material_shape()
+    pub(crate) fn buffer_channels(&self, def_id: i32, widget_id: i32) -> Option<usize> {
+        element_with_samples(self.window_def(def_id)?.find(widget_id)?)?
+            .sample_shape()
             .map(|(channels, _)| channels)
     }
 
-    /// The server buffer a widget's material is, when it is one.
+    /// The server buffer a widget's samples is, when it is one.
     fn buffer_of(&self, def_id: i32, widget_id: i32) -> Option<i32> {
-        material_element(self.window_def(def_id)?.find(widget_id)?)
-            .and_then(widget::element::Element::material_buffer)
+        element_with_samples(self.window_def(def_id)?.find(widget_id)?)
+            .and_then(widget::element::Element::source_buffer)
     }
 
     /// **Carries a destructive edit through to the samples**: the server's
@@ -1697,16 +1697,16 @@ impl Host {
     /// The server's copy first, because it is the one that sounds and the one a
     /// save writes. Then the host's — and *every* view of that buffer in the
     /// window, not the one the hand was over: a session draws a take twice (the
-    /// clip in its lane, the editor under the tracks), they are one material,
+    /// clip in its lane, the editor under the tracks), they are one samples,
     /// and a stroke that reached only the view under the pointer leaves the
     /// other showing samples that no longer exist anywhere. Refetching to find
     /// that out would be a round trip per gesture; the buffer number is what
-    /// says which pictures are of this material.
+    /// says which pictures are of this samples.
     ///
     /// The write itself belongs to each element ([`widget::element::Element::write_samples`]),
     /// because a take drawn as a clip holds samples and the same take drawn as
     /// a navigable view holds a pyramid.
-    fn write_material(
+    fn write_buffer_samples(
         &mut self,
         def_id: i32,
         widget_id: i32,
@@ -1728,7 +1728,11 @@ impl Host {
         // blob out, a job on the server, a reply, and this host reconciling its
         // own picture with what it had just sent.
         #[cfg(unix)]
-        if let Some(take) = self.material.as_ref().and_then(|m| m.map(bufnum as usize)) {
+        if let Some(take) = self
+            .shared_buffers
+            .as_ref()
+            .and_then(|m| m.map(bufnum as usize))
+        {
             take.write_channel(channel, start, values);
             self.announce_write(bufnum, channel, start, values.len());
             if let Some(tree) = self.window_def_mut(def_id) {
@@ -1758,12 +1762,12 @@ impl Host {
             return;
         };
         if write_buffer_views(tree, bufnum, channel, start, values) == 0 {
-            warn!("the picture refused a write the material accepted — they will disagree");
+            warn!("the picture refused a write the samples accepted — they will disagree");
         }
     }
 
     /// Carries the sample half of an **undone or redone** write through to the
-    /// material, exactly as [`Self::write_material`] does for a fresh one.
+    /// samples, exactly as [`Self::write_buffer_samples`] does for a fresh one.
     ///
     /// A replayed write is complete on its own: the log holds the samples,
     /// because the hand that drew over them supplied the inverse, and the
@@ -1793,7 +1797,7 @@ impl Host {
                 warn!("cannot restore {} sample(s): {why}", values.len());
                 continue;
             }
-            self.write_material(def_id, widget_id, channel, start, &values);
+            self.write_buffer_samples(def_id, widget_id, channel, start, &values);
         }
     }
 
@@ -2180,7 +2184,7 @@ impl Host {
     ///
     /// So the subscription is exactly the views that asked
     /// ([`Element::stream_want`](widget::Element::stream_want)): the client
-    /// said the material is being written (`fills`) and the body is this
+    /// said the samples is being written (`fills`) and the body is this
     /// element's own copy. A mapped view is deliberately not in it — it would
     /// be paying twice for one picture.
     ///
@@ -2272,7 +2276,7 @@ impl Host {
     ///
     /// Playing a take, sounding a key, rolling the transport and recording a
     /// bus are all addressed to whoever holds the audio device, which is not
-    /// always the server that holds the material. With no separate player
+    /// always the server that holds the samples. With no separate player
     /// attached the two are the same server and this is the leg it always was.
     fn send_to_player(&self, msg: OscMessage) {
         let Some(link) = self.player.as_ref().or(self.server.as_ref()) else {
@@ -2403,14 +2407,14 @@ fn scalar_arg(v: &Value) -> Option<OscType> {
     }
 }
 
-/// The element under `widget` that holds material — itself, or one of the
+/// The element under `widget` that holds samples — itself, or one of the
 /// bodies a container built from its own props (a clip's take carries no id of
 /// its own, so it is only ever reached through the widget that does).
-fn material_element(widget: &widget::Widget) -> Option<&dyn widget::element::Element> {
+fn element_with_samples(widget: &widget::Widget) -> Option<&dyn widget::element::Element> {
     std::iter::once(widget)
         .chain(widget.children.iter())
         .filter_map(|w| w.kind.as_element())
-        .find(|el| el.material_shape().is_some())
+        .find(|el| el.sample_shape().is_some())
 }
 
 /// Re-reads the summary of a span in **every element in this tree drawing
@@ -2429,8 +2433,8 @@ pub(crate) fn refresh_buffer_views(
 ) -> usize {
     let mut refreshed = 0;
     if let Some(el) = widget.kind.as_element_mut()
-        && el.material_buffer() == Some(bufnum)
-        && el.refresh_material(Some(channel), start, frames)
+        && el.source_buffer() == Some(bufnum)
+        && el.resummarize(Some(channel), start, frames)
     {
         refreshed += 1;
     }
@@ -2497,10 +2501,10 @@ fn collect_stream_wants(widget: &widget::Widget, buffers: &mut Vec<i32>, bucket:
 /// buffer `bufnum`**, returning how many took it.
 ///
 /// The buffer is the identity here for the same reason it is for a write: two
-/// widgets are two pictures of one material exactly when they name the same
+/// widgets are two pictures of one samples exactly when they name the same
 /// buffer. What arrives is the overview of frames the writer added, so every
-/// picture of that material is told at once and each one answers for itself —
-/// a mapped view says no, since it reads the material where it lies.
+/// picture of that samples is told at once and each one answers for itself —
+/// a mapped view says no, since it reads the samples where it lies.
 pub(crate) fn stream_buffer_views(
     widget: &mut widget::Widget,
     bufnum: i32,
@@ -2510,7 +2514,7 @@ pub(crate) fn stream_buffer_views(
 ) -> usize {
     let mut wrote = 0;
     if let Some(el) = widget.kind.as_element_mut()
-        && el.material_buffer() == Some(bufnum)
+        && el.source_buffer() == Some(bufnum)
     {
         if el.write_buckets(start_frame, bucket, stats) {
             wrote += 1;
@@ -2518,7 +2522,7 @@ pub(crate) fn stream_buffer_views(
         // **How far it is written travels with the report**, as it does with a
         // frontier: the element decides what to do with it (drawing only that
         // far is the `fills` prop's answer, not this walk's).
-        let channels = el.material_shape().map_or(1, |(ch, _)| ch.max(1));
+        let channels = el.sample_shape().map_or(1, |(ch, _)| ch.max(1));
         let frames = (stats.len() / (channels * 3)) as u64 * bucket as u64;
         if el.set_written(start_frame + frames) {
             wrote += 1;
@@ -2533,7 +2537,7 @@ pub(crate) fn stream_buffer_views(
 /// Writes a run of samples into **every element in this tree drawing server
 /// buffer `bufnum`**, returning how many took it.
 ///
-/// The buffer is the identity: two widgets are two pictures of one material
+/// The buffer is the identity: two widgets are two pictures of one samples
 /// exactly when they name the same buffer, and nothing else in the tree relates
 /// them — a clip and an editor of the same take are not parent and child.
 fn write_buffer_views(
@@ -2545,7 +2549,7 @@ fn write_buffer_views(
 ) -> usize {
     let mut wrote = 0;
     if let Some(el) = widget.kind.as_element_mut()
-        && el.material_buffer() == Some(bufnum)
+        && el.source_buffer() == Some(bufnum)
         && el.write_samples(channel, start, values)
     {
         wrote += 1;
@@ -3520,7 +3524,7 @@ mod tests {
 /// log takes it back.
 ///
 /// What is exercised here is the seam the milestone added — [`Host::can_write`]
-/// refusing what the wire cannot carry, [`Host::write_material`] sending and
+/// refusing what the wire cannot carry, [`Host::write_buffer_samples`] sending and
 /// patching, and the inverse the hand supplies coming back through an undo. The
 /// hand itself (the drag that builds the payload) is tested in `gestures`, and
 /// the server's own `/buffer_setRange` in the server crate; this is where the
@@ -3571,7 +3575,7 @@ mod write_tests {
             }),
             from(),
         );
-        // The two forms one material arrives in, which is the whole reason a
+        // The two forms one samples arrives in, which is the whole reason a
         // write goes through the element: the navigable view keeps a pyramid,
         // the clip's take body keeps the samples.
         let samples = vec![0.0f32; frames * channels];
@@ -3640,7 +3644,7 @@ mod write_tests {
                     .chain(w.children.iter())
                     .find_map(|w| w.kind.sample_value(ch, i))
             })
-            .expect("material")
+            .expect("samples")
     }
 
     #[test]
@@ -3671,7 +3675,7 @@ mod write_tests {
         assert_eq!(
             sample_of(&host, 51, 4),
             0.5,
-            "and so does the clip, which is the same material seen elsewhere"
+            "and so does the clip, which is the same samples seen elsewhere"
         );
         assert_eq!(sample(&host, 6), 0.25);
         assert_eq!(sample(&host, 7), 0.0, "past the span, nothing moved");
@@ -3687,14 +3691,14 @@ mod write_tests {
         assert_eq!(sample_of(&host, 51, 4), 0.0, "and the clip with them both");
     }
 
-    /// **The monitor plays the material the window is drawing** — the same
+    /// **The monitor plays the samples the window is drawing** — the same
     /// buffer, reached by the same widget lookup an edit takes, so what sounds
     /// is what would be written.
     #[test]
     fn the_monitor_plays_a_takes_buffer_and_stops_it() {
         let (mut host, server) = take_host(1, 16);
         assert!(
-            host.play_material(1, 50, 0, None),
+            host.play_buffer(1, 50, 0, None),
             "a take with a buffer plays"
         );
         // The transport is placed before a reader exists, so the readers are
@@ -3725,16 +3729,16 @@ mod write_tests {
         // starts the sound is the transport rolling and not the /synth_new.
         let msg = received(&server).expect("the transport rolled");
         assert_eq!(msg.addr, "/transport_play");
-        assert_eq!(host.playing_material(), Some(50));
+        assert_eq!(host.playing_widget(), Some(50));
 
-        assert!(host.stop_material(), "and it stops");
+        assert!(host.stop_playback(), "and it stops");
         let msg = received(&server).expect("the transport stopped");
         assert_eq!(msg.addr, "/transport_stop");
         let msg = received(&server).expect("the node was freed");
         assert_eq!(msg.addr, "/node_free");
         assert_eq!(msg.args.len(), 1, "one reader, one node");
-        assert!(!host.stop_material(), "stopping twice sends nothing");
-        assert!(host.playing_material().is_none());
+        assert!(!host.stop_playback(), "stopping twice sends nothing");
+        assert!(host.playing_widget().is_none());
     }
 
     /// **The seek and the loop are the transport's, and they go out before a
@@ -3743,7 +3747,7 @@ mod write_tests {
     #[test]
     fn playing_a_span_locates_and_loops_before_the_readers_are_made() {
         let (mut host, server) = take_host(1, 16);
-        assert!(host.play_material(1, 50, 4, Some((4, 12))));
+        assert!(host.play_buffer(1, 50, 4, Some((4, 12))));
 
         let msg = received(&server).expect("the loop went first");
         assert_eq!(msg.addr, "/transport_loop");
@@ -3772,12 +3776,12 @@ mod write_tests {
     #[test]
     fn pausing_keeps_the_readers_and_resuming_continues() {
         let (mut host, server) = take_host(1, 16);
-        assert!(host.play_material(1, 50, 0, None));
+        assert!(host.play_buffer(1, 50, 0, None));
         for _ in 0..4 {
             received(&server); // the loop, the locate, the reader, the play
         }
 
-        assert_eq!(host.pause_material(), Some(false), "rolling -> paused");
+        assert_eq!(host.pause_playback(), Some(false), "rolling -> paused");
         assert_eq!(
             received(&server)
                 .expect("one command, and it is the transport's")
@@ -3789,12 +3793,12 @@ mod write_tests {
             "and the take is still loaded: nothing was freed"
         );
 
-        assert_eq!(host.pause_material(), Some(true), "paused -> rolling again");
+        assert_eq!(host.pause_playback(), Some(true), "paused -> rolling again");
         assert_eq!(
             received(&server).expect("and it rolls").addr,
             "/transport_play"
         );
-        assert_eq!(host.playing_material(), Some(50));
+        assert_eq!(host.playing_widget(), Some(50));
     }
 
     /// A host that did not bind the governed group **drives no transport**: it
@@ -3815,7 +3819,7 @@ mod write_tests {
     #[test]
     fn a_stereo_take_plays_a_reader_per_channel_and_stops_them_together() {
         let (mut host, server) = take_host(2, 16);
-        assert!(host.play_material(1, 50, 0, None));
+        assert!(host.play_buffer(1, 50, 0, None));
         received(&server).expect("/transport_loop");
         received(&server).expect("/transport_locateSample");
         for ch in 0..2 {
@@ -3833,7 +3837,7 @@ mod write_tests {
             );
         }
         received(&server).expect("/transport_play");
-        assert!(host.stop_material());
+        assert!(host.stop_playback());
         received(&server).expect("/transport_stop");
         let msg = received(&server).expect("both were freed");
         assert_eq!(msg.addr, "/node_free");
@@ -3885,7 +3889,7 @@ mod write_tests {
         assert_eq!(sample_of_channel(&host, 50, 1, 4), 0.0);
     }
 
-    /// A channel the material does not have is refused, the way the server
+    /// A channel the samples does not have is refused, the way the server
     /// refuses one the buffer does not have.
     #[test]
     fn a_channel_the_take_does_not_have_refuses_the_write() {
@@ -3910,7 +3914,7 @@ mod write_tests {
         );
     }
 
-    /// A span that runs past the end of the material is refused for the same
+    /// A span that runs past the end of the samples is refused for the same
     /// reason and by the same door: what the server holds and what the window
     /// draws must stay one thing.
     #[test]

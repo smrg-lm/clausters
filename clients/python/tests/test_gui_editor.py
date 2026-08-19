@@ -106,7 +106,7 @@ def test_a_musical_quant_becomes_the_lanes_drag_grid():
 
 # ---- the mapping rule: root members are lanes, their members are clips ----
 
-def test_each_root_member_becomes_a_lane_named_after_its_material():
+def test_each_root_member_becomes_a_lane_named_after_its_element():
     tree = editor().draw()
     assert [lane["label"] for lane in lanes(tree)] == ["audio", "lead"]
     # The shared axis is ruled by a free-standing strip under the stack, not by
@@ -140,7 +140,7 @@ def test_a_vector_spans_its_frames_only_when_it_has_no_duration():
     assert clips(lane)[0]["dur"] == pytest.approx(1.5 * BEAT)
 
 
-def test_an_events_material_draws_a_piano_roll_placed_by_its_offset():
+def test_an_events_element_draws_a_piano_roll_placed_by_its_offset():
     lead = lanes(editor().draw())[1]
     (roll,) = clips(lead)
     # Placed at beat 2 of the song, in timeline samples.
@@ -167,7 +167,7 @@ def test_a_generator_lane_shows_the_notes_its_pattern_will_play():
     assert [roll["notes"][i] for i in (2, 7)] == [60.0, 62.0]
 
 
-def _track_material():
+def _track_with_a_take():
     """A `Track` of two notes and one OSC event on an editable timeline."""
     from clausters.form import Track
     from clausters.seq.event import Event as SeqEvent
@@ -181,7 +181,7 @@ def _track_material():
 
 
 def test_an_element_renders_as_a_dedicated_piano_roll():
-    track, _tl = _track_material()
+    track, _tl = _track_with_a_take()
     ed = Editor(track, sample_rate=SR, tempo=TEMPO, quant=0.25)
     ed._mode, ed._roll_element = "pianoroll", track
     (roll,) = ed.draw()["children"][:1]
@@ -253,7 +253,7 @@ def test_a_generator_has_no_samples_and_the_refusal_says_so():
         ed.open_signal(None, gen)
     assert ed.window is None
     # ...and the draw refuses too, since a mode set by hand must not build a
-    # tree with no material in it either.
+    # tree with no element in it either.
     ed._mode, ed._signal_element = "signal", gen
     with pytest.raises(ValueError, match="no samples"):
         ed.draw()
@@ -267,7 +267,7 @@ def test_an_unknown_measure_is_refused_by_name():
 
 
 def test_a_note_edit_rewrites_the_editable_timeline():
-    track, tl = _track_material()
+    track, tl = _track_with_a_take()
     ed = Editor(track, sample_rate=SR, tempo=TEMPO)
     ed._mode, ed._roll_element = "pianoroll", track
     ed.draw()  # builds the roll registry
@@ -283,7 +283,7 @@ def test_a_note_edit_rewrites_the_editable_timeline():
     assert any(isinstance(it, OscEvent) for _b, it in items)
 
 
-def test_a_generator_material_is_read_only_in_the_piano_roll():
+def test_a_generator_element_is_read_only_in_the_piano_roll():
     from clausters.seq.pattern import Pbind, Pseq
 
     gen = Sequence(Pbind(midinote=Pseq([60, 62], 1), dur=1.0))
@@ -300,7 +300,7 @@ def test_a_note_edited_in_a_clip_body_reaches_the_arrangement():
     """A roll body carries no id of its own, so its notes arrive tagged with the
     **clip's** — and the multitrack must resolve that to the element the body
     draws, or the note moves on screen and nowhere else."""
-    track, tl = _track_material()
+    track, tl = _track_with_a_take()
     ed = editor(Aggregate([(0.0, Aggregate([(2.0, track)], name="lead"))], name="song"))
     (lane,) = lanes(ed.draw())
     (roll,) = clips(lane)
@@ -405,7 +405,7 @@ def clip_event(wid: int, offset: float, dur: float) -> tuple:
     return ("/gui_event", [wid, SEQ, UNSTATED, "clip", offset, dur])
 
 
-def test_a_dragged_clip_moves_the_material_in_beats():
+def test_a_dragged_clip_moves_the_clip_in_beats():
     ed = editor(quant=0.25)
     tree = ed.draw()
     roll = clips(lanes(tree)[1])[0]           # the lead's piano-roll, at beat 2
@@ -575,7 +575,7 @@ def test_a_sweep_becomes_the_crates_typed_selection():
     assert ed.selection["value"] == {"min": -0.5, "max": 0.25}
     assert len(ed.selection["nodes"]) == 1
 
-    # And it resolves to the material underneath, through the crate.
+    # And it resolves to the samples underneath, through the crate.
     under = ed.resolve_selection()
     assert under, "the take is under the sweep"
     assert all("range" in u and "source" in u for u in under)
@@ -652,7 +652,7 @@ def test_a_redo_tells_the_host_where_the_clip_now_is():
 
 def test_a_cut_across_a_clip_is_refused_with_its_reason():
     """A selection cutting *through* a clip implies a new length for the
-    material under it, which is not a placement edit. The refusal says so
+    samples under it, which is not a placement edit. The refusal says so
     instead of doing nothing."""
     ed = editor()
     host = _FakeHost()
@@ -668,13 +668,13 @@ def test_a_cut_across_a_clip_is_refused_with_its_reason():
     assert not changed
     assert len(placed.owner.handles) == before
     _, _, reason = host.answers[-1]
-    assert reason and "material" in reason
+    assert reason and "samples" in reason
 
 
-def test_a_sample_paste_is_refused_because_material_has_an_owner():
+def test_a_sample_paste_is_refused_because_the_audio_has_an_owner():
     """The clipboard travels with the request, and this editor says what it is
     not: an arrangement places elements, and a nameless block of audio has
-    neither a source nor a source's owner until the material half lands."""
+    neither a source nor a source's owner until the samples half lands."""
     ed = editor()
     host = _FakeHost()
     ed.open(host)
@@ -1500,7 +1500,7 @@ def test_a_clip_over_a_generator_draws_its_notes_read_only():
     assert clip.get("editable") == 0, "and says they are read-only"
 
     # A track's own notes are editable, which is what says the flag is the
-    # material's and not the widget's.
+    # samples's and not the widget's.
     track = Aggregate([(0.0, Track(Timeline([(0.0, SeqEvent(midinote=60, dur=1.0))])))],
                   name="lead")
     ed2 = editor(Aggregate([(0.0, track)], name="song"))
@@ -1520,7 +1520,7 @@ def _find(node, pred):
     return None
 
 
-# ---- a clip is a window onto a segment of its material ----
+# ---- a clip is a window onto a segment of its samples ----
 
 def _take_song(**window) -> tuple:
     """A one-lane composition holding one four-beat take, and its element."""
@@ -1548,7 +1548,7 @@ def test_a_take_draws_the_window_it_reads():
 
 def test_a_trim_moves_the_window_and_is_undone_as_one():
     """The head trim the host reports: the clip begins later, is shorter, and
-    reads its material from further in -- and an undo gives back the frames it
+    reads its samples from further in -- and an undo gives back the frames it
     hid, because the window is a leaf's configuration and went through the log
     like every other edit."""
     song, take = _take_song()
@@ -1565,7 +1565,7 @@ def test_a_trim_moves_the_window_and_is_undone_as_one():
 
 def test_a_split_gives_two_windows_over_one_buffer():
     """The cut: the first half keeps the head it had and stops early, the second
-    begins where it left off -- one material, two windows -- and it is one edit,
+    begins where it left off -- one buffer, two windows -- and it is one edit,
     so an undo puts the clip back whole."""
     song, take = _take_song()
     ed = editor(song)
@@ -1608,7 +1608,7 @@ def test_a_join_puts_a_split_clip_back_together():
     assert "start" not in joined
 
 
-def test_clips_over_different_material_join_into_one_element():
+def test_clips_over_different_buffers_join_into_one_element():
     """Two windows onto *different* buffers read as one thing: the arrangement
     has an element for exactly that — a list of windows onto whatever buffers
     they come from, read back to back — so the join makes one, and the clip
@@ -1727,7 +1727,7 @@ def test_a_joined_clip_cuts_apart_into_the_windows_it_was_made_of():
 
 
 def test_a_segments_clip_shows_and_plays_only_what_its_placement_covers():
-    """A placement is a window onto an element, and that holds for material made
+    """A placement is a window onto an element, and that holds for samples made
     of several segments: a clip shortened over it draws — and plays — the
     segments it reaches, and lengthening it again brings the rest back."""
     from clausters.form import Segments
@@ -1744,5 +1744,5 @@ def test_a_segments_clip_shows_and_plays_only_what_its_placement_covers():
     assert [t["buffer"] for t in takes] == [7, 8]
     assert [t["dur"] for t in takes] == pytest.approx([BEAT, 0.5 * BEAT])
 
-    # The whole material is still there: the placement is what was shortened.
+    # The whole buffer is still there: the placement is what was shortened.
     assert [s.duration for s in seg.segments] == pytest.approx([1.0, 1.0])

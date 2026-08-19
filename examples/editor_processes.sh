@@ -3,21 +3,21 @@
 #
 #     ./examples/editor_processes.sh
 #
-# What it shows: **the material outlives the process that plays it.** One
+# What it shows: **the samples outlives the process that plays it.** One
 # server owns the segment and the takes in it (standing in for the editor's
-# on-demand session — same code, no audio device needed to own material); a
+# on-demand session — same code, no audio device needed to own samples); a
 # second one attaches to the same segment, holds the audio device, and plays
 # what the first owns. Then the player is killed and another is started, and
-# the take is still there and still plays: nothing about the material moved,
+# the take is still there and still plays: nothing about the samples moved,
 # because it never belonged to the player.
 #
 # The rule underneath, in one line: the rings are SPSC, so the first server on
-# a segment claims the command plane and owns the material, and any later one
+# a segment claims the command plane and owns the samples, and any later one
 # attaches to the data plane and serves its own clients over its own sockets.
 # Samples never travel; allocation and lifetime always do, which is what
 # /buffer_attach is.
 #
-# The last section shows the other side of that property: material outliving
+# The last section shows the other side of that property: samples outliving
 # its process means a segment left by an owner that was *killed* looks exactly
 # like one being kept, so the claim answers that too -- creating a segment
 # sweeps the ones whose owner no longer exists.
@@ -64,7 +64,7 @@ with c.map_buffer(0) as take:
     for i in range(take.frames):
         take.samples[i] = 0.3 * math.sin(step * i) * (1.0 - i / take.frames)
     print(f"  wrote {take.frames} frames into the region beside the segment")
-# Nothing else is sent: the owner holds the material, and what sounds it is a
+# Nothing else is sent: the owner holds the samples, and what sounds it is a
 # def on the *player*, which is a different server and gets its own below.
 c.close()
 PY
@@ -109,13 +109,13 @@ kill "$player_pid"; wait "$player_pid" 2>/dev/null
 player2_pid=$!
 sleep 1.5
 play_it "$player_port" 5001
-echo "  (same take, same samples: killing the player took no material with it)"
+echo "  (same take, same samples: killing the player took no samples with it)"
 
 echo
 echo "== what a restart does NOT bring back is the routing"
 echo "   the ports and the connections a person made live with the process."
 echo "   --client-name is what makes them come back under the same name, so a"
-echo "   patchbay can reconnect them; the material needed nothing."
+echo "   patchbay can reconnect them; the samples needed nothing."
 
 echo
 echo "== and what a *killed owner* leaves behind is collected by the next one"

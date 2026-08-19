@@ -97,7 +97,7 @@ const MAX_STREAM_BUFFERS: usize = 32;
 /// Ceiling on buckets in one `/buffer_stream.reply`, so a subscription that
 /// stalled does not answer with the whole recording in one message. What is
 /// left over is sent by the next report, since the frontier is where the
-/// report ended and not where the material is.
+/// report ended and not where the samples is.
 const MAX_STREAM_BUCKETS: usize = 4096;
 
 /// Largest `/bus_tapStream` window in samples for a **datagram-bounded** client
@@ -164,7 +164,7 @@ pub struct OscServer {
     /// network counterpart for the audio-tap rings. Pumped by the run loop.
     tap_streams: Vec<TapStream>,
     /// Active `/buffer_stream` subscriptions, at most one per client: the
-    /// **overview** of material as it is written, for a client that cannot map
+    /// **overview** of samples as it is written, for a client that cannot map
     /// the region and watch it fill. Pumped by the run loop.
     buffer_streams: Vec<BufferStream>,
     /// Which audio bus each tap ring is recording (`-1` = free), and how many
@@ -182,18 +182,18 @@ pub struct OscServer {
     /// the shared-memory / in-process ring endpoint, when attached.
     ipc: Option<crate::server::ipc::IpcPeer>,
     /// The segment itself, whether or not this server serves its rings. A
-    /// server that attached to somebody else's segment reads the material out
+    /// server that attached to somebody else's segment reads the samples out
     /// of it and has no ring at all, so the two cannot be one field.
     segment: Option<std::sync::Arc<crate::server::ipc::Segment>>,
     /// Where the segment's file is, when it has one: what a buffer's region is
     /// named from — on both sides, the server that writes the regions and the
     /// one that maps them.
     shm_path: Option<std::path::PathBuf>,
-    /// Whether this server **owns** the material: publishes a directory row
+    /// Whether this server **owns** the samples: publishes a directory row
     /// and a region for every buffer it installs. Exactly one process may, so
     /// it follows the control-plane claim; a server that attached without it
     /// maps what the owner published and keeps its own allocations private.
-    owns_material: bool,
+    owns_samples: bool,
     /// Per buffer, the region file backing it — kept so freeing one can unlink
     /// its name. Sized with the pool. Off Unix there are no regions and the
     /// list stays empty, which is why it is written and never read there.

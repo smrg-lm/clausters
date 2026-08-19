@@ -236,14 +236,14 @@ impl WebApp {
             .and_then(|t| t.find(widget_id))
             .is_some_and(|w| slot_target(w).is_some());
         if wants_slot {
-            // The picture goes to the slot, and whatever of it is *material*
-            // stays with the element that named it (`frame::keep_material`).
+            // The picture goes to the slot, and whatever of it is *samples*
+            // stays with the element that named it (`frame::keep_data`).
             if let Some(widget) = self
                 .host
                 .window_def_mut(def)
                 .and_then(|t| t.find_mut(widget_id))
             {
-                frame::keep_material(widget, &data);
+                frame::keep_data(widget, &data);
             }
             self.place_bulk(def, widget_id, data);
         } else if let Some(widget) = self

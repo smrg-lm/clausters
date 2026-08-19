@@ -48,7 +48,7 @@ mod tests;
 pub(crate) use crate::host::graphics::track::HeaderPart;
 
 pub(crate) use coords::{
-    ClipPart, ClipPlacement, Coords, Frame, Hit, Material, clip_drag_placement, local_time_of,
+    ClipPart, ClipPlacement, Contents, Coords, Frame, Hit, clip_drag_placement, local_time_of,
     plane_of, sample_at, time_of,
 };
 pub(crate) use edit::{clip_set, header_set, lane_resize, scroll_set_view};

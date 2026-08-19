@@ -195,7 +195,7 @@ pub unsafe extern "C" fn clausters_core_peaks_multi_build(
 /// This is what keeps an editor's overview true without re-summarizing the
 /// take: the owner applies an edit to its working copy and updates the span it
 /// touched, and the picture that reads the cache follows. The result is
-/// identical to rebuilding the cache from the edited material, which is
+/// identical to rebuilding the cache from the edited samples, which is
 /// asserted core-side rather than assumed.
 ///
 /// `samples` is the **whole** buffer as it now stands, interleaved — a bucket
@@ -284,7 +284,7 @@ pub unsafe extern "C" fn clausters_core_peaks_multi_empty(
 
 /// Folds a run of **already-summarized buckets** into an existing multichannel
 /// cache, in place — the receiving half of `/buffer_stream`, which sends the
-/// overview of material as it is written instead of the material.
+/// overview of the audio as it is written instead of the audio.
 ///
 /// `stats` is the reply's blob read as `n` `f32`s, **bucket-major and
 /// channel-minor**: for each bucket of `bucket` frames in order, for each
@@ -501,7 +501,7 @@ mod tests {
     fn peaks_multi_write_buckets_folds_a_report_into_a_cache() {
         // A take being recorded: the cache starts as the silence the buffer was
         // allocated as, and the reports are all this side ever sees of the
-        // material. What it ends up with must be the cache the samples build.
+        // samples. What it ends up with must be the cache the samples build.
         let (frames, channels, base) = (512, 2, 64);
         let inter: Vec<f32> = (0..frames * channels)
             .map(|i| ((i / channels) as f32 * 0.021 + (i % channels) as f32).sin() * 0.7)

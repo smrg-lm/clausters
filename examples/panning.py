@@ -141,7 +141,7 @@ def morph() -> SynthDef:
 #
 # `pan_az` places a source on a ring of any size — this one has six channels for
 # a listener with two, which is the ordinary case for anyone writing surround
-# material on headphones. The ring's channels are then panned into the stereo
+# samples on headphones. The ring's channels are then panned into the stereo
 # pair by hand, which is exactly what a fold-down is.
 #
 # `orientation=0` puts channel 0 at the front; the default 0.5 puts the front

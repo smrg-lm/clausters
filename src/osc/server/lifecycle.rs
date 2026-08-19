@@ -61,7 +61,7 @@ impl OscServer {
             ipc: None,
             segment: None,
             shm_path: None,
-            owns_material: false,
+            owns_samples: false,
             shared_buffers: Vec::new(),
             tcp: None,
             #[cfg(not(target_arch = "wasm32"))]
@@ -126,7 +126,7 @@ impl OscServer {
             ipc: None,
             segment: None,
             shm_path: None,
-            owns_material: false,
+            owns_samples: false,
             shared_buffers: Vec::new(),
             tcp: None,
             #[cfg(not(target_arch = "wasm32"))]

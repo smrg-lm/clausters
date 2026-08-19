@@ -154,7 +154,7 @@ def test_the_temporal_metadata_crosses_both_ways():
     handle = from_document(doc).handles[0]
     back = handle.element
     assert back.onset == 2.0 and back.duration == 0.5 and back.resident is True
-    # The id is the **placement's**: a clip is a window onto material, so the
+    # The id is the **placement's**: a clip is a window onto source, so the
     # handle is what carries the number an intent names.
     assert getattr(handle, ID_ATTR) == node["id"]
 
@@ -177,7 +177,7 @@ def _ids(node) -> list:
     return out
 
 
-# ---- the session: the document plus where its material is ----
+# ---- the session: the document plus where its source is ----
 
 def test_a_session_carries_the_document_and_its_source_table():
     from clausters.form.document import SESSION_FORMAT, from_session, to_session
@@ -213,7 +213,7 @@ def test_a_session_saved_mid_edit_reopens_with_the_edit_still_open():
             # The take the composition plays, and the working copy of it that an
             # unconfirmed edit is writing. Both are in the table because a
             # session whose table does not cover its own document is one that
-            # reopens with material unresolved.
+            # reopens with source unresolved.
             7: {
                 "location": {"at": "file", "path": "takes/vocal.wav"},
                 "lifetime": "external",
@@ -578,7 +578,7 @@ def test_opening_something_that_is_not_a_document_is_an_error_not_an_empty_one()
 def test_an_element_used_in_two_compositions_does_not_carry_a_number_the_second_one_holds():
     # Ids are stamped on the element object and numbering starts at 1 for every
     # root, so two arrangements built in one script both hold 1, 2, 3 -- and
-    # material authored in one and used in the other arrived carrying a number a
+    # source authored in one and used in the other arrived carrying a number a
     # different element here already had. An intent naming it then reached
     # whichever node the crate found first while the editor's index kept the
     # last: one gesture, two destinations.
@@ -597,19 +597,19 @@ def test_an_element_used_in_two_compositions_does_not_carry_a_number_the_second_
     assert _ids(to_document(second)["root"]) == ids
 
 
-def test_a_leaf_that_references_its_material_may_be_placed_twice():
-    # O14: a clip is a window onto material and the identity is the material, so
+def test_a_leaf_that_references_its_source_may_be_placed_twice():
+    # O14: a clip is a window onto a source and the identity is the source, so
     # two placements are two nodes naming one source -- which is the multitrack's
     # own semantics and what the defect at the foot of the crate's plan was about.
     take = Vector(FakeBuffer(7))
     doc = to_document(Aggregate([(0.0, take), (4.0, take)]))
     windows = [m["node"] for m in doc["root"]["members"]]
     assert windows[0]["id"] != windows[1]["id"], "two windows, two names"
-    assert windows[0]["source"] == windows[1]["source"], "one material behind them"
+    assert windows[0]["source"] == windows[1]["source"], "one source behind them"
 
 
-def test_an_element_whose_material_is_in_the_node_is_not_placed_twice():
-    # The other half of the rule: a clang carries its material *inside* the
+def test_an_element_whose_data_is_in_the_node_is_not_placed_twice():
+    # The other half of the rule: a clang carries its source *inside* the
     # node, so two placements would be two copies that diverge on the first
     # edit -- which is the answer the decision rejected, so it is refused rather
     # than made silently.
@@ -757,5 +757,5 @@ def test_a_session_whose_table_does_not_cover_its_document_is_refused():
     with pytest.raises(ValueError, match="does not cover this document"):
         to_session(an_aggregate(), sources={99: {"location": {"at": "file", "path": "x.wav"},
                                             "lifetime": "session", "generation": 0}})
-    # A composition with no material needs no table at all.
+    # A composition with no source needs no table at all.
     assert to_session(Aggregate([(0.0, Clang(SeqEvent(midinote=60)))]))["sources"] == {}

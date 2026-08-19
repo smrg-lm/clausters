@@ -339,7 +339,7 @@ class GuiHost:
                 every edit at or below it and a lost acknowledgement is
                 harmless.
             doc_version: the document's version after applying.
-            generations: ``(source, generation)`` pairs for material whose
+            generations: ``(source, generation)`` pairs for samples whose
                 *content* changed -- the only thing that can tell a reader its
                 copy is stale, since a destructive edit leaves the identity put.
             reason: why an edit was refused or transformed. Informational.

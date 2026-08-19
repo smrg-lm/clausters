@@ -470,7 +470,7 @@ impl UGen for Phasor {
 /// and not each reader's.
 ///
 /// One input, `offset` in frames, subtracted from the position: a clip that
-/// starts at sample `offset` of the piece reads its own material from frame 0
+/// starts at sample `offset` of the piece reads its own samples from frame 0
 /// when the transport reaches it. That is what the input is *for*, but it is
 /// also what keeps the output precise — see below.
 ///
@@ -486,7 +486,7 @@ impl UGen for Phasor {
 /// that. This is the catalog's existing arithmetic (`Phasor` keeps an `f64`
 /// internally and outputs `f32` just the same, and `BufRd` takes its phase as
 /// a signal), and the `offset` input is the answer to it: the subtraction
-/// happens here in `f64`, so a reader positioned at its own material's start
+/// happens here in `f64`, so a reader positioned at its own samples's start
 /// sees small numbers however deep into a long piece it sits. A graph that
 /// subtracts with a `Sub` UGen instead has already lost the precision by the
 /// time it does.

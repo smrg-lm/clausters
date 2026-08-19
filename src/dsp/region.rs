@@ -15,7 +15,7 @@
 //! whole answer to "what happens to a peer holding a buffer that was freed":
 //! its memory stays valid, it learns the buffer is gone by reading the
 //! directory, and the next allocation takes a new generation and therefore a
-//! new name — so a stale mapping can never be aliased onto new material.
+//! new name — so a stale mapping can never be aliased onto new samples.
 //!
 //! The cells are [`AtomicU32`] exactly as an owned buffer's are, and for the
 //! same reason (`dsp::buffer`): two threads — now two *processes* — touching

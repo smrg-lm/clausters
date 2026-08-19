@@ -296,9 +296,9 @@ pub(crate) struct ClipHit {
     /// The placement the press found, as one value — the snapshot a drag is
     /// measured against.
     pub placement: super::ClipPlacement,
-    /// What the material behind the clip allows its edges to do (how many
+    /// What the contents behind the clip allows its edges to do (how many
     /// frames it has, whether the window loops off them).
-    pub material: super::Material,
+    pub contents: super::Contents,
 }
 
 /// The [`ClipHit`] of the `clip` the pointer landed on: the clip the layout
@@ -330,13 +330,13 @@ pub(crate) fn clip_hit(
     };
     let window = widget.window.unwrap_or_default();
     // What the clip is a window **onto**: the take's own length, asked of the
-    // body that holds it. A clip with no material — a roll, a bare automation —
+    // body that holds it. A clip with no contents — a roll, a bare automation —
     // has no window to run off, and its edges are bounded by nothing but the
     // clip's own floor.
     let total = widget
         .clip_body(crate::host::widget::element::BodyRole::Take)
         .and_then(|k| k.as_element())
-        .and_then(|el| el.material_shape())
+        .and_then(|el| el.sample_shape())
         .map(|(_, frames)| frames as f64)
         .filter(|f| *f > 0.0);
     Some(ClipHit {
@@ -352,7 +352,7 @@ pub(crate) fn clip_hit(
             dur,
             start: window.start,
         },
-        material: super::Material {
+        contents: super::Contents {
             total,
             looping: window.looping,
         },

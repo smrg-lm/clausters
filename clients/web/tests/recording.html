@@ -110,7 +110,7 @@
 
         // **And the finished picture is the samples' own.** The take runs to
         // the end of its buffer, the node frees itself, and what the page was
-        // told is compared against what a build over the material gives.
+        // told is compared against what a build over the samples gives.
         await sleep(800);
         const written = stream.written(take);
         if (written !== FRAMES) {
@@ -140,7 +140,7 @@
         // **What the wire did not carry: the samples.** A pyramid's floor is
         // its base bucket, so zoomed inside one the picture is that bucket
         // repeated — the resolution the overview has, and the one difference
-        // from a host that maps the material and reads the cells themselves.
+        // from a host that maps the samples and reads the cells themselves.
         // It is the same floor on both sides, which is what this asserts.
         const inside = peaks.columns(0, { width: 8, start: 0, end: BUCKET });
         const insideRead = built.columns(0, { width: 8, start: 0, end: BUCKET });

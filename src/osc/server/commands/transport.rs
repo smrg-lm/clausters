@@ -120,7 +120,7 @@ impl OscServer {
             playing: false,
             position: 0.0,
             // The loop and the governed group survive: both are bindings to
-            // material and to the tree, not part of the grid, and dropping
+            // samples and to the tree, not part of the grid, and dropping
             // either here would leave the engine holding something no client
             // could see.
             loop_span: self.transport.loop_span,

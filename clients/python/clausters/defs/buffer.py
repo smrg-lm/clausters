@@ -292,12 +292,12 @@ class Buffer:
 
         Only meaningful against a server that **attached** to a segment
         somebody else owns — the RT server of an editor's arrangement, which
-        holds the devices and plays material the on-demand session owns. It
+        holds the devices and plays what the on-demand session owns. It
         maps every buffer the owner had published when it started, so this is
         for one published since: after it, that server's engine plays the very
         cells the owner writes, and nothing about the samples travelled.
 
-        Raises `CommandError` when this server owns the material, has no shared
+        Raises `CommandError` when this server owns the samples, has no shared
         segment, or finds no live buffer under this number.
         """
         srv = self._server()
@@ -312,7 +312,7 @@ class Buffer:
     def touch(self, channel: int, start: int, frames: int):
         """Announce that a span of this buffer was written (``/buffer_touch``).
 
-        For a local peer that edited the material **in place** — through the
+        For a local peer that edited the samples **in place** — through the
         shared segment, where a write reaches no wire at all. The span, not the
         samples: the server broadcasts ``/buffer_touched bufnum channel start
         frames`` to every client registered with ``/server_notify`` except the

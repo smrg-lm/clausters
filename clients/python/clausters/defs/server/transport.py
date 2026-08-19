@@ -89,7 +89,7 @@ class ServerTransport:
         subtree and the server's transport clock, `transport_play` thaws them.
         Every node in the subtree keeps its internal state across the freeze, so
         a resume continues the sound rather than restarting it — which is the
-        only thing a pause can mean for material the server generates itself.
+        only thing a pause can mean for a piece the server generates itself.
 
         Freeing the group unbinds the transport, and unbinding thaws whatever it
         governed, so no frozen subtree is left with nobody to resume it."""

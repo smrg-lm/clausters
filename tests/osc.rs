@@ -617,7 +617,7 @@ fn c_stream_rejects_bad_arguments() {
 }
 
 /// **A server with no segment reports a recording too**, which is the case the
-/// command exists for: whoever cannot map the material is who asks for its
+/// command exists for: whoever cannot map the samples is who asks for its
 /// overview, and most of them talk to a server that shares nothing — an engine
 /// inside a page, a `clausters` booted without `--shm`.
 ///
@@ -744,7 +744,7 @@ fn buffer_stream_reports_the_overview_of_what_was_recorded() {
         "an unwritten buffer reports nothing"
     );
 
-    // The material appears and the frontier says how far it goes. (In a real
+    // The samples appears and the frontier says how far it goes. (In a real
     // recording the writing UGen does both; here the two halves are done by
     // hand so the test is about the stream and not about a synth.)
     server.send(
@@ -1210,7 +1210,7 @@ fn b_export_dumps_raw_samples_to_a_local_file() {
     server.quit();
 }
 
-/// A peer that edits shared material writes into the cells and sends nothing,
+/// A peer that edits shared samples writes into the cells and sends nothing,
 /// so `/buffer_touch` is how every *other* client learns the span changed.
 #[test]
 fn a_touched_span_reaches_the_other_clients_and_not_the_writer() {

@@ -11,7 +11,7 @@
 //! [`TransportSample::to_device`], which both take the frozen total explicitly.
 //!
 //! Beside them is a third quantity that is **not a clock**: the
-//! [`PiecePosition`], where the transport is in the material. A clock counts
+//! [`PiecePosition`], where the transport is in the piece. A clock counts
 //! what has happened and only goes forward; a position says where you are and
 //! moves wherever a locate puts it. Keeping them apart is what lets a
 //! scheduler stay on an axis that cannot jump while a playhead sits on one
@@ -36,7 +36,7 @@ pub struct DeviceSample(u64);
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Default)]
 pub struct TransportSample(u64);
 
-/// Where the transport is **in the material**: a sample index of the piece.
+/// Where the transport is **in the piece**: a sample index of it.
 ///
 /// Not a clock. It advances with the transport clock while rolling, holds
 /// while stopped, jumps wherever `/transport_locate` puts it and wraps at a

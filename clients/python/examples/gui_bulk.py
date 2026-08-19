@@ -154,14 +154,14 @@ print("three waveforms mapped from files (zero OSC for the samples), and a "
 # The bottom lane is the other direction: the **host owns no data**, so dragging
 # a sample changes nothing by itself. What leaves is an *intent* --
 # `"sample" channel frame value previous` -- absolute and carrying its own
-# inverse, so whoever owns the material can apply it and undo it without having
+# inverse, so whoever owns the samples can apply it and undo it without having
 # remembered anything.
 #
 # While it is in flight the host draws the value the hand is holding, marked (a
 # ring tethered to the value it replaces), over a picture that has not changed.
 # This handler is the owner: it applies the edit to its own copy, pushes the
 # samples that now hold, and **acknowledges** -- and the acknowledgement is what
-# lets the host drop the pending drawing, the edit having become the material.
+# lets the host drop the pending drawing, the edit having become the samples.
 # Doing it in the other order would blink the old value back.
 
 # %%
@@ -210,7 +210,7 @@ def on_edit(tag: str, *values) -> None:
         edits.append(f"stroke over {len(run)} samples from {int(start)}")
     else:
         return
-    win["edit"].set(data=EDITABLE)      # the material the picture is now drawn from
+    win["edit"].set(data=EDITABLE)      # the samples the picture is now drawn from
     gui.ack(gui.last_seq)               # ...and only now does the hand let go
     win["log"].set(text=edits[-1])
     print(edits[-1])

@@ -104,7 +104,7 @@ and `next_below(n)` under `clausters.base.rand`) — draws from **one seedable c
   thread (or entered with ``with``), else the default session.
 
 There are **no per-pattern seeds** — independent seeds would break
-per-session consistency. To isolate some material, play it inside its own
+per-session consistency. To isolate some samples, play it inside its own
 routine (its own derived stream by construction) or its own session. The
 generator itself lives in the shared native core, so the same seed replays the
 same values in every Clausters client language.

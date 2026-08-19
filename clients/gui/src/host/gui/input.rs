@@ -261,7 +261,7 @@ impl App {
         true
     }
 
-    /// The space bar over the view under the cursor: play its material, or stop
+    /// The space bar over the view under the cursor: play its samples, or stop
     /// what is playing. Returns whether it was consumed.
     pub(super) fn play_key(&mut self, def_id: i32) -> bool {
         let Some((cx, cy)) = self.windows.get(&def_id).map(|w| w.cursor) else {

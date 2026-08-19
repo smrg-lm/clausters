@@ -322,7 +322,7 @@ class FakeGovernedServer:
 
 
 def test_resume_does_not_re_render():
-    """Play restarts the material; resume continues it.
+    """Play restarts the take; resume continues it.
 
     Governed, re-rendering on a resume would restart the very nodes the server
     froze so they could carry on -- which is the whole point of the freeze.
@@ -361,7 +361,7 @@ def test_play_still_re_renders():
     tp.play(at=0.0)
     tp.pause()
     tp.play()
-    assert len(calls) == 2, "play reads the material as it now stands"
+    assert len(calls) == 2, "play reads the take as it now stands"
 
 
 def test_a_governed_pause_starves_the_playhead_instead_of_stopping_it():

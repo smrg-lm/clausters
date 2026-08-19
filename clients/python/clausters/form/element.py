@@ -88,7 +88,7 @@ class Element:
         self.name = name
         self.onset = None if onset is None else float(onset)
         self.duration = None if duration is None else float(duration)
-        #: Whether this element's material is produced by a def running **on the
+        #: Whether this element's audio is produced by a def running **on the
         #: server** rather than by messages the arrangement flattens. Such an
         #: element is a generator with no index (see `locatable`).
         self.resident = bool(resident)
@@ -99,7 +99,7 @@ class Element:
 
         A **generated** element has an index: the arrangement flattens it to
         messages at absolute beats, so a transport can put itself anywhere on
-        it. A **resident generator** — a def producing its own material on the
+        it. A **resident generator** — a def producing its own audio on the
         server, a stochastic process, a demand-rate sequence — has none. Its
         position *is* its internal state, and no number moves it: the only thing
         a transport can do to it is stop it and let it carry on.
@@ -107,7 +107,7 @@ class Element:
         This is the same asymmetry the arrangement is built around, reaching the
         transport. Pause is symmetric and works for both; locate is not. A
         generator becomes locatable by being **rendered** — the change of state
-        from generator to generated — after which it is material like any other.
+        from generator to generated — after which it is a buffer like any other.
         """
         return not self.resident
 
@@ -210,7 +210,7 @@ class Vector(Element):
         duration: length in beats — how long the clip sounds. Give it for a take
             placed in time (an event's default length is used otherwise).
         start: the first frame of the buffer this element reads. An element is a
-            **window onto a segment** of its material, not the whole of it: a
+            **window onto a segment** of its buffer, not the whole of it: a
             trimmed take reads from further in and the frames before it are
             still there, which is what lets a trim be undone and a split give
             two windows over one buffer.
@@ -231,10 +231,10 @@ class Vector(Element):
         self.instrument = instrument
         self.controls = dict(controls or {})
         #: The **first frame of the buffer this element reads** — the head of
-        #: its window onto the material. Trimming a clip moves it; splitting one
+        #: its window onto the buffer. Trimming a clip moves it; splitting one
         #: in two gives each half a window of its own over the same buffer.
         self.start = float(start)
-        #: Whether the window **wraps** around the material: past the last frame
+        #: Whether the window **wraps** around the buffer: past the last frame
         #: it begins again, which is what stretching an element beyond the
         #: buffer means when a loop is what it is.
         self.loop = bool(loop)
@@ -247,7 +247,7 @@ class Vector(Element):
         0.8 would cut it short — a sampled take is not a note with a gap), and
         ``amp`` is 1 for the same reason at the other end: the note default
         mixes an event **20 dB down**, which is a headroom convention for
-        stacking notes and simply attenuates recorded material. A take arrives
+        stacking notes and simply attenuates recorded audio. A take arrives
         at the level it was recorded at; anything else is a mix decision, so it
         goes in ``controls`` (which overrides both).
         """
@@ -274,7 +274,7 @@ class Vector(Element):
 
 
 class Segments(Element):
-    """*Several windows read as one*: material assembled from segments of one or
+    """*Several windows read as one*: data assembled from segments of one or
     more buffers, which sound as a single thing.
 
     A `Vector` is one window onto one buffer. This is what a **join** makes when
@@ -290,7 +290,7 @@ class Segments(Element):
     segment, each over its own stretch of the clip.
 
     Args:
-        segments: the material, as ``(buffer, start, duration)`` triples (a
+        segments: the runs, as ``(buffer, start, duration)`` triples (a
             plain ``(buffer, duration)`` reads that buffer from its first
             frame). ``start`` is in frames, ``duration`` in beats.
         instrument: the def that plays them — one def for all of them, since
@@ -311,7 +311,7 @@ class Segments(Element):
 
     @property
     def segments(self) -> list:
-        """The segments, in reading order — the element's own material."""
+        """The segments, in reading order — the element's own data."""
         return list(self.wraps or ())
 
     def placed(self) -> list:

@@ -586,9 +586,9 @@ impl Gestures {
                     // **Which layer the press belongs to is decided first**,
                     // and everything below this line is the placement layer's
                     // — the move and the edges. A press on a content layer's
-                    // own material (an envelope's break-points, a note) selects
+                    // own contents (an envelope's break-points, a note) selects
                     // that layer and is that layer's; a press on the clip's
-                    // background is on no layer's material, which is what
+                    // background is on no layer's contents, which is what
                     // leaves it, and the grips with it, to the clip itself.
                     //
                     // The grips need no exception here any more, and that is
@@ -617,7 +617,7 @@ impl Gestures {
                         nav_len: h.nav.len,
                         press_sample,
                         orig: h.placement,
-                        material: h.material,
+                        contents: h.contents,
                         grid: snap,
                     });
                 }

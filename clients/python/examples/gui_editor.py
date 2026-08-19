@@ -35,14 +35,14 @@ the window's margin).
 
 **Ctrl+C then Ctrl+V** is the clipboard, and it shows where the host's authority
 stops. The copy is a *read*, so the host makes it alone: the selected span
-leaves the material it has mapped and lands on its clipboard, typed and carrying
+leaves the samples it has mapped and lands on its clipboard, typed and carrying
 its sample rate — nothing reaches this script. The paste *changes data*, which
 the host does not own, so it arrives here as a request with the clipboard beside
 it, and what this script does is the smallest honest thing: the block goes into
 a buffer of its own (`Buffer.set_samples`, which chunks it as blobs — a
 half-second of stereo is 200 kB and would not fit one datagram as arguments) and
 plays once. Copy a range, paste it, hear that range — with nothing written over
-the take, because a destructive edit belongs to whoever owns that material. The
+the take, because a destructive edit belongs to whoever owns that samples. The
 **playhead** tracks what you hear: `play_pass` starts one pass of the render
 through a ``PlayBuf`` voice (``loop`` is off — the take plays once and the sound
 never repeats under whatever else you are checking) and anchors the line with
@@ -168,7 +168,7 @@ SynthDef(
 
 # The clipboard's own voice: a one-shot over whatever buffer the paste filled.
 # A buffer of its own rather than a write into the take -- the host copied a
-# range, and hearing that range needs no edit to the material it came from. The
+# range, and hearing that range needs no edit to the samples it came from. The
 # buffer is a *control* because a paste allocates one sized to what came over,
 # so the def outlives every block it plays.
 _clip_voice = None
@@ -252,7 +252,7 @@ def on_clipboard(tag, *vals):
     What this script does with it is the smallest honest thing: it puts the
     block in a server buffer of its own and plays it once. Nothing is written
     back over the take — a destructive edit belongs to whoever owns that
-    material — so the round trip is *copy a range and hear that range*, which is
+    samples — so the round trip is *copy a range and hear that range*, which is
     the whole of what the clipboard promises.
     """
     if tag == "refused":

@@ -2,7 +2,7 @@
 """Asking a running server what it actually holds: defs, buffers, UGens.
 
 `introspect_tree.py` reads the *node tree* — what is playing right now. This
-reads the other half: the **catalog**, the material a client can build with.
+reads the other half: the **catalog**, the samples a client can build with.
 Three queries, all of them retrieval only (nothing here changes the server):
 
   * ``server.query_defs()``    -> the loaded defs and their control surface

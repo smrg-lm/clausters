@@ -156,7 +156,7 @@ class TempoClock:
         This is how a server transport's pause reaches a client. The sample
         timebase only decides how long to sleep between events and how to stamp
         one, so a client whose server froze would otherwise keep advancing beats
-        and scheduling material ahead — running away from a piece that is not
+        and scheduling events ahead — running away from a piece that is not
         moving. Freezing stops the beat instead of stopping the playhead: what
         was already scheduled stays scheduled, and the server's frozen queue
         holds it.

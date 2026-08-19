@@ -1,9 +1,9 @@
-//! The material a peer edits **in place**: a take's samples, mapped.
+//! A buffer's samples, mapped: what a peer edits **in place**.
 //!
 //! The segment ([`super::shm`]) carries the small, fixed data plane and a
 //! **directory** saying what each pool buffer is. It does not carry the
 //! samples: a buffer is sized at run time and a ten-minute stereo take is
-//! 230 MB, while the segment is sized once at boot. So a buffer's material is
+//! 230 MB, while the segment is sized once at boot. So a buffer's samples are
 //! its own file beside the segment, named from the segment's path, the buffer
 //! number and the generation — and this module opens it.
 //!
@@ -16,7 +16,7 @@
 //! whether that engine is in this process or in the RT server attached to the
 //! same segment.
 //!
-//! **It carries material, not computation.** A peer writes samples it already
+//! **It carries data, not computation.** A peer writes samples it already
 //! holds — a drawn stroke, a pasted block, a take it loaded. Every *operation*
 //! over samples (a gain, a fade, a reverse, a render) is still asked for over
 //! the wire and performed by the server, which is the rule the whole system
@@ -40,20 +40,20 @@ use clausters_core::peaks::Source;
 
 use super::shm::SharedSegment;
 
-/// The material of one segment: its directory, and the path its regions are
+/// The samples of one segment: its directory, and the path its regions are
 /// named from.
 ///
 /// Held beside the segment rather than inside it because the two answer
 /// different questions — the segment is *shape and time*, this is *samples* —
 /// and because a host may read a segment (meters, scopes) without ever mapping
 /// a take.
-pub struct SharedMaterial {
+pub struct SharedBuffers {
     segment: Arc<SharedSegment>,
     path: PathBuf,
 }
 
-impl SharedMaterial {
-    /// Reads `segment`'s material out of the regions beside `path`, which is
+impl SharedBuffers {
+    /// Reads `segment`'s samples out of the regions beside `path`, which is
     /// the segment's own file — the `--shm` path the server was given.
     pub fn new(segment: Arc<SharedSegment>, path: PathBuf) -> Self {
         Self { segment, path }
@@ -70,11 +70,11 @@ impl SharedMaterial {
     /// The generation is re-read after the mapping succeeds: a row that moved
     /// meanwhile describes a buffer this mapping is not, and mapping a take
     /// that was freed under us is exactly the case the generation exists for.
-    pub fn map(&self, bufnum: usize) -> Option<MappedTake> {
+    pub fn map(&self, bufnum: usize) -> Option<MappedBuffer> {
         let shape = self.segment.buffer_info(bufnum)?;
         let cells = shape.frames.checked_mul(shape.channels)?;
         let path = region_path(&self.path, bufnum, shape.generation);
-        let take = MappedTake::open(
+        let take = MappedBuffer::open(
             &path,
             cells,
             shape.channels,
@@ -92,7 +92,7 @@ impl SharedMaterial {
     /// picture of a recording needs and cannot get any other way, since the
     /// samples arrive with nothing said about them (the server's S20).
     ///
-    /// Zero for material that arrived whole, which is every take read from a
+    /// Zero for samples that arrived whole, which is every take read from a
     /// file: nothing wrote it here.
     pub fn frontier(&self, bufnum: usize) -> Option<u64> {
         self.segment.buffer_frontier(bufnum)
@@ -128,7 +128,7 @@ fn region_path(segment: &Path, bufnum: usize, generation: u64) -> PathBuf {
 /// audible on the next block with nothing sent. Concurrency is what the buffer
 /// model has always promised and no more: per-sample atomicity, no ordering
 /// between samples, a reader crossing a writer seeing some old and some new.
-pub struct MappedTake {
+pub struct MappedBuffer {
     ptr: *mut AtomicU32,
     cells: usize,
     channels: usize,
@@ -138,10 +138,10 @@ pub struct MappedTake {
 
 // SAFETY: every access goes through atomics on a shared mapping this value
 // owns; the pointer is never handed out.
-unsafe impl Send for MappedTake {}
-unsafe impl Sync for MappedTake {}
+unsafe impl Send for MappedBuffer {}
+unsafe impl Sync for MappedBuffer {}
 
-impl Drop for MappedTake {
+impl Drop for MappedBuffer {
     fn drop(&mut self) {
         // SAFETY: the exact mapping made in `open`. Unmapping releases *this*
         // view; the file itself outlives it, and an unlinked one dies with the
@@ -151,7 +151,7 @@ impl Drop for MappedTake {
     }
 }
 
-impl MappedTake {
+impl MappedBuffer {
     fn open(
         path: &Path,
         cells: usize,
@@ -258,7 +258,7 @@ impl MappedTake {
 }
 
 /// One channel of a mapped take, as a peak pyramid's [`Source`] — **the
-/// picture's door to the material**.
+/// picture's door to the samples**.
 ///
 /// It holds the mapping alive and reads through it; nothing is copied out. A
 /// read may cross a writer and see some old samples and some new, which is the
@@ -266,19 +266,19 @@ impl MappedTake {
 /// picture can live with — the alternative is a lock on the audio thread's own
 /// memory.
 pub struct MappedChannel {
-    take: Arc<MappedTake>,
+    take: Arc<MappedBuffer>,
     channel: usize,
 }
 
 impl MappedChannel {
     /// Channel `channel` of `take`.
-    pub fn new(take: Arc<MappedTake>, channel: usize) -> Self {
+    pub fn new(take: Arc<MappedBuffer>, channel: usize) -> Self {
         Self { take, channel }
     }
 
     /// One source per channel of `take`, in channel order — what a
     /// multichannel view is built from.
-    pub fn channels_of(take: Arc<MappedTake>) -> Vec<Arc<dyn Source + Send + Sync>> {
+    pub fn channels_of(take: Arc<MappedBuffer>) -> Vec<Arc<dyn Source + Send + Sync>> {
         let (channels, _, _) = take.shape();
         (0..channels.max(1))
             .map(|ch| Arc::new(Self::new(Arc::clone(&take), ch)) as Arc<dyn Source + Send + Sync>)

@@ -402,7 +402,7 @@ pub struct ProcessCtx<'a> {
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct TransportCtx {
     /// Where the transport is **in the piece** at this slice's first frame, in
-    /// samples of the material (`server::clock_axis::PiecePosition`).
+    /// samples of the piece (`server::clock_axis::PiecePosition`).
     ///
     /// It advances by one per sample across the whole slice — the engine cuts
     /// its block at a loop's wrap, so no slice ever straddles one. A UGen

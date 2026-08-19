@@ -35,7 +35,7 @@ fn take(id: u64, source: u64) -> Node {
     )
 }
 
-/// A composition with material, a generator holding its last rendered result,
+/// A composition with samples, a generator holding its last rendered result,
 /// and a plain clang -- one of everything the format has to carry.
 fn composition() -> Document {
     let rendered = Node {
@@ -238,7 +238,7 @@ fn only_a_working_copy_is_promoted() {
 // ---- what a save and an open have to report ----
 
 #[test]
-fn material_that_was_never_written_down_is_named_rather_than_pretended_about() {
+fn a_source_never_written_down_is_named_rather_than_pretended_about() {
     // A server buffer never exported. Saving is not blocked by it -- that would
     // block the safest habit in the program -- but the file cannot claim to be
     // complete either.

@@ -1,5 +1,5 @@
 //! Destructive edits over a span of interleaved samples — the verbs an audio
-//! editor applies to material.
+//! editor applies to samples.
 //!
 //! Three of them, and the set is small on purpose: `gain` with a shape covers
 //! constant gain, fades in and out, silence and each half of a crossfade;
@@ -32,13 +32,13 @@
 use crate::envshape::shape_value;
 
 /// What went wrong with a span, named rather than clamped: an edit that
-/// silently did less than it was asked would lose exactly the material the
+/// silently did less than it was asked would lose exactly the samples the
 /// caller believes it changed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EditError {
     /// `channels` was zero, or the data is not a whole number of frames.
     Shape,
-    /// The span runs past the end of the material.
+    /// The span runs past the end of the samples.
     Span,
     /// A replacement whose length is not the span's, in frames.
     Length,
@@ -48,7 +48,7 @@ impl core::fmt::Display for EditError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             EditError::Shape => write!(f, "channel count and sample count disagree"),
-            EditError::Span => write!(f, "the span runs past the end of the material"),
+            EditError::Span => write!(f, "the span runs past the end of the samples"),
             EditError::Length => write!(f, "the replacement is not the length of the span"),
         }
     }

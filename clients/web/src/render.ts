@@ -136,7 +136,7 @@ export interface RenderVerbOptions extends RenderOptions {
      * Extra defs the render needs first — a `GraphDef`'s member defs, or the
      * instrument a bounced pattern, timeline or routine names. Every offline
      * path starts from an **empty** ephemeral session, so whatever the
-     * material names has to ride along.
+     * samples names has to ride along.
      */
     defs?: readonly (SynthDef | FaustDef | GraphDef)[];
     /**

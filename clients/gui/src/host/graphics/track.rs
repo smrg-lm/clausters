@@ -441,7 +441,7 @@ pub fn clip_ends_on_screen(local: &View, dur: f64) -> (bool, bool) {
 /// collapsed clip is drawn as ([`clip_x_range`]): a grip is a promise the press
 /// keeps, so it can only be offered on pixels the press can be given. A clip
 /// drawn as a line therefore carries its expand grip *on the line* — enough to
-/// take once the zoom has widened it, and never a plate hanging over material
+/// take once the zoom has widened it, and never a plate hanging over the trace
 /// that is not the clip's.
 pub fn clip_grips(cr: Rect, ends: (bool, bool), m: &Metrics) -> (Option<Rect>, Option<Rect>) {
     let w = m.grip_w;
@@ -479,7 +479,7 @@ pub enum ClipSide {
 /// cannot keep, and the reader learns to distrust the mark rather than the
 /// distance. Lit only over its own strip, the two agree: what is lit is what
 /// the press takes (`interact::clip_part` reads the same [`clip_grips`]), and a
-/// pointer over the material lights nothing because nothing there resizes.
+/// pointer over the body lights nothing because nothing there resizes.
 pub fn clip_grip_at(
     cr: Rect,
     ends: (bool, bool),
@@ -515,14 +515,14 @@ pub fn clip_grip_on(
 ///
 /// It is a **plate**, the same translucent ground a caption over a picture sits
 /// on ([`plate_text`](super::plate_text)), for the same reason: what is under
-/// it is material, and an opaque strip would cut a hole in the take rather than
+/// it is the take, and an opaque strip would cut a hole in the take rather than
 /// mark an edge of it. The arrow says which way the edge moves and is centred
 /// on the strip's height, so it reads at any lane thickness.
 ///
 /// **The symbol is a parameter of the gesture, not of the clip.** An edge drag
 /// means *trim* on one arrangement and *stretch* on another, and the day a lane
 /// says which, the arrow is where that is announced — an outward chevron for
-/// the edge that moves, another mark for the material that stretches under it.
+/// the edge that moves, another mark for the contents that stretches under it.
 pub fn draw_clip_grip(d: &mut Draw, grip: Rect, side: ClipSide) {
     let (mesh, m, theme) = d.parts();
     mesh.round_rect(grip, m.plate_radius, theme.plate);
@@ -577,7 +577,7 @@ pub fn draw_clip_label(d: &mut Draw, cr: Rect, label: &str) {
 ///
 /// The bodies **layer**, back to front, because that is the order the layout
 /// placed them in: the take, the events over it, the envelope over both — an
-/// automation drawn on top of the material it shapes is one clip, not two, and
+/// automation drawn on top of the contents it shapes is one clip, not two, and
 /// each body keeps its own value axis.
 pub fn draw_body_widget(
     d: &mut Draw,
@@ -595,9 +595,9 @@ pub fn draw_body_widget(
 
 /// The **source** sample position an x pixel of a clip's body falls on: the
 /// pixel maps back through the clip's own axis to a clip-local time, and that
-/// through the clip's **window** onto the material ([`SourceWindow`]).
+/// through the clip's **window** onto the contents ([`SourceWindow`]).
 ///
-/// `None` where the window is off the material — a clip stretched past the end
+/// `None` where the window is off the contents — a clip stretched past the end
 /// of a buffer it does not loop. Nothing was recorded there, so nothing is
 /// drawn and nothing is read; the alternative is a flat line that looks like
 /// silence somebody recorded.
@@ -653,7 +653,7 @@ pub(crate) fn draw_take(
         return;
     }
     // **Every channel is drawn**, stacked, exactly as the standalone view
-    // stacks its lanes: a clip is a picture of the material and a stereo take
+    // stacks its lanes: a clip is a picture of the contents and a stereo take
     // whose right channel is nowhere on it is a picture of half of one — which
     // is also what an edit on that channel would land in, invisibly. `overlay`
     // is the same choice the standalone view offers, and it arrives the same
@@ -661,9 +661,9 @@ pub(crate) fn draw_take(
     // channel is.
     let lanes = if overlay { 1 } else { trace.channels().max(1) };
     // **The window is drawn a run at a time**, each run a stretch of clip time
-    // over which it stays inside the material — one run for the ordinary case,
+    // over which it stays inside the contents — one run for the ordinary case,
     // one per iteration for a looping clip, and none at all where a clip
-    // reaches past material it does not loop. Each run is an *affine* window,
+    // reaches past contents it does not loop. Each run is an *affine* window,
     // which is what lets one renderer draw all of them: the wrap lives in the
     // run list rather than in the maps, so nothing downstream has to know
     // whether a clip loops.
@@ -999,7 +999,7 @@ mod tests {
     }
 
     /// **A stereo take draws both channels**, stacked inside the clip: a clip
-    /// is a picture of the material, and a right channel drawn nowhere is a
+    /// is a picture of the contents, and a right channel drawn nowhere is a
     /// picture of half of it — which is also where an edit on that channel
     /// would land, invisibly.
     #[test]
@@ -1351,7 +1351,7 @@ mod tests {
         let py = cr.y as f64;
         assert!(matches!(el.press((px, py), &input), Claim::Take(_)));
 
-        // Anywhere that is not this curve's own material, a body **declines**:
+        // Anywhere that is not this curve's own contents, a body **declines**:
         // it shares its rectangle with the clip, whose own drag is what the
         // rest of it means, so the press falls back to the container's move.
         // Held as the **active layer** the curve also bends the segment under
@@ -1391,7 +1391,7 @@ mod tests {
         let (dur, total) = (400.0, 1000.0);
 
         // A **fitted** clip: 400 units of timeline showing 1000 frames of
-        // material, which is the picture a time stretch would make. Fully
+        // contents, which is the picture a time stretch would make. Fully
         // zoomed out its ends map to the take's ends.
         let fit = SourceWindow {
             fit: true,
@@ -1421,7 +1421,7 @@ mod tests {
     }
 
     /// **A clip's take may be several segments**, each over its own stretch of
-    /// the clip and each reading its own window onto its own material — which
+    /// the clip and each reading its own window onto its own contents — which
     /// is what joining fragments of two different files makes. The placement is
     /// the same mapping a lane uses for a clip, one level down, so each segment
     /// is drawn on its own part of the rectangle rather than over the whole of

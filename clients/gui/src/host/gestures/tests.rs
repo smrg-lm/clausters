@@ -895,11 +895,11 @@ fn a_spectral_view_reports_no_value_range() {
 }
 
 /// **The three verbs split where the host's authority does.** A copy is a read
-/// and the host may do it: the selected span leaves the element's own material
+/// and the host may do it: the selected span leaves the element's own contents
 /// and lands on the clipboard, typed and with the rate it was taken at. A cut
 /// and a paste change data the host does not own, so they leave as intents.
 #[test]
-fn copy_reads_the_material_and_cut_and_paste_leave_as_intents() {
+fn copy_reads_the_samples_and_cut_and_paste_leave_as_intents() {
     let mut host = host_from(
         r#"{"type":"window","children":[
             {"id":50,"type":"signal","view":"trace",
@@ -914,7 +914,7 @@ fn copy_reads_the_material_and_cut_and_paste_leave_as_intents() {
         g.clipboard_key(&mut host, &ctx, ClipVerb::Copy, 400.0, 150.0, &mut clip)
             .is_none()
     );
-    // Select samples 2..=5, then copy: the block is the material itself.
+    // Select samples 2..=5, then copy: the block is the contents itself.
     host.select_timeline(50, 2.0, 5.0);
     let effects = g
         .clipboard_key(&mut host, &ctx, ClipVerb::Copy, 400.0, 150.0, &mut clip)
@@ -972,7 +972,7 @@ fn a_copy_the_host_cannot_honestly_make_is_refused() {
 }
 
 /// **A sweep to the first sample leaves the pointer off the view, and the copy
-/// is still the selection's.** Dragging to the very start or end of the material
+/// is still the selection's.** Dragging to the very start or end of the contents
 /// parks the pointer in the window's margin — or outside the window, where there
 /// is no pointer at all — and a copy addressed only to what is under it answered
 /// nothing, silently, over a selection plainly on screen. The window's most
@@ -1028,9 +1028,9 @@ fn a_block_operation_falls_back_to_the_window_s_last_selection() {
 /// the ones whose data a loader routes into a GPU slot — so for a while a copy
 /// over the very source it was meant for refused, the element holding nothing
 /// while the picture on screen was drawn from the samples. The element keeps the
-/// pyramid the slot draws (`frame::keep_material`), and the copy reads it.
+/// pyramid the slot draws (`frame::keep_data`), and the copy reads it.
 #[test]
-fn a_take_routed_into_a_slot_is_still_the_elements_material() {
+fn a_take_routed_into_a_slot_is_still_the_elements_samples() {
     use crate::host::widget::element::Loaded;
     use crate::waveform::WaveformData;
     use std::sync::Arc;
@@ -1051,7 +1051,7 @@ fn a_take_routed_into_a_slot_is_still_the_elements_material() {
         .window_def_mut(1)
         .and_then(|t| t.find_mut(53))
         .expect("the view is in the tree");
-    crate::host::frame::keep_material(widget, &Loaded::Peaks(peaks));
+    crate::host::frame::keep_data(widget, &Loaded::Peaks(peaks));
     host.set_timeline_total(53, 8);
 
     let g = Gestures::default();
@@ -1689,7 +1689,7 @@ fn clip_offset(host: &Host, id: i32) -> f64 {
 /// rectangle with still moves.
 /// **The interaction rule between a clip's two levels**, on the case that used
 /// to have none: a clip carrying an automation. Pressing the curve's own
-/// material — a break-point, or the line between two of them — selects that
+/// contents — a break-point, or the line between two of them — selects that
 /// layer and edits it; pressing anywhere the curve draws nothing is the clip's,
 /// which moves and takes the active layer back. Nothing here is a precedence
 /// between claimants: each press asks what is drawn under it.
@@ -1781,13 +1781,13 @@ fn active_layer(host: &Host, id: i32) -> String {
     crate::host::layers::active(w).name(w)
 }
 
-/// **An edge drag is a trim**: the clip shows less of its material and the
-/// material stands still. Pulling the start edge right advances the placement,
+/// **An edge drag is a trim**: the clip shows less of its contents and the
+/// contents stands still. Pulling the start edge right advances the placement,
 /// the duration *and* the window over the source by the same amount, and the
 /// edit-back says all three — an owner told only where the clip sits would
 /// re-cut the wrong part of the take.
 #[test]
-fn trimming_a_clips_head_moves_its_window_over_the_material() {
+fn trimming_a_clips_head_moves_its_window_over_the_samples() {
     let mut host = host_from(
         r#"{"type":"window","margin":0,"children":[
             {"id":80,"type":"field","label":"takes","children":[
@@ -1831,7 +1831,7 @@ fn trimming_a_clips_head_moves_its_window_over_the_material() {
         value(1)
     );
 
-    // ...and the end edge stops where the material does, because this clip
+    // ...and the end edge stops where the contents does, because this clip
     // does not loop: there is nothing past the eighth frame to show or play.
     let on_end_grip = (clip.x + clip.w - grip_w * 0.5) as f64;
     g.press(&mut host, &ctx, on_end_grip, midy, &mut || false);
@@ -1986,7 +1986,7 @@ fn first_emit(effects: &[GestureEffect], id: i32) -> Option<Vec<OscType>> {
     })
 }
 
-/// A clip's window over its material: where it starts reading, and how long it
+/// A clip's window over its contents: where it starts reading, and how long it
 /// reads for.
 fn clip_window(host: &Host, id: i32) -> (f64, f64) {
     let w = host.window_def(1).unwrap().find(id).unwrap();
@@ -2000,8 +2000,8 @@ fn clip_window(host: &Host, id: i32) -> (f64, f64) {
 ///
 /// The defect this closes, in one press: `editable=false` used to be answered
 /// by *consuming* the press with a refusal, so a clip whose contents were
-/// locked could not be moved either — and where material sits is the
-/// composition's while what it holds is the material's, which is precisely the
+/// locked could not be moved either — and where contents sits is the
+/// composition's while what it holds is the contents's, which is precisely the
 /// distinction that was missing. A layer that cannot be edited is never
 /// selected by pointing at it, so the press lands where it always should have.
 #[test]
@@ -3880,7 +3880,7 @@ fn a_stroke_dragged_off_the_view_writes_nothing_past_the_last_visible_sample() {
         .clone();
     assert!(
         held.start + held.values.len() <= 8,
-        "the run ends inside the material: {} + {}",
+        "the run ends inside the contents: {} + {}",
         held.start,
         held.values.len()
     );

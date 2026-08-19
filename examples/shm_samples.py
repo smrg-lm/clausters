@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The material in shared memory: a take is edited without a message.
+"""The samples in shared memory: a take is edited without a message.
 
 Start a server with a segment first:
 
@@ -7,7 +7,7 @@ Start a server with a segment first:
 
 then:
 
-    python3 examples/shm_material.py
+    python3 examples/shm_samples.py
 
 What it shows: a pool buffer's **samples are a file a peer maps**, not a
 message it asks for. The buffer is allocated over the ring (allocation has
@@ -17,7 +17,7 @@ sample this script writes goes straight into the memory the engine reads —
 part is the same buffer played twice: once as the tone written into the cells,
 then again after a hand-written fade-out that no command carried.
 
-The one line to hold on to: what a peer may write is **material**, samples it
+The one line to hold on to: what a peer may write is **samples**, samples it
 already has. Every *operation* over samples — a gain, a fade, a reverse, a
 render — is the server's verb and is asked for over the ring, however easy
 mapped memory makes the other thing.
@@ -51,7 +51,7 @@ def main():
     )
     assert addr == "/done", f"{addr} {args}"
 
-    # The directory says where the material is. It is not in the segment: a
+    # The directory says where the samples is. It is not in the segment: a
     # ten-minute stereo take is 230 MB and the segment is sized once at boot,
     # so each buffer's samples are their own file beside it.
     info = c.buffer_info(BUFNUM)

@@ -49,7 +49,7 @@ const VERSION_MULTI: u32 = 2;
 const VERSION_MEASURE: u32 = 3;
 
 /// A read-only sequence of samples a pyramid can summarize **without owning
-/// it** — the door that lets a summary be taken over material that lives
+/// it** — the door that lets a summary be taken over samples that lives
 /// somewhere else.
 ///
 /// The pyramid used to be a function of a `&[f32]`, which quietly required
@@ -61,7 +61,7 @@ const VERSION_MEASURE: u32 = 3;
 /// caller-sized window — and a bounded scratch buffer is all a build needs.
 ///
 /// It is **mono**: one source is one channel, because that is what a pyramid
-/// summarizes. Interleaved material is read through [`Interleaved`], which is
+/// summarizes. Interleaved samples is read through [`Interleaved`], which is
 /// the adapter and not a second shape of the trait.
 pub trait Source {
     /// How many samples this source holds.
@@ -333,11 +333,11 @@ impl Pyramid {
 
     /// **An empty summary of a given length** — every bucket a measured zero,
     /// the levels sized as a build over `total_samples` would size them, and
-    /// no material read or held anywhere.
+    /// no samples read or held anywhere.
     ///
     /// It is what a take **allocated to be recorded into** is: the picture is
     /// the whole of the box it will fill, so the axis does not move while it
-    /// fills, and the only thing missing is the material — which is exactly
+    /// fills, and the only thing missing is the samples — which is exactly
     /// what has not happened yet. A client that cannot map the memory being
     /// written builds one of these and fills it from
     /// [`Self::write_buckets`] as the reports arrive; building it out of a
@@ -391,7 +391,7 @@ impl Pyramid {
     ///
     /// Returns `false`, changing nothing, when `samples` is not the buffer this
     /// pyramid describes — an edit that changed the *length* is a rebuild and
-    /// not an update, and quietly summarizing the wrong material would be worse
+    /// not an update, and quietly summarizing the wrong samples would be worse
     /// than refusing. A cache written before the mean square joined (v1/v2)
     /// keeps its min/max updated and stays without a measure rather than
     /// gaining an invented one.
@@ -454,7 +454,7 @@ impl Pyramid {
     /// This is [`Self::update_range_from`] with the measuring skipped, and the
     /// reason it is a separate door rather than a `Source` of buckets is that
     /// there are no samples anywhere in it: the caller holds a picture and
-    /// receives an overview of material it will never see (`/buffer_stream`,
+    /// receives an overview of samples it will never see (`/buffer_stream`,
     /// which sends 2 kB/s where the audio is 190). Level 0 takes the buckets
     /// as given and every level above is recombined the way the builder
     /// combines them, so a pyramid filled this way answers exactly as one
@@ -466,7 +466,7 @@ impl Pyramid {
     ///
     /// Returns `false`, changing nothing, when the run does not fit: level 0
     /// has as many buckets as the buffer this pyramid describes, and writing
-    /// past them would either grow the summary past its material or wrap it.
+    /// past them would either grow the summary past its samples or wrap it.
     /// A pyramid parsed from a v1/v2 cache keeps its min/max updated and stays
     /// without a measure, like every other write here.
     pub fn write_buckets(&mut self, first: usize, buckets: &[Bucket]) -> bool {
@@ -680,7 +680,7 @@ impl Pyramid {
     /// weighted by the samples it holds — the energy sibling of [`column`], and
     /// `None` when the level is empty or the cache carries no measure. The span
     /// is taken bucket-wise exactly as `column` takes it, so the two answer over
-    /// the same material; below `base_bucket` a caller reads the samples through
+    /// the same samples; below `base_bucket` a caller reads the samples through
     /// [`mean_square`] instead.
     ///
     /// [`column`]: Pyramid::column
@@ -868,7 +868,7 @@ impl MultiPyramid {
         // Checked once, before anything is written: every channel shares this
         // cache's length and grid, so a run that fits one fits all — and a
         // refusal halfway would leave the channels describing different
-        // material, which is the one state this format promises cannot happen.
+        // samples, which is the one state this format promises cannot happen.
         if first + n > self.frames().div_ceil(bucket) {
             return false;
         }
@@ -1374,7 +1374,7 @@ mod source_tests {
         let n = 9_000;
         let mut samples = materialized(n);
         let mut pyramid = Pyramid::build(&samples, 256);
-        // The material moves where it lies, as a store into a mapped region
+        // The samples moves where it lies, as a store into a mapped region
         // does, and only the summary is told about it.
         for s in samples.iter_mut().skip(3_000).take(1_500) {
             *s = -0.75;
@@ -1420,7 +1420,7 @@ mod source_tests {
 mod update_tests {
     use super::*;
 
-    fn material(n: usize) -> Vec<f32> {
+    fn ramp(n: usize) -> Vec<f32> {
         (0..n)
             .map(|i| ((i as f32 * 0.017).sin() * 0.9) + (i % 7) as f32 * 0.01)
             .collect()
@@ -1449,7 +1449,7 @@ mod update_tests {
 
     /// The claim the whole function rests on: updating a span leaves exactly the
     /// pyramid a rebuild would, at **every** level, so a session of edits cannot
-    /// drift away from the material.
+    /// drift away from the samples.
     #[test]
     fn an_updated_pyramid_equals_a_rebuilt_one() {
         // Deliberately not a multiple of the bucket, so the ragged tail is in.
@@ -1464,7 +1464,7 @@ mod update_tests {
             (3990, 10), // the tail exactly
             (63, 2),    // straddling a bucket boundary
         ] {
-            let mut samples = material(n);
+            let mut samples = ramp(n);
             let mut pyr = Pyramid::build(&samples, base);
             for s in &mut samples[start..start + len] {
                 *s = -*s * 0.5 + 0.3;
@@ -1481,7 +1481,7 @@ mod update_tests {
     fn edits_compose_without_drifting() {
         let n = 3000;
         let base = 32;
-        let mut samples = material(n);
+        let mut samples = ramp(n);
         let mut pyr = Pyramid::build(&samples, base);
         for (i, (start, len)) in [(10, 3), (1000, 200), (2999, 1), (500, 700)]
             .into_iter()
@@ -1497,20 +1497,20 @@ mod update_tests {
 
     #[test]
     fn a_buffer_of_another_length_is_refused_and_nothing_moves() {
-        let samples = material(1000);
+        let samples = ramp(1000);
         let mut pyr = Pyramid::build(&samples, 64);
         let before = Pyramid::build(&samples, 64);
         assert!(
             !pyr.update_range(&samples[..999], 0, 10),
             "a shorter buffer"
         );
-        assert!(!pyr.update_range(&material(1001), 0, 10), "a longer one");
+        assert!(!pyr.update_range(&ramp(1001), 0, 10), "a longer one");
         same(&pyr, &before).unwrap();
     }
 
     #[test]
     fn an_empty_span_is_a_no_op() {
-        let samples = material(500);
+        let samples = ramp(500);
         let mut pyr = Pyramid::build(&samples, 64);
         let before = Pyramid::build(&samples, 64);
         assert!(pyr.update_range(&samples, 100, 0));
@@ -1526,7 +1526,7 @@ mod update_tests {
     /// which is the distinction A1 drew and this must not undo.
     #[test]
     fn a_pyramid_without_a_measure_does_not_gain_one() {
-        let mut samples = material(1000);
+        let mut samples = ramp(1000);
         let mut pyr = Pyramid::build(&samples, 64);
         for level in &mut pyr.levels {
             level.ms = None;

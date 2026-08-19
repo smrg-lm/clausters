@@ -30,7 +30,7 @@ subject here. In five acts, each audible on its own:
 
 **Nothing here clicks, and the two reasons are the interesting part.** The
 recorded phrase is a windowed note followed by a silence, retriggered by an
-`impulse` at exactly the loop's own rate: the material is therefore zero at
+`impulse` at exactly the loop's own rate: the samples is therefore zero at
 the loop's seam, and every change of what is being written is made *during*
 that silence, where a change writes nothing and can leave no step behind.
 And the reader is started **after** the writer and runs at the same rate, so
@@ -186,7 +186,7 @@ def main():
             """Sleep until the loop's silence, where a change writes nothing.
 
             That is the whole trick behind a click-free looper: what is
-            written changes only where the material is zero, so no edge is
+            written changes only where the samples is zero, so no edge is
             ever stored in the buffer.
             """
             target = started + pass_number * LOOP + NOTE + TAIL / 2
@@ -232,7 +232,7 @@ def main():
 
         # The delay line is a buffer, so it can simply be written out. That is
         # the capability the whole family exists for: shared, addressable
-        # material rather than memory only one synth can see.
+        # samples rather than memory only one synth can see.
         path = os.path.join(tempfile.gettempdir(), "clausters-delay-line.wav")
         echo_buf.write(path, sample_format="float")
         print("   wrote the delay's own line to", path)

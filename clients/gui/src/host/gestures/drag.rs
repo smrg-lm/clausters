@@ -71,7 +71,7 @@ impl Gestures {
             nav_len,
             press_sample,
             orig,
-            material,
+            contents,
             grid,
         }) = self.drag
         else {
@@ -103,7 +103,7 @@ impl Gestures {
                 nav_len,
                 press_sample,
                 orig,
-                material,
+                contents,
                 grid,
             },
             cx,
@@ -306,10 +306,10 @@ impl Gestures {
                 let frames =
                     interact::sample_at(start, len, body.x as f64, body.w as f64, cx).max(0.0);
                 // ...and inside what exists: the right edge of a view showing
-                // the whole material maps to one *past* its last sample, and a
+                // the whole contents maps to one *past* its last sample, and a
                 // stroke carrying that frame is refused whole by the owner.
                 let last = host
-                    .material_frames(def_id, id)
+                    .buffer_frames(def_id, id)
                     .unwrap_or(0)
                     .saturating_sub(1);
                 let now = (
@@ -339,7 +339,7 @@ impl Gestures {
                 nav_len,
                 press_sample,
                 orig,
-                material,
+                contents,
                 grid,
             } => {
                 apply_clip_drag(
@@ -356,7 +356,7 @@ impl Gestures {
                         nav_len,
                         press_sample,
                         orig,
-                        material,
+                        contents,
                         grid,
                     },
                     cx,
@@ -434,7 +434,7 @@ impl Gestures {
             self.drag = None;
             let value = axis.value_in(channel, cy) as f32;
             // The pending stays until the owner answers: dropping it here would
-            // snap the picture back to the material for as long as the round
+            // snap the picture back to the contents for as long as the round
             // trip takes, which reads as the edit having been refused.
             set_pending(
                 host,

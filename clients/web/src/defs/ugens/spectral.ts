@@ -178,7 +178,7 @@ export interface PvKernelOptions {
  *
  * Note that `mag` is a raw transform magnitude — it scales with the input
  * level, the window and the `fftSize`, it is **not** normalized to 0..1 — so
- * thresholds and constants must be calibrated to the material (probe a
+ * thresholds and constants must be calibrated to the signal (probe a
  * render, or `poll` a reference).
  *
  * ```ts

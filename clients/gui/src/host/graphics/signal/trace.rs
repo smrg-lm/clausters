@@ -72,7 +72,7 @@ pub const BODY_MERGE_RATIO: f32 = 0.8;
 /// A root-mean-square is an average *over a duration*, so the duration is part
 /// of the reading: average whatever a pixel column happens to cover and the
 /// body's own values follow the **zoom**, changing as you move the view over
-/// material that did not change. A level is a property of the signal, so the
+/// samples that did not change. A level is a property of the signal, so the
 /// window is the signal's — the same 50 ms whatever the magnification — and the
 /// body stops moving when you do.
 ///
@@ -170,7 +170,7 @@ impl<'a> Trace<'a> {
     ///
     /// `None` is a source that cannot answer, never a zero: a pyramid cached
     /// before the statistic existed has an envelope and no energy, and a body
-    /// drawn from zeros would claim silence over material that is not silent.
+    /// drawn from zeros would claim silence over samples that is not silent.
     /// Raw samples always answer, since the measure is a loop over them.
     pub fn column_ms(&self, ch: usize, samples_per_px: f64, s0: f64, s1: f64) -> Option<f32> {
         match self {
@@ -348,12 +348,12 @@ pub struct TraceStyle {
     /// rate, has nothing better to offer and nothing that moves under a zoom
     /// it does not have.
     pub body_window: f64,
-    /// **How much of the material exists**, in frames — `None` for the
+    /// **How much of the samples exists**, in frames — `None` for the
     /// ordinary case, where all of it does.
     ///
     /// It is set for a take that is being **written into as it is drawn**: past
     /// the write frontier a recording's buffer holds its own zeros, which are
-    /// not silence in the material but the absence of material, and the
+    /// not silence in the samples but the absence of samples, and the
     /// minimum-ink rule would otherwise draw a flat line across a stretch
     /// nothing has happened in yet. So the picture stops, and the axis past it
     /// stays empty until the writer gets there.
@@ -393,7 +393,7 @@ impl TraceStyle {
         self
     }
 
-    /// The same trace over material that only exists as far as `frames` — a
+    /// The same trace over samples that only exists as far as `frames` — a
     /// take being recorded. `None` (the default) is all of it.
     pub fn with_written(mut self, frames: Option<u64>) -> Self {
         self.written = frames.map(|f| f as f64);
@@ -478,7 +478,7 @@ pub fn draw_channel(
     if columns {
         for c in 0..cols {
             let x = rect.x + c as f32 * cw;
-            // Past the written frontier there is no material yet, so there is
+            // Past the written frontier there is no samples yet, so there is
             // no column: the axis is drawn and left empty rather than inked
             // over the buffer's own zeros.
             if style.written.is_some_and(|w| src(x) >= w) {
@@ -982,7 +982,7 @@ mod tests {
     /// The **window is fixed** ([`BODY_WINDOW_SECS`], 50 ms of the *source*):
     /// a level is an average over a duration, so averaging whatever a pixel
     /// column happens to cover would make the body's own values follow the
-    /// zoom, changing over material that did not change. The values are the
+    /// zoom, changing over samples that did not change. The values are the
     /// signal's, and they stand still while the view moves.
     ///
     /// What ends it is the **envelope**, which does narrow with the zoom: once
@@ -1036,7 +1036,7 @@ mod tests {
 
     /// **A take being written is drawn up to its frontier and no further.**
     /// Past it a recording's buffer holds its own zeros, which are not silence
-    /// in the material but the absence of material — and the minimum-ink rule
+    /// in the samples but the absence of samples — and the minimum-ink rule
     /// would draw a flat line across them, which is a picture of a stretch that
     /// has not happened yet. Both regimes stop: the columns break at the
     /// frontier, and the polyline's last sample is the last one written.
@@ -1089,7 +1089,7 @@ mod tests {
 
     /// **A source that cannot measure draws no body at all.** The column is
     /// skipped rather than inked at zero, because zero is silence and a flat
-    /// line across material that is not silent is the one picture worse than no
+    /// line across samples that is not silent is the one picture worse than no
     /// picture. (The cache that has an envelope and no energy is the real case;
     /// it is asserted where the format lives, in `clausters_core::peaks`. Here
     /// the same `None` arrives from a channel the source does not have.)

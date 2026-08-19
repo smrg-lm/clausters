@@ -14,7 +14,7 @@
 //! (applying a gain to a span is not an event at an instant), while a **render**
 //! operation has one *internally*: a self-contained score starting at 0 and
 //! lasting the span. So determinism here is of **process, not of time**: the
-//! same operation over the same material yields the samples it would yield
+//! same operation over the same samples yields the samples it would yield
 //! expressed in a score and rendered in batch, which is what `tests/nrt_session.rs`
 //! asserts sample for sample.
 //!
@@ -46,7 +46,7 @@ use crate::server::ipc::{DEFAULT_TAP_FRAMES, DEFAULT_TAPS};
 use crate::server::ipc::{IpcPeer, Role, Segment};
 
 /// How a session is opened. The defaults match the batch renderer's, so an
-/// operation and a score of the same material start from the same server.
+/// operation and a score of the same samples start from the same server.
 pub struct SessionConfig {
     pub sample_rate: f64,
     pub channels: usize,
@@ -60,13 +60,13 @@ pub struct SessionConfig {
     pub audio_buses: usize,
     pub control_buses: usize,
     pub limits: Limits,
-    /// Where to put the segment, when this session's material is to be
+    /// Where to put the segment, when this session's samples is to be
     /// **shared**: a path makes it a mapped file, so a second process can read
     /// the directory and map every buffer this session holds (S19). `None` is
     /// the ordinary in-process session, whose segment lives on the heap.
     ///
     /// It is here rather than assumed because it is a *deployment* choice: an
-    /// on-demand server that renders and edits material an editor draws wants
+    /// on-demand server that renders and edits samples an editor draws wants
     /// it; one answering a script inside one process has nobody to share with.
     pub shm: Option<std::path::PathBuf>,
 }
@@ -93,10 +93,10 @@ pub struct NrtSession {
     engine: Engine,
     peer: IpcPeer,
     /// Kept alive for both peers; the ring lives in it, and it is what a
-    /// caller hands a player so the two share one material.
+    /// caller hands a player so the two share one samples.
     segment: Arc<Segment>,
     /// The segment file this session **created**, and therefore has to remove:
-    /// a session's material is the session's, and a segment left behind in
+    /// a session's samples is the session's, and a segment left behind in
     /// `/dev/shm` after the editor is gone is a leak with a take in it. `None`
     /// when the segment is on the heap or was somebody else's already.
     owned_segment: Option<std::path::PathBuf>,
@@ -123,7 +123,7 @@ impl NrtSession {
             return Err("sample rate must be positive".into());
         }
         // Both modes flush denormals, so an operation and a batch render of the
-        // same material stay sample-identical (the rule `render` follows).
+        // same samples stay sample-identical (the rule `render` follows).
         crate::dsp::denormals::flush_to_zero();
 
         // Set when this session *created* the file, which is what decides
@@ -138,9 +138,9 @@ impl NrtSession {
             Some(path) => {
                 // A shared segment is a mapped file, and off Unix there is
                 // none to map. Refused rather than silently opening a session
-                // whose material nobody else can reach.
+                // whose samples nobody else can reach.
                 return Err(format!(
-                    "shared material needs a Unix segment; {} cannot be opened here",
+                    "shared samples needs a Unix segment; {} cannot be opened here",
                     path.display()
                 ));
             }
@@ -160,7 +160,7 @@ impl NrtSession {
                     format!("cannot open the shared segment at {}: {e}", path.display())
                 })?;
                 // A session is driven through the ring, so it has to be the
-                // one serving it — and it owns the material it publishes.
+                // one serving it — and it owns the samples it publishes.
                 // Finding the command plane taken means another server is
                 // already the owner here, which is a wiring mistake worth
                 // saying out loud rather than half-working.
@@ -212,7 +212,7 @@ impl NrtSession {
         if let Some(path) = &cfg.shm {
             // With a segment on disk, every buffer this session installs lives
             // in a region beside it — which is what lets an editor draw and
-            // write the material of a server that has no audio device at all.
+            // write the samples of a server that has no audio device at all.
             server.share_buffers_at(path.clone());
         }
         Ok(Self {
@@ -229,7 +229,7 @@ impl NrtSession {
         })
     }
 
-    /// The segment this session publishes into: its material directory, its
+    /// The segment this session publishes into: its samples directory, its
     /// control buses, and the rings it serves.
     pub fn segment(&self) -> &Arc<Segment> {
         &self.segment
@@ -380,7 +380,7 @@ impl Drop for NrtSession {
         // And a session that created its segment takes it with it, regions
         // and all. Unlinking leaves every mapping a player still holds valid
         // until it drops it — the same property freeing one buffer relies on —
-        // so this ends the material rather than pulling it out from under
+        // so this ends the samples rather than pulling it out from under
         // somebody.
         let Some(path) = self.owned_segment.take() else {
             return;

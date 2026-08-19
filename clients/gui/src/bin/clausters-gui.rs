@@ -66,11 +66,11 @@ usage:
                             server buffer number, and for bound widgets
                             (/gui_bind) to forward their value to the server.
       --shm <path>          the shared-memory segment: zero-message
-                            meters/scopes, and the **material** — a take is
+                            meters/scopes, and the **samples** — a take is
                             drawn by mapping it and edited by storing into it,
                             with nothing sent either way. Point it at the audio
                             server's own --shm path. With --session it is where
-                            this editor's own material goes, and what a player
+                            this editor's own samples goes, and what a player
                             is started against (`clausters --shm <path>`);
                             without one a path is picked and logged. Unix only
       --data-dir <dir>      data directory for the GuiDef store (named GuiDefs
@@ -83,7 +83,7 @@ usage:
                             here, undone here and saved here, with no language
                             client anywhere. The third writer.
                             It opens an on-demand server in this process to own
-                            the material, and plays through the server --server
+                            the samples, and plays through the server --server
                             points at -- which is a separate process holding
                             the devices, and the only one that can record.
       --save-to <file>      write the session back here when the window closes.
@@ -108,7 +108,7 @@ usage:
                             other build warns and keeps its bitmap face. With
                             the feature and no path, one of the system's own
                             faces is used when there is one.
-      --follow-block <s>    how much recorded material a picture waits for
+      --follow-block <s>    how much recorded audio a picture waits for
                             before it re-reads its summary, in seconds
                             (default 0, every frame). A take being recorded
                             grows with nothing announcing it, so the host
@@ -142,7 +142,7 @@ struct Look {
     theme: Theme,
     metrics: Metrics,
     msaa: u32,
-    /// Seconds of recorded material a picture waits for before re-reading its
+    /// Seconds of recorded audio a picture waits for before re-reading its
     /// summary (`--follow-block`). Not a *look*, strictly — it is here because
     /// it is resolved and applied with the rest, on both launch paths.
     follow_block: f64,
@@ -377,7 +377,7 @@ fn run(args: &[String]) -> Result<(), String> {
             tracing::warn!("{w} (config [gui.metrics])");
         }
     }
-    // How much recorded material a picture waits for before it re-reads its
+    // How much recorded samples a picture waits for before it re-reads its
     // summary. Zero or less means every tick, which is what it did before the
     // block existed and what a measurement wants.
     let follow_block = cli_follow_block.or(cfg.gui.follow_block).unwrap_or(0.0);
@@ -400,7 +400,7 @@ fn run(args: &[String]) -> Result<(), String> {
     let resolved_dir = store::resolve_data_dir(data_dir.as_deref());
 
     // A session: the host opens a document and owns it. No store, no embedded
-    // server and no script -- the material is not played yet, which is what
+    // server and no script -- the piece is not played yet, which is what
     // separates this from `--standalone` and is named in the plan rather than
     // implied here.
     if let Some(path) = session_path {
@@ -500,13 +500,13 @@ fn run(args: &[String]) -> Result<(), String> {
         transport::serve(host, socket, hub, ws_hub).map_err(|e| e.to_string())
     } else {
         // The segment carries two things this host wants and they come from
-        // one path: the buses its meters read, and the **material** it draws
+        // one path: the buses its meters read, and the **samples** it draws
         // and edits in place rather than fetching and sending back.
         #[cfg(unix)]
         let bus = {
-            let (bus, material) = gui::open_shm_material(shm, HeadClock::Device);
-            if let Some(material) = material {
-                host.set_material(material);
+            let (bus, buffers) = gui::open_shm_buffers(shm, HeadClock::Device);
+            if let Some(buffers) = buffers {
+                host.set_shared_buffers(buffers);
             }
             bus
         };
@@ -598,7 +598,7 @@ fn run_session(
 
     let mut owner = Owner::open(path)?;
 
-    // **The material, before the picture.** A document says what plays when and
+    // **The samples, before the picture.** A document says what plays when and
     // never where its samples are; the session's table says that, and a host
     // that can read it draws takes instead of empty rectangles. The buffers are
     // read first and waited for, because a clip's fetch starts the moment the
@@ -703,14 +703,14 @@ fn run_session(
 /// **Gives a session host its two servers.** The arrangement this whole mode
 /// exists for, and the three roles it splits into.
 ///
-/// - The **on-demand session**, in this process: it owns the material. Every
+/// - The **on-demand session**, in this process: it owns the samples. Every
 ///   take is a region beside its segment, so this host draws them by mapping
 ///   and edits them by storing, with nothing sent either way. It has no audio
 ///   device and needs none — it computes.
 /// - The **player**, another process (`clausters --shm <path>`): it holds the
 ///   machine's input and output, and it is therefore the only one that can
 ///   record or make a sound. It attaches to the same segment, so what it plays
-///   is the very material being edited; killing it takes no take with it, and
+///   is the very samples being edited; killing it takes no take with it, and
 ///   the next one adopts what is there.
 /// - The **editor**, this host: it performs the actions. Which is why it owns
 ///   the transport, allocates through the session and plays through the player.
@@ -739,11 +739,11 @@ fn attach_server(
         }
     };
     tracing::info!(
-        "session: material at {} — an on-demand server owns it, and a player attaches to it",
+        "session: samples at {} — an on-demand server owns it, and a player attaches to it",
         path.display()
     );
 
-    // **The material goes to its owner.** A take is read into a buffer of the
+    // **The samples goes to its owner.** A take is read into a buffer of the
     // session, which puts it in a region beside the segment; from there the
     // player maps it and this host draws it.
     for msg in &load.messages {
@@ -757,16 +757,16 @@ fn attach_server(
         await_reads(&session, load.messages.len());
     }
 
-    // **The picture, from the memory the material is in.** The same file the
+    // **The picture, from the memory the samples is in.** The same file the
     // player attaches to: the segment for the clocks and the buses, the
     // regions beside it for the samples.
     #[cfg(unix)]
     let bus = {
-        let (bus, material) =
-            gui::open_shm_material(Some(path.display().to_string()), HeadClock::Piece);
-        match material {
-            Some(material) => host.set_material(material),
-            None => tracing::warn!("session: the material could not be mapped; takes will fetch"),
+        let (bus, buffers) =
+            gui::open_shm_buffers(Some(path.display().to_string()), HeadClock::Piece);
+        match buffers {
+            Some(buffers) => host.set_shared_buffers(buffers),
+            None => tracing::warn!("session: the buffers could not be mapped; takes will fetch"),
         }
         bus
     };
@@ -824,7 +824,7 @@ impl Drop for OwnedPlayer {
 ///
 /// **The segment exists by now**, which is what fixes the ordering: the
 /// editor's session created it and claimed the command plane, so the player
-/// attaches to what is there instead of truncating it and taking the material
+/// attaches to what is there instead of truncating it and taking the samples
 /// with it. Started the other way round it would be the owner, and the session
 /// would refuse to open.
 #[cfg(feature = "standalone")]
@@ -908,11 +908,11 @@ fn attach_player(
         await_player(&leg)?;
     }
     tracing::info!(
-        "session: player at {} (it holds the devices; the material stays at {})",
+        "session: player at {} (it holds the devices; the samples stays at {})",
         leg.target(),
         segment.display()
     );
-    // The monitor's def goes with the material: a take is data, and what sounds
+    // The monitor's def goes with the samples: a take is data, and what sounds
     // it is an instrument. Sent before anything can press the space bar.
     leg.send(clausters_gui::host::play::take_def_message())
         .map_err(|e| e.to_string())?;
@@ -922,7 +922,7 @@ fn attach_player(
     for msg in clausters_gui::host::play::take_group_messages() {
         leg.send(msg).map_err(|e| e.to_string())?;
     }
-    // **The takes, by number and not by sample.** A player maps the material
+    // **The takes, by number and not by sample.** A player maps the samples
     // directory when it starts, and these were read into it afterwards — so it
     // is pointed at them, which is the whole message: no blob, no copy, and
     // the very cells this editor is about to draw.
@@ -977,7 +977,7 @@ fn default_segment_path() -> String {
         .to_string()
 }
 
-/// Sends one message to the session that owns the material.
+/// Sends one message to the session that owns the samples.
 #[cfg(feature = "standalone")]
 fn send_session(session: &EmbedSession, msg: OscMessage) -> Result<(), String> {
     let addr = msg.addr.clone();

@@ -114,8 +114,8 @@ def pan_az(numchans, signal, pos=0.0, level=1.0, width=2.0,
 def xfade2(a, b, pan=0.0, level=1.0) -> Ugen:
     """Equal-power crossfade between two signals: −1 is all ``a``, 1 is all
     ``b``, and the two gains hold unit power in between — which keeps
-    *uncorrelated* material at one loudness across the fade, and lifts
-    correlated material by 3 dB in the middle. Use `lin_xfade2` when the two
+    *uncorrelated* signals at one loudness across the fade, and lifts
+    correlated ones by 3 dB in the middle. Use `lin_xfade2` when the two
     sides are the same signal."""
     return Ugen("XFade2", [a, b, pan, level])
 

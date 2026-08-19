@@ -359,7 +359,7 @@ impl OscServer {
     }
 
     /// `/buffer_stream periodMs bucket bufnum...`: subscribes this client to
-    /// the **overview of material as it is written** — what a peer that can
+    /// the **overview of samples as it is written** — what a peer that can
     /// map the region reads for free, for a client that cannot.
     ///
     /// The server acks `/done "/buffer_stream"` and then sends, every
@@ -433,7 +433,7 @@ impl OscServer {
         self.retune_timeout();
     }
 
-    /// Sends every due buffer stream what its material grew since the last
+    /// Sends every due buffer stream what its samples grew since the last
     /// report. Called once per run-loop iteration, like the other two pumps.
     pub(in crate::osc::server) fn pump_buffer_streams(&mut self) {
         if self.buffer_streams.is_empty() {

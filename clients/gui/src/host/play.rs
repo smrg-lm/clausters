@@ -32,14 +32,14 @@
 //! **One take at a time, and the host holds its nodes.** Playing another take
 //! replaces what is playing, because two takes over each other is noise and not
 //! a preview. The nodes are freed rather than gated: the def has no envelope,
-//! since a monitor that fades is a monitor lying about the material.
+//! since a monitor that fades is a monitor lying about the contents.
 
 use clausters_core::osc::{OscMessage, OscType};
 use serde_json::json;
 
 use super::Host;
 
-/// What the monitor is loaded with: whose material, over how many channels,
+/// What the monitor is loaded with: whose contents, over how many channels,
 /// and whether the transport is rolling it.
 ///
 /// The channel count is here because stopping has to free every reader it
@@ -69,7 +69,7 @@ const TAKE_NODE: i32 = super::voices::ID_BASE + super::voices::ID_SPAN;
 const TAKE_GROUP: i32 = TAKE_NODE - 1;
 
 /// The most channels the monitor will play at once — a bound rather than a
-/// judgement about material: it is what keeps a malformed channel count from
+/// judgement about contents: it is what keeps a malformed channel count from
 /// filling the node tree, and it is well past any take a person mixes by hand.
 const MAX_CHANNELS: usize = 32;
 
@@ -132,7 +132,7 @@ pub fn take_group_messages() -> Vec<OscMessage> {
 }
 
 impl Host {
-    /// **Plays the material a widget draws**, from `start` (a frame of the
+    /// **Plays the contents a widget draws**, from `start` (a frame of the
     /// take), stopping whatever the monitor was playing. Returns whether
     /// anything sounds.
     ///
@@ -144,7 +144,7 @@ impl Host {
     /// end, where the reader clamps and goes quiet — there is no "one shot" to
     /// arrange, because the transport simply keeps rolling and the head keeps
     /// moving, which is what a DAW does.
-    pub fn play_material(
+    pub fn play_buffer(
         &mut self,
         def_id: i32,
         widget_id: i32,
@@ -158,18 +158,18 @@ impl Host {
             tracing::warn!("nothing to play this take through: no audio server");
             return false;
         }
-        // As many readers as the material has channels, each to the bus of the
+        // As many readers as the contents has channels, each to the bus of the
         // same number: channel 0 is the left output, and a mono take is one
         // reader on it. What the device does with a bus past its own outputs is
         // the device's business, and it is the same answer any wide graph gets.
         let channels = self
-            .material_channels(def_id, widget_id)
+            .buffer_channels(def_id, widget_id)
             .unwrap_or(1)
             .clamp(1, MAX_CHANNELS);
         // Stop before rebuilding: the readers are created into the frozen
         // group, so they stand at the new position rather than racing from
         // wherever the last take left the piece.
-        self.stop_material();
+        self.stop_playback();
         self.set_loop(looping);
         self.locate(start);
         for ch in 0..channels {
@@ -204,9 +204,9 @@ impl Host {
     /// Stops the take monitor, if it is playing, and frees its readers.
     /// Returns whether it was playing.
     ///
-    /// This is the **end** of a preview, not a pause: [`Self::pause_material`]
+    /// This is the **end** of a preview, not a pause: [`Self::pause_playback`]
     /// is the one that leaves the readers standing where they are.
-    pub fn stop_material(&mut self) -> bool {
+    pub fn stop_playback(&mut self) -> bool {
         let Some(monitor) = self.playing.take() else {
             return false;
         };
@@ -235,7 +235,7 @@ impl Host {
     /// and the position, and therefore the drawn head, holds with it. Nothing
     /// here has to remember where the piece was, which is the whole reason a
     /// pause is a transport command and not a re-`/synth_new`.
-    pub fn pause_material(&mut self) -> Option<bool> {
+    pub fn pause_playback(&mut self) -> Option<bool> {
         let mut monitor = self.playing?;
         monitor.rolling = !monitor.rolling;
         self.playing = Some(monitor);
@@ -273,9 +273,9 @@ impl Host {
         });
     }
 
-    /// The widget whose material the monitor is loaded with, if any — whether
+    /// The widget whose contents the monitor is loaded with, if any — whether
     /// or not the transport is rolling it.
-    pub fn playing_material(&self) -> Option<i32> {
+    pub fn playing_widget(&self) -> Option<i32> {
         self.playing.map(|m| m.widget)
     }
 

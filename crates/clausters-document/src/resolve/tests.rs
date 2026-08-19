@@ -83,7 +83,7 @@ fn a_selection_on_a_clips_body_resolves_through_its_trim_and_its_offset() {
 #[test]
 fn the_same_selection_in_beats_lands_in_the_same_place() {
     // The unit is the reader's to declare, not the selection's: a view over
-    // placements reports beats and a view over material reports frames, and
+    // placements reports beats and a view over samples reports frames, and
     // both mean the same span.
     let document = one_clip();
     let in_frames = resolve(
@@ -227,7 +227,7 @@ fn asking_about_one_element_gives_that_elements_span() {
 // ---- what has no span to give ----
 
 #[test]
-fn an_element_with_no_material_is_skipped_rather_than_reported() {
+fn an_element_with_no_source_is_skipped_rather_than_reported() {
     // An aggregate and a generator are in the way of the selection, not underneath
     // it. The caller asked what is underneath.
     let document = Document::new(aggregate(vec![
@@ -287,7 +287,7 @@ fn a_placement_with_no_length_takes_it_from_the_trim() {
 #[test]
 fn a_placement_with_neither_a_length_nor_a_trim_gives_no_span() {
     // There is nothing to bound the read with, and guessing "the whole file"
-    // would be an operation reading material the composition never used.
+    // would be an operation reading samples the composition never used.
     let document = Document::new(aggregate(vec![placed(0.0, None, take(2, 100, None))]));
     assert!(
         resolve(
@@ -301,7 +301,7 @@ fn a_placement_with_neither_a_length_nor_a_trim_gives_no_span() {
 
 #[test]
 fn the_generation_travels_with_the_span() {
-    // An operation reads material, and a read taken against an older generation
+    // An operation reads samples, and a read taken against an older generation
     // is exactly the case the two counters exist for -- so it is part of the
     // answer rather than something the caller looks up afterwards.
     let document = one_clip();

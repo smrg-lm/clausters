@@ -30,7 +30,7 @@ class ServerStreams:
 
     def stream_buffers(self, period_ms: int, *buffers, bucket: int = 256,
                        timeout: "float | None" = None):
-        """Subscribes this client to the **overview of material as it is
+        """Subscribes this client to the **overview of the audio as it is
         written** (``/buffer_stream``): every ``period_ms`` (floor 10 ms) the
         server sends, per watched buffer whose write frontier moved, one
         ``/buffer_stream.reply bufnum startFrame bucket blob`` -- and nothing

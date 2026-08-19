@@ -1,10 +1,10 @@
-//! From a selection to the span of material underneath it.
+//! From a selection to the span of samples underneath it.
 //!
 //! A [`crate::Selection`] says what is selected on a *timeline*; an operation —
 //! normalize, fade, copy, reverse — needs the span of a **source**. Between them
 //! sit three things the view knows and an algorithm does not: where the element
 //! was placed, how much of the source it uses (its trim), and the bridge between
-//! the arrangement's beats and the material's frames. This module is that
+//! the arrangement's beats and the buffer's frames. This module is that
 //! mapping, and only that: it hands back *which source, which frames*, and the
 //! operation is performed by whoever owns it.
 //!
@@ -23,7 +23,7 @@
 //! take, and getting either term wrong is silent. **Clamping**, too: a selection
 //! dragged past the end of a clip selects what the clip covers, not a span past
 //! the end of a file. And the **generation**, because an operation reads
-//! material and a copy taken against an older one is the case the two counters
+//! samples and a copy taken against an older one is the case the two counters
 //! exist for.
 //!
 //! What it must not include is the operation. A numeric routine anything outside
@@ -43,7 +43,7 @@ use crate::{Beats, Body, Document, Member, Node, NodeId, Range, Selection, Sourc
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Unit {
-    /// Frames on the shared timeline axis — what a view over material reports.
+    /// Frames on the shared timeline axis — what a view over samples reports.
     Frames,
     /// Beats of the arrangement — what a view over placements reports.
     Beats,
@@ -52,7 +52,7 @@ pub enum Unit {
 /// How to get from a selection's numbers to a source's frames.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Mapping {
-    /// Frames of material per beat of the arrangement. Supplied rather than
+    /// Frames of samples per beat of the arrangement. Supplied rather than
     /// derived: tempo and sample rate are the caller's.
     pub frames_per_beat: f64,
     /// What the selection's numbers mean.
@@ -96,14 +96,14 @@ impl Mapping {
     }
 }
 
-/// One piece of material a selection landed on.
+/// One piece of samples a selection landed on.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Resolved {
     /// The element the span belongs to.
     pub node: NodeId,
-    /// Its material.
+    /// Its samples.
     pub source: SourceId,
-    /// Which generation of that material this was resolved against — what an
+    /// Which generation of that samples this was resolved against — what an
     /// operation names so a stale read is detectable rather than silent.
     pub generation: u64,
     /// The span **within the source**, in frames: trim and placement both
@@ -118,14 +118,14 @@ pub struct Resolved {
     pub at: u64,
 }
 
-/// Every piece of material a selection lands on, in tree order.
+/// Every piece of samples a selection lands on, in tree order.
 ///
 /// A selection may cross several elements — that is what a marquee over a
 /// multitrack *is* — so this returns all of them. `selection.nodes` narrows it
 /// when the selection named what it was of; an empty list means the shared
 /// axis, and then everything under it resolves.
 ///
-/// Elements the selection touches but that hold no material are skipped rather
+/// Elements the selection touches but that hold no samples are skipped rather
 /// than reported: an aggregate and a generator have no span to give, and the caller
 /// asked what is underneath, not what is in the way.
 pub fn resolve(document: &Document, selection: &Selection, mapping: &Mapping) -> Vec<Resolved> {
@@ -180,7 +180,7 @@ fn walk(
         {
             out.push(resolved);
         }
-        // **Assembled material resolves per window**: one entry per segment the
+        // **Assembled samples resolves per window**: one entry per segment the
         // selection reaches, because each of them is a different part of a
         // different source and a caller that copied them as one span would be
         // copying frames nobody placed there.
@@ -198,7 +198,7 @@ fn piece(
     end: Beats,
 ) -> Option<Resolved> {
     let Body::Vector { source, .. } = &member.node.body else {
-        // No material, no span. An aggregate or a generator is in the way of the
+        // No samples, no span. An aggregate or a generator is in the way of the
         // selection, not underneath it.
         return None;
     };
@@ -267,7 +267,7 @@ fn pieces_of_segments(
     for segment in segments {
         let (from_beat, to_beat) = (at + cursor, at + cursor + segment.duration);
         cursor += segment.duration;
-        // Past what the placement shows: the rest of the material is there and
+        // Past what the placement shows: the rest of the samples is there and
         // is not being played, so it is not under anything.
         let to_beat = match placed {
             Some(dur) if to_beat > at + dur => at + dur,

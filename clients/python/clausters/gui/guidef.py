@@ -372,15 +372,15 @@ def signal(*, view: str | None = None, data=None, blob: int | None = None,
       ``data``/``blob``/``buffer``/``path``/``cache`` are addressable samples,
       which is what lets a view navigate, slice and select. ``channels``
       de-interleaves it, ``base_bucket`` sizes the peak pyramid.
-    ``fills`` says the material is **being written into as it is drawn** — a
+    ``fills`` says the samples is **being written into as it is drawn** — a
     take you are recording. The view then draws it up to the buffer's write
     frontier and leaves the axis past it empty, instead of drawing a flat line
     across the buffer's own zeros: past the frontier there is no silence, there
-    is no material yet. The host cannot infer this and does not try, because a
+    is no samples yet. The host cannot infer this and does not try, because a
     frontier alone does not distinguish a recording from a loaded take that one
     write touched — you allocated the buffer, so you are what knows. Clear it
     (``set(fills=False)``) when the take is finished and the whole of the
-    material is drawn again.
+    samples is drawn again.
 
     - the **capabilities** — ``navigable`` (zooms and pans its axes, and joins
       the navigation group its x axis names), ``selectable``, ``editable``.
@@ -415,7 +415,7 @@ def signal(*, view: str | None = None, data=None, blob: int | None = None,
     ``dur`` place this body on a **stretch** of the clip's own time (a clip
     holding three segments of three files holds three takes, each over its own
     third), and ``start``/``loop`` are that body's own **window** onto its
-    material — the frame it reads from, and whether it wraps. A body that names
+    samples — the frame it reads from, and whether it wraps. A body that names
     none of them fills the clip and reads through the clip's own window, which
     is every take written as a clip prop.
     """
@@ -1433,17 +1433,17 @@ def clip(*, offset: float = 0.0, dur: float, data=None, blob: int | None = None,
       edit into a selection. It says nothing about the clip's own drag: a
       read-only body still moves and resizes as a placement.
 
-    A clip is a **window onto a segment of its material**, not a rectangle the
-    material is stretched into:
+    A clip is a **window onto a segment of its samples**, not a rectangle the
+    samples is stretched into:
 
     - ``start`` — the source frame the clip's own time zero reads (default 0).
       One timeline sample is one source frame, so trimming a clip hides frames
       rather than compressing them, and opening the window again brings them
       back.
-    - ``loop`` — whether that window wraps: past the last frame the material
+    - ``loop`` — whether that window wraps: past the last frame the samples
       begins again, and before its first frame comes its own tail. It is what
-      lets an edge be pulled past the material at all.
-    - ``fit`` — draw the material *fitted* to the clip's span instead, which is
+      lets an edge be pulled past the samples at all.
+    - ``fit`` — draw the samples *fitted* to the clip's span instead, which is
       the picture a time stretch would make and is not one. Off by default.
 
     **Layers.** A clip draws its bodies over each other and one of them is what
@@ -1793,7 +1793,7 @@ def peaks_cache_empty_file(path: str, frames: int, channels: int = 1,
 def peaks_cache_stream_file(path: str, start_frame: int, bucket: int, stats) -> str:
     """Folds a ``/buffer_stream.reply`` report into the cache at `path` — the
     listener's half of a recording being drawn, for a client that hears about
-    the material rather than mapping it.
+    the samples rather than mapping it.
 
     `stats` is the reply's blob read as floats, **bucket-major and
     channel-minor**: for each bucket of `bucket` frames in order, for each

@@ -20,7 +20,7 @@
 //!   no lane, no vertical position and no type-per-container here. A multitrack
 //!   editor is a *projection* that may decline to show what its shape does not
 //!   admit, the way an unknown widget is laid out and not painted.
-//! - **Sources are never overwritten.** A [`SourceRef`] names material and
+//! - **Sources are never overwritten.** A [`SourceRef`] names samples and
 //!   carries the [`Lifetime`] that says whether it outlives the session, which
 //!   is what lets a save be honest about what it is about to promote.
 //!
@@ -74,7 +74,7 @@ pub type Beats = f64;
 #[serde(transparent)]
 pub struct NodeId(pub u64);
 
-/// A source's identity: the material a [`SourceRef`] points at.
+/// A source's identity: the samples a [`SourceRef`] points at.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct SourceId(pub u64);
@@ -140,7 +140,7 @@ impl Range {
     }
 }
 
-/// A reference to material: which source, how long it lives, which generation
+/// A reference to samples: which source, how long it lives, which generation
 /// of it was last seen, and optionally which part of it.
 ///
 /// The `generation` is the source half of the document's two counters. One
@@ -151,7 +151,7 @@ impl Range {
 /// invalidates only what actually moved.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SourceRef {
-    /// The material this points at.
+    /// The samples this points at.
     pub source: SourceId,
     /// Whether it outlives the session.
     pub lifetime: Lifetime,
@@ -162,7 +162,7 @@ pub struct SourceRef {
     pub range: Option<Range>,
 }
 
-/// One window of a [`Body::Segments`]: which material, from which frame, for how
+/// One window of a [`Body::Segments`]: which samples, from which frame, for how
 /// long.
 ///
 /// The length is in **beats**, like every other length in this format, and the
@@ -173,7 +173,7 @@ pub struct SourceRef {
 /// placement length.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SegmentRef {
-    /// The material this window is onto.
+    /// The samples this window is onto.
     pub source: SourceRef,
     /// The first frame it reads.
     #[serde(default)]
@@ -216,7 +216,7 @@ pub struct Member {
 /// What a node **is**.
 ///
 /// The five primitives are the arrangement's, not this crate's invention, and
-/// each names a way material can be organized rather than a widget or a file
+/// each names a way samples can be organized rather than a widget or a file
 /// format:
 ///
 /// - [`Body::Clang`] — parameters or actions that happen **together**. One or
@@ -227,7 +227,7 @@ pub struct Member {
 /// - [`Body::Vector`] — a succession of data at **constant rate**.
 ///   [`Body::Segments`] is the same primitive assembled from several windows,
 ///   not a sixth kind.
-///   Audio or control, and the only body that names material directly.
+///   Audio or control, and the only body that names samples directly.
 /// - [`Body::Aggregate`] — the **recursive container**. Its job is to group elements,
 ///   of mixed kinds, and it is what a multitrack lane is a restricted
 ///   projection *of*.
@@ -263,9 +263,9 @@ pub enum Body {
     },
     /// Data at constant rate: a vector of samples or control values.
     Vector {
-        /// The material.
+        /// The samples.
         source: SourceRef,
-        /// How this material is meant to sound — a vector is *data*, so what
+        /// How this samples is meant to sound — a vector is *data*, so what
         /// plays it (an instrument, its controls) is configuration, and
         /// configuration is the client's to interpret.
         #[serde(default, skip_serializing_if = "Opaque::is_empty")]
@@ -275,12 +275,12 @@ pub enum Body {
     /// from which frame, for how long — read back to back as one thing.
     ///
     /// It is the same primitive [`Body::Vector`] is, over more than one piece
-    /// of material: joining fragments of two files makes one, and cutting one
+    /// of samples: joining fragments of two files makes one, and cutting one
     /// apart gives back the windows it was made of. Nothing is copied, which is
     /// the whole point — the segments are references, exactly as a vector's own
     /// is.
     Segments {
-        /// The material, in reading order.
+        /// The samples, in reading order.
         segments: Vec<SegmentRef>,
         /// How it is meant to sound — one configuration for the whole of it,
         /// because what this element *is* is one thing to play.
@@ -391,7 +391,7 @@ pub struct Node {
     /// Length in beats, when known.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub duration: Option<Beats>,
-    /// Whether the material is produced by a def running **on the server**
+    /// Whether the samples is produced by a def running **on the server**
     /// rather than by messages the arrangement flattens. Such an element has no
     /// index: its position *is* its internal state, so a transport can stop it
     /// but cannot locate within it. It becomes locatable by being rendered.

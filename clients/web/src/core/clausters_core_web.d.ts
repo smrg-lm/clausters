@@ -22,7 +22,7 @@ export class Document {
      */
     constructor(json?: string | null);
     /**
-     * Resolve a selection to the spans of material underneath it.
+     * Resolve a selection to the spans of samples underneath it.
      * `resolve(requestJson) -> resolvedJson`, the request carrying
      * `{ selection, framesPerBeat, inBeats? }`.
      */

@@ -120,7 +120,7 @@ struct Header {
     /// needs and what a **playhead does not**: for where the piece *is*, read
     /// `transport_position`.
     transport_clock: AtomicU64,
-    /// The sample of the *piece* the engine is playing, in the material's own
+    /// The sample of the *piece* the engine is playing, in the samples's own
     /// axis. It advances with the clock while rolling, holds while stopped,
     /// jumps on a locate and wraps at a loop's end. A playhead wants this one;
     /// a scheduled bundle wants the clock above.
@@ -158,7 +158,7 @@ struct Layout {
 /// only field that is not a shape. It is **odd while a buffer is live** and
 /// even when the slot is empty. It **names the region file**, so a freed buffer
 /// and its replacement can never share a name and a stale mapping can never be
-/// aliased onto new material. And it is a **seqlock**: a writer bumps it,
+/// aliased onto new samples. And it is a **seqlock**: a writer bumps it,
 /// writes the shape and bumps it again, so a reader that sees it move between
 /// its two loads knows it read a torn row and re-reads.
 #[repr(C)]
@@ -172,7 +172,7 @@ struct BufferRow {
     /// It is a *hint* and not a promise. A buffer may have several writers and
     /// nothing here says which of them wrote what, or that everything before
     /// it is final — what it answers is the one question a picture of a
-    /// recording has to ask and cannot otherwise: how far does the material go
+    /// recording has to ask and cannot otherwise: how far does the samples go
     /// now. Outside the seqlock deliberately: it moves every block while the
     /// shape does not move at all, and folding it into the row's version would
     /// spin every reader of the shape against a recorder.
@@ -730,7 +730,7 @@ impl View {
         row.channels.store(channels as u32, Ordering::Relaxed);
         row.sample_rate_bits
             .store(sample_rate.to_bits(), Ordering::Relaxed);
-        // A new take starts unwritten: the frontier is the *material's*, so
+        // A new take starts unwritten: the frontier is the *samples's*, so
         // the previous tenant's would claim samples this one never got.
         row.frontier.store(0, Ordering::Relaxed);
         row.generation.store(odd, Ordering::Release);
@@ -999,7 +999,7 @@ mod tests {
         view.raise_buffer_frontier(1, 1_024);
         view.raise_buffer_frontier(1, 4_096);
         // A second writer behind the first, and a looping recorder that wrapped:
-        // neither pulls the material back.
+        // neither pulls the samples back.
         view.raise_buffer_frontier(1, 512);
         assert_eq!(view.buffer_frontier(1), Some(4_096));
 
@@ -1034,7 +1034,7 @@ mod tests {
         view.retire_buffer(0);
         assert_eq!(view.buffer_info(0), None);
         // A new allocation takes a new generation, so a stale mapping can
-        // never be aliased onto new material.
+        // never be aliased onto new samples.
         let next = view.publish_buffer(0, 8, 1, 48_000.0).expect("a row");
         assert!(next > first);
         assert_ne!(region_suffix(0, first), region_suffix(0, next));

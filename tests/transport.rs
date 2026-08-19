@@ -48,7 +48,7 @@ fn constant_def(bus: i32, level: f32) -> Arc<SynthDef> {
 }
 
 /// A seeded noise generator: the case that makes a pause interesting, since it
-/// has no material to index into. Its position *is* its internal state, so a
+/// has no samples to index into. Its position *is* its internal state, so a
 /// resume either continues the stream or restarts it, audibly.
 #[cfg(feature = "synth")]
 fn noise_def() -> Arc<SynthDef> {
@@ -478,7 +478,7 @@ fn a_stopped_transport_holds_the_position_a_graph_reads() {
     );
 }
 
-/// The `offset` input is what a clip uses to read its own material from frame
+/// The `offset` input is what a clip uses to read its own samples from frame
 /// 0, and the subtraction happens inside the UGen in f64.
 #[test]
 #[cfg(feature = "synth")]
@@ -1081,7 +1081,7 @@ fn render_piece(blocks: usize, pause: Option<(u64, u64)>) -> Vec<f32> {
 /// and the transport queue neither lost nor advanced an event. Over a
 /// seeded-noise def it also proves the stochastic process **continued** rather
 /// than restarted, which is the case no DAW transport protocol covers: a piece
-/// that generates its own material has no index to seek to, so continuing is
+/// that generates its own samples has no index to seek to, so continuing is
 /// the only thing a pause can mean.
 ///
 /// The pause span is deliberately **not** block-aligned. An aligned span makes

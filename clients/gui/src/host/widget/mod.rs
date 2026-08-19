@@ -186,7 +186,7 @@ pub enum WidgetKind {
     /// **signal** element, a roll of events a `notes` element, an automation
     /// curve a `curve` element — the same elements that stand on their own
     /// composed here rather than reimplemented, and **layered** back to front
-    /// rather than selected by precedence: an envelope drawn over the material
+    /// rather than selected by precedence: an envelope drawn over the samples
     /// it shapes is one clip, not two. Each keeps its own value axis, because a
     /// roll's `min`/`max` are pitches and a curve's are its parameter's.
     ///
@@ -302,7 +302,7 @@ pub struct Widget {
     /// onto its own source. The clip's own `offset`/`dur` are the same idea one
     /// level up, which is why the words are the same one level down.
     pub span: Option<(f64, f64)>,
-    /// **What of the material behind it this node shows**: where its own time
+    /// **What of the samples behind it this node shows**: where its own time
     /// zero reads in the source, whether the window loops, whether the picture
     /// is fitted instead of read frame for sample ([`SourceWindow`]).
     ///
@@ -472,7 +472,7 @@ impl Widget {
                     let body = Self::build(None, child, blobs)?;
                     // Only a body is a body: a node the clip cannot layer (a
                     // control, a container, a type this build does not know) is
-                    // dropped rather than drawn over the material, which is the
+                    // dropped rather than drawn over the samples, which is the
                     // same answer the wire gives everywhere else for something
                     // in a place it does not belong.
                     if body.kind.body_role().is_some() {

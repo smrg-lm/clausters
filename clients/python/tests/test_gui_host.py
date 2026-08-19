@@ -123,17 +123,17 @@ def test_a_non_integer_widget_id_is_refused():
 
 def test_the_id_is_never_positional():
     """The id is a keyword everywhere, so the positional slot is the widget's
-    own material — and the two ways of getting that wrong both raise."""
+    own contents — and the two ways of getting that wrong both raise."""
     from clausters.gui import guidef
 
-    # A leaf takes no positional at all (its material is all keywords)...
+    # A leaf takes no positional at all (its contents are all keywords)...
     with pytest.raises(TypeError, match="positional"):
         guidef.knob(7)  # pyright: ignore[reportCallIssue] - the point of the test
     # ...and a container's positionals are its children, so a stray id-shaped
     # placeholder is refused as the non-node it is.
     with pytest.raises(TypeError, match="must be a widget node"):
         guidef.panel(None, guidef.button())
-    # The material that *is* positional reads without a keyword.
+    # The argument that *is* positional reads without a keyword.
     assert guidef.label("hello")["text"] == "hello"
     assert guidef.meter(4)["bus"] == 4
     assert guidef.menu(["sine", "saw"])["options"] == ["sine", "saw"]

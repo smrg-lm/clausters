@@ -17,7 +17,7 @@ interprets**, which is not a limitation to work around but the reason one
 document can serve three languages: a generator *is code*, in the language of
 whoever wrote it, and no format owns that.
 
-So the conversion is lossless for **concrete material** (events, placements,
+So the conversion is lossless for **concrete data** (events, placements,
 sets, buffers by reference) and carries a **generator by reference**, exactly as
 a project file references a plugin rather than serializing it. Coming back, a
 leaf whose configuration names an object this process no longer has resolves
@@ -37,7 +37,7 @@ in the next.
 
 The id is on the *element*, so placing one element at two offsets writes two
 nodes with one id, and an edit naming that id cannot say which of the two it
-means. Give each appearance its own element over the same material — two
+means. Give each appearance its own element over the same source — two
 `Vector` leaves over one server buffer — until the addressing settles.
 """
 
@@ -82,7 +82,7 @@ SESSION_FORMAT = 1
 def to_session(element, *, sources=None, version: int = FIRST_VERSION,
                provenance=None) -> dict:
     """The arrangement as a **session**: the document, plus the table that says
-    where its material is.
+    where its source is.
 
     A document says *what plays when* and deliberately not where a source lives,
     because inside a running system a source is a server buffer, a mapped file
@@ -112,19 +112,19 @@ def to_session(element, *, sources=None, version: int = FIRST_VERSION,
     missing = sorted(_source_ids(document["root"]) - {int(k) for k in table})
     if missing:
         # A session whose table does not cover its own document reopens with
-        # that material unresolved -- the take draws nothing and nothing says
+        # that source unresolved -- the take draws nothing and nothing says
         # why, which is a defect found the only way it can be: by looking at a
         # window two saves later. The table is caller data (what a location
         # *means* is the caller's), but whether it covers the tree is checkable
         # here, and it is the difference between an error now and a silent hole
         # later. It bites hardest where the ids move under you: reopening
-        # resolves material into new buffers, so a table built once at startup
+        # resolves source into new buffers, so a table built once at startup
         # stops matching the composition it is saved with.
         raise ValueError(
             f"the source table does not cover this document: no entry for "
             f"{', '.join(str(m) for m in missing)}. Build it from the "
             f"arrangement being saved (each buffer element's current source), "
-            f"not from the material the script started with."
+            f"not from the source the script started with."
         )
     session = {
         "format": SESSION_FORMAT,
@@ -150,7 +150,7 @@ def _source_ids(node: dict) -> set:
             found.add(int(source["source"]))
         # A `segments` node names one source per segment, and a session whose
         # table covered only the first would reopen with the rest of the
-        # material missing.
+        # source missing.
         for seg in current.get("segments") or ():
             if isinstance(seg, dict):
                 stack.append(seg)
@@ -216,7 +216,7 @@ class _Ids:
 
     **An id names one element, and this is where that is enforced.** The number
     is stamped on the element object, and numbering starts at 1 for every root,
-    so two arrangements built in one script both hold 1, 2, 3 — and material
+    so two arrangements built in one script both hold 1, 2, 3 — and source
     authored in one and used in the other arrives carrying a number a different
     element here already holds. Nothing downstream survives that: an intent
     naming the id reaches whichever node the crate's lookup finds first while
@@ -234,7 +234,7 @@ class _Ids:
 
     The cost of renumbering, stated because it is real: a log entry recorded
     earlier against the moved element's old number no longer names it. It
-    happens only when material crosses between trees, it stamps a number nothing
+    happens only when source crosses between trees, it stamps a number nothing
     else in this tree holds, and the editor re-derives its index from the
     document on every edit — so what is at risk is undo of an edit made before
     the crossing, not the current one."""
@@ -269,7 +269,7 @@ class _Ids:
 
     def of(self, element, member=None) -> int:
         """The id of the node this element occupies — **the placement's** when
-        it is placed, since a clip is a window onto material and what an edit
+        it is placed, since a clip is a window onto source and what an edit
         names is the window.
 
         An element reached any other way (the root, a rendered subtree, an item
@@ -385,7 +385,7 @@ def _body(element, ids: _Ids) -> dict:
         return _with_config({"kind": "sequence"},
                             _named({"sequence": _reference(items, element)}))
     if isinstance(element, Segments):
-        # Several windows read as one: the material is the **list**, each entry
+        # Several windows read as one: the source is the **list**, each entry
         # naming its own source and its own window into it. One node, because
         # what this element is is one thing to play.
         body = {
@@ -416,7 +416,7 @@ def _body(element, ids: _Ids) -> dict:
                 config["instrument"] = instrument
         if element.controls:
             config["controls"] = _plain(element.controls)
-        # The **window** onto the material, written only when it is not the
+        # The **window** onto the source, written only when it is not the
         # whole of it: a document saying nothing about a window means one that
         # reads the buffer from its first frame, which is every take written
         # before windows existed.
@@ -449,7 +449,7 @@ def _body(element, ids: _Ids) -> dict:
     # same body kind and the key is what a reader resolves on: writing a second
     # name for it made a round trip change the leaf's key (`element` on the way
     # out of a hand-written tree, `generator` on the way out of the one that
-    # came back), so a resolver that recognized the material once stopped
+    # came back), so a resolver that recognized the source once stopped
     # recognizing it on the second open.
     return _with_config({"kind": "generator"},
                         _named({"generator": _reference(element.wraps, element),
@@ -476,11 +476,11 @@ def _member(handle, ids: _Ids) -> dict:
 
 
 def _placeable_twice(handle, ids: _Ids):
-    """Refuse a *second* placement of an element whose material is in the node.
+    """Refuse a *second* placement of an element whose source is in the node.
 
-    Two windows share material only when the node **references** it — a buffer
+    Two windows share source only when the node **references** it — a buffer
     names a source, a generator names a recipe, and both placements point at the
-    one thing. A clang, a track or an aggregate carries its material *inside* the
+    one thing. A clang, a track or an aggregate carries its source *inside* the
     node, so a second placement is a second **copy**: they diverge on the first
     edit, which is the answer the open decision rejected. Refused with the
     distinction rather than copied in silence.
@@ -491,12 +491,12 @@ def _placeable_twice(handle, ids: _Ids):
         return
     if isinstance(element, (Vector, Generator)) or (
             isinstance(element, Sequence) and not isinstance(element.wraps, (list, tuple))):
-        return  # a window onto material the node only names
+        return  # a window onto source the node only names
     raise ValueError(
-        f"{type(element).__name__} is placed more than once, and its material is "
+        f"{type(element).__name__} is placed more than once, and its source is "
         "in the node rather than named by it — two placements would be two "
         "copies that diverge on the first edit. Place a leaf that *references* "
-        "its material (a Vector over one server buffer, a Generator over one "
+        "its source (a Vector over one server buffer, a Generator over one "
         "recipe), or give each placement its own element."
     )
 
@@ -539,8 +539,8 @@ class FrozenSource:
 
 
 def _source(buffer) -> dict:
-    """A buffer element's material. A server buffer the user allocated is
-    **session** material -- neither the external-file rule nor a scratch copy --
+    """A buffer element's source. A server buffer the user allocated is
+    **session** source -- neither the external-file rule nor a scratch copy --
     and a `FrozenSource` reports whatever the document said instead."""
     return {
         "source": int(getattr(buffer, "bufnum", 0) or 0),
@@ -563,7 +563,7 @@ def leaf_config(element) -> dict:
 
 def leaf_node(element) -> dict:
     """A leaf's **whole node body**, exactly as `to_document` writes it — its
-    kind, its material and its configuration, with no id (the id belongs to the
+    kind, its source and its configuration, with no id (the id belongs to the
     placement that holds it).
 
     Public for the same reason `leaf_config` is, one step further out: an edit
@@ -634,7 +634,7 @@ def _reference(obj, element=None):
     resolver and takes back whatever that resolver has. The reference therefore
     has to be something a caller **can produce**. Three sources, in order: the
     object's own name (a def, an `Automation`), the element's `name` (what an
-    author writes for material that has none of its own — a `Pbind` is code and
+    author writes for source that has none of its own — a `Pbind` is code and
     carries no name), and nothing.
 
     **Nothing is better than `repr`**, which is what this wrote before: a
@@ -710,7 +710,7 @@ def _element(node: dict, resolve, *, placed: bool = False):
             )
             if "id" in child:
                 # The placement's id, on the placement: a second window onto the
-                # same material is a second handle with a number of its own.
+                # same source is a second handle with a number of its own.
                 setattr(handle, ID_ATTR, int(child["id"]))
         built = aggregate
     elif kind == "clang":
@@ -794,7 +794,7 @@ def _element(node: dict, resolve, *, placed: bool = False):
 
 
 def _apply_points(resolved, points):
-    """Put a carried curve back onto the material that was handed to us.
+    """Put a carried curve back onto the source that was handed to us.
 
     The document is the authority for what it holds: a resolver returns the
     `clausters.seq.Automation` this process has, and the envelope *in the file*

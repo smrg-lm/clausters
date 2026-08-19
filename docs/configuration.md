@@ -103,7 +103,7 @@ host_port = 57210        # port for the host's script-facing front (UDP + TCP)
 # font = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
 #                             # the typeface to draw text with, on a host built
 #                             # with a rasterizer (its `font-atlas` feature)
-# follow_block = 0.0          # seconds of recorded material a picture waits for
+# follow_block = 0.0          # seconds of recorded samples a picture waits for
 #                             # before it re-reads its summary. 0 (the default)
 #                             # follows every frame; larger is cheaper and
 #                             # choppier. Neither the sound nor a playhead

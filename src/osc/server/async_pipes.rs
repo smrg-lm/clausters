@@ -179,7 +179,7 @@ impl OscServer {
             let swap = match action {
                 NrtAction::Install(buffer) => {
                     // **Where a buffer lives is decided here, once.** With a
-                    // segment attached the material goes into a region a peer
+                    // segment attached the samples goes into a region a peer
                     // can map by name, so an editor draws and writes it with no
                     // message at all; with none it stays the server's own
                     // memory, exactly as before. The copy is paid at
@@ -229,7 +229,7 @@ impl OscServer {
         buffer: Arc<crate::dsp::buffer::Buffer>,
     ) -> Arc<crate::dsp::buffer::Buffer> {
         use crate::dsp::region::Region;
-        if !self.owns_material {
+        if !self.owns_samples {
             // Somebody else's directory: this server's own allocations stay in
             // its own memory rather than taking a row and a buffer number that
             // are the owner's to hand out.
@@ -271,7 +271,7 @@ impl OscServer {
             );
         }
         self.shared_buffers[index] = Some(region_path);
-        // Shared material is material somebody may be drawing, so it publishes
+        // Shared samples is samples somebody may be drawing, so it publishes
         // how far it has been written: a recording fills a picture in another
         // process with one relaxed store per block and no message at all.
         Arc::new(
@@ -285,7 +285,7 @@ impl OscServer {
         )
     }
 
-    /// Sharing material needs a mapped region, and a region is a file
+    /// Sharing samples needs a mapped region, and a region is a file
     /// somebody else can open — which off Unix (the wasm engine, above all)
     /// there is no equivalent of. A buffer stays the server's own memory
     /// there, exactly as it does with no segment at all.
@@ -304,10 +304,10 @@ impl OscServer {
     /// until it drops it, which is what makes freeing a buffer safe while
     /// somebody is drawing it. What the peer sees is the row going even.
     fn retire_buffer(&mut self, index: usize) {
-        if !self.owns_material {
+        if !self.owns_samples {
             // Freeing a buffer here frees this server's *mapping* of it. The
             // row and the region are the owner's, and a player retiring them
-            // would free material out from under whoever is editing it.
+            // would free samples out from under whoever is editing it.
             return;
         }
         if let Some(segment) = self.segment.as_ref() {

@@ -40,7 +40,7 @@ The loop, and why each step needs the one before it:
    describing a composition that has moved on — and undoing would then write a
    state nobody was ever in.
 4. **Save it.** A *session* is the document plus the one half a document
-   deliberately lacks: the table saying where its material lives. Written here
+   deliberately lacks: the table saying where its samples lives. Written here
    beside the WAV it references, with the **provenance** of the script that made
    it — carried opaquely, which is what makes re-generating possible without the
    format knowing how.
@@ -61,7 +61,7 @@ element down to what it produced.
 
 **Two more, on the take.** An edge drag is a **trim**, so dragging the head of
 the audio clip to the right hides the take's first frames and the waveform stops
-moving — the material stands still and the clip shows less of it; drag the edge
+moving — the samples stands still and the clip shows less of it; drag the edge
 back and the frames come out again. And with the pointer over a clip, **`e`**
 cuts it in two at the time cursor and **`j`** joins it back with what touches it:
 the two halves are two windows onto one buffer, which is why the join can put
@@ -127,7 +127,7 @@ QUANT = 0.5          # the drag grid: half a beat
 # control. That is the arrangement's rule, and this is the def that satisfies it.
 #
 # It also reads the element's **window**: a clip is a window onto a segment of its
-# material, so ``start`` says which frame to begin at and ``loop`` whether to wrap
+# samples, so ``start`` says which frame to begin at and ``loop`` whether to wrap
 # — the two the arrangement sends when the window is not the whole buffer. A def
 # that named neither would play from the beginning whatever the clip drew, which
 # is a picture and a sound disagreeing.
@@ -186,7 +186,7 @@ wav = folder / "take.wav"
 bounce_take(str(wav))
 buf = ServerBuffer.read(str(wav), server=server)    # on the server, shape known
 
-# A **second** take, from a second file: two different materials on one lane, so
+# A **second** take, from a second file: two different takes on one lane, so
 # that joining them is a real join — an element that reads both, back to back,
 # rather than two placements of one buffer.
 other_wav = folder / "take_low.wav"
@@ -194,7 +194,7 @@ bounce_take(str(other_wav), note=48)
 other_buf = ServerBuffer.read(str(other_wav), server=server)
 
 # %% [markdown]
-# ## The material
+# ## The take
 # Three elements, three of the five primitives: the take is a **Vector** (data
 # — it sounds through the *instrument* named to play it), the melody a **Track**
 # (an aggregate of clangs placed in time), the bass a **Sequence** wrapping a
@@ -203,7 +203,7 @@ other_buf = ServerBuffer.read(str(other_wav), server=server)
 
 # %%
 # Two **elements** over one server buffer, since this lane places the take
-# twice: the material is shared, the placements are not. One object in two
+# twice: the samples is shared, the placements are not. One object in two
 # places would be one name for two positions, and an edit-back could not say
 # which of them it meant.
 take = Vector(buf, duration=2.0, instrument="take")       # the element over it
@@ -275,7 +275,7 @@ voice = Clang(SeqEvent(instrument="drone", freq_bus=sweep.bus.index,
 sweep_clip = Aggregate([(0.0, voice), (0.0, Element(sweep, duration=SWEEP))],
                    name="sweep")
 
-# The composition: four lanes, each an aggregate placing one material in time.
+# The composition: four lanes, each an aggregate placing one samples in time.
 song = Aggregate([
     (0.0, Aggregate([(0.0, take), (4.0, take_again)], name="drums")),
     (0.0, Aggregate([(0.0, bass)], name="bass")),
@@ -285,7 +285,7 @@ song = Aggregate([
 
 # %% [markdown]
 # ## Saving, and opening again
-# A **session** is the document plus the table saying where its material lives.
+# A **session** is the document plus the table saying where its samples lives.
 # The document says *what plays when* and deliberately not where a source is —
 # inside a running system a source is a server buffer, a mapped file or a
 # rendered result, and the tree has no business knowing which — so the table is
@@ -325,10 +325,10 @@ def takes_of(element):
 
 
 def save():
-    """Write the composition and where its material is.
+    """Write the composition and where its samples is.
 
     **The table is built from the composition being saved**, not from the
-    material this script started with, and that distinction is the whole of a
+    samples this script started with, and that distinction is the whole of a
     defect this example had: reopening resolves each take into a *new* server
     buffer, so a table naming the buffer read at startup stops covering the tree
     one save later — and the file it writes reopens with the takes unresolved
@@ -360,7 +360,7 @@ def reopen():
 
     **What the file names, this side supplies**, and that is the point of the
     resolver rather than a limitation of it: a document carries a *reference* to
-    material and to algorithms, never the material and never the algorithm, so
+    samples and to algorithms, never the samples and never the algorithm, so
     what a leaf becomes depends on who is there to answer for it. The take is a
     source id the table locates and this process reads back onto the server; the
     curve is named, so the recipe this script still holds is handed back and the
@@ -398,7 +398,7 @@ def reopen():
 
 # %% [markdown]
 # ## Open the editor, with a transport
-# The model tree becomes a multitrack window: a lane per member, its materials as
+# The model tree becomes a multitrack window: a lane per member, its takes as
 # clips on one shared axis. ``extra`` places widgets of the script's own under the
 # lanes — here the transport, the history and the file, whose buttons are *named*.
 # `Editor.open` hands back a window handle (like `GuiHost.open`), so the script
@@ -502,7 +502,7 @@ print("undo/redo: the buttons, or Ctrl+Z / Ctrl+Shift+Z over the window")
 # ## Edit it
 # `Editor.apply` takes the host's events into the **model**: a dragged clip becomes
 # a placement — its **offset** *and* its **length**, and the length trims what the
-# material plays — and a dragged break-point becomes the automation's new curve.
+# samples plays — and a dragged break-point becomes the automation's new curve.
 # Anything it does not recognize is the script's: here, the buttons above.
 # `Editor.poll` drains the window's whole stream into it, so one call is the loop.
 #

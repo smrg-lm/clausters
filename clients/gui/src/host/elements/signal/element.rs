@@ -202,20 +202,20 @@ impl Element for SignalElement {
         SignalElement::stream_want(self)
     }
 
-    fn material_shape(&self) -> Option<(usize, u64)> {
-        SignalElement::material_shape(self)
+    fn sample_shape(&self) -> Option<(usize, u64)> {
+        SignalElement::sample_shape(self)
     }
 
-    fn material_buffer(&self) -> Option<i32> {
-        SignalElement::material_buffer(self)
+    fn source_buffer(&self) -> Option<i32> {
+        SignalElement::source_buffer(self)
     }
 
     fn write_samples(&mut self, ch: usize, start: u64, values: &[f32]) -> bool {
         SignalElement::write_samples(self, ch, start, values)
     }
 
-    fn refresh_material(&mut self, ch: Option<usize>, start: u64, frames: usize) -> bool {
-        SignalElement::refresh_material(self, ch, start, frames)
+    fn resummarize(&mut self, ch: Option<usize>, start: u64, frames: usize) -> bool {
+        SignalElement::resummarize(self, ch, start, frames)
     }
 
     fn fill(&mut self) -> Option<SlotFill> {
@@ -256,14 +256,14 @@ impl Element for SignalElement {
         Some(BodyRole::Take)
     }
 
-    /// **A take's material is the whole of the box it fills** — samples run
+    /// **A take's samples are the whole of the box it fills** — samples run
     /// edge to edge, so there is no empty space inside one — and it is claimed
     /// only when the take can actually be edited (`editable`).
     ///
     /// That gate is what keeps a clip draggable: a clip's take is built with
     /// every capability off, so it never takes the press and the background
     /// stays the clip's. A take a script *did* make editable is a different
-    /// statement — the material is what the hand is there for, the way it is in
+    /// statement — the samples are what the hand is there for, the way it is in
     /// an editor's own view — and the clip is then moved from its grips or by
     /// naming its layer.
     fn layer_hit(&self, at: (f64, f64), input: &Input) -> bool {
@@ -331,7 +331,7 @@ impl Element for SignalElement {
         pending: Option<crate::host::widget::element::PendingEdit>,
     ) -> bool {
         // Only a navigable trace can hold one: it is the presentation where a
-        // sample is a thing on screen, and the only one whose material the
+        // sample is a thing on screen, and the only one whose samples the
         // owner can be asked to change.
         if !self.caps.navigable || self.presentation != Presentation::Signal {
             return false;

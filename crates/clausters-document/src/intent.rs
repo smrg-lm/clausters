@@ -102,7 +102,7 @@ impl Rules {
 /// The two counters, named by whoever is proposing the edit. They are separate
 /// because they answer different questions and one number cannot do both: the
 /// **document version** moves when the description changes (a clip is placed, an
-/// aggregate is rewritten), the **source generation** moves when material's *content*
+/// aggregate is rewritten), the **source generation** moves when samples's *content*
 /// changes while its identity stays put (a pencil stroke). A reader that holds
 /// no document at all — a waveform view over one source — can name a generation
 /// and nothing else, which is why the generation is optional rather than a
@@ -114,8 +114,8 @@ pub struct Against {
     /// not editing a stale picture, and an older client cannot say.
     #[serde(default)]
     pub version: u64,
-    /// The generation of the material the editor was looking at, when it was
-    /// looking at material.
+    /// The generation of the samples the editor was looking at, when it was
+    /// looking at samples.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub generation: Option<u64>,
 }
@@ -134,7 +134,7 @@ impl Against {
         }
     }
 
-    /// Also made against this generation of the material.
+    /// Also made against this generation of the samples.
     pub fn with_generation(mut self, generation: u64) -> Self {
         self.generation = Some(generation);
         self
@@ -186,18 +186,18 @@ pub enum Intent {
         /// Its members, in whatever order the owner keeps them.
         members: Vec<Member>,
     },
-    /// What a span of a node's material now holds.
+    /// What a span of a node's samples now holds.
     ///
     /// The destructive edit: a dragged sample, a pencil stroke. It names the
-    /// node rather than the source so that the document decides which material
+    /// node rather than the source so that the document decides which samples
     /// a node refers to, and it carries values rather than a delta for the same
     /// reason every other intent does.
     WriteSamples {
-        /// The node whose material is written.
+        /// The node whose samples is written.
         node: NodeId,
-        /// **Which channel of that material** the span belongs to.
+        /// **Which channel of that samples** the span belongs to.
         ///
-        /// A frame span already addresses the material's shape, and a channel
+        /// A frame span already addresses the samples's shape, and a channel
         /// is the same kind of coordinate — not a fact about the source, which
         /// stays the source's business. It is a channel rather than a run of
         /// interleaved frames because an edit is usually *one* channel of one:
@@ -337,7 +337,7 @@ pub fn apply(
 ///
 /// Two claims are checked and they are independent. The **document version**
 /// catches the description moving — including by routes no log sees. The
-/// **source generation** catches material being rewritten while the description
+/// **source generation** catches a source being rewritten while the description
 /// stands still, which the document's version cannot express and which is the
 /// case a sample editor lives in.
 ///
@@ -358,7 +358,7 @@ fn superseded(document: &Document, intent: &Intent, against: &Against) -> Option
     }
     let seen = against.generation?;
     let held = generation(document, intent.node())?;
-    (seen != held).then(|| Outcome::superseded(current, "the material changed since this edit"))
+    (seen != held).then(|| Outcome::superseded(current, "the samples changed since this edit"))
 }
 
 /// The intent describing what the document says *now* about what `intent`
@@ -412,11 +412,11 @@ pub(crate) fn current(document: &Document, intent: &Intent) -> Option<Intent> {
     }
 }
 
-/// The generation of the material a node names, for the nodes that name any.
+/// The generation of the samples a node names, for the nodes that name any.
 fn generation(document: &Document, id: NodeId) -> Option<u64> {
     match &document.find(id)?.body {
         Body::Vector { source, .. } => Some(source.generation),
-        // Assembled material is as fresh as its **stalest** piece: an edit made
+        // Assembled data is as fresh as its **stalest** piece: an edit made
         // against it was made against every window it shows, so any one of them
         // being rewritten is what a staleness check has to catch.
         Body::Segments { segments, .. } => segments.iter().map(|s| s.source.generation).max(),
@@ -559,7 +559,7 @@ fn write_samples(
         return refuse("no such node");
     };
     let Body::Vector { source, .. } = &mut node.body else {
-        return refuse("only material can be written");
+        return refuse("only samples can be written");
     };
     if values.is_empty() {
         return Outcome::unchanged(Intent::WriteSamples {
@@ -570,8 +570,8 @@ fn write_samples(
         });
     }
     // The samples are not in the document -- the document describes where
-    // material is, never what it holds -- so what applying does here is bump the
-    // source's generation, which is the signal every reader of that material
+    // samples is, never what it holds -- so what applying does here is bump the
+    // source's generation, which is the signal every reader of that samples
     // needs in order to know its copy is stale. Writing the samples themselves
     // is the owner's next step, against the working buffer.
     source.generation += 1;

@@ -44,16 +44,16 @@ pub enum Samples {
     /// A buffer this view owns. Empty for a cache-only view, which has an
     /// overview and no samples.
     Owned(Arc<[f32]>),
-    /// The material where it lies: one channel of a mapped region, read
+    /// The samples where it lies: one channel of a mapped region, read
     /// through [`peaks::Source`] so this module never learns what a mapping
     /// is. Reading it may cross a writer, which is the buffer model's own
     /// promise and exactly what a picture can live with.
     Shared(Arc<dyn peaks::Source + Send + Sync>),
     /// **A run of the channel, around what is being looked at.** `total` is
-    /// the material's whole length; `data` covers `start .. start + data.len()`
+    /// the samples' whole length; `data` covers `start .. start + data.len()`
     /// of it and nothing else.
     ///
-    /// It is what a picture that cannot map the material holds when a zoom
+    /// It is what a picture that cannot map the samples holds when a zoom
     /// goes past its summary: the span on screen is fetched and answers
     /// exactly, everything outside it is the pyramid's as before. So the same
     /// view is sample-exact where the eye is and an overview everywhere else,
@@ -67,7 +67,7 @@ pub enum Samples {
 }
 
 impl Samples {
-    /// How many samples the channel holds — the **material's** length, which
+    /// How many samples the channel holds — the **channel's** length, which
     /// a window states rather than measures (it holds a run of it).
     pub fn len(&self) -> usize {
         match self {
@@ -79,7 +79,7 @@ impl Samples {
 
     /// **Whether these samples can answer for `[a, b)`** — the question every
     /// regime decision comes down to, and the one a window makes interesting:
-    /// an owned or shared channel answers wherever the material reaches, a
+    /// an owned or shared channel answers wherever the samples reaches, a
     /// window only inside the run it holds, and an empty channel nowhere.
     pub fn covers(&self, a: usize, b: usize) -> bool {
         if b <= a {
@@ -217,7 +217,7 @@ impl std::fmt::Debug for WaveformData {
 impl WaveformData {
     /// **Nothing to draw** — no channels, no summary, no allocation.
     ///
-    /// It exists so a view can *give the material back* without becoming an
+    /// It exists so a view can *give the samples back* without becoming an
     /// `Option` everywhere it is read: a slot holds this between the frame it
     /// drew and the frame it is refilled for, which is what leaves the element
     /// the sole owner of the pyramid it is writing into.
@@ -238,7 +238,7 @@ impl WaveformData {
         }
     }
 
-    /// A multichannel view over material the host **maps**: one
+    /// A multichannel view over samples the host **maps**: one
     /// [`peaks::Source`] per channel, each summarized where it lies.
     ///
     /// This is the editor's own case since H7 — the take is the server's
@@ -346,7 +346,7 @@ impl WaveformData {
     ///
     /// # Panics
     /// On [`nothing`](Self::nothing), which has no channel to have one. Every
-    /// caller holds material it has just been given; the released state is the
+    /// caller holds samples it has just been given; the released state is the
     /// slot's own and is never asked.
     pub fn pyramid(&self) -> &Pyramid {
         &self.channels[0].pyramid
@@ -355,15 +355,15 @@ impl WaveformData {
     /// **Writes a run of samples into one channel and refreshes only the peaks
     /// that cover it**, returning whether it landed.
     ///
-    /// This is the drawn copy of a destructive edit: the material itself is the
+    /// This is the drawn copy of a destructive edit: the samples itself is the
     /// server's buffer, and what happens here is the picture agreeing with it
     /// without being fetched again. Refreshing the whole pyramid would be a
     /// pause proportional to the *file* on every stroke over a few hundred
     /// samples, which is what [`peaks::Pyramid::update_range`] exists to avoid.
     ///
     /// A write past the end is refused rather than clamped, like every other
-    /// write in this system: a stroke that ran off the material is a mistake
-    /// about where the material ends, and silently shortening it would draw
+    /// write in this system: a stroke that ran off the end is a mistake
+    /// about where the samples ends, and silently shortening it would draw
     /// something nobody asked for.
     pub fn write_range(&mut self, ch: usize, start: usize, values: &[f32]) -> bool {
         let Some(channel) = self.channels.get_mut(ch) else {
@@ -373,10 +373,10 @@ impl WaveformData {
             return false;
         }
         match &mut channel.samples {
-            // **Shared material is already written**: the store went into the
+            // **Shared samples are already written**: the store went into the
             // cells before anything asked the picture to follow, so there is
             // no copy to make and nothing to write here — only the summary of
-            // the span, read back out of the material itself.
+            // the span, read back out of the samples itself.
             Samples::Shared(_) => self.resummarize(ch, start, values.len()),
             // An owned buffer is this widget's own, so the write lands here
             // first. It still costs the channel: a page has no other place to
@@ -388,21 +388,21 @@ impl WaveformData {
                 *owned = samples.into();
                 ok
             }
-            // **A window holds a run and not the material**, so a stroke over
+            // **A window holds a run and not the samples**, so a stroke over
             // it is refused rather than half-applied: what a window is for is
             // reading the span the eye is on, and an edit belongs to whoever
-            // holds the material (the mapped path, or the page's own copy).
+            // holds the samples (the mapped path, or the page's own copy).
             // Refusing keeps the picture honest instead of writing into a run
             // the next zoom will drop.
             Samples::Window { .. } => false,
         }
     }
 
-    /// **Re-reads the summary of a span out of shared material** — what a
+    /// **Re-reads the summary of a span out of shared samples** — what a
     /// picture does when the samples changed underneath it and nobody handed
     /// it any: this host's own store, or a span another writer announced.
     ///
-    /// Refuses for an owned buffer, which has no material to re-read: its
+    /// Refuses for an owned buffer, which has no samples to re-read: its
     /// samples are the picture's own, so whoever changed them writes them
     /// here ([`Self::write_range`]).
     pub fn resummarize(&mut self, ch: usize, start: usize, len: usize) -> bool {
@@ -416,10 +416,10 @@ impl WaveformData {
     }
 
     /// **Folds a run of buckets somebody else measured** into the summary —
-    /// what a view does when it is *told* about material it cannot read.
+    /// what a view does when it is *told* about samples it cannot read.
     ///
     /// The mirror of [`Self::resummarize`], and it exists for the picture that
-    /// has no material to re-read: a page holds its own copy of the samples
+    /// has no samples to re-read: a page holds its own copy of the samples
     /// and maps nothing, so a recording growing in the server's memory reaches
     /// it as the overview of what was written (`/buffer_stream.reply`) rather
     /// than as samples. `stats` is that reply's payload — **bucket-major,
@@ -434,7 +434,7 @@ impl WaveformData {
     ///
     /// Returns whether it landed: the report has to be on this view's own grid
     /// (`bucket` its base bucket, `start_frame` on a bucket boundary, the run
-    /// inside the material), and a report that is not is refused whole rather
+    /// inside the samples), and a report that is not is refused whole rather
     /// than partly applied.
     pub fn write_buckets(&mut self, start_frame: usize, bucket: usize, stats: &[f32]) -> bool {
         let channels = self.channels.len();
@@ -455,9 +455,9 @@ impl WaveformData {
         let first = start_frame / bucket;
         let n = stats.len() / stride;
         // Checked before anything is written: every channel of one view shares
-        // the material's length, so a run that fits one fits all — and a
+        // the samples' length, so a run that fits one fits all — and a
         // refusal halfway would leave the channels of one picture describing
-        // different material.
+        // different samples.
         let buckets = self.total_samples().div_ceil(bucket);
         if first + n > buckets {
             return false;
@@ -480,21 +480,21 @@ impl WaveformData {
         true
     }
 
-    /// **Puts a fetched run of the material under the summary**: `start` is a
+    /// **Puts a fetched run of the samples under the summary**: `start` is a
     /// frame index and `samples` is interleaved, every channel of that run.
     ///
-    /// It is what a picture that cannot map the material does when a zoom goes
+    /// It is what a picture that cannot map the samples does when a zoom goes
     /// past its overview — the span on screen is read back and answers
     /// exactly, everything outside it stays the pyramid's. One window at a
     /// time per view: it is replaced when the eye moves, because what it is
     /// for is *where the eye is* and a cache with a policy is a different
     /// design.
     ///
-    /// Refuses, changing nothing, when the material already answers for
+    /// Refuses, changing nothing, when the samples already answers for
     /// itself (mapped or wholly owned), when the run does not fit the
-    /// material, or when the shape does not match — the summary is what says
-    /// how long the material is, and a window that disagreed would draw two
-    /// materials in one picture.
+    /// samples, or when the shape does not match — the summary is what says
+    /// how long the buffer runs, and a window that disagreed would draw two
+    /// different things in one picture.
     pub fn set_window(&mut self, start: usize, channels: usize, samples: &[f32]) -> bool {
         let channels = channels.max(1);
         if self.channels.len() != channels || !samples.len().is_multiple_of(channels) {
@@ -510,7 +510,7 @@ impl WaveformData {
             .iter()
             .any(|c| !matches!(c.samples, Samples::Window { .. }) && !c.samples.is_empty())
         {
-            return false; // the material is already here, in a form that answers
+            return false; // the samples are already here, in a form that answers
         }
         for (ch, channel) in self.channels.iter_mut().enumerate() {
             let data: Arc<[f32]> = (0..frames)
@@ -550,7 +550,7 @@ impl WaveformData {
         self.channels.first().is_some_and(|c| !c.samples.is_empty())
     }
 
-    /// Whether this view reads its material where it lives rather than owning
+    /// Whether this view reads its samples where it lives rather than owning
     /// a copy of it — what a mapped take gives and a page never can.
     pub fn is_shared(&self) -> bool {
         matches!(
@@ -581,7 +581,7 @@ impl WaveformData {
     /// `None` when the source cannot answer — a cache written before the
     /// pyramid carried the statistic. That absence is the whole reason this
     /// returns an option: zeros would be a measurement (silence), and a body
-    /// drawn from them would be a flat line across material that is not flat.
+    /// drawn from them would be a flat line across samples that is not flat.
     pub fn column_ms(&self, ch: usize, samples_per_px: f64, s0: f64, s1: f64) -> Option<f32> {
         self.measure(ch, samples_per_px, s0, s1)
             .and_then(|(_, _, ms)| ms)
@@ -607,7 +607,7 @@ impl WaveformData {
         let base = channel.pyramid.base_bucket();
         // **Not "are there samples" but "do they answer here"**: a window
         // covers the run it holds and no more, and a view that owns the whole
-        // material covers all of it — one question, both forms.
+        // samples covers all of it — one question, both forms.
         let raw = channel.samples.covers(a, b);
         // Finer than a bucket: the samples are the only thing that can answer,
         // and they answer exactly.
@@ -628,7 +628,7 @@ impl WaveformData {
         // it exact, and that is what this did first — measured at 700 µs per
         // frame of 900 columns against 10 µs for the fold, because a column of
         // two buckets is 500 samples of edge. Exactness bought by reading the
-        // material at every zoom is not exactness a picture can afford; the
+        // samples at every zoom is not exactness a picture can afford; the
         // regime that *does* read every sample is the one below, where a
         // column is finer than a bucket and there is nothing else to read.
         let (qa, qb) = (a - a % base, b - b % base);
@@ -765,7 +765,7 @@ fn domain_centre_half(min: f32, max: f32) -> (f32, f32) {
 /// timeline group, because a group may span windows while a slot is per window.
 pub struct WaveformView {
     /// The data, **shared** with the element that named the resource: the
-    /// pyramid a loader resolved is that element's material as much as it is
+    /// pyramid a loader resolved is that element's samples as much as it is
     /// this view's picture, and a read of it (a copy) is answered from there.
     data: Arc<WaveformData>,
     /// The vertical display axis: the visible slice of the value domain,
@@ -793,7 +793,7 @@ impl WaveformView {
         &self.data
     }
 
-    /// Puts a **rewritten** copy of the same material behind the view, keeping
+    /// Puts a **rewritten** copy of the same samples behind the view, keeping
     /// every navigation state it holds.
     ///
     /// An edit replaces the pyramid rather than mutating it (the element and
@@ -806,7 +806,7 @@ impl WaveformView {
         self.data = data.into();
     }
 
-    /// **Gives the material back**, keeping every navigation state.
+    /// **Gives the samples back**, keeping every navigation state.
     ///
     /// A slot draws the element's pyramid through a shared `Arc`, and while it
     /// holds one the element cannot write into the pyramid without copying it
@@ -1229,7 +1229,7 @@ mod tests {
     }
 }
 
-/// The material a view shares rather than owns: the picture reads it where it
+/// The samples a view shares rather than owns: the picture reads it where it
 /// lies, so a write by anyone is a write to what is drawn.
 #[cfg(test)]
 mod shared_tests {
@@ -1253,7 +1253,7 @@ mod shared_tests {
         }
     }
 
-    fn material(n: usize) -> Vec<f32> {
+    fn samples(n: usize) -> Vec<f32> {
         (0..n).map(|i| (i as f32 * 0.01).sin() * 0.7).collect()
     }
 
@@ -1268,7 +1268,7 @@ mod shared_tests {
     /// draws — at every regime, so the mapped path is not a second picture.
     #[test]
     fn a_shared_view_draws_what_an_owned_one_draws() {
-        let samples = material(20_000);
+        let samples = samples(20_000);
         let cells = Arc::new(Cells(Mutex::new(samples.clone())));
         let mapped = shared(&cells);
         let owned = WaveformData::new(samples.into(), 256);
@@ -1293,11 +1293,11 @@ mod shared_tests {
         assert_eq!(mapped.block(100, 50), owned.block(100, 50));
     }
 
-    /// **The point of the whole thing**: somebody else writes the material and
+    /// **The point of the whole thing**: somebody else writes the samples and
     /// the zoomed-in picture is already the new one, with nothing told to it.
     #[test]
     fn a_write_by_somebody_else_is_already_in_the_picture() {
-        let cells = Arc::new(Cells(Mutex::new(material(20_000))));
+        let cells = Arc::new(Cells(Mutex::new(samples(20_000))));
         let view = shared(&cells);
         let fine = 4.0; // finer than a bucket: the raw regime, read from the source
         let before = view.column(0, fine, 5_000.0, 5_004.0);
@@ -1307,15 +1307,15 @@ mod shared_tests {
         assert_eq!(after.0, -0.9);
     }
 
-    /// A stroke over shared material re-summarizes its span and copies
+    /// A stroke over shared samples re-summarizes its span and copies
     /// nothing: the samples were already written where they live.
     #[test]
     fn a_stroke_moves_the_summary_and_not_the_samples() {
-        let cells = Arc::new(Cells(Mutex::new(material(20_000))));
+        let cells = Arc::new(Cells(Mutex::new(samples(20_000))));
         let mut view = shared(&cells);
         let coarse = 2_000.0; // the pyramid's regime, which a stroke must refresh
         let before = view.column(0, coarse, 4_096.0, 6_096.0);
-        // The writer's half, exactly as the host does it: the material first.
+        // The writer's half, exactly as the host does it: the samples first.
         cells.0.lock().unwrap()[4_500..4_700].fill(0.99);
         assert!(view.write_range(0, 4_500, &[0.99; 200]));
         let after = view.column(0, coarse, 4_096.0, 6_096.0);
@@ -1324,7 +1324,7 @@ mod shared_tests {
             (after.1 - 0.99).abs() < 1e-6,
             "the summary followed: {after:?}"
         );
-        // And it equals a pyramid built from scratch over the same material.
+        // And it equals a pyramid built from scratch over the same samples.
         let rebuilt = shared(&cells);
         assert_eq!(after, rebuilt.column(0, coarse, 4_096.0, 6_096.0));
     }
@@ -1334,7 +1334,7 @@ mod shared_tests {
 mod stream_tests {
     use super::*;
 
-    fn material(frames: usize, channels: usize) -> Vec<f32> {
+    fn samples(frames: usize, channels: usize) -> Vec<f32> {
         (0..frames * channels)
             .map(|i| {
                 let f = (i / channels) as f32;
@@ -1345,7 +1345,7 @@ mod stream_tests {
     }
 
     /// The report the server sends for `count` whole buckets from `start`:
-    /// bucket-major, channel-minor, measured from the material the way the
+    /// bucket-major, channel-minor, measured from the samples the way the
     /// writer measures it.
     fn report(
         data: &[f32],
@@ -1369,13 +1369,13 @@ mod stream_tests {
 
     /// **The page's half of a recording**: a view over an empty take, told
     /// nothing but the overview of what was written, draws the overview a view
-    /// over the material draws. Column for column, at the zooms the summary
+    /// over the samples draws. Column for column, at the zooms the summary
     /// answers.
     #[test]
     fn a_told_view_draws_what_a_reading_one_draws() {
         let (bucket, channels) = (256, 2);
         let frames = bucket * 24;
-        let data = material(frames, channels);
+        let data = samples(frames, channels);
         let mut told =
             WaveformData::from_interleaved(&vec![0.0; frames * channels], channels, bucket);
         // The reports arrive in runs, as a recording fills.
@@ -1410,7 +1410,7 @@ mod stream_tests {
     #[test]
     fn the_samples_are_not_invented_from_the_summary() {
         let (bucket, frames) = (256, 4_096);
-        let data = material(frames, 1);
+        let data = samples(frames, 1);
         let mut told = WaveformData::from_interleaved(&vec![0.0; frames], 1, bucket);
         assert!(told.write_buckets(0, bucket, &report(&data, 1, bucket, 0, frames / bucket)));
         assert_ne!(
@@ -1426,11 +1426,11 @@ mod stream_tests {
     }
 
     /// A report on another grid is refused whole, so a picture is never part
-    /// one material and part another.
+    /// one samples and part another.
     #[test]
     fn a_report_on_another_grid_is_refused() {
         let (bucket, frames) = (256, 4_096);
-        let data = material(frames, 1);
+        let data = samples(frames, 1);
         let mut told = WaveformData::from_interleaved(&vec![0.0; frames], 1, bucket);
         let one = report(&data, 1, bucket, 0, 1);
         assert!(!told.write_buckets(0, bucket * 2, &one), "a coarser bucket");
@@ -1453,7 +1453,7 @@ mod stream_tests {
 mod window_tests {
     use super::*;
 
-    fn material(frames: usize, channels: usize) -> Vec<f32> {
+    fn samples(frames: usize, channels: usize) -> Vec<f32> {
         (0..frames * channels)
             .map(|i| {
                 let f = (i / channels) as f32;
@@ -1465,14 +1465,14 @@ mod window_tests {
 
     /// **The claim the whole path exists for**: a view that holds only a
     /// summary, given the run the eye is on, draws that run exactly as a view
-    /// that holds the material does — and goes on drawing the summary
+    /// that holds the samples does — and goes on drawing the summary
     /// everywhere else, at the same columns.
     #[test]
-    fn a_window_draws_the_material_where_it_covers_and_the_summary_elsewhere() {
+    fn a_window_draws_the_samples_where_it_covers_and_the_summary_elsewhere() {
         let (bucket, channels, frames) = (256, 2, 256 * 40);
-        let data = material(frames, channels);
+        let data = samples(frames, channels);
         let whole = WaveformData::from_interleaved(&data, channels, bucket);
-        // The page's side: the summary of the same material, no samples.
+        // The page's side: the summary of the same samples, no samples.
         let mut told =
             WaveformData::with_multi_pyramid(peaks::MultiPyramid::empty(frames, channels, bucket));
         for (ch, pyr) in told.channels.iter_mut().enumerate() {
@@ -1492,7 +1492,7 @@ mod window_tests {
         let run = &data[start * channels..(start + len) * channels];
         assert!(told.set_window(start, channels, run));
 
-        // ...and inside it the picture is the material's, column for column.
+        // ...and inside it the picture is the samples', column for column.
         for ch in 0..channels {
             for x in 0..16 {
                 let (a, b) = (4_200.0 + x as f64 * 64.0, 4_200.0 + x as f64 * 64.0 + 64.0);
@@ -1504,7 +1504,7 @@ mod window_tests {
             }
         }
         // Outside it, the summary answers as it did — and agrees with the
-        // material's own summary, since it is the same summary.
+        // the take's own summary, since it is the same summary.
         for x in 0..8 {
             let (a, b) = (x as f64 * 4_000.0, x as f64 * 4_000.0 + 4_000.0);
             assert_eq!(
@@ -1514,12 +1514,12 @@ mod window_tests {
         }
     }
 
-    /// A window is a run and not the material: it is refused where it would
-    /// not fit, and it never replaces material that already answers.
+    /// A window is a run and not the samples: it is refused where it would
+    /// not fit, and it never replaces samples that already answers.
     #[test]
-    fn a_window_is_refused_where_it_would_not_be_the_material() {
+    fn a_window_is_refused_where_it_would_not_be_the_samples() {
         let (bucket, channels, frames) = (64, 2, 1_024);
-        let data = material(frames, channels);
+        let data = samples(frames, channels);
         let mut told =
             WaveformData::with_multi_pyramid(peaks::MultiPyramid::empty(frames, channels, bucket));
         assert!(
@@ -1529,14 +1529,14 @@ mod window_tests {
         assert!(!told.set_window(0, channels, &data[..7]), "a ragged run");
         assert!(
             !told.set_window(frames - 4, channels, &data[..64 * channels]),
-            "past the end of the material"
+            "past the end of the samples"
         );
         assert!(
             told.set_window(0, channels, &data[..64 * channels]),
             "and a run that fits"
         );
 
-        // A view that owns its material takes none: it already answers.
+        // A view that owns its samples takes none: it already answers.
         let mut owned = WaveformData::from_interleaved(&data, channels, bucket);
         assert!(!owned.set_window(0, channels, &data[..64 * channels]));
     }
@@ -1546,7 +1546,7 @@ mod window_tests {
     #[test]
     fn a_second_window_replaces_the_first() {
         let (bucket, channels, frames) = (64, 1, 4_096);
-        let data = material(frames, channels);
+        let data = samples(frames, channels);
         let mut told =
             WaveformData::with_multi_pyramid(peaks::MultiPyramid::empty(frames, channels, bucket));
         assert!(told.set_window(0, channels, &data[..512]));

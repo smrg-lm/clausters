@@ -18,9 +18,9 @@
 //! data home through [`SignalElement::take`]. So a loader resolves a resource
 //! and hands it over, and nothing about a presentation is written down in it.
 //!
-//! A slot is where a picture goes, though, and not where the *material* lives:
+//! A slot is where a picture goes, though, and not where the *samples* lives:
 //! a pyramid is both, so a slot-backed element takes it home as well (one
-//! shared `Arc`, `frame::keep_material`). That is what lets a copy read the
+//! shared `Arc`, `frame::keep_data`). That is what lets a copy read the
 //! take back out of the element that named it, and lets a window opened later
 //! refill its slot from what the element already holds.
 
@@ -39,11 +39,11 @@ impl SignalElement {
     /// samples, and a server buffer being the one thing the host has to ask
     /// another process for.
     /// Forgets what this element resolved, so the next pass asks for it again
-    /// — the mapped half of "the material is now this".
+    /// — the mapped half of "the samples are now these".
     ///
     /// A source with nothing behind it (inline samples and no path, cache or
     /// buffer) is left alone: it has nothing to re-read, and clearing it would
-    /// erase the material instead of refreshing it.
+    /// erase the samples instead of refreshing it.
     pub fn reread(&mut self) {
         let Source::Data(data) = &mut self.source else {
             return;
@@ -106,7 +106,7 @@ impl SignalElement {
         // **A take being recorded into is asked for its shape, not its
         // samples.** It holds silence until something records into it, and
         // what fills the picture is the overview the server streams — so
-        // pulling the material would be a download of zeros, at the take's
+        // pulling the samples would be a download of zeros, at the take's
         // full length, to draw over them.
         if self.fills
             && data.cache.is_none()
@@ -162,7 +162,7 @@ impl SignalElement {
         })
     }
 
-    /// **The shape of the material this element holds** — `(channels, frames)`
+    /// **The shape of the samples this element holds** — `(channels, frames)`
     /// per channel — whichever form it arrived in: a resolved pyramid (a take)
     /// or the inline samples (a plotted sequence). `None` when it holds
     /// neither, which is a source nobody has resolved yet.
@@ -170,14 +170,14 @@ impl SignalElement {
     /// It is the shape and not the samples because the one caller is a
     /// **write**, which has to know what it may address before it addresses it:
     /// handing out the data to measure it would be a copy of a take per stroke.
-    /// **How far this element's material exists**, in frames, or `None` when
+    /// **How far this element's samples exists**, in frames, or `None` when
     /// all of it does — the drawing's half of the `fills` prop, asked wherever
-    /// a picture of the material is built.
+    /// a picture of the samples is built.
     pub fn written_frames(&self) -> Option<u64> {
         self.fills.then_some(self.written)
     }
 
-    pub fn material_shape(&self) -> Option<(usize, u64)> {
+    pub fn sample_shape(&self) -> Option<(usize, u64)> {
         let data = self.source.data()?;
         if let Some(body) = &data.body {
             return Some((body.num_channels(), body.total_samples() as u64));
@@ -189,16 +189,16 @@ impl SignalElement {
         Some((channels, (data.samples.len() / channels) as u64))
     }
 
-    /// The **server buffer** this element's material came from, if it named one.
-    pub fn material_buffer(&self) -> Option<i32> {
+    /// The **server buffer** this element's samples came from, if it named one.
+    pub fn source_buffer(&self) -> Option<i32> {
         self.source.data()?.buffer
     }
 
-    /// **Re-reads the summary of a span** of shared material, returning
+    /// **Re-reads the summary of a span** of shared samples, returning
     /// whether this element draws any. The other half of
     /// [`Self::write_samples`]: there the host wrote the samples, here
     /// somebody else did and only said where.
-    pub fn refresh_material(&mut self, ch: Option<usize>, start: u64, frames: usize) -> bool {
+    pub fn resummarize(&mut self, ch: Option<usize>, start: u64, frames: usize) -> bool {
         let Some(data) = self.source.data_mut() else {
             return false;
         };
@@ -220,7 +220,7 @@ impl SignalElement {
         //
         // `Arc::make_mut` is that rule and nothing else: `&mut` when this is
         // the sole owner, a copy first when a slot is still holding the
-        // material it draws. **One copy, however many channels** either way —
+        // samples it draws. **One copy, however many channels** either way —
         // taking one per channel is what made following a multichannel
         // recording scale with the square of nothing useful.
         let body = Arc::make_mut(data.body.as_mut().expect("just matched"));
@@ -239,12 +239,12 @@ impl SignalElement {
     }
 
     /// **Folds a report of buckets into the summary**, returning whether this
-    /// element draws material it applies to.
+    /// element draws samples it applies to.
     ///
     /// The third way a picture changes, beside [`Self::write_samples`] (the
-    /// host wrote the samples) and [`Self::refresh_material`] (somebody else
+    /// host wrote the samples) and [`Self::resummarize`] (somebody else
     /// wrote them where this element can read them): here nobody can read them
-    /// at all — the material is in the server's memory and this element holds
+    /// at all — the samples are in the server's memory and this element holds
     /// its own copy — so what arrives is the *overview* of what was written.
     ///
     /// It applies only to an **owned** body, which is exactly the case that
@@ -270,13 +270,13 @@ impl SignalElement {
         true
     }
 
-    /// **Puts a fetched run of the material under the summary**, returning
+    /// **Puts a fetched run of the samples under the summary**, returning
     /// whether this element took it.
     ///
     /// The other half of a zoom that went past the overview: the picture said
     /// which span it could not answer, the leg fetched it, and this is where
-    /// it lands. Only a body that holds no material of its own takes one — a
-    /// mapped body reads the material where it lies, and a wholly owned one
+    /// it lands. Only a body that holds no samples of its own takes one — a
+    /// mapped body reads the samples where it lies, and a wholly owned one
     /// already has it.
     pub fn set_window(&mut self, start: u64, channels: usize, samples: &[f32]) -> bool {
         let Some(data) = self.source.data_mut() else {
@@ -299,9 +299,9 @@ impl SignalElement {
     /// It is a want and not a subscription: the host collects them, and one
     /// `/buffer_stream` covers every view of every window. What makes an
     /// element want one is the pair of facts nothing else can supply — the
-    /// client said this material is being written (`fills`), and the body is
+    /// client said these samples are being written (`fills`), and the body is
     /// this element's **own copy**, so no frontier in memory can tell it what
-    /// grew. A mapped body is deliberately absent: it reads the material where
+    /// grew. A mapped body is deliberately absent: it reads the samples where
     /// it lies and would be paying twice for one picture.
     pub fn stream_want(&self) -> Option<(i32, usize)> {
         if !self.fills {
@@ -314,14 +314,14 @@ impl SignalElement {
         Some((data.buffer?, data.base_bucket))
     }
 
-    /// **Writes a run of samples into the material**, returning whether it
+    /// **Writes a run of samples into the samples**, returning whether it
     /// landed. `start` is a frame index in channel `ch`.
     ///
     /// The element does it rather than the host, because the host does not know
     /// which of the two forms this source is in — and both are real: a clip's
     /// take draws from inline samples, while the same buffer opened as a
     /// navigable view draws from a pyramid. A host that patched only the
-    /// pyramid left the clip showing the material as it was before the stroke.
+    /// pyramid left the clip showing the samples as it was before the stroke.
     ///
     /// Both are **replaced rather than mutated**: the pyramid is shared with
     /// whatever slot is drawing it, so patching it in place would rewrite a
@@ -398,7 +398,7 @@ impl SignalElement {
                 }
                 true
             }
-            // A pyramid is the material this element holds, whether or not a
+            // A pyramid is the samples this element holds, whether or not a
             // slot also draws it: the `Arc` is the one a slot was filled with,
             // and a read of the source (a copy) is answered out of it.
             Loaded::Peaks(peaks) => {
@@ -477,7 +477,7 @@ mod tests {
         );
     }
 
-    /// **A view that cannot read its own material asks to be told about it.**
+    /// **A view that cannot read its own samples asks to be told about it.**
     /// The want is the pair of facts nothing else supplies: the client said
     /// this take is being written (`fills`), and the body is this element's
     /// own copy — a mapped one reads the frontier and needs no wire.
@@ -578,10 +578,10 @@ mod tests {
         assert_eq!(waterfall.want(), None);
     }
 
-    /// Shared material: the samples move where they live and only the summary
+    /// Shared samples: the samples move where they live and only the summary
     /// is told, which is what makes a second peer's edit visible here at all.
     #[test]
-    fn a_take_reading_shared_material_refreshes_a_span() {
+    fn a_take_reading_shared_samples_refreshes_a_span() {
         use std::sync::Mutex;
 
         struct Cells(Mutex<Vec<f32>>);
@@ -618,13 +618,13 @@ mod tests {
         assert_eq!(column(&take), (0.1, 0.1));
         // Somebody else's write: the cells first, then the span announced.
         cells.0.lock().unwrap()[100..200].fill(-0.8);
-        assert!(take.refresh_material(Some(0), 100, 100));
+        assert!(take.resummarize(Some(0), 100, 100));
         assert_eq!(column(&take).0, -0.8);
 
         // Every channel at once is what a recording asks for, and it is one
         // copy of the summary rather than one per channel.
         cells.0.lock().unwrap()[400..500].fill(0.6);
-        assert!(take.refresh_material(None, 400, 100));
+        assert!(take.resummarize(None, 400, 100));
         assert_eq!(column(&take).1, 0.6);
 
         // An owned body has nothing to re-read: its samples are its own.
@@ -633,6 +633,6 @@ mod tests {
         assert!(owned.take(Loaded::Peaks(Arc::new(
             crate::waveform::WaveformData::from_interleaved(&[0.0, 1.0, 0.5, -1.0], 1, 2)
         ))));
-        assert!(!owned.refresh_material(Some(0), 0, 2));
+        assert!(!owned.resummarize(Some(0), 0, 2));
     }
 }

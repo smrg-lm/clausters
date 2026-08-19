@@ -72,7 +72,7 @@ await server.transportGroup(piece);   // null unbinds
 await server.transportPlay();
 ```
 
-A frozen node stays in the tree with its internal state untouched — filters keep their memory, phasors their phase, envelopes their position. So a resume **continues** the sound rather than starting it again. That matters most for material the server *generates*: a def running a stochastic process has nothing to read and no messages arriving, so there is no position to seek to — its position **is** its internal state. Continuing is the only thing a pause can honestly mean for it.
+A frozen node stays in the tree with its internal state untouched — filters keep their memory, phasors their phase, envelopes their position. So a resume **continues** the sound rather than starting it again. That matters most for samples the server *generates*: a def running a stochastic process has nothing to read and no messages arriving, so there is no position to seek to — its position **is** its internal state. Continuing is the only thing a pause can honestly mean for it.
 
 Anything scheduled against a governed node waits out the pause with it and fires on resume in its right relative place, so a look-ahead already in flight is not lost. A bundle is atomic, so one holding a governed message and a live one waits entirely.
 
@@ -80,7 +80,7 @@ Unbinding thaws whatever the transport governed, and so does freeing the group �
 
 ## The page's half of the pause
 
-A clock's beats come from a timebase that only decides how long to sleep before the next wake. A page whose server froze would keep advancing beats and scheduling material ahead — running away from a piece that is not moving. So the clock freezes too:
+A clock's beats come from a timebase that only decides how long to sleep before the next wake. A page whose server froze would keep advancing beats and scheduling samples ahead — running away from a piece that is not moving. So the clock freezes too:
 
 ```js
 await server.transportStop();

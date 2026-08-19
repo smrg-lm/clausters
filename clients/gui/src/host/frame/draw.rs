@@ -195,7 +195,7 @@ pub(super) fn draw_editor_overlay(
         }
     }
     // **The edit the hand is making, drawn over the picture and marked as
-    // pending.** The material under it has not changed — the host owns no data
+    // pending.** The samples under it has not changed — the host owns no data
     // — so this is the one thing on screen that is not what the document says.
     // It is drawn as a ring rather than a filled disc, and tethered to the
     // sample it replaces by a line, so what is read is *this value, moved from
@@ -418,7 +418,7 @@ pub(super) fn draw_timeline_meshes(
                 // bucket instead — which is correct and is not what the eye
                 // asked for. This is the one place that knows both numbers, so
                 // it leaves the span for the leg to fetch; a view that can
-                // answer (mapped material, a whole owned buffer, a window
+                // answer (mapped samples, a whole owned buffer, a window
                 // already over this span) leaves nothing.
                 slot.wanted_span.set(missing_span(
                     &slot.view,

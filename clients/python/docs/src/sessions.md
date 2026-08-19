@@ -52,7 +52,7 @@ Randomness (`Pwhite`, `Prand`, `clausters.uniform`/`choice`/…) always draws
 from a **single seedable context** — the running routine's generator, derived
 from the context that created it — never from per-pattern seeds. Each session
 is its **own** such context: `session.seed(n)` reproduces *that* session's
-material end to end, and two sessions (even both offline) reproduce
+samples end to end, and two sessions (even both offline) reproduce
 independently — seeding one never perturbs another. Outside any session,
 `main.seed(n)` governs the **default session** (`clausters.uniform`/… and
 anything played free-standing). See [Routines and clocks](routines-and-clocks.md).

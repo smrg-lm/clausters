@@ -95,7 +95,7 @@ const stats = await render(myPattern, { defs: [myInstrument], channels: 2 });
 
 `seed` is the one this take's stochastic UGens started from. Unless you asked for a seed you got a fresh one, so **this is how you get a take back**: pass it as `seed` and the render repeats sample for sample. (The engine's own entropy source does not exist on wasm, so the client draws the word from the platform's `crypto` and forwards it — without that, every take of a noisy piece in a browser would be the same take.) A pattern's own jitter — a `Pwhite` — is a different randomness: it is the *session's* seeded stream, reproduced with `session.seed(n)`.
 
-Every offline path starts from an **empty** ephemeral session, so whatever the material names has to ride along in `defs`.
+Every offline path starts from an **empty** ephemeral session, so whatever the samples names has to ride along in `defs`.
 
 ## Where the audio goes
 
@@ -109,7 +109,7 @@ const buffer = await Buffer.fromSamples(stats.samples, stats.channels, stats.sam
 play(buffer);
 ```
 
-`Buffer.fromSamples` is the browser's render-then-load with the file taken out of the middle — the samples go into a buffer on the page's engine directly, since the carrier shares memory with it. The render is *material* now: random-access audio, sliceable and playable like any other.
+`Buffer.fromSamples` is the browser's render-then-load with the file taken out of the middle — the samples go into a buffer on the page's engine directly, since the carrier shares memory with it. The render is *samples* now: random-access audio, sliceable and playable like any other.
 
 `examples/offline.html` runs the whole loop — render, look, download, play back.
 

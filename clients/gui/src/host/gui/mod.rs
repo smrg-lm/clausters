@@ -230,19 +230,19 @@ pub fn open_shm(path: Option<String>) -> Option<Arc<dyn BusSource>> {
     }
 }
 
-/// Maps a segment **and its material**: the buses a meter reads, and the takes
+/// Maps a segment **and its samples**: the buses a meter reads, and the takes
 /// a peer draws and edits without asking for them.
 ///
 /// The two travel together because they come from one path — the server's own
 /// `--shm` — and separating them at the call site would mean opening the file
 /// twice to answer two halves of the same question.
 #[cfg(unix)]
-pub fn open_shm_material(
+pub fn open_shm_buffers(
     path: Option<String>,
     head: super::shm::HeadClock,
 ) -> (
     Option<Arc<dyn BusSource>>,
-    Option<super::material::SharedMaterial>,
+    Option<super::mapped::SharedBuffers>,
 ) {
     let Some(path) = path else {
         return (None, None);
@@ -252,13 +252,12 @@ pub fn open_shm_material(
             let seg = Arc::new(seg.with_head(head));
             info!(
                 "shared segment mapped at {path} ({} control buses, {} buffer row(s)): \
-                 zero-message meters, and material read and written in place",
+                 zero-message meters, and samples read and written in place",
                 seg.control_buses(),
                 seg.buffer_rows(),
             );
-            let material =
-                super::material::SharedMaterial::new(Arc::clone(&seg), path.clone().into());
-            (Some(seg as Arc<dyn BusSource>), Some(material))
+            let samples = super::mapped::SharedBuffers::new(Arc::clone(&seg), path.clone().into());
+            (Some(seg as Arc<dyn BusSource>), Some(samples))
         }
         Err(e) => {
             warn!("cannot map shared segment {path}: {e}; meters will read zero");

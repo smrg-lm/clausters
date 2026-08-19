@@ -5,7 +5,7 @@
   2400 samples at 48 kHz), reaching out around a pixel column's centre wherever
   the column is narrower than that. A root-mean-square is an average over a
   *duration*, so a window that followed the column would make the body's own
-  values follow the **zoom** — the level moving over material that did not
+  values follow the **zoom** — the level moving over samples that did not
   change, which is the defect that decided this. 50 ms is WaveLab's default RMS
   window (adjustable to 999 ms); it sits below the ear's own integration —
   energy integrates over something like 200 ms, a VU meter's window is 300 ms —
@@ -4031,7 +4031,7 @@ at the end of a fixed group of arguments.
 Every transport protocol worth surveying — JACK's `jack_position_t` with its BBT
 and its slow-sync `Starting` state, Ableton Link, MIDI clock's Song Position
 Pointer, VST3's `ProcessContext`, CLAP's `clap_event_transport` — shares one
-assumption it never states: **position is an index into material that already
+assumption it never states: **position is an index into samples that already
 exists**. `song_pos_beats` means something because something is addressable at
 that beat.
 
@@ -4042,11 +4042,11 @@ its internal state, and no number summarises it.
 
 So the transport splits what those protocols keep together:
 
-- **Pause and resume are symmetric.** They work identically for material and for
+- **Pause and resume are symmetric.** They work identically for samples and for
   a generator, because they are only a freeze of the subtree, the clock and the
   queue. Universal, and cheap — the freeze itself is `NodeTree::set_paused`,
   which already keeps a node in the tree with its state intact.
-- **Locate is asymmetric.** Over generated material it is an index; over a
+- **Locate is asymmetric.** Over generated samples it is an index; over a
   generator it does not exist as an operation. `/transport_locate` therefore
   moves the position and never the state of a node, and says so.
 
@@ -4059,7 +4059,7 @@ rendered — the same answer, one layer down.
 
 It follows that the **locatability flag lives in the client, not the protocol**.
 The server cannot know which of its nodes are generators; `form` can, because it
-holds the material. Putting a capability bit on the wire would be the server
+holds the samples. Putting a capability bit on the wire would be the server
 promising something it cannot check.
 
 ## The two transports were absorbed, not renamed
@@ -5089,7 +5089,7 @@ them, rather than becoming dead space around every round control.
 Three parties touch a composition's data and each is good at a different thing.
 The **GUI host** has the hand: it draws, it hit-tests, it knows where the
 pointer is. The **client** has the algorithms: it generates, it iterates, it
-scripts. The **server** has the material: buffers, and the audio thread that
+scripts. The **server** has the samples: buffers, and the audio thread that
 reads them. Giving any two of them a copy of the model is how the three drift,
 and the drift is silent — a note springs back, a clip lands half a grid step
 from where it was dropped, an undo writes a state nobody was ever in.
@@ -5101,7 +5101,7 @@ gesture happened to touch.
 
 What settles it is splitting four layers that were being called one:
 
-- **Sources** — the material. Never overwritten, ever: not the user's file, not
+- **Sources** — the samples. Never overwritten, ever: not the user's file, not
   the session's own. A destructive edit is not an exception but the clearest
   case, because it writes a *temporary* source of its own and the composition
   takes the result only when the edit is confirmed.
@@ -5312,7 +5312,7 @@ index.
 format went to CLPK v3 and the two older layouts still parse, which leaves a
 pyramid that has min/max and no energy. Filling that gap with zeros would be a
 measurement — silence — and a measured layer drawn from it would be a flat line
-across material that is not flat. So the measure is an option that rides with
+across samples that is not flat. So the measure is an option that rides with
 the data, `Pyramid::has_mean_square` reports it, and a view's honest answer to an
 old cache is to draw no measured layer at all rather than a wrong one.
 
@@ -5410,16 +5410,16 @@ much.
 **A source that cannot measure draws nothing.** A peak cache written before the
 format carried the mean square has an envelope and no energy, and the layer is
 absent rather than flat: zeros are a measurement — silence — and drawing them
-over material that is not silent is the one picture worse than no picture.
+over samples that is not silent is the one picture worse than no picture.
 
-## The buffer is the material, and every picture of it takes the same write
+## A buffer's samples are one thing, and every picture of it takes the same write
 
 A destructive edit in a standalone editor has to land in two places at once: the
 server's buffer — the copy that sounds, and the one a save writes — and whatever
 the window is drawing, because refetching a take to show a stroke that is
 already on screen would be a round trip per gesture.
 
-**The picture and the material are one thing on purpose.** A session's take is
+**The picture and the samples are one thing on purpose.** A session's take is
 read into a **server buffer** rather than mapped as a file (see the session
 sources note): the editing verbs address a buffer, so a host that drew a file
 and edited a buffer would show one copy and write another. The same argument
@@ -5427,22 +5427,22 @@ carries one level down, inside the host.
 
 **A take is drawn more than once, and the views hold it in different forms.** A
 session window shows the clip in its lane *and* the take's editor under the
-tracks — two widgets, one material. Worse, they do not hold it alike: a
+tracks — two widgets, one samples. Worse, they do not hold it alike: a
 navigable view keeps a **peak pyramid** (a take is minutes of audio and reaches
 the host summarized), while a clip's take body keeps the **samples** it was
 handed. A host that patched the pyramid of the widget under the pointer
 therefore left the clip drawing samples that no longer existed anywhere, and the
 undo — which addresses the node, not the widget the hand happened to be over —
-reported that it could not restore material it was looking straight at.
+reported that it could not restore samples it was looking straight at.
 
 So the write is split the way the knowledge is:
 
-- **The element writes its own material** (`Element::write_samples`), because
+- **The element writes its own samples** (`Element::write_samples`), because
   only it knows which form it is in — it patches the pyramid, the samples, or
   both, recomputing only the columns over the span
   (`peaks::update_range`).
 - **The host decides which elements**, and the answer is the **buffer number**:
-  two widgets are two pictures of one material exactly when they name the same
+  two widgets are two pictures of one samples exactly when they name the same
   buffer. Nothing else in the tree relates them — a clip and an editor of the
   same take are not parent and child, and they are not even in the same lane.
 
@@ -5460,7 +5460,7 @@ that *follows* a recording re-summarizes on every step, so it paid for the whole
 take each time and only a coarse cadence made that affordable. What the sharing
 defends against is a **borrow**, not a race: the front is single-threaded and
 the only other holder is the slot. So the leg that follows the frontier has the
-view **give the material back before the write** (`WaveformView::release_data`;
+view **give the samples back before the write** (`WaveformView::release_data`;
 `WaveformData::nothing` is what a released view holds) and take it again on the
 next fill, which a repaint runs first. In between the element is the sole owner
 and `Arc::make_mut` hands it `&mut` with no copy at all — and where a slot *is*
@@ -5484,7 +5484,7 @@ the channel it took rather than assuming the first.
 three other places turned out to have assumed one channel — the clip's body drew
 only the first, the monitor played only the first, and a drag that crossed into
 another lane read *that* lane's value. None of them was the write path, and all
-three were invisible while the material was mono. A channel count is not a
+three were invisible while the samples was mono. A channel count is not a
 detail of the data: it is a fact every view, every gesture and every voice has
 to carry, and the way to find out who forgot it is to open something wider than
 two.
@@ -5501,7 +5501,7 @@ pointer, so it goes on reporting past the edge of the view and past the window
 itself. Following it would rewrite samples nobody is looking at, and the damage
 is discovered only by scrolling there afterwards. So the stroke is **clamped to
 the body it started on** — the last visible column still follows the hand, and
-the stroke ends where the eye does — and clamped again to the material's last
+the stroke ends where the eye does — and clamped again to the buffer's last
 frame, since the right edge of a fully zoomed-out view maps to *one past* the
 last sample and a stroke carrying that frame is refused whole by the owner.
 
@@ -5517,7 +5517,7 @@ The transport could say whether a piece was rolling and not where it was. `/tran
 
 The other shape stays available and is not deprecated: `PlayBuf` from its own frame 0, `BufRd` over any phase at all. A one-shot fired from a pattern has no business consulting a transport.
 
-**Two costs, recorded rather than discovered.** The position spends the last of the segment header's reserved space, so the next counter added there moves offsets that out-of-process readers pin by hand. And a signal is `f32`, which counts single frames exactly only to 2²⁴ — about 5.8 minutes at 48 kHz — so `TransportPos` takes an `offset` and subtracts it in `f64` internally: a clip reads its own material from frame 0 however deep into a long piece it sits, where a graph subtracting afterwards with a `Sub` has already lost what it was trying to keep.
+**Two costs, recorded rather than discovered.** The position spends the last of the segment header's reserved space, so the next counter added there moves offsets that out-of-process readers pin by hand. And a signal is `f32`, which counts single frames exactly only to 2²⁴ — about 5.8 minutes at 48 kHz — so `TransportPos` takes an `offset` and subtracts it in `f64` internally: a clip reads its own samples from frame 0 however deep into a long piece it sits, where a graph subtracting afterwards with a `Sub` has already lost what it was trying to keep.
 
 ## Every buffer is writable, because the alternative promised something the compiler could not keep
 
@@ -5542,7 +5542,7 @@ it keeps the last in its own index, so one gesture writes two places and the
 thing the hand moved springs back. It was reachable by ordinary authoring, from
 a direction nobody had looked at — ids are stamped on the element object and
 numbering starts at 1 for every root, so two arrangements built in one script
-both hold 1, 2, 3, and material authored in one and used in the other arrives
+both hold 1, 2, 3, and samples authored in one and used in the other arrives
 carrying a number a different element there already holds.
 
 **The fix is in two places because the failure has two sources.** The Python
@@ -5619,17 +5619,17 @@ keeping it out of the model, and it is the same cost the GUI protocol pays for
 putting a view in the tree, which is the trade this layer decided in the other
 direction on the day it was designed.
 
-## The working copy leads, and it is the buffer the material was loaded into
+## The working copy leads, and it is the buffer the samples were loaded into
 
 O8 says the working buffer leads while a session is open and that a take's pool
 buffer is replaced whole once, on confirmation. That was not a preference: it
 was derived from a measurement — a write cost the whole buffer (33.8 ms on a
 five-minute take), so an editor that wrote through per gesture was unusable, and
 a client-side working copy was the honest workaround. S18 removed the
-measurement: a write is now flat in the material.
+measurement: a write is now flat in the samples.
 
 **The rule survives the measurement that motivated it, and what dies is a
-reading of it.** The server buffer *is* the working copy. Loading material into
+reading of it.** The server buffer *is* the working copy. Loading samples into
 a pool buffer copies it — `/buffer_allocRead` reads a file and never touches it
 again — so an edit that writes that buffer has already not written the source.
 What the four-layer table protects is the user's own file, and the copy that
@@ -5641,17 +5641,17 @@ the acknowledgement and the log entry, which is what the editor already does.
 `inverse_of` returns the *empty* write for `WriteSamples` — the samples are not
 in the document — "which is why a destructive caller reads its own span before
 writing", and the host does exactly that: the previous samples ride in the log
-entry, span by span. A second take would have held the whole material to
+entry, span by span. A second take would have held the whole samples to
 recover what a stroke covers.
 
-**Where a temporary copy stays mandatory** is a property of how material is
-held, not of what a write costs: material reached **by reference to the user's
+**Where a temporary copy stays mandatory** is a property of how the samples are
+held, not of what a write costs: samples reached **by reference to the user's
 file** — mapped rather than loaded, which is the path shared-memory editing
 opens. An edit there would write the user's file, which the four-layer rule
 forbids outright, so it must materialize a `Temporary` copy first, and
 `confirm`/`promote` are what settle it. That is the whole remaining job of the
 `editing` field in the session format, and why it stays: a session that dies
-mid-edit over mapped material must reopen knowing what was undecided.
+mid-edit over mapped samples must reopen knowing what was undecided.
 
 Stated as one line, because the distinction is easy to lose: **an edit writes
 the copy the system already made, and makes a copy only when it has not made one
@@ -5695,7 +5695,7 @@ Three answers were on the table for months — forbid it, copy it, or have the
 intent name the **placement** — with the third recorded as the faithful one and
 the most expensive, "because a member has no stable identity in the document".
 Read against what a multitrack *is*, the first two are not options: a clip is a
-**window onto material** and the identity is the material, so forbidding the
+**window onto samples** and the identity is the samples, so forbidding the
 sentence outlaws non-destructive editing's basic move, and copying quietly forks
 what the author wrote as one thing.
 
@@ -5708,16 +5708,16 @@ returned and whose docstring already called it "the stable identity `remove` and
 wire, or the intent vocabulary. It was expensive against a model where a member
 has no identity; that stopped being true the day the handle existed.
 
-**What that leaves is the real question, and it is about material rather than
-addressing.** Two windows share material only when the node *references* it. So
+**What that leaves is the real question, and it is about samples rather than
+addressing.** Two windows share samples only when the node *references* it. So
 a **buffer** (two nodes, one source), a **generator** and a pattern-backed
 **sequence** may be placed twice — two views of one take, two evaluations of one
 function, which is the instance/function distinction the user's own exposition
-named. An **event**, a **track** or a **group** carries its material *inside* the
+named. An **event**, a **track** or a **group** carries its samples *inside* the
 node, so a second placement is a second copy that diverges on the first edit;
 that is refused with the distinction rather than made in silence.
 
-What stays open is the **alias** — a node that says "my material is that node" —
+What stays open is the **alias** — a node that says "my samples are that node's" —
 which is what would let a container be placed twice and edited in one place, and
 a placement's own **arguments**, for a function evaluated twice with different
 parameters. Both need a placement to be a thing with an identity, which is what
@@ -5728,14 +5728,14 @@ this makes it.
 **Context.** A segment used to belong to one server for its whole life: `--shm
 <path>` created the file, truncated it and re-initialised the header. That was
 right while the segment was that server's own transport — one process, one
-ring. It stopped being right the moment the segment indexed the **material**,
+ring. It stopped being right the moment the segment indexed the **samples**,
 because the process most likely to be restarted is the one holding the audio
 device, and it was also the one wiping what everybody else was editing.
 
 **Decision.** `--shm` opens what is there and creates only what is not, and the
 segment carries a **claim**: the pid serving its command plane, in the word that
 already existed to keep `transport_clock` aligned. The first server on a segment
-takes it, serves the rings and owns the material — a directory row and a region
+takes it, serves the rings and owns the samples — a directory row and a region
 per buffer it installs. Any later one attaches to the data plane, maps what the
 owner published, publishes nothing of its own, and serves its clients over its
 own sockets. A claim whose pid no longer answers is stale and is taken over.
@@ -5748,13 +5748,13 @@ a rule in a document does not prevent.
 **Consequence.** The arrangement an editor wants becomes expressible: the
 on-demand session creates the segment and owns the takes, and the player — a
 separate process, holding the devices — attaches. Killing the player takes no
-material with it, and the next one adopts what is there. Two things do **not**
+samples with it, and the next one adopts what is there. Two things do **not**
 follow from it and are stated where they bite: the clocks belong to whoever runs
-a device (a session publishes none), and attaching restores the material and not
+a device (a session publishes none), and attaching restores the samples and not
 the routing, since ports and patches live with the process.
 
 **And the claim is also what collects the dead.** The property above has a cost
-nobody paid at first: material *outliving* its process is the design, so a
+nobody paid at first: samples *outliving* its process is the design, so a
 segment left by an editor that was killed rather than closed is indistinguishable
 from one being kept, and a region is a whole take — a few crashes fill a memory
 filesystem with files nothing can tell live from dead. The claim answers that
@@ -5766,14 +5766,14 @@ buffer relies on — so the sweep ends a name, not a reader. A claim of *nobody*
 is never swept: `0` is a segment created a moment ago as much as one released on
 a clean exit, and neither is dead. And the path being opened is never swept, so
 recovery keeps its exact meaning — start a server against the same path and it
-adopts what is there, which is the case where a dead owner's material is wanted.
+adopts what is there, which is the case where a dead owner's samples are wanted.
 What is *not* offered is recovering it under a different name: an editor names
 its segment for its pid, so its next run is a new path, and the previous run's
 take is a file the sweep is right to collect.
 
-## The write frontier is the material's, and the segment's row is a mirror of it
+## The write frontier is the buffer's, and the segment's row is a mirror of it
 
-A take being recorded is the one material that changes with nothing announcing
+A take being recorded is the one samples that changes with nothing announcing
 it: a `RecordBuf` fills a buffer block by block from the audio thread, which is
 the one place that must never send a message. What a writer publishes instead is
 a single number — how far it has filled — and everything that draws a recording
@@ -5781,25 +5781,25 @@ reads that number.
 
 It was first published **only into the shared segment's buffer directory**,
 which is where a peer that maps the region reads it, and that made it a fact
-about *sharing* rather than about the material. The consequence was invisible
+about *sharing* rather than about the samples. The consequence was invisible
 and total: `/buffer_stream` — the command that exists for clients which cannot
 map anything — derived its report from that row, so on a server with no segment
 it reported nothing, silently, forever. That is an engine inside a page, and a
 `clausters` booted without `--shm`: the command's whole audience, missing
 exactly where it was needed.
 
-So the counter lives with the material. `Buffer` keeps its own `written`, every
+So the counter lives with the samples. `Buffer` keeps its own `written`, every
 writing UGen raises it, and a buffer that has a segment sink mirrors the same
 number into the row. A stream reads **the higher of the two**, and that is not
 belt and braces: a *peer* writing into the shared region raises the row in its
 own process, and this server's `Buffer` never hears about it.
 
-The rule generalizes past this field: a fact about the material belongs to the
-material, and a shared-memory layout is a way to *publish* facts, never the
+The rule generalizes past this field: a fact about the samples belongs to the
+samples, and a shared-memory layout is a way to *publish* facts, never the
 place they are kept. What a picture needs is the same number whether it maps the
 memory, subscribes to a summary, or is the process doing the writing.
 
-## A peer writes material, announces the span, and asks for every operation
+## A peer writes samples, announces the span, and asks for every operation
 
 **Context.** With a take mapped, an editor stores a stroke into the very cells
 the engine reads: no message, no blob, no reply, no reconciliation. That is the
@@ -5809,7 +5809,7 @@ changed.
 
 **Decision.** Two rules, both narrow.
 
-*What may be written is **material**, samples the writer already holds*: a drawn
+*What may be written is **samples**, samples the writer already holds*: a drawn
 stroke, a pasted block, a take it loaded. Every **operation** over samples — a
 gain, a fade, a reverse, a render, a resynthesis — stays the server's verb and
 is asked for over the wire, however easy the mapped memory makes the other
@@ -5878,7 +5878,7 @@ is the second kind of disagreement, the one a version cannot see.
 
 **Context.** A container that layers editable things — a clip today — draws
 several of them on one rectangle: the placement (where it sits, how long it
-is), the material under it, the events over that, an automation over both. Four
+is), the samples under it, the events over that, an automation over both. Four
 claimants over the same pixels, with no rule saying which one a press belongs
 to. Three attempts at something as small as a read-only body were written and
 reverted in one day, each of them changing what the clip itself does, because
@@ -5888,13 +5888,13 @@ disagreed.
 **Decision.** One sentence, in `host::layers`: **one layer is active at a time,
 and it is the only one that acts or offers an affordance.** A press resolves the
 layer from what is drawn under it — the active layer first, then the topmost
-layer whose *own material* is there, then the container's placement — and
+layer whose *own samples* is there, then the container's placement — and
 selecting a layer is an operation of its own, with the pointer rule as one
 caller, `/gui_set layer` as another, and a key binding or a menu as the next.
 
 Three things make it a rule rather than a table:
 
-- **A layer's material is not its rectangle.** An element answers
+- **A layer's data is not its rectangle.** An element answers
   `Element::layer_hit` for the things it holds — a break-point, the line
   between two of them, a note — and never for the rectangle it shares with its
   container. That is the whole of why the clip's background, and the grips drawn
@@ -5904,14 +5904,14 @@ Three things make it a rule rather than a table:
   type, so a container that grows a fourth kind of content grows a fourth layer.
 - **The active layer is a field of the node**, not of the `Clip` variant. A clip
   is the first container here that layers editable things and deliberately not
-  the last: an audio editor's view is the same picture — material, a selection
+  the last: an audio editor's view is the same picture — samples, a selection
   over it, an automation over both, later a spectral layer.
 
 **Consequence.** Two standing defects closed without being touched directly. A
 clip whose contents are locked **moves again**: a layer that cannot be edited is
 never selected by pointing at it, so the press falls through to the placement
-instead of being consumed by a refusal — where material sits is the
-composition's, what it holds is the material's. And a curve's **lit segment** is
+instead of being consumed by a refusal — where samples sits is the
+composition's, what it holds is the samples's. And a curve's **lit segment** is
 lit exactly when the curve is the layer in hand, where the bend is the gesture;
 inside a clip it used to be lit whether or not the curve was in hand, and the
 press there moved the clip.
@@ -5936,7 +5936,7 @@ thing and the sound another, and what the picture said was *time stretch*, which
 is a rendering nobody had asked for and which this project does not implement.
 
 **Decision.** The multitrack model: a clip is a **window onto a segment of its
-material**, the memory-view idea. `SourceWindow` says where a placement's own
+samples**, the memory-view idea. `SourceWindow` says where a placement's own
 time zero reads (`start`), whether the window wraps (`loop`), and — as an
 explicit opt-in — whether the picture is fitted instead (`fit`, the prop a time
 stretch will set when there is one). **One timeline sample is one source
@@ -5946,9 +5946,9 @@ window again brings them back.
 Everything the definition of a clip carries falls out of that one property:
 
 - **The start grip is a trim**: the offset, the duration and the window's head
-  advance together, so the material stands still while the clip shows less of
+  advance together, so the samples stands still while the clip shows less of
   it.
-- **The edges stop where the material does**, unless the clip loops — where past
+- **The edges stop where the samples does**, unless the clip loops — where past
   the end is the beginning again and before frame zero is the tail of the
   iteration before, which is what stretching an edge means on a loop.
 - **A split is two windows over one source**, and a **join** is the inverse; the
@@ -5956,9 +5956,9 @@ Everything the definition of a clip carries falls out of that one property:
   exactly what a split cut.
 
 **Consequence.** A take is drawn a **run at a time**, one run per pass over the
-material: the wrap lives in the run list rather than in the coordinate maps, so
+samples: the wrap lives in the run list rather than in the coordinate maps, so
 one affine renderer draws a looping clip, a plain one, and the part of a clip
-that reaches past material it does not loop — which stops there instead of
+that reaches past samples it does not loop — which stops there instead of
 clamping into a flat line nobody recorded.
 
 The window travels with the axis (`TimeSpace`) because it is the other half of
@@ -5976,7 +5976,7 @@ states the result of the whole gesture.
 element reading **several segments** — two different files, or two windows with
 a gap between them, read as one thing. An element wraps one thing. Such a join
 is refused by name rather than approximated, because approximating it silently
-drops material.
+drops samples.
 
 ## A UGen's trailing inputs may be declared optional, and only where the default is inert
 
@@ -5984,7 +5984,7 @@ drops material.
 input breaks every def ever written against it: `PlayBuf` going from four inputs
 to seven made every persisted def that used it fail to compile, and the server
 warned about them at every boot. The same break reaches a saved bundle, which is
-material a person made.
+samples a person made.
 
 **The cheap version is refused.** "Fill whatever is missing from the catalog's
 defaults" would make a short def legal in every input slot of the catalog, and
@@ -6035,7 +6035,7 @@ one it meant every time.
 
 Shadowing is the visible cost, but it is the smaller one. The larger is that a
 name repeated across two layers stops carrying information: a reader who sees
-`Buffer` learns nothing about whether they are holding material or a placement
+`Buffer` learns nothing about whether they are holding samples or a placement
 of it.
 
 **Decision.** The three are renamed for what they are, and the rename reaches

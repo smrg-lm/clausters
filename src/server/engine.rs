@@ -465,7 +465,7 @@ pub struct Engine {
     /// They belong to the process running an audio device, because they say
     /// where playback *is* — and an on-demand session has no device and no
     /// clock, only frames it was asked to run. Two engines on one segment is
-    /// the arrangement this exists for (an editor's session owns the material,
+    /// the arrangement this exists for (an editor's session owns the samples,
     /// the RT server owns the devices): a session that published here would
     /// jog the playhead every time somebody applied a fade.
     publishes_time: bool,
@@ -779,7 +779,7 @@ impl Engine {
     /// Stops this engine publishing **time** into the segment — the clocks,
     /// the taps and the per-bus levels (see `publishes_time`).
     ///
-    /// What it keeps publishing is the material and the control buses, which
+    /// What it keeps publishing is the samples and the control buses, which
     /// are the data plane proper: state a peer reads and writes, rather than a
     /// report of where a device is.
     pub fn silence_time_publication(&mut self) {

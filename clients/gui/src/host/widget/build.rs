@@ -241,7 +241,7 @@ fn take_element(source: signal::Data, view: Presentation) -> signal::SignalEleme
 /// A clip's **take**: a signal element over the clip's source props, with every
 /// capability off — it is drawn against the clip's axis, and the clip is what
 /// navigates. `bulk`, because a take is a take: it resolves as a peak pyramid,
-/// never as an array of samples, however long the material turns out to be.
+/// never as an array of samples, however long the samples turns out to be.
 fn clip_take(props: &Map<String, Value>, blobs: &[Vec<u8>]) -> Result<Option<WidgetKind>, String> {
     let samples = inline_samples("clip", None, props, blobs)?;
     let (buffer, path, cache) = (
@@ -419,7 +419,7 @@ pub(crate) fn signal_element(
     // whether a view navigates, carries a selection or edits back is a choice
     // over any presentation, and the six names only ever froze six of them.
     let cap = |key: &str, default: bool| props.get(key).and_then(truthy).unwrap_or(default);
-    // Not a capability but the same shape of answer: whether the material is
+    // Not a capability but the same shape of answer: whether the samples is
     // being written into as it is drawn, which only the client knows.
     el.fills = props.get("fills").and_then(truthy).unwrap_or(false);
     el.caps = signal::Caps {

@@ -3,7 +3,7 @@
 //! The claim under test is the one the mode is defined by, and it is not a
 //! claim about time: **determinism here is of process**. An interactive session
 //! cannot be deterministic in time — it answers a document, not a timeline —
-//! so what has to hold is that the *same operation over the same material*
+//! so what has to hold is that the *same operation over the same samples*
 //! yields the samples it would yield expressed in a score and rendered in
 //! batch. Everything below is that sentence, checked.
 
@@ -86,7 +86,7 @@ fn session_cfg() -> SessionConfig {
     }
 }
 
-/// The same material two ways: a score rendered in batch, and the same
+/// The same samples two ways: a score rendered in batch, and the same
 /// commands sent to a session which is then asked to run the span.
 fn batch(def_msg: OscMessage, frames: u64) -> Vec<f32> {
     let dur = frames as f64 / SR;
@@ -120,9 +120,9 @@ fn an_operation_equals_the_same_score_rendered_in_batch() {
     assert_eq!(a.len(), b.len(), "both produce the whole span");
     assert_eq!(
         a, b,
-        "an operation must be sample-identical to the batch render of the same material"
+        "an operation must be sample-identical to the batch render of the same samples"
     );
-    assert!(a.iter().any(|&x| x != 0.0), "the material has to sound");
+    assert!(a.iter().any(|&x| x != 0.0), "the samples has to sound");
 }
 
 #[test]
@@ -363,7 +363,7 @@ fn settling_between_operations_does_not_advance_time() {
     );
 }
 
-/// **A session with no audio device can still own the material a peer edits.**
+/// **A session with no audio device can still own the samples a peer edits.**
 ///
 /// The on-demand server is what an editor talks to — it renders, it applies the
 /// edit verbs, and it has no clock of its own — so it is the one that most
@@ -394,7 +394,7 @@ fn a_session_given_a_path_shares_the_buffers_it_holds() {
     s.settle_for(8);
 
     // The peer's side: another process would open the file; here opening it
-    // again is the same thing, and it is what proves the material is not in
+    // again is the same thing, and it is what proves the samples is not in
     // this process's heap.
     let peer = Segment::open(&path).expect("a peer maps the session's segment");
     let (_, mapped) = peer.map_buffer(&path, 1).expect("and finds buffer 1");
@@ -403,7 +403,7 @@ fn a_session_given_a_path_shares_the_buffers_it_holds() {
     assert_eq!(
         mapped.at(3),
         0.5,
-        "a server with no audio device, holding material an editor can write"
+        "a server with no audio device, holding samples an editor can write"
     );
 
     drop(s);

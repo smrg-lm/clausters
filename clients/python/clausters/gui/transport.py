@@ -38,7 +38,7 @@ class Transport:
         source: ``source(at, **kw)`` starts a pass at beat ``at`` and returns the
             playing `clausters.seq.Playhead` (``None`` when there is nothing to
             play). It is called afresh on every play, so what sounds is always
-            the material as it now stands.
+            the samples as it now stands.
         tempo: the clock's tempo in beats per second (the `TempoClock`
             convention — 2.0 is 120 bpm).
         sample_rate: the engine's sample rate. With ``tempo`` it fixes the
@@ -63,7 +63,7 @@ class Transport:
         #: The clock the pass runs on, when there is one. A governed `pause`
         #: freezes it instead of stopping the playhead.
         self.clock = clock
-        #: Whether a **server** transport governs the material (its
+        #: Whether a **server** transport governs the samples (its
         #: `clausters.defs.server.Server.transport_group` is bound). Governed, a
         #: pause freezes the server's subtree and this clock rather than
         #: stopping the playhead, so `resume` continues the sound where it
@@ -178,7 +178,7 @@ class Transport:
         stopping a playhead is not a panic button (the script owns its voices).
         Returns the position it stopped at.
 
-        **Governed** (a server transport holds the material), the playhead is
+        **Governed** (a server transport holds the samples), the playhead is
         not stopped at all — it is starved of time. `/transport_stop` freezes
         the server's subtree and its queue, the clock freezes with them, and the
         scan simply stops making progress. That is what lets `resume` continue

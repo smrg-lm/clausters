@@ -388,11 +388,11 @@ export class Buffer {
      *
      * Only meaningful against a server that **attached** to a segment somebody
      * else owns — the RT server of an editor's arrangement, which holds the
-     * devices and plays material the on-demand session owns. It maps every
+     * devices and plays samples the on-demand session owns. It maps every
      * buffer the owner had published when it started, so this is for one
      * published since.
      *
-     * A page never owns shared material itself (a browser cannot map a file),
+     * A page never owns shared samples itself (a browser cannot map a file),
      * so this is a command a page **sends** to a native server, not a door
      * into one: the samples still reach a page through `/buffer_getRange`.
      */
@@ -411,7 +411,7 @@ export class Buffer {
     /**
      * Announces that a span of this buffer was written (`/buffer_touch`).
      *
-     * For a local peer that edited the material **in place**, through the
+     * For a local peer that edited the samples **in place**, through the
      * shared segment, where a write reaches no wire at all. The span, not the
      * samples: the server broadcasts `/buffer_touched bufnum channel start
      * frames` to every `/server_notify` client but the one that wrote.

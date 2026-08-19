@@ -200,7 +200,7 @@ impl UGen for BufWr {
         };
         let frames = buf.frames() as f64;
         // The furthest frame this block reached, published once at the end
-        // rather than per sample: a peer drawing the material wants to know
+        // rather than per sample: a peer drawing the samples wants to know
         // how far it goes, and asking that question 64 times a block would
         // answer it no better.
         let mut reached = 0usize;
@@ -325,7 +325,7 @@ impl UGen for RecordBuf {
             self.pos += 1;
             wrote = true;
         }
-        // How far the material now goes, once per block. A looping recorder
+        // How far the samples now goes, once per block. A looping recorder
         // that wrapped does not pull it back: the frontier only rises, so what
         // it says is how much of the buffer has ever been recorded.
         if wrote {

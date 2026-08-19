@@ -175,6 +175,14 @@ on trust, so that is where drift accumulates:
   element is **rendered** (never "realized" — see the arrangement vocabulary
   below). Everyday synonyms make the prose drift from the surface the reader
   actually types against.
+- **Name the structure, not the category.** "Material" is a category — it can
+  be samples, a def, a pattern, a routine — so it never names a thing that has
+  a name: a buffer is a **buffer**, its contents are **samples** (data), a
+  def is a def, a pattern a pattern. Where the general term is genuinely
+  needed, the arrangement already has one (**element**, and a clip's
+  **contents**), and the concrete word is still preferred when the code knows
+  which it is. The same rule catches "the material" standing in for "the
+  piece", "the audio" or "whatever is played" — say which.
 - **Type and class names** are CamelCase, with an acronym inside a name
   taking only its first letter in uppercase — `OscFunc`, `MidiFunc`,
   `OscUdpInterface`, `OscTcpInterface`, `NodeIdAllocator` — never all-caps

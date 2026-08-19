@@ -79,7 +79,7 @@ pub extern "C" fn clausters_core_shm_segment_size(
 ///
 /// For a peer that **creates** one rather than attaching — which the editor's
 /// arrangement makes an ordinary thing to be (the process that owns the
-/// material creates the segment, and every server attaches to it). `len` must
+/// samples creates the segment, and every server attaches to it). `len` must
 /// be at least [`clausters_core_shm_segment_size`] for the counts given, and
 /// nothing else may have attached yet.
 ///

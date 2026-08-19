@@ -25,7 +25,7 @@ A `Vector` is *data*: it sounds through the **instrument** that plays it (a def
 whose ``buf`` control takes the buffer number), so a `Vector` with an
 ``instrument`` emits one event playing it — the audio clip — and one without
 contributes structure only. A `Segments` is the same rule over several windows:
-one event per segment, at its own offset inside the element, so material
+one event per segment, at its own offset inside the element, so what sounds
 assembled from pieces of different buffers sounds continuous on one instrument. An `Aggregate{logical}` takes the other path entirely (it
 becomes a `GraphDef`); instancing a bare def still needs an instrument of its own
 and raises a clear `NotImplementedError` here.
@@ -142,7 +142,7 @@ def _emit_element(element, base: float, out: list):
     elif isinstance(element, Segments):
         # Several windows read as one thing: one event per segment, each at its
         # own offset inside the element and each carrying its own window, so
-        # what sounds is continuous even though the material is not one buffer.
+        # what sounds is continuous even though the source is not one buffer.
         # Without an instrument it is structure, exactly as a `Vector` is.
         if element.instrument is not None:
             for offset, event in element.to_events():

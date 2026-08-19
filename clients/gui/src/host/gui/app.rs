@@ -102,7 +102,7 @@ pub(super) struct App {
     /// (`/server_notify 1`), so it is sent once even with several node-tree windows.
     pub(super) notified: bool,
     /// The write frontier last **drawn**, per `(def_id, widget_id)`: how far
-    /// the material of that view had been written when its summary was last
+    /// the samples of that view had been written when its summary was last
     /// refreshed. What moves it is a recording (the server's S20), and the
     /// difference is exactly the span to re-read.
     pub(super) frontiers: HashMap<(i32, i32), u64>,
@@ -110,7 +110,7 @@ pub(super) struct App {
     pub(super) next_query: Instant,
     /// Next check of the write frontiers — the recording tick, on the frame
     /// cadence and separate from the animated one because it redraws only
-    /// when the material actually grew.
+    /// when the samples actually grew.
     pub(super) next_follow: Instant,
     /// Standalone mode: the host booted a pre-loaded GuiDef with no script front
     /// (`--standalone`). Closing the last window then quits the app, so the
@@ -568,10 +568,10 @@ impl ApplicationHandler<UserEvent> for App {
         // **What the last frame could not draw.** A view zoomed finer than its
         // summary leaves the span it was asked for on its slot; here that note
         // becomes a read of exactly that span, so a picture that cannot map
-        // the material still resolves to the sample where the eye is.
+        // the samples still resolves to the sample where the eye is.
         self.fetch_wanted_spans();
 
-        // **A recording is drawn as it fills.** The material is mapped, so the
+        // **A recording is drawn as it fills.** The samples is mapped, so the
         // samples need nothing; what moves is the frontier its writer
         // publishes, and the summary over the frames it added.
         //

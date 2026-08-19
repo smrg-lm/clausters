@@ -1,7 +1,7 @@
 //! The session's source table, resolved to **server buffers**.
 //!
 //! A document says what plays when and deliberately never says where its
-//! material is; a session's `sources` table is that other half, and this is
+//! samples is; a session's `sources` table is that other half, and this is
 //! where a host turns it into something it can draw and edit. The answer is a
 //! server buffer per source, loaded with `/buffer_allocRead`.
 //!
@@ -11,7 +11,7 @@
 //! all (the `path` bulk route), which is cheaper and needs nothing running. It
 //! is the wrong route here for two reasons, and neither is about drawing.
 //!
-//! A session's material is **audio the user brought** — a WAV, a FLAC, an
+//! A session's samples are **audio the user brought** — a WAV, a FLAC, an
 //! MP3 — and decoding those is the server's job and nobody else's here (it
 //! decodes by content, through hound and symphonia). Mapping one as raw floats
 //! draws the header as a click.
@@ -22,7 +22,7 @@
 //! file and editing a buffer would be showing one copy and writing another,
 //! which is the two-owner problem again with the samples in place of the tree.
 //!
-//! So the picture and the material are one thing: a source becomes a buffer,
+//! So the picture and the samples are one thing: a source becomes a buffer,
 //! the clip draws that buffer, and an edit writes the very samples on screen.
 //!
 //! # What it does not do
@@ -43,7 +43,7 @@ use clausters_document::{Body, SourceId};
 /// One source, as the host holds it once it has been given to the server.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Take {
-    /// The server buffer its material was read into.
+    /// The server buffer its samples was read into.
     pub bufnum: i32,
     /// Channels, when the table said. The file decides in the end — this is
     /// what the session claimed, and it is only used to size a picture before
@@ -66,7 +66,7 @@ impl Takes {
     }
 
     /// Every buffer number the sources resolved to, in source order. What a
-    /// **player** has to be told about: it maps the material directory once,
+    /// **player** has to be told about: it maps the samples directory once,
     /// when it starts, and these takes were read after that.
     pub fn bufnums(&self) -> Vec<i32> {
         self.map.values().map(|take| take.bufnum).collect()
@@ -82,7 +82,7 @@ impl Takes {
     }
 }
 
-/// What loading a session's material comes to: the buffers it will occupy, and
+/// What loading a session's samples comes to: the buffers it will occupy, and
 /// the commands that fill them.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Load {
@@ -92,7 +92,7 @@ pub struct Load {
     /// them — this module builds no server and owns no link.
     pub messages: Vec<OscMessage>,
     /// Sources the tree names that could not be resolved, with why. Reported
-    /// rather than swallowed: a clip with no material is going to draw as an
+    /// rather than swallowed: a clip with no samples is going to draw as an
     /// empty rectangle, and the reader deserves to know it is missing rather
     /// than empty.
     pub unresolved: Vec<(SourceId, String)>,
@@ -164,7 +164,7 @@ fn locate(source: &Source, beside: &Path) -> Result<PathBuf, String> {
         // Material that only ever existed in a running system. The session was
         // allowed to save without it -- that is the format's decision, so that
         // a save is never blocked -- and opening one is where the cost is paid.
-        Location::Volatile => Err("the material was never written down (volatile)".to_string()),
+        Location::Volatile => Err("the samples was never written down (volatile)".to_string()),
     }
 }
 
@@ -176,7 +176,7 @@ fn locate(source: &Source, beside: &Path) -> Result<PathBuf, String> {
 fn referenced(session: &Session) -> Vec<SourceId> {
     let mut found: Vec<SourceId> = Vec::new();
     session.document.root.walk(&mut |node| {
-        // Assembled material names one source per window; a reader that took
+        // Assembled samples names one source per window; a reader that took
         // only the first would open a joined clip with the rest of it silent.
         let named: Vec<SourceId> = match &node.body {
             Body::Vector { source, .. } => vec![source.source],
@@ -281,7 +281,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// Missing material is **named**, not skipped: a clip that will draw empty
+    /// Missing samples is **named**, not skipped: a clip that will draw empty
     /// has a reason, and the reason is worth one line in the log.
     #[test]
     fn what_cannot_be_resolved_is_reported_with_why() {

@@ -1658,7 +1658,7 @@ mod osc {
 #[test]
 fn a_synth_records_into_a_buffer_while_another_plays_it() {
     let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
-    // 128 frames, mono: two blocks of material, so the recording fills while
+    // 128 frames, mono: two blocks of samples, so the recording fills while
     // the reader is still inside the first pass.
     let buffer = Arc::new(Buffer::zeroed(BLOCK_SIZE * 2, 1, SR as f64));
     handle
@@ -1726,7 +1726,7 @@ fn a_synth_records_into_a_buffer_while_another_plays_it() {
 /// **A recording says how far it has got.** The writers publish a frontier
 /// once per block, and that number is the whole of what lets another process
 /// draw a take as it fills — the samples are already in memory it can map, and
-/// what it cannot know is where the material now ends.
+/// what it cannot know is where the samples now ends.
 #[test]
 fn a_recorder_publishes_how_far_it_has_written() {
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -1776,7 +1776,7 @@ fn a_recorder_publishes_how_far_it_has_written() {
     let after_one = frontier.0.load(Ordering::Relaxed);
     assert_eq!(
         after_one, BLOCK_SIZE as u64,
-        "one block of recording is one block of material"
+        "one block of recording is one block of samples"
     );
     render_channel(&mut engine, 3, 0);
     assert_eq!(

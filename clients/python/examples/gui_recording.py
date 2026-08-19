@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Takes drawn **while they record**: the picture follows the write frontier.
 
-Every other way material reaches a picture announces itself — a client sends
+Every other way audio reaches a picture announces itself — a client sends
 samples, a peer edits a span and says so. A **recording** does not: a
 `record_buf` fills a buffer block by block from the audio thread, which is the
 one place that must never send a message. So the engine publishes a single
-number instead — how far the material now goes, the buffer's *write frontier* —
+number instead — how far the recording now goes, the buffer's *write frontier* —
 into the shared segment's directory row, and a host that maps the same segment
 draws the rest for itself.
 
@@ -26,7 +26,7 @@ Pass a track count::
 
 **The knob it is here to show.** Re-summarizing what appeared costs the span it
 names and not the take, so the picture follows **every frame** and a trace grows
-with the sound. The knob is how much material it may wait for instead:
+with the sound. The knob is how much audio it may wait for instead:
 ``--follow-block <seconds>``, ``0`` by default. Pass it as a second argument
 here and watch the host's CPU with ``top`` while it records::
 
@@ -34,7 +34,7 @@ here and watch the host's CPU with ``top`` while it records::
     python clients/python/examples/gui_recording.py 16 1     # one-second blocks
 
 Neither the sound nor a playhead over it reads that number: what changes is how
-often the *picture* catches up with the material.
+often the *picture* catches up with the sound.
 
 Two things worth watching for:
 
@@ -73,7 +73,7 @@ from clausters.gui import timeruler, waveform, window
 #: command-line argument so the same file is a demonstration and a stress test.
 TRACKS = int(sys.argv[1]) if len(sys.argv) > 1 else 8
 SECONDS = 10.0
-#: Seconds of material a picture waits for before catching up — the host's
+#: Seconds of audio a picture waits for before catching up — the host's
 #: ``--follow-block``. ``None`` leaves the host's own default (0 - the frame).
 BLOCK = float(sys.argv[2]) if len(sys.argv) > 2 else None
 
@@ -103,13 +103,13 @@ print(f"takes: buffers {takes[0].bufnum}..{takes[-1].bufnum}, "
 # `clausters.gui.timeruler` with a box of its own rather than a lane's own
 # ``ruler`` strip, which would come out of *that* lane's height and leave it
 # shorter than the rest. One prop *does* say recording, and it is the one thing
-# the host cannot work out for itself: `fills=True` says this material is being
+# the host cannot work out for itself: `fills=True` says this samples is being
 # written as it is drawn, so a lane stops at the buffer's write frontier and
 # leaves the axis past it empty. Without it the buffer's own zeros are drawn --
 # a flat line across the whole take before anything has been recorded into it --
-# because past the frontier there is no silence, there is no material yet. A
+# because past the frontier there is no silence, there is nothing yet. A
 # frontier alone cannot say this: a take read from a file that one write touched
-# has one too, and is material everywhere. We allocated the buffers, so we know.
+# has one too, and is written everywhere. We allocated the buffers, so we know.
 
 # %%
 LANES = 1  # the navigation group every lane and the ruler share
@@ -161,7 +161,7 @@ for take in takes:
         {"buf": float(take.bufnum), "from": START, "to": START * 2.0**octaves},
         server=server,
     )
-print("recording: the traces grow with the sound, a frame of material at a time")
+print("recording: the traces grow with the sound, a frame of samples at a time")
 
 # %% [markdown]
 # ## Watch them fill
@@ -193,11 +193,11 @@ watch(SECONDS + 2.0)
 print("window closed" if _closed else "done recording")
 
 # %% [markdown]
-# ## And they are ordinary material afterwards
+# ## And they are ordinary samples afterwards
 # The frontiers stop moving when the recorders free themselves, and what is
 # left is takes like any others — zoom them, sweep a selection, play them. So
 # `fills` is cleared: the take is finished, what was written is all there is,
-# and the lane goes back to drawing the whole of its material. It is the same
+# and the lane goes back to drawing the whole of its samples. It is the same
 # prop live, which is why this is a `set` and not a second window.
 
 # %%

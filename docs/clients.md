@@ -114,7 +114,7 @@ shader `canvas`, an engraved `score` page — and the **composition** views belo
 Their reference is the Python builders' documentation, since that is how a
 script names them.
 
-The `score` is worth a note, because it is the one widget whose material the
+The `score` is worth a note, because it is the one widget whose samples the
 host cannot read. A client engraves music notation (through
 [verovio](https://www.verovio.org/) and the shared notation layer, both shipped
 inside the wheel) and sends a **display list**: glyph outlines keyed by SMuFL codepoint, plus the placed
@@ -161,7 +161,7 @@ the graphic is not a picture of the music, it *is* the music. Its user
 documentation is the composition chapter of the Python client's book.
 
 **Playing any of these views is one shared object**, not a per-view transport:
-`clausters.gui.Transport` drives a playhead over the material and the view's line
+`clausters.gui.Transport` drives a playhead over the samples and the view's line
 together, and every view — a lane, a piano-roll, an engraved page — uses that one.
 What a view contributes is a single conversion (its cursor's unit: timeline
 samples for a lane, score milliseconds for a page); everything else is the same

@@ -155,12 +155,12 @@ impl App {
             ws.gpu.window.request_redraw();
         }
         // Kick off fetches for any waveform that references a server buffer.
-        let draws_material = !buffer_refs.is_empty();
+        let draws_a_buffer = !buffer_refs.is_empty();
         self.start_buffer_fetches(id, buffer_refs);
         // A window drawing a server buffer registers too: `/buffer_touched` is
-        // how it hears that another peer edited the material under it, and it
+        // how it hears that another peer edited the samples under it, and it
         // rides the same `/server_notify` the node tree uses.
-        if draws_material && self.host.server().is_some() {
+        if draws_a_buffer && self.host.server().is_some() {
             self.ensure_notify();
         }
         // A node-tree view drives the client leg: register for notifications and
@@ -254,8 +254,8 @@ fn load_bulk(
                 if let Some(loaded) = resolve_bulk(&want) {
                     if needs.slot.is_some() {
                         // The picture goes to the slot, and whatever of it is
-                        // *material* stays with the element that named it.
-                        frame::keep_material(widget, &loaded);
+                        // *samples* stays with the element that named it.
+                        frame::keep_data(widget, &loaded);
                         frame::place_in_slot(loaded, id, gpu, renderers, waveforms, spectrograms);
                     } else {
                         widget.kind.take_bulk(loaded);

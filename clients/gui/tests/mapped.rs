@@ -1,10 +1,10 @@
-//! The host against a **real** segment: one the server wrote, and the material
+//! The host against a **real** segment: one the server wrote, and the samples
 //! beside it.
 //!
 //! The layout itself is `clausters_core::shm` now, tested there — so what is
 //! left to check here is the part that is genuinely this crate's: that a host
 //! maps what a server published, reads the planes it draws from, and edits the
-//! material in place. Gated on `standalone`, the feature that links the server,
+//! samples in place. Gated on `standalone`, the feature that links the server,
 //! because that is what makes a real segment available to build one from.
 //!
 //! This replaced three tests that built a segment file by hand from this
@@ -18,7 +18,7 @@ use std::sync::Arc;
 
 use clausters::dsp::region::Region;
 use clausters::server::ipc::Segment;
-use clausters_gui::host::material::SharedMaterial;
+use clausters_gui::host::mapped::SharedBuffers;
 use clausters_gui::host::shm::SharedSegment;
 
 /// A segment path nothing else in this run uses.
@@ -123,7 +123,7 @@ fn a_foreign_or_stale_segment_is_refused() {
 
 #[test]
 fn a_take_the_server_published_is_drawn_and_edited_in_place() {
-    let path = scratch("material");
+    let path = scratch("samples");
     let _ = std::fs::remove_file(&path);
     let server = Segment::create(&path).expect("segment");
 
@@ -134,12 +134,12 @@ fn a_take_the_server_published_is_drawn_and_edited_in_place() {
     let region = Region::create(&region_path, 16).expect("region");
     region.cells()[2 * 2].store(0.5f32.to_bits(), std::sync::atomic::Ordering::Relaxed);
 
-    let material = SharedMaterial::new(
+    let samples = SharedBuffers::new(
         Arc::new(SharedSegment::open(&path).expect("segment")),
         path.clone(),
     );
-    assert!(material.holds(4));
-    let take = material.map(4).expect("the host maps the take");
+    assert!(samples.holds(4));
+    let take = samples.map(4).expect("the host maps the take");
     assert_eq!(take.shape(), (2, 8, 44_100.0));
     assert_eq!(
         take.read_all()[4],
@@ -158,8 +158,8 @@ fn a_take_the_server_published_is_drawn_and_edited_in_place() {
     // A freed take is not drawn as an empty one: the row goes even and the
     // mapping stops resolving, which is what the generation is for.
     server.retire_buffer(4);
-    assert!(!material.holds(4));
-    assert!(material.map(4).is_none());
+    assert!(!samples.holds(4));
+    assert!(samples.map(4).is_none());
 
     let _ = std::fs::remove_file(&region_path);
     let _ = std::fs::remove_file(&path);
@@ -170,7 +170,7 @@ fn a_take_the_server_published_is_drawn_and_edited_in_place() {
 /// is a write to what is drawn.
 #[test]
 fn a_view_of_a_published_take_reads_the_region_it_is_drawn_from() {
-    use clausters_gui::host::material::MappedChannel;
+    use clausters_gui::host::mapped::MappedChannel;
     use clausters_gui::waveform::WaveformData;
 
     let path = scratch("shared-view");
@@ -190,11 +190,11 @@ fn a_view_of_a_published_take_reads_the_region_it_is_drawn_from() {
         store(i, 0.2);
     }
 
-    let material = SharedMaterial::new(
+    let samples = SharedBuffers::new(
         Arc::new(SharedSegment::open(&path).expect("segment")),
         path.clone(),
     );
-    let take = Arc::new(material.map(6).expect("the host maps the take"));
+    let take = Arc::new(samples.map(6).expect("the host maps the take"));
     let view = WaveformData::from_sources(MappedChannel::channels_of(take), 256);
     assert!(view.is_shared());
     assert_eq!(view.total_samples(), frames);
@@ -220,10 +220,10 @@ fn a_view_of_a_published_take_reads_the_region_it_is_drawn_from() {
 
 /// **A recording is drawn as it fills**, and the whole of what the picture
 /// needs from the server is one number: the samples are already in memory it
-/// maps, and what it cannot otherwise know is how far the material now goes.
+/// maps, and what it cannot otherwise know is how far the samples now goes.
 #[test]
 fn a_view_follows_the_frontier_of_a_take_being_recorded() {
-    use clausters_gui::host::material::MappedChannel;
+    use clausters_gui::host::mapped::MappedChannel;
     use clausters_gui::waveform::WaveformData;
 
     let path = scratch("recording");
@@ -237,14 +237,14 @@ fn a_view_follows_the_frontier_of_a_take_being_recorded() {
     let region_path = Region::path_for(&path, 2, generation);
     let region = Region::create(&region_path, frames).expect("region");
 
-    let material = SharedMaterial::new(
+    let samples = SharedBuffers::new(
         Arc::new(SharedSegment::open(&path).expect("segment")),
         path.clone(),
     );
-    let take = Arc::new(material.map(2).expect("the host maps the take"));
+    let take = Arc::new(samples.map(2).expect("the host maps the take"));
     let mut view = WaveformData::from_sources(MappedChannel::channels_of(take), 256);
     assert_eq!(
-        material.frontier(2),
+        samples.frontier(2),
         Some(0),
         "an allocated take has recorded nothing"
     );
@@ -258,7 +258,7 @@ fn a_view_follows_the_frontier_of_a_take_being_recorded() {
         server.raise_buffer_frontier(2, to as u64);
     };
     record(0, 1_024, 0.4);
-    let frontier = material.frontier(2).expect("a live row");
+    let frontier = samples.frontier(2).expect("a live row");
     assert_eq!(frontier, 1_024);
 
     // The overview is what has to be told, and the span is the difference.
@@ -267,7 +267,7 @@ fn a_view_follows_the_frontier_of_a_take_being_recorded() {
 
     // It keeps up, and only the new frames are re-read.
     record(1_024, 2_048, -0.9);
-    let next = material.frontier(2).expect("a live row");
+    let next = samples.frontier(2).expect("a live row");
     assert!(view.resummarize(0, frontier as usize, (next - frontier) as usize));
     assert_eq!(view.column(0, 1_000.0, 1_100.0, 2_000.0), (-0.9, -0.9));
     assert_eq!(
@@ -289,11 +289,11 @@ fn a_write_past_the_end_writes_nothing_rather_than_the_next_channel() {
     let region_path = Region::path_for(&path, 0, generation);
     let region = Region::create(&region_path, 8).unwrap();
 
-    let material = SharedMaterial::new(
+    let samples = SharedBuffers::new(
         Arc::new(SharedSegment::open(&path).expect("segment")),
         path.clone(),
     );
-    let take = material.map(0).unwrap();
+    let take = samples.map(0).unwrap();
     take.write_channel(0, 3, &[1.0, 1.0, 1.0]); // one frame fits, two do not
     take.write_channel(7, 0, &[1.0]); // no such channel
 

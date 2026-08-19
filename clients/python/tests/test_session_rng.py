@@ -1,6 +1,6 @@
 """Per-session random context: each `Session` owns its RNG root, so two
 sessions reproduce independently — ``seed(n)`` on one never perturbs another,
-and material is independent of the order sessions were built in. The default
+and the sound is independent of the order sessions were built in. The default
 session (`main`) is just the fallback context when none is named.
 """
 
@@ -26,7 +26,7 @@ def test_different_seeds_differ():
 
 
 def test_sessions_are_order_independent():
-    # Build both, then play in the opposite order: a's random material must not
+    # Build both, then play in the opposite order: a's random sequencerial must not
     # depend on whether b was created/played first (separate roots, not one
     # shared global root spawned in creation order).
     a = Session.nrt(tempo=1.0)
@@ -45,7 +45,7 @@ def test_seeding_one_session_does_not_touch_another():
     b = Session.nrt(tempo=1.0)
     a.seed(1)
     b.seed(2)
-    a.seed(1)  # re-seed a after b exists; a must still reproduce seed-1 material
+    a.seed(1)  # re-seed a after b exists; a must still reproduce its seed-1 sequence
     with a:
         first = rand.next_f64()
     a.seed(1)

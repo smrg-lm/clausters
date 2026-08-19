@@ -605,7 +605,7 @@ fn select_x_is_exact_on_whole_indices() {
 }
 
 /// Halfway between two sources both arrive at 0.707 — the same 3 dB rise for
-/// correlated material that `XFade2` has, because it is the same law.
+/// correlated samples that `XFade2` has, because it is the same law.
 #[test]
 fn select_x_midpoint_is_the_equal_power_pair() {
     let sources: [&[f32]; 2] = [&[1.0], &[1.0]];

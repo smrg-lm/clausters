@@ -17,7 +17,7 @@ That is what makes a multitrack possible: many readers, one time. Nothing here
 keeps a position in step with anything, because there is only one position and
 it is the server's.
 
-The material is four one-second tones at different pitches, so every move is
+The samples is four one-second tones at different pitches, so every move is
 audible immediately: locate to the third second and the third pitch is what
 comes out. The script narrates what it is doing and prints the position it
 reads back from `/transport_query` beside it — the two should agree.
@@ -50,7 +50,7 @@ SECONDS = 4
 TONES = [220.0, 277.183, 329.628, 440.0]  # one per second: A, C#, E, A
 
 
-def material():
+def samples():
     """One second of each tone, with a short fade at every seam so the joins
     are not clicks — the seam this example is about is the loop's, and a
     buffer full of steps would put a click at every one."""
@@ -67,7 +67,7 @@ def follower_def():
     """The reader: its phase is the transport's position, so it plays wherever
     the piece is standing.
 
-    `offset` is where this material starts in the piece — 0 here, since the
+    `offset` is where this samples starts in the piece — 0 here, since the
     take *is* the piece — and it is subtracted inside `transport_pos` rather
     than after it, which is what keeps the position exact in a long piece (a
     signal is 32-bit, and beyond about six minutes at 48 kHz it can no longer
@@ -100,7 +100,7 @@ def main():
         server = session.server
 
         buf = Buffer.alloc(SECONDS * SR, 1)
-        buf.set_samples(material())
+        buf.set_samples(samples())
         follower_def().send(server)
 
         # No `set_transport` anywhere below: this piece is measured in frames,
@@ -121,7 +121,7 @@ def main():
         time.sleep(1.2)
         report(server, "playing from the start")
 
-        # Into the third tone, with material still ahead of it -- so the stop
+        # Into the third tone, with samples still ahead of it -- so the stop
         # and the resume below are heard, rather than falling past the end.
         server.transport_locate_sample(2 * SR)
         time.sleep(0.1)

@@ -251,7 +251,7 @@ impl Element for Curve {
         Some(BodyRole::Curve)
     }
 
-    /// **A curve's own material is its break-points and the segments between
+    /// **A curve's own samples is its break-points and the segments between
     /// them** — the line, not the field it is drawn over. Everything else in
     /// the rectangle is the container's, which is how an automation drawn
     /// across a whole clip still leaves the clip draggable.
@@ -273,7 +273,7 @@ impl Element for Curve {
     fn press(&mut self, at: (f64, f64), input: &Input) -> Claim {
         if !self.editable {
             // Consumed and said out loud, like the roll's: a curve drawn from
-            // material this editor cannot write is not a dead widget.
+            // samples this editor cannot write is not a dead widget.
             return Claim::Take(Take {
                 events: Events::message(vec![
                     OscType::String("refused".into()),

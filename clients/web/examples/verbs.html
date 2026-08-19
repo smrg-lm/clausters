@@ -44,7 +44,7 @@ change.</div>
       The web sibling of clients/python/examples/verbs.py, and it mirrors that
       example's shape: open an environment once, then visit every playable kind
       audibly, and finish by rendering one of them offline instead of playing
-      it — the same material, evaluated rather than sounded.
+      it — the same samples, evaluated rather than sounded.
     -->
     <script type="module">
       import {
@@ -198,7 +198,7 @@ change.</div>
         note.set({ gate: 0.0 });
 
         // The verb the tour ends on is not `play` at all. `render` takes the
-        // same material and *evaluates* it instead of sounding it: an
+        // same samples and *evaluates* it instead of sounding it: an
         // offline session, faster than real time, and what comes back is
         // samples plus what the take measured.
         log("\nand the same expression rendered instead of played:");

@@ -43,7 +43,7 @@ def test_temporal_character_table():
     assert temporal_character(None, None) == ABSTRACT
 
 
-def test_material_character_property():
+def test_element_character_property():
     assert Element(onset=1.0, duration=4.0).temporal_character == SEGMENT
     assert Element(onset=1.0).temporal_character == PUNCTUAL
     assert Element(duration=4.0).temporal_character == RELATIVE
@@ -106,7 +106,7 @@ def test_clang_play_delegates_to_wrapped_event(monkeypatch):
     assert seen["dest"] is dest
 
 
-def test_container_material_is_not_directly_playable():
+def test_a_container_is_not_directly_playable():
     with pytest.raises(NotImplementedError):
         Aggregate().play(_Dest())
     with pytest.raises(NotImplementedError):
@@ -218,12 +218,12 @@ def test_flatten_track_shifts_its_timeline():
     assert flat == [(4.0, a), (5.0, b)]
 
 
-def test_sequence_of_materials_is_laid_out_successively():
+def test_a_sequence_of_elements_is_laid_out_successively():
     flat = flatten(Sequence([Clang({"dur": 2.0}), Clang({"dur": 3.0}), Clang({"dur": 1.0})]))
     assert [beat for beat, _ in flat] == [0.0, 2.0, 5.0]
 
 
-def test_abstract_material_yields_no_clang():
+def test_an_abstract_element_yields_no_clang():
     flat = flatten(Aggregate([(0.0, Element()), (1.0, Clang({"dur": 1.0}))]))
     assert [beat for beat, _ in flat] == [1.0]
 
@@ -266,9 +266,9 @@ def test_a_resolved_leaf_plays_the_same_whichever_element_holds_it():
         def play(self, dest):
             pass
 
-    material = _Plays()
-    assert (flatten(Aggregate([(1.0, Generator(material))]))
-            == flatten(Aggregate([(1.0, Element(material))])))
+    playable = _Plays()
+    assert (flatten(Aggregate([(1.0, Generator(playable))]))
+            == flatten(Aggregate([(1.0, Element(playable))])))
 
 
 def test_render_bare_abstract_is_an_error():
@@ -361,7 +361,7 @@ def test_a_vector_sounds_through_the_instrument_that_plays_it():
     assert flatten(Aggregate([(0.0, Vector(buf, duration=2.0))])) == []
 
 
-def test_a_placement_length_trims_what_the_material_plays():
+def test_a_placement_length_trims_what_the_element_plays():
     """A clip's length is what you hear of it: a placement `dur` drops the events
     past its end and sizes a single-event element to it — the DAW rule, and what
     resizing a clip in the editor must actually change."""
@@ -487,7 +487,7 @@ def test_a_flattened_element_is_locatable():
 
 
 def test_a_resident_generator_is_not_locatable():
-    """A def generating its own material on the server has no index: its
+    """A def generating its own audio on the server has no index: its
     position *is* its internal state, and no number moves it."""
     from clausters.form import Element
     from clausters.seq import Event as SeqEvent

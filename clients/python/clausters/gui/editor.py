@@ -495,7 +495,7 @@ class Editor:
         self._rolls = {}
         self._signals = {}
         element = self._signal_element
-        body = self._material_of(element)
+        body = self._source_of(element)
         wid = self._new_id()
         # The view is the editor's one target here: the playhead, the cursor
         # readout and `locate` address it as they address a lane, and the signal
@@ -510,12 +510,12 @@ class Editor:
         return window(view, *self.extra, title=self.title,
                       w=self.size[0], h=self.size[1], layout="col")
 
-    def _material_of(self, element) -> dict:
+    def _source_of(self, element) -> dict:
         """The source props a signal view draws ``element``'s samples from, or a
         `ValueError` naming what is missing.
 
         **This is the generated/generator distinction, asked at the door.** A
-        rendered element has material a view can address — a buffer the host
+        rendered element has samples a view can address — a buffer the host
         fetches, decimates and navigates; a generator has none until it is
         rendered, and a window drawn over nothing is worse than a refusal that
         says what to do. It is the same question `open_pianoroll` answers by
@@ -545,7 +545,7 @@ class Editor:
         rectangle would not layer, and one view is also one axis, one ruler, one
         selection, one playhead and one upload of the samples.
 
-        The element must have **material**: a rendered take, not a generator
+        The element must have **samples**: a rendered take, not a generator
         (see the error a generator raises). Returns the **window handle**, like
         `open`.
         """
@@ -554,7 +554,7 @@ class Editor:
         # with no samples are both answers to the call that was made, and
         # finding out at the first repaint would leave an empty window behind.
         stack = tuple(_measure(m) for m in layers)
-        self._material_of(element)
+        self._source_of(element)
         self._host = self.transport.host = host
         self._mode = "signal"
         self._signal_element = element
@@ -736,7 +736,7 @@ class Editor:
                 return False
             if self._apply_notes(element, args[2:]):
                 return True
-            # Read-only material: a generator's notes are a *rendering* of an
+            # Read-only samples: a generator's notes are a *rendering* of an
             # algorithm, so the edit is refused -- and the refusal is the notes
             # as they still are, sent back so the host stops drawing the one the
             # hand moved. This is the case that used to be silent.
@@ -787,7 +787,7 @@ class Editor:
 
         offset, dur = float(args[2]), float(args[3])
         # The **window** the trim left behind, when the host stated one: where
-        # in its material the clip now reads. A host older than windows sends
+        # in its samples the clip now reads. A host older than windows sends
         # three arguments and means "from the beginning", which is what a take
         # with no window has always been.
         window = float(args[4]) if len(args) > 4 else None
@@ -798,7 +798,7 @@ class Editor:
             return False
         if trimmed:
             # A trim is a gesture of its own -- the placement *and* the window
-            # over the material, in one edit -- so it does not go through the
+            # over the samples, in one edit -- so it does not go through the
             # placement road below.
             if not self._trim(placed, offset, dur, window):
                 return False
@@ -920,7 +920,7 @@ class Editor:
 
         The half that was missing until now: this editor snaps a placement to
         the musical grid and refuses an edit to a generator, and the host could
-        learn neither -- so a note dragged onto read-only material stayed drawn
+        learn neither -- so a note dragged onto read-only samples stayed drawn
         where the hand put it, and a clip landed half a grid step from where it
         was released. The stamp closes both, because it lets the host retire
         what it drew and adopt what actually happened.
@@ -980,8 +980,8 @@ class Editor:
         an arrangement is elements placed in time, and a clip the selection
         covers entirely leaves the aggregate it was in — undoably, through the
         crate, like every other edit here. What it does *not* do is trim: a
-        selection cutting across a clip implies a new length for the material
-        under it, and writing material is the owner of that material's business
+        selection cutting across a clip implies a new length for the samples
+        under it, and writing samples is the owner of that samples's business
         (the working copy the document's plan describes), not a placement edit
         wearing the same name. That case is refused **out loud**, because a cut
         that silently did nothing would read as a broken key.
@@ -1000,8 +1000,8 @@ class Editor:
         if not (start <= span[0] and end >= span[1]):
             self._resync(wid)
             self._reason = (
-                "a cut across a clip is a new length for its material, "
-                "which is the material owner's edit"
+                "a cut across a clip is a new length for its samples, "
+                "which is the buffer owner's edit"
             )
             return False
         owner = placed.owner
@@ -1032,10 +1032,10 @@ class Editor:
         crate's typed document: its kind, its JSON, and its bulk beside it.
 
         **What this editor can place is elements.** A block of *samples* is
-        material, and material is written by whoever owns it against a working
+        samples, and samples is written by whoever owns it against a working
         copy; an arrangement editor placing a nameless block of audio would be
         inventing both a source and a source's owner. So a sample paste is
-        refused with the reason, which is the honest answer until the material
+        refused with the reason, which is the honest answer until the samples
         half of the track lands.
         """
         if wid not in self._clips and wid not in self._lanes:
@@ -1043,22 +1043,22 @@ class Editor:
         kind = str(values[1]) if len(values) > 1 else ""
         self._reason = (
             f"this editor places elements; a {kind or 'clipboard'} block is "
-            "material, and material is written by its owner"
+            "samples, and samples is written by its owner"
         )
         return False
 
     def resolve_selection(self) -> list:
-        """The **material under the current selection**, through the crate.
+        """The **samples under the current selection**, through the crate.
 
         The other half of what a selection is for: `Editor.selection` says what
         was swept, and this says what is underneath it — one entry per leaf,
         with the placement's base, the element's trim and the clamp at both ends
         already applied (`clausters._native.Document.resolve`). Empty when
-        nothing material was under the sweep, and when there is no selection at
+        nothing samples was under the sweep, and when there is no selection at
         all.
 
         The value range travels with the selection but does not narrow this:
-        what is under a band of amplitudes is the same material as what is under
+        what is under a band of amplitudes is the same samples as what is under
         the whole span, and *reading only those samples* is an operation over
         the range rather than a resolution of it.
         """
@@ -1081,7 +1081,7 @@ class Editor:
 
     def _trim(self, placed, offset: float, dur: float, start: float) -> bool:
         """A **trim**: the clip begins later or ends earlier, and the window over
-        its material moves with the edge.
+        its samples moves with the edge.
 
         One intent, not two. Where a clip sits is its placement's and what it
         reads is its element's, so a trim touches both -- and a gesture that
@@ -1120,7 +1120,7 @@ class Editor:
     def _apply_split(self, placed, at_units: float) -> bool:
         """A clip cut in two at ``at_units`` of its own time.
 
-        Both halves keep the **same material** and take a window of it: the
+        Both halves keep the **same samples** and take a window of it: the
         first reads what it always did and stops early, the second begins where
         the first left off. That is the whole of what a split is on a memory
         view, and it is why the frames neither of them shows are still there --
@@ -1137,10 +1137,10 @@ class Editor:
             return False
         element = member.element
         if not isinstance(element, (Vector, Segments)):
-            # Only a window onto material can be cut into windows. Splitting a
+            # Only a window onto samples can be cut into windows. Splitting a
             # pattern or an aggregate would have to say what half of an algorithm
             # is, which is a different question and not this one.
-            self._reason = ("only a clip over material can be split: this one "
+            self._reason = ("only a clip over samples can be split: this one "
                             "holds " + _name(element))
             return False
         length = member.length if member.length is not None else element.duration
@@ -1176,7 +1176,7 @@ class Editor:
         return self._changed()
 
     def _tail(self, element, at: float, length: float):
-        """The element the **second half** of a cut reads: the same material,
+        """The element the **second half** of a cut reads: the same samples,
         from ``at`` beats in.
 
         The first half is not built at all — it is the element it always was,
@@ -1205,9 +1205,9 @@ class Editor:
 
     def _segments_within(self, element, length) -> list:
         """The segments a placement of ``length`` beats actually shows of a
-        `Segments` — the placement being a window onto the material like every
+        `Segments` — the placement being a window onto the samples like every
         other placement here, so a half whose placement was shortened by a split
-        holds the material it *plays*, not everything the element still knows
+        holds the samples it *plays*, not everything the element still knows
         about.
         """
         if length is None:
@@ -1225,10 +1225,10 @@ class Editor:
         """Clips read as one.
 
         Two shapes, one verb, and which one it takes is a fact about the
-        material rather than a mode: fragments that are **one run of one
+        samples rather than a mode: fragments that are **one run of one
         buffer** (what a split makes) join back into the single window they were
         cut from, and anything else becomes a `Segments` — the element whose
-        material is a list of windows onto whatever buffers they come from, read
+        samples is a list of windows onto whatever buffers they come from, read
         back to back. The second is what a multitrack means by joining in
         general: nothing is copied, and cutting it apart again gives the same
         windows back.
@@ -1244,7 +1244,7 @@ class Editor:
         run.sort(key=lambda p: p.member.offset)
         elements = [p.member.element for p in run]
         if not all(isinstance(e, (Vector, Segments)) for e in elements):
-            self._reason = "only clips over material can be joined"
+            self._reason = "only clips over samples can be joined"
             return False
         # The segments the run holds, in reading order: a `Vector` is one, a
         # `Segments` is however many it already carries.
@@ -1252,7 +1252,7 @@ class Editor:
         for p, element in zip(run, elements):
             length = p.member.length if p.member.length is not None else element.duration
             if length is None:
-                self._reason = "a clip with no length has no material to join"
+                self._reason = "a clip with no length has no samples to join"
                 return False
             if isinstance(element, Segments):
                 segments += self._segments_within(element, length)
@@ -1265,7 +1265,7 @@ class Editor:
         keep, dropped = run[0].member, {id(p.member) for p in run[1:]}
         total = sum(seg.duration for seg in segments)
         # The members as they would stand -- the document's own serialization,
-        # with the run's first holding the joined material and the rest gone.
+        # with the run's first holding the joined samples and the rest gone.
         # Built rather than mutated, which is the cut's shape too: nothing on
         # this side moves until the crate has said what the edit becomes.
         whole = to_document(owner, version=self._version)["root"]
@@ -1546,7 +1546,7 @@ class Editor:
         walk mirrors `clausters.form.document`'s own, which is what keeps the
         two agreeing about what has an id."""
         # The id belongs to the **placement** when there is one: a clip is a
-        # window onto material, so what an intent names is the window.
+        # window onto samples, so what an intent names is the window.
         node = getattr(member if member is not None else element, ID_ATTR, None)
         if node is not None:
             self._by_node[int(node)] = (owner, member, element)
@@ -1663,7 +1663,7 @@ class Editor:
         disagree about which of the three happened."""
         if isinstance(element, Vector):
             # A take's configuration is the **window** it reads: which frame of
-            # its material it begins at, and whether that window wraps. The
+            # its samples it begins at, and whether that window wraps. The
             # configuration is written whole, so a key the intent does not carry
             # is the default -- reading from the first frame, once.
             element.start = float(config.get("start", 0.0))
@@ -1984,10 +1984,10 @@ class Editor:
         lanes draw. This is what a click on a lane's ruler does.
 
         A composition holding a **resident generator** has no position to seek
-        to — its material is produced on the server, so its position is that
+        to — its samples is produced on the server, so its position is that
         def's internal state and no number moves it. Rather than move the cursor
         somewhere the sound will not follow, this refuses and says why. Render
-        the element first (`clausters.form.render`) and it becomes material like
+        the element first (`clausters.form.render`) and it becomes samples like
         any other."""
         if not self.locatable:
             raise ValueError(
@@ -2009,7 +2009,7 @@ class Editor:
 
         MIDI's `continue` against `play`'s `start`: play reads the composition
         as it now stands and starts it again, resume picks the frozen sound back
-        up. Under a server transport that governs the material, every node kept
+        up. Under a server transport that governs the samples, every node kept
         its internal state through the pause, so a texture carries on
         mid-gesture instead of restarting."""
         return self.transport.resume()
@@ -2103,7 +2103,7 @@ class Editor:
         draws with *all of its members'*, layered in one clip.
 
         ``limit`` is the **placement's** length in beats when it has one: a
-        placement is a window onto an element, so a clip shortened over material
+        placement is a window onto an element, so a clip shortened over samples
         assembled from segments draws the segments it plays and not the ones it
         no longer reaches.
 
@@ -2132,7 +2132,7 @@ class Editor:
 
         if isinstance(element, Segments):
             segments = self._segments_within(element, limit)
-            # **One clip, one take per segment.** The material is several
+            # **One clip, one take per segment.** The samples is several
             # windows read as one thing, so the clip holds one body per segment,
             # each over its own stretch of the clip and each reading its own
             # buffer from its own frame — which is what makes a joined clip draw
@@ -2169,7 +2169,7 @@ class Editor:
             if channels is None:
                 return {}
             body = dict(buffer=buf.bufnum, channels=max(1, channels))
-            # The **window** onto that material: a clip shows the segment its
+            # The **window** onto that samples: a clip shows the segment its
             # element reads, so a trimmed take draws the frames it plays and
             # not the buffer squeezed into a rectangle. Sent only when there is
             # a window to state, which keeps a whole-take clip's props exactly
@@ -2238,7 +2238,7 @@ class Editor:
                                     else self._extent(m.element))
                         for m in element.handles), default=0.0)
         if isinstance(element, Segments):
-            # Its material is a list, and its extent is the whole of it.
+            # Its samples is a list, and its extent is the whole of it.
             return sum(seg.duration for seg in element.segments)
         if isinstance(element, Vector):
             buf = element.wraps

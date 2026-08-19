@@ -105,7 +105,7 @@ export interface SessionOptions {
  * It is an `Environment` — the same base the default session extends — so a
  * named session and the default one are the same kind of thing. That makes it
  * its **own random context** (`seed` / `rng`): `session.seed(n)` reproduces
- * *this* session's material without touching another's. Material created
+ * *this* session's samples without touching another's. Material created
  * while the session drives (`play`) or inside `use()` draws from this root.
  */
 export class Session extends Environment {
@@ -290,7 +290,7 @@ export class Session extends Environment {
 
     /**
      * Makes this session the ambient one for the duration of `body`, so
-     * material created in it (a played routine, a bare `new Synth`) resolves
+     * samples created in it (a played routine, a bare `new Synth`) resolves
      * to *this* session's server, clock and random root rather than the
      * default session's.
      *

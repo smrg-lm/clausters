@@ -97,7 +97,7 @@ mod tests {
 
     /// The wire-up nothing else covers: an embedded server's own segment, read
     /// as a `BusSource`, reports **the piece's position** — so a window drawing
-    /// a head from it draws where the material is rather than how long the
+    /// a head from it draws where the samples is rather than how long the
     /// machine has been running.
     ///
     /// Skipped where no audio device can be opened, which is what a headless
@@ -178,20 +178,20 @@ mod tests {
 ///
 /// The peer of [`EmbedServer`], and the difference is what each one holds. That
 /// one holds the machine's input and output; this one holds nothing but
-/// computation and — given a segment path — the **material**. An editor sends
+/// computation and — given a segment path — the **samples**. An editor sends
 /// it allocations, the editing verbs and renders, and lets a separate process
 /// hold the devices and play what it owns.
 ///
 /// The reason to separate them is not tidiness: an editor that owns its takes
 /// through a real-time server holds an audio device it does not need, cannot
-/// be restarted without taking the material with it, and pays the whole
+/// be restarted without taking the samples with it, and pays the whole
 /// real-time surface to run three verbs.
 pub struct EmbedSession {
     inner: clausters::embed::ClaustersSession,
 }
 
 impl EmbedSession {
-    /// Opens a session whose material lives beside the segment at `shm`, at
+    /// Opens a session whose samples lives beside the segment at `shm`, at
     /// `sample_rate` and `channels`. A peer — this host included — maps every
     /// buffer it installs.
     pub fn open(shm: &Path, sample_rate: f64, channels: usize) -> Result<EmbedSession, String> {
@@ -218,7 +218,7 @@ impl EmbedSession {
     }
 
     /// Where this session's segment is — what a player is pointed at and what
-    /// the host maps its material from.
+    /// the host maps its samples from.
     pub fn shm_path(&self) -> Option<&Path> {
         self.inner.shm_path()
     }

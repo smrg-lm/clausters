@@ -133,7 +133,7 @@ pub(crate) fn clip_set(host: &mut Host, def_id: i32, clip_id: i32, placed: super
             return;
         }
         // The window travels with the placement: a trimmed start shows less of
-        // the material from further in, which is the whole difference between
+        // the contents from further in, which is the whole difference between
         // trimming a clip and squeezing it.
         w.window
             .get_or_insert_with(crate::host::widget::SourceWindow::default)

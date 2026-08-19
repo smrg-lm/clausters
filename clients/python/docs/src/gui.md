@@ -277,7 +277,7 @@ Three things follow from what the measure is:
   column it is drawn in — 2400 samples at 48 kHz, the RMS window an audio editor
   defaults to. A root-mean-square is an average over a *duration*, so a window
   that followed the column would make the body's own values follow the **zoom**:
-  the level would move while you navigated material that had not changed. This
+  the level would move while you navigated samples that had not changed. This
   way it stands still. (A live bus view, whose window is already stated in
   milliseconds and whose rate the host does not know, averages what each column
   covers.)
@@ -298,15 +298,15 @@ A take you are **recording into** wants one more prop, `fills`:
 waveform(buffer=take.bufnum, sample_rate=rate, fills=True)   # ...and fills=False when it stops
 ```
 
-It says the material is being written as it is drawn, so the view stops at the
+It says the samples are being written as they are drawn, so the view stops at the
 buffer's write frontier and leaves the axis past it empty. Without it the
 buffer's own zeros are drawn — the minimum-ink rule puts a flat line across the
 whole take before anything has been recorded into it — because past the frontier
-there is no silence, there is no material yet. The host cannot work this out for
+there is no silence, there is no samples yet. The host cannot work this out for
 itself: a frontier alone does not tell a recording from a loaded take that one
 write touched, and you are the one who allocated the buffer.
 - **A cache built before the measure existed draws no body.** Its energy was
-  never measured, and zeros would say silence over material that is not
+  never measured, and zeros would say silence over samples that is not
   silent — so the layer is simply absent, and rebuilding the cache
   (`peaks_cache_file`) is what fills it in.
 
@@ -398,7 +398,7 @@ precedence order:
 | `blob` | a binary blob carried beside the JSON in the same message |
 
 `samples_to_file` and `peaks_cache_file` write the first two from a Python
-sequence; `samples_to_blob` packs the last. A cache follows its material rather
+sequence; `samples_to_blob` packs the last. A cache follows its samples rather
 than being rebuilt: `peaks_cache_update_file` re-summarizes the frame span an
 edit touched, and `peaks_cache_stream_file` folds a `/buffer_stream.reply`
 report into it — the overview of a take being recorded, measured by the writer
@@ -639,7 +639,7 @@ the step.
 ### The clipboard: copy is the host's, cut and paste are yours
 
 Ctrl+C over a selection is a **read**, so the host makes it alone: the span
-leaves the material it has mapped and lands on its own clipboard, typed, with
+leaves the samples it has mapped and lands on its own clipboard, typed, with
 the rate it was taken at — nothing reaches your script. Where it cannot read the
 source (a peak overview has no samples behind it; a live view has no addressable
 past) it says so with a `"refused"` event rather than copying silence.
@@ -662,8 +662,8 @@ and an edit is something you perform and log, never a side effect of a paste.
 
 `Editor` answers both verbs for the arrangement it holds: a cut whose selection
 covers a clip removes that placement (undoably, through the document), and a cut
-across a clip — or a paste of material — is refused with its reason, because
-that is a new length for the material under it and material belongs to whoever
+across a clip — or a paste of samples — is refused with its reason, because
+that is a new length for the samples under it and samples belongs to whoever
 owns it.
 
 ## The instrument without the script: a bundle

@@ -516,7 +516,7 @@ fn embed_render_returns_flat_samples() {
     assert_ne!(err[0], 0, "error message must be written");
 }
 
-/// **The material a peer maps, and the three things that make it safe.**
+/// **The samples a peer maps, and the three things that make it safe.**
 ///
 /// A pool buffer's samples live in a region beside the segment (S19), so a
 /// local peer draws and edits them with no message at all. What this pins is
@@ -567,7 +567,7 @@ fn a_peer_maps_a_buffer_by_number_and_writes_what_the_server_reads() {
     assert_eq!(mapped.at(5), 0.25, "what was mapped is still readable");
 
     // And the next allocation takes a new generation, so no stale mapping can
-    // ever be aliased onto new material.
+    // ever be aliased onto new samples.
     let next = segment.publish_buffer(3, 4, 2, 48_000.0).expect("a row");
     assert!(next > generation && !next.is_multiple_of(2));
     assert_ne!(Region::path_for(&path, 3, next), region_path);
@@ -578,7 +578,7 @@ fn a_peer_maps_a_buffer_by_number_and_writes_what_the_server_reads() {
 
 /// **End to end, over a real server**: a `/buffer_alloc` that arrives through
 /// the ring reaches the pool, and a peer with nothing but the segment's path
-/// maps the material by number.
+/// maps the samples by number.
 ///
 /// This is the property S19 exists for — the editor's samples stop being
 /// messages — and it is asserted the only way that means anything: the peer
@@ -641,14 +641,14 @@ fn a_buffer_the_server_allocated_is_mapped_by_a_peer() {
     assert_eq!(
         mapped.at(7),
         0.75,
-        "the peer writes the material, with nothing sent"
+        "the peer writes the samples, with nothing sent"
     );
 
     let _ = std::fs::remove_file(&path);
 }
 
 /// **The arrangement's own test**: a second server attaches to a segment that
-/// already holds material, plays the owner's very cells, and takes none of it
+/// already holds samples, plays the owner's very cells, and takes none of it
 /// with it when it goes.
 ///
 /// This is what makes "separate processes" a claim rather than a diagram. Both
@@ -656,7 +656,7 @@ fn a_buffer_the_server_allocated_is_mapped_by_a_peer() {
 /// *ownership* rules, not the process boundary, and running them apart is the
 /// example's job (`examples/editor_processes.sh`).
 #[test]
-fn a_second_server_attaches_to_the_material_and_owns_none_of_it() {
+fn a_second_server_attaches_to_the_buffers_and_owns_none_of_them() {
     let path = std::env::temp_dir().join(format!(
         "clausters-shm-attach-{}-{}",
         std::process::id(),
@@ -705,10 +705,10 @@ fn a_second_server_attaches_to_the_material_and_owns_none_of_it() {
     );
     let (mut player_server, _player_engine) = shared_server(&player_segment, None);
     player_server.attach_segment(Arc::clone(&player_segment));
-    let found = player_server.attach_material_at(path.clone());
+    let found = player_server.attach_samples_at(path.clone());
     assert_eq!(found, 1, "it maps the take that was already there");
 
-    // One material, two servers: the owner's write is what the player reads.
+    // One samples, two servers: the owner's write is what the player reads.
     let (_, owners_view) = owner_segment.map_buffer(&path, 3).unwrap();
     let (_, players_view) = player_segment.map_buffer(&path, 3).unwrap();
     owners_view.set_at(5, -0.5);
@@ -723,7 +723,7 @@ fn a_second_server_attaches_to_the_material_and_owns_none_of_it() {
     drop(player_server);
     assert!(
         owner_segment.buffer_info(3).is_some(),
-        "the material outlives the player, which is the whole point of separating them"
+        "the samples outlives the player, which is the whole point of separating them"
     );
 
     let _ = std::fs::remove_file(&path);
@@ -754,11 +754,11 @@ fn a_dead_owners_claim_is_taken_over() {
     let _ = std::fs::remove_file(&path);
 }
 
-/// Builds a headless server + engine over `segment`, owning the material when
+/// Builds a headless server + engine over `segment`, owning the samples when
 /// a path is given. The two tests above differ only in that.
 fn shared_server(
     segment: &Arc<Segment>,
-    own_material_at: Option<std::path::PathBuf>,
+    own_buffers_at: Option<std::path::PathBuf>,
 ) -> (OscServer, clausters::server::engine::Engine) {
     let (engine, handle) = engine_pair_full(
         SR,
@@ -777,7 +777,7 @@ fn shared_server(
         handle,
         0.0,
     );
-    if let Some(path) = own_material_at {
+    if let Some(path) = own_buffers_at {
         server
             .attach_ipc(IpcPeer::new(Arc::clone(segment), Role::Server))
             .unwrap();
@@ -787,14 +787,14 @@ fn shared_server(
 }
 
 /// **The editor's arrangement, end to end in one process**: the on-demand
-/// session owns the segment and the material, an RT-shaped server attaches to
+/// session owns the segment and the samples, an RT-shaped server attaches to
 /// play it, and the session never touches the clocks.
 ///
 /// The three roles are the phase's whole design — the session computes, the
 /// player holds the devices, and whoever edits writes the cells directly —
 /// so this asserts the two rules that make them safe to run at once.
 #[test]
-fn a_session_owns_the_material_and_a_player_attaches_to_it() {
+fn a_session_owns_the_buffers_and_a_player_attaches_to_them() {
     use clausters::server::nrtsession::{NrtSession, SessionConfig};
 
     let path = std::env::temp_dir().join(format!(
@@ -832,7 +832,7 @@ fn a_session_owns_the_material_and_a_player_attaches_to_it() {
     }
     let (_, take) = segment
         .map_buffer(&path, 1)
-        .expect("a session with a path publishes its material");
+        .expect("a session with a path publishes its samples");
     take.set_at(9, 0.25);
 
     // The player: a server that attached, mapping what the session owns.
@@ -841,7 +841,7 @@ fn a_session_owns_the_material_and_a_player_attaches_to_it() {
     assert!(!player_segment.claim_control());
     let (mut player, _engine) = shared_server(&player_segment, None);
     player.attach_segment(Arc::clone(&player_segment));
-    assert_eq!(player.attach_material_at(path.clone()), 1);
+    assert_eq!(player.attach_samples_at(path.clone()), 1);
     let (_, played) = player_segment.map_buffer(&path, 1).unwrap();
     assert_eq!(
         played.at(9),
@@ -867,7 +867,7 @@ fn a_session_owns_the_material_and_a_player_attaches_to_it() {
         None,
         "a session gives the command plane back on the way out"
     );
-    // And it takes its material with it: a session that created the segment
+    // And it takes its samples with it: a session that created the segment
     // owns it, and one left in /dev/shm after the editor is gone is a leak
     // with a take in it. The player's mapping above stays valid regardless —
     // unlinked, not deleted.
@@ -920,7 +920,7 @@ fn a_dead_owners_segment_is_swept_and_a_live_one_is_left_alone() {
     );
 
     // The path a caller is about to open is never swept, which is what keeps
-    // adopting a killed owner's material by name working.
+    // adopting a killed owner's samples by name working.
     let orphan = dir.join("orphan");
     Segment::create_full(&orphan, 1024, 2, 1024).unwrap();
     assert!(

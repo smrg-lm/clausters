@@ -15,14 +15,14 @@ beginning to end:
   (`current_rng`, via the thread-local ``main.current_tt``). Outside any routine
   it falls back to the **active session's** root — the explicit
   `clausters.Session` on this thread if any, else the default session
-  (``main``) — so ``seed(n)`` on one session reproduces *its* material without
+  (``main``) — so ``seed(n)`` on one session reproduces *its* own sound without
   touching another's.
 
 The generator itself lives in the shared native core (one ``u64`` of state, the
 same splitmix64/xorshift64 as the server's ``WhiteNoise``), so the same seed
 replays the same values in every client language. There are no per-pattern
 seeds: independent seeds would break whole-script consistency — override
-*locally* by playing material inside its own routine instead.
+*locally* by playing inside its own routine instead.
 """
 
 from .main import main

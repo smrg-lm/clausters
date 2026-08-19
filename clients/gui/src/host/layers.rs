@@ -2,14 +2,14 @@
 //!
 //! A container that layers elements draws several things on one rectangle, and
 //! each of them is editable in its own vocabulary: the container's *placement*
-//! (where it sits, how long it is), the material under it, the events over
+//! (where it sits, how long it is), the contents under it, the events over
 //! that, an automation over both. They share every pixel, so a press is claimed
 //! by four things at once, and the order used to be decided ad hoc in three
 //! different places.
 //!
 //! **This is not a clip's idea.** A clip is the first container here that
 //! layers editable contents and it is deliberately not the last: an audio
-//! editor's view is the same picture — material, a selection over it, an
+//! editor's view is the same picture — contents, a selection over it, an
 //! automation over both, later a spectral layer — and a container that grows
 //! contents grows layers with them. So the active layer is a field of the
 //! [`Widget`] node, the stack is read off whatever children fill a role, and
@@ -29,7 +29,7 @@
 //! of content grows a fourth layer with no change here. What an element
 //! contributes is only two answers — the role it fills
 //! ([`Element::body_role`](crate::host::widget::Element::body_role)) and
-//! whether the pointer is on its own material
+//! whether the pointer is on its own contents
 //! ([`Element::layer_hit`](crate::host::widget::Element::layer_hit)).
 //!
 //! **Selection is not the mouse.** [`Selection`] is the whole of what selecting
@@ -220,7 +220,7 @@ impl<'a> Selection<'a> {
 /// A layer that names no stretch fills the container, which is what a layered
 /// body has always been. One that names a stretch (`Widget::span`) is placed on
 /// it exactly as a clip is placed on its lane — the same mapping, one level
-/// down — and reads its own window onto its own material, which is what lets a
+/// down — and reads its own window onto its own contents, which is what lets a
 /// clip hold three segments of three different files and still be one clip.
 ///
 /// The **one** derivation, so the layout, the drawing, the hit-test and the
@@ -306,10 +306,10 @@ pub fn child_is_active(widget: &Widget, index: usize) -> bool {
 }
 
 /// The layer a press at `(x, y)` belongs to: the **topmost content layer whose
-/// own material is under the pointer**, and the placement everywhere else.
+/// own contents are under the pointer**, and the placement everywhere else.
 ///
 /// Topmost first, because that is the order they are drawn in and the reader
-/// aims at what they can see. A layer answers for its *material* — a curve's
+/// aims at what they can see. A layer answers for its *contents* — a curve's
 /// points and segments, a note's rectangle — and never for the rectangle it
 /// shares with the container, which is what leaves the clip's background and
 /// its grips to the placement: "drag the background to move the clip" is a rule

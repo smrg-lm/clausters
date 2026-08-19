@@ -178,7 +178,7 @@ impl WidgetKind {
             .is_some_and(|e| e.set_pending_edit(held))
     }
 
-    /// One sample of its material ([`Element::sample_value`]).
+    /// One sample of its samples ([`Element::sample_value`]).
     pub fn sample_value(&self, channel: usize, frame: usize) -> Option<f32> {
         self.as_element()?.sample_value(channel, frame)
     }

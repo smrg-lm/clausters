@@ -82,7 +82,7 @@ SR = float(server.options.sample_rate)
 folder = Path(tempfile.mkdtemp(prefix="clausters-take-"))
 
 # %% [markdown]
-# ## The material
+# ## The take
 # A phrase bounced offline and loaded from the file (a buffer is loaded or
 # generated on the server, never push-filled). Its shape is what makes the two
 # measures worth showing together: a legato line, so where two notes overlap
@@ -180,7 +180,7 @@ def run():
 # %% [markdown]
 # ## What a signal view will not open
 # The generated/generator line, asked at the door: a rendered element has
-# material a view can address, a generator has none until it is rendered. The
+# samples a view can address, a generator has none until it is rendered. The
 # piano roll answers this by showing a bounced generator read-only; a signal view
 # cannot, because notes can be bounced for a picture and samples cannot be
 # invented — so it refuses, and says what to do.

@@ -3,7 +3,7 @@
 language attached, and read back here unchanged.
 
 A document says what plays when; a *session* is that plus the table saying where
-its material lives, and it lives in the shared crate precisely so that more than
+its samples lives, and it lives in the shared crate precisely so that more than
 one program can write it. Until now two of the three writers existed — this
 client, and this client again. The third is `clausters-gui --session`, a host
 that opens the file, draws it as a multitrack, applies its own gestures through
@@ -19,13 +19,13 @@ What it shows, in the order the cells run:
   it back, `Ctrl+S` to save. The host is the owner while that window is open:
   the intent your drag emits is applied *there*, by the crate's `apply`, and the
   inverse comes out of the document rather than being remembered.
-- **Editing the material, not only the description.** The take opens twice: as
+- **Editing the samples, not only the description.** The take opens twice: as
   a clip in its lane, and as an editor under the ruler on an axis of its own.
   Zoom that one in (wheel) until each sample is a disc, then **Alt+drag** to
   draw over them — the picture changes over the span you drew and nowhere else,
   and `Ctrl+Z` puts the samples back. The take is **stereo** and the channels
   are drawn as stacked lanes: a stroke lands in the lane it was made in and the
-  other keeps its shape, because one channel of interleaved material is written
+  other keeps its shape, because one channel of interleaved samples is written
   as the strided span it is. **Click** on the waveform to place the
   playhead, **space** to play from it and to pause where it stands (a pause
   freezes the server's own transport, so playing again continues rather than
@@ -45,7 +45,7 @@ leaving in a temp directory.
 
 **What it needs:** nothing running — the host boots its own embedded server
 (a `--features standalone` build; without one the take still draws as a named
-rectangle and the space bar does nothing). It writes its own WAV, so no material
+rectangle and the space bar does nothing). It writes its own WAV, so no samples
 has to be found. The host binary is `clients/gui/target/*/clausters-gui`; build it with
 ``cargo build --bin clausters-gui`` from ``clients/gui`` if it is not there.
 
@@ -91,7 +91,7 @@ bass = Track(Timeline([
 ]))
 
 # %% [markdown]
-# ## And a take, which is material rather than description
+# ## And a take, which is samples rather than description
 #
 # A document says *what plays when* and never where the samples are — so a take
 # is a source **id**, and the session's table is what says where that source
@@ -113,7 +113,7 @@ def write_take(path: str, seconds: float = 2.0, freq: float = 440.0) -> int:
     recognize rather than a rectangle of noise -- and the two channels are
     deliberately unlike (the right one is the third partial alone, quieter), so
     an edit on one is visibly an edit on *one*: a channel of interleaved
-    material is a strided write, and that it lands where it was aimed is the
+    samples is a strided write, and that it lands where it was aimed is the
     thing worth seeing.
     """
     frames = int(seconds * SAMPLE_RATE)

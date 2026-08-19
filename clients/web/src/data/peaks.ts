@@ -89,7 +89,7 @@ export class Peaks {
      * follows a recording it cannot map.
      *
      * The server sends the *overview* of what was written rather than the
-     * material (about 2 kB/s a channel where the audio is 190), and the
+     * samples (about 2 kB/s a channel where the audio is 190), and the
      * measuring already happened at the writer's end: this puts the buckets
      * where they belong and rebuilds the levels above them, so the picture
      * grows into the one the samples would have built.

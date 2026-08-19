@@ -65,11 +65,11 @@ pub(crate) fn corner_text(d: &mut Draw, s: &str, body: Rect) {
 /// The plate is the answer to a defect an eye pass found twice: a caption over
 /// a signal is written in one color and the signal draws in another, so
 /// wherever the two meet the text disappears into the trace — and the denser
-/// the material the less of the name survives. A ground of its own is what a
+/// the drawing the less of the name survives. A ground of its own is what a
 /// label over a picture needs, and it is one piece rather than one per widget
 /// because the pixels a clip's name sits on and the ones a read-out sits on are
 /// the same problem. The alpha keeps the picture legible *through* it (the
-/// plate says "text here", it does not erase the material), and the corners are
+/// plate says "text here", it does not erase the picture under it), and the corners are
 /// rounded so a small box over a dense drawing reads as one object rather than
 /// as a hole cut in it.
 ///

@@ -19,7 +19,7 @@
 // splitmix64/xorshift64 as the server's `WhiteNoise`), so the same seed
 // replays the same values in every client language. There are no per-pattern
 // seeds — independent seeds would break whole-script consistency; override
-// locally by playing material inside its own routine instead.
+// locally by playing inside its own routine instead.
 
 import { Rng as CoreRng } from "../core/clausters_core_web.js";
 import { currentRoutine } from "./context.ts";
@@ -88,7 +88,7 @@ export class Rng {
  * outside a routine and every routine created after this call.
  *
  * A named `Session` is its own random context: `session.seed(n)` reproduces
- * *that* session's material without touching another's, which is what lets
+ * *that* session's own sound without touching another's, which is what lets
  * two sessions on one page stay reproducible independently.
  */
 export function seed(value: number): void {

@@ -74,7 +74,7 @@ usage:
                            put it on /dev/shm — see docs/ipc.md). One that
                            already exists is attached to, never truncated: the
                            first server on a segment owns its command plane and
-                           its material, a later one plays what the owner
+                           its buffers, a later one plays what the owner
                            published
       --data-dir <dir>     where defs are persisted/reloaded (RT only;
                            default $CLAUSTERS_DATA_DIR or the XDG data dir)
@@ -551,7 +551,7 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     // given back on the way out.
     let mut shared: Option<std::sync::Arc<Segment>> = None;
     // `--shm` **attaches** to a segment that is already there and creates one
-    // only when it is not: the segment indexes the material now, so a server
+    // only when it is not: the segment indexes the buffers now, so a server
     // that truncated it on the way in would take somebody's take with it.
     let mut segment_created = false;
     let segment = match &shm_path {
@@ -652,7 +652,7 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         let abi = clausters::server::ipc::ABI_VERSION;
         // **Two roles, and the claim decides which one this server has.** The
         // rings are SPSC and there is one pair, so the first server on a
-        // segment serves the command plane and owns the material; a second one
+        // segment serves the command plane and owns the buffers; a second one
         // — the RT server in the editor's arrangement — attaches to the data
         // plane, maps what the owner published, and serves its own clients
         // over its sockets.
@@ -667,7 +667,7 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             tracing::info!("shared segment {verb} at {path} (ABI v{abi}); this server owns it");
         } else {
             osc.attach_segment(std::sync::Arc::clone(&segment));
-            let found = osc.attach_material_at(std::path::PathBuf::from(path));
+            let found = osc.attach_samples_at(std::path::PathBuf::from(path));
             tracing::info!(
                 "attached to the shared segment at {path} (ABI v{abi}); pid {} owns it, {found} \
                  buffer(s) mapped — commands over the sockets, /buffer_attach for later ones",

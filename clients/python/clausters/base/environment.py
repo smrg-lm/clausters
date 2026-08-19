@@ -25,7 +25,7 @@ class RandomContext:
     **independently**: ``seed(n)`` on one never touches another's stream. A
     `clausters.base.stream.Stream` created while a context is active derives its
     own generator from that context's root (see `clausters.base.rand`), so two
-    sessions' material stays reproducible per session regardless of interleaving.
+    sessions stay reproducible per session regardless of interleaving.
     """
 
     def __init__(self):

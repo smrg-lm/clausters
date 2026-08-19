@@ -145,7 +145,7 @@ def pv_kernel(chain, mag=None, phase=None, params=()) -> Ugen:
 
     Note that ``mag`` is a raw transform magnitude — it scales with the input
     level, the window and the ``fft_size``, it is **not** normalized to 0..1 —
-    so thresholds and constants must be calibrated to the material (probe a
+    so thresholds and constants must be calibrated to the signal (probe a
     render, or ``poll`` a reference).
 
     ```python

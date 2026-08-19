@@ -1,4 +1,4 @@
-"""The **material** in a shared segment: what a local client maps rather than asks for.
+"""The **samples** in a shared segment: what a local client maps rather than asks for.
 
 A `clausters --shm <path>` server puts every pool buffer's samples in a region
 beside the segment and indexes them in its directory, so a client on the same
@@ -109,7 +109,7 @@ def test_a_published_buffer_is_read_and_mapped(tmp_path):
 def test_a_retired_slot_stops_answering_even_with_the_file_there(tmp_path):
     """Freeing a buffer is the generation going **even**. The region is unlinked
     rather than deleted, so a peer that still holds a mapping keeps valid
-    memory — what tells it the material is history is the directory."""
+    memory — what tells it the samples are history is the directory."""
     path = _segment(tmp_path)
     client = ShmClient(str(path))
     at = client.shape.buffers_offset

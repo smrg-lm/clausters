@@ -74,10 +74,10 @@ pub struct Notes {
     /// Whether a hand may edit what is drawn here.
     ///
     /// **The picture must not follow a hand that cannot edit.** A body over
-    /// material that is a *rendering* — the notes of a pattern — is read-only,
+    /// samples that is a *rendering* — the notes of a pattern — is read-only,
     /// and an owner refusing the edit afterwards is too late: the roll has
     /// already offered the drag, drawn it for its whole duration and unwound
-    /// it, which reads as a broken editor rather than as material that cannot
+    /// it, which reads as a broken editor rather than as samples that cannot
     /// be edited here. So the refusal happens at the press, where it is seen.
     editable: bool,
 }
@@ -562,7 +562,7 @@ impl Element for Notes {
         Some(GestureMap::of_plans(&[El], &[Pan], &[El], &[El]))
     }
 
-    /// **The roll's own material is its notes** — a note's rectangle, and the
+    /// **The roll's own samples is its notes** — a note's rectangle, and the
     /// velocity bar that belongs to one. The grid between them is the
     /// container's, which is what leaves a clip's empty roll to the clip's own
     /// move.

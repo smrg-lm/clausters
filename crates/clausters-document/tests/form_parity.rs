@@ -102,7 +102,7 @@ fn a_resident_generator_arrives_unlocatable() {
 }
 
 #[test]
-fn material_arrives_with_its_lifetime() {
+fn a_source_arrives_with_its_lifetime() {
     let doc = vector();
     let Body::Vector { source, config } = &doc.root.members()[2].node.body else {
         panic!("not a vector")
@@ -211,7 +211,7 @@ fn a_session_saved_mid_edit_opens_with_the_edit_still_open() {
 }
 
 #[test]
-fn material_that_was_never_written_down_crosses_as_volatile() {
+fn a_source_never_written_down_crosses_as_volatile() {
     let session = session();
     assert_eq!(session.volatile(), vec![SourceId(9)]);
 }

@@ -338,7 +338,7 @@ pub struct SignalElement {
     /// body, one axis, one ruler, one upload, a picture per measure
     /// ([`Measures`]).
     pub measures: Measures,
-    /// **Whether this material is being written right now** — the `fills` prop.
+    /// **Whether these samples are being written right now** — the `fills` prop.
     ///
     /// The host cannot infer it and must not try. A buffer publishes a write
     /// frontier, but a frontier is not the question: a `BufWr` dropping one
@@ -347,12 +347,12 @@ pub struct SignalElement {
     /// What separates the two cases is *intent* — the client allocated an empty
     /// buffer to record into — so the client is what says so.
     ///
-    /// Set, the view draws its material up to [`Self::written`] and nothing
-    /// past it: a recording is material up to its frontier and **nothing**
+    /// Set, the view draws its samples up to [`Self::written`] and nothing
+    /// past it: a recording is samples up to its frontier and **nothing**
     /// beyond, where the buffer's own zeros are silence the picture would
     /// otherwise draw a flat line across.
     pub fills: bool,
-    /// **How far the material has been written**, in frames — the buffer's
+    /// **How far the samples has been written**, in frames — the buffer's
     /// write frontier, read by the host from the shared segment and pushed in
     /// through [`Element::set_written`](crate::host::widget::element::Element::set_written).
     ///
@@ -383,13 +383,13 @@ pub struct SignalElement {
     /// The edit the hand is making **right now**, before anyone has applied it.
     ///
     /// The host owns no data, so a dragged sample is not a change to the
-    /// material: it is a value drawn over the picture until the owner answers.
+    /// samples: it is a value drawn over the picture until the owner answers.
     /// It is kept here rather than in the gesture machine because state lives
     /// in the element (and because the drawing has to find it), and it is
     /// dropped when the acknowledgement arrives.
     ///
     /// **A pending value never enters the summary.** The peaks the picture is
-    /// drawn from are the material's, and re-summarizing on every motion event
+    /// drawn from are the samples', and re-summarizing on every motion event
     /// would both cost the span per frame and make the overview disagree with
     /// the samples until the edit lands. So this draws *over* the trace and
     /// changes nothing under it.
@@ -496,7 +496,7 @@ impl SignalElement {
         })
     }
 
-    /// The element's material over a span of its own frames, interleaved with
+    /// The element's samples over a span of its own frames, interleaved with
     /// the rate it was taken at — the copy a clipboard gets.
     ///
     /// Only a **random-access** source answers: a live bus has no addressable

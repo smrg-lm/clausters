@@ -184,7 +184,7 @@ def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
         defs: extra defs the render needs first — a `GraphDef`'s member defs,
             or the instrument a bounced pattern, timeline or routine names.
             Every offline path starts from an **empty** ephemeral session, so
-            whatever the material names has to ride along.
+            whatever it names has to ride along.
         until: stop the offline bounce at this beat — required for an endless
             source (an infinite pattern never drains on its own).
         tempo: the offline bounce's clock tempo, in beats per second (beats

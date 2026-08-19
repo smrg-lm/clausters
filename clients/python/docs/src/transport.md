@@ -169,11 +169,11 @@ server.transport_stop()    # the subtree freezes, mid-gesture
 server.transport_play()    # and carries on from exactly there
 ```
 
-This matters most for material the server *generates*. A def running a
+This matters most for samples the server *generates*. A def running a
 stochastic process or a demand-rate sequence has nothing to read and no
 messages arriving, so there is no position to seek to — its position **is** its
 internal state. Continuing is the only thing a pause can honestly mean for it,
-and it is what no DAW transport offers, because a DAW's material exists before
+and it is what no DAW transport offers, because a DAW's samples exists before
 you press play.
 
 That asymmetry runs through the whole feature:
@@ -183,7 +183,7 @@ That asymmetry runs through the whole feature:
 - **Locate does not.** `transport_locate(beat)` moves the position and never a
   node's state, and `Editor.locate` refuses over a composition holding a
   resident generator instead of moving a cursor the sound will not follow.
-  Render the element first and it becomes material like any other — the change
+  Render the element first and it becomes samples like any other — the change
   of state the [composition](composition.md) chapter is built around.
 
 Anything **scheduled** against a governed node waits out the pause with it and
