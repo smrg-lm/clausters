@@ -15,7 +15,7 @@ use crate::host::fetch::{FetchStep, WaveWant};
 use crate::host::frame;
 use crate::host::graphics::nodetree::NodeTree;
 use crate::host::widget::Widget;
-use crate::host::widget::element::{Loaded, SlotKind};
+use crate::host::widget::element::{Bulk, Loaded, SlotKind};
 use crate::waveform::WaveformData;
 
 use super::app::App;
@@ -24,9 +24,10 @@ impl App {
     /// Registers timeline widgets (waveform/spectrogram) that reference a
     /// server buffer and queries the audio server for each distinct buffer's
     /// shape (the fetch proceeds on the `/buffer_query.reply` reply). `refs` is
-    /// `(widget_id, bufnum)`.
-    pub(super) fn start_buffer_fetches(&mut self, def_id: i32, refs: Vec<(i32, i32)>) {
-        for (widget_id, bufnum) in refs {
+    /// `(widget_id, bufnum, shape_only)`, the last saying the widget draws a
+    /// take being recorded into and wants its length rather than its silence.
+    pub(super) fn start_buffer_fetches(&mut self, def_id: i32, refs: Vec<(i32, i32, bool)>) {
+        for (widget_id, bufnum, shape_only) in refs {
             // **Mapped material needs no conversation.** When the take is in a
             // region this host can open, its samples are read straight out of
             // it — no `/buffer_query`, no chunked `/buffer_getRange`, no
@@ -37,7 +38,12 @@ impl App {
                 continue;
             }
             debug!("gui_def {def_id}: widget {widget_id} waits on server buffer {bufnum}");
-            if let Some(query) = self.fetches.want(def_id, widget_id, bufnum) {
+            let query = if shape_only {
+                self.fetches.want_shape(def_id, widget_id, bufnum)
+            } else {
+                self.fetches.want(def_id, widget_id, bufnum)
+            };
+            if let Some(query) = query {
                 self.send_to_server(query);
             }
         }
@@ -65,7 +71,11 @@ impl App {
             Arc::new(take),
             channels,
             sample_rate,
-            vec![WaveWant { def_id, widget_id }],
+            vec![WaveWant {
+                def_id,
+                widget_id,
+                shape_only: false,
+            }],
         );
         true
     }
@@ -182,6 +192,13 @@ impl App {
                 sample_rate,
                 wants,
             } => self.finalize_buffer(bufnum, samples, channels, sample_rate, wants),
+            FetchStep::Empty {
+                bufnum,
+                frames,
+                channels,
+                sample_rate,
+                wants,
+            } => self.place_empty_take(bufnum, frames, channels, sample_rate, wants),
             FetchStep::None => {}
         }
     }
@@ -463,6 +480,62 @@ impl App {
             }
             ws.gpu.window.request_redraw();
             self.finish_placement(want, samples.len() / channels, sample_rate);
+        }
+    }
+
+    /// A take being recorded into answered with its **shape**: every waiting
+    /// view gets an empty summary of that length and nothing is downloaded.
+    ///
+    /// The picture is the whole of the box the take will fill — so the axis
+    /// does not move while it fills — and what fills it is the overview the
+    /// server streams (`fills`, `/buffer_stream`). Pulling the material here
+    /// would be a download of silence at the take's full length, to draw over
+    /// it a moment later.
+    fn place_empty_take(
+        &mut self,
+        bufnum: i32,
+        frames: usize,
+        channels: usize,
+        sample_rate: f64,
+        wants: Vec<WaveWant>,
+    ) {
+        debug!("gui: buffer {bufnum} is being recorded into ({frames} frames): shape only");
+        for want in wants {
+            let Some(base_bucket) = self
+                .host
+                .window_def(want.def_id)
+                .and_then(|t| t.find(want.widget_id))
+                .and_then(|w| match w.bulk_target().kind.needs().bulk {
+                    Some(Bulk::Recording { base_bucket, .. }) => Some(base_bucket),
+                    _ => None,
+                })
+            else {
+                continue;
+            };
+            let data: Arc<WaveformData> = Arc::new(WaveformData::with_multi_pyramid(
+                clausters_core::peaks::MultiPyramid::empty(frames, channels, base_bucket),
+            ));
+            if let Some(ws) = self.windows.get_mut(&want.def_id) {
+                if matches!(
+                    self.host
+                        .window_def(want.def_id)
+                        .and_then(|t| t.find(want.widget_id))
+                        .and_then(|w| w.bulk_target().kind.needs().slot),
+                    Some(SlotKind::Geometry { .. })
+                ) {
+                    ws.waveforms
+                        .insert(want.widget_id, frame::waveform_slot(data.clone()));
+                }
+                ws.gpu.window.request_redraw();
+            }
+            if let Some(w) = self
+                .host
+                .window_def_mut(want.def_id)
+                .and_then(|t| t.find_mut(want.widget_id))
+            {
+                frame::keep_material(w, &Loaded::Peaks(data));
+            }
+            self.finish_placement(want, frames, sample_rate);
         }
     }
 

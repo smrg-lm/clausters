@@ -980,6 +980,7 @@ export function waveform(
             ["base_bucket", baseBucket],
             ["overlay", flag(overlay)],
             ["measure", measure],
+            ["fills", flag(fills)],
         ]),
     });
 }

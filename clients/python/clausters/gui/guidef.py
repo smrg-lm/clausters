@@ -1775,6 +1775,21 @@ def peaks_cache_update_file(path: str, samples, start: int, frames: int) -> str:
     return path
 
 
+def peaks_cache_empty_file(path: str, frames: int, channels: int = 1,
+                           base_bucket: int = 256) -> str:
+    """Writes the cache of a take **allocated and not yet recorded into** to
+    `path` — `frames` frames of `channels` channels, every bucket a measured
+    zero. The file a ``waveform(cache=...)`` maps before the recording starts,
+    grown from there by `peaks_cache_stream_file`.
+
+    Returns `path`."""
+    from .._native import peaks_cache_empty  # lazy: only needs the cdylib if used
+
+    with open(path, "wb") as f:
+        f.write(peaks_cache_empty(frames, channels, base_bucket))
+    return path
+
+
 def peaks_cache_stream_file(path: str, start_frame: int, bucket: int, stats) -> str:
     """Folds a ``/buffer_stream.reply`` report into the cache at `path` — the
     listener's half of a recording being drawn, for a client that hears about

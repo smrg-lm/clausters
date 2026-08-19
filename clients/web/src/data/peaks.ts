@@ -60,6 +60,21 @@ export class Peaks {
     }
 
     /**
+     * An **empty** pyramid over `frames` frames — the picture of a take that
+     * has been allocated and not yet recorded into, ready to be filled by
+     * `writeBuckets` as the reports arrive.
+     *
+     * It is not `build` over a buffer of zeros: that would allocate the take
+     * (230 MB for ten minutes of stereo) to summarize samples nobody wrote.
+     */
+    static empty(
+        frames: number,
+        { channels = 1, baseBucket = 256 }: { channels?: number; baseBucket?: number } = {},
+    ): Peaks {
+        return new Peaks(Pyramid.empty(Math.trunc(frames), channels, baseBucket));
+    }
+
+    /**
      * Reads back a serialized cache — one written here, or the file the GUI
      * host maps and the Python client writes. `undefined` when the bytes are
      * not a cache.

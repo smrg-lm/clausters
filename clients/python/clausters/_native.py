@@ -347,6 +347,10 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_core_peaks_multi_build.argtypes = [
         f32p, ctypes.c_size_t, ctypes.c_size_t, ctypes.c_size_t, u8p, ctypes.c_size_t,
     ]
+    lib.clausters_core_peaks_multi_empty.restype = ctypes.c_size_t
+    lib.clausters_core_peaks_multi_empty.argtypes = [
+        ctypes.c_size_t, ctypes.c_size_t, ctypes.c_size_t, u8p, ctypes.c_size_t,
+    ]
     # The receiving half of /buffer_stream (ABI v21): buckets the writer
     # measured, folded into a cache at an offset -- for whoever hears about a
     # recording rather than mapping the memory it fills.
@@ -1566,6 +1570,27 @@ def peaks_cache_update(cache: bytes, samples, start: int, frames: int) -> bytes:
             "clausters_core_peaks_multi_update refused: the samples are not the "
             "buffer this cache describes (a length change is a rebuild)")
     return bytes(buf)
+
+def peaks_cache_empty(frames: int, channels: int = 1, base_bucket: int = 256) -> bytes:
+    """The peak cache of a take that has been **allocated and not recorded
+    into**: `frames` frames of `channels` channels, every bucket a measured
+    zero, ready to be filled by `peaks_cache_write_buckets` as the reports
+    arrive.
+
+    It is `peaks_cache` with no samples to read, which is the point — building
+    one from a buffer of silence would allocate the take (230 MB for ten
+    minutes of stereo) to summarize what nobody wrote."""
+    size = lib().clausters_core_peaks_multi_cache_size(frames, channels, base_bucket)
+    if size == 0:
+        raise ValueError(
+            "clausters_core_peaks_multi_cache_size returned 0 (base_bucket must be > 0)")
+    out = (ctypes.c_ubyte * size)()
+    written = lib().clausters_core_peaks_multi_empty(
+        frames, channels, base_bucket, out, size)
+    if written != size:
+        raise ValueError(f"clausters_core_peaks_multi_empty wrote {written} of {size} bytes")
+    return bytes(out)
+
 
 def peaks_cache_write_buckets(cache: bytes, start_frame: int, bucket: int, stats) -> bytes:
     """Folds a run of **already-summarized buckets** into a peak cache,

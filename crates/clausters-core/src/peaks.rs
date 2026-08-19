@@ -331,6 +331,48 @@ impl Pyramid {
         }
     }
 
+    /// **An empty summary of a given length** — every bucket a measured zero,
+    /// the levels sized as a build over `total_samples` would size them, and
+    /// no material read or held anywhere.
+    ///
+    /// It is what a take **allocated to be recorded into** is: the picture is
+    /// the whole of the box it will fill, so the axis does not move while it
+    /// fills, and the only thing missing is the material — which is exactly
+    /// what has not happened yet. A client that cannot map the memory being
+    /// written builds one of these and fills it from
+    /// [`Self::write_buckets`] as the reports arrive; building it out of a
+    /// buffer of silence instead would allocate the take (230 MB for ten
+    /// minutes of stereo) to summarize samples nobody wrote.
+    ///
+    /// The zeros are honest here, unlike a cache with no measure at all: an
+    /// unwritten frame *is* silence in the buffer. Whether a view draws that
+    /// stretch or leaves it empty is the view's own question — the host's
+    /// `fills` prop — and not the summary's.
+    pub fn empty(total_samples: usize, base_bucket: usize) -> Self {
+        assert!(base_bucket >= 1);
+        let mut levels = Vec::new();
+        let mut n = total_samples.div_ceil(base_bucket);
+        let mut bucket = base_bucket;
+        loop {
+            levels.push(Level {
+                bucket,
+                min: vec![0.0; n],
+                max: vec![0.0; n],
+                ms: Some(vec![0.0; n]),
+            });
+            if n <= 1 {
+                break;
+            }
+            n = n.div_ceil(2);
+            bucket *= 2;
+        }
+        Self {
+            base_bucket,
+            total_samples,
+            levels,
+        }
+    }
+
     /// Rebuilds only the part of the pyramid a sample span touches — the
     /// summary's answer to an edit, so a redraw costs the span rather than the
     /// take.
@@ -751,6 +793,17 @@ impl MultiPyramid {
             .map(|ch| Pyramid::build_from(&Interleaved::new(samples, channels, ch), base_bucket))
             .collect();
         Self { channels: pyramids }
+    }
+
+    /// **An empty multichannel summary**: [`Pyramid::empty`] per channel — the
+    /// picture of a take that has been allocated and not yet recorded into.
+    pub fn empty(frames: usize, channels: usize, base_bucket: usize) -> Self {
+        let channels = channels.max(1);
+        Self {
+            channels: (0..channels)
+                .map(|_| Pyramid::empty(frames, base_bucket))
+                .collect(),
+        }
     }
 
     /// Wraps already-built per-channel pyramids (they must share `base_bucket`
@@ -1730,5 +1783,42 @@ mod stream_tests {
         let level0 = &pyr.channel(0).unwrap().levels[0];
         assert_eq!(level0.min.len(), 5, "four whole buckets and the remainder");
         assert_eq!((level0.min[4], level0.max[4]), (0.0, 0.0), "still silent");
+    }
+}
+
+#[cfg(test)]
+mod empty_tests {
+    use super::*;
+
+    /// An empty summary is the summary of silence — the same levels, the same
+    /// buckets, the same answers — without the silence being anywhere.
+    #[test]
+    fn an_empty_pyramid_equals_one_built_over_silence() {
+        for (frames, base) in [(4_096usize, 256usize), (1_000, 64), (1, 256), (0, 256)] {
+            let built = Pyramid::build(&vec![0.0f32; frames], base);
+            let empty = Pyramid::empty(frames, base);
+            assert_eq!(empty.num_levels(), built.num_levels(), "{frames} @{base}");
+            assert_eq!(empty.total_samples(), built.total_samples());
+            for (l, (a, b)) in empty.levels.iter().zip(&built.levels).enumerate() {
+                assert_eq!(a.bucket, b.bucket, "{frames} @{base}, level {l}");
+                assert_eq!(a.min, b.min);
+                assert_eq!(a.max, b.max);
+                assert_eq!(a.ms, b.ms);
+            }
+        }
+    }
+
+    /// And it is a picture that can be filled: the reports land in it exactly
+    /// as they land in a built one, which is what a take being recorded needs.
+    #[test]
+    fn an_empty_pyramid_takes_reports() {
+        let mut multi = MultiPyramid::empty(2_048, 2, 256);
+        assert_eq!(multi.frames(), 2_048);
+        assert_eq!(multi.num_channels(), 2);
+        let report: Vec<f32> = vec![-0.5, 0.5, 0.25, -0.25, 0.75, 0.3];
+        assert!(multi.write_buckets(256, 256, &report));
+        let left = multi.channel(0).unwrap();
+        assert_eq!(left.column(0, 256.0, 512.0).unwrap(), (-0.5, 0.5));
+        assert_eq!(left.column(0, 0.0, 256.0).unwrap(), (0.0, 0.0));
     }
 }

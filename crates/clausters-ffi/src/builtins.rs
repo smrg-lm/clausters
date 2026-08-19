@@ -245,6 +245,43 @@ pub unsafe extern "C" fn clausters_core_peaks_multi_update(
     cache_len
 }
 
+/// Writes the cache bytes of an **empty** multichannel pyramid over `frames`
+/// frames of `channels` channels at `base_bucket` — the summary of a take that
+/// has been allocated and not yet recorded into.
+///
+/// Its sibling [`clausters_core_peaks_multi_build`] needs the samples to
+/// summarize; this one has none to read, which is the point: a client that
+/// will fill the cache from `/buffer_stream` reports
+/// ([`clausters_core_peaks_multi_write_buckets`]) would otherwise allocate the
+/// whole take in silence to summarize what nobody wrote. Size the buffer with
+/// [`clausters_core_peaks_multi_cache_size`], as for the builder.
+///
+/// Returns the bytes written, or 0 on a null pointer, `base_bucket == 0` /
+/// `channels == 0`, or a too-small `out_cap`.
+///
+/// # Safety
+/// `out` must be writable for `out_cap` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_core_peaks_multi_empty(
+    frames: usize,
+    channels: usize,
+    base_bucket: usize,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    if out.is_null() || base_bucket == 0 || channels == 0 {
+        return 0;
+    }
+    let cache = MultiPyramid::empty(frames, channels, base_bucket).to_bytes();
+    if cache.len() > out_cap {
+        return 0;
+    }
+    // SAFETY: out is writable for out_cap >= cache.len().
+    let o = unsafe { std::slice::from_raw_parts_mut(out, cache.len()) };
+    o.copy_from_slice(&cache);
+    cache.len()
+}
+
 /// Folds a run of **already-summarized buckets** into an existing multichannel
 /// cache, in place — the receiving half of `/buffer_stream`, which sends the
 /// overview of material as it is written instead of the material.

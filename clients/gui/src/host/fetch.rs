@@ -29,6 +29,10 @@ pub(crate) const BUFFER_CHUNK: usize = 8192;
 pub(crate) struct WaveWant {
     pub def_id: i32,
     pub widget_id: i32,
+    /// Whether this widget asked for the buffer's **shape** rather than its
+    /// samples — a take being recorded into, whose picture is filled by the
+    /// overview the server streams and whose material is silence until then.
+    pub shape_only: bool,
 }
 
 /// An in-progress fetch of a server buffer: the flat interleaved samples
@@ -55,6 +59,15 @@ pub(crate) enum FetchStep {
         sample_rate: f64,
         wants: Vec<WaveWant>,
     },
+    /// A buffer's **shape** answered a shape-only want: build an empty summary
+    /// of this length and place it, with nothing fetched.
+    Empty {
+        bufnum: i32,
+        frames: usize,
+        channels: usize,
+        sample_rate: f64,
+        wants: Vec<WaveWant>,
+    },
     /// Nothing to do (an unsolicited or stale reply).
     None,
 }
@@ -74,11 +87,37 @@ impl BufferFetches {
     /// the first time a buffer is wanted (`None` when a query or download for
     /// it is already under way — the widget just joins the wait).
     pub(crate) fn want(&mut self, def_id: i32, widget_id: i32, bufnum: i32) -> Option<OscMessage> {
+        self.register(def_id, widget_id, bufnum, false)
+    }
+
+    /// Registers a widget waiting on `bufnum`'s **shape** — a take being
+    /// recorded into. The conversation is the same `/buffer_query`; what
+    /// changes is that the reply finishes it, with no samples pulled.
+    ///
+    /// A buffer wanted both ways downloads: one view being told about a
+    /// recording does not excuse another that has to draw the material.
+    pub(crate) fn want_shape(
+        &mut self,
+        def_id: i32,
+        widget_id: i32,
+        bufnum: i32,
+    ) -> Option<OscMessage> {
+        self.register(def_id, widget_id, bufnum, true)
+    }
+
+    fn register(
+        &mut self,
+        def_id: i32,
+        widget_id: i32,
+        bufnum: i32,
+        shape_only: bool,
+    ) -> Option<OscMessage> {
         let first = !self.wants.contains_key(&bufnum);
-        self.wants
-            .entry(bufnum)
-            .or_default()
-            .push(WaveWant { def_id, widget_id });
+        self.wants.entry(bufnum).or_default().push(WaveWant {
+            def_id,
+            widget_id,
+            shape_only,
+        });
         (first && !self.fetches.contains_key(&bufnum)).then(|| OscMessage {
             addr: "/buffer_query".into(),
             args: vec![OscType::Int(bufnum)],
@@ -117,6 +156,22 @@ impl BufferFetches {
         let total = frames * channels;
         if total == 0 {
             return self.finish(bufnum, Vec::new(), channels, sample_rate);
+        }
+        // Every waiter wants the shape: the shape is the answer, and nothing
+        // is downloaded. (Any waiter that wants the material downloads for all
+        // of them — the samples serve both.)
+        if self
+            .wants
+            .get(&bufnum)
+            .is_some_and(|w| w.iter().all(|want| want.shape_only))
+        {
+            return FetchStep::Empty {
+                bufnum,
+                frames,
+                channels,
+                sample_rate,
+                wants: self.wants.remove(&bufnum).unwrap_or_default(),
+            };
         }
         self.fetches.insert(
             bufnum,

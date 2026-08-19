@@ -238,7 +238,7 @@ fn load_bulk(
     renderers: &Renderers,
     waveforms: &mut HashMap<i32, WaveformSlot>,
     spectrograms: &mut HashMap<i32, SpectrogramSlot>,
-    buffer_refs: &mut Vec<(i32, i32)>,
+    buffer_refs: &mut Vec<(i32, i32, bool)>,
 ) {
     let owner = widget.id.or(owner);
     let needs = widget.kind.needs();
@@ -246,7 +246,10 @@ fn load_bulk(
         match want {
             // A server buffer names no local file: the leg fetches it, and the
             // reply lands through the same routing this walk does.
-            Bulk::Buffer(bufnum) => buffer_refs.push((id, bufnum)),
+            Bulk::Buffer(bufnum) => buffer_refs.push((id, bufnum, false)),
+            // A take being recorded into: the leg asks for its shape and
+            // builds an empty summary, and the overview fills it.
+            Bulk::Recording { buffer, .. } => buffer_refs.push((id, buffer, true)),
             want => {
                 if let Some(loaded) = resolve_bulk(&want) {
                     if needs.slot.is_some() {
@@ -331,6 +334,6 @@ fn resolve_bulk(want: &Bulk) -> Option<Loaded> {
         }),
         // A server buffer is the leg's: it names no local resource, and the
         // walk above never brings one here.
-        Bulk::Buffer(_) => None,
+        Bulk::Buffer(_) | Bulk::Recording { .. } => None,
     }
 }

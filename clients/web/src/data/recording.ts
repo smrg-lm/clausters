@@ -92,7 +92,9 @@ export class RecordingStream {
         const stream = new RecordingStream(server, baseBucket);
         for (const take of takes) {
             const { bufnum, frames, channels } = shapeOf(take);
-            const peaks = Peaks.build(new Float32Array(frames * Math.max(1, channels)), {
+            // Empty rather than built over silence: a ten-minute stereo take
+            // would be 230 MB of zeros to summarize what nobody wrote.
+            const peaks = Peaks.empty(frames, {
                 channels: Math.max(1, channels),
                 baseBucket,
             });

@@ -2449,12 +2449,21 @@ pub(crate) fn refresh_buffer_views(
 pub(crate) fn stream_report(args: &[OscType]) -> Option<(i32, u64, usize, Vec<f32>)> {
     let [
         OscType::Int(bufnum),
-        OscType::Int(start),
+        start,
         OscType::Int(bucket),
         OscType::Blob(blob),
     ] = args
     else {
         return None;
+    };
+    // `startFrame` rides as a **long**: a buffer's sample axis outgrows an
+    // `i32` at about twelve hours, and the server says so on the wire. Both
+    // spellings are read, because a reader that insisted on `Int` dropped
+    // every report and said nothing — which is exactly what it did.
+    let start = match start {
+        OscType::Long(frames) => *frames,
+        OscType::Int(frames) => *frames as i64,
+        _ => return None,
     };
     let stats: Vec<f32> = blob
         .chunks_exact(4)
@@ -2462,7 +2471,7 @@ pub(crate) fn stream_report(args: &[OscType]) -> Option<(i32, u64, usize, Vec<f3
         .collect();
     Some((
         *bufnum,
-        (*start).max(0) as u64,
+        start.max(0) as u64,
         (*bucket).max(0) as usize,
         stats,
     ))
@@ -2561,6 +2570,35 @@ mod tests {
             addr: GUI_DEF.into(),
             args: vec![OscType::Int(id), OscType::String(json.into())],
         })
+    }
+
+    /// **The report's start frame rides as a long**, and a reader that took
+    /// only `Int` dropped every report without a word — which is how a whole
+    /// wire looked like a drawing bug for an afternoon.
+    #[test]
+    fn a_stream_report_reads_the_start_frame_in_either_width() {
+        let blob = OscType::Blob(vec![0u8; 12]); // one bucket, one channel
+        let long = vec![
+            OscType::Int(7),
+            OscType::Long(512),
+            OscType::Int(256),
+            blob.clone(),
+        ];
+        let int = vec![
+            OscType::Int(7),
+            OscType::Int(512),
+            OscType::Int(256),
+            blob.clone(),
+        ];
+        for args in [long, int] {
+            let (bufnum, start, bucket, stats) = stream_report(&args).expect("a report");
+            assert_eq!((bufnum, start, bucket), (7, 512, 256));
+            assert_eq!(stats.len(), 3);
+        }
+        assert!(
+            stream_report(&[OscType::Int(7), OscType::Long(0), OscType::Int(256)]).is_none(),
+            "a report without its blob is not one"
+        );
     }
 
     /// The reply messages among a batch of effects.

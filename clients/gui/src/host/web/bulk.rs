@@ -26,13 +26,15 @@ use crate::host::widget::element::Bulk;
 fn collect_bulk(
     widget: &Widget,
     owner: Option<i32>,
-    buffer_refs: &mut Vec<(i32, i32)>,
+    buffer_refs: &mut Vec<(i32, i32, bool)>,
     requests: &mut Vec<(i32, Bulk)>,
 ) {
     let id = widget.id.or(owner);
     if let (Some(id), Some(want)) = (id, widget.kind.needs().bulk) {
         match want {
-            Bulk::Buffer(bufnum) => buffer_refs.push((id, bufnum)),
+            Bulk::Buffer(bufnum) => buffer_refs.push((id, bufnum, false)),
+            // A take being recorded into: its shape, and the overview fills it.
+            Bulk::Recording { buffer, .. } => buffer_refs.push((id, buffer, true)),
             want => requests.push((id, want)),
         }
     }
@@ -125,8 +127,9 @@ pub(super) async fn fetch_bulk(host: HostId, def_id: i32, widget_id: i32, reques
             ));
             Loaded::Samples(flat.into())
         }
-        // Resolved above: a buffer names no URL and never reaches the fetch.
-        Bulk::Buffer(_) => return,
+        // Resolved above: a buffer names no URL and never reaches the fetch,
+        // whether its samples are wanted or only its shape.
+        Bulk::Buffer(_) | Bulk::Recording { .. } => return,
     };
     if let Some(proxy) = web_proxy() {
         let _ = proxy.send_event(HostEvent::To(
@@ -178,8 +181,13 @@ impl WebApp {
         let mut buffer_refs = Vec::new();
         let mut requests = Vec::new();
         collect_bulk(tree, None, &mut buffer_refs, &mut requests);
-        for (widget_id, bufnum) in buffer_refs {
-            if let Some(query) = self.fetches.want(def, widget_id, bufnum) {
+        for (widget_id, bufnum, shape_only) in buffer_refs {
+            let query = if shape_only {
+                self.fetches.want_shape(def, widget_id, bufnum)
+            } else {
+                self.fetches.want(def, widget_id, bufnum)
+            };
+            if let Some(query) = query {
                 self.send_to_server(query);
             }
         }

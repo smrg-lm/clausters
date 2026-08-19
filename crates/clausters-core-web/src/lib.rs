@@ -847,6 +847,20 @@ impl JsPyramid {
         ))
     }
 
+    /// **An empty pyramid of a given length** — the picture of a take that has
+    /// been allocated and not yet recorded into, ready to be filled by
+    /// [`Self::write_buckets`] as the reports arrive.
+    ///
+    /// Building one out of a buffer of silence instead would allocate the take
+    /// (230 MB for ten minutes of stereo) to summarize samples nobody wrote.
+    pub fn empty(frames: usize, channels: u32, base_bucket: usize) -> JsPyramid {
+        JsPyramid(MultiPyramid::empty(
+            frames,
+            channels.max(1) as usize,
+            base_bucket.max(1),
+        ))
+    }
+
     /// Reads back a serialized cache (`toBytes`, or the file the GUI host maps
     /// and the Python client writes). `undefined` when the bytes are not one.
     #[wasm_bindgen(js_name = fromBytes)]

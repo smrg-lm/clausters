@@ -194,7 +194,8 @@
               "sel_max": 0.75
             }
           },
-          "overlay": 1
+          "overlay": 1,
+          "fills": 1
         },
         {
           "type": "signal",

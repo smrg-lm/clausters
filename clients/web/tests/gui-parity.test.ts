@@ -148,7 +148,7 @@ const trees: Record<string, () => GuiNode> = {
                 playheadAt: 48000.0, playhead: 32000.0,
                 playheadLoopStart: 1000.0, playheadLoopLen: 8000.0,
                 yStart: 0.25, yLen: 0.5, link: 7,
-                overlay: true, measure: "rms",
+                overlay: true, measure: "rms", fills: true,
             }),
             spectrogram({
                 id: 2, cache: "take.stft", windowSize: 2048, hop: 512,

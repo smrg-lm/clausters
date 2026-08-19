@@ -137,6 +137,15 @@ export class Pyramid {
      */
     columns(ch: number, s0: number, s1: number, width: number): Float32Array;
     /**
+     * **An empty pyramid of a given length** — the picture of a take that has
+     * been allocated and not yet recorded into, ready to be filled by
+     * [`Self::write_buckets`] as the reports arrive.
+     *
+     * Building one out of a buffer of silence instead would allocate the take
+     * (230 MB for ten minutes of stereo) to summarize samples nobody wrote.
+     */
+    static empty(frames: number, channels: number, base_bucket: number): Pyramid;
+    /**
      * Reads back a serialized cache (`toBytes`, or the file the GUI host maps
      * and the Python client writes). `undefined` when the bytes are not one.
      */
@@ -607,6 +616,7 @@ export interface InitOutput {
     readonly pyramid_channels: (a: number) => number;
     readonly pyramid_column: (a: number, b: number, c: number, d: number, e: number) => [number, number];
     readonly pyramid_columns: (a: number, b: number, c: number, d: number, e: number) => [number, number];
+    readonly pyramid_empty: (a: number, b: number, c: number) => number;
     readonly pyramid_frames: (a: number) => number;
     readonly pyramid_fromBytes: (a: number, b: number) => number;
     readonly pyramid_levelBucket: (a: number, b: number) => number;

@@ -483,6 +483,15 @@ pub enum Bulk {
     /// the local filesystem — the one resource the host does not own and has to
     /// ask for.
     Buffer(i32),
+    /// A server buffer that is **being recorded into**: its shape, and not its
+    /// samples.
+    ///
+    /// A take allocated to record into holds nothing worth fetching — it is
+    /// silence — and what fills the picture is the overview the server streams
+    /// (`fills`, `/buffer_stream`). So the leg asks what shape it is and
+    /// builds an empty summary of that length, instead of pulling ten minutes
+    /// of zeros through the client leg to draw over them.
+    Recording { buffer: i32, base_bucket: usize },
 }
 
 impl Bulk {
@@ -494,7 +503,7 @@ impl Bulk {
             Bulk::Peaks { path, .. } | Bulk::Samples { path, .. } | Bulk::Stft { path, .. } => {
                 Some(path)
             }
-            Bulk::Buffer(_) => None,
+            Bulk::Buffer(_) | Bulk::Recording { .. } => None,
         }
     }
 }

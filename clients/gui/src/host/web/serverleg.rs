@@ -428,6 +428,64 @@ impl WebApp {
                     self.request_redraw(want.def_id);
                 }
             }
+            // A take being recorded into: its shape is the answer, and the
+            // overview the server streams is what fills the picture. Nothing
+            // is downloaded — the material is silence until something records
+            // into it, and by then the reports are already drawing it.
+            FetchStep::Empty {
+                bufnum,
+                frames,
+                channels,
+                sample_rate,
+                wants,
+            } => {
+                let channels = channels.max(1);
+                log(&format!(
+                    "buffer {bufnum}: being recorded into ({frames} frames x {channels} \
+                     channel(s)); {} view(s) drawn from the stream",
+                    wants.len()
+                ));
+                for want in wants {
+                    let Some(base_bucket) = self
+                        .host
+                        .window_def(want.def_id)
+                        .and_then(|t| t.find(want.widget_id))
+                        .and_then(|w| match w.bulk_target().kind.needs().bulk {
+                            Some(crate::host::widget::element::Bulk::Recording {
+                                base_bucket,
+                                ..
+                            }) => Some(base_bucket),
+                            _ => None,
+                        })
+                    else {
+                        continue;
+                    };
+                    let data = Arc::new(crate::waveform::WaveformData::with_multi_pyramid(
+                        MultiPyramid::empty(frames, channels, base_bucket),
+                    ));
+                    if let Some(w) = self
+                        .host
+                        .window_def_mut(want.def_id)
+                        .and_then(|t| t.find_mut(want.widget_id))
+                    {
+                        crate::host::frame::keep_material(w, &Loaded::Peaks(data.clone()));
+                    }
+                    self.place_bulk(want.def_id, want.widget_id, Loaded::Peaks(data));
+                    self.host.set_timeline_total(want.widget_id, frames);
+                    if sample_rate > 0.0
+                        && let Some(w) = self
+                            .host
+                            .window_def_mut(want.def_id)
+                            .and_then(|t| t.find_mut(want.widget_id))
+                        && let Some(editor) = w.kind.editor_mut()
+                        && editor.sample_rate <= 0.0
+                    {
+                        editor.sample_rate = sample_rate;
+                    }
+                    self.host.sync_buffer_streams();
+                    self.request_redraw(want.def_id);
+                }
+            }
             FetchStep::None => {}
         }
     }

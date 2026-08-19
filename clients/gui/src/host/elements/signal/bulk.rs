@@ -103,6 +103,21 @@ impl SignalElement {
         if data.body.is_some() {
             return None; // the pyramid is already here
         }
+        // **A take being recorded into is asked for its shape, not its
+        // samples.** It holds silence until something records into it, and
+        // what fills the picture is the overview the server streams — so
+        // pulling the material would be a download of zeros, at the take's
+        // full length, to draw over them.
+        if self.fills
+            && data.cache.is_none()
+            && data.path.is_none()
+            && let Some(buffer) = data.buffer
+        {
+            return Some(Bulk::Recording {
+                buffer,
+                base_bucket: data.base_bucket,
+            });
+        }
         if let Some(cache) = &data.cache {
             return Some(Bulk::PeakCache(cache.clone()));
         }
