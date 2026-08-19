@@ -15,10 +15,10 @@ accepts, none of which re-send the samples per frame:
 - a **server buffer exported** to a file with ``/buffer_export`` -- the audio server
   dumps its RT buffer to a local file the host maps.
 
-A fourth lane stacks two views of the *same* mapped cache -- the peak envelope
-and the RMS body over it -- which is what a peak cache carrying a mean square
-per bucket buys: the classic editor picture with no second pass over the samples
-and no second file.
+A fourth lane draws the *same* mapped cache with both measures at once
+(``measure="peak rms"``) -- the peak envelope with the RMS body inside it, which
+is what a peak cache carrying a mean square per bucket buys: the classic editor
+picture with no second pass over the samples and no second file.
 
 Files are passed by absolute path, so the host (a separate process) resolves
 them; the buffer export needs the host's client leg pointed at the server, which
@@ -49,8 +49,8 @@ import wave
 
 from clausters import Session
 from clausters.base.bulk import blob_to_samples
-from clausters.gui import (button, field, label, panel, peaks_cache_file,
-                           samples_to_file, signal, waveform, window)
+from clausters.gui import (button, label, panel, peaks_cache_file,
+                           samples_to_file, waveform, window)
 
 SR = 48_000
 
@@ -118,14 +118,14 @@ print(f"server exported buffer {bufnum} -> {os.path.getsize(exported_path)} B")
 # Three waveforms, one per shared-resource form -- all mapped from files, zero
 # OSC for the samples. Named, so `open` resolves them.
 #
-# The fourth lane is the same mapped cache drawn **twice**: what the sweep
-# reached (the peak envelope) and what it held (the RMS body), stacked. That is
-# the classic editor picture, and it is composition rather than a mode -- two
-# `signal` elements measuring differently, laid over one `field` (a lane, so it
-# carries its children; a *placed* field is a clip, whose bodies come from its
-# own props). Neither layer knows the other is there, and the body is the same
-# mapped pyramid the envelope reads: the mean square rides in the cache beside
-# the min and max, so the second picture costs no second pass over the samples.
+# The fourth lane is the same mapped cache measured **two ways at once**: what
+# the sweep reached (the peak envelope) and what it held (the RMS body inside
+# it). That is the classic editor picture, and the measure is a factor of the
+# one element rather than a stack of them -- every view of a signal paints its
+# own field before it draws, so two elements on one rectangle are not layers,
+# the second one's field hides the first. Both pictures read the same mapped
+# pyramid: the mean square rides in the cache beside the min and max, so the
+# body costs no second pass over the samples and no second file.
 
 # %%
 #: A short take, small enough that every sample is a disc on screen -- which is
@@ -136,10 +136,8 @@ win = gui.open(window(
     waveform(name="cache", cache=cache_path),                 # prebuilt peak cache
     waveform(name="raw", path=raw_path),                      # raw f32, host maps it
     waveform(name="exported", path=exported_path, channels=1),  # a server buffer export
-    field(                                                    # the layer stack
-        signal(cache=cache_path, navigable=False),            # what it reached
-        signal(cache=cache_path, navigable=False, measure="rms"),  # what it held
-        label="peak + rms"),
+    waveform(name="body", cache=cache_path,                   # both measures, one element
+             measure="peak rms", label="peak + rms"),
     # The editable lane: drag a sample, or draw a run of them.
     waveform(name="edit", data=EDITABLE, gestures={"drag": "sample"}),
     panel(button(name="mode", label="mode: grab a sample"),
@@ -148,7 +146,7 @@ win = gui.open(window(
     title="Bulk: mapped files, no OSC", w=900, h=800, layout="col"))
 win.on_closed(lambda: globals().__setitem__("_closed", True))
 print("three waveforms mapped from files (zero OSC for the samples), and a "
-      "fourth lane stacking the RMS body over the peak envelope of the same "
+      "fourth lane drawing the RMS body inside the peak envelope of the same "
       "cache; zoom/pan with wheel/drag, close the window to stop")
 
 # %% [markdown]
