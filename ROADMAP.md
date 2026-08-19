@@ -32,7 +32,7 @@ Where the work lives:
 | Track | File | What it is |
 |---|---|---|
 | `Ox` | `crates/clausters-document/PLAN.md` | the document: tree, intents, log, session, bindings |
-| `Dx`, `Hx`, `Ax`, `Kx`, `Ex`, `Gx`, `Lx`, `Px` | `clients/gui/PLAN.md` | the GUI host: gestures, undo from the hand, measured layers, the widget API, the patcher |
+| `Dx`, `Hx`, `Ax`, `Kx`, `Ex`, `Gx`, `Lx`, `Px`, `Nx` | `clients/gui/PLAN.md` | the GUI host: gestures, undo from the hand, measured layers, the widget API, the patcher, engraving |
 | `Cx` | `clients/python/PLAN.md` | the Python client |
 | `Wx` | `clients/web/PLAN.md` | the web client |
 | `Mx`, `Sx`, `Tx`, `Rx`, `Bx`, `Ux` | `PLAN.md` (root) | the server, and its engine in the browser (`Bx`) |
@@ -156,11 +156,14 @@ its plan; the plan is where its acceptance is read.
 
 ### Ready — no decision in front of them
 
-- ⬜ **`G31g` — engraving refinements** *(`clients/gui/PLAN.md`)*. Tuplets, full
-  polyphony, written duration beyond `dur`, tonal spelling, grace notes,
-  articulations. Not permanent limits: a refinement pass on the same encoder,
-  behind the seams that were left for it, so it extends rather than rewrites. It
-  is the largest thing in this section and nothing waits on it.
+- ⬜ **The `N` track — engraving refinements**, `N1`-`N4` *(`clients/gui/PLAN.md`,
+  "N track — engraving: what the encoder still owes the page")*. What was one
+  line as `G31g` was sized and split: the note-entry surface (`N1`, a decision
+  the other three read from), the markup verovio already knows (`N2`), polyphony
+  (`N3`) and tuplets with the tick base they need (`N4`, the only one that
+  changes the representation). Not permanent limits: a refinement pass on the
+  same encoder, behind the seams that were left for it, so it extends rather
+  than rewrites. Taken one at a time, and nothing waits on any of them.
 
 ### Waiting on a decision
 
