@@ -649,41 +649,23 @@ pub(super) fn draw_static_meshes(
         mesh.set_clip(item.clip);
         mesh.set_ink(item.ink);
         let th = item.theme.as_deref().unwrap_or(theme);
-        match &item.kind {
-            // An **element** body draws itself, told which coordinate system
-            // it is in: the same element that stands on its own elsewhere,
-            // handed the clip's axis instead of its own. The container decides
-            // that here — once — rather than each element asking where it is.
-            WidgetKind::Custom(el) => el.draw(
-                &mut Draw::new(mesh, &item.metrics, th),
-                &Ctx {
-                    world: &inputs.world,
-                    metrics: &item.metrics,
-                    rect: item.rect,
-                    // A body is drawn against its clip's axis, which starts at
-                    // the clip's own left edge: no group gutter here.
-                    indent: 0.0,
-                    clip: item.clip,
-                    scale: item.scale,
-                    time: Some(
-                        TimeSpace::of(item.local, item.dur)
-                            .with_active(item.active)
-                            .with_window(item.window),
-                    ),
-                    // A body carries no id, so nothing can address the keyboard
-                    // at it: the focus is the clip's or nobody's.
-                    focused: false,
-                },
-            ),
-            kind => track::draw_body_widget(
-                &mut Draw::new(mesh, m, th),
-                kind,
-                item.rect,
-                &TimeSpace::of(item.local, item.dur)
-                    .with_active(item.active)
-                    .with_window(item.window),
-            ),
-        }
+        // A body is drawn **through its own door** ([`Element::draw_body`]),
+        // never through the standalone draw: the same element that stands on
+        // its own elsewhere, here with no chrome of its own and against the
+        // clip's axis instead of its own. Which one it is, is the container's
+        // answer and is given here — once — rather than each element inferring
+        // it from what it was handed, which is not a thing the context can say:
+        // an element placed on its own is handed its **navigation group's**
+        // axis through the same field, so "I have a time space" means one thing
+        // on this path and another on the ordinary one.
+        track::draw_body_widget(
+            &mut Draw::new(mesh, &item.metrics, th),
+            &item.kind,
+            item.rect,
+            &TimeSpace::of(item.local, item.dur)
+                .with_active(item.active)
+                .with_window(item.window),
+        );
     }
     // A clip's **name** and its **grips**, last and into the overlay: a body
     // drawn over them would bury them (the take's trace does, and the

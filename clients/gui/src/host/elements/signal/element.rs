@@ -55,18 +55,6 @@ impl Element for SignalElement {
     /// stored view of a live source has nothing to draw until it has data.
     fn draw(&self, d: &mut Draw, ctx: &Ctx) {
         let rect = ctx.rect;
-        // **Placed on somebody else's axis** (a clip's take): the picture is
-        // the trace against *that* axis and its span, with no chrome of its
-        // own — never the plot's, which spans its own samples and rules its
-        // own axes. The container is what says where in time this sits, so
-        // this fork comes before the presentations.
-        if let Some(time) = ctx.time
-            && matches!(self.source, Source::Data(_))
-            && !self.caps.navigable
-        {
-            SignalElement::draw_body(self, d, rect, &time);
-            return;
-        }
         match (self.presentation, &self.source) {
             // The navigable heavy views: the slot draws them.
             (Presentation::Signal | Presentation::TimeFrequency, _) if self.caps.navigable => {}
@@ -402,5 +390,70 @@ impl SignalElement {
             label: self.display.label.as_deref(),
             measures: self.measures,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::host::guidef::GuiNode;
+    use crate::host::layout::Rect;
+    use crate::host::metrics::Metrics;
+    use crate::host::paint::{Draw, Mesh};
+    use crate::host::theme::Theme;
+    use crate::host::widget::element::{Ctx, TimeSpace};
+    use crate::host::widget::{Widget, WidgetKind};
+    use crate::viewport::View;
+
+    /// **A group's axis is not a container's.** `Ctx::time` carries two
+    /// different facts: the axis a *body* is drawn against, and — since a leaf
+    /// placed on its own reads its navigation group's window through the same
+    /// field — the axis a standalone view shares. This element once read the
+    /// second as the first and drew itself as a chromeless body: a still plot
+    /// that had a group space drew two points against an axis that was not its
+    /// own instead of its own picture over its own samples.
+    ///
+    /// So the door decides, not the context: a body is drawn through
+    /// `Element::draw_body` and nothing else, and `draw` means the same thing
+    /// whether or not an axis came with it.
+    #[test]
+    fn a_still_plot_draws_the_same_with_or_without_a_group_axis() {
+        let json = r#"{"id":1,"type":"signal","view":"trace","navigable":0,"min":-1.0,"max":1.0,
+            "label":"a plot","data":[0.0,0.5,-0.5,1.0,-1.0,0.25,0.0,-0.75]}"#;
+        let w = Widget::from_node(1, &GuiNode::parse(json.as_bytes()).unwrap(), &[]).unwrap();
+        let WidgetKind::Custom(el) = &w.kind else {
+            panic!("a signal is an element")
+        };
+        let (m, theme) = (Metrics::default(), Theme::default());
+        let world = Default::default();
+        let ctx = |time| Ctx {
+            world: &world,
+            metrics: &m,
+            rect: Rect::new(0.0, 0.0, 400.0, 200.0),
+            indent: 0.0,
+            clip: None,
+            scale: 1.0,
+            time,
+            focused: false,
+        };
+        let draw = |time| {
+            let mut mesh = Mesh::default();
+            el.draw(&mut Draw::new(&mut mesh, &m, &theme), &ctx(time));
+            mesh.positions().collect::<Vec<_>>()
+        };
+
+        let alone = draw(None);
+        assert!(!alone.is_empty(), "a plot with samples draws something");
+        let in_a_group = draw(Some(TimeSpace::of(
+            View {
+                start: 0.0,
+                len: 8.0,
+            },
+            8.0,
+        )));
+        assert_eq!(
+            alone, in_a_group,
+            "the group's window is chrome for the axis to draw, not a licence \
+             to draw this element as somebody else's body"
+        );
     }
 }

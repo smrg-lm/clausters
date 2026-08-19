@@ -93,10 +93,10 @@ pub(super) struct ClipBodyItem {
     /// ([`super::ink_of`]).
     pub(super) ink: Ink,
     pub(super) theme: Option<Arc<Theme>>,
-    /// The placement's size table and zoom — an element body draws through
-    /// them exactly as it does anywhere else.
+    /// The placement's size table — an element body draws through it exactly
+    /// as it does anywhere else. Its **zoom** is not here because a body's
+    /// door takes no context: what a zoom resolves is already in the table.
     pub(super) metrics: Metrics,
-    pub(super) scale: f32,
     /// What of its material the container is showing (the clip's own
     /// [`SourceWindow`](crate::host::widget::SourceWindow)).
     pub(super) window: crate::host::widget::SourceWindow,
@@ -278,7 +278,6 @@ pub(super) fn collect_widgets(
                 ink,
                 theme: p.widget.theme.clone(),
                 metrics: p.metrics,
-                scale: p.scale,
                 kind: p.widget.kind.clone(),
             });
             continue;
