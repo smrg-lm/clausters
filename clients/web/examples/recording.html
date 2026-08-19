@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: takes drawn while they record</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 76rem; }
+      #note, #log { max-width: 52rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+      .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      #stage { align-self: stretch; height: min(60vh, 480px); }
+      #stage canvas { display: block; width: 100%; height: 100%; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">The web twin of the Python client's
+<code>gui_recording.py</code>: <b>takes drawn while they record</b>, in a page.
+
+Every other way material reaches a picture announces itself — a client sends
+samples, a peer edits a span and says so. A <b>recording</b> does not: a
+<code>recordBuf</code> fills a buffer block by block from the audio thread,
+which is the one place that must never send a message. A host that can
+<b>map</b> the engine's memory reads the buffer's <i>write frontier</i> and
+re-summarizes what appeared. <b>A page maps nothing</b>: its samples are its own
+copy, so there is no frontier to read and nothing to re-summarize.
+
+So the server sends the <b>overview</b> instead — <code>/buffer_stream</code>,
+min/max/energy per bucket, about a hundredth of the audio's bandwidth — and the
+host folds each report into the pyramid the picture already holds. Nothing about
+the audio crosses back, and the summary a page draws is the summary a desktop
+host derives for itself. <b>Nothing in this script asks for it</b>: the
+<code>fills</code> prop says this material is being written, and the host
+subscribes for the views that need it.
+
+Zoom in past the summary (<b>wheel</b>) and the recorded part is flat: the wire
+carries the overview and not the samples, so what a page holds under the
+overview is the silence it allocated. That is the honest picture of what
+arrived, and it is the one difference from the desktop's.
+
+Everything runs on the <b>in-page engine</b>: no server process, no
+socket.</div>
+
+      <div class="row">
+        <button id="start">start</button>
+        <button id="record" disabled>record 4 takes</button>
+      </div>
+
+      <div id="stage"></div>
+      <pre id="log"></pre>
+    </main>
+
+    <script type="module">
+      import {
+        loadOsc, loadCore, pageConnection, server as engine, Server,
+        Buffer, Synth, SynthDef, GuiHost, guiHost, gui,
+      } from "../dist/index.js";
+      import { control, line, out, recordBuf, sine } from "../dist/defs/index.js";
+
+      const el = (id) => document.getElementById(id);
+      const log = (line) => { el("log").textContent += line + "\n"; };
+
+      const TAKES = 4;              // lanes recording at once
+      const SECONDS = 8.0;          // how long each one runs
+      const RATE = 48000;
+      const LANES = 1;              // the navigation group every lane shares
+
+      let server, host, raw, page, win = null;
+      let unfit = null, takes = [];
+
+      // One def, one node per take: a glissando, heard and recorded at once —
+      // `recordBuf` passes its input through, so the same signal reaches the
+      // buffer and the output. `doneAction: 2` frees the node when the
+      // recorder reaches the end of its buffer, which is what stops the
+      // pictures growing.
+      const glissando = () => {
+        const buf = control("buf", 0.0, "ir");
+        const from = control("from", 220.0, "ir");
+        const to = control("to", 880.0, "ir");
+        const tone = sine(line(from, to, SECONDS))
+          .mul(line(0.02, 0.2 / Math.sqrt(TAKES), SECONDS));
+        return new SynthDef("web_glissando",
+          out(0.0, recordBuf(buf, 0.0, tone, { doneAction: 2 })));
+      };
+
+      // One waveform per take, stacked, all in one navigation group so they
+      // zoom and pan together, and a `timeruler` of its own so no lane pays
+      // for the strip out of its own height.
+      //
+      // `fills: true` is the one thing the host cannot work out for itself: a
+      // lane stops at the write frontier and leaves the axis past it empty.
+      // Without it the buffer's own zeros are drawn — a flat line across the
+      // whole take before anything has been recorded into it — because past
+      // the frontier there is no silence, there is no material yet.
+      const scene = () => gui.window(
+        { title: "recording", layout: "col", margin: 8.0, gap: 6.0 },
+        ...takes.map((take, i) => gui.waveform({
+          name: `take${i}`, buffer: take.bufnum, sampleRate: RATE,
+          fills: true, ruler: "off", rulerY: "off", link: LANES,
+        })),
+        gui.timeruler({ ruler: "time", sampleRate: RATE, link: LANES, h: 22 }),
+      );
+
+      async function record() {
+        el("record").disabled = true;
+        // They all start on one pitch and fan out, so what is heard opens
+        // rather than beating against itself.
+        for (const take of takes) {
+          const octaves = (Math.random() * 3.5 - 1.75) || 1.0;
+          new Synth("web_glissando", {
+            buf: take.bufnum, from: 220.0, to: 220.0 * 2 ** octaves,
+          }, { server });
+        }
+        log(`recording ${TAKES} takes: the traces grow with the sound`);
+        setTimeout(async () => {
+          // The takes are finished, so `fills` is cleared: what was written is
+          // now all there is, and each lane draws the whole of its material.
+          for (let i = 0; i < TAKES; i++) win?.widget(`take${i}`).set({ fills: false });
+          log("done — the lanes now draw the whole of what they hold");
+          el("record").disabled = false;
+        }, (SECONDS + 0.5) * 1000);
+      }
+
+      async function run() {
+        await loadOsc();
+        await loadCore();
+        raw = await engine({ channels: 2 });
+        await raw.resume();
+        server = await Server.open(await pageConnection());
+        host = await GuiHost.page();
+        page = await guiHost();
+        el("stage").append(page.canvas);
+
+        await glissando().send(server);
+        await server.sync();
+        // Empty buffers, allocated at their full length: a take's picture is
+        // the whole of the box it will fill, and the axis must not move while
+        // it fills.
+        takes = [];
+        for (let i = 0; i < TAKES; i++) {
+          takes.push(await Buffer.alloc(Math.round(SECONDS * RATE), 1, { server }));
+        }
+        win = host.open(scene());
+        unfit?.();
+        unfit = page.fit(win.id, el("stage"));
+        log(`${TAKES} empty takes of ${SECONDS} s — the lanes are empty, `
+          + "and `fills` is what makes that read as empty rather than as silence");
+        el("record").disabled = false;
+      }
+
+      el("start").onclick = () => {
+        el("start").disabled = true;
+        run().catch((error) => log(`error: ${error}`));
+      };
+    </script>
+  </body>
+</html>

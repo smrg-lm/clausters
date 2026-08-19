@@ -362,6 +362,71 @@ impl WaveformData {
         channel.pyramid.update_range_from(&**source, start, len)
     }
 
+    /// **Folds a run of buckets somebody else measured** into the summary —
+    /// what a view does when it is *told* about material it cannot read.
+    ///
+    /// The mirror of [`Self::resummarize`], and it exists for the picture that
+    /// has no material to re-read: a page holds its own copy of the samples
+    /// and maps nothing, so a recording growing in the server's memory reaches
+    /// it as the overview of what was written (`/buffer_stream.reply`) rather
+    /// than as samples. `stats` is that reply's payload — **bucket-major,
+    /// channel-minor**: for each bucket of `bucket` frames in order, for each
+    /// channel, `min`, `max` and mean square.
+    ///
+    /// Only the summary moves. The samples this view owns are whatever it was
+    /// built with, so a zoom past the base bucket still shows them (silence,
+    /// for a take allocated empty) — the overview is the resolution the wire
+    /// carries, and pretending otherwise would mean inventing samples from
+    /// their statistics.
+    ///
+    /// Returns whether it landed: the report has to be on this view's own grid
+    /// (`bucket` its base bucket, `start_frame` on a bucket boundary, the run
+    /// inside the material), and a report that is not is refused whole rather
+    /// than partly applied.
+    pub fn write_buckets(&mut self, start_frame: usize, bucket: usize, stats: &[f32]) -> bool {
+        let channels = self.channels.len();
+        if channels == 0 || bucket == 0 || !start_frame.is_multiple_of(bucket) {
+            return false;
+        }
+        if self
+            .channels
+            .iter()
+            .any(|c| c.pyramid.base_bucket() != bucket)
+        {
+            return false;
+        }
+        let stride = channels * 3;
+        if !stats.len().is_multiple_of(stride) {
+            return false;
+        }
+        let first = start_frame / bucket;
+        let n = stats.len() / stride;
+        // Checked before anything is written: every channel of one view shares
+        // the material's length, so a run that fits one fits all — and a
+        // refusal halfway would leave the channels of one picture describing
+        // different material.
+        let buckets = self.total_samples().div_ceil(bucket);
+        if first + n > buckets {
+            return false;
+        }
+        let mut run: Vec<peaks::Bucket> = Vec::with_capacity(n);
+        for (ch, channel) in self.channels.iter_mut().enumerate() {
+            run.clear();
+            run.extend((0..n).map(|b| {
+                let at = b * stride + ch * 3;
+                peaks::Bucket {
+                    min: stats[at],
+                    max: stats[at + 1],
+                    ms: stats[at + 2],
+                }
+            }));
+            if !channel.pyramid.write_buckets(first, &run) {
+                return false;
+            }
+        }
+        true
+    }
+
     /// Whether raw samples are present. A cache-only view (`with_pyramid` with an
     /// empty buffer) has only the peak pyramid, so every regime — including the
     /// zoomed-in ones — must render from it; reading the empty raw buffer would
@@ -1144,5 +1209,124 @@ mod shared_tests {
         // And it equals a pyramid built from scratch over the same material.
         let rebuilt = shared(&cells);
         assert_eq!(after, rebuilt.column(0, coarse, 4_096.0, 6_096.0));
+    }
+}
+
+#[cfg(test)]
+mod stream_tests {
+    use super::*;
+
+    fn material(frames: usize, channels: usize) -> Vec<f32> {
+        (0..frames * channels)
+            .map(|i| {
+                let f = (i / channels) as f32;
+                let c = (i % channels) as f32;
+                ((f * 0.019 + c * 1.3).sin() * 0.8) - c * 0.05
+            })
+            .collect()
+    }
+
+    /// The report the server sends for `count` whole buckets from `start`:
+    /// bucket-major, channel-minor, measured from the material the way the
+    /// writer measures it.
+    fn report(
+        data: &[f32],
+        channels: usize,
+        bucket: usize,
+        start: usize,
+        count: usize,
+    ) -> Vec<f32> {
+        let mut out = Vec::new();
+        for b in 0..count {
+            for ch in 0..channels {
+                let chunk: Vec<f32> = (0..bucket)
+                    .map(|i| data[(start + b * bucket + i) * channels + ch])
+                    .collect();
+                let (lo, hi) = peaks::min_max(&chunk).unwrap();
+                out.extend([lo, hi, peaks::mean_square(&chunk).unwrap()]);
+            }
+        }
+        out
+    }
+
+    /// **The page's half of a recording**: a view over an empty take, told
+    /// nothing but the overview of what was written, draws the overview a view
+    /// over the material draws. Column for column, at the zooms the summary
+    /// answers.
+    #[test]
+    fn a_told_view_draws_what_a_reading_one_draws() {
+        let (bucket, channels) = (256, 2);
+        let frames = bucket * 24;
+        let data = material(frames, channels);
+        let mut told =
+            WaveformData::from_interleaved(&vec![0.0; frames * channels], channels, bucket);
+        // The reports arrive in runs, as a recording fills.
+        let mut at = 0;
+        for count in [3usize, 9, 12] {
+            assert!(told.write_buckets(
+                at * bucket,
+                bucket,
+                &report(&data, channels, bucket, at * bucket, count)
+            ));
+            at += count;
+        }
+        let reading = WaveformData::from_interleaved(&data, channels, bucket);
+        for ch in 0..channels {
+            for spp in [bucket as f64, 1_000.0, 4_000.0] {
+                for x in 0..8 {
+                    let (a, b) = (x as f64 * 1_000.0, x as f64 * 1_000.0 + 1_000.0);
+                    assert_eq!(
+                        told.column(ch, spp, a, b),
+                        reading.column(ch, spp, a, b),
+                        "channel {ch}, {spp} samples per pixel, column {x}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// What it does **not** claim: the samples. A page holds its own copy and
+    /// the wire carries no audio, so zoomed past the base bucket the picture is
+    /// still the silence the take was allocated as — the resolution the report
+    /// has, rather than samples invented from their statistics.
+    #[test]
+    fn the_samples_are_not_invented_from_the_summary() {
+        let (bucket, frames) = (256, 4_096);
+        let data = material(frames, 1);
+        let mut told = WaveformData::from_interleaved(&vec![0.0; frames], 1, bucket);
+        assert!(told.write_buckets(0, bucket, &report(&data, 1, bucket, 0, frames / bucket)));
+        assert_ne!(
+            told.column(0, bucket as f64, 0.0, 1_024.0),
+            (0.0, 0.0),
+            "the overview grew"
+        );
+        assert_eq!(
+            told.column(0, 4.0, 100.0, 104.0),
+            (0.0, 0.0),
+            "and the raw regime is the page's own copy, untouched"
+        );
+    }
+
+    /// A report on another grid is refused whole, so a picture is never part
+    /// one material and part another.
+    #[test]
+    fn a_report_on_another_grid_is_refused() {
+        let (bucket, frames) = (256, 4_096);
+        let data = material(frames, 1);
+        let mut told = WaveformData::from_interleaved(&vec![0.0; frames], 1, bucket);
+        let one = report(&data, 1, bucket, 0, 1);
+        assert!(!told.write_buckets(0, bucket * 2, &one), "a coarser bucket");
+        assert!(!told.write_buckets(bucket / 2, bucket, &one), "unaligned");
+        assert!(!told.write_buckets(frames, bucket, &one), "past the end");
+        assert!(!told.write_buckets(0, bucket, &one[..2]), "a ragged run");
+        assert_eq!(
+            told.column(0, bucket as f64, 0.0, 1_024.0),
+            (0.0, 0.0),
+            "nothing was applied"
+        );
+        assert!(
+            told.write_buckets(0, bucket, &one),
+            "and the right one lands"
+        );
     }
 }

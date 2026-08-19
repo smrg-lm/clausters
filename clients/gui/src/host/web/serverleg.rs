@@ -267,6 +267,18 @@ impl WebApp {
                     }
                 }
             }
+            // **The recording this page cannot read, reported by the server.**
+            // A page maps nothing and holds its own copy of the samples, so a
+            // take filling in the server's memory reaches it only as the
+            // overview of what was written -- min, max and energy per bucket,
+            // folded into the pyramid the picture already holds. This is the
+            // page's half of what a mapped host gets from a frontier.
+            "/buffer_stream.reply" => {
+                if let Some((bufnum, start, bucket, stats)) = crate::host::stream_report(&msg.args)
+                {
+                    self.on_stream_report(bufnum, start, bucket, &stats);
+                }
+            }
             "/bus_tapStream.reply" => {
                 // (tap, stream position, raw LE f32 blob): the newest window
                 // of one tap; store it for the tick to align and draw.
@@ -410,10 +422,65 @@ impl WebApp {
                     {
                         editor.sample_rate = sample_rate;
                     }
+                    // The material just arrived, so whether this view has to
+                    // be told about its own recording is only answerable now.
+                    self.host.sync_buffer_streams();
                     self.request_redraw(want.def_id);
                 }
             }
             FetchStep::None => {}
+        }
+    }
+
+    /// Folds one `/buffer_stream.reply` into every view of that buffer and
+    /// repaints the canvases that took it.
+    ///
+    /// The slots let the material go first, the way the mapped path does: a
+    /// pyramid a slot is holding cannot be written in place, so the element
+    /// would copy the whole take before patching the buckets that arrived.
+    pub(super) fn on_stream_report(
+        &mut self,
+        bufnum: i32,
+        start: u64,
+        bucket: usize,
+        stats: &[f32],
+    ) {
+        let mut redraw = Vec::new();
+        for def_id in self.host.window_def_ids() {
+            let holding: Vec<i32> = self
+                .host
+                .window_def(def_id)
+                .map(|tree| {
+                    tree.descendants()
+                        .filter(|w| {
+                            w.kind
+                                .as_element()
+                                .and_then(|el| el.material_buffer())
+                                .is_some_and(|b| b == bufnum)
+                        })
+                        .filter_map(|w| w.id)
+                        .collect()
+                })
+                .unwrap_or_default();
+            for widget_id in holding {
+                if let Some(slot) = self
+                    .canvases
+                    .get_mut(&def_id)
+                    .and_then(|c| c.render.as_mut())
+                    .and_then(|r| r.waveforms.get_mut(&widget_id))
+                {
+                    slot.view.release_data();
+                }
+            }
+            let Some(tree) = self.host.window_def_mut(def_id) else {
+                continue;
+            };
+            if crate::host::stream_buffer_views(tree, bufnum, start, bucket, stats) > 0 {
+                redraw.push(def_id);
+            }
+        }
+        for def_id in redraw {
+            self.request_redraw(def_id);
         }
     }
 

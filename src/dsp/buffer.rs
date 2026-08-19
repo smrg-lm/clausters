@@ -37,7 +37,7 @@
 //! final `Arc` drop (the deallocation) never happens there.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 /// Default buffer-pool size, like scsynth's default `-b`. The live server sizes
 /// its pool at boot from `--max-buffers` (see [`empty_pool_with`]); this stays
@@ -67,8 +67,19 @@ pub struct Buffer {
     channels: usize,
     frames: usize,
     sample_rate: f64,
-    /// Where to publish how far this buffer has been written, when anybody is
-    /// in a position to read it. `None` is a buffer that is nobody else's.
+    /// **How far this buffer has been written**, in frames — the buffer's own
+    /// counter, always here.
+    ///
+    /// It used to live only in the shared segment's directory row, which made
+    /// it a fact about *sharing* rather than about the material: a server with
+    /// no segment recorded exactly as it does now and could not say how far it
+    /// had got, so `/buffer_stream` — the command for clients that cannot map
+    /// anything, which is most of them — had nothing to report. The frontier
+    /// is the material's, so it is kept with the material and published from
+    /// here to whoever else wants it.
+    written: AtomicU64,
+    /// Where else to publish it: the directory row a mapping peer reads
+    /// directly. `None` is a buffer no other process can see.
     frontier: Option<std::sync::Arc<dyn Frontier>>,
 }
 
@@ -140,6 +151,7 @@ impl Buffer {
             channels,
             frames,
             sample_rate,
+            written: AtomicU64::new(0),
             frontier: None,
         }
     }
@@ -159,6 +171,7 @@ impl Buffer {
             channels,
             frames,
             sample_rate,
+            written: AtomicU64::new(0),
             frontier: None,
         }
     }
@@ -175,17 +188,31 @@ impl Buffer {
         self
     }
 
-    /// **Publishes the write frontier**, if this buffer has somewhere to
-    /// publish it: the highest frame a writer has filled.
+    /// **Publishes the write frontier**: the highest frame a writer has
+    /// filled, kept here and mirrored into the directory row when there is
+    /// one.
     ///
-    /// Called from the audio thread once per block by whoever wrote — one
-    /// relaxed read-modify-write into the mapping and nothing else. A picture
-    /// of a recording is the only reader, and what it does with a frame that
-    /// is being written as it reads is what it does with every other one.
+    /// Called from the audio thread once per block by whoever wrote — one or
+    /// two relaxed read-modify-writes and nothing else. A picture of a
+    /// recording is the only reader, and what it does with a frame that is
+    /// being written as it reads is what it does with every other one.
     pub fn raise_frontier(&self, frame: usize) {
+        self.written.fetch_max(frame as u64, Ordering::Relaxed);
         if let Some(sink) = &self.frontier {
             sink.raise(frame as u64);
         }
+    }
+
+    /// **How far this buffer has been written**, in frames, or `0` for one
+    /// nothing recorded into — a buffer that arrived whole is material
+    /// everywhere and has no frontier at all.
+    ///
+    /// It is a *hint*, like the row a peer reads: several writers may share a
+    /// buffer and nothing here says which of them wrote what. Its one reader
+    /// is a picture of a recording — `/buffer_stream` summarizes up to it, and
+    /// a mapping peer reads the same number out of the segment.
+    pub fn frontier(&self) -> u64 {
+        self.written.load(Ordering::Relaxed)
     }
 
     /// Where this buffer's samples live — what a pool consults to hand a peer

@@ -11,6 +11,8 @@
 //   oscilloscopes, phasescopes, spectra.
 // - `Peaks`, `fetchAudio` and `Server.getSamples` — bulk buffer samples and
 //   their reduction: waveforms, audio-editor views.
+// - `RecordingStream` — takes as they record (`/buffer_stream`): the overview
+//   of what was written, since a page can map no memory to watch it fill.
 //
 // Plus `analysis`, the measurements those views are drawn from. Every number
 // in here comes out of `clausters-core`, so what the page draws and what the
@@ -26,6 +28,8 @@ export {
 export type { ScopeTrace, TapWindow } from "./taps.ts";
 export { Peaks } from "./peaks.ts";
 export type { Columns } from "./peaks.ts";
+export { RECORDING_PERIOD_MS, RecordingStream } from "./recording.ts";
+export type { TakeLike, TakeShape } from "./recording.ts";
 export { correlation, lissajous, spectrumDb } from "./analysis.ts";
 export type { WindowShape } from "./analysis.ts";
 export { deinterleave, fetchAudio, interleave } from "./samples.ts";

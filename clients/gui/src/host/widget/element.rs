@@ -1686,6 +1686,30 @@ pub trait Element: fmt::Debug {
         false
     }
 
+    /// **Folds a run of already-measured buckets** into this element's
+    /// summary, returning whether it did. The default is not to.
+    ///
+    /// The sibling of [`Self::refresh_material`] for the picture that cannot
+    /// re-read anything: its material is a copy, and the material itself is
+    /// being written somewhere it has no access to (a page and a server
+    /// buffer). So the *overview* of what was written arrives instead —
+    /// `stats` is `/buffer_stream.reply`'s payload, bucket-major and
+    /// channel-minor, `start_frame` on the buffer's own sample axis.
+    fn write_buckets(&mut self, _start_frame: u64, _bucket: usize, _stats: &[f32]) -> bool {
+        false
+    }
+
+    /// **The stream this element wants to be told about**, `(buffer, bucket)`,
+    /// or `None` (the default) for one that wants none.
+    ///
+    /// The host collects the wants of everything it draws and keeps one
+    /// subscription for all of them, so an element says what it needs without
+    /// knowing that a wire exists — the same shape as [`Needs`], one message
+    /// later.
+    fn stream_want(&self) -> Option<(i32, usize)> {
+        None
+    }
+
     /// The [`BodyRole`] this element fills when a container holds it as one of
     /// its bodies, or `None` (the default) for an element that is only ever
     /// itself.

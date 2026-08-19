@@ -535,6 +535,14 @@ pub struct Host {
     /// bus 4" into the server's `/bus_tap`, which is why no client -- and no
     /// widget -- ever names a recording ring.
     watched_buses: Vec<i32>,
+    /// The `/buffer_stream` subscription this host currently holds, as
+    /// `(buffers, bucket)` — empty for none.
+    ///
+    /// One subscription covers every view of every window (the server keeps one
+    /// per client and replaces it on each call), so what is kept here is the
+    /// last thing asked for, and a resync that would ask for the same thing
+    /// sends nothing.
+    buffer_stream: (Vec<i32>, usize),
     /// The audio-server client leg (the third topology leg). Present when the
     /// host was started with a `--server` target or, in standalone mode, an
     /// embedded server; [`forward`](Self::forward) sends bound-widget values
@@ -674,6 +682,7 @@ impl Host {
             registry: Registry::new(),
             window_defs: HashMap::new(),
             watched_buses: Vec::new(),
+            buffer_stream: (Vec::new(), 0),
             server: None,
             player: None,
             #[cfg(unix)]
@@ -1133,6 +1142,7 @@ impl Host {
                     widget::resolve_style(&mut tree, &Arc::new(self.theme.clone()));
                     self.window_defs.insert(id, tree);
                     self.sync_bus_watches();
+                    self.sync_buffer_streams();
                     // The def's timeline views (re)join their navigation
                     // groups; rebuild semantics for state confined to this def.
                     self.sync_timeline_groups(Some(id));
@@ -1332,6 +1342,12 @@ impl Host {
         let touches_source = keys
             .iter()
             .any(|k| matches!(k.as_str(), "bus" | "rate" | "channels"));
+        // And a set can start or stop a *recording* being followed: `fills` is
+        // the client saying this material is being written, and `buffer` is
+        // which material it is.
+        let touches_stream = keys
+            .iter()
+            .any(|k| matches!(k.as_str(), "fills" | "buffer"));
         // Mirror the change into the typed window tree the front renders. A
         // timeline view's shared keys (`view_*`, `sel_*`, `playhead_at`,
         // `link`) route through its navigation group instead, so a set on any
@@ -1399,6 +1415,9 @@ impl Host {
         if touches_source {
             self.sync_bus_watches();
         }
+        if touches_stream || touches_source {
+            self.sync_buffer_streams();
+        }
         true
     }
 
@@ -1420,6 +1439,7 @@ impl Host {
             effects.push(HostEffect::CloseWindow(id));
         }
         self.sync_bus_watches();
+        self.sync_buffer_streams();
         // A freed widget can no longer forward (its subtree is gone), its
         // timeline group state goes with it, and its live voices are released.
         self.prune_bindings();
@@ -2146,6 +2166,75 @@ impl Host {
         self.watched_buses = wanted;
     }
 
+    /// **Asks to be told about the recordings the pictures cannot read.**
+    ///
+    /// A take being recorded grows with nothing announcing it: the writer
+    /// publishes only how far it has got, into the shared segment. A host that
+    /// **maps** that segment reads the number and re-summarizes the frames it
+    /// names, and needs nothing from the wire — but a page maps nothing, and
+    /// its samples are its own copy, so there is no frontier to read and
+    /// nothing to re-summarize. For it the server sends the *overview* of what
+    /// was written instead (`/buffer_stream`, min/max/energy per bucket, about
+    /// a hundredth of the audio's bandwidth), which is the same summary the
+    /// mapping path derives for itself.
+    ///
+    /// So the subscription is exactly the views that asked
+    /// ([`Element::stream_want`](widget::Element::stream_want)): the client
+    /// said the material is being written (`fills`) and the body is this
+    /// element's own copy. A mapped view is deliberately not in it — it would
+    /// be paying twice for one picture.
+    ///
+    /// One subscription covers all of them, because the server keeps one per
+    /// client and replaces it on every call; asking per view would mean the
+    /// last view to ask silently cancelled the others. Views that want
+    /// different buckets cannot be served at once for the same reason: the
+    /// first bucket wins and the rest keep the picture they have, which is the
+    /// honest half-answer rather than a subscription that flaps between them.
+    ///
+    /// Called wherever what is drawn can change — a def, a set of `fills` or
+    /// `buffer`, a free, and a placement that gave an element its body.
+    pub(crate) fn sync_buffer_streams(&mut self) {
+        let mut buffers: Vec<i32> = Vec::new();
+        let mut bucket = 0usize;
+        for tree in self.window_defs.values() {
+            collect_stream_wants(tree, &mut buffers, &mut bucket);
+        }
+        // The server takes at most 32 buffers in one subscription.
+        buffers.truncate(32);
+        buffers.sort_unstable();
+        if (&buffers, bucket) == (&self.buffer_stream.0, self.buffer_stream.1) {
+            return;
+        }
+        let Some(server) = self.server.as_ref() else {
+            return;
+        };
+        // The cadence is the server's to keep, and it is the same number the
+        // mapped path waits for: `--follow-block` if it was set, and the
+        // picture's own rate when it was not (the frame is finer than the wire
+        // needs, and 20 Hz is already smoother than a take grows).
+        let period_ms = if self.follow_block > 0.0 {
+            (self.follow_block * 1000.0).round().max(10.0) as i32
+        } else {
+            50
+        };
+        let mut args = vec![
+            OscType::Int(if buffers.is_empty() { 0 } else { period_ms }),
+            OscType::Int(bucket.max(1) as i32),
+        ];
+        args.extend(buffers.iter().map(|b| OscType::Int(*b)));
+        if let Err(e) = server.send(OscMessage {
+            addr: "/buffer_stream".into(),
+            args,
+        }) {
+            return warn!("cannot subscribe to the recording stream: {e}");
+        }
+        debug!(
+            "buffer stream: {} buffer(s) at bucket {bucket}",
+            buffers.len()
+        );
+        self.buffer_stream = (buffers, bucket);
+    }
+
     /// **Says what was written, since the samples said nothing.**
     ///
     /// A stroke into mapped cells reaches no wire — that is what mapping is
@@ -2349,6 +2438,87 @@ pub(crate) fn refresh_buffer_views(
         refreshed += refresh_buffer_views(child, bufnum, channel, start, frames);
     }
     refreshed
+}
+
+/// Reads a `/buffer_stream.reply bufnum startFrame bucket blob` into
+/// `(buffer, start_frame, bucket, stats)`, or `None` when it is not one.
+///
+/// The blob is little-endian `f32`s at whatever offset the packet left them,
+/// which is why they are read out rather than viewed in place — the same
+/// reason every other client reads this payload the same way.
+pub(crate) fn stream_report(args: &[OscType]) -> Option<(i32, u64, usize, Vec<f32>)> {
+    let [
+        OscType::Int(bufnum),
+        OscType::Int(start),
+        OscType::Int(bucket),
+        OscType::Blob(blob),
+    ] = args
+    else {
+        return None;
+    };
+    let stats: Vec<f32> = blob
+        .chunks_exact(4)
+        .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+        .collect();
+    Some((
+        *bufnum,
+        (*start).max(0) as u64,
+        (*bucket).max(0) as usize,
+        stats,
+    ))
+}
+
+/// Collects the buffers whose recording the elements of this tree want to be
+/// told about, and the bucket the first of them named.
+fn collect_stream_wants(widget: &widget::Widget, buffers: &mut Vec<i32>, bucket: &mut usize) {
+    if let Some((bufnum, want)) = widget.kind.as_element().and_then(|el| el.stream_want()) {
+        if *bucket == 0 {
+            *bucket = want;
+        }
+        if want == *bucket && !buffers.contains(&bufnum) {
+            buffers.push(bufnum);
+        }
+    }
+    for child in &widget.children {
+        collect_stream_wants(child, buffers, bucket);
+    }
+}
+
+/// Folds a stream report into **every element in this tree drawing server
+/// buffer `bufnum`**, returning how many took it.
+///
+/// The buffer is the identity here for the same reason it is for a write: two
+/// widgets are two pictures of one material exactly when they name the same
+/// buffer. What arrives is the overview of frames the writer added, so every
+/// picture of that material is told at once and each one answers for itself —
+/// a mapped view says no, since it reads the material where it lies.
+pub(crate) fn stream_buffer_views(
+    widget: &mut widget::Widget,
+    bufnum: i32,
+    start_frame: u64,
+    bucket: usize,
+    stats: &[f32],
+) -> usize {
+    let mut wrote = 0;
+    if let Some(el) = widget.kind.as_element_mut()
+        && el.material_buffer() == Some(bufnum)
+    {
+        if el.write_buckets(start_frame, bucket, stats) {
+            wrote += 1;
+        }
+        // **How far it is written travels with the report**, as it does with a
+        // frontier: the element decides what to do with it (drawing only that
+        // far is the `fills` prop's answer, not this walk's).
+        let channels = el.material_shape().map_or(1, |(ch, _)| ch.max(1));
+        let frames = (stats.len() / (channels * 3)) as u64 * bucket as u64;
+        if el.set_written(start_frame + frames) {
+            wrote += 1;
+        }
+    }
+    for child in &mut widget.children {
+        wrote += stream_buffer_views(child, bufnum, start_frame, bucket, stats);
+    }
+    wrote
 }
 
 /// Writes a run of samples into **every element in this tree drawing server

@@ -267,6 +267,16 @@ impl App {
                     self.refresh_material(*bufnum, *channel, *start, *frames);
                 }
             }
+            // **A recording this host cannot read, reported by the server.**
+            // The overview of the frames that appeared, for a view holding its
+            // own copy of the material — the wire's answer to the frontier a
+            // mapping reads for free.
+            "/buffer_stream.reply" => {
+                if let Some((bufnum, start, bucket, stats)) = crate::host::stream_report(&msg.args)
+                {
+                    self.on_stream_report(bufnum, start, bucket, &stats);
+                }
+            }
             "/group_queryTree.reply" => self.on_query_tree_reply(&msg.args),
             // A node was created or freed (on any client): refresh the tree
             // promptly instead of waiting for the next poll.
@@ -489,6 +499,55 @@ impl App {
         }
     }
 
+    /// Folds one `/buffer_stream.reply` into every view of that buffer and
+    /// repaints the windows that took it.
+    ///
+    /// The slots let the material go first, for the reason the mapped path
+    /// gives: a pyramid a slot is holding cannot be written in place, so the
+    /// element would copy the whole take before patching the buckets that
+    /// arrived. Released, the element is the sole owner and the write costs
+    /// the report.
+    fn on_stream_report(&mut self, bufnum: i32, start: u64, bucket: usize, stats: &[f32]) {
+        let mut redraw = Vec::new();
+        for def_id in self.host.window_def_ids() {
+            let holding: Vec<i32> = self
+                .host
+                .window_def(def_id)
+                .map(|tree| {
+                    tree.descendants()
+                        .filter(|w| {
+                            w.kind
+                                .as_element()
+                                .and_then(|el| el.material_buffer())
+                                .is_some_and(|b| b == bufnum)
+                        })
+                        .filter_map(|w| w.id)
+                        .collect()
+                })
+                .unwrap_or_default();
+            for widget_id in holding {
+                if let Some(slot) = self
+                    .windows
+                    .get_mut(&def_id)
+                    .and_then(|ws| ws.waveforms.get_mut(&widget_id))
+                {
+                    slot.view.release_data();
+                }
+            }
+            let Some(tree) = self.host.window_def_mut(def_id) else {
+                continue;
+            };
+            if crate::host::stream_buffer_views(tree, bufnum, start, bucket, stats) > 0 {
+                redraw.push(def_id);
+            }
+        }
+        for def_id in redraw {
+            if let Some(ws) = self.windows.get(&def_id) {
+                ws.gpu.window.request_redraw();
+            }
+        }
+    }
+
     /// Whether this window draws material that is **still being written** —
     /// a frontier that has moved and has not reached the end of the buffer.
     ///
@@ -633,6 +692,10 @@ impl App {
     /// rate takes the material's so its ruler can label real time.
     fn finish_placement(&mut self, want: WaveWant, frames: usize, sample_rate: f64) {
         self.host.set_timeline_total(want.widget_id, frames);
+        // The material just arrived, so whether this view can follow its own
+        // recording is only answerable now: a mapped body reads the frontier,
+        // an owned one has to be told.
+        self.host.sync_buffer_streams();
         if sample_rate > 0.0
             && let Some(w) = self
                 .host

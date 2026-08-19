@@ -223,6 +223,59 @@ impl SignalElement {
         true
     }
 
+    /// **Folds a report of buckets into the summary**, returning whether this
+    /// element draws material it applies to.
+    ///
+    /// The third way a picture changes, beside [`Self::write_samples`] (the
+    /// host wrote the samples) and [`Self::refresh_material`] (somebody else
+    /// wrote them where this element can read them): here nobody can read them
+    /// at all — the material is in the server's memory and this element holds
+    /// its own copy — so what arrives is the *overview* of what was written.
+    ///
+    /// It applies only to an **owned** body, which is exactly the case that
+    /// cannot re-read: a shared one is a mapping and follows the frontier for
+    /// free (and would have this report's own information twice over).
+    pub fn write_buckets(&mut self, start_frame: u64, bucket: usize, stats: &[f32]) -> bool {
+        let Some(data) = self.source.data_mut() else {
+            return false;
+        };
+        let Some(body) = &data.body else {
+            return false;
+        };
+        if body.is_shared() {
+            return false;
+        }
+        // Sole owner where nobody is holding it, a copy where a slot still is
+        // — the same rule a refresh follows, for the same reason.
+        let body = Arc::make_mut(data.body.as_mut().expect("just matched"));
+        if !body.write_buckets(start_frame as usize, bucket, stats) {
+            return false;
+        }
+        self.slot_dirty = true;
+        true
+    }
+
+    /// **The stream this element wants to be told about**, as
+    /// `(buffer, bucket)`, or `None` when it wants none.
+    ///
+    /// It is a want and not a subscription: the host collects them, and one
+    /// `/buffer_stream` covers every view of every window. What makes an
+    /// element want one is the pair of facts nothing else can supply — the
+    /// client said this material is being written (`fills`), and the body is
+    /// this element's **own copy**, so no frontier in memory can tell it what
+    /// grew. A mapped body is deliberately absent: it reads the material where
+    /// it lies and would be paying twice for one picture.
+    pub fn stream_want(&self) -> Option<(i32, usize)> {
+        if !self.fills {
+            return None;
+        }
+        let data = self.source.data()?;
+        if data.body.as_ref()?.is_shared() {
+            return None;
+        }
+        Some((data.buffer?, data.base_bucket))
+    }
+
     /// **Writes a run of samples into the material**, returning whether it
     /// landed. `start` is a frame index in channel `ch`.
     ///
@@ -383,6 +436,62 @@ mod tests {
                 path: "seq.f32".into(),
                 channels: 1,
             })
+        );
+    }
+
+    /// **A view that cannot read its own material asks to be told about it.**
+    /// The want is the pair of facts nothing else supplies: the client said
+    /// this take is being written (`fills`), and the body is this element's
+    /// own copy — a mapped one reads the frontier and needs no wire.
+    #[test]
+    fn an_owned_take_being_recorded_wants_the_stream() {
+        let mut take = element(
+            r#"{"id":1,"type":"signal","view":"trace","bulk":true,"buffer":7,"fills":true}"#,
+        );
+        assert_eq!(
+            take.stream_want(),
+            None,
+            "no body yet: nothing to fold into"
+        );
+        assert!(take.take(Loaded::Peaks(Arc::new(
+            crate::waveform::WaveformData::from_interleaved(&[0.0; 2048], 1, 256)
+        ))));
+        assert_eq!(
+            take.stream_want(),
+            Some((7, crate::host::elements::signal::DEFAULT_BASE_BUCKET)),
+            "an owned body being written wants the reports"
+        );
+
+        let loaded = element(r#"{"id":1,"type":"signal","view":"trace","bulk":true,"buffer":7}"#);
+        assert_eq!(
+            loaded.stream_want(),
+            None,
+            "a take nobody is recording into is not followed"
+        );
+    }
+
+    /// And the report lands in the summary: the element folds buckets it was
+    /// handed exactly as it re-summarizes a span it can read.
+    #[test]
+    fn a_report_folds_into_an_owned_summary() {
+        let mut take = element(
+            r#"{"id":1,"type":"signal","view":"trace","bulk":true,"buffer":7,"fills":true}"#,
+        );
+        take.take(Loaded::Peaks(Arc::new(
+            crate::waveform::WaveformData::from_interleaved(&[0.0; 1024], 1, 256),
+        )));
+        // One bucket, one channel: min, max and mean square, as the wire has it.
+        assert!(take.write_buckets(256, 256, &[-0.5, 0.5, 0.25]));
+        let body = take.source.data().unwrap().body.clone().unwrap();
+        assert_eq!(body.column(0, 256.0, 256.0, 512.0), (-0.5, 0.5));
+        assert_eq!(
+            body.column(0, 256.0, 0.0, 256.0),
+            (0.0, 0.0),
+            "and only the bucket it named"
+        );
+        assert!(
+            !take.write_buckets(1, 256, &[-0.5, 0.5, 0.25]),
+            "a report off the grid is refused"
         );
     }
 

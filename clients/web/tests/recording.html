@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: a take followed from the page while it records</title>
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            max-width: 44rem; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div>a take recorded by the engine in this page and followed over
+        <code>/buffer_stream</code>: the overview arrives, the samples never
+        do.</div>
+      <button id="boot">boot + record</button>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The acceptance behind examples/recording.html (clients/web/test.sh,
+      headless Chrome): ?smoke=1 auto-runs. A `RecordBuf` fills a buffer from
+      the audio thread and says nothing; the page subscribes to the *overview*
+      of what was written and folds each report into a pyramid it holds. What
+      is asserted is the claim the whole path exists for: the picture grew
+      while the take recorded, it stopped where the writer had got to, and once
+      the take was finished it is **column for column** the picture built from
+      the samples read back — so a page's recording view and a mapping host's
+      are one picture, not two that resemble each other.
+    -->
+    <script type="module">
+      import {
+        loadOsc, loadCore, pageConnection, server as engine, Server,
+        Buffer, Synth, SynthDef, data,
+      } from "../dist/index.js";
+      import { control, out, recordBuf, sine } from "../dist/defs/index.js";
+
+      const smoke = new URLSearchParams(location.search).has("smoke");
+      const log = (line) => {
+        document.getElementById("log").textContent += line + "\n";
+      };
+      const verdict = (text) => {
+        log(text);
+        document.title = text.split("\n")[0];
+        fetch(`/smoke-verdict-${encodeURIComponent(text.split("\n")[0])}`)
+          .catch(() => {});
+      };
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+      const RATE = 48000;
+      const BUCKET = 256;
+      const FRAMES = BUCKET * 100;      // 0.53 s, a whole number of buckets
+      const AMP = 0.5;
+
+      async function run() {
+        await loadOsc();
+        await loadCore();
+        const raw = await engine({ channels: 2 });
+        await raw.resume();
+        const server = await Server.open(await pageConnection());
+
+        // A tone recorded into an empty take, and heard while it records:
+        // `recordBuf` passes its input through. `doneAction: 2` frees the node
+        // at the end of the buffer, which is what stops the frontier moving.
+        await new SynthDef("page_recording",
+          out(0.0, recordBuf(control("buf", 0.0, "ir"), 0.0,
+            sine(220.0).mul(AMP), { doneAction: 2 }))).send(server);
+        const take = await Buffer.alloc(FRAMES, 1, { server });
+        await server.sync();
+
+        // The picture, before anything is recorded: allocated at the take's
+        // full length and empty.
+        const stream = await data.RecordingStream.open(server, [take], {
+          periodMs: 20, baseBucket: BUCKET,
+        });
+        const peaks = stream.peaks(take);
+        if (!peaks) throw new Error("the stream has no pyramid for the take");
+        if (peaks.frames !== FRAMES) {
+          throw new Error(`the pyramid spans ${peaks.frames} frames, not ${FRAMES}`);
+        }
+        const silent = peaks.columns(0, { width: 32 });
+        if (Math.max(...silent.max) !== 0) throw new Error("an empty take is not silent");
+
+        new Synth("page_recording", { buf: take.bufnum }, { server });
+
+        // **It grows while it records, and stops where the writer got to.**
+        await sleep(200);
+        const growing = stream.written(take);
+        if (stream.reports < 5) {
+          throw new Error(`only ${stream.reports} reports in 200 ms`);
+        }
+        if (growing <= 0 || growing >= FRAMES) {
+          throw new Error(`written is ${growing} of ${FRAMES} after 200 ms`);
+        }
+        const drawn = peaks.columns(0, { width: 64, start: 0, end: growing });
+        const ahead = peaks.columns(0, { width: 64, start: growing, end: FRAMES });
+        const peak = Math.max(...drawn.max);
+        if (Math.abs(peak - AMP) > 0.02) {
+          throw new Error(`the recorded part reads ${peak}, not ~${AMP}`);
+        }
+        if (Math.max(...ahead.max.map(Math.abs)) !== 0) {
+          throw new Error("what has not been recorded is not empty");
+        }
+        log(`while recording: ${stream.reports} reports, `
+          + `${growing} of ${FRAMES} frames, peak ${peak.toFixed(3)}`);
+
+        // **And the finished picture is the samples' own.** The take runs to
+        // the end of its buffer, the node frees itself, and what the page was
+        // told is compared against what a build over the material gives.
+        await sleep(800);
+        const written = stream.written(take);
+        if (written !== FRAMES) {
+          throw new Error(`the take stopped at ${written} of ${FRAMES}`);
+        }
+        await stream.stop();
+
+        // Read back the head of the take — a whole number of buckets, in
+        // chunks the in-page carrier's ring takes — and build the picture the
+        // samples give. A bulk read is a different path from this one: what is
+        // compared is the *summary*, told against measured.
+        const PREFIX = BUCKET * 32;
+        const samples = await take.getSamples({ count: PREFIX, chunk: 4096 });
+        const built = data.Peaks.build(samples, { channels: 1, baseBucket: BUCKET });
+        let worst = 0;
+        for (const width of [17, 64, 100]) {
+          const told = peaks.columns(0, { width, start: 0, end: PREFIX });
+          const reading = built.columns(0, { width, start: 0, end: PREFIX });
+          for (let i = 0; i < width; i++) {
+            worst = Math.max(worst, Math.abs(told.min[i] - reading.min[i]),
+                             Math.abs(told.max[i] - reading.max[i]));
+          }
+        }
+        if (worst !== 0) {
+          throw new Error(`the told picture differs from the read one by ${worst}`);
+        }
+        // **What the wire did not carry: the samples.** A pyramid's floor is
+        // its base bucket, so zoomed inside one the picture is that bucket
+        // repeated — the resolution the overview has, and the one difference
+        // from a host that maps the material and reads the cells themselves.
+        // It is the same floor on both sides, which is what this asserts.
+        const inside = peaks.columns(0, { width: 8, start: 0, end: BUCKET });
+        const insideRead = built.columns(0, { width: 8, start: 0, end: BUCKET });
+        if (new Set(inside.max).size !== 1) {
+          throw new Error("inside one bucket the summary resolved further than a bucket");
+        }
+        for (let i = 0; i < 8; i++) {
+          if (inside.max[i] !== insideRead.max[i] || inside.min[i] !== insideRead.min[i]) {
+            throw new Error("the told picture and the read one differ inside a bucket");
+          }
+        }
+        if (Math.max(...samples.map(Math.abs)) === 0) {
+          throw new Error("the read-back samples are silent: nothing was recorded");
+        }
+
+        stream.free();
+        built.free();
+        take.free();
+        verdict(`PASS: ${stream.reports} reports drew ${FRAMES} frames while they `
+          + `recorded (peak ${peak.toFixed(3)}), and the told picture matched the `
+          + "samples read back column for column");
+      }
+
+      document.getElementById("boot").onclick = () =>
+        run().catch((err) => verdict(`FAIL: ${err}`));
+      if (smoke) run().catch((err) => verdict(`FAIL: ${err}`));
+    </script>
+  </body>
+</html>

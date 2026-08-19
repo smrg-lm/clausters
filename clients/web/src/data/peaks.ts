@@ -92,8 +92,7 @@ export class Peaks {
      *
      * ```ts
      * const peaks = Peaks.build(new Float32Array(frames * channels), { channels });
-     * new OscFunc((msg) => {
-     *     const [bufnum, startFrame, bucket, blob] = msg.args;
+     * new OscFunc(([, bufnum, startFrame, bucket, blob]) => {
      *     if (bufnum === take.bufnum) {
      *         peaks.writeBuckets(startFrame as number, bucket as number, blob as Uint8Array);
      *     }

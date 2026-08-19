@@ -468,16 +468,6 @@ impl OscServer {
         let bucket = self.buffer_streams[i].bucket;
         for k in 0..self.buffer_streams[i].buffers.len() {
             let (bufnum, reported) = self.buffer_streams[i].buffers[k];
-            let frontier = self
-                .handle
-                .segment()
-                .and_then(|seg| seg.buffer_frontier(bufnum as usize))
-                .unwrap_or(0);
-            let start = (reported / bucket as u64) * bucket as u64;
-            let whole = frontier.saturating_sub(start) / bucket as u64;
-            if whole == 0 {
-                continue;
-            }
             let Some(buffer) = self
                 .translator
                 .buffers
@@ -486,6 +476,27 @@ impl OscServer {
             else {
                 continue;
             };
+            // **The buffer's own frontier, or the row's — whichever is
+            // further.** This used to read the row alone, which made the
+            // command work only where it was least needed: a client that
+            // cannot map is exactly who it is for, and most of those talk to a
+            // server with no segment at all (an engine in a page, a
+            // `clausters` without `--shm`), where the row does not exist and
+            // nothing was ever reported. The buffer keeps its own counter now.
+            // The row still counts, because a **peer** writing into the shared
+            // region raises it there and this server's buffer never hears
+            // about it.
+            let frontier = buffer.frontier().max(
+                self.handle
+                    .segment()
+                    .and_then(|seg| seg.buffer_frontier(bufnum as usize))
+                    .unwrap_or(0),
+            );
+            let start = (reported / bucket as u64) * bucket as u64;
+            let whole = frontier.saturating_sub(start) / bucket as u64;
+            if whole == 0 {
+                continue;
+            }
             let channels = buffer.channels().max(1);
             let whole = whole.min(MAX_STREAM_BUCKETS as u64) as usize;
             let mut bytes = Vec::with_capacity(whole * channels * 3 * 4);

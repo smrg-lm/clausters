@@ -192,27 +192,38 @@ writes the same bytes the GUI host maps and the Python client produces, and
 
 A recording is the one material a page cannot fetch as it grows: the samples are
 being written into the server's own memory, and a page maps nothing. So the
-server sends the **overview** instead — `streamBuffers` subscribes, and every
-report carries what the writer measured over the frames that appeared, at about
-2 kB/s a channel where the audio would be 190. `writeBuckets` puts a report into
-the pyramid the picture already holds:
+server sends the **overview** instead — what the writer measured over the frames
+that appeared, at about 2 kB/s a channel where the audio would be 190.
+`RecordingStream` is the receiving end: one pyramid per take, growing as the
+reports land.
 
 ```js
-const peaks = data.Peaks.build(new Float32Array(frames * channels), { channels });
+const take = await Buffer.alloc(10 * 48000, 1, { server });
+const stream = await data.RecordingStream.open(server, [take]);
 
-new OscFunc((msg) => {
-    const [bufnum, startFrame, bucket, blob] = msg.args;
-    if (bufnum === take.bufnum) peaks.writeBuckets(startFrame, bucket, blob);
-}, "/buffer_stream.reply", { recv: server.receiver });
+stream.onReport(() => {
+    const { min, max } = stream.peaks(take).columns(0, { width: canvas.width });
+    draw(min, max, stream.written(take));   // draw only as far as it was written
+});
 
-await server.streamBuffers(50, [take], peaks.baseBucket);
+new Synth("record_something", { buf: take.bufnum }, { server });
 ```
 
-Nothing is measured on this side, so the picture it grows into is the picture the
-samples would have built — the same bytes, asserted against the other clients.
-Subscribe with the pyramid's own `baseBucket`: a report on another grid is
-refused (`writeBuckets` returns `false`) rather than smeared across buckets
-nobody measured.
+Each take's pyramid is allocated at the buffer's **full length** and empty, so
+the axis does not move while it fills; `written` is how far the reports have
+got, and past it the pyramid is the silence the buffer is — draw up to it and
+the two read apart, which is what the GUI host's `fills` prop does for a
+host-drawn view. `stop()` cancels the subscription and `free()` releases the
+pyramids.
+
+Two limits worth knowing, both of them the wire's rather than this class's. The
+summary is the resolution: zoomed inside one bucket the picture is that bucket,
+and the samples are still the page's own copy — read the take back with
+`getSamples` once it is finished to edit or play it. And the server keeps **one
+buffer subscription per client**, replacing it on every call: on a page where
+the GUI host is already following a recording of its own (a `waveform` with
+`fills`), opening this beside it cancels the host's. Following a take is either
+the host's job or the script's.
 
 ## The measurements
 

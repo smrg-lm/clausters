@@ -190,6 +190,14 @@ impl Element for SignalElement {
         true
     }
 
+    fn write_buckets(&mut self, start_frame: u64, bucket: usize, stats: &[f32]) -> bool {
+        SignalElement::write_buckets(self, start_frame, bucket, stats)
+    }
+
+    fn stream_want(&self) -> Option<(i32, usize)> {
+        SignalElement::stream_want(self)
+    }
+
     fn material_shape(&self) -> Option<(usize, u64)> {
         SignalElement::material_shape(self)
     }

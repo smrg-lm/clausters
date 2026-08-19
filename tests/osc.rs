@@ -616,6 +616,94 @@ fn c_stream_rejects_bad_arguments() {
     server.quit();
 }
 
+/// **A server with no segment reports a recording too**, which is the case the
+/// command exists for: whoever cannot map the material is who asks for its
+/// overview, and most of them talk to a server that shares nothing — an engine
+/// inside a page, a `clausters` booted without `--shm`.
+///
+/// It read the write frontier out of the segment's directory row, so exactly
+/// there it reported nothing at all, forever and silently. The frontier is the
+/// **buffer's** now, and the row is where a mapping peer reads it.
+#[test]
+fn buffer_stream_reports_a_recording_with_no_segment_behind_it() {
+    let mut server = TestServer::spawn();
+
+    // A recorder writing a constant into a buffer of its own: the frontier
+    // moves because a writing UGen moved it, which is the only thing that does.
+    server.send(
+        "/buffer_alloc",
+        vec![OscType::Int(2), OscType::Int(4_096), OscType::Int(1)],
+    );
+    server.sync();
+    let json = r#"{
+        "name": "recorder",
+        "ugens": [
+            {"kind": "Line", "inputs": [
+                {"const": 0.5}, {"const": 0.5}, {"const": 100.0}, {"const": 0.0}
+            ]},
+            {"kind": "RecordBuf", "inputs": [
+                {"const": 2.0}, {"const": 0.0}, {"ugen": 0},
+                {"const": 0.0}, {"const": 1.0}, {"const": 0.0},
+                {"const": 1.0}, {"const": 0.0}, {"const": 0.0}, {"const": 0.0}
+            ]}
+        ]
+    }"#;
+    server.send(
+        "/def_send",
+        vec![
+            OscType::String("synth".into()),
+            OscType::Blob(json.as_bytes().to_vec()),
+        ],
+    );
+    server.recv_until("/done");
+
+    server.send(
+        "/buffer_stream",
+        vec![OscType::Int(20), OscType::Int(256), OscType::Int(2)],
+    );
+    let done = server.recv_until("/done");
+    assert_eq!(done.args[0], OscType::String("/buffer_stream".into()));
+
+    server.send(
+        "/synth_new",
+        vec![
+            OscType::String("recorder".into()),
+            OscType::Int(1000),
+            OscType::Int(1),
+            OscType::Int(0),
+        ],
+    );
+    server.wait_for_synth_count(1);
+
+    // Enough blocks to fill several buckets, and enough time for one report.
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+    for _ in 0..40 {
+        server.engine.process_block(&mut out);
+    }
+    let reply = server.recv_until("/buffer_stream.reply");
+    assert_eq!(reply.args[0], OscType::Int(2));
+    assert_eq!(
+        reply.args[1],
+        OscType::Long(0),
+        "it starts at the beginning"
+    );
+    let OscType::Blob(bytes) = &reply.args[3] else {
+        panic!("expected the overview blob, got {:?}", reply.args);
+    };
+    let values: Vec<f32> = bytes
+        .chunks_exact(4)
+        .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
+        .collect();
+    assert!(!values.is_empty(), "a recording that ran reports buckets");
+    for bucket in values.chunks_exact(3) {
+        assert_eq!((bucket[0], bucket[1]), (0.5, 0.5), "the recorded constant");
+        assert!((bucket[2] - 0.25).abs() < 1e-6, "its energy: 0.5 squared");
+    }
+
+    server.send("/node_free", vec![OscType::Int(1000)]);
+    server.quit();
+}
+
 /// `/bus_tap` routes a live bus into a segment tap ring and `/bus_tapStream` streams
 /// windows of it: ack, immediate snapshot (index + stream position + raw LE
 /// `f32` blob), audible content, cancel, and the /fail cases.

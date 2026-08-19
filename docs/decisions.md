@@ -5771,6 +5771,34 @@ What is *not* offered is recovering it under a different name: an editor names
 its segment for its pid, so its next run is a new path, and the previous run's
 take is a file the sweep is right to collect.
 
+## The write frontier is the material's, and the segment's row is a mirror of it
+
+A take being recorded is the one material that changes with nothing announcing
+it: a `RecordBuf` fills a buffer block by block from the audio thread, which is
+the one place that must never send a message. What a writer publishes instead is
+a single number — how far it has filled — and everything that draws a recording
+reads that number.
+
+It was first published **only into the shared segment's buffer directory**,
+which is where a peer that maps the region reads it, and that made it a fact
+about *sharing* rather than about the material. The consequence was invisible
+and total: `/buffer_stream` — the command that exists for clients which cannot
+map anything — derived its report from that row, so on a server with no segment
+it reported nothing, silently, forever. That is an engine inside a page, and a
+`clausters` booted without `--shm`: the command's whole audience, missing
+exactly where it was needed.
+
+So the counter lives with the material. `Buffer` keeps its own `written`, every
+writing UGen raises it, and a buffer that has a segment sink mirrors the same
+number into the row. A stream reads **the higher of the two**, and that is not
+belt and braces: a *peer* writing into the shared region raises the row in its
+own process, and this server's `Buffer` never hears about it.
+
+The rule generalizes past this field: a fact about the material belongs to the
+material, and a shared-memory layout is a way to *publish* facts, never the
+place they are kept. What a picture needs is the same number whether it maps the
+memory, subscribes to a summary, or is the process doing the writing.
+
 ## A peer writes material, announces the span, and asks for every operation
 
 **Context.** With a take mapped, an editor stores a stroke into the very cells
