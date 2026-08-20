@@ -1708,3 +1708,33 @@ finished work, where a pending item reads as done.
   **The bundle ships no face**, which is what makes this affordable: the cost is the rasterizer alone, **+130 KB uncompressed, +46 KB gzipped** on a 5.8 MB / 1.7 MB bundle, and a page that hands over nothing draws the embedded bitmap face exactly as a build without the feature does. Loading one relayouts nothing — the sizing table never followed the typeface — so it may be handed over at any point, before or after the first `/gui_def`.
 
   Checked by eye rather than by a suite, and deliberately: verifying it needs a face, and committing one to the repository is the cost this whole design avoids. Two headless-Chrome screenshots of the same tree, one with a fetched face and one without, showed the same layout in the two faces — which is also what proves the floor holds in the browser.
+
+- ⬜ **The square wave's edge is still missing on the web, and the join that
+  draws it is only in the host** *(found 2026-08-20 by the user, on the web
+  version, after the fix landed for the native window)*. A column measures a
+  group of samples and groups partition the samples where the curve does not, so
+  a one-sample jump landing on a column boundary is drawn by neither column and
+  the trace comes apart exactly at an edge — and it comes and goes with the zoom,
+  since where the jump falls is a fact about the magnification. The rule that
+  closes it is that **a column is inked over what it measured, extended to reach
+  the column before it**, and it shipped in `3a7ce0fe` (with the record moved in
+  `514ce96d`) inside `trace::draw_channel`, the host's one renderer — so the wasm
+  host carries it and every widget-drawn picture in a page is fixed by the same
+  commit.
+
+  What is **not** fixed is a page that draws columns itself. This client hands
+  out `Peaks.columns()` — measurements, and no renderer — so the rule is on
+  whoever draws them, and it was copied into `examples/scope.html` in the same
+  commit while `tests/data.html` still draws the gap. Two questions a fix has to
+  settle: whether the rule stays a recipe each page repeats (documented where
+  `columns` is) or the client grows the drawing side of it — a small helper over
+  a `PeakRow`, or a `columns` variant returning joined spans — and, since the
+  measurements must stay exactly what the core measured, that the join lives in
+  `data/` rather than in the core or the wire.
+
+  **What is not established is which surface the report is about.** A page of the
+  user's own and `tests/data.html` fit the entry; `examples/scope.html` fits it
+  only if it was looked at before the rebuild; and the wasm host fits it not at
+  all — if the edge is missing in a `waveform` widget on a page, the join is
+  reaching the picture and something else is, and this entry is the wrong place
+  to look. Reproducing it against a named page is the first step, not the fix.

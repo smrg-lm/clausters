@@ -128,6 +128,14 @@ session picks up**, so everything the phase left is here rather than spread
 through the list below, in the order it would be taken and with the reason for
 that order.
 
+- ⬜ **The square wave's edge is still missing on the web, and the join that
+  draws it is only in the host** *(`clients/web/PLAN.md`, Found by use)*.
+  **Before the rest because it is a report from use and its surface is not
+  identified yet**: the rule that joins a column to the one before it shipped in
+  the host's one renderer, so every widget-drawn picture has it, and a page that
+  draws `Peaks.columns()` itself does not. Reproducing it against a named page
+  settles whether this is a page's recipe, a missing drawing helper in the
+  client, or something else entirely in the host.
 - ⬜ **A page cannot zoom to the sample while a take records, and behind the
   frontier it could** *(`clients/gui/PLAN.md`, Found by use)*. **First because
   it is the smallest and it closes the last asymmetry between the two twins**:
