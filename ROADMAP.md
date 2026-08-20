@@ -153,6 +153,7 @@ whole download and a summary is a question of size that is written down):
 - **The builders could be generated from the catalog instead of contrasted
   against it** *(root `PLAN.md`, Future directions)* — the contrast tests caught
   eleven drifted builders, which is strictly weaker than not hand-writing the mirrors.
+- **What the overview work turned up by use** *(`clients/gui/PLAN.md`)* — the fixed ones stay there with their record; what is still open is **a page cannot zoom to the sample while a take records, and behind the frontier it could** (Found by use), and two designs in Future directions: **a zoom asks for samples where what it wants is a finer summary**, which is a track's worth and the real answer to a page's zoom, and **a column is its own quad, and a signal that steps shows what that costs**, deferred by the user to be looked at another way.
 - **A take is drawn in amplitude and heard in decibels**; **the other text over
   pictures has no plate yet**; **persistence saves the document, not what the
   user did to it** — `clients/gui/PLAN.md`,
