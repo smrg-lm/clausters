@@ -158,6 +158,80 @@ pub fn min_max(samples: &[f32]) -> Option<(f32, f32)> {
     Some((lo, hi))
 }
 
+/// **What a column is inked over: what it measured, extended to meet the column
+/// before it** — the rule that makes a picture drawn as columns show the same
+/// curve a picture drawn as a polyline does.
+///
+/// The two regimes are one picture. Zoomed in, a trace is the polyline through
+/// the samples, and every consecutive pair is joined by a segment; zoomed out, a
+/// column is that same polyline's envelope over the samples one pixel covers.
+/// But a column measures a *group of samples*, and groups partition the samples
+/// where the curve does not: between the last sample of one column and the first
+/// of the next there is a segment, and nothing draws it. Where the signal
+/// crossed a column boundary the two quads did not touch.
+///
+/// On ordinary audio nothing shows, because a column holding a hundred samples
+/// of a wave already spans nearly the excursion its neighbour does and the two
+/// overlap by themselves. On the picture this is *for* — a digital square wave,
+/// a gate, a step, an edge of any kind — it is the whole of the feature: the
+/// one-sample jump falls between two columns, and the vertical stroke that *is*
+/// the edge is not drawn at all, leaving a flat run at the top and a flat run
+/// at the bottom with nothing between them. And it comes and goes as the view
+/// moves, since whether a jump lands inside a column or on its boundary is a
+/// fact about the magnification and the scroll, not about the signal — which is
+/// what makes it read as the picture losing its grip on the samples rather than
+/// as a defect at one zoom.
+///
+/// Reaching to the neighbour's nearest edge inks exactly the values the curve
+/// takes while it crosses the boundary — the segment the polyline draws a zoom
+/// later, no more — so it is silent everywhere it is not needed: columns that
+/// already overlap are returned exactly as they were measured. What a caller
+/// remembers for the next column is the **measurement**, never the extension, so
+/// a run of them cannot ratchet the trace outwards.
+///
+/// It lives here, beside the measurement, because it is not one renderer's:
+/// the GUI host draws columns in Rust and a page draws them in JavaScript, and
+/// two implementations of one rule is how the same buffer comes to look
+/// different in a window and in a browser. Whoever holds a whole row calls
+/// [`join_columns`] instead.
+pub fn join(lo: f32, hi: f32, prev: Option<(f32, f32)>) -> (f32, f32) {
+    match prev {
+        // The column before it sat wholly below: reach down to its top.
+        Some((_, phi)) if lo > phi => (phi, hi),
+        // ...wholly above: reach up to its bottom.
+        Some((plo, _)) if hi < plo => (lo, plo),
+        // They already overlap (or there is no column before): as measured.
+        _ => (lo, hi),
+    }
+}
+
+/// [`join`] over a whole pixel row: `pairs` is the measured `[min, max]` of each
+/// column in order, flat and interleaved — the layout the pyramid answers a row
+/// in — and the result is the row to ink, the same length.
+///
+/// This is the one call a client that draws its own columns makes, between
+/// measuring the row and stroking it. It joins pairwise and reads every pair as
+/// a measurement, which is the one thing it cannot tell apart: a renderer
+/// walking column by column knows when a column held no samples and starts the
+/// run again there, while a row of numbers has no way to say so.
+///
+/// A row of an odd length keeps its last, unpaired number untouched.
+pub fn join_columns(pairs: &[f32]) -> Vec<f32> {
+    let mut out = Vec::with_capacity(pairs.len());
+    let mut prev: Option<(f32, f32)> = None;
+    for pair in pairs.chunks(2) {
+        let [lo, hi] = pair else {
+            out.extend_from_slice(pair);
+            continue;
+        };
+        let (vlo, vhi) = join(*lo, *hi, prev.take());
+        prev = Some((*lo, *hi));
+        out.push(vlo);
+        out.push(vhi);
+    }
+    out
+}
+
 /// Mean square (energy) over a slice, or `None` if empty — the pyramid's third
 /// statistic computed directly, and what a renderer zoomed in past `base_bucket`
 /// reads instead of a bucket. Accumulated in `f64`, since a long window of small
@@ -1895,5 +1969,76 @@ mod empty_tests {
         let left = multi.channel(0).unwrap();
         assert_eq!(left.column(0, 256.0, 512.0).unwrap(), (-0.5, 0.5));
         assert_eq!(left.column(0, 0.0, 256.0).unwrap(), (0.0, 0.0));
+    }
+}
+
+/// The join: what a column is inked over once it has a neighbour.
+#[cfg(test)]
+mod join_tests {
+    use super::*;
+
+    /// **A square wave's edge is drawn at a column boundary too.** Every
+    /// transition of this signal lands exactly between two columns, which is
+    /// the case the join is for: measured, the row is two flat runs with
+    /// nothing between them; joined, each column that starts a new level
+    /// reaches back to the one before it and the vertical is inked.
+    #[test]
+    fn an_edge_on_a_column_boundary_is_inked_after_the_join() {
+        // Eight columns, alternating between the two levels of a square wave.
+        let measured: Vec<f32> = (0..8)
+            .flat_map(|c| if c % 2 == 0 { [0.8, 0.8] } else { [-0.8, -0.8] })
+            .collect();
+        for pair in measured.chunks(2) {
+            assert_eq!(pair[1] - pair[0], 0.0, "measured: no column has height");
+        }
+        let inked = join_columns(&measured);
+        assert_eq!(inked.len(), measured.len());
+        assert_eq!(
+            &inked[0..2],
+            &[0.8, 0.8],
+            "the first column has no neighbour"
+        );
+        for pair in inked[2..].chunks(2) {
+            assert!(
+                (pair[1] - pair[0] - 1.6).abs() < 1e-6,
+                "every later column spans the crossing: {pair:?}"
+            );
+        }
+    }
+
+    /// **The join never widens a column whose neighbour it already overlaps**,
+    /// and never accumulates: what a run remembers is the measurement, so a
+    /// monotone signal reaches back exactly one segment per column rather than
+    /// walking the trace outwards.
+    #[test]
+    fn the_join_reaches_one_segment_and_leaves_an_overlap_alone() {
+        assert_eq!(join(-0.5, 0.5, Some((-0.2, 0.2))), (-0.5, 0.5));
+        assert_eq!(join(0.4, 0.6, Some((-0.1, 0.1))), (0.1, 0.6));
+        assert_eq!(join(-0.6, -0.4, Some((-0.1, 0.1))), (-0.6, -0.1));
+        assert_eq!(join(0.4, 0.6, None), (0.4, 0.6));
+
+        // A ramp: consecutive columns are disjoint at every boundary.
+        let measured: Vec<f32> = (0..16)
+            .flat_map(|c| {
+                let base = c as f32 * 0.1;
+                [base, base + 0.05]
+            })
+            .collect();
+        let inked = join_columns(&measured);
+        for (c, pair) in inked.chunks(2).enumerate().skip(1) {
+            let prev_hi = measured[(c - 1) * 2 + 1];
+            assert_eq!(
+                pair[0], prev_hi,
+                "column {c} reaches its neighbour and no further"
+            );
+            assert_eq!(pair[1], measured[c * 2 + 1], "column {c} keeps its own top");
+        }
+    }
+
+    /// A row with a trailing, unpaired number is left with it.
+    #[test]
+    fn an_odd_row_keeps_its_last_number() {
+        assert_eq!(join_columns(&[0.5, 0.5, -0.5]), vec![0.5, 0.5, -0.5]);
+        assert!(join_columns(&[]).is_empty());
     }
 }

@@ -158,6 +158,7 @@ thought about the other side", write `gap` — that is what it is for.
 | — | `JsPyramid.level_for` | `idiom` — as above |
 | — | `JsPyramid.column` | `idiom` — as above |
 | — | `JsPyramid.columns` | `idiom` — as above |
+| — | `join_columns` (`joinColumns` in JS) | `n/a` — the rule that a column is inked out to meet the column before it, applied to a whole measured row. Nothing on the C side draws: the GUI host reaches `peaks::join` as a Rust caller of the core, and the Python client hands its pyramids to that host rather than stroking a pixel row itself |
 
 ## Bundles and patches
 

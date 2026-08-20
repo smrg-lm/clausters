@@ -12,16 +12,68 @@
 // format it maps and the Python client writes. A page that builds a pyramid
 // here and a host that maps one over there draw the identical columns.
 //
+// What a view draws is not quite what the pyramid measured: `columns` answers
+// the measurement and `joinColumns` answers the row to ink, each column
+// extended to meet the one before it. Both are the core's, so a page and the
+// GUI host's `waveform` widget over one buffer draw the same picture.
+//
 // The samples come from wherever a buffer comes from — `Server.getSamples`
 // over the wire, `fetchAudio` over HTTP — and after `build` they are not
 // needed again.
 
-import { Pyramid } from "../core/clausters_core_web.js";
+import { Pyramid, joinColumns as coreJoinColumns } from "../core/clausters_core_web.js";
 
 /** A pixel row of a waveform: one `(min, max)` pair per column. */
 export interface Columns {
     min: Float32Array;
     max: Float32Array;
+}
+
+/**
+ * **A pixel row joined**: each column extended to meet the one before it, which
+ * is what a page strokes.
+ *
+ * A column measures a group of samples, and the groups partition the samples
+ * where the curve does not: between the last sample of one column and the first
+ * of the next there is a segment nothing draws. On audio it never shows, since
+ * consecutive columns already overlap; on a one-sample jump — a square wave, a
+ * gate, an edge of any kind — it is the whole of the feature, and the vertical
+ * stroke that *is* the edge comes and goes with the zoom, because whether the
+ * jump lands inside a column or on its boundary is a fact about the
+ * magnification.
+ *
+ * So `columns` answers what the pyramid measured and this answers what to ink:
+ * columns that already overlap come back untouched, and one that does not
+ * reaches back to its neighbour's nearest edge — exactly the values the curve
+ * takes while it crosses the boundary, the same segment a deeper zoom draws as
+ * a polyline. It is the core's own rule, the one the GUI host's renderer
+ * draws with, so a page and a `waveform` widget over the same buffer draw the
+ * same picture.
+ *
+ * ```ts
+ * const row = joinColumns(peaks.columns(0, { width: canvas.width }));
+ * for (let x = 0; x < row.min.length; x++) {
+ *     ctx.moveTo(x, y(row.max[x]));
+ *     ctx.lineTo(x, y(row.min[x]));
+ * }
+ * ```
+ *
+ * Requires a prior `loadCore()`.
+ */
+export function joinColumns({ min, max }: Columns): Columns {
+    const flat = new Float32Array(min.length * 2);
+    for (let i = 0; i < min.length; i++) {
+        flat[i * 2] = min[i];
+        flat[i * 2 + 1] = max[i];
+    }
+    const joined = coreJoinColumns(flat);
+    const lo = new Float32Array(min.length);
+    const hi = new Float32Array(min.length);
+    for (let i = 0; i < min.length; i++) {
+        lo[i] = joined[i * 2];
+        hi[i] = joined[i * 2 + 1];
+    }
+    return { min: lo, max: hi };
 }
 
 /**

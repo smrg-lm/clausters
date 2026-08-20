@@ -29,7 +29,7 @@ use clausters_core::{
     builtins, bundle,
     clocksync::SampleClockModel,
     measure, osc, oscil,
-    peaks::MultiPyramid,
+    peaks::{self, MultiPyramid},
     registry::{self, NodeIdPartition, Registry},
     rng::Rng,
     spectrum,
@@ -823,6 +823,21 @@ pub fn oscil_raw_frames(display: usize) -> usize {
 pub fn oscil_align(raw: &[f32], display: usize, level: f32) -> Vec<f64> {
     let (start, locked) = oscil::align(raw, display, level);
     vec![start as f64, if locked { 1.0 } else { 0.0 }]
+}
+
+/// **A pixel row joined**: each measured `[min, max]` extended to meet the
+/// column before it, so a page that strokes its own columns draws the same
+/// continuous curve the GUI host draws — [`clausters_core::peaks::join`] has
+/// the rule and why it is not optional.
+///
+/// `pairs` is the row as [`JsPyramid::columns`] answers it, flat and
+/// interleaved, and the result has the same length. It is a separate call and
+/// not a mode of `columns` because the measurement is what the two clients
+/// compare and the cache stores; this is what a *drawing* does with it.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = joinColumns)]
+pub fn join_columns(pairs: &[f32]) -> Vec<f32> {
+    peaks::join_columns(pairs)
 }
 
 /// A built min/max peak pyramid, the JS face of

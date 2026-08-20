@@ -33,6 +33,7 @@ import {
     decodeSamples,
     deinterleave,
     interleave,
+    joinColumns,
     lissajous,
     scopeFrames,
     scopeWindow,
@@ -279,6 +280,48 @@ test("zooming picks a finer level, and the columns follow", () => {
     const quarter = peaks.columns(0, { width: 4, start: 0, end: 1024 });
     assert.ok(quarter.max[0] <= whole.max[0] + 1e-6);
     peaks.free();
+});
+
+test("a square wave's edge is inked once the columns are joined", () => {
+    // A square wave is the picture the join is for: every transition is a
+    // one-sample jump, so a column holding no transition is perfectly flat and
+    // the vertical edge lives *between* two columns. Measured, the row is a
+    // dashed top and a dashed bottom with nothing between them; joined, each
+    // column that changes level reaches back to the one before it.
+    const frames = 8192;
+    const square = new Float32Array(frames);
+    for (let i = 0; i < frames; i++) square[i] = Math.floor(i / 512) % 2 === 0 ? 0.8 : -0.8;
+    const peaks = Peaks.build(square, { baseBucket: 256 });
+    for (const width of [16, 32, 64]) {
+        const measured = peaks.columns(0, { width });
+        const inked = joinColumns(measured);
+        let crossings = 0;
+        for (let x = 0; x < width; x++) {
+            assert.equal(measured.max[x] - measured.min[x], 0, `measured column ${x} is flat`);
+            const jumped = x > 0 && measured.min[x] !== measured.min[x - 1];
+            if (jumped) {
+                crossings++;
+                assert.ok(
+                    inked.max[x] - inked.min[x] > 1.5,
+                    `column ${x} spans the crossing: ${inked.min[x]}..${inked.max[x]}`,
+                );
+            } else {
+                // No crossing to draw, and the first column has no neighbour
+                // to reach: as measured, both of them.
+                assert.equal(inked.min[x], measured.min[x], `column ${x} unchanged`);
+                assert.equal(inked.max[x], measured.max[x], `column ${x} unchanged`);
+            }
+        }
+        assert.equal(crossings, 15, `every transition is drawn at width ${width}`);
+    }
+    // A signal whose columns already overlap comes back exactly as measured.
+    const sine = Peaks.build(SIGNALS.sine440, { baseBucket: 256 });
+    const measured = sine.columns(0, { width: 8 });
+    const inked = joinColumns(measured);
+    assert.deepEqual([...inked.min], [...measured.min]);
+    assert.deepEqual([...inked.max], [...measured.max]);
+    peaks.free();
+    sine.free();
 });
 
 test("a degenerate span draws nothing rather than guessing", () => {

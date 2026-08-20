@@ -439,6 +439,19 @@ export function degree_to_midinote(degree: number, octave: number, root: number,
 export function graph_bus_reserved(): Uint32Array;
 
 /**
+ * **A pixel row joined**: each measured `[min, max]` extended to meet the
+ * column before it, so a page that strokes its own columns draws the same
+ * continuous curve the GUI host draws — [`clausters_core::peaks::join`] has
+ * the rule and why it is not optional.
+ *
+ * `pairs` is the row as [`JsPyramid::columns`] answers it, flat and
+ * interleaved, and the result has the same length. It is a separate call and
+ * not a mode of `columns` because the measurement is what the two clients
+ * compare and the cache stores; this is what a *drawing* does with it.
+ */
+export function joinColumns(pairs: Float32Array): Float32Array;
+
+/**
  * JS face: the **Lissajous / goniometer** projection of a stereo pair, as
  * interleaved `[x, y]` pairs (`x` = side, `y` = mid) — one pair per input
  * frame. An empty array when the two channels differ in length.
@@ -590,6 +603,7 @@ export interface InitOutput {
     readonly document_snapshot: (a: number) => [number, number, number, number];
     readonly document_version: (a: number) => bigint;
     readonly graph_bus_reserved: () => [number, number];
+    readonly joinColumns: (a: number, b: number) => [number, number];
     readonly lissajous: (a: number, b: number, c: number, d: number) => [number, number];
     readonly log_apply: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly log_canRedo: (a: number) => number;

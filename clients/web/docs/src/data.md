@@ -175,7 +175,7 @@ one column per pixel:
 
 ```js
 const peaks = data.Peaks.build(samples, { channels: buffer.channels });
-const { min, max } = peaks.columns(0, { width: canvas.width });
+const { min, max } = data.joinColumns(peaks.columns(0, { width: canvas.width }));
 
 for (let x = 0; x < min.length; x++) {
     ctx.moveTo(x, mid - max[x] * scale);
@@ -191,6 +191,20 @@ narrower span:
 ```js
 peaks.columns(0, { width: canvas.width, start: 44100, end: 88200 });
 ```
+
+**`joinColumns` is what turns the measurement into the picture**, and a page
+that strokes its own columns wants it. A column measures a *group* of samples,
+and the groups partition the samples where the curve does not: between the last
+sample of one column and the first of the next there is a segment nothing draws.
+On ordinary audio it never shows, since consecutive columns already overlap. On
+a one-sample jump — a square wave, a gate, an edge of any kind — it is the whole
+of the feature, and the vertical stroke that *is* the edge comes and goes as you
+zoom, because whether the jump lands inside a column or on its boundary is a
+fact about the magnification rather than about the signal. `joinColumns`
+extends each column to meet the one before it, which inks exactly the values the
+curve takes while it crosses the boundary and leaves overlapping columns
+untouched. It is the core's own rule, the one the GUI host's renderer draws
+with, so a page and a `waveform` widget over one buffer draw the same picture.
 
 The reduction is the shared core's, and so is its cache format: `peaks.toBytes()`
 writes the same bytes the GUI host maps and the Python client produces, and
@@ -211,7 +225,8 @@ const take = await Buffer.alloc(10 * 48000, 1, { server });
 const stream = await data.RecordingStream.open(server, [take]);
 
 stream.onReport(() => {
-    const { min, max } = stream.peaks(take).columns(0, { width: canvas.width });
+    const row = stream.peaks(take).columns(0, { width: canvas.width });
+    const { min, max } = data.joinColumns(row);
     draw(min, max, stream.written(take));   // draw only as far as it was written
 });
 

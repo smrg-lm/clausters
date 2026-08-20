@@ -76,12 +76,17 @@
         }
         ctx.stroke();
 
-        // A waveform: one min/max column per pixel, from the peak pyramid.
+        // A waveform: one min/max column per pixel, from the peak pyramid,
+        // joined -- each column reaches the one before it, so an edge landing
+        // on a column boundary is inked rather than falling between the two
+        // quads that measured it. The rule is the core's, the same one the
+        // GUI host's renderer draws with.
         ctx.strokeStyle = "#ddaa44";
         ctx.beginPath();
-        for (let x = 0; x < columns.min.length; x++) {
-          ctx.moveTo(x, 240 - columns.max[x] * 50);
-          ctx.lineTo(x, 240 - columns.min[x] * 50);
+        const row = data.joinColumns(columns);
+        for (let x = 0; x < row.min.length; x++) {
+          ctx.moveTo(x, 240 - row.max[x] * 50);
+          ctx.lineTo(x, 240 - row.min[x] * 50);
         }
         ctx.stroke();
       }

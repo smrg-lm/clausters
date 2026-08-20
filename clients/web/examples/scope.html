@@ -123,23 +123,19 @@ Swapping to a <code>--ws</code> server is the one line marked below.</div>
         }
         ctx.stroke();
 
-        // A waveform: the buffer's peak columns, one per pixel. Each column
-        // is drawn from its own [min, max] extended to meet the one before it:
-        // the columns partition the samples, the signal does not, so a jump
-        // landing on a boundary (the edge of a square wave) would otherwise be
-        // drawn by neither and the trace would come apart at that pixel.
+        // A waveform: the buffer's peak columns, one per pixel, joined --
+        // data.joinColumns extends each column to meet the one before it. The
+        // columns partition the samples and the signal does not, so a jump
+        // landing on a boundary (the edge of a square wave) is drawn by
+        // neither and the trace comes apart at that pixel. It is the same
+        // rule the GUI host's waveform widget draws with, out of the core.
         band(ctx, 300, 110);
         ctx.strokeStyle = COLORS.wave;
         ctx.beginPath();
-        let prev = null;
-        for (let x = 0; x < view.columns.min.length; x++) {
-          let lo = view.columns.min[x];
-          let hi = view.columns.max[x];
-          if (prev && lo > prev.hi) lo = prev.hi;
-          else if (prev && hi < prev.lo) hi = prev.lo;
-          ctx.moveTo(x, 355 - hi * 50);
-          ctx.lineTo(x, 355 - lo * 50);
-          prev = { lo: view.columns.min[x], hi: view.columns.max[x] };
+        const row = data.joinColumns(view.columns);
+        for (let x = 0; x < row.min.length; x++) {
+          ctx.moveTo(x, 355 - row.max[x] * 50);
+          ctx.lineTo(x, 355 - row.min[x] * 50);
         }
         ctx.stroke();
       }

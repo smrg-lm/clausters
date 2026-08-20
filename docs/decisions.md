@@ -6129,8 +6129,23 @@ rules say the same thing from two sides — the drawing shows the signal and
 nothing else, at every zoom, and never changes its mind about what it is looking
 at.
 
-It lives in `draw_channel`, which is the one renderer, so it holds for every
-source (raw samples, a peak pyramid, a cache-only view) and every picture (the
-navigable waveform, a clip's take, a plot's series) at once. The measurements
-stay untouched: the pyramid's buckets keep tiling, the wire's overview keeps its
+It holds for every source (raw samples, a peak pyramid, a cache-only view) and
+every picture (the navigable waveform, a clip's take, a plot's series) at once,
+because the host's `draw_channel` is the one renderer. The measurements stay
+untouched: the pyramid's buckets keep tiling, the wire's overview keeps its
 meaning, and nothing about the summary format moves.
+
+**The rule itself is the core's** (`clausters_core::peaks::join`, and
+`join_columns` over a whole measured row), which is the correction the web
+client forced. "One renderer" is true of the *host* and of nothing else: a page
+that reads `Peaks.columns` gets measurements and strokes them itself, so the
+first version of this left the rule in Rust and copied it by hand into one
+example — and the square wave came apart in a browser exactly as it had in a
+window, while every widget-drawn picture in the same page was right. Two
+implementations of one rule is how the same buffer comes to look different in a
+window and in a browser, so the rule went where the measurement already is,
+beside it and one level below both drawings: the host calls it per column,
+keeping only the walk (which column the trace is on, and where a run starts
+again because a column held nothing), and the web client's `data.joinColumns`
+calls it over the row a page just measured. The C ABI has no row of its own —
+nothing on that side strokes pixels — which `docs/bindings.md` records.

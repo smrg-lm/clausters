@@ -24,6 +24,8 @@
 //! its vertex count was bounded by the render width, as here. So it is gone,
 //! and `crate::waveform` is now the data and the navigation state alone.
 
+use clausters_core::peaks;
+
 use crate::waveform::WaveformData;
 
 use crate::host::layout::Rect;
@@ -424,7 +426,9 @@ impl TraceStyle {
 /// `y_at` maps a sample value to a y pixel inside the lane. Above
 /// [`LINE_THRESHOLD`] samples per pixel — or whenever the source cannot answer
 /// for one sample ([`Trace::has_raw`]) — it draws one min/max column per pixel,
-/// each **joined to the one before it** ([`join`]) so the picture stays the one
+/// each **joined to the one before it** ([`peaks::join`], the core's rule and
+/// not this renderer's, because a page drawing its own columns from the same
+/// pyramid takes the same one) so the picture stays the one
 /// continuous curve the other regime draws; at or below it, the polyline
 /// through every visible sample **plus the one beyond each edge**, so the
 /// segments that cross the edges are drawn and the trace enters and leaves the
@@ -477,7 +481,7 @@ pub fn draw_channel(
         return;
     }
     if columns {
-        // What the column before this one reached — see [`join`].
+        // What the column before this one reached — see [`peaks::join`].
         let mut prev: Option<(f32, f32)> = None;
         for c in 0..cols {
             let x = rect.x + c as f32 * cw;
@@ -493,8 +497,9 @@ pub fn draw_channel(
                 continue;
             }
             // **Joined to the column before it**, which is what keeps the
-            // trace one curve: see [`join`].
-            let (vlo, vhi) = join(lo, hi, prev.take());
+            // trace one curve: see [`peaks::join`]. The walk is the renderer's
+            // — a column that held nothing starts the run again above.
+            let (vlo, vhi) = peaks::join(lo, hi, prev.take());
             prev = Some((lo, hi));
             // A column is a quad, **never inked thinner than the trace's
             // weight in either direction**: at least the pixel column it fills,
@@ -542,48 +547,6 @@ pub fn draw_channel(
         }
     }
     mesh.set_clip(outer);
-}
-
-/// **What a column is inked over: what it measured, extended to meet the column
-/// before it** — the rule that makes the column regime draw the same curve the
-/// polyline regime does.
-///
-/// The two regimes are one picture. Below [`LINE_THRESHOLD`] the trace is the
-/// polyline through the samples, and every consecutive pair is joined by a
-/// segment; above it a column is that same polyline's envelope over the samples
-/// one pixel covers. But a column measures a *group of samples*, and groups
-/// partition the samples where the curve does not: between the last sample of
-/// one column and the first of the next there is a segment, and it was drawn
-/// nowhere. Where the signal crossed a column boundary the two quads did not
-/// touch.
-///
-/// On ordinary audio nothing shows, because a column holding a hundred samples
-/// of a wave already spans nearly the excursion its neighbour does and the two
-/// overlap by themselves. On the picture this is *for* — a digital square wave,
-/// a gate, a step, an edge of any kind — it is the whole of the feature: the
-/// one-sample jump falls between two columns, and the vertical stroke that *is*
-/// the edge is not drawn at all, leaving a flat run at the top and a flat run
-/// at the bottom with nothing between them. And it comes and goes as the view
-/// moves, since whether a jump lands inside a column or on its boundary is a
-/// fact about the magnification and the scroll, not about the signal — which is
-/// what makes it read as the picture losing its grip on the samples rather than
-/// as a defect at one zoom.
-///
-/// Reaching to the neighbour's nearest edge inks exactly the values the curve
-/// takes while it crosses the boundary — the segment the polyline draws a zoom
-/// later, no more — so the fix is silent everywhere it is not needed: columns
-/// that already overlap are left exactly as they were measured. What is stored
-/// for the next column is the **measurement**, never the extension, so a run of
-/// them cannot ratchet the trace outwards.
-fn join(lo: f32, hi: f32, prev: Option<(f32, f32)>) -> (f32, f32) {
-    match prev {
-        // The column before it sat wholly below: reach down to its top.
-        Some((_, phi)) if lo > phi => (phi, hi),
-        // ...wholly above: reach up to its bottom.
-        Some((plo, _)) if hi < plo => (lo, plo),
-        // They already overlap (or there is no column before): as measured.
-        _ => (lo, hi),
-    }
 }
 
 /// **The span a column's level is averaged over**: its own, or the fixed window

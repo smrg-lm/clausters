@@ -26,7 +26,7 @@ export {
     scopeWindow,
 } from "./taps.ts";
 export type { ScopeTrace, TapWindow } from "./taps.ts";
-export { Peaks } from "./peaks.ts";
+export { Peaks, joinColumns } from "./peaks.ts";
 export type { Columns } from "./peaks.ts";
 export { RECORDING_PERIOD_MS, RecordingStream } from "./recording.ts";
 export type { TakeLike, TakeShape } from "./recording.ts";

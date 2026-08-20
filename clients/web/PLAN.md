@@ -1709,7 +1709,7 @@ finished work, where a pending item reads as done.
 
   Checked by eye rather than by a suite, and deliberately: verifying it needs a face, and committing one to the repository is the cost this whole design avoids. Two headless-Chrome screenshots of the same tree, one with a fetched face and one without, showed the same layout in the two faces — which is also what proves the floor holds in the browser.
 
-- ⬜ **The square wave's edge is still missing on the web, and the join that
+- ✅ **The square wave's edge is still missing on the web, and the join that
   draws it is only in the host** *(found 2026-08-20 by the user, on the web
   version, after the fix landed for the native window)*. A column measures a
   group of samples and groups partition the samples where the curve does not, so
@@ -1738,3 +1738,26 @@ finished work, where a pending item reads as done.
   all — if the edge is missing in a `waveform` widget on a page, the join is
   reaching the picture and something else is, and this entry is the wrong place
   to look. Reproducing it against a named page is the first step, not the fix.
+
+  **Reproduced, and it is the page that draws its own columns** *(2026-08-20)*:
+  a square wave of 8192 frames with a 512-frame period, read at widths 16, 32
+  and 64, comes back with **every column flat and fifteen disjoint boundaries** —
+  a dashed top, a dashed bottom, no vertical anywhere — because at those widths
+  a transition always lands between two columns. The wasm host was never in it:
+  a widget draws through `trace::draw_channel`, which had the join.
+
+  **Fixed by moving the rule down rather than by copying it again**, which is
+  what the entry's second question actually needed. The join is now
+  `clausters_core::peaks::join` (plus `join_columns` over a whole measured row),
+  so there is **one implementation** and both drawings call it: the host per
+  column, keeping only the walk a run of columns needs, and this client through
+  `data.joinColumns(row)`. The measurement is untouched and stays what the two
+  clients compare and the cache stores — `columns` answers what the pyramid
+  measured, `joinColumns` answers what to ink — which is the constraint the
+  entry set, met by putting the rule *beside* the measurement rather than inside
+  it. `tests/data.html` and `examples/scope.html` (which loses its hand-copied
+  recipe) both go through it, the web book's waveform section teaches it, and
+  the case is asserted on both sides: `peaks::join_tests` in the core, "a square
+  wave's edge is inked once the columns are joined" in `data.test.ts`.
+  `docs/bindings.md` carries the wasm row; the C ABI has none, since nothing on
+  that side strokes pixels.
