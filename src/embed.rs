@@ -217,6 +217,20 @@ impl ClaustersHeadless {
         })
     }
 
+    /// Sets the ceiling on the bus indices one `/bus_stream` subscription may
+    /// list, the pulled server's half of the native `--max-stream-buses`
+    /// (default [`crate::osc::DEFAULT_MAX_STREAM_BUSES`]).
+    ///
+    /// It is a setter rather than a constructor argument because this engine
+    /// boots from an audio callback's format and nothing else: an embedder
+    /// that wants another ceiling — a page whose document holds hundreds of
+    /// live canvases — says so before it starts serving. What a client then
+    /// gets is this clamped by the ring it reads over, which is the number
+    /// `/server_query.reply` hands it.
+    pub fn set_max_stream_buses(&mut self, n: usize) {
+        self.server.set_max_stream_buses(n);
+    }
+
     /// Delivers one complete OSC packet (message or bundle) through the
     /// command ring; it takes effect on the next [`Self::process_block`].
     /// Returns `false` when the ring is momentarily full (backpressure).

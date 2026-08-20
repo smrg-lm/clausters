@@ -80,11 +80,12 @@ impl OscServer {
     /// `/server_query.reply [audio_buses, control_buses, output_channels,
     /// block_size, nominal_sr, actual_sr, input_channels, max_nodes,
     /// max_buffers, max_graph_children, max_ugen_inputs, taps, tap_frames,
-    /// max_frame]`. The first six fields are stable; the boot-time capacities
-    ///, the tap region shape and the stream-transport frame ceiling
-    /// (what a client should size bulk requests like `/buffer_getRange` chunks
-    /// from) are appended so older clients that read only the six keep
-    /// working.
+    /// max_frame, max_stream_buses]`. The first six fields are stable; the
+    /// boot-time capacities, the tap region shape, the stream-transport frame
+    /// ceiling (what a client should size bulk requests like
+    /// `/buffer_getRange` chunks from) and the `/bus_stream` bus ceiling **as
+    /// it applies to the asking client's carrier** are appended so older
+    /// clients that read only the six keep working.
     pub(in crate::osc::server) fn send_server_query(&mut self, to: ClientId) {
         let limits = self.handle.limits;
         let (taps, tap_frames) = self
@@ -106,6 +107,10 @@ impl OscServer {
             OscType::Int(taps as i32),
             OscType::Int(tap_frames as i32),
             OscType::Int(self.max_frame.min(i32::MAX as usize) as i32),
+            // Per client, not per server: the same ceiling reaches a page over
+            // the ring and a native client over TCP as two different numbers,
+            // and the one a client can act on is its own.
+            OscType::Int(self.stream_bus_cap(to).min(i32::MAX as usize) as i32),
         ];
         self.reply(to, "/server_query.reply", args);
     }

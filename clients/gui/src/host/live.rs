@@ -510,6 +510,60 @@ impl BusSource for StreamedSource {
     }
 }
 
+/// What a page's leg believes its `/bus_stream` ceiling is **before the server
+/// says** — the limit every server has allowed since the command existed.
+///
+/// Starting at the configured default instead would be optimistic in the one
+/// direction that costs something: the canvases of a document open in one
+/// synchronous pass, each re-deriving the subscription, and the engine cannot
+/// answer `/server_query` until its next serving turn — so an over-large set
+/// is asked for, and refused, once per canvas before the first reply lands.
+/// Believing the floor asks for less than it may for a few frames (a meter
+/// holds its last value) and asks for nothing it will be refused.
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+pub(crate) const INITIAL_STREAM_BUS_CAP: usize = 128;
+
+// Both rules below belong to the *page's* leg -- a native host reads the buses
+// out of the shared segment and subscribes to nothing -- but they are
+// decisions rather than I/O, so they live on the agnostic side of the seam and
+// are tested here, with no browser. That is also why the native build sees no
+// caller for them.
+/// Trims a `/bus_stream` set to what the server will accept, answering how
+/// many buses were left out.
+///
+/// The set is the union over every visible canvas, so it grows with the
+/// *document* rather than with a widget, and a page can walk into the server's
+/// ceiling by opening one more view. The request is refused whole past it, so
+/// asking for everything is asking for nothing: what is kept is the head of
+/// the set, which is def-id order — the canvases that opened first hold their
+/// stream, and the ones that arrived after it are the ones that stop moving.
+/// Arbitrary, and stated here so it is one rule instead of an accident of
+/// where the truncation happened to be written.
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+pub(crate) fn clamp_stream_set(wanted: &mut Vec<i32>, cap: usize) -> usize {
+    if wanted.len() <= cap {
+        return 0;
+    }
+    let dropped = wanted.len() - cap;
+    wanted.truncate(cap);
+    dropped
+}
+
+/// The ceiling a `/bus_stream` refusal names, out of the reason it carries
+/// ("at most N bus indices per subscription on this carrier").
+///
+/// Reading a limit out of prose is not how a client should learn one —
+/// `/server_query.reply` reports it — and this is the fallback for a server
+/// that refused before the query was answered, or for a refusal the query
+/// could not have predicted. A reason it cannot parse leaves the ceiling
+/// alone; what matters either way is that the belief in the subscription is
+/// dropped.
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+pub(crate) fn refused_stream_cap(reason: &str) -> Option<usize> {
+    let (count, _) = reason.strip_prefix("at most ")?.split_once(' ')?;
+    count.parse().ok().filter(|n| *n > 0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::guidef::GuiNode;
@@ -791,5 +845,37 @@ mod tests {
         assert_eq!(buses.control(5), 0.25);
         assert_eq!(buses.control(9), -1.5);
         assert_eq!(buses.control(1000), 0.0);
+    }
+
+    /// The union is trimmed from the tail, and a set that fits is untouched --
+    /// including the empty one, which is how a page with nothing live cancels.
+    #[test]
+    fn a_stream_set_is_trimmed_from_the_tail() {
+        let mut wanted = vec![3, 5, 8, 13];
+        assert_eq!(clamp_stream_set(&mut wanted, 4), 0);
+        assert_eq!(wanted, vec![3, 5, 8, 13], "a set that fits is left alone");
+
+        assert_eq!(clamp_stream_set(&mut wanted, 2), 2);
+        assert_eq!(wanted, vec![3, 5], "the head is what keeps streaming");
+
+        let mut none: Vec<i32> = Vec::new();
+        assert_eq!(clamp_stream_set(&mut none, 0), 0);
+    }
+
+    /// A refusal names the ceiling, and anything else leaves it alone: the
+    /// number is a hint, and the reply that carries it is prose.
+    #[test]
+    fn a_refusal_names_the_ceiling_or_says_nothing() {
+        assert_eq!(
+            refused_stream_cap("at most 819 bus indices per subscription on this carrier"),
+            Some(819)
+        );
+        assert_eq!(refused_stream_cap("expected int periodMs"), None);
+        assert_eq!(refused_stream_cap("at most zero buses"), None);
+        assert_eq!(
+            refused_stream_cap("at most 0 buses"),
+            None,
+            "a cap of none is no cap"
+        );
     }
 }

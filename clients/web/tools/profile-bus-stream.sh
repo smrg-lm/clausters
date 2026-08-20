@@ -11,7 +11,7 @@
 #
 # Prerequisites: ./build.sh (dist/ is git-ignored and stale by default).
 #
-# From clients/web/:  ./tools/profile-bus-stream.sh [canvases] [seconds]
+# From clients/web/:  ./tools/profile-bus-stream.sh [canvases] [seconds] [ceiling]
 #
 # The headless caveat that belongs beside every number it prints: Chrome's
 # software WebGL (SwiftShader) makes the *drawing* far more expensive than a
@@ -23,6 +23,10 @@ cd "$(dirname "$0")/.."
 
 CANVASES="${1:-40}"
 SECONDS_PER_PHASE="${2:-6}"
+# Optional third argument: boot the in-page engine with a lowered /bus_stream
+# ceiling, to exercise what a page does when its document outgrows the server's
+# limit (it subscribes what fits and says what it left out).
+CEILING="${3:-}"
 CHROME="${CHROME:-$(command -v google-chrome || command -v chromium || command -v chromium-browser)}"
 PORT="${PORT:-8143}"
 
@@ -65,6 +69,7 @@ fi
 
 profile=$(mktemp -d)
 url="http://127.0.0.1:$PORT/tools/bus-stream-profile.html?canvases=$CANVASES&seconds=$SECONDS_PER_PHASE"
+[ -n "$CEILING" ] && url="$url&maxbuses=$CEILING"
 setsid "$CHROME" --headless=new --disable-gpu --no-sandbox \
     --enable-unsafe-swiftshader \
     --window-size=1600,1200 \

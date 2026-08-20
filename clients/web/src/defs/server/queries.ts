@@ -111,6 +111,7 @@ export class ServerQueries {
             taps: at(11, 0),
             tapFrames: at(12, 0),
             maxFrame: at(13, 65536),
+            maxStreamBuses: at(14, 128),
         };
     }
 

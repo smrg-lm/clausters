@@ -66,6 +66,19 @@ export interface BootOptions {
     channels?: number;
     wasmUrl?: URL | string;
     workletUrl?: URL | string;
+    /**
+     * How many control buses one `/bus_stream` subscription may list, the
+     * page's half of the server's `--max-stream-buses` (default 4096). A
+     * document whose canvases hold hundreds of live widgets subscribes a bus
+     * per meter, and the union is one subscription — so this is the knob that
+     * decides how large a page may grow before the engine refuses it, the same
+     * decision an operator makes on a server process.
+     *
+     * The effective ceiling is this clamped by what one reply can carry over
+     * the page's ring; `/server_query.reply` reports that number, and the GUI
+     * host reads it from there rather than assuming either.
+     */
+    maxStreamBuses?: number;
 }
 
 type WorkletReply =
@@ -80,6 +93,7 @@ export async function bootClausters({
     channels = 2,
     wasmUrl = new URL("./clausters_web_bg.wasm", import.meta.url),
     workletUrl = new URL("./worklet.js", import.meta.url),
+    maxStreamBuses,
 }: BootOptions = {}): Promise<ClaustersEngine> {
     const ctx = context ?? new AudioContext();
     const [module] = await Promise.all([
@@ -97,6 +111,7 @@ export async function bootClausters({
             // Unix seconds at engine sample 0: the anchor that lets
             // wall-clocked bundle timetags land on the engine's sample axis.
             unixEpoch: Date.now() / 1000,
+            maxStreamBuses,
         },
     });
     node.connect(ctx.destination);

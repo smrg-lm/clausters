@@ -51,6 +51,11 @@ usage:
       --max-clients <n>    concurrent stream clients, TCP + WebSocket combined
                            (default 64); a connection past the ceiling is
                            dropped at accept. UDP is connectionless, unaffected
+      --max-stream-buses <n>
+                           bus indices one /bus_stream subscription may list
+                           (default 4096); a client's own ceiling is this
+                           clamped by what its carrier carries in one packet,
+                           and /server_query.reply reports that number
       --ws [port]          also accept OSC over WebSocket, reachable from a
                            browser (RT only; default the base port + 10, so
                            57120; ws://host:port/)
@@ -270,6 +275,9 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let mut max_clients: usize = cfg
         .max_clients
         .unwrap_or(clausters::osc::DEFAULT_MAX_CLIENTS);
+    let mut max_stream_buses: usize = cfg
+        .max_stream_buses
+        .unwrap_or(clausters::osc::DEFAULT_MAX_STREAM_BUSES);
     let mut cli_ws: Option<PortChoice> = None;
     // Enabled-ness now, the name later: the default name carries the port (see
     // `default_midi_name`), which the loop below can still move.
@@ -361,6 +369,14 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                     .next()
                     .ok_or(format!("--max-clients needs a count\n{USAGE}"))?;
                 max_clients = value.parse().map_err(|e| format!("--max-clients: {e}"))?;
+            }
+            "--max-stream-buses" => {
+                let value = it
+                    .next()
+                    .ok_or(format!("--max-stream-buses needs a count\n{USAGE}"))?;
+                max_stream_buses = value
+                    .parse()
+                    .map_err(|e| format!("--max-stream-buses: {e}"))?;
             }
             "--ws" => {
                 // Optional port; bare, it follows the base port offset by
@@ -632,6 +648,7 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     // Before the listeners: the TCP/WS hubs capture the ceiling when they bind.
     osc.set_max_frame(max_frame);
     osc.set_max_clients(max_clients);
+    osc.set_max_stream_buses(max_stream_buses);
     if !no_persist && let Some(dir) = resolve_data_dir(data_dir.as_deref()) {
         match DefStore::open(&dir) {
             Ok(store) => {

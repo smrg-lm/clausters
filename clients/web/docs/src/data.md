@@ -37,10 +37,19 @@ newest snapshot; `buses.value(level)` reads one by handle. When the view goes
 away, `await buses.stop()` cancels the subscription — the buses themselves are
 untouched, since a stream only ever reads.
 
-Two limits come from the server and not from this class: at most **128 buses**
-per subscription, and **one subscription per client** — opening a second
-`BusStream` on the same `Server` replaces the first. Watch everything the page
-needs in one stream.
+Two limits come from the server and not from this class: a **ceiling on the
+buses** one subscription may list, and **one subscription per client** —
+opening a second `BusStream` on the same `Server` replaces the first. Watch
+everything the page needs in one stream.
+
+The ceiling is boot-time configuration on the server (`--max-stream-buses`, or
+`maxStreamBuses` when the page boots its own engine) and its default is
+generous. What matters is that the number is **per carrier**: the same server
+answers a page over its shared-memory ring and a native client over TCP with
+two different figures, because a snapshot is one message and is never split
+across replies. So a page that draws a great deal reads it rather than assuming
+it — `(await server.queryInfo()).maxStreamBuses` — and a request over the
+ceiling is refused whole, leaving whatever subscription was already there.
 
 > **In the page, the GUI host is that same client.** Over the in-page carrier
 > the script and the host both reach the engine through one shared-memory ring,

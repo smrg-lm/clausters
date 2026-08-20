@@ -45,6 +45,8 @@ interface ProcessorOptions {
     module: WebAssembly.Module;
     channels: number;
     unixEpoch: number;
+    /** The page's `/bus_stream` ceiling; the engine's default stands when unset. */
+    maxStreamBuses?: number;
 }
 
 class ClaustersProcessor extends AudioWorkletProcessor {
@@ -58,12 +60,16 @@ class ClaustersProcessor extends AudioWorkletProcessor {
 
     constructor(options: { processorOptions: ProcessorOptions }) {
         super();
-        const { module, channels, unixEpoch } = options.processorOptions;
+        const { module, channels, unixEpoch, maxStreamBuses } = options.processorOptions;
         initSync({ module });
         this.channels = channels;
         this.epoch = unixEpoch;
         // sampleRate is the AudioWorkletGlobalScope global: the context rate.
         this.server = new WebServer(sampleRate, channels, unixEpoch);
+        // Before anything subscribes: the ceiling is read when a `/bus_stream`
+        // arrives, and the page's first canvas may open in the same turn as
+        // the boot.
+        if (maxStreamBuses !== undefined) this.server.set_max_stream_buses(maxStreamBuses);
         this.interleaved = new Float32Array(128 * channels);
         this.pending = [];
         this.dead = false;

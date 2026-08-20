@@ -67,6 +67,13 @@
       const params = new URLSearchParams(location.search);
       const CANVASES = Number(params.get("canvases") ?? 40);
       const SECONDS = Number(params.get("seconds") ?? 6);
+      // `?maxbuses=` boots the in-page engine with a lowered `/bus_stream`
+      // ceiling (the page's half of the server's --max-stream-buses), so the
+      // wall a big document walks into can be exercised at any size: the host
+      // subscribes what fits, says in the log what it left out, and the page
+      // keeps drawing rather than freezing on a refusal nobody read.
+      const MAX_BUSES = params.has("maxbuses")
+          ? Number(params.get("maxbuses")) : undefined;
       const FRAME_MS = 33;   // the host's own tick and stream period
 
       const out = [];
@@ -178,7 +185,7 @@
       async function run() {
         await loadOsc();
         await loadCore();
-        const raw = await engine({ channels: 2 });
+        const raw = await engine({ channels: 2, maxStreamBuses: MAX_BUSES });
         await raw.resume();
         const connection = await pageConnection();
         const server = await Server.open(connection);
@@ -265,7 +272,9 @@
         await server.sync();
         say(`${CANVASES} canvases, ${CANVASES * 2} control buses, `
           + `${CANVASES * 2} LFO synths; host tick and stream period `
-          + `${FRAME_MS} ms`);
+          + `${FRAME_MS} ms`
+          + (MAX_BUSES === undefined ? ""
+             : `; engine ceiling lowered to ${MAX_BUSES} buses`));
 
         // Let the host settle: it subscribes on its tick, and the first
         // frames pay for shader compilation and the first upload.
@@ -340,6 +349,7 @@
           + `not streaming: loop lag ${lagDelta} ms, blocked ${blockedDelta} ms/s.`);
 
         verdict(`PROFILE canvases=${CANVASES} buses=${CANVASES * 2} `
+          + (MAX_BUSES === undefined ? "" : `ceiling=${MAX_BUSES} `)
           + `refused=${refusals.length} `
           + `bytes/frame=${round(A.bytesPerReply, 0)} `
           + `us/frame=${round(perFrame * 1000, 0)} `

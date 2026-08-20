@@ -20,7 +20,8 @@ export class ServerStreams {
     /**
      * Subscribes this client to a periodic `/bus_stream.reply` snapshot of `buses`
      * (`/bus_stream`): the server sends one immediately and then one every
-     * `periodMs` (10 ms floor, at most 128 buses) with no further requests —
+     * `periodMs` (10 ms floor; at most `ServerInfo.maxStreamBuses` buses,
+     * which the server reports per carrier) with no further requests —
      * the message-based counterpart of reading the shared-memory segment, and
      * what a meter or a control-rate scope in the page feeds on.
      *

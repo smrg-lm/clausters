@@ -18,8 +18,9 @@ class ServerStreams:
     def stream_buses(self, period_ms: int, *buses, timeout: "float | None" = None):
         """Subscribes this client to a periodic ``/bus_stream.reply`` snapshot of the
         given control buses (``/bus_stream``): the server sends one snapshot
-        immediately and then one every ``period_ms`` (floor 10 ms, at most 128
-        buses) with no further requests -- the network counterpart of reading
+        immediately and then one every ``period_ms`` (floor 10 ms; at most
+        `ServerInfo.max_stream_buses` buses, which the server reports per
+        carrier) with no further requests -- the network counterpart of reading
         the shared-memory segment, e.g. for meters over WebSocket. One
         subscription per client, replaced on each call; ``period_ms <= 0`` (or
         no buses) cancels it. Receive the snapshots with an `OscFunc` on

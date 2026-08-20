@@ -71,6 +71,18 @@ export class WebServer {
      * is the page's to assign; there is no handshake.
      */
     send(peer: number, packet: Uint8Array): boolean;
+    /**
+     * Sets the ceiling on the bus indices one `/bus_stream` subscription may
+     * list — the page's half of the native `--max-stream-buses`, so an
+     * in-page engine is configured on the same axis as a server process
+     * (default 4096). A page whose document holds hundreds of live canvases
+     * subscribes a bus per meter, and the number it may ask for should be its
+     * own decision here as it is a server operator's there.
+     *
+     * What a client actually gets is this clamped by what the ring carries in
+     * one reply, and `/server_query.reply` reports that number to it.
+     */
+    set_max_stream_buses(n: number): void;
 }
 
 /**
@@ -110,6 +122,7 @@ export interface InitOutput {
     readonly webserver_process: (a: number, b: number, c: number, d: any) => [number, number];
     readonly webserver_quit_requested: (a: number) => number;
     readonly webserver_send: (a: number, b: number, c: number, d: number) => number;
+    readonly webserver_set_max_stream_buses: (a: number, b: number) => void;
     readonly last_render_seed: () => bigint;
     readonly abi_version: () => number;
     readonly clausters_free_samples: (a: number, b: bigint) => void;

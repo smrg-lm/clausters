@@ -75,4 +75,14 @@ export interface ServerInfo extends ServerSizing {
     tapFrames: number;
     /** The stream-transport frame ceiling in bytes. */
     maxFrame: number;
+    /**
+     * How many control buses one `/bus_stream` subscription may list
+     * (`--max-stream-buses`), **as it applies to this client's carrier**: the
+     * server's configured ceiling clamped by what one reply carries over the
+     * transport asking. A subscription is one client's whole live picture — a
+     * page of many canvases asks for a bus per meter — so a client that draws
+     * a lot reads this rather than assuming. Falls back to the historical 128
+     * against a server too old to report it.
+     */
+    maxStreamBuses: number;
 }

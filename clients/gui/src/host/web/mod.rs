@@ -236,6 +236,23 @@ struct WebApp {
     /// the first time a tree names a server buffer, exactly as the native
     /// front sends it when a window draws one.
     notified: bool,
+    /// How many buses one `/bus_stream` subscription may list on this leg —
+    /// the server's own ceiling as it applies to *this* client's carrier, read
+    /// from `/server_query.reply` when the leg connects.
+    ///
+    /// It matters because the subscription is the union over every visible
+    /// canvas: a document grows the set, so a page can walk into the ceiling
+    /// by opening widgets rather than by asking for anything unusual. Until
+    /// the reply lands the historical floor stands
+    /// ([`live::INITIAL_STREAM_BUS_CAP`]), and a refusal lowers it — the
+    /// host's belief about what it subscribed is what decides whether it ever
+    /// asks again.
+    stream_bus_cap: usize,
+    /// How many buses the last subscription had to leave out, so the log says
+    /// so when it *changes* rather than once per canvas: a document's opening
+    /// pass re-derives the subscription per canvas, and a line each would bury
+    /// the one thing worth reading.
+    stream_dropped: usize,
     /// The server's sample rate (from `/clock_query.reply`, requested when the leg
     /// connects); `0.0` until known — window sizing then assumes 48 kHz.
     server_rate: f64,
@@ -270,6 +287,8 @@ impl WebApp {
             taps: Arc::new(StreamedTaps::default()),
             tap_streamed: (Vec::new(), 0),
             notified: false,
+            stream_bus_cap: live::INITIAL_STREAM_BUS_CAP,
+            stream_dropped: 0,
             server_rate: 0.0,
             server_clock: 0.0,
             tick: None,
@@ -344,13 +363,19 @@ impl WebApp {
     /// A freshly attached server leg (WS or in-page) holds no subscription:
     /// forget the old ones and subscribe the current tree's buses and taps
     /// (WS frames queue until the socket opens, so sending now is safe).
-    /// `/clock_query` fetches the rate the oscilloscope windows are sized with.
+    /// `/clock_query` fetches the rate the oscilloscope windows are sized with,
+    /// and `/server_query` the ceiling on how many buses one subscription may
+    /// list — this leg's own, since the answer depends on the carrier.
     fn on_server_attached(&mut self) {
         self.streamed.clear();
         self.tap_streamed = (Vec::new(), 0);
         if let Some(server) = self.host.server() {
             let _ = server.send(OscMessage {
                 addr: "/clock_query".into(),
+                args: vec![],
+            });
+            let _ = server.send(OscMessage {
+                addr: "/server_query".into(),
                 args: vec![],
             });
         }

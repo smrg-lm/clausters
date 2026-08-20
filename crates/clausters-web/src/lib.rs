@@ -129,6 +129,19 @@ impl WebServer {
         })
     }
 
+    /// Sets the ceiling on the bus indices one `/bus_stream` subscription may
+    /// list — the page's half of the native `--max-stream-buses`, so an
+    /// in-page engine is configured on the same axis as a server process
+    /// (default 4096). A page whose document holds hundreds of live canvases
+    /// subscribes a bus per meter, and the number it may ask for should be its
+    /// own decision here as it is a server operator's there.
+    ///
+    /// What a client actually gets is this clamped by what the ring carries in
+    /// one reply, and `/server_query.reply` reports that number to it.
+    pub fn set_max_stream_buses(&mut self, n: u32) {
+        self.inner.set_max_stream_buses(n as usize);
+    }
+
     /// Pushes one complete OSC packet into the command ring, authored by
     /// `peer`. `false` = momentarily full (backpressure): retry next quantum.
     ///

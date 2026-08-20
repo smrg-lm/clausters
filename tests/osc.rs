@@ -607,12 +607,46 @@ fn c_stream_rejects_bad_arguments() {
     let reply = server.recv_until("/fail");
     assert_eq!(reply.args[0], OscType::String("/bus_stream".into()));
 
-    let mut args = vec![OscType::Int(20)];
-    args.extend((0..129).map(OscType::Int));
+    // Over what one reply can carry to *this* client -- a datagram-bounded one
+    // keeps the overview budget, so about eight hundred pairs. The refusal
+    // names the number, which is what a client with no `/server_query` in hand
+    // has to go on.
+    let mut args = vec![OscType::Int(1000)];
+    args.extend((0..4096).map(OscType::Int));
     server.send("/bus_stream", args);
     let reply = server.recv_until("/fail");
     assert_eq!(reply.args[0], OscType::String("/bus_stream".into()));
+    let OscType::String(why) = &reply.args[1] else {
+        panic!("expected a reason, got {:?}", reply.args[1]);
+    };
+    assert!(
+        why.starts_with("at most ") && why.ends_with("on this carrier"),
+        "the refusal has to name the ceiling: {why}"
+    );
 
+    server.quit();
+}
+
+/// The ceiling is a boot-time configuration and not the shape of a widget: a
+/// page holding many canvases subscribes the union of what they draw, so a
+/// subscription grows with the document. 128 was the old constant, and it is
+/// the number a page of sixty-four canvases walked into.
+#[test]
+fn c_stream_carries_far_more_than_a_frame_of_meters() {
+    let server = TestServer::spawn();
+
+    // Slow enough that the snapshots do not flood the socket before the ack.
+    let mut args = vec![OscType::Int(1000)];
+    args.extend((0..400).map(OscType::Int));
+    server.send("/bus_stream", args);
+    let done = server.recv_until("/done");
+    assert_eq!(done.args[0], OscType::String("/bus_stream".into()));
+
+    let snap = server.recv_until("/bus_stream.reply");
+    assert_eq!(snap.args.len(), 800, "400 (index, value) pairs");
+
+    // No cancel: the subscription dies with the server, and the `/done` a
+    // cancel would ack is the reply `quit()` is waiting for.
     server.quit();
 }
 
@@ -2839,6 +2873,19 @@ fn server_info_reports_configured_limits() {
     // M25: the stream-transport frame ceiling, for clients to size bulk
     // requests from.
     assert_eq!(ints[13], 16 * 1024 * 1024, "max_frame");
+    // The `/bus_stream` ceiling, per carrier: this client is a datagram one,
+    // so it is the overview byte budget rather than the configured 4096 --
+    // which is the whole reason the field is reported to the client instead of
+    // being a constant it could have compiled in.
+    assert!(
+        (1..=4096).contains(&ints[14]),
+        "max_stream_buses for a datagram client: {}",
+        ints[14]
+    );
+    assert!(
+        ints[14] > 128,
+        "the old constant is not the ceiling any more"
+    );
     server.quit();
 }
 

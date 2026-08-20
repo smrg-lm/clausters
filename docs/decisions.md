@@ -4488,6 +4488,53 @@ Versioning: the framing changed, so `ABI_VERSION` moves 6 → 7 and, by the
 linkage rule, drags the SemVer breaking tier with it. Nothing else about the
 segment moved.
 
+## How many buses one subscription may list is configuration, and it is per carrier
+
+Context: `/bus_stream` was born with a constant — at most 128 bus indices,
+chosen when the only consumer was one browser canvas' meters over WebSocket and
+sized by the sentence "128 pairs fit comfortably in a single frame on every
+transport". The command exists for clients that cannot map the shared-memory
+segment, so **only a page ever meets it**: a native GUI host reads the buses
+straight out of the segment and subscribes nothing. What changed underneath is
+what the page became. A browser host subscribes the union over every visible
+canvas, so the set grows with the *document*: at a bus per meter, a page of
+sixty-four canvases walked into the ceiling by opening widgets, and past it
+every further canvas read a bus nobody streamed. The refusal was a `/fail` the
+host logged and otherwise ignored, so the page went on drawing stale values.
+
+Decision, in three parts.
+
+- **The ceiling is boot-time configuration, like every other pool the server
+  sizes** — `--max-stream-buses` / `[server] max_stream_buses`, default 4096 —
+  and the in-page engine carries the same knob, because a page is a deployment
+  and not a client: `maxStreamBuses` at boot reaches
+  `WebServer::set_max_stream_buses`. A limit only one of the two deployments can
+  set is a limit the browser is stuck with, which is exactly the position this
+  started from.
+- **The effective limit is per carrier, and the server reports it.** A snapshot
+  is one message per period and is never split across replies, so a
+  subscription its carrier cannot deliver would have every reply dropped —
+  silently, on the ring. The request is therefore clamped by what the asking
+  client's transport carries in one packet (its frame ceiling on TCP/WebSocket,
+  the overview reply budget on UDP and the ring) and the result is appended to
+  `/server_query.reply`. One number for the whole server would be a fiction:
+  the same server answers a page over its ring and a native client over TCP
+  with two different figures.
+- **A refusal is not a subscription.** The over-large request is still refused
+  whole rather than quietly truncated — a client that believes it subscribed a
+  set it did not is the disease, not the cure — and the browser host now acts
+  on the `/fail` instead of logging it: it forgets the subscription it thought
+  it had (its own belief is what stopped it asking again), takes the ceiling
+  the refusal names, and re-subscribes what fits. Before that, it asks
+  `/server_query` when its leg attaches and clamps the union to the answer,
+  naming in the log how many buses were left out and which knob raises them.
+
+What was **not** done, and why: splitting the union across several
+subscriptions. The protocol's rule is one per client, so splitting means
+several peer tags or a second connection — carrier-dependent plumbing for
+headroom a configurable ceiling gives outright.
+
+
 ## The port is a parameter, and that is what makes a handle worth attaching to
 
 The server binary bound 57110 and nothing else: `--tcp [port]` and `--ws [port]`

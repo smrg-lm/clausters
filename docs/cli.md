@@ -43,6 +43,7 @@ lets several run side by side on one machine — see
 | `--ws` | port (optional) | the base port + 10 | Also accept OSC over WebSocket (`ws://host:port/`), reachable from a browser. Off unless asked for. |
 | `--max-frame` | bytes | `16777216` | Largest OSC frame on the stream transports. A denial-of-service ceiling, not a protocol limit; UDP keeps its ~64 KB datagram cap regardless. |
 | `--max-clients` | count | `64` | Concurrent stream clients, TCP and WebSocket combined. A connection past the ceiling is dropped at accept; UDP is connectionless and unaffected. |
+| `--max-stream-buses` | count | `4096` | Bus indices one `/bus_stream` subscription may list. A subscription is one client's whole live picture — a page of many canvases asks for a bus per meter — so the ceiling scales with a document, not with a widget. What a given client may ask for is this clamped by what one reply carries over its carrier, and `/server_query.reply` reports **that** number to it. |
 
 ### Audio
 

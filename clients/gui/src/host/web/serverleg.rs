@@ -118,7 +118,30 @@ impl WebApp {
     /// canvases read live (`/bus_stream`, replacing this client's previous
     /// subscription), or cancels when none are left. Skipped without a server
     /// leg; `ConnectServer` re-runs it once the leg exists.
-    pub(super) fn sync_bus_stream(&mut self, wanted: Vec<i32>) {
+    pub(super) fn sync_bus_stream(&mut self, mut wanted: Vec<i32>) {
+        // The subscription is the union over every visible canvas, so what is
+        // asked for grows with the document. Past the server's ceiling the
+        // whole request is refused and the previous subscription kept, which
+        // would leave the page streaming a set nobody can name: better to ask
+        // for as much as the carrier takes, in the order the canvases opened
+        // (the demand walk is sorted by def id), and say what was left out.
+        let dropped = live::clamp_stream_set(&mut wanted, self.stream_bus_cap);
+        if dropped != self.stream_dropped {
+            self.stream_dropped = dropped;
+            if dropped == 0 {
+                log("/bus_stream: every bus the canvases read is subscribed again");
+            } else {
+                log(&format!(
+                    "/bus_stream: {dropped} of {} buses left unsubscribed -- this \
+                 server carries {} per subscription to this client, and the \
+                 widgets reading the rest will hold their last value \
+                 (raise it with --max-stream-buses, or the page engine's \
+                 maxStreamBuses)",
+                    wanted.len() + dropped,
+                    self.stream_bus_cap,
+                ));
+            }
+        }
         if wanted == self.streamed {
             return;
         }
@@ -323,7 +346,42 @@ impl WebApp {
                     self.sync_tap_stream(demand.taps, demand.tap_frames);
                 }
             }
-            "/fail" => log(&format!("audio server replied /fail: {:?}", msg.args)),
+            "/server_query.reply" => {
+                // The last field (appended, so a shorter reply is an older
+                // server and not an error) is what this client may list in one
+                // `/bus_stream` -- the server's ceiling already clamped to the
+                // carrier this leg reads over.
+                if let Some(OscType::Int(cap)) = msg.args.get(14)
+                    && *cap > 0
+                {
+                    self.stream_bus_cap = *cap as usize;
+                    // Re-derive: the set already asked for may have been
+                    // truncated against the default, or may now fit.
+                    self.streamed.clear();
+                    let demand = self.demand();
+                    self.sync_bus_stream(demand.buses);
+                }
+            }
+            "/fail" => {
+                log(&format!("audio server replied /fail: {:?}", msg.args));
+                // A refused subscription is not a subscription, and the host
+                // re-sends only when its own set changes -- so believing the
+                // send is what would freeze every meter on the page until a
+                // widget happened to come or go. Forget it, take the ceiling
+                // the refusal names, and ask again for what fits.
+                if let Some(OscType::String(addr)) = msg.args.first()
+                    && addr == "/bus_stream"
+                {
+                    if let Some(OscType::String(why)) = msg.args.get(1)
+                        && let Some(cap) = live::refused_stream_cap(why)
+                    {
+                        self.stream_bus_cap = cap;
+                    }
+                    self.streamed.clear();
+                    let demand = self.demand();
+                    self.sync_bus_stream(demand.buses);
+                }
+            }
             // `/done` acks (e.g. for `/bus_stream`) need no action.
             "/done" => {}
             _ => {}

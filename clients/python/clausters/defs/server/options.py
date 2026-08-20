@@ -50,7 +50,8 @@ class ServerOptions:
       this object agree by construction. Verify a running server with
       `Server.query_info`.
     - **Behavior** (``workers``, ``tcp``, ``ws``, ``midi``, ``persist``,
-      ``max_frame``, ``max_clients``, ``pin``): server-only, no client-side
+      ``max_frame``, ``max_stream_buses``, ``max_clients``, ``pin``):
+      server-only, no client-side
       counterpart. Their default ``None`` emits **no flag**, leaving the
       server's own precedence intact (CLI flag > project config > user
       config > compiled default); a set value emits the flag, which wins.
@@ -120,6 +121,10 @@ class ServerOptions:
     persist: "bool | None" = None
     #: Largest OSC frame on the stream transports, bytes (``--max-frame``).
     max_frame: "int | None" = None
+    #: Bus indices one ``/bus_stream`` subscription may list
+    #: (``--max-stream-buses``); the server's default is generous and a client
+    #: reads its own effective ceiling from `ServerInfo.max_stream_buses`.
+    max_stream_buses: "int | None" = None
     #: Concurrent stream clients, TCP + WebSocket (``--max-clients``).
     max_clients: "int | None" = None
     #: The audio host/backend by name (``--host``): ``"jack"``, ``"alsa"``,
@@ -192,6 +197,8 @@ class ServerOptions:
             flags += ["--no-persist"]
         if self.max_frame is not None:
             flags += ["--max-frame", str(self.max_frame)]
+        if self.max_stream_buses is not None:
+            flags += ["--max-stream-buses", str(self.max_stream_buses)]
         if self.max_clients is not None:
             flags += ["--max-clients", str(self.max_clients)]
         if self.pin is not None:
@@ -233,6 +240,14 @@ class ServerInfo:
     #: bulk requests (`clausters.defs.Buffer.get_samples` chunks) are sized from. Falls back
     #: to the UDP datagram cap against a server too old to report it.
     max_frame: int = 65536
+    #: How many control buses one ``/bus_stream`` subscription may list
+    #: (``--max-stream-buses``), **as it applies to this client's carrier**:
+    #: the server's configured ceiling clamped by what one reply can carry
+    #: over the transport asking. A subscription is one client's whole live
+    #: picture -- a page of many canvases asks for a bus per meter -- so a
+    #: client that draws a lot reads the number here instead of assuming one.
+    #: Falls back to the historical 128 against a server too old to report it.
+    max_stream_buses: int = 128
 
     def __str__(self) -> str:
         drift = ("" if self.actual_sample_rate == self.nominal_sample_rate
@@ -249,4 +264,5 @@ class ServerInfo:
             f"{self.max_ugen_inputs} ugen inputs",
             f"  taps    {taps}",
             f"  frame   {self.max_frame} bytes max",
+            f"  stream  {self.max_stream_buses} buses per /bus_stream",
         ])

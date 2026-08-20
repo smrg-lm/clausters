@@ -62,11 +62,12 @@ impl OscServer {
             }
             buses.push(*index);
         }
-        if buses.len() > MAX_STREAM_BUSES {
+        let cap = self.stream_bus_cap(from);
+        if buses.len() > cap {
             return self.fail(
                 from,
                 "/bus_stream",
-                format!("at most {MAX_STREAM_BUSES} bus indices per subscription"),
+                format!("at most {cap} bus indices per subscription on this carrier"),
             );
         }
         self.streams.retain(|s| s.client != from);

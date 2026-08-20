@@ -75,6 +75,8 @@ persist = true           # persist/reload defs; false is like --no-persist
 #                        # or a number
 # max_frame = 16777216   # largest OSC frame on TCP/WebSocket, in bytes
 # max_clients = 64       # concurrent stream clients, TCP + WebSocket combined
+# max_stream_buses = 4096  # buses one /bus_stream subscription may list; a
+#                        # client's own ceiling is this clamped by its carrier
 # midi = "clausters"     # virtual MIDI input: true = default name, or a name
 
 [client]                 # the Python (and future) client
@@ -154,7 +156,8 @@ server off 57110 opens `clausters:<port>` rather than a second `clausters`.
 - **Server** — the `[server]` section supplies the defaults for every flag of
   `clausters` (`--port`, `--workers`, `--sample-rate`, `--audio-buses`,
   `--control-buses`, `--taps`, `--tap-frames`, `--tcp`/`--no-tcp`, `--ws`,
-  `--max-frame`, `--max-clients`, `--midi`, `--shm`, `--data-dir`,
+  `--max-frame`, `--max-stream-buses`, `--max-clients`, `--midi`, `--shm`,
+  `--data-dir`,
   `--no-persist`). A flag on the command line overrides the file. `--udp` has no
   key of its own: in a file, write the base in `port` and give `tcp` a number.
 - **GUI host** — the `[gui]` section supplies the defaults for `clausters-gui`

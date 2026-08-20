@@ -30,7 +30,9 @@ export const STREAM_PERIOD_MS = 33;
  * await buses.stop();
  * ```
  *
- * At most 128 buses per subscription, and **one subscription per client**:
+ * At most `ServerInfo.maxStreamBuses` per subscription (the server's
+ * `--max-stream-buses`, clamped to what this client's carrier delivers in one
+ * reply), and **one subscription per client**:
  * opening a second `BusStream` on the same `Server` replaces the first, which
  * is the server's rule, not this class's. Watch every bus a page needs in one
  * stream.

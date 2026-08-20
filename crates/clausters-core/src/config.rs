@@ -103,6 +103,11 @@ pub struct ServerConfig {
     /// Ceiling for concurrent stream clients, TCP + WebSocket combined
     /// (`--max-clients`). UDP is connectionless and unaffected.
     pub max_clients: Option<usize>,
+    /// Bus indices one `/bus_stream` subscription may list
+    /// (`--max-stream-buses`). A client's own ceiling is this clamped by what
+    /// its carrier delivers in one packet, and `/server_query.reply` reports
+    /// that number rather than this one.
+    pub max_stream_buses: Option<usize>,
     /// Virtual MIDI input (`--midi`): `true` for the default name, or a name.
     pub midi: Option<MidiSetting>,
 }
@@ -398,6 +403,7 @@ impl ServerConfig {
             ws: pick(self.ws, h.ws),
             max_frame: pick(self.max_frame, h.max_frame),
             max_clients: pick(self.max_clients, h.max_clients),
+            max_stream_buses: pick(self.max_stream_buses, h.max_stream_buses),
             midi: pick(self.midi, h.midi),
         }
     }

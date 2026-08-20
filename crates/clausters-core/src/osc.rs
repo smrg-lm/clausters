@@ -19,6 +19,21 @@ pub use rosc::{OscBundle, OscMessage, OscPacket, OscTime, OscType};
 /// keeps the ~64 KB datagram cap the OS imposes.
 pub const DEFAULT_MAX_FRAME: usize = 16 * 1024 * 1024;
 
+/// Default ceiling on the bus indices one `/bus_stream` subscription may list
+/// — shared by the audio server and the GUI host so both ends of the wire
+/// agree, the same reason [`DEFAULT_MAX_FRAME`] lives here.
+///
+/// It is boot-time configuration (`--max-stream-buses`, `[server]
+/// max_stream_buses`, and the in-page engine's own setter) rather than a
+/// protocol limit, and it is sized like the rest of the server's pools: a
+/// subscription is one client's whole live picture, and a page of many
+/// canvases asks for a bus per meter, so the ceiling scales with a document
+/// and not with a widget. The **effective** limit is this clamped by what the
+/// asking client's carrier can deliver in one packet — a snapshot is not split
+/// across replies — and a client reads that number back from
+/// `/server_query.reply` instead of assuming either.
+pub const DEFAULT_MAX_STREAM_BUSES: usize = 4096;
+
 /// Seconds between the NTP epoch (1900-01-01) and the Unix epoch (1970-01-01).
 const NTP_UNIX_OFFSET: f64 = 2_208_988_800.0;
 

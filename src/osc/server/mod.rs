@@ -83,9 +83,11 @@ const GC_INTERVAL: Duration = Duration::from_millis(100);
 /// bound on how much reply traffic one client can subscribe to.
 const MIN_STREAM_PERIOD: Duration = Duration::from_millis(10);
 
-/// Most bus indices one `/bus_stream` subscription may list: 128 (index, value)
-/// pairs fit comfortably in a single frame on every transport.
-const MAX_STREAM_BUSES: usize = 128;
+/// What one `(index, value)` pair costs a `/bus_stream.reply` on the wire:
+/// eight bytes of arguments and two of type-tag string. The address and the
+/// tag string's own padding are the fixed overhead the carrier budget below
+/// subtracts before dividing by this.
+const STREAM_BUS_BYTES: usize = 10;
 
 /// Most tap indices one `/bus_tapStream` subscription may list — one `/bus_tapStream.reply`
 /// blob goes out per tap per period, so this bounds the reply traffic.
@@ -274,6 +276,12 @@ pub struct OscServer {
     /// window) may grow to; advertised in `/server_query.reply` so clients size
     /// their requests from it. UDP keeps the datagram cap regardless.
     max_frame: usize,
+    /// Ceiling on the bus indices one `/bus_stream` subscription may list
+    /// (`--max-stream-buses`, default
+    /// [`crate::osc::DEFAULT_MAX_STREAM_BUSES`]). What a client actually gets
+    /// is this clamped by its carrier (`stream_bus_cap`), and that is the
+    /// number `/server_query.reply` reports to it.
+    max_stream_buses: usize,
     /// Ceiling for concurrent stream clients, TCP + WebSocket combined
     /// (`--max-clients`, default [`crate::osc::DEFAULT_MAX_CLIENTS`]).
     max_clients: usize,
@@ -437,6 +445,34 @@ impl OscServer {
     /// slot pool is created when the first front binds.
     pub fn set_max_clients(&mut self, n: usize) {
         self.max_clients = n.max(1);
+    }
+
+    /// Sets the ceiling on the bus indices one `/bus_stream` subscription may
+    /// list (`--max-stream-buses`). Takes effect on the next subscription;
+    /// what a given client may actually ask for is this clamped by its
+    /// carrier, which is what `stream_bus_cap` answers and what
+    /// `/server_query.reply` reports.
+    pub fn set_max_stream_buses(&mut self, n: usize) {
+        self.max_stream_buses = n.max(1);
+    }
+
+    /// The most buses one `/bus_stream` subscription may list **for this
+    /// client**: the configured ceiling, clamped by what its carrier can
+    /// deliver in one packet.
+    ///
+    /// A snapshot is never split across replies — it is one message per period
+    /// by construction — so a subscription the carrier cannot carry would have
+    /// every one of its replies dropped, silently on the ring. A stream client
+    /// (TCP/WebSocket) is bounded by the frame ceiling it negotiated; a
+    /// datagram-bounded one (UDP, the shared ring) by the same
+    /// [`MAX_STREAM_BYTES`] budget the overview replies keep, and for the same
+    /// reason.
+    pub(in crate::osc::server) fn stream_bus_cap(&self, to: ClientId) -> usize {
+        let carrier = match to {
+            ClientId::Tcp(_) | ClientId::Ws(_) => self.max_frame.saturating_sub(256),
+            ClientId::Udp(_) | ClientId::Ring(_) => MAX_STREAM_BYTES,
+        };
+        self.max_stream_buses.min(carrier / STREAM_BUS_BYTES).max(1)
     }
 
     /// Declares that an offline driver owns the engine and will perform

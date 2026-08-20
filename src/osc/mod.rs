@@ -51,6 +51,10 @@ impl std::fmt::Display for ClientId {
 /// docs for the rationale).
 pub use clausters_core::osc::DEFAULT_MAX_FRAME;
 
+/// The `/bus_stream` bus ceiling's default, shared with the GUI host through
+/// the core for the same reason (see the constant's own docs).
+pub use clausters_core::osc::DEFAULT_MAX_STREAM_BUSES;
+
 /// Default ceiling for concurrent stream clients (TCP + WebSocket combined,
 /// `--max-clients`). Each connection costs a thread and queue slots, so the
 /// count is bounded like every other boot-time pool — a DoS guard in the
