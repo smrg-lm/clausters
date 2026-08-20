@@ -91,6 +91,39 @@ Porting then = rebind the same core (ctypes/N-API/wasm), not reimplement it.
 Full rationale in `clients/python/PLAN.md` ("Build strategy"). Always factor
 new work with this modularity in mind.
 
+### Non-divergence: the clients are one client in two languages
+
+**The standing rule, above any milestone's acceptance and any example's
+convenience.** Every part of it has been broken at least once, and each clause
+is here because of that:
+
+- **Both clients have the same functionality and the same surface.** A verb,
+  a class or a figure that exists in one and not the other is a defect, not a
+  head start — whichever direction it runs in. "The port has not reached it
+  yet" is a reason for a plan entry, never for a surface that stays.
+- **Implementation details add nothing.** A binding, a door, a wasm export or
+  a convenience wrapper may not grow surface the other client lacks. If some
+  language needs a different *shape* for the same capability, that is `idiom`
+  and it is written in `docs/bindings.md`; if it needs a different capability,
+  it is a gap and is written down as one.
+- **The examples add nothing.** An example is written correctly against what
+  exists. It never invents a surface, and **the client is never modified to
+  satisfy an example** — that is how a scaffold becomes a norm. An example
+  that cannot be written with the supported surface is reporting a missing
+  feature, and the feature is decided on its own merits, in both clients.
+- **The host is one**, native and browser: the same Rust, compiled twice.
+  There is no "web version" of a widget, a renderer or a rule.
+- **The clients do not draw.** A client names what to look at (`plot`,
+  `scope`, a widget in a GuiDef) and the host draws it. Anyone who would
+  rather draw their own canvas is writing their own program, and that is
+  outside this project — not a surface it provides, documents or keeps in
+  step.
+- **The logic is in Rust, and there is one of it.** Numeric, timing and
+  drawing rules live in `clausters-core` (or in the host, for what only a
+  renderer does) and every client binds the same one. Two implementations of
+  one rule is how the same data comes to look different in two places, and it
+  is never found by a compiler.
+
 ### The packages move together
 
 Four packages share every surface worth changing — the **server** (root crate +
