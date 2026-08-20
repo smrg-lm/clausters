@@ -29,6 +29,19 @@ memory leaves through a garbage FIFO to be dropped on the network thread.
 - **Asynchronous command semantics are deliberate.** A `/server_status` immediately
   after a command may report the old count: commands apply at the start of the
   next block. That is scsynth's model, not a race.
+- **A queue the audio thread fills is served by a poll, not by a wake.** The
+  network loop parks in `recv_from`, and a worker that finishes something ends
+  the park with a zero-length datagram (`osc::wake`) — which is why an NRT job
+  that took 2 ms is reported in 2 ms. The audio thread cannot do that: sending
+  is I/O. So the one queue it produces into — node lifecycle events — buys its
+  promptness with the **tick** instead: while any client holds a
+  `/server_notify` registration the loop's timeout is `NOTIFY_INTERVAL`, and
+  that number is deliberately `MIN_STREAM_PERIOD` rather than a new one. A
+  client that asked to be told about the node tree is entitled to the cadence a
+  client that asked to be told about a bus already gets, and picking the same
+  number keeps "how often may a subscribed client be served" a single answer.
+  Nobody listening, nothing to be prompt about: the tick falls back to
+  `GC_INTERVAL`, which is housekeeping and was never a latency.
 
 ## `SynthNode`: one trait, symmetric def families
 

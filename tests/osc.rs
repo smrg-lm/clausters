@@ -102,9 +102,14 @@ impl TestServer {
     /// none arrives — for asserting that something is **not** sent, which a
     /// blocking receive cannot do.
     fn try_recv_matching(&self, addr: &str) -> Option<OscMessage> {
-        self.client
-            .set_read_timeout(Some(Duration::from_millis(120)))
-            .unwrap();
+        self.try_recv_within(addr, Duration::from_millis(120))
+    }
+
+    /// `try_recv_matching` with the wait spelled out — for a caller that has
+    /// to keep the engine running while it waits, and so cannot afford to
+    /// block for the default.
+    fn try_recv_within(&self, addr: &str, wait: Duration) -> Option<OscMessage> {
+        self.client.set_read_timeout(Some(wait)).unwrap();
         let mut buf = [0u8; 65536];
         let found = loop {
             let Ok((len, _)) = self.client.recv_from(&mut buf) else {
@@ -1448,6 +1453,80 @@ fn notify_clients_receive_n_go_and_n_end() {
     let end = server.tick_until("/node_end");
     assert_eq!(end.args[0], OscType::Int(1000));
     assert_eq!(end.args[4], OscType::Int(0));
+
+    server.quit();
+}
+
+/// **A node notification does not wait for the idle tick.**
+///
+/// `/node_start` and `/node_end` are posted by the audio thread and drained
+/// where every other queue is, on the way out of the command loop's `recv` —
+/// so with nothing else talking to the server they used to wait for the 100 ms
+/// `GC_INTERVAL`, measured at 103-112 ms over a quiet connection. The audio
+/// thread cannot poke the loop's waker (it may not send, lock or allocate), so
+/// a `/server_notify` client shortens the tick instead, exactly as a stream
+/// subscription does.
+///
+/// The other notify tests hide this: `tick_until` nudges the server with
+/// `/server_status` between engine blocks, and every nudge is a packet that
+/// wakes the loop. This one sends the command, runs the engine, and then does
+/// nothing but wait — which is what a client watching the node tree does.
+#[test]
+fn a_node_notification_is_reported_without_waiting_for_the_idle_tick() {
+    let mut server = TestServer::spawn();
+    server.send("/server_notify", vec![OscType::Int(1)]);
+    assert_eq!(server.recv_until("/done").args[1], OscType::Int(1));
+
+    server.send(
+        "/synth_new",
+        vec![
+            OscType::String("default".into()),
+            OscType::Int(1000),
+            OscType::Int(1),
+            OscType::Int(0),
+            OscType::String("amp".into()),
+            OscType::Float(0.0),
+        ],
+    );
+    // The engine applies the command and posts the event; the test thread is
+    // the audio thread here, so this is where that happens. Ticking is not
+    // traffic — **nothing below sends the server anything** while a
+    // notification is outstanding, which is the whole point: it has to find
+    // its own way out.
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+    let mut await_event = |server: &mut TestServer, addr: &str| -> Duration {
+        let start = std::time::Instant::now();
+        loop {
+            server.engine.process_block(&mut out);
+            // A short wait, so the engine keeps being ticked while the command
+            // loop decides to look. How long the *command* takes to reach the
+            // engine is not what is measured — the warm-up below is there so
+            // that trip is not on the clock.
+            if server
+                .try_recv_within(addr, Duration::from_millis(2))
+                .is_some()
+            {
+                return start.elapsed();
+            }
+            assert!(
+                start.elapsed() < Duration::from_secs(2),
+                "no {addr} in two seconds"
+            );
+        }
+    };
+
+    // Warm-up, untimed: this one pays for whatever the first packet, the first
+    // block and the scheduler cost.
+    await_event(&mut server, "/node_start");
+
+    // And the timed leg, on a server that is now demonstrably awake and a
+    // path that is now demonstrably warm.
+    server.send("/node_free", vec![OscType::Int(1000)]);
+    let elapsed = await_event(&mut server, "/node_end");
+    assert!(
+        elapsed < Duration::from_millis(50),
+        "the notification waited for the idle tick: {elapsed:?}"
+    );
 
     server.quit();
 }

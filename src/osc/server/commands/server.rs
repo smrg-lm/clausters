@@ -211,6 +211,10 @@ impl OscServer {
                     Some(i) => i + 1,
                     None => {
                         self.clients.push(from);
+                        // The first subscriber shortens the loop's tick: a
+                        // node event comes from the audio thread, which cannot
+                        // wake it (`NOTIFY_INTERVAL`).
+                        self.retune_timeout();
                         self.clients.len()
                     }
                 };
@@ -225,6 +229,8 @@ impl OscServer {
             }
             Some(OscType::Int(0)) => {
                 self.clients.retain(|c| *c != from);
+                // And the last one hands the idle tick back.
+                self.retune_timeout();
                 self.reply(
                     from,
                     "/done",

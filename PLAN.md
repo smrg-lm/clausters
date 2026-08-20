@@ -1743,7 +1743,7 @@ finished work, where a pending item reads as done.
   (`tests/buffers.rs::a_finished_job_is_reported_without_waiting_for_the_idle_tick`),
   which measured 104 ms before and under 1 ms after.
 
-- ⬜ **A node notification waits up to 100 ms on a quiet connection, and the
+- ✅ **A node notification waits up to 100 ms on a quiet connection, and the
   audio thread cannot wake anybody** *(found 2026-08-20, chasing what looked
   like a flaky web test: `seq-ws.test.ts`'s "two clocks join one grid and land
   on the same bar" failed once with the two notes 102 ms apart and passed in
@@ -1780,3 +1780,34 @@ finished work, where a pending item reads as done.
   notification pays this**, including a client reconciling node ids off
   `/node_end`, a GUI host's node-tree view, and any test that times a note by
   when it was told about it.
+
+  **Fixed the same day, with the poll rate and the number already in the
+  file.** `NOTIFY_INTERVAL` is `MIN_STREAM_PERIOD` — 10 ms — and
+  `retune_timeout` now takes it as one more term beside the stream periods,
+  armed while `self.clients` is non-empty and handed back when the last
+  registration goes (`/server_notify 0`, or a dropped TCP/WS connection, which
+  `prune_disconnected` already retunes for). Choosing rather than inventing the
+  number is the whole of the design here: a client that asked to be told about
+  the **node tree** is entitled to the same cadence as one that asked to be
+  told about a **bus**, and that cadence was decided once already. A server
+  nobody is listening to still falls back to `GC_INTERVAL`, which stays what it
+  was written to be.
+
+  **Measured before and after, end to end**: `/node_start` over a `--ws`
+  connection with nothing else talking went from **103–115 ms** to **12–27 ms**
+  (the tick, a block, and the socket hop). The acceptance is
+  `tests/osc.rs::a_node_notification_is_reported_without_waiting_for_the_idle_tick`,
+  which reads 104 ms with the term removed and a few ms with it — **verified by
+  mutation, not by passing**.
+
+  Two things the test had to get right, both of them the reason the defect
+  survived this long. It **sends the server nothing** while a notification is
+  outstanding: the other notify tests call `tick_until`, which nudges with
+  `/server_status` between blocks, and every nudge is a packet that wakes the
+  loop — the bug was hiding behind the harness. And it **times the second
+  event, not the first**: the trip from the socket to the engine is not what is
+  being measured and is not fixed under a parallel harness, so the
+  `/synth_new`/`/node_start` pass is a warm-up and the clock runs over
+  `/node_free`/`/node_end`. The first version of it timed the first event and
+  failed about one run in six on a loaded machine — a flaky test written while
+  fixing a defect that presented as a flaky test.

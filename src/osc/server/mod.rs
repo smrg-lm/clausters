@@ -83,6 +83,18 @@ const GC_INTERVAL: Duration = Duration::from_millis(100);
 /// bound on how much reply traffic one client can subscribe to.
 const MIN_STREAM_PERIOD: Duration = Duration::from_millis(10);
 
+/// How long a **node notification** may sit in the event queue before the
+/// command loop looks: the tick while any client has `/server_notify` on.
+///
+/// `/node_start`/`/node_end` are posted by the **audio thread**, which may not
+/// send, lock or allocate — so it cannot poke the loop's waker the way an NRT
+/// worker does (`crate::osc::wake`). Promptness on this queue is therefore
+/// bought with a poll rate, and the number is the one this file already chose
+/// for "how often a subscribed client may be served": `MIN_STREAM_PERIOD`. A
+/// client that asked to be told about the node tree is entitled to the same
+/// cadence as one that asked to be told about a bus.
+const NOTIFY_INTERVAL: Duration = MIN_STREAM_PERIOD;
+
 /// What one `(index, value)` pair costs a `/bus_stream.reply` on the wire:
 /// eight bytes of arguments and two of type-tag string. The address and the
 /// tag string's own padding are the fixed overhead the carrier budget below

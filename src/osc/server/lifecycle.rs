@@ -540,12 +540,18 @@ impl OscServer {
         if self.ipc.is_some() {
             return;
         }
+        // A `/server_notify` client is a subscriber too, and the thing it
+        // subscribed to is filled by the audio thread — which cannot wake this
+        // loop. So it shortens the tick exactly as a stream does; see
+        // `NOTIFY_INTERVAL`.
+        let notify = (!self.clients.is_empty()).then_some(NOTIFY_INTERVAL);
         let timeout = self
             .streams
             .iter()
             .map(|s| s.period)
             .chain(self.tap_streams.iter().map(|s| s.period))
             .chain(self.buffer_streams.iter().map(|s| s.period))
+            .chain(notify)
             .min()
             .map_or(GC_INTERVAL, |p| p.min(GC_INTERVAL));
         let Some(socket) = &self.socket else {
