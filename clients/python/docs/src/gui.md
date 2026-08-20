@@ -8,6 +8,16 @@ process — the **GUI host** — that owns the pixels and talks OSC.
 This page builds one from nothing and then walks every element there is,
 finishing with an instrument that keeps its GUI after the script is gone.
 
+**The host is what draws, always.** A script names what to look at — `plot(...)`,
+`scope(bus)`, a `waveform`/`scope`/`spectrum` widget in a tree like the ones
+below — and the host reads the buffer or the bus itself and paints it. The
+client computes no picture: not a pixel column, not a trigger, not a decibel
+curve. That is what keeps the Python and TypeScript clients one client in two
+languages, and what keeps a figure from being drawn two ways. If you would
+rather do your own arithmetic over your own canvas, the data paths are open and
+nothing stops you — but that is your program, and it is not a surface this
+project provides, documents or keeps in step.
+
 Install once, from the repo root:
 
 ```sh

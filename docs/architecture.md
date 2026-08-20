@@ -617,10 +617,24 @@ looks for:
   spectrum frame's decibel curve — lives in `clausters-core` and is *shared*;
   only geometry, hit-testing and chrome are gui-side. This is why the `bpf`
   editor and the server's `EnvGen` cannot drift: they evaluate the same function.
-  The trigger (`core::oscil`) and the spectrum curve (`core::spectrum`) moved
-  down from this crate the moment a second drawer appeared — a client script
-  reading a bus itself — which is the rule stated as a test: a piece of signal
-  logic belongs here only while the host is the only one computing it.
+  The trigger (`core::oscil`) and the spectrum curve (`core::spectrum`) live
+  there for the same reason, though nothing outside the host consumes them
+  today: they are functions of a *signal*, and a headless client measuring one
+  would want the same numbers.
+- **Everything drawn is drawn by the host, and this is where a new figure
+  goes.** A client names what to look at — `plot`, `scope`, a
+  `waveform`/`scope`/`spectrum` widget in a GuiDef — and the host draws it. So
+  a picture's own arithmetic (a row of pixel columns, an oscilloscope's display
+  window and trigger alignment, a magnitude-to-decibel curve, the join that
+  inks one column out to the next) belongs **in the host, or in the core for
+  the host to read** — never in a client, in either language. Two clients that
+  each compute a picture are two renderings of one signal that no compiler
+  compares, and the difference shows up as a screenshot somebody notices
+  months later. This is a rule about *placement*, not about ambition: anyone
+  who would rather stroke their own canvas over the data paths is writing
+  their own program, which is fine and is not a surface this project provides,
+  documents or keeps in step. (Stated as a rule after the web client had grown
+  one — `clients/web/PLAN.md`, W26/W27.)
 - **Edit-back is a payload, not an address.** A view that writes data back emits
   `/gui_event <id> <tag> <flat values…>` — `"points"` for a curve, `"clip"` for a
   placement, `"wire"` for a connection. The widget tree stays the source of truth

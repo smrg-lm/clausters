@@ -3380,6 +3380,21 @@ is a *look* rather than a measurement — a spectrum's averaging across frames, 
 scope's history depth. Those are decisions about how a picture should feel, and
 two views are entitled to disagree about them.
 
+**The test was wrong, and the move it justified was right** *(2026-08-20)*. The
+second drawer is gone: a client draws nothing at all now, and the trigger, the
+decibel curve and the pixel row left the web client with the doors onto them
+(`clients/web/PLAN.md`, W26). By the rule above, `oscil` and `spectrum` would go
+back into the host — and they are staying where they are, which says the count
+of consumers was never the reason. They are functions of a **signal**: a
+headless client measuring one, a test asserting one, a future analysis path
+would each want the same numbers, and the core is where a thing that has an
+answer independent of any screen belongs. What the host keeps is what only a
+renderer does. The rule as it now stands is the placement rule in
+`architecture.md`: **everything drawn is drawn by the host**, and the arithmetic
+of a picture goes into the host or into the core for the host to read — never
+into a client, where a second implementation would be reachable from one
+language only.
+
 ## A bus is a bus: the sample ring is the server's, never an API's
 
 The live data views grew one at a time, and each took whatever number was

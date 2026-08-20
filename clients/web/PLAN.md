@@ -1727,24 +1727,34 @@ use is to put ink on a canvas; `./build.sh && ./test.sh` green; the scope
 example opens host widgets; and a name-by-name diff of the two clients' data
 surfaces turns up no drawing on either side.
 
-### W27 - It is written down who draws
+### ✅ W27 - It is written down who draws *(done 2026-08-20)*
 
 W26 removes the surface; this is what stops it growing back. The rule is stated
 where each audience reads, in one sentence and with its consequence:
 
-- ⬜ **The three books** — the server's, the Python client's, the web client's:
+- ✅ **The three books** — the server's, the Python client's, the web client's:
   everything drawn is drawn by the GUI host; a client names what to look at
   (`plot`, `scope`, a `waveform`/`plot`/`scope` widget in a GuiDef). A page or
   a script that would rather draw its own is free to, and that is its own
-  program, not a surface this project provides.
-- ⬜ **`docs/architecture.md`** — the same, as a placement rule beside the
+  program, not a surface this project provides. It lands where each audience
+  is already reading about the host: `docs/clients.md`'s "The GUI host: a
+  scriptable peer" (a third design choice beside the declarative protocol and
+  the GPU substrate), the head of the Python book's GUI chapter, and the head
+  of the web book's — where it is said hardest, because a page has a
+  `<canvas>` of its own within reach.
+- ✅ **`docs/architecture.md`** — the same, as a placement rule beside the
   existing one for shared numeric logic, so the next milestone that needs a
   figure knows where it goes: into the host, or into the core for the host to
-  read, never into a client.
-- ⬜ **`clients/web/docs/src/data.md`** loses its waveform-drawing recipe and
-  points at the host instead.
-- ⬜ The `examples` skill gains the line, since an example is where the
-  temptation appears: a page that wants to show a signal opens a host view.
+  read, never into a client. The bullet above it lost its old test ("signal
+  logic belongs here only while the host is the only one computing it"), which
+  was written when a client was expected to become a second drawer.
+- ✅ **`clients/web/docs/src/data.md`** loses its waveform-drawing recipe and
+  points at the host instead *(with W26, since the recipe named symbols that
+  left with it)*; its closing section now states the rule rather than only the
+  "one implementation of every figure" half of it.
+- ✅ The `examples` skill gains the line, since an example is where the
+  temptation appears: a page that wants to show a signal opens a host view —
+  with the record of what happened when one did not.
 
 **Acceptance:** the rule is findable from either client's book without knowing
 it already, and `docs/architecture.md` states it as a rule rather than as a

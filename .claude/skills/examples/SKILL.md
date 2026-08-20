@@ -119,6 +119,16 @@ These are what a generated example gets wrong, every time.
    The root `examples/` are the opposite case: several of them are there
    precisely to show the wire (`json_client.py`, `shm_client.py`,
    `tcp_client.py`, `osc_ping.rs`).
+5. **An example that wants to show a signal opens a host view.** `plot(...)`,
+   `scope(bus)`, a `waveform`/`scope`/`spectrum` widget in a GuiDef — never a
+   canvas the example feeds, and never arithmetic over samples to fill one.
+   Everything drawn is drawn by the GUI host; a client names what to look at.
+   The temptation lives here more than anywhere else — a page has a `<canvas>`
+   in reach and a notebook has matplotlib — and it is how a scaffold becomes a
+   norm: the web client once grew a whole pixel-column surface because one
+   example needed it (`clients/web/PLAN.md`, W26). If the view you want cannot
+   be named, that is a missing widget, decided on its own merits and in both
+   clients — not something an example invents.
 
 ## The docstring is the documentation
 

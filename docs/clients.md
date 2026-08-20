@@ -89,6 +89,14 @@ Two design choices carry the rest:
   `/gui_free` frees a subtree. The wire form is generic (`{id, type, props,
   children}`) so the protocol never changes when a widget type is added; an
   unknown type is laid out but not painted, so old and new hosts interoperate.
+- **The host is the only thing that draws.** A client names what to look at — a
+  `plot`, a `scope`, a `waveform` widget over a buffer — and the host reads the
+  data and paints it; no client computes a picture. That is what keeps two
+  clients from becoming two renderings of one signal, and it is why the figures
+  a drawing is made of live in `clausters-core` (the host reads them) rather
+  than in a language binding. Somebody who would rather do their own arithmetic
+  over their own canvas is free to — the data paths are open — and that is
+  their program, not a surface this project provides or keeps in step.
 - **A web-capable GPU substrate, one stack for both targets.** The heavy widgets
   (waveform, spectrogram, scopes) are custom GPU rendering written against
   `wgpu`/WGSL, which runs natively today and under WebGPU in a browser unchanged

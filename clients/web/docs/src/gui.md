@@ -7,6 +7,16 @@ chapter](https://clausters-python.readthedocs.io/en/latest/gui.html) walks
 through, and that page is the tutorial. This one says what the browser makes
 different, and nothing that book already says.
 
+**The host is what draws, always** — and in a page that is worth saying twice,
+because a page has a `<canvas>` of its own and the temptation is right there.
+A script names what to look at (`plot`, `scope`, a `waveform`/`scope`/
+`spectrum` widget) and the host reads the bus or the buffer and paints it; this
+client computes no picture — no pixel column, no trigger, no decibel curve —
+and neither does the Python one. The two are one client in two languages, and a
+figure drawn two ways is a difference nothing checks. Drawing your own canvas
+over the [data paths](data.md) is of course allowed, and it is *your* program:
+not a surface this package provides, documents or keeps in step.
+
 ## The model, in one table
 
 A GuiDef node is `{id, type, props, children}`, and a `type` names one of three

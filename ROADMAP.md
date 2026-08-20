@@ -1,9 +1,10 @@
 # Roadmap — the order the open work is taken in
 
-*Rewritten 2026-08-20, twice: when the overview work closed, and again when the
+*Rewritten 2026-08-20, three times: when the overview work closed, when the
 four entries it had left behind were taken — the join that draws an edge, a
 page's zoom while a take records, the shape a zoom asks in, and what a column
-claims at a discontinuity (before that: 2026-08-19,
+claims at a discontinuity — and again when the web client stopped drawing
+(before that: 2026-08-19,
 when the picture-reads-the-samples phase closed; twice on 2026-08-18, when the
 clip's interaction rules and the real-sizes phase closed; twice on 2026-08-17,
 against the plans and once the autonomous editor closed). A rewrite **drops what
@@ -74,23 +75,6 @@ nothing now, and it is still here for the reason it always was: it is a port,
 and porting is cheapest once the layer has stopped moving, which is what the
 closed phases did to it.*
 
-**Two of them come first, and they subtract**: the web client carries a surface
-no other client has — a row of pixel columns, an oscilloscope's framing and
-trigger, a decibel curve, a rule saying what to ink — and every one of them is a
-second implementation of something the GUI host already does. It was a scaffold
-(W10's acceptance, 2026-07-28, written before `scope`/`plot` existed on 08-03)
-that became a norm. Porting *on top* of it would carry the divergence into the
-arrangement layer too, and the two clients would stop being one client with two
-languages. So they are taken before anything is added.
-
-- ⬜ **W26 — The client stops drawing: the screen-shaped exports go.** Removes
-  the surface, closes four `gap` rows of `docs/bindings.md` by deletion, amends
-  W10's own record, and rebuilds `examples/scope.html` on `gui.scope()` — which
-  is what its name has promised all along.
-- ⬜ **W27 — It is written down who draws.** The rule in the three books and in
-  `docs/architecture.md`: everything drawn is drawn by the host; a client names
-  what to look at, and whoever would rather draw their own is writing their own
-  program, not using a surface of this project.
 - ⬜ **W16 — Example parity with the Python client**, and its named track: the
   arrangement layer and the editor. The shape `gui/notation.py`'s port follows
   was decided on the Python side and is written in the web plan rather than
