@@ -18,22 +18,50 @@ use std::sync::Arc;
 
 use clausters_core::osc::{OscMessage, OscType};
 
-/// Samples per `/buffer_getRange` request when pulling a server buffer (each reply must
-/// fit a frame on every transport; a bulk-transfer optimization would replace
-/// this path, not grow the chunk).
-pub(crate) const BUFFER_CHUNK: usize = 8192;
+/// Samples per `/buffer_getRange` request when pulling a server buffer: **8 kB
+/// of reply**, and the number is the carrier's rather than the buffer's.
+///
+/// The smallest carrier a reply crosses is the shared ring, 64 KiB, and it is
+/// **lossy under pressure by design**: a server whose reply ring is full drops
+/// the reply rather than blocking (`osc::server`, "reply ring full"). So the
+/// chunk is not a throughput knob, it is what decides how many replies can be
+/// in the air at once without any of them being thrown away — four of these
+/// fit, where the old 32 kB chunk let two lanes fill the ring between them and
+/// every other lane's answer went missing.
+///
+/// It is a **trade against round trips**, and that is the reason it is not
+/// smaller: a chunk is one request and one reply, so halving it doubles how
+/// many frames a span takes to arrive. Small enough that nothing is dropped,
+/// large enough that the span under a zoom lands in a few frames.
+pub(crate) const BUFFER_CHUNK: usize = 4096;
+
+/// **How many buffers may be downloading at once.** The bound is the carrier's
+/// too: our own traffic must not be able to fill the reply ring, or the drops
+/// are self-inflicted and a session that zooms four lanes at once loses three
+/// of the four answers.
+///
+/// A view refused here asks again on the next frame — it re-reads the span it
+/// cannot draw every time it draws — so this queues rather than fails, and the
+/// lanes resolve one after another instead of racing and losing.
+const MAX_IN_FLIGHT: usize = 3;
 
 /// The most samples a view will pull **whole** rather than draw from a summary
-/// — about ten seconds of stereo at 48 kHz, four megabytes on the wire. See
+/// — about five seconds of stereo at 48 kHz, two megabytes on the wire. See
 /// [`BufferFetches::whole`] for why the line is drawn by size at all.
-const WHOLE_DOWNLOAD_SAMPLES: usize = 1 << 20;
+///
+/// The number is a count of **round trips** as much as of bytes: a whole
+/// download is one request per [`BUFFER_CHUNK`], each gated by a frame, so this
+/// is the point past which asking for the samples costs more waiting than
+/// drawing the summary and reading the run under the eye.
+const WHOLE_DOWNLOAD_SAMPLES: usize = 1 << 19;
 
 /// How many asks a buffer's download may refuse **without landing anything**
 /// before it is treated as lost and started over. The frame asks once per
-/// draw, so this is about two seconds at sixty frames — long enough that a
-/// slow but working conversation is never restarted, short enough that a
-/// dropped reply is not a view frozen for the session.
-const STALLED_ASKS: usize = 120;
+/// draw, so this is about half a second at sixty frames — long enough that a
+/// working conversation is never restarted between two of its replies, short
+/// enough that a dropped one is a hesitation rather than the seconds it used
+/// to be.
+const STALLED_ASKS: usize = 30;
 
 /// A widget waiting on a server buffer fetch. What to build from the finished
 /// samples is read off the widget's kind at completion, so the machine carries
@@ -157,6 +185,26 @@ pub(crate) struct BufferFetches {
     queued: HashMap<i32, (usize, usize)>,
     /// The channel count each queued span was announced with.
     channels: HashMap<i32, usize>,
+    /// The summary walks under way, by buffer number.
+    peaks: HashMap<i32, PeaksWalk>,
+}
+
+/// **A walk over a buffer's summary**: what is left to ask for, and how long it
+/// has been since anything came back.
+///
+/// It lives here rather than in a front because it needs what the downloads
+/// need — a reply that never arrives must not stop it. A summary is asked for
+/// once and answered in pieces; a piece lost on a carrier that is allowed to
+/// lose one would otherwise leave a hole in the picture for the rest of the
+/// session, with nothing to notice it.
+struct PeaksWalk {
+    /// The next frame to ask from, and where the take ends.
+    next: usize,
+    end: usize,
+    bucket: usize,
+    channels: usize,
+    /// Frames since the last answer, in ticks of [`BufferFetches::tick_peaks`].
+    stalled: usize,
 }
 
 impl BufferFetches {
@@ -283,9 +331,9 @@ impl BufferFetches {
     /// answer is the size, and `fills` is back to meaning the one thing it
     /// says: these samples are being written, so they are not there to fetch.
     ///
-    /// The threshold is about ten seconds of stereo at 48 kHz — a buffer a
-    /// player, a wavetable or a short take fits in, against the material of a
-    /// session, which does not.
+    /// The threshold is about five seconds of stereo at 48 kHz — a buffer a
+    /// player, a wavetable or a short take fits in, against the samples of a
+    /// session, which do not.
     fn whole(total: usize) -> bool {
         total <= WHOLE_DOWNLOAD_SAMPLES
     }
@@ -421,6 +469,15 @@ impl BufferFetches {
         if frames == 0 {
             return None;
         }
+        // Our own traffic is what fills the reply ring, so it is bounded here
+        // rather than apologised for afterwards. A patch still queues (it is
+        // announced once); a zoom asks again next frame.
+        if !self.fetches.contains_key(&bufnum) && self.fetches.len() >= MAX_IN_FLIGHT {
+            if span == SpanUse::Patch {
+                self.queue(bufnum, start, frames, channels);
+            }
+            return None;
+        }
         if let Some(fetch) = self.fetches.get_mut(&bufnum) {
             // **A conversation that has stopped answering is abandoned.** A
             // reply can be lost with nothing said — the shared ring drops what
@@ -447,11 +504,7 @@ impl BufferFetches {
             // the announcement waits for the download in flight, merged with
             // whatever else is waiting into the one span that covers them.
             if span == SpanUse::Patch {
-                let pending = self.queued.entry(bufnum).or_insert((start, frames));
-                let end = (pending.0 + pending.1).max(start + frames);
-                pending.0 = pending.0.min(start);
-                pending.1 = end - pending.0;
-                self.channels.insert(bufnum, channels);
+                self.queue(bufnum, start, frames, channels);
             }
             return None;
         }
@@ -471,6 +524,88 @@ impl BufferFetches {
             },
         );
         Some(request_chunk(bufnum, origin, origin + total))
+    }
+
+    /// Remembers an announced edit that could not be asked for yet, merged
+    /// with whatever else is waiting on that buffer into the one span covering
+    /// them.
+    fn queue(&mut self, bufnum: i32, start: usize, frames: usize, channels: usize) {
+        let pending = self.queued.entry(bufnum).or_insert((start, frames));
+        let end = (pending.0 + pending.1).max(start + frames);
+        pending.0 = pending.0.min(start);
+        pending.1 = end - pending.0;
+        self.channels.insert(bufnum, channels);
+    }
+
+    /// **Starts a walk over `bufnum`'s summary**, returning the first
+    /// `/buffer_peaks` to send.
+    ///
+    /// `bucket` must be the one the asking pyramid is built at, or what comes
+    /// back cannot be folded into it; `frames` is how long the take is, which
+    /// is what says when the walk is done.
+    pub(crate) fn want_peaks(
+        &mut self,
+        bufnum: i32,
+        bucket: usize,
+        channels: usize,
+        frames: usize,
+    ) -> Option<OscMessage> {
+        if bucket == 0 || frames < bucket {
+            return None;
+        }
+        let walk = PeaksWalk {
+            next: 0,
+            end: frames,
+            bucket,
+            channels: channels.max(1),
+            stalled: 0,
+        };
+        let msg = peaks_request(bufnum, walk.bucket, walk.next);
+        self.peaks.insert(bufnum, walk);
+        Some(msg)
+    }
+
+    /// One `/buffer_peaks.reply` landed: advance the walk and return the next
+    /// request, or `None` when the summary is covered (or nothing is walking
+    /// that buffer).
+    ///
+    /// The reply says where it began and its own length says how many buckets
+    /// it carried, so the walk reads its place out of the answer rather than
+    /// assuming the server answered the request it made.
+    pub(crate) fn on_peaks(&mut self, bufnum: i32, start: u64, stats: usize) -> Option<OscMessage> {
+        let walk = self.peaks.get_mut(&bufnum)?;
+        let buckets = stats / (walk.channels * 3);
+        if buckets == 0 {
+            self.peaks.remove(&bufnum); // no whole bucket left: it is covered
+            return None;
+        }
+        walk.stalled = 0;
+        walk.next = (start as usize + buckets * walk.bucket).max(walk.next);
+        if walk.next + walk.bucket > walk.end {
+            self.peaks.remove(&bufnum);
+            return None;
+        }
+        Some(peaks_request(bufnum, walk.bucket, walk.next))
+    }
+
+    /// **Asks again for a piece of a summary that never came back.** Called
+    /// once a frame, beside the spans the drawing could not resolve.
+    ///
+    /// The carrier is allowed to lose a reply — a full ring drops one rather
+    /// than blocking the server — so a walk that has heard nothing for
+    /// [`STALLED_ASKS`] frames repeats its request. There is nothing to undo:
+    /// the answer is folded where the frame it names says it belongs, so a
+    /// duplicate writes the same buckets twice.
+    pub(crate) fn tick_peaks(&mut self) -> Vec<OscMessage> {
+        let mut again = Vec::new();
+        for (bufnum, walk) in self.peaks.iter_mut() {
+            walk.stalled += 1;
+            if walk.stalled >= STALLED_ASKS {
+                walk.stalled = 0;
+                again.push(peaks_request(*bufnum, walk.bucket, walk.next));
+            }
+        }
+        again
     }
 
     /// **The announced edit that had to wait**, as the `/buffer_getRange` that
@@ -948,6 +1083,57 @@ mod tests {
             "the window is as long as what arrived, never padded with silence"
         );
         assert!(samples.iter().all(|s| *s == 0.5));
+    }
+
+    /// **A summary arrives in pieces and the walk survives losing one.** The
+    /// carrier may drop a reply — a full ring drops rather than blocks — so a
+    /// walk that hears nothing asks again instead of leaving a hole in the
+    /// picture that nothing would ever notice.
+    #[test]
+    fn a_summary_walk_advances_on_each_answer_and_asks_again_when_one_is_lost() {
+        let mut fetches = BufferFetches::default();
+        // A stereo take of 40 buckets, answered ten buckets at a time.
+        let msg = fetches
+            .want_peaks(3, 256, 2, 40 * 256)
+            .expect("a take longer than a bucket is walked");
+        assert_eq!(msg.addr, "/buffer_peaks");
+        assert_eq!(ints(&msg), vec![3, 256, 0, -1]);
+
+        let next = fetches
+            .on_peaks(3, 0, 10 * 2 * 3)
+            .expect("more of the take is left");
+        assert_eq!(
+            ints(&next),
+            vec![3, 256, 10 * 256, -1],
+            "it continues where the answer ended, not where the request did"
+        );
+
+        // Nothing comes back. The frame ticks, and the same piece is asked for
+        // again once the silence has gone on long enough.
+        for _ in 0..STALLED_ASKS - 1 {
+            assert!(
+                fetches.tick_peaks().is_empty(),
+                "a moment's wait is not a loss"
+            );
+        }
+        let again = fetches.tick_peaks();
+        assert_eq!(again.len(), 1);
+        assert_eq!(
+            ints(&again[0]),
+            vec![3, 256, 10 * 256, -1],
+            "the same piece"
+        );
+
+        // The rest lands, and the walk ends rather than asking past the take.
+        assert!(fetches.on_peaks(3, 10 * 256, 30 * 2 * 3).is_none());
+        assert!(
+            fetches.tick_peaks().is_empty(),
+            "a finished walk ticks nothing"
+        );
+        assert!(
+            fetches.on_peaks(3, 0, 6).is_none(),
+            "and a late answer to a walk that ended is nobody's"
+        );
     }
 
     /// A span is widened to whole buckets, so what comes back can replace what

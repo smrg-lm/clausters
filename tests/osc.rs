@@ -714,7 +714,7 @@ fn buffer_peaks_answers_the_overview_of_a_buffer_at_rest() {
         panic!("expected the overview blob");
     };
     assert!(
-        bytes.len() <= 16 * 1024,
+        bytes.len() <= 8 * 1024,
         "one reply fits the smallest carrier, got {} bytes",
         bytes.len()
     );

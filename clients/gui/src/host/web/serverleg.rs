@@ -285,15 +285,8 @@ impl WebApp {
                 if let Some((bufnum, start, bucket, stats)) = crate::host::stream_report(&msg.args)
                 {
                     self.on_stream_report(bufnum, start, bucket, &stats);
-                    let shape = self.host.window_def_ids().into_iter().find_map(|id| {
-                        self.host
-                            .window_def(id)
-                            .and_then(|tree| crate::host::buffer_shape_in(tree, bufnum))
-                    });
-                    if let Some(next) =
-                        crate::host::next_peaks_frame(shape, start, bucket, stats.len())
-                    {
-                        self.ask_peaks(bufnum, next);
+                    if let Some(next) = self.fetches.on_peaks(bufnum, start, stats.len()) {
+                        self.send_to_server(next);
                     }
                 }
             }
@@ -467,11 +460,13 @@ impl WebApp {
                     wants.len(),
                     if ask_summary { "asked for" } else { "streamed" }
                 ));
+                let mut bucket = None;
                 for want in wants {
                     let Some(base_bucket) = self.summary_bucket_of(want.def_id, want.widget_id)
                     else {
                         continue;
                     };
+                    bucket = bucket.or(Some(base_bucket));
                     let data = Arc::new(crate::waveform::WaveformData::with_multi_pyramid(
                         MultiPyramid::empty(frames, channels, base_bucket),
                     ));
@@ -497,8 +492,13 @@ impl WebApp {
                     self.host.sync_buffer_streams();
                     self.request_redraw(want.def_id);
                 }
-                if ask_summary {
-                    self.ask_peaks(bufnum, 0);
+                // **And then the summary itself**, when it is not being
+                // pushed: one walk per buffer, however many views drew the
+                // empty picture, at the bucket their pyramids are built on.
+                if let (true, Some(bucket)) = (ask_summary, bucket)
+                    && let Some(msg) = self.fetches.want_peaks(bufnum, bucket, channels, frames)
+                {
+                    self.send_to_server(msg);
                 }
             }
             FetchStep::Window {
@@ -630,27 +630,6 @@ impl WebApp {
         })
     }
 
-    /// **Asks for a buffer's overview from `first_frame` on** (`/buffer_peaks`).
-    ///
-    /// One request answers at most a few thousand buckets, so a long take takes
-    /// several -- walked by the replies themselves rather than by a state
-    /// machine here: each one says where it ended, and the tree says how long
-    /// the take is.
-    fn ask_peaks(&mut self, bufnum: i32, first_frame: usize) {
-        let Some(bucket) = self.host.window_def_ids().into_iter().find_map(|def_id| {
-            self.host
-                .window_def(def_id)
-                .and_then(|tree| crate::host::summary_bucket_for(tree, bufnum))
-        }) else {
-            return;
-        };
-        self.send_to_server(crate::host::fetch::peaks_request(
-            bufnum,
-            bucket,
-            first_frame,
-        ));
-    }
-
     /// **Reads an announced span back off the wire.** A page maps nothing, so
     /// the samples it draws are a download and an edit somebody else made is
     /// not in them -- no summary over what it holds can find it. The
@@ -686,7 +665,14 @@ impl WebApp {
     /// One download per buffer is in flight at a time (the fetch machine's own
     /// bound), and nothing is asked while the zoom stays above the bucket —
     /// where the summary is the right answer and already on screen.
+    ///
+    /// The summary walks are ticked here too, for the same reason and against
+    /// the same clock: a piece of a summary that never came back is asked for
+    /// again rather than leaving a hole in the picture.
     pub(super) fn fetch_wanted_spans(&mut self, def_id: i32) {
+        for msg in self.fetches.tick_peaks() {
+            self.send_to_server(msg);
+        }
         let mut asked: Vec<(i32, i32, usize, usize, usize)> = Vec::new();
         if let Some(render) = self.canvases.get(&def_id).and_then(|c| c.render.as_ref()) {
             for (widget_id, slot) in &render.waveforms {

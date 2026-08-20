@@ -333,15 +333,8 @@ impl App {
                 if let Some((bufnum, start, bucket, stats)) = crate::host::stream_report(&msg.args)
                 {
                     self.on_stream_report(bufnum, start, bucket, &stats);
-                    let shape = self.host.window_def_ids().into_iter().find_map(|id| {
-                        self.host
-                            .window_def(id)
-                            .and_then(|tree| crate::host::buffer_shape_in(tree, bufnum))
-                    });
-                    if let Some(next) =
-                        crate::host::next_peaks_frame(shape, start, bucket, stats.len())
-                    {
-                        self.ask_peaks(bufnum, next);
+                    if let Some(next) = self.fetches.on_peaks(bufnum, start, stats.len()) {
+                        self.send_to_server(next);
                     }
                 }
             }
@@ -582,7 +575,14 @@ impl App {
     /// Called after drawing, once per pass: the note is this frame's, and a
     /// span already in flight is not asked for again (the fetch machine keeps
     /// one download per buffer, which is what bounds this).
+    ///
+    /// The summary walks are ticked here too, for the same reason and against
+    /// the same clock: a piece of a summary that never came back is asked for
+    /// again rather than leaving a hole in the picture.
     pub(super) fn fetch_wanted_spans(&mut self) {
+        for msg in self.fetches.tick_peaks() {
+            self.send_to_server(msg);
+        }
         let mut asked: Vec<(i32, i32, i32, usize, usize, usize)> = Vec::new();
         for (def_id, ws) in &self.windows {
             for (widget_id, slot) in &ws.waveforms {
@@ -644,6 +644,7 @@ impl App {
         wants: Vec<WaveWant>,
     ) {
         debug!("gui: buffer {bufnum} ({frames} frames) is drawn from its summary");
+        let mut bucket = None;
         for want in wants {
             let Some(base_bucket) = self.summary_bucket_of(want.def_id, want.widget_id) else {
                 continue;
@@ -672,9 +673,15 @@ impl App {
                 frame::keep_data(w, &Loaded::Peaks(data));
             }
             self.finish_placement(want, frames, sample_rate);
+            bucket = bucket.or(Some(base_bucket));
         }
-        if ask_summary {
-            self.ask_peaks(bufnum, 0);
+        // **And then the summary itself**, when it is not being pushed: one
+        // walk per buffer, however many views drew the empty picture, at the
+        // bucket their pyramids are built on.
+        if let (true, Some(bucket)) = (ask_summary, bucket)
+            && let Some(msg) = self.fetches.want_peaks(bufnum, bucket, channels, frames)
+        {
+            self.send_to_server(msg);
         }
     }
 
@@ -695,27 +702,6 @@ impl App {
                 _ => crate::host::elements::signal::DEFAULT_BASE_BUCKET,
             },
         })
-    }
-
-    /// **Asks for a buffer's overview from `first_frame` on** (`/buffer_peaks`).
-    ///
-    /// One request answers at most a few thousand buckets, so a long take takes
-    /// several — walked by the replies themselves rather than by a state
-    /// machine here: each one says where it ended, and the tree says how long
-    /// the take is.
-    fn ask_peaks(&mut self, bufnum: i32, first_frame: usize) {
-        let Some(bucket) = self.host.window_def_ids().into_iter().find_map(|def_id| {
-            self.host
-                .window_def(def_id)
-                .and_then(|tree| crate::host::summary_bucket_for(tree, bufnum))
-        }) else {
-            return;
-        };
-        self.send_to_server(crate::host::fetch::peaks_request(
-            bufnum,
-            bucket,
-            first_frame,
-        ));
     }
 
     /// Re-summarizes the span another writer announced, in every view of that

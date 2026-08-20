@@ -204,11 +204,16 @@ socket.</div>
         // sample of it crosses in either direction, which is the point the
         // lane goes on to make about drawing it.
         long = await Buffer.alloc(Math.round(LONG_SECONDS * RATE), 2, { server });
-        const cells = long.frames * 2;
+        // The steps land on **whole buckets** of the summary (256 frames), so
+        // each one is drawn from buckets that hold one value: a boundary
+        // falling inside a bucket would give that bucket both values, and the
+        // picture a full-height column at every step -- correct, and a
+        // distraction from what the lane is here to show.
         const steps = 12;
+        const stepFrames = Math.floor(long.frames / steps / 256) * 256;
         await long.fill(Array.from({ length: steps }, (_, i) => [
-          Math.round((i * cells) / steps),
-          Math.round(cells / steps),
+          i * stepFrames * 2,
+          stepFrames * 2,
           (i % 2 === 0 ? 1 : -1) * (0.15 + 0.85 * (i / (steps - 1))),
         ]));
         await long.gain(1.0, { to: 0.25 });

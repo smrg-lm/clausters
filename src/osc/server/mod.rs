@@ -104,14 +104,14 @@ const MAX_STREAM_BUFFERS: usize = 32;
 /// take and 400 kB of an eight-channel one. The carriers have real limits and
 /// the smallest of them is the shared ring's **64 KiB**, which drops what does
 /// not fit *silently* — a page that asked for a summary and got nothing back,
-/// forever, is exactly what this ceiling exists to prevent. A sixteenth of the
-/// ring leaves room for the several replies that are in flight while a session
-/// draws.
+/// forever, is exactly what this ceiling exists to prevent. An eighth of the
+/// ring leaves room for the several replies in the air while a session draws,
+/// which is the same reasoning that sizes a client's `/buffer_getRange` chunk.
 ///
 /// What is left over is asked for again (`/buffer_peaks`, whose reply says
 /// where it ended) or sent by the next report (`/buffer_stream`, whose
 /// frontier is where the report ended and not where the samples end).
-const MAX_STREAM_BYTES: usize = 16 * 1024;
+const MAX_STREAM_BYTES: usize = 8 * 1024;
 
 /// The above as a bucket count, for a buffer of `channels` channels: each
 /// bucket carries `min`, `max` and mean square per channel.

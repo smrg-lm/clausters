@@ -2493,61 +2493,6 @@ pub(crate) fn span_to_read_back(widget: &widget::Widget, bufnum: i32) -> Option<
         .find_map(|child| span_to_read_back(child, bufnum))
 }
 
-/// **The bucket the summary of `bufnum` is built at**, from the first element
-/// of this tree drawing it — what a request for more of that summary has to be
-/// phrased in, since a report at another bucket cannot be folded in.
-pub(crate) fn summary_bucket_for(widget: &widget::Widget, bufnum: i32) -> Option<usize> {
-    if let Some(el) = widget.kind.as_element()
-        && el.source_buffer() == Some(bufnum)
-        && let Some(bucket) = el.summary_bucket()
-    {
-        return Some(bucket);
-    }
-    widget
-        .children
-        .iter()
-        .find_map(|child| summary_bucket_for(child, bufnum))
-}
-
-/// **The shape of the samples of `bufnum`**, `(channels, frames)`, from the
-/// first element of this tree drawing it — what says how much of a summary one
-/// answer carried and whether the walk has reached the end.
-pub(crate) fn buffer_shape_in(widget: &widget::Widget, bufnum: i32) -> Option<(usize, u64)> {
-    if let Some(el) = widget.kind.as_element()
-        && el.source_buffer() == Some(bufnum)
-        && let Some(shape) = el.sample_shape()
-    {
-        return Some(shape);
-    }
-    widget
-        .children
-        .iter()
-        .find_map(|child| buffer_shape_in(child, bufnum))
-}
-
-/// **Where a walk over a buffer's summary continues**, or `None` when it has
-/// covered the take.
-///
-/// One `/buffer_peaks.reply` carries as many buckets as a message holds and
-/// says where it began; the take's shape says how many those were and whether
-/// that was the end. So the walk keeps no state of its own — and an unanswered
-/// request simply stops it, which is the honest failure for a picture that then
-/// draws the buckets it already has.
-pub(crate) fn next_peaks_frame(
-    shape: Option<(usize, u64)>,
-    start: u64,
-    bucket: usize,
-    stats: usize,
-) -> Option<usize> {
-    let (channels, frames) = shape?;
-    let buckets = stats / (channels.max(1) * 3);
-    if bucket == 0 || buckets == 0 {
-        return None; // an empty answer: no whole bucket was left to summarize
-    }
-    let next = start as usize + buckets * bucket;
-    ((next + bucket) as u64 <= frames).then_some(next)
-}
-
 /// Reads a `/buffer_stream.reply bufnum startFrame bucket blob` into
 /// `(buffer, start_frame, bucket, stats)`, or `None` when it is not one.
 ///
@@ -3633,41 +3578,6 @@ mod tests {
 /// hand itself (the drag that builds the payload) is tested in `gestures`, and
 /// the server's own `/buffer_setRange` in the server crate; this is where the
 /// three meet.
-#[cfg(test)]
-mod summary_walk_tests {
-    use super::*;
-
-    /// **The walk over a long take's summary carries no state**: each answer
-    /// says where it began, its own length says how many buckets it held, and
-    /// the take's shape says whether that was the end.
-    #[test]
-    fn a_summary_walk_reads_its_own_place_out_of_each_answer() {
-        // A stereo take of 4096 buckets, answered 1000 at a time.
-        let shape = Some((2, 4096 * 256));
-        let stats = 1000 * 2 * 3;
-        assert_eq!(
-            next_peaks_frame(shape, 0, 256, stats),
-            Some(1000 * 256),
-            "the next request starts where the answer ended"
-        );
-        assert_eq!(
-            next_peaks_frame(shape, 3000 * 256, 256, 1096 * 2 * 3),
-            None,
-            "the last answer reaches the end and the walk stops"
-        );
-        assert_eq!(
-            next_peaks_frame(shape, 4096 * 256, 256, 0),
-            None,
-            "an empty answer stops it too: there was no whole bucket left"
-        );
-        assert_eq!(
-            next_peaks_frame(None, 0, 256, stats),
-            None,
-            "and nothing drawing that buffer stops it as well"
-        );
-    }
-}
-
 #[cfg(test)]
 mod write_tests {
     use super::*;
