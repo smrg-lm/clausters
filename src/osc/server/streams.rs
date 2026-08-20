@@ -12,6 +12,32 @@
 
 use super::*;
 
+/// **One buffer's overview, as the wire carries it**: `buckets` buckets of
+/// `bucket` frames from `first_frame`, bucket-major and channel-minor, min,
+/// max and mean square each, as little-endian `f32`.
+///
+/// The arithmetic is [`clausters_core::peaks::overview`] — the same function
+/// that folds the result on the other end reads it here, so the layout is
+/// stated once — and the buffer is read a bucket at a time through
+/// [`crate::dsp::buffer::Buffer::channel`], never copied.
+pub(in crate::osc::server) fn overview_blob(
+    buffer: &crate::dsp::buffer::Buffer,
+    first_frame: usize,
+    bucket: usize,
+    buckets: usize,
+) -> Vec<u8> {
+    let channels: Vec<_> = (0..buffer.channels().max(1))
+        .map(|ch| buffer.channel(ch))
+        .collect();
+    let sources: Vec<_> = channels.iter().collect();
+    let stats = clausters_core::peaks::overview(&sources, first_frame, bucket, buckets);
+    let mut bytes = Vec::with_capacity(stats.len() * 4);
+    for value in stats {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes
+}
+
 impl OscServer {
     /// `/bus_stream periodMs busIndex...`: subscribes this client to a periodic
     /// `/bus_set` snapshot of the listed control buses — the network counterpart
@@ -497,25 +523,8 @@ impl OscServer {
             if whole == 0 {
                 continue;
             }
-            let channels = buffer.channels().max(1);
             let whole = whole.min(MAX_STREAM_BUCKETS as u64) as usize;
-            let mut bytes = Vec::with_capacity(whole * channels * 3 * 4);
-            for b in 0..whole {
-                let from = start as usize + b * bucket;
-                for ch in 0..channels {
-                    let (mut lo, mut hi, mut sum) = (f32::INFINITY, f32::NEG_INFINITY, 0.0f64);
-                    for f in from..from + bucket {
-                        let v = buffer.sample(f, ch);
-                        lo = lo.min(v);
-                        hi = hi.max(v);
-                        sum += (v as f64) * (v as f64);
-                    }
-                    let ms = (sum / bucket as f64) as f32;
-                    for value in [lo, hi, ms] {
-                        bytes.extend_from_slice(&value.to_le_bytes());
-                    }
-                }
-            }
+            let bytes = overview_blob(buffer, start as usize, bucket, whole);
             let end = start + (whole * bucket) as u64;
             self.buffer_streams[i].buffers[k] = (bufnum, end);
             self.reply(

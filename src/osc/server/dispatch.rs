@@ -341,6 +341,9 @@ pub(super) static COMMANDS: &[(&str, Command)] = &[
     ("/buffer_getRange", |s, _, m, f| {
         s.handle_buffer_get_range(Args::new(m), f)
     }),
+    ("/buffer_peaks", |s, _, m, f| {
+        s.handle_buffer_peaks(Args::new(m), f)
+    }),
     ("/buffer_query", |s, _, m, f| {
         s.handle_buffer_query(Args::new(m), f)
     }),

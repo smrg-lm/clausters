@@ -447,6 +447,59 @@ class Buffer:
             got += n
         return out
 
+    def peaks(self, bucket: int = 256, start: int = 0, frames: int = -1, *,
+              timeout: "float | None" = None):
+        """Fetch this buffer's **overview** (``/buffer_peaks`` →
+        ``/buffer_peaks.reply``), as ``(start_frame, bucket, stats)``.
+
+        The summary of a buffer that is standing still, and the sibling of the
+        stream a recording pushes: the same blob either way — bucket-major and
+        channel-minor, ``min``, ``max`` and mean square per bucket, in one flat
+        ``array('f')`` — so it folds into a pyramid through the same door
+        (`clausters.gui.peaks_cache_stream_file`, the core's ``write_buckets``)
+        with nothing converted.
+
+        It is what lets a picture of a long take exist without the take: about
+        a hundredth of the samples' bandwidth, enough to draw the whole of it,
+        and the spans under a zoom read back with `get_samples` as they are
+        needed.
+
+        Args:
+            bucket: frames per bucket. Use the one the pyramid it is folded
+                into was built at (256 unless it says otherwise), so the two
+                grids agree by construction.
+            start: the first frame, rounded **down** to a whole bucket for the
+                same reason.
+            frames: how many, -1 to the end. Long spans come back in several
+                requests: the reply's own length says how much arrived, and
+                this walks from where it ended until the span is covered or the
+                server has no more.
+
+        RT only (it needs replies)."""
+        srv = self._server()
+        # The channel count is what turns a blob's length back into buckets, so
+        # it is asked for when the handle does not already carry it -- exactly
+        # as `get_samples` asks for the shape it needs.
+        if frames < 0 or not self.channels:
+            shape = self.info(timeout=timeout)
+            if frames < 0:
+                frames = max(0, shape.frames - start)
+        channels = max(1, self.channels)
+        first = (start // bucket) * bucket
+        end = start + frames
+        out = array("f")
+        at = first
+        while at < end:
+            _, args = srv.request("/buffer_peaks", self.bufnum, int(bucket), int(at),
+                                  int(end - at), timeout=timeout,
+                                  expect=("/buffer_peaks.reply",))
+            run = blob_to_samples(args[3])
+            if not run:
+                break              # no whole bucket left: the span is covered
+            out.extend(run)
+            at += (len(run) // (channels * 3)) * bucket
+        return first, bucket, out
+
     def set_samples(self, samples, start: int = 0, *, chunk: "int | None" = None,
                     wait: bool = True, timeout: "float | None" = None):
         """Write interleaved samples into this buffer (``/buffer_setRange``), in

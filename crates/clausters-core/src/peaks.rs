@@ -170,6 +170,44 @@ pub fn mean_square(samples: &[f32]) -> Option<f32> {
     Some((sum / samples.len() as f64) as f32)
 }
 
+/// **The overview of a span, in the layout the wire carries it in**:
+/// bucket-major and channel-minor — for each bucket in order, for each channel,
+/// `min`, `max` and mean square, as a flat run of `f32`.
+///
+/// One function because there is one layout, and every end of it is somebody
+/// else's: the server's `/buffer_stream` reports it as a recording grows and
+/// `/buffer_peaks` answers it for a buffer that stands still, while a client
+/// folds it straight into the pyramid a picture already holds
+/// ([`Pyramid::write_buckets`], [`MultiPyramid::write_buckets`]) — the same
+/// three statistics in the same energy form, so nothing is converted anywhere.
+///
+/// `channels` is one [`Source`] per channel, read a bucket at a time through a
+/// scratch of exactly that size: a ten-minute take is summarized without ever
+/// holding more than one bucket of it. A bucket that runs past a channel's end
+/// reads as silence, which is what [`Source::read_into`] promises.
+pub fn overview<S: Source + ?Sized>(
+    channels: &[&S],
+    first_frame: usize,
+    bucket: usize,
+    buckets: usize,
+) -> Vec<f32> {
+    if bucket == 0 || channels.is_empty() {
+        return Vec::new();
+    }
+    let mut scratch = vec![0.0f32; bucket];
+    let mut out = Vec::with_capacity(buckets * channels.len() * 3);
+    for b in 0..buckets {
+        let at = first_frame + b * bucket;
+        for source in channels {
+            source.read_into(at, &mut scratch);
+            let (lo, hi) = min_max(&scratch).unwrap_or((0.0, 0.0));
+            let ms = mean_square(&scratch).unwrap_or(0.0);
+            out.extend_from_slice(&[lo, hi, ms]);
+        }
+    }
+    out
+}
+
 /// One resolution level: `min[i]`/`max[i]`/`ms[i]` summarize `bucket` source
 /// samples. `ms` is `None` for a pyramid parsed from a v1/v2 cache, which
 /// predates the statistic — an absent measure, not a zero one.
@@ -1045,6 +1083,42 @@ mod tests {
 
     fn ramp(n: usize) -> Vec<f32> {
         (0..n).map(|i| (i as f32 * 0.01).sin()).collect()
+    }
+
+    /// **The overview is the pyramid's level 0, said on the wire** — one
+    /// function serves both ends of `/buffer_stream` and `/buffer_peaks`, so
+    /// what it produces has to be exactly what `write_buckets` folds back.
+    #[test]
+    fn an_overview_is_the_base_level_in_the_wire_layout() {
+        let left = ramp(1024);
+        let right: Vec<f32> = left.iter().map(|s| s * 0.5).collect();
+        let sources: Vec<&[f32]> = vec![&left, &right];
+        let stats = overview(&sources, 0, 256, 4);
+        assert_eq!(stats.len(), 4 * 2 * 3, "bucket-major, channel-minor");
+
+        // Every triple is the statistic of the bucket it names, in order.
+        for b in 0..4 {
+            for (ch, source) in [&left, &right].into_iter().enumerate() {
+                let run = &source[b * 256..(b + 1) * 256];
+                let at = (b * 2 + ch) * 3;
+                assert_eq!((stats[at], stats[at + 1]), min_max(run).unwrap());
+                assert!((stats[at + 2] - mean_square(run).unwrap()).abs() < 1e-9);
+            }
+        }
+
+        // And it folds back into a pyramid of the same bucket, which is the
+        // whole reason the layout is what it is.
+        let mut multi = MultiPyramid::empty(1024, 2, 256);
+        assert!(multi.write_buckets(0, 256, &stats));
+        let (lo, hi) = multi.channel(0).unwrap().column(0, 0.0, 256.0).unwrap();
+        assert_eq!((lo, hi), min_max(&left[..256]).unwrap());
+
+        // A bucket that runs past the end reads as silence rather than
+        // panicking -- what `Source::read_into` promises, asked for here.
+        let short: Vec<&[f32]> = vec![&left[..300]];
+        let tail = overview(&short, 256, 256, 1);
+        assert_eq!(tail.len(), 3);
+        assert_eq!(tail[0], 0.0, "the zeros past the end are the minimum");
     }
 
     #[test]

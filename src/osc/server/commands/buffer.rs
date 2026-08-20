@@ -302,6 +302,93 @@ impl OscServer {
         Ok(())
     }
 
+    /// `/buffer_peaks bufnum [bucket=256] [start=0] [frames=-1]` →
+    /// `/buffer_peaks.reply bufnum startFrame bucket blob` (one or more):
+    /// **the overview of a buffer that is standing still.**
+    ///
+    /// `/buffer_stream`'s sibling, and the pair is a distinction in the
+    /// *material* and not in the client: a recording's overview is pushed as
+    /// it is written, and a buffer nothing is writing has one that can simply
+    /// be asked for. Same blob either way — bucket-major, channel-minor, min,
+    /// max and mean square as little-endian `f32` — so the receiving half is
+    /// the one both already have (`peaks::MultiPyramid::write_buckets`), and
+    /// the folding code does not fork.
+    ///
+    /// **What it is for is the round trip it replaces.** A view of a server
+    /// buffer that cannot map it had two ways to get a picture: download every
+    /// sample (230 MB for a ten-minute stereo take, and the page's own bulk
+    /// read gives up well below that), or have nothing until something records
+    /// into it. This is the third: about a hundredth of the bandwidth, enough
+    /// to draw the whole take at once, and the spans under a zoom read back
+    /// with `/buffer_getRange` as they are needed.
+    ///
+    /// `bucket` is the summary's finest resolution and should be the one the
+    /// asking pyramid was built at (256 unless it says otherwise), so the two
+    /// grids agree by construction; `start` is rounded **down** to a whole
+    /// bucket for the same reason. `frames < 0` runs to the end.
+    ///
+    /// **One request, one reply, and the reply's own length says how much
+    /// came** — the chunk conversation `/buffer_getRange` already has, for the
+    /// same reason: at most [`MAX_STREAM_BUCKETS`] buckets are answered at
+    /// once, so no message is bounded by how long the take is, and a client
+    /// walking a long take asks again from where the blob ended. Nothing is
+    /// remembered between requests.
+    ///
+    /// Synchronous on the network thread, like `/buffer_get`, `/buffer_getRange`
+    /// and `/buffer_export`: it reads the span once, a bucket at a time, and
+    /// allocates only the summary.
+    pub(in crate::osc::server) fn handle_buffer_peaks(
+        &mut self,
+        mut args: Args,
+        from: ClientId,
+    ) -> Answer {
+        let bufnum = args.int()?;
+        let bucket = args.opt_int()?.unwrap_or(256).max(1) as usize;
+        let start = args.opt_int()?.unwrap_or(0).max(0) as usize;
+        let asked = args.opt_int()?.unwrap_or(-1);
+        let Some(buffer) = self.mirror_buffer(bufnum) else {
+            return Err(format!("buffer {bufnum} not allocated"));
+        };
+        let frames = buffer.frames();
+        // Rounded to the grid the answer is folded into: a bucket summarized
+        // from part of itself would report a peak the samples do not have.
+        let first = (start / bucket) * bucket;
+        let end = match asked {
+            n if n < 0 => frames,
+            n => (start + n as usize).min(frames),
+        };
+        let buckets = end.saturating_sub(first) / bucket;
+        if buckets == 0 {
+            // Nothing whole to answer with, and the honest reply is an empty
+            // one rather than silence: the asker learns the span held no
+            // bucket, which is different from a request that went missing.
+            self.reply(
+                from,
+                "/buffer_peaks.reply",
+                vec![
+                    OscType::Int(bufnum),
+                    OscType::Long(first as i64),
+                    OscType::Int(bucket as i32),
+                    OscType::Blob(Vec::new()),
+                ],
+            );
+            return Ok(());
+        }
+        let buckets = buckets.min(MAX_STREAM_BUCKETS);
+        let bytes = super::super::streams::overview_blob(&buffer, first, bucket, buckets);
+        self.reply(
+            from,
+            "/buffer_peaks.reply",
+            vec![
+                OscType::Int(bufnum),
+                OscType::Long(first as i64),
+                OscType::Int(bucket as i32),
+                OscType::Blob(bytes),
+            ],
+        );
+        Ok(())
+    }
+
     /// `/buffer_export bufnum path` → `/done /buffer_export bufnum`: write the buffer's raw
     /// samples (flat, interleaved, little-endian `f32`) to `path` as a **local
     /// shared resource**, so a same-machine client (the GUI host) can map and read

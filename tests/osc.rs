@@ -616,6 +616,106 @@ fn c_stream_rejects_bad_arguments() {
     server.quit();
 }
 
+/// **The overview of a buffer that is standing still**, which is
+/// `/buffer_stream`'s sibling: a recording's summary is pushed as it is
+/// written, and a buffer nothing writes has one that is simply asked for.
+///
+/// What the test pins is the pair of things a client depends on: the blob is
+/// the *same* layout the stream reports (bucket-major, channel-minor, min, max
+/// and mean square), so the folding half does not fork; and the conversation is
+/// `/buffer_getRange`'s — one reply per request, its own length saying how much
+/// came, the start rounded down to a whole bucket so the grids agree.
+#[test]
+fn buffer_peaks_answers_the_overview_of_a_buffer_at_rest() {
+    let mut server = TestServer::spawn();
+
+    // A stereo buffer of four buckets: the left channel a constant, the right
+    // one silent, so a bucket says which channel it is.
+    server.send(
+        "/buffer_alloc",
+        vec![OscType::Int(3), OscType::Int(1_024), OscType::Int(2)],
+    );
+    server.sync();
+    let mut samples: Vec<OscType> = vec![OscType::Int(3), OscType::Int(0)];
+    let mut blob = Vec::new();
+    for _ in 0..1_024 {
+        blob.extend_from_slice(&0.5f32.to_le_bytes());
+        blob.extend_from_slice(&0.0f32.to_le_bytes());
+    }
+    samples.push(OscType::Blob(blob));
+    server.send("/buffer_setRange", samples);
+    server.sync();
+
+    server.send("/buffer_peaks", vec![OscType::Int(3), OscType::Int(256)]);
+    let reply = server.recv_until("/buffer_peaks.reply");
+    assert_eq!(reply.args[0], OscType::Int(3));
+    assert_eq!(reply.args[1], OscType::Long(0));
+    assert_eq!(reply.args[2], OscType::Int(256));
+    let OscType::Blob(bytes) = &reply.args[3] else {
+        panic!("expected the overview blob, got {:?}", reply.args);
+    };
+    let values: Vec<f32> = bytes
+        .chunks_exact(4)
+        .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
+        .collect();
+    assert_eq!(
+        values.len(),
+        4 * 2 * 3,
+        "four buckets, two channels, three each"
+    );
+    for frame in values.chunks_exact(6) {
+        assert_eq!((frame[0], frame[1]), (0.5, 0.5), "left is the constant");
+        assert!((frame[2] - 0.25).abs() < 1e-6, "its energy");
+        assert_eq!(
+            (frame[3], frame[4], frame[5]),
+            (0.0, 0.0, 0.0),
+            "right is silent"
+        );
+    }
+
+    // A span, and a start that is not on the grid: it is rounded **down**, so
+    // what comes back can be folded into a summary bucket for bucket.
+    server.send(
+        "/buffer_peaks",
+        vec![
+            OscType::Int(3),
+            OscType::Int(256),
+            OscType::Int(300),
+            OscType::Int(512),
+        ],
+    );
+    let reply = server.recv_until("/buffer_peaks.reply");
+    assert_eq!(
+        reply.args[1],
+        OscType::Long(256),
+        "rounded down to the grid"
+    );
+    let OscType::Blob(bytes) = &reply.args[3] else {
+        panic!("expected the overview blob");
+    };
+    assert_eq!(
+        bytes.len(),
+        2 * 2 * 3 * 4,
+        "frames 256..812 hold two buckets"
+    );
+
+    // A span with no whole bucket in it answers empty rather than not at all:
+    // the asker learns the span held none, which is not the same as silence.
+    server.send(
+        "/buffer_peaks",
+        vec![
+            OscType::Int(3),
+            OscType::Int(256),
+            OscType::Int(0),
+            OscType::Int(100),
+        ],
+    );
+    let reply = server.recv_until("/buffer_peaks.reply");
+    assert_eq!(reply.args[3], OscType::Blob(Vec::new()));
+
+    server.quit();
+}
+
 /// **A server with no segment reports a recording too**, which is the case the
 /// command exists for: whoever cannot map the samples is who asks for its
 /// overview, and most of them talk to a server that shares nothing — an engine

@@ -289,6 +289,20 @@ impl Buffer {
         }
     }
 
+    /// **One channel of this buffer, read where it lies** — the door every
+    /// summary goes through.
+    ///
+    /// Interleaved storage puts a channel's frames `channels` apart, so
+    /// de-interleaving one to summarize it would copy the take; a
+    /// [`clausters_core::peaks::Source`] reads a caller-sized window instead,
+    /// which is what lets a ten-minute take be summarized a bucket at a time.
+    pub fn channel(&self, channel: usize) -> BufferChannel<'_> {
+        BufferChannel {
+            buffer: self,
+            channel,
+        }
+    }
+
     /// A snapshot of the whole buffer, interleaved — what a caller that wants a
     /// plain slice takes instead of borrowing one. It is a *reading*, not a
     /// view: samples written after it are not in it, which is the honest shape
@@ -308,5 +322,30 @@ impl Buffer {
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.cells().is_empty()
+    }
+}
+
+/// One channel of a [`Buffer`], as the shared summarizer reads it.
+///
+/// It holds a borrow rather than a copy: a summary is a read over the cells the
+/// engine is writing, which is the same concurrency every other reader of a
+/// buffer takes — some old samples and some new, never half of one.
+pub struct BufferChannel<'a> {
+    buffer: &'a Buffer,
+    channel: usize,
+}
+
+impl clausters_core::peaks::Source for BufferChannel<'_> {
+    fn len(&self) -> usize {
+        if self.channel >= self.buffer.channels() {
+            return 0;
+        }
+        self.buffer.frames()
+    }
+
+    fn read_into(&self, start: usize, out: &mut [f32]) {
+        for (i, slot) in out.iter_mut().enumerate() {
+            *slot = self.buffer.sample(start + i, self.channel);
+        }
     }
 }

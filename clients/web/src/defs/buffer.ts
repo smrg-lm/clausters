@@ -708,6 +708,69 @@ export class Buffer {
     }
 
     /**
+     * Fetches this buffer's **overview** (`/buffer_peaks` →
+     * `/buffer_peaks.reply`), as `{ start, bucket, stats }`.
+     *
+     * The summary of a buffer that is standing still, and the sibling of the
+     * stream a recording pushes: the same blob either way — bucket-major and
+     * channel-minor, `min`, `max` and mean square per bucket, one flat
+     * `Float32Array` — so it folds into a pyramid through the same door
+     * (`Peaks.writeBuckets`) with nothing converted.
+     *
+     * It is what lets a picture of a long take exist without the take: about a
+     * hundredth of the samples' bandwidth, enough to draw the whole of it, and
+     * the spans under a zoom read back with {@link getSamples} as they are
+     * needed.
+     *
+     * `bucket` should be the one the pyramid it is folded into was built at
+     * (256 unless it says otherwise), so the two grids agree by construction;
+     * `start` is rounded **down** to a whole bucket for the same reason, and
+     * the rounded frame comes back with the answer. `frames: -1` runs to the
+     * end. Long spans take several requests — the reply's own length says how
+     * much arrived, and this walks from where it ended.
+     */
+    async peaks({
+        bucket = 256,
+        start = 0,
+        frames = -1,
+        timeout,
+    }: { bucket?: number; start?: number; frames?: number; timeout?: number } = {}):
+        Promise<{ start: number; bucket: number; stats: Float32Array }> {
+        const server = this.srv();
+        // The channel count turns a blob's length back into buckets, so it is
+        // asked for when the handle does not carry it — as `getSamples` asks
+        // for the shape it needs.
+        if (frames < 0 || !this.channels) {
+            const shape = await this.info(timeout);
+            if (frames < 0) frames = Math.max(0, shape.frames - start);
+        }
+        const channels = Math.max(1, this.channels);
+        const first = Math.floor(start / bucket) * bucket;
+        const end = start + frames;
+        const runs: Float32Array[] = [];
+        let at = first;
+        while (at < end) {
+            const msg = await server.request(
+                "/buffer_peaks",
+                [["i", this.bufnum], ["i", bucket], ["i", at], ["i", end - at]],
+                { expect: ["/buffer_peaks.reply"], timeout },
+            );
+            const run = blobToSamples(msg.args[3] as Uint8Array);
+            if (run.length === 0) break; // no whole bucket left: the span is covered
+            runs.push(run);
+            at += Math.floor(run.length / (channels * 3)) * bucket;
+        }
+        const total = runs.reduce((n, run) => n + run.length, 0);
+        const stats = new Float32Array(total);
+        let at_ = 0;
+        for (const run of runs) {
+            stats.set(run, at_);
+            at_ += run.length;
+        }
+        return { start: first, bucket, stats };
+    }
+
+    /**
      * Writes interleaved samples into this buffer (`/buffer_setRange`), in
      * chunks — the write half of `getSamples`, and the step that closes an
      * editor's read → edit → write cycle.
