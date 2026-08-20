@@ -188,11 +188,6 @@ again for what never came back.
 - **The builders could be generated from the catalog instead of contrasted
   against it** *(root `PLAN.md`, Future directions)* — the contrast tests caught
   eleven drifted builders, which is strictly weaker than not hand-writing the mirrors.
-- **A page's opening pass re-subscribes once per canvas** *(`clients/gui/PLAN.md`,
-  Found by use)* — what fixing the bus ceiling uncovered: the `/bus_stream` set
-  is re-derived and re-sent on every tree change, so a document of forty
-  canvases sends forty subscriptions at load. Correct, bounded, and one tick's
-  worth of coalescing away.
 - **A take is drawn in amplitude and heard in decibels**; **the other text over
   pictures has no plate yet**; **persistence saves the document, not what the
   user did to it** — `clients/gui/PLAN.md`,

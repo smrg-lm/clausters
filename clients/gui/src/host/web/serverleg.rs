@@ -11,7 +11,8 @@
 //! the whole difference from the native leg: a live bus arrives as a
 //! `/bus_stream` subscription and a tap window as `/bus_tapStream`, both
 //! re-diffed whenever the trees change, so the page asks for exactly what it
-//! draws.
+//! draws -- once per turn rather than once per change, since a document builds
+//! its canvases in one synchronous pass (`WebApp::schedule_stream_sync`).
 
 use super::*;
 
@@ -341,9 +342,11 @@ impl WebApp {
                 }
                 if let Some(OscType::Double(rate)) = msg.args.get(1) {
                     self.server_rate = *rate;
-                    // Window sizes may change with the real rate known.
-                    let demand = self.demand();
-                    self.sync_tap_stream(demand.taps, demand.tap_frames);
+                    // Window sizes may change with the real rate known, so the
+                    // tap windows are re-derived — through the same queue the
+                    // trees use, which is the only door that talks to the
+                    // server about subscriptions.
+                    self.schedule_stream_sync();
                 }
             }
             "/server_query.reply" => {
@@ -356,10 +359,9 @@ impl WebApp {
                 {
                     self.stream_bus_cap = *cap as usize;
                     // Re-derive: the set already asked for may have been
-                    // truncated against the default, or may now fit.
+                    // truncated against the floor, or may now fit.
                     self.streamed.clear();
-                    let demand = self.demand();
-                    self.sync_bus_stream(demand.buses);
+                    self.schedule_stream_sync();
                 }
             }
             "/fail" => {
@@ -378,8 +380,7 @@ impl WebApp {
                         self.stream_bus_cap = cap;
                     }
                     self.streamed.clear();
-                    let demand = self.demand();
-                    self.sync_bus_stream(demand.buses);
+                    self.schedule_stream_sync();
                 }
             }
             // `/done` acks (e.g. for `/bus_stream`) need no action.

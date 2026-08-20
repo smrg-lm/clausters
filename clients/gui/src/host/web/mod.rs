@@ -145,6 +145,11 @@ enum WebEvent {
     SetVisible { def_id: i32, visible: bool },
     /// The async WebGPU device for one canvas is ready.
     GpuReady { def_id: i32, gpu: Gpu },
+    /// Re-derive the server subscriptions from the current trees and send
+    /// whatever changed — queued by [`WebApp::schedule_stream_sync`] and
+    /// coalesced, so a document that opens forty canvases in one pass asks
+    /// once rather than forty times.
+    SyncStreams,
     /// One inbound OSC packet from the in-page binding surface (a `/gui_*`).
     Inbound(Vec<u8>),
     /// Attach the audio-server leg to this `--ws` URL (for bound widgets).
@@ -248,6 +253,9 @@ struct WebApp {
     /// host's belief about what it subscribed is what decides whether it ever
     /// asks again.
     stream_bus_cap: usize,
+    /// Whether a subscription re-derivation is already queued for the end of
+    /// this turn, so a burst of tree changes schedules one.
+    stream_sync_pending: bool,
     /// How many buses the last subscription had to leave out, so the log says
     /// so when it *changes* rather than once per canvas: a document's opening
     /// pass re-derives the subscription per canvas, and a line each would bury
@@ -289,6 +297,7 @@ impl WebApp {
             notified: false,
             stream_bus_cap: live::INITIAL_STREAM_BUS_CAP,
             stream_dropped: 0,
+            stream_sync_pending: false,
             server_rate: 0.0,
             server_clock: 0.0,
             tick: None,
@@ -388,10 +397,57 @@ impl WebApp {
     /// attaches; cheap (a tree walk) and idempotent, so calling it eagerly is
     /// fine.
     fn on_tree_changed(&mut self) {
+        // The tick is local and settles now; the subscriptions are messages,
+        // and they wait for the end of the turn (see `schedule_stream_sync`).
+        let demand = self.demand();
+        self.ensure_tick(demand.animated);
+        self.schedule_stream_sync();
+    }
+
+    /// Queues one subscription re-derivation for the end of this JavaScript
+    /// turn, if none is queued already.
+    ///
+    /// A page builds its document in **one synchronous pass** — forty canvases
+    /// opened in a loop, each a tree change — while the engine cannot answer
+    /// anything until its next serving turn. Sending per change made that
+    /// forty subscriptions, each replacing the one before it, none of them yet
+    /// acknowledged: correct, and forty round trips to reach the set the last
+    /// one already carried. A zero-delay timeout is exactly the coalescing
+    /// window that pass needs — everything synchronous lands in one request,
+    /// and a change that arrives in its own turn still goes out immediately.
+    fn schedule_stream_sync(&mut self) {
+        if self.stream_sync_pending {
+            return;
+        }
+        let Some(window) = web_sys::window() else {
+            return;
+        };
+        let host = self.id;
+        let callback = Closure::once_into_js(move || {
+            if let Some(proxy) = web_proxy() {
+                let _ = proxy.send_event(HostEvent::To(host, WebEvent::SyncStreams));
+            }
+        });
+        match window
+            .set_timeout_with_callback_and_timeout_and_arguments_0(callback.unchecked_ref(), 0)
+        {
+            Ok(_) => self.stream_sync_pending = true,
+            // No timer: ask now rather than never.
+            Err(e) => {
+                log(&format!("cannot queue the subscription sync: {e:?}"));
+                self.sync_streams();
+            }
+        }
+    }
+
+    /// Sends whatever the current trees ask of the server that is not already
+    /// subscribed — the queued half of [`Self::on_tree_changed`], and the one
+    /// place the subscriptions are derived from.
+    fn sync_streams(&mut self) {
+        self.stream_sync_pending = false;
         let demand = self.demand();
         self.sync_bus_stream(demand.buses);
         self.sync_tap_stream(demand.taps, demand.tap_frames);
-        self.ensure_tick(demand.animated);
     }
 
     /// What the drawing canvases ask of the server and of the frame clock —
@@ -655,6 +711,7 @@ impl WebApp {
                 self.on_server_attached();
             }
             WebEvent::ServerInbound(bytes) => self.on_server_inbound(&bytes),
+            WebEvent::SyncStreams => self.sync_streams(),
             WebEvent::Tick => self.on_tick(),
             WebEvent::BulkReady {
                 def_id,

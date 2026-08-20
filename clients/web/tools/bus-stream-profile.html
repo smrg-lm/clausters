@@ -228,11 +228,17 @@
         // and its last values). `null` while phase A runs.
         let hostPeer = null;
         let cancelling = false;
+        // How many `/bus_stream` requests the host sends while the document is
+        // built: the host re-derives its subscription on every tree change, so
+        // this is what the opening pass costs in round trips -- one, if the
+        // changes of a synchronous pass are coalesced.
+        let subscriptions = 0;
         const realSend = raw.send.bind(raw);
         raw.send = (bytes, peer) => {
             for (const { addr } of decodePacket(bytes)) {
                 if (addr !== "/bus_stream") continue;
                 hostPeer = peer;
+                subscriptions++;
                 if (cancelling) {
                     return realSend(encodeMessage("/bus_stream", [["i", 0]]), peer);
                 }
@@ -275,6 +281,8 @@
           + `${FRAME_MS} ms`
           + (MAX_BUSES === undefined ? ""
              : `; engine ceiling lowered to ${MAX_BUSES} buses`));
+
+        const subsAtBuild = subscriptions;
 
         // Let the host settle: it subscribes on its tick, and the first
         // frames pay for shader compilation and the first upload.
@@ -341,7 +349,8 @@
         const lagDelta = round(((A.lagMean + C.lagMean) / 2) - B.lagMean, 2);
         const blockedDelta = round(((A.blockedPerSec + C.blockedPerSec) / 2)
                                    - B.blockedPerSec, 1);
-        say(`\nA frame of /bus_stream at ${CANVASES} canvases `
+        say(`\n${subsAtBuild} /bus_stream request(s) to open ${CANVASES} canvases`);
+        say(`A frame of /bus_stream at ${CANVASES} canvases `
           + `(${CANVASES * 2} buses): ${round(A.bytesPerReply, 0)} B, `
           + `${round(perFrame * 1000, 0)} us of main thread inside `
           + `server_reply (${round(100 * perFrame / FRAME_MS, 2)}% of the `
@@ -350,7 +359,7 @@
 
         verdict(`PROFILE canvases=${CANVASES} buses=${CANVASES * 2} `
           + (MAX_BUSES === undefined ? "" : `ceiling=${MAX_BUSES} `)
-          + `refused=${refusals.length} `
+          + `refused=${refusals.length} subs-to-open=${subsAtBuild} `
           + `bytes/frame=${round(A.bytesPerReply, 0)} `
           + `us/frame=${round(perFrame * 1000, 0)} `
           + `share=${round(100 * perFrame / FRAME_MS, 2)}% `
