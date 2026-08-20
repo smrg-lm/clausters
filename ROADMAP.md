@@ -1,15 +1,16 @@
 # Roadmap — the order the open work is taken in
 
-*Rewritten 2026-08-20, three times: when the overview work closed, when the
-four entries it had left behind were taken — the join that draws an edge, a
-page's zoom while a take records, the shape a zoom asks in, and what a column
-claims at a discontinuity — and again when the web client stopped drawing
-(before that: 2026-08-19,
-when the picture-reads-the-samples phase closed; twice on 2026-08-18, when the
-clip's interaction rules and the real-sizes phase closed; twice on 2026-08-17,
-against the plans and once the autonomous editor closed). A rewrite **drops what
-is done** and reorganizes what is left: this file is not a record of anything,
-and the record of what shipped is the git history and each plan's own checkbox.*
+*Rewritten 2026-08-20, four times: when the overview work closed, when the four
+entries it had left behind were taken — the join that draws an edge, a page's
+zoom while a take records, the shape a zoom asks in, and what a column claims at
+a discontinuity — when the web client stopped drawing, and again on the pass
+that read the whole `PLAN.md` set against this file looking for open work it
+never named (before that: 2026-08-19, when the picture-reads-the-samples phase
+closed; twice on 2026-08-18, when the clip's interaction rules and the
+real-sizes phase closed; twice on 2026-08-17, against the plans and once the
+autonomous editor closed). A rewrite **drops what is done** and reorganizes what
+is left: this file is not a record of anything, and the record of what shipped is
+the git history and each plan's own checkbox.*
 
 **This file is temporary, and it defines nothing.** It is a working sequence
 over pending work that lives, already written, across several `PLAN.md` files —
@@ -39,10 +40,12 @@ looking at in the shape that span wants — a finer summary, or the samples wher
 only they will do — recording or finished, so the browser draws what the native
 window draws rather than stopping at a bucket.
 
-**So what is left below is not on the path to that example.** One port the
-destination does not wait on, and one track that is genuinely later. Everything
-else is in the section after them, named so that "not scheduled" reads as a
-decision.
+**So what leads the list is what use turned up and nothing has taken yet.** Each
+of those is a defect or a gap somebody hit with their hands, none is a track, and
+they are first because that is the cheapest they will ever be. Behind them: one
+port the destination does not wait on, and one track that is genuinely later.
+Everything else is in the section after them, named so that "not scheduled" reads
+as a decision.
 
 Where the work lives:
 
@@ -65,15 +68,58 @@ right — that is the normal failure, not a sign the work vanished.
 
 ---
 
-## Phase 1 — the packages move together: the arrangement reaches the web client
+## Phase 1 — what use found: the open fixes, before any new track
 
-*Why this first: the rule the project already states, applied to the largest
+*Why this first: every entry here is something that was hit rather than designed,
+each is already written down with the record of what was seen, and none is more
+than a session's work. Two of them are the twins diverging, which is the standing
+rule and not a preference. They are ordered by what each one actually costs
+somebody, with the wheel's conversion last; nothing in the phase depends on
+anything else in it, so it can be taken in any order and a taken entry just
+leaves.*
+
+- ⬜ **A bulk read of more than one chunk gets no reply on the in-page carrier**
+  (`clients/web/PLAN.md`, Found by use). `getSamples` fails by default and works
+  when a chunk size nobody should have to know is passed. Its mechanism is no
+  longer a guess — a server drops a reply that does not fit the 64 KiB ring,
+  deliberately — and the GUI host already does for its own requests what this
+  entry proposes: size a chunk so several fit, bound how many are in flight, ask
+  again for what never came back. What is left is the number a *user* of the
+  client gets handed.
+- ⬜ **Following a recording has a class in the web client and a primitive here**
+  (`clients/python/PLAN.md`, Found by use). The reference client is the one that
+  ended up with less, which is backwards.
+- ⬜ **Persistence saves the document, not what the user did to it**
+  (`clients/gui/PLAN.md`, Found by use).
+- ⬜ **The other text over pictures has no plate yet** (`clients/gui/PLAN.md`,
+  Found by use).
+- ⬜ **A take is drawn in amplitude and heard in decibels**
+  (`clients/gui/PLAN.md`, Found by use). Deferred by decision when it was found:
+  it belongs with the revision of multitrack playback, so it is the one entry
+  here that may well ride with other work rather than being taken alone.
+- ⬜ **The wheel zooms faster in a page than in a window, and the conversion is
+  written three times** (`clients/gui/PLAN.md`, Found by use). Last, and it is a
+  comfort rather than a defect: a wheel click is one zoom step natively and about
+  two in a browser, because the `/50` that converts one is copied into three
+  shells and calibrated for the native trackpad. Nothing is wrong with what
+  either twin draws. The fix starts by **measuring** `deltaY` per click in both,
+  then is one function all three call.
+
+**One more fix is written down and is deliberately not here**: the four UGen
+builders that take their statics positionally (`clients/python/PLAN.md`, Found by
+use — "Four UGen builders take their statics positionally, interleaved with real
+inputs"). It breaks the client's source API, so it waits for a release that bumps
+the breaking tier rather than for a slot in this order.
+
+## Phase 2 — the packages move together: the arrangement reaches the web client
+
+*Why here: the rule the project already states, applied to the largest
 outstanding violation. `form/`, `gui/editor.py`, `gui/transport.py` and
 `gui/notation.py` have **no TypeScript counterpart at all** — the whole
 arrangement, document and editor layer exists in one client. It waits on
-nothing now, and it is still here for the reason it always was: it is a port,
-and porting is cheapest once the layer has stopped moving, which is what the
-closed phases did to it.*
+nothing, and it is still here for the reason it always was: it is a port, and
+porting is cheapest once the layer has stopped moving, which is what the closed
+phases did to it.*
 
 - ⬜ **W16 — Example parity with the Python client**, and its named track: the
   arrangement layer and the editor. The shape `gui/notation.py`'s port follows
@@ -85,15 +131,7 @@ closed phases did to it.*
 - ⬜ **W7** (the Faust surfaces), **W9** (MIDI), **W15** (the bundle writer) —
   unported features, each owned, none on the path to the complete example.
 
-**Two debts this phase should collect on the way**, both opened 2026-08-19 and
-both cheap while a port is already touching those files: **a bulk read of more
-than one chunk gets no reply on the in-page carrier** (`clients/web/PLAN.md`,
-Found by use — `getSamples` fails by default and works when a chunk size nobody
-should have to know is passed), and **following a recording has a class in the
-web client and a primitive here** (`clients/python/PLAN.md`, Found by use — the
-reference client is the one that ended up with less, which is backwards).
-
-## Phase 2 — the spectral editor
+## Phase 3 — the spectral editor
 
 *Everything here is genuinely later: it needs the A track's descriptors, it is
 partly experimental, and none of it is on the path to the complete example.*
@@ -122,17 +160,6 @@ Named so "not scheduled" reads as a decision rather than an oversight. Each is
 in its own plan with its own reasoning; none is on the path to the complete
 example, and none blocks anything that is.
 
-**One debt is open here**, already ordered in Phase 1 and left named because it
-is the one thing the last session did not finish: **a bulk read of more than one
-chunk gets no reply on the in-page carrier** (`clients/web/PLAN.md`, Found by
-use). Its mechanism is no longer a guess — a server drops a reply that does not
-fit the 64 KiB ring, deliberately — and the GUI host now does for its own
-requests what that entry proposes for `bulkChunk`: size a chunk so several fit,
-bound how many are in flight, ask again for what never came back. What is left is
-the number a *user* of the client gets handed.
-
-**The rest**, unchanged:
-
 - **The GUI host's own documentation** — `K16`/`K16a`/`K16b`/`K16c`. Waits on
   nothing; costs a decision about a fourth mdBook that the project's three-book
   rule does not currently allow.
@@ -142,27 +169,44 @@ the number a *user* of the client gets handed.
   question it was flagged with still stands: `T5` put a position in samples on
   the engine, which crosses the beats↔samples conversion `T2` says is anchored
   on the wrong axis.
+- **A long take is played out of the pool, and `DiskIn` cannot be positioned**
+  *(root `PLAN.md`, Future directions)* — a five-minute stereo take is 110 MB of
+  pool and a thirty-minute one 660 MB, per take, and the streaming pair that
+  exists for exactly this cannot start anywhere but the beginning. The smallest
+  step (a start frame on `DiskIn`) is probably a U-track item; the seek under a
+  moving playhead is a design, and the mapped read stays named and unchosen.
+  Nothing on the path to the complete example is long enough to force it, which
+  is the only reason it is here.
 - **The three open questions of the Python plan** *(`clients/python/PLAN.md`,
   Found by use)* — "Acceptable equivalence level for higher math vs Faust",
   "Whether a separate `cdylib` for `clausters-ffi` is preferable" and "The
   FFI-overhead threshold at which the scalar builtin uses a pure-language
   fallback". Each is a number or a decision that nothing currently waits on;
   they are named so that "unanswered" reads as a decision rather than an
-  oversight.
+  oversight. **`C18`** sits with them, deferred by a decision taken with the
+  user: live OS MIDI output stays best-effort, and the UMP-over-our-own-transport
+  direction has no date.
 - **The builders could be generated from the catalog instead of contrasted
   against it** *(root `PLAN.md`, Future directions)* — the contrast tests caught
   eleven drifted builders, which is strictly weaker than not hand-writing the mirrors.
-- **A take is drawn in amplitude and heard in decibels**; **the other text over
-  pictures has no plate yet**; **persistence saves the document, not what the
-  user did to it** — `clients/gui/PLAN.md`,
-  Found by use, each with its record of what was seen; **many channels are drawn
-  and not yet readable, and a take cannot be created empty**, **time-stretch: an
-  edge that changes the material rather than the window** and **the audio
-  editor's layers: the view is the next container, and it is the richer one**
-  are in that plan's Future directions instead, being designs rather than fixes.
-  The last of those is the one the user asked to have thought through and built
-  next, and it is a track's worth: the same layer mechanism with richer
-  contents, visualization layers kept separate from edit layers.
+- **The heavy views' three rendering questions** *(`clients/gui/PLAN.md`, Future
+  directions)* — "Cache lifecycle", "Spectrogram scaling" and "Migrating the rest
+  of the `Stft` machinery behind `clausters-ffi`/`libclausters`". They lived
+  mid-plan and without checkboxes until 2026-08-20; the last of them is the one
+  with a dependency (the inverse FFT waits on the server's `FFT`/`IFFT`).
+- **The web client's three directions** *(`clients/web/PLAN.md`, Future
+  directions)* — "Node target" (true in the harness, not a product), "Type-safe
+  GuiDef/def schemas" (narrower than it was: the question is which source
+  generates them, not whether one exists) and "A remote-server standalone page"
+  (what W4 left is a destination seam in place of the page's singletons).
+- **Many channels are drawn and not yet readable, and a take cannot be created
+  empty**, **time-stretch: an edge that changes the material rather than the
+  window** and **the audio editor's layers: the view is the next container, and
+  it is the richer one** — `clients/gui/PLAN.md`, Future directions, being
+  designs rather than fixes. The last of those is the one the user asked to have
+  thought through and built next, and it is a track's worth: the same layer
+  mechanism with richer contents, visualization layers kept separate from edit
+  layers.
 - **The larger "Future directions"** in each plan — the free arrangement plane,
   an interpreter inside a standalone host, per-node staleness, more than one
   owner of one document, IME text, a Tauri wrapper, the heavy families as

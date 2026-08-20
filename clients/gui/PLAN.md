@@ -208,14 +208,6 @@ The spectrogram is the time-frequency analogue and deliberately reuses the navig
 
 Notation (`"score"` widget) is a third shape, and the cheapest: **all geometry, no analysis**. An engraved page is a fixed drawing - glyph outlines and strokes in page units - so there is nothing to resolve per frame and no LOD to pick; the page is tessellated into the flat `paint::Mesh` the light widgets use, and zoom is the containing `scroll`'s affine. What makes it fit here at all is that the *engraving* (the expensive, format-reading part) happens on the client, once per edit, exactly as the peak pyramid and the STFT are computed once per source - the same "the host draws, the client analyzes" split, with the display list as its cache (G31).
 
-### Open questions in the rendering strategy
-
-Design-level questions the heavy views still leave open, distinct from the staged milestones above (interpolating between adjacent pyramid levels for smoother zoom-out and the edit-back-to-data pattern have since landed - the LOD crossfade in G20 and the `bpf` editor in G21):
-
-- **Cache lifecycle**: a cache key (source path + mtime + analysis params) and memory-mapping the cache file instead of reading it into RAM.
-- **Spectrogram scaling**: time-axis mipmaps or tiling for buffers wider than the max texture size; a smoother (interpolating) log resample.
-- **Migrating the rest of the `Stft` machinery behind `clausters-ffi`/`libclausters`** so the signal code lives once: done for `peaks` and the forward FFT (both now in `clausters-core`, the pyramid reachable over the FFI); the `Stft` windowing/normalization and the inverse FFT (for resynthesis UGens) remain, the latter waiting on the server's `FFT`/`IFFT` UGens.
-
 ## Status: foundation in place
 
 The `clients/gui` crate (an independent workspace, so it can never break the core build) already validates the heavy-rendering path - the `Gx` work below builds the protocol/host around it. The prototype layout:
@@ -2216,6 +2208,18 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 - ⬜ **Composed text (IME) cannot be typed into a field.** K6 reads keys and nothing else: the native front takes winit's resolved characters, and in a page a `<canvas>` cannot host an input method at all — so a field takes Latin text and refuses everything a reader of Japanese, Chinese, Korean or a Latin script with dead keys actually types. It is recorded as a limit in `docs/decisions.md` rather than left to be found, and it is a *design* rather than a fix because the answer is not in the host: the page owns composition (an off-screen `<input>` or `contenteditable` fed through `beforeinput`, forwarded to the host as finished text), and the native front owns winit's own IME events — two different mechanisms filling one hole, which is exactly the shape the platform seam exists for. It becomes a milestone the day a field has to hold a name that is not ASCII. **The other half of the sentence has since closed**: text the host cannot *draw* is no better than text it cannot receive, and K9 gave the embedded face lowercase and accents while K10 put any real typeface behind `font-atlas` — so the drawing half is a matter of loading a face that carries the script, and the input half is the whole of what is left here.
 - ⬜ **Packaging: an optional Tauri desktop wrapper** reusing the web frontend. The rest of what this entry once listed has shipped — the GUI chapter of the client's book (`gui.md` and its pages) and the worked `gui_*` examples — so the wrapper alone is what remains, and it stays **last** by the ordering rule above: it changes how the system ships, not what it can show.
 
+- ⬜ **Cache lifecycle**: a cache key (source path + mtime + analysis params) and memory-mapping the cache file instead of reading it into RAM.
+
+- ⬜ **Spectrogram scaling**: time-axis mipmaps or tiling for buffers wider than the max texture size; a smoother (interpolating) log resample.
+
+- ⬜ **Migrating the rest of the `Stft` machinery behind `clausters-ffi`/`libclausters`** so the signal code lives once: done for `peaks` and the forward FFT (both now in `clausters-core`, the pyramid reachable over the FFI); the `Stft` windowing/normalization and the inverse FFT (for resynthesis UGens) remain, the latter waiting on the server's `FFT`/`IFFT` UGens.
+
+  *(The three above are design-level questions the heavy views still leave open. They
+  lived mid-plan, under "Open questions in the rendering strategy" and without
+  checkboxes, which is where a pending item stops reading as pending; moved here
+  verbatim 2026-08-20. Two of the questions that stood beside them have since landed —
+  the LOD crossfade in G20 and the `bpf` editor's edit-back in G21.)*
+
 ## Found by use: the running list of fixes
 
 These are not milestones and they are not future directions. They are what
@@ -2266,7 +2270,7 @@ finished work, where a pending item reads as done.
 
   **A download that is working lands something on every reply**, and that is the difference the fix keys on: a span refused for the same buffer without anything having landed in between counts, and after two seconds' worth of frames the stale fetch is dropped so the next ask starts a new one. A slow conversation is never restarted, because progress resets the count.
 
-- ⬜ **A page cannot zoom to the sample while a take records, and behind the frontier it could** *(found 2026-08-20 by the user, comparing the two twins: "funciona igual con la diferencia de que en nativo se puede hacer zoom a la muestra mientras se graba")*. Natively the fine regime asks for nothing — the samples are the mapped cells, so any zoom is current with nothing told to it, and `fills` only decides how far the lane draws. In a page `fills` does a second thing: while it is set the view asks for **no span at all** (`frame::missing_span` returns `None` the moment there is a frontier), so a recording can only be drawn at the bucket the stream reports.
+- ✅ **A page cannot zoom to the sample while a take records, and behind the frontier it could** *(found 2026-08-20 by the user, comparing the two twins: "funciona igual con la diferencia de que en nativo se puede hacer zoom a la muestra mientras se graba")*. Natively the fine regime asks for nothing — the samples are the mapped cells, so any zoom is current with nothing told to it, and `fills` only decides how far the lane draws. In a page `fills` does a second thing: while it is set the view asks for **no span at all** (`frame::missing_span` returns `None` the moment there is a frontier), so a recording can only be drawn at the bucket the stream reports.
 
   **The reason written down is stronger than it needs to be.** `docs/gui-protocol.md` says a take still being written asks for nothing because "there is nothing past the frontier to read, and behind it the next block would make a run stale" — the first half holds always, the second only for the run *at* the frontier. A span entirely behind it is final: a recorder writes forward and does not come back. So the condition wants to be the span's position rather than the take's state — everything below `written`, less a margin for the block being written — and the machinery it would use is the one that is already there (`want_span`, `set_window`, and now a bounded number of them in flight).
 
