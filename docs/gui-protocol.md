@@ -493,8 +493,8 @@ by turning its measures on and off.
   (`/buffer_peaks`, or the stream while it records) with the run under the eye
   read back as the eye moves, because 230 MB is not downloadable at any zoom.
   The line between them is the buffer's **size**, decided by the host when
-  `/buffer_query.reply` first says what the shape is — roughly ten seconds of
-  stereo. It used to be `fills`, which meant two views of one finished take,
+  `/buffer_query.reply` first says what the shape is — roughly five seconds of
+  stereo, which is as much a count of round trips as of bytes. It used to be `fills`, which meant two views of one finished take,
   one opened while it recorded and one after, took different routes and behaved
   differently under the same hand; the fork is real and worth keeping, the
   criterion was not. Nothing about this is on the wire: a script says what the
