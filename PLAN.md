@@ -1742,3 +1742,41 @@ finished work, where a pending item reads as done.
   trip with nothing else talking to the server
   (`tests/buffers.rs::a_finished_job_is_reported_without_waiting_for_the_idle_tick`),
   which measured 104 ms before and under 1 ms after.
+
+- ⬜ **A node notification waits up to 100 ms on a quiet connection, and the
+  audio thread cannot wake anybody** *(found 2026-08-20, chasing what looked
+  like a flaky web test: `seq-ws.test.ts`'s "two clocks join one grid and land
+  on the same bar" failed once with the two notes 102 ms apart and passed in
+  the twenty-five runs after it)*. It is the entry above, in the one place the
+  wakeup did not reach. `/node_start`/`/node_end` are posted by the **audio
+  thread** into the event queue and drained in `collect_garbage`, which the
+  network loop calls on every path out of `recv_from` — so with no other
+  traffic a notification waits for the 100 ms `GC_INTERVAL` tick, exactly as an
+  NRT result used to.
+
+  **Measured, not inferred**: over a `--ws` connection with nothing else
+  talking, `/node_start` arrives **103–112 ms** after the `/synth_new` that
+  caused it, eight times out of eight. It is not a flake and it is not load —
+  it is the tick, every time. What made it *look* like a flake is that the test
+  compares two notifications with each other: both are late by the same tick,
+  so the difference is 0 ms until the two happen to straddle a tick boundary,
+  and then it is one whole tick. The 0.05 s tolerance is fine; the test was
+  reporting a real 100 ms.
+
+  **The fix is not the same fix**, which is why this is written down instead of
+  folded into the entry above. That one added a `Waker` the worker thread pokes
+  after queueing its result — and the producer here is the **audio thread**,
+  which may not send a datagram, take a lock or do anything else. So promptness
+  has to be bought with a poll rate rather than a wake: `retune_timeout`
+  already narrows the loop's timeout to the fastest subscribed stream period,
+  and the natural shape is another term — while any client has `/server_notify`
+  on, the tick is the notification bound (10 ms, say) rather than
+  `GC_INTERVAL`. That is a cost paid only by connections that asked for
+  notifications, and it wants a number chosen deliberately: what a client
+  watching the node tree is entitled to expect. The alternative — a non-RT
+  helper that watches the queue — is the same poll one thread further away.
+
+  Worth knowing before picking the number: **everything that waits on a
+  notification pays this**, including a client reconciling node ids off
+  `/node_end`, a GUI host's node-tree view, and any test that times a note by
+  when it was told about it.
