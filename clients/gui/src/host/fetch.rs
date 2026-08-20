@@ -310,16 +310,24 @@ impl BufferFetches {
             };
             let mut next = 0usize;
             let mut landed = 0usize;
+            let mut matched = 0usize;
             for range in ranges.chunks(2) {
                 let [OscType::Int(start), OscType::Blob(bytes)] = range else {
                     continue;
                 };
                 let start = (*start).max(0) as usize;
                 // The reply's `start` is the buffer's own flat index; a window
-                // stores it where the window begins.
+                // stores it where the window begins. A range that falls outside
+                // this fetch's span belongs to **another conversation** — an
+                // abandoned one whose reply arrived late — and is not this
+                // fetch's to read or to be ended by.
                 let Some(at) = start.checked_sub(fetch.origin) else {
                     continue;
                 };
+                if at >= fetch.total {
+                    continue;
+                }
+                matched += 1;
                 let n = (bytes.len() / 4).min(fetch.total.saturating_sub(at));
                 for (i, word) in bytes.chunks_exact(4).take(n).enumerate() {
                     fetch.samples[at + i] =
@@ -329,6 +337,15 @@ impl BufferFetches {
                 landed += n;
                 next = next.max(start + n);
             }
+            // **A reply that was not ours changes nothing.** It used to end the
+            // download — "a range that carries nothing ends it with what has
+            // arrived" — which is right for a server that declined a read and
+            // wrong for a straggler from a fetch that was restarted: the new
+            // one would finish on the spot, and what it had not received yet is
+            // zeros nobody measured.
+            if matched == 0 {
+                return FetchStep::None;
+            }
             (
                 landed == 0 || fetch.received >= fetch.total,
                 fetch.origin + fetch.total,
@@ -336,7 +353,21 @@ impl BufferFetches {
             )
         };
         if done {
-            let fetch = self.fetches.remove(&bufnum).unwrap();
+            let mut fetch = self.fetches.remove(&bufnum).unwrap();
+            // **A span is handed over as far as it actually arrived.** The
+            // buffer was sized for the whole request and filled from its
+            // origin, so what is past `received` is zeros nothing measured —
+            // and a view told it holds them draws silence over a stretch it
+            // simply has not read. Truncated, the run answers where it
+            // reaches and the summary answers everywhere else, which is what
+            // a partial read honestly is.
+            if fetch.window.is_some() {
+                let frames = fetch.received / fetch.channels.max(1);
+                if frames == 0 {
+                    return FetchStep::None;
+                }
+                fetch.samples.truncate(frames * fetch.channels.max(1));
+            }
             match fetch.window {
                 Some((start_frame, SpanUse::Patch)) => {
                     return FetchStep::Patch {
@@ -875,6 +906,48 @@ mod tests {
                 panic!("a download that keeps answering is never restarted");
             };
         }
+    }
+
+    /// **A straggler from a conversation that was restarted must not end the
+    /// new one**, and a span is handed over only as far as it arrived. Both
+    /// halves of the same failure: a window that claims samples nobody read
+    /// draws silence over a stretch of audio.
+    #[test]
+    fn a_late_reply_from_an_abandoned_fetch_neither_lands_nor_ends_the_new_one() {
+        let mut fetches = BufferFetches::default();
+        // A window over frames 1000..1512 of a mono take.
+        let msg = fetches
+            .want_span(7, 1000, 512, 1, window(1, 10))
+            .expect("the span asks");
+        assert_eq!(ints(&msg), vec![7, 1000, 512]);
+
+        // A reply belonging to *another* span of the same buffer -- the one the
+        // stall logic abandoned a moment ago. It is neither read nor believed.
+        assert!(matches!(
+            fetches.on_data(&range_reply(7, 0, &[1.0; 8])),
+            FetchStep::None
+        ));
+
+        // The real answer arrives short: half the run, and then a range that
+        // carries nothing, which is a server declining rather than a straggler.
+        let FetchStep::Request(_) = fetches.on_data(&range_reply(7, 1000, &[0.5; 256])) else {
+            panic!("a partial answer asks for the rest");
+        };
+        let FetchStep::Window {
+            start_frame,
+            samples,
+            ..
+        } = fetches.on_data(&range_reply(7, 1256, &[]))
+        else {
+            panic!("a range that carries nothing ends the read");
+        };
+        assert_eq!(start_frame, 1000);
+        assert_eq!(
+            samples.len(),
+            256,
+            "the window is as long as what arrived, never padded with silence"
+        );
+        assert!(samples.iter().all(|s| *s == 0.5));
     }
 
     /// A span is widened to whole buckets, so what comes back can replace what
