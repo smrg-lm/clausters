@@ -634,7 +634,7 @@ pub struct Host {
     /// comes up, and a window already open keeps the pass it was built with,
     /// since every pipeline in a pass agrees on the count.
     pub msaa: u32,
-    /// **How much recorded samples a picture waits for** before it re-reads
+    /// **How much recorded audio a picture waits for** before it re-reads
     /// its summary, in seconds (`--follow-block`, default `0` — every frame).
     ///
     /// A recording announces nothing: the host reads the buffer's write
@@ -1343,8 +1343,8 @@ impl Host {
             .iter()
             .any(|k| matches!(k.as_str(), "bus" | "rate" | "channels"));
         // And a set can start or stop a *recording* being followed: `fills` is
-        // the client saying this samples is being written, and `buffer` is
-        // which samples it is.
+        // the client saying this buffer is being written into, and `buffer` is
+        // which one it is.
         let touches_stream = keys
             .iter()
             .any(|k| matches!(k.as_str(), "fills" | "buffer"));
@@ -1560,7 +1560,7 @@ impl Host {
             return false;
         };
         // A **destructive** edit is the one that reaches past the document: the
-        // samples are not in it, so they are written to the samples itself and
+        // samples are not in it, so they are written to the buffer itself and
         // the inverse comes from the hand that drew over them.
         let write = match &intent {
             clausters_document::Intent::WriteSamples {
@@ -1637,7 +1637,7 @@ impl Host {
         // The span is **frames of one channel** on both sides of the seam — the
         // picture is drawn per channel and the server is written per channel
         // (`/buffer_setRangeChannel`) — so this is the same check whatever the
-        // samples's shape, which is what it took to stop refusing stereo.
+        // buffer's shape, which is what it took to stop refusing stereo.
         if channel >= channels {
             return Err(format!(
                 "the take has {channels} channel(s); there is no channel {channel}"
@@ -1645,7 +1645,7 @@ impl Host {
         }
         if start + len as u64 > frames {
             return Err(format!(
-                "the span ends at frame {} and the samples is {frames} frame(s) long",
+                "the span ends at frame {} and the buffer is {frames} frame(s) long",
                 start + len as u64,
             ));
         }
@@ -1657,7 +1657,7 @@ impl Host {
         #[cfg(not(unix))]
         let held = self.server.is_some();
         if !held {
-            return Err("no audio server holds this samples".into());
+            return Err("no audio server holds this buffer".into());
         }
         if self.buffer_of(def_id, widget_id).is_none() {
             return Err("this widget draws no server buffer".into());
@@ -1669,7 +1669,7 @@ impl Host {
     ///
     /// What a gesture clamps against: the right edge of a fully zoomed-out view
     /// maps to *one past* the last sample (a window of 8 samples is 8 wide),
-    /// and a stroke that reaches it would carry a frame the samples does not
+    /// and a stroke that reaches it would carry a frame the buffer does not
     /// have — which the owner refuses, taking the whole stroke with it.
     pub(crate) fn buffer_frames(&self, def_id: i32, widget_id: i32) -> Option<u64> {
         element_with_samples(self.window_def(def_id)?.find(widget_id)?)?
@@ -1685,7 +1685,7 @@ impl Host {
             .map(|(channels, _)| channels)
     }
 
-    /// The server buffer a widget's samples is, when it is one.
+    /// The server buffer a widget's samples are in, when they are in one.
     fn buffer_of(&self, def_id: i32, widget_id: i32) -> Option<i32> {
         element_with_samples(self.window_def(def_id)?.find(widget_id)?)
             .and_then(widget::element::Element::source_buffer)
@@ -1697,11 +1697,11 @@ impl Host {
     /// The server's copy first, because it is the one that sounds and the one a
     /// save writes. Then the host's — and *every* view of that buffer in the
     /// window, not the one the hand was over: a session draws a take twice (the
-    /// clip in its lane, the editor under the tracks), they are one samples,
+    /// clip in its lane, the editor under the tracks), they are one buffer,
     /// and a stroke that reached only the view under the pointer leaves the
     /// other showing samples that no longer exist anywhere. Refetching to find
     /// that out would be a round trip per gesture; the buffer number is what
-    /// says which pictures are of this samples.
+    /// says which pictures are of this buffer.
     ///
     /// The write itself belongs to each element ([`widget::element::Element::write_samples`]),
     /// because a take drawn as a clip holds samples and the same take drawn as
@@ -2184,7 +2184,7 @@ impl Host {
     ///
     /// So the subscription is exactly the views that asked
     /// ([`Element::stream_want`](widget::Element::stream_want)): the client
-    /// said the samples is being written (`fills`) and the body is this
+    /// said the buffer is being written into (`fills`) and the body is this
     /// element's own copy. A mapped view is deliberately not in it — it would
     /// be paying twice for one picture.
     ///
@@ -2501,10 +2501,10 @@ fn collect_stream_wants(widget: &widget::Widget, buffers: &mut Vec<i32>, bucket:
 /// buffer `bufnum`**, returning how many took it.
 ///
 /// The buffer is the identity here for the same reason it is for a write: two
-/// widgets are two pictures of one samples exactly when they name the same
+/// widgets are two pictures of one buffer exactly when they name the same
 /// buffer. What arrives is the overview of frames the writer added, so every
-/// picture of that samples is told at once and each one answers for itself —
-/// a mapped view says no, since it reads the samples where it lies.
+/// picture of that buffer is told at once and each one answers for itself —
+/// a mapped view says no, since it reads the samples where they lie.
 pub(crate) fn stream_buffer_views(
     widget: &mut widget::Widget,
     bufnum: i32,
@@ -2537,7 +2537,7 @@ pub(crate) fn stream_buffer_views(
 /// Writes a run of samples into **every element in this tree drawing server
 /// buffer `bufnum`**, returning how many took it.
 ///
-/// The buffer is the identity: two widgets are two pictures of one samples
+/// The buffer is the identity: two widgets are two pictures of one buffer
 /// exactly when they name the same buffer, and nothing else in the tree relates
 /// them — a clip and an editor of the same take are not parent and child.
 fn write_buffer_views(
@@ -3575,7 +3575,7 @@ mod write_tests {
             }),
             from(),
         );
-        // The two forms one samples arrives in, which is the whole reason a
+        // The two forms one buffer's samples arrive in, which is the whole reason a
         // write goes through the element: the navigable view keeps a pyramid,
         // the clip's take body keeps the samples.
         let samples = vec![0.0f32; frames * channels];
@@ -3889,7 +3889,7 @@ mod write_tests {
         assert_eq!(sample_of_channel(&host, 50, 1, 4), 0.0);
     }
 
-    /// A channel the samples does not have is refused, the way the server
+    /// A channel the take does not have is refused, the way the server
     /// refuses one the buffer does not have.
     #[test]
     fn a_channel_the_take_does_not_have_refuses_the_write() {
@@ -3914,7 +3914,7 @@ mod write_tests {
         );
     }
 
-    /// A span that runs past the end of the samples is refused for the same
+    /// A span that runs past the end of the take is refused for the same
     /// reason and by the same door: what the server holds and what the window
     /// draws must stay one thing.
     #[test]

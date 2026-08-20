@@ -165,7 +165,7 @@ pub struct GuiConfig {
     /// window and nothing per widget, and a count the GPU does not offer for
     /// the surface format falls back to `1` with a warning.
     pub msaa: Option<u32>,
-    /// How much recorded samples a picture waits for before it re-reads its
+    /// How much recorded audio a picture waits for before it re-reads its
     /// summary, in **seconds** (`--follow-block`, default 0 — every frame).
     ///
     /// A take being recorded grows continuously and nothing announces it: the

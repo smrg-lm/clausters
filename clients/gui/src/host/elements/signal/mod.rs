@@ -352,7 +352,7 @@ pub struct SignalElement {
     /// beyond, where the buffer's own zeros are silence the picture would
     /// otherwise draw a flat line across.
     pub fills: bool,
-    /// **How far the samples has been written**, in frames — the buffer's
+    /// **How far the samples have been written**, in frames — the buffer's
     /// write frontier, read by the host from the shared segment and pushed in
     /// through [`Element::set_written`](crate::host::widget::element::Element::set_written).
     ///

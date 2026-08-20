@@ -849,7 +849,7 @@ class Document:
         Args:
             selection: ``{"start", "len", …}`` — see the crate's ``Selection``.
             frames_per_beat: the bridge between the arrangement's beats and the
-                samples's frames. Supplied rather than derived: tempo is the
+                samples' frames. Supplied rather than derived: tempo is the
                 caller's, the arithmetic is the crate's.
             in_beats: whether the selection's numbers are beats rather than
                 frames on the shared axis.
@@ -857,7 +857,7 @@ class Document:
         Returns:
             ``[{"node", "source", "generation", "range", "at"}, …]`` in tree
             order, with the placement's base, the element's trim and the clamp
-            at both ends already applied. Empty when nothing samples was
+            at both ends already applied. Empty when nothing with samples was
             underneath — a group and a generator are in the way of a selection,
             not under it.
         """

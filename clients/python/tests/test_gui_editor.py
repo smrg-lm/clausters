@@ -1500,7 +1500,7 @@ def test_a_clip_over_a_generator_draws_its_notes_read_only():
     assert clip.get("editable") == 0, "and says they are read-only"
 
     # A track's own notes are editable, which is what says the flag is the
-    # samples's and not the widget's.
+    # contents' and not the widget's.
     track = Aggregate([(0.0, Track(Timeline([(0.0, SeqEvent(midinote=60, dur=1.0))])))],
                   name="lead")
     ed2 = editor(Aggregate([(0.0, track)], name="song"))

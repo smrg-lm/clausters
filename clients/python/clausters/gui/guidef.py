@@ -372,7 +372,7 @@ def signal(*, view: str | None = None, data=None, blob: int | None = None,
       ``data``/``blob``/``buffer``/``path``/``cache`` are addressable samples,
       which is what lets a view navigate, slice and select. ``channels``
       de-interleaves it, ``base_bucket`` sizes the peak pyramid.
-    ``fills`` says the samples is **being written into as it is drawn** — a
+    ``fills`` says the buffer is **being written into as it is drawn** — a
     take you are recording. The view then draws it up to the buffer's write
     frontier and leaves the axis past it empty, instead of drawing a flat line
     across the buffer's own zeros: past the frontier there is no silence, there
@@ -1434,7 +1434,7 @@ def clip(*, offset: float = 0.0, dur: float, data=None, blob: int | None = None,
       read-only body still moves and resizes as a placement.
 
     A clip is a **window onto a segment of its samples**, not a rectangle the
-    samples is stretched into:
+    samples are stretched into:
 
     - ``start`` — the source frame the clip's own time zero reads (default 0).
       One timeline sample is one source frame, so trimming a clip hides frames

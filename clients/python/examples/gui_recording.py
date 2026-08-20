@@ -103,7 +103,7 @@ print(f"takes: buffers {takes[0].bufnum}..{takes[-1].bufnum}, "
 # `clausters.gui.timeruler` with a box of its own rather than a lane's own
 # ``ruler`` strip, which would come out of *that* lane's height and leave it
 # shorter than the rest. One prop *does* say recording, and it is the one thing
-# the host cannot work out for itself: `fills=True` says this samples is being
+# the host cannot work out for itself: `fills=True` says this buffer is being
 # written as it is drawn, so a lane stops at the buffer's write frontier and
 # leaves the axis past it empty. Without it the buffer's own zeros are drawn --
 # a flat line across the whole take before anything has been recorded into it --

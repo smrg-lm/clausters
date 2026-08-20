@@ -42,7 +42,7 @@ it, and what this script does is the smallest honest thing: the block goes into
 a buffer of its own (`Buffer.set_samples`, which chunks it as blobs — a
 half-second of stereo is 200 kB and would not fit one datagram as arguments) and
 plays once. Copy a range, paste it, hear that range — with nothing written over
-the take, because a destructive edit belongs to whoever owns that samples. The
+the take, because a destructive edit belongs to whoever owns those samples. The
 **playhead** tracks what you hear: `play_pass` starts one pass of the render
 through a ``PlayBuf`` voice (``loop`` is off — the take plays once and the sound
 never repeats under whatever else you are checking) and anchors the line with

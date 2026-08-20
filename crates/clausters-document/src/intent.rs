@@ -102,7 +102,7 @@ impl Rules {
 /// The two counters, named by whoever is proposing the edit. They are separate
 /// because they answer different questions and one number cannot do both: the
 /// **document version** moves when the description changes (a clip is placed, an
-/// aggregate is rewritten), the **source generation** moves when samples's *content*
+/// aggregate is rewritten), the **source generation** moves when a source's *content*
 /// changes while its identity stays put (a pencil stroke). A reader that holds
 /// no document at all — a waveform view over one source — can name a generation
 /// and nothing else, which is why the generation is optional rather than a
@@ -193,11 +193,11 @@ pub enum Intent {
     /// a node refers to, and it carries values rather than a delta for the same
     /// reason every other intent does.
     WriteSamples {
-        /// The node whose samples is written.
+        /// The node whose samples are written.
         node: NodeId,
-        /// **Which channel of that samples** the span belongs to.
+        /// **Which channel of those samples** the span belongs to.
         ///
-        /// A frame span already addresses the samples's shape, and a channel
+        /// A frame span already addresses the samples' shape, and a channel
         /// is the same kind of coordinate — not a fact about the source, which
         /// stays the source's business. It is a channel rather than a run of
         /// interleaved frames because an edit is usually *one* channel of one:
@@ -570,8 +570,8 @@ fn write_samples(
         });
     }
     // The samples are not in the document -- the document describes where
-    // samples is, never what it holds -- so what applying does here is bump the
-    // source's generation, which is the signal every reader of that samples
+    // samples are, never what they hold -- so what applying does here is bump the
+    // source's generation, which is the signal every reader of those samples
     // needs in order to know its copy is stale. Writing the samples themselves
     // is the owner's next step, against the working buffer.
     source.generation += 1;

@@ -571,8 +571,8 @@ impl ApplicationHandler<UserEvent> for App {
         // the samples still resolves to the sample where the eye is.
         self.fetch_wanted_spans();
 
-        // **A recording is drawn as it fills.** The samples is mapped, so the
-        // samples need nothing; what moves is the frontier its writer
+        // **A recording is drawn as it fills.** The samples are mapped, so
+        // they need nothing; what moves is the frontier its writer
         // publishes, and the summary over the frames it added.
         //
         // It keeps the loop waking while a take fills and **redraws only what

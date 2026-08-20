@@ -103,7 +103,7 @@ pub struct Resolved {
     pub node: NodeId,
     /// Its samples.
     pub source: SourceId,
-    /// Which generation of that samples this was resolved against — what an
+    /// Which generation of those samples this was resolved against — what an
     /// operation names so a stale read is detectable rather than silent.
     pub generation: u64,
     /// The span **within the source**, in frames: trim and placement both

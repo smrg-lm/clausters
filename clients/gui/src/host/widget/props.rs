@@ -1007,7 +1007,7 @@ impl Range {
 /// samples.
 ///
 /// This is what makes a clip *a view of the data* rather than a rectangle the
-/// samples is stretched into. A clip is a window onto a segment of a
+/// samples are stretched into. A clip is a window onto a segment of a
 /// buffer — the memory-view idea, and the reason trimming one hides samples
 /// instead of squeezing them: shortening the window leaves the samples
 /// exactly as it is and shows less of it, and lengthening it again brings the
@@ -1026,12 +1026,12 @@ pub struct SourceWindow {
     /// are the tail of the iteration before this one.
     pub start: f64,
     /// Whether the window **wraps** around the samples: past the end it
-    /// begins again, and before the beginning it shows the samples's own tail
+    /// begins again, and before the beginning it shows the samples' own tail
     /// — which is what stretching an edge past the source means when a loop is
     /// what the placement is. Off, the window shows the samples where it has
     /// any and nothing where it has none.
     pub looping: bool,
-    /// Whether the samples is **fitted** to the placement's span instead of
+    /// Whether the samples are **fitted** to the placement's span instead of
     /// read frame for sample — the picture a time stretch would produce,
     /// which nothing here produces yet. Off by default: an edge drag is a trim.
     pub fit: bool,
@@ -1119,7 +1119,7 @@ impl SourceWindow {
     /// A **looping** one is a run per iteration, which is what lets the same
     /// affine drawing be used for all of them; a window running off samples it
     /// does not loop contributes only the part that is on it, so the picture
-    /// stops where the samples does instead of clamping into a flat line
+    /// stops where the samples end instead of clamping into a flat line
     /// nothing recorded.
     pub fn runs(&self, from: f64, to: f64, dur: f64, total: f64) -> Vec<(f64, f64, f64)> {
         if total <= 0.0 || to <= from {
@@ -1189,7 +1189,7 @@ mod window_tests {
     }
 
     /// A **looping** window wraps both ways: past the end is the beginning
-    /// again, and before frame zero is the samples's own tail — the samples of
+    /// again, and before frame zero is the samples' own tail — the samples of
     /// the iteration before this one.
     #[test]
     fn a_looping_window_wraps_at_both_ends() {
@@ -1228,7 +1228,7 @@ mod window_tests {
             ..plain
         };
         assert!(past.runs(0.0, 500.0, 500.0, 1000.0).is_empty());
-        // Looping: one run per iteration, each starting where the samples does.
+        // Looping: one run per iteration, each starting where the samples begin.
         let looped = SourceWindow {
             start: 900.0,
             looping: true,

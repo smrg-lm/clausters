@@ -493,7 +493,7 @@ fn placed_nav(nav: &View, offset: f64) -> View {
 /// fetched because somebody is looking at it, and guessing where they will
 /// look next is a cache policy this deliberately does not have.
 ///
-/// **Material that is still being written asks for nothing** (`written`, the
+/// **Samples still being written ask for nothing** (`written`, the
 /// `fills` prop's frontier): there is nothing to read past the frontier, and
 /// reading behind it would install a run that the next block makes stale. A
 /// take being recorded is *told* what it looks like; it reads the samples

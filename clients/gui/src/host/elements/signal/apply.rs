@@ -169,7 +169,7 @@ impl SignalElement {
                 }
                 _ => false,
             },
-            // **The samples changed where it lives; read it again.** Bulk
+            // **The samples changed where they live; read them again.** Bulk
             // resolution is idempotent by design — a resolved source stops
             // asking — so re-reading is the element *forgetting* what it
             // resolved, and the loader picking it up on the next pass. One door

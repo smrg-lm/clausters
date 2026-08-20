@@ -108,7 +108,7 @@ export interface Resolved {
     node: NodeId;
     /** Its samples. */
     source: number;
-    /** Which generation of that samples this was resolved against. */
+    /** Which generation of those samples this was resolved against. */
     generation: number;
     /** The span within the source, in frames: trim and placement both applied. */
     range: { start: number; end: number };
@@ -203,11 +203,11 @@ export class Document {
      *
      * @param selection - what is selected.
      * @param framesPerBeat - the bridge between the arrangement's beats and the
-     *   samples's frames. Supplied rather than derived: tempo is the caller's,
+     *   samples' frames. Supplied rather than derived: tempo is the caller's,
      *   the arithmetic is the crate's.
      * @param inBeats - whether the selection's numbers are beats rather than
      *   frames on the shared axis.
-     * @returns the spans, in tree order. Empty when nothing samples was
+     * @returns the spans, in tree order. Empty when nothing with samples was
      *   underneath — a group and a generator are in the way of a selection, not
      *   under it.
      */

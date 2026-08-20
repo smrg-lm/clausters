@@ -176,7 +176,7 @@ pub enum EditOp {
 impl EditOp {
     /// The frames this edit touches, as `(start, frames)` — what an in-place
     /// write reads out and puts back, so the cost is the edit's rather than the
-    /// samples's.
+    /// buffer's.
     pub fn span(&self) -> (usize, usize) {
         match self {
             EditOp::Gain { start, frames, .. } | EditOp::Reverse { start, frames } => {

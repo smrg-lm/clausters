@@ -17,7 +17,7 @@ That is what makes a multitrack possible: many readers, one time. Nothing here
 keeps a position in step with anything, because there is only one position and
 it is the server's.
 
-The samples is four one-second tones at different pitches, so every move is
+The take is four one-second tones at different pitches, so every move is
 audible immediately: locate to the third second and the third pitch is what
 comes out. The script narrates what it is doing and prints the position it
 reads back from `/transport_query` beside it — the two should agree.
@@ -67,7 +67,7 @@ def follower_def():
     """The reader: its phase is the transport's position, so it plays wherever
     the piece is standing.
 
-    `offset` is where this samples starts in the piece — 0 here, since the
+    `offset` is where these samples start in the piece — 0 here, since the
     take *is* the piece — and it is subtracted inside `transport_pos` rather
     than after it, which is what keeps the position exact in a long piece (a
     signal is 32-bit, and beyond about six minutes at 48 kHz it can no longer

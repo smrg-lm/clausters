@@ -97,7 +97,7 @@ def session() -> dict:
                 "editing": {"from": 7, "confirmed": False},
             },
             9: {
-                # Material never written down. Saving is not blocked by it, but
+                # Samples never written down. Saving is not blocked by it, but
                 # the file cannot claim to be complete either.
                 "location": {"at": "volatile"},
                 "lifetime": "session",

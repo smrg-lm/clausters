@@ -122,7 +122,7 @@ fn an_operation_equals_the_same_score_rendered_in_batch() {
         a, b,
         "an operation must be sample-identical to the batch render of the same samples"
     );
-    assert!(a.iter().any(|&x| x != 0.0), "the samples has to sound");
+    assert!(a.iter().any(|&x| x != 0.0), "the samples have to sound");
 }
 
 #[test]
@@ -394,7 +394,7 @@ fn a_session_given_a_path_shares_the_buffers_it_holds() {
     s.settle_for(8);
 
     // The peer's side: another process would open the file; here opening it
-    // again is the same thing, and it is what proves the samples is not in
+    // again is the same thing, and it is what proves the samples are not in
     // this process's heap.
     let peer = Segment::open(&path).expect("a peer maps the session's segment");
     let (_, mapped) = peer.map_buffer(&path, 1).expect("and finds buffer 1");

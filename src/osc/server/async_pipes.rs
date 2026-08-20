@@ -179,9 +179,9 @@ impl OscServer {
             let swap = match action {
                 NrtAction::Install(buffer) => {
                     // **Where a buffer lives is decided here, once.** With a
-                    // segment attached the samples goes into a region a peer
-                    // can map by name, so an editor draws and writes it with no
-                    // message at all; with none it stays the server's own
+                    // segment attached the samples go into a region a peer
+                    // can map by name, so an editor draws and writes them with no
+                    // message at all; with none they stay the server's own
                     // memory, exactly as before. The copy is paid at
                     // *allocation*, which is where the data was being built
                     // anyway -- never per write.
@@ -271,7 +271,7 @@ impl OscServer {
             );
         }
         self.shared_buffers[index] = Some(region_path);
-        // Shared samples is samples somebody may be drawing, so it publishes
+        // Shared samples are samples somebody may be drawing, so the buffer publishes
         // how far it has been written: a recording fills a picture in another
         // process with one relaxed store per block and no message at all.
         Arc::new(

@@ -80,7 +80,7 @@ pub struct Owner {
     /// rather than remembered by the gesture that made it.
     pub log: Log,
     /// The session this document came from, when it came from one: the sources
-    /// its samples lives in, which is what a save has to write back.
+    /// its samples live in, which is what a save has to write back.
     pub session: Option<Session>,
     /// How an edit is transformed on the way in (the grid a placement snaps
     /// to). The host states where the hand put something; this decides.
@@ -343,7 +343,7 @@ impl Owner {
     ///
     /// There is exactly one such edit and the crate says so: a destructive
     /// write's previous samples are not in the document (the document describes
-    /// where samples is, never what it holds), so `apply_logged` records an
+    /// where samples are, never what they hold), so `apply_logged` records an
     /// empty write as the inverse and an undo would restore nothing. What was
     /// there is known to whoever was **drawing** it — the gesture carried the
     /// span it painted over, which is why the payload has a `previous` half —

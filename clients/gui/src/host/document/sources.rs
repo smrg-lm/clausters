@@ -1,7 +1,7 @@
 //! The session's source table, resolved to **server buffers**.
 //!
 //! A document says what plays when and deliberately never says where its
-//! samples is; a session's `sources` table is that other half, and this is
+//! samples are; a session's `sources` table is that other half, and this is
 //! where a host turns it into something it can draw and edit. The answer is a
 //! server buffer per source, loaded with `/buffer_allocRead`.
 //!
@@ -43,7 +43,7 @@ use clausters_document::{Body, SourceId};
 /// One source, as the host holds it once it has been given to the server.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Take {
-    /// The server buffer its samples was read into.
+    /// The server buffer its samples were read into.
     pub bufnum: i32,
     /// Channels, when the table said. The file decides in the end — this is
     /// what the session claimed, and it is only used to size a picture before
@@ -66,7 +66,7 @@ impl Takes {
     }
 
     /// Every buffer number the sources resolved to, in source order. What a
-    /// **player** has to be told about: it maps the samples directory once,
+    /// **player** has to be told about: it maps the buffer directory once,
     /// when it starts, and these takes were read after that.
     pub fn bufnums(&self) -> Vec<i32> {
         self.map.values().map(|take| take.bufnum).collect()
@@ -161,10 +161,10 @@ fn locate(source: &Source, beside: &Path) -> Result<PathBuf, String> {
                 Err(format!("{} is not there", full.display()))
             }
         }
-        // Material that only ever existed in a running system. The session was
+        // Samples that only ever existed in a running system. The session was
         // allowed to save without it -- that is the format's decision, so that
         // a save is never blocked -- and opening one is where the cost is paid.
-        Location::Volatile => Err("the samples was never written down (volatile)".to_string()),
+        Location::Volatile => Err("the samples were never written down (volatile)".to_string()),
     }
 }
 
@@ -281,7 +281,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// Missing samples is **named**, not skipped: a clip that will draw empty
+    /// Missing samples are **named**, not skipped: a clip that will draw empty
     /// has a reason, and the reason is worth one line in the log.
     #[test]
     fn what_cannot_be_resolved_is_reported_with_why() {

@@ -70,7 +70,7 @@ usage:
                             drawn by mapping it and edited by storing into it,
                             with nothing sent either way. Point it at the audio
                             server's own --shm path. With --session it is where
-                            this editor's own samples goes, and what a player
+                            this editor's own samples go, and what a player
                             is started against (`clausters --shm <path>`);
                             without one a path is picked and logged. Unix only
       --data-dir <dir>      data directory for the GuiDef store (named GuiDefs
@@ -377,7 +377,7 @@ fn run(args: &[String]) -> Result<(), String> {
             tracing::warn!("{w} (config [gui.metrics])");
         }
     }
-    // How much recorded samples a picture waits for before it re-reads its
+    // How much recorded audio a picture waits for before it re-reads its
     // summary. Zero or less means every tick, which is what it did before the
     // block existed and what a measurement wants.
     let follow_block = cli_follow_block.or(cfg.gui.follow_block).unwrap_or(0.0);
@@ -709,8 +709,8 @@ fn run_session(
 ///   device and needs none — it computes.
 /// - The **player**, another process (`clausters --shm <path>`): it holds the
 ///   machine's input and output, and it is therefore the only one that can
-///   record or make a sound. It attaches to the same segment, so what it plays
-///   is the very samples being edited; killing it takes no take with it, and
+///   record or make a sound. It attaches to the same segment, so it plays
+///   the very samples being edited; killing it takes no take with it, and
 ///   the next one adopts what is there.
 /// - The **editor**, this host: it performs the actions. Which is why it owns
 ///   the transport, allocates through the session and plays through the player.
@@ -739,11 +739,11 @@ fn attach_server(
         }
     };
     tracing::info!(
-        "session: samples at {} — an on-demand server owns it, and a player attaches to it",
+        "session: samples at {} — an on-demand server owns them, and a player attaches to them",
         path.display()
     );
 
-    // **The samples goes to its owner.** A take is read into a buffer of the
+    // **The samples go to their owner.** A take is read into a buffer of the
     // session, which puts it in a region beside the segment; from there the
     // player maps it and this host draws it.
     for msg in &load.messages {
@@ -757,7 +757,7 @@ fn attach_server(
         await_reads(&session, load.messages.len());
     }
 
-    // **The picture, from the memory the samples is in.** The same file the
+    // **The picture, from the memory the samples are in.** The same file the
     // player attaches to: the segment for the clocks and the buses, the
     // regions beside it for the samples.
     #[cfg(unix)]
@@ -908,7 +908,7 @@ fn attach_player(
         await_player(&leg)?;
     }
     tracing::info!(
-        "session: player at {} (it holds the devices; the samples stays at {})",
+        "session: player at {} (it holds the devices; the samples stay at {})",
         leg.target(),
         segment.display()
     );
@@ -922,7 +922,7 @@ fn attach_player(
     for msg in clausters_gui::host::play::take_group_messages() {
         leg.send(msg).map_err(|e| e.to_string())?;
     }
-    // **The takes, by number and not by sample.** A player maps the samples
+    // **The takes, by number and not by sample.** A player maps the buffer
     // directory when it starts, and these were read into it afterwards — so it
     // is pointed at them, which is the whole message: no blob, no copy, and
     // the very cells this editor is about to draw.

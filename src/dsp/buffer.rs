@@ -75,7 +75,7 @@ pub struct Buffer {
     /// no segment recorded exactly as it does now and could not say how far it
     /// had got, so `/buffer_stream` — the command for clients that cannot map
     /// anything, which is most of them — had nothing to report. The frontier
-    /// is the samples's, so it is kept with the samples and published from
+    /// is the buffer's, so it is kept with the samples and published from
     /// here to whoever else wants it.
     written: AtomicU64,
     /// Where else to publish it: the directory row a mapping peer reads

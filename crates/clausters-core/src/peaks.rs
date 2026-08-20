@@ -61,7 +61,7 @@ const VERSION_MEASURE: u32 = 3;
 /// caller-sized window — and a bounded scratch buffer is all a build needs.
 ///
 /// It is **mono**: one source is one channel, because that is what a pyramid
-/// summarizes. Interleaved samples is read through [`Interleaved`], which is
+/// summarizes. Interleaved samples are read through [`Interleaved`], which is
 /// the adapter and not a second shape of the trait.
 pub trait Source {
     /// How many samples this source holds.

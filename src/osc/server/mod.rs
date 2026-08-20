@@ -97,7 +97,7 @@ const MAX_STREAM_BUFFERS: usize = 32;
 /// Ceiling on buckets in one `/buffer_stream.reply`, so a subscription that
 /// stalled does not answer with the whole recording in one message. What is
 /// left over is sent by the next report, since the frontier is where the
-/// report ended and not where the samples is.
+/// report ended and not where the samples end.
 const MAX_STREAM_BUCKETS: usize = 4096;
 
 /// Largest `/bus_tapStream` window in samples for a **datagram-bounded** client

@@ -40,7 +40,7 @@ The loop, and why each step needs the one before it:
    describing a composition that has moved on — and undoing would then write a
    state nobody was ever in.
 4. **Save it.** A *session* is the document plus the one half a document
-   deliberately lacks: the table saying where its samples lives. Written here
+   deliberately lacks: the table saying where its samples live. Written here
    beside the WAV it references, with the **provenance** of the script that made
    it — carried opaquely, which is what makes re-generating possible without the
    format knowing how.
@@ -61,7 +61,7 @@ element down to what it produced.
 
 **Two more, on the take.** An edge drag is a **trim**, so dragging the head of
 the audio clip to the right hides the take's first frames and the waveform stops
-moving — the samples stands still and the clip shows less of it; drag the edge
+moving — the samples stand still and the clip shows less of it; drag the edge
 back and the frames come out again. And with the pointer over a clip, **`e`**
 cuts it in two at the time cursor and **`j`** joins it back with what touches it:
 the two halves are two windows onto one buffer, which is why the join can put
@@ -203,7 +203,7 @@ other_buf = ServerBuffer.read(str(other_wav), server=server)
 
 # %%
 # Two **elements** over one server buffer, since this lane places the take
-# twice: the samples is shared, the placements are not. One object in two
+# twice: the samples are shared, the placements are not. One object in two
 # places would be one name for two positions, and an edit-back could not say
 # which of them it meant.
 take = Vector(buf, duration=2.0, instrument="take")       # the element over it
@@ -285,7 +285,7 @@ song = Aggregate([
 
 # %% [markdown]
 # ## Saving, and opening again
-# A **session** is the document plus the table saying where its samples lives.
+# A **session** is the document plus the table saying where its samples live.
 # The document says *what plays when* and deliberately not where a source is —
 # inside a running system a source is a server buffer, a mapped file or a
 # rendered result, and the tree has no business knowing which — so the table is
@@ -325,7 +325,7 @@ def takes_of(element):
 
 
 def save():
-    """Write the composition and where its samples is.
+    """Write the composition and where its samples are.
 
     **The table is built from the composition being saved**, not from the
     samples this script started with, and that distinction is the whole of a
@@ -501,8 +501,8 @@ print("undo/redo: the buttons, or Ctrl+Z / Ctrl+Shift+Z over the window")
 # %% [markdown]
 # ## Edit it
 # `Editor.apply` takes the host's events into the **model**: a dragged clip becomes
-# a placement — its **offset** *and* its **length**, and the length trims what the
-# samples plays — and a dragged break-point becomes the automation's new curve.
+# a placement — its **offset** *and* its **length**, and the length trims how much of the
+# take plays — and a dragged break-point becomes the automation's new curve.
 # Anything it does not recognize is the script's: here, the buttons above.
 # `Editor.poll` drains the window's whole stream into it, so one call is the loop.
 #

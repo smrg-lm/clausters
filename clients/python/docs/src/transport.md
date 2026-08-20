@@ -173,7 +173,7 @@ This matters most for samples the server *generates*. A def running a
 stochastic process or a demand-rate sequence has nothing to read and no
 messages arriving, so there is no position to seek to — its position **is** its
 internal state. Continuing is the only thing a pause can honestly mean for it,
-and it is what no DAW transport offers, because a DAW's samples exists before
+and it is what no DAW transport offers, because a DAW's audio exists before
 you press play.
 
 That asymmetry runs through the whole feature:

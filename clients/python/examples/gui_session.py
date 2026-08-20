@@ -3,7 +3,7 @@
 language attached, and read back here unchanged.
 
 A document says what plays when; a *session* is that plus the table saying where
-its samples lives, and it lives in the shared crate precisely so that more than
+its samples live, and the format lives in the shared crate precisely so that more than
 one program can write it. Until now two of the three writers existed — this
 client, and this client again. The third is `clausters-gui --session`, a host
 that opens the file, draws it as a multitrack, applies its own gestures through

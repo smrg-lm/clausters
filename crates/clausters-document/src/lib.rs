@@ -265,7 +265,7 @@ pub enum Body {
     Vector {
         /// The samples.
         source: SourceRef,
-        /// How this samples is meant to sound — a vector is *data*, so what
+        /// How these samples are meant to sound — a vector is *data*, so what
         /// plays it (an instrument, its controls) is configuration, and
         /// configuration is the client's to interpret.
         #[serde(default, skip_serializing_if = "Opaque::is_empty")]
@@ -391,7 +391,7 @@ pub struct Node {
     /// Length in beats, when known.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub duration: Option<Beats>,
-    /// Whether the samples is produced by a def running **on the server**
+    /// Whether the samples are produced by a def running **on the server**
     /// rather than by messages the arrangement flattens. Such an element has no
     /// index: its position *is* its internal state, so a transport can stop it
     /// but cannot locate within it. It becomes locatable by being rendered.

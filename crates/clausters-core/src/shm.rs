@@ -120,7 +120,7 @@ struct Header {
     /// needs and what a **playhead does not**: for where the piece *is*, read
     /// `transport_position`.
     transport_clock: AtomicU64,
-    /// The sample of the *piece* the engine is playing, in the samples's own
+    /// The sample of the *piece* the engine is playing, in the piece's own
     /// axis. It advances with the clock while rolling, holds while stopped,
     /// jumps on a locate and wraps at a loop's end. A playhead wants this one;
     /// a scheduled bundle wants the clock above.
@@ -730,7 +730,7 @@ impl View {
         row.channels.store(channels as u32, Ordering::Relaxed);
         row.sample_rate_bits
             .store(sample_rate.to_bits(), Ordering::Relaxed);
-        // A new take starts unwritten: the frontier is the *samples's*, so
+        // A new take starts unwritten: the frontier is the *buffer's*, so
         // the previous tenant's would claim samples this one never got.
         row.frontier.store(0, Ordering::Relaxed);
         row.generation.store(odd, Ordering::Release);

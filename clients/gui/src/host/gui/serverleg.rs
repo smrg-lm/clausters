@@ -28,7 +28,7 @@ impl App {
     /// take being recorded into and wants its length rather than its silence.
     pub(super) fn start_buffer_fetches(&mut self, def_id: i32, refs: Vec<(i32, i32, bool)>) {
         for (widget_id, bufnum, shape_only) in refs {
-            // **Mapped samples needs no conversation.** When the take is in a
+            // **Mapped samples need no conversation.** When the take is in a
             // region this host can open, its samples are read straight out of
             // it — no `/buffer_query`, no chunked `/buffer_getRange`, no
             // waiting. The fetch machine below stays exactly as it is for
@@ -275,7 +275,7 @@ impl App {
                 let step = self.fetches.on_data(&msg.args);
                 self.apply_fetch_step(step);
             }
-            // **Somebody else wrote this samples.** A peer editing a shared
+            // **Somebody else wrote these samples.** A peer editing a shared
             // buffer stores into the cells and announces the span; the server
             // broadcasts it to everyone but the writer. A picture reading the
             // mapping is already the new one — what it needs is to be told

@@ -51,7 +51,7 @@ def main():
     )
     assert addr == "/done", f"{addr} {args}"
 
-    # The directory says where the samples is. It is not in the segment: a
+    # The directory says where the samples are. It is not in the segment: a
     # ten-minute stereo take is 230 MB and the segment is sized once at boot,
     # so each buffer's samples are their own file beside it.
     info = c.buffer_info(BUFNUM)

@@ -251,7 +251,7 @@ impl Element for Curve {
         Some(BodyRole::Curve)
     }
 
-    /// **A curve's own samples is its break-points and the segments between
+    /// **A curve's own contents are its break-points and the segments between
     /// them** — the line, not the field it is drawn over. Everything else in
     /// the rectangle is the container's, which is how an automation drawn
     /// across a whole clip still leaves the clip draggable.

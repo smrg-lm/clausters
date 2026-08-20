@@ -419,7 +419,7 @@ pub(crate) fn signal_element(
     // whether a view navigates, carries a selection or edits back is a choice
     // over any presentation, and the six names only ever froze six of them.
     let cap = |key: &str, default: bool| props.get(key).and_then(truthy).unwrap_or(default);
-    // Not a capability but the same shape of answer: whether the samples is
+    // Not a capability but the same shape of answer: whether the buffer is
     // being written into as it is drawn, which only the client knows.
     el.fills = props.get("fills").and_then(truthy).unwrap_or(false);
     el.caps = signal::Caps {

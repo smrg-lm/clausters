@@ -723,7 +723,7 @@ fn a_second_server_attaches_to_the_buffers_and_owns_none_of_them() {
     drop(player_server);
     assert!(
         owner_segment.buffer_info(3).is_some(),
-        "the samples outlives the player, which is the whole point of separating them"
+        "the samples outlive the player, which is the whole point of separating them"
     );
 
     let _ = std::fs::remove_file(&path);

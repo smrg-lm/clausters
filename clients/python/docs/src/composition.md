@@ -167,9 +167,9 @@ into a rectangle. One timeline sample is one frame of the samples, so:
 - **trimming** a clip — dragging its edge — hides frames rather than compressing
   them, and the ones it hides are still there: stretch the edge back and they
   come out again;
-- the **head** trim moves the window with the edge, so the samples stands still
+- the **head** trim moves the window with the edge, so the samples stand still
   while the clip shows less of it;
-- an edge stops where the samples does, unless the element **loops** — where
+- an edge stops where the samples end, unless the element **loops** — where
   past the last frame the buffer begins again and before the first comes its own
   tail.
 

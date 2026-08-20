@@ -170,7 +170,7 @@ impl SignalElement {
     /// It is the shape and not the samples because the one caller is a
     /// **write**, which has to know what it may address before it addresses it:
     /// handing out the data to measure it would be a copy of a take per stroke.
-    /// **How far this element's samples exists**, in frames, or `None` when
+    /// **How much of this element's samples exists**, in frames, or `None` when
     /// all of it does — the drawing's half of the `fills` prop, asked wherever
     /// a picture of the samples is built.
     pub fn written_frames(&self) -> Option<u64> {
@@ -418,7 +418,7 @@ impl SignalElement {
                 self.slot_dirty = true;
                 true
             }
-            // Material read where it lives. A take draws the summary and
+            // Samples read where they live. A take draws the summary and
             // takes the whole thing as it is; a run of samples has to be read
             // out, because that is what it draws from.
             Loaded::Shared(data) => {

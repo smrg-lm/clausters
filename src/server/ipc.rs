@@ -506,7 +506,7 @@ impl Segment {
     /// region cannot be opened — which is the ordinary answer for a buffer that
     /// was freed between reading the directory and opening the file, and is why
     /// this returns the generation it mapped: a caller that keeps the mapping
-    /// compares it against the row to learn its samples is history.
+    /// compares it against the row to learn its samples are history.
     #[cfg(unix)]
     pub fn map_buffer(
         self: &Arc<Self>,

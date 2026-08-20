@@ -27,7 +27,7 @@
 //!
 //! An aggregate of pitched clangs draws as a **roll** from the tree alone,
 //! because the pitches are in the tree. A **take** cannot: the document names a
-//! source and never says where the samples is, so drawing one needs the
+//! source and never says where the samples are, so drawing one needs the
 //! session's table resolved to something a host can read — which is
 //! [`super::sources`], and is why `Look` takes the resolved [`Takes`] rather
 //! than the session. Given none, a take is still drawn: its placement and its
@@ -73,7 +73,7 @@ pub struct Look<'a> {
     ///
     /// `None` — or a source missing from it — draws a take as its placement and
     /// its name, which is what a host with no server can honestly show: the
-    /// document holds no samples, so an empty clip here means *the samples is
+    /// document holds no samples, so an empty clip here means *the samples are
     /// elsewhere*, not that there is none.
     pub takes: Option<&'a Takes>,
 }
@@ -279,7 +279,7 @@ fn clip_of(
     });
     let take = take_of(&member.node, look);
     // The length shown: the placement's where it overrides, else the element's
-    // own, else **the samples's** — a take placed 1:1 is as long as it is,
+    // own, else **the samples'** — a take placed 1:1 is as long as it is,
     // which is the one length nobody has to state — else a beat, because a clip
     // with no length at all would be a line.
     let dur = member
@@ -310,7 +310,7 @@ fn clip_of(
             props.insert("channels".into(), json!(channels));
         }
     }
-    // **Assembled samples draws a take per window**, each over its own stretch
+    // **Assembled samples draw a take per window**, each over its own stretch
     // of the clip: one clip, because that is what the element is, and one body
     // per piece, because each reads a different part of different samples.
     if let Body::Segments { segments, .. } = &member.node.body {
@@ -344,9 +344,9 @@ fn clip_of(
 }
 
 /// **One editor per take**, under the tracks: the samples as a navigable
-/// picture of itself, where it can be zoomed to the sample and drawn over.
+/// picture of themselves, where they can be zoomed to the sample and drawn over.
 ///
-/// The arrangement says *where* samples is and the editor is where samples is
+/// The arrangement says *where* samples are and the editor is where they are
 /// *edited*, and the two views are of one thing — the same server buffer, the
 /// same node — so a stroke here moves the clip's picture above it without
 /// anything being told. That is the whole reason a take opens as a second view
@@ -358,8 +358,8 @@ fn clip_of(
 /// is, and joining them would make drawing a sample scroll the whole session.
 ///
 /// A source drawn by several clips opens once (the first node that names it):
-/// the samples is one, and editing it twice would be two pictures of the same
-/// samples disagreeing while the hand is down.
+/// the buffer is one, and editing it twice would be two pictures of the same
+/// buffer disagreeing while the hand is down.
 fn take_editors(
     document: &Document,
     look: &Look<'_>,
@@ -751,7 +751,7 @@ mod take_tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// **Assembled samples draws one clip and a take per window**, each over
+    /// **Assembled samples draw one clip and a take per window**, each over
     /// its own stretch of it — the standalone host reading what a joined clip
     /// was saved as, which is the one path a script is not there to draw.
     #[test]
@@ -822,7 +822,7 @@ mod take_tests {
     }
 
     /// A resolved take also **opens as an editor**, on its own axis and bound
-    /// to the same node the clip is: the arrangement is where the samples is
+    /// to the same node the clip is: the arrangement is where the samples are
     /// placed and this is where it is drawn over, and both write the one buffer.
     #[test]
     fn a_resolved_take_opens_an_editor_bound_to_the_same_node() {

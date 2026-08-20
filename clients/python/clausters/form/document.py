@@ -96,7 +96,7 @@ def to_session(element, *, sources=None, version: int = FIRST_VERSION,
         sources: ``{source_id: dict}`` — each entry as the crate's
             ``session::Source`` (``location``, ``lifetime``, ``generation``, and
             optionally ``channels``/``frames``/``sample_rate``/``provenance``/
-            ``editing``). Material with an **open destructive edit** carries
+            ``editing``). A source with an **open destructive edit** carries
             ``editing`` and reopens that way: a save never blocks on a
             confirmation.
         version: the document version to stamp.
@@ -523,7 +523,7 @@ def _timeline_items(timeline) -> list:
 
 
 class FrozenSource:
-    """Material a document names and this process does not hold.
+    """A source a document names and this process does not hold.
 
     A `Vector` element wraps `clausters.defs.Buffer`; reading a document written
     elsewhere (or written here before the buffer was allocated) gives the

@@ -663,8 +663,8 @@ and an edit is something you perform and log, never a side effect of a paste.
 `Editor` answers both verbs for the arrangement it holds: a cut whose selection
 covers a clip removes that placement (undoably, through the document), and a cut
 across a clip — or a paste of samples — is refused with its reason, because
-that is a new length for the samples under it and samples belongs to whoever
-owns it.
+that is a new length for the samples under it and samples belong to whoever
+owns them.
 
 ## The instrument without the script: a bundle
 

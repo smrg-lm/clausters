@@ -5484,7 +5484,7 @@ the channel it took rather than assuming the first.
 three other places turned out to have assumed one channel — the clip's body drew
 only the first, the monitor played only the first, and a drag that crossed into
 another lane read *that* lane's value. None of them was the write path, and all
-three were invisible while the samples was mono. A channel count is not a
+three were invisible while the samples were mono. A channel count is not a
 detail of the data: it is a fact every view, every gesture and every voice has
 to carry, and the way to find out who forgot it is to open something wider than
 two.
@@ -5910,8 +5910,8 @@ Three things make it a rule rather than a table:
 **Consequence.** Two standing defects closed without being touched directly. A
 clip whose contents are locked **moves again**: a layer that cannot be edited is
 never selected by pointing at it, so the press falls through to the placement
-instead of being consumed by a refusal — where samples sits is the
-composition's, what it holds is the samples's. And a curve's **lit segment** is
+instead of being consumed by a refusal — where a body sits is the
+composition's, what it holds is the body's. And a curve's **lit segment** is
 lit exactly when the curve is the layer in hand, where the bend is the gesture;
 inside a clip it used to be lit whether or not the curve was in hand, and the
 press there moved the clip.
@@ -5946,9 +5946,9 @@ window again brings them back.
 Everything the definition of a clip carries falls out of that one property:
 
 - **The start grip is a trim**: the offset, the duration and the window's head
-  advance together, so the samples stands still while the clip shows less of
+  advance together, so the samples stand still while the clip shows less of
   it.
-- **The edges stop where the samples does**, unless the clip loops — where past
+- **The edges stop where the samples end**, unless the clip loops — where past
   the end is the beginning again and before frame zero is the tail of the
   iteration before, which is what stretching an edge means on a loop.
 - **A split is two windows over one source**, and a **join** is the inverse; the

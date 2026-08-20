@@ -562,7 +562,7 @@ impl Element for Notes {
         Some(GestureMap::of_plans(&[El], &[Pan], &[El], &[El]))
     }
 
-    /// **The roll's own samples is its notes** — a note's rectangle, and the
+    /// **The roll's own contents are its notes** — a note's rectangle, and the
     /// velocity bar that belongs to one. The grid between them is the
     /// container's, which is what leaves a clip's empty roll to the clip's own
     /// move.

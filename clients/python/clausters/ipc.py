@@ -84,7 +84,7 @@ _ROLE_CLIENT = 1
 
 
 class MappedBuffer:
-    """One pool buffer's samples, mapped — the samples itself, not a copy.
+    """One pool buffer's samples, mapped — the samples themselves, not a copy.
 
     ``samples`` is a writable ``memoryview`` of ``f32`` in the buffer's own
     interleaved order, so reading is a memory read and writing is what the

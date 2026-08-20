@@ -486,7 +486,7 @@ impl UGen for Phasor {
 /// that. This is the catalog's existing arithmetic (`Phasor` keeps an `f64`
 /// internally and outputs `f32` just the same, and `BufRd` takes its phase as
 /// a signal), and the `offset` input is the answer to it: the subtraction
-/// happens here in `f64`, so a reader positioned at its own samples's start
+/// happens here in `f64`, so a reader positioned at its own buffer's start
 /// sees small numbers however deep into a long piece it sits. A graph that
 /// subtracts with a `Sub` UGen instead has already lost the precision by the
 /// time it does.

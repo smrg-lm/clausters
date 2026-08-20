@@ -52,7 +52,7 @@ class Session(Environment):
     default one are the same kind of thing. That makes it its **own random
     context** (`seed` / ``rng``): ``session.seed(n)`` reproduces *this* session's
     events without touching another's, so two sessions -- even both offline --
-    stay reproducible independently. Material created while the session drives
+    stay reproducible independently. Anything created while the session drives
     (``play`` / ``render``) or inside a ``with`` block draws from this root.
 
     Args:

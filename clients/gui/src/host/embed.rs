@@ -97,7 +97,7 @@ mod tests {
 
     /// The wire-up nothing else covers: an embedded server's own segment, read
     /// as a `BusSource`, reports **the piece's position** — so a window drawing
-    /// a head from it draws where the samples is rather than how long the
+    /// a head from it draws where the piece is rather than how long the
     /// machine has been running.
     ///
     /// Skipped where no audio device can be opened, which is what a headless
@@ -191,7 +191,7 @@ pub struct EmbedSession {
 }
 
 impl EmbedSession {
-    /// Opens a session whose samples lives beside the segment at `shm`, at
+    /// Opens a session whose samples live beside the segment at `shm`, at
     /// `sample_rate` and `channels`. A peer — this host included — maps every
     /// buffer it installs.
     pub fn open(shm: &Path, sample_rate: f64, channels: usize) -> Result<EmbedSession, String> {

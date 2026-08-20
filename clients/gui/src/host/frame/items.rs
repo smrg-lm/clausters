@@ -165,7 +165,7 @@ pub(super) struct TimelineItem {
     /// it has not changed and must not be re-summarized to show an edit that
     /// nobody has applied yet.
     pub(super) pending: Option<crate::host::widget::element::PendingEdit>,
-    /// How far the samples exists, for a take being written into as it is
+    /// How much of the samples exists, for a take being written into as it is
     /// drawn (`fills`); `None` when all of it does.
     pub(super) written: Option<u64>,
 }

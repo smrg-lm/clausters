@@ -60,7 +60,7 @@ pub struct SessionConfig {
     pub audio_buses: usize,
     pub control_buses: usize,
     pub limits: Limits,
-    /// Where to put the segment, when this session's samples is to be
+    /// Where to put the segment, when this session's samples are to be
     /// **shared**: a path makes it a mapped file, so a second process can read
     /// the directory and map every buffer this session holds (S19). `None` is
     /// the ordinary in-process session, whose segment lives on the heap.
@@ -93,10 +93,10 @@ pub struct NrtSession {
     engine: Engine,
     peer: IpcPeer,
     /// Kept alive for both peers; the ring lives in it, and it is what a
-    /// caller hands a player so the two share one samples.
+    /// caller hands a player so the two share one segment.
     segment: Arc<Segment>,
     /// The segment file this session **created**, and therefore has to remove:
-    /// a session's samples is the session's, and a segment left behind in
+    /// a session's samples are the session's, and a segment left behind in
     /// `/dev/shm` after the editor is gone is a leak with a take in it. `None`
     /// when the segment is on the heap or was somebody else's already.
     owned_segment: Option<std::path::PathBuf>,
@@ -140,7 +140,7 @@ impl NrtSession {
                 // none to map. Refused rather than silently opening a session
                 // whose samples nobody else can reach.
                 return Err(format!(
-                    "shared samples needs a Unix segment; {} cannot be opened here",
+                    "sharing samples needs a Unix segment; {} cannot be opened here",
                     path.display()
                 ));
             }
@@ -229,7 +229,7 @@ impl NrtSession {
         })
     }
 
-    /// The segment this session publishes into: its samples directory, its
+    /// The segment this session publishes into: its buffer directory, its
     /// control buses, and the rings it serves.
     pub fn segment(&self) -> &Arc<Segment> {
         &self.segment

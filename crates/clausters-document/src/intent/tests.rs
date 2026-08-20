@@ -314,8 +314,8 @@ fn an_aggregate_keeps_the_ids_of_the_members_that_survived_an_edit() {
 
 #[test]
 fn writing_samples_bumps_the_sources_generation_and_not_the_node() {
-    // The document describes where samples is, never what it holds. What
-    // applying does is move the counter every reader of that samples watches;
+    // The document describes where samples are, never what they hold. What
+    // applying does is move the counter every reader of those samples watches;
     // writing the samples is the owner's next step, against the working buffer.
     let mut d = Document::new(Node::new(
         NodeId(1),
@@ -628,7 +628,7 @@ fn samples_rewritten_underneath_make_a_write_stale() {
     };
     apply(&mut d, &write, &Against::unstated(), &Rules::none());
 
-    // The editor drew over generation 2; the samples is at 3 now.
+    // The editor drew over generation 2; the samples are at 3 now.
     let drew_over = Against::at(d.version).with_generation(2);
     let outcome = apply(&mut d, &write, &drew_over, &Rules::none());
     assert!(outcome.stale && !outcome.applied);

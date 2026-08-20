@@ -396,7 +396,7 @@ win = gui.open(window(
         # **spectrogram**: `view="spectrogram"` picks the presentation, and
         # everything else about it is a clip. It is placed at an offset, it ends
         # at its duration, it drags and resizes with the same handle, and the
-        # STFT stops where the samples does instead of spanning the lane. The
+        # STFT stops where the samples end instead of spanning the lane. The
         # trace and the texture are two views of one signal, and this is where
         # the model says so.
         track(clip(name="sweep", offset=SWEEP_AT * BEAT, dur=len(sweep_samples),

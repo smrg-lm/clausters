@@ -355,15 +355,15 @@ impl WaveformData {
     /// **Writes a run of samples into one channel and refreshes only the peaks
     /// that cover it**, returning whether it landed.
     ///
-    /// This is the drawn copy of a destructive edit: the samples itself is the
-    /// server's buffer, and what happens here is the picture agreeing with it
+    /// This is the drawn copy of a destructive edit: the real samples are the
+    /// server buffer's, and what happens here is the picture agreeing with it
     /// without being fetched again. Refreshing the whole pyramid would be a
     /// pause proportional to the *file* on every stroke over a few hundred
     /// samples, which is what [`peaks::Pyramid::update_range`] exists to avoid.
     ///
     /// A write past the end is refused rather than clamped, like every other
     /// write in this system: a stroke that ran off the end is a mistake
-    /// about where the samples ends, and silently shortening it would draw
+    /// about where the samples end, and silently shortening it would draw
     /// something nobody asked for.
     pub fn write_range(&mut self, ch: usize, start: usize, values: &[f32]) -> bool {
         let Some(channel) = self.channels.get_mut(ch) else {
@@ -376,7 +376,7 @@ impl WaveformData {
             // **Shared samples are already written**: the store went into the
             // cells before anything asked the picture to follow, so there is
             // no copy to make and nothing to write here — only the summary of
-            // the span, read back out of the samples itself.
+            // the span, read back out of the samples themselves.
             Samples::Shared(_) => self.resummarize(ch, start, values.len()),
             // An owned buffer is this widget's own, so the write lands here
             // first. It still costs the channel: a page has no other place to

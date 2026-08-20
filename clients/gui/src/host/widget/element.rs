@@ -526,7 +526,7 @@ pub enum Loaded {
     Stfts(Vec<crate::spectrogram::Stft>),
     /// Interleaved samples, kept whole.
     Samples(std::sync::Arc<[f32]>),
-    /// **Material the host reads where it lives** — a view over a mapped
+    /// **Samples the host reads where they live** — a view over a mapped
     /// region, its pyramid already built over the mapping.
     ///
     /// It is `Peaks`' sibling and not a duplicate of it: a pyramid *is* the
@@ -596,7 +596,7 @@ pub enum SlotKind {
 /// envelope over its samples one clip rather than two.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum BodyRole {
-    /// The samples itself — a clip's sound, drawn as a signal.
+    /// The samples themselves — a clip's sound, drawn as a signal.
     Take,
     /// The events over it — the notes of a roll.
     Notes,
@@ -1617,7 +1617,7 @@ pub trait Element: fmt::Debug {
         false
     }
 
-    /// **How far this element's samples exists**, in frames, or `None` when
+    /// **How much of this element's samples exists**, in frames, or `None` when
     /// all of it does — what a picture of the samples is cut to.
     ///
     /// It is the drawing's half of [`set_written`](Element::set_written): the
@@ -1628,7 +1628,7 @@ pub trait Element: fmt::Debug {
         None
     }
 
-    /// **How far the samples has been written**, in frames — a buffer's write
+    /// **How far the samples have been written**, in frames — a buffer's write
     /// frontier, pushed in by the host that reads it from the shared segment.
     /// Returns whether anything changed, which is what asks for a redraw.
     ///
@@ -1657,7 +1657,7 @@ pub trait Element: fmt::Debug {
         None
     }
 
-    /// **The server buffer that samples *is***, when the element named one.
+    /// **The server buffer the samples are *in***, when the element named one.
     ///
     /// Not [`Needs::bulk`]: that is a *request*, and it goes quiet the moment
     /// the samples land — which is exactly when a destructive edit becomes
@@ -1671,7 +1671,7 @@ pub trait Element: fmt::Debug {
     /// channel `ch`; returns whether it landed.
     ///
     /// The element writes rather than the host because only it knows which form
-    /// its samples is in — a pyramid, inline samples, or both — and a host
+    /// its samples are in — a pyramid, inline samples, or both — and a host
     /// that patched one form left every view holding the other showing the
     /// samples as it was before the stroke. What is written stays the
     /// element's own picture; the *samples* is the server's buffer, and the
@@ -1699,7 +1699,7 @@ pub trait Element: fmt::Debug {
     /// summary, returning whether it did. The default is not to.
     ///
     /// The sibling of [`Self::resummarize`] for the picture that cannot
-    /// re-read anything: its samples is a copy, and the samples itself is
+    /// re-read anything: its samples are a copy, and the samples themselves are
     /// being written somewhere it has no access to (a page and a server
     /// buffer). So the *overview* of what was written arrives instead —
     /// `stats` is `/buffer_stream.reply`'s payload, bucket-major and

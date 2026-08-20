@@ -16,7 +16,7 @@
 //!
 //! # A source is named, located and dated
 //!
-//! [`Source`] carries where the samples is ([`Location`]), whether it outlives
+//! [`Source`] carries where the samples are ([`Location`]), whether it outlives
 //! the session ([`crate::Lifetime`]), which generation of its content this is,
 //! and its shape. Two fields are the ones a naive format leaves out and then
 //! cannot add:
@@ -65,11 +65,11 @@ pub enum Location {
         /// The path as written.
         path: String,
     },
-    /// Material that exists only in the running system — a server buffer never
+    /// Samples that exist only in the running system — a server buffer never
     /// exported, a result never written down.
     ///
     /// A session may hold one, because saving must not be blocked by it, but a
-    /// reader that finds one knows the samples is not there: it opens with
+    /// reader that finds one knows the samples are not there: it opens with
     /// that element unresolved rather than pretending. [`Session::volatile`]
     /// is what a save consults before promising the file is complete.
     Volatile,
@@ -122,7 +122,7 @@ pub struct Source {
 }
 
 impl Source {
-    /// Material in a file.
+    /// Samples in a file.
     pub fn file(path: impl Into<String>, lifetime: Lifetime) -> Self {
         Self {
             location: Location::File { path: path.into() },
@@ -136,7 +136,7 @@ impl Source {
         }
     }
 
-    /// Material that has not been written down.
+    /// Samples that have not been written down.
     pub fn volatile(lifetime: Lifetime) -> Self {
         Self {
             location: Location::Volatile,
@@ -167,18 +167,18 @@ impl Source {
         self
     }
 
-    /// Whether a destructive edit is open and undecided over this samples.
+    /// Whether a destructive edit is open and undecided over these samples.
     pub fn is_being_edited(&self) -> bool {
         self.editing.as_ref().is_some_and(|e| !e.confirmed)
     }
 
-    /// Whether the samples is somewhere a reader could find it.
+    /// Whether the samples are somewhere a reader could find them.
     pub fn is_resolvable(&self) -> bool {
         matches!(&self.location, Location::File { path } if !path.is_empty())
     }
 }
 
-/// A composition, saved: the document, and where its samples is.
+/// A composition, saved: the document, and where its samples are.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Session {
     /// The format this was written in. See [`FORMAT`].
@@ -225,7 +225,7 @@ impl Session {
         self.sources.get(&id)
     }
 
-    /// Sources whose samples is not written down anywhere — what a save
+    /// Sources whose samples are not written down anywhere — what a save
     /// consults before promising the file is complete.
     pub fn volatile(&self) -> Vec<SourceId> {
         self.sources

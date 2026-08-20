@@ -981,7 +981,7 @@ class Editor:
         covers entirely leaves the aggregate it was in — undoably, through the
         crate, like every other edit here. What it does *not* do is trim: a
         selection cutting across a clip implies a new length for the samples
-        under it, and writing samples is the owner of that samples's business
+        under it, and writing samples is the business of whoever owns them
         (the working copy the document's plan describes), not a placement edit
         wearing the same name. That case is refused **out loud**, because a cut
         that silently did nothing would read as a broken key.
@@ -1032,7 +1032,7 @@ class Editor:
         crate's typed document: its kind, its JSON, and its bulk beside it.
 
         **What this editor can place is elements.** A block of *samples* is
-        samples, and samples is written by whoever owns it against a working
+        samples, and samples are written by whoever owns them against a working
         copy; an arrangement editor placing a nameless block of audio would be
         inventing both a source and a source's owner. So a sample paste is
         refused with the reason, which is the honest answer until the samples
@@ -1043,7 +1043,7 @@ class Editor:
         kind = str(values[1]) if len(values) > 1 else ""
         self._reason = (
             f"this editor places elements; a {kind or 'clipboard'} block is "
-            "samples, and samples is written by its owner"
+            "samples, and samples are written by their owner"
         )
         return False
 
@@ -1054,7 +1054,7 @@ class Editor:
         was swept, and this says what is underneath it — one entry per leaf,
         with the placement's base, the element's trim and the clamp at both ends
         already applied (`clausters._native.Document.resolve`). Empty when
-        nothing samples was under the sweep, and when there is no selection at
+        nothing with samples was under the sweep, and when there is no selection at
         all.
 
         The value range travels with the selection but does not narrow this:
@@ -1228,7 +1228,7 @@ class Editor:
         samples rather than a mode: fragments that are **one run of one
         buffer** (what a split makes) join back into the single window they were
         cut from, and anything else becomes a `Segments` — the element whose
-        samples is a list of windows onto whatever buffers they come from, read
+        contents are a list of windows onto whatever buffers they come from, read
         back to back. The second is what a multitrack means by joining in
         general: nothing is copied, and cutting it apart again gives the same
         windows back.
@@ -1984,7 +1984,7 @@ class Editor:
         lanes draw. This is what a click on a lane's ruler does.
 
         A composition holding a **resident generator** has no position to seek
-        to — its samples is produced on the server, so its position is that
+        to — its samples are produced on the server, so its position is that
         def's internal state and no number moves it. Rather than move the cursor
         somewhere the sound will not follow, this refuses and says why. Render
         the element first (`clausters.form.render`) and it becomes samples like
@@ -2132,7 +2132,7 @@ class Editor:
 
         if isinstance(element, Segments):
             segments = self._segments_within(element, limit)
-            # **One clip, one take per segment.** The samples is several
+            # **One clip, one take per segment.** The samples are several
             # windows read as one thing, so the clip holds one body per segment,
             # each over its own stretch of the clip and each reading its own
             # buffer from its own frame — which is what makes a joined clip draw
@@ -2158,7 +2158,7 @@ class Editor:
             # The take rides the bulk path: the host fetches the server buffer and
             # decimates it through its peak pyramid.
             #
-            # Material this process does not hold draws as a **clip with no
+            # An element this process does not hold draws as a **clip with no
             # waveform** rather than not at all: a session reopened without its
             # sources resolved wraps each one in a `FrozenSource`, which knows
             # the buffer number the document recorded and nothing about its
@@ -2169,7 +2169,7 @@ class Editor:
             if channels is None:
                 return {}
             body = dict(buffer=buf.bufnum, channels=max(1, channels))
-            # The **window** onto that samples: a clip shows the segment its
+            # The **window** onto those samples: a clip shows the segment its
             # element reads, so a trimmed take draws the frames it plays and
             # not the buffer squeezed into a rectangle. Sent only when there is
             # a window to state, which keeps a whole-take clip's props exactly
@@ -2238,7 +2238,7 @@ class Editor:
                                     else self._extent(m.element))
                         for m in element.handles), default=0.0)
         if isinstance(element, Segments):
-            # Its samples is a list, and its extent is the whole of it.
+            # Its contents are a list, and its extent is the whole of it.
             return sum(seg.duration for seg in element.segments)
         if isinstance(element, Vector):
             buf = element.wraps

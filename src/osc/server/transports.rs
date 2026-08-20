@@ -160,13 +160,13 @@ impl OscServer {
         self.install_buffer(index, buffer)
     }
 
-    /// Off Unix the samples is unreachable: a region is a file another
+    /// Off Unix the samples are unreachable: a region is a file another
     /// process opens, and there is no equivalent — so a server there says so
     /// rather than pretending. The wasm engine in a page is the case this is
     /// really about, and a page keeps `/buffer_getRange`.
     #[cfg(not(unix))]
     pub fn attach_shared_buffer(&mut self, _index: usize) -> Result<(), String> {
-        Err("shared samples needs a Unix segment".into())
+        Err("sharing samples needs a Unix segment".into())
     }
 
     /// handles every packet waiting in the attached ring. Same
