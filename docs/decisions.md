@@ -1653,9 +1653,9 @@ the check.
 **`ugens.py` stays hand-written.** Generating it from the catalog would end the
 drift by construction, but the callables carry hand-written docstrings that are
 the client's real teaching surface, and generation would add a build step to a
-pure-Python package. The contrast test buys the same guarantee at the cost of
-one test: for every kind whose signature maps 1:1 onto the wire, names and
-defaults must agree with what the server reports (compared at `f32` precision,
+pure-Python package. The contrast test gives the same guarantee and costs one
+test: for every kind whose signature maps 1:1 onto the wire, names and defaults
+must agree with what the server reports (compared at `f32` precision,
 since the server's defaults arrive widened to `f64`).
 
 ## The editable text field carries an internal clipboard, not an OS-clipboard dependency
@@ -2639,8 +2639,8 @@ it, both the same two-by-two matrix `Rotate2` already is:
   `1/2` a DAW meter shows. That normalization makes it an **involution**: one
   kind encodes and decodes, and the round trip is exact rather than nearly so.
   It costs a 3 dB offset on the mid against the convention, which is a plain
-  gain, and buys a catalog with one name instead of an encoder and a decoder
-  that must be kept inverse to each other by hand.
+  gain, and it leaves the catalog with one name instead of an encoder and a
+  decoder that must be kept inverse to each other by hand.
 
 `StereoWidth` is `MidSide`, a multiply, `MidSide` — collapsed into the matrix it
 amounts to, and tested against the two-step route. Keeping both is not
@@ -4003,8 +4003,8 @@ collides *always* — every voice of one instance is the same def. That leaves
 the server three ways out, each worse than an unnamed group. Refusing the
 instantiation answers a client that asked for two voices with an error about a
 label it never wrote. Creating it anonymous is the silent downgrade the naming
-rules exist to prevent. Inventing a suffix (`reverb-2`) buys navigability with
-a name the client cannot predict and has to read back out of the tree. An
+rules exist to prevent. Inventing a suffix (`reverb-2`) keeps the tree navigable
+under a name the client cannot predict and has to read back out of it. An
 unnamed group is not a hole in the addressing anyway: it answers to its id, and
 a path reaches it through its decimal segment.
 
@@ -4578,8 +4578,8 @@ nothing else. That method applies the prop, mirrors it into the registry and
 asks for a repaint; it never enters the delivery path, so the target's own
 binding does not fire from it. There is no cycle detector and no depth counter,
 because there is no chain to walk — and the alternative, letting a binding
-cascade and then policing it, buys a feature nobody asked for at the price of a
-class of hangs.
+cascade and then policing it, would add a feature nobody asked for and a class
+of hangs with it.
 
 - **The destination keyword was already on the wire**, which is the whole reason
   this was additive: `/gui_bind id "server" …` spelled out a destination when
@@ -5529,7 +5529,7 @@ A pool buffer used to be immutable: built once, handed to the audio thread throu
 
 **So the kind was dropped and the guarantee moved into the storage.** Samples are `AtomicU32` holding `f32` bits, read with relaxed loads through one door and written through `set_sample` on `&self`. Shape — frames, channels, sample rate — is settled at allocation and never changes, which is the invariant that actually matters: a reader's bounds cannot move under it. Contents can change under anything, at any time, from a UGen or a command. What that guarantees is **per-element atomicity and no ordering between elements**: a reader crossing a writer sees some old samples and some new, never half of one. That is scsynth's own semantics for exactly this case, and it is what a looper crossing its own write head has always sounded like.
 
-**The cost was measured before the choice, not defended after it.** An interpolated random read of 64 frames (`PlayBuf`, `BufRd`) goes 145 → 150 ns, **+5%** — 12 ns per block per reader, about a thousandth of a percent of a 64-frame block's budget at 48 kHz — and **+0%** on the other three shapes that matter (sequential reads, a wavetable hot in cache, the convolver's kernel), where the loads still vectorise. The atomics buy the *right to write while another thread reads* — without them a concurrent write is a data race and therefore undefined behaviour, whatever the generated code happens to do — and what they cost is optimizer freedom, not an instruction.
+**The cost was measured before the choice, not defended after it.** An interpolated random read of 64 frames (`PlayBuf`, `BufRd`) goes 145 → 150 ns, **+5%** — 12 ns per block per reader, about a thousandth of a percent of a 64-frame block's budget at 48 kHz — and **+0%** on the other three shapes that matter (sequential reads, a wavetable hot in cache, the convolver's kernel), where the loads still vectorise. The atomics are what make it **legal to write while another thread reads** — without them a concurrent write is a data race and therefore undefined behaviour, whatever the generated code happens to do — and what they cost is optimizer freedom, not an instruction.
 
 **The consequence is a smaller surface, not a bigger one.** No kind, no flag on `/buffer_alloc`, no branch in any reader, no second storage layout to keep working, and no refusal to explain in the reference. One sentence replaces all of it: a buffer's contents are mutable and only its shape is fixed. The one thing genuinely given up is the flat `data() -> &[f32]` accessor, which is why every reader in the tree had to be visited once — and the golden renders say they came back bit-identical.
 
@@ -5615,8 +5615,8 @@ gets in the GUI protocol.
 **What it does not fix**, said so the next reader does not assume it: the two
 clients now have to agree on a string that no schema checks. That is the cost of
 keeping it out of the model, and it is the same cost the GUI protocol pays for
-`kind`. The alternative — a typed `view` field — buys checking and pays by
-putting a view in the tree, which is the trade this layer decided in the other
+`kind`. The alternative — a typed `view` field — would be checked, and would put a
+view in the tree, which is the trade this layer decided in the other
 direction on the day it was designed.
 
 ## The working copy leads, and it is the buffer the samples were loaded into

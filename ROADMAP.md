@@ -61,7 +61,7 @@ right — that is the normal failure, not a sign the work vanished.
 
 ## Phase 1 — the packages move together: the arrangement reaches the web client
 
-*What it buys: the rule the project already states, applied to the largest
+*Why this first: the rule the project already states, applied to the largest
 outstanding violation. `form/`, `gui/editor.py`, `gui/transport.py` and
 `gui/notation.py` have **no TypeScript counterpart at all** — the whole
 arrangement, document and editor layer exists in one client. It waits on
@@ -120,7 +120,7 @@ example, and none blocks anything that is.
 
 - **A take's overview could be a file beside its region** *(root `PLAN.md`,
   Future directions)* — dropped from S20 when the frontier answered the live
-  question on its own. It buys the opening pass, brings a second writer of
+  question on its own. It saves the opening pass, costs a second writer of
   derived state, and **it is what unblocks the fork below**.
 - **A view of a server buffer has two ways of getting its material, and what
   chooses between them is the wrong question** *(`clients/gui/PLAN.md`, Future

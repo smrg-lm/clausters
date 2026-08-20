@@ -358,7 +358,7 @@ fn a_small_payload_stays_in_the_log() {
 
 #[test]
 fn a_deterministic_operation_stores_its_parameters_and_not_its_result() {
-    // The asymmetry the placement buys. Undoing a normalize is the old samples
+    // The asymmetry the placement exists for. Undoing a normalize is the old samples
     // and nothing else can be; redoing it is the word "normalize" plus its
     // parameters, which the owner re-runs. A log held by the host could not do
     // this, because the host has no algorithms.

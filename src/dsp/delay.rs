@@ -108,7 +108,7 @@ fn feedback_gain(delay_secs: f64, decay_secs: f64) -> f64 {
 pub enum Storage {
     /// Synth-private memory, allocated at build and read by nobody else.
     /// `f32`: this is signal, not recursive filter state, so the extra
-    /// precision would buy nothing and cost twice the cache.
+    /// precision would change nothing and cost twice the cache.
     Private(Vec<f32>),
     /// One channel of a pool buffer, both named by **inputs** and resolved per
     /// block — `bufnum` and `chan`, exactly as every other buffer UGen names

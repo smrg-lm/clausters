@@ -218,8 +218,8 @@ test("a receiver with a clock hands its handlers to the clock, not to the socket
     const resp = new OscFunc(() => beats.push(clock.beats()), "/done", { recv });
 
     // A stopped clock runs nothing: the packet's arrival queues the handler
-    // rather than calling it, which is the property the reference buys with a
-    // thread and this client buys with the queue.
+    // rather than calling it, which is the property the reference client gets
+    // from a thread and this one from the queue.
     carrier.push("/done");
     assert.deepEqual(beats, []);
 

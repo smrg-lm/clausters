@@ -10,9 +10,9 @@
 //! **Why the cells are atomic, since the answer is not the obvious one.** A
 //! `u32` holds the sample's `f32` bits exactly (`from_bits`/`to_bits` compile to
 //! nothing — there is no `AtomicF32` in the standard library, and that is the
-//! only reason for the type). What atomics buy is not indivisibility: a
+//! only reason for the type). Atomics are not here for indivisibility: a
 //! naturally aligned 32-bit store is already indivisible on every target we
-//! run on. They buy the right to **write at all**. Two threads touching one
+//! run on. They are here to make the write **legal at all**. Two threads touching one
 //! non-atomic location with a writer among them is a data race, which is
 //! undefined behaviour — so the compiler may hoist a load out of a loop and
 //! reuse a value forever, and a plain `&[f32]` written behind its back reads

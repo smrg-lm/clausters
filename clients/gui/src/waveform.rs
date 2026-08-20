@@ -627,8 +627,8 @@ impl WaveformData {
         // Reading the two partial edges out of the samples instead would make
         // it exact, and that is what this did first — measured at 700 µs per
         // frame of 900 columns against 10 µs for the fold, because a column of
-        // two buckets is 500 samples of edge. Exactness bought by reading the
-        // samples at every zoom is not exactness a picture can afford; the
+        // two buckets is 500 samples of edge. Exactness that costs a read of
+        // the samples at every zoom is not exactness a picture can afford; the
         // regime that *does* read every sample is the one below, where a
         // column is finer than a bucket and there is nothing else to read.
         let (qa, qb) = (a - a % base, b - b % base);

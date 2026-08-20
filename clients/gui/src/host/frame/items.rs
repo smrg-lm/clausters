@@ -226,7 +226,7 @@ pub(super) fn collect_widgets(
         // A **clip body** is drawn as a body, not as the element it also is:
         // it has no chrome of its own (no ruler, no keyboard gutter, no
         // navigation), because it is drawn against the axes of the clip
-        // holding it. That is what the containment buys, and it is decided
+        // holding it. That is what the containment is for, and it is decided
         // here — once — rather than by each element asking where it is.
         if let Some(parent) = p.parent
             && let WidgetKind::Clip { dur, .. } = placed[parent].widget.kind

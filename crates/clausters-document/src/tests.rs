@@ -87,8 +87,8 @@ fn a_body_this_build_does_not_know_survives_whole() {
     assert!(matches!(doc.root.body, Body::Unknown(_)));
     // Lossless rather than byte-identical: `serde_json` sorts an object's keys,
     // so what comes back out is the same *value*, which is the property that
-    // matters -- key order in JSON carries no information, and buying its
-    // preservation would mean turning on `preserve_order` for every crate in
+    // matters -- key order in JSON carries no information, and preserving it
+    // would mean turning on `preserve_order` for every crate in
     // the workspace, since features are additive.
     assert_eq!(
         reparse(&doc),

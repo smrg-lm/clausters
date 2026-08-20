@@ -8,8 +8,8 @@
 #
 # This does NOT enforce that rule, and cannot. A client-side git hook is skipped
 # by `--no-verify`, by unsetting core.hooksPath, or by editing this file -- it
-# sits in the working tree of the person it is checking. What it buys is
-# *speed*: the same failure in two seconds, here, instead of five minutes into a
+# sits in the working tree of the person it is checking. What it saves is
+# *time*: the same failure in two seconds, here, instead of five minutes into a
 # CI run. CI (.github/workflows/ci.yml) is what actually enforces the rule,
 # because the person committing cannot skip it.
 #
