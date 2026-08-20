@@ -1,80 +1,30 @@
-// The peak pyramid: a waveform that costs its window, not its buffer.
+// The peak pyramid: a summary that costs a window, not a buffer.
 //
 // A waveform view is never drawn sample by sample. The samples are reduced
 // once into a min/max pyramid — level 0 summarizes every `baseBucket` samples,
-// each level above halves the resolution — and a draw reads the level whose
-// buckets match the current zoom, so each pixel column costs about one bucket
+// each level above halves the resolution — and a drawing reads the level whose
+// buckets match its zoom, so a picture costs about a bucket per pixel column
 // and the work is proportional to the width of the view rather than to the
 // length of the buffer.
 //
 // The reduction itself is `clausters_core::peaks`, reached through the core's
 // wasm door: the same code the GUI host reduces with, and the same cache
-// format it maps and the Python client writes. A page that builds a pyramid
-// here and a host that maps one over there draw the identical columns.
+// format it maps and the Python client writes. A cache built here and a cache
+// mapped over there are the same bytes.
 //
-// What a view draws is not quite what the pyramid measured: `columns` answers
-// the measurement and `joinColumns` answers the row to ink, each column
-// extended to meet the one before it. Both are the core's, so a page and the
-// GUI host's `waveform` widget over one buffer draw the same picture.
+// **The cache is data; the picture is the host's.** The reading a drawing
+// needs — which level a magnification calls for, a column per pixel, the join
+// that inks one column out to the next — happens where the drawing does, and
+// the drawing is never here (a `waveform` widget over a `buffer`, a `cache`
+// file or a `path`). What a page reads off a pyramid is the cache in the
+// cache's own units: how long it is, how many levels it has, and one cell's
+// `[min, max]` over a span of samples.
 //
 // The samples come from wherever a buffer comes from — `Server.getSamples`
 // over the wire, `fetchAudio` over HTTP — and after `build` they are not
 // needed again.
 
-import { Pyramid, joinColumns as coreJoinColumns } from "../core/clausters_core_web.js";
-
-/** A pixel row of a waveform: one `(min, max)` pair per column. */
-export interface Columns {
-    min: Float32Array;
-    max: Float32Array;
-}
-
-/**
- * **A pixel row joined**: each column extended to meet the one before it, which
- * is what a page strokes.
- *
- * A column measures a group of samples, and the groups partition the samples
- * where the curve does not: between the last sample of one column and the first
- * of the next there is a segment nothing draws. On audio it never shows, since
- * consecutive columns already overlap; on a one-sample jump — a square wave, a
- * gate, an edge of any kind — it is the whole of the feature, and the vertical
- * stroke that *is* the edge comes and goes with the zoom, because whether the
- * jump lands inside a column or on its boundary is a fact about the
- * magnification.
- *
- * So `columns` answers what the pyramid measured and this answers what to ink:
- * columns that already overlap come back untouched, and one that does not
- * reaches back to its neighbour's nearest edge — exactly the values the curve
- * takes while it crosses the boundary, the same segment a deeper zoom draws as
- * a polyline. It is the core's own rule, the one the GUI host's renderer
- * draws with, so a page and a `waveform` widget over the same buffer draw the
- * same picture.
- *
- * ```ts
- * const row = joinColumns(peaks.columns(0, { width: canvas.width }));
- * for (let x = 0; x < row.min.length; x++) {
- *     ctx.moveTo(x, y(row.max[x]));
- *     ctx.lineTo(x, y(row.min[x]));
- * }
- * ```
- *
- * Requires a prior `loadCore()`.
- */
-export function joinColumns({ min, max }: Columns): Columns {
-    const flat = new Float32Array(min.length * 2);
-    for (let i = 0; i < min.length; i++) {
-        flat[i * 2] = min[i];
-        flat[i * 2 + 1] = max[i];
-    }
-    const joined = coreJoinColumns(flat);
-    const lo = new Float32Array(min.length);
-    const hi = new Float32Array(min.length);
-    for (let i = 0; i < min.length; i++) {
-        lo[i] = joined[i * 2];
-        hi[i] = joined[i * 2 + 1];
-    }
-    return { min: lo, max: hi };
-}
+import { Pyramid } from "../core/clausters_core_web.js";
 
 /**
  * A built peak pyramid over one interleaved sample buffer.
@@ -82,7 +32,7 @@ export function joinColumns({ min, max }: Columns): Columns {
  * ```ts
  * const samples = await buffer.getSamples();
  * const peaks = Peaks.build(samples, { channels: buffer.channels });
- * const { min, max } = peaks.columns(0, { width: canvas.width });
+ * const bytes = peaks.toBytes();        // the cache every client reads
  * ```
  *
  * Requires a prior `loadCore()`, like everything core-backed. The pyramid owns
@@ -213,15 +163,13 @@ export class Peaks {
         return this.inner.levelBucket(level);
     }
 
-    /** The level whose buckets match `samplesPerPx`. */
-    levelFor(samplesPerPx: number): number {
-        return this.inner.levelFor(samplesPerPx);
-    }
-
     /**
-     * One column: the `[min, max]` of `channel` over `[start, end)` at
-     * `level`. `undefined` for an unknown channel or an empty level. A view
-     * draws with `columns` instead — this is for reading a single figure.
+     * One cell: the `[min, max]` of `channel` over `[start, end)` at `level`.
+     * `undefined` for an unknown channel or an empty level.
+     *
+     * A read of the summary in its own units, for checking what it says about
+     * a span of samples. Drawing a *view* of it is the GUI host's: a
+     * `waveform` widget over the buffer, the cache file or the samples.
      */
     column(
         channel: number,
@@ -231,32 +179,6 @@ export class Peaks {
     ): [number, number] | undefined {
         const pair = this.inner.column(channel, level, start, end);
         return pair ? [pair[0], pair[1]] : undefined;
-    }
-
-    /**
-     * A whole pixel row in one crossing: `width` columns spanning
-     * `[start, end)` of `channel`, at the level that span and width imply.
-     *
-     * This is what a view calls per frame — never a column at a time, and
-     * never finer than the screen. `start`/`end` default to the whole buffer.
-     */
-    columns(
-        channel: number,
-        {
-            width,
-            start = 0,
-            end = this.frames,
-        }: { width: number; start?: number; end?: number },
-    ): Columns {
-        const flat = this.inner.columns(channel, start, end, Math.trunc(width));
-        const n = flat.length / 2;
-        const min = new Float32Array(n);
-        const max = new Float32Array(n);
-        for (let i = 0; i < n; i++) {
-            min[i] = flat[i * 2];
-            max[i] = flat[i * 2 + 1];
-        }
-        return { min, max };
     }
 
     /** Releases the wasm-side cache. The object is unusable afterwards. */

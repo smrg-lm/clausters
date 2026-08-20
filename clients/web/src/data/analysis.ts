@@ -2,39 +2,23 @@
 //
 // Pure functions over samples, with no state and no server: hand them a tap
 // window, a slice of a buffer, anything. Each is `clausters-core`'s own — the
-// function the GUI host's meter, phasescope and spectrum draw from — so a
-// figure computed here and the same figure drawn by the host are the same
-// number, not two implementations that agree today.
+// function the GUI host's meter and phasescope draw from — so a figure
+// measured here and the same figure drawn by the host are the same number, not
+// two implementations that agree today.
 //
-// What is *not* here is everything with memory across frames: the exponential
-// averaging and peak hold of a spectrum display, the rolling history of a
-// scope. Those are display smoothing, and belong to whoever draws — how long
-// a trace remembers is a look, not a measurement.
+// What is *not* here is anything of the **screen**: a decibel curve, an
+// oscilloscope's framing and trigger, a row of pixel columns. Those are
+// drawing; the host is what draws, and a script that wants to see a signal
+// names a view (`scope`, `plot`, a widget in a GuiDef) instead of computing
+// one. Nor is anything with memory across frames — the exponential averaging
+// and peak hold of a spectrum display, the rolling history of a scope: how
+// long a trace remembers is a look, not a measurement.
 
 import {
     channel_stats,
     correlation as coreCorrelation,
     lissajous as coreLissajous,
-    spectrum_db,
 } from "../core/clausters_core_web.js";
-
-/** The analysis windows the FFT applies, by name (the wire's `wintype`). */
-export type WindowShape =
-    | "rectangular"
-    | "hann"
-    | "sine"
-    | "welch"
-    | "hamming"
-    | "blackman";
-
-const WINTYPE: Record<WindowShape, number> = {
-    rectangular: -1,
-    hann: 0,
-    sine: 1,
-    welch: 2,
-    hamming: 3,
-    blackman: 4,
-};
 
 /**
  * The stereo **correlation** (Pearson's r) of two equal-length channels, in
@@ -59,26 +43,6 @@ export function correlation(
  */
 export function lissajous(left: Float32Array, right: Float32Array): Float32Array {
     return coreLissajous(left, right);
-}
-
-/**
- * One spectrum frame: `samples` windowed, transformed, and scaled to decibels
- * — `fftSize / 2` bins, a full-scale sine reading about 0 dB at its bin and
- * silence sitting at the -120 dB reference floor. Bin `b` is at
- * `b * sampleRate / fftSize` hertz.
- *
- * `samples` should be exactly one `fftSize` window (a shorter one is
- * zero-padded); `fftSize` must be a supported power of two, or the result is
- * empty.
- */
-export function spectrumDb(
-    samples: Float32Array,
-    {
-        fftSize = 1024,
-        window = "hann",
-    }: { fftSize?: number; window?: WindowShape } = {},
-): Float32Array {
-    return spectrum_db(samples, fftSize, WINTYPE[window] ?? 0);
 }
 
 /**

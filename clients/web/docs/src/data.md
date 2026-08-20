@@ -10,9 +10,11 @@ things worth reading, and each has its own path:
 | a **buffer** | `/buffer_getRange` in chunks, or `fetch` | waveforms, audio-editor views |
 
 The GUI host already reads all three on its own — that is why a GuiDef naming a
-bus or a URL draws with no script at all. This chapter describes the same
-three paths opened to *your* script, for a view you draw yourself on your own
-canvas.
+bus or a URL draws with no script at all, and **the drawing is always its**: a
+client names what to look at (`plot`, `scope`, a `meter`/`scope`/`spectrum`/
+`waveform` widget) and the host paints it. This chapter is the same three paths
+opened to *your* script, for everything else a program does with the data — a
+read-out, a decision, a summary it stores or hands on, a test.
 
 Everything here lives in the `data` namespace:
 
@@ -29,7 +31,7 @@ const level = Bus.control(server);
 // ... something writes it: a synth's `outCtl`, a knob bound to it, `bus.set`
 
 const buses = await data.BusStream.open(server, [level], { periodMs: 33 });
-buses.onSnapshot((values) => drawMeter(values[0]));    // ~30 times a second
+buses.onSnapshot((values) => report(values[0]));       // ~30 times a second
 ```
 
 `values` is a `Float32Array` in the order you asked for, always holding the
@@ -47,8 +49,8 @@ The ceiling is boot-time configuration on the server (`--max-stream-buses`, or
 generous. What matters is that the number is **per carrier**: the same server
 answers a page over its shared-memory ring and a native client over TCP with
 two different figures, because a snapshot is one message and is never split
-across replies. So a page that draws a great deal reads it rather than assuming
-it — `(await server.queryInfo()).maxStreamBuses` — and a request over the
+across replies. So a page that watches a great deal reads it rather than
+assuming it — `(await server.queryInfo()).maxStreamBuses` — and a request over the
 ceiling is refused whole, leaving whatever subscription was already there.
 
 > **In the page, the GUI host is that same client.** Over the in-page carrier
@@ -62,17 +64,19 @@ ceiling is refused whole, leaving whatever subscription was already there.
 > WebSocket there is no such conflict — a native host and a script are
 > different clients.
 
-A stream is a *latest value*, not a history. A rolling trace is the view's own
-business:
+A stream is a *latest value*, not a history: a script that needs one keeps it.
 
 ```js
 const history = new Float32Array(512);
 buses.onSnapshot((values) => {
     history.copyWithin(0, 1);
     history[511] = values[0];
-    drawTrace(history);
 });
 ```
+
+To *see* the history rather than hold it, name the view instead — a `scope`
+widget at `rate: "control"` plots a control bus's recent past, and the host
+keeps the window.
 
 ## Audio buses
 
@@ -82,12 +86,10 @@ be read; an audio bus does not, so the server **records** the ones it is asked
 for. You never name the recording: you name the bus.
 
 ```js
-const frames = data.scopeFrames(20.0, 48000);   // a 20 ms window, with slack
-const taps = await data.TapStream.open(server, [bus], { frames, periodMs: 33 });
+const taps = await data.TapStream.open(server, [bus], { frames: 2048, periodMs: 33 });
 
 taps.onData((bus, window) => {
-    const trace = data.scopeWindow(window.samples, { windowMs: 20.0 });
-    drawScope(trace.samples, trace.locked);
+    report(Math.max(...window.samples.map(Math.abs)));   // the newest peak
 });
 ```
 
@@ -103,19 +105,18 @@ above: a `TapStream` and a host oscilloscope on one page displace each other.
 The server has a finite number of rings to record into (8 by default), shared
 with whatever the GUI host is drawing — it counts watchers, so several views of
 one bus cost one ring, and a stream that cannot get one fails loudly rather than
-drawing nothing.
+falling silent.
 
 Each window arrives with `endPosition` — the total samples ever recorded for
 that bus at the window's end — so consecutive windows can be placed on the bus's
 own timeline: they overlap or gap by exactly the position delta, never by a
 guess about the period.
 
-`scopeWindow` is what makes a trace stand still. Without it a periodic signal
-crawls across the view; with it, the window starts at the latest rising crossing
-of the trigger level, and `locked` says whether one was found (silence and DC
-free-run on the newest samples instead of blanking). The alignment is the
-server core's own — the same one the GUI host's `scope` widget draws with — so a
-trace you draw and one the host draws from the same bus are the same trace.
+**To *see* the bus, name it instead**: `await scope(bus)` opens an
+oscilloscope window on it, and a `scope` widget in a GuiDef puts one inside a
+window you compose. The framing and the trigger that make a periodic signal
+stand still are the host's, over the same tap — there is nothing to compute
+here, and nothing that would agree with the host by coincidence.
 
 A stereo pair reads as one interleaved window, which is what a phasescope and a
 correlation take:
@@ -170,41 +171,34 @@ server reads it in one command.
 
 ### The peak pyramid
 
-A waveform is never drawn sample by sample. Reduce the samples once, then read
-one column per pixel:
+A waveform is never drawn sample by sample. The samples are reduced once into a
+min/max pyramid — level 0 summarizes every `baseBucket` samples, each level
+above halves the resolution — and a picture reads the level its magnification
+calls for, so the drawing costs the width of the view rather than the length of
+the buffer:
 
 ```js
 const peaks = data.Peaks.build(samples, { channels: buffer.channels });
-const { min, max } = data.joinColumns(peaks.columns(0, { width: canvas.width }));
-
-for (let x = 0; x < min.length; x++) {
-    ctx.moveTo(x, mid - max[x] * scale);
-    ctx.lineTo(x, mid - min[x] * scale);
-}
 ```
 
-`columns` picks the resolution level the span and the width imply and reads the
-whole row in one crossing into wasm — the work is proportional to the width of
-your view, not to the length of the buffer. Zooming is the same call with a
-narrower span:
+**The picture over it is the host's.** A `waveform` widget takes a `buffer`
+number, a `cache` file or a `path` and walks this same path itself, choosing the
+level, laying a column across each pixel and joining the columns so an edge is
+inked rather than falling between two of them. None of that is in this client,
+and a page that wants a waveform names one:
 
 ```js
-peaks.columns(0, { width: canvas.width, start: 44100, end: 88200 });
+gui.waveform({ buffer: buffer.bufnum, sampleRate, ruler: "time", rulerY: "db" })
 ```
 
-**`joinColumns` is what turns the measurement into the picture**, and a page
-that strokes its own columns wants it. A column measures a *group* of samples,
-and the groups partition the samples where the curve does not: between the last
-sample of one column and the first of the next there is a segment nothing draws.
-On ordinary audio it never shows, since consecutive columns already overlap. On
-a one-sample jump — a square wave, a gate, an edge of any kind — it is the whole
-of the feature, and the vertical stroke that *is* the edge comes and goes as you
-zoom, because whether the jump lands inside a column or on its boundary is a
-fact about the magnification rather than about the signal. `joinColumns`
-extends each column to meet the one before it, which inks exactly the values the
-curve takes while it crosses the boundary and leaves overlapping columns
-untouched. It is the core's own rule, the one the GUI host's renderer draws
-with, so a page and a `waveform` widget over one buffer draw the same picture.
+What a script reads off a pyramid is the cache in the cache's own units — how
+long it is, how many levels, and what one cell says about a span of samples:
+
+```js
+peaks.frames;                       // samples per channel
+peaks.levelBucket(0);               // the source samples one level-0 cell covers
+peaks.column(0, 0, 0, 256);         // that cell's [min, max]
+```
 
 The reduction is the shared core's, and so is its cache format: `peaks.toBytes()`
 writes the same bytes the GUI host maps and the Python client produces, and
@@ -225,9 +219,7 @@ const take = await Buffer.alloc(10 * 48000, 1, { server });
 const stream = await data.RecordingStream.open(server, [take]);
 
 stream.onReport(() => {
-    const row = stream.peaks(take).columns(0, { width: canvas.width });
-    const { min, max } = data.joinColumns(row);
-    draw(min, max, stream.written(take));   // draw only as far as it was written
+    report(stream.written(take));           // how far the take has got
 });
 
 new Synth("record_something", { buf: take.bufnum }, { server });
@@ -235,15 +227,19 @@ new Synth("record_something", { buf: take.bufnum }, { server });
 
 Each take's pyramid is allocated at the buffer's **full length** and empty, so
 the axis does not move while it fills; `written` is how far the reports have
-got, and past it the pyramid is the silence the buffer is — draw up to it and
-the two read apart, which is what the GUI host's `fills` prop does for a
-host-drawn view. `stop()` cancels the subscription and `free()` releases the
-pyramids.
+got, and past it the pyramid is the silence the buffer is — read up to it and
+the two stay apart, which is what the GUI host's `fills` prop does for the
+picture. `stop()` cancels the subscription and `free()` releases the pyramids.
+
+**To watch a take fill, name it**: a `waveform` widget with `fills` over the
+take's buffer follows the same reports from the host's side, drawn to the write
+frontier and no further. This class is for a script that wants the summary
+itself — and only one of the two may have it, which is the next paragraph.
 
 Two limits worth knowing, both of them the wire's rather than this class's. The
-summary is the resolution: zoomed inside one bucket the picture is that bucket,
-so a script drawing its own canvas reads the take back with `getSamples` for the
-span it wants to show in detail. (A **host-drawn** view does that for itself —
+summary is the resolution: inside one bucket there is one figure, the bucket's,
+so a script that needs the detail reads the take back with `getSamples` for the
+span it cares about. (A **host-drawn** view does that for itself —
 it asks the server for the span it is zoomed into, which is how a page resolves
 to the sample where a desktop host reads the samples it mapped.) And the server
 keeps **one buffer subscription per client**, replacing it on every call: on a
@@ -259,20 +255,26 @@ function — the one the host draws with:
 ```js
 data.correlation(left, right);                  // Pearson's r, or undefined
 data.lissajous(left, right);                    // interleaved [x, y] points
-data.spectrumDb(window, { fftSize: 1024 });     // one frame, dB per bin
 ```
 
-`spectrumDb` returns `fftSize / 2` bins; bin `b` sits at
-`b * sampleRate / fftSize` hertz, a full-scale sine reads about 0 dB at its own
-bin, and silence sits at the -120 dB reference floor. It is one frame, with no
-memory: the exponential averaging and the peak hold a spectrum display shows
-across frames are smoothing — a look, not a measurement — and belong to
-whatever draws.
+Both are measurements **of the signal**, which is why they are here: a number a
+script can report, compare or act on. What is *not* here is anything of the
+screen — a decibel curve, an oscilloscope's display window and trigger, a row of
+pixel columns. Those are drawing, the host draws, and it reaches the same
+`clausters-core` for them: `scope(bus, { view: "spectrum" })` gives you the
+spectrum a page would otherwise be computing, over the very same tap.
 
 ## One implementation of every figure
 
-Nothing here computes a number in TypeScript. Every figure — the trigger
-alignment, the decibel curve, the peak columns, the correlation — comes out of
-the same `clausters-core` function the GUI host calls. A canvas your script
-feeds and a widget the host draws from the same bus or buffer therefore
-show the same picture, which is why both may read these paths.
+Nothing here computes a number in TypeScript. Every figure — the correlation,
+the stereo projection, the peak summary — comes out of the same
+`clausters-core` function the GUI host calls, so a figure your script reports
+and the picture the host draws from the same bus or buffer are the same
+measurement rather than two that agree today.
+
+That is also the reason the drawing itself is not here. A second implementation
+of a picture is exactly what would drift, and it would drift where no compiler
+looks: **everything drawn is drawn by the host**. A script names what to look at
+and gets the host's own rendering of it; anyone who would rather stroke their
+own canvas is welcome to, and that is their program, not a surface this package
+provides, documents or keeps in step with the Python client.

@@ -8,24 +8,21 @@
 // is itself the request to record it, and the ring behind it is the server's
 // bookkeeping.
 //
-// Two things this module keeps that a raw subscription does not:
+// What this module keeps that a raw subscription does not is **the sample
+// axis**: every window arrives with its `endPosition`, the total samples ever
+// recorded at the window's end, so consecutive snapshots can be placed on the
+// bus's own timeline — they overlap or gap by exactly the position delta,
+// never by a guess about the period.
 //
-// - **The sample axis.** Every window arrives with its `endPosition`, the
-//   total samples ever recorded at the window's end, so consecutive snapshots
-//   can be placed on the bus's own timeline: they overlap or gap by exactly
-//   the position delta, never by a guess about the period.
-// - **The trace.** A free-running window makes a periodic signal crawl across
-//   the view; `scopeWindow` aligns it on a rising crossing with the core's own
-//   trigger — the one the GUI host draws with, so the two traces agree.
+// **What is not here: the trace.** Framing a display window and aligning it on
+// a trigger so a periodic signal stands still is what an oscilloscope *draws*,
+// and the drawing is the GUI host's — `scope(bus)`, or a `scope` widget in a
+// GuiDef, which asks the server for the same tap and stands the trace still.
+// What a script does with a window here is measure it.
 
 import type { Server } from "../defs/server/index.ts";
 import { OscFunc } from "../responders.ts";
 import type { ResponderMessage } from "../responders.ts";
-import {
-    oscil_align,
-    oscil_display_frames,
-    oscil_raw_frames,
-} from "../core/clausters_core_web.js";
 import { STREAM_PERIOD_MS } from "./buses.ts";
 
 /** One bus's newest window, on that bus's own sample axis. */
@@ -36,19 +33,15 @@ export interface TapWindow {
     endPosition: number;
 }
 
-/** A triggered oscilloscope trace: the display window and whether it locked. */
-export interface ScopeTrace {
-    samples: Float32Array;
-    /** `true` = the trigger fired; `false` = free-running on the newest data. */
-    locked: boolean;
-}
-
 /**
  * A live view of a set of audio buses.
  *
  * ```ts
- * const taps = await TapStream.open(server, [bus], { frames: 2048 });
- * taps.onData((bus, window) => draw(scopeWindow(window.samples)));
+ * const taps = await TapStream.open(server, [left], { frames: 2048 });
+ * taps.onData(() => {
+ *     const [l, r] = deinterleave(taps.interleaved(left, 2), 2);
+ *     report(correlation(l, r));
+ * });
  * // ... later
  * await taps.stop();   // and the server stops recording
  * ```
@@ -189,38 +182,4 @@ export function decodeSamples(blob: Uint8Array): Float32Array {
     const out = new Float32Array(Math.floor(blob.byteLength / 4));
     for (let i = 0; i < out.length; i++) out[i] = view.getFloat32(i * 4, true);
     return out;
-}
-
-/**
- * How many raw samples a `windowMs` trace needs — the display window plus the
- * trigger's search slack. What to ask `TapStream.open` for.
- */
-export function scopeFrames(windowMs: number, sampleRate = 48000): number {
-    return oscil_raw_frames(oscil_display_frames(windowMs, sampleRate));
-}
-
-/**
- * The triggered trace inside a raw window: the display window starting at
- * the latest rising crossing of `trigger` (so a periodic signal stands still),
- * falling back to the newest samples when there is no crossing — silence, DC,
- * or no rising edge — with `locked` saying which happened.
- *
- * The alignment is the core's, the same one the GUI host's `scope` widget
- * draws with, so a trace drawn here and one drawn by the host from the same
- * tap are the same trace.
- */
-export function scopeWindow(
-    raw: Float32Array,
-    {
-        windowMs = 20.0,
-        sampleRate = 48000,
-        trigger = 0.0,
-    }: { windowMs?: number; sampleRate?: number; trigger?: number } = {},
-): ScopeTrace {
-    const display = oscil_display_frames(windowMs, sampleRate);
-    const [start, locked] = oscil_align(raw, display, trigger);
-    return {
-        samples: raw.subarray(start, start + display),
-        locked: locked === 1,
-    };
 }

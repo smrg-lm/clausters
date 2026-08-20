@@ -11,7 +11,8 @@
 // the *overview* of the frames that appeared (min, max and mean square per
 // bucket — the peak pyramid's own three statistics), at about a hundredth of
 // the audio's bandwidth. This class is the receiving end: one `Peaks` per
-// buffer, growing as the reports land, drawn like any other pyramid.
+// buffer, growing as the reports land — the same cache the samples would have
+// built, in a page that never sees them.
 
 import type { Server } from "../defs/server/index.ts";
 import type { Buffer } from "../defs/buffer.ts";
@@ -42,16 +43,16 @@ function shapeOf(take: TakeLike): TakeShape {
  * ```ts
  * const take = await Buffer.alloc(10 * 48000, 1, { server });
  * const stream = await data.RecordingStream.open(server, [take]);
- * stream.onReport((bufnum) => draw(stream.peaks(bufnum), stream.written(bufnum)));
+ * stream.onReport((bufnum) => report(stream.written(bufnum)));
  * new Synth("record_something", { buf: take.bufnum }, { server });
  * ```
  *
  * Each take gets a pyramid **allocated at its full length** and empty: a take's
  * picture is the whole of the box it will fill, so the axis does not move while
  * it fills. Reports write the buckets that were measured and nothing else, so
- * what has not been recorded reads as the silence the buffer is — draw only up
+ * what has not been recorded reads as the silence the buffer is — read only up
  * to `written` to tell the two apart, which is what the GUI host's `fills` prop
- * does for a host-drawn view.
+ * does for the picture.
  *
  * **Only the overview arrives.** Zoomed in past the base bucket a page has its
  * own copy of the samples and the wire carried none, so the fine regime is
@@ -61,7 +62,8 @@ function shapeOf(take: TakeLike): TakeShape {
  * One subscription per client, and the server **replaces** it on every call —
  * so a page whose GUI host is also following a recording (a `waveform` with
  * `fills`) must not open one of these beside it: the two would cancel each
- * other. Opening this stream is the choice to draw the take yourself.
+ * other. Watching a take is either the host's or the script's, and if what you
+ * want is the picture it is the host's.
  */
 export class RecordingStream {
     readonly server: Server;
@@ -136,7 +138,7 @@ export class RecordingStream {
     /**
      * Calls `handler` with each take that grew, as its report lands; returns
      * the unsubscribe. The handler runs from the reply dispatch, so keep it to
-     * storing and drawing — never a round trip.
+     * storing and reading — never a round trip.
      */
     onReport(handler: (bufnum: number, stream: RecordingStream) => void): () => void {
         this.listeners.add(handler);

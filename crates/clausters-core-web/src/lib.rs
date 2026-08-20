@@ -11,9 +11,11 @@
 //! layer's core: the beat-ordered **queue**, the beat/second/sample
 //! arithmetic, **bundle assembly** with a timetag, the seeded value stream,
 //! the builtins and the pitch space, and the sample-clock model. W10 adds the
-//! **data paths' analysis** — the stereo-field measurements, one spectrum
-//! frame, the oscilloscope's trigger and the peak pyramid — so a page that
-//! reads buses, taps and buffers itself draws the numbers the GUI host draws.
+//! **data paths' analysis** — the stereo-field measurements and the peak
+//! pyramid — so a page that reads buses, taps and buffers measures them with
+//! the same functions the GUI host measures with. Only measurements: what a
+//! *drawing* needs of them (a pixel row, a display window, a decibel curve)
+//! stays in the host, which is the one thing that draws (W26).
 //! Always the same shape: the logic lives in `clausters-core`, natively tested; this
 //! shell only converts values at the JS boundary, and only on the wasm target.
 //!
@@ -28,13 +30,11 @@ use clausters_core::osc::{OscMessage, OscPacket, OscType, decode_packet, encode,
 use clausters_core::{
     builtins, bundle,
     clocksync::SampleClockModel,
-    measure, osc, oscil,
-    peaks::{self, MultiPyramid},
+    measure, osc,
+    peaks::MultiPyramid,
     registry::{self, NodeIdPartition, Registry},
     rng::Rng,
-    spectrum,
     tempoclock::{self, Scheduler},
-    window::Window,
 };
 
 #[cfg(target_arch = "wasm32")]
@@ -736,12 +736,14 @@ pub fn bundle_validate(request: &str) -> Result<(), JsError> {
 
 // ---- the data paths' analysis ----
 //
-// W10's doors: what a page computes from the data it reads off the server —
-// control buses, tap windows, buffer samples. Every one of them is the
-// function the GUI host itself draws from, so a script that draws its own
-// meter, oscilloscope, spectrum or waveform gets the host's numbers rather
-// than a second implementation of them. Nothing here keeps state except the
-// peak pyramid, which is a cache by definition.
+// W10's doors: what a page measures from the data it reads off the server —
+// control buses, tap windows, buffer samples. Every one of them is a
+// measurement of the *signal*, and it is the same function the GUI host
+// measures with, so a figure a script reports and a figure a widget draws are
+// one number rather than two implementations of it. Nothing of the *screen*
+// belongs here (W26): a display window, a trigger's framing, a decibel curve
+// and a row of pixel columns are drawing, and the host is what draws. Nothing
+// here keeps state except the peak pyramid, which is a cache by definition.
 
 /// JS face: the **peak and RMS** of one channel of an interleaved buffer, as
 /// `[peak, rms]` — what a render reports back about what it produced. The
@@ -781,69 +783,12 @@ pub fn lissajous(left: &[f32], right: &[f32]) -> Vec<f32> {
     out.into_iter().flatten().collect()
 }
 
-/// JS face: one spectrum frame — `samples` windowed, transformed and scaled to
-/// decibels, `fft_size / 2` bins. `wintype` is the shared window code (`-1`
-/// rectangular, `0` Hann — the display default —, `1` sine, `2` Welch, `3`
-/// Hamming, `4` Blackman). An empty array when `fft_size` is not a supported
-/// power of two. The per-frame half of a spectrum view; the smoothing and
-/// peak-hold across frames belong to whoever draws.
-#[cfg(target_arch = "wasm32")]
-#[wasm_bindgen]
-pub fn spectrum_db(samples: &[f32], fft_size: usize, wintype: i32) -> Vec<f32> {
-    let mut win = vec![0.0f32; fft_size];
-    Window::from_wintype(wintype).fill(&mut win);
-    let mut scratch = vec![0.0f32; fft_size];
-    let mut out = vec![0.0f32; fft_size / 2];
-    let gain = spectrum::coherent_gain(&win);
-    if !spectrum::magnitudes_db_into(samples, &win, gain, &mut scratch, &mut out) {
-        return Vec::new();
-    }
-    out
-}
-
-/// JS face: the display window in samples for `window_ms` at `sample_rate`.
-#[cfg(target_arch = "wasm32")]
-#[wasm_bindgen]
-pub fn oscil_display_frames(window_ms: f32, sample_rate: f64) -> usize {
-    oscil::display_frames(window_ms, sample_rate)
-}
-
-/// JS face: how many raw tap samples one display window needs — the window
-/// plus the trigger's search slack. What a `/bus_tapStream` subscription asks for.
-#[cfg(target_arch = "wasm32")]
-#[wasm_bindgen]
-pub fn oscil_raw_frames(display: usize) -> usize {
-    oscil::raw_frames(display)
-}
-
-/// JS face: the triggered window's start inside `raw`, as `[start, locked]`
-/// (`locked` 1 = the trigger fired, 0 = free-running on the newest window).
-#[cfg(target_arch = "wasm32")]
-#[wasm_bindgen]
-pub fn oscil_align(raw: &[f32], display: usize, level: f32) -> Vec<f64> {
-    let (start, locked) = oscil::align(raw, display, level);
-    vec![start as f64, if locked { 1.0 } else { 0.0 }]
-}
-
-/// **A pixel row joined**: each measured `[min, max]` extended to meet the
-/// column before it, so a page that strokes its own columns draws the same
-/// continuous curve the GUI host draws — [`clausters_core::peaks::join`] has
-/// the rule and why it is not optional.
-///
-/// `pairs` is the row as [`JsPyramid::columns`] answers it, flat and
-/// interleaved, and the result has the same length. It is a separate call and
-/// not a mode of `columns` because the measurement is what the two clients
-/// compare and the cache stores; this is what a *drawing* does with it.
-#[cfg(target_arch = "wasm32")]
-#[wasm_bindgen(js_name = joinColumns)]
-pub fn join_columns(pairs: &[f32]) -> Vec<f32> {
-    peaks::join_columns(pairs)
-}
-
 /// A built min/max peak pyramid, the JS face of
-/// [`clausters_core::peaks::MultiPyramid`] — what a navigable waveform reads
-/// so a view costs the width of the window rather than the length of the
-/// buffer. Built once from the samples, then queried per frame.
+/// [`clausters_core::peaks::MultiPyramid`] — the summary a waveform view is
+/// drawn from, so the drawing costs the width of the window rather than the
+/// length of the buffer. Built (or filled from `/buffer_stream` reports) here
+/// and handed to the GUI host, which draws it; the readers below answer about
+/// the cache, in the cache's own units.
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_name = Pyramid)]
 pub struct JsPyramid(MultiPyramid);
@@ -954,44 +899,18 @@ impl JsPyramid {
         self.0.channel(0).and_then(|p| p.level_bucket(level))
     }
 
-    /// The level whose buckets match `samples_per_px` — the finest one that
-    /// still aggregates about a bucket per pixel column.
-    #[wasm_bindgen(js_name = levelFor)]
-    pub fn level_for(&self, samples_per_px: f64) -> usize {
-        self.0.channel(0).map_or(0, |p| p.level_for(samples_per_px))
-    }
-
-    /// One column: the `[min, max]` of channel `ch` over `[s0, s1)` at
-    /// `level`. `undefined` for an unknown channel or an empty level.
+    /// One cell: the `[min, max]` of channel `ch` over `[s0, s1)` at `level`.
+    /// `undefined` for an unknown channel or an empty level.
+    ///
+    /// A read of the cache in the cache's own units — a level and a span of
+    /// samples — which is what a caller checking a summary against the audio
+    /// it summarizes asks for. Nothing here reads a *pixel* row: choosing a
+    /// level for a magnification and laying cells across a width is drawing,
+    /// and drawing is the GUI host's (`clausters_core::peaks` is the same code
+    /// it reads).
     pub fn column(&self, ch: usize, level: usize, s0: f64, s1: f64) -> Option<Vec<f32>> {
         let (lo, hi) = self.0.channel(ch)?.column(level, s0, s1)?;
         Some(vec![lo, hi])
-    }
-
-    /// A whole pixel row in one crossing: `width` columns spanning
-    /// `[s0, s1)` of channel `ch`, as interleaved `[min, max]` pairs, read at
-    /// the level `s1 - s0` and `width` imply. This is the door a view calls
-    /// every frame — never one column per call, and never a resolution finer
-    /// than the screen. An empty array for an unknown channel or a
-    /// degenerate span.
-    pub fn columns(&self, ch: usize, s0: f64, s1: f64, width: usize) -> Vec<f32> {
-        let Some(pyramid) = self.0.channel(ch) else {
-            return Vec::new();
-        };
-        let span = s1 - s0;
-        if width == 0 || !span.is_finite() || span <= 0.0 {
-            return Vec::new();
-        }
-        let step = span / width as f64;
-        let level = pyramid.level_for(step);
-        let mut out = Vec::with_capacity(width * 2);
-        for i in 0..width {
-            let (a, b) = (s0 + step * i as f64, s0 + step * (i + 1) as f64);
-            let (lo, hi) = pyramid.column(level, a, b).unwrap_or((0.0, 0.0));
-            out.push(lo);
-            out.push(hi);
-        }
-        out
     }
 }
 

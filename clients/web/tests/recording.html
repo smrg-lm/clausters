@@ -51,6 +51,18 @@
       };
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+      // The cache read cell by cell at `level`, over `[start, end)` in steps of
+      // `step` samples: what the summary says, in the summary's own units.
+      const cells = (peaks, level, start, end, step) => {
+        const out = [];
+        for (let s = start; s + step <= end; s += step) {
+          out.push(peaks.column(0, level, s, s + step) ?? [0, 0]);
+        }
+        return out;
+      };
+      const lowest = (rows) => Math.min(...rows.map(([lo]) => lo));
+      const highest = (rows) => Math.max(...rows.map(([, hi]) => hi));
+
       const RATE = 48000;
       const BUCKET = 256;
       const FRAMES = BUCKET * 100;      // 0.53 s, a whole number of buckets
@@ -82,8 +94,8 @@
         if (peaks.frames !== FRAMES) {
           throw new Error(`the pyramid spans ${peaks.frames} frames, not ${FRAMES}`);
         }
-        const silent = peaks.columns(0, { width: 32 });
-        if (Math.max(...silent.max) !== 0) throw new Error("an empty take is not silent");
+        const silent = cells(peaks, 0, 0, FRAMES, BUCKET);
+        if (highest(silent) !== 0) throw new Error("an empty take is not silent");
 
         new Synth("page_recording", { buf: take.bufnum }, { server });
 
@@ -96,13 +108,16 @@
         if (growing <= 0 || growing >= FRAMES) {
           throw new Error(`written is ${growing} of ${FRAMES} after 200 ms`);
         }
-        const drawn = peaks.columns(0, { width: 64, start: 0, end: growing });
-        const ahead = peaks.columns(0, { width: 64, start: growing, end: FRAMES });
-        const peak = Math.max(...drawn.max);
+        // Whole buckets on either side of the frontier: a cell straddling it
+        // holds both what was written and what was not, and belongs to neither.
+        const edge = Math.floor(growing / BUCKET) * BUCKET;
+        const told = cells(peaks, 0, 0, edge, BUCKET);
+        const ahead = cells(peaks, 0, edge + BUCKET, FRAMES, BUCKET);
+        const peak = highest(told);
         if (Math.abs(peak - AMP) > 0.02) {
           throw new Error(`the recorded part reads ${peak}, not ~${AMP}`);
         }
-        if (Math.max(...ahead.max.map(Math.abs)) !== 0) {
+        if (highest(ahead) !== 0 || lowest(ahead) !== 0) {
           throw new Error("what has not been recorded is not empty");
         }
         log(`while recording: ${stream.reports} reports, `
@@ -119,37 +134,40 @@
         await stream.stop();
 
         // Read back the head of the take — a whole number of buckets, in
-        // chunks the in-page carrier's ring takes — and build the picture the
+        // chunks the in-page carrier's ring takes — and build the summary the
         // samples give. A bulk read is a different path from this one: what is
         // compared is the *summary*, told against measured.
         const PREFIX = BUCKET * 32;
         const samples = await take.getSamples({ count: PREFIX, chunk: 4096 });
         const built = data.Peaks.build(samples, { channels: 1, baseBucket: BUCKET });
         let worst = 0;
-        for (const width of [17, 64, 100]) {
-          const told = peaks.columns(0, { width, start: 0, end: PREFIX });
-          const reading = built.columns(0, { width, start: 0, end: PREFIX });
-          for (let i = 0; i < width; i++) {
-            worst = Math.max(worst, Math.abs(told.min[i] - reading.min[i]),
-                             Math.abs(told.max[i] - reading.max[i]));
+        for (let level = 0; level < 3; level++) {
+          const step = peaks.levelBucket(level);
+          if (!step || step > PREFIX) break;
+          const toldCells = cells(peaks, level, 0, PREFIX, step);
+          const readCells = cells(built, level, 0, PREFIX, step);
+          for (let i = 0; i < toldCells.length; i++) {
+            worst = Math.max(worst, Math.abs(toldCells[i][0] - readCells[i][0]),
+                             Math.abs(toldCells[i][1] - readCells[i][1]));
           }
         }
         if (worst !== 0) {
-          throw new Error(`the told picture differs from the read one by ${worst}`);
+          throw new Error(`the told summary differs from the read one by ${worst}`);
         }
         // **What the wire did not carry: the samples.** A pyramid's floor is
-        // its base bucket, so zoomed inside one the picture is that bucket
-        // repeated — the resolution the overview has, and the one difference
-        // from a host that maps the samples and reads the cells themselves.
-        // It is the same floor on both sides, which is what this asserts.
-        const inside = peaks.columns(0, { width: 8, start: 0, end: BUCKET });
-        const insideRead = built.columns(0, { width: 8, start: 0, end: BUCKET });
-        if (new Set(inside.max).size !== 1) {
-          throw new Error("inside one bucket the summary resolved further than a bucket");
-        }
-        for (let i = 0; i < 8; i++) {
-          if (inside.max[i] !== insideRead.max[i] || inside.min[i] !== insideRead.min[i]) {
-            throw new Error("the told picture and the read one differ inside a bucket");
+        // its base bucket, so a span inside one reads that bucket whole — the
+        // resolution the overview has, and the one difference from a host that
+        // maps the samples and reads them. It is the same floor on both sides,
+        // which is what this asserts.
+        const whole = peaks.column(0, 0, 0, BUCKET);
+        const inside = cells(peaks, 0, 0, BUCKET, BUCKET / 8);
+        const insideRead = cells(built, 0, 0, BUCKET, BUCKET / 8);
+        for (let i = 0; i < inside.length; i++) {
+          if (inside[i][0] !== whole[0] || inside[i][1] !== whole[1]) {
+            throw new Error("inside one bucket the summary resolved further than a bucket");
+          }
+          if (inside[i][0] !== insideRead[i][0] || inside[i][1] !== insideRead[i][1]) {
+            throw new Error("the told summary and the read one differ inside a bucket");
           }
         }
         if (Math.max(...samples.map(Math.abs)) === 0) {
@@ -159,9 +177,9 @@
         stream.free();
         built.free();
         take.free();
-        verdict(`PASS: ${stream.reports} reports drew ${FRAMES} frames while they `
-          + `recorded (peak ${peak.toFixed(3)}), and the told picture matched the `
-          + "samples read back column for column");
+        verdict(`PASS: ${stream.reports} reports summarized ${FRAMES} frames while `
+          + `they recorded (peak ${peak.toFixed(3)}), and the told summary matched `
+          + "the samples read back cell for cell");
       }
 
       document.getElementById("boot").onclick = () =>

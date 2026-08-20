@@ -6150,6 +6150,14 @@ again because a column held nothing), and the web client's `data.joinColumns`
 calls it over the row a page just measured. The C ABI has no row of its own —
 nothing on that side strokes pixels — which `docs/bindings.md` records.
 
+**The web half of that is gone, and the rule is better for it** *(W26)*. A page
+strokes no columns any more: `Peaks.columns` and `data.joinColumns` were a
+surface no other client had — a second drawing, reachable from one language —
+and they were removed rather than kept in step. What is left is the sentence
+this record was always making: `peaks::join` is the core's, the host is the one
+thing that calls it, and a client names what to look at. The measurement side
+is untouched, and so is everything above about *why* the join exists.
+
 ## A zoom past the summary asks for a finer summary, and only then for the samples
 
 A view that cannot map the samples used to have two states and one crossing: the

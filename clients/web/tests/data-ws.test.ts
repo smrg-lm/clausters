@@ -25,7 +25,7 @@ import { Synth } from "../src/defs/node.ts";
 import { Server } from "../src/defs/server/index.ts";
 import { SynthDef } from "../src/defs/synthdef.ts";
 import { control, out, outCtl, sine } from "../src/defs/ugens/index.ts";
-import { BusStream, Peaks, TapStream, scopeFrames, scopeWindow } from "../src/data/index.ts";
+import { BusStream, Peaks, TapStream } from "../src/data/index.ts";
 
 const here = new URL(".", import.meta.url);
 const serverBin = new URL("../../../target/debug/clausters", here).pathname;
@@ -124,9 +124,11 @@ test("a tap carries the samples a synth is writing", { skip: !hasServer }, async
         await server.sync();
         await sleep(200); // let the ring fill a window
 
-        const frames = scopeFrames(10.0, info.nominalSampleRate);
         // The subscription is the watch: naming the bus is all it takes.
-        const stream = await TapStream.open(server, [bus.index], { frames, periodMs: 20 });
+        const stream = await TapStream.open(server, [bus.index], {
+            frames: 1024,
+            periodMs: 20,
+        });
         await sleep(300);
         const window = stream.window(bus.index);
         assert.ok(window, "no /bus_tapStream.reply arrived");
@@ -135,13 +137,6 @@ test("a tap carries the samples a synth is writing", { skip: !hasServer }, async
 
         const peak = Math.max(...window.samples.map(Math.abs));
         assert.ok(peak > 0.3 && peak <= 0.6, `the tone's amplitude: ${peak}`);
-
-        // The trace locks, which is what makes a drawn scope stand still.
-        const trace = scopeWindow(window.samples, {
-            windowMs: 10.0,
-            sampleRate: info.nominalSampleRate,
-        });
-        assert.equal(trace.locked, true, "a steady tone locks the trigger");
 
         // A second snapshot advances the tap's own sample axis.
         const first = window.endPosition;
@@ -177,11 +172,17 @@ test("a generated buffer reads back in chunks, and reduces", { skip: !hasServer 
         const tail = await buffer.getSamples({ start: frames - 10, count: 100 });
         assert.equal(tail.length, 10);
 
-        // And what a waveform view would draw from it spans the tone.
+        // And the summary a waveform view is drawn from spans the tone.
         const peaks = Peaks.build(read, { baseBucket: 256 });
         assert.equal(peaks.frames, frames);
-        const { min, max } = peaks.columns(0, { width: 10 });
-        assert.ok(Math.max(...max) > 0.9 && Math.min(...min) < -0.9);
+        let lo = 0;
+        let hi = 0;
+        for (let start = 0; start + 256 <= frames; start += 256) {
+            const cell = peaks.column(0, 0, start, start + 256)!;
+            lo = Math.min(lo, cell[0]);
+            hi = Math.max(hi, cell[1]);
+        }
+        assert.ok(hi > 0.9 && lo < -0.9);
         peaks.free();
 
         buffer.free();

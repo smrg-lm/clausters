@@ -669,8 +669,9 @@ export class Buffer {
      *
      * `chunk` (samples per round trip) defaults to the transport's own bound —
      * the frame ceiling the server advertises, which is megabytes per reply on
-     * a stream carrier. This is the path a waveform view is built from; feed
-     * the result to `Peaks.build` and draw the columns.
+     * a stream carrier. This is the bulk path behind a waveform view: feed the
+     * result to `Peaks.build` for the summary the picture is drawn from (a
+     * `waveform` widget over this buffer has the host walk the same path).
      *
      * `setSamples` is the way back, so an editor view can read, edit and write.
      */

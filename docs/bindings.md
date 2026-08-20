@@ -47,7 +47,7 @@ thought about the other side", write `gap` — that is what it is for.
 | `clausters_core_unary` | `unary` | |
 | `clausters_core_binary` | `binary` | |
 | `clausters_core_whitenoise` | — | **gap** — `JsRng` steps values one at a time; there is no buffer fill, so a browser cannot reproduce a server noise stream in one call |
-| `clausters_core_window` | — | **gap** — the FFT smoothing windows. The web spectrogram takes magnitudes from `spectrumDb`, which applies its own |
+| `clausters_core_window` | — | **gap** — the FFT smoothing windows. Nothing in the browser transforms anything: a spectrum is a view and the GUI host draws it, reaching `spectrum` and `window` as a Rust caller of the core |
 | `clausters_core_stats` | `channel_stats` | `idiom` — the peak and RMS of one channel of an interleaved buffer; C writes the pair through an out pointer, wasm returns it as a two-element array |
 | `clausters_core_correlation` | `correlation` | |
 | `clausters_core_lissajous` | `lissajous` | |
@@ -55,10 +55,6 @@ thought about the other side", write `gap` — that is what it is for.
 | `clausters_core_mel_to_hz` | — | **gap** — as above |
 | `clausters_core_hz_to_bark` | — | **gap** — as above |
 | `clausters_core_bark_to_hz` | — | **gap** — as above |
-| — | `spectrum_db` | **gap** — the magnitude-to-decibel column the web spectrogram draws |
-| — | `oscil_raw_frames` | **gap** — oscilloscope framing |
-| — | `oscil_display_frames` | **gap** — as above |
-| — | `oscil_align` | **gap** — as above |
 
 ## Time and the beat grid
 
@@ -155,10 +151,7 @@ thought about the other side", write `gap` — that is what it is for.
 | — | `JsPyramid.base_bucket` | `idiom` — as above |
 | — | `JsPyramid.num_levels` | `idiom` — as above |
 | — | `JsPyramid.level_bucket` | `idiom` — as above |
-| — | `JsPyramid.level_for` | `idiom` — as above |
-| — | `JsPyramid.column` | `idiom` — as above |
-| — | `JsPyramid.columns` | `idiom` — as above |
-| — | `join_columns` (`joinColumns` in JS) | `n/a` — the rule that a column is inked out to meet the column before it, applied to a whole measured row. Nothing on the C side draws: the GUI host reaches `peaks::join` as a Rust caller of the core, and the Python client hands its pyramids to that host rather than stroking a pixel row itself |
+| — | `JsPyramid.column` | `idiom` — as above: one cell of the cache, at a level and over a span of samples. Its neighbours on the drawing side (a row of pixel columns, the level a magnification reads at, the join that inks one column out to the next) went with W26 — a client names what to look at and the host draws it |
 
 ## Bundles and patches
 

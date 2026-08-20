@@ -656,7 +656,16 @@ works today); this is the client getting the same numbers.
 - Bulk buffers by `fetch`/`/buffer_getRange` (G15), with the **peak pyramid built in wasm** from the fetched samples, so a waveform draws at screen resolution without a second implementation of the reduction; plus the fetch + `decodeAudioData` → `bLoad` sample path B3 left in `bundle.ts`, folded into the client's buffer API.
 - The core's `correlation`/`lissajous` analysis exports surfaced to TS.
 
-**Acceptance:** a TS app reads a control bus and a buffer over either carrier and draws them **itself** (a canvas the script feeds, not a host-fed widget), numerically matching what the GUI host draws from the same source.
+**Acceptance:** a TS app reads a control bus and a buffer over either carrier and the figures it reads are, number for number, the ones the GUI host draws from the same source.
+
+> **Amended in place by W26** (2026-08-20). This acceptance read "and draws them
+> **itself** (a canvas the script feeds, not a host-fed widget)", and that
+> clause was the divergence: it was written when a hand-drawn canvas was the
+> only way to prove the numbers arrived — `scope`/`plot` and the host's own
+> widgets landed six days later — and it stayed as a rule long after it had
+> stopped being one. Everything drawn is drawn by the host. What the milestone
+> actually established, and what is still true, is the sentence above: one
+> implementation of every figure, reached by whoever needs it.
 
 **What shipped.** The three paths, and the move that makes "numerically
 matching" true by construction rather than by care.
@@ -666,22 +675,24 @@ The **script reads what the host reads**. `Server` grew the commands
 `streamTaps`, `getSamples` chunked by the frame ceiling the transport
 advertises) and `src/data/` the sources over them: `BusStream` decoding the
 periodic `/bus_set` snapshots, `TapStream` placing each `/bus_tapStream.reply` window on its
-tap's own sample axis by `endPosition`, `Peaks` over the wasm pyramid whose
-`columns` reads a whole pixel row per crossing, and the measurements a view is
-drawn with. The subscriptions rode `Server.onReply`, and **W8** folded them
-onto `OscFunc` without changing their surface, as this slot said it would.
+tap's own sample axis by `endPosition`, `Peaks` over the wasm pyramid, and the
+measurements a view is drawn with. (The pyramid's pixel-row read went with
+**W26**; the cache and its own readers stayed.) The subscriptions rode
+`Server.onReply`, and **W8** folded them onto `OscFunc` without changing their
+surface, as this slot said it would.
 
 Three things are worth carrying forward:
 
 - **The signal logic moved into the core.** The oscilloscope's trigger
   alignment and the spectrum's decibel curve lived in the GUI host crate,
   correctly, while the host was the only thing computing them; a page drawing
-  its own trace makes a second consumer, so they became
+  its own trace made a second consumer, so they became
   `clausters_core::{oscil, spectrum}` and the host now consumes them from
-  there. The alternative — a trigger re-implemented in TypeScript — fails
-  silently, as two subtly different pictures of one signal, and exporting the
-  host's internals would make a script that draws a canvas download 5.3 MB of
-  GPU host to reach 40 lines of arithmetic. Rationale in `docs/decisions.md`.
+  there. That move was right and stands — the code is in the core, natively
+  tested, and the host reads it. What did not stand is the second consumer:
+  **W26 removed the JS door onto `oscil` and `spectrum`** (and onto a pixel
+  row), because a figure of the *screen* computed in a client is a drawing the
+  other client does not have. Rationale in `docs/decisions.md`.
 - **The peak cache is byte-identical across clients.** `Peaks.toBytes()` writes
   what the Python client writes and what the GUI host maps — the mono layout
   for one channel, the multichannel one above it — which is what the parity
@@ -712,11 +723,11 @@ chunking over a fake carrier, plus four against a real `clausters --ws` server
 — a streamed bus, an LFO through it, a tap carrying a synth's samples with its
 trace locked, and a buffer read back in chunks) and six headless-Chrome
 acceptances, the new one being `tests/data.html`: a def feeds a bus and a tap,
-the script subscribes to both, reads a generated buffer, and draws a meter, a
-scope and a waveform on its own canvas — with the columns asserted to be the
-min/max of the very samples read, the trigger locked, the spectrum's peak on
-the tone, and the canvas carrying ink. Examples: `examples/scope.html`, the
-three paths in one page drawn by the script; and `examples/editor.html`, the
+the script subscribes to both and reads a generated buffer, and every figure is
+checked as a number (**since W26** — it drew them on a canvas until then).
+Examples: `examples/scope.html`, the three paths in one page, each under the
+host view that reads it (**rebuilt by W26**; it drew its own canvas before);
+and `examples/editor.html`, the
 port of the Python client's `gui_editor.py` — a decoded file in a server
 buffer, drawn by the **host** as a linked waveform and spectrogram, with a
 transport whose playhead is anchored to the engine clock and whose pause is
@@ -1620,7 +1631,7 @@ share stayed, being a property of the server's id model rather than of this
 carrier — `tests/share.test.ts` and `clients/python/tests/test_id_share.py`
 still pin it. See `clients/jupyter/ISOLATION.md` on the `jupyter` branch.
 
-### W26 - The client stops drawing: the screen-shaped exports go
+### ✅ W26 - The client stops drawing: the screen-shaped exports go *(done 2026-08-20)*
 
 **The rule this restores**, and it is the project's own: *everything that is
 drawn is drawn by the host.* A client names what to look at and the host draws
@@ -1644,7 +1655,7 @@ and each of them is a second implementation of something the host already does.
 
 | Export | What it is | Python |
 |---|---|---|
-| `Peaks.columns`, `Peaks.column`, `Peaks.levelFor`, `Peaks.levelBucket`, `Columns` | a row of pixel columns and the level to read it at | absent |
+| `Peaks.columns`, `Peaks.levelFor`, `Columns`, and `joinColumns` below | a row of pixel columns and the level to read it at | absent |
 | `joinColumns` | a **drawing rule**: what to ink, not what was measured | absent |
 | `scopeFrames`, `scopeWindow`, `ScopeTrace` | the oscilloscope's display framing and trigger alignment | absent |
 | `spectrumDb` | the decibel curve a spectrum is drawn as | absent |
@@ -1666,24 +1677,46 @@ host's arithmetic and the host goes on consuming them — what goes is the
 *client door* onto them (`clausters-core-web`'s `columns`, `join_columns`,
 `spectrum_db`, `oscil_*`), which exists only for the JS client.
 
-- ⬜ Remove the four groups from `src/data/` and their re-exports, and the
+- ✅ Remove the four groups from `src/data/` and their re-exports, and the
   doors under them in `crates/clausters-core-web`.
-- ⬜ `docs/bindings.md`: the four `gap` rows go with the symbols.
-- ⬜ **W10's record is amended in place** — its acceptance sentence and the
+- ✅ `docs/bindings.md`: the four `gap` rows go with the symbols.
+- ✅ **W10's record is amended in place** — its acceptance sentence and the
   bullet that says a page draws its own trace, since a plan that still states
   the old rule is how this comes back.
-- ⬜ `examples/scope.html` is rebuilt on `gui.scope()`, which is what its name
-  has been promising: it draws its own oscilloscope today while `scope()` and
-  the `scope`/`phasescope` widgets sit unused beside it, and its own text
-  claims "this canvas and a host widget on the same bus show the same picture"
-  — a claim the page never demonstrates, and one that is currently *false* for
-  the waveform (the wasm door's `columns` widens across boundaries where the
-  host tiles).
-- ⬜ `tests/data.html` — W10's acceptance — asserts **figures** rather than
+- ✅ `examples/scope.html` is rebuilt on the host's own views, which is what its
+  name has been promising: it drew its own oscilloscope while `scope()` and the
+  `scope`/`phasescope` widgets sat unused beside it, and its own text claimed
+  "this canvas and a host widget on the same bus show the same picture" — a
+  claim the page never demonstrated, and one that was *false* for the waveform
+  (the wasm door's `columns` widened across boundaries where the host tiles).
+- ✅ `tests/data.html` — W10's acceptance — asserts **figures** rather than
   pixels: the same buses, taps and bulk reads, checked as numbers, with the
   drawing left to the host page beside it.
-- ⬜ `tests/recording.html` keeps its `columns` reads only where they are
+- ✅ `tests/recording.html` keeps its cache reads only where they are
   assertions about measurements; anything drawing goes.
+
+**What shipped, and the one place this list contradicted itself.** The table
+above named `Peaks.column` and `Peaks.levelBucket` for removal while the
+`recording.html` bullet asked that page to keep *assertions about
+measurements* — and with no read at all on the cache there is no way to state
+one, which would have cost the `/buffer_stream` acceptance its central claim
+(the told summary is the summary the samples build). So the line was drawn
+where the argument actually is: **what takes a unit of the screen goes**
+(`columns`, a pixel width; `levelFor`, samples per pixel; `joinColumns`, what
+to ink), and **what reads the cache in the cache's own units stays**
+(`column(channel, level, start, end)`, `levelBucket(level)`, beside `frames`,
+`channels`, `baseBucket`, `numLevels`). `docs/bindings.md` already declared
+that group as `idiom` for a written reason — through the C ABI a pyramid is a
+blob whoever mapped it reads, while wasm keeps it as an object that answers
+about itself — and that reason survives the milestone intact. The tests and
+pages that measured in pixels now measure in buckets, which is what they were
+asserting all along.
+
+`examples/scope.html` is now one host window over the three paths — a `meter`
+on the control bus, a `scope` and a `spectrum` on the audio bus, a `waveform`
+on the buffer — with a **bound** knob (the host writes `/node_set` itself) and
+a scripted toggle beside it, so both directions are still shown. The page has
+no canvas of its own and no arithmetic over samples.
 
 **Not touched**: the parity vectors. `data-vectors.json` covers `peaks`,
 `peaksStream` and `stereoField`, all of which stay — so nothing in this
@@ -1858,3 +1891,11 @@ finished work, where a pending item reads as done.
   wave's edge is inked once the columns are joined" in `data.test.ts`.
   `docs/bindings.md` carries the wasm row; the C ABI has none, since nothing on
   that side strokes pixels.
+
+  **And then the web half went** *(W26, 2026-08-20)*. The fix above was right
+  about *where* the rule lives and wrong about who calls it: a page strokes no
+  columns at all any more, so `data.joinColumns` and the pixel row it joined
+  (`Peaks.columns`) were removed rather than kept in step with a host that has
+  the only renderer. The core's `peaks::join`/`join_columns` and the assertions
+  under them are untouched — this entry's record of the defect stands, and the
+  square wave is drawn correctly by the one thing that draws it.

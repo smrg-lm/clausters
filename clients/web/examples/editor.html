@@ -49,9 +49,10 @@ follows it: <code>playhead_loop_start</code>/<code>playhead_loop_len</code> make
 the host's own sweep wrap inside the region, so a repeating pass still costs one
 message and not one per frame.
 
-Nothing is drawn by this page: the canvas below belongs to the host. (For the
-other direction — the same data read by the script and drawn by hand — see
-<code>scope.html</code>.)
+Nothing is drawn by this page: the canvas below belongs to the host, as it does
+in every view this client opens. (For the live paths under the same rule — a
+bus and a tap under a <code>meter</code>, a <code>scope</code> and a
+<code>spectrum</code> — see <code>scope.html</code>.)
 
 Everything runs on the <b>in-page engine</b>: no server process, no socket.</div>
 

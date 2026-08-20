@@ -3,70 +3,87 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>clausters: reading the server, drawing it yourself</title>
+    <title>clausters: the three data paths, seen</title>
     <link rel="icon" href="data:," />
     <style>
       html, body { margin: 0; min-height: 100%; background: #0d0d12;
                    color: #dddddd; font-family: system-ui, sans-serif; }
       main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
-             align-items: flex-start; max-width: 46rem; }
-      #note { font-size: 13px; line-height: 1.5; }
+             align-items: flex-start; max-width: 76rem; }
+      #note { font-size: 13px; line-height: 1.5; max-width: 52rem; }
       button { font: inherit; padding: 4px 10px; }
-      canvas { background: #12121a; border: 1px solid #2a2a36;
-               align-self: stretch; width: 100%; }
       pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
-            white-space: pre-wrap; align-self: stretch; }
+            max-width: 52rem; white-space: pre-wrap; align-self: stretch; }
       .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-      label { font-size: 13px; }
+      /* The canvas is an element: the document sizes it and the host draws
+         into whatever it gets. */
+      #stage { align-self: stretch; height: min(76vh, 620px); }
+      #stage canvas { display: block; width: 100%; height: 100%; }
     </style>
   </head>
   <body>
     <main>
-      <div id="note">The three <b>data paths</b>, read by this script and drawn
-on its own canvas — no widget, no GUI host.
+      <div id="note">The three <b>data paths</b> of a running server, each with
+the view that reads it: a <b>control bus</b> (an LFO) under a
+<code>meter</code>, an <b>audio bus</b> (a tone) under a <code>scope</code> and
+a <code>spectrum</code>, and a <b>buffer</b> under a <code>waveform</code>.
 
-A synth writes a control bus (an LFO) and an audio bus (a tone); the audio bus
-is recorded by the server on request. The page then subscribes to both:
-<code>BusStream</code> brings the bus as periodic snapshots (the
-<b>meter</b>), <code>TapStream</code> brings the audio bus as windows of samples (the
-<b>oscilloscope</b> and the <b>spectrum</b>), and a generated buffer is read in
-bulk with <code>getSamples</code> and reduced by the wasm <b>peak pyramid</b>
-into one min/max column per pixel (the <b>waveform</b>).
+<b>This script names what to look at and draws none of it.</b> A GuiDef says
+<code>gui.scope(bus)</code>, <code>gui.spectrum(bus)</code>,
+<code>gui.meter(bus)</code>, <code>gui.waveform({ buffer })</code> — a bus
+number and a buffer number — and the <b>GUI host</b> subscribes, measures and
+paints: the trigger that makes the trace stand still, the decibel curve, the
+peak columns and the join that inks an edge are all its, out of the same
+<code>clausters-core</code> the server computes with. There is no canvas in
+this page and no arithmetic over samples; the whole of the client's part is
+the tree below.
 
-Nothing here computes a number in JavaScript: the trigger that makes the trace
-stand still, the decibel curve, the peak columns and the correlation all come
-out of the same shared core the GUI host draws with — so this canvas and a host
-widget on the same bus show the same picture.
+The tone's <b>freq</b> knob is <b>bound</b>: its value goes from the host
+straight to the engine as a <code>/node_set</code>, never passing through this
+script. <b>freeze</b> is the other path — it comes back as a
+<code>/gui_event</code> and this code sets the scope's <code>hold</code>, so
+both directions are visible at once.
+
+<b>One reader per page.</b> Over the in-page carrier the script and the host
+reach the engine through one shared-memory ring, which the server sees as a
+single client — so a subscription the script opens and one the host opens
+displace each other. Here the host is the reader, which is the ordinary case:
+what a page wants of a live bus is almost always to see it.
 
 Everything runs on the <b>in-page engine</b>: no server process, no socket.
-Swapping to a <code>--ws</code> server is the one line marked below.</div>
+Swapping to a <code>--ws</code> server (or to a native
+<code>clausters-gui --ws</code> host) is one line each, marked below.</div>
 
       <div class="row">
         <button id="start">start</button>
-        <button id="freeze" disabled>freeze the trace</button>
-        <label>tone
-          <input id="freq" type="range" min="80" max="1200" value="400"
-                 step="1" disabled />
-        </label>
       </div>
 
-      <canvas id="views" width="880" height="420"></canvas>
+      <div id="stage"></div>
       <pre id="log"></pre>
     </main>
 
+    <!--
+      What this page shows: the data paths as the client is meant to use them —
+      named, not read. It is the counterpart of tests/data.html, which reads the
+      same three paths from the script and checks them as numbers.
+
+      Needs: ./build.sh from clients/web (dist/ is git-ignored), then any static
+      server over this directory — `python3 -m http.server` and open
+      examples/scope.html. A WebGPU-capable browser; the host falls back to
+      WebGL2 where it must.
+    -->
     <script type="module">
       import {
         loadOsc, loadCore, pageConnection, server as engine, Server,
-        Bus, Buffer, Synth, SynthDef, data,
+        Bus, Buffer, Synth, SynthDef, GuiHost, guiHost, gui,
       } from "../dist/index.js";
       import { control, out, outCtl, sine } from "../dist/defs/index.js";
 
       const el = (id) => document.getElementById(id);
       const log = (line) => { el("log").textContent += line + "\n"; };
 
-      const WINDOW_MS = 20.0;   // what the oscilloscope shows
-      const FFT_SIZE = 1024;
       const BUFFER_FRAMES = 30000;
+      const RATE = 48000.0;
 
       // ---- the defs: something to look at ----
       // Ordinary defs. Neither knows a view is watching — what makes them
@@ -80,75 +97,27 @@ Swapping to a <code>--ws</code> server is the one line marked below.</div>
         new SynthDef("scope_lfo",
           outCtl(control("bus", 0.0), sine(0.7).mul(0.5).add(0.5)));
 
-      // ---- the drawing: three views, one canvas ----
-      // Plain canvas 2D. The point of the milestone is that the *figures* are
-      // the server's; what is done with them is the page's business.
-      const COLORS = { meter: "#44aadd", scope: "#88dd66",
-                       spectrum: "#dd7755", wave: "#ddaa44", axis: "#2a2a36" };
-
-      function draw(ctx, view) {
-        const { width } = ctx.canvas;
-        ctx.clearRect(0, 0, width, ctx.canvas.height);
-        ctx.lineWidth = 1;
-
-        // A meter: the control bus as a bar, 0..1.
-        ctx.fillStyle = COLORS.meter;
-        ctx.fillRect(8, 8, Math.max(0, view.level) * (width - 16), 18);
-
-        // An oscilloscope: the triggered trace. `locked` is the read-out a
-        // scope shows in its corner — whether the trigger found an edge.
-        band(ctx, 40, 120);
-        ctx.strokeStyle = COLORS.scope;
-        ctx.beginPath();
-        for (let x = 0; x < width; x++) {
-          const s = view.trace[Math.floor((x / width) * view.trace.length)] ?? 0;
-          const y = 100 - s * 55;
-          x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-        }
-        ctx.stroke();
-        label(ctx, view.locked ? "lock" : "free", width - 40, 54);
-
-        // A spectrum: one point per pixel column over a log frequency axis,
-        // the dB window mapped to the band.
-        band(ctx, 170, 120);
-        ctx.strokeStyle = COLORS.spectrum;
-        ctx.beginPath();
-        const bins = view.spectrum.length;
-        for (let x = 0; x < width; x++) {
-          // Log axis: bin 1 at the left edge, Nyquist at the right.
-          const b = Math.round(Math.exp((x / width) * Math.log(bins - 1)));
-          const db = view.spectrum[Math.min(b, bins - 1)] ?? -120;
-          const y = 290 - ((db + 90) / 90) * 110;
-          x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, Math.max(175, y));
-        }
-        ctx.stroke();
-
-        // A waveform: the buffer's peak columns, one per pixel, joined --
-        // data.joinColumns extends each column to meet the one before it. The
-        // columns partition the samples and the signal does not, so a jump
-        // landing on a boundary (the edge of a square wave) is drawn by
-        // neither and the trace comes apart at that pixel. It is the same
-        // rule the GUI host's waveform widget draws with, out of the core.
-        band(ctx, 300, 110);
-        ctx.strokeStyle = COLORS.wave;
-        ctx.beginPath();
-        const row = data.joinColumns(view.columns);
-        for (let x = 0; x < row.min.length; x++) {
-          ctx.moveTo(x, 355 - row.max[x] * 50);
-          ctx.lineTo(x, 355 - row.min[x] * 50);
-        }
-        ctx.stroke();
-      }
-
-      const band = (ctx, y, h) => {
-        ctx.strokeStyle = COLORS.axis;
-        ctx.strokeRect(0.5, y + 0.5, ctx.canvas.width - 1, h);
-      };
-      const label = (ctx, text, x, y) => {
-        ctx.fillStyle = "#8a8a99";
-        ctx.font = "12px system-ui, sans-serif";
-        ctx.fillText(text, x, y);
-      };
+      // ---- the window: four views over three paths ----
+      // Each widget names its source and nothing else. `link` is not used
+      // here: the views watch different things, so they navigate apart.
+      const scene = (ctlBus, audioBus, buffer) => gui.window(
+        // No w/h: the layout takes the canvas the document supplies.
+        { title: "the data paths", layout: "col", margin: 8.0, gap: 8.0 },
+        gui.panel(
+          { layout: "row", h: 40, gap: 8.0 },
+          gui.knob({ name: "freq", label: "freq", min: 80.0, max: 1200.0,
+                     value: 400.0, w: 120 }),
+          gui.toggle({ name: "hold", label: "freeze the trace", w: 160 }),
+          gui.meter(ctlBus, { rate: "control", min: 0.0, max: 1.0,
+                              label: `control bus ${ctlBus}` }),
+        ),
+        gui.scope(audioBus, { name: "trace", windowMs: 20.0,
+                              label: `audio bus ${audioBus}`, h: 200 }),
+        gui.spectrum(audioBus, { name: "spectrum", fftSize: 1024,
+                                 freqScale: "log", dbFloor: -100.0, h: 200 }),
+        gui.waveform({ name: "wave", buffer, sampleRate: RATE,
+                       ruler: "time", rulerY: "db", h: 180 }),
+      );
 
       async function run() {
         await loadOsc();
@@ -178,74 +147,42 @@ Swapping to a <code>--ws</code> server is the one line marked below.</div>
         const voice = new Synth("scope_tone", { bus: audioBus.index }, { server });
         new Synth("scope_lfo", { bus: ctlBus.index }, { server });
 
-        await server.sync();
-
-        // A buffer to draw: filled by the server, read back in bulk, reduced
-        // once. The pyramid outlives the samples — after `build` the raw
-        // array is not needed again.
+        // A buffer to look at. The samples are the server's and stay there:
+        // the host pulls them over its own client leg, reduces them once and
+        // draws the summary.
         const buffer = await Buffer.alloc(BUFFER_FRAMES, 1, { server });
         await buffer.gen("sine1", [["i", 7], 1.0, 0.6, 0.3]);
-        const samples = await buffer.getSamples();
-        const peaks = data.Peaks.build(samples, { baseBucket: 256 });
-        log(`buffer ${buffer.bufnum}: ${samples.length} samples, `
-          + `${peaks.numLevels} pyramid levels`);
+        await server.sync();
 
-        // ---- the two subscriptions ----
-        const buses = await data.BusStream.open(server, [ctlBus], { periodMs: 33 });
-        const frames = data.scopeFrames(WINDOW_MS, info.nominalSampleRate);
-        // Opening the stream is what asks the server to record the bus; no
-        // ring index anywhere.
-        const taps = await data.TapStream.open(server, [audioBus.index], {
-          frames, periodMs: 33,
+        // ---- the host ----
+        // `GuiHost.page()` drives the wasm host on this page's canvas;
+        // `GuiHost.connect("ws://127.0.0.1:57220")` would drive a native one,
+        // and nothing below this line would change.
+        const host = await GuiHost.page();
+        const page = await guiHost();
+        el("stage").append(page.canvas);
+        const win = host.open(scene(ctlBus.index, audioBus.index, buffer.bufnum));
+        // The canvas follows its element, so the layout decides how wide the
+        // views are — full width here, and just as full on a phone.
+        page.fit(win.id, el("stage"));
+
+        // The bound control: the knob's value never passes through here.
+        win.widget("freq").bind("/node_set", voice.id, "freq");
+        // The scripted one: the event arrives and this code decides.
+        win.widget("hold").onEvent((down) => {
+          win.widget("trace").set({ hold: down ? 1 : 0 });
+          log(down ? "trace held" : "trace running");
         });
-        log(`streaming control bus ${ctlBus.index} and audio bus `
-          + `${audioBus.index} (${frames}-frame windows at ~30 fps)`);
 
-        // ---- the frame ----
-        // The snapshots arrive as calls; the drawing is paced by the browser's
-        // own frame loop, which is the one that knows when a repaint is due.
-        const ctx = el("views").getContext("2d");
-        const canvas = el("views");
-        let frozen = false;
-        let view = {
-          level: 0, locked: false,
-          trace: new Float32Array(1),
-          spectrum: new Float32Array(FFT_SIZE / 2).fill(-120),
-          columns: peaks.columns(0, { width: canvas.width }),
-        };
-
-        const frame = () => {
-          if (!frozen) {
-            const window = taps.window(audioBus.index);
-            if (window) {
-              const trace = data.scopeWindow(window.samples, {
-                windowMs: WINDOW_MS, sampleRate: info.nominalSampleRate,
-              });
-              view.trace = trace.samples;
-              view.locked = trace.locked;
-              view.spectrum = data.spectrumDb(
-                window.samples.subarray(0, FFT_SIZE), { fftSize: FFT_SIZE });
-            }
-            view.level = buses.value(ctlBus);
-          }
-          draw(ctx, view);
-          requestAnimationFrame(frame);
-        };
-        requestAnimationFrame(frame);
-
-        el("freeze").disabled = false;
-        el("freeze").onclick = () => {
-          frozen = !frozen;
-          el("freeze").textContent = frozen ? "resume the trace" : "freeze the trace";
-        };
-        el("freq").disabled = false;
-        el("freq").oninput = (e) =>
-          voice.set({ freq: Number(e.target.value) });
+        log(`control bus ${ctlBus.index} under a meter, audio bus `
+          + `${audioBus.index} under a scope and a spectrum, buffer `
+          + `${buffer.bufnum} (${BUFFER_FRAMES} frames) under a waveform`);
+        log("turn `freq` (bound, no script) — the trace and the spectrum follow");
 
         // Nothing is freed here on purpose: the page keeps drawing until it is
-        // closed. A view that comes and goes stops its streams (`await
-        // stream.stop()`, which also stops the recording behind them) and
-        // frees its pyramid (`peaks.free()`).
+        // closed. A view that comes and goes closes its window (`win.close()`,
+        // after which the host stops recording whatever nothing draws any
+        // more) and calls the disposer `fit` returns.
       }
 
       el("start").onclick = () => {

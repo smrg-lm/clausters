@@ -8,10 +8,10 @@
 //   `clausters-ffi`. Both clients reach one `clausters-core`, so the cache is
 //   byte-identical and the measurements exact; a divergence is a failing test
 //   rather than a rumour.
-// - **Behaviour** — the trigger and the spectrum curve, which have no Python
-//   door and therefore no second implementation to compare against. What is
-//   worth asserting there is what a view depends on: a periodic signal locks,
-//   a full-scale sine reads about 0 dB at its bin.
+// - **Behaviour** — what the pyramid answers about a cache: a cell covers the
+//   samples under it, a coarser level is coarser, a span that is not a span
+//   answers nothing. The reduction has a Python door and is compared above;
+//   what these add is the reading, which does not.
 // - **Decoding** — the `/bus_set` and `/bus_tapStream.reply` snapshots and the bulk
 //   chunking, driven over a fake carrier so they run with no server at all.
 
@@ -33,11 +33,7 @@ import {
     decodeSamples,
     deinterleave,
     interleave,
-    joinColumns,
     lissajous,
-    scopeFrames,
-    scopeWindow,
-    spectrumDb,
 } from "../src/data/index.ts";
 
 const wasm = await readFile(
@@ -129,7 +125,14 @@ test("a cache written by the Python client reads back here", () => {
     assert.equal(read.frames, 4096);
     assert.equal(read.channels, 1);
     assert.equal(read.baseBucket, 256);
-    assert.deepEqual(read.columns(0, { width: 8 }), written.columns(0, { width: 8 }));
+    for (let i = 0; i < 8; i++) {
+        const span = 4096 / 8;
+        assert.deepEqual(
+            read.column(0, 0, i * span, (i + 1) * span),
+            written.column(0, 0, i * span, (i + 1) * span),
+            `cell ${i}`,
+        );
+    }
     assert.equal(Peaks.fromBytes(new Uint8Array([1, 2, 3, 4])), undefined, "not a cache");
     written.free();
     read.free();
@@ -243,146 +246,53 @@ test("a mismatched pair has no correlation and no projection", () => {
     assert.equal(lissajous(left, short).length, 0);
 });
 
-// ---- the peak pyramid as a view reads it ----
+// ---- the peak pyramid, as its own reader answers ----
 
-test("a column is the min/max of the samples under it", () => {
+test("a cell is the min/max of the samples under it", () => {
     const samples = SIGNALS.ramp;
     const peaks = Peaks.build(samples, { baseBucket: 256 });
-    const width = 16;
-    const { min, max } = peaks.columns(0, { width });
-    assert.equal(min.length, width);
-    const step = samples.length / width;
-    for (let i = 0; i < width; i++) {
-        // The pyramid reads whole buckets, so a column may reach a little
-        // past its span; it can never be narrower than the samples in it.
+    const bucket = peaks.levelBucket(0);
+    assert.equal(bucket, 256);
+    for (let start = 0; start + 256 <= samples.length; start += 256) {
+        const cell = peaks.column(0, 0, start, start + 256);
+        assert.ok(cell, `cell at ${start}`);
         let lo = Infinity;
         let hi = -Infinity;
-        for (let s = Math.floor(i * step); s < Math.floor((i + 1) * step); s++) {
-            lo = Math.min(lo, samples[s]);
-            hi = Math.max(hi, samples[s]);
+        for (let i = start; i < start + 256; i++) {
+            lo = Math.min(lo, samples[i]);
+            hi = Math.max(hi, samples[i]);
         }
-        assert.ok(min[i] <= lo + 1e-6, `column ${i}: ${min[i]} > ${lo}`);
-        assert.ok(max[i] >= hi - 1e-6, `column ${i}: ${max[i]} < ${hi}`);
+        // The pyramid reads whole buckets, so a cell may reach a little past
+        // its span; it can never be narrower than the samples in it.
+        assert.ok(cell[0] <= lo + 1e-6, `cell at ${start}: ${cell[0]} > ${lo}`);
+        assert.ok(cell[1] >= hi - 1e-6, `cell at ${start}: ${cell[1]} < ${hi}`);
     }
     peaks.free();
 });
 
-test("zooming picks a finer level, and the columns follow", () => {
+test("each level above summarizes twice as much", () => {
     const peaks = Peaks.build(SIGNALS.sine440, { baseBucket: 256 });
     assert.ok(peaks.numLevels > 1, "a 4096-sample buffer has levels above 0");
     assert.equal(peaks.levelBucket(0), 256);
     assert.equal(peaks.levelBucket(1), 512);
-    assert.equal(peaks.levelFor(256), 0, "at the base bucket, level 0");
-    assert.ok(peaks.levelFor(4096) > 0, "zoomed out, a coarser level");
-    // A window over a quarter of the buffer is drawn from the same data as
-    // the full view's first quarter — same signal, finer columns.
-    const whole = peaks.columns(0, { width: 4 });
-    const quarter = peaks.columns(0, { width: 4, start: 0, end: 1024 });
-    assert.ok(quarter.max[0] <= whole.max[0] + 1e-6);
+    assert.equal(peaks.levelBucket(99), undefined, "no such level");
+    // The same span read one level up covers at least what the finer one did:
+    // a coarser summary can only widen.
+    const fine = peaks.column(0, 0, 0, 1024)!;
+    const coarse = peaks.column(0, 1, 0, 1024)!;
+    assert.ok(coarse[0] <= fine[0] + 1e-6 && coarse[1] >= fine[1] - 1e-6);
     peaks.free();
 });
 
-test("a square wave's edge is inked once the columns are joined", () => {
-    // A square wave is the picture the join is for: every transition is a
-    // one-sample jump, so a column holding no transition is perfectly flat and
-    // the vertical edge lives *between* two columns. Measured, the row is a
-    // dashed top and a dashed bottom with nothing between them; joined, each
-    // column that changes level reaches back to the one before it.
-    const frames = 8192;
-    const square = new Float32Array(frames);
-    for (let i = 0; i < frames; i++) square[i] = Math.floor(i / 512) % 2 === 0 ? 0.8 : -0.8;
-    const peaks = Peaks.build(square, { baseBucket: 256 });
-    for (const width of [16, 32, 64]) {
-        const measured = peaks.columns(0, { width });
-        const inked = joinColumns(measured);
-        let crossings = 0;
-        for (let x = 0; x < width; x++) {
-            assert.equal(measured.max[x] - measured.min[x], 0, `measured column ${x} is flat`);
-            const jumped = x > 0 && measured.min[x] !== measured.min[x - 1];
-            if (jumped) {
-                crossings++;
-                assert.ok(
-                    inked.max[x] - inked.min[x] > 1.5,
-                    `column ${x} spans the crossing: ${inked.min[x]}..${inked.max[x]}`,
-                );
-            } else {
-                // No crossing to draw, and the first column has no neighbour
-                // to reach: as measured, both of them.
-                assert.equal(inked.min[x], measured.min[x], `column ${x} unchanged`);
-                assert.equal(inked.max[x], measured.max[x], `column ${x} unchanged`);
-            }
-        }
-        assert.equal(crossings, 15, `every transition is drawn at width ${width}`);
-    }
-    // A signal whose columns already overlap comes back exactly as measured.
-    const sine = Peaks.build(SIGNALS.sine440, { baseBucket: 256 });
-    const measured = sine.columns(0, { width: 8 });
-    const inked = joinColumns(measured);
-    assert.deepEqual([...inked.min], [...measured.min]);
-    assert.deepEqual([...inked.max], [...measured.max]);
-    peaks.free();
-    sine.free();
-});
-
-test("a degenerate span draws nothing rather than guessing", () => {
+test("what does not exist answers nothing, and what does answers a bucket", () => {
     const peaks = Peaks.build(SIGNALS.quiet, { baseBucket: 256 });
-    assert.equal(peaks.columns(0, { width: 0 }).min.length, 0);
-    assert.equal(peaks.columns(0, { width: 8, start: 10, end: 10 }).min.length, 0);
-    assert.equal(peaks.columns(7, { width: 8 }).min.length, 0, "no such channel");
     assert.equal(peaks.column(0, 99, 0, 10), undefined, "no such level");
     assert.equal(peaks.column(7, 0, 0, 10), undefined, "no such channel");
+    // A span shorter than a bucket — an empty one included — reads the bucket
+    // it falls in: the summary is never resolved finer than it was measured,
+    // and the cell reaches outward rather than answering nothing.
+    assert.deepEqual(peaks.column(0, 0, 10, 10), peaks.column(0, 0, 0, 256));
     peaks.free();
-});
-
-// ---- the oscilloscope's trigger, and the spectrum ----
-
-test("the trigger locks a periodic signal at the same phase", () => {
-    const rate = 48000;
-    const windowMs = 5;
-    const raw = scopeFrames(windowMs, rate);
-    assert.equal(raw, 480, "a 5 ms window at 48 kHz, plus its search slack");
-    const a = scopeWindow(sine(raw, 109.09, 0.3), { windowMs, sampleRate: rate });
-    const b = scopeWindow(sine(raw, 109.09, 2.1), { windowMs, sampleRate: rate });
-    assert.ok(a.locked && b.locked, "a periodic signal locks");
-    assert.equal(a.samples.length, 240);
-    for (let i = 0; i < a.samples.length; i++) {
-        assert.ok(
-            Math.abs(a.samples[i] - b.samples[i]) < 0.06,
-            `sample ${i}: ${a.samples[i]} vs ${b.samples[i]}`,
-        );
-    }
-});
-
-test("silence free-runs on the newest window instead of blanking", () => {
-    const trace = scopeWindow(new Float32Array(480), { windowMs: 5 });
-    assert.equal(trace.locked, false);
-    assert.equal(trace.samples.length, 240);
-});
-
-test("a full-scale sine reads about 0 dB at its own bin", () => {
-    const fftSize = 1024;
-    const bin = 32;
-    const curve = spectrumDb(sine(fftSize, fftSize / bin), { fftSize });
-    assert.equal(curve.length, fftSize / 2);
-    assert.ok(Math.abs(curve[bin]) < 0.5, `bin ${bin} reads ${curve[bin]} dB`);
-    assert.ok(curve[bin + 40] < curve[bin] - 40, "and the rest is far below");
-    const silent = spectrumDb(new Float32Array(fftSize), { fftSize });
-    assert.ok(
-        silent.every((v) => v === -120),
-        "silence sits at the reference floor",
-    );
-    assert.equal(spectrumDb(new Float32Array(100), { fftSize: 100 }).length, 0);
-});
-
-test("the window shape reaches the transform", () => {
-    // A tone *between* two bins is what tells the windows apart: exactly on a
-    // bin, a rectangular window is periodic in the frame and leaks nothing.
-    const tone = sine(1024, 1024 / 32.5);
-    const hann = spectrumDb(tone, { fftSize: 1024 });
-    const rect = spectrumDb(tone, { fftSize: 1024, window: "rectangular" });
-    assert.notDeepEqual(Array.from(hann), Array.from(rect));
-    assert.ok(hann[32] > -6 && rect[32] > -6, "both find the tone");
-    assert.ok(rect[60] > hann[60], "rectangular leaks further out");
 });
 
 // ---- interleaving ----
