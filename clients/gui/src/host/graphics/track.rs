@@ -571,7 +571,7 @@ pub fn draw_clip_label(d: &mut Draw, cr: Rect, label: &str) {
 
 /// Draws one clip **body** — a child element of a clip — into the clip's
 /// rectangle, against the clip's own axis. This is the whole of what "a clip is
-/// a container" buys: the element says what it is, the container says where it
+/// a container" comes to: the element says what it is, the container says where it
 /// is, and neither knows about the lane, the group's window or the clip's
 /// offset on it.
 ///

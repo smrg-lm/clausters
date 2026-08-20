@@ -1839,7 +1839,7 @@ is LGPL-3, so linking it in is clean, no separate process required.
 
 **Consequence.** The two producers are interchangeable behind the display list, so
 the native path is a drop-in replacement for the *producer alone*, never a rewrite
-of the renderer. It buys three things the SVG walk cannot: no parsing round-trip,
+of the renderer. It gives three things the SVG walk cannot: no parsing round-trip,
 in-process incremental relayout, and direct **edit-back** (mutate a note, re-engrave
 in memory, no re-serialize). None of those pays off until the score view becomes
 interactive — and editing shipped on the SVG walk after all (G31d), which reloads
@@ -1879,7 +1879,7 @@ carries the corrected `#ifndef NO_EDIT_SUPPORT`.
 **Consequence — three routes to editing, and they differ in cost, not in
 capability.** (1) Ship verovio ≥ 6.3 once released: editing arrives in the Python
 client for free, no build. (2) Build verovio ourselves — the deferred native
-producer — which unblocks the editor *now* and additionally buys the in-process
+producer — which unblocks the editor *now* and additionally brings the in-process
 relayout and edit-back the previous entry describes. (3) Mutate the MEI in
 Python and re-engrave: `getMEI()` out, edit the XML (we own the `xml:id`s),
 `loadData` back. It needs no editor toolkit and no C++ at all, at the price of a
@@ -2163,8 +2163,8 @@ pure tone reads 99.2 dB through it), so the low end is effectively transparent.
 
 **Why fourth order and not second.** The two-sample residual was implemented,
 measured, and rejected on its numbers: 67.6 / 32.3 / 27.7 dB at the same three
-fundamentals. Doubling the corrected span buys +29 dB at the bottom and +10 to
-+12 dB over the rest, for two extra polynomial evaluations per cycle — a trade
+fundamentals. Doubling the corrected span adds 29 dB at the bottom and 10 to
+12 dB over the rest, for two extra polynomial evaluations per cycle — a trade
 worth taking, and one that could only be judged after measuring both.
 
 **Two consequences worth writing down.** Above `sr/4` the two correction regions
@@ -2584,7 +2584,7 @@ are design, not luck.
 
 **The endpoints are exact.** The fifth coefficient is not the Taylor one; it is
 *defined* as whatever makes the five sum to `1`, which lands within `3.5e-6` of
-Taylor's and buys `quarter_sin(1) == 1` exactly. It also carries most of the
+Taylor's and makes `quarter_sin(1) == 1` exact. It also carries most of the
 accuracy: forcing the sum cancels the bulk of the truncation error across the
 whole range, which is why the worst case is `2.6e-7` and not the `3.5e-6` the
 truncated series alone would give. That number is the gain of a
@@ -3074,7 +3074,7 @@ test.ts` builds each reference graph independently in TypeScript and asserts the
 `SynthDefSpec`/signal-tree/`GraphDefSpec` JSON is identical to what the Python
 builders emit for the same graph (frozen by `gen-def-vectors.py`). That is the
 right seam anyway: the def format is the shared contract, and two clients
-agreeing on it is exactly what "numerically equivalent by construction" buys.
+agreeing on it is exactly what "numerically equivalent by construction" is for.
 The vectors cover what the source alone cannot show — control dedup and
 first-seen order, the topological walk, the fused `Sum4`/`Sum3` mix fold, the
 `ir`/`tr` control types and lags, generic op naming, and the `sr()` clamp inside
@@ -3672,7 +3672,7 @@ generators is worse than no default.
 **Where the sequence starts: a random process is unpredictable first.** Moving
 the counter into the render left a second question, and the first answer to it
 was wrong: the sequence started from a fixed constant, so an unconfigured render
-was reproducible and `--seed` bought you a *different* take. That is the testing
+was reproducible and `--seed` gave you a *different* take. That is the testing
 answer, not the musical one. When a piece has a random process in it, the point
 is that playing it again is another performance; reproducibility is the
 exception you ask for, by fixing the seed, and it is worth having precisely
@@ -3742,7 +3742,7 @@ interface. A second destination would have had to copy the arithmetic.
 
 sc3 solves this in the *interface*: `NetAddr.send_bundle(time, ...)` passes a
 delta, and each interface resolves it against `main.current_tt._seconds`, with
-an NRT subclass overriding `_get_timetag`. That placement buys something real —
+an NRT subclass overriding `_get_timetag`. That placement gives something real —
 nested sub-bundles all resolve against a single captured "now" — and it is why
 any `NetAddr` in sclang is timed without knowing what a clock is.
 
@@ -4014,7 +4014,7 @@ with `-1` — so the label is a second message on an id the caller already holds
 `/graph_new` then `/group_name`, in order on the same connection. A `name=`
 argument in the clients is the whole of it, with nothing new on the wire.
 
-Carrying the label in `/graph_new` itself would buy exactly one thing the
+Carrying the label in `/graph_new` itself would give exactly one thing the
 composition cannot: the name riding in the instance's own `/node_start`. That
 is recorded here rather than built, because the gap it names is not the graph's
 — **a rename notifies nobody**. `/group_name` pushes nothing to the
@@ -4804,7 +4804,7 @@ taste: a **registered element** (the `Element` trait) has props no catalog
 inside this crate can know, and instantiating one is a first-class use of the
 builder. So the open door — a node named by its wire type, props set by key —
 has to exist whatever else is built on top of it. Once it does, a typed twin of
-the catalog buys spelling rather than safety, at the cost of a surface that
+the catalog checks spelling rather than safety, at the cost of a surface that
 rots.
 
 What *is* typed is what a hand-written document actually loses: a prop is a Rust

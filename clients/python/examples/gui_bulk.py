@@ -17,7 +17,7 @@ accepts, none of which re-send the samples per frame:
 
 A fourth lane draws the *same* mapped cache with both measures at once
 (``measure="peak rms"``) -- the peak envelope with the RMS body inside it, which
-is what a peak cache carrying a mean square per bucket buys: the classic editor
+is what a peak cache carrying a mean square per bucket gives: the classic editor
 picture with no second pass over the samples and no second file.
 
 Files are passed by absolute path, so the host (a separate process) resolves

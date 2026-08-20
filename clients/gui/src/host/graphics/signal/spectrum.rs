@@ -175,7 +175,7 @@ pub(crate) fn axis_geometry(sample_rate: f64) -> (f64, f64) {
 /// The fewest analysis bins a navigable frequency axis will show across its
 /// whole body. Below this the curve stops being a measurement and becomes the
 /// interpolation between two neighbouring bins — a straight line that no longer
-/// answers to the signal, which is what zooming past the analysis buys.
+/// answers to the signal, which is all a zoom past the analysis gives.
 const MIN_VISIBLE_BINS: f64 = 4.0;
 
 /// **The narrowest window a frequency axis may be zoomed to**, in display

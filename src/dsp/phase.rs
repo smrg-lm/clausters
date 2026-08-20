@@ -8,7 +8,7 @@
 //!
 //! What `f64` gives is worth stating precisely, because the obvious answer is
 //! wrong and the tests measure it (`tests/oscillators.rs`,
-//! `f64_is_for_the_position_not_the_phase`). For the **wrapped phase** it buys
+//! `f64_is_for_the_position_not_the_phase`). For the **wrapped phase** it changes
 //! nothing audible:
 //! the value never leaves `[0, 1)`, so the rounding error per step is about one
 //! ulp of 1.0 and random-walks nowhere — over ten seconds an `f32` phase and an

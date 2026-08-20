@@ -34,7 +34,7 @@
 //! nobody did. A registered element ([`crate::Element`]) has props no catalog
 //! in this crate can know, and it is a first-class caller of this builder — so
 //! the open door has to exist regardless, and once it exists a typed twin of it
-//! buys spelling, not safety. And the client whose surface *is* the catalog is
+//! checks spelling, not safety. And the client whose surface *is* the catalog is
 //! the Python one, by the project's own reference-client rule.
 //!
 //! What is typed here is what a JSON string loses: a prop is a Rust value, an

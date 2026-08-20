@@ -107,7 +107,7 @@ pub(crate) fn tree_has_playhead(widget: &Widget, groups: &TimelineGroups) -> boo
 }
 
 /// **A retained history of one bus** — the addressable past a forward-only
-/// source does not have, and the whole of what `retention` buys.
+/// source does not have, and the whole of what `retention` is for.
 ///
 /// The ring is sized by the axis's declared span (seconds times the sample
 /// rate) and filled from the same per-tick read every live view already does,

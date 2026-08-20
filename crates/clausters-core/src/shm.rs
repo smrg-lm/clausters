@@ -74,7 +74,7 @@ pub const TAP_ALIGN: usize = 64;
 
 /// Audio-bus slots the bus region is always sized for. The region is two words
 /// per bus and 1 KiB in total, small enough that making it a runtime parameter
-/// would buy nothing — so it is the server's compile-time cap, and the server
+/// would give nothing — so it is the server's compile-time cap, and the server
 /// asserts the two agree.
 pub const AUDIO_BUS_SLOTS: usize = 128;
 

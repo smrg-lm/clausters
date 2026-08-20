@@ -1482,7 +1482,7 @@ pub trait Element: fmt::Debug {
     /// **What this element draws as a clip's body**, into the clip's rectangle
     /// and against the clip's own local axis (`dur` is the clip's span).
     ///
-    /// The whole of what "a clip is a container" buys: the element says what it
+    /// The whole of what "a clip is a container" comes to: the element says what it
     /// is, the container says where it is, and neither knows about the lane,
     /// the group's window or the clip's offset on it. It is a separate draw
     /// from [`draw`](Element::draw) because a body carries **no chrome** — no

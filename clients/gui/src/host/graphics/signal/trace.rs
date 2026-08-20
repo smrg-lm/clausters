@@ -19,7 +19,7 @@
 //! drifts: the pipeline took a neighbouring sample on the left of the window
 //! but not on the right (so a deep zoom drew a trace arriving at a sample and
 //! stopping dead), marked samples with squares where this one marks discs, and
-//! split the regimes on the opposite side of the threshold. The pipeline bought
+//! split the regimes on the opposite side of the threshold. The pipeline did
 //! nothing for it: its columns were folded on the CPU per pixel, as here, and
 //! its vertex count was bounded by the render width, as here. So it is gone,
 //! and `crate::waveform` is now the data and the navigation state alone.

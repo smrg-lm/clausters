@@ -428,7 +428,7 @@ mod tests {
     }
 
     /// **Two automations over one clip**, which is what the stack being the
-    /// container's contents buys: they are two layers, named apart, and one of
+    /// container's contents gives: they are two layers, named apart, and one of
     /// them is edited at a time. Nothing here counts kinds — the second curve
     /// is the second curve because it is declared second.
     #[test]

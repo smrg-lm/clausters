@@ -11,7 +11,7 @@
 //!
 //! Undo needs no second code path: the inverse of an entry is an [`Intent`],
 //! handed back to `apply` like any other. That is what the absolute vocabulary
-//! buys — an edit states the resulting value, so the edit that states the
+//! is for — an edit states the resulting value, so the edit that states the
 //! *previous* value is its inverse, and the document already knows how to
 //! compute it (the same reader O4's staleness check uses).
 //!

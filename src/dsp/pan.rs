@@ -68,7 +68,7 @@ use crate::dsp::{ProcessCtx, UGen, at};
 /// Polynomial coefficients of `sin(t * pi/2)` on `t` in `[0, 1]`, in odd powers
 /// of `t`. The first four are the Taylor series'; the fifth is *defined* as
 /// whatever makes the five sum to one, which lands within `3.5e-6` of the
-/// Taylor coefficient and buys an exact `quarter_sin(1) == 1`. Forcing that
+/// Taylor coefficient and makes `quarter_sin(1) == 1` exact. Forcing that
 /// sum also cancels most of the truncation error across the range, which is
 /// where the `2.6e-7` worst case comes from.
 ///

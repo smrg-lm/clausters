@@ -124,7 +124,7 @@ export function manualTicker(): ManualTicker {
 
 /**
  * The page's one tick worker, shared by every clock on it (a worker per clock
- * would buy nothing: the work is a `setTimeout`).
+ * would give nothing: the work is a `setTimeout`).
  */
 let sharedWorker: Worker | null = null;
 let nextTickerId = 1;

@@ -9,7 +9,7 @@ number instead — how far the recording now goes, the buffer's *write frontier*
 into the shared segment's directory row, and a host that maps the same segment
 draws the rest for itself.
 
-What that buys, and it is the whole example: **nothing about the audio crosses
+What that gives, and it is the whole example: **nothing about the audio crosses
 the wire**. The samples are already the cells the engine is writing (the host
 maps the region), so the picture is not fetched, not streamed and not copied —
 what the host re-reads is the *summary* of the frames that appeared since last

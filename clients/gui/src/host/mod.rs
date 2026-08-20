@@ -3849,7 +3849,7 @@ mod write_tests {
     }
 
     /// **One channel of a stereo take**, which is what the server's
-    /// channel-addressed write bought: the span is frames of that channel on
+    /// channel-addressed write is for: the span is frames of that channel on
     /// both sides of the seam, and the other channel is not mentioned.
     #[test]
     fn a_stereo_take_is_written_one_channel_at_a_time() {
