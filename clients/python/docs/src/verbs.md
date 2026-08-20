@@ -25,7 +25,7 @@ The three verbs carry one semantic each, and the split is deliberate:
   def, a pattern, an arrangement — an algorithm that describes sound) into a
   *generated* one (samples — random-access audio). Offline by default, into
   memory or a file; either way it reports what it did.
-- **`plot`** is the visual sibling of `render`: the same materialization, drawn
+- **`plot`** is the visual sibling of `render`: the same render, drawn
   in its own window instead of returned. (Its live counterpart is
   [`scope`](api.md), which taps buses on a running server.)
 
@@ -167,7 +167,7 @@ stats.samples          # None - the audio is in take.wav
 stats.path             # 'take.wav'
 ```
 
-Two things follow. First, a long bounce never materializes in the client: a
+Two things follow. First, a long bounce never lands in the client: a
 sixty-second stereo render is 5.7 million floats, and not carrying them across
 is most of the reason the file path is several times faster than the in-memory
 one. Second, the file's format is the server's to choose — `sample_format` is

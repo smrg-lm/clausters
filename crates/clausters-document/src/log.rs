@@ -377,7 +377,7 @@ impl Log {
         for change in entry.changes.iter().rev() {
             // A backward half is always an edit -- `Entry`'s constructors take
             // an `Intent` for it, so `Recompute` cannot get in here.
-            if let Step::Edit(intent) = materialize(&change.backward, self.spill.as_ref()) {
+            if let Step::Edit(intent) = restore(&change.backward, self.spill.as_ref()) {
                 out.push(intent);
             }
         }
@@ -392,7 +392,7 @@ impl Log {
             entry
                 .changes
                 .iter()
-                .map(|change| materialize(&change.forward, self.spill.as_ref()))
+                .map(|change| restore(&change.forward, self.spill.as_ref()))
                 .collect(),
         )
     }
@@ -570,7 +570,7 @@ fn lift(half: &mut Half, threshold: usize, spill: &mut dyn Spill) {
 }
 
 /// Puts a spilled payload back, giving the caller a step it can act on.
-fn materialize(half: &Half, spill: &dyn Spill) -> Step {
+fn restore(half: &Half, spill: &dyn Spill) -> Step {
     let mut step = half.step.clone();
     let Some(id) = half.blob else {
         return step;

@@ -544,7 +544,7 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
         The file is written by the server, not here: the score goes to the
         ``clausters --nrt`` renderer, which streams straight to disk. That is
         why nothing has to cross into Python — a long bounce never
-        materializes millions of floats just to be written out — and why
+        builds millions of floats just to be written out — and why
         ``sample_format`` (``"float"``, ``"int24"``, ``"int16"``) is
         available at all. It also means the binary must be findable, the same
         way `clausters.launch` finds it.

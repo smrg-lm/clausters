@@ -4330,7 +4330,7 @@ same piece.
 **Where the audio goes.** Here the two clients genuinely part. Python's
 `render(path=...)` hands the score to a `clausters --nrt` process that streams
 straight to disk — the samples never cross into Python, which is what lets a
-long bounce not materialize millions of floats, and what makes `int16`/`int24`
+long bounce not build millions of floats, and what makes `int16`/`int24`
 output meaningful. A page has no process to hand a score to and no filesystem
 to write to: its renderer *is* the wasm engine already in the tab, and what it
 produces is a `Float32Array` in this page's memory. There is no honest `path`
@@ -5648,7 +5648,7 @@ recover what a stroke covers.
 held, not of what a write costs: samples reached **by reference to the user's
 file** — mapped rather than loaded, which is the path shared-memory editing
 opens. An edit there would write the user's file, which the four-layer rule
-forbids outright, so it must materialize a `Temporary` copy first, and
+forbids outright, so it must write a `Temporary` copy first, and
 `confirm`/`promote` are what settle it. That is the whole remaining job of the
 `editing` field in the session format, and why it stays: a session that dies
 mid-edit over mapped samples must reopen knowing what was undecided.
@@ -6016,7 +6016,7 @@ compiled def is byte-identical to one a complete client sent — so there is no
 runtime cost and the audio thread never learns of it. And a declared default
 becomes **wire contract**: changing one afterwards changes what every def
 leaning on the fill sounds like, where before all of them were free metadata.
-Clients are unaffected and keep materialising every default before the last
+Clients are unaffected and keep sending every default before the last
 input the caller gave: the wire is positional and has no sparse form.
 
 

@@ -237,7 +237,7 @@ impl UGen for Saw {
 ///
 /// Built as a naive square with a PolyBLEP correction at each of its two edges —
 /// equivalent to the difference of two phase-shifted band-limited saws, but
-/// without materializing either. Width is clamped away from `0` and `1`, where
+/// without building either. Width is clamped away from `0` and `1`, where
 /// the two edges would coincide and the waveform would collapse to silence with
 /// a discontinuity of twice the amplitude.
 pub struct Pulse {

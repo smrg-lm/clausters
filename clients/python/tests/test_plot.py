@@ -74,12 +74,12 @@ def test_guidef_plot_carries_the_new_props():
     assert "axes" not in lean and lean["view"] == "trace"
 
 
-def test_sequence_materializes_lists_patterns_and_channels():
+def test_sequence_reads_lists_patterns_and_channels():
     # A plain list is one channel, index axis (rate 0).
     samples, channels, rate, label = _sequence([1.0, 2.0, 3.0], n=10)
     assert (samples, channels, rate) == ([1.0, 2.0, 3.0], 1, 0.0)
     assert label == "sequence"
-    # A finite pattern materializes fully; an endless one caps at n.
+    # A finite pattern is read to its end; an endless one caps at n.
     seq, _, _, _ = _sequence(Pseq([1.0, 2.0], repeats=2), n=100)
     assert seq == [1.0, 2.0, 1.0, 2.0]
     capped, _, _, _ = _sequence(Pwhite(0.0, 1.0), n=50)

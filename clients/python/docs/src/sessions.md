@@ -308,7 +308,7 @@ eyeball what a def actually produces, with no server and no audio device. An
 sustain point when it has one), so the curve you see is what the engine plays.
 A **`Buffer`** is fetched from the ambient live server, with its channel count
 and sample rate. Anything else **iterable of numbers** — a list, a `Pseq`, a
-`Pwhite`, any stream — is materialized (up to `n` items for the endless ones)
+`Pwhite`, any stream — is read (up to `n` values for the endless ones)
 and plotted as a sequence, index counts on the x axis and the value axis
 fitted to the data, whatever its range.
 

@@ -1341,7 +1341,7 @@ mod source_tests {
         (i as f32 * 0.013).sin() * 0.8 + (i % 11) as f32 * 0.02
     }
 
-    fn materialized(n: usize) -> Vec<f32> {
+    fn values(n: usize) -> Vec<f32> {
         (0..n).map(value).collect()
     }
 
@@ -1349,7 +1349,7 @@ mod source_tests {
     fn a_pyramid_over_a_source_equals_one_over_the_samples() {
         let n = 9_000;
         let from_source = Pyramid::build_from(&Generated { len: n }, 256);
-        let from_slice = Pyramid::build(&materialized(n), 256);
+        let from_slice = Pyramid::build(&values(n), 256);
         assert_eq!(from_source.num_levels(), from_slice.num_levels());
         for level in 0..from_slice.num_levels() {
             for b in 0..40 {
@@ -1372,7 +1372,7 @@ mod source_tests {
     #[test]
     fn a_span_updated_through_a_source_equals_a_rebuild() {
         let n = 9_000;
-        let mut samples = materialized(n);
+        let mut samples = values(n);
         let mut pyramid = Pyramid::build(&samples, 256);
         // The samples moves where it lies, as a store into a mapped region
         // does, and only the summary is told about it.
@@ -1396,7 +1396,7 @@ mod source_tests {
 
     #[test]
     fn a_source_of_another_length_is_refused() {
-        let mut pyramid = Pyramid::build(&materialized(4_000), 256);
+        let mut pyramid = Pyramid::build(&values(4_000), 256);
         assert!(!pyramid.update_range_from(&Generated { len: 4_001 }, 0, 10));
     }
 

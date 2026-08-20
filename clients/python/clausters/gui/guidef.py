@@ -1132,7 +1132,7 @@ def plot(*, data=None, blob: int | None = None,
       always drawn (a polyline when it fits the width, a min/max envelope per
       pixel column when it does not — no visual aliasing). The value axis is
       ``[min, max]``; **omit either side and it auto-fits to the data** (the
-      arbitrary-range sequence case, e.g. a materialized ``Pwhite``); set a
+      arbitrary-range sequence case, e.g. the values of a ``Pwhite``); set a
       side back to auto live with ``GuiHost.set(id, min="auto")``.
     - ``"spectrum"`` — the averaged magnitude spectrum of the (short) signal,
       one curve per channel: dB over ``[db_floor, db_ceil]`` (default

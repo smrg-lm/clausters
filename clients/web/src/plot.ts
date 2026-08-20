@@ -19,7 +19,7 @@
 // - a `Buffer` (or a buffer number) is fetched from the ambient **live**
 //   server with its shape and rate — the way to check a buffer's contents;
 // - any other **iterable of numbers** — an array, a `Float32Array`, a
-//   `Pattern` — is materialized (up to `n` items for the endless ones) and
+//   `Pattern` — is read (up to `n` values for the endless ones) and
 //   plotted as a sequence: index counts on the x axis, the value axis fitted
 //   to the data.
 //
@@ -124,7 +124,7 @@ export interface PlotOptions {
     controls?: Controls;
     /** Extra defs the render needs first — a `GraphDef`'s member defs. */
     defs?: readonly (SynthDef | FaustDef | GraphDef)[];
-    /** Materialization cap for endless sequences. */
+    /** How many values to take from an endless sequence. */
     n?: number;
     /** The offline render's rate; also places a fetched buffer's time axis. */
     sampleRate?: number;
@@ -178,7 +178,7 @@ export async function plot(
         ruler, rulerY, label, title, w = 760, h, host: explicitHost,
     } = options;
 
-    const drawn = await materialize(obj, {
+    const drawn = await resolve(obj, {
         dur, controls, defs, n, sampleRate, channels,
     });
     const text = label ?? drawn.label;
@@ -233,7 +233,7 @@ interface Drawn {
     label: string;
 }
 
-async function materialize(
+async function resolve(
     obj: Plottable,
     {
         dur, controls, defs, n, sampleRate, channels,
@@ -344,8 +344,8 @@ async function fetchBuffer(
 }
 
 /**
- * Materializes an iterable of numbers (or of per-channel rows, interleaved) —
- * up to `n` items for the endless ones. The rate is 0: the x axis reads in
+ * Takes up to `n` values from an iterable of numbers (or of per-channel rows,
+ * interleaved). The rate is 0: the x axis reads in
  * index counts and the value range auto-fits.
  */
 function sequence(obj: Iterable<number>, n: number): Drawn {

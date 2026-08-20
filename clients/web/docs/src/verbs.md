@@ -17,8 +17,8 @@ The three carry one semantic each, and the split is deliberate:
 
 - **`play`** is for what already sounds directly — it starts something *now* (or on the clock's next beat) and returns a handle to it.
 - **`render`** is the **change of state**: it evaluates a *generator* thing (a def, a pattern — an algorithm that describes sound) into a *generated* one (samples — random-access audio). Always offline, and it reports what it did.
-- **`plot`** is the visual sibling of `render`: the same materialization, drawn in its own window instead of returned.
-- **`scope`** is the *live* one: where `plot` draws a thing that was materialized once, `scope` opens a window that follows a running server's audio buses frame by frame, with no per-frame messages from the script.
+- **`plot`** is the visual sibling of `render`: the same render, drawn in its own window instead of returned.
+- **`scope`** is the *live* one: where `plot` draws a thing that was rendered once, `scope` opens a window that follows a running server's audio buses frame by frame, with no per-frame messages from the script.
 
 `play` is synchronous; `plot`, `scope` and `render` resolve with a promise, because opening a host and running a render both wait and a page may not block. That is this client's one standing difference from the [Python client](https://clausters-python.readthedocs.io/), not a difference in the verbs.
 
@@ -63,7 +63,7 @@ The three carry one semantic each, and the split is deliberate:
 | a def, or a bare expression | instances it offline for `dur` seconds — the audible sibling of `plot(def)` |
 | a `Timeline`, an event `Pattern`, a `Routine` or a generator | **bounces** it in an ephemeral offline session |
 
-`plot` and `render` share their materialization: `plot(x)` shows exactly what `render(x)` returns and `play(x)` sounds.
+`plot` and `render` do the same render: `plot(x)` shows exactly what `render(x)` returns and `play(x)` sounds.
 
 They part company on one word. `play` and `plot` are **conveniences** — free to infer what you meant, so `plot` sizes its render from the expression and a stereo pair shows two lanes without being told. `render` is part of the **offline interface**: its `channels` is the render's *output* count, a fact about the server being configured and not about the graph, so it derives nothing. An expression laid past those outputs is refused rather than half-rendered.
 

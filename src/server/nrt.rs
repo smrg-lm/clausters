@@ -101,7 +101,7 @@ pub enum NrtJob {
     /// `/buffer_fill`: runs of one repeated value, addressed flat like
     /// [`NrtJob::Set`] — `(start, count, value)` each. Kept apart from `Set`
     /// rather than expanded into one: a fill says how *many* samples it writes
-    /// and materializing them would allocate the run it exists to avoid.
+    /// and building them would allocate the run it exists to avoid.
     ///
     /// Chained on `base` for the same reason `Set` is.
     Fill {
@@ -512,7 +512,7 @@ pub fn run_job(job: NrtJob) -> Result<NrtAction, String> {
         NrtJob::Fill { base, fills } => {
             // In place, like every other write of a span. A fill says how many
             // samples it writes rather than carrying them, which is why it is
-            // its own job: materializing the run would allocate what it exists
+            // its own job: building the run would allocate what it exists
             // to avoid.
             for (at, count, value) in fills {
                 for i in at..at + count {

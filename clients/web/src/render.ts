@@ -21,7 +21,7 @@
 //
 // **Where this client stops, and why.** The Python verb also writes a file,
 // through the server's own `--nrt` renderer: it hands a score to a process
-// that streams straight to disk, so a long bounce never materializes millions
+// that streams straight to disk, so a long bounce never builds millions
 // of floats just to be written out. A page has no such process and no
 // filesystem to write to — its renderer is the same wasm engine that makes its
 // sound, and what it produces is a `Float32Array` in this tab. So there is no

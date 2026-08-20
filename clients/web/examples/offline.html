@@ -37,7 +37,7 @@ a def, a bare expression, a pattern or a timeline goes in, and what comes back
 is samples plus what the take measured — frames, per-channel peak and RMS, and
 the <b>seed</b>, which is how you get a take back (hand it to the next render
 and it repeats sample for sample). <code>plot(x)</code> is its visual sibling:
-the same materialization, drawn in its own window rather than returned.
+the same render, drawn in its own window rather than returned.
 
 Nothing here needs a gesture except the last button: an offline render has no
 <code>AudioContext</code> to unlock. That is the point of it — the piece is
@@ -163,7 +163,7 @@ over HTTP (<code>python3 -m http.server</code>) and open
       }
 
       async function look() {
-        // `plot` is the same materialization, drawn. The def leg renders
+        // `plot` is the same render, drawn. The def leg renders
         // offline exactly as `render` does — one lane per channel.
         log("\nplotting: the def's own output, then its spectrum");
         const win = await plot(pluck(), {

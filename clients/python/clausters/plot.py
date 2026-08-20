@@ -28,7 +28,7 @@ involved unless the object itself needs one). It dispatches by kind:
   and sample rate, and plotted — the way to check a buffer's contents.
 - any other **iterable of numbers** — a list, a stdlib ``array``, a
   `clausters.seq.pattern.Pattern` (``Pseq``, ``Pwhite``, …) or any stream — is
-  materialized (up to ``n`` items for the endless ones) and plotted as a
+  read (up to ``n`` values for the endless ones) and plotted as a
   sequence: index counts on the x axis and the value axis **auto-fitted** to
   the data, whatever its range. A list of per-channel lists plots multichannel.
 
@@ -126,14 +126,15 @@ def plot(obj, *, dur: float = 1.0, controls=None, defs=(), n: int = 1024,
             `Automation` (rendered
             through ``EnvGen``), a `Buffer` or buffer number (fetched from
             the ambient live server), or an iterable of numbers / of
-            per-channel number lists (materialized).
+            per-channel number lists, read up to ``n`` values.
         dur: seconds a def is held before it is freed — the rendered length.
         controls: ``{name: value}`` controls (ports, for a `GraphDef`) the
             instance is started with.
         defs: extra defs the render needs first — a `GraphDef`'s **member
             defs** (the ephemeral offline session starts empty, so they must
             ride along), or any def ``obj``'s graph references.
-        n: materialization cap for endless sequences (`Pwhite` and friends).
+        n: how many values to take from an endless sequence (`Pwhite` and
+            friends).
         sample_rate: the offline render's rate; also places a fetched buffer's
             time axis when the server reports none.
         channels: how many channels to show. ``None`` derives it — a bare
@@ -170,7 +171,7 @@ def plot(obj, *, dur: float = 1.0, controls=None, defs=(), n: int = 1024,
         A `PlotWindow` — ``.set(...)`` retunes the display live (e.g.
         ``view="spectrum"``), ``.close()`` closes it.
     """
-    samples, chans, rate, kind_label = _materialize(
+    samples, chans, rate, kind_label = _resolve(
         obj, dur=dur, controls=controls, defs=defs, n=n,
         sample_rate=sample_rate, channels=channels)
     label = label if label is not None else kind_label
@@ -265,7 +266,7 @@ def _open_patch_view(model, *, label=None, w: int = 1000, h: int = 700,
 
 # ---- dispatch: turning the object into interleaved samples ----
 
-def _materialize(obj, *, dur, controls, defs, n, sample_rate, channels):
+def _resolve(obj, *, dur, controls, defs, n, sample_rate, channels):
     """Resolves ``obj`` to ``(samples, channels, sample_rate, label)`` —
     interleaved floats; ``sample_rate`` 0 marks an index (sequence) axis."""
     from .defs.asdef import as_def, expr_channels
@@ -349,8 +350,8 @@ def _fetch_buffer(bufnum, fallback_rate):
 
 
 def _sequence(obj, n):
-    """Materializes an iterable of numbers (or of per-channel number lists,
-    interleaved) — up to ``n`` items for the endless ones. The rate is 0: the
+    """Takes up to ``n`` values from an iterable of numbers (or of per-channel
+    number lists, interleaved). The rate is 0: the
     x axis reads in index counts and the value range auto-fits."""
     if isinstance(obj, (list, tuple)) and obj and _is_sequence(obj[0]):
         chans = [[float(x) for x in itertools.islice(iter(ch), n)] for ch in obj]
