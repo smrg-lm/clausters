@@ -85,6 +85,11 @@ impl Overviews {
     ///
     /// `region` is the region file's path; the overview is its sibling, so the
     /// generation that names one names the other.
+    ///
+    /// Only a Unix build has regions to put one beside, which is why this and
+    /// [`Self::retire`] read as dead code anywhere else — the same reason the
+    /// server's region list does.
+    #[cfg_attr(not(unix), allow(dead_code))]
     pub(in crate::osc::server) fn publish(&mut self, index: usize, region: &Path, buffer: &Buffer) {
         if self.slots.len() <= index {
             self.slots.resize_with(index + 1, || None);
@@ -110,6 +115,7 @@ impl Overviews {
 
     /// Drops a freed buffer's overview and unlinks its file. Every mapping of
     /// it stays valid until its holder drops it, exactly as the region's does.
+    #[cfg_attr(not(unix), allow(dead_code))]
     pub(in crate::osc::server) fn retire(&mut self, index: usize) {
         if let Some(overview) = self.slots.get_mut(index).and_then(Option::take) {
             let _ = std::fs::remove_file(&overview.path);
@@ -215,6 +221,7 @@ impl Overviews {
 /// The overview's name: the region's own, plus `.peaks`. Sibling rather than
 /// derived from the segment again, so the two files cannot disagree about which
 /// generation they describe.
+#[cfg_attr(not(unix), allow(dead_code))]
 pub(in crate::osc::server) fn peaks_path(region: &Path) -> PathBuf {
     let mut name = region.as_os_str().to_os_string();
     name.push(".peaks");
