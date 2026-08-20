@@ -1620,6 +1620,103 @@ share stayed, being a property of the server's id model rather than of this
 carrier — `tests/share.test.ts` and `clients/python/tests/test_id_share.py`
 still pin it. See `clients/jupyter/ISOLATION.md` on the `jupyter` branch.
 
+### W26 - The client stops drawing: the screen-shaped exports go
+
+**The rule this restores**, and it is the project's own: *everything that is
+drawn is drawn by the host.* A client names what to look at and the host draws
+it. Somebody who does not want the host is free to do their own arithmetic over
+their own canvas, and that is **outside this project** — not a surface this
+package supports, documents or keeps in step.
+
+**What went wrong is not a slip, it is this plan's own acceptance.** W10 reads
+"a TS app reads a control bus and a buffer over either carrier and **draws them
+itself** (a canvas the script feeds, not a host-fed widget)", and it was written
+when that was the only way to prove the numbers arrived: the host driver landed
+2026-07-26 (W2), W10 closed 2026-07-28, and `scope`/`plot` — the verbs that open
+a host window, the exact mirror of `clausters/scope.py` and `plot.py` — arrived
+2026-08-03, six days later. From that day the hand-drawn path was redundant and
+nobody went back for it. What was a scaffold became a norm.
+
+**The cost of leaving it is the one this track exists to avoid**: the two
+clients stop being the same client. Everything below exists in TypeScript and in
+no other client, so a figure a page can compute is one a Python script cannot,
+and each of them is a second implementation of something the host already does.
+
+| Export | What it is | Python |
+|---|---|---|
+| `Peaks.columns`, `Peaks.column`, `Peaks.levelFor`, `Peaks.levelBucket`, `Columns` | a row of pixel columns and the level to read it at | absent |
+| `joinColumns` | a **drawing rule**: what to ink, not what was measured | absent |
+| `scopeFrames`, `scopeWindow`, `ScopeTrace` | the oscilloscope's display framing and trigger alignment | absent |
+| `spectrumDb` | the decibel curve a spectrum is drawn as | absent |
+
+Three of the four are already recorded as unresolved by the binding manifest
+itself — `docs/bindings.md` carries `spectrum_db`, `oscil_raw_frames`,
+`oscil_display_frames` and `oscil_align` as **`gap`** rows, which is that file
+saying nobody decided. They close here by **deletion** rather than by a decision.
+
+**What stays, and why it is not the same thing**: building and folding the peak
+cache (`Peaks.build`, `toBytes`/`fromBytes`, `writeBuckets`, `updateRange`) is
+*data* — the client's own recording path uses it and the Python client has the
+same door; `correlation` and `lissajous` are measurements *of the signal*, bound
+in the C ABI too; `interleave`/`deinterleave`/`fetchAudio` are plumbing. None of
+them is of the screen.
+
+**The core keeps everything.** `peaks::join`, `oscil` and `spectrum` are the
+host's arithmetic and the host goes on consuming them — what goes is the
+*client door* onto them (`clausters-core-web`'s `columns`, `join_columns`,
+`spectrum_db`, `oscil_*`), which exists only for the JS client.
+
+- ⬜ Remove the four groups from `src/data/` and their re-exports, and the
+  doors under them in `crates/clausters-core-web`.
+- ⬜ `docs/bindings.md`: the four `gap` rows go with the symbols.
+- ⬜ **W10's record is amended in place** — its acceptance sentence and the
+  bullet that says a page draws its own trace, since a plan that still states
+  the old rule is how this comes back.
+- ⬜ `examples/scope.html` is rebuilt on `gui.scope()`, which is what its name
+  has been promising: it draws its own oscilloscope today while `scope()` and
+  the `scope`/`phasescope` widgets sit unused beside it, and its own text
+  claims "this canvas and a host widget on the same bus show the same picture"
+  — a claim the page never demonstrates, and one that is currently *false* for
+  the waveform (the wasm door's `columns` widens across boundaries where the
+  host tiles).
+- ⬜ `tests/data.html` — W10's acceptance — asserts **figures** rather than
+  pixels: the same buses, taps and bulk reads, checked as numbers, with the
+  drawing left to the host page beside it.
+- ⬜ `tests/recording.html` keeps its `columns` reads only where they are
+  assertions about measurements; anything drawing goes.
+
+**Not touched**: the parity vectors. `data-vectors.json` covers `peaks`,
+`peaksStream` and `stereoField`, all of which stay — so nothing in this
+milestone can move a number the two clients compare.
+
+**Acceptance:** no export of `clients/web/src` computes something whose only
+use is to put ink on a canvas; `./build.sh && ./test.sh` green; the scope
+example opens host widgets; and a name-by-name diff of the two clients' data
+surfaces turns up no drawing on either side.
+
+### W27 - It is written down who draws
+
+W26 removes the surface; this is what stops it growing back. The rule is stated
+where each audience reads, in one sentence and with its consequence:
+
+- ⬜ **The three books** — the server's, the Python client's, the web client's:
+  everything drawn is drawn by the GUI host; a client names what to look at
+  (`plot`, `scope`, a `waveform`/`plot`/`scope` widget in a GuiDef). A page or
+  a script that would rather draw its own is free to, and that is its own
+  program, not a surface this project provides.
+- ⬜ **`docs/architecture.md`** — the same, as a placement rule beside the
+  existing one for shared numeric logic, so the next milestone that needs a
+  figure knows where it goes: into the host, or into the core for the host to
+  read, never into a client.
+- ⬜ **`clients/web/docs/src/data.md`** loses its waveform-drawing recipe and
+  points at the host instead.
+- ⬜ The `examples` skill gains the line, since an example is where the
+  temptation appears: a page that wants to show a signal opens a host view.
+
+**Acceptance:** the rule is findable from either client's book without knowing
+it already, and `docs/architecture.md` states it as a rule rather than as a
+description of what happens to be true.
+
 ### W24 - The completeness pass
 
 The slot for what the milestone-by-milestone port leaves behind: differences
