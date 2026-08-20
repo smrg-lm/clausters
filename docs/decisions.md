@@ -6074,3 +6074,44 @@ pre-1.0 and would not have been after. The `grouping` field keeps its name, as
 do `Sequence`, `Segments`, `Track`, `Generator`, and the `CONCRETE`/`LOGICAL`
 kinds. `Vector.to_event()` and `Segments.to_events()` keep theirs too, because
 what they return really is a `clausters.seq.Event`.
+
+## A column reaches the column before it: the trace is a curve, and the columns are not
+
+A digital square wave drew as a row of dashes along the top and another along
+the bottom, with the vertical edge between them missing — and it came back at
+some magnifications and vanished at others, which is what said the picture had
+lost its grip on the samples rather than that one zoom was wrong.
+
+The two regimes are one picture: below `LINE_THRESHOLD` the trace is the
+polyline through the samples, where every consecutive pair is joined by a
+segment; above it a column is that same polyline's envelope over the samples one
+pixel covers. But a column measures a **group of samples**, and groups partition
+the samples where the curve does not. Between the last sample of one column and
+the first of the next there is a segment, and it was drawn nowhere. On audio it
+never showed — a column holding a hundred samples of a wave already spans nearly
+the excursion its neighbour does, so consecutive columns overlap by themselves —
+and on a one-sample jump it is the whole of the feature. Whether the jump lands
+inside a column or on its boundary is a fact about the zoom and the scroll, so
+the edge appeared and disappeared as the view moved.
+
+**A column is inked over what it measured, extended to reach the column before
+it** (`trace::join`): where the previous column sat wholly below, this one
+reaches down to its top; wholly above, up to its bottom; already overlapping,
+nothing changes. What is remembered for the next column is the **measurement**
+and never the extension, so a run of them cannot walk the trace outwards.
+
+This is not the fill that was refused next door ("A waveform column is its own
+envelope"), and the distinction is the whole of it. Filling to the baseline inks
+values **the signal never took** — three samples at +0.6 drawn from 0 to 0.6 —
+and needs a zoom threshold nobody can name. The join inks exactly the values the
+curve takes **while it crosses the boundary**: the same segment the polyline
+draws a zoom later, no more, measured from the two columns themselves. Both
+rules say the same thing from two sides — the drawing shows the signal and
+nothing else, at every zoom, and never changes its mind about what it is looking
+at.
+
+It lives in `draw_channel`, which is the one renderer, so it holds for every
+source (raw samples, a peak pyramid, a cache-only view) and every picture (the
+navigable waveform, a clip's take, a plot's series) at once. The measurements
+stay untouched: the pyramid's buckets keep tiling, the wire's overview keeps its
+meaning, and nothing about the summary format moves.

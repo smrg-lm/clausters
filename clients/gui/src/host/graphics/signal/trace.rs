@@ -423,11 +423,12 @@ impl TraceStyle {
 /// window, or straight down the whole buffer), `x_of` is its inverse, and
 /// `y_at` maps a sample value to a y pixel inside the lane. Above
 /// [`LINE_THRESHOLD`] samples per pixel — or whenever the source cannot answer
-/// for one sample ([`Trace::has_raw`]) — it draws one min/max column per pixel;
-/// at or below it, the polyline through every visible sample **plus the one
-/// beyond each edge**, so the segments that cross the edges are drawn and the
-/// trace enters and leaves the rect instead of stopping at the last sample it
-/// can see.
+/// for one sample ([`Trace::has_raw`]) — it draws one min/max column per pixel,
+/// each **joined to the one before it** ([`join`]) so the picture stays the one
+/// continuous curve the other regime draws; at or below it, the polyline
+/// through every visible sample **plus the one beyond each edge**, so the
+/// segments that cross the edges are drawn and the trace enters and leaves the
+/// rect instead of stopping at the last sample it can see.
 // The rect, the source, the channel, three coordinate maps and a style: all
 // distinct inputs to one drawing pass, clearer flat than bundled.
 #[allow(clippy::too_many_arguments)]
@@ -476,6 +477,8 @@ pub fn draw_channel(
         return;
     }
     if columns {
+        // What the column before this one reached — see [`join`].
+        let mut prev: Option<(f32, f32)> = None;
         for c in 0..cols {
             let x = rect.x + c as f32 * cw;
             // Past the written frontier there is no samples yet, so there is
@@ -486,8 +489,13 @@ pub fn draw_channel(
             }
             let (lo, hi) = trace.column(ch, per_px, src(x), src(x + cw));
             if lo > hi {
+                prev = None;
                 continue;
             }
+            // **Joined to the column before it**, which is what keeps the
+            // trace one curve: see [`join`].
+            let (vlo, vhi) = join(lo, hi, prev.take());
+            prev = Some((lo, hi));
             // A column is a quad, **never inked thinner than the trace's
             // weight in either direction**: at least the pixel column it fills,
             // so columns tile into a solid band on a dense signal, and at least
@@ -499,7 +507,7 @@ pub fn draw_channel(
             // draws *nothing* — so the flat stretch of an envelope disappeared
             // exactly where it is most readable. Overlapping neighbours is the
             // price of the second floor, and it is what a stroke does anyway.
-            let (top, bottom) = (y_at(hi), y_at(lo));
+            let (top, bottom) = (y_at(vhi), y_at(vlo));
             let (w, h) = (cw.max(style.width), (bottom - top).max(style.width));
             let (cx, cy) = (x + cw * 0.5, (top + bottom) * 0.5);
             mesh.rect(Rect::new(cx - w * 0.5, cy - h * 0.5, w, h), style.color);
@@ -534,6 +542,48 @@ pub fn draw_channel(
         }
     }
     mesh.set_clip(outer);
+}
+
+/// **What a column is inked over: what it measured, extended to meet the column
+/// before it** — the rule that makes the column regime draw the same curve the
+/// polyline regime does.
+///
+/// The two regimes are one picture. Below [`LINE_THRESHOLD`] the trace is the
+/// polyline through the samples, and every consecutive pair is joined by a
+/// segment; above it a column is that same polyline's envelope over the samples
+/// one pixel covers. But a column measures a *group of samples*, and groups
+/// partition the samples where the curve does not: between the last sample of
+/// one column and the first of the next there is a segment, and it was drawn
+/// nowhere. Where the signal crossed a column boundary the two quads did not
+/// touch.
+///
+/// On ordinary audio nothing shows, because a column holding a hundred samples
+/// of a wave already spans nearly the excursion its neighbour does and the two
+/// overlap by themselves. On the picture this is *for* — a digital square wave,
+/// a gate, a step, an edge of any kind — it is the whole of the feature: the
+/// one-sample jump falls between two columns, and the vertical stroke that *is*
+/// the edge is not drawn at all, leaving a flat run at the top and a flat run
+/// at the bottom with nothing between them. And it comes and goes as the view
+/// moves, since whether a jump lands inside a column or on its boundary is a
+/// fact about the magnification and the scroll, not about the signal — which is
+/// what makes it read as the picture losing its grip on the samples rather than
+/// as a defect at one zoom.
+///
+/// Reaching to the neighbour's nearest edge inks exactly the values the curve
+/// takes while it crosses the boundary — the segment the polyline draws a zoom
+/// later, no more — so the fix is silent everywhere it is not needed: columns
+/// that already overlap are left exactly as they were measured. What is stored
+/// for the next column is the **measurement**, never the extension, so a run of
+/// them cannot ratchet the trace outwards.
+fn join(lo: f32, hi: f32, prev: Option<(f32, f32)>) -> (f32, f32) {
+    match prev {
+        // The column before it sat wholly below: reach down to its top.
+        Some((_, phi)) if lo > phi => (phi, hi),
+        // ...wholly above: reach up to its bottom.
+        Some((plo, _)) if hi < plo => (lo, plo),
+        // They already overlap (or there is no column before): as measured.
+        _ => (lo, hi),
+    }
 }
 
 /// **The span a column's level is averaged over**: its own, or the fixed window
@@ -715,6 +765,134 @@ mod tests {
         // Two triangles (six vertices) per column, at most one column per pixel.
         assert!(mesh.vertex_count() <= (rect.w as u32 + 2) * 6);
         assert!(!mesh.is_empty());
+    }
+
+    /// The heights of the quads drawn, in order — one per column, six
+    /// vertices each.
+    fn quad_heights(mesh: &Mesh) -> Vec<f32> {
+        let ys: Vec<f32> = mesh.positions().map(|(_, y)| y).collect();
+        ys.chunks_exact(6)
+            .map(|q| {
+                let hi = q.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+                let lo = q.iter().cloned().fold(f32::INFINITY, f32::min);
+                hi - lo
+            })
+            .collect()
+    }
+
+    /// Draws `samples` across `rect` at exactly `per_px` samples per pixel,
+    /// full scale mapped to the rect — the geometry every view hands the
+    /// renderer, with the two maps written out.
+    fn draw_at(samples: &[f32], rect: Rect, per_px: f64) -> Mesh {
+        let mut mesh = Mesh::new();
+        draw_channel(
+            &mut mesh,
+            rect,
+            &Trace::samples(samples, 1),
+            0,
+            |x| (x - rect.x) as f64 * per_px,
+            |s| rect.x + (s / per_px) as f32,
+            |v| rect.y + rect.h * 0.5 * (1.0 - v),
+            TraceStyle::new([1.0, 1.0, 1.0, 1.0], 1.0),
+        );
+        mesh
+    }
+
+    /// **A one-sample jump is drawn wherever it falls**, including exactly on
+    /// a column boundary — the square wave's vertical edge, which is the whole
+    /// of the picture at that zoom.
+    ///
+    /// The columns partition the samples and the curve does not, so before the
+    /// join a jump landing between two columns was drawn by neither: this
+    /// signal came out as a row of dashes along the top and another along the
+    /// bottom, with nothing joining them. Chosen so every transition lands on
+    /// a boundary (period 8 at 4 samples per pixel), which is exactly what a
+    /// zoom or a scroll arrives at on its own.
+    #[test]
+    fn a_jump_on_a_column_boundary_is_still_drawn() {
+        let samples: Vec<f32> = (0..800)
+            .map(|i| if (i % 8) < 4 { 1.0 } else { -1.0 })
+            .collect();
+        let rect = Rect::new(0.0, 0.0, 100.0, 100.0);
+        let mesh = draw_at(&samples, rect, 4.0);
+        let heights = quad_heights(&mesh);
+        assert_eq!(heights.len(), 100, "one column per pixel");
+        // Every column but the first spans the full swing: it holds one level
+        // and reaches the other, which is the edge between them.
+        let full = heights.iter().filter(|h| **h > rect.h * 0.9).count();
+        assert_eq!(full, 99, "the edges are drawn: {heights:?}");
+    }
+
+    /// ...and the join inks **only** the crossing: a column whose neighbour
+    /// already overlaps it is drawn exactly as it was measured, which is every
+    /// column of ordinary audio.
+    #[test]
+    fn joining_never_widens_a_column_that_already_overlaps() {
+        // Several cycles per column: consecutive columns share nearly the
+        // whole swing, so there is no crossing left to draw.
+        let samples: Vec<f32> = (0..4000).map(|i| (i as f32 * 0.4).sin()).collect();
+        let rect = Rect::new(0.0, 0.0, 100.0, 100.0);
+        let inked = quad_heights(&draw_at(&samples, rect, 40.0));
+        let trace = Trace::samples(&samples, 1);
+        for (c, h) in inked.iter().enumerate() {
+            let (lo, hi) = trace.column(0, 40.0, c as f64 * 40.0, (c + 1) as f64 * 40.0);
+            let measured = ((hi - lo) * rect.h * 0.5).max(1.0);
+            assert!(
+                (h - measured).abs() < 1e-3,
+                "column {c} inked {h}, measured {measured}"
+            );
+        }
+    }
+
+    /// The trace over a signal that only ever moves one way: **connected at
+    /// every boundary, and never wider than the two columns it joins.**
+    ///
+    /// A slow ramp is the case the join does real work in at every column —
+    /// consecutive ones are disjoint by construction, so each reaches back the
+    /// one segment the polyline would draw. What it may never do is
+    /// accumulate: the extension is drawn and not remembered, so a run of
+    /// columns cannot walk the trace outwards.
+    #[test]
+    fn a_monotone_signal_is_connected_and_no_wider_than_its_columns() {
+        let n = 4000;
+        let samples: Vec<f32> = (0..n).map(|i| i as f32 / n as f32 * 2.0 - 1.0).collect();
+        let rect = Rect::new(0.0, 0.0, 100.0, 100.0);
+        let per_px = n as f64 / rect.w as f64;
+        let mesh = draw_at(&samples, rect, per_px);
+        let ys: Vec<f32> = mesh.positions().map(|(_, y)| y).collect();
+        let spans: Vec<(f32, f32)> = ys
+            .chunks_exact(6)
+            .map(|q| {
+                let hi = q.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+                (q.iter().cloned().fold(f32::INFINITY, f32::min), hi)
+            })
+            .collect();
+        let trace = Trace::samples(&samples, 1);
+        let measured = |c: usize| {
+            let (lo, hi) = trace.column(0, per_px, c as f64 * per_px, (c + 1) as f64 * per_px);
+            // Value space to y, top first — the map `draw_at` hands over.
+            (rect.h * 0.5 * (1.0 - hi), rect.h * 0.5 * (1.0 - lo))
+        };
+        for c in 1..spans.len() {
+            let (top, bottom) = spans[c];
+            let (ptop, pbottom) = spans[c - 1];
+            assert!(
+                top <= pbottom + 1e-3 && bottom + 1e-3 >= ptop,
+                "column {c} left a gap: {:?} after {:?}",
+                spans[c],
+                spans[c - 1]
+            );
+            // Inside the two measurements it joins, the trace weight included.
+            let (mtop, mbottom) = measured(c);
+            let (ptop_m, pbottom_m) = measured(c - 1);
+            assert!(
+                top >= mtop.min(ptop_m) - 1.0 && bottom <= mbottom.max(pbottom_m) + 1.0,
+                "column {c} inked {:?} outside [{}, {}]",
+                spans[c],
+                mtop.min(ptop_m),
+                mbottom.max(pbottom_m)
+            );
+        }
     }
 
     /// A column the signal barely moves in is still inked, at the trace's own

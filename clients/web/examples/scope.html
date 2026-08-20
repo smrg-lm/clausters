@@ -123,13 +123,23 @@ Swapping to a <code>--ws</code> server is the one line marked below.</div>
         }
         ctx.stroke();
 
-        // A waveform: the buffer's peak columns, one per pixel.
+        // A waveform: the buffer's peak columns, one per pixel. Each column
+        // is drawn from its own [min, max] extended to meet the one before it:
+        // the columns partition the samples, the signal does not, so a jump
+        // landing on a boundary (the edge of a square wave) would otherwise be
+        // drawn by neither and the trace would come apart at that pixel.
         band(ctx, 300, 110);
         ctx.strokeStyle = COLORS.wave;
         ctx.beginPath();
+        let prev = null;
         for (let x = 0; x < view.columns.min.length; x++) {
-          ctx.moveTo(x, 355 - view.columns.max[x] * 50);
-          ctx.lineTo(x, 355 - view.columns.min[x] * 50);
+          let lo = view.columns.min[x];
+          let hi = view.columns.max[x];
+          if (prev && lo > prev.hi) lo = prev.hi;
+          else if (prev && hi < prev.lo) hi = prev.lo;
+          ctx.moveTo(x, 355 - hi * 50);
+          ctx.lineTo(x, 355 - lo * 50);
+          prev = { lo: view.columns.min[x], hi: view.columns.max[x] };
         }
         ctx.stroke();
       }
