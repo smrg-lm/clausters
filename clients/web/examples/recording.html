@@ -46,10 +46,13 @@ silence, so the host asks only what <b>shape</b> it is and builds an empty
 summary of that length — the picture is the whole of the box it will fill, which
 is why the axis does not move while it fills.
 
-And once the takes are finished, <b>zoom in</b> (wheel): past what the overview
-can resolve, the host reads back <i>the span you are looking at</i> and draws
-the samples themselves. So the picture is the same here as in a desktop window,
-which reads the memory it mapped — the route differs, the drawing does not.
+<b>Zoom in</b> (wheel): past what the overview can resolve, the host reads back
+<i>the span you are looking at</i> and draws the samples themselves. So the
+picture is the same here as in a desktop window, which reads the memory it
+mapped — the route differs, the drawing does not. That holds <b>while a take is
+still recording</b> too: everything behind the write frontier is final, so it is
+read like any other span, and only what is past the frontier is left to the
+overview — which is the one thing the picture cannot know yet.
 
 The last button is the <b>other</b> way a picture changes: a second client — its
 own connection to the same engine, a peer as far as the server is concerned —

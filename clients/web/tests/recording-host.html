@@ -37,9 +37,11 @@
         ("being recorded into"), so a lane opens at once and empty;
       - the picture grows from the stream while it records, with nothing in
         this script asking for it (the `fills` prop is the whole request);
-      - and once it is finished, a zoom past the summary makes the host read
-        that span back ("read back for widget"), which is how a page resolves
-        to the sample where a native host reads the mapped cells.
+      - a zoom past the summary makes the host read that span back ("read back
+        for widget"), which is how a page resolves to the sample where a native
+        host reads the mapped cells -- asserted twice, once **while the take
+        records** (behind the write frontier, where the samples are already
+        final) and once after it is finished.
     -->
     <script type="module">
       // The host logs through the console, which is the only window a page has
@@ -117,7 +119,27 @@
         if (saw("loaded into")) throw new Error("the take's samples were pulled anyway");
 
         new Synth("host_recording", { buf: take.bufnum }, { server });
-        await sleep(2000);
+
+        // **Zoomed to the sample while it records.** Half a second in, the
+        // frontier is past 20 000 frames, so a window of 2000 frames at 4000 is
+        // wholly behind it -- final samples, a recorder writes forward -- and
+        // the host reads them back exactly as it would for a finished take.
+        // This is the asymmetry that used to be here: `fills` made a view ask
+        // for no span at all, so a page could only draw the bucket the stream
+        // reported while a native window, whose samples are the mapped cells,
+        // resolved to the sample at any zoom.
+        await sleep(500);
+        const during = seen.length;
+        win.widget("take").set({ view_start: 4000, view_len: 2000 });
+        await sleep(600);
+        const live = seen.slice(during).find((line) => line.includes("read back for widget"));
+        if (!live) {
+          throw new Error("a recording take read nothing back behind its frontier | "
+            + seen.slice(during).join(" ; ").slice(0, 300));
+        }
+        win.widget("take").set({ view_start: 0, view_len: FRAMES });
+
+        await sleep(1600);
         log("recorded");
 
         // The take is finished: `fills` is cleared, exactly as a client says
@@ -136,8 +158,10 @@
         // **Zoom past the summary.** A window of 2000 frames over 200 px is
         // ten samples a pixel — far finer than the 256-frame bucket — so the
         // picture can only be drawn from samples this view does not hold, and
-        // the host has to read them back.
-        win.widget("take").set({ view_start: 4000, view_len: 2000 });
+        // the host has to read them back. A different span from the one read
+        // while it recorded: that run is held, and a view that can answer for
+        // what it is showing asks for nothing, which is the whole point of it.
+        win.widget("take").set({ view_start: 40000, view_len: 2000 });
         await sleep(800);
         const read = seen.slice(before).find((line) => line.includes("read back for widget"));
         if (!read) {
@@ -162,6 +186,7 @@
         }
 
         verdict(`PASS: the take drew from the stream without being downloaded, `
+          + `a zoom read the samples back behind the frontier while it recorded, `
           + `and a zoom past the summary read ${frames} frames back — `
           + "the span on screen, not the take");
       }

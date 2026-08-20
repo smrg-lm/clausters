@@ -493,20 +493,27 @@ fn placed_nav(nav: &View, offset: f64) -> View {
 /// fetched because somebody is looking at it, and guessing where they will
 /// look next is a cache policy this deliberately does not have.
 ///
-/// **Samples still being written ask for nothing** (`written`, the
-/// `fills` prop's frontier): there is nothing to read past the frontier, and
-/// reading behind it would install a run that the next block makes stale. A
-/// take being recorded is *told* what it looks like; it reads the samples
-/// once it is finished, which is what clearing `fills` says.
+/// **A take still being written is asked for what is behind the frontier, and
+/// never for what is past it** (`written`, the `fills` prop's frontier). Past
+/// it there is nothing to read: the buffer holds the zeros it was allocated
+/// with, and a run installed over them would claim measured silence over audio
+/// that has not arrived. Behind it the samples are **final** — a recorder
+/// writes forward and does not come back, and the frontier is what the writer
+/// says it has already written — so a span that ends there is as readable as
+/// any other, and a page zoomed past its summary sees the samples rather than
+/// the bucket the stream reports.
+///
+/// This is what makes a page's zoom the window's: natively the samples are the
+/// mapped cells, so a view answers for any span with nothing told to it and
+/// this function returns `None` on `covers` alone. A client that cannot map
+/// took the same picture only down to the bucket, because `fills` was reading
+/// as *this take is not readable* rather than as *this much of it exists*.
 fn missing_span(
     view: &WaveformView,
     nav: &View,
     width: f64,
     written: Option<u64>,
 ) -> Option<(usize, usize)> {
-    if written.is_some() {
-        return None;
-    }
     let data = view.data();
     let total = data.total_samples();
     if width <= 0.0 || nav.len <= 0.0 || total == 0 {
@@ -518,6 +525,12 @@ fn missing_span(
     let a = (nav.start.floor().max(0.0) as usize).min(total);
     let b = (nav.start + nav.len).ceil().max(0.0) as usize;
     let b = b.clamp(a, total);
+    // The frontier is the ceiling, and it is the only thing `fills` does here.
+    // No margin under it: the frames the report counts were written before it
+    // was measured, so the last of them is as settled as the first. The margin
+    // that would be needed is *above* — which is not a margin but the clamp
+    // itself, since what the report has not counted yet may not be there.
+    let b = written.map_or(b, |w| b.min(w as usize));
     (b > a && !data.covers(a, b)).then_some((a, b))
 }
 
@@ -1421,6 +1434,49 @@ mod tests {
             bucket,
         ));
         assert_eq!(missing_span(&owned, &close, 800.0, None), None);
+    }
+
+    /// **A take being recorded is asked for what is behind its frontier.** The
+    /// span is clamped to `written` and never crosses it: a page zoomed past
+    /// its summary reads the samples that are final, and nothing over the zeros
+    /// the buffer is still holding.
+    #[test]
+    fn a_recording_asks_for_the_span_behind_its_frontier_and_no_further() {
+        use crate::waveform::WaveformData;
+        let (bucket, frames) = (256usize, 256 * 4_000);
+        let told = WaveformView::new(WaveformData::with_multi_pyramid(
+            clausters_core::peaks::MultiPyramid::empty(frames, 1, bucket),
+        ));
+        let close = View {
+            start: 1_000.0,
+            len: 2_000.0,
+        };
+        assert_eq!(
+            missing_span(&told, &close, 800.0, Some(10_000)),
+            Some((1_000, 3_000)),
+            "wholly behind the frontier: the same span a finished take asks for"
+        );
+        assert_eq!(
+            missing_span(&told, &close, 800.0, Some(2_000)),
+            Some((1_000, 2_000)),
+            "straddling it: only the settled half"
+        );
+        assert_eq!(
+            missing_span(&told, &close, 800.0, Some(500)),
+            None,
+            "wholly past it: there is nothing written to read"
+        );
+        assert_eq!(
+            missing_span(&told, &close, 800.0, Some(0)),
+            None,
+            "a take nothing has been written into yet"
+        );
+        // Zoomed out it is still the summary's answer, recording or not.
+        let wide = View {
+            start: 0.0,
+            len: frames as f64,
+        };
+        assert_eq!(missing_span(&told, &wide, 800.0, Some(10_000)), None);
     }
 
     #[test]

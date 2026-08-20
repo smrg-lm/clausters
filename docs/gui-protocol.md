@@ -477,14 +477,23 @@ by turning its measures on and off.
   subscription covers every such view of every window, so a script sharing the
   connection (a page, where the host and the script are one client) must not
   open its own beside it — the server keeps one per client and the second call
-  replaces the first. What arrives is the summary and not the audio, so while
-  the take is filling the picture resolves to the report's bucket. **Past that
-  it reads**: once the samples stops moving (`fills` cleared), a view zoomed
-  finer than its summary asks for the span it is showing (`/buffer_getRange`)
-  and draws the samples there — so the picture is the same at every zoom
-  whichever way the host got it, which is the rule the platform seam is judged
-  by. A take still being written asks for nothing: there is nothing past the
-  frontier to read, and behind it the next block would make a run stale.
+  replaces the first. What arrives is the summary and not the audio, so a take
+  that is filling is drawn at the report's bucket wherever nothing finer has
+  been read. **Past that it reads**: a view zoomed finer than its summary asks
+  for the span it is showing (`/buffer_getRange`) and draws the samples there —
+  so the picture is the same at every zoom whichever way the host got it, which
+  is the rule the platform seam is judged by.
+
+  This holds **while the take records too**, and the frontier is the whole of
+  what `fills` does to it: a span is asked for only as far as `written`, never
+  across it. Past the frontier there is nothing to read — the buffer holds the
+  zeros it was allocated with, and a run over them would claim measured silence
+  over audio that has not arrived — while behind it the frames are final, since
+  a recorder writes forward and does not come back and the frontier is what the
+  writer says it has already written. So a page zoomed to the sample during a
+  recording sees the samples behind the frontier, which is what a host that maps
+  the segment has always shown: there the samples *are* the mapped cells, so any
+  zoom is current with nothing told to it.
 - **What `fills` does *not* decide is how the samples arrive.** A host that
   cannot map them has two routes and keeps both, because they are cheap in
   opposite cases: a **short** buffer is downloaded whole (`/buffer_getRange`
