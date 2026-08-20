@@ -199,10 +199,17 @@ socket.</div>
         }
         // **A take that is finished and too big to download.** The server
         // fills it: `fill` says *how many* samples to write rather than
-        // carrying them, so a staircase across 23 MB is a dozen numbers on the
-        // wire, and `gain` then sweeps a fade over the whole of it. Not one
-        // sample of it crosses in either direction, which is the point the
-        // lane goes on to make about drawing it.
+        // carrying them, so a square wave across 23 MB is a dozen numbers on
+        // the wire. Not one sample of it crosses in either direction, which is
+        // the point the lane goes on to make about drawing it.
+        //
+        // Twelve constant runs and **nothing else** -- no fade over them. A
+        // trace is one quad per pixel column, from that column's lowest sample
+        // to its highest, so a constant run is a column of no height at all,
+        // inked at the trace's minimum weight. Slope that run by even a
+        // hundredth and each column sits a pixel below the last: the line
+        // reads as a staircase of its own, which is a true picture of a fade
+        // and a distraction from a lane that says "square wave".
         long = await Buffer.alloc(Math.round(LONG_SECONDS * RATE), 2, { server });
         // The steps land on **whole buckets** of the summary (256 frames), so
         // each one is drawn from buckets that hold one value: a boundary
@@ -214,9 +221,8 @@ socket.</div>
         await long.fill(Array.from({ length: steps }, (_, i) => [
           i * stepFrames * 2,
           stepFrames * 2,
-          (i % 2 === 0 ? 1 : -1) * (0.15 + 0.85 * (i / (steps - 1))),
+          (i % 2 === 0 ? 1 : -1) * (0.2 + 0.7 * (i / (steps - 1))),
         ]));
-        await long.gain(1.0, { to: 0.25 });
         win = host.open(scene());
         unfit?.();
         unfit = page.fit(win.id, el("stage"));
