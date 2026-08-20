@@ -1,6 +1,6 @@
 # The node-tree model and DAWs (design rationale)
 
-Why Clausters keeps SuperCollider's node-tree model, what that model buys and costs against the channel-graph model of a digital audio workstation (DAW), and — in detail — how the auto-sorted-group dependency analysis relates to a DAW's plugin delay compensation (PDC), including why Clausters has no PDC today and how one would fit. This is background and rationale; the user-facing behavior of auto-sorted groups is in [`auto-order.md`](auto-order.md), and the implementation invariants are in [`architecture.md`](architecture.md).
+Why Clausters keeps SuperCollider's node-tree model, the trade-off it makes against the channel-graph model of a digital audio workstation (DAW), and — in detail — how the auto-sorted-group dependency analysis relates to a DAW's plugin delay compensation (PDC), including why Clausters has no PDC today and how one would fit. This is background and rationale; the user-facing behavior of auto-sorted groups is in [`auto-order.md`](auto-order.md), and the implementation invariants are in [`architecture.md`](architecture.md).
 
 ## Three models in one sentence
 

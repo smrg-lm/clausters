@@ -229,7 +229,7 @@ It is versioned in the repo but git only looks at it once you point git at it, s
 git config core.hooksPath .githooks
 ```
 
-**It does not enforce anything, and cannot.** `git commit --no-verify` skips it without running it; so does unsetting `core.hooksPath`, or editing the file, which sits in the working tree of the person it is checking. A client-side hook is a convenience, never a gate. What it buys is speed: the same failure in two seconds instead of five minutes into a CI run. **CI is the gate** — it runs fmt, clippy, the test matrix and the Python suite, and the person committing cannot skip it. So `--no-verify` is not a licence to land a warning; it just moves the discovery to CI, and the rule in CLAUDE.md ("zero warnings, always") is unchanged either way.
+**It does not enforce anything, and cannot.** `git commit --no-verify` skips it without running it; so does unsetting `core.hooksPath`, or editing the file, which sits in the working tree of the person it is checking. A client-side hook is a convenience, never a gate. What it saves is time: the same failure in two seconds instead of five minutes into a CI run. **CI is the gate** — it runs fmt, clippy, the test matrix and the Python suite, and the person committing cannot skip it. So `--no-verify` is not a licence to land a warning; it just moves the discovery to CI, and the rule in CLAUDE.md ("zero warnings, always") is unchanged either way.
 
 A *git* hook rather than an editor's or an agent's, because git is the one thing that knows with certainty that a commit is happening: anything upstream has to guess it from the text of a command line, and a guess that errs permissive is a check that silently is not there. It also covers every commit — from any terminal, editor or script.
 

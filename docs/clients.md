@@ -372,8 +372,8 @@ builtins are the core's, through the same wasm shell; what is TypeScript is the
 coroutine driver (`function*`/async in place of Python's `yield`) and the
 composition of events and patterns. Two timebases are available — the
 monotonic clock and the Web Audio sample-clock — and the driver stays on the
-page: only the wake-up moves to a shared tick worker, which is how the browser
-buys the property Python gets from a background thread.
+page: only the wake-up moves to a shared tick worker, which is how a page reaches
+the wake-up a background thread gives Python.
 
 **The input path.** `OscFunc`, mirroring `clausters.responders` — the same
 constructor, the same `(msg, time, src)` callback, the same `argTemplate` and

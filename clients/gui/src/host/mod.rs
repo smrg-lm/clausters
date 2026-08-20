@@ -645,7 +645,7 @@ pub struct Host {
     /// bigger block is cheaper and choppier, and neither the sound nor a
     /// playhead over it reads this.
     ///
-    /// It was one second, and the second was buying back a **copy**. A slot
+    /// It was one second, and the second was paying for a **copy**. A slot
     /// holds the pyramid it draws, so a refresh could not write in place and
     /// copied the whole take first — a cost that does not shrink with the
     /// block, which is why the block had to grow instead. The slot gives the

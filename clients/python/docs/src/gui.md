@@ -367,8 +367,8 @@ reach that differently:
   floors it at that resolution, computed from `fft_size` and the sample rate.
   It is not a fixed fraction of the axis, because a bin is not one: on a log
   axis one is a twentieth of what you see at 500 Hz and a thousandth of it near
-  Nyquist. Raise `fft_size` to zoom further; that is the only thing that buys
-  more detail, here as anywhere.
+  Nyquist. Raise `fft_size` to zoom further; that is the only thing that adds
+  detail, here as anywhere.
 
   Because the floor moves with the window, the axis distinguishes the window you
   **asked** for from the one it can **show** you. `view_start`/`view_len` are the

@@ -1035,7 +1035,7 @@ mod tests {
     /// the correction the first attempt earned. Two elements measuring
     /// differently on one rectangle are *not* layers: each paints its own field
     /// before it draws, so the second hides the first. The layering is a set on
-    /// the element instead, and this is what that has to buy — the level body
+    /// the element instead, and this is what that has to deliver — the level body
     /// drawn inside the envelope, by the one renderer placed twice, in one
     /// drawing that the axis, the ruler and the upload are shared by.
     #[test]

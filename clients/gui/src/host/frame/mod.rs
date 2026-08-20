@@ -935,7 +935,7 @@ mod tests {
     }
 
     /// The whole clip path, from the tree to the geometry: the clip's box, and
-    /// then each body over it. This is what the containment has to buy — the
+    /// then each body over it. This is what the containment has to deliver — the
     /// lane draws no clip, the clip draws no body, and each body draws itself
     /// against the clip's rectangle and axis.
     #[test]

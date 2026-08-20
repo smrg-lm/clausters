@@ -156,7 +156,7 @@ pub enum Step {
     /// A deterministic operation to **re-run**, carried as the owner's own
     /// parameters and never interpreted here. The crate cannot execute one —
     /// it holds no algorithms — so a caller that stores these must be ready to
-    /// perform them on redo. What it buys is a redo whose cost follows the
+    /// perform them on redo. What it gives is a redo whose cost follows the
     /// parameters instead of the audio.
     Recompute(Opaque),
 }

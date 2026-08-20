@@ -746,7 +746,7 @@ Two consequences of the shape are load-bearing:
 - **The base level is the view, not the data.** How coarse or fine a group is
   shown (a summary rectangle, or its members resolved into lanes) is a property of
   the *look*, so the same structure serves the whole scale from a section to a
-  note to a parameter — which is the granularity a type list cannot buy.
+  note to a parameter — which is the granularity a type list cannot reach.
 
 **Consequence.** The layer is pure and transport-agnostic: no DSP, no protocol, no
 GUI — the piece a future client factors into the shared core. It carries the
@@ -1329,7 +1329,7 @@ only there (same-platform RT ≡ NRT stays bit-exact, unchanged):
   records for its cross-platform tolerance. UGens call transcendentals per
   sample (`Sine` is `phase.sin()`), so the difference is unavoidable without
   forcing one libm on every target (a rejected option: pinning the Rust libm
-  natively would change the native sample stream and buy nothing users can
+  natively would change the native sample stream and change nothing users can
   hear).
 - **No flush-to-zero on wasm.** wasm has no FTZ/DAZ mode, so a render that
   enters the denormal range diverges from the FTZ-armed native engine. The
@@ -1889,7 +1889,7 @@ Route 3's price is smaller than it sounds and should be measured before it is
 assumed away: a full engrave of a six-bar page — load, lay out, render, walk the
 SVG into the display list — is **~17 ms**, from MEI or from Plaine & Easie alike.
 That is inside a frame budget for a page of this size, so "incremental relayout"
-buys nothing yet; it starts to matter at a page count a rehearsal score reaches,
+is worth nothing yet; it starts to matter at a page count a rehearsal score reaches,
 not at the sizes the editing work will first be shaped against.
 
 **Resolved: route 2 — vendor and build verovio ourselves.** It is the only route
@@ -2367,7 +2367,7 @@ a `powf` per sample, some fifty times scsynth's. Cheap in absolute terms, and
 exactly the sort of thing that stops being cheap at one instance per voice.
 
 So they are now scsynth's ramps (`dsp::line`): the step is derived once and the
-inner loop is one arithmetic operation. What the reuse was buying is kept
+inner loop is one arithmetic operation. What the reuse was for is kept
 without it — the done actions are the same enum, and the landing is committed
 by *assigning* `end` when the counter runs out rather than by arriving at it.
 Two things did change, both deliberate:
@@ -2584,7 +2584,7 @@ are design, not luck.
 
 **The endpoints are exact.** The fifth coefficient is not the Taylor one; it is
 *defined* as whatever makes the five sum to `1`, which lands within `3.5e-6` of
-Taylor's and buys `quarter_sin(1) == 1` exactly. It also buys most of the
+Taylor's and buys `quarter_sin(1) == 1` exactly. It also carries most of the
 accuracy: forcing the sum cancels the bulk of the truncation error across the
 whole range, which is why the worst case is `2.6e-7` and not the `3.5e-6` the
 truncated series alone would give. That number is the gain of a
@@ -2906,7 +2906,7 @@ itself a barrier, they would have been as scalar as `binary_slice` was. They wer
 not: `MulAdd` disassembles to **26 packed arithmetic instructions against 15
 scalar**, so LLVM had already unswitched part of it on its own. Hoisting the rest
 by hand was written and measured — it takes the same probe to 199 packed against
-3, and buys **1.19–1.23× on the all-signal shapes, 1.03–1.09× on the
+3, and is worth **1.19–1.23× on the all-signal shapes, 1.03–1.09× on the
 constant-heavy ones** — real, consistent, and an order of magnitude less than the
 operator match was worth.
 
@@ -2928,7 +2928,7 @@ move the engine ~20%: there the loop being fixed was 70 ns, not 10.
 
 What the section is for going forward is the question a user actually asks —
 whether to reach for `MulAdd` over `a*b` then `+c` at all. Read at the voice
-counts where the bench is steady (32 to 512): **fusing buys some 3–4% for
+counts where the bench is steady (32 to 512): **fusing is worth some 3–4% for
 `MulAdd` over `Mul`+`Add` and 5–8% for `Sum4` over three `Add`s**, and what it
 saves is mostly the dropped `dyn` dispatch and wire buffer rather than the
 arithmetic. The 1000-voice row of that section is **not** readable — repeated
@@ -3129,7 +3129,7 @@ cross. So there is no direct port of that thread, and the coroutine driver stays
 on the page's thread, which is what `clients/python/PLAN.md` already asks for ("the
 coroutine driver stays in the language").
 
-What *does* port is the property the background thread buys: a wake-up the rest
+What *does* port is the property the background thread has: a wake-up the rest
 of the program cannot starve. On the page, `setTimeout` is clamped once nested
 and throttled to about a second in a background tab — longer than any usable
 scheduling headroom, so a sequence would stutter the moment the user changed
@@ -3325,7 +3325,7 @@ bundler, one dependency.
 **TypeDoc, installed as a tool rather than as a dependency.** It is the only
 generator that reads the language's own doc format, and with the markdown plugin
 it emits the pages an mdBook can host. Its weight — about forty megabytes,
-mostly the TypeScript it parses with — buys nothing at run time and nothing at
+mostly the TypeScript it parses with — does nothing at run time and nothing at
 build time, so it goes where pydoc-markdown goes: a **user-space global
 install**, never in the package's `node_modules` and never in `package.json`.
 Read the Docs installs it the same way, into a directory of its own.
@@ -4322,7 +4322,7 @@ branches on the first exactly where the Python client branches on
 that would have made "which carrier" a question the layers above `Server` could
 ask, which is the one property the seam exists to prevent.
 
-What that buys is worth stating plainly: **only the connection changes**. The
+The consequence is worth stating plainly: **only the connection changes**. The
 same patterns, defs and routines write a score that a live session would have
 sent, and the score comes out byte-identical to the Python client's for the
 same piece.
@@ -4490,7 +4490,7 @@ outbound one — and `ClientId::Ring` becomes `ClientId::Ring(u32)`.
   `clients/python/clausters/ipc.py`) need only their version constant bumped —
   exactly the case `shm.rs`'s own comment anticipates. The alternative
   considered, **several rings** (one pair per client), moves the layout, fixes a
-  client count at boot, and buys nothing the tag does not.
+  client count at boot, and gives nothing the tag does not.
 - **SPSC survives, because the tag is about the packet and not the ring.** One
   producer still writes each ring; an embedder holding several clients funnels
   their sends through it and demultiplexes the replies by tag. The page already
@@ -4896,7 +4896,7 @@ the atlas keeps it rather than inheriting a typeface's own metrics. A scale
 rasterizes at the pixel size whose **cap height** is the body box, so a capital
 through the atlas is exactly as tall as the capital the bitmap drew.
 
-The property that buys is the one the sizing model paid for: the metrics table
+The property it delivers is the one the sizing model paid for: the metrics table
 is constant data resolved once per scale change, so **changing the typeface
 never relayouts a window**. Loading a face mid-session is a redraw, not a
 re-measure; a document laid out by a host with a face and one without is the
@@ -5333,7 +5333,7 @@ of its own. It is not: `measure` says what the element's columns measure —
 signal held — and the classic editor picture is one view naming **both**
 (`measure: "peak rms"`), drawn by the one renderer placed once per measure.
 
-**What that buys is the generality the signal element was factored for.** The
+**That generality is what the signal element was factored for.** The
 element is already a presentation × a source × its capabilities; a measure is
 one more factor of that product, so it costs no name in the catalog and it
 means the same thing everywhere the element goes — over a file it is an offline

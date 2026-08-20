@@ -6,7 +6,7 @@
 //! **One accumulator, in `f64`.** Every UGen here advances a normalized phase in
 //! `[0, 1)` by `freq / sample_rate` per sample.
 //!
-//! What `f64` buys is worth stating precisely, because the obvious answer is
+//! What `f64` gives is worth stating precisely, because the obvious answer is
 //! wrong and the tests measure it (`tests/oscillators.rs`,
 //! `f64_is_for_the_position_not_the_phase`). For the **wrapped phase** it buys
 //! nothing audible:

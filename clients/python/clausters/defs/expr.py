@@ -16,7 +16,7 @@ Its two branches are the two def families, which are peers: `SynthExpr` for the
 UGen graph (`Ugen`, `Control`, `ChannelList`) and `FaustExpr` for Faust
 (`Signal`, `Box`). A single engine-neutral base would make one family "the
 graph" and the other the exception; `Signal` and `Box` do not compose with each
-other either, so their shared roof buys a real dispatch. The name avoids
+other either, so their shared roof does a real dispatch. The name avoids
 ``Graph*``: `clausters.defs.graphdef.GraphDef` is the third def family, so in
 this package "graph" already means a configuration of member nodes wired by
 buses.
