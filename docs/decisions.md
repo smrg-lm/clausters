@@ -1321,7 +1321,20 @@ render quantum runs one serving turn before its two 64-frame engine blocks
   headers, which an embeddable component cannot demand of its host page. The
   MessagePort path has no header requirement at all. The ring seam keeps a
   later SAB/wasm-threads build (a zero-message in-page `BusSource`) open as an
-  optimization, not a redesign.
+  optimization, not a redesign — and the optimization has since been priced,
+  which is what settles it. On a page holding forty canvases, each drawing a
+  control-rate meter and a control-rate scope, one `/bus_stream` frame is 824
+  bytes and taking it in costs about 29 microseconds of the main thread per 33
+  ms frame: **a tenth of a percent of the frame**, some 25 kB/s, with the
+  page's frame rate and event-loop lag unable to tell a streaming phase from
+  the same page with the subscription cancelled. The cost is per call rather
+  than per byte (sixty-four canvases: 1304 bytes, the same 28 microseconds).
+  So the zero-message path would save a tenth of a percent of a frame, and
+  cost isolation headers an embedded component cannot ask for plus a second
+  backend for one seam; the MessagePort carrier is not a compromise at
+  this scale, it is the right size. The measurement is reproducible —
+  `clients/web/tools/profile-bus-stream.sh` — and reopening the question means
+  a profile that shows the messages costing something, not an argument.
 - **The one relaxation vs. the native RT rules**: OSC→Cmd translation
   allocates on the worklet (audio) thread. wasm malloc is a bump over linear
   memory — no page faults, no locks, no priority inversion — and the DSP

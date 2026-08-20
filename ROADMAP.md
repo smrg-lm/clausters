@@ -123,7 +123,12 @@ example, and none blocks anything that is.
 of the four entries it inherited are done and gone: the take's overview is a
 file beside its region, a page follows another peer's edit, and the fork between
 a whole download and a summary is a question of cost that is written down in
-`docs/architecture.md` and `docs/gui-protocol.md`). **This is where the next
+`docs/architecture.md` and `docs/gui-protocol.md`). **The in-page shared-memory
+path has since been answered and left too**: the number it waited on was
+measured — a frame of `/bus_stream` at forty canvases is 824 bytes and ~29 µs,
+a tenth of a percent of the frame — so a `SharedArrayBuffer` saves nothing
+worth COOP/COEP and the track stays shut (`clients/gui/PLAN.md`, Future
+directions; `docs/decisions.md`). **This is where the next
 session picks up**, so everything the phase left is here rather than spread
 through the list below, in the order it would be taken and with the reason for
 that order.
@@ -153,15 +158,15 @@ that order.
   *(`clients/gui/PLAN.md`, Future directions)*. Deferred by the user the day it
   was found, to be looked at another way rather than patched — so it is here
   named and not ordered against the two above.
-- ⬜ **The in-page shared-memory path — a track to open** *(`clients/gui/PLAN.md`,
-  Future directions)* — a `SharedArrayBuffer` would make a page's host read the
-  engine's memory as the native one reads the segment (zoom to the sample while
-  a take records, no messages at all). Left out by requirement: SAB needs
-  COOP/COEP, which an embeddable component cannot demand of its page. **What it
-  waits on is a number, not a decision**: what a frame of `/bus_stream` costs on
-  a page holding forty canvases, which the entry names as the whole argument.
-  Note what the first two entries would already give of it over the wire, which
-  is most of what a page actually asks for.
+- ⬜ **Past 128 buses a page's stream stops growing, and it stops silently**
+  *(`clients/gui/PLAN.md`, Found by use)*. What the profile turned up while it
+  was answering the question above: `/bus_stream` is one subscription per
+  client capped at 128 bus indices, a larger one is refused and the previous
+  kept, so a page crosses the
+  ceiling by opening canvases — about sixty-four at two buses each — and every
+  one after that reads a bus nobody streams. Here rather than ordered because
+  nothing on the path to the complete example opens sixty-four live canvases,
+  and because a fix spans both packages.
 
 **And one debt this phase paid half of**, already ordered in Phase 1: **a bulk
 read of more than one chunk gets no reply on the in-page carrier**

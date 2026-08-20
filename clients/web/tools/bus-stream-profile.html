@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>profile: /bus_stream on a page of many canvases</title>
+    <style>
+      html, body { margin: 0; background: #0d0d12; color: #ddd;
+                   font-family: system-ui, sans-serif; }
+      main { padding: 12px; }
+      #grid { display: grid; grid-template-columns: repeat(auto-fill, 240px);
+              gap: 8px; }
+      .cell { width: 240px; height: 120px; }
+      canvas { display: block; width: 100%; height: 100%; }
+      pre { font-size: 12px; white-space: pre-wrap; color: #9c9; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <pre id="report">running…</pre>
+      <div id="grid"></div>
+    </main>
+
+    <!--
+      The number the in-page shared-memory path waits on
+      (`clients/gui/PLAN.md`, Future directions -- "The in-page shared-memory
+      path"): what a frame of `/bus_stream` costs on a page holding forty
+      canvases. A `SharedArrayBuffer` would delete exactly that cost and
+      nothing else -- the tick, the histories and the drawing stay where they
+      are -- so the measurement is an A/B over the same page: the same
+      canvases, drawing the same widgets, with the stream flowing and with it
+      cancelled.
+
+      The page builds N canvases (`?canvases=`, default 40), each a window with
+      a control-rate meter and a control-rate scope on two buses of its own,
+      each bus driven by its own LFO synth. The GUI host subscribes the union
+      through one `/bus_stream`, and every snapshot arrives as one OSC packet
+      over the worklet's MessagePort.
+
+      Three phases, each `?seconds=` long (default 6):
+
+        A  the stream flowing            -- the shipped path
+        B  the subscription cancelled    -- the page as SAB would leave it
+        A' flowing again                 -- that the delta is the stream's
+
+      B is reached by intercepting the host's own outbound `/bus_stream` (the
+      `engine.send` wrapper `tests/ring-peers.html` uses) and cancelling under
+      its peer tag: the host keeps ticking, drawing and reading its last
+      values, and the engine stops sending.
+
+      What is measured, per phase: the packets and bytes that arrived, the time
+      spent inside `bridge.server_reply` (decode + apply -- the half SAB
+      deletes outright), and what the main thread had left over -- the rAF
+      cadence, an event-loop lag probe, and Chrome's long-animation-frame
+      total.
+
+      Run it with tools/profile-bus-stream.sh (headless, beacons its report),
+      or serve the package and open it.
+    -->
+    <script type="module">
+      import {
+        loadOsc, loadCore, pageConnection, server as engine, Server,
+        Bus, Synth, SynthDef, GuiHost, guiHost, gui, decodePacket,
+      } from "../dist/index.js";
+      import { control, outCtl, sine } from "../dist/defs/index.js";
+      import { encodeMessage } from "../dist/base/osc.js";
+
+      const params = new URLSearchParams(location.search);
+      const CANVASES = Number(params.get("canvases") ?? 40);
+      const SECONDS = Number(params.get("seconds") ?? 6);
+      const FRAME_MS = 33;   // the host's own tick and stream period
+
+      const out = [];
+      const say = (line) => {
+        out.push(line);
+        document.getElementById("report").textContent = out.join("\n");
+      };
+      const verdict = (t) => {
+        document.title = t;
+        fetch(`/smoke-verdict-${encodeURIComponent(t)}`).catch(() => {});
+      };
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const round = (x, n = 2) => Number(x.toFixed(n));
+
+      // ---- the meters this page reads itself with -------------------------
+
+      // Every `/bus_stream.reply` packet, timed where the host receives it.
+      // The address is matched on the raw bytes: decoding here to find out
+      // whether to time the decode would be paying the cost twice.
+      const TAG = new TextEncoder().encode("/bus_stream.reply");
+      const isStreamReply = (bytes) => {
+        if (bytes.length < TAG.length) return false;
+        for (let i = 0; i < TAG.length; i++) if (bytes[i] !== TAG[i]) return false;
+        return true;
+      };
+
+      const counters = { replies: 0, bytes: 0, ms: 0 };
+      // The server refuses a subscription of more than 128 buses outright and
+      // keeps the previous one, so a page past that ceiling streams a stale
+      // subset and says nothing: the refusals are counted here to make the
+      // wall visible in the report rather than by its silence.
+      const refusals = [];
+
+      // The rAF cadence and an event-loop lag probe: what the page has left
+      // over while the host ticks. Both run for the whole session and are
+      // read as differences per phase.
+      const raf = { frames: 0, deltas: [] };
+      let lastFrame = performance.now();
+      const onFrame = (t) => {
+        raf.frames++;
+        raf.deltas.push(t - lastFrame);
+        lastFrame = t;
+        requestAnimationFrame(onFrame);
+      };
+      requestAnimationFrame(onFrame);
+
+      const lag = { samples: [] };
+      const PROBE_MS = 20;
+      let due = performance.now() + PROBE_MS;
+      setInterval(() => {
+        const now = performance.now();
+        lag.samples.push(Math.max(0, now - due));
+        due = now + PROBE_MS;
+      }, PROBE_MS);
+
+      // Chrome's long-animation-frame timing, when the browser has it: the
+      // main thread's blocked total, which neither of the two above sees
+      // directly.
+      const loaf = { blocked: 0, frames: 0 };
+      try {
+        new PerformanceObserver((list) => {
+          for (const entry of list.getEntries()) {
+            loaf.frames++;
+            loaf.blocked += entry.blockingDuration ?? 0;
+          }
+        }).observe({ type: "long-animation-frame", buffered: false });
+      } catch { /* not this browser: the other two probes still answer */ }
+
+      const mark = () => ({
+        t: performance.now(),
+        replies: counters.replies, bytes: counters.bytes, ms: counters.ms,
+        frames: raf.frames, deltas: raf.deltas.length,
+        lag: lag.samples.length,
+        blocked: loaf.blocked, loafFrames: loaf.frames,
+      });
+
+      const percentile = (values, p) => {
+        if (values.length === 0) return 0;
+        const sorted = [...values].sort((a, b) => a - b);
+        return sorted[Math.min(sorted.length - 1,
+                                Math.floor(p * sorted.length))];
+      };
+
+      const measure = (name, from, to) => {
+        const secs = (to.t - from.t) / 1000;
+        const replies = to.replies - from.replies;
+        const deltas = raf.deltas.slice(from.deltas, to.deltas);
+        const lags = lag.samples.slice(from.lag, to.lag);
+        const fps = deltas.length / secs;
+        return {
+            name, secs: round(secs), replies,
+            perSec: round(replies / secs, 1),
+            bytesPerReply: replies ? round((to.bytes - from.bytes) / replies, 1) : 0,
+            bytesPerSec: round((to.bytes - from.bytes) / secs),
+            // The two forms of the same number: what one snapshot costs to
+            // take in, and what a second of them costs the main thread.
+            usPerReply: replies ? round(((to.ms - from.ms) / replies) * 1000, 1) : 0,
+            msPerSec: round((to.ms - from.ms) / secs, 3),
+            fps: round(fps, 1),
+            frameP95: round(percentile(deltas, 0.95), 1),
+            lagMean: round(lags.reduce((a, b) => a + b, 0) / (lags.length || 1), 2),
+            lagP95: round(percentile(lags, 0.95), 2),
+            blockedPerSec: round((to.blocked - from.blocked) / secs, 1),
+        };
+      };
+
+      // ---- the page ------------------------------------------------------
+
+      async function run() {
+        await loadOsc();
+        await loadCore();
+        const raw = await engine({ channels: 2 });
+        await raw.resume();
+        const connection = await pageConnection();
+        const server = await Server.open(connection);
+
+        // One LFO per bus: the values the widgets read have to move, or the
+        // host is drawing a constant and the tick does less work than it
+        // would on a live page.
+        await new SynthDef("profile_lfo",
+          outCtl(control("bus", 0.0),
+                 sine(control("freq", 2.0)).mul(0.5).add(0.5))).send(server);
+        await server.sync();
+
+        const gui_ = await guiHost();
+        const host = await GuiHost.page();
+
+        // The host's own reply door, wrapped where the cost lands: this is
+        // the decode and the apply, the whole of what a shared segment would
+        // replace with a load.
+        const bridge = gui_.bridge;
+        const inner = bridge.server_reply.bind(bridge);
+        bridge.server_reply = (bytes) => {
+            if (!isStreamReply(bytes)) {
+                for (const { addr, args } of decodePacket(bytes)) {
+                    if (addr === "/fail" && String(args[0]).includes("/bus_stream")) {
+                        refusals.push(args.join(" "));
+                    }
+                }
+                return inner(bytes);
+            }
+            const t0 = performance.now();
+            const r = inner(bytes);
+            counters.ms += performance.now() - t0;
+            counters.replies++;
+            counters.bytes += bytes.length;
+            return r;
+        };
+
+        // The outbound door, to cancel the host's subscription under its own
+        // peer tag without the host knowing (it keeps its widgets, its tick
+        // and its last values). `null` while phase A runs.
+        let hostPeer = null;
+        let cancelling = false;
+        const realSend = raw.send.bind(raw);
+        raw.send = (bytes, peer) => {
+            for (const { addr } of decodePacket(bytes)) {
+                if (addr !== "/bus_stream") continue;
+                hostPeer = peer;
+                if (cancelling) {
+                    return realSend(encodeMessage("/bus_stream", [["i", 0]]), peer);
+                }
+            }
+            return realSend(bytes, peer);
+        };
+
+        const grid = document.getElementById("grid");
+        const defs = [];
+
+        for (let i = 0; i < CANVASES; i++) {
+            const cell = document.createElement("div");
+            cell.className = "cell";
+            const canvas = document.createElement("canvas");
+            cell.append(canvas);
+            grid.append(cell);
+
+            const level = Bus.control(1, { server });
+            const wave = Bus.control(1, { server });
+            new Synth("profile_lfo",
+                      { bus: level.index, freq: 0.7 + i * 0.03 }, { server });
+            new Synth("profile_lfo",
+                      { bus: wave.index, freq: 1.3 + i * 0.05 }, { server });
+
+            // The canvas comes first: the host holds one per def, and it must
+            // know where the def draws before the def opens.
+            const id = host.allocId();
+            gui_.attach(id, canvas);
+            host.open(
+                gui.window({ title: `p${i}`, w: 240, h: 120 },
+                    gui.meter(level.index, { rate: "control", h: 24 }),
+                    gui.scope(wave.index, { rate: "control", windowMs: 2000 })),
+                { id });
+            gui_.fit(id, cell, canvas);
+            defs.push(id);
+        }
+        await server.sync();
+        say(`${CANVASES} canvases, ${CANVASES * 2} control buses, `
+          + `${CANVASES * 2} LFO synths; host tick and stream period `
+          + `${FRAME_MS} ms`);
+
+        // Let the host settle: it subscribes on its tick, and the first
+        // frames pay for shader compilation and the first upload.
+        await sleep(2000);
+        if (counters.replies === 0) {
+            throw new Error("no /bus_stream.reply arrived: nothing to measure "
+                + "(is the wrapper on the host's reply door?)");
+        }
+
+        const a0 = mark();
+        await sleep(SECONDS * 1000);
+        const a1 = mark();
+
+        // Phase B: cancel under the host's peer. It re-subscribes only when
+        // its widget set changes, so the toggle is what makes it speak.
+        cancelling = true;
+        if (hostPeer === null) throw new Error("the host never sent /bus_stream");
+        realSend(encodeMessage("/bus_stream", [["i", 0]]), hostPeer);
+        await sleep(500);
+        const b0 = mark();
+        await sleep(SECONDS * 1000);
+        const b1 = mark();
+
+        // Phase A': the same page again, so the delta reads as the stream's
+        // and not as a warm-up that ran out.
+        cancelling = false;
+        // Nudge the visible set so the host re-derives and re-subscribes.
+        bridge.set_visible(defs[0], false);
+        await sleep(200);
+        bridge.set_visible(defs[0], true);
+        await sleep(800);
+        const c0 = mark();
+        await sleep(SECONDS * 1000);
+        const c1 = mark();
+
+        const A = measure("A  streaming", a0, a1);
+        const B = measure("B  cancelled", b0, b1);
+        const C = measure("A' streaming", c0, c1);
+
+        for (const p of [A, B, C]) {
+            say(`${p.name}: ${p.replies} replies (${p.perSec}/s, `
+              + `${p.bytesPerReply} B each, ${p.bytesPerSec} B/s) | `
+              + `server_reply ${p.usPerReply} us each = ${p.msPerSec} ms/s | `
+              + `raf ${p.fps} fps (p95 ${p.frameP95} ms) | `
+              + `loop lag mean ${p.lagMean} p95 ${p.lagP95} ms | `
+              + `blocked ${p.blockedPerSec} ms/s`);
+        }
+
+        if (refusals.length) {
+            say(`\n${refusals.length} subscription(s) refused: ${refusals[0]}`);
+        }
+        if (B.replies !== 0) {
+            throw new Error(`phase B still received ${B.replies} replies`);
+        }
+        if (C.replies === 0) {
+            throw new Error("the host never came back after the cancel");
+        }
+
+        // The number the entry asks for, in the frame's own units: what one
+        // 33 ms frame of the stream costs the page's main thread, and what
+        // the page paid for it in lag and in blocked time.
+        const streamingMs = (A.msPerSec + C.msPerSec) / 2;
+        const perFrame = streamingMs * (FRAME_MS / 1000);
+        const lagDelta = round(((A.lagMean + C.lagMean) / 2) - B.lagMean, 2);
+        const blockedDelta = round(((A.blockedPerSec + C.blockedPerSec) / 2)
+                                   - B.blockedPerSec, 1);
+        say(`\nA frame of /bus_stream at ${CANVASES} canvases `
+          + `(${CANVASES * 2} buses): ${round(A.bytesPerReply, 0)} B, `
+          + `${round(perFrame * 1000, 0)} us of main thread inside `
+          + `server_reply (${round(100 * perFrame / FRAME_MS, 2)}% of the `
+          + `${FRAME_MS} ms frame). Whole-path deltas against the same page `
+          + `not streaming: loop lag ${lagDelta} ms, blocked ${blockedDelta} ms/s.`);
+
+        verdict(`PROFILE canvases=${CANVASES} buses=${CANVASES * 2} `
+          + `refused=${refusals.length} `
+          + `bytes/frame=${round(A.bytesPerReply, 0)} `
+          + `us/frame=${round(perFrame * 1000, 0)} `
+          + `share=${round(100 * perFrame / FRAME_MS, 2)}% `
+          + `lagDelta=${lagDelta}ms blockedDelta=${blockedDelta}ms/s `
+          + `fps A=${A.fps} B=${B.fps} A'=${C.fps} `
+          + `lag A=${A.lagMean} B=${B.lagMean} A'=${C.lagMean}`);
+      }
+      run().catch((e) => {
+        const why = refusals.length
+            ? `${e} (${refusals.length} refused: ${refusals[0]})` : `${e}`;
+        say(`FAIL: ${why}`);
+        verdict(`FAIL: canvases=${CANVASES} ${why}`);
+      });
+    </script>
+  </body>
+</html>
