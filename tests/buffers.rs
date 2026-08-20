@@ -57,14 +57,16 @@ fn installed(action: Result<NrtAction, String>) -> Arc<Buffer> {
 
 /// A write that lands **in the buffer the engine is reading**: it installs
 /// nothing, because there is nothing to install — the samples went into the
-/// cells the pool already holds. Hands back the mirror's buffer, which is that
-/// very allocation, so a test asserts over what the audio thread now sees.
+/// cells the pool already holds. What it does report is the **span** it
+/// covered, which is what the summary kept beside a shared buffer follows.
+/// Hands back the mirror's buffer, which is that very allocation, so a test
+/// asserts over what the audio thread now sees.
 fn wrote_in_place(
     action: Result<NrtAction, String>,
     mirror: &clausters::dsp::buffer::BufferPool,
 ) -> Arc<Buffer> {
     match action.expect("job must succeed") {
-        NrtAction::None => {}
+        NrtAction::Wrote { .. } => {}
         other => panic!("a span write installs nothing, got {other:?}"),
     }
     mirror[0].clone().expect("the buffer is still there")
@@ -702,7 +704,21 @@ fn set_range_channel_writes_one_channel_and_leaves_the_other_alone() {
     )
     .expect("a well-formed setRangeChannel parses");
 
-    let written = wrote_in_place(run_nrt(job), &mirror);
+    // The span it reports is in **frames**, and a channel write is strided:
+    // frames 1..4 of one channel are flat indices 3, 5 and 7, and what a
+    // summary over the take has to refresh is the frames they fall in.
+    let action = run_nrt(job);
+    assert!(
+        matches!(
+            action,
+            Ok(NrtAction::Wrote {
+                start: 1,
+                frames: 3
+            })
+        ),
+        "a strided write reports the frames it covered, got {action:?}"
+    );
+    let written = mirror[0].clone().expect("the buffer is still there");
     assert_eq!(
         (written.frames(), written.channels()),
         (4, 2),

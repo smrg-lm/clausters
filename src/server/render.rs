@@ -474,6 +474,10 @@ impl Renderer {
                             buffer: Some(buffer),
                         });
                     }
+                    // Offline there is no segment, no region and therefore no
+                    // overview to follow: a write in place has already landed
+                    // in the cells the render reads.
+                    NrtAction::Wrote { .. } => {}
                     NrtAction::Clear => {
                         self.translator.buffers[index as usize] = None;
                         cmds.push(Cmd::SetBuffer {

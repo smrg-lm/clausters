@@ -814,6 +814,7 @@ pub fn cache_size(total_samples: usize, base_bucket: usize) -> usize {
 /// sibling files, so a multichannel waveform view names exactly one `cache`
 /// prop and the channels can never drift apart. `from_bytes` also accepts the
 /// version-1 mono layout (as one channel), so existing caches keep working.
+#[derive(Clone)]
 pub struct MultiPyramid {
     channels: Vec<Pyramid>,
 }

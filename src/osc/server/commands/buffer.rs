@@ -66,6 +66,18 @@ impl OscServer {
         {
             return Err(format!("buffer {index} not allocated"));
         }
+        // **The overview beside the region is a reader like any other**, and
+        // the only one that is this server's own: a peer wrote into the cells
+        // and said where, so the summary over that span is what is stale.
+        if let (Ok(start), Ok(frames)) = (usize::try_from(start), usize::try_from(frames))
+            && let Some(buffer) = self
+                .translator
+                .buffers
+                .get(index)
+                .and_then(|b| b.as_ref().cloned())
+        {
+            self.overviews.wrote(index, &buffer, start, frames);
+        }
         let payload = vec![
             OscType::Int(index as i32),
             OscType::Int(channel),
@@ -375,7 +387,24 @@ impl OscServer {
             return Ok(());
         }
         let buckets = buckets.min(MAX_STREAM_BUCKETS);
-        let bytes = super::super::streams::overview_blob(&buffer, first, bucket, buckets);
+        // **Out of the summary when there is one**, which is what the overview
+        // beside the region is for: answering this without reading the samples
+        // at all. Its grid is the file's, so a request at another bucket falls
+        // back to the samples rather than being answered off a grid it does
+        // not describe.
+        let bytes = match self
+            .overviews
+            .span(bufnum.max(0) as usize, first, bucket, buckets)
+        {
+            Some(stats) => {
+                let mut bytes = Vec::with_capacity(stats.len() * 4);
+                for value in stats {
+                    bytes.extend_from_slice(&value.to_le_bytes());
+                }
+                bytes
+            }
+            None => super::super::streams::overview_blob(&buffer, first, bucket, buckets),
+        };
         self.reply(
             from,
             "/buffer_peaks.reply",

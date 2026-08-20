@@ -263,6 +263,37 @@ impl WaveformData {
         Self { channels }
     }
 
+    /// The same, with the summary **already built** — read out of the
+    /// overview file the server keeps beside a take's region.
+    ///
+    /// It is the pass [`Self::from_sources`] pays that this saves, and it is
+    /// the only difference between them: the samples are still mapped, so a
+    /// zoom past the summary still reads the cells themselves. `None` when the
+    /// summary does not describe these sources — a different channel count or
+    /// length, which is a file from another take or another generation, and
+    /// drawing one over the other would be a picture of the wrong audio.
+    pub fn from_sources_summarized(
+        sources: Vec<Arc<dyn peaks::Source + Send + Sync>>,
+        summary: MultiPyramid,
+    ) -> Option<Self> {
+        if sources.is_empty()
+            || summary.num_channels() != sources.len()
+            || sources.first().map(|s| s.len()) != Some(summary.frames())
+        {
+            return None;
+        }
+        Some(Self {
+            channels: sources
+                .into_iter()
+                .zip(summary.into_channels())
+                .map(|(source, pyramid)| Channel {
+                    samples: Samples::Shared(source),
+                    pyramid,
+                })
+                .collect(),
+        })
+    }
+
     /// A multichannel waveform from `samples` holding `channels` interleaved
     /// channels (a trailing partial frame is ignored), one pyramid per channel.
     pub fn from_interleaved(samples: &[f32], channels: usize, base_bucket: usize) -> Self {

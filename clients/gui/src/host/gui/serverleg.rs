@@ -65,12 +65,19 @@ impl App {
         let Some(take) = self.host.shared_buffers().and_then(|m| m.map(index)) else {
             return false;
         };
+        // **And the summary beside it, when the server wrote one.** Opening a
+        // take costs one pass over every sample to build its pyramid; the
+        // overview file is that pass already paid, so this reads a few
+        // megabytes instead of a few hundred. Absent, the pass happens as it
+        // always did.
+        let summary = self.host.shared_buffers().and_then(|m| m.overview(index));
         let (channels, _, sample_rate) = take.shape();
         debug!("gui_def {def_id}: widget {widget_id} maps buffer {bufnum}, nothing sent");
         self.place_mapped_buffer_data(
             Arc::new(take),
             channels,
             sample_rate,
+            summary,
             vec![WaveWant {
                 def_id,
                 widget_id,
@@ -89,6 +96,7 @@ impl App {
         take: Arc<crate::host::mapped::MappedBuffer>,
         channels: usize,
         sample_rate: f64,
+        summary: Option<clausters_core::peaks::MultiPyramid>,
         wants: Vec<WaveWant>,
     ) {
         let channels = channels.max(1);
@@ -142,10 +150,18 @@ impl App {
             };
             let data = shared
                 .get_or_insert_with(|| {
-                    Arc::new(WaveformData::from_sources(
-                        crate::host::mapped::MappedChannel::channels_of(Arc::clone(&take)),
-                        base_bucket,
-                    ))
+                    let sources =
+                        crate::host::mapped::MappedChannel::channels_of(Arc::clone(&take));
+                    // The file's own bucket is what it was written at, so a
+                    // view asking for another one summarizes rather than
+                    // drawing a grid the file does not describe.
+                    let read = summary
+                        .clone()
+                        .filter(|s| s.base_bucket() == base_bucket)
+                        .and_then(|s| WaveformData::from_sources_summarized(sources.clone(), s));
+                    Arc::new(
+                        read.unwrap_or_else(|| WaveformData::from_sources(sources, base_bucket)),
+                    )
                 })
                 .clone();
             if matches!(slot, Some(SlotKind::Geometry { .. })) {

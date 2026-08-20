@@ -55,6 +55,7 @@ mod async_pipes;
 mod commands;
 mod dispatch;
 mod lifecycle;
+mod overviews;
 mod streams;
 mod transports;
 
@@ -199,6 +200,11 @@ pub struct OscServer {
     /// list stays empty, which is why it is written and never read there.
     #[cfg_attr(not(unix), allow(dead_code))]
     shared_buffers: Vec<Option<std::path::PathBuf>>,
+    /// Per buffer, the **overview** beside its region: the peak pyramid a peer
+    /// maps instead of summarizing the samples itself, kept current span by
+    /// span as writes land. See [`overviews`].
+    #[cfg_attr(not(unix), allow(dead_code))]
+    overviews: overviews::Overviews,
     /// TCP transport, when `listen_tcp` was called: accepts length-prefixed OSC
     /// connections multiplexed into the same loop. See [`crate::osc::tcp`].
     tcp: Option<crate::osc::tcp::TcpHub>,

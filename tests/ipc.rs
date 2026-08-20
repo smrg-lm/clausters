@@ -647,6 +647,134 @@ fn a_buffer_the_server_allocated_is_mapped_by_a_peer() {
     let _ = std::fs::remove_file(&path);
 }
 
+/// **The overview beside the region**: the summary a peer maps instead of
+/// building, and the rule that keeps it true — it follows the writes span by
+/// span rather than being rebuilt or left to rot.
+///
+/// What this pins is the pair of claims the file makes. It **describes the
+/// samples** when it is written, and it **still describes them** after an edit
+/// that never touched the file directly, which is the whole cost the design
+/// took on: one writer, refreshed by span.
+#[test]
+fn the_overview_beside_a_region_follows_the_writes() {
+    use clausters_core::peaks::MultiPyramid;
+
+    let path = std::env::temp_dir().join(format!(
+        "clausters-shm-overview-{}-{}",
+        std::process::id(),
+        line!()
+    ));
+    let _ = std::fs::remove_file(&path);
+
+    let (segment, _) = Segment::open_or_create_full(&path, 1024, 2, 1024).unwrap();
+    assert!(segment.claim_control());
+    let (mut server, mut engine) = shared_server(&segment, Some(path.clone()));
+    let client = IpcPeer::new(Arc::clone(&segment), Role::Client);
+
+    // A mono take of four buckets. The allocation is waited for before
+    // anything is written into it: a write parses against the mirror, and the
+    // mirror only holds the buffer once the allocation has completed.
+    let frames = 4 * 256;
+    assert!(client.push(
+        0,
+        &encode(
+            "/buffer_alloc",
+            vec![OscType::Int(3), OscType::Int(frames), OscType::Int(1)],
+        )
+    ));
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+    let mut generation = None;
+    for _ in 0..600 {
+        server.step();
+        engine.process_block(&mut out);
+        if let Some(info) = segment.buffer_info(3) {
+            generation = Some(info.generation);
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    let generation = generation.expect("the take is published");
+    let file = {
+        let mut name = path.clone().into_os_string();
+        name.push(clausters_core::shm::region_suffix(3, generation));
+        name.push(".peaks");
+        std::path::PathBuf::from(name)
+    };
+
+    // It exists as soon as the take does, describing the silence that is
+    // there: a picture of an empty take is a picture, and the pass over the
+    // samples is paid here rather than by every peer that opens it.
+    let multi = MultiPyramid::read_cache(&file)
+        .expect("the overview is readable")
+        .expect("the overview is written beside the region");
+    assert_eq!(multi.frames(), frames as usize, "it describes this take");
+    assert_eq!(multi.base_bucket(), 256);
+    assert_eq!(
+        multi.channel(0).and_then(|p| p.column(0, 0.0, 256.0)),
+        Some((0.0, 0.0)),
+        "an empty take summarizes as silence"
+    );
+
+    // **A write, and the summary follows it.** `/buffer_setRange` writes in
+    // place -- the cells the engine reads -- and nothing rebuilds the file: the
+    // server refreshes the buckets the span covered and writes it out within a
+    // period.
+    let mut blob = Vec::new();
+    for _ in 0..512 {
+        blob.extend_from_slice(&0.8f32.to_le_bytes());
+    }
+    assert!(client.push(
+        0,
+        &encode(
+            "/buffer_setRange",
+            vec![OscType::Int(3), OscType::Int(0), OscType::Blob(blob)],
+        )
+    ));
+    let mut followed = false;
+    for _ in 0..600 {
+        server.step();
+        engine.process_block(&mut out);
+        if let Ok(Some(multi)) = MultiPyramid::read_cache(&file)
+            && multi.channel(0).and_then(|p| p.column(0, 0.0, 256.0)) == Some((0.8, 0.8))
+        {
+            // And only the span: a refresh is the write's, not the take's.
+            assert_eq!(
+                multi.channel(0).and_then(|p| p.column(0, 512.0, 768.0)),
+                Some((0.0, 0.0)),
+                "the buckets nothing wrote are untouched"
+            );
+            followed = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    assert!(
+        followed,
+        "the overview follows a write it did not make itself"
+    );
+
+    // Freeing the take takes its overview with it: the generation is in the
+    // name, so a file left behind could never be read as the next take's -- but
+    // leaving one behind is still a leak, and it does not.
+    assert!(client.push(0, &encode("/buffer_free", vec![OscType::Int(3)])));
+    let mut gone = false;
+    for _ in 0..600 {
+        server.step();
+        engine.process_block(&mut out);
+        if !file.exists() {
+            gone = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    assert!(
+        gone,
+        "a freed buffer's overview is unlinked with its region"
+    );
+
+    let _ = std::fs::remove_file(&path);
+}
+
 /// **The arrangement's own test**: a second server attaches to a segment that
 /// already holds samples, plays the owner's very cells, and takes none of it
 /// with it when it goes.

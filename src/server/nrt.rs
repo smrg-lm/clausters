@@ -205,7 +205,19 @@ pub struct NrtRequest {
 pub enum NrtAction {
     Install(Arc<Buffer>),
     Clear,
-    /// Nothing to install (`/buffer_write`): just reply `/done`.
+    /// **Samples were written in place**, over the frames `[start, start +
+    /// frames)`: nothing to install, and a span whoever keeps derived state
+    /// over this buffer has to be told about (the overview beside its region).
+    ///
+    /// It is the span and not the samples, for the reason every announcement
+    /// here is: the cells are already the new ones, and what is stale is
+    /// whatever summarizes them.
+    Wrote {
+        start: usize,
+        frames: usize,
+    },
+    /// Nothing to install and nothing written (`/buffer_write`): just reply
+    /// `/done`.
     None,
 }
 
@@ -463,12 +475,16 @@ pub fn run_job(job: NrtJob) -> Result<NrtAction, String> {
             // and nothing is installed. The parse already bounded every run
             // against the buffer's length, so a write cannot fail halfway and
             // there is nothing to roll back.
+            let channels = current.channels().max(1);
+            let (mut first, mut last) = (usize::MAX, 0usize);
             for write in writes {
                 for (i, v) in write.values.iter().enumerate() {
                     current.set_at(write.at + i * write.stride, *v);
                 }
+                first = first.min(write.at);
+                last = last.max(write.end());
             }
-            Ok(NrtAction::None)
+            Ok(wrote_frames(first, last, channels))
         }
         NrtJob::Edit { base, op } => {
             // The edit itself is the core's, so a fade sounds the same wherever
@@ -507,21 +523,44 @@ pub fn run_job(job: NrtJob) -> Result<NrtAction, String> {
             for (i, v) in data.iter().enumerate() {
                 base.set_at(start + i, *v);
             }
-            Ok(NrtAction::None)
+            let (start, frames) = op.span();
+            Ok(NrtAction::Wrote { start, frames })
         }
         NrtJob::Fill { base, fills } => {
             // In place, like every other write of a span. A fill says how many
             // samples it writes rather than carrying them, which is why it is
             // its own job: building the run would allocate what it exists
             // to avoid.
+            let channels = base.channels().max(1);
+            let (mut first, mut last) = (usize::MAX, 0usize);
             for (at, count, value) in fills {
                 for i in at..at + count {
                     base.set_at(i, value);
                 }
+                first = first.min(at);
+                last = last.max(at + count);
             }
-            Ok(NrtAction::None)
+            Ok(wrote_frames(first, last, channels))
         }
         NrtJob::Free => Ok(NrtAction::Clear),
+    }
+}
+
+/// The frame span a run of **flat** writes covered, as the action that reports
+/// it. Flat indices are interleaved, so a channel-addressed write is a strided
+/// run and its span in frames is what the summary over it is keyed by.
+///
+/// An empty run (nothing written) reports nothing rather than an empty span at
+/// frame zero, which a refresher would take at face value.
+fn wrote_frames(first: usize, last: usize, channels: usize) -> NrtAction {
+    if first == usize::MAX || last <= first {
+        return NrtAction::None;
+    }
+    let start = first / channels;
+    let end = last.div_ceil(channels);
+    NrtAction::Wrote {
+        start,
+        frames: end - start,
     }
 }
 

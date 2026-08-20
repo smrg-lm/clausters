@@ -194,6 +194,23 @@ impl OscServer {
                     self.translator.buffers[index] = None;
                     Some(None)
                 }
+                // **A write in place, and the span it covered.** Nothing is
+                // installed -- the cells the engine reads are already the new
+                // ones -- so all this owes is the summary over them: the
+                // overview beside the region follows the span, and every
+                // *client* holding a picture is told by whoever asked for the
+                // write, exactly as a peer's own edit is announced.
+                NrtAction::Wrote { start, frames } => {
+                    if let Some(buffer) = self
+                        .translator
+                        .buffers
+                        .get(index)
+                        .and_then(|b| b.as_ref().cloned())
+                    {
+                        self.overviews.wrote(index, &buffer, start, frames);
+                    }
+                    None
+                }
                 NrtAction::None => None,
             };
             if let Some(buffer) = swap
@@ -270,6 +287,10 @@ impl OscServer {
                 std::sync::atomic::Ordering::Relaxed,
             );
         }
+        // **The overview beside it**, built from the samples that were just
+        // copied in: the one full pass, paid where the copy already is, so a
+        // peer opening this take maps a summary instead of computing one.
+        self.overviews.publish(index, &region_path, &buffer);
         self.shared_buffers[index] = Some(region_path);
         // Shared samples are samples somebody may be drawing, so the buffer publishes
         // how far it has been written: a recording fills a picture in another
@@ -316,6 +337,7 @@ impl OscServer {
         #[cfg(unix)]
         if let Some(path) = self.shared_buffers.get_mut(index).and_then(Option::take) {
             crate::dsp::region::Region::unlink(&path);
+            self.overviews.retire(index);
         }
     }
 

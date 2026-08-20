@@ -63,6 +63,7 @@ impl OscServer {
             shm_path: None,
             owns_samples: false,
             shared_buffers: Vec::new(),
+            overviews: Default::default(),
             tcp: None,
             #[cfg(not(target_arch = "wasm32"))]
             ws: None,
@@ -128,6 +129,7 @@ impl OscServer {
             shm_path: None,
             owns_samples: false,
             shared_buffers: Vec::new(),
+            overviews: Default::default(),
             tcp: None,
             #[cfg(not(target_arch = "wasm32"))]
             ws: None,
@@ -325,6 +327,8 @@ impl OscServer {
             self.pump_streams();
             self.pump_tap_streams();
             self.pump_buffer_streams();
+            let now = self.mono_secs();
+            self.overviews.flush(now);
             let socket = self.socket.as_ref().expect("run() checked the socket");
             let (len, from) = match socket.recv_from(&mut self.recv_buf) {
                 Ok(ok) => ok,
@@ -382,6 +386,8 @@ impl OscServer {
         self.pump_streams();
         self.pump_tap_streams();
         self.pump_buffer_streams();
+        let now = self.mono_secs();
+        self.overviews.flush(now);
         self.collect_async();
         false
     }

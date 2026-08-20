@@ -38,6 +38,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 use clausters_core::peaks::Source;
 
+use super::mapfile::MappedFile;
 use super::shm::SharedSegment;
 
 /// The samples of one segment: its directory, and the path its regions are
@@ -86,6 +87,31 @@ impl SharedBuffers {
             return None;
         }
         Some(take)
+    }
+
+    /// **The overview the server keeps beside buffer `bufnum`'s region**, when
+    /// there is one — the summary read instead of computed.
+    ///
+    /// A view over a mapped take builds its pyramid by streaming the samples
+    /// once, which is bounded but real: a ten-minute stereo take is 57.6
+    /// million samples read on open, by every process that opens it. The
+    /// server writes that summary as a file beside the region and keeps it
+    /// current span by span, so this is a few megabytes read instead.
+    ///
+    /// `None` whenever the file is not there or does not parse, which is the
+    /// ordinary case rather than an error: a server without a segment writes
+    /// none, and the caller summarizes the samples exactly as it did before.
+    /// The generation is in the name, so a file that survived a freed buffer
+    /// cannot be read as the next take's.
+    pub fn overview(&self, bufnum: usize) -> Option<clausters_core::peaks::MultiPyramid> {
+        let shape = self.segment.buffer_info(bufnum)?;
+        let mut name = region_path(&self.path, bufnum, shape.generation).into_os_string();
+        name.push(".peaks");
+        let map = MappedFile::open(std::path::Path::new(&name)).ok()?;
+        let summary = clausters_core::peaks::MultiPyramid::from_bytes(map.bytes())?;
+        // The row is re-read for the same reason the mapping re-reads it: a
+        // take freed under us would leave a summary of samples this is not.
+        (self.segment.buffer_info(bufnum)?.generation == shape.generation).then_some(summary)
     }
 
     /// **How far buffer `bufnum` has been written**, in frames — the number a
