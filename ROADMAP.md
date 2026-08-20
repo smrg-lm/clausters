@@ -1,8 +1,10 @@
 # Roadmap — the order the open work is taken in
 
-*Rewritten 2026-08-19, when the picture-reads-the-material phase closed and took
-its entries with it (before that: twice on 2026-08-18, when the clip's
-interaction rules and the real-sizes phase closed, and twice on 2026-08-17,
+*Rewritten 2026-08-20, when the overview work closed — the summary of a take
+became something a peer maps and a client can ask for, and three of the four
+entries the previous phase left behind went with it (before that: 2026-08-19,
+when the picture-reads-the-samples phase closed; twice on 2026-08-18, when the
+clip's interaction rules and the real-sizes phase closed; twice on 2026-08-17,
 against the plans and once the autonomous editor closed). A rewrite **drops what
 is done** and reorganizes what is left: this file is not a record of anything,
 and the record of what shipped is the git history and each plan's own checkbox.*
@@ -27,11 +29,12 @@ not only at an example's.
 as the piece that was saved, the editor is an application with its own
 processes, a clip has interaction rules, and the taxes every session paid — an
 async command's 100 ms floor, a killed editor's segments, a persisted def that
-would not load and could not be named — are paid. The picture reads the material
-it maps instead of copying it; a recording is drawn as it fills, at the frame,
-on any server and in a page as well as in a window; and a page zoomed past its
-summary reads the span it is looking at, so the browser draws what the native
-window draws rather than stopping at a bucket.
+would not load and could not be named — are paid. The picture reads the samples
+it maps instead of copying them, and the summary over them is a file it maps
+too; a recording is drawn as it fills, at the frame, on any server and in a page
+as well as in a window; and a page zoomed past its summary reads the span it is
+looking at — or the span another peer just edited — so the browser draws what
+the native window draws rather than stopping at a bucket.
 
 **So what is left below is not on the path to that example.** One port the
 destination does not wait on, and one track that is genuinely later. Everything
@@ -116,28 +119,18 @@ Named so "not scheduled" reads as a decision rather than an oversight. Each is
 in its own plan with its own reasoning; none is on the path to the complete
 example, and none blocks anything that is.
 
-**What the material work left behind** (2026-08-19, closing that phase):
+**What the overview work left behind** (2026-08-20, closing that phase — the
+other three entries it held are done and gone: the take's overview is a file
+beside its region, a page follows another peer's edit, and the fork between a
+whole download and a summary is a question of size that is written down):
 
-- **A take's overview could be a file beside its region** *(root `PLAN.md`,
-  Future directions)* — dropped from S20 when the frontier answered the live
-  question on its own. It saves the opening pass, costs a second writer of
-  derived state, and **it is what unblocks the fork below**.
-- **A view of a server buffer has two ways of getting its material, and what
-  chooses between them is the wrong question** *(`clients/gui/PLAN.md`, Future
-  directions)* — the whole buffer downloaded, or shape plus summary plus the
-  spans a zoom asks for, with `fills` choosing: a question about recording
-  standing in for one about cost. Blocked on the entry above (or on anything
-  else that lets a client ask for a summary without reading the material), and
-  deliberately not half-fixed before there is one.
-- **A page cannot follow another peer's edit, and now says so instead of showing
-  it** *(`clients/gui/PLAN.md`, Found by use)* — the span-fetch machine it wanted
-  now exists (H9); what is left is the trigger and re-summarizing the announced
-  buckets.
 - **The in-page shared-memory path — a track to open** *(`clients/gui/PLAN.md`,
   Future directions)* — a `SharedArrayBuffer` would make a page's host read the
   engine's memory as the native one reads the segment (zoom to the sample while
   a take records, no messages at all). Left out by requirement: SAB needs
-  COOP/COEP, which an embeddable component cannot demand of its page.
+  COOP/COEP, which an embeddable component cannot demand of its page. **What it
+  waits on is a number, not a decision**: what a frame of `/bus_stream` costs on
+  a page holding forty canvases, which the entry names as the whole argument.
 
 **The rest**, unchanged:
 
