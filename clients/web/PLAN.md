@@ -1655,7 +1655,7 @@ and each of them is a second implementation of something the host already does.
 
 | Export | What it is | Python |
 |---|---|---|
-| `Peaks.columns`, `Peaks.levelFor`, `Columns`, and `joinColumns` below | a row of pixel columns and the level to read it at | absent |
+| `Peaks.columns`, `Peaks.column`, `Peaks.levelFor`, `Peaks.levelBucket`, `Columns` | a row of pixel columns, a cell of it, and the level to read it at | absent |
 | `joinColumns` | a **drawing rule**: what to ink, not what was measured | absent |
 | `scopeFrames`, `scopeWindow`, `ScopeTrace` | the oscilloscope's display framing and trigger alignment | absent |
 | `spectrumDb` | the decibel curve a spectrum is drawn as | absent |
@@ -1692,31 +1692,35 @@ host's arithmetic and the host goes on consuming them — what goes is the
 - ✅ `tests/data.html` — W10's acceptance — asserts **figures** rather than
   pixels: the same buses, taps and bulk reads, checked as numbers, with the
   drawing left to the host page beside it.
-- ✅ `tests/recording.html` keeps its cache reads only where they are
-  assertions about measurements; anything drawing goes.
+- ✅ `tests/recording.html` keeps its assertions about measurements and loses
+  everything of a drawing — stated the way the reference client states it (see
+  below), since the reading it used is gone on both sides.
 
-**What shipped, and the one place this list contradicted itself.** The table
-above named `Peaks.column` and `Peaks.levelBucket` for removal while the
-`recording.html` bullet asked that page to keep *assertions about
-measurements* — and with no read at all on the cache there is no way to state
-one, which would have cost the `/buffer_stream` acceptance its central claim
-(the told summary is the summary the samples build). So the line was drawn
-where the argument actually is: **what takes a unit of the screen goes**
-(`columns`, a pixel width; `levelFor`, samples per pixel; `joinColumns`, what
-to ink), and **what reads the cache in the cache's own units stays**
-(`column(channel, level, start, end)`, `levelBucket(level)`, beside `frames`,
-`channels`, `baseBucket`, `numLevels`). `docs/bindings.md` already declared
-that group as `idiom` for a written reason — through the C ABI a pyramid is a
-blob whoever mapped it reads, while wasm keeps it as an object that answers
-about itself — and that reason survives the milestone intact. The tests and
-pages that measured in pixels now measure in buckets, which is what they were
-asserting all along.
+**What shipped.** The table's four groups are gone from `src/data/` and their
+doors with them, and the pyramid's reading surface came down to **what the cache
+is** — `frames`, `channels`, `baseBucket`, `numLevels`, `toBytes` — and never
+what it says. `column` and `levelBucket` went with the rest: they are a
+*drawing's* questions asked one cell at a time, and no other client has them.
 
-`examples/scope.html` is now one host window over the three paths — a `meter`
-on the control bus, a `scope` and a `spectrum` on the audio bus, a `waveform`
-on the buffer — with a **bound** knob (the host writes `/node_set` itself) and
-a scripted toggle beside it, so both directions are still shown. The page has
-no canvas of its own and no arithmetic over samples.
+The bullet about `tests/recording.html` looked, at first, as though it needed
+one of them back — its central claim is that the summary the wire told is the
+summary the samples build, and with no reader there is nothing to compare. The
+answer was to ask how the **reference client** states it, which is the question
+this whole track exists to ask: the Python client holds a cache as `bytes` and
+compares **bytes** (`peaks_cache_empty` + `peaks_cache_write_buckets` against
+`peaks_cache`, one digest — the recipe behind `data-vectors.json`'s
+`peaksStream` vector). So the page now reads the whole take back and compares
+the two caches byte for byte, which is stronger than the cell walk it replaced
+and is the same assertion in both languages. **Verified, not assumed**: the
+caches are identical, so the streamed and the measured reduction agree to the
+last bit of the mean square, not merely to a tolerance.
+
+What is left of that page's live half is about the **wire**: the reports' own
+blobs, read where they arrive, carry the tone at the amplitude the synth writes
+and never run past the frontier `written` reports. `tests/data.html` does the
+same — the bulk read is checked as the samples the server generated, and the
+reduction as a cache over them, with the cache's own bytes pinned against the
+Python client in `data.test.ts` where that comparison belongs.
 
 **Not touched**: the parity vectors. `data-vectors.json` covers `peaks`,
 `peaksStream` and `stereoField`, all of which stay — so nothing in this

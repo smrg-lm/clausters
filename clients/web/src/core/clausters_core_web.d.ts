@@ -111,8 +111,9 @@ export class Log {
  * [`clausters_core::peaks::MultiPyramid`] — the summary a waveform view is
  * drawn from, so the drawing costs the width of the window rather than the
  * length of the buffer. Built (or filled from `/buffer_stream` reports) here
- * and handed to the GUI host, which draws it; the readers below answer about
- * the cache, in the cache's own units.
+ * and handed to the GUI host, which draws it; the readers below answer **what
+ * the cache is** — length, channels, bucket, levels — and never what it says,
+ * which is a drawing's question.
  */
 export class Pyramid {
     private constructor();
@@ -124,18 +125,6 @@ export class Pyramid {
      * ~0.8% of the source in cache for a floor of 256 samples per column).
      */
     static build(samples: Float32Array, channels: number, base_bucket: number): Pyramid;
-    /**
-     * One cell: the `[min, max]` of channel `ch` over `[s0, s1)` at `level`.
-     * `undefined` for an unknown channel or an empty level.
-     *
-     * A read of the cache in the cache's own units — a level and a span of
-     * samples — which is what a caller checking a summary against the audio
-     * it summarizes asks for. Nothing here reads a *pixel* row: choosing a
-     * level for a magnification and laying cells across a width is drawing,
-     * and drawing is the GUI host's (`clausters_core::peaks` is the same code
-     * it reads).
-     */
-    column(ch: number, level: number, s0: number, s1: number): Float32Array | undefined;
     /**
      * **An empty pyramid of a given length** — the picture of a take that has
      * been allocated and not yet recorded into, ready to be filled by
@@ -150,10 +139,6 @@ export class Pyramid {
      * and the Python client writes). `undefined` when the bytes are not one.
      */
     static fromBytes(data: Uint8Array): Pyramid | undefined;
-    /**
-     * The bucket size (source samples per entry) of `level`, or `undefined`.
-     */
-    levelBucket(level: number): number | undefined;
     /**
      * The cache's bytes, in the format every client reads: the mono layout
      * for a single channel and the multichannel one above it — the choice
@@ -580,11 +565,9 @@ export interface InitOutput {
     readonly pyramid_baseBucket: (a: number) => number;
     readonly pyramid_build: (a: number, b: number, c: number, d: number) => number;
     readonly pyramid_channels: (a: number) => number;
-    readonly pyramid_column: (a: number, b: number, c: number, d: number, e: number) => [number, number];
     readonly pyramid_empty: (a: number, b: number, c: number) => number;
     readonly pyramid_frames: (a: number) => number;
     readonly pyramid_fromBytes: (a: number, b: number) => number;
-    readonly pyramid_levelBucket: (a: number, b: number) => number;
     readonly pyramid_numLevels: (a: number) => number;
     readonly pyramid_toBytes: (a: number) => [number, number];
     readonly pyramid_updateRange: (a: number, b: number, c: number, d: number, e: number) => number;

@@ -12,13 +12,14 @@
 // format it maps and the Python client writes. A cache built here and a cache
 // mapped over there are the same bytes.
 //
-// **The cache is data; the picture is the host's.** The reading a drawing
-// needs — which level a magnification calls for, a column per pixel, the join
-// that inks one column out to the next — happens where the drawing does, and
-// the drawing is never here (a `waveform` widget over a `buffer`, a `cache`
-// file or a `path`). What a page reads off a pyramid is the cache in the
-// cache's own units: how long it is, how many levels it has, and one cell's
-// `[min, max]` over a span of samples.
+// **The cache is data; the picture is the host's.** Everything a drawing does
+// with a pyramid — which level a magnification calls for, a column per pixel,
+// the join that inks one column out to the next, and reading a cell at all —
+// happens where the drawing does, and the drawing is never here (a `waveform`
+// widget over a `buffer`, a `cache` file or a `path`). What this object
+// answers is **what it is** — how long, how many channels, at what bucket,
+// how many levels — never what it says. That is the same split the Python
+// client has, where a cache is a `bytes` its owner hands on.
 //
 // The samples come from wherever a buffer comes from — `Server.getSamples`
 // over the wire, `fetchAudio` over HTTP — and after `build` they are not
@@ -156,29 +157,6 @@ export class Peaks {
 
     get numLevels(): number {
         return this.inner.numLevels;
-    }
-
-    /** The source samples one entry of `level` summarizes. */
-    levelBucket(level: number): number | undefined {
-        return this.inner.levelBucket(level);
-    }
-
-    /**
-     * One cell: the `[min, max]` of `channel` over `[start, end)` at `level`.
-     * `undefined` for an unknown channel or an empty level.
-     *
-     * A read of the summary in its own units, for checking what it says about
-     * a span of samples. Drawing a *view* of it is the GUI host's: a
-     * `waveform` widget over the buffer, the cache file or the samples.
-     */
-    column(
-        channel: number,
-        level: number,
-        start: number,
-        end: number,
-    ): [number, number] | undefined {
-        const pair = this.inner.column(channel, level, start, end);
-        return pair ? [pair[0], pair[1]] : undefined;
     }
 
     /** Releases the wasm-side cache. The object is unusable afterwards. */

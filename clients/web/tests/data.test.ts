@@ -125,14 +125,7 @@ test("a cache written by the Python client reads back here", () => {
     assert.equal(read.frames, 4096);
     assert.equal(read.channels, 1);
     assert.equal(read.baseBucket, 256);
-    for (let i = 0; i < 8; i++) {
-        const span = 4096 / 8;
-        assert.deepEqual(
-            read.column(0, 0, i * span, (i + 1) * span),
-            written.column(0, 0, i * span, (i + 1) * span),
-            `cell ${i}`,
-        );
-    }
+    assert.deepEqual(read.toBytes(), written.toBytes(), "and back to the same bytes");
     assert.equal(Peaks.fromBytes(new Uint8Array([1, 2, 3, 4])), undefined, "not a cache");
     written.free();
     read.free();
@@ -246,52 +239,19 @@ test("a mismatched pair has no correlation and no projection", () => {
     assert.equal(lissajous(left, short).length, 0);
 });
 
-// ---- the peak pyramid, as its own reader answers ----
+// ---- the peak pyramid: what the object answers about itself ----
 
-test("a cell is the min/max of the samples under it", () => {
-    const samples = SIGNALS.ramp;
-    const peaks = Peaks.build(samples, { baseBucket: 256 });
-    const bucket = peaks.levelBucket(0);
-    assert.equal(bucket, 256);
-    for (let start = 0; start + 256 <= samples.length; start += 256) {
-        const cell = peaks.column(0, 0, start, start + 256);
-        assert.ok(cell, `cell at ${start}`);
-        let lo = Infinity;
-        let hi = -Infinity;
-        for (let i = start; i < start + 256; i++) {
-            lo = Math.min(lo, samples[i]);
-            hi = Math.max(hi, samples[i]);
-        }
-        // The pyramid reads whole buckets, so a cell may reach a little past
-        // its span; it can never be narrower than the samples in it.
-        assert.ok(cell[0] <= lo + 1e-6, `cell at ${start}: ${cell[0]} > ${lo}`);
-        assert.ok(cell[1] >= hi - 1e-6, `cell at ${start}: ${cell[1]} < ${hi}`);
-    }
-    peaks.free();
-});
-
-test("each level above summarizes twice as much", () => {
-    const peaks = Peaks.build(SIGNALS.sine440, { baseBucket: 256 });
+test("a cache says what it is, and nothing about what it holds", () => {
+    const peaks = Peaks.build(SIGNALS.ramp, { channels: 1, baseBucket: 256 });
+    assert.equal(peaks.frames, 4096);
+    assert.equal(peaks.channels, 1);
+    assert.equal(peaks.baseBucket, 256);
     assert.ok(peaks.numLevels > 1, "a 4096-sample buffer has levels above 0");
-    assert.equal(peaks.levelBucket(0), 256);
-    assert.equal(peaks.levelBucket(1), 512);
-    assert.equal(peaks.levelBucket(99), undefined, "no such level");
-    // The same span read one level up covers at least what the finer one did:
-    // a coarser summary can only widen.
-    const fine = peaks.column(0, 0, 0, 1024)!;
-    const coarse = peaks.column(0, 1, 0, 1024)!;
-    assert.ok(coarse[0] <= fine[0] + 1e-6 && coarse[1] >= fine[1] - 1e-6);
-    peaks.free();
-});
-
-test("what does not exist answers nothing, and what does answers a bucket", () => {
-    const peaks = Peaks.build(SIGNALS.quiet, { baseBucket: 256 });
-    assert.equal(peaks.column(0, 99, 0, 10), undefined, "no such level");
-    assert.equal(peaks.column(7, 0, 0, 10), undefined, "no such channel");
-    // A span shorter than a bucket — an empty one included — reads the bucket
-    // it falls in: the summary is never resolved finer than it was measured,
-    // and the cell reaches outward rather than answering nothing.
-    assert.deepEqual(peaks.column(0, 0, 10, 10), peaks.column(0, 0, 0, 256));
+    assert.ok(peaks.toBytes().length > 0, "and hands the cache on as bytes");
+    // Those five are the whole reading surface, and deliberately: what a cell
+    // holds is a question a *drawing* asks, and the GUI host is what draws.
+    // The reduction itself is asserted above against the Python client's
+    // bytes, and in `clausters_core::peaks`, where the code lives.
     peaks.free();
 });
 

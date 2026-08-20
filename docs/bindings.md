@@ -144,14 +144,12 @@ thought about the other side", write `gap` — that is what it is for.
 | `clausters_core_peaks_multi_update` | `JsPyramid.update_range` | both — the span an edit touched, re-summarized; C rewrites the caller's cache bytes in place, wasm mutates the handle it already holds |
 | `clausters_core_peaks_multi_empty` | `JsPyramid.empty` | both — the summary of a take allocated and not yet recorded into, so a client that will fill it from the stream does not allocate the take in silence to summarize it |
 | `clausters_core_peaks_multi_write_buckets` | `JsPyramid.write_buckets` | both — the receiving half of `/buffer_stream`: buckets somebody else measured, folded in at an offset. Same split as the row above, and it is on both sides for the same reason the command is — a page cannot map the memory a recording fills, and a headless client that only listens cannot either |
-| — | `JsPyramid.from_bytes` | `idiom` — the two sides consume a cache differently: through the C ABI the pyramid is a byte blob whoever mapped it reads, while wasm keeps it as an object and answers about it. The readers below are that object's face |
+| — | `JsPyramid.from_bytes` | `idiom` — the two sides consume a cache differently: through the C ABI the pyramid is a byte blob whoever mapped it reads, while wasm keeps it as an object. The readers below are that object's face, and they answer **what the cache is** — never what it says: reading a cell, picking a level for a zoom or laying a row of columns is drawing, which is the GUI host's on both sides |
 | — | `JsPyramid.to_bytes` | `idiom` — as above |
 | — | `JsPyramid.frames` | `idiom` — as above |
 | — | `JsPyramid.channels` | `idiom` — as above |
 | — | `JsPyramid.base_bucket` | `idiom` — as above |
 | — | `JsPyramid.num_levels` | `idiom` — as above |
-| — | `JsPyramid.level_bucket` | `idiom` — as above |
-| — | `JsPyramid.column` | `idiom` — as above: one cell of the cache, at a level and over a span of samples. Its neighbours on the drawing side (a row of pixel columns, the level a magnification reads at, the join that inks one column out to the next) went with W26 — a client names what to look at and the host draws it |
 
 ## Bundles and patches
 

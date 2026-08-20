@@ -191,13 +191,16 @@ and a page that wants a waveform names one:
 gui.waveform({ buffer: buffer.bufnum, sampleRate, ruler: "time", rulerY: "db" })
 ```
 
-What a script reads off a pyramid is the cache in the cache's own units — how
-long it is, how many levels, and what one cell says about a span of samples:
+What a script asks a pyramid is **what it is**, never what it says — a cell's
+min/max, the level a zoom reads at and the row across a width are the drawing's
+questions, and the drawing is not here:
 
 ```js
-peaks.frames;                       // samples per channel
-peaks.levelBucket(0);               // the source samples one level-0 cell covers
-peaks.column(0, 0, 0, 256);         // that cell's [min, max]
+peaks.frames;        // samples per channel
+peaks.channels;
+peaks.baseBucket;    // what to subscribe with, so reports fold in
+peaks.numLevels;
+peaks.toBytes();     // the cache, to hand on or to store
 ```
 
 The reduction is the shared core's, and so is its cache format: `peaks.toBytes()`

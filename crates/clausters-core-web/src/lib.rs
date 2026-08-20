@@ -787,8 +787,9 @@ pub fn lissajous(left: &[f32], right: &[f32]) -> Vec<f32> {
 /// [`clausters_core::peaks::MultiPyramid`] — the summary a waveform view is
 /// drawn from, so the drawing costs the width of the window rather than the
 /// length of the buffer. Built (or filled from `/buffer_stream` reports) here
-/// and handed to the GUI host, which draws it; the readers below answer about
-/// the cache, in the cache's own units.
+/// and handed to the GUI host, which draws it; the readers below answer **what
+/// the cache is** — length, channels, bucket, levels — and never what it says,
+/// which is a drawing's question.
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_name = Pyramid)]
 pub struct JsPyramid(MultiPyramid);
@@ -891,26 +892,6 @@ impl JsPyramid {
     #[wasm_bindgen(getter, js_name = numLevels)]
     pub fn num_levels(&self) -> usize {
         self.0.channel(0).map_or(0, |p| p.num_levels())
-    }
-
-    /// The bucket size (source samples per entry) of `level`, or `undefined`.
-    #[wasm_bindgen(js_name = levelBucket)]
-    pub fn level_bucket(&self, level: usize) -> Option<usize> {
-        self.0.channel(0).and_then(|p| p.level_bucket(level))
-    }
-
-    /// One cell: the `[min, max]` of channel `ch` over `[s0, s1)` at `level`.
-    /// `undefined` for an unknown channel or an empty level.
-    ///
-    /// A read of the cache in the cache's own units — a level and a span of
-    /// samples — which is what a caller checking a summary against the audio
-    /// it summarizes asks for. Nothing here reads a *pixel* row: choosing a
-    /// level for a magnification and laying cells across a width is drawing,
-    /// and drawing is the GUI host's (`clausters_core::peaks` is the same code
-    /// it reads).
-    pub fn column(&self, ch: usize, level: usize, s0: f64, s1: f64) -> Option<Vec<f32>> {
-        let (lo, hi) = self.0.channel(ch)?.column(level, s0, s1)?;
-        Some(vec![lo, hi])
     }
 }
 

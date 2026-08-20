@@ -30,10 +30,11 @@
       then reduces it. What is asserted is that each path delivers the figure
       it promises: the streamed bus value is what /bus_get answers, the tap
       carries the tone at the amplitude the synth writes and the stereo pair
-      correlates the way the graph makes it, and a cell of the summary is the
-      min/max of the very samples read. All of it is measurement — the
-      drawing is the GUI host's, and gui.html is where a widget over these
-      same paths is checked. The WS half is tests/data-ws.test.ts.
+      correlates the way the graph makes it, and the bulk read comes back as
+      the samples the server generated and reduces to a cache over them. All
+      of it is measurement -- the drawing is the GUI host's, and gui.html is
+      where a widget over these same paths is checked. The WS half is
+      tests/data-ws.test.ts.
     -->
     <script type="module">
       import {
@@ -147,31 +148,28 @@
         if (samples.length !== total) {
           throw new Error(`read ${samples.length} of ${total} samples`);
         }
-        const peaks = data.Peaks.build(samples, { baseBucket: 256 });
-        const bucket = peaks.levelBucket(0);
-
-        // The assertion the milestone is about: a cell of the summary is the
-        // min/max of the samples under it — the same definition the GUI host
-        // reduces with, since both call one `clausters_core::peaks`. The
-        // picture over it is the host's; what is checked here is the number
-        // the picture would be drawn from.
-        let cells = 0;
-        for (let start = 0; start + bucket <= total; start += bucket) {
-          const cell = peaks.column(0, 0, start, start + bucket);
-          if (!cell) throw new Error(`no cell at ${start}`);
-          let lo = Infinity, hi = -Infinity;
-          for (let i = start; i < start + bucket; i++) {
-            lo = Math.min(lo, samples[i]);
-            hi = Math.max(hi, samples[i]);
-          }
-          if (cell[0] > lo + 1e-6 || cell[1] < hi - 1e-6) {
-            throw new Error(`the cell at ${start} does not cover its samples: `
-              + `[${cell[0]}, ${cell[1]}] vs [${lo}, ${hi}]`);
-          }
-          cells++;
+        // `sine1` with the normalize flag: whatever the partial amplitudes,
+        // the table comes back peaking at full scale.
+        const table = Math.max(...samples.map(Math.abs));
+        if (Math.abs(table - 1.0) > 0.02) {
+          throw new Error(`the normalized table peaks at ${table}, not ~1`);
         }
-        log(`buffer ${buffer.bufnum}: ${samples.length} samples, `
-          + `${peaks.numLevels} pyramid levels, ${cells} cells verified`);
+
+        // The reduction over what came back: a client builds the cache and
+        // hands it on — to a `waveform` widget, to a file — and never reads a
+        // picture out of it. So what is checked here is the path (the samples
+        // arrived, the cache is over them) and not a column: the columns are
+        // the host's, and the cache's bytes are pinned against the Python
+        // client in `data.test.ts`.
+        const peaks = data.Peaks.build(samples, { baseBucket: 256 });
+        if (peaks.frames !== total || peaks.baseBucket !== 256) {
+          throw new Error(`the cache spans ${peaks.frames} frames at `
+            + `${peaks.baseBucket}, not ${total} at 256`);
+        }
+        const bytes = peaks.toBytes().length;
+        log(`buffer ${buffer.bufnum}: ${samples.length} samples peaking `
+          + `${table.toFixed(3)}, ${peaks.numLevels} pyramid levels, `
+          + `${bytes}-byte cache`);
 
         // Everything this script took, returned.
         await buses.stop();
@@ -183,7 +181,7 @@
 
         verdict(`PASS: bus ${streamed.toFixed(3)}~${queried.toFixed(3)}, `
           + `tap peak ${peak.toFixed(3)}, correlation ${r.toFixed(3)}, `
-          + `${cells} cells of ${samples.length} samples`);
+          + `${samples.length} samples reduced to a ${bytes}-byte cache`);
       }
 
       document.getElementById("boot").onclick = () =>
