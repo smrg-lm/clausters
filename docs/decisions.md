@@ -6149,3 +6149,47 @@ keeping only the walk (which column the trace is on, and where a run starts
 again because a column held nothing), and the web client's `data.joinColumns`
 calls it over the row a page just measured. The C ABI has no row of its own —
 nothing on that side strokes pixels — which `docs/bindings.md` records.
+
+## A zoom past the summary asks for a finer summary, and only then for the samples
+
+A view that cannot map the samples used to have two states and one crossing: the
+summary it holds, and — past the base bucket — the **samples** over the span on
+screen, read back with `/buffer_getRange`. That is right for the deepest zoom
+and it is the wrong request everywhere else. What a picture needs is **one
+min/max pair per pixel column**: eight hundred columns is eight hundred pairs,
+and at a hundred samples a pixel the span behind them is eighty thousand samples
+— a few hundred kilobytes through a 64 KiB carrier, a chunk a frame, to compute
+a few kilobytes' worth. `/buffer_peaks` measures exactly that row, at any
+bucket, in one reply.
+
+What stood in the way is that **a view holds one pyramid at one base bucket**,
+and a report at another bucket cannot be folded into it: the grids do not line
+up, and `write_buckets` refuses it, correctly. So the finer answer lives *beside*
+the summary rather than inside it — `waveform::Detail`, a pyramid over a span,
+the way `Samples::Window` is a run of samples beside the whole. The regime picker
+gains a rung: the samples where they answer, then a detail grid where it covers
+at this zoom, then the summary.
+
+**The crossing between the two requests is a question about bytes**, and it is
+the wire's own arithmetic: a bucket is three floats where a sample is one, so a
+grid only pays where a bucket holds well more than three samples. At four it
+carries three quarters of what it describes, which is no saving for a second
+grid to keep; at sixteen it carries a fifth. With a column holding two buckets
+or more — so the fold's position error stays under half a pixel — that puts the
+crossing at about **thirty-two samples a pixel**, which is also roughly where
+the trace stops being columns and becomes the polyline through the samples. Below
+it the samples are asked for and kept: they are exact, they answer every deeper
+zoom too, and a grid answers only down to its own bucket.
+
+The grid's bucket is a **power of two**, so a zoom holds still: a grid answers
+every column from its bucket upwards (the levels above it are the same pyramid),
+so zooming out is free and zooming in asks again only after a factor of two. And
+it is coarsened until the whole span fits **one reply** (4096 buckets), because a
+detail grid is *replaced* rather than extended — one grid at a time per view, for
+the same reason there is one window at a time: what it is for is where the eye
+is, and a cache with a policy is a different design.
+
+Nothing about this is on the wire. Both requests are ordinary commands the
+server already answered; which one a host sends is its own business, and the
+draw pass is where it is decided because that is the only place that knows the
+zoom and the span at once (`frame::owed`).

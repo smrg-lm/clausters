@@ -12,7 +12,7 @@ use tracing::{debug, info, warn};
 #[cfg(feature = "standalone")]
 use crate::host::ServerLink;
 use crate::host::fetch::{FetchStep, SpanUse, WaveWant, align_span};
-use crate::host::frame;
+use crate::host::frame::{self, Owed};
 use crate::host::graphics::nodetree::NodeTree;
 use crate::host::widget::Widget;
 use crate::host::widget::element::{Bulk, Loaded, SlotKind};
@@ -332,9 +332,20 @@ impl App {
             "/buffer_peaks.reply" => {
                 if let Some((bufnum, start, bucket, stats)) = crate::host::stream_report(&msg.args)
                 {
-                    self.on_stream_report(bufnum, start, bucket, &stats);
-                    if let Some(next) = self.fetches.on_peaks(bufnum, start, stats.len()) {
-                        self.send_to_server(next);
+                    // **Which of the two summaries this is, told by its
+                    // bucket**: a detail grid is asked for finer than the view
+                    // it is for, and the walk asks at the view's own -- so a
+                    // reply some view asked for at that bucket and start is
+                    // that view's, and everything else is the walk's.
+                    if let Some((def_id, widget_id)) =
+                        self.fetches.detail_reply(bufnum, start, bucket)
+                    {
+                        self.place_detail(bufnum, def_id, widget_id, start, bucket, &stats);
+                    } else {
+                        self.on_stream_report(bufnum, start, bucket, &stats);
+                        if let Some(next) = self.fetches.on_peaks(bufnum, start, stats.len()) {
+                            self.send_to_server(next);
+                        }
                     }
                 }
             }
@@ -583,43 +594,83 @@ impl App {
         for msg in self.fetches.tick_peaks() {
             self.send_to_server(msg);
         }
-        let mut asked: Vec<(i32, i32, i32, usize, usize, usize)> = Vec::new();
+        let mut asked: Vec<(i32, i32, i32, usize, Owed)> = Vec::new();
         for (def_id, ws) in &self.windows {
             for (widget_id, slot) in &ws.waveforms {
-                let Some((a, b)) = slot.wanted_span.take() else {
+                let Some(owed) = slot.owed.take() else {
                     continue;
                 };
-                let Some((channels, _)) = self
+                let Some(el) = self
                     .host
                     .window_def(*def_id)
                     .and_then(|t| t.find(*widget_id))
                     .and_then(|w| w.bulk_target().kind.as_element())
-                    .and_then(|el| el.sample_shape())
                 else {
                     continue;
                 };
-                let Some(bufnum) = self
-                    .host
-                    .window_def(*def_id)
-                    .and_then(|t| t.find(*widget_id))
-                    .and_then(|w| w.bulk_target().kind.as_element())
-                    .and_then(|el| el.source_buffer())
+                let (Some((channels, _)), Some(bufnum)) = (el.sample_shape(), el.source_buffer())
                 else {
                     continue;
                 };
-                asked.push((*def_id, *widget_id, bufnum, a, b - a, channels));
+                asked.push((*def_id, *widget_id, bufnum, channels, owed));
             }
         }
-        for (def_id, widget_id, bufnum, start, frames, channels) in asked {
-            if let Some(msg) = self.fetches.want_span(
-                bufnum,
-                start,
-                frames,
-                channels,
-                SpanUse::Window { def_id, widget_id },
-            ) {
+        for (def_id, widget_id, bufnum, channels, owed) in asked {
+            let msg = match owed {
+                Owed::Summary { a, b, bucket } => {
+                    self.fetches
+                        .want_detail(bufnum, def_id, widget_id, a, b - a, bucket)
+                }
+                Owed::Samples { a, b } => self.fetches.want_span(
+                    bufnum,
+                    a,
+                    b - a,
+                    channels,
+                    SpanUse::Window { def_id, widget_id },
+                ),
+            };
+            if let Some(msg) = msg {
                 self.send_to_server(msg);
             }
+        }
+    }
+
+    /// **Puts a finer grid under one view**, the summary counterpart of
+    /// [`Self::place_window`]: the same `/buffer_peaks` blob every other
+    /// overview arrives in, folded beside the view's own summary rather than
+    /// into it, because it is measured at a different bucket.
+    fn place_detail(
+        &mut self,
+        bufnum: i32,
+        def_id: i32,
+        widget_id: i32,
+        start: u64,
+        bucket: usize,
+        stats: &[f32],
+    ) {
+        debug!(
+            "gui: buffer {bufnum} detail of {} bucket(s) of {bucket} at {start} for widget {widget_id}",
+            stats.len() / 3
+        );
+        if let Some(slot) = self
+            .windows
+            .get_mut(&def_id)
+            .and_then(|ws| ws.waveforms.get_mut(&widget_id))
+        {
+            slot.view.release_data();
+        }
+        let took = self
+            .host
+            .window_def_mut(def_id)
+            .and_then(|t| t.find_mut(widget_id))
+            .is_some_and(|w| {
+                w.bulk_target_mut()
+                    .kind
+                    .as_element_mut()
+                    .is_some_and(|el| el.set_detail(start, bucket, stats))
+            });
+        if took && let Some(ws) = self.windows.get(&def_id) {
+            ws.gpu.window.request_redraw();
         }
     }
 

@@ -480,9 +480,17 @@ by turning its measures on and off.
   replaces the first. What arrives is the summary and not the audio, so a take
   that is filling is drawn at the report's bucket wherever nothing finer has
   been read. **Past that it reads**: a view zoomed finer than its summary asks
-  for the span it is showing (`/buffer_getRange`) and draws the samples there —
-  so the picture is the same at every zoom whichever way the host got it, which
-  is the rule the platform seam is judged by.
+  for the span it is showing and draws it — so the picture is the same at every
+  zoom whichever way the host got it, which is the rule the platform seam is
+  judged by. What it asks for has two shapes, and the zoom is what chooses:
+  between the summary's bucket and about thirty-two samples a pixel it asks for
+  a **finer grid** over that span (`/buffer_peaks` at a finer bucket), which is
+  the one min/max pair per pixel column the drawing actually needs and a few
+  kilobytes; finer than that it asks for the **samples** (`/buffer_getRange`),
+  where a bucket would carry three floats to describe a handful of them and
+  where the trace is the polyline through the samples anyway. Neither is on the
+  wire as a decision: both are ordinary commands, and which one a host sends is
+  its own business.
 
   This holds **while the take records too**, and the frontier is the whole of
   what `fills` does to it: a span is asked for only as far as `written`, never

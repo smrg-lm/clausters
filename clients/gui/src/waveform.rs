@@ -191,6 +191,43 @@ impl From<Arc<[f32]>> for Samples {
 struct Channel {
     samples: Samples,
     pyramid: Pyramid,
+    /// **A finer summary over the span being looked at**, when there is one.
+    detail: Option<Detail>,
+}
+
+/// **A second grid, over a span**: the summary a view asked for when its own
+/// was too coarse for the zoom, the way [`Samples::Window`] is a run of samples
+/// beside the whole.
+///
+/// A view holds one pyramid at one base bucket, and a report at another bucket
+/// cannot be folded into it — the grids do not line up, and
+/// [`Pyramid::write_buckets`] refuses it, correctly. So the finer answer lives
+/// beside it: `pyramid` covers `start .. start + pyramid.total_samples()` of
+/// the channel and nothing else, at a bucket finer than the view's own.
+///
+/// What it is for is the client that cannot map the samples. Zoomed past its
+/// summary, such a view used to fetch the **samples** over the span it shows —
+/// a few hundred kilobytes through a 64 KiB carrier, a chunk a frame — to
+/// compute one min/max pair per pixel column, which is a few kilobytes and
+/// which `/buffer_peaks` answers directly. The samples are still what the
+/// deepest zoom reads: below a handful of samples a column there is no summary
+/// worth asking for, and the trace draws the polyline through the samples
+/// themselves.
+#[derive(Clone)]
+struct Detail {
+    start: usize,
+    pyramid: Pyramid,
+}
+
+impl Detail {
+    /// Whether this grid answers for `[a, b)` at `samples_per_px` — inside the
+    /// span it covers, and no finer than its own bucket.
+    fn answers(&self, a: usize, b: usize, samples_per_px: f64) -> bool {
+        b > a
+            && a >= self.start
+            && b <= self.start + self.pyramid.total_samples()
+            && samples_per_px >= self.pyramid.base_bucket() as f64
+    }
 }
 
 /// A waveform's data: per channel, the raw samples (shared, for the zoomed-in
@@ -234,6 +271,7 @@ impl WaveformData {
             channels: vec![Channel {
                 samples: samples.into(),
                 pyramid,
+                detail: None,
             }],
         }
     }
@@ -257,6 +295,7 @@ impl WaveformData {
                 Channel {
                     samples: Samples::Shared(source),
                     pyramid,
+                    detail: None,
                 }
             })
             .collect();
@@ -289,6 +328,7 @@ impl WaveformData {
                 .map(|(source, pyramid)| Channel {
                     samples: Samples::Shared(source),
                     pyramid,
+                    detail: None,
                 })
                 .collect(),
         })
@@ -307,6 +347,7 @@ impl WaveformData {
                 Channel {
                     samples: samples.into(),
                     pyramid,
+                    detail: None,
                 }
             })
             .collect();
@@ -324,6 +365,7 @@ impl WaveformData {
             channels: vec![Channel {
                 samples: samples.into(),
                 pyramid,
+                detail: None,
             }],
         }
     }
@@ -339,6 +381,7 @@ impl WaveformData {
             .map(|(samples, pyramid)| Channel {
                 samples: samples.into(),
                 pyramid,
+                detail: None,
             })
             .collect();
         Self { channels }
@@ -353,6 +396,7 @@ impl WaveformData {
             .map(|pyramid| Channel {
                 samples: Samples::Owned(Arc::from([] as [f32; 0])),
                 pyramid,
+                detail: None,
             })
             .collect();
         Self { channels }
@@ -553,6 +597,71 @@ impl WaveformData {
         true
     }
 
+    /// **Puts a finer summary over the span being looked at**, beside the
+    /// view's own — the summary counterpart of [`Self::set_window`], and what
+    /// a zoom past the base bucket should be asking for when the samples
+    /// cannot be mapped.
+    ///
+    /// `start` is a frame index, `bucket` the grid the report was measured at,
+    /// and `stats` the wire's own bucket-major, channel-minor blob — the same
+    /// one [`Self::write_buckets`] folds, unconverted. The span it covers is
+    /// whatever the blob holds, and it **replaces** any detail already here:
+    /// one grid at a time per view, for the same reason there is one window at
+    /// a time, because what it is for is *where the eye is*.
+    ///
+    /// Refuses, changing nothing, when the grid is not finer than the view's
+    /// own (there would be nothing to gain and the report belongs in the
+    /// pyramid itself), when the shape does not match, or when the span runs
+    /// past the samples.
+    pub fn set_detail(
+        &mut self,
+        start: usize,
+        bucket: usize,
+        channels: usize,
+        stats: &[f32],
+    ) -> bool {
+        let channels = channels.max(1);
+        if self.channels.len() != channels || bucket == 0 || bucket >= self.base_bucket() {
+            return false;
+        }
+        let stride = channels * 3;
+        if stats.is_empty() || !stats.len().is_multiple_of(stride) {
+            return false;
+        }
+        let buckets = stats.len() / stride;
+        let frames = buckets * bucket;
+        if start + frames > self.total_samples() {
+            return false;
+        }
+        let mut multi = MultiPyramid::empty(frames, channels, bucket);
+        if !multi.write_buckets(0, bucket, stats) {
+            return false;
+        }
+        for (channel, pyramid) in self.channels.iter_mut().zip(multi.into_channels()) {
+            channel.detail = Some(Detail { start, pyramid });
+        }
+        true
+    }
+
+    /// **Whether a finer grid is in hand for `[a, b)` at this zoom** — the
+    /// second half of the question [`Self::covers`] asks about samples, and
+    /// what says a view has stopped owing anything for what it is showing.
+    pub fn detail_covers(&self, a: usize, b: usize, samples_per_px: f64) -> bool {
+        self.channels
+            .first()
+            .and_then(|c| c.detail.as_ref())
+            .is_some_and(|d| d.answers(a, b, samples_per_px))
+    }
+
+    /// The bucket of the detail grid in hand, if any — what says whether a
+    /// finer one is worth asking for.
+    pub fn detail_bucket(&self) -> Option<usize> {
+        self.channels
+            .first()
+            .and_then(|c| c.detail.as_ref())
+            .map(|d| d.pyramid.base_bucket())
+    }
+
     /// The summary's finest bucket — the zoom below which only samples can
     /// answer.
     pub fn base_bucket(&self) -> usize {
@@ -646,6 +755,18 @@ impl WaveformData {
             let (lo, hi, ms) = channel.samples.stats(a, b)?;
             return Some((lo, hi, Some(ms)));
         }
+        // **The rung between the summary and the samples**: a finer grid over
+        // the span being looked at, for a view that cannot map the samples and
+        // has not fetched them. It is read exactly as the summary below is —
+        // whole buckets folded, tiling the same way — on its own axis, which
+        // starts where the grid does.
+        if samples_per_px < base as f64
+            && let Some(detail) = &channel.detail
+            && detail.answers(a, b, samples_per_px)
+            && let Some(measured) = fold(&detail.pyramid, a - detail.start, b - detail.start)
+        {
+            return Some(measured);
+        }
         // **Which buckets belong to this column**, and it is a *tiling*: the
         // span is rounded down at both ends, so consecutive columns cover
         // every bucket exactly once. A bucket straddling a boundary lands in
@@ -662,24 +783,20 @@ impl WaveformData {
         // the samples at every zoom is not exactness a picture can afford; the
         // regime that *does* read every sample is the one below, where a
         // column is finer than a bucket and there is nothing else to read.
-        let (qa, qb) = (a - a % base, b - b % base);
-        let Some(whole) = channel.pyramid.aligned_stats(qa, qb) else {
-            // No whole bucket fits: the column straddles one boundary and is
-            // narrower than two buckets, so the samples are the only answer
-            // and they are a short read.
-            if raw && let Some((lo, hi, ms)) = channel.samples.stats(a, b) {
-                return Some((lo, hi, Some(ms)));
-            }
-            // A cache-only view zoomed past its own resolution shows the
-            // bucket it has rather than nothing, which is the finest overview
-            // it can honestly draw.
-            let (lo, hi) = channel.pyramid.column(0, a as f64, b as f64)?;
-            let ms = channel.pyramid.column_ms(0, a as f64, b as f64);
-            return Some((lo, hi, ms));
-        };
-        let (lo, hi) = (whole.min, whole.max);
-        let (sum_sq, count) = (whole.sum_sq, whole.count);
-        let ms = (whole.measured && count > 0).then(|| (sum_sq / count as f64) as f32);
+        if let Some(measured) = fold(&channel.pyramid, a, b) {
+            return Some(measured);
+        }
+        // No whole bucket fits: the column straddles one boundary and is
+        // narrower than two buckets, so the samples are the only answer and
+        // they are a short read.
+        if raw && let Some((lo, hi, ms)) = channel.samples.stats(a, b) {
+            return Some((lo, hi, Some(ms)));
+        }
+        // A cache-only view zoomed past its own resolution shows the bucket it
+        // has rather than nothing, which is the finest overview it can honestly
+        // draw.
+        let (lo, hi) = channel.pyramid.column(0, a as f64, b as f64)?;
+        let ms = channel.pyramid.column_ms(0, a as f64, b as f64);
         Some((lo, hi, ms))
     }
 
@@ -750,6 +867,22 @@ pub const DEFAULT_DOMAIN: (f32, f32) = (-1.0, 1.0);
 /// separates a body from a curve is whether the signal crosses the span inside
 /// one column, and the min/max already answers that — measured, per column, at
 /// no cost.
+/// **Whole buckets of one pyramid, folded for a column spanning `[a, b)`** on
+/// that pyramid's own axis — the read both grids share, so a detail summary and
+/// the view's own answer the same function of the span.
+///
+/// `None` when no whole bucket fits, which leaves the decision to the caller:
+/// the view's own summary falls back to the samples or to its coarsest honest
+/// answer, and a detail grid falls through to the summary under it.
+fn fold(pyramid: &Pyramid, a: usize, b: usize) -> Option<(f32, f32, Option<f32>)> {
+    let base = pyramid.base_bucket().max(1);
+    let (qa, qb) = (a - a % base, b - b % base);
+    let whole = pyramid.aligned_stats(qa, qb)?;
+    let ms =
+        (whole.measured && whole.count > 0).then(|| (whole.sum_sq / whole.count as f64) as f32);
+    Some((whole.min, whole.max, ms))
+}
+
 pub fn baseline_of(min: f32, max: f32) -> Option<f32> {
     (min < 0.0 && max > 0.0).then_some(0.0)
 }
@@ -1585,5 +1718,105 @@ mod window_tests {
         assert!(told.set_window(2_048, channels, &data[2_048..2_560]));
         assert!(told.covers(2_048, 2_560));
         assert!(!told.covers(0, 512), "the run the eye left is not kept");
+    }
+
+    /// **A finer grid answers the columns the summary cannot**, and it is the
+    /// same picture the samples would have drawn.
+    ///
+    /// A cache-only view is what a client that cannot map the samples holds:
+    /// a summary at 256 and nothing else. Zoomed to 32 samples a pixel every
+    /// column falls inside one bucket, so the picture stops resolving — every
+    /// column of a bucket reads the same pair. A detail grid at 16 is a few
+    /// kilobytes over the span and puts the shape back.
+    #[test]
+    fn a_detail_grid_resolves_where_the_summary_has_one_bucket() {
+        let frames = 256 * 64;
+        // A signal whose shape lives *inside* a 256-sample bucket: a ramp that
+        // restarts every 64 samples, so a bucket is four teeth and a column of
+        // 32 samples is half of one.
+        let samples: Vec<f32> = (0..frames).map(|i| (i % 64) as f32 / 64.0).collect();
+        let multi = MultiPyramid::build_interleaved(&samples, 1, 256);
+        let mut data = WaveformData::with_multi_pyramid(multi);
+        assert_eq!(data.base_bucket(), 256);
+
+        // Zoomed to 32 samples a pixel, two columns inside one bucket read the
+        // same thing: the bucket.
+        let (per_px, a, b) = (32.0, 1_024.0, 1_056.0);
+        let flat = data.column(0, per_px, a, b);
+        assert_eq!(
+            flat,
+            data.column(0, per_px, b, b + 32.0),
+            "one bucket, twice"
+        );
+
+        // The grid the eye's span would be asked for, measured exactly as the
+        // server measures it.
+        let (start, span_buckets, bucket) = (1_024usize, 32usize, 16usize);
+        let source = peaks::Interleaved::new(&samples, 1, 0);
+        let stats = peaks::overview(&[&source], start, bucket, span_buckets);
+        assert!(
+            data.set_detail(start, bucket, 1, &stats),
+            "the finer grid lands"
+        );
+        assert_eq!(data.detail_bucket(), Some(bucket));
+        assert!(data.detail_covers(start, start + span_buckets * bucket, per_px));
+
+        // Now the two columns differ, and each is what the samples say.
+        let fine = data.column(0, per_px, a, b);
+        assert_ne!(
+            fine,
+            data.column(0, per_px, b, b + 32.0),
+            "the shape is back"
+        );
+        for (s0, s1) in [(a, b), (b, b + 32.0)] {
+            let (lo, hi) = data.column(0, per_px, s0, s1);
+            let run = &samples[s0 as usize..s1 as usize];
+            let (tlo, thi) = peaks::min_max(run).expect("a run");
+            assert!((lo - tlo).abs() < 1e-6, "column min {lo} vs {tlo}");
+            assert!((hi - thi).abs() < 1e-6, "column max {hi} vs {thi}");
+        }
+
+        // Outside the grid the summary answers, as it did.
+        assert!(!data.detail_covers(0, 512, per_px));
+        assert_eq!(
+            data.column(0, per_px, 0.0, 32.0),
+            data.column(0, per_px, 32.0, 64.0)
+        );
+        // And zoomed past the grid's own bucket it stops answering: a column of
+        // eight samples is finer than the grid, and only the samples would do.
+        assert!(!data.detail_covers(start, start + 128, 8.0));
+    }
+
+    /// A grid that is not finer than the view's own is refused: the report
+    /// belongs in the pyramid itself, and two grids at one bucket is one grid.
+    #[test]
+    fn a_detail_grid_no_finer_than_the_summary_is_refused() {
+        let frames = 256 * 8;
+        let samples: Vec<f32> = (0..frames).map(|i| (i as f32 * 0.01).sin()).collect();
+        let mut data =
+            WaveformData::with_multi_pyramid(MultiPyramid::build_interleaved(&samples, 1, 256));
+        let source = peaks::Interleaved::new(&samples, 1, 0);
+        let same = peaks::overview(&[&source], 0, 256, 4);
+        assert!(!data.set_detail(0, 256, 1, &same), "the view's own bucket");
+        assert!(
+            !data.set_detail(0, 512, 1, &same),
+            "coarser than the view's own"
+        );
+        assert!(!data.set_detail(0, 0, 1, &same), "no bucket at all");
+        assert!(data.detail_bucket().is_none());
+        let finer = peaks::overview(&[&source], 0, 16, 32);
+        assert!(
+            !data.set_detail(frames - 16, 16, 1, &finer),
+            "past the samples"
+        );
+        assert!(data.set_detail(0, 16, 1, &finer), "finer, and inside");
+        // One grid at a time: a second replaces the first.
+        let elsewhere = peaks::overview(&[&source], 1_024, 16, 32);
+        assert!(data.set_detail(1_024, 16, 1, &elsewhere));
+        assert!(
+            !data.detail_covers(0, 256, 32.0),
+            "the grid the eye left is not kept"
+        );
+        assert!(data.detail_covers(1_024, 1_280, 32.0));
     }
 }

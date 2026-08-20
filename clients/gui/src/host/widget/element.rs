@@ -1727,6 +1727,20 @@ pub trait Element: fmt::Debug {
         None
     }
 
+    /// **Puts a finer summary over the span this element is showing**, beside
+    /// its own, returning whether it took it. The default is not to.
+    ///
+    /// The other landing of a zoom past the overview, and the cheaper one: the
+    /// wire's ordinary overview blob (`/buffer_peaks`, bucket-major and
+    /// channel-minor) measured at a bucket finer than this element's summary,
+    /// which is a few kilobytes where the samples over the same span are a few
+    /// hundred. It answers the columns inside its span and the summary goes on
+    /// answering everywhere else; the samples are what the deepest zoom still
+    /// reads, through [`Element::set_window`].
+    fn set_detail(&mut self, _start: u64, _bucket: usize, _stats: &[f32]) -> bool {
+        false
+    }
+
     /// **Puts a fetched run of the samples under this element's summary**,
     /// returning whether it took it. The default is not to.
     ///

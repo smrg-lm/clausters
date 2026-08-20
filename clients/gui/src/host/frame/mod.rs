@@ -71,23 +71,51 @@ pub(crate) fn clear_color(theme: &Theme) -> wgpu::Color {
 /// the window's mesh like every other widget's, so nothing here is GPU state.
 pub(crate) struct WaveformSlot {
     pub(crate) view: WaveformView,
-    /// **The span this view was drawn over and could not answer** — a zoom
-    /// finer than the summary's bucket, over samples the picture holds no
-    /// samples for. `(start, end)` in frames.
+    /// **What this view was drawn over and could not answer** — a zoom finer
+    /// than its summary's bucket, over a span it holds neither samples nor a
+    /// finer grid for. [`Owed`] says which of the two would settle it.
     ///
     /// It is set by the draw pass, which is the only place that knows the zoom
     /// *and* the span, and read (and cleared) by the leg after the frame,
     /// which is the only place that can ask the server for it. A `Cell`
     /// because the draw pass borrows the slots immutably — the front is single
     /// threaded, and this is a note left on the way past rather than state.
-    pub(crate) wanted_span: std::cell::Cell<Option<(usize, usize)>>,
+    pub(crate) owed: std::cell::Cell<Option<Owed>>,
+}
+
+/// **What a view is owed for the span it is showing**, and the two are a
+/// difference in *shape* rather than in size.
+///
+/// A picture needs one min/max pair per pixel column. A view that can map the
+/// samples has them under its pointer and measures the columns itself; one that
+/// cannot has two ways to get the same row, and which is cheaper depends only
+/// on the zoom:
+///
+/// - [`Owed::Summary`] — a **finer grid** over the span, at about a bucket a
+///   column (`/buffer_peaks`, folded by [`WaveformData::set_detail`]). A few
+///   kilobytes, one reply, and it is what a zoom above the polyline regime
+///   actually wants: asking for the samples there moves a few hundred kilobytes
+///   through a 64 KiB carrier to compute a row the server can measure in one
+///   pass.
+/// - [`Owed::Samples`] — the **samples themselves** (`/buffer_getRange`, folded
+///   by [`WaveformData::set_window`]), for the zoom below which no summary is
+///   worth asking for: past `trace::LINE_THRESHOLD` the trace is the polyline
+///   through the samples, and a bucket is not a sample.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum Owed {
+    /// The run of samples to read back, `[a, b)` in frames.
+    Samples { a: usize, b: usize },
+    /// The span to summarize, `[a, b)` in frames, and the bucket to measure it
+    /// at — finer than the view's own, and coarse enough that one reply holds
+    /// the whole span.
+    Summary { a: usize, b: usize, bucket: usize },
 }
 
 /// A `WaveformSlot` for ready data.
 pub(crate) fn waveform_slot(data: impl Into<Arc<WaveformData>>) -> WaveformSlot {
     WaveformSlot {
         view: WaveformView::new(data),
-        wanted_span: std::cell::Cell::new(None),
+        owed: std::cell::Cell::new(None),
     }
 }
 
@@ -493,11 +521,37 @@ fn placed_nav(nav: &View, offset: f64) -> View {
 /// fetched because somebody is looking at it, and guessing where they will
 /// look next is a cache policy this deliberately does not have.
 ///
+/// **What the view could not draw, and in what shape** — or `None` when it
+/// answered for everything it showed.
+///
+/// A column finer than the summary's base bucket can only come from something
+/// finer than the summary: a view holding neither draws the bucket, which is
+/// the honest picture and one the eye has stopped getting anything new from.
+/// So the answer is the visible span, clamped to the samples, and it is `None`
+/// in every other case: zoomed out (the summary *is* the answer), or answered
+/// already (mapped samples, a whole owned buffer, a window over this span, a
+/// finer grid over this span).
+///
+/// **Which shape is owed is a question about the zoom alone**, and it is
+/// [`Owed`]'s whole subject: zoomed out the picture is min/max columns, which a
+/// finer *summary* answers in one reply of a few kilobytes; zoomed in far
+/// enough the summary stops being cheaper than the samples it describes — and
+/// past that the trace is the polyline through the samples, where only the
+/// samples will do. [`detail_bucket`] draws the line and picks the grid: a
+/// column holds two buckets or more, so the position error of the fold stays
+/// under half a column, and the bucket is coarsened until the whole span fits
+/// one reply, because a second reply would replace the first rather than extend
+/// it.
+///
+/// The span is the window as drawn and not a margin around it: a window is
+/// fetched because somebody is looking at it, and guessing where they will
+/// look next is a cache policy this deliberately does not have.
+///
 /// **A take still being written is asked for what is behind the frontier, and
 /// never for what is past it** (`written`, the `fills` prop's frontier). Past
 /// it there is nothing to read: the buffer holds the zeros it was allocated
-/// with, and a run installed over them would claim measured silence over audio
-/// that has not arrived. Behind it the samples are **final** — a recorder
+/// with, and a run or a bucket over them would claim measured silence over
+/// audio that has not arrived. Behind it the samples are **final** — a recorder
 /// writes forward and does not come back, and the frontier is what the writer
 /// says it has already written — so a span that ends there is as readable as
 /// any other, and a page zoomed past its summary sees the samples rather than
@@ -508,18 +562,15 @@ fn placed_nav(nav: &View, offset: f64) -> View {
 /// this function returns `None` on `covers` alone. A client that cannot map
 /// took the same picture only down to the bucket, because `fills` was reading
 /// as *this take is not readable* rather than as *this much of it exists*.
-fn missing_span(
-    view: &WaveformView,
-    nav: &View,
-    width: f64,
-    written: Option<u64>,
-) -> Option<(usize, usize)> {
+fn owed(view: &WaveformView, nav: &View, width: f64, written: Option<u64>) -> Option<Owed> {
     let data = view.data();
     let total = data.total_samples();
     if width <= 0.0 || nav.len <= 0.0 || total == 0 {
         return None;
     }
-    if nav.len / width >= data.base_bucket() as f64 {
+    let per_px = nav.len / width;
+    let base = data.base_bucket();
+    if per_px >= base as f64 {
         return None; // the summary answers at this zoom, exactly as it should
     }
     let a = (nav.start.floor().max(0.0) as usize).min(total);
@@ -531,8 +582,67 @@ fn missing_span(
     // that would be needed is *above* — which is not a margin but the clamp
     // itself, since what the report has not counted yet may not be there.
     let b = written.map_or(b, |w| b.min(w as usize));
-    (b > a && !data.covers(a, b)).then_some((a, b))
+    if b <= a || data.covers(a, b) {
+        return None;
+    }
+    match detail_bucket(per_px, b - a, base) {
+        Some(bucket) if !data.detail_covers(a, b, per_px) => Some(Owed::Summary { a, b, bucket }),
+        Some(_) => None,
+        None => Some(Owed::Samples { a, b }),
+    }
 }
+
+/// **How many buckets one `/buffer_peaks` reply carries** (`docs/schemas.md`),
+/// which is what bounds the span one request can summarize.
+const DETAIL_REPLY_BUCKETS: usize = 4096;
+
+/// **The grid to ask for a span of `span` frames at `per_px` samples a pixel**,
+/// or `None` where no summary is worth asking for and the samples are the
+/// answer.
+///
+/// Two rules meet here. The picture wants **two buckets a column or more**, so
+/// the fold's position error stays under half a pixel — one bucket a column
+/// would put it at a whole one, which is the resolution the coarse summary
+/// already has and the reason this is being asked for at all. And the span has
+/// to fit **one reply**: a detail grid is replaced rather than extended (one
+/// grid per view, like one window per view), so a span that would need two
+/// requests is summarized at a coarser bucket instead, which is still finer
+/// than the view's own and still one round trip.
+///
+/// It returns a power of two so a zoom holds still: a grid at `bucket` answers
+/// every column from `bucket` samples wide upwards (the levels above it are the
+/// same pyramid), so zooming *out* is free and zooming *in* asks again only
+/// after a factor of two.
+fn detail_bucket(per_px: f64, span: usize, base: usize) -> Option<usize> {
+    // Two buckets to a column, and never finer than a summary is worth.
+    let target = per_px * 0.5;
+    if span == 0 || target < MIN_DETAIL_BUCKET as f64 {
+        return None;
+    }
+    let mut bucket = MIN_DETAIL_BUCKET;
+    while (bucket * 2) as f64 <= target {
+        bucket *= 2;
+    }
+    // Coarsened until one reply holds the whole span.
+    while bucket < base && span.div_ceil(bucket) > DETAIL_REPLY_BUCKETS {
+        bucket *= 2;
+    }
+    (bucket < base).then_some(bucket)
+}
+
+/// **The bucket below which a summary is not worth asking for**, and the number
+/// is the wire's own. A bucket is three floats (min, max, mean square) where a
+/// sample is one, so a grid only pays where a bucket holds *well* more than
+/// three samples: at four it carries three quarters of what it describes, which
+/// is no saving at all for a second grid to keep, and at sixteen it carries a
+/// fifth. Below that the samples are both nearly as cheap and **exact**, and
+/// they answer every deeper zoom as well — a grid answers only down to its own
+/// bucket.
+///
+/// With a column holding two buckets or more, this puts the crossing at about
+/// **thirty-two samples a pixel**: coarser than that a view asks for the grid,
+/// finer than it a view reads the samples and keeps them.
+const MIN_DETAIL_BUCKET: usize = 16;
 
 /// Maps sample position `s` into `body`'s x range through `nav`.
 fn sample_to_x(s: f64, nav: &View, body: Rect) -> f32 {
@@ -1405,7 +1515,7 @@ mod tests {
             len: frames as f64,
         };
         assert_eq!(
-            missing_span(&told, &wide, 800.0, None),
+            owed(&told, &wide, 800.0, None),
             None,
             "zoomed out, the summary is the answer"
         );
@@ -1414,8 +1524,8 @@ mod tests {
             len: 2_000.0,
         };
         assert_eq!(
-            missing_span(&told, &close, 800.0, None),
-            Some((1_000, 3_000)),
+            owed(&told, &close, 800.0, None),
+            Some(Owed::Samples { a: 1_000, b: 3_000 }),
             "past the bucket over samples it cannot answer for"
         );
 
@@ -1425,7 +1535,7 @@ mod tests {
         );
         assert!(data.set_window(1_000, 1, &vec![0.0; 2_000]));
         let covered = WaveformView::new(data);
-        assert_eq!(missing_span(&covered, &close, 800.0, None), None);
+        assert_eq!(owed(&covered, &close, 800.0, None), None);
 
         // And a view that owns its samples never asks.
         let owned = WaveformView::new(WaveformData::from_interleaved(
@@ -1433,7 +1543,7 @@ mod tests {
             1,
             bucket,
         ));
-        assert_eq!(missing_span(&owned, &close, 800.0, None), None);
+        assert_eq!(owed(&owned, &close, 800.0, None), None);
     }
 
     /// **A take being recorded is asked for what is behind its frontier.** The
@@ -1452,22 +1562,22 @@ mod tests {
             len: 2_000.0,
         };
         assert_eq!(
-            missing_span(&told, &close, 800.0, Some(10_000)),
-            Some((1_000, 3_000)),
+            owed(&told, &close, 800.0, Some(10_000)),
+            Some(Owed::Samples { a: 1_000, b: 3_000 }),
             "wholly behind the frontier: the same span a finished take asks for"
         );
         assert_eq!(
-            missing_span(&told, &close, 800.0, Some(2_000)),
-            Some((1_000, 2_000)),
+            owed(&told, &close, 800.0, Some(2_000)),
+            Some(Owed::Samples { a: 1_000, b: 2_000 }),
             "straddling it: only the settled half"
         );
         assert_eq!(
-            missing_span(&told, &close, 800.0, Some(500)),
+            owed(&told, &close, 800.0, Some(500)),
             None,
             "wholly past it: there is nothing written to read"
         );
         assert_eq!(
-            missing_span(&told, &close, 800.0, Some(0)),
+            owed(&told, &close, 800.0, Some(0)),
             None,
             "a take nothing has been written into yet"
         );
@@ -1476,7 +1586,93 @@ mod tests {
             start: 0.0,
             len: frames as f64,
         };
-        assert_eq!(missing_span(&told, &wide, 800.0, Some(10_000)), None);
+        assert_eq!(owed(&told, &wide, 800.0, Some(10_000)), None);
+    }
+
+    /// **What is owed is a finer summary, until a summary stops being worth
+    /// asking for.** The same view at three zooms answers three ways: the
+    /// summary it has, a grid it can be sent in one reply, and the samples.
+    #[test]
+    fn a_zoom_past_the_summary_asks_for_a_finer_grid_and_not_for_the_samples() {
+        use crate::waveform::WaveformData;
+        let (bucket, frames) = (256usize, 256 * 4_000);
+        let told = WaveformView::new(WaveformData::with_multi_pyramid(
+            clausters_core::peaks::MultiPyramid::empty(frames, 1, bucket),
+        ));
+        // 800 px over 256 000 frames: 320 samples a pixel, coarser than the
+        // bucket, and the summary is already the answer.
+        let out = View {
+            start: 0.0,
+            len: 256_000.0,
+        };
+        assert_eq!(owed(&told, &out, 800.0, None), None);
+
+        // 800 px over 51 200 frames: 64 samples a pixel. What draws that is one
+        // min/max pair per column, which is 800 pairs -- and asking for the
+        // samples would be 51 200 of them, a few hundred kilobytes through a
+        // 64 KiB carrier, to compute a few kilobytes' worth.
+        let mid = View {
+            start: 0.0,
+            len: 51_200.0,
+        };
+        assert_eq!(
+            owed(&told, &mid, 800.0, None),
+            Some(Owed::Summary {
+                a: 0,
+                b: 51_200,
+                bucket: 32
+            }),
+            "two buckets a column, finer than the view's own"
+        );
+
+        // 800 px over 3 200 frames: four samples a pixel. A grid there would be
+        // two samples a bucket -- three floats to describe two -- so the
+        // samples are both cheaper and exact.
+        let deep = View {
+            start: 0.0,
+            len: 12_800.0,
+        };
+        assert_eq!(
+            owed(&told, &deep, 800.0, None),
+            Some(Owed::Samples { a: 0, b: 12_800 }),
+        );
+    }
+
+    /// The grid a span is asked at: a power of two, two of them to a column,
+    /// coarsened until one reply holds the span, and `None` where the samples
+    /// are the better answer.
+    #[test]
+    fn the_detail_grid_holds_two_buckets_a_column_and_fits_one_reply() {
+        let base = 256;
+        for (per_px, want) in [
+            (256.0, Some(128)),
+            (64.0, Some(32)),
+            (63.0, Some(16)),
+            (32.0, Some(16)),
+            (31.9, None),
+            (8.0, None),
+            (0.5, None),
+        ] {
+            assert_eq!(
+                detail_bucket(per_px, 8_192, base),
+                want,
+                "at {per_px} samples a pixel"
+            );
+        }
+        // Never as coarse as the view's own summary: there would be nothing to
+        // gain, and the report belongs in the pyramid itself.
+        assert_eq!(detail_bucket(512.0, 8_192, base), None);
+        assert_eq!(detail_bucket(1_000.0, 8_192, base), None);
+        // A span too long for one reply is summarized coarser rather than in
+        // two, because a grid is replaced and not extended.
+        let long = DETAIL_REPLY_BUCKETS * 64;
+        assert_eq!(detail_bucket(64.0, long, base), Some(64));
+        assert_eq!(
+            detail_bucket(64.0, long * 8, base),
+            None,
+            "not without passing the view's own"
+        );
+        assert_eq!(detail_bucket(64.0, 0, base), None);
     }
 
     #[test]

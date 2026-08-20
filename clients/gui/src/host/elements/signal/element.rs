@@ -198,6 +198,10 @@ impl Element for SignalElement {
         SignalElement::set_window(self, start, channels, samples)
     }
 
+    fn set_detail(&mut self, start: u64, bucket: usize, stats: &[f32]) -> bool {
+        SignalElement::set_detail(self, start, bucket, stats)
+    }
+
     fn stream_want(&self) -> Option<(i32, usize)> {
         SignalElement::stream_want(self)
     }

@@ -299,6 +299,26 @@ impl SignalElement {
         true
     }
 
+    /// **Puts a finer summary over the span this element is showing**, beside
+    /// the one it holds — the summary counterpart of [`Self::set_window`], and
+    /// what a zoom past the base bucket asks for where the samples cannot be
+    /// mapped. `stats` is the wire's own overview blob, unconverted.
+    pub fn set_detail(&mut self, start: u64, bucket: usize, stats: &[f32]) -> bool {
+        let channels = self.sample_shape().map_or(1, |(ch, _)| ch.max(1));
+        let Some(data) = self.source.data_mut() else {
+            return false;
+        };
+        if data.body.is_none() {
+            return false;
+        }
+        let body = Arc::make_mut(data.body.as_mut().expect("just checked"));
+        if !body.set_detail(start as usize, bucket, channels, stats) {
+            return false;
+        }
+        self.slot_dirty = true;
+        true
+    }
+
     /// **The summary's finest bucket**, or `None` when this element holds no
     /// summary — what a span read back has to be aligned to before it can
     /// replace what the summary says over it.

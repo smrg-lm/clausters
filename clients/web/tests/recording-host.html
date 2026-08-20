@@ -41,7 +41,11 @@
         for widget"), which is how a page resolves to the sample where a native
         host reads the mapped cells -- asserted twice, once **while the take
         records** (behind the write frontier, where the samples are already
-        final) and once after it is finished.
+        final) and once after it is finished;
+      - and a zoom that stops between the bucket and the sample is answered by
+        a **finer grid** ("detail of") rather than by the samples, which is the
+        shape that span actually wants: one min/max pair per pixel column, in
+        one reply of a few kilobytes.
     -->
     <script type="module">
       // The host logs through the console, which is the only window a page has
@@ -176,6 +180,26 @@
           throw new Error(`it read ${frames} frames for a 2000-frame window`);
         }
 
+        // **A zoom that wants a finer summary asks for one, not for samples.**
+        // 20 000 frames over 200 px is a hundred samples a pixel: coarser than
+        // the 256-frame bucket cannot resolve, and far coarser than a sample.
+        // What draws it is one min/max pair per column, which /buffer_peaks
+        // measures at a bucket of 32 in one reply of a few kilobytes -- where
+        // the samples over the same span are 80 kB through a 64 KiB carrier,
+        // a chunk a frame, to compute the same 200 pairs.
+        const grid = seen.length;
+        win.widget("take").set({ view_start: 8192, view_len: 20000 });
+        await sleep(800);
+        const detail = seen.slice(grid).find((line) => line.includes("detail of"));
+        if (!detail) {
+          throw new Error("a zoom between the bucket and the sample read no grid | "
+            + seen.slice(grid).join(" ; ").slice(0, 300));
+        }
+        if (seen.slice(grid).some((line) => line.includes("read back for widget"))) {
+          throw new Error("it read the samples where a finer summary was the answer");
+        }
+        log(detail);
+
         // Zoomed back out, nothing more is asked: the summary is the answer
         // there and it is already on screen.
         const quiet = seen.length;
@@ -187,8 +211,9 @@
 
         verdict(`PASS: the take drew from the stream without being downloaded, `
           + `a zoom read the samples back behind the frontier while it recorded, `
-          + `and a zoom past the summary read ${frames} frames back — `
-          + "the span on screen, not the take");
+          + `a zoom past the summary read ${frames} frames back — the span on `
+          + "screen, not the take — and a zoom between the bucket and the "
+          + "sample was answered by a finer grid instead");
       }
 
       document.getElementById("boot").onclick = () =>

@@ -15,6 +15,7 @@
 //! its canvases in one synchronous pass (`WebApp::schedule_stream_sync`).
 
 use super::*;
+use crate::host::frame::Owed;
 
 /// The host's audio-server leg over a browser `WebSocket` to a `--ws` server.
 /// Bidirectional: outbound frames carry bound-widget values and the host's own
@@ -308,9 +309,20 @@ impl WebApp {
             "/buffer_peaks.reply" => {
                 if let Some((bufnum, start, bucket, stats)) = crate::host::stream_report(&msg.args)
                 {
-                    self.on_stream_report(bufnum, start, bucket, &stats);
-                    if let Some(next) = self.fetches.on_peaks(bufnum, start, stats.len()) {
-                        self.send_to_server(next);
+                    // **Which of the two summaries this is, told by its
+                    // bucket**: a detail grid is asked for finer than the view
+                    // it is for, and the walk asks at the view's own -- so a
+                    // reply some view asked for at that bucket and start is
+                    // that view's, and everything else is the walk's.
+                    if let Some((def_id, widget_id)) =
+                        self.fetches.detail_reply(bufnum, start, bucket)
+                    {
+                        self.place_detail(bufnum, def_id, widget_id, start, bucket, &stats);
+                    } else {
+                        self.on_stream_report(bufnum, start, bucket, &stats);
+                        if let Some(next) = self.fetches.on_peaks(bufnum, start, stats.len()) {
+                            self.send_to_server(next);
+                        }
                     }
                 }
             }
@@ -732,10 +744,10 @@ impl WebApp {
         for msg in self.fetches.tick_peaks() {
             self.send_to_server(msg);
         }
-        let mut asked: Vec<(i32, i32, usize, usize, usize)> = Vec::new();
+        let mut asked: Vec<(i32, i32, usize, Owed)> = Vec::new();
         if let Some(render) = self.canvases.get(&def_id).and_then(|c| c.render.as_ref()) {
             for (widget_id, slot) in &render.waveforms {
-                let Some((a, b)) = slot.wanted_span.take() else {
+                let Some(owed) = slot.owed.take() else {
                     continue;
                 };
                 let Some(el) = self
@@ -750,19 +762,66 @@ impl WebApp {
                 else {
                     continue;
                 };
-                asked.push((*widget_id, bufnum, a, b - a, channels));
+                asked.push((*widget_id, bufnum, channels, owed));
             }
         }
-        for (widget_id, bufnum, start, frames, channels) in asked {
-            if let Some(msg) = self.fetches.want_span(
-                bufnum,
-                start,
-                frames,
-                channels,
-                SpanUse::Window { def_id, widget_id },
-            ) {
+        for (widget_id, bufnum, channels, owed) in asked {
+            let msg = match owed {
+                Owed::Summary { a, b, bucket } => {
+                    self.fetches
+                        .want_detail(bufnum, def_id, widget_id, a, b - a, bucket)
+                }
+                Owed::Samples { a, b } => self.fetches.want_span(
+                    bufnum,
+                    a,
+                    b - a,
+                    channels,
+                    SpanUse::Window { def_id, widget_id },
+                ),
+            };
+            if let Some(msg) = msg {
                 self.send_to_server(msg);
             }
+        }
+    }
+
+    /// **Puts a finer grid under one view**, the summary counterpart of
+    /// `place_window`: the same `/buffer_peaks` blob every other overview
+    /// arrives in, folded beside the view's own summary rather than into it,
+    /// because it is measured at a different bucket.
+    fn place_detail(
+        &mut self,
+        bufnum: i32,
+        def_id: i32,
+        widget_id: i32,
+        start: u64,
+        bucket: usize,
+        stats: &[f32],
+    ) {
+        log(&format!(
+            "buffer {bufnum}: detail of {} bucket(s) of {bucket} at {start} for widget {widget_id}",
+            stats.len() / 3
+        ));
+        if let Some(slot) = self
+            .canvases
+            .get_mut(&def_id)
+            .and_then(|c| c.render.as_mut())
+            .and_then(|r| r.waveforms.get_mut(&widget_id))
+        {
+            slot.view.release_data();
+        }
+        let took = self
+            .host
+            .window_def_mut(def_id)
+            .and_then(|t| t.find_mut(widget_id))
+            .is_some_and(|w| {
+                w.bulk_target_mut()
+                    .kind
+                    .as_element_mut()
+                    .is_some_and(|el| el.set_detail(start, bucket, stats))
+            });
+        if took {
+            self.request_redraw(def_id);
         }
     }
 
