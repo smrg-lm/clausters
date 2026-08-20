@@ -182,7 +182,26 @@ on trust, so that is where drift accumulates:
   needed, the arrangement already has one (**element**, and a clip's
   **contents**), and the concrete word is still preferred when the code knows
   which it is. The same rule catches "the material" standing in for "the
-  piece", "the audio" or "whatever is played" — say which.
+  piece", "the audio" or "whatever is played" — say which. The verb goes the
+  same way: **"materialize" names no act** — the change of state is
+  **rendered**, memory is **built** or **allocated**, an iterable is **read**,
+  a spilled payload is **restored**. Only "materialize an iterable" in its
+  plain Python/TS sense survives, and only where nothing is being generated.
+- **A metaphor that has to be decoded is not an explanation.** The economic
+  register (`cost`, `pay`, `price`, `cheap`) is the project's and stays, but
+  the *benefit* side is always a plain verb: something **gives**, **adds**,
+  **saves**, **keeps**, **makes legal**, **checks** — never "buys". "Buys a
+  catalog with one name", "buys the right to write", "buys checking" say less
+  than the verbs they replaced, and "What X buys is …" as a paragraph opener
+  is a tic: state the claim. Name the relation itself with the term of art,
+  **trade-off**. (`buy` survives only in the `PLAN.md` set, as record.)
+- **A rename is not a search-and-replace.** An uncountable word swapped for a
+  countable one leaves a hundred sentences ungrammatical ("the samples is",
+  "a session's samples lives", "the samples's shape") and a few meaningless
+  (a roll's contents are notes, not samples). After any vocabulary change,
+  re-read the sentences it touched: agreement, the possessive, and whether the
+  new word is the right one *there* — often it is `buffer`, `take`, `piece`,
+  `contents` or `audio` rather than the one word the rename reached for.
 - **Type and class names** are CamelCase, with an acronym inside a name
   taking only its first letter in uppercase — `OscFunc`, `MidiFunc`,
   `OscUdpInterface`, `OscTcpInterface`, `NodeIdAllocator` — never all-caps
