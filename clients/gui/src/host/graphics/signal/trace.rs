@@ -786,6 +786,90 @@ mod tests {
         assert_eq!(full, 99, "the edges are drawn: {heights:?}");
     }
 
+    /// **The lane that raised it, measured again.** A minute of a square wave
+    /// across 1250 columns at 2304 samples a column: eleven transitions, of
+    /// which one falls exactly on a column boundary, and 1239 columns holding a
+    /// constant run.
+    ///
+    /// Before the join, ten transitions drew as a tall column — a column that
+    /// holds both levels *is* the vertical — and the eleventh drew nothing at
+    /// all, because each side of it was a separate quad. All eleven draw now,
+    /// and the picture no longer changes with where the zoom happens to put a
+    /// boundary.
+    ///
+    /// The flat columns are the other half of what that lane showed, and they
+    /// are **not** a defect: a constant run has no height, so it is inked at
+    /// the trace's own weight, which is what keeps a flat stretch visible at
+    /// all. What the join adds there is that a run of them is *connected* to
+    /// what comes before it; what it does not add is slope, because a picture
+    /// never resolves finer than the screen and a value that drifts by less
+    /// than a pixel across a column has none to draw.
+    #[test]
+    fn every_transition_of_a_minute_long_square_wave_is_drawn() {
+        let (columns, per_px) = (1250usize, 2304.0);
+        let n = (columns as f64 * per_px) as usize;
+        let period = n / 12; // eleven transitions inside the take
+        let samples: Vec<f32> = (0..n)
+            .map(|i| {
+                if (i / period).is_multiple_of(2) {
+                    0.8
+                } else {
+                    -0.8
+                }
+            })
+            .collect();
+        let rect = Rect::new(0.0, 0.0, columns as f32, 100.0);
+        let heights = quad_heights(&draw_at(&samples, rect, per_px));
+        assert_eq!(heights.len(), columns, "one column per pixel");
+        let tall = heights.iter().filter(|h| **h > rect.h * 0.5).count();
+        assert_eq!(tall, 11, "every transition draws a vertical: {tall}");
+        // And the rest are the constant runs, inked at the trace's weight and
+        // no more — the picture is still a measurement of its column.
+        let flat = heights.iter().filter(|h| **h <= 1.0 + 1e-3).count();
+        assert_eq!(flat, columns - 11, "a constant run has no height to draw");
+    }
+
+    /// **A line that drifts by less than a pixel a column is connected**, not
+    /// a row of separated bars — the other thing that lane showed.
+    ///
+    /// A column of a constant run has no height, so it is inked at the trace's
+    /// weight and sits where its value is. Two neighbours a fifth of a pixel
+    /// apart used to be two such bars with a gap between them wherever the
+    /// rounding fell on either side of a pixel; joined, each reaches the one
+    /// before it, so the run is one line whatever the drift. What it still does
+    /// not have is *slope*: below a pixel a column there is none to draw, and a
+    /// picture never resolves finer than the screen.
+    #[test]
+    fn a_drift_of_less_than_a_pixel_a_column_still_draws_one_line() {
+        let (columns, per_px) = (200usize, 64.0);
+        let n = (columns as f64 * per_px) as usize;
+        let rect = Rect::new(0.0, 0.0, columns as f32, 100.0);
+        // Full scale is rect.h / 2 pixels of value, so this drifts a fifth of a
+        // pixel per column: two columns are never a pixel apart.
+        let step = 0.2 / (rect.h as f64 * 0.5) / per_px;
+        let samples: Vec<f32> = (0..n).map(|i| (i as f64 * step) as f32).collect();
+        let mesh = draw_at(&samples, rect, per_px);
+        let ys: Vec<f32> = mesh.positions().map(|(_, y)| y).collect();
+        let spans: Vec<(f32, f32)> = ys
+            .chunks_exact(6)
+            .map(|q| {
+                (
+                    q.iter().cloned().fold(f32::INFINITY, f32::min),
+                    q.iter().cloned().fold(f32::NEG_INFINITY, f32::max),
+                )
+            })
+            .collect();
+        assert_eq!(spans.len(), columns);
+        for (c, pair) in spans.windows(2).enumerate() {
+            let (a, b) = (pair[0], pair[1]);
+            assert!(
+                b.0 <= a.1 + 1e-3 && b.1 >= a.0 - 1e-3,
+                "column {c} and {} do not touch: {a:?} then {b:?}",
+                c + 1
+            );
+        }
+    }
+
     /// ...and the join inks **only** the crossing: a column whose neighbour
     /// already overlaps it is drawn exactly as it was measured, which is every
     /// column of ordinary audio.
