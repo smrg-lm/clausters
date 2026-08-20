@@ -1,8 +1,9 @@
 # Roadmap — the order the open work is taken in
 
-*Rewritten 2026-08-20, when the overview work closed — the summary of a take
-became something a peer maps and a client can ask for, and three of the four
-entries the previous phase left behind went with it (before that: 2026-08-19,
+*Rewritten 2026-08-20, twice: when the overview work closed, and again when the
+four entries it had left behind were taken — the join that draws an edge, a
+page's zoom while a take records, the shape a zoom asks in, and what a column
+claims at a discontinuity (before that: 2026-08-19,
 when the picture-reads-the-samples phase closed; twice on 2026-08-18, when the
 clip's interaction rules and the real-sizes phase closed; twice on 2026-08-17,
 against the plans and once the autonomous editor closed). A rewrite **drops what
@@ -32,9 +33,10 @@ async command's 100 ms floor, a killed editor's segments, a persisted def that
 would not load and could not be named — are paid. The picture reads the samples
 it maps instead of copying them, and the summary over them is a file it maps
 too; a recording is drawn as it fills, at the frame, on any server and in a page
-as well as in a window; and a page zoomed past its summary reads the span it is
-looking at — or the span another peer just edited — so the browser draws what
-the native window draws rather than stopping at a bucket.
+as well as in a window; and a page zoomed past its summary reads what it is
+looking at in the shape that span wants — a finer summary, or the samples where
+only they will do — recording or finished, so the browser draws what the native
+window draws rather than stopping at a bucket.
 
 **So what is left below is not on the path to that example.** One port the
 destination does not wait on, and one track that is genuinely later. Everything
@@ -119,53 +121,14 @@ Named so "not scheduled" reads as a decision rather than an oversight. Each is
 in its own plan with its own reasoning; none is on the path to the complete
 example, and none blocks anything that is.
 
-**What the overview work left behind** (2026-08-20, closing that phase — three
-of the four entries it inherited are done and gone: the take's overview is a
-file beside its region, a page follows another peer's edit, and the fork between
-a whole download and a summary is a question of cost that is written down in
-`docs/architecture.md` and `docs/gui-protocol.md`). **The in-page shared-memory
-path has since been answered and left too**: the number it waited on was
-measured — a frame of `/bus_stream` at forty canvases is 824 bytes and ~29 µs,
-a tenth of a percent of the frame — so a `SharedArrayBuffer` saves nothing
-worth COOP/COEP and the track stays shut (`clients/gui/PLAN.md`, Future
-directions; `docs/decisions.md`). **This is where the next
-session picks up**, so everything the phase left is here rather than spread
-through the list below, in the order it would be taken and with the reason for
-that order.
-
-- ⬜ **The square wave's edge is still missing on the web, and the join that
-  draws it is only in the host** *(`clients/web/PLAN.md`, Found by use)*.
-  **Before the rest because it is a report from use and its surface is not
-  identified yet**: the rule that joins a column to the one before it shipped in
-  the host's one renderer, so every widget-drawn picture has it, and a page that
-  draws `Peaks.columns()` itself does not. Reproducing it against a named page
-  settles whether this is a page's recipe, a missing drawing helper in the
-  client, or something else entirely in the host.
-- ⬜ **A page cannot zoom to the sample while a take records, and behind the
-  frontier it could** *(`clients/gui/PLAN.md`, Found by use)*. **First because
-  it is the smallest and it closes the last asymmetry between the two twins**:
-  `examples/gui_recording_mapped.py` and `examples/recording.html` now differ in
-  exactly one thing a hand can feel. The machinery is all there — the condition
-  wants to be where the span is rather than what the take is doing — and the
-  entry names the two questions a fix has to settle.
-- ⬜ **A zoom asks for samples where what it wants is a finer summary**
-  *(`clients/gui/PLAN.md`, Future directions)*. **The real answer to the entry
-  above, and a track's worth rather than a fix**: a page zoomed past its summary
-  moves a few hundred kilobytes of samples through a 64 KiB carrier to compute
-  what `/buffer_peaks` could answer in one reply. What stands in the way is that
-  a view holds one pyramid at one bucket, so it changes what a view *is*.
-- ⬜ **A column is its own quad, and a signal that steps shows what that costs**
-  *(`clients/gui/PLAN.md`, Future directions)*. Deferred by the user the day it
-  was found, to be looked at another way rather than patched — so it is here
-  named and not ordered against the two above.
-
-**And one debt this phase paid half of**, already ordered in Phase 1: **a bulk
-read of more than one chunk gets no reply on the in-page carrier**
-(`clients/web/PLAN.md`, Found by use). Its mechanism is no longer a guess — a
-server drops a reply that does not fit the 64 KiB ring, deliberately — and the
-GUI host now does for its own requests what that entry proposes for
-`bulkChunk`: size a chunk so several fit, bound how many are in flight, ask
-again for what never came back.
+**One debt is open here**, already ordered in Phase 1 and left named because it
+is the one thing the last session did not finish: **a bulk read of more than one
+chunk gets no reply on the in-page carrier** (`clients/web/PLAN.md`, Found by
+use). Its mechanism is no longer a guess — a server drops a reply that does not
+fit the 64 KiB ring, deliberately — and the GUI host now does for its own
+requests what that entry proposes for `bulkChunk`: size a chunk so several fit,
+bound how many are in flight, ask again for what never came back. What is left is
+the number a *user* of the client gets handed.
 
 **The rest**, unchanged:
 
