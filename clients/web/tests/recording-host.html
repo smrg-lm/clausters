@@ -103,10 +103,16 @@
         page.fit(win.id, document.getElementById("stage"));
         await sleep(600);
 
-        // **Nothing was downloaded**: a take being recorded into holds
-        // silence, so the host asked for its shape and drew an empty summary.
-        if (!saw("being recorded into")) {
+        // **Nothing was downloaded**: this take is longer than the download
+        // route's ceiling, so the host took the summary route -- and because
+        // something is writing it, the summary is *streamed* to it rather
+        // than asked for (the samples are silence until they are recorded).
+        if (!saw("drawn from its summary")) {
           throw new Error("the host downloaded the take instead of asking its shape");
+        }
+        if (!saw("view(s), streamed")) {
+          throw new Error("a take being recorded into has its summary pushed, "
+            + "not asked for");
         }
         if (saw("loaded into")) throw new Error("the take's samples were pulled anyway");
 
