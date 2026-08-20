@@ -119,18 +119,49 @@ Named so "not scheduled" reads as a decision rather than an oversight. Each is
 in its own plan with its own reasoning; none is on the path to the complete
 example, and none blocks anything that is.
 
-**What the overview work left behind** (2026-08-20, closing that phase — the
-other three entries it held are done and gone: the take's overview is a file
-beside its region, a page follows another peer's edit, and the fork between a
-whole download and a summary is a question of size that is written down):
+**What the overview work left behind** (2026-08-20, closing that phase — three
+of the four entries it inherited are done and gone: the take's overview is a
+file beside its region, a page follows another peer's edit, and the fork between
+a whole download and a summary is a question of cost that is written down in
+`docs/architecture.md` and `docs/gui-protocol.md`). **This is where the next
+session picks up**, so everything the phase left is here rather than spread
+through the list below, in the order it would be taken and with the reason for
+that order.
 
-- **The in-page shared-memory path — a track to open** *(`clients/gui/PLAN.md`,
+- ⬜ **A page cannot zoom to the sample while a take records, and behind the
+  frontier it could** *(`clients/gui/PLAN.md`, Found by use)*. **First because
+  it is the smallest and it closes the last asymmetry between the two twins**:
+  `examples/gui_recording_mapped.py` and `examples/recording.html` now differ in
+  exactly one thing a hand can feel. The machinery is all there — the condition
+  wants to be where the span is rather than what the take is doing — and the
+  entry names the two questions a fix has to settle.
+- ⬜ **A zoom asks for samples where what it wants is a finer summary**
+  *(`clients/gui/PLAN.md`, Future directions)*. **The real answer to the entry
+  above, and a track's worth rather than a fix**: a page zoomed past its summary
+  moves a few hundred kilobytes of samples through a 64 KiB carrier to compute
+  what `/buffer_peaks` could answer in one reply. What stands in the way is that
+  a view holds one pyramid at one bucket, so it changes what a view *is*.
+- ⬜ **A column is its own quad, and a signal that steps shows what that costs**
+  *(`clients/gui/PLAN.md`, Future directions)*. Deferred by the user the day it
+  was found, to be looked at another way rather than patched — so it is here
+  named and not ordered against the two above.
+- ⬜ **The in-page shared-memory path — a track to open** *(`clients/gui/PLAN.md`,
   Future directions)* — a `SharedArrayBuffer` would make a page's host read the
   engine's memory as the native one reads the segment (zoom to the sample while
   a take records, no messages at all). Left out by requirement: SAB needs
   COOP/COEP, which an embeddable component cannot demand of its page. **What it
   waits on is a number, not a decision**: what a frame of `/bus_stream` costs on
   a page holding forty canvases, which the entry names as the whole argument.
+  Note what the first two entries would already give of it over the wire, which
+  is most of what a page actually asks for.
+
+**And one debt this phase paid half of**, already ordered in Phase 1: **a bulk
+read of more than one chunk gets no reply on the in-page carrier**
+(`clients/web/PLAN.md`, Found by use). Its mechanism is no longer a guess — a
+server drops a reply that does not fit the 64 KiB ring, deliberately — and the
+GUI host now does for its own requests what that entry proposes for
+`bulkChunk`: size a chunk so several fit, bound how many are in flight, ask
+again for what never came back.
 
 **The rest**, unchanged:
 
@@ -153,7 +184,6 @@ whole download and a summary is a question of size that is written down):
 - **The builders could be generated from the catalog instead of contrasted
   against it** *(root `PLAN.md`, Future directions)* — the contrast tests caught
   eleven drifted builders, which is strictly weaker than not hand-writing the mirrors.
-- **What the overview work turned up by use** *(`clients/gui/PLAN.md`)* — the fixed ones stay there with their record; what is still open is **a page cannot zoom to the sample while a take records, and behind the frontier it could** (Found by use), and two designs in Future directions: **a zoom asks for samples where what it wants is a finer summary**, which is a track's worth and the real answer to a page's zoom, and **a column is its own quad, and a signal that steps shows what that costs**, deferred by the user to be looked at another way.
 - **A take is drawn in amplitude and heard in decibels**; **the other text over
   pictures has no plate yet**; **persistence saves the document, not what the
   user did to it** — `clients/gui/PLAN.md`,
