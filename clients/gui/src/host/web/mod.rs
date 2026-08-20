@@ -43,7 +43,7 @@ use crate::spectrogram::Stft;
 use crate::view::Renderers;
 use crate::waveform::WaveformData;
 
-use super::fetch::{BufferFetches, FetchStep};
+use super::fetch::{BufferFetches, FetchStep, SpanUse, align_span};
 use super::frame::{self, SpectrogramSlot, WaveformSlot};
 use super::gestures::{ClipVerb, GestureCtx, GestureEffect, Gestures};
 use super::live::{self, StreamedBuses, StreamedTaps};
@@ -230,6 +230,12 @@ struct WebApp {
     /// The `(taps, window frames)` currently subscribed with `/bus_tapStream`,
     /// so a tree change only resubscribes when they actually changed.
     tap_streamed: (Vec<i32>, usize),
+    /// Whether this page has registered for the server's notifications
+    /// (`/server_notify 1`). It is what `/buffer_touched` rides on — an edit
+    /// another peer made to a buffer this page draws — and it is sent once,
+    /// the first time a tree names a server buffer, exactly as the native
+    /// front sends it when a window draws one.
+    notified: bool,
     /// The server's sample rate (from `/clock_query.reply`, requested when the leg
     /// connects); `0.0` until known — window sizing then assumes 48 kHz.
     server_rate: f64,
@@ -263,6 +269,7 @@ impl WebApp {
             streamed: Vec::new(),
             taps: Arc::new(StreamedTaps::default()),
             tap_streamed: (Vec::new(), 0),
+            notified: false,
             server_rate: 0.0,
             server_clock: 0.0,
             tick: None,

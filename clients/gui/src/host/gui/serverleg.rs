@@ -11,7 +11,7 @@ use tracing::{debug, info, warn};
 
 #[cfg(feature = "standalone")]
 use crate::host::ServerLink;
-use crate::host::fetch::{FetchStep, WaveWant};
+use crate::host::fetch::{FetchStep, SpanUse, WaveWant, align_span};
 use crate::host::frame;
 use crate::host::graphics::nodetree::NodeTree;
 use crate::host::widget::Widget;
@@ -206,6 +206,12 @@ impl App {
                 channels,
                 samples,
             } => self.place_window(bufnum, want, start_frame, channels, &samples),
+            FetchStep::Patch {
+                bufnum,
+                start_frame,
+                channels,
+                samples,
+            } => self.place_patch(bufnum, start_frame, channels, &samples),
             FetchStep::None => {}
         }
     }
@@ -287,8 +293,9 @@ impl App {
                     OscType::Int(start),
                     OscType::Int(frames),
                 ] = msg.args.as_slice()
+                    && self.resummarize(*bufnum, *channel, *start, *frames) == 0
                 {
-                    self.resummarize(*bufnum, *channel, *start, *frames);
+                    self.read_span_back(*bufnum, *start, *frames);
                 }
             }
             // **A recording this host cannot read, reported by the server.**
@@ -567,10 +574,13 @@ impl App {
             }
         }
         for (def_id, widget_id, bufnum, start, frames, channels) in asked {
-            if let Some(msg) = self
-                .fetches
-                .want_span(def_id, widget_id, bufnum, start, frames, channels)
-            {
+            if let Some(msg) = self.fetches.want_span(
+                bufnum,
+                start,
+                frames,
+                channels,
+                SpanUse::Window { def_id, widget_id },
+            ) {
                 self.send_to_server(msg);
             }
         }
@@ -640,13 +650,13 @@ impl App {
     /// is all that is stale. A view holding its own copy (a fetched buffer,
     /// a page) would have to fetch the span back, which is the fetch machine's
     /// work and not this one's.
-    fn resummarize(&mut self, bufnum: i32, channel: i32, start: i32, frames: i32) {
+    fn resummarize(&mut self, bufnum: i32, channel: i32, start: i32, frames: i32) -> usize {
         let (Ok(channel), Ok(start), Ok(frames)) = (
             usize::try_from(channel),
             u64::try_from(start),
             usize::try_from(frames),
         ) else {
-            return;
+            return 0;
         };
         let mut touched = Vec::new();
         let open = self.host.window_def_ids();
@@ -658,10 +668,75 @@ impl App {
                 touched.push(def_id);
             }
         }
-        for def_id in touched {
+        for def_id in &touched {
+            if let Some(ws) = self.windows.get(def_id) {
+                ws.gpu.window.request_redraw();
+            }
+        }
+        touched.len()
+    }
+
+    /// **Reads an announced span back off the wire**, for a host whose views
+    /// hold their own copy of the samples.
+    ///
+    /// The other half of [`Self::resummarize`], and the one a mapped host
+    /// never reaches: with no segment to open — a remote server, a page —
+    /// the samples this host draws are a download, so an edit somebody else
+    /// made is not in them and no summary over them can find it. What the
+    /// announcement gives is where to look, and this asks for exactly that
+    /// span, widened to the summary's buckets so what comes back can replace
+    /// what the summary says over it.
+    fn read_span_back(&mut self, bufnum: i32, start: i32, frames: i32) {
+        let (Ok(start), Ok(frames)) = (usize::try_from(start), usize::try_from(frames)) else {
+            return;
+        };
+        let Some((channels, bucket)) = self.host.window_def_ids().into_iter().find_map(|def_id| {
+            self.host
+                .window_def(def_id)
+                .and_then(|tree| crate::host::span_to_read_back(tree, bufnum))
+        }) else {
+            return;
+        };
+        let (start, frames) = align_span(start, frames, bucket);
+        if let Some(msg) = self
+            .fetches
+            .want_span(bufnum, start, frames, channels, SpanUse::Patch)
+        {
+            debug!("buffer {bufnum}: reading {frames} frame(s) at {start} back after an edit");
+            self.send_to_server(msg);
+        }
+    }
+
+    /// Puts a span read back after an edit into every view of that buffer, and
+    /// redraws the windows that took it. Then asks for whatever else was
+    /// announced while this was in flight.
+    fn place_patch(&mut self, bufnum: i32, start_frame: usize, channels: usize, samples: &[f32]) {
+        let mut redraw = Vec::new();
+        for def_id in self.host.window_def_ids() {
+            // A pyramid a slot is holding cannot be written in place, so the
+            // samples go first — the same order a streamed report takes, and
+            // for the same reason.
+            if let Some(ws) = self.windows.get_mut(&def_id) {
+                for slot in ws.waveforms.values_mut() {
+                    slot.view.release_data();
+                }
+            }
+            let Some(tree) = self.host.window_def_mut(def_id) else {
+                continue;
+            };
+            if crate::host::patch_buffer_views(tree, bufnum, start_frame as u64, channels, samples)
+                > 0
+            {
+                redraw.push(def_id);
+            }
+        }
+        for def_id in redraw {
             if let Some(ws) = self.windows.get(&def_id) {
                 ws.gpu.window.request_redraw();
             }
+        }
+        if let Some(msg) = self.fetches.queued_span(bufnum) {
+            self.send_to_server(msg);
         }
     }
 

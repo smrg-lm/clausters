@@ -293,6 +293,76 @@ impl SignalElement {
         true
     }
 
+    /// **The summary's finest bucket**, or `None` when this element holds no
+    /// summary — what a span read back has to be aligned to before it can
+    /// replace what the summary says over it.
+    pub fn summary_bucket(&self) -> Option<usize> {
+        Some(self.source.data()?.body.as_ref()?.base_bucket())
+    }
+
+    /// **Takes a span another peer wrote**, returning whether this element
+    /// drew any of it. `samples` is interleaved, every channel of the frames
+    /// `[start, start + n)`, read back out of the buffer itself.
+    ///
+    /// The third way somebody else's write reaches a picture, and the one for
+    /// a view that can neither re-read the samples nor be streamed an
+    /// overview: [`Self::resummarize`] is for samples this element can read
+    /// where they lie, [`Self::write_buckets`] for a recording the server
+    /// reports on, and this for an **edit** — announced once, over a span,
+    /// into samples this element holds its own copy of.
+    ///
+    /// Which of the two halves lands depends on what the copy is, and they are
+    /// exclusive by construction: samples that are here are written and
+    /// re-summarized over the span ([`Self::write_samples`], which is what a
+    /// stroke does and behaves the same whether the copy is owned or mapped),
+    /// while a summary with **no** samples under it (a take being recorded
+    /// into, whose picture is buckets and a window) takes the span as the
+    /// buckets it covers and as the window itself.
+    pub fn patch_span(&mut self, start: u64, channels: usize, samples: &[f32]) -> bool {
+        let channels = channels.max(1);
+        if samples.is_empty() || !samples.len().is_multiple_of(channels) {
+            return false;
+        }
+        let frames = samples.len() / channels;
+        let mut wrote = false;
+        for ch in 0..channels {
+            let run: Vec<f32> = (0..frames).map(|f| samples[f * channels + ch]).collect();
+            wrote |= self.write_samples(ch, start, &run);
+        }
+        if wrote {
+            return true;
+        }
+        // No samples to write into: the picture is a summary. The buckets the
+        // span **wholly** covers are recomputed from it — a partial one at
+        // either edge is left alone rather than written from the fraction of
+        // it that arrived, which would report a peak that is not there.
+        let Some(bucket) = self.summary_bucket().filter(|b| *b > 0) else {
+            return false;
+        };
+        let first = (start as usize).div_ceil(bucket);
+        let last = (start as usize + frames) / bucket;
+        let mut folded = false;
+        if last > first {
+            let mut stats = Vec::with_capacity((last - first) * channels * 3);
+            for b in first..last {
+                let at = b * bucket - start as usize;
+                for ch in 0..channels {
+                    let run: Vec<f32> = (0..bucket)
+                        .map(|f| samples[(at + f) * channels + ch])
+                        .collect();
+                    let (lo, hi) = clausters_core::peaks::min_max(&run).unwrap_or((0.0, 0.0));
+                    let ms = clausters_core::peaks::mean_square(&run).unwrap_or(0.0);
+                    stats.extend_from_slice(&[lo, hi, ms]);
+                }
+            }
+            folded = self.write_buckets((first * bucket) as u64, bucket, &stats);
+        }
+        // The samples themselves answer where the eye is, exactly as a zoom's
+        // window does: an edit under a zoomed-in view is drawn from what came
+        // back, not from the buckets it was folded into.
+        folded | self.set_window(start, channels, samples)
+    }
+
     /// **The stream this element wants to be told about**, as
     /// `(buffer, bucket)`, or `None` when it wants none.
     ///
@@ -505,6 +575,63 @@ mod tests {
             loaded.stream_want(),
             None,
             "a take nobody is recording into is not followed"
+        );
+    }
+
+    /// **An edit somebody else made, read back.** A page's copy is owned, so
+    /// the span lands as samples and the summary over it follows.
+    #[test]
+    fn a_patch_lands_in_owned_samples_and_in_the_summary() {
+        let mut take = element(
+            r#"{"id":1,"type":"signal","view":"trace","bulk":true,"buffer":7,"channels":2}"#,
+        );
+        take.take(Loaded::Raw {
+            samples: vec![0.0; 1024 * 2],
+            channels: 2,
+        });
+        // A stereo run of 256 frames at frame 256: full scale left, silent right.
+        let mut span = Vec::new();
+        for _ in 0..256 {
+            span.extend_from_slice(&[1.0, 0.0]);
+        }
+        assert!(take.patch_span(256, 2, &span));
+        let body = take.source.data().unwrap().body.clone().unwrap();
+        assert_eq!(body.column(0, 256.0, 256.0, 512.0), (1.0, 1.0));
+        assert_eq!(
+            body.column(0, 256.0, 0.0, 256.0),
+            (0.0, 0.0),
+            "and only where it was written"
+        );
+        assert_eq!(
+            body.column(1, 256.0, 256.0, 512.0),
+            (0.0, 0.0),
+            "the other channel is what came back for it"
+        );
+    }
+
+    /// A picture that is a **summary with no samples under it** — a take being
+    /// recorded into — takes the same span as the buckets it covers, so the
+    /// overview shows the edit at every zoom.
+    #[test]
+    fn a_patch_folds_into_a_summary_with_no_samples() {
+        let mut take = element(
+            r#"{"id":1,"type":"signal","view":"trace","bulk":true,"buffer":7,"fills":true}"#,
+        );
+        take.take(Loaded::Peaks(Arc::new(
+            crate::waveform::WaveformData::with_multi_pyramid(
+                clausters_core::peaks::MultiPyramid::empty(1024, 1, 256),
+            ),
+        )));
+        let span: Vec<f32> = (0..512)
+            .map(|i| if i % 2 == 0 { 0.5 } else { -0.5 })
+            .collect();
+        assert!(take.patch_span(256, 1, &span));
+        let body = take.source.data().unwrap().body.clone().unwrap();
+        assert_eq!(body.column(0, 256.0, 256.0, 512.0), (-0.5, 0.5));
+        assert_eq!(
+            body.column(0, 256.0, 0.0, 256.0),
+            (0.0, 0.0),
+            "and nothing outside the span it was given"
         );
     }
 

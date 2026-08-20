@@ -1708,6 +1708,25 @@ pub trait Element: fmt::Debug {
         false
     }
 
+    /// **Takes a span another peer wrote**, returning whether it did. The
+    /// default is not to.
+    ///
+    /// The sibling of [`Self::resummarize`] for a picture that cannot re-read
+    /// the samples: they are the server's, this element holds its own copy,
+    /// and the edit was announced (`/buffer_touched`) and then read back.
+    /// `samples` is interleaved, every channel of the frames
+    /// `[start, start + n)`.
+    fn patch_span(&mut self, _start: u64, _channels: usize, _samples: &[f32]) -> bool {
+        false
+    }
+
+    /// **The finest bucket this element's summary holds**, or `None` when it
+    /// holds no summary — what a span read back has to be aligned to before
+    /// it can replace what the summary says.
+    fn summary_bucket(&self) -> Option<usize> {
+        None
+    }
+
     /// **Puts a fetched run of the samples under this element's summary**,
     /// returning whether it took it. The default is not to.
     ///

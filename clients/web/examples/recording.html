@@ -51,12 +51,23 @@ can resolve, the host reads back <i>the span you are looking at</i> and draws
 the samples themselves. So the picture is the same here as in a desktop window,
 which reads the memory it mapped — the route differs, the drawing does not.
 
+The last button is the <b>other</b> way a picture changes: a second client — its
+own connection to the same engine, a peer as far as the server is concerned —
+silences the middle of the first take and announces the span with
+<code>/buffer_touch</code>. A desktop host maps those cells and only has to
+re-summarize them; a page holds its own copy, so it <b>reads the span back</b>
+(<code>/buffer_getRange</code> over the announced frames, widened to whole
+buckets) and puts it into both the samples and the summary. Zoom in or out
+afterwards: the gap is there at every scale, which is what says the summary was
+patched and not just the run under the eye.
+
 Everything runs on the <b>in-page engine</b>: no server process, no
 socket.</div>
 
       <div class="row">
         <button id="start">start</button>
         <button id="record" disabled>record 4 takes</button>
+        <button id="edit" disabled>another peer edits take 1</button>
       </div>
 
       <div id="stage"></div>
@@ -79,7 +90,7 @@ socket.</div>
       const LANES = 1;              // the navigation group every lane shares
 
       let server, host, raw, page, win = null;
-      let unfit = null, takes = [];
+      let unfit = null, takes = [], peer = null;
 
       // One def, one node per take: a glissando, heard and recorded at once —
       // `recordBuf` passes its input through, so the same signal reaches the
@@ -131,6 +142,7 @@ socket.</div>
           for (let i = 0; i < TAKES; i++) win?.widget(`take${i}`).set({ fills: false });
           log("done — the lanes now draw the whole of what they hold");
           el("record").disabled = false;
+          el("edit").disabled = false;
         }, (SECONDS + 0.5) * 1000);
       }
 
@@ -161,7 +173,27 @@ socket.</div>
         el("record").disabled = false;
       }
 
+      // **The edit this page did not make.** A second connection over the same
+      // engine is a second *client*: the server broadcasts `/buffer_touched` to
+      // everyone registered but the writer, so the host hears about a span it
+      // knows nothing else about. The peer edits with the server's own verb
+      // (`/buffer_gain` at zero, which is what `silence` is) and then says
+      // where — the announcement carries the span and never the samples.
+      async function peerEdit() {
+        el("edit").disabled = true;
+        peer ??= await Server.open(await pageConnection(raw));
+        const take = takes[0];
+        const held = new Buffer(take.bufnum, take.frames, 1, RATE, peer);
+        const start = Math.round(take.frames / 3);
+        const frames = Math.round(take.frames / 3);
+        await held.silence({ start, frames });
+        held.touch(0, start, frames);
+        log(`another peer silenced frames ${start}..${start + frames} of take 1 `
+          + "and announced the span — the lane reads it back and redraws");
+      }
+
       el("record").onclick = () => record();
+      el("edit").onclick = () => peerEdit().catch((e) => log(`error: ${e}`));
 
       el("start").onclick = () => {
         el("start").disabled = true;

@@ -233,12 +233,12 @@ impl WebApp {
                 let step = self.fetches.on_data(&msg.args);
                 self.apply_fetch_step(step);
             }
-            // Another peer wrote a span of samples this page may be drawing.
-            // A page holds its **own copy** of the samples — it cannot map
-            // anything — so there is no summary to re-read and the honest
-            // outcome is to say the picture is behind rather than to redraw
-            // the same stale thing. Following it means fetching the span back,
-            // which the fetch machine does not do yet.
+            // **Another peer wrote a span of samples this page is drawing.**
+            // A page holds its **own copy** — it cannot map anything — so the
+            // announcement names a span whose samples are not in it, and no
+            // summary over what it holds can find the edit. So the span is
+            // read back off the wire and put where the picture keeps it, which
+            // is what a mapped host gets for the price of re-summarizing.
             "/buffer_touched" => {
                 if let [
                     OscType::Int(bufnum),
@@ -261,9 +261,7 @@ impl WebApp {
                         }
                     }
                     if refreshed == 0 {
-                        log(&format!(
-                            "buffer {bufnum} was edited by another peer; this page's copy is behind"
-                        ));
+                        self.read_span_back(*bufnum, (*start).max(0), (*frames).max(0));
                     }
                 }
             }
@@ -519,7 +517,83 @@ impl WebApp {
                     self.request_redraw(want.def_id);
                 }
             }
+            // **A span another peer wrote**, read back. It goes to every view
+            // of that buffer, not only to whoever asked: the samples are the
+            // buffer's own, so any picture of it is entitled to them.
+            FetchStep::Patch {
+                bufnum,
+                start_frame,
+                channels,
+                samples,
+            } => {
+                log(&format!(
+                    "buffer {bufnum}: {} frame(s) at {start_frame} read back after an edit",
+                    samples.len() / channels.max(1),
+                ));
+                let mut redraw = Vec::new();
+                for def_id in self.host.window_def_ids() {
+                    // A pyramid a slot is holding cannot be written in place,
+                    // so the samples go first -- the same order a streamed
+                    // report takes, and for the same reason.
+                    if let Some(render) = self
+                        .canvases
+                        .get_mut(&def_id)
+                        .and_then(|c| c.render.as_mut())
+                    {
+                        for slot in render.waveforms.values_mut() {
+                            slot.view.release_data();
+                        }
+                    }
+                    let Some(tree) = self.host.window_def_mut(def_id) else {
+                        continue;
+                    };
+                    if crate::host::patch_buffer_views(
+                        tree,
+                        bufnum,
+                        start_frame as u64,
+                        channels,
+                        &samples,
+                    ) > 0
+                    {
+                        redraw.push(def_id);
+                    }
+                }
+                for def_id in redraw {
+                    self.request_redraw(def_id);
+                }
+                if let Some(msg) = self.fetches.queued_span(bufnum) {
+                    self.send_to_server(msg);
+                }
+            }
             FetchStep::None => {}
+        }
+    }
+
+    /// **Reads an announced span back off the wire.** A page maps nothing, so
+    /// the samples it draws are a download and an edit somebody else made is
+    /// not in them -- no summary over what it holds can find it. The
+    /// announcement says where to look, and this asks for exactly that span,
+    /// widened to the summary's buckets so what comes back can replace what
+    /// the summary says over it.
+    fn read_span_back(&mut self, bufnum: i32, start: i32, frames: i32) {
+        let (Ok(start), Ok(frames)) = (usize::try_from(start), usize::try_from(frames)) else {
+            return;
+        };
+        let Some((channels, bucket)) = self.host.window_def_ids().into_iter().find_map(|def_id| {
+            self.host
+                .window_def(def_id)
+                .and_then(|tree| crate::host::span_to_read_back(tree, bufnum))
+        }) else {
+            return log(&format!(
+                "buffer {bufnum} was edited by another peer; nothing here draws it"
+            ));
+        };
+        let (start, frames) = align_span(start, frames, bucket);
+        if let Some(msg) = self
+            .fetches
+            .want_span(bufnum, start, frames, channels, SpanUse::Patch)
+        {
+            self.send_to_server(msg);
         }
     }
 
@@ -553,10 +627,13 @@ impl WebApp {
             }
         }
         for (widget_id, bufnum, start, frames, channels) in asked {
-            if let Some(msg) = self
-                .fetches
-                .want_span(def_id, widget_id, bufnum, start, frames, channels)
-            {
+            if let Some(msg) = self.fetches.want_span(
+                bufnum,
+                start,
+                frames,
+                channels,
+                SpanUse::Window { def_id, widget_id },
+            ) {
                 self.send_to_server(msg);
             }
         }

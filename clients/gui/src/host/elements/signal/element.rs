@@ -218,6 +218,14 @@ impl Element for SignalElement {
         SignalElement::resummarize(self, ch, start, frames)
     }
 
+    fn patch_span(&mut self, start: u64, channels: usize, samples: &[f32]) -> bool {
+        SignalElement::patch_span(self, start, channels, samples)
+    }
+
+    fn summary_bucket(&self) -> Option<usize> {
+        SignalElement::summary_bucket(self)
+    }
+
     fn fill(&mut self) -> Option<SlotFill> {
         SignalElement::fill(self)
     }

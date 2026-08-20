@@ -47,9 +47,27 @@ struct BufferFetch {
     total: usize,
     samples: Vec<f32>,
     received: usize,
-    /// The one widget a **window** is for, and the frame it starts at. `None`
-    /// is the whole buffer, which is for everybody waiting on it.
-    window: Option<(WaveWant, usize)>,
+    /// **What this download is**, when it is a span: the frame it starts at
+    /// and who it is for. `None` is the whole buffer, which is for everybody
+    /// waiting on it.
+    window: Option<(usize, SpanUse)>,
+}
+
+/// **Why a span of a buffer is being read back.** The same request serves two
+/// readers, and what they do with the answer is opposite: a zoom puts the run
+/// under the summary and leaves the summary alone, while an edit *replaces*
+/// what the summary says over that span.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum SpanUse {
+    /// A view zoomed past what its summary can answer, and which view it is:
+    /// two views of one take are at two zooms over two spans, so a window is
+    /// one view's and names it.
+    Window { def_id: i32, widget_id: i32 },
+    /// **Another peer wrote here and said so** (`/buffer_touched`). The span
+    /// comes back for every view of that buffer, not only the one that asked:
+    /// what arrives is the buffer's own samples, so any picture of it is
+    /// entitled to them, and one request serves them all.
+    Patch,
 }
 
 /// What one protocol step asks the driving front to do.
@@ -75,6 +93,17 @@ pub(crate) enum FetchStep {
         channels: usize,
         samples: Vec<f32>,
     },
+    /// **A span another peer wrote** arrived: put it into every view of that
+    /// buffer — samples and the summary over them — and redraw.
+    ///
+    /// Unlike [`FetchStep::Window`] this carries no want: the samples are the
+    /// buffer's, so whoever draws it takes them.
+    Patch {
+        bufnum: i32,
+        start_frame: usize,
+        channels: usize,
+        samples: Vec<f32>,
+    },
     /// A buffer's **shape** answered a shape-only want: build an empty summary
     /// of this length and place it, with nothing fetched.
     Empty {
@@ -96,6 +125,12 @@ pub(crate) struct BufferFetches {
     wants: HashMap<i32, Vec<WaveWant>>,
     /// In-progress downloads, by buffer number.
     fetches: HashMap<i32, BufferFetch>,
+    /// **Announced edits that arrived while that buffer was busy**, as the one
+    /// span covering them, by buffer number. Drained by [`Self::queued_span`]
+    /// when the download in flight finishes.
+    queued: HashMap<i32, (usize, usize)>,
+    /// The channel count each queued span was announced with.
+    channels: HashMap<i32, usize>,
 }
 
 impl BufferFetches {
@@ -251,14 +286,29 @@ impl BufferFetches {
         };
         if done {
             let fetch = self.fetches.remove(&bufnum).unwrap();
-            if let Some((want, start_frame)) = fetch.window {
-                return FetchStep::Window {
-                    bufnum,
-                    want,
-                    start_frame,
-                    channels: fetch.channels,
-                    samples: fetch.samples,
-                };
+            match fetch.window {
+                Some((start_frame, SpanUse::Patch)) => {
+                    return FetchStep::Patch {
+                        bufnum,
+                        start_frame,
+                        channels: fetch.channels,
+                        samples: fetch.samples,
+                    };
+                }
+                Some((start_frame, SpanUse::Window { def_id, widget_id })) => {
+                    return FetchStep::Window {
+                        bufnum,
+                        want: WaveWant {
+                            def_id,
+                            widget_id,
+                            shape_only: false,
+                        },
+                        start_frame,
+                        channels: fetch.channels,
+                        samples: fetch.samples,
+                    };
+                }
+                None => {}
             }
             self.finish(bufnum, fetch.samples, fetch.channels, fetch.sample_rate)
         } else {
@@ -279,15 +329,30 @@ impl BufferFetches {
     /// asks only for what it is showing.
     pub(crate) fn want_span(
         &mut self,
-        def_id: i32,
-        widget_id: i32,
         bufnum: i32,
         start: usize,
         frames: usize,
         channels: usize,
+        span: SpanUse,
     ) -> Option<OscMessage> {
         let channels = channels.max(1);
-        if frames == 0 || self.fetches.contains_key(&bufnum) {
+        if frames == 0 {
+            return None;
+        }
+        if self.fetches.contains_key(&bufnum) {
+            // **A patch is kept, a zoom is dropped.** A view that could not
+            // read its span asks again on the next frame, so losing one costs
+            // a frame; an edit is announced *once*, and a picture that misses
+            // it stays wrong until something else happens to that buffer. So
+            // the announcement waits for the download in flight, merged with
+            // whatever else is waiting into the one span that covers them.
+            if span == SpanUse::Patch {
+                let pending = self.queued.entry(bufnum).or_insert((start, frames));
+                let end = (pending.0 + pending.1).max(start + frames);
+                pending.0 = pending.0.min(start);
+                pending.1 = end - pending.0;
+                self.channels.insert(bufnum, channels);
+            }
             return None;
         }
         let (origin, total) = (start * channels, frames * channels);
@@ -300,17 +365,23 @@ impl BufferFetches {
                 total,
                 samples: vec![0.0; total],
                 received: 0,
-                window: Some((
-                    WaveWant {
-                        def_id,
-                        widget_id,
-                        shape_only: false,
-                    },
-                    start,
-                )),
+                window: Some((start, span)),
             },
         );
         Some(request_chunk(bufnum, origin, origin + total))
+    }
+
+    /// **The announced edit that had to wait**, as the `/buffer_getRange` that
+    /// reads it back, or `None` when nothing is waiting on `bufnum`.
+    ///
+    /// Asked after a step for that buffer lands, which is the moment the one
+    /// in-flight download per buffer frees up. A span queued while *this* one
+    /// is in flight simply queues again, so an edit is never lost and the
+    /// buffer never has two conversations at once.
+    pub(crate) fn queued_span(&mut self, bufnum: i32) -> Option<OscMessage> {
+        let (start, frames) = self.queued.remove(&bufnum)?;
+        let channels = self.channels.remove(&bufnum).unwrap_or(1);
+        self.want_span(bufnum, start, frames, channels, SpanUse::Patch)
     }
 
     /// Forgets every want of a closed (or rebuilt) window, so a finished fetch
@@ -342,6 +413,19 @@ impl BufferFetches {
     }
 }
 
+/// **Widens a span to whole summary buckets.** A run that ends inside a bucket
+/// can only patch that bucket from part of it, which would report a peak the
+/// samples do not have — so the request is widened rather than the answer
+/// guessed at, and the widening is at most two buckets.
+pub(crate) fn align_span(start: usize, frames: usize, bucket: usize) -> (usize, usize) {
+    if bucket <= 1 || frames == 0 {
+        return (start, frames);
+    }
+    let first = (start / bucket) * bucket;
+    let end = (start + frames).div_ceil(bucket) * bucket;
+    (first, end - first)
+}
+
 /// The `/buffer_getRange` for the next chunk of `bufnum` starting at `start`.
 fn request_chunk(bufnum: i32, start: usize, total: usize) -> OscMessage {
     let count = BUFFER_CHUNK.min(total.saturating_sub(start));
@@ -358,6 +442,11 @@ fn request_chunk(bufnum: i32, start: usize, total: usize) -> OscMessage {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A span asked for by one view, which is what a zoom is.
+    fn window(def_id: i32, widget_id: i32) -> SpanUse {
+        SpanUse::Window { def_id, widget_id }
+    }
 
     fn ints(msg: &OscMessage) -> Vec<i32> {
         msg.args
@@ -433,7 +522,7 @@ mod tests {
         let mut f = BufferFetches::default();
         let (start, frames, channels) = (10_000usize, 6_000usize, 2usize);
         let msg = f
-            .want_span(1, 7, 3, start, frames, channels)
+            .want_span(3, start, frames, channels, window(1, 7))
             .expect("a span is asked for");
         // Flat indices: the run starts where the frames start, times channels.
         assert_eq!(
@@ -447,7 +536,7 @@ mod tests {
 
         // A second view's span is not asked for while this one is in flight —
         // one download per buffer is the bound.
-        assert!(f.want_span(1, 8, 3, 0, 100, channels).is_none());
+        assert!(f.want_span(3, 0, 100, channels, window(1, 8)).is_none());
 
         let total = frames * channels;
         let mut at = start * channels;
@@ -547,6 +636,78 @@ mod tests {
         };
         let ids: Vec<i32> = wants.iter().map(|w| w.widget_id).collect();
         assert_eq!(ids, vec![30], "only the open window still waits");
+    }
+
+    /// An announced edit is read back as a span and lands as a patch, which
+    /// names no widget: the samples are the buffer's own.
+    #[test]
+    fn an_announced_edit_reads_its_span_back_as_a_patch() {
+        let mut fetches = BufferFetches::default();
+        let msg = fetches
+            .want_span(4, 8, 4, 2, SpanUse::Patch)
+            .expect("a free buffer asks at once");
+        assert_eq!(msg.addr, "/buffer_getRange");
+        // Flat indices: a stereo span of four frames at frame 8.
+        assert_eq!(ints(&msg), vec![4, 16, 8]);
+        let step = fetches.on_data(&range_reply(
+            4,
+            16,
+            &[1.0, -1.0, 2.0, -2.0, 3.0, -3.0, 4.0, -4.0],
+        ));
+        let FetchStep::Patch {
+            bufnum,
+            start_frame,
+            channels,
+            samples,
+        } = step
+        else {
+            panic!("expected a patch");
+        };
+        assert_eq!((bufnum, start_frame, channels), (4, 8, 2));
+        assert_eq!(samples.len(), 8, "interleaved, both channels");
+    }
+
+    /// A zoom that cannot be asked is dropped (the next frame asks again); an
+    /// edit is kept, because it is announced once, and several are merged into
+    /// the one span that covers them.
+    #[test]
+    fn an_edit_announced_while_the_buffer_is_busy_waits_and_merges() {
+        let mut fetches = BufferFetches::default();
+        fetches
+            .want_span(2, 0, 4, 1, window(1, 10))
+            .expect("the first span asks");
+        assert!(
+            fetches.want_span(2, 100, 4, 1, window(1, 11)).is_none(),
+            "a zoom asks again next frame"
+        );
+        assert!(fetches.queued_span(2).is_none(), "nothing waits for a zoom");
+
+        assert!(fetches.want_span(2, 40, 4, 1, SpanUse::Patch).is_none());
+        assert!(fetches.want_span(2, 60, 10, 1, SpanUse::Patch).is_none());
+        let FetchStep::Window { .. } = fetches.on_data(&range_reply(2, 0, &[0.0; 4])) else {
+            panic!("the zoom's own span finishes first");
+        };
+        let msg = fetches.queued_span(2).expect("both edits waited");
+        assert_eq!(
+            ints(&msg),
+            vec![2, 40, 30],
+            "one request covering frames 40..70"
+        );
+    }
+
+    /// A span is widened to whole buckets, so what comes back can replace what
+    /// the summary says over it rather than part of a bucket.
+    #[test]
+    fn a_span_is_widened_to_whole_buckets() {
+        assert_eq!(
+            align_span(300, 100, 256),
+            (256, 256),
+            "300..400 is one bucket"
+        );
+        assert_eq!(align_span(300, 300, 256), (256, 512), "300..600 is two");
+        assert_eq!(align_span(512, 256, 256), (512, 256));
+        assert_eq!(align_span(7, 3, 1), (7, 3), "no summary, no widening");
+        assert_eq!(align_span(9, 0, 256), (9, 0), "an empty span stays empty");
     }
 
     #[test]

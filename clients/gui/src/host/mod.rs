@@ -2444,6 +2444,55 @@ pub(crate) fn refresh_buffer_views(
     refreshed
 }
 
+/// **Puts a span another peer wrote into every element of this tree drawing
+/// server buffer `bufnum`**, returning how many took it.
+///
+/// [`refresh_buffer_views`]' sibling for a host that cannot re-read the
+/// samples: it holds its own copy, so the span had to be read back off the
+/// wire, and what arrives is the buffer's own samples — which is why this
+/// names no widget. Whoever draws that buffer is entitled to them.
+pub(crate) fn patch_buffer_views(
+    widget: &mut widget::Widget,
+    bufnum: i32,
+    start: u64,
+    channels: usize,
+    samples: &[f32],
+) -> usize {
+    let mut patched = 0;
+    if let Some(el) = widget.kind.as_element_mut()
+        && el.source_buffer() == Some(bufnum)
+        && el.patch_span(start, channels, samples)
+    {
+        patched += 1;
+    }
+    for child in &mut widget.children {
+        patched += patch_buffer_views(child, bufnum, start, channels, samples);
+    }
+    patched
+}
+
+/// **The shape of the request that reads an announced span back**, as
+/// `(channels, summary bucket)`, from the first element of this tree drawing
+/// `bufnum`.
+///
+/// One element is enough because the answer serves them all
+/// ([`patch_buffer_views`]), and no widget id comes back with it for the same
+/// reason: what the walk is for is the shape of the request, which only an
+/// element knows.
+pub(crate) fn span_to_read_back(widget: &widget::Widget, bufnum: i32) -> Option<(usize, usize)> {
+    if let Some(el) = widget.kind.as_element()
+        && el.source_buffer() == Some(bufnum)
+        && let Some((channels, _)) = el.sample_shape()
+        && let Some(bucket) = el.summary_bucket()
+    {
+        return Some((channels, bucket));
+    }
+    widget
+        .children
+        .iter()
+        .find_map(|child| span_to_read_back(child, bufnum))
+}
+
 /// Reads a `/buffer_stream.reply bufnum startFrame bucket blob` into
 /// `(buffer, start_frame, bucket, stats)`, or `None` when it is not one.
 ///

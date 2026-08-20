@@ -181,6 +181,18 @@ impl WebApp {
         let mut buffer_refs = Vec::new();
         let mut requests = Vec::new();
         collect_bulk(tree, None, &mut buffer_refs, &mut requests);
+        // **A page drawing a server buffer registers for notifications.**
+        // `/buffer_touched` is how it hears that another peer edited the
+        // samples under it, and the server broadcasts that only to the
+        // clients that asked -- the same registration the native front makes
+        // when a window draws a buffer.
+        if !buffer_refs.is_empty() && !self.notified && self.host.server().is_some() {
+            self.notified = true;
+            self.send_to_server(OscMessage {
+                addr: "/server_notify".into(),
+                args: vec![OscType::Int(1)],
+            });
+        }
         for (widget_id, bufnum, shape_only) in buffer_refs {
             let query = if shape_only {
                 self.fetches.want_shape(def, widget_id, bufnum)
