@@ -341,10 +341,10 @@ impl OscServer {
     ///
     /// **One request, one reply, and the reply's own length says how much
     /// came** — the chunk conversation `/buffer_getRange` already has, for the
-    /// same reason: at most [`MAX_STREAM_BUCKETS`] buckets are answered at
-    /// once, so no message is bounded by how long the take is, and a client
-    /// walking a long take asks again from where the blob ended. Nothing is
-    /// remembered between requests.
+    /// same reason: one reply is bounded by [`MAX_STREAM_BYTES`], so no message
+    /// is bounded by how long the take is, and a client walking a long take
+    /// asks again from where the blob ended. Nothing is remembered between
+    /// requests.
     ///
     /// Synchronous on the network thread, like `/buffer_get`, `/buffer_getRange`
     /// and `/buffer_export`: it reads the span once, a bucket at a time, and
@@ -386,7 +386,7 @@ impl OscServer {
             );
             return Ok(());
         }
-        let buckets = buckets.min(MAX_STREAM_BUCKETS);
+        let buckets = buckets.min(max_stream_buckets(buffer.channels()));
         // **Out of the summary when there is one**, which is what the overview
         // beside the region is for: answering this without reading the samples
         // at all. Its grid is the file's, so a request at another bucket falls

@@ -28,6 +28,13 @@ pub(crate) const BUFFER_CHUNK: usize = 8192;
 /// [`BufferFetches::whole`] for why the line is drawn by size at all.
 const WHOLE_DOWNLOAD_SAMPLES: usize = 1 << 20;
 
+/// How many asks a buffer's download may refuse **without landing anything**
+/// before it is treated as lost and started over. The frame asks once per
+/// draw, so this is about two seconds at sixty frames — long enough that a
+/// slow but working conversation is never restarted, short enough that a
+/// dropped reply is not a view frozen for the session.
+const STALLED_ASKS: usize = 120;
+
 /// A widget waiting on a server buffer fetch. What to build from the finished
 /// samples is read off the widget's kind at completion, so the machine carries
 /// no per-kind parameters.
@@ -52,6 +59,13 @@ struct BufferFetch {
     total: usize,
     samples: Vec<f32>,
     received: usize,
+    /// How many times a span was refused for this buffer with **no progress**
+    /// in between — see [`BufferFetches::want_span`]. Reset by every reply
+    /// that lands anything.
+    stalled: usize,
+    /// What `received` was at the last such refusal, which is what says whether
+    /// anything landed since.
+    stalled_at: usize,
     /// **What this download is**, when it is a span: the frame it starts at
     /// and who it is for. `None` is the whole buffer, which is for everybody
     /// waiting on it.
@@ -245,6 +259,8 @@ impl BufferFetches {
                 total,
                 samples: vec![0.0; total],
                 received: 0,
+                stalled: 0,
+                stalled_at: 0,
                 window: None,
             },
         );
@@ -374,6 +390,24 @@ impl BufferFetches {
         if frames == 0 {
             return None;
         }
+        if let Some(fetch) = self.fetches.get_mut(&bufnum) {
+            // **A conversation that has stopped answering is abandoned.** A
+            // reply can be lost with nothing said — the shared ring drops what
+            // does not fit in it, and a page's is 64 KiB — and the fetch it
+            // belonged to would otherwise hold this buffer for the rest of the
+            // session: every later span refused, the view frozen at its
+            // summary, and no error anywhere. A download that is *working*
+            // lands something on every reply, so no progress across this many
+            // asks is the difference that matters. The frame asks again every
+            // time it draws a span it cannot resolve, so this counts frames
+            // without needing a clock.
+            let progressed = fetch.received > fetch.stalled_at;
+            fetch.stalled_at = fetch.received;
+            fetch.stalled = if progressed { 0 } else { fetch.stalled + 1 };
+            if fetch.stalled >= STALLED_ASKS {
+                self.fetches.remove(&bufnum);
+            }
+        }
         if self.fetches.contains_key(&bufnum) {
             // **A patch is kept, a zoom is dropped.** A view that could not
             // read its span asks again on the next frame, so losing one costs
@@ -400,6 +434,8 @@ impl BufferFetches {
                 total,
                 samples: vec![0.0; total],
                 received: 0,
+                stalled: 0,
+                stalled_at: 0,
                 window: Some((start, span)),
             },
         );
@@ -797,6 +833,48 @@ mod tests {
             panic!("a recording is never downloaded, however short");
         };
         assert!(!ask_summary);
+    }
+
+    /// **A conversation that stopped answering does not hold its buffer for
+    /// the session.** A reply can be lost with nothing said — the shared ring
+    /// drops what does not fit — and the view would sit at its summary forever,
+    /// every later ask refused by a download that will never finish.
+    #[test]
+    fn a_download_that_stops_answering_is_started_over() {
+        let mut fetches = BufferFetches::default();
+        fetches.want(1, 10, 5);
+        let FetchStep::Request(_) = fetches.on_info(5, 100_000, 1, 48_000.0) else {
+            panic!("a short buffer downloads");
+        };
+        // Nothing comes back. Every frame asks for the span it cannot draw and
+        // is refused -- until the ask that gives up on the silence.
+        for _ in 0..STALLED_ASKS - 1 {
+            assert!(
+                fetches.want_span(5, 0, 512, 1, window(1, 10)).is_none(),
+                "a download in flight is still believed"
+            );
+        }
+        assert!(
+            fetches.want_span(5, 0, 512, 1, window(1, 10)).is_some(),
+            "and then the span is asked for again"
+        );
+
+        // A download that is *working* is never restarted: every reply lands
+        // something, which is the difference between slow and lost.
+        let mut fetches = BufferFetches::default();
+        fetches.want(1, 11, 6);
+        let chunks = STALLED_ASKS + 8; // more chunks than the stall would allow
+        let FetchStep::Request(_) = fetches.on_info(6, BUFFER_CHUNK * chunks, 1, 48_000.0) else {
+            panic!("expected the first chunk");
+        };
+        for i in 0..STALLED_ASKS + 4 {
+            assert!(fetches.want_span(6, 0, 512, 1, window(1, 11)).is_none());
+            let FetchStep::Request(_) =
+                fetches.on_data(&range_reply(6, i * BUFFER_CHUNK, &vec![1.0; BUFFER_CHUNK]))
+            else {
+                panic!("a download that keeps answering is never restarted");
+            };
+        }
     }
 
     /// A span is widened to whole buckets, so what comes back can replace what

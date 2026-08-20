@@ -61,7 +61,12 @@ buckets) and puts it into both the samples and the summary. Zoom in or out
 afterwards: the gap is there at every scale, which is what says the summary was
 patched and not just the run under the eye.
 
-The last lane is the <b>other</b> half of the same question, and the one that is
+The last lane has <b>its own ruler</b>, and that is not decoration: it is eight
+times longer than the takes, and a navigation group is one window in samples over
+every lane in it — so two lengths mean two axes. Zoom (wheel) and pan work on
+whichever ruler or lane the pointer is over, and each group moves on its own.
+
+It is the <b>other</b> half of the same question, and the one that is
 not about recording at all: a take that is <i>finished</i> and too big to
 download. A page has two routes to a picture and keeps both, because they are
 cheap in opposite cases — a short buffer is pulled whole and then every zoom is
@@ -78,7 +83,7 @@ socket.</div>
       <div class="row">
         <button id="start">start</button>
         <button id="record" disabled>record 4 takes</button>
-        <button id="edit" disabled>another peer edits take 1</button>
+        <button id="edit" disabled>another peer silences the middle of take 1</button>
       </div>
 
       <div id="stage"></div>
@@ -99,7 +104,8 @@ socket.</div>
       const SECONDS = 8.0;          // how long each one runs
       const LONG_SECONDS = 60.0;    // the take that is too big to download
       const RATE = 48000;
-      const LANES = 1;              // the navigation group every lane shares
+      const LANES = 1;              // the navigation group the four takes share
+      const LONG = 2;               // the finished take's own: a different axis
 
       let server, host, raw, page, win = null;
       let unfit = null, takes = [], long = null, peer = null;
@@ -134,14 +140,21 @@ socket.</div>
           name: `take${i}`, buffer: take.bufnum, sampleRate: RATE,
           fills: true, ruler: "off", rulerY: "off", link: LANES,
         })),
+        gui.timeruler({ ruler: "time", sampleRate: RATE, link: LANES, h: 22 }),
         // The last lane is not a recording at all: a minute of stereo that
         // already exists. No `fills`, nothing streamed -- and nothing
         // downloaded either, because 23 MB is not a download at any zoom.
+        //
+        // It is **eight times longer than the takes**, so it gets a navigation
+        // group and a ruler of its own rather than being squeezed into theirs:
+        // a group is one window in samples over every member, and the honest
+        // way to show two different lengths is two axes. Zoom and pan work on
+        // whichever ruler or lane the pointer is over.
         gui.waveform({
           name: "long", buffer: long.bufnum, sampleRate: RATE,
-          ruler: "off", rulerY: "off",
+          ruler: "off", rulerY: "off", link: LONG,
         }),
-        gui.timeruler({ ruler: "time", sampleRate: RATE, link: LANES, h: 22 }),
+        gui.timeruler({ ruler: "time", sampleRate: RATE, link: LONG, h: 22 }),
       );
 
       async function record() {
@@ -227,7 +240,8 @@ socket.</div>
         await held.silence({ start, frames });
         held.touch(0, start, frames);
         log(`another peer silenced frames ${start}..${start + frames} of take 1 `
-          + "and announced the span — the lane reads it back and redraws");
+          + "(its middle third) and announced the span — that lane reads it back "
+          + "and redraws, and the others are untouched");
       }
 
       el("record").onclick = () => record();

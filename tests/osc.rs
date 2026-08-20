@@ -699,6 +699,27 @@ fn buffer_peaks_answers_the_overview_of_a_buffer_at_rest() {
         "frames 256..812 hold two buckets"
     );
 
+    // **A reply is bounded in bytes, not in buckets**, because a bucket is not
+    // a size: the smallest carrier is the shared ring at 64 KiB and it drops
+    // what does not fit in silence. So a long take answers in several replies,
+    // each saying where it began, and the walk continues from there.
+    server.send(
+        "/buffer_alloc",
+        vec![OscType::Int(4), OscType::Int(4_000_000), OscType::Int(2)],
+    );
+    server.sync();
+    server.send("/buffer_peaks", vec![OscType::Int(4), OscType::Int(256)]);
+    let reply = server.recv_until("/buffer_peaks.reply");
+    let OscType::Blob(bytes) = &reply.args[3] else {
+        panic!("expected the overview blob");
+    };
+    assert!(
+        bytes.len() <= 16 * 1024,
+        "one reply fits the smallest carrier, got {} bytes",
+        bytes.len()
+    );
+    assert!(!bytes.is_empty(), "and it is not empty either");
+
     // A span with no whole bucket in it answers empty rather than not at all:
     // the asker learns the span held none, which is not the same as silence.
     server.send(

@@ -95,11 +95,29 @@ const MAX_STREAM_TAPS: usize = 8;
 /// handful of takes at once, and a client that wants more takes two.
 const MAX_STREAM_BUFFERS: usize = 32;
 
-/// Ceiling on buckets in one `/buffer_stream.reply`, so a subscription that
-/// stalled does not answer with the whole recording in one message. What is
-/// left over is sent by the next report, since the frontier is where the
-/// report ended and not where the samples end.
-const MAX_STREAM_BUCKETS: usize = 4096;
+/// Ceiling on the **bytes** of one overview reply (`/buffer_stream.reply`,
+/// `/buffer_peaks.reply`), so a subscription that stalled — or a request for a
+/// long take — does not answer in one message.
+///
+/// It is a byte count and not a bucket count because a bucket is not a size: a
+/// bucket costs `channels * 3` floats, so 4096 of them are 96 kB of a stereo
+/// take and 400 kB of an eight-channel one. The carriers have real limits and
+/// the smallest of them is the shared ring's **64 KiB**, which drops what does
+/// not fit *silently* — a page that asked for a summary and got nothing back,
+/// forever, is exactly what this ceiling exists to prevent. A sixteenth of the
+/// ring leaves room for the several replies that are in flight while a session
+/// draws.
+///
+/// What is left over is asked for again (`/buffer_peaks`, whose reply says
+/// where it ended) or sent by the next report (`/buffer_stream`, whose
+/// frontier is where the report ended and not where the samples end).
+const MAX_STREAM_BYTES: usize = 16 * 1024;
+
+/// The above as a bucket count, for a buffer of `channels` channels: each
+/// bucket carries `min`, `max` and mean square per channel.
+fn max_stream_buckets(channels: usize) -> usize {
+    (MAX_STREAM_BYTES / (channels.max(1) * 3 * 4)).max(1)
+}
 
 /// Largest `/bus_tapStream` window in samples for a **datagram-bounded** client
 /// (UDP, and the 64 KiB IPC reply ring): a 32 KB blob (8192 × `f32`) leaves

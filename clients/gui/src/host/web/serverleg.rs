@@ -551,13 +551,17 @@ impl WebApp {
                 for def_id in self.host.window_def_ids() {
                     // A pyramid a slot is holding cannot be written in place,
                     // so the samples go first -- the same order a streamed
-                    // report takes, and for the same reason.
-                    if let Some(render) = self
-                        .canvases
-                        .get_mut(&def_id)
-                        .and_then(|c| c.render.as_mut())
-                    {
-                        for slot in render.waveforms.values_mut() {
+                    // report takes, and for the same reason. **Only the slots
+                    // drawing this buffer**: a slot released and not refilled
+                    // draws nothing, so releasing every one of them blanks
+                    // every other take on the canvas.
+                    for widget_id in self.widgets_drawing(def_id, bufnum) {
+                        if let Some(slot) = self
+                            .canvases
+                            .get_mut(&def_id)
+                            .and_then(|c| c.render.as_mut())
+                            .and_then(|r| r.waveforms.get_mut(&widget_id))
+                        {
                             slot.view.release_data();
                         }
                     }
@@ -584,6 +588,26 @@ impl WebApp {
             }
             FetchStep::None => {}
         }
+    }
+
+    /// The widgets of `def_id` drawing server buffer `bufnum` — whose GPU slots
+    /// a write to that buffer has to release before the element rewrites the
+    /// pyramid they share.
+    fn widgets_drawing(&self, def_id: i32, bufnum: i32) -> Vec<i32> {
+        self.host
+            .window_def(def_id)
+            .map(|tree| {
+                tree.descendants()
+                    .filter(|w| {
+                        w.kind
+                            .as_element()
+                            .and_then(|el| el.source_buffer())
+                            .is_some_and(|b| b == bufnum)
+                    })
+                    .filter_map(|w| w.id)
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     /// **The bucket a view's summary is built at**, which is what a request for

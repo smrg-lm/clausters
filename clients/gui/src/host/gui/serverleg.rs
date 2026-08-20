@@ -791,9 +791,15 @@ impl App {
         for def_id in self.host.window_def_ids() {
             // A pyramid a slot is holding cannot be written in place, so the
             // samples go first — the same order a streamed report takes, and
-            // for the same reason.
-            if let Some(ws) = self.windows.get_mut(&def_id) {
-                for slot in ws.waveforms.values_mut() {
+            // for the same reason. **Only the slots drawing this buffer**: a
+            // slot released and not refilled draws nothing, so releasing every
+            // one of them blanks every other take in the window.
+            for widget_id in self.widgets_drawing(def_id, bufnum) {
+                if let Some(slot) = self
+                    .windows
+                    .get_mut(&def_id)
+                    .and_then(|ws| ws.waveforms.get_mut(&widget_id))
+                {
                     slot.view.release_data();
                 }
             }
@@ -814,6 +820,26 @@ impl App {
         if let Some(msg) = self.fetches.queued_span(bufnum) {
             self.send_to_server(msg);
         }
+    }
+
+    /// The widgets of `def_id` drawing server buffer `bufnum` — whose GPU
+    /// slots a write to that buffer has to release before the element rewrites
+    /// the pyramid they share.
+    fn widgets_drawing(&self, def_id: i32, bufnum: i32) -> Vec<i32> {
+        self.host
+            .window_def(def_id)
+            .map(|tree| {
+                tree.descendants()
+                    .filter(|w| {
+                        w.kind
+                            .as_element()
+                            .and_then(|el| el.source_buffer())
+                            .is_some_and(|b| b == bufnum)
+                    })
+                    .filter_map(|w| w.id)
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     /// Folds one `/buffer_stream.reply` into every view of that buffer and

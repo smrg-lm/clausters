@@ -523,7 +523,7 @@ impl OscServer {
             if whole == 0 {
                 continue;
             }
-            let whole = whole.min(MAX_STREAM_BUCKETS as u64) as usize;
+            let whole = whole.min(max_stream_buckets(buffer.channels()) as u64) as usize;
             let bytes = overview_blob(buffer, start as usize, bucket, whole);
             let end = start + (whole * bucket) as u64;
             self.buffer_streams[i].buffers[k] = (bufnum, end);
