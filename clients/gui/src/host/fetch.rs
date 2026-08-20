@@ -23,6 +23,11 @@ use clausters_core::osc::{OscMessage, OscType};
 /// this path, not grow the chunk).
 pub(crate) const BUFFER_CHUNK: usize = 8192;
 
+/// The most samples a view will pull **whole** rather than draw from a summary
+/// — about ten seconds of stereo at 48 kHz, four megabytes on the wire. See
+/// [`BufferFetches::whole`] for why the line is drawn by size at all.
+const WHOLE_DOWNLOAD_SAMPLES: usize = 1 << 20;
+
 /// A widget waiting on a server buffer fetch. What to build from the finished
 /// samples is read off the widget's kind at completion, so the machine carries
 /// no per-kind parameters.
@@ -104,13 +109,20 @@ pub(crate) enum FetchStep {
         channels: usize,
         samples: Vec<f32>,
     },
-    /// A buffer's **shape** answered a shape-only want: build an empty summary
-    /// of this length and place it, with nothing fetched.
+    /// A buffer answered with its **shape**: build an empty summary of this
+    /// length and place it, with no samples fetched.
+    ///
+    /// `ask_summary` says where the summary that fills it comes from. A take
+    /// being *written* is `false` — nothing can be asked for what is not there
+    /// yet, and the server pushes it (`/buffer_stream`) as it appears. A take
+    /// that stands still is `true`: the front asks for it (`/buffer_peaks`),
+    /// which is the same blob folded the same way.
     Empty {
         bufnum: i32,
         frames: usize,
         channels: usize,
         sample_rate: f64,
+        ask_summary: bool,
         wants: Vec<WaveWant>,
     },
     /// Nothing to do (an unsolicited or stale reply).
@@ -208,19 +220,19 @@ impl BufferFetches {
         if total == 0 {
             return self.finish(bufnum, Vec::new(), channels, sample_rate);
         }
-        // Every waiter wants the shape: the shape is the answer, and nothing
-        // is downloaded. (Any waiter that wants the samples downloads for all
-        // of them — the samples serve both.)
-        if self
+        // **Which of the two routes this take arrives by**, decided here
+        // because this is where the shape is first known — see [`Self::whole`].
+        let being_written = self
             .wants
             .get(&bufnum)
-            .is_some_and(|w| w.iter().all(|want| want.shape_only))
-        {
+            .is_some_and(|w| w.iter().all(|want| want.shape_only));
+        if being_written || !Self::whole(total) {
             return FetchStep::Empty {
                 bufnum,
                 frames,
                 channels,
                 sample_rate,
+                ask_summary: !being_written,
                 wants: self.wants.remove(&bufnum).unwrap_or_default(),
             };
         }
@@ -237,6 +249,29 @@ impl BufferFetches {
             },
         );
         FetchStep::Request(request_chunk(bufnum, 0, total))
+    }
+
+    /// **Whether a buffer of `total` samples is worth downloading whole.**
+    ///
+    /// There are two routes to a picture of a server buffer, and keeping both
+    /// is the point rather than a wart: a short buffer is one conversation and
+    /// then no latency at all, since every zoom is already answered out of the
+    /// samples in hand; a long one cannot be downloaded at any zoom (a
+    /// ten-minute stereo take is 230 MB) and is drawn from its summary, with
+    /// the run under the eye read back as the eye moves.
+    ///
+    /// What was wrong was not the fork but the **criterion**: it used to be
+    /// `fills` — *is this being recorded?* — so two views of one finished take,
+    /// one opened while it recorded and one after, took different routes and
+    /// behaved differently under the same hand. The question is a cost, so the
+    /// answer is the size, and `fills` is back to meaning the one thing it
+    /// says: these samples are being written, so they are not there to fetch.
+    ///
+    /// The threshold is about ten seconds of stereo at 48 kHz — a buffer a
+    /// player, a wavetable or a short take fits in, against the material of a
+    /// session, which does not.
+    fn whole(total: usize) -> bool {
+        total <= WHOLE_DOWNLOAD_SAMPLES
     }
 
     /// `/buffer_getRange.reply bufnum [start blob]...`: store each range, then
@@ -424,6 +459,24 @@ pub(crate) fn align_span(start: usize, frames: usize, bucket: usize) -> (usize, 
     let first = (start / bucket) * bucket;
     let end = (start + frames).div_ceil(bucket) * bucket;
     (first, end - first)
+}
+
+/// **The `/buffer_peaks` that asks for a take's overview** from `first_frame`
+/// on, at the bucket the asking summary is built at — so what comes back folds
+/// into it with nothing converted.
+///
+/// `frames` is left at "to the end": the server answers as much as one reply
+/// holds and says where it ended, which is what the walk reads.
+pub(crate) fn peaks_request(bufnum: i32, bucket: usize, first_frame: usize) -> OscMessage {
+    OscMessage {
+        addr: "/buffer_peaks".into(),
+        args: vec![
+            OscType::Int(bufnum),
+            OscType::Int(bucket as i32),
+            OscType::Int(first_frame as i32),
+            OscType::Int(-1),
+        ],
+    }
 }
 
 /// The `/buffer_getRange` for the next chunk of `bufnum` starting at `start`.
@@ -693,6 +746,57 @@ mod tests {
             vec![2, 40, 30],
             "one request covering frames 40..70"
         );
+    }
+
+    /// **The two routes to a picture, and what chooses between them**: the
+    /// size of the take, not whether something is recording into it.
+    #[test]
+    fn a_short_buffer_is_downloaded_and_a_long_one_is_summarized() {
+        let mut fetches = BufferFetches::default();
+        fetches.want(1, 10, 1);
+        let FetchStep::Request(msg) = fetches.on_info(1, 1_000, 2, 48_000.0) else {
+            panic!("a short buffer is one conversation and then no latency");
+        };
+        assert_eq!(msg.addr, "/buffer_getRange");
+
+        // Ten minutes of stereo: 230 MB, which no view downloads at any zoom.
+        let mut fetches = BufferFetches::default();
+        fetches.want(1, 11, 2);
+        let FetchStep::Empty {
+            frames,
+            ask_summary,
+            ..
+        } = fetches.on_info(2, 10 * 60 * 48_000, 2, 48_000.0)
+        else {
+            panic!("a long buffer is drawn from its summary");
+        };
+        assert_eq!(frames, 10 * 60 * 48_000, "the picture is its whole length");
+        assert!(
+            ask_summary,
+            "and the summary is asked for: nothing writes it"
+        );
+
+        // The same length, being recorded into: the same route, and the
+        // summary arrives on its own because it does not exist yet.
+        let mut fetches = BufferFetches::default();
+        fetches.want_shape(1, 12, 3);
+        let FetchStep::Empty { ask_summary, .. } = fetches.on_info(3, 10 * 60 * 48_000, 2, 0.0)
+        else {
+            panic!("a recording is drawn from its shape");
+        };
+        assert!(
+            !ask_summary,
+            "a recording's overview is pushed, not asked for"
+        );
+
+        // And a *short* take being recorded into still takes it: what `fills`
+        // says is that the samples are not there, which no size makes false.
+        let mut fetches = BufferFetches::default();
+        fetches.want_shape(1, 13, 4);
+        let FetchStep::Empty { ask_summary, .. } = fetches.on_info(4, 1_000, 1, 0.0) else {
+            panic!("a recording is never downloaded, however short");
+        };
+        assert!(!ask_summary);
     }
 
     /// A span is widened to whole buckets, so what comes back can replace what

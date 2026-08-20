@@ -213,8 +213,9 @@ impl App {
                 frames,
                 channels,
                 sample_rate,
+                ask_summary,
                 wants,
-            } => self.place_empty_take(bufnum, frames, channels, sample_rate, wants),
+            } => self.place_summary(bufnum, frames, channels, sample_rate, ask_summary, wants),
             FetchStep::Window {
                 bufnum,
                 want,
@@ -322,6 +323,26 @@ impl App {
                 if let Some((bufnum, start, bucket, stats)) = crate::host::stream_report(&msg.args)
                 {
                     self.on_stream_report(bufnum, start, bucket, &stats);
+                }
+            }
+            // **The overview of a take that is standing still**, asked for
+            // rather than pushed. Identical payload, so it folds through the
+            // same door -- and then the walk continues, because one reply
+            // carries only so many buckets.
+            "/buffer_peaks.reply" => {
+                if let Some((bufnum, start, bucket, stats)) = crate::host::stream_report(&msg.args)
+                {
+                    self.on_stream_report(bufnum, start, bucket, &stats);
+                    let shape = self.host.window_def_ids().into_iter().find_map(|id| {
+                        self.host
+                            .window_def(id)
+                            .and_then(|tree| crate::host::buffer_shape_in(tree, bufnum))
+                    });
+                    if let Some(next) =
+                        crate::host::next_peaks_frame(shape, start, bucket, stats.len())
+                    {
+                        self.ask_peaks(bufnum, next);
+                    }
                 }
             }
             "/group_queryTree.reply" => self.on_query_tree_reply(&msg.args),
@@ -602,33 +623,29 @@ impl App {
         }
     }
 
-    /// A take being recorded into answered with its **shape**: every waiting
-    /// view gets an empty summary of that length and nothing is downloaded.
+    /// A buffer answered with its **shape**: every waiting view gets an empty
+    /// summary of that length, and the summary is filled rather than the
+    /// samples downloaded.
     ///
-    /// The picture is the whole of the box the take will fill — so the axis
-    /// does not move while it fills — and what fills it is the overview the
-    /// server streams (`fills`, `/buffer_stream`). Pulling the samples here
-    /// would be a download of silence at the take's full length, to draw over
-    /// it a moment later.
-    fn place_empty_take(
+    /// The picture is the whole of the box the take fills — so the axis does
+    /// not move while it fills — and what fills it comes from one of two
+    /// places, which is what `ask_summary` says: a take being **written** has
+    /// its overview pushed as it appears (`/buffer_stream`), and one standing
+    /// still is asked for it (`/buffer_peaks`). Either way the samples stay
+    /// where they are, and the run under the eye is read back when a zoom goes
+    /// past what the summary can answer.
+    fn place_summary(
         &mut self,
         bufnum: i32,
         frames: usize,
         channels: usize,
         sample_rate: f64,
+        ask_summary: bool,
         wants: Vec<WaveWant>,
     ) {
-        debug!("gui: buffer {bufnum} is being recorded into ({frames} frames): shape only");
+        debug!("gui: buffer {bufnum} ({frames} frames) is drawn from its summary");
         for want in wants {
-            let Some(base_bucket) = self
-                .host
-                .window_def(want.def_id)
-                .and_then(|t| t.find(want.widget_id))
-                .and_then(|w| match w.bulk_target().kind.needs().bulk {
-                    Some(Bulk::Recording { base_bucket, .. }) => Some(base_bucket),
-                    _ => None,
-                })
-            else {
+            let Some(base_bucket) = self.summary_bucket_of(want.def_id, want.widget_id) else {
                 continue;
             };
             let data: Arc<WaveformData> = Arc::new(WaveformData::with_multi_pyramid(
@@ -656,6 +673,49 @@ impl App {
             }
             self.finish_placement(want, frames, sample_rate);
         }
+        if ask_summary {
+            self.ask_peaks(bufnum, 0);
+        }
+    }
+
+    /// **The bucket a view's summary is built at**, which is what a request for
+    /// one has to be phrased in. The element declares it with the resource it
+    /// wants; a view that declared none takes the default every signal element
+    /// summarizes at.
+    fn summary_bucket_of(&self, def_id: i32, widget_id: i32) -> Option<usize> {
+        let needs = self
+            .host
+            .window_def(def_id)
+            .and_then(|t| t.find(widget_id))
+            .map(|w| w.bulk_target().kind.needs())?;
+        Some(match needs.bulk {
+            Some(Bulk::Recording { base_bucket, .. }) => base_bucket,
+            _ => match needs.slot {
+                Some(SlotKind::Geometry { base_bucket }) => base_bucket,
+                _ => crate::host::elements::signal::DEFAULT_BASE_BUCKET,
+            },
+        })
+    }
+
+    /// **Asks for a buffer's overview from `first_frame` on** (`/buffer_peaks`).
+    ///
+    /// One request answers at most a few thousand buckets, so a long take takes
+    /// several — walked by the replies themselves rather than by a state
+    /// machine here: each one says where it ended, and the tree says how long
+    /// the take is.
+    fn ask_peaks(&mut self, bufnum: i32, first_frame: usize) {
+        let Some(bucket) = self.host.window_def_ids().into_iter().find_map(|def_id| {
+            self.host
+                .window_def(def_id)
+                .and_then(|tree| crate::host::summary_bucket_for(tree, bufnum))
+        }) else {
+            return;
+        };
+        self.send_to_server(crate::host::fetch::peaks_request(
+            bufnum,
+            bucket,
+            first_frame,
+        ));
     }
 
     /// Re-summarizes the span another writer announced, in every view of that

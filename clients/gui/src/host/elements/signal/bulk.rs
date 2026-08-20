@@ -108,6 +108,12 @@ impl SignalElement {
         // what fills the picture is the overview the server streams — so
         // pulling the samples would be a download of zeros, at the take's
         // full length, to draw over them.
+        //
+        // That is all `fills` says here, and all it decides: *these samples
+        // are being written*. Which route a take that stands still arrives by
+        // is a question about cost and is answered where the size is known
+        // (`fetch::BufferFetches::whole`), not by whether something happens to
+        // be recording into it.
         if self.fills
             && data.cache.is_none()
             && data.path.is_none()

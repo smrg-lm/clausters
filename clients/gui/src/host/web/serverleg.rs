@@ -277,6 +277,26 @@ impl WebApp {
                     self.on_stream_report(bufnum, start, bucket, &stats);
                 }
             }
+            // **The overview of a take that is standing still**, asked for
+            // rather than pushed. Identical payload, so it folds through the
+            // same door -- and then the walk continues, because one reply
+            // carries only so many buckets.
+            "/buffer_peaks.reply" => {
+                if let Some((bufnum, start, bucket, stats)) = crate::host::stream_report(&msg.args)
+                {
+                    self.on_stream_report(bufnum, start, bucket, &stats);
+                    let shape = self.host.window_def_ids().into_iter().find_map(|id| {
+                        self.host
+                            .window_def(id)
+                            .and_then(|tree| crate::host::buffer_shape_in(tree, bufnum))
+                    });
+                    if let Some(next) =
+                        crate::host::next_peaks_frame(shape, start, bucket, stats.len())
+                    {
+                        self.ask_peaks(bufnum, next);
+                    }
+                }
+            }
             "/bus_tapStream.reply" => {
                 // (tap, stream position, raw LE f32 blob): the newest window
                 // of one tap; store it for the tick to align and draw.
@@ -426,35 +446,29 @@ impl WebApp {
                     self.request_redraw(want.def_id);
                 }
             }
-            // A take being recorded into: its shape is the answer, and the
-            // overview the server streams is what fills the picture. Nothing
-            // is downloaded — the samples are silence until something records
-            // into it, and by then the reports are already drawing it.
+            // **A take drawn from its summary**: the shape is the answer and
+            // no samples are downloaded. Where the summary comes from is the
+            // one difference between the two cases this covers -- a take being
+            // recorded into is streamed one (the samples are silence until
+            // something writes them), and a take standing still is asked for
+            // one. The run under the eye is read back on a zoom, either way.
             FetchStep::Empty {
                 bufnum,
                 frames,
                 channels,
                 sample_rate,
+                ask_summary,
                 wants,
             } => {
                 let channels = channels.max(1);
                 log(&format!(
-                    "buffer {bufnum}: being recorded into ({frames} frames x {channels} \
-                     channel(s)); {} view(s) drawn from the stream",
-                    wants.len()
+                    "buffer {bufnum}: drawn from its summary ({frames} frames x {channels} \
+                     channel(s)); {} view(s), {}",
+                    wants.len(),
+                    if ask_summary { "asked for" } else { "streamed" }
                 ));
                 for want in wants {
-                    let Some(base_bucket) = self
-                        .host
-                        .window_def(want.def_id)
-                        .and_then(|t| t.find(want.widget_id))
-                        .and_then(|w| match w.bulk_target().kind.needs().bulk {
-                            Some(crate::host::widget::element::Bulk::Recording {
-                                base_bucket,
-                                ..
-                            }) => Some(base_bucket),
-                            _ => None,
-                        })
+                    let Some(base_bucket) = self.summary_bucket_of(want.def_id, want.widget_id)
                     else {
                         continue;
                     };
@@ -482,6 +496,9 @@ impl WebApp {
                     }
                     self.host.sync_buffer_streams();
                     self.request_redraw(want.def_id);
+                }
+                if ask_summary {
+                    self.ask_peaks(bufnum, 0);
                 }
             }
             FetchStep::Window {
@@ -567,6 +584,47 @@ impl WebApp {
             }
             FetchStep::None => {}
         }
+    }
+
+    /// **The bucket a view's summary is built at**, which is what a request for
+    /// one has to be phrased in. The element declares it with the resource it
+    /// wants; a view that declared none takes the default every signal element
+    /// summarizes at.
+    fn summary_bucket_of(&self, def_id: i32, widget_id: i32) -> Option<usize> {
+        use crate::host::widget::element::{Bulk, SlotKind};
+        let needs = self
+            .host
+            .window_def(def_id)
+            .and_then(|t| t.find(widget_id))
+            .map(|w| w.bulk_target().kind.needs())?;
+        Some(match needs.bulk {
+            Some(Bulk::Recording { base_bucket, .. }) => base_bucket,
+            _ => match needs.slot {
+                Some(SlotKind::Geometry { base_bucket }) => base_bucket,
+                _ => crate::host::elements::signal::DEFAULT_BASE_BUCKET,
+            },
+        })
+    }
+
+    /// **Asks for a buffer's overview from `first_frame` on** (`/buffer_peaks`).
+    ///
+    /// One request answers at most a few thousand buckets, so a long take takes
+    /// several -- walked by the replies themselves rather than by a state
+    /// machine here: each one says where it ended, and the tree says how long
+    /// the take is.
+    fn ask_peaks(&mut self, bufnum: i32, first_frame: usize) {
+        let Some(bucket) = self.host.window_def_ids().into_iter().find_map(|def_id| {
+            self.host
+                .window_def(def_id)
+                .and_then(|tree| crate::host::summary_bucket_for(tree, bufnum))
+        }) else {
+            return;
+        };
+        self.send_to_server(crate::host::fetch::peaks_request(
+            bufnum,
+            bucket,
+            first_frame,
+        ));
     }
 
     /// **Reads an announced span back off the wire.** A page maps nothing, so

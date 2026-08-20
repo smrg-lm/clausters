@@ -61,6 +61,17 @@ buckets) and puts it into both the samples and the summary. Zoom in or out
 afterwards: the gap is there at every scale, which is what says the summary was
 patched and not just the run under the eye.
 
+The last lane is the <b>other</b> half of the same question, and the one that is
+not about recording at all: a take that is <i>finished</i> and too big to
+download. A page has two routes to a picture and keeps both, because they are
+cheap in opposite cases — a short buffer is pulled whole and then every zoom is
+free, while a minute of stereo (23 MB, and a ten-minute take is 230) is drawn
+from its <b>overview</b> and reads back only the span under the eye. What
+chooses is the buffer's <b>size</b>, not whether something is recording into it.
+The overview of a take standing still is asked for
+(<code>/buffer_peaks</code>) instead of streamed; it is the same blob, folded the
+same way.
+
 Everything runs on the <b>in-page engine</b>: no server process, no
 socket.</div>
 
@@ -86,11 +97,12 @@ socket.</div>
 
       const TAKES = 4;              // lanes recording at once
       const SECONDS = 8.0;          // how long each one runs
+      const LONG_SECONDS = 60.0;    // the take that is too big to download
       const RATE = 48000;
       const LANES = 1;              // the navigation group every lane shares
 
       let server, host, raw, page, win = null;
-      let unfit = null, takes = [], peer = null;
+      let unfit = null, takes = [], long = null, peer = null;
 
       // One def, one node per take: a glissando, heard and recorded at once —
       // `recordBuf` passes its input through, so the same signal reaches the
@@ -122,6 +134,13 @@ socket.</div>
           name: `take${i}`, buffer: take.bufnum, sampleRate: RATE,
           fills: true, ruler: "off", rulerY: "off", link: LANES,
         })),
+        // The last lane is not a recording at all: a minute of stereo that
+        // already exists. No `fills`, nothing streamed -- and nothing
+        // downloaded either, because 23 MB is not a download at any zoom.
+        gui.waveform({
+          name: "long", buffer: long.bufnum, sampleRate: RATE,
+          ruler: "off", rulerY: "off",
+        }),
         gui.timeruler({ ruler: "time", sampleRate: RATE, link: LANES, h: 22 }),
       );
 
@@ -165,11 +184,30 @@ socket.</div>
         for (let i = 0; i < TAKES; i++) {
           takes.push(await Buffer.alloc(Math.round(SECONDS * RATE), 1, { server }));
         }
+        // **A take that is finished and too big to download.** The server
+        // fills it: `fill` says *how many* samples to write rather than
+        // carrying them, so a staircase across 23 MB is a dozen numbers on the
+        // wire, and `gain` then sweeps a fade over the whole of it. Not one
+        // sample of it crosses in either direction, which is the point the
+        // lane goes on to make about drawing it.
+        long = await Buffer.alloc(Math.round(LONG_SECONDS * RATE), 2, { server });
+        const cells = long.frames * 2;
+        const steps = 12;
+        await long.fill(Array.from({ length: steps }, (_, i) => [
+          Math.round((i * cells) / steps),
+          Math.round(cells / steps),
+          (i % 2 === 0 ? 1 : -1) * (0.15 + 0.85 * (i / (steps - 1))),
+        ]));
+        await long.gain(1.0, { to: 0.25 });
         win = host.open(scene());
         unfit?.();
         unfit = page.fit(win.id, el("stage"));
         log(`${TAKES} empty takes of ${SECONDS} s — the lanes are empty, `
           + "and `fills` is what makes that read as empty rather than as silence");
+        log(`the last lane is a finished take of ${LONG_SECONDS} s x 2 `
+          + `(${(LONG_SECONDS * RATE * 2 * 4 / 1e6).toFixed(0)} MB): drawn from its `
+          + "overview, about a hundredth of that, and the samples read back only "
+          + "where you zoom in");
         el("record").disabled = false;
       }
 
