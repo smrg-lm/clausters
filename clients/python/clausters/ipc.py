@@ -258,6 +258,24 @@ class ShmClient:
         """
         return _native.shm_buffer_info(self._addr, len(self.mm), bufnum)
 
+    def region_path(self, bufnum: int) -> "str | None":
+        """The file buffer `bufnum`'s **samples** live in, or ``None`` when the
+        directory holds no live buffer under that number.
+
+        The segment's own path, the buffer number and the **generation** — so a
+        freed buffer's file and its replacement's can never share a name. Its
+        sibling ``<path>.peaks`` is the summary the server keeps beside it,
+        which is what a peer maps instead of reading the samples to build one.
+
+        `map_buffer` is what opens it; this is here for the questions that are
+        about the file rather than about its contents — how big the samples
+        are against their summary, whether either is there at all.
+        """
+        info = self.buffer_info(bufnum)
+        if info is None:
+            return None
+        return self._path + _native.shm_region_suffix(bufnum, info[0])
+
     def map_buffer(self, bufnum: int) -> "MappedBuffer | None":
         """Maps buffer `bufnum`'s **samples**, or ``None`` when there is no such
         buffer (or its region cannot be opened, which is what a buffer freed
