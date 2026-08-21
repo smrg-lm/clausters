@@ -169,8 +169,8 @@ print("recording: the traces grow with the sound, a frame of samples at a time")
 # on its own tick and re-summarizing what appeared; all this does is keep the
 # script alive while it happens. A client that wants the same news — a headless
 # capture, or a page, which can map nothing — asks for it over the wire
-# instead: ``server.stream_buffers(50, *takes)`` and an `OscFunc` on
-# ``/buffer_stream.reply``, which carries the summary and not the samples.
+# instead: `clausters.data.RecordingStream`, which subscribes for them and keeps
+# one peak cache per take — the wire carries the summary and not the samples.
 
 # %%
 def watch(seconds: "float | None" = None) -> None:

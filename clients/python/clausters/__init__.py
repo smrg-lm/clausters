@@ -97,6 +97,7 @@ __all__ = [
     # and the transports and process launchers (ipc, launch), which you reach
     # through Session and Server rather than by instantiating them.
     "base",
+    "data",
     "defs",
     "errors",
     "form",

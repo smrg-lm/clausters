@@ -235,7 +235,37 @@ what was wrong. Anything unresolved lives here, at the **end** of the plan —
 never inside the milestone that happened to be open, and never among finished
 work, where a pending item reads as done.)*
 
-- ⬜ **Following a recording has a class in the web client and a primitive here** *(named 2026-08-19, shipping the streamed overview: the reference client is the one that ended up with less)*. `/buffer_stream` sends the summary of what a take is recording, and both clients can subscribe (`stream_buffers`). What folds a report into a picture is `clausters_core::peaks`, bound here as `peaks_cache_write_buckets` / `gui.peaks_cache_stream_file` — the primitive, and the one shape that makes sense for a headless script: the cache file a `waveform(cache=...)` maps grows as the take does. The web client has `data.RecordingStream` on top of it, which owns a pyramid per take, tracks how far each was written and calls back on every report. Nothing here is wrong — but the ordering rule is that this client leads and the port follows, so the class is missing on the side that is supposed to have it first. What it would look like: an `OscFunc` on `/buffer_stream.reply`, a cache (in memory or on disk) per take, and `written` beside it; the one subscription per client is the constraint either way.
+- ✅ **Following a recording has a class in the web client and a primitive here** *(named 2026-08-19, shipping the streamed overview: the reference client is the one that ended up with less)*. `/buffer_stream` sends the summary of what a take is recording, and both clients can subscribe (`stream_buffers`). What folds a report into a picture is `clausters_core::peaks`, bound here as `peaks_cache_write_buckets` / `gui.peaks_cache_stream_file` — the primitive, and the one shape that makes sense for a headless script: the cache file a `waveform(cache=...)` maps grows as the take does. The web client has `data.RecordingStream` on top of it, which owns a pyramid per take, tracks how far each was written and calls back on every report. Nothing here is wrong — but the ordering rule is that this client leads and the port follows, so the class is missing on the side that is supposed to have it first. What it would look like: an `OscFunc` on `/buffer_stream.reply`, a cache (in memory or on disk) per take, and `written` beside it; the one subscription per client is the constraint either way.
+
+  **Ported 2026-08-21 as `clausters.data.RecordingStream`**, with the twin's
+  surface — `open`, `peaks`, `written`, `on_report`, `stop`, `free`, `reports`
+  — and the caches allocated at each take's full length and empty, so the axis
+  does not move while it fills. The one thing that is genuinely different is
+  **where the reports arrive**: this client's reply path is pulled, not pushed
+  (`Server.request` reads the carrier and drops what it did not ask for), so a
+  subscription sent over the command carrier would have no one listening. The
+  stream sends `/buffer_stream` out of its **own `OscReceiver` socket** instead
+  — the shape `_ensure_recycler` already uses for `/node_end` — and the reports
+  land on the responder thread like every other `OscFunc` callback. That also
+  settles the "one subscription per client" constraint in this client's favour:
+  the stream is a different client from the script's own carrier, so a
+  `stream_buffers` call beside it replaces nothing. `tests/test_recording_stream.py`
+  drives it against a fake server and asserts the same claim the web client's
+  `tests/recording.html` does — the cache the reports built and the cache the
+  samples build are the same bytes. `peaks_cache_stream_file` stays: it is the
+  right call when what you want is the file a `waveform(cache=...)` maps, and
+  the book now says which is which.
+
+  **`data.BusStream` and `data.TapStream` are the same defect and are not
+  fixed** *(found 2026-08-21 doing this port, looking for where the class
+  belonged)*. The web client's `data` module holds three stream classes and
+  this client has none of them: `/bus_stream` and `/bus_tapStream` are
+  `Server.stream_buffers`' siblings and stop at the subscription here too, so a
+  script that wants the newest value of a bus or the newest window of a tap
+  writes the responder and the bookkeeping itself. They were left out of the
+  entry above because that entry names the recording one, not because they are
+  fine. The port is the same shape — the receiver socket, a per-index store,
+  a callback — and `clausters/data.py` is now the module they belong in.
 
 - ✅ **A session's source table was built from the material the script started with, so the second save wrote a file that could not be reopened** *(found 2026-08-17, tracing the GUI plan's "a reopened session draws less on every redefine" — which turned out not to be the host's)*. `gui_composer.py`'s `save` named `buf`, the buffer read at startup. But reopening resolves each take into a **new** server buffer, so after one cycle the composition's takes are buffers 3 and 4 while the table still describes 1 — the document names sources the table does not contain, `resolve` finds no entry, and the take comes back with no material. On screen that is a waveform that vanishes on the second save/open cycle, with nothing said anywhere; it reads exactly like a redraw bug, which is where it was filed for a day.
 

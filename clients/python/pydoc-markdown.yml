@@ -23,6 +23,7 @@ loaders:
       - clausters.bundle
       - clausters.ipc
       - clausters.errors
+      - clausters.data
       - clausters.base
       - clausters.base.builtins
       - clausters.base.absobject

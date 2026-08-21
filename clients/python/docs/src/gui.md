@@ -415,6 +415,29 @@ report into it — the overview of a take being recorded, measured by the writer
 and sent instead of the samples, so a picture mapping the file grows as the take
 does.
 
+Those two are the primitives, and they are the right call when what you want is
+the *file* a `cache=` prop maps. To follow a take without a picture in it —
+a headless capture, a test, a read-out — `clausters.data.RecordingStream` owns
+the whole conversation: it subscribes, keeps one cache per take, and says how
+far each has been reported.
+
+```python
+from clausters.data import RecordingStream
+
+stream = RecordingStream.open(server, [take])
+stream.on_report(lambda bufnum, s: print(s.written(bufnum), "frames"))
+Synth("record_something", {"buf": take.bufnum}, server=server)
+```
+
+Each take's cache is allocated at the buffer's **full length** and empty, so the
+axis does not move while it fills; `written` is how far the reports have got, and
+past it the cache is the silence the buffer is — read up to it and the two stay
+apart, which is what a `waveform`'s `fills` does for the picture. Only the
+overview arrives: inside one bucket there is one figure, so a script that needs
+the detail reads the take back with `Buffer.get_samples` once it is finished.
+`stop()` cancels the subscription and leaves the caches readable; `free()` drops
+them.
+
 ### The axes carry the chrome
 
 A ruler, the visible window, the selection, the playhead and the value range
