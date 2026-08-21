@@ -718,7 +718,11 @@ def waveform(*, data=None, blob: int | None = None, buffer: int | None = None,
     ``ruler_y`` labels the amplitude axis — ``"norm"`` (the default;
     normalized [-1, 1]), ``"db"`` (dBFS), ``"bits"`` (integer sample values at
     the ``bit_depth`` resolution, default 16), ``"percent"`` (0-100% of full
-    scale), or ``"off"``.
+    scale), or ``"off"``. It **labels** the axis and does not map it: the
+    picture is linear in amplitude whichever unit is named, and ``"db"`` is a
+    ladder of rungs drawn at the amplitudes those decibels are. So what a
+    reading names and what an edit writes at a height are one value, and editing
+    is in linear amplitude and only there.
 
     ``min``/``max`` are the **value domain** the trace is drawn over, ``[-1,
     1]`` (full-scale audio) when omitted. A named domain is **ruled with its

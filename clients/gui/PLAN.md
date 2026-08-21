@@ -2573,11 +2573,42 @@ finished work, where a pending item reads as done.
   **What this does not do, stated so it is not looked for**: it does not touch what a widget *draws* at a given size — the shared vocabulary for that is `font::text_ellipsis` and `plate_text`, and `label_height` is the one shape rule. This is the door beside them: the size arrives having been negotiated rather than assumed, which is what the entry's three findings each lacked.
   **A fourth thing the same pass asked for, and it is the general half arriving early: the text plate.** With the two texts inside their boxes they were still *illegible*, because a caption over a picture is written in one color and the picture draws in another — wherever the two meet the line dissolves into the material, and the denser the take the less of the name survives. So a line drawn over a picture now sits on a ground of its own: `graphics::plate_text` — a translucent, rounded box under the glyphs, truncated to the room it was given, returning the plate it laid down so a caller stacking two knows where the first ended. It is **one piece in the models' shared vocabulary** (beside `corner_text`, the same reach) rather than a clip feature: its signature names no clip, no lane and no axis, so the roll's read-out took it unchanged, and the two properties that make it a *ground* are what the test pins — it is as wide as the line it grounds (a truncated caption takes a truncated plate, never the plate of the string it would have drawn) and where not even the ellipsis fits there is no plate at all. Both of its numbers are **roles**, not literals at the drawing site: `plate` (the color, whose alpha *is* the role — an opaque plate would be a label with a background, a different thing) and `plate_radius` (the corner), so the density scale and a window's `ui_scale` carry them like everything else. Documented in the client book's color and size tables and in `docs/gui-protocol.md`'s text paragraph.
 
-- ⬜ **A take is drawn in amplitude and heard in decibels** *(found 2026-08-12, by ear on `gui_multitrack` after the envelope fix below; deferred by decision — it belongs with the revision of multitrack playback and the arrangement model)*. With the picture and the voice finally built from one description, the sound of an audio clip still stops about a **quarter of the clip** before the playhead reaches its end. What is left is not a timing error: it is that the trace is drawn **linearly in amplitude** and heard **logarithmically**. The example's fastest take (`exp(-5t)`) is at 0.024 of full scale three quarters through — **−33 dB**, silence to the ear — while the drawing still puts a line there, and the minimum-ink floor *guarantees* it does: a column is inked at least one pixel, which is exactly the rule that keeps a flat stretch visible. The two rules are right on their own and disagree here.
+- ✅ **A take is drawn in amplitude and heard in decibels** *(found 2026-08-12, by ear on `gui_multitrack` after the envelope fix below; deferred by decision — it belongs with the revision of multitrack playback and the arrangement model)*. With the picture and the voice finally built from one description, the sound of an audio clip still stops about a **quarter of the clip** before the playhead reaches its end. What is left is not a timing error: it is that the trace is drawn **linearly in amplitude** and heard **logarithmically**. The example's fastest take (`exp(-5t)`) is at 0.024 of full scale three quarters through — **−33 dB**, silence to the ear — while the drawing still puts a line there, and the minimum-ink floor *guarantees* it does: a column is inked at least one pixel, which is exactly the rule that keeps a flat stretch visible. The two rules are right on their own and disagree here.
 
   The measurements, so the next pass does not re-derive them: at three quarters of its span the example's three takes sit at −32.6, −7.8 and −13.0 dB (decays 5.0, 1.2, 2.0), and at the very end at −43.4, −10.4 and −17.4. The slow ones are plainly audible to the end, so what the ear generalizes from is the fast one — which is also the one whose picture is emptiest.
 
   Two answers, and the choice is a design rather than a fix. **Draw the body on a dB scale** — the amplitude axis already *labels* in `db`/`bits`/`percent` (the ruler's units of full scale), but the geometry is linear, so this means a display mapping a take body can carry, and a decision about its floor. Or **accept the divergence and say so**: an editor's waveform is amplitude, and a reader learns to read a decay. Whichever wins, it wants the same call the trace renderers took — one rule for every view of a signal, not one for a clip body.
+
+  **Answered 2026-08-21 by the user: the second one. Editing is in linear
+  amplitude and only there, and the geometry stays as it is.** What settled it
+  was a fact neither answer had: the `db` ruler already places its rungs **by
+  amplitude** — −6 dB sits at amplitude 0.5, not halfway
+  (`ruler::amp_ticks`, and its own test says so). So there is no lie on screen
+  today. The axis is linear in amplitude and the decibel labels are drawn where
+  those values actually fall, which is a coherent answer already, and the ink at
+  −33 dB is the minimum-ink floor doing exactly what it is for. A dB *body*
+  would also have to choose a floor, which is a parameter with no natural value:
+  a wrong floor is a different lie, not one less. A per-view dB body remains a
+  legitimate **feature** — the editors that offer it offer it as a view option —
+  and it is not this fix.
+
+  **The safeguard is an assertion and not a check, because there is nothing to
+  check.** Grepping every use of `ruler_y` outside `ruler.rs`: they are the prop
+  itself (parse, presets, the axis vocabulary), whether the strip exists and how
+  wide it is (`!= Off`, `amp_strip_w`, the strip's hit-test), and labels and
+  read-out strings. Not one of them reaches the value. The value under a height
+  comes from `ValueAxis::value_in` → `waveform::display_to_value(display,
+  domain.0, domain.1)`, and `ValueAxis` carries **no unit at all** — body,
+  window, domain, lanes. A runtime guard would defend an input nobody can write.
+  So what holds the decision is
+  `signal::tests::the_amplitude_unit_labels_the_axis_and_never_maps_it`: the
+  same value at every height under `norm` and under `db`, the two bodies
+  vertically identical (the unit may move the body *horizontally*, since its
+  strip is as wide as its own labels), and the mapping affine. It fails the day
+  the body's geometry becomes logarithmic, which is exactly when somebody should
+  come back and read this. The rule is written where a reader would otherwise
+  "fix" it: the `RulerY` enum, both clients' `waveform` builders, and
+  `docs/gui-protocol.md`'s axis table.
 
 - ✅ **The take sounded a different envelope than the one it drew** *(found 2026-08-12, by ear on `gui_multitrack`: the sound stopped a little before the playhead reached the end of a clip; fixed the same day)*. The first suspicion was the playhead, and it was wrong — worth recording, because the measurements are what turned it around. `Transport.anchor` already compensates the latency (the line marks where the audio is *heard*, not where it was scheduled), the query it takes after starting the pass costs **1.9 ms**, and the engine's sample clock runs ~1 % behind wall time, which over a three-second clip is 30 ms: none of it is a quarter of a beat, and none of it explains a gap that shows on a clean play.
 

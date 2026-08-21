@@ -141,6 +141,14 @@ impl Ruler {
 /// units (`Norm`/`Db`/`Bits`/`Percent`, default `Norm`); the spectrogram uses
 /// `Hz` (default) or `Off` — its tick *positions* follow the widget's
 /// `freq_scale`, the labels stay in hertz.
+///
+/// **The unit labels the axis; it never maps it.** The geometry is linear in
+/// amplitude on every one of these, and `Db` is a ladder of rungs placed at the
+/// amplitudes those decibels are (`ruler::amp_ticks`), not a logarithmic body.
+/// So the value under a height is the same whichever unit is printed beside it,
+/// and editing is in linear amplitude and only there — a decision, recorded at
+/// "A take is drawn in amplitude and heard in decibels" in the GUI plan and
+/// held by `signal::tests::the_amplitude_unit_labels_the_axis_and_never_maps_it`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RulerY {
     /// No vertical ruler strip.

@@ -926,6 +926,12 @@ export function menu(
  * amplitude axis (`"norm"`, `"db"`, `"bits"`, `"percent"`, `"off"`).
  * Dragging on the view selects (and emits `"selection" start len`), Shift+drag
  * pans, the wheel zooms.
+ *
+ * `rulerY` **labels** the axis and does not map it: the picture is linear in
+ * amplitude whichever unit is named, and `"db"` is a ladder of rungs drawn at
+ * the amplitudes those decibels are. So what a reading names and what an edit
+ * writes at a height are one value, and editing is in linear amplitude and only
+ * there.
  */
 export function waveform(
     options: SourceOptions & TimelineOptions & {
@@ -933,7 +939,7 @@ export function waveform(
         baseBucket?: number;
         /** Draw the channels as overlaid traces instead of stacked lanes. */
         overlay?: boolean;
-        /** The amplitude-axis ruler. */
+        /** The amplitude-axis ruler: it labels the axis, it does not map it. */
         rulerY?: string;
         /** The integer resolution `rulerY: "bits"` labels (default 16). */
         bitDepth?: number;

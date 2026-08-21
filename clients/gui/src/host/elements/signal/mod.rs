@@ -800,6 +800,66 @@ pub fn point(view: Presentation, live: bool, navigable: bool) -> Preset {
 mod tests {
     use super::*;
 
+    /// **The amplitude unit labels the axis; it never maps it.** Editing is in
+    /// linear amplitude and only there — the decision at "A take is drawn in
+    /// amplitude and heard in decibels" — and there is no runtime guard to
+    /// write for it, because [`ValueAxis`] carries no unit at all: it holds the
+    /// body, the visible window, the domain and the lane count, and the
+    /// inversion is `waveform::display_to_value`, which takes the domain and
+    /// nothing else.
+    ///
+    /// So the safeguard is this assertion rather than a check. `ruler_y` is
+    /// free to move the body **horizontally** (the strip it reserves is as wide
+    /// as its own labels), and the claim is that it moves nothing vertically:
+    /// the value a stroke writes at a height is the value the read-out names at
+    /// that height, whatever unit is printed beside it. It fails the day the
+    /// body's geometry becomes logarithmic, which is exactly when somebody
+    /// should come back and read the decision.
+    #[test]
+    fn the_amplitude_unit_labels_the_axis_and_never_maps_it() {
+        let m = crate::host::metrics::Metrics::default();
+        let rect = Rect::new(0.0, 0.0, 400.0, 200.0);
+        let axis_for = |unit| {
+            let mut el = SignalElement::from_preset(&point(Presentation::Signal, false, true));
+            el.editor.ruler_y = unit;
+            el.value_axis(rect, 0.0, &m, 1)
+                .expect("a navigable trace answers with a value axis")
+        };
+        let linear = axis_for(RulerY::Norm);
+        let decibels = axis_for(RulerY::Db);
+
+        // The strip `ruler_y` reserves is as wide as its own labels, so the
+        // two bodies differ in x -- and that is the whole of what the unit may
+        // move. Vertically they are the same rectangle, which is what makes
+        // comparing at one height mean anything.
+        assert_eq!(
+            (linear.body.y, linear.body.h),
+            (decibels.body.y, decibels.body.h),
+            "the unit moved the body vertically"
+        );
+
+        let top = linear.body.y as f64;
+        let bottom = (linear.body.y + linear.body.h) as f64;
+        for step in 0..=20 {
+            let cy = top + (bottom - top) * f64::from(step) / 20.0;
+            let (a, b) = (linear.value_in(0, cy), decibels.value_in(0, cy));
+            assert!(
+                (a - b).abs() < 1e-12,
+                "the unit moved the value: {a} in amplitude, {b} in decibels, at y {cy}"
+            );
+        }
+
+        // And the mapping is linear, which is the other half of the claim: a
+        // decibel axis would put the midpoint of the domain nowhere near the
+        // middle of the lane.
+        let mid = linear.value_in(0, (top + bottom) * 0.5);
+        let ends = (linear.value_in(0, top) + linear.value_in(0, bottom)) * 0.5;
+        assert!(
+            (mid - ends).abs() < 1e-9,
+            "mid-height read {mid}, halfway between the ends is {ends}"
+        );
+    }
+
     /// The six views the catalog named separately are six **distinct** points
     /// of one product — which is why the wire says the point and no table of
     /// names is left to keep in step with it.

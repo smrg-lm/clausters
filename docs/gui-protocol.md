@@ -359,6 +359,12 @@ Under an axis a property drops the axis marker — `x.start` is the old
 | `x` | `unit` (`time`/`samples`/`beats`/`off`; `ruler` is accepted as its old name), `start`, `len`, `tempo` (beats per second), `beat_at`, `quant` (**beats per bar** — the grid a `bar:beat` label counts on, not a length in samples), `sample_rate`, `link`, `sel_start`, `sel_len`, `playhead`, `playhead_at`, `playhead_loop_start`, `playhead_loop_len` |
 | `y` | `unit` (`norm`/`db`/`bits`/`percent`/`hz`/`off`), `start`, `len`, `min`, `max`, `bit_depth`, `sel_min`, `sel_max` |
 
+**`y.unit` labels the axis; it does not map it.** The picture is linear in
+amplitude whichever unit is named, and `db` is a ladder of rungs drawn at the
+amplitudes those decibels are — not a logarithmic body. So the value a reading
+names at a height and the value an edit writes at that height are one value, and
+editing is in linear amplitude and only there.
+
 **A selection is a count of samples.** `sel_len` is how many the selection
 holds and `sel_start` is the first, snapped when they are set and when a sweep
 writes them, so the `"selection"` event always reports whole samples. Zoomed in
