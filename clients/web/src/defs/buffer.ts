@@ -667,9 +667,10 @@ export class Buffer {
      * queried first). Sample indices are flat across channels
      * (`frame * channels + channel`), so a stereo buffer reads `L R L R …`.
      *
-     * `chunk` (samples per round trip) defaults to the transport's own bound —
-     * the frame ceiling the server advertises, which is megabytes per reply on
-     * a stream carrier. This is the bulk path behind a waveform view: feed the
+     * `chunk` (samples per round trip) defaults to the carrier's own bound
+     * (`Server.bulkChunk`) — megabytes per reply on a stream carrier, the
+     * classic 1024 where one delivery bounds the reply (a datagram, the page's
+     * ring). This is the bulk path behind a waveform view: feed the
      * result to `Peaks.build` for the summary the picture is drawn from (a
      * `waveform` widget over this buffer has the host walk the same path).
      *

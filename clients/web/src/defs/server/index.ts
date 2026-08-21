@@ -666,12 +666,21 @@ export class Server {
     // ---- bulk sizing ----
 
     /**
-     * Samples per bulk round trip for this carrier: the frame ceiling the
-     * server advertises (`/server_query`, queried once and cached), minus
-     * headroom for the reply's OSC envelope. A server that does not answer
-     * leaves the conservative 1024 a datagram fits.
+     * Samples per bulk round trip **for this carrier**: a carrier bounded by
+     * one fixed-size delivery — a datagram, the page's shared ring — keeps the
+     * classic 1024; a stream carrier uses the frame ceiling the server
+     * advertises (`/server_query`, queried once and cached), minus headroom for
+     * the reply's OSC envelope. A server that does not answer leaves the
+     * conservative number too.
+     *
+     * Which of the two a carrier is is the carrier's own answer
+     * (`Connection.stream`), never a list of types here — and it is what
+     * decides whether a reply comes back at all: the ring drops one it cannot
+     * hold, silently, so a chunk sized from a stream's ceiling reads nothing on
+     * a page.
      */
     async bulkChunk(timeout?: number): Promise<number> {
+        if (!this.connection.stream) return 1024;
         if (this.maxFrame === null) {
             try {
                 this.maxFrame = (await this.queryInfo(timeout)).maxFrame;

@@ -161,8 +161,8 @@
         }
         await stream.stop();
 
-        // Read back the **whole** take — in chunks the in-page carrier's ring
-        // takes — and build the summary the samples give. A bulk read is a
+        // Read back the **whole** take — the carrier sizes the chunks itself —
+        // and build the summary the samples give. A bulk read is a
         // different path from this one, and what is compared is the cache
         // itself: same frames, same channels, same base bucket, so the two
         // must be the same bytes. This is the assertion the Python client
@@ -170,7 +170,7 @@
         // `peaks_cache_write_buckets` against `peaks_cache`, one digest), and
         // it is the only shape a client has for it — neither client reads a
         // summary; they build one and hand it to whatever draws.
-        const samples = await take.getSamples({ chunk: 4096 });
+        const samples = await take.getSamples();
         if (samples.length !== FRAMES) {
           throw new Error(`read ${samples.length} of ${FRAMES} samples`);
         }

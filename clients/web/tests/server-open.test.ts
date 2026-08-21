@@ -86,3 +86,22 @@ test("verify probes even when the sizing was given", async () => {
     );
     assert.equal(connection.packets.length, 1, "one /server_query went out");
 });
+
+test("a bulk chunk reads the carrier's capability, not its type", async () => {
+    // The reference client's `test_bulk_chunk_reads_the_carrier_capability_not_its_type`:
+    // a carrier this module never heard of answers the datagram-or-stream
+    // question itself, through `Connection.stream`.
+    const framed = { ...silent(), stream: true };
+    const server = await Server.open(framed, { notify: false, timeout: 0.2 });
+    // As if `/server_query` had answered: the handle caches the ceiling, and
+    // a stream carrier is the one allowed to size a request from it.
+    (server as unknown as { maxFrame: number }).maxFrame = 1024 * 1024;
+    assert.equal(await server.bulkChunk(0.2), Math.floor((1024 * 1024 - 256) / 4));
+
+    // Bounded by one delivery — a datagram, the page's 64 KiB ring, which
+    // drops a reply it cannot hold instead of splitting it. The ceiling is
+    // cached all the same and is simply not what the chunk comes from.
+    const bounded = await Server.open(silent(), { notify: false, timeout: 0.2 });
+    (bounded as unknown as { maxFrame: number }).maxFrame = 1024 * 1024;
+    assert.equal(await bounded.bulkChunk(0.2), 1024);
+});

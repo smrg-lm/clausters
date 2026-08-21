@@ -54,6 +54,19 @@ export interface Connection {
      */
     readonly url?: string;
     /**
+     * Whether a packet on this carrier is free of the datagram ceiling. A
+     * stream (a WebSocket, a TCP socket) frames its own packets, so a bulk
+     * round trip can use the server's whole frame ceiling; a carrier bounded
+     * by one fixed-size delivery — a datagram, the page's shared ring — must
+     * stay under it and keeps the classic chunk.
+     *
+     * Read by `Server.bulkChunk`, which is why it is a capability here rather
+     * than a list of carrier types there: a carrier that module never heard of
+     * answers the question for itself. The reference client's
+     * `OscInterface.stream`.
+     */
+    readonly stream?: boolean;
+    /**
      * Accumulates a bundle at `secs` from the render's start — a score
      * carrier's structured entry point, and the reason a score never has to
      * decode bytes to learn when they were meant to happen. Live carriers
@@ -93,6 +106,9 @@ export interface Connection {
 export class WsConnection implements Connection {
     private socket: WebSocket;
     private listeners = new Set<(packet: Uint8Array) => void>();
+
+    /** A WebSocket frames its own packets: no datagram ceiling to stay under. */
+    readonly stream = true;
 
     /** The socket's URL — what a receiver reports as this carrier's `src`. */
     get url(): string {
@@ -169,6 +185,11 @@ export async function pageConnection(
     // share a tag or they overwrite each other's `/bus_stream`.
     const peer = engine.claimPeer();
     return {
+        // The engine is reached over the shared ring, 64 KiB, and a reply the
+        // ring cannot hold is dropped rather than split -- so this carrier is
+        // bounded exactly as a datagram is, and a bulk round trip keeps the
+        // classic chunk instead of the server's stream frame ceiling.
+        stream: false,
         send: (packet) => engine.send(packet, peer),
         addReply: (listener) => {
             mine.add(listener);
