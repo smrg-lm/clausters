@@ -6229,3 +6229,42 @@ Nothing about this is on the wire. Both requests are ordinary commands the
 server already answered; which one a host sends is its own business, and the
 draw pass is where it is decided because that is the only place that knows the
 zoom and the span at once (`frame::owed`).
+
+## The score model is the core's, and the engraver is a port shaped like verovio's toolkit
+
+Engraving reaches a page and a window through completely different plumbing —
+libverovio linked into a process, or the same library compiled to wasm and
+reached through JS glue — and the temptation with a wire like that is to let
+each side own "its" score. It is a trap, and a familiar one: what looks like
+plumbing is mostly *logic*. An edit is not one call, it is an action, then a
+`commit` that re-runs the layout, then a reload of the edited MEI (the
+MIDI/timemap cache survives an edit, so without it a transposed note keeps
+sounding at its old pitch); a document must be drawn before an edit reaches it,
+or the editor reaches through drawing state the load never built and the process
+dies; and undo is a stack of MEI snapshots of our own, because reloading resets
+verovio's stack, its `canUndo` lies, and its `undo` on an empty stack takes the
+process down. Written twice, those are two chances to get each of them wrong,
+and no compiler is watching.
+
+**Decision.** `clausters_core::notation::Score` owns all of it, generic over an
+`Engraver` port; `clausters-notation` implements that port over libverovio for a
+native caller, and a page implements it over the wasm build's exports. Building
+the engraver — a resource path, an options JSON, whatever the binding needs —
+stays with the binding, because that is the part that genuinely differs.
+
+**The port is verovio's toolkit surface, deliberately, and not an abstract
+notion of engraving.** Both implementations drive the *same* C wrapper: natively
+through `tools/c_wrapper.h`, in a page through the Emscripten build's exports,
+which are that same wrapper (`_vrvToolkit_edit`, `_getMEI`, `_renderToSVG`, …).
+An abstraction over it would be a third vocabulary nobody speaks, and it would
+have to be invented from one implementation anyway. What the port buys is not
+independence from verovio — it is that the *order of the calls* has one
+definition.
+
+**Consequence.** The core's own tests drive the state machine over a fake
+engraver, which is the first time any of those rules has been testable without a
+C++ library present; the binding's tests keep the cases that need a real
+engraver to be right about. And the two clients must engrave with **one verovio
+version**: `third_party/verovio.pin` tracks the release the npm package
+publishes, so a display list from a window and one from a page are comparable to
+each other rather than to two different engines.

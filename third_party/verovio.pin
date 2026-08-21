@@ -8,23 +8,34 @@
 # carries no patch of our own -- everything we need is already in the tree.
 VEROVIO_ORIGIN=https://github.com/rism-digital/verovio
 
-# The commit verovio is built from: the `develop` tip of 2026-07-10, which the
-# source itself versions 6.3.0-dev (VERSION_DEV true in include/vrv/vrvdef.h) --
-# i.e. after the 6.2.1 release.
+# The commit verovio is built from: the **6.3.0 release** (tag `version-6.3.0`,
+# 2026-08-19). A tag rather than a branch tip, which is what the previous pin
+# had to be and no longer does -- see the note below.
 #
-# It is a commit and not a release tag *because* of that gap. In 6.2.1 the score
-# editor is dead in any build that keeps Humdrum support -- the PyPI wheel
-# included: Toolkit::SetViewAndEditor() guards the construction of
-# m_editorToolkit with `#if defined NO_HUMDRUM_SUPPORT` where it meant
-# `#ifndef NO_EDIT_SUPPORT`, so the guard never opens, the pointer stays null,
-# and every Toolkit::Edit() returns false (parameterless `undo` included, which
-# is what makes the diagnosis certain -- the symbols are in the shipped .so, so
-# it is not a NO_EDIT_SUPPORT build). Upstream inverted the guard in 8100cb396
-# ("Invert #define fix", 2026-05-27), which is an ancestor of the SHA below;
-# building from this pin is what gives us a working editor at all.
+# The reason to be exactly here, and not merely somewhere recent: **6.3.0 is
+# also what the npm package publishes**, and that package is the engraver a
+# page reaches (an Emscripten build of these same sources, exporting the same C
+# wrapper this repository links). Native and browser therefore engrave with one
+# verovio, which is what lets the two clients' display lists be compared to each
+# other rather than to two different engines. A repin moves both ends or
+# neither.
 #
-# Repin to the 6.3.0 tag once it is released -- that is the point where the
-# published wheel becomes usable again and this build stops being mandatory for
-# the Python client (it stays required for the native producer). Full 40-char
-# SHA: fetching an arbitrary commit by SHA only resolves unabbreviated.
-VEROVIO_SHA=46a4df5256c8326d9d2d6783ff6e4048312dea34
+# Why the previous pin was a commit, kept because it is the history of this
+# file's shape: in 6.2.1 the score editor is dead in any build that keeps
+# Humdrum support -- the PyPI wheel included: Toolkit::SetViewAndEditor() guards
+# the construction of m_editorToolkit with `#if defined NO_HUMDRUM_SUPPORT`
+# where it meant `#ifndef NO_EDIT_SUPPORT`, so the guard never opens, the
+# pointer stays null, and every Toolkit::Edit() returns false (parameterless
+# `undo` included, which is what makes the diagnosis certain -- the symbols are
+# in the shipped .so, so it is not a NO_EDIT_SUPPORT build). Upstream inverted
+# the guard in 8100cb396 ("Invert #define fix", 2026-05-27), so a build with a
+# working editor meant pinning past it, ahead of any release. 6.3.0 carries the
+# fix, which retires that whole argument: the published wheel is usable again
+# and this build is no longer mandatory *for the editor's sake*. It stays the
+# only build we use, for the reasons in BUILD-VEROVIO.md ("Why there is no
+# Python-module target") -- a second compile, a second copy of the SMuFL data,
+# and a distribution literally named `verovio` that pip can replace under us.
+#
+# Full 40-char SHA: fetching an arbitrary commit by SHA only resolves
+# unabbreviated.
+VEROVIO_SHA=425dd7b6ba26edcecbe345c10b15586d095743d9

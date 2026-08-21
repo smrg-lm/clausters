@@ -1445,6 +1445,16 @@ which is what makes this a move rather than a rewrite.
 `docs/bindings.md`'s notation table records "not built for wasm" on every row
 and is what that work rewrites.
 
+**Landed on 2026-08-21, the first half of it**: the pin is the 6.3.0 release,
+and `Score` is `clausters_core::notation::Score` over an `Engraver` port that
+`clausters-notation`'s `Toolkit` implements — so the state machine (the
+action/commit/reload cycle, the draw-before-edit rule, the MEI snapshot stack)
+compiles to wasm and is tested over a fake engraver with no C++ library
+present. The rationale is in `docs/decisions.md`. What is left of the port:
+the wasm door (`clausters-core-web`) exposing `Score` over a JS engraver, the
+TypeScript shell at `gui/notation/`'s four paths, and mounting the npm
+`verovio` toolkit behind it.
+
 One rule the `gui/transport.py` port must carry, since the reference learned it
 after the list above was written: **a drained scan is not the end of the piece.**
 A `Playhead` runs out when it renders its *last item*, and that item is still

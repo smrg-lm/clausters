@@ -583,10 +583,17 @@ placed glyphs, strokes, fills and text in page units, each carrying the MEI
 and fills through `lyon`'s fill tessellator, strokes as the painter's own
 thick-line quads), so notation costs no new pipeline and stays WebGL2-safe. The
 engraving itself is the **client's**, but not any one client's: the whole layer
-is native and shared. `clausters-notation` binds libverovio and owns the editable
-`Score`; the format-agnostic half — the SVG→display-list walk, the MEI writer,
-the timemap→cursor fold — is `clausters_core::notation` (feature `notation`, so
-it compiles to wasm); `clausters-ffi` exposes both over the C ABI, and each
+is shared. `clausters_core::notation` (feature `notation`, so it compiles to
+wasm) holds all of the logic — the SVG→display-list walk, the MEI writer, the
+timemap→cursor fold, and the editable `Score`: the order an edit is made in, the
+reload that keeps the timemap honest, and the undo stack of MEI snapshots.
+`clausters-notation` is the **binding** under it: `Toolkit` implements the
+`Engraver` port over libverovio's C wrapper, and building one (a resource path,
+the options JSON) is what its `open` does. The split is drawn there because that
+is where the languages actually differ — a page reaches the same engraver
+compiled to wasm, whose exports are that same C wrapper, so it implements the
+same port and runs the same state machine rather than a second one written in
+TypeScript. `clausters-ffi` exposes both over the C ABI, and each
 client is a thin shell over that (`clients/python/clausters/gui/notation/` is
 `ctypes` plus the reduction of its own `Event`/`Timeline` into a voice — the one
 step that reads client-native types, and the seam a richer encoding extends). The host never links verovio, and a second

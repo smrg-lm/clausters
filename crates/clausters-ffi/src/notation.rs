@@ -166,7 +166,7 @@ pub unsafe extern "C" fn clausters_score_open(
         return std::ptr::null_mut();
     };
     let opts = self::options(scale, page_width, extra.map(|e| e.into_owned()));
-    match Score::open(&data, &opts) {
+    match clausters_notation::open(&data, &opts) {
         Ok(score) => Box::into_raw(Box::new(score)),
         Err(_) => std::ptr::null_mut(),
     }

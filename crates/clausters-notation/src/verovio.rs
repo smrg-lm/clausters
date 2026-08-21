@@ -242,6 +242,14 @@ impl Toolkit {
     }
 }
 
+// SAFETY: a toolkit is a raw pointer into libverovio, which has process-wide
+// state, and every operation on one is bracketed by `ffi_lock` -- the score
+// model takes that guard through `Engraver::lock`, and `engrave_svg` takes it
+// directly -- so no two calls are ever inside the library at once. That is what
+// makes handing a score to another thread (a GUI client's usual shape) sound;
+// the pointer itself is never shared between them.
+unsafe impl Send for Toolkit {}
+
 impl Drop for Toolkit {
     fn drop(&mut self) {
         // SAFETY: `ptr` is a live toolkit constructed here; freed exactly once.
