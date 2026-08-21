@@ -45,6 +45,8 @@ clients/web/
       guidef.ts  handle.ts  ids.ts
     seq/                  #   sequencing (mirrors clausters/seq)
       event.ts  eventstream.ts  pattern.ts  timeline.ts
+    form/                 #   the arrangement (mirrors clausters/form)
+      element.ts  aggregate.ts  render.ts  document.ts
     data/                 #   the data paths: what a view reads off the server
       buses.ts  taps.ts   #     the streamed sources (/bus_stream, /bus_tapStream)
       samples.ts  peaks.ts analysis.ts
@@ -1017,6 +1019,42 @@ not a detail of it. Until then `clients/web/examples/composer.html` covers the
 widgets with no model behind them — which is what the host's own bugs need to be
 reproducible in a browser, and it is where G32b was found.
 
+**The first leg of that track is in: `src/form/` — the arrangement itself.**
+The four modules sit at their siblings' paths (`element`, `aggregate`,
+`render`, `document`), and what holds them to the Python client is not the
+source but what leaves the layer: `tests/gen-form-vectors.py` builds five
+compositions with the reference surface and freezes both the **document** each
+is written as and the **flattened timeline** it renders to, and
+`form-parity.test.ts` rebuilds the same five here and asserts the same two
+results. What is still absent from this leg, and is the rest of the track: the
+multitrack `Editor`, its transport, and `gui/notation` (whose own blocker is
+below).
+
+Four differences the port has, each an idiom and none a surface:
+
+- **The node id is stamped in a `WeakMap`, not as an attribute.** Python sets
+  `_doc_id` on the object; a `Track`'s items are `Event`s the sequencing layer
+  owns, and this bridge has no business growing a field on one, so the
+  association lives beside them and is read through `docIdOf`/`setDocId`.
+- **`renderLogical` is async**, because sending a def is a round trip and a
+  page has one thread to wait on. `render` over a logical aggregate therefore
+  answers with a promise of the instance group where the Python one answers
+  with the group.
+- **`element.render()` reaches the dispatch through a registry.** The two
+  modules name each other (rendering knows every element kind; every element
+  renders itself), which Python spells as a function-level import and a page
+  cannot: a static cycle whose far end declares `class Aggregate extends
+  Element` fails at *load*. `render.ts` registers itself as it loads.
+- **An event's two renamed keys are written the file's way.** `addAction`/
+  `hasGate` here are `add_action`/`has_gate` in the document, as on the wire
+  and in the Python client, so one composition reads the same in both clients;
+  every other key is a def's control name and crosses untouched.
+
+**The engraver's blocker moved**: verovio 6.3.0 is released and on npm as an
+Emscripten build, so "libverovio is not built for wasm" has stopped being true.
+What that changes for the port — including the part of it that is *not* a
+packaging question — is written with the rest of the notation shape below.
+
 ### ✅ W17 - Publishing: the npm registry and a third Read the Docs project
 
 *Deferred out of W5*, which built the package and the book and left them on the
@@ -1330,8 +1368,9 @@ misplaced code, and each is already owned: `defs/boxes.py` (**W7**;
 `defs/pv_expr.py` came with **W6**, which is what `pvKernel` takes),
 the MIDI half of `responders.py` (**W9** — its OSC half is ported),
 `session.py`/`play.py`/`base/main.py`/`base/environment.py`/`defs/_wire.py`
-(**W18**), `render.py`/`defs/asdef.py` (**W13**), `form/` and `gui/editor.py`/
-`gui/transport.py`/`gui/notation.py` (**W16**'s named track), `defs/patch.py`
+(**W18**), `render.py`/`defs/asdef.py` (**W13**), `gui/editor.py`/
+`gui/transport.py`/`gui/notation.py` (**W16**'s named track, whose first leg —
+`form/` — is ported), `defs/patch.py`
 (unclaimed), and the launcher/IPC/CLI/config set (`launch.py`, `ipc.py`,
 `_cli.py`, `config.py`, `_midi.py`, `_libpath.py`), which is a process-shaped
 surface a page has no counterpart for.
@@ -1386,9 +1425,25 @@ reason this is portable at all. And **`mei` is the seam**, not an
 implementation detail: the client half reduces to the voice, the shared half in
 `clausters_core::notation` lays it out into barred, tied measures, and richer
 encoding (tuplets, voices, spelling, articulations) extends the *shared* half,
-so both clients gain it at once. The blocker is unchanged and is a packaging
-one: the page needs an engraver, and libverovio is not in the bundle — so this
-lands with **W16** and not before.
+so both clients gain it at once. This lands with **W16** and not before.
+
+**The blocker moved on 2026-08-21, and it moved the port's shape with it.**
+verovio 6.3.0 is released and published on npm as an Emscripten build, and its
+exports are the *same C wrapper* `clausters-notation` binds
+(`emscripten/exports.txt`: `_vrvToolkit_edit`, `_editInfo`, `_getMEI`,
+`_renderToSVG`, `_redoLayout`, …) — so the page can have an engraver without
+this repository building one, and `third_party/verovio.pin` can take the 6.3.0
+tag its own note reserved for it. What that does **not** license is a
+TypeScript re-implementation of `clausters_notation::Score`: its edit cycle
+(edit → commit → reload) and its undo stack of MEI snapshots are *logic*, and
+there is one of it. So the port's shape is that **`Score` moves down into
+`clausters-core`**, generic over a small toolkit port (load, render, `getMEI`,
+edit, `redoLayout`, timemap); `clausters-notation` implements that port over
+libverovio for a native caller, and a page implements it over the Emscripten
+module's exports. The SVG walk and the MEI encoder are in the core already,
+which is what makes this a move rather than a rewrite.
+`docs/bindings.md`'s notation table records "not built for wasm" on every row
+and is what that work rewrites.
 
 One rule the `gui/transport.py` port must carry, since the reference learned it
 after the list above was written: **a drained scan is not the end of the piece.**

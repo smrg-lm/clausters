@@ -360,9 +360,20 @@ of the Python client's book; the reasoning behind it is in
 | Shared time axis, playhead, cursor | the navigation groups (linked views), grown to hold lanes | `clients/gui/src/host/timeline.rs` |
 
 Two boundaries hold this together, and both are worth defending: `clausters.form`
-imports **nothing** from the GUI (it is pure and transport-agnostic — the piece a
-future client factors into the shared core), and the driver is the **only**
-converter between the arrangement's beats and the view's timeline samples.
+imports **nothing** from the GUI (it is pure and transport-agnostic), and the
+driver is the **only** converter between the arrangement's beats and the view's
+timeline samples.
+
+The paths above are the Python client's, and the model now exists **twice**: the
+web client carries the same layer at mirrored paths (`clients/web/src/form/`
+— `element.ts`, `aggregate.ts`, `render.ts`, `document.ts`), so a rule changed
+in one is changed in both. What holds them together is not review: the two
+things that leave the layer — the **document** a composition is written as and
+the **flattened timeline** it renders to — are frozen from the Python side
+(`clients/web/tests/gen-form-vectors.py`) and asserted from the TypeScript one
+(`form-parity.test.ts`), so a rule that drifts into one client fails a test
+instead of reaching a piece. The multitrack editor is still the Python
+client's alone.
 
 ### The document: the model under the arrangement
 
@@ -794,10 +805,11 @@ the prop that sets it, and a non-scalar reported as the JSON string its own
 The builder **does not mirror the widget catalog**, and that is the decision rather than an omission: a leaf is `node("knob").prop(…)`. Every widget's props are already declared in three surfaces a test holds together (`docs/gui-props.md` against the host, the Python builder and the web builder); a typed Rust twin would be a fourth to keep in step. A registered element has props no catalog in this crate can know, so the open door must exist regardless — and once it does, a typed twin checks spelling, not safety.
 
 A **new element kind** (a new primitive of the arrangement) is the client's
-business, not the host's: it lands in `clients/python/clausters/form/`, and it
-reaches the screen through the editor driver (`clausters/gui/editor.py`), which is
-the only module that knows both the arrangement and the widget tree. The Python
-book's composition chapter is its user documentation.
+business, not the host's: it lands in `clients/python/clausters/form/` **and in
+`clients/web/src/form/`**, which are one layer in two languages, and it reaches
+the screen through the editor driver (`clausters/gui/editor.py`), which is the
+only module that knows both the arrangement and the widget tree. Its user
+documentation is the composition chapter of each client's book.
 
 ## Extending the server: the plugin question
 

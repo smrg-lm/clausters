@@ -145,6 +145,12 @@ export * as errors from "./errors.ts";
 export { ClaustersError } from "./errors.ts";
 
 /**
+ * The **arrangement**: a recursive algebra of elements placed in time, grouped
+ * and rendered — what a multitrack editor edits. See `./form/index.ts`.
+ */
+export * as form from "./form/index.ts";
+
+/**
  * The document: the composition's authoritative model, applied by the shared
  * crate rather than by any client. See `./document.ts`.
  */

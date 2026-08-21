@@ -1,0 +1,766 @@
+{
+ "cases": {
+  "a_piece": {
+   "document": {
+    "version": 1,
+    "root": {
+     "id": 1,
+     "name": "piece",
+     "kind": "aggregate",
+     "grouping": "concrete",
+     "members": [
+      {
+       "offset": 0.0,
+       "node": {
+        "id": 2,
+        "duration": 1.0,
+        "kind": "clang",
+        "config": {
+         "type": "note",
+         "instrument": "default",
+         "dur": 1.0,
+         "legato": 0.8,
+         "stretch": 1.0,
+         "amp": 0.1,
+         "add_action": 1,
+         "target": 0,
+         "has_gate": false,
+         "octave": 5.0,
+         "root": 0.0,
+         "scale": [
+          0,
+          2,
+          4,
+          5,
+          7,
+          9,
+          11
+         ],
+         "midinote": 60
+        }
+       },
+       "dur": 1.0
+      },
+      {
+       "offset": 2.0,
+       "node": {
+        "id": 3,
+        "duration": 4.0,
+        "kind": "vector",
+        "source": {
+         "source": 100,
+         "lifetime": "session",
+         "generation": 0
+        },
+        "config": {
+         "instrument": "take"
+        }
+       },
+       "dur": 4.0
+      },
+      {
+       "offset": 8.0,
+       "node": {
+        "id": 4,
+        "kind": "aggregate",
+        "grouping": "concrete",
+        "members": [
+         {
+          "offset": 0.0,
+          "node": {
+           "id": 5,
+           "duration": 0.5,
+           "kind": "clang",
+           "config": {
+            "type": "note",
+            "instrument": "default",
+            "dur": 0.5,
+            "legato": 0.8,
+            "stretch": 1.0,
+            "amp": 0.1,
+            "add_action": 1,
+            "target": 0,
+            "has_gate": false,
+            "octave": 5.0,
+            "root": 0.0,
+            "scale": [
+             0,
+             2,
+             4,
+             5,
+             7,
+             9,
+             11
+            ],
+            "midinote": 67
+           }
+          },
+          "dur": 0.5
+         }
+        ]
+       },
+       "dur": 2.0
+      }
+     ]
+    }
+   },
+   "flat": [
+    {
+     "beat": 0.0,
+     "event": {
+      "type": "note",
+      "instrument": "default",
+      "dur": 1.0,
+      "legato": 0.8,
+      "stretch": 1.0,
+      "amp": 0.1,
+      "add_action": 1,
+      "target": 0,
+      "has_gate": false,
+      "octave": 5.0,
+      "root": 0.0,
+      "scale": [
+       0,
+       2,
+       4,
+       5,
+       7,
+       9,
+       11
+      ],
+      "midinote": 60
+     }
+    },
+    {
+     "beat": 2.0,
+     "event": {
+      "type": "note",
+      "instrument": "take",
+      "dur": 4.0,
+      "legato": 1.0,
+      "stretch": 1.0,
+      "amp": 1.0,
+      "add_action": 1,
+      "target": 0,
+      "has_gate": false,
+      "octave": 5.0,
+      "root": 0.0,
+      "scale": [
+       0,
+       2,
+       4,
+       5,
+       7,
+       9,
+       11
+      ],
+      "buf": 100
+     }
+    },
+    {
+     "beat": 8.0,
+     "event": {
+      "type": "note",
+      "instrument": "default",
+      "dur": 2.0,
+      "legato": 0.8,
+      "stretch": 1.0,
+      "amp": 0.1,
+      "add_action": 1,
+      "target": 0,
+      "has_gate": false,
+      "octave": 5.0,
+      "root": 0.0,
+      "scale": [
+       0,
+       2,
+       4,
+       5,
+       7,
+       9,
+       11
+      ],
+      "midinote": 67
+     }
+    }
+   ],
+   "relation": "mixed"
+  },
+  "a_trimmed_placement": {
+   "document": {
+    "version": 1,
+    "root": {
+     "id": 1,
+     "kind": "aggregate",
+     "grouping": "concrete",
+     "members": [
+      {
+       "offset": 1.0,
+       "node": {
+        "id": 2,
+        "kind": "aggregate",
+        "grouping": "concrete",
+        "members": [
+         {
+          "offset": 0.0,
+          "node": {
+           "id": 3,
+           "duration": 2.0,
+           "kind": "clang",
+           "config": {
+            "type": "note",
+            "instrument": "default",
+            "dur": 2.0,
+            "legato": 0.8,
+            "stretch": 1.0,
+            "amp": 0.1,
+            "add_action": 1,
+            "target": 0,
+            "has_gate": false,
+            "octave": 5.0,
+            "root": 0.0,
+            "scale": [
+             0,
+             2,
+             4,
+             5,
+             7,
+             9,
+             11
+            ],
+            "midinote": 60
+           }
+          }
+         },
+         {
+          "offset": 2.0,
+          "node": {
+           "id": 4,
+           "duration": 2.0,
+           "kind": "clang",
+           "config": {
+            "type": "note",
+            "instrument": "default",
+            "dur": 2.0,
+            "legato": 0.8,
+            "stretch": 1.0,
+            "amp": 0.1,
+            "add_action": 1,
+            "target": 0,
+            "has_gate": false,
+            "octave": 5.0,
+            "root": 0.0,
+            "scale": [
+             0,
+             2,
+             4,
+             5,
+             7,
+             9,
+             11
+            ],
+            "midinote": 64
+           }
+          }
+         },
+         {
+          "offset": 4.0,
+          "node": {
+           "id": 5,
+           "duration": 2.0,
+           "kind": "clang",
+           "config": {
+            "type": "note",
+            "instrument": "default",
+            "dur": 2.0,
+            "legato": 0.8,
+            "stretch": 1.0,
+            "amp": 0.1,
+            "add_action": 1,
+            "target": 0,
+            "has_gate": false,
+            "octave": 5.0,
+            "root": 0.0,
+            "scale": [
+             0,
+             2,
+             4,
+             5,
+             7,
+             9,
+             11
+            ],
+            "midinote": 67
+           }
+          }
+         }
+        ]
+       },
+       "dur": 3.0
+      }
+     ]
+    }
+   },
+   "flat": [
+    {
+     "beat": 1.0,
+     "event": {
+      "type": "note",
+      "instrument": "default",
+      "dur": 3.0,
+      "legato": 0.8,
+      "stretch": 1.0,
+      "amp": 0.1,
+      "add_action": 1,
+      "target": 0,
+      "has_gate": false,
+      "octave": 5.0,
+      "root": 0.0,
+      "scale": [
+       0,
+       2,
+       4,
+       5,
+       7,
+       9,
+       11
+      ],
+      "midinote": 60
+     }
+    },
+    {
+     "beat": 3.0,
+     "event": {
+      "type": "note",
+      "instrument": "default",
+      "dur": 1.0,
+      "legato": 0.8,
+      "stretch": 1.0,
+      "amp": 0.1,
+      "add_action": 1,
+      "target": 0,
+      "has_gate": false,
+      "octave": 5.0,
+      "root": 0.0,
+      "scale": [
+       0,
+       2,
+       4,
+       5,
+       7,
+       9,
+       11
+      ],
+      "midinote": 64
+     }
+    }
+   ],
+   "relation": "simultaneous"
+  },
+  "a_track": {
+   "document": {
+    "version": 1,
+    "root": {
+     "id": 1,
+     "kind": "aggregate",
+     "grouping": "concrete",
+     "members": [
+      {
+       "offset": 4.0,
+       "node": {
+        "id": 2,
+        "name": "bass",
+        "kind": "aggregate",
+        "grouping": "concrete",
+        "members": [
+         {
+          "offset": 0.0,
+          "node": {
+           "id": 3,
+           "kind": "clang",
+           "config": {
+            "type": "note",
+            "instrument": "default",
+            "dur": 1.0,
+            "legato": 0.8,
+            "stretch": 1.0,
+            "amp": 0.1,
+            "add_action": 1,
+            "target": 0,
+            "has_gate": false,
+            "octave": 5.0,
+            "root": 0.0,
+            "scale": [
+             0,
+             2,
+             4,
+             5,
+             7,
+             9,
+             11
+            ],
+            "midinote": 48
+           }
+          }
+         },
+         {
+          "offset": 1.5,
+          "node": {
+           "id": 4,
+           "kind": "clang",
+           "config": {
+            "type": "note",
+            "instrument": "default",
+            "dur": 0.5,
+            "legato": 0.8,
+            "stretch": 1.0,
+            "amp": 0.1,
+            "add_action": 1,
+            "target": 0,
+            "has_gate": false,
+            "octave": 5.0,
+            "root": 0.0,
+            "scale": [
+             0,
+             2,
+             4,
+             5,
+             7,
+             9,
+             11
+            ],
+            "midinote": 55
+           }
+          }
+         }
+        ],
+        "config": {
+         "form": "track"
+        }
+       }
+      }
+     ]
+    }
+   },
+   "flat": [
+    {
+     "beat": 4.0,
+     "event": {
+      "type": "note",
+      "instrument": "default",
+      "dur": 1.0,
+      "legato": 0.8,
+      "stretch": 1.0,
+      "amp": 0.1,
+      "add_action": 1,
+      "target": 0,
+      "has_gate": false,
+      "octave": 5.0,
+      "root": 0.0,
+      "scale": [
+       0,
+       2,
+       4,
+       5,
+       7,
+       9,
+       11
+      ],
+      "midinote": 48
+     }
+    },
+    {
+     "beat": 5.5,
+     "event": {
+      "type": "note",
+      "instrument": "default",
+      "dur": 0.5,
+      "legato": 0.8,
+      "stretch": 1.0,
+      "amp": 0.1,
+      "add_action": 1,
+      "target": 0,
+      "has_gate": false,
+      "octave": 5.0,
+      "root": 0.0,
+      "scale": [
+       0,
+       2,
+       4,
+       5,
+       7,
+       9,
+       11
+      ],
+      "midinote": 55
+     }
+    }
+   ],
+   "relation": "simultaneous"
+  },
+  "a_window": {
+   "document": {
+    "version": 1,
+    "root": {
+     "id": 1,
+     "kind": "aggregate",
+     "grouping": "concrete",
+     "members": [
+      {
+       "offset": 0.0,
+       "node": {
+        "id": 2,
+        "duration": 2.0,
+        "kind": "vector",
+        "source": {
+         "source": 7,
+         "lifetime": "session",
+         "generation": 0
+        },
+        "config": {
+         "instrument": "take",
+         "controls": {
+          "amp": 0.5
+         },
+         "start": 44100.0,
+         "loop": true
+        }
+       },
+       "dur": 2.0
+      },
+      {
+       "offset": 2.0,
+       "node": {
+        "id": 3,
+        "duration": 2.5,
+        "kind": "segments",
+        "segments": [
+         {
+          "source": {
+           "source": 7,
+           "lifetime": "session",
+           "generation": 0
+          },
+          "start": 0.0,
+          "duration": 1.0
+         },
+         {
+          "source": {
+           "source": 8,
+           "lifetime": "session",
+           "generation": 0
+          },
+          "start": 22050.0,
+          "duration": 1.5
+         }
+        ],
+        "config": {
+         "instrument": "take"
+        }
+       }
+      }
+     ]
+    }
+   },
+   "flat": [
+    {
+     "beat": 0.0,
+     "event": {
+      "type": "note",
+      "instrument": "take",
+      "dur": 2.0,
+      "legato": 1.0,
+      "stretch": 1.0,
+      "amp": 0.5,
+      "add_action": 1,
+      "target": 0,
+      "has_gate": false,
+      "octave": 5.0,
+      "root": 0.0,
+      "scale": [
+       0,
+       2,
+       4,
+       5,
+       7,
+       9,
+       11
+      ],
+      "buf": 7,
+      "start": 44100.0,
+      "loop": 1.0
+     }
+    },
+    {
+     "beat": 2.0,
+     "event": {
+      "type": "note",
+      "instrument": "take",
+      "dur": 1.0,
+      "legato": 1.0,
+      "stretch": 1.0,
+      "amp": 1.0,
+      "add_action": 1,
+      "target": 0,
+      "has_gate": false,
+      "octave": 5.0,
+      "root": 0.0,
+      "scale": [
+       0,
+       2,
+       4,
+       5,
+       7,
+       9,
+       11
+      ],
+      "buf": 7
+     }
+    },
+    {
+     "beat": 3.0,
+     "event": {
+      "type": "note",
+      "instrument": "take",
+      "dur": 1.5,
+      "legato": 1.0,
+      "stretch": 1.0,
+      "amp": 1.0,
+      "add_action": 1,
+      "target": 0,
+      "has_gate": false,
+      "octave": 5.0,
+      "root": 0.0,
+      "scale": [
+       0,
+       2,
+       4,
+       5,
+       7,
+       9,
+       11
+      ],
+      "buf": 8,
+      "start": 22050.0
+     }
+    }
+   ],
+   "relation": "successive"
+  },
+  "a_frozen_generator": {
+   "document": {
+    "version": 1,
+    "root": {
+     "id": 1,
+     "kind": "aggregate",
+     "grouping": "concrete",
+     "members": [
+      {
+       "offset": 0.0,
+       "node": {
+        "id": 2,
+        "name": "melody",
+        "duration": 4.0,
+        "kind": "generator",
+        "rendered": {
+         "id": 3,
+         "kind": "aggregate",
+         "grouping": "concrete",
+         "members": [
+          {
+           "offset": 0.0,
+           "node": {
+            "id": 4,
+            "duration": 0.25,
+            "kind": "clang",
+            "config": {
+             "type": "note",
+             "instrument": "default",
+             "dur": 0.25,
+             "legato": 0.8,
+             "stretch": 1.0,
+             "amp": 0.1,
+             "add_action": 1,
+             "target": 0,
+             "has_gate": false,
+             "octave": 5.0,
+             "root": 0.0,
+             "scale": [
+              0,
+              2,
+              4,
+              5,
+              7,
+              9,
+              11
+             ],
+             "midinote": 72
+            }
+           },
+           "dur": 0.25
+          }
+         ]
+        },
+        "config": {
+         "generator": "melody"
+        }
+       },
+       "dur": 4.0
+      },
+      {
+       "offset": 4.0,
+       "node": {
+        "id": 5,
+        "name": "unheld",
+        "duration": 1.0,
+        "kind": "sequence",
+        "config": {
+         "sequence": "unheld"
+        }
+       }
+      }
+     ]
+    }
+   },
+   "flat": [],
+   "relation": "successive"
+  }
+ },
+ "session": {
+  "format": 1,
+  "document": {
+   "version": 1,
+   "root": {
+    "id": 1,
+    "kind": "aggregate",
+    "grouping": "concrete",
+    "members": [
+     {
+      "offset": 0.0,
+      "node": {
+       "id": 2,
+       "duration": 4.0,
+       "kind": "vector",
+       "source": {
+        "source": 100,
+        "lifetime": "session",
+        "generation": 0
+       },
+       "config": {
+        "instrument": "take"
+       }
+      },
+      "dur": 4.0
+     }
+    ]
+   }
+  },
+  "sources": {
+   "100": {
+    "location": "takes/one.wav",
+    "lifetime": "session",
+    "generation": 0
+   }
+  }
+ }
+}

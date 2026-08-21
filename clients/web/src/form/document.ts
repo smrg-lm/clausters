@@ -1,0 +1,1011 @@
+// The arrangement to and from the **document** — the shared model in
+// `crates/clausters-document` (mirrors `clausters/form/document.py`).
+//
+// The document is the single authoritative model of a composition, and it lives
+// in a Rust crate so that every deployment mode binds one of it: this client,
+// the Python client, and a `standalone` GUI host with no language attached at
+// all. This module is the bridge, and it is a **round trip through the format**
+// rather than a binding: the tree here is converted to the document's JSON and
+// back, so the crate stays the normative shape without this client giving up its
+// own objects.
+//
+// What crosses, and what cannot
+// -----------------------------
+//
+// The document holds **where things are** — the tree, the placements, the
+// grouping. It holds a leaf's configuration as an **opaque payload it never
+// interprets**, which is not a limitation to work around but the reason one
+// document can serve three languages: a generator *is code*, in the language of
+// whoever wrote it, and no format owns that.
+//
+// So the conversion is lossless for **concrete data** (events, placements, sets,
+// buffers by reference) and carries a **generator by reference**, exactly as a
+// project file references a plugin rather than serializing it. Coming back, a
+// leaf whose configuration names an object this process no longer has resolves
+// through `resolve`; without one it comes back as the reference itself, which a
+// `Generator` already accepts (it wraps a def *name* as readily as a def
+// object). That is the frozen case, and it is the floor rather than a failure: a
+// host with no interpreter shows what was rendered.
+//
+// Identity
+// --------
+//
+// The document addresses nodes by id and the arrangement does not, so
+// `toDocument` assigns one per element and **stamps it on the element**, reusing
+// whatever is already there. Converting the same tree twice therefore yields the
+// same ids, which is what lets an edit made against one conversion still name
+// the right node in the next.
+//
+// The stamp itself is the one place this module reads differently from the
+// Python one, and only in shape: Python sets a `_doc_id` attribute on the
+// object, and a page keeps the same association in a `WeakMap` — `docIdOf` /
+// `setDocId` below — because a timeline item is an `Event` this module does not
+// own and must not grow a field on.
+//
+// The id is on the *element*, so placing one element at two offsets writes two
+// nodes with one id, and an edit naming that id cannot say which of the two it
+// means. Give each appearance its own element over the same source — two
+// `Vector` leaves over one server buffer — until the addressing settles.
+
+import { Event as SeqEvent } from "../seq/event.ts";
+import { Timeline } from "../seq/timeline.ts";
+import { pointsToEnv } from "../defs/ugens/index.ts";
+import { CONCRETE, LOGICAL, Aggregate, Member } from "./aggregate.ts";
+import {
+    Clang,
+    Element,
+    Generator,
+    Segments,
+    Sequence,
+    Track,
+    Vector,
+} from "./element.ts";
+import type { SourceLike } from "./element.ts";
+
+/**
+ * A document node, as `serde` reads it. Deliberately open: a body this build
+ * does not know is carried through whole rather than dropped.
+ */
+export type DocNode = Record<string, any>;
+
+/** A whole document: the version it is at, and its root node. */
+export interface DocumentJson {
+    version: number;
+    root: DocNode;
+}
+
+/** A session: the document, plus the table that says where its source is. */
+export interface SessionJson {
+    format: number;
+    document: DocumentJson;
+    sources: Record<string, unknown>;
+    provenance?: unknown;
+}
+
+/**
+ * What a caller supplies for a leaf the document only names — the port of the
+ * Python bridge's `resolve(kind, config)`.
+ */
+export type Resolver = (kind: string, config: any) => unknown;
+
+/**
+ * The node ids this conversion stamped, keyed by the object they name — an
+ * element, a member handle, or a timeline item.
+ *
+ * A `WeakMap` rather than an attribute (Python's `_doc_id`) because the objects
+ * stamped are not all ours: a `Track`'s items are `Event`s the sequencing layer
+ * owns, and this bridge has no business growing a field on one.
+ */
+const docIds = new WeakMap<object, number>();
+
+/** The node id stamped on `obj` by a conversion, or `null` for none. */
+export function docIdOf(obj: unknown): number | null {
+    if (obj === null || typeof obj !== "object") return null;
+    return docIds.get(obj as object) ?? null;
+}
+
+/**
+ * Stamps `id` as the node id of `obj` — what a conversion does, and what an
+ * editor does for a node it mints itself (a note added by a gesture).
+ */
+export function setDocId(obj: unknown, id: number): void {
+    if (obj !== null && typeof obj === "object") docIds.set(obj as object, id);
+}
+
+/**
+ * The version an unedited document carries.
+ *
+ * One rather than zero, because zero is what an edit means by *unstated* when it
+ * names the state it was made against — the same reservation the GUI host's
+ * sequence numbers make. An unedited document is a real state an editor must be
+ * able to name, so it cannot share a number with "I cannot say".
+ */
+export const FIRST_VERSION = 1;
+
+/** The session format this client writes (the crate's `session::FORMAT`). */
+export const SESSION_FORMAT = 1;
+
+/**
+ * The whole arrangement as a document, ready for `serde`.
+ *
+ * `version` is the document version to stamp (see the crate: the document's half
+ * of the two counters); zero means *unstated* and is never a document's own
+ * version.
+ */
+export function toDocument(
+    element: Element,
+    { version = FIRST_VERSION }: { version?: number } = {},
+): DocumentJson {
+    return { version: Math.trunc(version), root: node(element, new Ids(element)) };
+}
+
+/**
+ * The arrangement as a **session**: the document, plus the table that says where
+ * its source is.
+ *
+ * A document says *what plays when* and deliberately not where a source lives,
+ * because inside a running system a source is a server buffer, a mapped file or
+ * a rendered result and the tree has no business knowing which. A session is the
+ * document plus exactly that missing half, so the thing can be closed and opened
+ * again — by this client, or by a `standalone` host with no language attached,
+ * which is why the format lives in the crate and not here.
+ *
+ * `sources` is `{sourceId: entry}` — each entry as the crate's `session::Source`
+ * (`location`, `lifetime`, `generation`, and optionally `channels`/`frames`/
+ * `sample_rate`/`provenance`/`editing`). A source with an **open destructive
+ * edit** carries `editing` and reopens that way: a save never blocks on a
+ * confirmation. `provenance` is an opaque reference to whatever produced the
+ * session — the scripts behind it — carried and never interpreted, which is what
+ * makes re-generating possible without the format knowing how.
+ */
+export function toSession(
+    element: Element,
+    {
+        sources,
+        version = FIRST_VERSION,
+        provenance,
+    }: {
+        sources?: Record<number | string, unknown> | Map<number, unknown> | null;
+        version?: number;
+        provenance?: unknown;
+    } = {},
+): SessionJson {
+    const document = toDocument(element, { version });
+    const entries =
+        sources instanceof Map ? [...sources.entries()] : Object.entries(sources ?? {});
+    const table: Record<string, unknown> = {};
+    for (const [key, value] of entries) table[String(key)] = value;
+    const covered = new Set([...Object.keys(table)].map((k) => Number(k)));
+    const missing = [...sourceIds(document.root)]
+        .filter((id) => !covered.has(id))
+        .sort((a, b) => a - b);
+    if (missing.length > 0) {
+        // A session whose table does not cover its own document reopens with
+        // that source unresolved -- the take draws nothing and nothing says
+        // why, which is a defect found the only way it can be: by looking at a
+        // window two saves later. The table is caller data (what a location
+        // *means* is the caller's), but whether it covers the tree is checkable
+        // here, and it is the difference between an error now and a silent hole
+        // later. It bites hardest where the ids move under you: reopening
+        // resolves source into new buffers, so a table built once at startup
+        // stops matching the composition it is saved with.
+        throw new Error(
+            "the source table does not cover this document: no entry for " +
+                `${missing.join(", ")}. Build it from the arrangement being ` +
+                "saved (each buffer element's current source), not from the " +
+                "source the script started with.",
+        );
+    }
+    const session: SessionJson = {
+        format: SESSION_FORMAT,
+        document,
+        sources: table,
+    };
+    if (provenance !== undefined && provenance !== null) session.provenance = provenance;
+    return session;
+}
+
+/**
+ * Every source id the document names, so a session can be checked against its
+ * own table before it is written.
+ */
+function sourceIds(root: DocNode): Set<number> {
+    const found = new Set<number>();
+    const stack: unknown[] = [root];
+    while (stack.length > 0) {
+        const current = stack.pop();
+        if (current === null || typeof current !== "object") continue;
+        const node = current as DocNode;
+        const source = node.source;
+        if (source !== null && typeof source === "object" && "source" in source) {
+            found.add(Math.trunc(Number(source.source)));
+        }
+        // A `segments` node names one source per segment, and a session whose
+        // table covered only the first would reopen with the rest of the
+        // source missing.
+        for (const seg of (node.segments as unknown[]) ?? []) {
+            if (seg !== null && typeof seg === "object") stack.push(seg);
+        }
+        for (const member of (node.members as DocNode[]) ?? []) {
+            if (member !== null && typeof member === "object") stack.push(member.node);
+        }
+        stack.push(node.rendered);
+    }
+    return found;
+}
+
+/**
+ * Opens a session: the root element, and its source table as written.
+ *
+ * The table is handed back as data rather than resolved, because what a source
+ * *is* (a server buffer to allocate, a file to map) is the caller's to decide and
+ * depends on what is running.
+ *
+ * Throws if the file was written in a format this build cannot read. A newer
+ * *field* is not a version change — it is ignored on the way through, the way an
+ * unknown body is carried rather than dropped — so this only fires when reading
+ * it wrongly is the alternative.
+ */
+export function fromSession(
+    session: SessionJson,
+    { resolve }: { resolve?: Resolver } = {},
+): { element: Element; sources: Map<number, unknown> } {
+    const format = Math.trunc(Number(session.format ?? SESSION_FORMAT));
+    if (format > SESSION_FORMAT) {
+        throw new Error(
+            `session format ${format} is newer than this build reads (${SESSION_FORMAT})`,
+        );
+    }
+    const sources = new Map<number, unknown>();
+    for (const [key, value] of Object.entries(session.sources ?? {})) {
+        sources.set(Number(key), value);
+    }
+    return { element: fromDocument(session.document, { resolve }), sources };
+}
+
+/**
+ * Rebuilds an arrangement from a document — what {@link toDocument} produces, or
+ * what the crate wrote.
+ *
+ * `resolve(kind, config)` supplies the leaves whose configuration *names*
+ * something this process must supply — a generator's def, a pattern. Returning
+ * `null` (or passing no resolver) leaves the reference itself in place, which is
+ * the frozen case rather than an error.
+ */
+export function fromDocument(
+    document: DocumentJson,
+    { resolve }: { resolve?: Resolver } = {},
+): Element {
+    return fromNode(document.root, resolve ?? null);
+}
+
+// ---- arrangement -> document ----
+
+/**
+ * Node ids for one conversion: whatever an element already carries, and a fresh
+ * number past all of them for one that does not.
+ *
+ * Allocating past the maximum already stamped is what keeps a second conversion
+ * stable — a new element added between two conversions cannot take an id an
+ * existing element is still using.
+ *
+ * **An id names one element, and this is where that is enforced.** The number is
+ * stamped on the element object, and numbering starts at 1 for every root, so
+ * two arrangements built in one script both hold 1, 2, 3 — and source authored
+ * in one and used in the other arrives carrying a number a different element
+ * here already holds. Nothing downstream survives that: an intent naming the id
+ * reaches whichever node the crate's lookup finds first while the editor's index
+ * keeps the last, so one gesture writes two places. The walk therefore **claims**
+ * each id for the object it first meets carrying it, and an object that turns up
+ * with an id already claimed by another is renumbered.
+ *
+ * Two things it deliberately does not do. It does not touch the *same* object
+ * appearing twice — two placements of one element are one node with one id,
+ * which is a question about what an id identifies and is open in the document
+ * crate's plan, not something to settle by accident here. And it does not
+ * renumber the first claimant, so a tree converted on its own is numbered
+ * exactly as it always was.
+ *
+ * The cost of renumbering, stated because it is real: a log entry recorded
+ * earlier against the moved element's old number no longer names it. It happens
+ * only when source crosses between trees, it stamps a number nothing else in
+ * this tree holds, and the editor re-derives its index from the document on
+ * every edit — so what is at risk is undo of an edit made before the crossing,
+ * not the current one.
+ */
+class Ids {
+    next = 1;
+    private owner = new Map<number, object>();
+    private renumber = new Set<object>();
+    /**
+     * Elements already met as a placement, so a second one is checked against
+     * what may be placed twice at all.
+     */
+    placed = new Set<object>();
+
+    constructor(root: Element) {
+        this.scan(root, null);
+    }
+
+    private scan(element: Element, member: Member | null): void {
+        const holder: object = member ?? element;
+        const existing = docIdOf(holder);
+        if (existing !== null) {
+            const owner = this.owner.get(existing);
+            if (owner === undefined) {
+                this.owner.set(existing, holder);
+                this.next = Math.max(this.next, existing + 1);
+            } else if (owner === holder) {
+                this.next = Math.max(this.next, existing + 1);
+            } else {
+                // Another object in this tree claimed the number first, so this
+                // one was numbered against a tree that is not this one.
+                this.renumber.add(holder);
+            }
+        }
+        if (element instanceof Aggregate) {
+            for (const handle of element.handles) this.scan(handle.element, handle);
+            return;
+        }
+        for (const child of children(element)) this.scan(child as Element, null);
+    }
+
+    /**
+     * The id of the node this element occupies — **the placement's** when it is
+     * placed, since a clip is a window onto source and what an edit names is the
+     * window.
+     *
+     * An element reached any other way (the root, a rendered subtree, an item of
+     * a sequence) carries its own, which is the same rule read where there is no
+     * placement to name.
+     */
+    of(element: object, member: Member | null = null): number {
+        const holder: object = member ?? element;
+        const existing = docIdOf(holder);
+        if (existing !== null && !this.renumber.has(holder)) return existing;
+        const assigned = this.next;
+        this.next += 1;
+        this.owner.set(assigned, holder);
+        this.renumber.delete(holder);
+        setDocId(holder, assigned);
+        return assigned;
+    }
+}
+
+/**
+ * What below this element carries an id of its own.
+ *
+ * A `Track`'s timeline items are not `Element`s, but they *are* nodes in the
+ * document (a note is addressable, or no edit could name it and no log could
+ * invert it), so they take ids the same way — and the scan has to see them, or a
+ * second conversion would hand them numbers the first did not.
+ */
+function children(element: Element): object[] {
+    if (element instanceof Aggregate) return element.handles.map((m) => m.element);
+    if (element instanceof Track) {
+        return timelineItems(element.wraps).map(([, item]) => item as object);
+    }
+    if (element instanceof Sequence && Array.isArray(element.wraps)) {
+        return (element.wraps as unknown[]).filter((item) => item instanceof Element);
+    }
+    if (element instanceof Generator && element.rendered !== null) {
+        // The last rendered result is ordinary tree, so its nodes take ids like
+        // any others -- and the scan has to see them, or a second conversion
+        // would renumber a subtree the first had already stamped.
+        return [element.rendered];
+    }
+    return [];
+}
+
+/**
+ * One element as a document node: the temporal metadata every node has, plus the
+ * body that says what it is.
+ */
+function node(element: Element, ids: Ids, member: Member | null = null): DocNode {
+    const out: DocNode = { id: ids.of(element, member) };
+    if (typeof element.name === "string" && element.name) {
+        // A referenceable label, never a second identity -- the server's own
+        // rule for an aggregate's name, and the reason a reopened piece can
+        // still label its lanes the way it was authored.
+        out.name = element.name;
+    }
+    if (element.onset !== null) out.onset = Number(element.onset);
+    if (element.duration !== null) out.duration = Number(element.duration);
+    if (element.resident) out.resident = true;
+    Object.assign(out, body(element, ids));
+    return out;
+}
+
+/** The keys `node` writes itself; a preserved body must not restate them. */
+const TEMPORAL = new Set(["id", "name", "onset", "duration", "resident"]);
+
+/**
+ * What a `Track` is, in the set body's opaque config. The document has one set
+ * kind and goes on having one -- a track is *a set with the restrictions of a
+ * multitrack view*, and the tree deliberately carries no view. But a writer that
+ * has such a set must get it back, or a round trip turns every track into a
+ * plain set and the piece reopens with a level of nesting nobody wrote. So the
+ * restriction travels the way a leaf's code does: carried, uninterpreted.
+ */
+export const FORM_TRACK = "track";
+
+function body(element: Element, ids: Ids): DocNode {
+    const kept = preserved(element);
+    if (kept !== null) {
+        // A body this build does not know, on its way back out untouched.
+        return Object.fromEntries(
+            Object.entries(kept).filter(([key]) => !TEMPORAL.has(key)),
+        );
+    }
+    if (element instanceof Track) {
+        // A Set with the restrictions of a multitrack view, and its items are
+        // placed elements like any others -- which is what makes a note in a
+        // roll addressable, and therefore editable and undoable. Which
+        // restrictions those are is the client's own business, so it rides in
+        // the body's opaque config and the document never reads it.
+        return withConfig(
+            {
+                kind: "aggregate",
+                grouping: CONCRETE,
+                members: timelineItems(element.wraps).map(([beat, item]) =>
+                    timelineMember(beat, item, ids),
+                ),
+            },
+            { form: FORM_TRACK },
+        );
+    }
+    if (element instanceof Aggregate) {
+        return {
+            kind: "aggregate",
+            grouping: element.kind === LOGICAL ? LOGICAL : CONCRETE,
+            members: element.handles.map((handle) => placement(handle, ids)),
+        };
+    }
+    if (element instanceof Clang) {
+        return withConfig({ kind: "clang" }, plain(element.wraps) as DocNode);
+    }
+    if (element instanceof Sequence) {
+        const items = element.wraps;
+        if (Array.isArray(items) && items.every((i) => i instanceof Element)) {
+            return {
+                kind: "sequence",
+                // A sequence's items are *elements in order*, not placements —
+                // there is no handle to name, so each node's id is its own.
+                members: (items as Element[]).map((i) => ({
+                    offset: 0.0,
+                    node: node(i, ids),
+                })),
+            };
+        }
+        // A pattern, or a list of values the client owns: a reference, not a
+        // serialization. A leaf with no name is written with no reference:
+        // frozen, and the same bytes on every run of the same script.
+        return withConfig(
+            { kind: "sequence" },
+            named({ sequence: reference(items, element) }),
+        );
+    }
+    if (element instanceof Segments) {
+        // Several windows read as one: the source is the **list**, each entry
+        // naming its own source and its own window into it. One node, because
+        // what this element is is one thing to play.
+        const out: DocNode = {
+            kind: "segments",
+            segments: element.segments.map((seg) => ({
+                source: source(seg.buffer),
+                start: Number(seg.start),
+                duration: Number(seg.duration),
+            })),
+        };
+        const config: DocNode = {};
+        if (element.instrument !== null) {
+            const instrument = reference(element.instrument);
+            if (instrument !== null) config.instrument = instrument;
+        }
+        if (Object.keys(element.controls).length > 0) {
+            config.controls = plain(element.controls);
+        }
+        return withConfig(out, Object.keys(config).length > 0 ? config : null);
+    }
+    if (element instanceof Vector) {
+        const out: DocNode = { kind: "vector", source: source(element.buffer) };
+        const config: DocNode = {};
+        if (element.instrument !== null) {
+            const instrument = reference(element.instrument);
+            if (instrument !== null) config.instrument = instrument;
+        }
+        if (Object.keys(element.controls).length > 0) {
+            config.controls = plain(element.controls);
+        }
+        // The **window** onto the source, written only when it is not the whole
+        // of it: a document saying nothing about a window means one that reads
+        // the buffer from its first frame, which is every take written before
+        // windows existed.
+        if (element.start) config.start = Number(element.start);
+        if (element.loop) config.loop = true;
+        return withConfig(out, Object.keys(config).length > 0 ? config : null);
+    }
+    if (element instanceof Generator) {
+        const config: DocNode = named({
+            generator: reference(element.wraps, element),
+        });
+        if (element.controls && Object.keys(element.controls).length > 0) {
+            config.controls = plain(element.controls);
+        }
+        if (element.maps && Object.keys(element.maps).length > 0) {
+            config.maps = plain(element.maps);
+        }
+        const out: DocNode = { kind: "generator" };
+        if (element.rendered !== null) {
+            // What the generator last produced, as ordinary tree. A host with no
+            // language attached has nothing to run the generator with, so this
+            // is the whole of what it can show.
+            out.rendered = node(element.rendered, ids);
+        }
+        return withConfig(out, config);
+    }
+    // A base `Element` wrapping something this module has no body for. It
+    // becomes an opaque leaf rather than an error, which is the format's own
+    // rule read from this side: **what a writer does not understand, it
+    // preserves**. The alternative was found by routing the editor's own edits
+    // through the document -- an arrangement is free to hold an element kind the
+    // conversion predates, and refusing to convert would make the whole
+    // composition uneditable because one leaf in it is unfamiliar.
+    // Under the **same config key** a `Generator` writes, because this is the
+    // same body kind and the key is what a reader resolves on: writing a second
+    // name for it made a round trip change the leaf's key (`element` on the way
+    // out of a hand-written tree, `generator` on the way out of the one that
+    // came back), so a resolver that recognized the source once stopped
+    // recognizing it on the second open.
+    return withConfig(
+        { kind: "generator" },
+        named({
+            generator: reference(element.wraps, element),
+            points: pointsOf(element.wraps),
+        }),
+    );
+}
+
+/**
+ * The raw node a {@link fromDocument} kept for a body this build cannot name, or
+ * `null` for an element it understands.
+ */
+function preserved(element: Element): DocNode | null {
+    if (
+        Object.getPrototypeOf(element) === Element.prototype &&
+        element.wraps !== null &&
+        typeof element.wraps === "object" &&
+        !Array.isArray(element.wraps)
+    ) {
+        return element.wraps as DocNode;
+    }
+    return null;
+}
+
+/**
+ * One placement: where it sits, and the node it holds — whose id is the
+ * **handle's**, so one element placed twice is two windows and not one
+ * ambiguous name.
+ */
+function placement(handle: Member, ids: Ids): DocNode {
+    placeableTwice(handle, ids);
+    const out: DocNode = {
+        offset: Number(handle.offset),
+        node: node(handle.element, ids, handle),
+    };
+    if (handle.dur !== null) out.dur = Number(handle.dur);
+    return out;
+}
+
+/**
+ * Refuses a *second* placement of an element whose source is in the node.
+ *
+ * Two windows share source only when the node **references** it — a buffer names
+ * a source, a generator names a recipe, and both placements point at the one
+ * thing. A clang, a track or an aggregate carries its source *inside* the node,
+ * so a second placement is a second **copy**: they diverge on the first edit,
+ * which is the answer the open decision rejected. Refused with the distinction
+ * rather than copied in silence.
+ */
+function placeableTwice(handle: Member, ids: Ids): void {
+    const element = handle.element;
+    if (!ids.placed.has(element)) {
+        ids.placed.add(element);
+        return;
+    }
+    if (
+        element instanceof Vector ||
+        element instanceof Generator ||
+        (element instanceof Sequence && !Array.isArray(element.wraps))
+    ) {
+        return; // a window onto source the node only names
+    }
+    throw new Error(
+        `${element.constructor.name} is placed more than once, and its source ` +
+            "is in the node rather than named by it — two placements would be " +
+            "two copies that diverge on the first edit. Place a leaf that " +
+            "*references* its source (a Vector over one server buffer, a " +
+            "Generator over one recipe), or give each placement its own element.",
+    );
+}
+
+/**
+ * A timeline item as a placed clang, with an id stamped on the item itself so it
+ * survives to the next conversion.
+ */
+function timelineMember(beat: number, item: unknown, ids: Ids): DocNode {
+    const out: DocNode = { id: ids.of(item as object) };
+    Object.assign(out, withConfig({ kind: "clang" }, plain(item) as DocNode));
+    return { offset: Number(beat), node: out };
+}
+
+/**
+ * `[beat, item]` pairs from a `seq.Timeline`, or nothing when a `Track` wraps
+ * something else.
+ */
+function timelineItems(timeline: unknown): [number, unknown][] {
+    if (timeline === null || timeline === undefined) return [];
+    if (!(timeline instanceof Timeline)) return [];
+    return [...timeline];
+}
+
+/**
+ * A source a document names and this process does not hold.
+ *
+ * A `Vector` element wraps a `Buffer`; reading a document written elsewhere (or
+ * written here before the buffer was allocated) gives the reference and not the
+ * object. Rather than losing it, the element wraps this: the same `bufnum` a
+ * real buffer answers with, plus the lifetime and generation the document
+ * carried, so a re-conversion is faithful and a caller that *can* resolve it does
+ * so through `resolve`.
+ */
+export class FrozenSource implements SourceLike {
+    readonly bufnum: number;
+    readonly lifetime: string;
+    readonly generation: number;
+
+    constructor(src: DocNode) {
+        this.bufnum = Math.trunc(Number(src?.source ?? 0));
+        this.lifetime = String(src?.lifetime ?? "session");
+        this.generation = Math.trunc(Number(src?.generation ?? 0));
+    }
+}
+
+/**
+ * A buffer element's source. A server buffer the user allocated is **session**
+ * source -- neither the external-file rule nor a scratch copy -- and a
+ * {@link FrozenSource} reports whatever the document said instead.
+ */
+function source(buffer: SourceLike): DocNode {
+    return {
+        source: Math.trunc(Number(buffer?.bufnum ?? 0)) || 0,
+        lifetime: buffer?.lifetime ?? "session",
+        generation: Math.trunc(Number(buffer?.generation ?? 0)),
+    };
+}
+
+/**
+ * The configuration a leaf's node carries, exactly as {@link toDocument} writes
+ * it.
+ *
+ * Public because an **editor** needs it: a `Configure` intent replaces a leaf's
+ * configuration *whole*, so an editor that wants to change one field of it has
+ * to start from the rest — and re-deriving that here rather than in the editor
+ * is what keeps one description of what a leaf's config is.
+ */
+export function leafConfig(element: Element): DocNode {
+    return { ...((body(element, new Ids(element)).config as DocNode) ?? {}) };
+}
+
+/**
+ * A leaf's **whole node body**, exactly as {@link toDocument} writes it — its
+ * kind, its source and its configuration, with no id (the id belongs to the
+ * placement that holds it).
+ *
+ * Public for the same reason {@link leafConfig} is, one step further out: an
+ * edit that replaces *what a placement holds* — a run of clips joined into one
+ * element — states the result as a member list, and a member carries the node.
+ * Re-deriving that in the editor would be a second description of what a leaf is
+ * written as.
+ */
+export function leafNode(element: Element): DocNode {
+    const out = { ...body(element, new Ids(element)) };
+    delete out.id;
+    return out;
+}
+
+/**
+ * The first node id no element in this arrangement holds.
+ *
+ * What an editor mints from when it has to name a node the conversion has not
+ * seen yet — a note added by a gesture. It follows the conversion's own rule
+ * (past the maximum already stamped), so a minted id and a converted one cannot
+ * collide.
+ */
+export function nextNodeId(element: Element): number {
+    return new Ids(element).next;
+}
+
+/**
+ * A curve's break-points, when the leaf is one — or `null`.
+ *
+ * **The document has to carry these, and not only draw them.** A curve is a leaf
+ * like any other and its configuration is opaque, but an edit to it is a
+ * `Configure` intent, and an intent's inverse is *the previous value read out of
+ * the document*: with nothing there, a dragged break-point had nothing to invert
+ * and could not be undone. Carrying them also makes an edited curve survive a
+ * save, which it did not — reopening resolved the automation by name and took
+ * whatever envelope that object happened to hold.
+ */
+function pointsOf(wrapped: unknown): number[] | null {
+    const toPoints = (wrapped as { toPoints?: unknown } | null)?.toPoints;
+    if (typeof toPoints !== "function") return null;
+    let points: number[];
+    try {
+        points = [...(toPoints.call(wrapped) as Iterable<unknown>)].map((v) => Number(v));
+    } catch {
+        // A leaf is opaque, and reading one must never be able to take a save
+        // down: an object that answers to the name and not to the shape is
+        // carried by reference like any other, with no points.
+        return null;
+    }
+    if (points.some((v) => Number.isNaN(v))) return null;
+    return points.length > 0 ? points : null;
+}
+
+/**
+ * A config with the keys whose value is `null` dropped — a reference nothing
+ * could name is left out rather than written as null, so an unnamed leaf and a
+ * leaf named nothing are the same file.
+ */
+function named(config: DocNode): DocNode {
+    return Object.fromEntries(
+        Object.entries(config).filter(([, value]) => value !== null && value !== undefined),
+    );
+}
+
+function withConfig(out: DocNode, config: DocNode | null): DocNode {
+    if (config !== null && Object.keys(config).length > 0) out.config = config;
+    return out;
+}
+
+/**
+ * What names an object the document does not own — or `null` when nothing does,
+ * which is the honest answer.
+ *
+ * A leaf is opaque by decision: the document carries a *reference* to an
+ * algorithm and never the algorithm, so reopening hands the reference to a
+ * resolver and takes back whatever that resolver has. The reference therefore
+ * has to be something a caller **can produce**. Three sources, in order: the
+ * object's own name (a def, an `Automation`), the element's `name` (what an
+ * author writes for source that has none of its own — a `Pbind` is code and
+ * carries no name), and nothing.
+ *
+ * **Nothing is better than a printed object**: an identity nothing can resolve
+ * is unresolvable by construction *and* different between two runs of the same
+ * script, so it would break the format's determinism to hand a resolver a key
+ * that could never match. An unnamed leaf is written with no reference at all
+ * and comes back frozen — drawn, placed, silent — which is what a composition
+ * means where its language is not running.
+ */
+function reference(obj: unknown, element: Element | null = null): string | null {
+    if (typeof obj === "string") return obj;
+    const own = (obj as { name?: unknown } | null)?.name;
+    if (typeof own === "string" && own) return own;
+    const label = element?.name;
+    return typeof label === "string" && label ? label : null;
+}
+
+/**
+ * A value as plain JSON-able data, leaving anything else as its reference.
+ *
+ * A `seq.Event` travels as the object of its parameters, under the **document's
+ * own spelling** of the two keys this language renamed: the file says
+ * `add_action`/`has_gate`, as the wire and the Python client do, so one
+ * composition reads the same in both clients. Every other key is a control name
+ * and belongs to the def, so it crosses untouched.
+ */
+function plain(value: unknown): any {
+    if (value instanceof SeqEvent) return plain(eventProps(value.props));
+    if (Array.isArray(value)) return value.map((v) => plain(v));
+    if (value === null || value === undefined) return null;
+    const type = typeof value;
+    if (type === "string" || type === "number" || type === "boolean") return value;
+    if (type === "object" && Object.getPrototypeOf(value) === Object.prototype) {
+        return Object.fromEntries(
+            Object.entries(value as Record<string, unknown>).map(([k, v]) => [
+                String(k),
+                plain(v),
+            ]),
+        );
+    }
+    return reference(value);
+}
+
+/**
+ * The two event keys whose spelling differs between the clients, as
+ * `thisLanguage -> the document`. Nothing else in an event is renamed: the rest
+ * are the def's control names, which are one string in every language.
+ */
+const EVENT_KEYS: Record<string, string> = {
+    addAction: "add_action",
+    hasGate: "has_gate",
+};
+
+/** The reverse of {@link EVENT_KEYS}, for a document on its way back in. */
+const EVENT_KEYS_BACK: Record<string, string> = Object.fromEntries(
+    Object.entries(EVENT_KEYS).map(([k, v]) => [v, k]),
+);
+
+function eventProps(props: Record<string, unknown>): Record<string, unknown> {
+    return Object.fromEntries(
+        Object.entries(props).map(([k, v]) => [EVENT_KEYS[k] ?? k, v]),
+    );
+}
+
+/** A document's event config, back in this language's spelling. */
+function eventConfig(config: DocNode): Record<string, unknown> {
+    return Object.fromEntries(
+        Object.entries(config).map(([k, v]) => [EVENT_KEYS_BACK[k] ?? k, v]),
+    );
+}
+
+// ---- document -> arrangement ----
+
+function fromNode(src: DocNode, resolve: Resolver | null, placed = false): Element {
+    const kind = src.kind;
+    const config: DocNode = src.config ?? {};
+    const onset = src.onset ?? null;
+    const duration = src.duration ?? null;
+    let built: Element;
+
+    if (kind === "aggregate" && config.form === FORM_TRACK) {
+        // A set the author wrote as a `Track`, said by the body's own config.
+        // Rebuilding it as an `Aggregate` is what made a reopened piece grow a
+        // level of nesting nobody wrote, and left the editor drawing a lane of
+        // clips where there had been a roll.
+        const timeline = new Timeline();
+        for (const member of (src.members as DocNode[]) ?? []) {
+            const child = member.node as DocNode;
+            const leaf = fromNode(child, resolve);
+            // A timeline holds the client's own sequencing items, not elements:
+            // what went out as a placed event comes back as the event itself.
+            const item = leaf.wraps ?? leaf;
+            if ("id" in child) {
+                // The id belongs to the item, which is what the conversion
+                // stamped on the way out -- so a note keeps its number across a
+                // save, and an intent recorded against it still names it.
+                setDocId(item, Math.trunc(Number(child.id)));
+            }
+            timeline.add(Number(member.offset ?? 0.0), item);
+        }
+        built = new Track(timeline, onset, duration);
+    } else if (kind === "aggregate") {
+        const aggregate = new Aggregate(null, src.grouping === LOGICAL ? LOGICAL : CONCRETE, {
+            onset,
+            duration,
+        });
+        for (const member of (src.members as DocNode[]) ?? []) {
+            const child = member.node as DocNode;
+            const handle = aggregate.add(
+                fromNode(child, resolve, true),
+                Number(member.offset ?? 0.0),
+                member.dur === undefined || member.dur === null ? null : Number(member.dur),
+            );
+            if ("id" in child) {
+                // The placement's id, on the placement: a second window onto the
+                // same source is a second handle with a number of its own.
+                setDocId(handle, Math.trunc(Number(child.id)));
+            }
+        }
+        built = aggregate;
+    } else if (kind === "clang") {
+        built = new Clang(new SeqEvent(eventConfig(config)), onset, duration);
+    } else if (kind === "sequence") {
+        const members = src.members as DocNode[] | undefined;
+        const items =
+            members && members.length > 0
+                ? members.map((m) => fromNode(m.node as DocNode, resolve))
+                : (resolved(resolve, "sequence", config) || config.sequence);
+        built = new Sequence(items, onset, duration);
+    } else if (kind === "segments") {
+        built = new Segments(
+            ((src.segments as DocNode[]) ?? []).map(
+                (seg) =>
+                    [
+                        (resolved(resolve, "vector", seg.source) as SourceLike) ||
+                            new FrozenSource((seg.source as DocNode) ?? {}),
+                        Number(seg.start ?? 0.0),
+                        Number(seg.duration ?? 0.0),
+                    ] as const,
+            ),
+            onset,
+            duration,
+            {
+                instrument: (config.instrument as string) ?? null,
+                controls: (config.controls as Record<string, unknown>) ?? null,
+            },
+        );
+    } else if (kind === "vector") {
+        built = new Vector(
+            (resolved(resolve, "vector", src.source) as SourceLike) ||
+                new FrozenSource((src.source as DocNode) ?? {}),
+            onset,
+            duration,
+            {
+                instrument: (config.instrument as string) ?? null,
+                controls: (config.controls as Record<string, unknown>) ?? null,
+                start: Number(config.start ?? 0.0),
+                loop: Boolean(config.loop ?? false),
+            },
+        );
+    } else if (kind === "generator") {
+        const rendered = src.rendered as DocNode | undefined;
+        const supplied = resolved(resolve, "generator", config);
+        applyPoints(supplied, config.points as number[] | undefined);
+        built = new Generator(
+            // `element` is what this client wrote for a leaf it had no body for
+            // before the two keys became one; a file carrying it still opens.
+            supplied || config.generator || config.element || null,
+            onset,
+            duration,
+            {
+                controls: (config.controls as Record<string, unknown>) ?? null,
+                maps: (config.maps as Record<string, string>) ?? null,
+                rendered:
+                    rendered === undefined || rendered === null
+                        ? null
+                        : fromNode(rendered, resolve),
+            },
+        );
+    } else {
+        // A body this build does not know. The document preserves it whole and
+        // so does this side: it comes back as an abstract element carrying the
+        // payload, so a round trip through an older client does not lose it.
+        built = new Element({ ...src }, onset, duration);
+    }
+
+    // The document is the authority on temporal metadata: an element's own
+    // constructor may derive a duration (a `Clang` takes the event's `dur` when
+    // none is given), and letting that win would make a document say something
+    // the document did not say.
+    built.onset = onset === null ? null : Number(onset);
+    built.duration = duration === null ? null : Number(duration);
+    if (src.resident) built.resident = true;
+    const name = src.name;
+    if (typeof name === "string" && name) {
+        // A label, not an identity: it says what the node is and nothing
+        // addresses by it, so restoring it is what lets a reopened piece label
+        // its lanes the way it was authored.
+        built.name = name;
+    }
+    if ("id" in src && !placed) {
+        // An element reached as a placement takes no id of its own: the number
+        // is the window's, and its handle is what carries it.
+        setDocId(built, Math.trunc(Number(src.id)));
+    }
+    return built;
+}
+
+/**
+ * Puts a carried curve back onto the source that was handed to us.
+ *
+ * The document is the authority for what it holds: a resolver returns the
+ * `seq.Automation` this process has, and the envelope *in the file* is the one
+ * that was saved — without this, reopening a session showed the curve the script
+ * last built rather than the curve the piece was left with.
+ */
+function applyPoints(supplied: unknown, points: number[] | undefined): void {
+    if (!points || points.length === 0) return;
+    if (supplied === null || supplied === undefined) return;
+    if (!(typeof supplied === "object" && "env" in supplied)) return;
+    (supplied as { env: unknown }).env = pointsToEnv([...points]);
+}
+
+/**
+ * Whatever the caller supplies for a leaf the document only names, or `null`
+ * when nobody can supply it — the frozen case.
+ */
+function resolved(resolve: Resolver | null, kind: string, config: unknown): unknown {
+    return resolve === null ? null : (resolve(kind, config) ?? null);
+}

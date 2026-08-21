@@ -468,6 +468,7 @@ package over the same OSC, against a native server.
 | Client-side OSC/MIDI responders (`OscFunc`/`MidiFunc`) | done |
 | Browser GUI host (wasm bundle; meters over `/bus_stream`, bulk over fetch/`/buffer_getRange`) | done |
 | Arrangement model in the Python client (elements, recursive groups, rendering) | done |
+| Arrangement model in the web client (the same layer, held to the Python one by parity vectors over the document and the flattened timeline) | done |
 | Multitrack editor + patcher (tracks/clips, piano-roll, automation curves, `patch`) and the driver that binds them to the arrangement | done |
 | Engraved music notation (the `score` widget, its display list and the click/transpose edit round trip) | done |
 | Notation layer in the shared core (`clausters-notation` + `clausters_core::notation`, over the C ABI; every client a shell) | done |

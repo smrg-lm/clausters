@@ -14,6 +14,10 @@
       "types": "./dist/defs/index.d.ts",
       "default": "./dist/defs/index.js"
     },
+    "./form": {
+      "types": "./dist/form/index.d.ts",
+      "default": "./dist/form/index.js"
+    },
     "./seq": {
       "types": "./dist/seq/index.d.ts",
       "default": "./dist/seq/index.js"
