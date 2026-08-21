@@ -158,7 +158,7 @@ thought about the other side", write `gap` — that is what it is for.
 | `clausters_core_bundle_requirements` | `bundle_requirements` | |
 | `clausters_core_bundle_resolve` | `bundle_resolve` | |
 | `clausters_core_bundle_validate` | `bundle_validate` | |
-| `clausters_core_patch_compile` | — | **gap** — the patcher's graph compilation |
+| `clausters_core_patch_compile` | `patch_compile` | the cord→bus pass, one bus per connected net. Reached from a page since the multitrack editor was ported: a logical aggregate draws as a directed patch, and a cord drawn there is compiled by this rather than by a second answer written in TypeScript |
 
 ## The document
 

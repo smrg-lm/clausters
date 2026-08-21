@@ -50,6 +50,8 @@ clients/web/
     gui/notation/         #   engraving (mirrors clausters/gui/notation)
       engraver.ts  mei.ts  view.ts  _verovio.ts (the wasm toolkit)
     gui/transport.ts      #   play/pause/stop/locate + the view's playhead line
+    gui/editor.ts         #   the multitrack editor (mirrors clausters/gui/editor.py)
+    defs/patch.ts         #   the directed patcher, level 1 (GraphPatch)
   vendor/                 # the engraver, built by third_party/build-verovio-wasm.sh
                           #   (git-ignored; build.sh stages it into dist/)
     data/                 #   the data paths: what a view reads off the server
@@ -1024,7 +1026,32 @@ not a detail of it. Until then `clients/web/examples/composer.html` covers the
 widgets with no model behind them — which is what the host's own bugs need to be
 reproducible in a browser, and it is where G32b was found.
 
-**The first leg of that track is in: `src/form/` — the arrangement itself.**
+**The track is in.** `src/form/` (the arrangement), `gui/transport.ts` (the
+playhead and its four buttons) and `gui/editor.ts` (the multitrack editor) are
+all ported, with `defs/patch.ts` under the last of them — level 1 of the
+patcher, `GraphPatch`, which is what a logical aggregate draws through.
+`clausters_core_patch_compile` reached wasm with it, closing the one **gap**
+`docs/bindings.md` still declared.
+
+Two idioms are the page's and are written down here rather than in a diff: the
+editor **subscribes** where the Python one is polled (`open` listens, `detach`
+stops), and `Document`/`Log` grew synchronous constructors beside their
+awaiting `open`, because an edit answers the host in the same turn and an
+`await` in the middle of that is a window for a second gesture.
+
+What is **not** ported, and is a surface this client lacks rather than a
+decision: **`DefPatch`** — level 2 of the patcher, a def's internal UGen graph
+as boxes. Nothing in the editor needs it; `gui_patch2.py` is the example that
+does.
+
+The parity suite is the point of the whole thing:
+`tests/editor-parity.test.ts` freezes the tree the *Python* editor draws for one
+composition per branch of the mapping rule and asserts this one draws the same,
+and it earned its keep on the first run — it found a curve drawn with a shape it
+did not have (the Python client resolved an already-resolved break-point quad a
+second time; fixed there, recorded in that plan's "Found by use").
+
+**The first leg of that track was `src/form/` — the arrangement itself.**
 The four modules sit at their siblings' paths (`element`, `aggregate`,
 `render`, `document`), and what holds them to the Python client is not the
 source but what leaves the layer: `tests/gen-form-vectors.py` builds five

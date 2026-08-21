@@ -470,6 +470,7 @@ package over the same OSC, against a native server.
 | Arrangement model in the Python client (elements, recursive groups, rendering) | done |
 | Arrangement model in the web client (the same layer, held to the Python one by parity vectors over the document and the flattened timeline) | done |
 | Multitrack editor + patcher (tracks/clips, piano-roll, automation curves, `patch`) and the driver that binds them to the arrangement | done |
+| Multitrack editor + transport + patcher in the web client (the same driver, its drawn tree compared with the Python client's) | done |
 | Engraved music notation (the `score` widget, its display list and the click/transpose edit round trip) | done |
 | Notation layer in the shared core (`clausters_core::notation` — the score model, the SVG walk, the MEI encoder — with `clausters-notation` the libverovio binding; every client a shell) | done |
 | Notation in the web client (the same core over wasm, driving verovio compiled from the same pin; parity checked against the Python client's engraving) | done |

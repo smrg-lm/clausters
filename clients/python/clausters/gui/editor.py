@@ -897,9 +897,10 @@ class Editor:
                 # A curve is as much of "what this widget should be drawing" as
                 # a placement is, and an undone one is the case that needs it:
                 # nothing else would tell the host the break-points moved back.
+                # Flat: already-resolved quads, as `_body_for` sends them.
                 props["points"] = _flat_points(
-                    [(self.beats_to_units(t), v, shape, curve)
-                     for t, v, shape, curve in _quads(auto.to_points())])
+                    [x for t, v, shape, curve in _quads(auto.to_points())
+                     for x in (self.beats_to_units(t), v, shape, curve)])
         element = self._rolls.get(widget_id)
         if element is not None:
             props["notes"] = _flat_notes(self._notes(element))
@@ -2128,7 +2129,15 @@ class Editor:
             points = [(self.beats_to_units(t), v, shape, curve)
                       for t, v, shape, curve in _quads(auto.to_points())]
             lo, hi = _curve_range(points)
-            return dict(points=points, points_min=lo, points_max=hi)
+            # **Flat, because these quads are already resolved.** A `points`
+            # argument of *tuples* is read as `(t, v, curve_spec)` and resolved,
+            # so handing it `(t, v, shape, curve)` re-reads the shape number as a
+            # curvature: a linear segment (shape 1) came out as the custom shape
+            # with curvature 1.0 -- drawn curved, and edited back curved, so an
+            # envelope changed shape by being looked at. The flat form is kept
+            # verbatim.
+            return dict(points=[x for p in points for x in p],
+                        points_min=lo, points_max=hi)
 
         if isinstance(element, Segments):
             segments = self._segments_within(element, limit)

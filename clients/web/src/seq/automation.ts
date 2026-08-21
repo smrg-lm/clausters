@@ -208,6 +208,26 @@ export class Automation {
     }
 
     /**
+     * Re-fill the control buffer from the curve **as it now stands**.
+     *
+     * `prepare` fills it once, at setup; an edit to `env` afterwards changes
+     * what the next render *schedules* and not what the lane synth *reads*, so
+     * without this the curve you draw is not the curve you hear. Anything that
+     * rewrites the envelope of a prepared automation calls it — the multitrack
+     * editor does, on every break-point edit.
+     *
+     * Not awaited by default: it is called from an event handler, and the fill
+     * is one command the server applies in the order it arrived, ahead of the
+     * synth that reads it. Does nothing before `prepare` — there is no buffer to
+     * fill, and the first `prepare` will fill it from the same envelope.
+     */
+    refill({ wait = false }: { wait?: boolean } = {}): this {
+        if (this.buf === null) return this;
+        void this.buf.gen("env", envGenArgs(this.env), { wait });
+        return this;
+    }
+
+    /**
      * Timeline-item hook and interactive trigger: schedules the lane synth,
      * `/node_map`s the targets, and frees the synth after the curve's
      * duration. Nothing here waits.

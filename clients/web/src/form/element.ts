@@ -105,6 +105,16 @@ export interface SourceLike {
     readonly bufnum: number;
     readonly lifetime?: string;
     readonly generation?: number;
+    /**
+     * The shape a *held* buffer knows and a frozen reference does not: what a
+     * view draws with, and what an element with no stated duration is as long
+     * as. Optional because a document names a source by number and says nothing
+     * about its shape — a session reopened without its sources resolved has the
+     * number and nothing else.
+     */
+    readonly frames?: number;
+    readonly channels?: number;
+    readonly sampleRate?: number;
 }
 
 /** The optional label every element takes. */

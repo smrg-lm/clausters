@@ -140,8 +140,24 @@ export interface Selection {
 export class Document {
     #inner: CoreDocument;
 
-    private constructor(inner: CoreDocument) {
-        this.#inner = inner;
+    /**
+     * Open a document from its JSON (or an empty composition), **with the core
+     * already loaded** — `await loadCore()` once, then build as many as you
+     * like. {@link Document.open} is the same thing for a caller that has not.
+     *
+     * The synchronous door exists because an editor's gestures are
+     * synchronous: an event handler applies an edit and answers the host in
+     * the same turn, and an `await` in the middle of that is a window in which
+     * a second gesture arrives against a document that is not open yet.
+     */
+    constructor(document?: string | ClaustersDocument) {
+        this.#inner = new CoreDocument(
+            document === undefined
+                ? undefined
+                : typeof document === "string"
+                  ? document
+                  : JSON.stringify(document),
+        );
     }
 
     /** @internal — how {@link Log} reaches the same wasm object. */
@@ -156,9 +172,7 @@ export class Document {
      */
     static async open(document?: ClaustersDocument): Promise<Document> {
         await loadCore();
-        return new Document(
-            new CoreDocument(document === undefined ? undefined : JSON.stringify(document)),
-        );
+        return new Document(document);
     }
 
     /**
@@ -316,8 +330,13 @@ export interface Redone {
 export class Log {
     #inner: CoreLog;
 
-    private constructor(inner: CoreLog) {
-        this.#inner = inner;
+    /**
+     * A log, **with the core already loaded** — the synchronous door, for the
+     * same reason {@link Document}'s constructor is one. {@link Log.open} is
+     * the awaiting form.
+     */
+    constructor(budget = 0, spillAbove = 0) {
+        this.#inner = new CoreLog(budget, spillAbove);
     }
 
     /**
@@ -327,7 +346,7 @@ export class Log {
      */
     static async open(budget = 0, spillAbove = 0): Promise<Log> {
         await loadCore();
-        return new Log(new CoreLog(budget, spillAbove));
+        return new Log(budget, spillAbove);
     }
 
     /**

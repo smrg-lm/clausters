@@ -11,6 +11,8 @@
 // `./server/` by what a call does (the handle itself, the configuration, the
 // queries, the subscriptions).
 
+export { GraphPatch, patchToWidget, synthdefPorts } from "./patch.ts";
+export type { Box, Compiled, Cord, PatchWidget, Port, PortRate, PortSpec } from "./patch.ts";
 export { Server } from "./server/index.ts";
 export type {
     MsgArg, ServerInfo, ServerSizing, TimedMessage, TransportGrid, TransportState,

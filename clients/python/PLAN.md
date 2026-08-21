@@ -228,6 +228,28 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
 
 ## Found by use: the running list of fixes and open questions
 
+- ✅ **A curve was drawn with a shape it did not have.** `Editor._body_for`
+  handed `clip(points=…)` a list of already-resolved `(t, v, shape, curve)`
+  quads, but a `points` argument of *tuples* is read as `(t, v, curve_spec)` and
+  resolved — so the shape number was re-read as a curvature and the fourth
+  element dropped. A linear segment (shape 1, curve 0) drew as the custom shape
+  with curvature 1.0, and edited back the same way: an envelope changed shape by
+  being looked at. Found by the web client's editor parity vectors, which
+  compare the two clients' drawn trees; fixed by sending the flat form (kept
+  verbatim), in `_body_for` and `_resync` both, and pinned by
+  `test_a_curve_is_drawn_with_the_shape_it_has`.
+- ⬜ **`Editor._snap` is dead code.** It predates the document: the crate snaps a
+  placement now ("the intent states where the hand put it and the crate snaps"),
+  and nothing calls this. The TypeScript port left it out rather than porting a
+  method that runs nowhere; delete it here, or say why it stays.
+- ⬜ **`guidef.waveform`'s `measure` is documented narrower than it is.** The
+  docstring offers `"peak"` or `"rms"` and describes a stack as *two* waveform
+  views; the host parses a space-separated set on any signal-family widget, and
+  the editor's own signal view sends `"peak rms"` to one `waveform` — which is
+  what its `layers` property is. The TypeScript builder's type was widened to
+  the four spellings when the editor was ported; this docstring is the other
+  half.
+
 *(This plan's version of the section the other roadmaps call "Found by use": what
 using the client turns up, recorded the day it is found. Every entry is a
 checkbox, so what is open reads as open; a resolved one stays with the record of

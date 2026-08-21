@@ -553,6 +553,18 @@ export function osc_encode_message(addr: string, args: Array<any>): Uint8Array;
 export function osc_encode_score_bundle(secs: number, messages: Array<any>): Uint8Array;
 
 /**
+ * The patcher's **cord→bus pass**: a directed patch (`{boxes, cords}`) in, the
+ * buses and wired members it compiles to out, both as JSON.
+ *
+ * One bus per connected net, its writers summing, and a bad cord — reversed,
+ * rate-mismatched, out of range — comes back as `{"error": …}` naming it. The
+ * same door the C ABI opens as `clausters_core_patch_compile`: a patcher is a
+ * model with one compilation, and a second implementation of it in TypeScript
+ * would be a second answer to "what does this cord mean".
+ */
+export function patchCompile(patch: string): string;
+
+/**
  * Beats to wait so a routine starts on the next `quant` boundary of the grid
  * (`quant <= 0` → now). The snapping rule every client shares.
  */
@@ -660,6 +672,7 @@ export interface InitOutput {
     readonly osc_encode_immediate_bundle: (a: any) => [number, number, number, number];
     readonly osc_encode_message: (a: number, b: number, c: any) => [number, number, number, number];
     readonly osc_encode_score_bundle: (a: number, b: any) => [number, number, number, number];
+    readonly patchCompile: (a: number, b: number) => [number, number, number, number];
     readonly pyramid_baseBucket: (a: number) => number;
     readonly pyramid_build: (a: number, b: number, c: number, d: number) => number;
     readonly pyramid_channels: (a: number) => number;

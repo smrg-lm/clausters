@@ -1,0 +1,474 @@
+{
+ "cases": {
+  "a_joined_take": {
+   "expand": false,
+   "extent": 2.5,
+   "quant": 0.0,
+   "tree": {
+    "children": [
+     {
+      "axes": {
+       "x": {
+        "sample_rate": 48000.0,
+        "tempo": 2.0
+       }
+      },
+      "children": [
+       {
+        "children": [
+         {
+          "at": 0.0,
+          "buffer": 3,
+          "channels": 1,
+          "dur": 24000.0,
+          "type": "signal",
+          "view": "trace"
+         },
+         {
+          "at": 24000.0,
+          "buffer": 4,
+          "channels": 1,
+          "dur": 36000.0,
+          "start": 6000.0,
+          "type": "signal",
+          "view": "trace"
+         }
+        ],
+        "dur": 60000.0,
+        "id": 10000,
+        "label": "segments",
+        "offset": 0.0,
+        "type": "field"
+       }
+      ],
+      "id": 10001,
+      "label": "segments",
+      "type": "field"
+     },
+     {
+      "axes": {
+       "x": {
+        "sample_rate": 48000.0,
+        "tempo": 2.0,
+        "unit": "beats"
+       }
+      },
+      "h": 20.0,
+      "type": "field"
+     }
+    ],
+    "flow": "col",
+    "h": 520,
+    "title": "Composition",
+    "type": "window",
+    "w": 1000
+   }
+  },
+  "a_nested_aggregate": {
+   "expand": false,
+   "extent": 2.0,
+   "quant": 0.0,
+   "tree": {
+    "children": [
+     {
+      "axes": {
+       "x": {
+        "sample_rate": 48000.0,
+        "tempo": 2.0
+       }
+      },
+      "children": [
+       {
+        "dur": 24000.0,
+        "editable": 0,
+        "id": 10000,
+        "label": "clang",
+        "max": 62.0,
+        "min": 58.0,
+        "notes": [
+         0.0,
+         19200.0,
+         60.0,
+         13,
+         0
+        ],
+        "offset": 0.0,
+        "type": "field"
+       },
+       {
+        "dur": 24000.0,
+        "editable": 0,
+        "id": 10001,
+        "label": "clang",
+        "max": 66.0,
+        "min": 62.0,
+        "notes": [
+         0.0,
+         19200.0,
+         64.0,
+         13,
+         0
+        ],
+        "offset": 24000.0,
+        "type": "field"
+       }
+      ],
+      "id": 10002,
+      "label": "phrase",
+      "type": "field"
+     },
+     {
+      "axes": {
+       "x": {
+        "sample_rate": 48000.0,
+        "tempo": 2.0,
+        "unit": "beats"
+       }
+      },
+      "h": 20.0,
+      "type": "field"
+     }
+    ],
+    "flow": "col",
+    "h": 520,
+    "title": "Composition",
+    "type": "window",
+    "w": 1000
+   }
+  },
+  "a_nested_aggregate_expanded": {
+   "expand": true,
+   "extent": 2.0,
+   "quant": 0.0,
+   "tree": {
+    "children": [
+     {
+      "axes": {
+       "x": {
+        "sample_rate": 48000.0,
+        "tempo": 2.0
+       }
+      },
+      "children": [
+       {
+        "dur": 24000.0,
+        "editable": 0,
+        "id": 10000,
+        "label": "clang",
+        "max": 62.0,
+        "min": 58.0,
+        "notes": [
+         0.0,
+         19200.0,
+         60.0,
+         13,
+         0
+        ],
+        "offset": 0.0,
+        "type": "field"
+       },
+       {
+        "dur": 24000.0,
+        "editable": 0,
+        "id": 10001,
+        "label": "clang",
+        "max": 66.0,
+        "min": 62.0,
+        "notes": [
+         0.0,
+         19200.0,
+         64.0,
+         13,
+         0
+        ],
+        "offset": 24000.0,
+        "type": "field"
+       }
+      ],
+      "id": 10002,
+      "label": "phrase",
+      "type": "field"
+     },
+     {
+      "axes": {
+       "x": {
+        "sample_rate": 48000.0,
+        "tempo": 2.0,
+        "unit": "beats"
+       }
+      },
+      "h": 20.0,
+      "type": "field"
+     }
+    ],
+    "flow": "col",
+    "h": 520,
+    "title": "Composition",
+    "type": "window",
+    "w": 1000
+   }
+  },
+  "a_patch": {
+   "expand": false,
+   "extent": 0.0,
+   "quant": 0.0,
+   "tree": {
+    "children": [
+     {
+      "children": [
+       {
+        "boxes": [
+         {
+          "def": "gsrc",
+          "inlets": [],
+          "outlets": [
+           "out"
+          ]
+         },
+         {
+          "def": "gsink",
+          "inlets": [
+           "in"
+          ],
+          "outlets": []
+         }
+        ],
+        "cords": [
+         0,
+         0,
+         1,
+         0
+        ],
+        "h": 700.0,
+        "id": 10000,
+        "label": "chain",
+        "type": "plane",
+        "w": 900.0,
+        "x": 0.0,
+        "y": 0.0
+       }
+      ],
+      "content_h": 700.0,
+      "content_w": 900.0,
+      "id": 10001,
+      "type": "plane"
+     }
+    ],
+    "flow": "col",
+    "h": 520,
+    "title": "Composition",
+    "type": "window",
+    "w": 1000
+   }
+  },
+  "a_song": {
+   "expand": false,
+   "extent": 5.6,
+   "quant": 0.25,
+   "tree": {
+    "children": [
+     {
+      "axes": {
+       "x": {
+        "sample_rate": 48000.0,
+        "tempo": 2.0
+       }
+      },
+      "children": [
+       {
+        "buffer": 7,
+        "channels": 1,
+        "dur": 96000.0,
+        "id": 10000,
+        "label": "vector",
+        "offset": 0.0,
+        "type": "field"
+       }
+      ],
+      "id": 10001,
+      "label": "audio",
+      "snap": 6000.0,
+      "type": "field"
+     },
+     {
+      "axes": {
+       "x": {
+        "sample_rate": 48000.0,
+        "tempo": 2.0
+       }
+      },
+      "children": [
+       {
+        "dur": 86400.0,
+        "id": 10002,
+        "label": "track",
+        "max": 69.0,
+        "min": 58.0,
+        "notes": [
+         0.0,
+         19200.0,
+         60.0,
+         13,
+         0,
+         24000.0,
+         19200.0,
+         64.0,
+         13,
+         0,
+         48000.0,
+         38400.0,
+         67.0,
+         13,
+         0
+        ],
+        "offset": 48000.0,
+        "type": "field"
+       }
+      ],
+      "id": 10003,
+      "label": "lead",
+      "snap": 6000.0,
+      "type": "field"
+     },
+     {
+      "axes": {
+       "x": {
+        "sample_rate": 48000.0,
+        "tempo": 2.0,
+        "unit": "beats"
+       }
+      },
+      "h": 20.0,
+      "type": "field"
+     }
+    ],
+    "flow": "col",
+    "h": 520,
+    "title": "Composition",
+    "type": "window",
+    "w": 1000
+   }
+  },
+  "a_windowed_take": {
+   "expand": false,
+   "extent": 3.0,
+   "quant": 0.0,
+   "tree": {
+    "children": [
+     {
+      "axes": {
+       "x": {
+        "sample_rate": 48000.0,
+        "tempo": 2.0
+       }
+      },
+      "children": [
+       {
+        "buffer": 9,
+        "channels": 1,
+        "dur": 48000.0,
+        "id": 10000,
+        "label": "vector",
+        "loop": 1,
+        "offset": 24000.0,
+        "start": 12000.0,
+        "type": "field"
+       }
+      ],
+      "id": 10001,
+      "label": "vector",
+      "type": "field"
+     },
+     {
+      "axes": {
+       "x": {
+        "sample_rate": 48000.0,
+        "tempo": 2.0,
+        "unit": "beats"
+       }
+      },
+      "h": 20.0,
+      "type": "field"
+     }
+    ],
+    "flow": "col",
+    "h": 520,
+    "title": "Composition",
+    "type": "window",
+    "w": 1000
+   }
+  },
+  "an_envelope_on_its_event": {
+   "expand": false,
+   "extent": 2.0,
+   "quant": 0.0,
+   "tree": {
+    "children": [
+     {
+      "axes": {
+       "x": {
+        "sample_rate": 48000.0,
+        "tempo": 2.0
+       }
+      },
+      "children": [
+       {
+        "dur": 48000.0,
+        "id": 10000,
+        "label": "shaped",
+        "max": 74.0,
+        "min": 70.0,
+        "notes": [
+         0.0,
+         38400.0,
+         72.0,
+         13,
+         0
+        ],
+        "offset": 0.0,
+        "points": [
+         0.0,
+         0.2,
+         1,
+         0.0,
+         24000.0,
+         0.9,
+         1,
+         0.0,
+         48000.0,
+         0.1,
+         1,
+         0.0
+        ],
+        "points_max": 0.98,
+        "points_min": 0.01999999999999999,
+        "type": "field"
+       }
+      ],
+      "id": 10001,
+      "label": "shaped",
+      "type": "field"
+     },
+     {
+      "axes": {
+       "x": {
+        "sample_rate": 48000.0,
+        "tempo": 2.0,
+        "unit": "beats"
+       }
+      },
+      "h": 20.0,
+      "type": "field"
+     }
+    ],
+    "flow": "col",
+    "h": 520,
+    "title": "Composition",
+    "type": "window",
+    "w": 1000
+   }
+  }
+ },
+ "sample_rate": 48000.0,
+ "tempo": 2.0
+}

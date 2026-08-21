@@ -11,7 +11,8 @@ import pytest
 
 from clausters.defs import SynthDef, control, in_, out, sine
 from clausters.defs.buffer import Buffer as ServerBuffer
-from clausters.form import Aggregate, Generator, Clang, Sequence, Track, Vector
+from clausters.form import (Aggregate, Element, Generator, Clang, Sequence,
+                            Track, Vector)
 from clausters.form.aggregate import LOGICAL
 from clausters.form.document import FIRST_VERSION
 from clausters.gui.editor import Editor, _logical_patch
@@ -779,6 +780,25 @@ def test_an_automation_draws_as_a_curve_clip_on_the_timeline():
     assert curve["points_min"] < 200.0 and curve["points_max"] > 4000.0
     assert "notes" not in curve and "buffer" not in curve
     assert curve["label"] == "cutoff", "an envelope is named for what it drives"
+
+
+def test_a_curve_is_drawn_with_the_shape_it_has():
+    """A `points` argument of *tuples* is read as ``(t, v, curve_spec)`` and
+    resolved, so handing the builder already-resolved ``(t, v, shape, curve)``
+    quads re-read the shape number as a curvature: a linear segment (shape 1)
+    was drawn as the custom shape with curvature 1.0 -- and edited back that
+    way, so an envelope changed shape by being looked at. The flat form is kept
+    verbatim, which is what this pins."""
+    from clausters.defs.ugens import Env
+    from clausters.seq.automation import Automation
+
+    curve = Element(Automation(Env([0.0, 1.0], [2.0]), None, name="cutoff"),
+                    duration=2.0)
+    ed = editor(Aggregate([(0.0, curve)], name="song"))
+    (c,) = clips(lanes(ed.draw())[0])
+    # [t, v, shape, curve] quads: linear is shape 1 with no curvature.
+    assert c["points"][2:4] == [1, 0.0]
+    assert c["points"][6:8] == [1, 0.0]
 
 
 def test_editing_the_curve_in_place_writes_it_back_onto_the_automation():

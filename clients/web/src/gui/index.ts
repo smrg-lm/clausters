@@ -30,6 +30,8 @@ export type { EventArgs } from "./handle.ts";
 
 export { BASE_ID, CAPACITY, GuiIdAllocator } from "./ids.ts";
 
+export { Editor, MEASURES } from "./editor.ts";
+export type { EditorOptions, Measure } from "./editor.ts";
 export { Transport } from "./transport.ts";
 export type { TransportOptions, TransportTargets } from "./transport.ts";
 

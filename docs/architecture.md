@@ -354,7 +354,7 @@ of the Python client's book; the reasoning behind it is in
 | Automation (a curve) | an `Env` discretized into a control buffer, read onto a bus | `seq/automation.py`, `/buffer_gen "env"`, `src/dsp/io.rs` (`OutCtl`) |
 | Change of state (generator → generated) | evaluating a def or bouncing a pattern | `Timeline.from_pattern`, `session.py`, `src/server/render.rs` |
 | Rendering (in time) | timetagged bundles (RT) or a `Score` (NRT) — one flattening, two destinations | `form/render.py`, `seq/timeline.py` (`Playhead`), `src/server/render.rs` |
-| The editor driver (data ↔ view) | — the one piece that is new, and the only one that knows both | `clients/python/clausters/gui/editor.py` |
+| The editor driver (data ↔ view) | — the one piece that is new, and the only one that knows both | `clients/python/clausters/gui/editor.py`, `clients/web/src/gui/editor.ts` |
 | Graphic unit (a clip: length = duration) | the placed rectangle, and its bodies as the child elements they are | `clients/gui/src/host/graphics/track.rs` |
 | Base level (coarser or finer) | the LOD rule, and a group collapsed to a summary or resolved into lanes | `clients/gui/src/{waveform,spectrogram}.rs`, `gui/editor.py` |
 | Shared time axis, playhead, cursor | the navigation groups (linked views), grown to hold lanes | `clients/gui/src/host/timeline.rs` |
@@ -819,8 +819,9 @@ The builder **does not mirror the widget catalog**, and that is the decision rat
 A **new element kind** (a new primitive of the arrangement) is the client's
 business, not the host's: it lands in `clients/python/clausters/form/` **and in
 `clients/web/src/form/`**, which are one layer in two languages, and it reaches
-the screen through the editor driver (`clausters/gui/editor.py`), which is the
-only module that knows both the arrangement and the widget tree. Its user
+the screen through the editor driver (`clausters/gui/editor.py` and
+`clients/web/src/gui/editor.ts`, one driver in two languages likewise), which is
+the only module that knows both the arrangement and the widget tree. Its user
 documentation is the composition chapter of each client's book.
 
 ## Extending the server: the plugin question

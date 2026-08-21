@@ -957,12 +957,15 @@ export function waveform(
         /** The top of the value domain (see `min`). */
         max?: number;
         /**
-         * What the columns measure: `"peak"` (the default envelope) or
-         * `"rms"` (the level body). Two views of one source on the same axes,
-         * one of each, are the classic editor picture as a stack — see
-         * `signal`.
+         * What the picture measures: `"peak"` (the default envelope), `"rms"`
+         * (the level body), or **both as one space-separated string** —
+         * `"peak rms"`, the classic editor picture, the level drawn inside the
+         * envelope. A stack is a prop of *one* view and not two views layered:
+         * a view paints its own field before it draws, so the second would hide
+         * the first (see `signal`, and the multitrack editor's signal view,
+         * whose `layers` is this prop).
          */
-        measure?: "peak" | "rms";
+        measure?: "peak" | "rms" | "peak rms" | "rms peak";
         /**
          * The samples are **being written into as they are drawn** — a take you
          * are recording. The picture stops at the buffer's write frontier and
