@@ -2308,6 +2308,19 @@ finished work, where a pending item reads as done.
   row showed. The test now walks four device-pixel ratios so the cancellation is
   asserted rather than reasoned about.
 
+  **Verified end to end 2026-08-21 in the page** (`clients/web/tests/editor.html`,
+  the host drawing a `waveform` and a `spectrogram` over the in-page engine):
+  the two browsers move the same as each other and as the native window, with
+  Chrome felt as *imperceptibly* faster. That residual is expected and is a
+  consequence of the two rules rather than a mistuned constant: a line report is
+  **counted**, so one event is one step however hard the wheel is spun, while a
+  pixel report is **divided**, so a browser applying scroll acceleration to a
+  fast flick sends more than 120 and gets more than one step. Per notch at an
+  ordinary speed they agree exactly, which is what was measured and what is
+  felt. It cannot be closed by counting the pixel half too: a trackpad's stream
+  is continuous and there the magnitude is the whole of the information. Worth
+  reopening only if a fast spin turns out to overshoot by enough to notice.
+
   **The number has to be measured before it is chosen**: `deltaY` per click depends on the browser, the OS and the scale factor, so the fix starts by logging `steps` in both shells and turning one click on each. Then it is **one function** — "a wheel event becomes this many zoom steps", with the per-shell adjustment inside it — that all three call sites use, rather than three copies that happen to agree today. Same family as the drawing divergence and on the input side of it: the host is one, so what reaches it has to be one too.
 
 - ✅ **A page's opening pass re-subscribes once per canvas** *(found 2026-08-20, watching the refusals while fixing the entry below — with the page engine's ceiling lowered to 50, a forty-canvas page produced fifteen refused subscriptions before the first reply landed)*. `on_tree_changed` re-derives and re-sends the `/bus_stream` set on every tree change, and a document's canvases open in one synchronous pass — so a page of forty sends forty subscriptions, each replacing the last, and the engine cannot answer any of them until its next serving turn. It is correct and it is bounded, which is why it survived: the end state is always the right set. What it costs is a round trip and a server-side re-subscribe per canvas at load, and it is what turns one wrong ceiling into a burst of refusals instead of one. The fix is to coalesce: mark the subscription dirty and re-send it on the tick that follows, which is where the host already does its per-frame work — and the same would hold for `/bus_tapStream` beside it. Left open because nothing is wrong with what the page ends up drawing.
