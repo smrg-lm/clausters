@@ -22,7 +22,7 @@ use crate::host::graphics::bpf::{self, Axes, BpfPoint};
 use crate::host::graphics::controls;
 use crate::host::layout::Rect;
 use crate::host::paint::Draw;
-use crate::host::widget::element::{BodyRole, Claim, Ctx, Element, Events, Input, Take};
+use crate::host::widget::element::{BodyRole, Claim, Ctx, Element, Events, Input, Take, TimeSpace};
 use crate::host::widget::parse::{label, number, number_f64, set_f, set_f64, set_label, truthy};
 use crate::host::{font, metrics::Metrics};
 
@@ -249,6 +249,30 @@ impl Element for Curve {
 
     fn body_role(&self) -> Option<BodyRole> {
         Some(BodyRole::Curve)
+    }
+
+    /// A clip's body: the line over the clip's own axis, with none of the
+    /// chrome [`draw`](Self::draw) paints when it stands on its own — no label,
+    /// no field, no border, because the clip drew those.
+    ///
+    /// **This existing is the whole of it.** `Element::draw_body` defaults to
+    /// drawing nothing, and a curve went without it: a clip carrying `points`
+    /// built its body, placed it and collected it for the pass, and the pass
+    /// called a method that did nothing — so an automation lane was an empty
+    /// rectangle in every client, native and browser alike. What hid it is that
+    /// the tests drove `draw` with a `TimeSpace`, which is the *standalone*
+    /// door taking the body-shaped branch, and the two doors are only the same
+    /// when something connects them. `a_clip_body_draws_the_line` is the test
+    /// that goes through this one.
+    ///
+    /// The lit segment is not drawn here: what a bend would take is read off
+    /// the cursor, and a body is handed no world to read it from.
+    fn draw_body(&self, d: &mut Draw, rect: Rect, time: &TimeSpace) {
+        let ax = {
+            let (_mesh, m, _theme) = d.parts();
+            self.axes(rect, m, Some(*time))
+        };
+        bpf::draw_with(d, &ax, &self.points, None);
     }
 
     /// **A curve's own contents are its break-points and the segments between
@@ -530,6 +554,39 @@ mod tests {
 
     /// A body draws no chrome of its own: the same points, in the same
     /// rectangle, put less geometry in the mesh than the framed view does.
+    /// The **body door**, which is the one a clip's automation is drawn
+    /// through — and which drew nothing at all until `draw_body` existed here:
+    /// the element was built, placed and collected, and the pass called a
+    /// default that paints nothing. The test beside this one drove `draw`
+    /// instead, so it passed throughout.
+    #[test]
+    fn a_clip_body_draws_the_line() {
+        use crate::host::widget::element::TimeSpace;
+
+        let curve = body(
+            &serde_json::from_str(
+                r#"{"points":[0.0,200.0,1,0.0,48000.0,900.0,2,0.0,96000.0,300.0,1,0.0],
+                    "points_min":130.0,"points_max":970.0}"#,
+            )
+            .unwrap(),
+        )
+        .expect("the props carry a curve");
+        let metrics = Metrics::default();
+        let theme = Theme::default();
+        let rect = Rect::new(0.0, 0.0, 200.0, 60.0);
+
+        let mut mesh = Mesh::new();
+        curve.draw_body(
+            &mut Draw::new(&mut mesh, &metrics, &theme),
+            rect,
+            &TimeSpace::of(View::full(96_000), 96_000.0),
+        );
+        assert!(
+            !mesh.is_empty(),
+            "a clip's curve body draws its line, not nothing"
+        );
+    }
+
     #[test]
     fn a_body_draws_without_the_view_s_chrome() {
         let m = Metrics::default();

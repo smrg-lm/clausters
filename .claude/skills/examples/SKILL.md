@@ -91,6 +91,37 @@ prebuilt bundle. The header comment carries what a module docstring would.
 Remember `dist/` is git-ignored: `./build.sh` from `clients/web` before the page
 will load anything.
 
+## An example that exists twice is **one example in two languages**
+
+`clients/python/examples/gui_composer.py` and
+`clients/web/examples/composer.html` are not two examples about the same topic:
+they are the same example, and the pair carries the non-divergence rule the way
+the clients do. So the second one is **ported, not re-invented**:
+
+- **Same composition, same material, same names.** The lanes, the defs, the
+  notes, the buffers, the labels a reader sees on screen. A lane called
+  `bassline` in one is called `bassline` in the other; a take bounced offline
+  from a two-beat note is bounced offline from a two-beat note, not filled with
+  a wavetable because that was quicker to write.
+- **Same API calls, in the same order.** Both clients have the same surface, so
+  the port is a transliteration: `Sequence(Pbind(...), name="bassline")`
+  becomes `new form.Sequence(new seq.Pbind(...), null, null, { name: "bassline" })`
+  and nothing else changes. Where the two genuinely differ — a page has no
+  filesystem, a script has no `<canvas>`, one awaits what the other calls — the
+  difference is **named in the prose**, and it is the only difference there is.
+- **Same prose, same order.** The docstring and the page's note explain the
+  same things in the same sequence, because they are explaining the same
+  example. Two texts that drifted are two readers with two mental models.
+- **A screenshot of the two, side by side, should differ only where the hosts
+  differ** (a window frame, a page's chrome). That is the check worth doing when
+  a port lands, and it is how a whole class of "the port is not the example"
+  was caught: different lane names, a wavetable where a take belonged, a
+  primitive swapped for a simpler one.
+
+What this rule is *for*: an example is the manual test surface, so a pair that
+diverges silently stops testing the same thing — and the client that is not the
+reference stops being checked at all.
+
 ## The idiom rules
 
 These are what a generated example gets wrong, every time.

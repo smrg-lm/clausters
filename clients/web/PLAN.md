@@ -1922,20 +1922,18 @@ row in `docs/gui-props.md`, or a paragraph in this plan's parity section.
 
 ## Found by use: the running list of fixes
 
-- ⬜ **A clip's curve body does not draw in a page.** A `clip` carrying
-  `points` (with `points_min`/`points_max`, or `min`/`max` + `exp` — both
-  spellings) lays out as an empty rectangle in the wasm host: the take and the
-  roll bodies beside it draw, the curve does not. It is **not** the editor's
-  port: it reproduces on the page that predates it (`git show
-  c76c53dd^:clients/web/examples/composer.html`, whose sweep lane was built as
-  bare widgets) and on a twenty-line page with one lane per spelling. The props
-  arrive — `/gui_query` reports `points` as the right flat quad list — and the
-  host's own curve tests pass (`cargo test curve` in `clients/gui`, including
-  `a_body_draws_without_the_view_s_chrome` and the track test that draws a roll
-  and a curve into one mesh), so what is left is the live path: `clip_bodies`
-  builds it, `collect_widgets` places it, or the draw pass skips it. **Whether
-  a native window has the same hole is unchecked** and is the first thing to
-  ask, since it decides between a host bug and a wasm-only one.
+- ✅ **A clip's curve body drew nothing — in every client.** A `clip` carrying
+  `points` laid out as an empty rectangle: the automation lane of the multitrack
+  editor, in a page *and* in a native window. `Element::draw_body` defaults to
+  drawing nothing and `Curve` never overrode it, so the body was built
+  (`clip_bodies`), placed (the layout test asserts it) and collected for the
+  pass — which then called a method that painted nothing. What hid it for so
+  long is that every test drove `Curve::draw` with a `TimeSpace`, the
+  *standalone* door taking its body-shaped branch, and the two doors are only
+  the same when something connects them. Found by porting the editor and
+  comparing the two clients' screens side by side; fixed in
+  `clients/gui/src/host/elements/curve.rs`, pinned by
+  `a_clip_body_draws_the_line`, which goes through the body door.
 
 These are not milestones and they are not future directions. They are what
 **using the thing** turns up — an eye pass over an example, a path read while

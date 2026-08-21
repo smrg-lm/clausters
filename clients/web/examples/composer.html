@@ -16,7 +16,7 @@
       pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
             white-space: pre-wrap; align-self: stretch; }
       .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-      #stage { align-self: stretch; height: min(70vh, 560px); }
+      #stage { align-self: stretch; height: min(70vh, 620px); }
       #stage canvas { display: block; width: 100%; height: 100%; }
     </style>
   </head>
@@ -24,7 +24,7 @@
     <main>
       <div id="note">The web port of the Python client's
 <code>gui_composer.py</code>: <b>compose the arrangement, edit it on screen,
-hear it, undo it</b>.
+hear it, undo it</b> — the same composition, lane for lane.
 
 <code>gui.Editor</code> is the bridge between the arrangement
 (<code>form</code> — elements placed recursively by offset) and the multitrack
@@ -33,31 +33,35 @@ a GuiDef, applies the clip edit-backs the host sends <i>onto the arrangement</i>
 and re-renders it. So the thing you drag is not a picture of the music: it is the
 music.
 
-The mapping, in one paragraph. The root aggregate's members are the <b>lanes</b>;
-a lane's members are its <b>clips</b>. A <code>Vector</code> clip names its
-server buffer and spans its frames (the host fetches it and decimates it — a real
-take never rides the wire as JSON). An element of events draws a
-<b>piano-roll</b>, and a contained generator is bounced in the same pass. An
-<code>Automation</code> draws its <b>curve</b> as the clip body, editable in
-place. A nested aggregate draws as the labeled rectangle that summarizes it,
-until you <code>expand</code> it into lanes of its own.
+<b>Four lanes, and each is a different primitive.</b> <b>drums</b> holds two
+<code>Vector</code>s over <b>two different takes</b>, each bounced offline in
+this tab and installed as a server buffer — the host fetches and decimates them,
+so a real take never rides the wire as JSON. <b>bass</b> is a
+<code>Sequence</code> over a <b>pattern</b>: a generator, bounced in the same
+pass that draws it, so the lane shows the notes it is about to play and the roll
+is read-only (a rendering of an algorithm is not a thing to drag). <b>lead</b> is
+a <code>Track</code> of clangs — those notes <i>are</i> editable. And
+<b>sweep</b> is an aggregate whose members start and end together, so it draws as
+<b>one clip with layered bodies</b>: the curve over the note it shapes. Press the
+curve and you edit the curve; press the clip's background and the clip is back in
+hand.
 
-<b>Drag a clip</b> to move it, <b>its edge</b> to resize. The gesture leaves the
+<b>Drag a clip</b> to move it, <b>its edge</b> to trim it. The gesture leaves the
 host as an <i>intent</i> — where the hand put it, absolute — and the <b>shared
 crate</b> decides what it becomes: the musical <code>quant</code> grid snaps it
-there, not here. What comes back is the value that actually holds. With
-<code>follow</code> on, the composition is re-scheduled from the playhead on
-every edit, so you hear the clip where you dropped it.
+there, not here. With <code>follow</code> on, the composition is re-scheduled
+from the playhead on every edit, so you hear the clip where you dropped it. With
+the pointer over a clip, <b>e</b> cuts it in two and <b>j</b> joins it back with
+what touches it — the two halves are two windows onto one buffer.
 
 <b>Undo</b> and <b>redo</b> are the buttons, or <b>Ctrl+Z</b> /
 <b>Ctrl+Shift+Z</b> over the window. The history is <b>not this editor's</b>: it
-lives with the document, in the same Rust crate both clients bind — a log a view
-keeps sees only the gestures that view made.
+lives with the document, in the same Rust crate both clients bind.
 
-<i>What this page does not do, and the Python example does:</i> save the session
-to a file and open it again. A page has no filesystem to write the take's WAV
-beside the document; the arrangement, the editing and the history are the same
-code either way.
+<i>The one thing the Python example does and this does not:</i> save the session
+to a file and open it again. A page has no folder to write the takes' WAVs beside
+the document; the arrangement, the editing and the history are the same code
+either way.
 
 Everything runs on the <b>in-page engine</b>: no server process, no socket.</div>
 
@@ -72,72 +76,116 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
     <script type="module">
       import {
         loadOsc, loadCore, pageConnection, server as engine, Server,
-        Buffer, Event, GuiHost, guiHost, gui, seq, form, defs, TempoClock,
+        Buffer, Event, GuiHost, guiHost, gui, seq, form, defs, render,
+        TempoClock,
       } from "../dist/index.js";
 
       const el = (id) => document.getElementById(id);
       const log = (line) => { el("log").textContent += line + "\n"; };
 
-      const SR = 48000;
       const TEMPO = 2.0;   // beats per second (120 bpm)
-      const QUANT = 0.5;   // the drag grid, in beats
+      const QUANT = 0.5;   // the drag grid: half a beat
+      const SWEEP = 4.0;   // the sweep's length in beats (the curve's, and its voice's)
 
       let server, host, page, clock, editor = null, win = null, unfit = null;
 
-      // ---- the instrument the take sounds through ----
-      // A buffer is *data*: it sounds through the def named to play it, whose
-      // `buf` control takes the buffer number. That is the whole rule for an
-      // audio clip, and it is why a `Vector` names an instrument.
-      const takeDef = () => {
-        const buf = defs.control("buf", 0.0);
-        const start = defs.control("start", 0.0);
-        const rate = defs.bufRateScale(buf);
-        const sig = defs.playBuf(buf, 0, rate, start).mul(defs.control("amp", 0.8));
-        return new defs.SynthDef("composer_take", defs.out(0, sig), defs.out(1, sig));
+      // ---- the instrument that plays a buffer ----
+      // The notes use the server's stock `default` def; the **take** needs an
+      // instrument of its own, because a buffer is *data* — a `Vector` sounds
+      // through the def named to play it, which reads the buffer number from its
+      // `buf` control. It also reads the element's **window**: a clip is a
+      // window onto a segment of its samples, so `start` says which frame to
+      // begin at and `loop` whether to wrap.
+      const sampler = () => {
+        const buf = defs.control("buf", 0.0, "ir");
+        const amp = defs.control("amp", 0.8, "ir");
+        const start = defs.control("start", 0.0, "ir");
+        const loop = defs.control("loop", 0.0, "ir");
+        const sig = defs.playBuf(buf, 0.0, 1.0, loop, 0.0, start).mul(amp);
+        return new defs.SynthDef("take", defs.out(0.0, sig), defs.out(1.0, sig));
       };
 
+      // The voice the curve drives: a sine whose **frequency** is read from a
+      // control bus — the one the automation writes — held by a gate and freed
+      // on release, so its life is the *event's*. Seek past the clip and there
+      // is simply no voice; a synth humming over empty timeline is a leak.
+      const drone = () => {
+        const bus = defs.control("freq_bus", 0.0, "ir");
+        const amp = defs.control("amp", 0.12, "kr");
+        const gate = defs.control("gate", 1.0, "kr");
+        const shape = defs.envGen(defs.Env.asr(0.05, 1.0, 0.4), {
+          gate, doneAction: defs.DoneAction.FREE_SELF,
+        });
+        const sig = defs.sine(defs.inCtl(bus)).mul(shape).mul(amp);
+        return new defs.SynthDef("drone", defs.out(0.0, sig), defs.out(1.0, sig));
+      };
+
+      // ---- the takes ----
+      // Bounced the way a composition really makes one: rendered offline — in
+      // this tab, faster than real time — and installed as a server buffer. Two
+      // different notes, so that joining the two clips is a real join: an
+      // element that reads both, back to back, rather than two placements of
+      // one buffer.
+      async function bounce(midinote, beats = 2.0) {
+        const stats = await render(
+          new seq.Pbind({ midinote: new seq.Pseq([midinote], 1), dur: beats,
+                          legato: 1.0, amp: 0.3 }),
+          { channels: 1, tempo: TEMPO },
+        );
+        log(`bounced ${stats.frames} frames of take (midinote ${midinote})`);
+        return Buffer.fromSamples(stats.samples, 1, stats.sampleRate, { server });
+      }
+
       // ---- the composition ----
-      // Written as the arrangement, not as widgets: the editor draws whatever
-      // this tree is, so what the page states is the music.
-      //
-      // Answers the tree **and the curve**, because the curve is the one member
-      // that has to be prepared before the piece can play: an `Automation`
-      // sounds through a control buffer and a bus, and allocating them waits on
-      // the server — which is why it is `prepare`, called once, and not
-      // something `play` can do for you inside a routine.
-      function compose(take) {
-        const { Aggregate, Element, Track, Vector } = form;
+      // Four lanes, four ways of holding material — and the sweep, whose curve
+      // has to be prepared before the piece plays: an `Automation` sounds
+      // through a control buffer and a bus, and allocating them waits on the
+      // server, which a routine may not.
+      async function compose(buf, otherBuf) {
+        const { Aggregate, Clang, Element, Sequence, Track, Vector } = form;
 
-        const clip = (at) =>
-          new Vector(take, null, 2.0, { instrument: "composer_take" });
-        const drums = new Aggregate(
-          [[0.0, 2.0, clip()], [4.0, 2.0, clip()]], "concrete", { name: "drums" });
+        // Two **elements** over two server buffers, since this lane places a
+        // take twice: the samples are shared, the placements are not.
+        const take = new Vector(buf, null, 2.0, { instrument: "take" });
+        const takeAgain = new Vector(otherBuf, null, 2.0, { instrument: "take" });
+        const melody = new Track(new seq.Timeline([
+          [0.0, new Event({ midinote: 72, dur: 1.0 })],
+          [1.0, new Event({ midinote: 76, dur: 1.0 })],
+          [2.0, new Event({ midinote: 79, dur: 2.0 })],
+        ]));
+        // A Function: a generator the editor bounces to draw and the render
+        // bounces to play. Same tree, both times.
+        const bass = new Sequence(
+          new seq.Pbind({ midinote: new seq.Pseq([48, 48, 55, 53], 2), dur: 1.0, amp: 0.15 }),
+          null, null, { name: "bassline" },
+        );
 
-        const bass = new Track(new seq.Timeline(
-          [[0, 48], [1, 48], [2, 55], [3, 53], [4, 48], [5, 48], [6, 55], [7, 53]]
-            .map(([beat, midinote]) => [beat, new Event({ midinote, dur: 1.0, amp: 0.2 })]),
-        ), null, 8.0, { name: "bass" });
+        const sweep = seq.Automation.fromPoints(
+          [[0.0, 200.0, 1, 0.0],   // 200 Hz ...
+           [2.0, 900.0, 2, 0.0],   // ... up to 900 (exponential) ...
+           [4.0, 300.0, 1, 0.0]],  // ... back down (linear)
+          null, { name: "freq" },
+        );
+        await sweep.prepare(server);
 
-        const lead = new Track(new seq.Timeline(
-          [[0, 72, 1.0], [1, 76, 1.0], [2, 79, 2.0]]
-            .map(([beat, midinote, dur]) => [beat, new Event({ midinote, dur, amp: 0.15 })]),
-        ), null, 4.0, { name: "melody" });
+        // The envelope **attached to the voice it shapes**: an aggregate whose
+        // members start and end together. Its temporal relation is
+        // *simultaneous*, and the editor draws that as one clip with layered
+        // bodies — the curve over the note — which drags as one.
+        const voice = new Clang(new Event({
+          instrument: "drone", freq_bus: sweep.bus.index,
+          dur: SWEEP, legato: 1.0, amp: 0.12, hasGate: true,
+        }));
+        const sweepClip = new Aggregate(
+          [[0.0, voice], [0.0, new Element(sweep, null, SWEEP)]],
+          "concrete", { name: "sweep" });
 
-        // The curve: a break-point envelope as an element, drawn and edited in
-        // place. Naming no target, it sweeps a control bus nothing reads yet —
-        // pointing it at a synth's control is one line more, and it is what the
-        // Python example does.
-        const curve = new seq.Automation(
-          new defs.Env([200.0, 900.0, 300.0], [2.0, 2.0], "exp"), null, { name: "freq" });
-        const sweep = new Element(curve, null, 4.0);
-
-        const song = new Aggregate([
-          [0.0, drums],
+        return new Aggregate([
+          [0.0, new Aggregate([[0.0, take], [4.0, takeAgain]], "concrete", { name: "drums" })],
           [0.0, new Aggregate([[0.0, bass]], "concrete", { name: "bass" })],
-          [2.0, new Aggregate([[0.0, lead]], "concrete", { name: "lead" })],
-          [0.0, new Aggregate([[0.0, sweep]], "concrete", { name: "sweep" })],
+          [2.0, new Aggregate([[0.0, melody]], "concrete", { name: "lead" })],
+          [0.0, new Aggregate([[0.0, sweepClip]], "concrete", { name: "sweep" })],
         ], "concrete", { name: "song" });
-        return { song, curve };
       }
 
       // The transport bar rides *under* the lanes as the editor's `extra`: its
@@ -147,6 +195,7 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
         gui.button({ name: "play", label: "play" }),
         gui.button({ name: "pause", label: "pause" }),
         gui.button({ name: "stop", label: "stop" }),
+        gui.button({ name: "rewind", label: "rewind" }),
         gui.button({ name: "undo", label: "undo" }),
         gui.button({ name: "redo", label: "redo" }),
       );
@@ -162,23 +211,13 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
         page = await guiHost();
         el("stage").append(page.canvas);
 
-        await takeDef().send(server);
-        // The take: the *server* fills a buffer (a few partials), so the lane
-        // has a real body to decimate — a clip's take is reached exactly as the
-        // heavy waveform's samples are.
-        const take = await Buffer.alloc(Math.round(2.0 * SR / TEMPO), 1, { server });
-        await take.gen("sine1", [["i", 7], 1.0, 0.5, 0.25, 0.12]);
+        await sampler().send(server);
+        await drone().send(server);
+        const [buf, other] = [await bounce(60), await bounce(48)];
         await server.sync();
 
-        const { song, curve } = compose(take);
-        // The curve before the piece plays: a pass renders every item in beat
-        // order, and an automation that has not allocated its buffer refuses to
-        // play — which would end the pass on the first item rather than skip
-        // one lane.
-        await curve.prepare(server);
-
         clock = new TempoClock(TEMPO).start();
-        editor = new gui.Editor(song, {
+        editor = new gui.Editor(await compose(buf, other), {
           sampleRate: raw.context.sampleRate,
           tempo: TEMPO,
           quant: QUANT,
@@ -195,31 +234,29 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
         win.widget("play").onEvent((down) => { if (down) editor.render(server, clock); });
         win.widget("pause").onEvent((down) => { if (down) editor.pause(); });
         win.widget("stop").onEvent((down) => { if (down) editor.stop(); });
+        win.widget("rewind").onEvent((down) => { if (down) editor.locate(0.0); });
         win.widget("undo").onEvent((down) => { if (down) report("undo", editor.undo()); });
         win.widget("redo").onEvent((down) => { if (down) report("redo", editor.redo()); });
 
         // A pass ends by itself; this is the one loop that has to notice.
         setInterval(() => editor.transport.update(), 100);
-        // What the *model* says after every gesture — the point of the page:
-        // the numbers below are the arrangement's, not the picture's.
+        // What the *model* says after a gesture that changed something — the
+        // point of the page: the numbers below are the arrangement's, not the
+        // picture's. The host reports gestures that change nothing too (a
+        // press, a drag back to where it started), and those say nothing.
         host.onMessage((msg) => {
           if (msg.addr !== "/gui_event") return;
           const tag = msg.args[3];
-          if (tag === "clip" || tag === "notes" || tag === "points") {
-            // Read *after* the editor has routed it — and only when something
-            // moved: the host reports gestures that change nothing too (a
-            // press, a drag back to where it started), and logging the model
-            // then says "nothing to undo" about an edit nobody made.
-            const before = editor.undoLabel;
-            queueMicrotask(() => {
-              if (editor.undoLabel === before && !editor.dirty) return;
-              log(`${tag}: the piece is now ${editor.extent().toFixed(2)} beats`
-                + `${editor.canUndo ? `, undo: ${editor.undoLabel}` : ""}`);
-            });
-          }
+          if (tag !== "clip" && tag !== "notes" && tag !== "points") return;
+          const before = editor.undoLabel;
+          queueMicrotask(() => {
+            if (editor.undoLabel === before && !editor.dirty) return;
+            log(`${tag}: the piece is now ${editor.extent().toFixed(2)} beats`
+              + `${editor.canUndo ? `, undo: ${editor.undoLabel}` : ""}`);
+          });
         });
 
-        log("drag a clip to move it, an edge to resize — press play and edit "
+        log("press play — drag a clip to move it, an edge to trim it, and edit "
           + "while it sounds");
       }
 

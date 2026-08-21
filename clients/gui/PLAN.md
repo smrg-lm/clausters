@@ -2222,6 +2222,27 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 
 ## Found by use: the running list of fixes
 
+- ✅ **A clip's curve body drew nothing, in both fronts.** `Element::draw_body`
+  paints nothing by default and `Curve` never overrode it, so an automation
+  clip — the multitrack editor's whole envelope lane — was an empty rectangle
+  everywhere. The body was built, placed and collected; the pass called a
+  no-op. Every test drove `Curve::draw` with a `TimeSpace` instead (the
+  standalone door taking its body-shaped branch), which is exactly why it
+  survived: two doors that look alike and only one of them wired.
+  `a_clip_body_draws_the_line` now goes through the one a clip uses.
+- ⬜ **A page burns the main thread while nothing is happening.** Measured on
+  `clients/web/examples/composer.html` through the DevTools protocol: **67% of
+  the main thread, idle** — no transport running, no pointer moving, no
+  streams subscribed — and the same 67% while playing, which is why the
+  playhead visibly jitters: the line is redrawn from a thread that is already
+  saturated. The event loop is `ControlFlow::Wait` and `draw` does not re-arm
+  itself, and the `/clock_query` poll is gated on a tree that actually shows a
+  playhead — so the cost is in the periodic tick itself (`live::STREAM_PERIOD_MS`:
+  the slot refresh, the extents pass, the edge-scroll step) or in something it
+  requests a redraw from unconditionally. Native does not have the same shape
+  (it reads the shm header and needs no poll), so this is the browser front's
+  own. Worth measuring per stage before changing anything.
+
 These are not milestones and they are not future directions. They are what
 **using the thing** turns up — an eye pass over an example, a path read while
 doing something else, a behaviour that is correct and unclear — recorded the day
