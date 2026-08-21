@@ -256,16 +256,21 @@ work, where a pending item reads as done.)*
   right call when what you want is the file a `waveform(cache=...)` maps, and
   the book now says which is which.
 
-  **`data.BusStream` and `data.TapStream` are the same defect and are not
-  fixed** *(found 2026-08-21 doing this port, looking for where the class
-  belonged)*. The web client's `data` module holds three stream classes and
-  this client has none of them: `/bus_stream` and `/bus_tapStream` are
-  `Server.stream_buffers`' siblings and stop at the subscription here too, so a
-  script that wants the newest value of a bus or the newest window of a tap
-  writes the responder and the bookkeeping itself. They were left out of the
-  entry above because that entry names the recording one, not because they are
-  fine. The port is the same shape — the receiver socket, a per-index store,
-  a callback — and `clausters/data.py` is now the module they belong in.
+  **`data.BusStream` and `data.TapStream` were the same defect and were ported
+  with it** *(found 2026-08-21 doing this port, looking for where the class
+  belonged; taken the same day at the user's instruction — the web shape is the
+  better one, so the fix is to complete this client rather than to record the
+  difference)*. The web client's `data` module holds three stream classes and
+  this client had none of them: `/bus_stream` and `/bus_tapStream` are
+  `Server.stream_buffers`' siblings and stopped at the subscription here too,
+  so a script that wanted the newest value of a bus or the newest window of a
+  tap wrote the responder and the bookkeeping itself. All three are now in
+  `clausters/data.py` on one base (`_Subscription`): the receiver socket, the
+  ack, the listener list and the two verbs that end it are written once, and
+  each class adds only its command, its arguments and what a reply means.
+  `TapStream.interleaved` carries the one piece of real arithmetic — windows of
+  a stereo pair may differ in length, and what it pairs is the freshest sample
+  of each, not their starts.
 
 - ✅ **A session's source table was built from the material the script started with, so the second save wrote a file that could not be reopened** *(found 2026-08-17, tracing the GUI plan's "a reopened session draws less on every redefine" — which turned out not to be the host's)*. `gui_composer.py`'s `save` named `buf`, the buffer read at startup. But reopening resolves each take into a **new** server buffer, so after one cycle the composition's takes are buffers 3 and 4 while the table still describes 1 — the document names sources the table does not contain, `resolve` finds no entry, and the take comes back with no material. On screen that is a waveform that vanishes on the second save/open cycle, with nothing said anywhere; it reads exactly like a redraw bug, which is where it was filed for a day.
 

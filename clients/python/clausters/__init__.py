@@ -38,6 +38,12 @@ The layers:
   `ServerOptions`, `Synth`, `Group`, `AddAction`, `SynthDef`, `FaustDef`,
   `GraphDef`, `Bus`, `Buffer` — are re-exported here; the UGen and signal
   callables are not, and stay under `clausters.defs`.
+- `clausters.data` — what the server keeps *sending*, because what is being
+  watched changes faster than anything could ask: control buses
+  (`clausters.data.BusStream`), an audio bus's samples
+  (`clausters.data.TapStream`) and a take as it records
+  (`clausters.data.RecordingStream`). The GUI host reads the same three paths
+  itself; this is them opened to the script.
 - `clausters.form` — the **arrangement**: a recursive algebra of elements
   over the sequencing/def layers, for composing at any granularity.
 - `clausters.responders` — `OscFunc`/`MidiFunc`, callbacks on incoming OSC
@@ -63,7 +69,7 @@ The layers:
 """
 
 from . import _native
-from . import base, defs, errors, form, gui, ipc, launch, seq
+from . import base, data, defs, errors, form, gui, ipc, launch, seq
 from .errors import ClaustersError
 from .base.clock import TempoClock
 from .base.main import default_session, main

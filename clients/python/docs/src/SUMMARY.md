@@ -31,6 +31,7 @@
   - [Bouncing: the piece as a file](composing/bounce.md)
   - [Glossary](composing/glossary.md)
 - [Bundles: an instrument you can hand to a page](bundles.md)
+- [Reading the server: buses, taps and takes](data.md)
 - [Receiving OSC and MIDI](responders.md)
 - [Examples](examples.md)
 
