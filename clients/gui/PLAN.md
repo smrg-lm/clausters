@@ -2238,7 +2238,42 @@ Anything unresolved lives here or under "Future directions", both **after** the
 tracks: never inside the milestone that happened to be open, and never among
 finished work, where a pending item reads as done.
 
-- ⬜ **The wheel zooms faster in a page than in a window, and the conversion is written three times** *(found 2026-08-20 by the user, comparing the two twins side by side: "la rueda hace zoom más rápido que en nativo")*. The host's own arithmetic is not what differs — `native.rs`, `host/gui/app.rs` and `host/web/input.rs` each carry the identical two lines, `LineDelta(_, y) => y` and `PixelDelta(p) => p.y / 50.0`. What differs is what winit hands each shell: a wheel click on X11/Wayland arrives as `LineDelta(0, ±1)`, one step, while a browser sends a `WheelEvent` at `DOM_DELTA_PIXEL` with a `deltaY` of about a hundred per click, which the same divisor turns into **two**. So the input is not normalized per shell, and the `/50` is calibrated for the native trackpad.
+- ✅ **The wheel zooms faster in a page than in a window, and the conversion is written three times** *(found 2026-08-20 by the user, comparing the two twins side by side: "la rueda hace zoom más rápido que en nativo")*. The host's own arithmetic is not what differs — `native.rs`, `host/gui/app.rs` and `host/web/input.rs` each carry the identical two lines, `LineDelta(_, y) => y` and `PixelDelta(p) => p.y / 50.0`. What differs is what winit hands each shell: a wheel click on X11/Wayland arrives as `LineDelta(0, ±1)`, one step, while a browser sends a `WheelEvent` at `DOM_DELTA_PIXEL` with a `deltaY` of about a hundred per click, which the same divisor turns into **two**. So the input is not normalized per shell, and the `/50` is calibrated for the native trackpad.
+
+  **Fixed 2026-08-21, and the measurement turned up a second axis the entry did
+  not have.** Reading winit's web backend rather than a browser: at
+  `DOM_DELTA_PIXEL` it takes the `WheelEvent`'s `deltaY` in **CSS** pixels and
+  converts it **to physical** by the window's scale factor before handing over a
+  `PixelDelta` (`platform_impl/web/web_sys/event.rs`, `mouse_scroll_delta`). So
+  the divisor was not only calibrated for the wrong shell, it made the zoom rate
+  a property of the **display**: the same notch on a 2x screen reported twice
+  the pixels and zoomed twice as far, in a page and on a native trackpad alike.
+  That is the same thing `CLIP_EDGE_PX` was doing before the grip shipped — an
+  interaction site naming device pixels — and it is why the fix is arithmetic
+  rather than a number.
+
+  `gestures::Wheel` is that arithmetic, in the module where the wheel's meaning
+  already lives: a `WheelDelta` (lines or physical pixels — the two shapes any
+  source has), a per-shell calibration (`Wheel::NATIVE`, `Wheel::BROWSER`), and
+  `steps()`, which takes the scale off a pixel report before dividing it. The
+  core stays platform-agnostic by rule, so each shell still translates its own
+  winit event into `WheelDelta` — that is the shell's job — but the conversion
+  to steps, and the numbers, are written once. `Wheel::BROWSER` is 100 logical
+  pixels per notch against the native trackpad's 50, which is exactly the factor
+  of two that was felt. The test asserts the claim rather than either number: a
+  notch is one step, on either shell and on any display.
+
+  **One thing is left unmeasured and is deliberately not guessed**: a browser
+  that reports `DOM_DELTA_LINE` — Firefox does — sends its own count of lines
+  per notch (commonly three), and winit passes that through as `LineDelta`. If
+  it is three, a wheel click in Firefox is three steps, which is worse than what
+  was reported and is *not* what the divisor above touches.
+  `Wheel::BROWSER.lines_per_step` is therefore left at the native `1.0`:
+  unchanged behavior rather than a new number nobody has felt. **What to
+  measure**, since the entry's own rule is that this starts with a measurement:
+  log `event.deltaMode` and `event.deltaY` for one wheel click in Firefox and in
+  Chrome, on a page and on a 2x display, and put the two figures in that
+  constant.
 
   **The number has to be measured before it is chosen**: `deltaY` per click depends on the browser, the OS and the scale factor, so the fix starts by logging `steps` in both shells and turning one click on each. Then it is **one function** — "a wheel event becomes this many zoom steps", with the per-shell adjustment inside it — that all three call sites use, rather than three copies that happen to agree today. Same family as the drawing divergence and on the input side of it: the host is one, so what reaches it has to be one too.
 

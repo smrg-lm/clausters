@@ -22,7 +22,7 @@ use crate::canvas::CanvasView;
 use crate::gpu::Gpu;
 use crate::host::fetch::BufferFetches;
 use crate::host::frame::{self, SpectrogramSlot, WaveformSlot};
-use crate::host::gestures::{ClipEdit, ClipVerb, Gestures};
+use crate::host::gestures::{ClipEdit, ClipVerb, Gestures, Wheel, WheelDelta};
 use crate::host::graphics::nodetree::NodeTree;
 use crate::host::live::{self, tree_animates, tree_has_live_widget};
 use crate::host::paint::Painter;
@@ -762,10 +762,13 @@ impl ApplicationHandler<UserEvent> for App {
                 ElementState::Released => self.on_release(def_id),
             },
             WindowEvent::MouseWheel { delta, .. } => {
-                let steps = match delta {
-                    MouseScrollDelta::LineDelta(_, y) => y as f64,
-                    MouseScrollDelta::PixelDelta(p) => p.y / 50.0,
+                // The shell translates its own event; how many steps that is
+                // belongs to the wheel and is written once (NATIVE).
+                let delta = match delta {
+                    MouseScrollDelta::LineDelta(_, y) => WheelDelta::Lines(y as f64),
+                    MouseScrollDelta::PixelDelta(p) => WheelDelta::Pixels(p.y),
                 };
+                let steps = Wheel::NATIVE.steps(delta, self.host.ui_scale(def_id) as f64);
                 self.on_wheel(def_id, steps);
             }
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {

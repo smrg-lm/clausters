@@ -16,6 +16,7 @@ use winit::keyboard::{Key, NamedKey};
 use winit::window::{Window, WindowId};
 
 use crate::gpu::Gpu;
+use crate::host::gestures::{Wheel, WheelDelta};
 use crate::host::layout::Rect;
 use crate::host::metrics::Metrics;
 use crate::host::paint::{Mesh, Painter};
@@ -227,10 +228,13 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::MouseWheel { delta, .. } => {
-                let steps = match delta {
-                    MouseScrollDelta::LineDelta(_, y) => y as f64,
-                    MouseScrollDelta::PixelDelta(p) => p.y / 50.0,
+                // The shell translates its own event; how many steps that is
+                // belongs to the wheel and is written once (NATIVE).
+                let delta = match delta {
+                    MouseScrollDelta::LineDelta(_, y) => WheelDelta::Lines(y as f64),
+                    MouseScrollDelta::PixelDelta(p) => WheelDelta::Pixels(p.y),
                 };
+                let steps = Wheel::NATIVE.steps(delta, state.gpu.window.scale_factor());
                 let factor = 0.85f64.powf(steps);
                 let redraw = if state.shift {
                     // anchor measured from the bottom for the frequency axis.

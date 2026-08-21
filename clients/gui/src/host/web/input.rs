@@ -9,6 +9,7 @@
 //! the whole reason a drag behaves identically on a desktop and in a tab.
 
 use super::*;
+use crate::host::gestures::{Wheel, WheelDelta};
 
 /// Translates a winit key into the platform-neutral [`HostKey`] the focus reads
 /// (the browser front's twin of the native `to_key`), or `None` for a key
@@ -369,10 +370,13 @@ impl WebApp {
                 }
             }
             WindowEvent::MouseWheel { delta, .. } => {
-                let steps = match delta {
-                    MouseScrollDelta::LineDelta(_, y) => y as f64,
-                    MouseScrollDelta::PixelDelta(p) => p.y / 50.0,
+                // The shell translates its own event; how many steps that is
+                // belongs to the wheel and is written once (BROWSER).
+                let delta = match delta {
+                    MouseScrollDelta::LineDelta(_, y) => WheelDelta::Lines(y as f64),
+                    MouseScrollDelta::PixelDelta(p) => WheelDelta::Pixels(p.y),
                 };
+                let steps = Wheel::BROWSER.steps(delta, self.host.ui_scale(def) as f64);
                 self.on_wheel(def, steps);
             }
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
