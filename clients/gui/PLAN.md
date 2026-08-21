@@ -2622,13 +2622,16 @@ finished work, where a pending item reads as done.
   through the document and the def is not on the route. `def_json` persisting
   the bytes the script sent is correct and stays.
 
-  **What is left is one real question, and it is not this crate's to answer
-  alone**: a standalone bundle has GuiDefs and no session at all, so a control
-  a user left somewhere has no legitimate owner — and whether a session should
-  carry the configuration of the GuiDefs it used is a question about the
-  *format*. It is written where the format lives
-  (`crates/clausters-document/PLAN.md`, Open decisions, "Does a session carry
-  the configuration of the GuiDefs it was worked through?").
+  **What is left is not this plan's question and is reformulated where it
+  belongs** *(2026-08-21)*: a standalone bundle is a combination of GuiDefs with
+  **no application document behind it**, so a control a user left somewhere has
+  no owner to be written to — and that absence is a question about what the
+  second kind of document *is*, not about what a def stores. It is open and
+  undefined, and it is written where documents live:
+  `crates/clausters-document/PLAN.md`, Open decisions, "What is the second
+  document: the application, and not the arrangement?". Nothing here waits on
+  it, and nothing here changes when it is answered — that is what makes the
+  half settled above worth having settled on its own.
 
 - ✅ **The editing gestures want affordances** *(found 2026-08-10, by eye on `gui_bpf.py` and `gui_multitrack.py` after the K5 port)*. Two gestures that work correctly and that nothing on screen announces. They are one entry because they are one decision — what a *grabbable part* looks like in this host — and answering either alone would give the two a different vocabulary.
 

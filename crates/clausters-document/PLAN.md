@@ -110,33 +110,69 @@ The eight that opened with this file were taken one at a time and are in the sec
 
   **So the two things the roadmap said would move, move like this:** `editing` in the session format **stays**, narrowed to the mapped case and unused until it exists; the per-edit confirmation step **is not built**, because the acknowledgement is it. And the one-tree refactor inherits a simpler world than it would have: one copy of the material, one place an edit lands, and a history that already holds what an undo needs.
 
-- ⬜ **Does a session carry the configuration of the GuiDefs it was worked
-  through?** *(opened 2026-08-21 by the user, answering the GUI plan's
-  "Persistence saves the document, not what the user did to it" — which had
-  framed itself as a choice between a def that reloads as authored and a def
-  that reloads as left)*. That framing was a confusion of domains and is
-  settled: a GuiDef defines an interface, holds no data and persists as the
-  script wrote it; what a session of work produced is the session's, which is
-  this crate's. The composition already round-trips that way — a gesture
-  becomes a change on the arrangement and `to_session` saves it — so nothing is
-  lost on the path that has a document behind it.
+- ⬜ **What is the second document: the application, and not the arrangement?**
+  *(opened 2026-08-21 by the user, and it is **open and undefined** — recorded
+  here to be thought through, not to be answered by the next milestone that
+  trips over it)*. The crate's `Document` was thought for **one** thing: the
+  arrangement. It holds the arrangement's data structures and the GUI is
+  **implicit** in them — a view exists because the objects that represent the
+  data can show themselves, which is exactly why the editor needs no layout
+  saved anywhere. That is a real property and it stays. What it is not is an
+  **application scope**, and the absence of one is what this question is about.
 
-  **The question is the path that does not.** A `standalone` bundle is GuiDefs
-  and defs with no document at all: a control a user left somewhere is
-  *interface configuration*, and it has no owner today. Two answers, and they
-  differ in what a session **is** rather than in where a value is written.
-  **The session carries it** — a table of `{guidef name: {widget: props}}`
-  beside the source table, written from the same overlay `/gui_query` already
-  answers with (`Widget::info()`), which makes a bundle reopen as an instrument
-  and makes "the file being worked on" the one thing that says what state
-  anything was in. **The session does not** — a bundle with no document has no
-  session either, and what it wants is a *preferences* file, which is a
-  different thing with a different lifetime and is not this format's job.
+  **Application scope defines a second level, and a second kind of document.**
+  An application is a *combination of GuiDefs*, and what saves its form and its
+  organization is a document of its own — not the arrangement's. Inside an
+  application one then opens a document, and an arrangement is one kind of
+  document among the kinds that application deals in. The analogy it was argued
+  with is direct: building a text editor, the application scope is the
+  combination of GuiDefs that *is* the editor, specified by a document saying
+  how it is put together; inside it, what one opens is a text document. Audio
+  defs sit on the same axis — they are the application's **processing
+  capabilities**, not its contents.
 
-  **What it costs is asymmetric**: the first is the format, the standalone
-  host's boot, and a writer in both clients; the second is a decision to write
-  down and nothing to build. What must not happen either way is the value going
-  back into the def, since that is the answer the GUI entry already rejected.
+  **So what this project is building is a framework for dynamic applications**
+  made of predefined elements (defs) that combine the host and the server — and
+  such an application could exist **with no interpreter at all**, which is to
+  say with no client. That is the frame the second document has to be designed
+  in, and it is why the question cannot be settled from inside a milestone: it
+  decides what the crate is for as much as what it stores.
+
+  **What is written down and is not being decided:** whether the second document
+  is this crate's at all (it is a document, and a format with two writers in two
+  languages drifts — the argument that put the first one here); what it holds
+  (the GuiDefs and their composition, the defs the application needs, what a
+  "kind of document" is to it); how an arrangement document is *opened inside*
+  one; and what any of it means for the standalone host, which is the case with
+  no interpreter and therefore the case that decides.
+
+  **The `Session`/`Document` naming is secondary to this and waits on it.**
+  There are two `session`s in the tree — this crate's saved file
+  (`session::Session`, the document plus its source table) and the client's
+  isolated environment (`clausters.Session`: a server, a GUI host, a clock) —
+  and the instruction is that the one which is a document be called a document.
+  That is right, but *which* thing ends up called what depends on how many
+  documents there turn out to be, so it is not worth paying twice. Note that
+  `Lifetime::Session` uses *session* in a third sense, the running one, which is
+  the client's rather than the file's; whichever names move, that one is decided
+  in the same pass so the term is not left half renamed. And a rename here is a
+  pass of its own, never a search and replace: it changes the subject of whole
+  paragraphs of doc comment in the crate, in two clients and in three books.
+
+  **The GUI plan's "Persistence saves the document, not what the user did to
+  it" is the same question arriving from the other end**, and is reformulated
+  here rather than answered there *(moved 2026-08-21; the entry stays in
+  `clients/gui/PLAN.md` with the record of what was seen)*. What it found: a
+  named GuiDef persists as the bytes the script sent, so a control a user left
+  somewhere is saved nowhere. What it settled, and what does not need this
+  decision: **the value does not go back into the def** — a GuiDef defines an
+  interface, holds no data, and a widget is not what saves configuration in any
+  application. What it could not settle is where the value *does* go, and this
+  entry is why: a standalone bundle is a combination of GuiDefs with no
+  application document behind it, so there is no owner to write it to. The
+  arrangement's own path is unaffected either way — a gesture becomes a change
+  on the arrangement and the document saves that — which is the measure of how
+  narrowly this misses being urgent.
 
 ## The milestones
 
