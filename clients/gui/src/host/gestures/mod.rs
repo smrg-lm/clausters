@@ -359,7 +359,7 @@ mod keys;
 mod nav;
 
 pub use keys::{ClipEdit, ClipVerb};
-pub use wheel::{Wheel, WheelDelta};
+pub use wheel::{Lines, Wheel, WheelDelta};
 mod press;
 mod wheel;
 

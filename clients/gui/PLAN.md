@@ -2263,17 +2263,39 @@ finished work, where a pending item reads as done.
   of two that was felt. The test asserts the claim rather than either number: a
   notch is one step, on either shell and on any display.
 
-  **One thing is left unmeasured and is deliberately not guessed**: a browser
-  that reports `DOM_DELTA_LINE` — Firefox does — sends its own count of lines
-  per notch (commonly three), and winit passes that through as `LineDelta`. If
-  it is three, a wheel click in Firefox is three steps, which is worse than what
-  was reported and is *not* what the divisor above touches.
-  `Wheel::BROWSER.lines_per_step` is therefore left at the native `1.0`:
-  unchanged behavior rather than a new number nobody has felt. **What to
-  measure**, since the entry's own rule is that this starts with a measurement:
-  log `event.deltaMode` and `event.deltaY` for one wheel click in Firefox and in
-  Chrome, on a page and on a 2x display, and put the two figures in that
-  constant.
+  **Measured 2026-08-21 in a browser, and the number was not the suspected
+  one.** Firefox 153 on X11 reports `DOM_DELTA_LINE` with `deltaY = 6` per
+  notch, identical across every event — so at the placeholder `lines_per_step`
+  of 1.0 a wheel click was **six** zoom steps, worse than the two that were
+  reported and in a mode the entry had not considered. (The measuring page is a
+  dozen lines of DOM — `deltaMode`, `deltaY`, `devicePixelRatio` — and needs
+  none of the web package; it lives in a scratchpad, not in the tree.)
+
+  **What the measurement showed is that the number should not be used.** A
+  pixel report is a browser constant; a *line* report is the viewer's own
+  scroll preference — how far a document moves per notch — and 6 is a setting,
+  so calibrating to it would repeat, smaller, exactly the mistake the `/50` was.
+  Nothing about that preference is about zoom: no browser or OS carries one for
+  how far a notch should zoom, the browsers' own `ctrl`+wheel moves one step per
+  notch whatever the scroll setting says, and **this host had already decided
+  not to honour it anywhere** — a wheel pan is `steps * WHEEL_PAN_PX`, the
+  host's own quantum, and a lane resize `1.1^steps`. The preference was never
+  being respected; it was leaking into a place it means nothing.
+
+  So a line report is **counted, not divided**: `Lines::Notch` takes the
+  direction and reads the event as the one notch it is, which agrees with
+  `Lines::Per(1.0)` natively without either being tuned to the other, and holds
+  for a machine set to 3 lines or to 16. The pixel half keeps its divisor,
+  because a trackpad's stream is continuous and there the magnitude *is* the
+  information — the two shapes `WheelDelta` already had turn out to be the two
+  rules. The test asserts a notch is a step at four different scroll
+  preferences.
+
+  **What is still inferred rather than measured** is `pixels_per_step` for a
+  browser that reports pixels (Chrome does; the machine this was measured on
+  reports lines). The 100 comes from the original report's factor of two
+  against the native divisor, and one wheel click in Chrome on the same page
+  would confirm or correct it.
 
   **The number has to be measured before it is chosen**: `deltaY` per click depends on the browser, the OS and the scale factor, so the fix starts by logging `steps` in both shells and turning one click on each. Then it is **one function** — "a wheel event becomes this many zoom steps", with the per-shell adjustment inside it — that all three call sites use, rather than three copies that happen to agree today. Same family as the drawing divergence and on the input side of it: the host is one, so what reaches it has to be one too.
 

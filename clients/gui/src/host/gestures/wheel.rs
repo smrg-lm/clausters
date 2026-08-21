@@ -8,6 +8,13 @@
 
 use clausters_core::osc::OscType;
 
+use super::super::interact::{self, Hit};
+use super::super::widget::{Axis, WidgetKind};
+use super::super::{Host, scroll};
+use super::effects::*;
+use super::nav::*;
+use super::{GestureCtx, GestureEffect, Gestures, element};
+
 /// One wheel event as the shell reported it, in the shell's own terms — the
 /// two shapes every source has, and the only two this crate has to know.
 ///
@@ -26,6 +33,27 @@ pub enum WheelDelta {
     Pixels(f64),
 }
 
+/// What a **line** report means on a shell — the half of the calibration that
+/// is not a number everywhere.
+#[derive(Debug, Clone, Copy)]
+pub enum Lines {
+    /// One notch is this many lines, in a unit the shell shares with us. X11
+    /// and Wayland send exactly one line per notch, so the count divides.
+    Per(f64),
+    /// The magnitude is the **viewer's own scroll preference** — how far a
+    /// document moves per notch — so it is not ours to divide by. Measured at
+    /// **6** in Firefox 153 on X11, uniform across every event, and it is a
+    /// setting rather than a browser constant: the next machine may say 3.
+    ///
+    /// Nothing there is about zoom. No browser or OS carries a preference for
+    /// how far a notch should *zoom*, and the browsers' own `ctrl`+wheel moves
+    /// one step per notch whatever the scroll setting says. So the event is
+    /// counted as the one notch it is and only its direction is read, which is
+    /// also what makes it agree with `Per(1.0)` natively without either being
+    /// tuned to the other.
+    Notch,
+}
+
 /// What one wheel notch reports **on this shell**, and so what turns a scroll
 /// report into zoom steps.
 ///
@@ -33,22 +61,27 @@ pub enum WheelDelta {
 /// type exists. The same two lines were copied into all three shells —
 /// `LineDelta(_, y) => y`, `PixelDelta(p) => p.y / 50.0` — and the divisor was
 /// calibrated for the native trackpad, so a wheel click was one step in a
-/// window and about two in a page: the browser reports around a hundred pixels
-/// where the trackpad reports fifty. The input was never normalized *per
-/// shell*, and one divisor cannot be right for two sources.
+/// window and several in a page. The input was never normalized *per shell*,
+/// and one divisor cannot be right for two sources.
 ///
 /// **The pixel figure is logical**, which is the second half. winit hands a
 /// browser's `deltaY` over already converted from CSS pixels to physical ones,
 /// so the same notch on a 2x display reports twice the pixels — and dividing
 /// that by a constant makes the zoom rate a property of the *display*. A
 /// trackpad reports physical pixels natively for the same reason. So the scale
-/// comes off before the divisor does, which is [`Wheel::steps`]'s only
-/// arithmetic beyond the division itself.
+/// comes off before the divisor does.
+///
+/// **What the host does with a step is its own quantum** — `0.85^steps` for a
+/// zoom, [`super::super::scroll::WHEEL_PAN_PX`] for a pan, `1.1^steps` for a
+/// lane's height. None of them is a distance the platform has an opinion about,
+/// which is why honouring a raw delta was never respecting a preference; it was
+/// letting one leak into a place it means nothing.
 #[derive(Debug, Clone, Copy)]
 pub struct Wheel {
-    /// Lines one notch reports. X11 and Wayland send exactly one.
-    pub lines_per_step: f64,
-    /// **Logical** pixels one notch reports.
+    /// What a line report means here.
+    pub lines: Lines,
+    /// **Logical** pixels one notch reports, for a report that is continuous
+    /// and cannot be counted (a trackpad, a high-resolution wheel).
     pub pixels_per_step: f64,
 }
 
@@ -56,33 +89,39 @@ impl Wheel {
     /// A window on a desktop: one line per notch, and the trackpad figure the
     /// original divisor was calibrated against.
     pub const NATIVE: Wheel = Wheel {
-        lines_per_step: 1.0,
+        lines: Lines::Per(1.0),
         pixels_per_step: 50.0,
     };
 
-    /// A canvas in a page. The pixel figure is the browser's own step at
-    /// `DOM_DELTA_PIXEL` — about a hundred CSS pixels per notch, which is why
-    /// the native divisor made a page zoom twice as fast.
+    /// A canvas in a page, where both halves vary with the browser: Firefox
+    /// reports lines, Chrome reports pixels, and the same wheel gives both.
     ///
-    /// The line figure is **unmeasured and deliberately left at the native
-    /// one**: a browser that reports `DOM_DELTA_LINE` (Firefox does) sends its
-    /// own count per notch, and guessing it here would trade a defect somebody
-    /// felt for one nobody has. It is written down in the plan as the thing to
-    /// measure in a browser rather than assumed here.
+    /// The pixel figure is the browser's own step at `DOM_DELTA_PIXEL` — about
+    /// a hundred CSS pixels per notch, which is the factor of two that was
+    /// reported against the native divisor. It is **inferred rather than
+    /// measured**: the machine this was calibrated on reports lines, so a
+    /// browser that reports pixels would confirm or correct it.
     pub const BROWSER: Wheel = Wheel {
-        lines_per_step: 1.0,
+        lines: Lines::Notch,
         pixels_per_step: 100.0,
     };
 
     /// The zoom steps one event means: positive up, and one notch is one step
-    /// on every shell and every display.
+    /// on every shell, every browser and every display.
     ///
     /// `ui_scale` is the window's own (the page's device-pixel ratio, the
     /// desktop's scale factor), and it is what makes a pixel report comparable
-    /// with the constant it is divided by.
+    /// with the constant it is divided by. A line report never sees it: a line
+    /// is not a length on screen.
     pub fn steps(&self, delta: WheelDelta, ui_scale: f64) -> f64 {
         match delta {
-            WheelDelta::Lines(y) => y / self.lines_per_step.max(f64::EPSILON),
+            WheelDelta::Lines(y) => match self.lines {
+                Lines::Per(n) => y / n.max(f64::EPSILON),
+                // `f64::signum` answers 1.0 for a zero, which would turn a
+                // report of nothing into a zoom.
+                Lines::Notch if y == 0.0 => 0.0,
+                Lines::Notch => y.signum(),
+            },
             WheelDelta::Pixels(y) => {
                 let logical = y / ui_scale.max(f64::EPSILON);
                 logical / self.pixels_per_step.max(f64::EPSILON)
@@ -90,13 +129,6 @@ impl Wheel {
         }
     }
 }
-
-use super::super::interact::{self, Hit};
-use super::super::widget::{Axis, WidgetKind};
-use super::super::{Host, scroll};
-use super::effects::*;
-use super::nav::*;
-use super::{GestureCtx, GestureEffect, Gestures, element};
 
 impl Gestures {
     /// Wheel over a timeline view: zoom the shared time axis anchored at the
@@ -287,23 +319,38 @@ impl Gestures {
 
 #[cfg(test)]
 mod wheel_tests {
-    use super::{Wheel, WheelDelta};
+    use super::{Lines, Wheel, WheelDelta};
 
-    /// **One notch is one step**, on either shell and on any display. The
-    /// defect this fixes was felt as a page zooming about twice as fast as a
-    /// window, so the assertion is the two agreeing rather than either one's
-    /// arithmetic.
+    /// **One notch is one step**, on either shell, in either browser and on any
+    /// display. The defect was felt as a page zooming faster than a window, so
+    /// the assertion is the two agreeing rather than either one's arithmetic.
     #[test]
     fn a_notch_is_a_step_on_every_shell_and_every_display() {
-        // A desktop wheel reports lines; a page at DOM_DELTA_PIXEL reports
-        // about a hundred CSS pixels, which winit hands over already
-        // multiplied by the window's scale.
+        // A desktop wheel reports one line per notch.
         let native = Wheel::NATIVE.steps(WheelDelta::Lines(1.0), 1.0);
-        let page = Wheel::BROWSER.steps(WheelDelta::Pixels(100.0), 1.0);
         assert!((native - 1.0).abs() < 1e-9, "a wheel click is one step");
+
+        // Firefox reports lines too, but the count is the viewer's scroll
+        // preference: 6 on the machine this was measured on, and a setting
+        // rather than a constant. The preference is not read, so a machine set
+        // to 3 -- or to 16 -- zooms exactly as far.
+        for preference in [1.0, 3.0, 6.0, 16.0] {
+            let page = Wheel::BROWSER.steps(WheelDelta::Lines(preference), 1.0);
+            assert!(
+                (page - native).abs() < 1e-9,
+                "a page at {preference} lines a notch zoomed {page} where a window zoomed {native}"
+            );
+        }
+        // Direction survives the counting, and nothing is not a notch.
+        assert!(Wheel::BROWSER.steps(WheelDelta::Lines(-6.0), 1.0) < 0.0);
+        assert_eq!(Wheel::BROWSER.steps(WheelDelta::Lines(0.0), 1.0), 0.0);
+
+        // Chrome reports pixels, where the magnitude *is* the information: a
+        // trackpad's stream cannot be counted, so that half stays a divisor.
+        let pixels = Wheel::BROWSER.steps(WheelDelta::Pixels(100.0), 1.0);
         assert!(
-            (page - native).abs() < 1e-9,
-            "a page zoomed {page} steps where a window zoomed {native}"
+            (pixels - native).abs() < 1e-9,
+            "a pixel report zoomed {pixels}"
         );
 
         // The same notch on a 2x display: winit doubles the pixels, so the
@@ -311,20 +358,21 @@ mod wheel_tests {
         // screen. A count is not a distance.
         let hidpi = Wheel::BROWSER.steps(WheelDelta::Pixels(200.0), 2.0);
         assert!(
-            (hidpi - page).abs() < 1e-9,
+            (hidpi - pixels).abs() < 1e-9,
             "a notch changed with the display"
         );
 
-        // Direction survives, and a fraction of a notch is a fraction of a
-        // step: a trackpad's fine scroll is not quantized here.
+        // A fraction of a notch is a fraction of a step: a trackpad's fine
+        // scroll is not quantized here.
         assert!(Wheel::NATIVE.steps(WheelDelta::Lines(-1.0), 1.0) < 0.0);
         let half = Wheel::NATIVE.steps(WheelDelta::Pixels(25.0), 1.0);
         assert!((half - 0.5).abs() < 1e-9, "a half notch is half a step");
     }
 
     /// A scale of zero (a shell that has not reported one yet) must not divide
-    /// the zoom to infinity: the guard is in the arithmetic, not at the call
-    /// sites, since there are three of those.
+    /// the zoom to infinity, and neither must a calibration of zero: the guards
+    /// are in the arithmetic, not at the call sites, since there are three of
+    /// those.
     #[test]
     fn an_unreported_scale_does_not_run_away() {
         assert!(
@@ -332,5 +380,11 @@ mod wheel_tests {
                 .steps(WheelDelta::Pixels(100.0), 0.0)
                 .is_finite()
         );
+        let zeroed = Wheel {
+            lines: Lines::Per(0.0),
+            pixels_per_step: 0.0,
+        };
+        assert!(zeroed.steps(WheelDelta::Lines(1.0), 1.0).is_finite());
+        assert!(zeroed.steps(WheelDelta::Pixels(1.0), 1.0).is_finite());
     }
 }
