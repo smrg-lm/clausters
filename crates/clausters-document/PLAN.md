@@ -117,8 +117,17 @@ The eight that opened with this file were taken one at a time and are in the sec
   arrangement. It holds the arrangement's data structures and the GUI is
   **implicit** in them — a view exists because the objects that represent the
   data can show themselves, which is exactly why the editor needs no layout
-  saved anywhere. That is a real property and it stays. What it is not is an
-  **application scope**, and the absence of one is what this question is about.
+  saved anywhere. That property is real and is not what is in question. What it
+  is not is an **application scope**, and the absence of one is what this
+  question is about.
+
+  **`Document` is the arrangement's, *for the moment*** — that scoping is where
+  this decision finds things, not a boundary it has agreed to keep. Whether a
+  document is one kind of thing with the application as a second, or one shape
+  that both levels are written in, is part of what is open here; so nothing
+  should be built on "the crate is the arrangement's" as if it were settled,
+  and this line is here so a reader of the sections above does not take it for
+  one.
 
   **Application scope defines a second level, and a second kind of document.**
   An application is a *combination of GuiDefs*, and what saves its form and its
