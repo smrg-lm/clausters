@@ -2267,9 +2267,13 @@ finished work, where a pending item reads as done.
   one.** Firefox 153 on X11 reports `DOM_DELTA_LINE` with `deltaY = 6` per
   notch, identical across every event — so at the placeholder `lines_per_step`
   of 1.0 a wheel click was **six** zoom steps, worse than the two that were
-  reported and in a mode the entry had not considered. (The measuring page is a
-  dozen lines of DOM — `deltaMode`, `deltaY`, `devicePixelRatio` — and needs
-  none of the web package; it lives in a scratchpad, not in the tree.)
+  reported and in a mode the entry had not considered. The instrument is
+  `clients/web/tests/wheel.html`: `deltaMode`, `deltaY` and `devicePixelRatio`,
+  needing none of the web package built. It is the one page there that is
+  **not** in `test.sh`'s `run_page` list and says so — it needs a hand turning a
+  wheel and has no verdict to beacon — and it is in the tree rather than thrown
+  away because the number it reads is per browser and per machine, so this is
+  asked again and not once.
 
   **What the measurement showed is that the number should not be used.** A
   pixel report is a browser constant; a *line* report is the viewer's own

@@ -1837,6 +1837,23 @@ finished work, where a pending item reads as done.
 
 - ✅ **A page can follow a take while it records** *(shipped 2026-08-19 with the core's `write_buckets` door, closing the GUI plan's "A page cannot fold a streamed overview into the picture it holds")*. `data.RecordingStream` is the receiving end of `/buffer_stream`: one `Peaks` per take, allocated at the buffer's full length and empty, each report folded in through `Peaks.writeBuckets` (the core's own door, so nothing is measured on this side) with `written` saying how far the reports have got. `tests/recording.html` is the acceptance and it asserts the claim rather than the mechanism — a take recorded by the in-page engine, followed while it fills, and then compared **column for column** against a pyramid built from the samples read back. The two limits are the wire's and are documented as such: the summary is the resolution (zoomed inside a bucket the picture is that bucket), and the server keeps one buffer subscription per client, so on a page a script's stream and the GUI host's `fills` view cancel each other.
 
+- ✅ **The wheel had no instrument, so its calibration was a guess**
+  *(added 2026-08-21, taking the GUI plan's "The wheel zooms faster in a page
+  than in a window")*. What one notch reports is neither a constant nor the same
+  in two browsers — Firefox sends `DOM_DELTA_LINE` with the viewer's own scroll
+  preference as the count, Chrome sends `DOM_DELTA_PIXEL` with about a hundred
+  CSS pixels, and winit multiplies a pixel report by the window's scale factor
+  before the host sees it — so the host's `Wheel::BROWSER` cannot be written
+  without a browser. `tests/wheel.html` is that browser: three facts, no wasm,
+  no engine, no server, open it and turn the wheel.
+
+  It is the one page in `tests/` deliberately **outside** `test.sh`'s `run_page`
+  list, and the list says so rather than leaving the absence to be read as an
+  oversight: it needs a hand and has no verdict to beacon. It stays in the tree
+  because the figure is per browser and per machine, so it is asked again rather
+  than once — `pixels_per_step` is still inferred and one wheel click in Chrome
+  would settle it.
+
 - ✅ **A bulk read of more than one chunk gets no reply on the in-page carrier** *(found 2026-08-19 writing `tests/recording.html`, which reads a take back to compare it: `buffer.getSamples()` over 25 600 frames raised `ReplyTimeout: no reply to /buffer_getRange within 5s`, while the same call with `{ chunk: 4096 }` returned every sample)*. So it is not the size of the buffer but the size of one **request**: the chunk `getSamples` picks by default (`server.bulkChunk()`, the server's own maximum) produces a reply the page's ring does not deliver, silently — no `/fail`, no partial, just nothing. The test works around it by naming a chunk, which is what makes the workaround visible; what it means for an ordinary page is that reading a buffer of any size fails by default and works when a number nobody should have to know is passed. Worth taking with the next thing that touches the carrier's framing: either the ring's frame limit is what `bulkChunk` should answer, or the reply has to be split where it is written.
 
   **The mechanism is no longer a guess** *(2026-08-20, from the GUI host hitting the same wall)*: the server drops a reply whose ring has no room — deliberately, "backpressure, not loss ... all we can do without blocking the server" — and the ring is 64 KiB. So the loss is by design and every reader over the carrier owes itself the arithmetic. The host now does the first of the two fixes named above for its *own* requests: it sizes a chunk so several fit the ring, bounds how many it has in flight, and asks again for what never came back. This entry is the same reasoning applied to `bulkChunk`, which is the number a *user* of the client gets handed.

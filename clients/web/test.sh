@@ -154,6 +154,11 @@ run_page() {   # $1 = page under tests/, $2 = optional WxH viewport
     case "$decoded" in PASS*) ;; *) echo "$page FAILED" >&2; exit 1;; esac
 }
 
+# `tests/wheel.html` is deliberately absent from this list and is not a gap: it
+# measures what one wheel notch reports in the browser it is opened in, so it
+# needs a hand turning a wheel and has no verdict to beacon. Open it when
+# `gestures::Wheel::BROWSER` has to be calibrated; the page says how to read it.
+
 run_page client.html   # the carrier seam itself
 run_page defs.html     # the def model + Server over that carrier
 run_page gui.html      # the GuiDef builders + GuiHost, gestures and all
