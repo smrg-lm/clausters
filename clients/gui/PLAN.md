@@ -2295,11 +2295,18 @@ finished work, where a pending item reads as done.
   rules. The test asserts a notch is a step at four different scroll
   preferences.
 
-  **What is still inferred rather than measured** is `pixels_per_step` for a
-  browser that reports pixels (Chrome does; the machine this was measured on
-  reports lines). The 100 comes from the original report's factor of two
-  against the native divisor, and one wheel click in Chrome on the same page
-  would confirm or correct it.
+  **The pixel half was measured the same day, in Chrome 151 on X11: 120 CSS
+  pixels a notch**, identical across every event — so `pixels_per_step` is 120
+  and not the 100 the original report's factor of two had suggested. It goes in
+  **as read**, and the first version of the measuring page got that wrong: it
+  divided the figure by `devicePixelRatio` and reported 80. `deltaY` at
+  `DOM_DELTA_PIXEL` is already in CSS pixels; winit multiplies it by the
+  window's scale factor and `Wheel::steps` divides that back out, so the ratio
+  **cancels** and dividing again on the way in is a double correction. Read
+  properly it also reverses which way the old constant was wrong: at 100 a
+  Chrome notch was 1.2 steps — twenty per cent fast — not the 0.8 the mistaken
+  row showed. The test now walks four device-pixel ratios so the cancellation is
+  asserted rather than reasoned about.
 
   **The number has to be measured before it is chosen**: `deltaY` per click depends on the browser, the OS and the scale factor, so the fix starts by logging `steps` in both shells and turning one click on each. Then it is **one function** — "a wheel event becomes this many zoom steps", with the per-shell adjustment inside it — that all three call sites use, rather than three copies that happen to agree today. Same family as the drawing divergence and on the input side of it: the host is one, so what reaches it has to be one too.
 

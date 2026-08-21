@@ -1851,8 +1851,16 @@ finished work, where a pending item reads as done.
   list, and the list says so rather than leaving the absence to be read as an
   oversight: it needs a hand and has no verdict to beacon. It stays in the tree
   because the figure is per browser and per machine, so it is asked again rather
-  than once — `pixels_per_step` is still inferred and one wheel click in Chrome
-  would settle it.
+  than once: Firefox 153 answered 6 lines a notch, Chrome 151 answered 120 CSS
+  pixels, on the same machine and the same day.
+
+  **The page's own arithmetic was wrong first time out**, which is worth keeping
+  because it is the kind of error a measuring instrument hides rather than
+  announces: it divided a pixel report by `devicePixelRatio` and reported 80
+  where the answer was 120. `deltaY` is already in CSS pixels, and the ratio
+  belongs to undoing winit's conversion to physical ones — which the *host*
+  does, not the page. The two cancel. Read wrongly it even reversed the sign of
+  the error, showing a notch as short when it was long.
 
 - ✅ **A bulk read of more than one chunk gets no reply on the in-page carrier** *(found 2026-08-19 writing `tests/recording.html`, which reads a take back to compare it: `buffer.getSamples()` over 25 600 frames raised `ReplyTimeout: no reply to /buffer_getRange within 5s`, while the same call with `{ chunk: 4096 }` returned every sample)*. So it is not the size of the buffer but the size of one **request**: the chunk `getSamples` picks by default (`server.bulkChunk()`, the server's own maximum) produces a reply the page's ring does not deliver, silently — no `/fail`, no partial, just nothing. The test works around it by naming a chunk, which is what makes the workaround visible; what it means for an ordinary page is that reading a buffer of any size fails by default and works when a number nobody should have to know is passed. Worth taking with the next thing that touches the carrier's framing: either the ring's frame limit is what `bulkChunk` should answer, or the reply has to be split where it is written.
 

@@ -96,14 +96,15 @@ impl Wheel {
     /// A canvas in a page, where both halves vary with the browser: Firefox
     /// reports lines, Chrome reports pixels, and the same wheel gives both.
     ///
-    /// The pixel figure is the browser's own step at `DOM_DELTA_PIXEL` — about
-    /// a hundred CSS pixels per notch, which is the factor of two that was
-    /// reported against the native divisor. It is **inferred rather than
-    /// measured**: the machine this was calibrated on reports lines, so a
-    /// browser that reports pixels would confirm or correct it.
+    /// The pixel figure is the browser's own step at `DOM_DELTA_PIXEL`,
+    /// **measured at 120 CSS pixels** per notch in Chrome 151 on X11, identical
+    /// across every event. It goes in as read: `deltaY` is already in CSS
+    /// pixels, winit converts it to physical ones with the window's scale
+    /// factor, and [`Self::steps`] divides that back out — so the ratio cancels
+    /// and the constant stays in the browser's own unit.
     pub const BROWSER: Wheel = Wheel {
         lines: Lines::Notch,
-        pixels_per_step: 100.0,
+        pixels_per_step: 120.0,
     };
 
     /// The zoom steps one event means: positive up, and one notch is one step
@@ -347,20 +348,16 @@ mod wheel_tests {
 
         // Chrome reports pixels, where the magnitude *is* the information: a
         // trackpad's stream cannot be counted, so that half stays a divisor.
-        let pixels = Wheel::BROWSER.steps(WheelDelta::Pixels(100.0), 1.0);
-        assert!(
-            (pixels - native).abs() < 1e-9,
-            "a pixel report zoomed {pixels}"
-        );
-
-        // The same notch on a 2x display: winit doubles the pixels, so the
-        // scale has to come off or the zoom rate becomes a property of the
-        // screen. A count is not a distance.
-        let hidpi = Wheel::BROWSER.steps(WheelDelta::Pixels(200.0), 2.0);
-        assert!(
-            (hidpi - pixels).abs() < 1e-9,
-            "a notch changed with the display"
-        );
+        // 120 CSS pixels a notch, measured. winit hands them over multiplied by
+        // the window's scale factor, which is what the second argument undoes —
+        // so the notch is a step on every display rather than on one.
+        for ratio in [1.0, 1.5, 2.0, 2.5] {
+            let pixels = Wheel::BROWSER.steps(WheelDelta::Pixels(120.0 * ratio), ratio);
+            assert!(
+                (pixels - native).abs() < 1e-9,
+                "a page at devicePixelRatio {ratio} zoomed {pixels} where a window zoomed {native}"
+            );
+        }
 
         // A fraction of a notch is a fraction of a step: a trackpad's fine
         // scroll is not quantized here.
