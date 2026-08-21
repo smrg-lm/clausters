@@ -235,6 +235,32 @@ what was wrong. Anything unresolved lives here, at the **end** of the plan —
 never inside the milestone that happened to be open, and never among finished
 work, where a pending item reads as done.)*
 
+- ✅ **A read left its timeout on the socket, and the next send inherited it**
+  *(found 2026-08-21 by the user, resizing `gui_analyzer`'s window: the window
+  died, and what died was the script — `TimeoutError: timed out` out of
+  `synth.set` → `sendall`, not anything in the host; fixed the same day)*. In
+  Python a timeout belongs to the **socket**, not to the call that set it.
+  `OscTcpInterface._recv_into_buf` set one per read and never took it off, and
+  `recv` walks its budget down to a remainder — so after a request that spends
+  its budget the socket was left with *microseconds* on it, and the next
+  `sendall` that could not complete at once raised instead of waiting. The
+  client gives a send no deadline; it was holding a read's.
+
+  **Why a resize is what found it**, since the sequence is the whole of the
+  defect: the host asks the server for everything it has to redraw, the server
+  takes a moment to drain, the script's send buffer backs up for an instant —
+  and the example's control sweep, which should have waited that instant, died.
+  The example was right and so was the host. Anything that sends while the
+  server is busy could hit it, which is why it read as random.
+
+  Fixed by restoring the socket to blocking in a `finally`, in both interfaces
+  that set one (`OscTcpInterface`, and `OscUdpInterface.recv` for the same
+  reason, where `sendto` is the one that would inherit it). The regression test
+  is a fake socket that **refuses a send while a timeout is set**, which is what
+  a real one does under a full buffer — it fails against the old code with the
+  remainder still on the socket. `OscWsInterface` was already clean: its
+  connection takes the timeout per call.
+
 - ✅ **Following a recording has a class in the web client and a primitive here** *(named 2026-08-19, shipping the streamed overview: the reference client is the one that ended up with less)*. `/buffer_stream` sends the summary of what a take is recording, and both clients can subscribe (`stream_buffers`). What folds a report into a picture is `clausters_core::peaks`, bound here as `peaks_cache_write_buckets` / `gui.peaks_cache_stream_file` — the primitive, and the one shape that makes sense for a headless script: the cache file a `waveform(cache=...)` maps grows as the take does. The web client has `data.RecordingStream` on top of it, which owns a pyramid per take, tracks how far each was written and calls back on every report. Nothing here is wrong — but the ordering rule is that this client leads and the port follows, so the class is missing on the side that is supposed to have it first. What it would look like: an `OscFunc` on `/buffer_stream.reply`, a cache (in memory or on disk) per take, and `written` beside it; the one subscription per client is the constraint either way.
 
   **Ported 2026-08-21 as `clausters.data.RecordingStream`**, with the twin's

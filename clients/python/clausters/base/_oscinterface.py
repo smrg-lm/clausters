@@ -216,6 +216,12 @@ class OscUdpInterface(OscInterface):
             return data
         except (TimeoutError, OSError):
             return None
+        finally:
+            # Blocking again on the way out: the timeout is the socket's, so
+            # one left behind would govern `sendto` too. See the same `finally`
+            # in `OscTcpInterface._recv_into_buf`, where it is what a resize
+            # found.
+            self._sock.settimeout(None)
 
 
 class OscTcpInterface(OscInterface):
@@ -268,12 +274,23 @@ class OscTcpInterface(OscInterface):
 
     def _recv_into_buf(self, timeout) -> bool:
         """Reads one chunk into ``_buf`` within ``timeout``; False on
-        timeout/close."""
+        timeout/close.
+
+        The socket goes back to **blocking** on the way out, and that is not
+        housekeeping. A timeout in Python belongs to the *socket*, not to the
+        call that set it, so one left behind governs the next ``sendall`` as
+        well — and `recv` walks this with a shrinking remainder, so a request
+        that spends its budget leaves microseconds on it. The next send that
+        cannot complete at once then raises instead of waiting, which is a
+        send this client never gave a deadline to.
+        """
         self._sock.settimeout(timeout)
         try:
             chunk = self._sock.recv(65536)
         except (TimeoutError, OSError):
             return False
+        finally:
+            self._sock.settimeout(None)
         if not chunk:
             return False
         self._buf += chunk

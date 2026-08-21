@@ -19,6 +19,12 @@ class FakeSocket:
         self.timeout = None
 
     def sendall(self, data):
+        # What a real socket does when a timeout is set and the send buffer is
+        # momentarily full: it raises rather than waiting. The fake raises
+        # unconditionally, since what is being asserted is that no timeout is
+        # set at all by the time a send happens.
+        if self.timeout is not None:
+            raise TimeoutError("timed out")
         self.sent += data
 
     def recv(self, _n):
@@ -100,3 +106,26 @@ if __name__ == "__main__":
             except BaseException as e:  # noqa: BLE001
                 print(f"FAIL {name}: {e}")
                 traceback.print_exc()
+
+
+def test_a_read_leaves_the_socket_blocking_for_the_next_send():
+    """A timeout in Python belongs to the **socket**, not to the call that set
+    it, so one left behind by a read governs the next ``sendall`` as well.
+
+    Found by use 2026-08-21: `gui_analyzer` died on a window resize. The host
+    asked the server for everything it had to redraw, the script's send buffer
+    backed up for an instant, and the control sweep's ``synth.set`` raised
+    ``TimeoutError`` instead of waiting a moment -- a send this client never
+    gave a deadline to, holding one inherited from a read. `recv` walks its
+    budget down to a remainder, so after a request that spends it the socket is
+    left with microseconds on it, which is why the window died rather than
+    stuttering.
+    """
+    iface = _iface([b""])                 # one read that comes back empty
+    assert iface.recv(0.01) is None
+    assert iface._sock.timeout is None, "the read left its timeout on the socket"
+    # The send that was dying. It goes out because nothing is set any more.
+    iface.send_msg(("127.0.0.1", 57110), "/node_set", 1000, "freq", 440.0)
+    addr, args = osc.decode(_unframe(bytes(iface._sock.sent)))
+    assert addr == "/node_set"
+    assert args[:3] == [1000, "freq", 440.0]
