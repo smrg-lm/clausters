@@ -11,7 +11,11 @@ description = "The shared core's JS door: a thin wasm-bindgen shell over clauste
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-clausters-core = { path = "../clausters-core" }
+# `notation` is on here: the score model, the SVG walk and the MEI encoder are
+# what a page engraves with, and they are the same ones the native binding
+# drives. The engraver itself is not in this build -- it is a JS object the page
+# hands in (see `Engraver` in the notation door below).
+clausters-core = { path = "../clausters-core", features = ["notation"] }
 # The document: one implementation of what an edit means, bound here as it is
 # bound over the C ABI, so the web client re-derives none of it.
 clausters-document = { path = "../clausters-document" }

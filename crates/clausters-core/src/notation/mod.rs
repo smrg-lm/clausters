@@ -38,5 +38,5 @@ mod svg;
 
 pub use cursors::{Cursor, TimemapEntry, cursor_track};
 pub use mei::{Slot, voice_to_mei};
-pub use score::{Engraver, NoteEvent, Page, Score};
+pub use score::{Engraver, NoteEvent, Page, Score, engrave_options};
 pub use svg::{DisplayList, Prim, svg_to_display_list};

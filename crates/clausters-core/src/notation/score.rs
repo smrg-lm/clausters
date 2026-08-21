@@ -80,6 +80,35 @@ pub trait Engraver {
     fn midi_values(&self, xml_id: &str) -> Option<String>;
 }
 
+/// The engraver's options for one page, as the JSON object it is configured
+/// with — `scale` (staff size), `page_width` (the page units a score wraps into
+/// systems at) and whatever `extra` a caller merges over them.
+///
+/// Here rather than in a binding because these are what a page *looks like*,
+/// and two clients configuring their engravers differently would draw the same
+/// score two ways — a display list that cannot be compared across clients, which
+/// is the one thing the shared engraver was for. A caller passing non-object
+/// JSON as `extra` has it ignored rather than refused.
+pub fn engrave_options(scale: i32, page_width: i32, extra: Option<&str>) -> String {
+    use serde_json::{Map, Value, json};
+    let mut map: Map<String, Value> = json!({
+        "scale": scale,
+        "adjustPageHeight": true,
+        "svgViewBox": true,
+        "breaks": "auto",
+        "pageWidth": page_width,
+    })
+    .as_object()
+    .cloned()
+    .unwrap_or_default();
+    if let Some(extra) = extra
+        && let Ok(Value::Object(m)) = serde_json::from_str::<Value>(extra)
+    {
+        map.extend(m);
+    }
+    Value::Object(map).to_string()
+}
+
 /// One engraving, in the three layers a client sends and plays.
 ///
 /// The drawing layers are flattened in, so the serialized object is exactly the

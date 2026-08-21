@@ -47,6 +47,10 @@ clients/web/
       event.ts  eventstream.ts  pattern.ts  timeline.ts
     form/                 #   the arrangement (mirrors clausters/form)
       element.ts  aggregate.ts  render.ts  document.ts
+    gui/notation/         #   engraving (mirrors clausters/gui/notation)
+      engraver.ts  mei.ts  view.ts  _verovio.ts (the wasm toolkit)
+  vendor/                 # the engraver, built by third_party/build-verovio-wasm.sh
+                          #   (git-ignored; build.sh stages it into dist/)
     data/                 #   the data paths: what a view reads off the server
       buses.ts  taps.ts   #     the streamed sources (/bus_stream, /bus_tapStream)
       samples.ts  peaks.ts analysis.ts
@@ -82,7 +86,7 @@ The repo-wide posture — minimal, user-space, reproducible — applied to the J
 - **No bundler for the package.** Nothing a page loads needs one: the package ships unbundled, the wasm bundles and the worklet module must stay static assets anyway (`AudioWorklet.addModule` and bundlers are a known friction), and the browser loads bare ESM natively. Evaluated and not adopted: **vite** (a dev server with HMR plus rollup/esbuild underneath — tens of MB of dev machinery whose two roles are already covered by `http.server` and `tsc --watch`; revisit only if HMR-grade DX is genuinely missed), **vitest** (pulls vite in as its platform). **`esbuild` was adopted 2026-08-04 for one artifact and dropped again on 2026-08-05** with the notebook front end that needed it: a client handed over a carrier and imported from `blob:` URLs cannot load a module graph with cycles (this one has three), which is the one condition this bullet always named. Nothing in `dist/` is bundled now — it is the `src/` tree emitted 1:1 — and the carrier that wanted it lives on the `jupyter` branch.
 - **Tests: `node:test`, built into node — zero dependencies.** Node runs `.ts` directly (native type stripping, default since 23.6), so pure-logic tests (codec parity, clock arithmetic, builders) run straight from source with `node --test`, no compile step, no runner package. Browser-only behavior (audio, canvas, the elements) keeps the B-track posture: headless-Chrome smoke scripts with the access-log beacon.
 - `typedoc` (the W5 API-reference generator) gets evaluated under this same lens when W5 starts.
-- The **Emscripten SDK** (`emcc`, user-space via `emsdk`) is the one heavy addition this lens admits, and it is **W7's**, not the toolchain's baseline: it builds `libfaust-wasm` so a Faust def compiles in the page (`third_party/BUILD-FAUST.md`, "WebAssembly parts" — documented, never built here). It stays out of the JS toolchain proper — nothing in `src/` or the test loop touches it, `build.sh` only stages its output as static assets, and the slim run-time entry never loads them. Evaluated under the same lens when W7 starts, decision recorded then.
+- The **Emscripten SDK** (`emcc`, user-space via `emsdk`) is the one heavy addition this lens admits, and it **arrived on 2026-08-21 with notation rather than with W7**: the engraver a page loads is built from `third_party/verovio.pin` by `third_party/build-verovio-wasm.sh`, because the published npm artifact is a different build of the same version and a build is what decides which score formats a client reads (`docs/decisions.md`, which also records what would reverse the choice). It stays out of the JS toolchain proper on the terms this bullet always set: nothing in `src/` or the test loop touches it, `build.sh` only stages its output, and the slim run-time entry never loads it. What follows is the original entry, still accurate about the *other* artifact: it builds `libfaust-wasm` so a Faust def compiles in the page (`third_party/BUILD-FAUST.md`, "WebAssembly parts" — documented, never built here). It stays out of the JS toolchain proper — nothing in `src/` or the test loop touches it, `build.sh` only stages its output as static assets, and the slim run-time entry never loads them. Evaluated under the same lens when W7 starts, decision recorded then.
 
 ## Milestones
 
@@ -1442,18 +1446,26 @@ edit, `redoLayout`, timemap); `clausters-notation` implements that port over
 libverovio for a native caller, and a page implements it over the Emscripten
 module's exports. The SVG walk and the MEI encoder are in the core already,
 which is what makes this a move rather than a rewrite.
-`docs/bindings.md`'s notation table records "not built for wasm" on every row
-and is what that work rewrites.
+`docs/bindings.md`'s notation table recorded "not built for wasm" on every row,
+and that table is now rewritten.
 
-**Landed on 2026-08-21, the first half of it**: the pin is the 6.3.0 release,
-and `Score` is `clausters_core::notation::Score` over an `Engraver` port that
-`clausters-notation`'s `Toolkit` implements — so the state machine (the
-action/commit/reload cycle, the draw-before-edit rule, the MEI snapshot stack)
-compiles to wasm and is tested over a fake engraver with no C++ library
-present. The rationale is in `docs/decisions.md`. What is left of the port:
-the wasm door (`clausters-core-web`) exposing `Score` over a JS engraver, the
-TypeScript shell at `gui/notation/`'s four paths, and mounting the npm
-`verovio` toolkit behind it.
+**Landed whole on 2026-08-21.** The pin is the 6.3.0 release; `Score` is
+`clausters_core::notation::Score` over an `Engraver` port (`clausters-notation`
+implements it over libverovio, `clausters-core-web` over a JS object); the
+engraver is built for wasm by `third_party/build-verovio-wasm.sh` **from the
+same pin and with the same importer options as the native library**, which is
+the decision `docs/decisions.md` records — one *build*, not one version, because
+a build is what decides which formats a client reads. The shell is
+`src/gui/notation/` at the reference's four paths, and
+`tests/notation-parity.test.ts` engraves the Python client's fixtures through
+the browser stack and compares the page primitive by primitive, before an edit
+and after one.
+
+Two things are deliberately not in it, and neither is a decision left open:
+`view.ts` has `scoreView` and **not** `transport`, which is the arrangement
+track's shared object and lands with it; and `examples/score.html` covers the
+engraving and editing halves of `gui_score.py` while its transport bar waits on
+the same thing.
 
 One rule the `gui/transport.py` port must carry, since the reference learned it
 after the list above was written: **a drained scan is not the end of the piece.**

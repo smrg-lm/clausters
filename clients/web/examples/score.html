@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: engraved notation in the page</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 76rem; }
+      #note, #log { max-width: 52rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+      .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      #stage { align-self: stretch; height: min(70vh, 560px); }
+      #stage canvas { display: block; width: 100%; height: 100%; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">The web port of the Python client's
+<code>gui_score.py</code>: <b>engraved music notation, clickable and
+editable</b>.
+
+This page engraves a melody with <b>verovio compiled to wasm</b> — the same
+pinned sources, the same build options and the same version the native client
+links — and walks the SVG into the host's <code>score</code> display list with
+the same shared core. The host tessellates that into its ordinary mesh:
+<b>it never reads a note</b>, and it has no engraver in it.
+
+Every primitive carries the MEI <code>xml:id</code> it was engraved from, so a
+<b>click</b> reports the element under the cursor and this script sounds that
+note, and a <b>vertical drag</b> reports the diatonic staff position the note
+<i>reaches</i> — absolute, so a resend cannot move it twice. This side applies
+it (<code>transposeTo</code>), re-engraves and sends the page back; the ids
+survive the edit, so the note stays selected. <b>Undo</b> and <b>redo</b> are
+the client's too: the score owns a stack of MEI snapshots, because the host
+holds no score.
+
+The engraver is <b>loaded on demand</b> — it is not part of the runtime, and a
+page that draws no notation never downloads it.
+
+<i>Not here yet, and not a defect of this page:</i> the Python example also
+<b>plays the score</b> with a transport bar, the cursor following the sound.
+That transport is shared with the multitrack editor, which this client has not
+ported; the score half lands with it.
+
+Everything runs on the <b>in-page engine</b>: no server process, no socket.</div>
+
+      <div class="row">
+        <button id="start">start</button>
+      </div>
+
+      <div id="stage"></div>
+      <pre id="log"></pre>
+    </main>
+
+    <script type="module">
+      import {
+        loadOsc, loadCore, pageConnection, server as engine, Server,
+        Event, GuiHost, guiHost, gui,
+      } from "../dist/index.js";
+
+      const { notation } = gui;
+      const el = (id) => document.getElementById(id);
+      const log = (line) => { el("log").textContent += line + "\n"; };
+
+      let server, host, page, win = null, unfit = null;
+      let score = null;      // the open document: engraved, editable, undoable
+      let byId = new Map();  // MEI id -> the note it draws, rebuilt per page
+
+      // The melody, written as the client's own events — the inverse
+      // direction, data to score: `fromNotes` reduces them to a voice and the
+      // shared encoder lays that out into barred, tied MEI.
+      const MELODY = [
+        [67, 1.0], [69, 0.5], [71, 0.5], [72, 1.0], [71, 1.0],
+        [69, 1.5], [67, 0.5], [64, 2.0],
+        [65, 1.0], [67, 1.0], [69, 1.0], [67, 2.0],
+      ].map(([midinote, dur]) => new Event({ midinote, dur }));
+
+      // ---- the window ----
+      // `scoreView` wraps the page in a scroll sized to it, so a multi-system
+      // score scrolls down the systems and the wheel zooms into a dense bar.
+      // `editable` is what opts the page into pitch dragging; without it the
+      // view is read-only, which is what a plain plot of a score wants.
+      const scene = (displayList) => gui.window(
+        { title: "score", layout: "col", margin: 8.0, gap: 8.0 },
+        gui.panel(
+          { layout: "row", h: 34, gap: 8.0 },
+          gui.button({ name: "undo", label: "undo" }),
+          gui.button({ name: "redo", label: "redo" }),
+        ),
+        notation.scoreView(displayList, {
+          name: "page", editable: true, width: 1000.0,
+        }),
+      );
+
+      // Every edit ends here: re-engrave, replace the drawn page in place and
+      // rebuild the id index. The host keeps its own chrome across the swap,
+      // which is what leaves the edited note selected.
+      const refresh = () => {
+        const dl = score.displayList();
+        // One prop, not a bag of layers: the whole page travels as
+        // `display_list`, which is what the builder sends too.
+        win.widget("page").set({ displayList: notation.pageJson(dl) });
+        byId = new Map(dl.notes.map((note) => [note.id, note]));
+      };
+
+      const sound = (note) => {
+        new Event({
+          midinote: note.pitch, dur: note.dur / 1000.0, amp: 0.15,
+        }).play(server);
+      };
+
+      const onScore = (tag, ...rest) => {
+        if (tag === "element" && rest.length) {
+          const note = byId.get(rest[0]);
+          if (note === undefined) return log(`  clicked ${rest[0] || "(blank paper)"}`);
+          log(`  clicked note ${rest[0]}: MIDI ${note.pitch} at ${note.t.toFixed(0)} ms`);
+          sound(note);
+        } else if (tag === "transpose" && rest.length >= 2) {
+          // The host drew the drag; this side makes it true. The payload is a
+          // position and not a displacement, which is what makes it safe to
+          // arrive late or twice: the step count is computed against the
+          // engraving this side has right now.
+          const [element, position] = [rest[0], Math.round(rest[1])];
+          if (!score.transposeTo(element, position)) {
+            return log(`  refused to transpose ${element}`);
+          }
+          refresh();
+          const note = byId.get(element);
+          log(`  moved ${element} to staff position ${position}`
+            + (note ? ` -> MIDI ${note.pitch}` : ""));
+          if (note) sound(note);
+        }
+      };
+
+      const step = (name, act) => (down) => {
+        if (!down) return;
+        if (act()) { refresh(); log(`  ${name}`); }
+        else log(`  nothing to ${name}`);
+      };
+
+      async function run() {
+        el("start").disabled = true;
+        await loadOsc();
+        await loadCore();
+        const raw = await engine({ channels: 2 });
+        await raw.resume();
+        server = await Server.open(await pageConnection());
+        host = await GuiHost.page();
+        page = await guiHost();
+        el("stage").append(page.canvas);
+
+        // Opening the score is the one asynchronous step of the layer, and
+        // only because the engraver module is fetched the first time a page
+        // engraves. Everything after it — drawing, editing, undo — is direct.
+        log("loading the engraver …");
+        score = await notation.Score.fromNotes(MELODY, { meter: "4/4", key: "G" });
+        log(`verovio ${score.engraverVersion()}`);
+
+        const dl = score.displayList();
+        byId = new Map(dl.notes.map((note) => [note.id, note]));
+        win = host.open(scene(dl));
+        unfit?.();
+        unfit = page.fit(win.id, el("stage"));
+        win.widget("page").onEvent(onScore);
+        win.widget("undo").onEvent(step("undo", () => score.undo()));
+        win.widget("redo").onEvent(step("redo", () => score.redo()));
+        log(`${dl.notes.length} notes engraved — click one to hear it, `
+          + "drag it up or down to transpose");
+      }
+
+      el("start").onclick = () => run().catch((error) => log(`error: ${error}`));
+    </script>
+  </body>
+</html>

@@ -6268,3 +6268,65 @@ engraver to be right about. And the two clients must engrave with **one verovio
 version**: `third_party/verovio.pin` tracks the release the npm package
 publishes, so a display list from a window and one from a page are comparable to
 each other rather than to two different engines.
+
+## The browser's verovio is our build, not the published one — and the SDK that makes it so
+
+The engraver reaches a page as a wasm module, and there are two ways to have
+one: take the artifact upstream publishes on npm, or compile the pinned sources
+ourselves with the **Emscripten SDK**. The published one is tempting — no
+toolchain, no build leg, no CI question — and it is what was chosen first,
+before the two builds were actually compared.
+
+**They are not the same build.** `third_party/build-verovio.sh` trims verovio on
+purpose: `NO_HUMDRUM_SUPPORT` (which vendors humlib, 148k lines, and is worth
+3 MB in the wheel), `NO_GABC_SUPPORT`, `NO_DARMS_SUPPORT` — so the library
+carries MEI, MusicXML and its compressed form, Plaine & Easie and ABC, which is
+the list of formats the client actually offers. Upstream's npm build makes its
+own choices. Taking it would have meant one *version* at both ends and two
+different builds, and what a build decides here is **which input formats
+exist** — so a page would read a GABC file a window refuses. That is a
+capability in one client and not the other, which this project calls a defect
+rather than packaging (`CLAUDE.md`, "Non-divergence").
+
+**Decision.** `third_party/build-verovio-wasm.sh` sits beside the native script,
+reads the same `verovio.pin` and passes **the same three options**; the web
+client's `build.sh` stages the pair it produces, off the slim `dist/runtime.js`
+so a page that never engraves downloads nothing. The Emscripten SDK is installed
+user-space under `~/.local`, the same pattern as node and libfaust; nothing in
+`src/` or the test loop touches it, which is what keeps the "typescript is the
+only dependency" rule intact. The fonts are deliberately *not* trimmed, by the
+same argument that trims the importers: the native prefix installs the whole
+SMuFL set, so cutting it in the browser would make a font a window engraves in
+one a page cannot.
+
+**Size turned out not to be an argument at all, and the estimate that said
+otherwise was wrong.** Dropping `-s SINGLE_FILE=1` — upstream's release flag,
+which base64s the engraver into the glue — was expected to halve the bytes.
+Measured, it does not: the published module is 7.0 MB raw and 2.2 MB gzipped,
+this build is 6.6 MB and 2.2 MB. Base64 costs a third on disk and gzip gives
+almost all of it back, so the two are the same download. What a separate
+`.wasm` still gives is a file compiled from bytes rather than decoded from text
+first, and cached and served as what it is — worth having, and not worth a
+decision on its own. The decision rests on the build identity above, alone.
+
+**This is reversible, and the conditions are worth naming.** The producer of the
+artifact is not visible to any TypeScript: the shell drives the six toolkit
+calls through the `Engraver` port whatever compiled them, so going back to the
+published packages — npm `verovio`, and `@grame/faustwasm` for the Faust
+compiler — costs a change to `build.sh` and an asset path, and nothing else. Do
+it if the vendored build stops being convenient **for both** artifacts: if
+keeping the SDK current turns into a maintenance tax, if CI's build leg costs
+more than the divergence it prevents, or if upstream's builds converge on the
+options we pass. The reverse trade is the one recorded above, and it is not
+free: a published artifact brings its own build's surface with it.
+
+**Faust is the other half of this and is not settled by it.** `libfaust-wasm` is
+published too (`@grame/faustwasm`), so nothing forces a vendored build there
+either — but the Faust wasm has to be integrated with the Rust engine rather
+than merely loaded beside it, and that integration is what will decide the
+shape. It is also blocked on something a compiler artifact does not solve: the
+in-page engine is the `synth,embed` build with no LLVM JIT, so a def compiled in
+the page has no way to be instantiated until the engine grows one (a wasm DSP
+module behind the worklet, or the Faust interpreter backend executed in our own
+engine). The SDK installed here is what W7 would have had to install; the
+decision it still owes is its own.

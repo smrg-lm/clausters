@@ -593,12 +593,17 @@ the options JSON) is what its `open` does. The split is drawn there because that
 is where the languages actually differ — a page reaches the same engraver
 compiled to wasm, whose exports are that same C wrapper, so it implements the
 same port and runs the same state machine rather than a second one written in
-TypeScript. `clausters-ffi` exposes both over the C ABI, and each
-client is a thin shell over that (`clients/python/clausters/gui/notation/` is
-`ctypes` plus the reduction of its own `Event`/`Timeline` into a voice — the one
-step that reads client-native types, and the seam a richer encoding extends). The host never links verovio, and a second
-client in another language rebinds the same ABI rather than reimplementing a
-line — the same "no engraving logic duplicated per language" split the value-math
+TypeScript. `clausters-ffi` exposes both over the C ABI and
+`clausters-core-web` over wasm, and each client is a thin shell over that
+(`clients/python/clausters/gui/notation/` is `ctypes` and
+`clients/web/src/gui/notation/` is `cwrap`, each plus the reduction of its own
+`Event`/`Timeline` into a voice — the one step that reads client-native types,
+and the seam a richer encoding extends). The engraver is built twice from one
+pin (`third_party/build-verovio{,-wasm}.sh`, the same importer options), which
+is what makes the two drawings comparable rather than merely similar, and
+`clients/web/tests/notation-parity.test.ts` compares them. The host never links
+verovio, and a second client in another language rebinds the same core rather
+than reimplementing a line — the same "no engraving logic duplicated per language" split the value-math
 rule makes elsewhere. Two derived structures ride along, both computed where the
 knowledge is: the score layer folds the timemap into a **cursor track** (musical
 time → page-x and the system's y-span), because only it knows the music; the host

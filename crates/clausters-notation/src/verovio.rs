@@ -296,25 +296,10 @@ pub fn engrave_svg(data: &str, opts: &EngraveOptions) -> Result<String, EngraveE
 /// The verovio options JSON: the fixed defaults plus the caller's scale/width,
 /// with `extra` (a JSON object) merged last so it can override any of them.
 pub(crate) fn options_json(opts: &EngraveOptions) -> String {
-    use serde_json::{Map, Value, json};
-    let mut map: Map<String, Value> = json!({
-        "scale": opts.scale,
-        "adjustPageHeight": true,
-        "svgViewBox": true,
-        "breaks": "auto",
-        "pageWidth": opts.page_width,
-    })
-    .as_object()
-    .cloned()
-    .unwrap_or_default();
-    if let Some(extra) = &opts.extra {
-        // A caller passing non-object JSON gets it ignored, not an error, matching
-        // the Python client's `dict.update`.
-        if let Ok(Value::Object(m)) = serde_json::from_str::<Value>(extra) {
-            map.extend(m);
-        }
-    }
-    Value::Object(map).to_string()
+    // The defaults are the core's (`clausters_core::notation::engrave_options`),
+    // not this crate's: a page configures its engraver through the same function,
+    // so the two clients' pages are laid out identically rather than similarly.
+    clausters_core::notation::engrave_options(opts.scale, opts.page_width, opts.extra.as_deref())
 }
 
 #[cfg(test)]

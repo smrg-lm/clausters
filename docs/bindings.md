@@ -237,25 +237,41 @@ Its document-carrying calls take the document handle.
 
 ## Notation
 
-The whole layer is behind the crate's `notation` and `verovio` features, and
-`verovio` links `libverovio`, which is not built for wasm. A browser that wants
-engraving asks a server for it.
+The engraver used to be the one part of the core a browser could not have, and
+the reason was packaging rather than design: `libverovio` is C++ and nothing
+here built it for wasm. That changed on 2026-08-21. The pinned sources are now
+compiled twice — natively by `third_party/build-verovio.sh` and by Emscripten
+through `third_party/build-verovio-wasm.sh`, **with the same importer options** —
+and the score model moved into `clausters_core::notation` over an `Engraver`
+port, so both clients run one state machine over one engraver
+(`docs/decisions.md`).
+
+What that leaves in this table is a shape difference and nothing else: C hands
+out an opaque handle and takes it back to every call, and wasm has a class.
 
 | C ABI | wasm | Note |
 |---|---|---|
-| `clausters_core_svg_to_display_list` | — | `n/a` — notation layer, not built for wasm |
-| `clausters_core_voice_to_mei` | — | `n/a` — as above |
-| `clausters_score_open` | — | `n/a` — engraver, links libverovio |
-| `clausters_score_free` | — | `n/a` — as above |
-| `clausters_score_display_list` | — | `n/a` — as above |
-| `clausters_score_mei` | — | `n/a` — as above |
-| `clausters_score_transpose` | — | `n/a` — as above |
-| `clausters_score_transpose_to` | — | `n/a` — as above. The absolute form, and the one an edit travels in: `transpose` is verovio's relative call and stays for a caller that has the delta |
-| `clausters_score_edit` | — | `n/a` — as above |
-| `clausters_score_undo` | — | `n/a` — as above |
-| `clausters_score_redo` | — | `n/a` — as above |
-| `clausters_score_can_undo` | — | `n/a` — as above |
-| `clausters_score_can_redo` | — | `n/a` — as above |
+| `clausters_core_svg_to_display_list` | `svg_to_display_list` | |
+| `clausters_core_voice_to_mei` | `voice_to_mei` | |
+| — | `engrave_options` | `idiom` — the engraver's options JSON. A native caller builds it from `EngraveOptions` inside `clausters-notation`, which is where its resource path also lives; a page has no such struct and calls the core's builder directly, so both configure verovio identically |
+| `clausters_score_open` | `JsScore.new` | `idiom` — a constructor where C mints a handle. The engraver is built by the binding either way: natively from a resource path, in a page from the loaded module |
+| `clausters_score_free` | — | `n/a` — wasm frees by `Drop` |
+| `clausters_score_display_list` | `JsScore.display_list` | |
+| `clausters_score_mei` | `JsScore.mei` | |
+| `clausters_score_transpose` | `JsScore.transpose` | |
+| `clausters_score_transpose_to` | `JsScore.transpose_to` | the absolute form, and the one an edit travels in: `transpose` is verovio's relative call and stays for a caller that has the delta |
+| `clausters_score_edit` | `JsScore.edit` | |
+| `clausters_score_undo` | `JsScore.undo` | |
+| `clausters_score_redo` | `JsScore.redo` | |
+| `clausters_score_can_undo` | `JsScore.can_undo` | `idiom` — a getter |
+| `clausters_score_can_redo` | `JsScore.can_redo` | `idiom` — a getter |
+
+**The engraver itself is not in this table and cannot be**: it is not a core
+symbol but a C++ library, reached through `tools/c_wrapper.h` in a process and
+through `cwrap` over the same exports in a page. What holds *those* two together
+is not this file but the pin: one commit, one set of build options, and
+`clients/web/tests/notation-parity.test.ts`, which engraves the Python client's
+fixtures in the browser stack and compares the drawing primitive by primitive.
 
 ## The shared-memory segment
 

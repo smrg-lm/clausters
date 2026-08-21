@@ -127,7 +127,8 @@ impl Slot {
 ///
 /// `meter` is `"num/den"` (e.g. `"4/4"`), `clef` is a shape+line like `"G2"`,
 /// `"F4"` or `"C3"`, and `key` selects the key signature and sharp-vs-flat
-/// spelling (see [`key_signature`]). A duration that is not a single note value
+/// spelling (`key_signature`, private: a link there resolves only in a build
+/// documenting private items). A duration that is not a single note value
 /// is written as tied notes (a dotted value when exact), and a note that
 /// overruns a barline is split and tied across it.
 pub fn voice_to_mei(voice: &[Slot], meter: &str, clef: &str, key: &str) -> String {

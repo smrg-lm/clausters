@@ -63,6 +63,38 @@ node --version && npm --version
 Upgrading is the same recipe with a newer `V`; the `~/.local/lib/node`
 symlink flips atomically.
 
+## Installing the Emscripten SDK (user space, no sudo) — the engraver
+
+Only for **notation**: `gui/notation` engraves with verovio compiled to wasm,
+and that artifact is built here rather than taken from npm, because a page and a
+window must engrave with the same *build* and not merely the same version
+(`docs/decisions.md`). Nothing else in this package needs the SDK — skip this
+section unless you are touching notation, and note that `build.sh` says so and
+carries on when `vendor/verovio` is missing.
+
+```sh
+git clone --depth 1 https://github.com/emscripten-core/emsdk.git ~/.local/lib/emsdk
+cd ~/.local/lib/emsdk && ./emsdk install latest && ./emsdk activate latest
+. ./emsdk_env.sh          # per shell, or from your profile
+```
+
+Then build the engraver from the pin (`third_party/verovio.pin`, the same file
+the native library is built from):
+
+```sh
+third_party/build-verovio-wasm.sh          # writes clients/web/vendor/verovio/
+```
+
+It produces `verovio.js` (70 KB of Emscripten glue, an ES module) and
+`verovio.wasm` (6.5 MB, the engraver with the SMuFL data embedded). `build.sh`
+stages the pair into `dist/vendor/verovio/`; `vendor/` is git-ignored, like
+`dist/`. The module is **loaded on demand** — nothing in the slim runtime
+imports it, so a page that draws no notation never fetches it.
+
+The SDK is ~1.7 GB installed and is the one heavy addition the repository's
+tooling rule admits (`PLAN.md`, "Tooling"). It is also what **W7** will need for
+`libfaust-wasm`; that milestone's own decisions are separate and still open.
+
 ## Build, check, test, serve
 
 All from `clients/web/`. The layout: sources under `src/` (the module tree
@@ -186,9 +218,15 @@ gate the workflow passes through.
    environment — an automation token with publish rights. (npm's OIDC trusted
    publishing is configured per package on a package that already exists, so
    the token is what can create one; it can be swapped in later.)
-4. **The wasm bundles ship inside the tarball** (~2 MB), rather than being
-   fetched at run time: an installed package has to work offline and with no
-   CDN. The worklet is reached as `new URL("./worklet.js", import.meta.url)`,
+4. **The wasm bundles ship inside the tarball**, rather than being fetched at
+   run time: an installed package has to work offline and with no CDN. They are
+   the larger half of it — the engine, the GUI host and the core come to ~9 MB
+   unpacked, and the **engraver adds 6.5 MB more** when `vendor/verovio` is
+   staged. Nothing loads what it does not use (the engraver is imported only by
+   `gui/notation`, and only on demand), but the install pays for all of it; if
+   that ever stops being the right trade, the alternative already named is a
+   companion package for the heavy optional artifacts, and it is the same
+   question `libfaust-wasm` will ask. The worklet is reached as `new URL("./worklet.js", import.meta.url)`,
    the form every bundler recognises as an asset to copy rather than a module
    to inline — a worklet is loaded by URL, into another realm. A consumer whose
    bundler does neither passes its own `workletUrl` to `server()`.

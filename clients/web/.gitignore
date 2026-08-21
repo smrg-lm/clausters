@@ -2,6 +2,9 @@
 # (build.sh copies them from crates/clausters-web, clients/gui and
 # crates/clausters-core-web) — the browser's _bin/_libs.
 /dist/
+# The vendored engraver: a build product of third_party/build-verovio-wasm.sh,
+# 6.5 MB of wasm. Staged into dist/ by build.sh, never committed.
+/vendor/
 node_modules/
 
 # Glue stubs staged into src/ by build.sh (type-checking + node-from-source).

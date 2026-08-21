@@ -133,6 +133,62 @@ host an input method, so the host reads the keys it is handed and no more, and
 the clipboard a field cuts and pastes through is its own, page-wide. Text that
 needs composing is not entered through a host field today.
 
+## Notation: engraving in the page
+
+The `score` widget draws a page of music, and what it draws is a **display
+list** — a glyph-outline table plus placed glyphs, staff lines, stems and beams
+in page units — which the client produces and the host tessellates. The host
+reads no notation and links no engraver; that split is what lets one host
+renderer serve every client.
+
+The engraving is `gui.notation`, and it is the same layer the Python client has:
+the score model, the SVG walk and the MEI encoder are the shared Rust core, and
+the engraver is [verovio](https://verovio.org) compiled to wasm from the same
+pinned sources, with the same options, as the native client links. A page and a
+window engrave one score into one drawing — a parity suite compares them
+primitive by primitive.
+
+```ts
+import { gui, Event } from "clausters";
+const { notation } = gui;
+
+// The inverse direction, data → score: the client's own events become MEI.
+const melody = [67, 69, 71, 72].map((midinote) => new Event({ midinote, dur: 1.0 }));
+const score = await notation.Score.fromNotes(melody, { meter: "4/4", key: "G" });
+
+const page = score.displayList();          // what is drawn, the cursors, the notes
+const win = host.open(gui.window({ title: "score" },
+    notation.scoreView(page, { name: "page", editable: true })));
+```
+
+Opening a score is the layer's one asynchronous step, and only because the
+engraver is **fetched on demand**: nothing in the runtime imports it, so a page
+that draws no notation never downloads it. Everything after that — drawing,
+editing, undo — is direct.
+
+An engraved page comes in three layers from one engraving, because the engraver
+mints fresh MEI ids on every load and ids from two engravings do not line up:
+what the host **draws**, where the **cursor** goes at each onset, and what
+**sounds** (one `{t, dur, pitch, id}` per note, which stays in your script — it
+is what a driver plays).
+
+Editing rides on those ids. A click reports the element under the cursor; a
+vertical drag reports the diatonic staff position the note *reaches* — absolute,
+so an edit that arrives twice moves nothing the second time. Your script applies
+it and sends the new page back:
+
+```ts
+win.widget("page").onEvent((tag, id, position) => {
+    if (tag !== "transpose") return;
+    score.transposeTo(id, Math.round(position));
+    win.widget("page").set({ displayList: notation.pageJson(score.displayList()) });
+});
+```
+
+`score.undo()` and `score.redo()` are the client's, not the host's: the score
+owns a stack of MEI snapshots, and the host holds no score at all. The example
+is `examples/score.html`.
+
 ## Bindings, and the page that runs without a script
 
 A widget's value can bypass this script entirely — to the audio server, or to

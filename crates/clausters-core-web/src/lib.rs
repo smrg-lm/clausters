@@ -1312,3 +1312,216 @@ impl JsLog {
         self.0.clear();
     }
 }
+
+// ---- the notation layer ----------------------------------------------------
+//
+// The engraving logic is the core's and there is one of it: the SVG walk, the
+// MEI encoder, and the editable `Score` -- the order an edit is made in, the
+// reload that keeps the timemap honest, the undo stack of MEI snapshots. What
+// differs in a page is only *where verovio is*: not a linked C++ library but a
+// module the page loads, so the engraver arrives as a JS object and this door
+// makes it look like the port the core drives.
+//
+// The methods that object must have are exactly verovio's toolkit calls, in
+// this language's spelling: `loadData(data)`, `renderSvg(page)`, `mei()`,
+// `edit(actionJson)`, `timemap(optionsJson)`, `midiValues(id)`. The web client
+// wraps the published toolkit in one; anything else answering to those six is
+// as good, which is what makes this testable without an engraver at all.
+
+/// The engraver as a page has it: a JS object with the six toolkit calls.
+///
+/// Every crossing is `Reflect::get` plus a call, and every failure — a missing
+/// method, a thrown exception, a value of the wrong shape — reads as the same
+/// thing a refusal reads as. That is the port's rule (failure is a value), and
+/// it is what keeps a broken engraver from taking a page's edit half-applied:
+/// the score rolls back either way.
+#[cfg(target_arch = "wasm32")]
+struct JsEngraver {
+    object: js_sys::Object,
+}
+
+#[cfg(target_arch = "wasm32")]
+impl JsEngraver {
+    /// Call `name` with `args`, or `None` when the method is missing or threw.
+    fn call(&self, name: &str, args: &[JsValue]) -> Option<JsValue> {
+        let method = js_sys::Reflect::get(&self.object, &JsValue::from_str(name)).ok()?;
+        let method = method.dyn_ref::<js_sys::Function>()?;
+        let out = match args {
+            [] => method.call0(&self.object),
+            [a] => method.call1(&self.object, a),
+            [a, b] => method.call2(&self.object, a, b),
+            _ => return None,
+        };
+        out.ok()
+    }
+
+    fn text(&self, name: &str, args: &[JsValue]) -> Option<String> {
+        self.call(name, args)?.as_string()
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl clausters_core::notation::Engraver for JsEngraver {
+    /// A page has one thread and the engraver is reached from it alone, so
+    /// there is nothing to serialize. The guard exists for the native binding,
+    /// where libverovio's process-wide state makes it load-bearing.
+    type Guard = ();
+
+    fn lock(&self) -> Self::Guard {}
+
+    fn load_data(&self, data: &str) -> bool {
+        self.call("loadData", &[JsValue::from_str(data)])
+            .map(|v| v.is_truthy())
+            .unwrap_or(false)
+    }
+
+    fn render_svg(&self, page: i32) -> String {
+        self.text("renderSvg", &[JsValue::from_f64(page as f64)])
+            .unwrap_or_default()
+    }
+
+    fn mei(&self) -> String {
+        self.text("mei", &[]).unwrap_or_default()
+    }
+
+    fn edit(&self, action: &str) -> bool {
+        self.call("edit", &[JsValue::from_str(action)])
+            .map(|v| v.is_truthy())
+            .unwrap_or(false)
+    }
+
+    fn timemap(&self, options: &str) -> String {
+        self.text("timemap", &[JsValue::from_str(options)])
+            .unwrap_or_default()
+    }
+
+    fn midi_values(&self, xml_id: &str) -> Option<String> {
+        self.text("midiValues", &[JsValue::from_str(xml_id)])
+            .filter(|s| !s.is_empty())
+    }
+}
+
+/// A loaded score, held open in Rust so it can be edited and re-engraved — the
+/// JS face of [`clausters_core::notation::Score`].
+///
+/// The same object the Python client holds over the C ABI, running the same
+/// state machine: a page that transposes a note and one that transposes it in a
+/// window take the identical sequence of calls to verovio.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = Score)]
+pub struct JsScore(clausters_core::notation::Score<JsEngraver>);
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_class = Score)]
+impl JsScore {
+    /// Load `data` (any format the engraver auto-detects) on `engraver`, or
+    /// throw when it could not be read.
+    ///
+    /// Configuring the engraver — its resource path, its options — happens on
+    /// the JS side before this, exactly as the native binding configures its
+    /// toolkit before handing it over.
+    #[wasm_bindgen(constructor)]
+    pub fn new(engraver: js_sys::Object, data: &str) -> Result<JsScore, JsError> {
+        clausters_core::notation::Score::open(JsEngraver { object: engraver }, data)
+            .map(JsScore)
+            .ok_or_else(|| JsError::new("the engraver could not load the score data"))
+    }
+
+    /// This score engraved into a page: the display list the host draws, the
+    /// cursor track a playhead follows, and the notes that sound.
+    #[wasm_bindgen(js_name = displayList)]
+    pub fn display_list(&mut self, page: i32) -> Result<String, JsError> {
+        serde_json::to_string(&self.0.display_list(page)).map_err(|e| JsError::new(&e.to_string()))
+    }
+
+    /// The score as MEI, ids and all — what to persist, and what an undo step
+    /// is made of.
+    pub fn mei(&self) -> String {
+        self.0.mei()
+    }
+
+    /// Whether there is an edit to step back over.
+    #[wasm_bindgen(getter, js_name = canUndo)]
+    pub fn can_undo(&self) -> bool {
+        self.0.can_undo()
+    }
+
+    /// Whether there is an undone edit to step forward into.
+    #[wasm_bindgen(getter, js_name = canRedo)]
+    pub fn can_redo(&self) -> bool {
+        self.0.can_redo()
+    }
+
+    /// Step back one edit; `false` when there is nothing to undo.
+    pub fn undo(&mut self) -> bool {
+        self.0.undo()
+    }
+
+    /// Step forward again after an undo; `false` when there is nothing to redo.
+    pub fn redo(&mut self) -> bool {
+        self.0.redo()
+    }
+
+    /// Move a note by `steps` diatonic steps along the staff, as one undo step.
+    /// The relative form: reach for it only when the delta is what you have.
+    pub fn transpose(&mut self, element_id: &str, steps: i32) -> bool {
+        self.0.transpose(element_id, steps)
+    }
+
+    /// Move a note **to** a diatonic staff position, as one undo step — the
+    /// shape an edit travels in, so a resend cannot move the note twice.
+    #[wasm_bindgen(js_name = transposeTo)]
+    pub fn transpose_to(&mut self, element_id: &str, position: i32, page: i32) -> bool {
+        self.0.transpose_to(element_id, position, page)
+    }
+
+    /// One raw editor action (`set`, `insert`, `delete`, …) as a single undo
+    /// step, `param` being its parameter object as JSON.
+    pub fn edit(&mut self, action: &str, param: &str) -> bool {
+        self.0.edit(action, param)
+    }
+}
+
+/// The engraver's options for one page, as the JSON object it is configured
+/// with: `scale` (staff size), `pageWidth` (the page units a score wraps into
+/// systems at) and an optional JSON object merged over them.
+///
+/// A page configures its engraver through this rather than through a table of
+/// its own, for the same reason the score model is shared: two clients that
+/// configure verovio differently draw the same score two ways, and then no
+/// display list from one is comparable with one from the other.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = engraveOptions)]
+pub fn engrave_options(scale: i32, page_width: i32, extra: Option<String>) -> String {
+    clausters_core::notation::engrave_options(scale, page_width, extra.as_deref())
+}
+
+/// Walk a verovio SVG into a `score` display list, as JSON.
+///
+/// The one-shot path: a page that only draws a score engraves once and walks
+/// the SVG, with no document held open. A malformed SVG yields an empty display
+/// list rather than an error, as the C ABI's twin does.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = svgToDisplayList)]
+pub fn svg_to_display_list(svg: &str) -> Result<String, JsError> {
+    serde_json::to_string(&clausters_core::notation::svg_to_display_list(svg))
+        .map_err(|e| JsError::new(&e.to_string()))
+}
+
+/// Lay a **voice** — a JSON array of slots, `{"midis": [60], "ticks": 8}` per
+/// note or chord and `{"ticks": 8}` per rest — out into barred, tied MEI.
+///
+/// `meter` is `"num/den"`, `clef` a shape+line like `"G2"`, and `key` selects
+/// the key signature and the sharp-vs-flat spelling. Reducing a client's own
+/// sequencing data to that voice stays in the client, where the native types
+/// are; this is the language-agnostic step below it, and the seam a richer
+/// encoding extends for every client at once.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = voiceToMei)]
+pub fn voice_to_mei(voice: &str, meter: &str, clef: &str, key: &str) -> Result<String, JsError> {
+    let voice: Vec<clausters_core::notation::Slot> =
+        serde_json::from_str(voice).map_err(|e| JsError::new(&format!("voice: {e}")))?;
+    Ok(clausters_core::notation::voice_to_mei(
+        &voice, meter, clef, key,
+    ))
+}

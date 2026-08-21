@@ -83,6 +83,20 @@ cp dist/core/clausters_core_web.js dist/core/clausters_core_web.d.ts src/core/
 cp dist/gui-host/clausters_gui.d.ts src/gui-host/
 cp dist/engine/clausters_web.js dist/engine/clausters_web.d.ts src/engine/
 
+# The engraver: vendored, not built here. `third_party/build-verovio-wasm.sh`
+# compiles the pinned verovio with the Emscripten SDK -- the same sources and
+# the same importer options as the native library, so a page and a window
+# engrave with one build (docs/decisions.md). It is staged rather than rebuilt
+# because the SDK is not part of this toolchain, and it is **off the slim
+# runtime**: only `gui/notation` imports it, and only when a page engraves.
+if [ -d vendor/verovio ]; then
+    mkdir -p dist/vendor/verovio
+    cp vendor/verovio/verovio.js vendor/verovio/verovio.wasm dist/vendor/verovio/
+else
+    echo "note: vendor/verovio missing -- run third_party/build-verovio-wasm.sh" \
+         "if you need the engraver (notation)" >&2
+fi
+
 # Type-check + emit the package into dist/ (js + d.ts + maps).
 if [ -d node_modules ]; then
     npm run --silent build
@@ -90,5 +104,5 @@ else
     echo "note: node_modules missing — run 'npm install' then 'npm run build'" >&2
 fi
 
-echo "package staged: dist/ (modules + engine/ gui-host/ core/ wasm bundles)"
+echo "package staged: dist/ (modules + engine/ gui-host/ core/ wasm bundles + vendor/verovio)"
 echo "demo:  python3 -m http.server  then open http://localhost:8000/examples/demo.html"

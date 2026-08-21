@@ -345,6 +345,69 @@ export class Scheduler {
 }
 
 /**
+ * A loaded score, held open in Rust so it can be edited and re-engraved — the
+ * JS face of [`clausters_core::notation::Score`].
+ *
+ * The same object the Python client holds over the C ABI, running the same
+ * state machine: a page that transposes a note and one that transposes it in a
+ * window take the identical sequence of calls to verovio.
+ */
+export class Score {
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * This score engraved into a page: the display list the host draws, the
+     * cursor track a playhead follows, and the notes that sound.
+     */
+    displayList(page: number): string;
+    /**
+     * One raw editor action (`set`, `insert`, `delete`, …) as a single undo
+     * step, `param` being its parameter object as JSON.
+     */
+    edit(action: string, param: string): boolean;
+    /**
+     * The score as MEI, ids and all — what to persist, and what an undo step
+     * is made of.
+     */
+    mei(): string;
+    /**
+     * Load `data` (any format the engraver auto-detects) on `engraver`, or
+     * throw when it could not be read.
+     *
+     * Configuring the engraver — its resource path, its options — happens on
+     * the JS side before this, exactly as the native binding configures its
+     * toolkit before handing it over.
+     */
+    constructor(engraver: object, data: string);
+    /**
+     * Step forward again after an undo; `false` when there is nothing to redo.
+     */
+    redo(): boolean;
+    /**
+     * Move a note by `steps` diatonic steps along the staff, as one undo step.
+     * The relative form: reach for it only when the delta is what you have.
+     */
+    transpose(element_id: string, steps: number): boolean;
+    /**
+     * Move a note **to** a diatonic staff position, as one undo step — the
+     * shape an edit travels in, so a resend cannot move the note twice.
+     */
+    transposeTo(element_id: string, position: number, page: number): boolean;
+    /**
+     * Step back one edit; `false` when there is nothing to undo.
+     */
+    undo(): boolean;
+    /**
+     * Whether there is an undone edit to step forward into.
+     */
+    readonly canRedo: boolean;
+    /**
+     * Whether there is an edit to step back over.
+     */
+    readonly canUndo: boolean;
+}
+
+/**
  * The 0-based bar index `beats` falls in on a grid of `quant` beats per bar.
  */
 export function bar(beats: number, quant: number): number;
@@ -411,6 +474,18 @@ export function correlation(left: Float32Array, right: Float32Array): number | u
  * `scale` yields middle C.
  */
 export function degree_to_midinote(degree: number, octave: number, root: number, scale: Float32Array): number;
+
+/**
+ * The engraver's options for one page, as the JSON object it is configured
+ * with: `scale` (staff size), `pageWidth` (the page units a score wraps into
+ * systems at) and an optional JSON object merged over them.
+ *
+ * A page configures its engraver through this rather than through a table of
+ * its own, for the same reason the score model is shared: two clients that
+ * configure verovio differently draw the same score two ways, and then no
+ * display list from one is comparable with one from the other.
+ */
+export function engraveOptions(scale: number, page_width: number, extra?: string | null): string;
 
 /**
  * JS face: the `[audio, control]` bus widths GraphDef instances reserve at
@@ -499,6 +574,15 @@ export function secs_to_beats(tempo: number, base_beats: number, base_seconds: n
 export function secs_to_samples(secs: number, sample_rate: number): number;
 
 /**
+ * Walk a verovio SVG into a `score` display list, as JSON.
+ *
+ * The one-shot path: a page that only draws a score engraves once and walks
+ * the SVG, with no document held open. A malformed SVG yields an empty display
+ * list rather than an error, as the C ABI's twin does.
+ */
+export function svgToDisplayList(svg: string): string;
+
+/**
  * JS face: one unary builtin by name (`"midicps"`, `"cpsmidi"`, `"dbamp"`,
  * ...), computed in `f32` exactly as the server's UGens compute it.
  */
@@ -516,6 +600,18 @@ export function unix_to_ntp(unix_secs: number): bigint;
  */
 export function unix_to_sample(unix_secs: number, anchor_unix: number, anchor_sample: number, rate: number): number;
 
+/**
+ * Lay a **voice** — a JSON array of slots, `{"midis": [60], "ticks": 8}` per
+ * note or chord and `{"ticks": 8}` per rest — out into barred, tied MEI.
+ *
+ * `meter` is `"num/den"`, `clef` a shape+line like `"G2"`, and `key` selects
+ * the key signature and the sharp-vs-flat spelling. Reducing a client's own
+ * sequencing data to that voice stays in the client, where the native types
+ * are; this is the language-agnostic step below it, and the seam a richer
+ * encoding extends for every client at once.
+ */
+export function voiceToMei(voice: string, meter: string, clef: string, key: string): string;
+
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
@@ -527,6 +623,7 @@ export interface InitOutput {
     readonly __wbg_rng_free: (a: number, b: number) => void;
     readonly __wbg_sampleclockmodel_free: (a: number, b: number) => void;
     readonly __wbg_scheduler_free: (a: number, b: number) => void;
+    readonly __wbg_score_free: (a: number, b: number) => void;
     readonly bar: (a: number, b: number) => number;
     readonly beat_in_bar: (a: number, b: number) => number;
     readonly beats_to_secs: (a: number, b: number, c: number, d: number) => number;
@@ -542,6 +639,7 @@ export interface InitOutput {
     readonly document_resolve: (a: number, b: number, c: number) => [number, number, number, number];
     readonly document_snapshot: (a: number) => [number, number, number, number];
     readonly document_version: (a: number) => bigint;
+    readonly engraveOptions: (a: number, b: number, c: number, d: number) => [number, number];
     readonly graph_bus_reserved: () => [number, number];
     readonly lissajous: (a: number, b: number, c: number, d: number) => [number, number];
     readonly log_apply: (a: number, b: number, c: number, d: number) => [number, number, number, number];
@@ -606,11 +704,23 @@ export interface InitOutput {
     readonly scheduler_popDue: (a: number, b: number) => [number, number];
     readonly scheduler_push: (a: number, b: number, c: number) => void;
     readonly scheduler_remove: (a: number, b: number) => number;
+    readonly score_canRedo: (a: number) => number;
+    readonly score_canUndo: (a: number) => number;
+    readonly score_displayList: (a: number, b: number) => [number, number, number, number];
+    readonly score_edit: (a: number, b: number, c: number, d: number, e: number) => number;
+    readonly score_mei: (a: number) => [number, number];
+    readonly score_new: (a: any, b: number, c: number) => [number, number, number];
+    readonly score_redo: (a: number) => number;
+    readonly score_transpose: (a: number, b: number, c: number, d: number) => number;
+    readonly score_transposeTo: (a: number, b: number, c: number, d: number, e: number) => number;
+    readonly score_undo: (a: number) => number;
     readonly secs_to_beats: (a: number, b: number, c: number, d: number) => number;
     readonly secs_to_samples: (a: number, b: number) => number;
+    readonly svgToDisplayList: (a: number, b: number) => [number, number, number, number];
     readonly unary: (a: number, b: number, c: number) => [number, number, number];
     readonly unix_to_ntp: (a: number) => bigint;
     readonly unix_to_sample: (a: number, b: number, c: number, d: number) => number;
+    readonly voiceToMei: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];
     readonly __wbindgen_exn_store: (a: number) => void;
     readonly __externref_table_alloc: () => number;
     readonly __wbindgen_externrefs: WebAssembly.Table;
