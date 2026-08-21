@@ -293,6 +293,14 @@ class FakeConnection implements Connection {
     private handlers = new Set<(msg: { addr: string; args: unknown[] }) => void>();
     /** Answers every command with its `/done`, the way a server does. */
     autoDone = true;
+    /**
+     * A framed carrier, like the `--ws` server these suites stand in for: a
+     * packet here is free of the ceiling one delivery imposes, so a bulk round
+     * trip is sized from the server's own frame ceiling. Saying so is not
+     * decoration — `Server.bulkChunk` reads the capability and keeps the
+     * classic 1024 for a carrier that does not claim it.
+     */
+    readonly stream = true;
 
     send(packet: Uint8Array): void {
         for (const msg of decode(packet)) {
