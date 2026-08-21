@@ -99,6 +99,12 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
       // ---- the composition ----
       // Written as the arrangement, not as widgets: the editor draws whatever
       // this tree is, so what the page states is the music.
+      //
+      // Answers the tree **and the curve**, because the curve is the one member
+      // that has to be prepared before the piece can play: an `Automation`
+      // sounds through a control buffer and a bus, and allocating them waits on
+      // the server — which is why it is `prepare`, called once, and not
+      // something `play` can do for you inside a routine.
       function compose(take) {
         const { Aggregate, Element, Track, Vector } = form;
 
@@ -118,21 +124,20 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
         ), null, 4.0, { name: "melody" });
 
         // The curve: a break-point envelope as an element, drawn and edited in
-        // place. It is structure here — hooking it to a control is one more
-        // step (`Automation.prepare` and a target), and it is what the Python
-        // example does.
-        const sweep = new Element(
-          new seq.Automation(new defs.Env([200.0, 900.0, 300.0], [2.0, 2.0], "exp"),
-                             null, { name: "freq" }),
-          null, 4.0,
-        );
+        // place. Naming no target, it sweeps a control bus nothing reads yet —
+        // pointing it at a synth's control is one line more, and it is what the
+        // Python example does.
+        const curve = new seq.Automation(
+          new defs.Env([200.0, 900.0, 300.0], [2.0, 2.0], "exp"), null, { name: "freq" });
+        const sweep = new Element(curve, null, 4.0);
 
-        return new Aggregate([
+        const song = new Aggregate([
           [0.0, drums],
           [0.0, new Aggregate([[0.0, bass]], "concrete", { name: "bass" })],
           [2.0, new Aggregate([[0.0, lead]], "concrete", { name: "lead" })],
           [0.0, new Aggregate([[0.0, sweep]], "concrete", { name: "sweep" })],
         ], "concrete", { name: "song" });
+        return { song, curve };
       }
 
       // The transport bar rides *under* the lanes as the editor's `extra`: its
@@ -165,8 +170,15 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
         await take.gen("sine1", [["i", 7], 1.0, 0.5, 0.25, 0.12]);
         await server.sync();
 
+        const { song, curve } = compose(take);
+        // The curve before the piece plays: a pass renders every item in beat
+        // order, and an automation that has not allocated its buffer refuses to
+        // play — which would end the pass on the first item rather than skip
+        // one lane.
+        await curve.prepare(server);
+
         clock = new TempoClock(TEMPO).start();
-        editor = new gui.Editor(compose(take), {
+        editor = new gui.Editor(song, {
           sampleRate: raw.context.sampleRate,
           tempo: TEMPO,
           quant: QUANT,
@@ -194,9 +206,16 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
           if (msg.addr !== "/gui_event") return;
           const tag = msg.args[3];
           if (tag === "clip" || tag === "notes" || tag === "points") {
-            queueMicrotask(() => log(`${tag}: the piece is now `
-              + `${editor.extent().toFixed(2)} beats, `
-              + `${editor.canUndo ? `undo: ${editor.undoLabel}` : "nothing to undo"}`));
+            // Read *after* the editor has routed it — and only when something
+            // moved: the host reports gestures that change nothing too (a
+            // press, a drag back to where it started), and logging the model
+            // then says "nothing to undo" about an edit nobody made.
+            const before = editor.undoLabel;
+            queueMicrotask(() => {
+              if (editor.undoLabel === before && !editor.dirty) return;
+              log(`${tag}: the piece is now ${editor.extent().toFixed(2)} beats`
+                + `${editor.canUndo ? `, undo: ${editor.undoLabel}` : ""}`);
+            });
           }
         });
 

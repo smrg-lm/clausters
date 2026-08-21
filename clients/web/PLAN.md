@@ -1922,6 +1922,21 @@ row in `docs/gui-props.md`, or a paragraph in this plan's parity section.
 
 ## Found by use: the running list of fixes
 
+- ⬜ **A clip's curve body does not draw in a page.** A `clip` carrying
+  `points` (with `points_min`/`points_max`, or `min`/`max` + `exp` — both
+  spellings) lays out as an empty rectangle in the wasm host: the take and the
+  roll bodies beside it draw, the curve does not. It is **not** the editor's
+  port: it reproduces on the page that predates it (`git show
+  c76c53dd^:clients/web/examples/composer.html`, whose sweep lane was built as
+  bare widgets) and on a twenty-line page with one lane per spelling. The props
+  arrive — `/gui_query` reports `points` as the right flat quad list — and the
+  host's own curve tests pass (`cargo test curve` in `clients/gui`, including
+  `a_body_draws_without_the_view_s_chrome` and the track test that draws a roll
+  and a curve into one mesh), so what is left is the live path: `clip_bodies`
+  builds it, `collect_widgets` places it, or the draw pass skips it. **Whether
+  a native window has the same hole is unchecked** and is the first thing to
+  ask, since it decides between a host bug and a wasm-only one.
+
 These are not milestones and they are not future directions. They are what
 **using the thing** turns up — an eye pass over an example, a path read while
 doing something else, a behavior that is correct and unclear — recorded the day
