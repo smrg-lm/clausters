@@ -44,10 +44,12 @@ holds no score.
 The engraver is <b>loaded on demand</b> — it is not part of the runtime, and a
 page that draws no notation never downloads it.
 
-<i>Not here yet, and not a defect of this page:</i> the Python example also
-<b>plays the score</b> with a transport bar, the cursor following the sound.
-That transport is shared with the multitrack editor, which this client has not
-ported; the score half lands with it.
+The page also <b>plays</b>, and the cursor follows the sound: the transport is
+the shared one — the same object the multitrack editor drives its lanes with —
+and all a score adds is its unit, since a page places its cursor in <b>score
+milliseconds</b> and a lane in samples. The line itself is the host's: one
+anchor message per pass, swept from the engine's own clock, and a static cursor
+where a pause left it.
 
 Everything runs on the <b>in-page engine</b>: no server process, no socket.</div>
 
@@ -62,16 +64,20 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
     <script type="module">
       import {
         loadOsc, loadCore, pageConnection, server as engine, Server,
-        Event, GuiHost, guiHost, gui,
+        Event, GuiHost, guiHost, gui, seq, TempoClock,
       } from "../dist/index.js";
 
       const { notation } = gui;
       const el = (id) => document.getElementById(id);
       const log = (line) => { el("log").textContent += line + "\n"; };
 
+      const TEMPO = 2.0;     // beats per second (120 bpm), so a beat is 500 ms
+
       let server, host, page, win = null, unfit = null;
       let score = null;      // the open document: engraved, editable, undoable
       let byId = new Map();  // MEI id -> the note it draws, rebuilt per page
+      let dl = null;         // the page as it stands, what a pass is built from
+      let clock = null, transport = null, selected = null;
 
       // The melody, written as the client's own events — the inverse
       // direction, data to score: `fromNotes` reduces them to a voice and the
@@ -91,6 +97,11 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
         { title: "score", layout: "col", margin: 8.0, gap: 8.0 },
         gui.panel(
           { layout: "row", h: 34, gap: 8.0 },
+          gui.button({ name: "play", label: "play" }),
+          gui.button({ name: "pause", label: "pause" }),
+          gui.button({ name: "stop", label: "stop" }),
+          gui.button({ name: "rewind", label: "rewind" }),
+          gui.button({ name: "fromNote", label: "from note" }),
           gui.button({ name: "undo", label: "undo" }),
           gui.button({ name: "redo", label: "redo" }),
         ),
@@ -103,7 +114,7 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
       // rebuild the id index. The host keeps its own chrome across the swap,
       // which is what leaves the edited note selected.
       const refresh = () => {
-        const dl = score.displayList();
+        dl = score.displayList();
         // One prop, not a bag of layers: the whole page travels as
         // `display_list`, which is what the builder sends too.
         win.widget("page").set({ displayList: notation.pageJson(dl) });
@@ -116,8 +127,30 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
         }).play(server);
       };
 
+      // One playback pass: the engraved notes on a fresh Timeline, played from
+      // beat `at`. Built per play, so a note transposed meanwhile simply sounds
+      // at the pitch it now has. Score milliseconds are beats/1000 at this
+      // tempo, which is the whole of the conversion.
+      const pass = (at) => {
+        const timeline = new seq.Timeline();
+        for (const note of dl.notes) {
+          timeline.add(note.t / 1000.0, new Event({
+            midinote: note.pitch, dur: note.dur / 1000.0, amp: 0.12,
+          }));
+        }
+        return new seq.Playhead(timeline, clock, server).play({ at });
+      };
+
+      // Where the piece ends, in beats: the last note's onset plus its length.
+      // The transport parks the cursor there when a pass runs out.
+      const extent = () => {
+        const last = dl.notes[dl.notes.length - 1];
+        return last ? (last.t + last.dur) / 1000.0 : 0.0;
+      };
+
       const onScore = (tag, ...rest) => {
         if (tag === "element" && rest.length) {
+          selected = rest[0] || null;
           const note = byId.get(rest[0]);
           if (note === undefined) return log(`  clicked ${rest[0] || "(blank paper)"}`);
           log(`  clicked note ${rest[0]}: MIDI ${note.pitch} at ${note.t.toFixed(0)} ms`);
@@ -163,16 +196,39 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
         score = await notation.Score.fromNotes(MELODY, { meter: "4/4", key: "G" });
         log(`verovio ${score.engraverVersion()}`);
 
-        const dl = score.displayList();
+        dl = score.displayList();
         byId = new Map(dl.notes.map((note) => [note.id, note]));
         win = host.open(scene(dl));
         unfit?.();
         unfit = page.fit(win.id, el("stage"));
+
+        // The clock the pass runs on, and the transport over the page's widget.
+        clock = new TempoClock(TEMPO).start();
+        transport = notation.transport(host, win.widget("page").id, {
+          // The rate the anchor's beats→samples conversion is expressed in
+          // is the engine's own — in a page, its audio context's.
+          source: pass, tempo: TEMPO, extent,
+          sampleRate: raw.context.sampleRate,
+        });
+        transport.locate(0.0);        // the cursor waits at the top
+        // A pass ends by itself; this is the one loop that has to notice.
+        setInterval(() => transport.update(), 100);
+
         win.widget("page").onEvent(onScore);
+        win.widget("play").onEvent((down) => { if (down) transport.play(server); });
+        win.widget("pause").onEvent((down) => { if (down) transport.pause(); });
+        win.widget("stop").onEvent((down) => { if (down) transport.stop(); });
+        win.widget("rewind").onEvent((down) => { if (down) transport.locate(0.0); });
+        win.widget("fromNote").onEvent((down) => {
+          if (!down) return;
+          const note = byId.get(selected);
+          if (!note) return log("  no note selected: click one first");
+          transport.play(server, { at: note.t / 1000.0 });
+        });
         win.widget("undo").onEvent(step("undo", () => score.undo()));
         win.widget("redo").onEvent(step("redo", () => score.redo()));
-        log(`${dl.notes.length} notes engraved — click one to hear it, `
-          + "drag it up or down to transpose");
+        log(`${dl.notes.length} notes engraved — press play, click a note to `
+          + "hear it and select it, drag one up or down to transpose");
       }
 
       el("start").onclick = () => run().catch((error) => log(`error: ${error}`));

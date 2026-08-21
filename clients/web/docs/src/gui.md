@@ -186,8 +186,31 @@ win.widget("page").onEvent((tag, id, position) => {
 ```
 
 `score.undo()` and `score.redo()` are the client's, not the host's: the score
-owns a stack of MEI snapshots, and the host holds no score at all. The example
-is `examples/score.html`.
+owns a stack of MEI snapshots, and the host holds no score at all.
+
+To **play** the page with the cursor following the sound, `gui.Transport` is the
+same object every time view uses — a lane, a piano roll, an engraved page — and
+`notation.transport` only fills in the page's unit, since a score places its
+cursor in milliseconds where a lane places it in samples:
+
+```ts
+const tp = notation.transport(host, win.widget("page").id, {
+    source: (at) => new seq.Playhead(timelineOf(score), clock, server).play({ at }),
+    tempo: 2.0, sampleRate: engine.context.sampleRate,
+    extent: () => endOfPiece(score),
+});
+tp.play(server);                 // and pause / stop / locate
+setInterval(() => tp.update(), 100);   // parks the cursor when the pass ends
+```
+
+The line is the **host's**: `play` sends one anchor — the clock value the view's
+time 0 maps to — and the host sweeps from it every frame, so a pass costs one
+message and not one per frame. A pause writes the other half of that number, the
+static cursor where the music stopped. `update` is the one thing a script owes
+it: a pass ends when its last item *starts*, so the transport keeps sweeping
+that last note's tail and parks only at the piece's extent.
+
+The example is `examples/score.html`.
 
 ## Bindings, and the page that runs without a script
 

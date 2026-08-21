@@ -49,6 +49,7 @@ clients/web/
       element.ts  aggregate.ts  render.ts  document.ts
     gui/notation/         #   engraving (mirrors clausters/gui/notation)
       engraver.ts  mei.ts  view.ts  _verovio.ts (the wasm toolkit)
+    gui/transport.ts      #   play/pause/stop/locate + the view's playhead line
   vendor/                 # the engraver, built by third_party/build-verovio-wasm.sh
                           #   (git-ignored; build.sh stages it into dist/)
     data/                 #   the data paths: what a view reads off the server
@@ -1461,11 +1462,9 @@ a build is what decides which formats a client reads. The shell is
 the browser stack and compares the page primitive by primitive, before an edit
 and after one.
 
-Two things are deliberately not in it, and neither is a decision left open:
-`view.ts` has `scoreView` and **not** `transport`, which is the arrangement
-track's shared object and lands with it; and `examples/score.html` covers the
-engraving and editing halves of `gui_score.py` while its transport bar waits on
-the same thing.
+Its `transport` half landed the same day, with `gui/transport.ts`: the page
+plays, `examples/score.html` has the bar `gui_score.py` has, and the layer is
+whole.
 
 One rule the `gui/transport.py` port must carry, since the reference learned it
 after the list above was written: **a drained scan is not the end of the piece.**

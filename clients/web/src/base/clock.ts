@@ -301,6 +301,20 @@ export class TempoClock {
     }
 
     /**
+     * Whether the beat advances **by itself**: the real-time driver is running
+     * (`start`, not yet `stop`ped).
+     *
+     * False before the first `start` and during an offline render, whose beat is
+     * the queue's position and not the wall's — the distinction a caller needs
+     * before treating `beats()` as a thing that moves while it waits (a
+     * transport sweeping a cursor over the last item's tail). Freezing does not
+     * change it: a frozen clock is rolling and held.
+     */
+    get rolling(): boolean {
+        return this.running && this.mode === "rt";
+    }
+
+    /**
      * Resumes from where `freeze` left the beat.
      *
      * The pacing origin shifts by the time spent frozen, so those seconds are

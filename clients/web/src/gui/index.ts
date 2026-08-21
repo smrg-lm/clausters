@@ -30,6 +30,9 @@ export type { EventArgs } from "./handle.ts";
 
 export { BASE_ID, CAPACITY, GuiIdAllocator } from "./ids.ts";
 
+export { Transport } from "./transport.ts";
+export type { TransportOptions, TransportTargets } from "./transport.ts";
+
 export * from "./guidef.ts";
 
 // Engraving, as its own namespace for the same reason the Python client keeps

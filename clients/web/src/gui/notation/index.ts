@@ -24,12 +24,12 @@
 // `engrave`/`Score.open`; `fromNotes`/`fromTimeline`, which turn the client's
 // own `seq` data into MEI (the inverse direction, data→score); and
 // `svgToDisplayList`, the adapter the first two both flow through. `scoreView`
-// puts a page on screen.
+// and `transport` are the two helpers that put a page on screen and *play* it.
 
 export { Score, engrave, pageJson, svgToDisplayList } from "./engraver.ts";
 export type { EngraveOptions, Page } from "./engraver.ts";
 export { fromNotes, fromTimeline } from "./mei.ts";
 export type { MeiOptions, Slot } from "./mei.ts";
-export { scoreView } from "./view.ts";
+export { scoreView, transport } from "./view.ts";
 export type { ScoreViewOptions } from "./view.ts";
 export { setEngraverUrl } from "./_verovio.ts";
