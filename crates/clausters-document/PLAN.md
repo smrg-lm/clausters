@@ -110,6 +110,34 @@ The eight that opened with this file were taken one at a time and are in the sec
 
   **So the two things the roadmap said would move, move like this:** `editing` in the session format **stays**, narrowed to the mapped case and unused until it exists; the per-edit confirmation step **is not built**, because the acknowledgement is it. And the one-tree refactor inherits a simpler world than it would have: one copy of the material, one place an edit lands, and a history that already holds what an undo needs.
 
+- ⬜ **Does a session carry the configuration of the GuiDefs it was worked
+  through?** *(opened 2026-08-21 by the user, answering the GUI plan's
+  "Persistence saves the document, not what the user did to it" — which had
+  framed itself as a choice between a def that reloads as authored and a def
+  that reloads as left)*. That framing was a confusion of domains and is
+  settled: a GuiDef defines an interface, holds no data and persists as the
+  script wrote it; what a session of work produced is the session's, which is
+  this crate's. The composition already round-trips that way — a gesture
+  becomes a change on the arrangement and `to_session` saves it — so nothing is
+  lost on the path that has a document behind it.
+
+  **The question is the path that does not.** A `standalone` bundle is GuiDefs
+  and defs with no document at all: a control a user left somewhere is
+  *interface configuration*, and it has no owner today. Two answers, and they
+  differ in what a session **is** rather than in where a value is written.
+  **The session carries it** — a table of `{guidef name: {widget: props}}`
+  beside the source table, written from the same overlay `/gui_query` already
+  answers with (`Widget::info()`), which makes a bundle reopen as an instrument
+  and makes "the file being worked on" the one thing that says what state
+  anything was in. **The session does not** — a bundle with no document has no
+  session either, and what it wants is a *preferences* file, which is a
+  different thing with a different lifetime and is not this format's job.
+
+  **What it costs is asymmetric**: the first is the format, the standalone
+  host's boot, and a writer in both clients; the second is a decision to write
+  down and nothing to build. What must not happen either way is the value going
+  back into the def, since that is the answer the GUI entry already rejected.
+
 ## The milestones
 
 - ✅ **O1 - The document: the tree, and a leaf is opaque.** The crate's types and their serde form: elements with their placements (`onset`, `duration`), aggregates with their two kinds (**concrete** - members relate in time; **logical** - they relate by processing), and a leaf as `(id, kind, opaque config)`. A **source reference** carries its **lifetime** (external / session / temporary) from the start rather than gaining it later, since it is what a save has to read. No client objects, no widget, no OSC, no I/O. **Two properties the shape has to admit, because they are the arrangement's and not the document's to invent.** A generator's *code* is the opaque leaf; **its output is ordinary tree** - a generator may produce any element, generators included - so nothing about being generated makes a subtree a second kind of thing. And a **clang may reference a generator** to fire it live, which means the document expresses structure resolved at run time and not only at render time: a reference that no flattening pass will ever expand. **The tree stays general, and the views carry their own restrictions** - a multitrack lane is a *projection* that may decline to show what its shape does not admit, exactly as an unknown widget is laid out and not painted; nothing here grows a lane, a vertical position or a type-per-container so that a view is easier to write. The arrangement's own vocabulary (the Aggregate and the other primitives, the temporal traits) is unchanged by this milestone and is refined by iteration in `clausters.form`, which is why the shape has to stay versatile rather than final: the document need not know the model, but it must not be what blocks its refinement. **Acceptance:** a tree round-trips through serde unchanged; an unknown body kind and an unread config blob both survive a load/save cycle **losslessly**, and writing is **deterministic** (the two are the properties that matter, and byte-identity is not one of them: `serde_json` sorts an object's keys, key order in JSON carries no information, and buying its preservation would mean turning `preserve_order` on for every crate in the workspace since features are additive); the Python `clausters.form` tree converts in and out with no loss.

@@ -2600,7 +2600,35 @@ finished work, where a pending item reads as done.
 
   Worth keeping because of the reflex it corrects: **a live view is a measurement, so an unsteady picture is a claim about the signal before it is a complaint about the drawing.** The A/B against the previous host is what settled it, and the same question is worth asking of the next one.
 
-- ⬜ **Persistence saves the document, not what the user did to it** *(found 2026-08-10, reading the query path while fixing the entry above)*. `def_json` is the bytes the `/gui_def` carried, and neither a `/gui_set` nor a gesture rewrites it — so a named def reloads exactly as it was sent, and a standalone bundle a user has spent an afternoon arranging reopens on the arrangement the script wrote. It is the sibling of the query gap and it is **not** the same fix: making a query honest is a read, and this is a decision about what a persisted def *is*. Two defensible answers, and the entry exists so the choice is made rather than defaulted into — a def is a **document** (it reloads as authored; a session is a separate thing the host does not have) or a def is a **state** (it reloads as left, which is what a user of a standalone bundle will expect and what makes the bundle an instrument rather than a demo). If the second wins, the mechanism is already there: `Widget::info()` says what diverged, so persisting is overlaying it on the document before the store writes — the same overlay the query does, at a different moment.
+- ✅ **Persistence saves the document, not what the user did to it** *(found 2026-08-10, reading the query path while fixing the entry above)*. `def_json` is the bytes the `/gui_def` carried, and neither a `/gui_set` nor a gesture rewrites it — so a named def reloads exactly as it was sent, and a standalone bundle a user has spent an afternoon arranging reopens on the arrangement the script wrote. It is the sibling of the query gap and it is **not** the same fix: making a query honest is a read, and this is a decision about what a persisted def *is*. Two defensible answers, and the entry exists so the choice is made rather than defaulted into — a def is a **document** (it reloads as authored; a session is a separate thing the host does not have) or a def is a **state** (it reloads as left, which is what a user of a standalone bundle will expect and what makes the bundle an instrument rather than a demo). If the second wins, the mechanism is already there: `Widget::info()` says what diverged, so persisting is overlaying it on the document before the store writes — the same overlay the query does, at a different moment.
+
+  **Answered 2026-08-21 by the user, and the entry was asking the wrong
+  question.** The two answers were not a choice: "a def is a state" is not an
+  alternative to "a def is a document", it is a **confusion of domains**. A
+  GuiDef defines an *interface* — it is the same interface every time it is
+  instantiated and it holds no data. What a session of work produced is the
+  **session's**, and this project already has that thing: the document plus its
+  source table (`form.to_session`, `session::FORMAT`), owned by
+  `clausters-document`, which lists "the session document and its provenance"
+  among what it owns. In any desktop application a widget is not what saves the
+  configuration; the file being worked on is. Handing persistent configuration
+  to a GuiDef puts the state back inside the view, which is the same mistake
+  `clausters-document` exists to undo — the entry above it, "a query answers what
+  a widget *is*", is a **read** and stays right for exactly that reason.
+
+  **So nothing changes here, and there was never a defect in the work path.**
+  A dragged clip is not lost: `Editor.apply` turns the gesture into a change on
+  the arrangement and `to_session` saves *that*, so the composition round-trips
+  through the document and the def is not on the route. `def_json` persisting
+  the bytes the script sent is correct and stays.
+
+  **What is left is one real question, and it is not this crate's to answer
+  alone**: a standalone bundle has GuiDefs and no session at all, so a control
+  a user left somewhere has no legitimate owner — and whether a session should
+  carry the configuration of the GuiDefs it used is a question about the
+  *format*. It is written where the format lives
+  (`crates/clausters-document/PLAN.md`, Open decisions, "Does a session carry
+  the configuration of the GuiDefs it was worked through?").
 
 - ✅ **The editing gestures want affordances** *(found 2026-08-10, by eye on `gui_bpf.py` and `gui_multitrack.py` after the K5 port)*. Two gestures that work correctly and that nothing on screen announces. They are one entry because they are one decision — what a *grabbable part* looks like in this host — and answering either alone would give the two a different vocabulary.
 
