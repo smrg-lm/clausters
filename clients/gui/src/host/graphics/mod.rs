@@ -49,11 +49,27 @@ use crate::host::paint::Draw;
 /// It sits here rather than in whichever model happened to write it first: four
 /// callers across three modules and the frame's draw pass share one corner, and
 /// a helper with that reach is the models' own vocabulary, not one widget's.
+///
+/// **On a plate** ([`plate_text`]), and for the reason that helper exists: the
+/// corner is *inside the body*, so the ground under this line is whatever the
+/// view drew there — a trace, a spectrogram — and a tag written straight onto
+/// it disappears wherever the two happen to share a color. The body's own
+/// corner is where a signal is least often quiet, not most.
 pub(crate) fn corner_text(d: &mut Draw, s: &str, body: Rect) {
-    let (mesh, m, theme) = d.parts();
-    let w = font::width(s, m.text_scale);
-    let x = (body.x + body.w - w - m.pad).max(body.x);
-    font::text(mesh, s, x, body.y + m.pad, m.text_scale, theme.text);
+    // Read once: `plate_text` takes the context back, so the geometry and the
+    // ink are settled before it is handed over.
+    let (w, x, y, scale, color) = {
+        let (_, m, theme) = d.parts();
+        let w = font::width(s, m.text_scale);
+        (
+            w,
+            (body.x + body.w - w - m.pad).max(body.x),
+            body.y + m.pad,
+            m.text_scale,
+            theme.text,
+        )
+    };
+    plate_text(d, s, x, y, w, scale, color);
 }
 
 /// A short line drawn **over a picture**, on the translucent rounded ground
@@ -170,6 +186,26 @@ mod tests {
                 theme.text,
             )
             .is_none()
+        );
+    }
+
+    /// The corner slot is **inside the body**, so what it writes on is whatever
+    /// the view drew there. It gets the same ground, and this is the assertion
+    /// that keeps the two from drifting apart again: a corner tag is a plate
+    /// plus glyphs, never glyphs alone.
+    #[test]
+    fn a_corner_tag_is_grounded_like_any_other_line_over_a_picture() {
+        let (m, theme) = (Metrics::default(), Theme::default());
+        let body = Rect::new(0.0, 0.0, 200.0, 80.0);
+
+        let mut bare = Mesh::new();
+        crate::host::font::text(&mut bare, "LOCK", 0.0, 0.0, m.text_scale, theme.text);
+
+        let mut tagged = Mesh::new();
+        corner_text(&mut Draw::new(&mut tagged, &m, &theme), "LOCK", body);
+        assert!(
+            tagged.vertex_count() > bare.vertex_count(),
+            "the corner tag draws a ground under its glyphs"
         );
     }
 }

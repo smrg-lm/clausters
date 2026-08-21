@@ -2554,7 +2554,36 @@ finished work, where a pending item reads as done.
 
   Fixed as containment rather than as a trim, and that is the whole of it: a clip hands its bodies a **mask of its own box** (`layout::place_on_time`, intersected with whatever mask it inherited), so every drawing placed inside one is bounded by it and no renderer has to know where the edges are. A clip is a coordinate system; one that does not bound its contents is a rectangle they happen to start in. The regression test draws twelve samples over a 400-pixel clip — far enough apart that the polyline and every dot are drawn — and asserts not one vertex of the bodies lands outside the clip's rectangle.
 
-- ⬜ **The other text over pictures has no plate yet** *(found 2026-08-12, answering where `plate_text` belongs after it shipped)*. The plate is in the models' shared vocabulary and two callers use it — a clip's name and the roll's cursor read-out. Five more sites draw text over a *picture* with a bare `font::text` and want the same ground, and they are one change rather than five, since each is one call: the heavy views' cursor read-out (`frame/draw.rs`, time + value over the waveform or the spectrogram), the `plot`'s (`signal/plot.rs`, `440 HZ  -12.3 DB`), the goniometer's and the spectrum's and the scope's labels (`signal/phasescope.rs`, `meters::label_strip`), and `corner_text` itself, which is the same problem in the opposite corner. What deliberately stays **unplated** is text on **chrome** — ruler labels, a lane's header, every control — because there the ground is already the widget's own; the plate is for where the background is *material*. Not done with the multitrack pass because adopting them is an eye pass over the live views (four of the five are in `gui_analyzer`), and that is a session of its own rather than a change to wave through.
+- ✅ **The other text over pictures has no plate yet** *(found 2026-08-12, answering where `plate_text` belongs after it shipped)*. The plate is in the models' shared vocabulary and two callers use it — a clip's name and the roll's cursor read-out. Five more sites draw text over a *picture* with a bare `font::text` and want the same ground, and they are one change rather than five, since each is one call: the heavy views' cursor read-out (`frame/draw.rs`, time + value over the waveform or the spectrogram), the `plot`'s (`signal/plot.rs`, `440 HZ  -12.3 DB`), the goniometer's and the spectrum's and the scope's labels (`signal/phasescope.rs`, `meters::label_strip`), and `corner_text` itself, which is the same problem in the opposite corner. What deliberately stays **unplated** is text on **chrome** — ruler labels, a lane's header, every control — because there the ground is already the widget's own; the plate is for where the background is *material*. Not done with the multitrack pass because adopting them is an eye pass over the live views (four of the five are in `gui_analyzer`), and that is a session of its own rather than a change to wave through.
+
+  **Done 2026-08-21, and the eye pass found three sites rather than five** —
+  which is what the pass was for, since the list above was written from a grep
+  and the rule is about what a line *sits on*. Plated: the heavy views' cursor
+  read-out (`frame/draw.rs`, time + value over the take or the spectrogram), the
+  `plot`'s (`signal/plot.rs`, `440 HZ  -12.3 DB`) and `corner_text` itself,
+  whose whole point is that the slot is *inside the body* — a scope's
+  `lock`/`free` tag sits on the trace, and the corner is where a signal is least
+  often quiet rather than most.
+
+  **The other four are one thing, and it is chrome.** The goniometer's label,
+  the spectrum's, the plot's and `meters::label_strip` are the same eight lines
+  copied four times: a widget's label drawn in the strip *above* its body, and
+  the strip is **reserved** — every one of them goes through
+  `controls::body_rect(rect, label.is_some(), m)`, which takes the label's
+  height off the body before anything is drawn. So no label overlaps a picture,
+  the ground under them is already the widget's own, and plating them would have
+  put a translucent box on flat chrome for no reason. The entry's own rule said
+  so; the list did not. The phasescope's `r +0.52` is the near miss: it is not
+  over a picture either, but it *is* centred on the correlation bar's own fill,
+  which is the rule the controls follow the other way round (a control's
+  read-out gets a reserved strip at the bottom "so it never lands on the thing
+  it is reading"). Left alone, and named here rather than fixed, because it is a
+  layout question and not a legibility one.
+
+  **What the pass also found and did not take**: those four label blocks are one
+  helper written four times, and `meters::label_strip` is already that helper.
+  It is written down in "Found by use" below rather than folded in here, since a
+  cleanup riding in a legibility fix is how a diff stops being readable.
 
 - ✅ **The patcher's model is not behind the `patcher` feature** *(found 2026-08-12, auditing where the host's files sit for K14)*. K13 gave the two element families a feature each, and `notation` gates both halves — `host::score` (the model) and `elements/score.rs` (the leaf). `patcher` gates only the leaf: `elements/patch.rs` and `widget::parse::parse_patch`/`parse_ports` carry the attribute, and `host/graphics/patch.rs` — 1570 lines of boxes, cords, hit-testing and geometry — does not, so a build that dropped the family still compiles all of it and nothing can reach it. It is not a break (the matrix is clean either way, and a `pub mod` warns about nothing), which is exactly why it survived: the asymmetry is invisible to every check that exists, and only shows up reading the two families side by side. *(fixed 2026-08-12, in its own commit)*. One `#[cfg]` line in `host/graphics/mod.rs`, and the floor build reported nothing: every caller of the model was already gated, which is the confirmation that only the module declaration had been missed. The seventeen configurations stay clean and a build without the family now drops the whole 1570 lines instead of compiling them for nobody.
 
@@ -2654,3 +2683,18 @@ finished work, where a pending item reads as done.
   **Closed 2026-08-17 with the second half.** The vocabulary was chosen by the clip grip and did not need choosing again: an affordance belongs to what is **held**, it is drawn where the thing is rather than where the pointer got to, and it is absent when there is nothing to grab. Applied to the curve, that is one lit segment — the accent at a handle's weight, over the part a vertical drag would bend — taken from the **grab** when a bend is in flight and from the pointer only when nothing is held, and only where the curve is editable at all.
 
   **The one defect left standing is closed** *(2026-08-18)*, and not by the guard it was waiting for. The segment is lit exactly when the curve is the **active edit layer**, where the bend *is* the gesture — so inside a clip it lights when the curve is in hand and not otherwise, and the press there bends rather than moving the clip. The condition that was written and reverted three times was a precedence between claimants; what it needed was the layer rule above, and then the affordance and the press agree without either of them knowing about the other.
+
+- ⬜ **A widget's label strip is written four times** *(found 2026-08-21 doing
+  the plate pass above, which had to read all four to decide none of them wanted
+  a plate)*. `graphics::meters::label_strip` is the helper — "draws the label
+  strip above a view body, if it has a label" — and three views do not call it:
+  `signal/plot.rs`, `signal/spectrum.rs` and `signal/phasescope.rs` each open
+  with the same `if let Some(text) = label { font::text(mesh, text, rect.x +
+  m.pad, rect.y + m.pad, m.text_scale, theme.text) }`, byte for byte. Nothing is
+  wrong on screen: all four agree today, and they agree because they were copied
+  rather than because anything holds them together — which is the whole of the
+  entry. The strip's *height* is already shared (`controls::body_rect` takes it
+  off the body), so the drawing is the one half that was left loose, and the fix
+  is to make `label_strip` `pub(crate)` and call it. Not folded into the plate
+  pass because a cleanup riding in a legibility fix is how a diff stops being
+  readable.

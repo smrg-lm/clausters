@@ -315,11 +315,15 @@ pub(super) fn draw_editor_overlay(
         let w = font::width(&text, m.caption_scale);
         let x = (body.x + body.w - w - m.pad).max(body.x);
         let y = body.y + body.h - font::height(m.caption_scale) - 3.0;
-        font::text(
-            mesh,
+        // On a plate: the ground under it is the take or the spectrogram, and a
+        // read-out written straight onto either disappears into it exactly
+        // where the drawing is densest -- which is where a cursor usually is.
+        crate::host::graphics::plate_text(
+            &mut Draw::new(mesh, m, theme),
             &text,
             x,
             y.max(body.y),
+            w,
             m.caption_scale,
             with_alpha(theme.text, 0.9),
         );

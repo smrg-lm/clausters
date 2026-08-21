@@ -498,11 +498,14 @@ pub fn draw_readout(d: &mut Draw, rect: Rect, p: &PlotParams, cursor: (f64, f64)
     let w = font::width(&text, m.caption_scale);
     let x = (g.body.x + g.body.w - w - m.pad).max(g.body.x);
     let y = g.body.y + g.body.h - font::height(m.caption_scale) - 3.0;
-    font::text(
-        over,
+    // On a plate, for the same reason the timeline views' read-out is: the
+    // ground here is the trace, and a dense one swallows the line naming it.
+    crate::host::graphics::plate_text(
+        &mut Draw::new(over, m, theme),
         &text,
         x,
         y.max(g.body.y),
+        w,
         m.caption_scale,
         with_alpha(theme.text, 0.9),
     );
