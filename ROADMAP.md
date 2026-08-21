@@ -1,7 +1,7 @@
 # Roadmap — the order the open work is taken in
 
-*Rewritten 2026-08-21, when the phase of things found by use was taken and only
-its one design question was left. Before that: 2026-08-20, four times — when the
+*Rewritten 2026-08-21, when the phase of things found by use was taken whole —
+its last entry being a design question rather than a fix. Before that: 2026-08-20, four times — when the
 overview work closed, when the four
 entries it had left behind were taken — the join that draws an edge, a page's
 zoom while a take records, the shape a zoom asks in, and what a column claims at
@@ -42,16 +42,15 @@ looking at in the shape that span wants — a finer summary, or the samples wher
 only they will do — recording or finished, so the browser draws what the native
 window draws rather than stopping at a bucket.
 
-**What use turned up has been taken, and one entry of it is still first.** It
-leads not because it is cheap but because it is the one thing found by hand that
-is still open, and what it is waiting for is a decision rather than a session.
-Behind it: one port the destination does not wait on, and one track that is
-genuinely later. Everything else is in the section after them, named so that
-"not scheduled" reads as a decision.
+**Everything found by use has been taken**, so what leads the list is no longer
+a defect somebody hit but the largest standing violation of the project's own
+rule: the arrangement, the document and the editor exist in one client. Behind
+it, one track that is genuinely later. Everything else is in the section after
+them, named so that "not scheduled" reads as a decision.
 
-**A larger question was opened on the way and is deliberately not in this
-order**, because it is not work to schedule: what the *second* document is — the
-application's, as against the arrangement's — in
+**A larger question was opened while that phase was taken and is deliberately
+not in this order**, because it is not work to schedule: what the *second*
+document is — the application's, as against the arrangement's — in
 `crates/clausters-document/PLAN.md`, Open decisions. Nothing below waits on it,
 and it is named here only so its absence reads as a decision too.
 
@@ -76,35 +75,9 @@ right — that is the normal failure, not a sign the work vanished.
 
 ---
 
-## Phase 1 — what use found: the open fixes, before any new track
+## Phase 1 — the packages move together: the arrangement reaches the web client
 
-*Why this first: every entry here is something that was hit rather than
-designed, each is already written down with the record of what was seen, and
-none is more than a session's work. They were ordered by what each one actually
-costs somebody; nothing in the phase depended on anything else in it. **Taken
-2026-08-21**, and what is left is the one entry that turned out to hold a design
-question rather than a fix.*
-
-- ⬜ **A take is drawn in amplitude and heard in decibels**
-  (`clients/gui/PLAN.md`, Found by use). The last of the phase, and it is not
-  waiting on effort: the entry names **two answers and calls the choice a
-  design rather than a fix** — draw the body on a dB scale (a display mapping a
-  take body carries, plus a decision about its floor), or accept the divergence
-  and say so, an editor's waveform being amplitude and a reader learning to read
-  a decay. Whichever wins wants the call the trace renderers took: one rule for
-  every view of a signal, not one for a clip body. It was already deferred once
-  by decision — it belongs with the revision of multitrack playback — so it may
-  well ride with that rather than be taken alone.
-
-**One fix is written down and is deliberately not here**: the four UGen builders
-that take their statics positionally (`clients/python/PLAN.md`, Found by use —
-"Four UGen builders take their statics positionally, interleaved with real
-inputs"). It breaks the client's source API, so it waits for a release that
-bumps the breaking tier rather than for a slot in this order.
-
-## Phase 2 — the packages move together: the arrangement reaches the web client
-
-*Why here: the rule the project already states, applied to the largest
+*Why first: the rule the project already states, applied to the largest
 outstanding violation. `form/`, `gui/editor.py`, `gui/transport.py` and
 `gui/notation.py` have **no TypeScript counterpart at all** — the whole
 arrangement, document and editor layer exists in one client. It waits on
@@ -122,7 +95,7 @@ phases did to it.*
 - ⬜ **W7** (the Faust surfaces), **W9** (MIDI), **W15** (the bundle writer) —
   unported features, each owned, none on the path to the complete example.
 
-## Phase 3 — the spectral editor
+## Phase 2 — the spectral editor
 
 *Everything here is genuinely later: it needs the A track's descriptors, it is
 partly experimental, and none of it is on the path to the complete example.*
