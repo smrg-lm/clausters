@@ -581,6 +581,32 @@ mod tests {
         Widget::from_node(1, &node, &[]).unwrap()
     }
 
+    /// **A window with a piano roll in it is not, by itself, animated.** The
+    /// roll declared `clock` for its kind rather than for its anchor, so any
+    /// tree holding one asked for the ~30 fps tick — and a page then repainted
+    /// for as long as it was open with nothing moving in it. The tick is what
+    /// the whole window pays, so what turns it on has to be a thing that moves.
+    #[test]
+    fn a_roll_with_nothing_sweeping_leaves_the_window_still() {
+        let idle = tree(
+            r#"{"type":"window","children":[
+                {"id":5,"type":"notes","notes":[0.0,50.0,60.0,100.0,0.0]}]}"#,
+        );
+        assert!(
+            !demand([&idle], &groups(), 48000.0).animated,
+            "a still roll keeps no window awake"
+        );
+        let sweeping = tree(
+            r#"{"type":"window","children":[
+                {"id":5,"type":"notes","notes":[0.0,50.0,60.0,100.0,0.0],
+                 "playhead_at":480.0}]}"#,
+        );
+        assert!(
+            demand([&sweeping], &groups(), 48000.0).animated,
+            "an anchored one does: its line follows the engine clock"
+        );
+    }
+
     /// A tree with one retained waterfall on bus 0.
     fn retaining(seconds: f32) -> Widget {
         tree(&format!(

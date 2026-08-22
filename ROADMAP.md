@@ -92,16 +92,11 @@ landed on 2026-08-21, each with a parity suite that asserts the two clients
 produce the same tree, the same document and the same engraving. Using it on
 2026-08-22 turned up eight defects in one sitting — a curve that drew nothing, a
 document written two ways, an edit per frame, a bend that drifted, a press
-repeated per frame — and **what leads the phase now is what that sitting did not
-finish**, followed by the destination the track was blocking and the one surface
-it named on its way past.*
+repeated per frame — and the two findings it left behind (the knob's captured
+pointer, the page that burned a main thread with nothing happening) are paid.
+**What leads the phase now is the destination the track was blocking**, followed
+by the one surface it named on its way past.*
 
-- ⬜ **A page burns the main thread while nothing is happening**
-  *(`clients/gui/PLAN.md`, Found by use)* — 67% of the main thread with the
-  composer page idle, and the same 67% while playing, which is what makes the
-  playhead jitter. It is the browser front's own (native reads the shm header
-  and polls nothing), and the entry says to measure per stage before changing
-  anything. First because every page the phase adds pays it.
 - ⬜ **W16 — Example parity with the Python client**. Its named track (the
   arrangement layer, the editor, the transport, the engraver) is closed; what
   remains is the milestone itself, and it is the larger half: about forty

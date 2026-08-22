@@ -2599,18 +2599,46 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   front's `grab_pointer`/`release_pointer`/`device_event` path. `number` follows
   `knob`, as it always has.
 
-- ⬜ **A page burns the main thread while nothing is happening.** Measured on
+- ✅ **A page burns the main thread while nothing is happening.** Measured on
   `clients/web/examples/composer.html` through the DevTools protocol: **67% of
-  the main thread, idle** — no transport running, no pointer moving, no
-  streams subscribed — and the same 67% while playing, which is why the
-  playhead visibly jitters: the line is redrawn from a thread that is already
-  saturated. The event loop is `ControlFlow::Wait` and `draw` does not re-arm
-  itself, and the `/clock_query` poll is gated on a tree that actually shows a
-  playhead — so the cost is in the periodic tick itself (`live::STREAM_PERIOD_MS`:
-  the slot refresh, the extents pass, the edge-scroll step) or in something it
-  requests a redraw from unconditionally. Native does not have the same shape
-  (it reads the shm header and needs no poll), so this is the browser front's
-  own. Worth measuring per stage before changing anything.
+  the main thread, idle** — no transport running, no pointer moving, no streams
+  subscribed. The guesses in this entry were all wrong: the tick's own stages
+  are cheap, the `/clock_query` poll is gated correctly, and nothing in the
+  browser front asks for a frame it should not. What asked was a **widget**.
+
+  **A `notes` roll declared `Needs::clock` for its kind rather than for its
+  anchor** — "a roll follows the transport, so the window has to keep
+  repainting", which is true *while one is running* and was written as always.
+  `clock` is the element's way of saying its own playhead is sweeping, so it
+  makes `has_playhead` true, which makes the tree `animated`, which runs the ~30
+  fps tick and repaints the whole window — for as long as the page is open, with
+  nothing moving in it. The composer holds three roll clips. `score`, the other
+  element with an anchor of its own, had the rule right all along
+  (`clock: self.data.playhead_at >= 0.0`), and the roll now reads the same way.
+
+  **Measured before and after**, same page, same browser, three seconds idle:
+  **58.8% of the main thread and 30.7 paint requests per second → 3.2% and
+  zero.** A sweep over the other examples says the defect was this one widget's:
+  `editor`, `typed-controls`, `verbs`, `score`, `automation-lane`, `recording`,
+  `multichannel` and `spectral` were already still (0 paints/s, ~1–3%), and the
+  two that do animate — `scope` and `piano` — hold a scope and a meter, which is
+  what animating is *for*.
+
+  **The stages, since the entry asked for them.** Per frame on the renderer's
+  main thread: the host's own work (the tick's tree walk plus the frame build
+  and submit) is ~1.4 ms, and the rest — around 18 ms in a headless software-GPU
+  browser — is the browser committing and presenting the canvas. So the cost is
+  never in making a frame cheaper; it is in **not asking for one**. Both fronts
+  share the rule, so the native window was repainting at 30 fps beside a still
+  roll too, where a real GPU made it invisible.
+
+  Guarded in both places it can regress: `notes` (the element declares it from
+  its anchor) and `live::demand` (a tree with a still roll is not animated).
+
+  *What is left of this entry, and it is a different question:* whether a page
+  that **is** animating costs too much per frame — the jitter the playhead was
+  reported with was measured with this burn underneath it, so it needs looking
+  at again by eye, on a real GPU, now that a still page is still.
 
 These are not milestones and they are not future directions. They are what
 **using the thing** turns up — an eye pass over an example, a path read while

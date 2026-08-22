@@ -503,8 +503,13 @@ impl Element for Notes {
     fn needs(&self) -> Needs {
         Needs {
             // A roll follows the transport, so the window has to keep repainting
-            // while one is running.
-            clock: true,
+            // **while one is running** — which is what the anchor says, and what
+            // this asked for unconditionally until 2026-08-22. A roll that is
+            // merely on screen has nothing moving in it, and a window that
+            // repaints anyway repaints for as long as the page is open. The
+            // rule is the `score`'s, for the same reason: the element that
+            // carries its own anchor is the one that can answer.
+            clock: self.editor.playhead_at >= 0.0,
             midi: self.midi_in,
             ..Needs::default()
         }
@@ -1185,6 +1190,26 @@ mod tests {
 
     fn roll(json: &str) -> Notes {
         from_props(&props(json))
+    }
+
+    /// **A roll asks the window to follow the clock only while something is
+    /// sweeping.** It asked for it unconditionally once, and a page holding a
+    /// roll then repainted thirty times a second for as long as it was open,
+    /// with nothing moving in it — 59% of a browser's main thread on the
+    /// composer example, against 3% once the anchor decides. The rule is the
+    /// `score`'s: the element carrying the anchor is the one that can answer.
+    #[test]
+    fn a_roll_follows_the_clock_only_while_a_playhead_is_anchored() {
+        let idle = roll(r#"{"notes":[0.0,50.0,60.0,100.0,0.0]}"#);
+        assert!(
+            !idle.needs().clock,
+            "a roll with nothing sweeping in it keeps no window awake"
+        );
+        let sweeping = roll(r#"{"notes":[0.0,50.0,60.0,100.0,0.0],"playhead_at":480.0}"#);
+        assert!(
+            sweeping.needs().clock,
+            "an anchored roll does: the line has to move"
+        );
     }
 
     /// The cursor read-out stays inside the grid it reads: a roll drawn as a
