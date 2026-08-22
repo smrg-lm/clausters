@@ -759,7 +759,7 @@ fn draw_cord(mesh: &mut Mesh, pts: &[[f32; 2]], rate: Rate, theme: &Theme, scale
 /// the real box rects, grown by the margin and the label room — so the frame hugs
 /// where the boxes actually are, not a phantom auto layout. Falls back to `area`
 /// for an empty patch.
-fn content_rect(area: Rect, patch: &PatchDraw, scale: f32) -> Rect {
+pub fn content_rect(area: Rect, patch: &PatchDraw, scale: f32) -> Rect {
     if patch.boxes.is_empty() {
         return area;
     }

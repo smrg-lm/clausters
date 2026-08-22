@@ -344,32 +344,64 @@ fn a_plain_drag_marquees_and_shift_pans_leaving_the_selection() {
     shift.shift = true;
     let area = Rect::new(0.0, 0.0, 600.0, 400.0);
     let before = patch_of(&host);
-    // A plain drag from the empty middle-bottom over the two stacked boxes.
+    // The canvas is the **drawn panel**, so a sweep starts on its own bare
+    // paper: at its bottom-left corner, clear of the boxes stacked up the
+    // middle. The paper *outside* it belongs to the workspace, which is the
+    // last case below.
+    let panel = patch::content_rect(area, &before, 1.0);
+    let (sweep_x, sweep_y) = (
+        (panel.x + panel.w - 2.0) as f64,
+        (panel.y + panel.h - 2.0) as f64,
+    );
     let b1 = patch::obj_rect(area, &before, 1, 1.0);
-    g.press(&mut host, &plain, 300.0, 390.0);
-    g.drag_to(&mut host, &plain, (b1.x - 2.0) as f64, 2.0);
+    g.press(&mut host, &plain, sweep_x, sweep_y);
+    g.drag_to(
+        &mut host,
+        &plain,
+        (b1.x - 2.0) as f64,
+        (panel.y + 2.0) as f64,
+    );
     assert_eq!(
         selection_of(&host),
         vec![0, 1],
         "the marquee spans both boxes"
     );
     assert!(g.dragging(), "the element holds the sweep, and draws it");
-    g.release(&mut host, &plain, (b1.x - 2.0) as f64, 2.0);
+    g.release(
+        &mut host,
+        &plain,
+        (b1.x - 2.0) as f64,
+        (panel.y + 2.0) as f64,
+    );
     assert!(!g.dragging());
-    // Shift+drag on empty canvas pans (the heavy-view convention): it starts
+    // Shift+drag on the canvas pans (the heavy-view convention): it starts
     // no marquee and leaves the selection untouched.
-    g.press(&mut host, &shift, 300.0, 390.0);
-    g.drag_to(&mut host, &shift, 330.0, 360.0);
+    g.press(&mut host, &shift, sweep_x, sweep_y);
+    g.drag_to(&mut host, &shift, sweep_x + 30.0, sweep_y - 30.0);
     assert_eq!(
         selection_of(&host),
         vec![0, 1],
         "Shift pans: the element never saw the press"
     );
-    g.release(&mut host, &shift, 330.0, 360.0);
+    g.release(&mut host, &shift, sweep_x + 30.0, sweep_y - 30.0);
     assert_eq!(selection_of(&host), vec![0, 1], "Shift+drag does not clear");
-    // A plain click on empty canvas (a zero-size marquee) clears the set.
-    g.press(&mut host, &plain, 300.0, 390.0);
-    g.release(&mut host, &plain, 300.0, 390.0);
+    // **The paper beside the graph is the workspace's**, with no modifier at
+    // all: the panel hugs the boxes and the widget's rect is whatever the
+    // scroll view gave it, so a drag out here pans rather than sweeping a
+    // marquee over nothing — which is what it used to do, in both fronts.
+    let outside = ((panel.x + panel.w + 20.0) as f64, 200.0);
+    g.press(&mut host, &plain, outside.0, outside.1);
+    g.drag_to(&mut host, &plain, outside.0 - 40.0, 160.0);
+    assert_eq!(
+        selection_of(&host),
+        vec![0, 1],
+        "outside the panel the element never saw the press"
+    );
+    g.release(&mut host, &plain, outside.0 - 40.0, 160.0);
+    // A plain click on the canvas's own bare paper (a zero-size marquee)
+    // clears the set.
+    g.press(&mut host, &plain, sweep_x, sweep_y);
+    g.release(&mut host, &plain, sweep_x, sweep_y);
     assert!(selection_of(&host).is_empty());
 }
 

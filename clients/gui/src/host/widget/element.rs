@@ -1082,6 +1082,12 @@ impl Events {
 /// to write, and a leaf that says nothing keeps the rectangle it always had.
 /// The slop is added by the machine, so a small target is grabbable without
 /// each element deciding how much air it deserves.
+///
+/// **Slop grows a target, never a region.** The shapes below are things to
+/// *hit* — a dial, a box, a groove — and a few pixels of air around one is a
+/// kindness. [`HitArea::Region`] is the other kind: an area whose edge is a
+/// **boundary between two owners**, where the same air makes the two overlap
+/// and a gesture change meaning a few pixels before the drawing says it does.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum HitArea {
     /// The rectangle itself — the default, and what anything filling its cell
@@ -1091,10 +1097,16 @@ pub enum HitArea {
     Disc { cx: f32, cy: f32, r: f32 },
     /// The ellipse inscribed in a box.
     Ellipse(Rect),
+    /// A rectangle taken **exactly**, with no slop: an area big enough that
+    /// nobody hunts for its edge, and whose edge is where one owner stops and
+    /// another begins — a patcher's drawn panel, with the workspace's paper
+    /// around it.
+    Region(Rect),
 }
 
 impl HitArea {
-    /// Whether `(x, y)` is on the shape, with `slop` of air around it.
+    /// Whether `(x, y)` is on the shape, with `slop` of air around it — except
+    /// for a [`HitArea::Region`], which is taken at its edge.
     pub fn hit(&self, x: f64, y: f64, slop: f32) -> bool {
         match *self {
             HitArea::Rect(r) => r.grown(slop).contains(x, y),
@@ -1102,6 +1114,7 @@ impl HitArea {
                 shape::in_disc(x, y, cx as f64, cy as f64, (r + slop) as f64)
             }
             HitArea::Ellipse(r) => shape::in_ellipse(x, y, r.grown(slop)),
+            HitArea::Region(r) => r.contains(x, y),
         }
     }
 }

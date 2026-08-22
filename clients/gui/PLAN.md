@@ -2640,6 +2640,28 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   reported with was measured with this burn underneath it, so it needs looking
   at again by eye, on a real GPU, now that a still page is still.
 
+- ✅ **A drag beside the graph swept a marquee over nothing** *(found
+  2026-08-22 by the user, on the patcher's Def view: "al costado (fuera) del
+  recuadro que contiene las cajas arrastrar selecciona")*. The patcher draws a
+  **labelled panel that hugs its laid-out boxes** — deliberately, so every box
+  is inside it whatever rect the widget got — while its press claimed the whole
+  widget rect, which a `scroll` workspace never sizes below the window. So the
+  paper at the sides *looked* like the workspace and *acted* like the canvas: a
+  drag there swept a selection instead of panning. It is the defect a knob's
+  cell corners and a checkbox's air had, and it has the same fix — the element
+  answers with a `hit_area`, and what can be grabbed is exactly what is drawn.
+  A press outside the panel now falls through to the workspace, which pans it.
+  Found in a page and fixed in the host, so both fronts get it: the rule was
+  never the browser's.
+
+  **And the edge is taken exactly**, which the first fix did not do: the machine
+  adds a few pixels of hit slop to every shape an element declares, so the
+  selection still started just outside the drawn frame. Slop grows a *target* —
+  a dial, a note, a break-point, where nobody should hunt for a pixel — and this
+  is a *region*, whose edge is where one owner stops and another begins.
+  `HitArea::Region` is that distinction, named so the next boundary can ask for
+  it: the same rectangle, taken at its edge.
+
 These are not milestones and they are not future directions. They are what
 **using the thing** turns up — an eye pass over an example, a path read while
 doing something else, a behaviour that is correct and unclear — recorded the day

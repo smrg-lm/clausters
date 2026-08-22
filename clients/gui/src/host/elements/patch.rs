@@ -27,7 +27,7 @@ use serde_json::{Map, Value};
 use crate::host::graphics::patch::{self, PatchDraw, Port, Side};
 use crate::host::layout::Rect;
 use crate::host::paint::Draw;
-use crate::host::widget::element::{Claim, Ctx, Element, Events, Input};
+use crate::host::widget::element::{Claim, Ctx, Element, Events, HitArea, Input};
 use crate::host::widget::parse::{label, set_label};
 
 /// A patcher over its own canvas. `selected` and `drag` are native view state —
@@ -180,6 +180,22 @@ impl Element for Patch {
     /// content to, since only the element knows how far its boxes reach.
     fn content_size(&self) -> Option<(f32, f32)> {
         Some(patch::natural_size(&self.patch))
+    }
+
+    /// **The canvas is the panel, and the paper around it is the workspace's.**
+    /// The frame the renderer draws hugs the laid-out boxes, while the widget's
+    /// rect is whatever the scroll view gave it — never smaller than the window.
+    /// Claiming that whole rect made a drag on the empty paper *beside* the
+    /// graph sweep a marquee, where nothing is drawn and the workspace should
+    /// simply pan. The two now agree, the same way a knob's disc and a
+    /// checkbox's box do: what can be grabbed is exactly what is drawn.
+    ///
+    /// A [`HitArea::Region`] and not a rect, so the machine adds no slop: this
+    /// edge is a **boundary** — canvas on one side, workspace on the other —
+    /// and a few pixels of air around it start a selection outside the frame
+    /// the reader is looking at.
+    fn hit_area(&self, input: &Input) -> HitArea {
+        HitArea::Region(patch::content_rect(input.rect, &self.patch, input.scale))
     }
 
     fn press(&mut self, at: (f64, f64), input: &Input) -> Claim {
@@ -582,6 +598,52 @@ mod tests {
         // A box still takes a Shift press: what falls through is the bare canvas.
         let at = centre(&p, 0);
         assert!(matches!(p.press(at, &input(&m, r, shift)), Claim::Take(_)));
+    }
+
+    /// **The paper beside the graph is the workspace's.** The frame the renderer
+    /// draws hugs the boxes; the widget's rect is whatever the scroll view gave
+    /// it, never smaller than the window. Claiming the whole rect made a drag on
+    /// the empty paper at the sides sweep a marquee over nothing — the same
+    /// defect a knob's cell corners and a checkbox's air had, and the same fix:
+    /// the hit area is what is drawn.
+    #[test]
+    fn the_canvas_is_the_drawn_panel_and_not_the_rect_it_was_given() {
+        let (m, r) = (Metrics::default(), rect());
+        let p = graph();
+        let HitArea::Region(area) = p.hit_area(&input(&m, r, Mods::default())) else {
+            panic!("a patcher's canvas is a region, taken at its edge");
+        };
+        // No slop: the edge is a boundary, and a selection that starts a few
+        // pixels outside the frame is the whole of what the reader sees wrong.
+        let m_slop = Metrics::default().hit_slop;
+        assert!(m_slop > 0.0, "the metric exists, and this area declines it");
+        assert!(
+            !p.hit_area(&input(&m, r, Mods::default())).hit(
+                (area.x + area.w + 2.0) as f64,
+                (area.y + area.h / 2.0) as f64,
+                m_slop,
+            ),
+            "two pixels outside the panel is outside the canvas"
+        );
+        assert!(
+            area.w < r.w && area.h < r.h,
+            "the panel is smaller than the paper it sits on: {area:?} in {r:?}"
+        );
+        let inside = |x: f64, y: f64| {
+            x >= area.x as f64
+                && y >= area.y as f64
+                && x <= (area.x + area.w) as f64
+                && y <= (area.y + area.h) as f64
+        };
+        // Every box is inside it, and the sides are not.
+        for i in 0..p.patch.boxes.len() {
+            let (x, y) = centre(&p, i);
+            assert!(inside(x, y), "box {i} at ({x}, {y}) is outside the panel");
+        }
+        assert!(
+            !inside((r.x + r.w - 4.0) as f64, (r.y + r.h / 2.0) as f64),
+            "the paper right of the graph is the workspace's; panel {area:?} in {r:?}"
+        );
     }
 
     /// A replaced `boxes` list drops the selection, whose indices would dangle.
