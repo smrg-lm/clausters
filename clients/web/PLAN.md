@@ -1006,11 +1006,11 @@ stand and left the rest. This closes the gap, so the two example sets read as
 one catalogue: same name, same instrument, same point of interest, one written
 as a script and one as a page.
 
-- The remaining `clients/python/examples/` ported to `clients/web/examples/`, each keeping the name of the example it mirrors and the catalog row that says so.
+- The remaining `clients/python/examples/` ported to `clients/web/examples/`, each named after the example it mirrors — **the page's own spelling**: a hyphen for the underscore, and without the `gui_` prefix, which says which *process* runs it and means nothing to a page (`gui_composer.py` is `composer.html`, `offline_render.py` is `offline.html`). Where a page's name cannot be read back to a script's, the page's header comment says which example it is.
 - Most of what is left is **not** blocked on porting effort but on a surface this client does not have yet — MIDI, automation, the transport grid, an offline render, the box algebra, the UGens outside the shipped set. Each such example lands with (or after) the milestone that opens its surface, which is why this slot is a destination rather than a queue.
-- The examples that are Python-process shaped by nature (a launcher, a live UDP peer, a native GUI shell) have no page counterpart and stay unported; the catalog says so rather than leaving a hole.
+- The examples that are Python-process shaped by nature (a launcher, a live UDP peer, a native GUI shell) have no page counterpart and stay unported. **This is stated where a reader is, not in a catalog** — the project's example rule keeps the books out of enumerating them, so the absence is recorded in this plan, and the *nearest* page says in its header what its Python sibling does that a tab cannot.
 
-**Acceptance:** every Python example either has a web page of the same name or a stated reason in the catalog for having none, and each ported page runs on the in-page engine with the carrier line marked.
+**Acceptance:** every Python example either has a web page named after it or a reason stated in this plan for having none, and each ported page runs on the in-page engine with the carrier line marked. And, for a pair that exists twice, the stronger check the `examples` skill now states: the two are **one example in two languages** — same material, same names, the same calls to the same API in the same order — so a port is finished when the two screens can be put side by side and read as the same piece.
 
 The largest single item behind this, named here because it is a **track and not
 an example**: `gui_composer.py` needs the **arrangement layer** — `clausters.form`

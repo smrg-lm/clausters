@@ -1,7 +1,10 @@
 # Roadmap — the order the open work is taken in
 
-*Rewritten 2026-08-21, when the phase of things found by use was taken whole —
-its last entry being a design question rather than a fix. Before that: 2026-08-20, four times — when the
+*Rewritten 2026-08-21 (twice: the second time when the arrangement, the editor,
+the transport and the engraver all reached the web client, which is what Phase 1
+was ordered for), and before that the same day, when the phase of things found by
+use was taken whole — its last entry being a design question rather than a fix.
+Before that: 2026-08-20, four times — when the
 overview work closed, when the four
 entries it had left behind were taken — the join that draws an edge, a page's
 zoom while a take records, the shape a zoom asks in, and what a column claims at
@@ -42,11 +45,13 @@ looking at in the shape that span wants — a finer summary, or the samples wher
 only they will do — recording or finished, so the browser draws what the native
 window draws rather than stopping at a bucket.
 
-**Everything found by use has been taken**, so what leads the list is no longer
-a defect somebody hit but the largest standing violation of the project's own
-rule: the arrangement, the document and the editor exist in one client. Behind
-it, one track that is genuinely later. Everything else is in the section after
-them, named so that "not scheduled" reads as a decision.
+**The violation that led this list is paid**: the arrangement, the document and
+the editor now exist in both clients, held together by parity suites rather than
+by care. What leads it instead is what taking that port turned up — one measured
+defect and one surface it named but did not build — followed by the destination
+the port was blocking. Behind them, one track that is genuinely later.
+Everything else is in the section after them, named so that "not scheduled"
+reads as a decision.
 
 **A larger question was opened while that phase was taken and is deliberately
 not in this order**, because it is not work to schedule: what the *second*
@@ -78,20 +83,37 @@ right — that is the normal failure, not a sign the work vanished.
 ## Phase 1 — the packages move together: the arrangement reaches the web client
 
 *Why first: the rule the project already states, applied to the largest
-outstanding violation. `form/`, `gui/editor.py`, `gui/transport.py` and
-`gui/notation.py` have **no TypeScript counterpart at all** — the whole
-arrangement, document and editor layer exists in one client. It waits on
-nothing, and it is still here for the reason it always was: it is a port, and
-porting is cheapest once the layer has stopped moving, which is what the closed
-phases did to it.*
+outstanding violation. **The named track is in** — `src/form/`,
+`gui/transport.ts`, `gui/editor.ts`, `gui/notation/` and `defs/patch.ts` all
+landed on 2026-08-21, each with a parity suite that asserts the two clients
+produce the same tree, the same document and the same engraving. What is left of
+the phase is the destination the track was blocking, and one surface the track
+named on its way past.*
 
-- ⬜ **W16 — Example parity with the Python client**, and its named track: the
-  arrangement layer and the editor. The shape `gui/notation.py`'s port follows
-  was decided on the Python side and is written in the web plan rather than
-  re-derived.
+- ⬜ **W16 — Example parity with the Python client**. Its named track (the
+  arrangement layer, the editor, the transport, the engraver) is closed; what
+  remains is the milestone itself, and it is the larger half: about forty
+  Python examples have no page, most of them GUI ones, and each lands with the
+  surface it needs rather than as a queue. Two things about the entry's own
+  text are stale and are fixed in the plan before it is taken — it asks for a
+  **catalog row**, which the project's example rule no longer allows a book to
+  hold, and for the **same name**, which the pages already do not keep
+  (`gui_composer.py` is `composer.html`).
+- ⬜ **`DefPatch` — level 2 of the patcher** *(`clients/web/PLAN.md`, W16)*, the
+  one surface the port left named rather than built: a def's internal UGen graph
+  as boxes, which `gui_patch2.py` is the example of. A missing surface is a
+  defect under the non-divergence rule, so it is ordered here rather than
+  waiting for the example that needs it.
+- ⬜ **A page burns the main thread while nothing is happening**
+  *(`clients/gui/PLAN.md`, Found by use)* — 67% of the main thread with the
+  composer page idle, and the same 67% while playing, which is what makes the
+  playhead jitter. It is the browser front's own (native reads the shm header
+  and polls nothing), and the entry says to measure per stage before changing
+  anything. Ordered here because it is the only thing found by use that is
+  still open, and because every page the phase adds pays it.
 - ⬜ **W24 — The completeness pass**, and the parity gaps that plan already
-  carries with reasons (the record formatters, `defs/patch.ts`, `connectGui`,
-  the two leftover names).
+  carries with reasons (the record formatters, `connectGui`, the two leftover
+  names — `defs/patch.ts` is no longer among them).
 - ⬜ **W7** (the Faust surfaces), **W9** (MIDI), **W15** (the bundle writer) —
   unported features, each owned, none on the path to the complete example.
 
