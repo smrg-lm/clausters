@@ -207,6 +207,13 @@ class Editor:
         #: composition does not change when it moves, and the document is
         #: explicit that what a view is currently editing is never part of it.
         self._edit_layer: dict = {}
+        #: The **run of edits one gesture has produced**: ``(widget id, the
+        #: version it started from)``, or ``None`` between gestures. See
+        #: `_stale`, which is the only thing that reads it.
+        self._run: "tuple[int, int] | None" = None
+        #: The version this editor was at when that run last landed -- the way
+        #: it notices the composition moving by a route that was not a gesture.
+        self._run_end: int = FIRST_VERSION
         #: The **value axis** each curve is drawn against, by `Automation` —
         #: remembered rather than recomputed, which is screen state for the same
         #: reason the edit layer is.
@@ -396,6 +403,10 @@ class Editor:
         editor calls it for itself wherever *it* writes the arrangement directly.
         """
         self._rederive = True
+        # The arrangement moved by a route no gesture took, which is exactly
+        # what ends a run: a step still in flight was made against a picture
+        # that is now gone, and `_stale` has to say so.
+        self._run = None
 
     def load(self, element) -> None:
         """Point this editor at another composition, redrawing the window it
@@ -698,7 +709,20 @@ class Editor:
         # the real owner never saw.
         if not self._owns(int(args[0])):
             return False
-        if self._stale(against):
+        # **A gesture is a run, not an edit.** A drag emits a value per frame,
+        # each stamped with the version the *host* holds -- and the host only
+        # learns a new one when an acknowledgement reaches it. A page's round
+        # trip is slower than a hand is, so every step after the first names a
+        # version this editor has already moved past, and the check below would
+        # refuse the whole drag and answer each step by snapping the picture
+        # back: the curve trembles under the hand editing it. The run is what
+        # tells the two apart -- these versions are *this widget's own*, made by
+        # the gesture still in flight.
+        if self._version != self._run_end:
+            # Something moved the composition between one gesture and the next
+            # (a script, a button, a redefine). Whatever run was open is over.
+            self._run = None
+        if self._stale(against, int(args[0])):
             # The composition moved under the gesture, by a route no gesture
             # produced. The edit is not applied and not merged: an edit-back
             # payload is absolute *and* whole (a roll's notes are the list, not
@@ -710,7 +734,10 @@ class Editor:
             self._resync(int(args[0]))
             self._acknowledge(seq, reason="the composition changed since this edit")
             return False
+        if self._run is None or self._run[0] != int(args[0]):
+            self._run = (int(args[0]), against or self._version)
         changed = self._route(args)
+        self._run_end = self._version
         # Answered whatever happened, and answered with a *value*. There is no
         # success flag: the state this editor decided rides as the corrections
         # `_route` collected, and a refusal is simply the previous value among
@@ -881,14 +908,28 @@ class Editor:
         if self._host is not None:
             self._host.ack(0, doc_version=self._version)
 
-    def _stale(self, against: int) -> bool:
+    def _stale(self, against: int, widget_id: int) -> bool:
         """Whether an edit made against document version ``against`` has been
         overtaken.
 
         Zero is *unstated* rather than a version -- an older host, or one no
         owner has reported a version to -- and unstated applies unchecked, which
-        is the behavior there was before there were versions at all."""
-        return bool(against) and against != self._version
+        is the behavior there was before there were versions at all.
+
+        A version this editor has moved past is **not** overtaken when the
+        versions in between are the ones *this widget's own gesture* made: a
+        drag is one gesture emitting a value per frame, and the host names the
+        last version it was told, which lags the acknowledgements by however
+        long the round trip takes. Refusing those is refusing the drag -- and
+        answering each with a resync is what makes the picture snap back to the
+        first frame of it, over and over. Anything else that moved the document
+        ends the run (see `apply`), so a script's edit, a second editor's or a
+        redefine still overtakes a gesture in flight, which is what the check is
+        for."""
+        if not against or against == self._version:
+            return False
+        run = self._run
+        return not (run is not None and run[0] == widget_id and against >= run[1])
 
     def _resync(self, widget_id: int):
         """Hand back what the widget should be drawing, without applying

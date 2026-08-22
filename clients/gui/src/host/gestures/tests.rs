@@ -1736,9 +1736,9 @@ fn a_press_selects_the_layer_it_lands_on_and_the_background_is_the_clips() {
                     && args.get(1) == Some(&OscType::String("points".into())))),
         "{selected:?}"
     );
-    let effects = g.drag_to(&mut host, &ctx, on_line.0, on_line.1 - 20.0);
+    g.drag_to(&mut host, &ctx, on_line.0, on_line.1 - 20.0);
+    let effects = g.release(&mut host, &ctx, on_line.0, on_line.1 - 20.0);
     assert!(has_emit_tag(&effects, 81, "points"), "{effects:?}");
-    g.release(&mut host, &ctx, on_line.0, on_line.1 - 20.0);
     assert_eq!(clip_offset(&host, 81), 0.0, "the clip did not move");
     assert_eq!(
         active_layer(&host, 81),
@@ -1750,9 +1750,9 @@ fn a_press_selects_the_layer_it_lands_on_and_the_background_is_the_clips() {
     // envelope's own units, tagged `points`.
     g.press(&mut host, &ctx, peak.0, peak.1, &mut || false);
     assert!(g.dragging());
-    let effects = g.drag_to(&mut host, &ctx, peak.0, (lane.y + lane.h) as f64 - 1.0);
+    g.drag_to(&mut host, &ctx, peak.0, (lane.y + lane.h) as f64 - 1.0);
+    let effects = g.release(&mut host, &ctx, peak.0, (lane.y + lane.h) as f64 - 1.0);
     assert!(has_emit_tag(&effects, 81, "points"), "{effects:?}");
-    g.release(&mut host, &ctx, peak.0, (lane.y + lane.h) as f64 - 1.0);
     assert_eq!(clip_offset(&host, 81), 0.0, "the clip itself did not move");
 
     // Off the curve altogether — the clip's own background, where the
@@ -1805,8 +1805,8 @@ fn trimming_a_clips_head_moves_its_window_over_the_samples() {
     let quarter = (clip.x + clip.w * 0.25) as f64;
 
     g.press(&mut host, &ctx, on_start_grip, midy, &mut || false);
-    let effects = g.drag_to(&mut host, &ctx, quarter, midy);
-    g.release(&mut host, &ctx, quarter, midy);
+    g.drag_to(&mut host, &ctx, quarter, midy);
+    let effects = g.release(&mut host, &ctx, quarter, midy);
     let args = effects
         .iter()
         .find_map(|e| match e {
@@ -2119,11 +2119,12 @@ fn a_note_dragged_in_a_clip_stops_at_the_clips_edge() {
     assert!(g.dragging(), "the press grabbed the note");
     // Drag far past the clip's right edge: the note travels, and its **tail**
     // parks on the edge — the whole note stays inside, not just its onset.
-    let effects = g.drag_to(&mut host, &ctx, (clip.x + clip.w) as f64 + 400.0, midy);
+    g.drag_to(&mut host, &ctx, (clip.x + clip.w) as f64 + 400.0, midy);
+    // The edit leaves whole on the release — one gesture, one edit.
+    let effects = g.release(&mut host, &ctx, (clip.x + clip.w) as f64 + 400.0, midy);
     let (start, dur) = first_note(&effects);
     assert_eq!(dur, 200.0, "a move keeps the duration");
     assert_eq!(start, 800.0, "the tail stopped at the clip's dur (1000)");
-    g.release(&mut host, &ctx, (clip.x + clip.w) as f64 + 400.0, midy);
     assert_eq!(
         clip_offset(&host, 81),
         0.0,
@@ -2164,7 +2165,12 @@ fn a_press_on_a_clips_grip_resizes_it_rather_than_the_note_under_it() {
 
     g.press(&mut host, &ctx, on_grip, midy, &mut || false);
     assert!(g.dragging(), "the press was taken");
-    let effects = g.drag_to(&mut host, &ctx, on_grip + 60.0, midy);
+    let dragged = g.drag_to(&mut host, &ctx, on_grip + 60.0, midy);
+    let effects = g.release(&mut host, &ctx, on_grip + 60.0, midy);
+    assert!(
+        !has_emit_tag(&dragged, 81, "clip"),
+        "the resize is one edit, delivered at the end"
+    );
     assert!(
         !has_emit_tag(&effects, 81, "notes"),
         "the note under the grip was not touched"
@@ -2176,13 +2182,13 @@ fn a_press_on_a_clips_grip_resizes_it_rather_than_the_note_under_it() {
         clip_dur(&host, 81)
     );
     assert_eq!(clip_offset(&host, 81), 0.0, "and the other end stayed put");
-    g.release(&mut host, &ctx, on_grip + 60.0, midy);
 
     // Clear of the grip, the same note is the body's again — which is the half
     // of the rule that keeps the roll editable at all.
     let on_note = (clip.x + clip.w * 0.93) as f64;
     g.press(&mut host, &ctx, on_note, midy, &mut || false);
-    let effects = g.drag_to(&mut host, &ctx, on_note - 40.0, midy);
+    g.drag_to(&mut host, &ctx, on_note - 40.0, midy);
+    let effects = g.release(&mut host, &ctx, on_note - 40.0, midy);
     assert!(has_emit_tag(&effects, 81, "notes"), "the note moved");
 }
 
@@ -2317,10 +2323,15 @@ fn a_clip_dragged_to_the_edge_pulls_the_view_along() {
         "and the clip travelled with it: {parked} -> {}",
         clip_offset(&host, 71)
     );
-    // The move keeps reporting itself, and the view move is reported too.
-    assert!(has_emit_tag(&effects, 71, "clip"));
+    // The **view** move is reported as it goes: a pan is the container's own
+    // state and a script following the axis needs it now, not at the end.
     // The view move is the *lane's* — the group member, not the clip.
     assert!(has_emit_tag(&effects, 70, "view"));
+    // The clip's *edit* is not: one gesture is one edit, so it leaves whole on
+    // the release, wherever the scrolling took it.
+    assert!(!has_emit_tag(&effects, 71, "clip"), "not once per tick");
+    let done = g.release(&mut host, &ctx, 790.0, 0.0);
+    assert!(has_emit_tag(&done, 71, "clip"), "and once at the end");
 
     // A cursor clear of the margins scrolls nothing.
     let (held, _) = host.timeline_nav(70).unwrap();

@@ -1225,6 +1225,45 @@ def test_every_acknowledgement_carries_the_version_the_next_gesture_names_back()
     assert version > FIRST_VERSION, "an applied edit moved it"
 
 
+def test_a_drag_is_one_run_and_its_own_older_versions_are_not_stale():
+    """A drag emits a value per frame, each stamped with the version the *host*
+    holds -- and a host only learns a new one when an acknowledgement reaches
+    it. Refusing those is refusing the drag: every step after the first comes
+    back as a resync and the picture snaps to the first frame, over and over,
+    which is a curve trembling under the hand editing it."""
+    ed = two_clips()
+    host = _FakeHost()
+    ed.open(host)
+    (lead, _bass) = lanes(ed.draw())
+    (clip,) = clips(lead)
+    drawn_at = ed._version
+    placement = ed._clips[clip["id"]]
+
+    # Five frames of one drag, every one of them naming the version the host
+    # had when the gesture began.
+    for beat in (1.0, 2.0, 3.0, 4.0, 5.0):
+        assert ed.apply("/gui_event", [clip["id"], SEQ, drawn_at, "clip",
+                                       beat * BEAT, float(BEAT)]) is True
+    # `_Placed` keeps the drawn placement in timeline units, not beats.
+    assert placement.offset == pytest.approx(5.0 * BEAT), "the last frame is where it is"
+    assert ed._version != drawn_at
+
+    # ...and the run is this widget's alone. A *second* widget naming the same
+    # old version is the case the check exists for, and is still refused.
+    (other,) = clips(_bass)
+    assert ed.apply("/gui_event", [other["id"], SEQ + 1, drawn_at, "clip",
+                                   6.0 * BEAT, float(BEAT)]) is False
+
+    # A change by no gesture at all ends the run, so a step arriving after it is
+    # refused as well -- which is what the version is for. The offset has to be
+    # a *new* one: a step asking for where the clip already sits changes nothing
+    # and would answer False whatever the rule said.
+    ed.refresh()
+    assert ed.apply("/gui_event", [clip["id"], SEQ + 2, drawn_at, "clip",
+                                   7.0 * BEAT, float(BEAT)]) is False
+    assert placement.offset == pytest.approx(5.0 * BEAT), "and it did not move"
+
+
 def test_an_edit_made_against_a_superseded_version_is_refused_and_answered():
     """O4's acceptance. The composition moved between the picture the gesture
     was made against and the gesture arriving -- here by another edit, which is

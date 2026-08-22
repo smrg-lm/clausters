@@ -46,6 +46,27 @@ pub(super) struct CanvasSlot {
     /// not stop *us* from computing a frame or the server from streaming for it.
     pub(super) visible: bool,
     pub(super) cursor: (f64, f64),
+    /// **Which mouse buttons the browser says are down**, as of the last
+    /// pointer event on this canvas — the bitmask of `PointerEvent.buttons`.
+    ///
+    /// A desktop window cannot lose a release: the OS delivers the button-up to
+    /// whoever captured the pointer. A page can — the button comes up outside
+    /// the browser window, over another application, after an alt-tab — and
+    /// winit synthesizes a button event only from a move that *reports* a
+    /// change (`PointerEvent.button != -1`), which such a move does not. So the
+    /// gesture machine would still be holding whatever was in hand, and the
+    /// next move back over the canvas would look exactly like a drag step: the
+    /// thing in hand teleports to wherever the pointer came back in, and the
+    /// edit it amounts to is never sent because no release ever happens.
+    ///
+    /// The shell reads the browser's own answer and ends the drag itself. This
+    /// is the browser front's job and not the host's: the host is one
+    /// implementation and must be handed the same press → drag → release either
+    /// side, which is what this restores.
+    pub(super) buttons: Rc<Cell<u16>>,
+    /// Kept alive for as long as the canvas is: dropping it removes the
+    /// listener that fills it.
+    pub(super) pointer_listener: Option<PointerListener>,
     /// The finger currently driving this canvas, if any.
     ///
     /// The gesture machine is single-pointer — one press, one drag, one release
@@ -70,6 +91,29 @@ pub(super) struct CanvasSlot {
     pub(super) pending_bulk: Vec<(i32, Loaded)>,
 }
 
+/// The window-level pointer listener a [`CanvasSlot`] keeps, removed when the
+/// canvas goes: a detached canvas whose listener stayed would keep reading a
+/// rectangle nothing draws into.
+pub(super) struct PointerListener {
+    window: web_sys::Window,
+    closure: Closure<dyn FnMut(web_sys::PointerEvent)>,
+}
+
+/// The three events a gesture is made of, watched together.
+const POINTER_EVENTS: [&str; 3] = ["pointerdown", "pointermove", "pointerup"];
+
+impl Drop for PointerListener {
+    fn drop(&mut self) {
+        for name in POINTER_EVENTS {
+            let _ = self.window.remove_event_listener_with_callback_and_bool(
+                name,
+                self.closure.as_ref().unchecked_ref(),
+                true,
+            );
+        }
+    }
+}
+
 impl CanvasSlot {
     pub(super) fn new(window: Arc<Window>) -> Self {
         Self {
@@ -78,6 +122,8 @@ impl CanvasSlot {
             pending_size: None,
             visible: true,
             cursor: (0.0, 0.0),
+            buttons: Rc::new(Cell::new(0)),
+            pointer_listener: None,
             touch: None,
             gestures: Gestures::default(),
             shift: false,
@@ -85,6 +131,45 @@ impl CanvasSlot {
             alt: false,
             histories: HashMap::new(),
             pending_bulk: Vec::new(),
+        }
+    }
+
+    /// Follows the browser's own **button state** on this canvas, so a release
+    /// the page never saw is caught on the next move (see
+    /// [`CanvasSlot::buttons`]).
+    ///
+    /// On `window` in the capture phase, so the mask is already stored by the
+    /// time winit's own handler turns the event into a `CursorMoved`. Anything
+    /// whose target is not this canvas is another canvas' (or the page's) and
+    /// is left alone.
+    fn watch_buttons(&mut self) {
+        let Some(canvas) = self.window.canvas() else {
+            return;
+        };
+        let Some(window) = web_sys::window() else {
+            return;
+        };
+        let buttons = self.buttons.clone();
+        let target = canvas.clone();
+        let closure = Closure::<dyn FnMut(web_sys::PointerEvent)>::new(
+            move |event: web_sys::PointerEvent| {
+                if event.target().as_ref() == Some(target.as_ref()) {
+                    buttons.set(event.buttons());
+                }
+            },
+        );
+        let mut attached = false;
+        for name in POINTER_EVENTS {
+            attached |= window
+                .add_event_listener_with_callback_and_bool(
+                    name,
+                    closure.as_ref().unchecked_ref(),
+                    true,
+                )
+                .is_ok();
+        }
+        if attached {
+            self.pointer_listener = Some(PointerListener { window, closure });
         }
     }
 
@@ -149,8 +234,9 @@ impl WebApp {
             Err(e) => return log(&format!("def {def_id}: cannot open a canvas: {e}")),
         };
         self.by_winit.insert(window.id(), def_id);
-        self.canvases
-            .insert(def_id, CanvasSlot::new(window.clone()));
+        let mut slot = CanvasSlot::new(window.clone());
+        slot.watch_buttons();
+        self.canvases.insert(def_id, slot);
         log(&format!(
             "def {def_id}: canvas attached; requesting GPU adapter"
         ));

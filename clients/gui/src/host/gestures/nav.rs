@@ -13,7 +13,7 @@ use super::super::interact::{self, Hit};
 use super::super::layout::Rect;
 use super::super::widget::element::{FreqAxis, ValueAxis};
 use super::super::widget::{ScrollView, Widget, WidgetKind};
-use super::effects::{emit, emit_clip, emit_view, redraw_all};
+use super::effects::{emit, emit_view, redraw_all};
 use super::{GestureCtx, GestureEffect};
 
 /// The rectangle spanned by two corner points, whatever their order.
@@ -370,7 +370,13 @@ pub(super) fn apply_clip_drag(
     // the cursor (a DAW scrolls at constant zoom; the refit is for content that
     // changes under a still view).
     host.sync_track_totals_keeping_view();
-    emit_clip(host, out, def_id, d.id);
+    // **Nothing is emitted here.** One gesture is one edit: the clip follows
+    // the hand because the host moved it, and what the hand did on the way is
+    // the picture's business rather than the owner's -- the same rule
+    // `Drag::Draw` and `Drag::Sample` already state at their own release. A
+    // value per frame instead means a document edit per frame: an undo history
+    // of a hundred steps for one drag, and a hundred round trips whose
+    // acknowledgements the next frame outruns.
     out.push(GestureEffect::Redraw(def_id));
 }
 

@@ -2262,6 +2262,41 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   taller curve); never narrowed, so a point dragged down and back up leaves the
   drawing where it was. In both clients, with the test in both.
 
+- ✅ **A gesture reported a value per frame, so a drag was a hundred edits and
+  all but the first were refused** *(found 2026-08-22 by the user, dragging the
+  composer's envelope: the point teleported, the segment "tiembla en el lugar",
+  and it started as soon as the pointer left the window and came back)*. A clip,
+  a roll and a curve each emitted their whole edit-back on **every drag step**.
+  Two things follow, and the second is the one that showed: an undo history of a
+  hundred entries for one bend, and — since every event names the last version an
+  acknowledgement reported — a hundred round trips that a hand outruns, so every
+  frame after the first named a version the owner had moved past, came back
+  **refused**, and was answered with a resync that snapped the picture to the
+  first frame. Measured in a real browser: a burst of 24 moves left the host at a
+  bend of ~-3 and the model at -0.55, with `apply` answering `false` down the
+  line. Native survived it only because its round trip happens to keep up with a
+  hand; the page does not, which is what made it look like a browser-only defect
+  and is why the shell was searched first (winit's coalesced `offsetX` was
+  measured in Chrome and is *not* wrong — that hypothesis was tested and
+  dropped).
+
+  The host already had the rule, written at two other gestures: *"one gesture is
+  one edit, and what the hand did on the way is the pending drawing's business
+  rather than the owner's"* (`Drag::Draw`, `Drag::Sample`). The clip, the roll
+  and the curve now follow it — the picture follows the hand, the edit leaves
+  whole **on the release** — and `docs/gui-protocol.md` states it for every
+  payload, along with what is still reported as it goes (a view pan, a
+  selection, a layer change, a bound control) because none of those is a
+  document edit.
+
+  The clients gained the second half: a run of edits from **one widget** naming
+  versions the editor has already moved past is that widget's own gesture, not a
+  stale edit, so a host that does report as it goes still edits correctly. What
+  ends a run is anything else moving the document — another widget, a script, a
+  history step, a `refresh()`. *(The user's own note, kept as an open question:
+  an acknowledgement should not be lost to saturation in the first place. That
+  is the carrier's, and is not what this entry fixed.)*
+
 - ⬜ **A page burns the main thread while nothing is happening.** Measured on
   `clients/web/examples/composer.html` through the DevTools protocol: **67% of
   the main thread, idle** — no transport running, no pointer moving, no

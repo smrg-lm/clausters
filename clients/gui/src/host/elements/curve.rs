@@ -348,6 +348,16 @@ impl Element for Curve {
         Claim::Decline
     }
 
+    /// The curve follows the hand; **the edit leaves on release**.
+    ///
+    /// One gesture is one edit — the rule `Drag::Draw` and `Drag::Sample`
+    /// already state at their own release, and the one this never had. A value
+    /// per frame is a document edit per frame: a hundred entries in the history
+    /// for one bend, and a hundred round trips whose acknowledgements the next
+    /// frame outruns, so every frame after the first names a version its owner
+    /// has moved past and comes back refused. The picture is then snapped to the
+    /// answer of the first frame, over and over — a curve trembling under the
+    /// hand editing it.
     fn drag(&mut self, at: (f64, f64), input: &Input) -> Events {
         let ax = self.axes(input.rect, input.metrics, input.time);
         match &mut self.grab {
@@ -359,12 +369,17 @@ impl Element for Curve {
             }
             None => return Events::none(),
         }
-        self.points_event()
+        Events::none()
     }
 
     fn release(&mut self, _at: (f64, f64), _input: &Input) -> Events {
-        self.grab = None;
-        Events::none()
+        // What the drag amounts to, once — see `drag`.
+        let held = self.grab.take().is_some();
+        if held {
+            self.points_event()
+        } else {
+            Events::none()
+        }
     }
 
     fn clone_box(&self) -> Box<dyn Element> {
@@ -481,19 +496,23 @@ mod tests {
         assert!(matches!(c.grab, Some(Grab::Point(0))));
 
         // Dragging point 0 to the top of the field takes it to the range top;
-        // its time cannot pass its neighbour.
+        // its time cannot pass its neighbour. The curve follows the hand and
+        // says nothing: one gesture is one edit.
         let events = c.drag(
             (field.x as f64 + field.w as f64, field.y as f64),
             &input(&m, rect, None),
         );
         assert_eq!(c.points[0].value, 1.0);
         assert_eq!(c.points[0].time, 100.0, "clamped monotonic to point 1");
-        let msgs = events.clone().into_messages();
+        assert!(events.is_empty(), "a frame of a drag is not an edit");
+
+        // The release is the edit, and it carries the whole list.
+        let msgs = c
+            .release((0.0, 0.0), &input(&m, rect, None))
+            .into_messages();
         assert_eq!(msgs.len(), 1);
         assert_eq!(msgs[0][0], OscType::String("points".into()));
         assert_eq!(msgs[0].len(), 1 + 4 * 2, "the tag plus a quad per point");
-
-        assert!(c.release((0.0, 0.0), &input(&m, rect, None)).is_empty());
         assert!(c.grab.is_none());
     }
 

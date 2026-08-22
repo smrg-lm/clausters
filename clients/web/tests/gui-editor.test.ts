@@ -481,13 +481,52 @@ test("every acknowledgement carries the version the next gesture names back", ()
     assert.ok((host.versions.at(-1) as number) > 1, "an edit moves it");
 });
 
+test("a drag is one run, and its own older versions are not stale", () => {
+    // A host that reports as it goes stamps every step with the version *it*
+    // holds, and it only learns a new one when an acknowledgement reaches it —
+    // which a hand outruns. Refusing those is refusing the drag: every step
+    // comes back as a resync and the picture snaps to the first frame of it.
+    const piece = song();
+    const ed = editor(piece, { quant: 0.25 });
+    const host = new FakeHost();
+    ed.open(asHost(host));
+    const clip = clipsOf(lanes(ed.draw())[1] as GuiNode)[0] as GuiNode;
+    const member = (piece.handles[1]?.element as Aggregate).handles[0];
+    const drawnAt = ed.version;
+
+    for (const beat of [1.0, 2.0, 3.0, 4.0, 5.0]) {
+        assert.equal(
+            ed.apply("/gui_event", [clip.id as number, SEQ, drawnAt, "clip", beat * BEAT, 2 * BEAT]),
+            true,
+        );
+    }
+    assert.equal(member?.offset, 5.0, "the last frame is where it is");
+    assert.notEqual(ed.version, drawnAt);
+
+    // A change by no gesture at all ends the run, so a step arriving after it
+    // is refused — which is what the version is for. The offset has to be a
+    // *new* one: a step asking for where the clip already sits changes nothing
+    // and would answer false whatever the rule said.
+    ed.refresh();
+    assert.equal(
+        ed.apply("/gui_event", [clip.id as number, SEQ + 1, drawnAt, "clip", 7.0 * BEAT, 2 * BEAT]),
+        false,
+    );
+    assert.equal(member?.offset, 5.0, "and it did not move");
+});
+
 test("an edit made against a superseded version is refused and answered", () => {
     const ed = editor(song(), { quant: 0.25 });
     const host = new FakeHost();
     ed.open(asHost(host));
-    const roll = clipsOf(lanes(ed.draw())[1] as GuiNode)[0] as GuiNode;
+    const drawn = ed.draw();
+    const take = clipsOf(lanes(drawn)[0] as GuiNode)[0] as GuiNode;
+    const roll = clipsOf(lanes(drawn)[1] as GuiNode)[0] as GuiNode;
     const version = host.versions.at(-1) as number;
-    ed.apply("/gui_event", clipEvent(roll.id as number, 5 * BEAT, 2 * BEAT));
+    // **Another widget** edits the composition first, which is what a script or
+    // a second editor looks like from in here. The same widget editing twice is
+    // a drag, and a drag is one gesture whose own older versions are its own.
+    ed.apply("/gui_event", clipEvent(take.id as number, 5 * BEAT, 2 * BEAT));
     host.acks.length = 0;
 
     // A second gesture naming the version *before* that edit.

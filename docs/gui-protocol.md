@@ -145,6 +145,23 @@ The host pushes back to the script that built the window:
 **`seq` and `version` are the second and third arguments of every event**, before any tag, so one rule reads them all whatever the payload. `seq` is the host's stamp on the edit, and what an acknowledgement names. `version` is the document version the edit was made **against** — the last one an acknowledgement reported to this host — so an owner can tell an edit made against the picture it is looking at from one made against a picture that has since been replaced. Both are zero when the host has nothing to say: an unstamped event is one nobody will acknowledge, and an unstated version is one an owner applies unchecked. See *Answering an event* below.
 | `/gui_closed id` | The window was closed by the user. |
 
+**A gesture is one edit, and it leaves when the hand lets go.** A drag moves
+what it is holding — a clip, a note, a break-point — and the host draws that as
+it goes, because the picture must follow the hand. What it does *not* do is
+report a value per frame: the edit-back is emitted **on the release**, whole, in
+the owner's own units. Two things go wrong when it is emitted per frame, and
+both were found by dragging one envelope: an undo history of a hundred entries
+for one bend, and — since every event names the last version an acknowledgement
+reported — a hundred round trips that a hand outruns, so every frame after the
+first names a version the owner has already moved past and comes back refused.
+The picture is then snapped to the answer of the first frame, over and over,
+which is a curve trembling under the hand editing it.
+
+What is reported *as it goes* is what is not an edit: a `"view"` pan, a
+`"selection"` sweep, a `"layer"` change, and a bound control's value. Those are
+state a script follows now, not a document change, and none of them is
+versioned.
+
 The **edit-back payloads**:
 
 | Tag | Arguments | Sent by |
@@ -235,6 +252,8 @@ Three things follow, and they are the whole design:
 - **The stamp is what tells two gestures apart.** Without it an answer to one edit is indistinguishable from an answer to another on the same widget, which is exactly the case a host with an edit still in flight is in.
 
 **The version answers a different question, and needs both directions.** `seq` says *which of my gestures is this an answer to*; `docVersion` says *are we talking about the same state*. That second one is what catches the document moving by a route that was never a gesture — a script editing the arrangement, a second editor, a re-render — which no record of the host's own edits can see. So the acknowledgement reports the version, the host remembers it, and the host names it back on its next event. An owner that finds an edit made against a superseded version **refuses it as stale and pushes the state that holds**, which needs no new path on either side: the host adopts it exactly as it adopts a snap, and the `reason` is what distinguishes *someone else changed this* from *not here*. Merging the two edits instead is deliberately not done — an edit-back payload is absolute *and* whole (a roll's `"notes"` is the list, not a diff), so applying a stale one would silently drop whatever arrived in between.
+
+**A run of edits from one widget is one gesture, not a stale one.** An owner that receives several events from the *same widget* naming versions it has already moved past is looking at a host whose acknowledgements have not caught up — the versions in between are the ones this very gesture made. Those are applied. What ends the run is anything else moving the document: another widget's edit, a script's, a history step, a re-derivation. Both reference clients implement the rule this way, and it is the second half of the protection the release-only rule above gives: a host that reports as it goes (an older one, or a widget that must) still edits correctly instead of having every frame but the first refused.
 
 **A redefine drops what that window had in flight.** `/gui_def` on an open window replaces its whole tree, so an edit still pending against the old one has nothing left to resolve to — its widget may be gone, or its id may now belong to something else. The host forgets those pendings itself, exactly as `/gui_free` does, and an owner is not expected to acknowledge them.
 

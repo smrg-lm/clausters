@@ -620,6 +620,12 @@ impl Element for Notes {
         }
     }
 
+    /// The notes follow the hand; **the edit leaves on release**.
+    ///
+    /// One gesture is one edit — the rule `Drag::Draw` and `Drag::Sample`
+    /// already state at their own release. A value per frame is a document edit
+    /// per frame: an undo history of a hundred steps for one dragged note, and
+    /// a hundred round trips whose acknowledgements the next frame outruns.
     fn drag(&mut self, at: (f64, f64), input: &Input) -> Events {
         let r = self.regions(input.rect, input.indent, input.metrics);
         let nav = self.view(input.time);
@@ -656,7 +662,7 @@ impl Element for Notes {
                         limit,
                     ),
                 }
-                self.notes_event()
+                Events::none()
             }
             Some(Drag::Block {
                 press_time,
@@ -672,7 +678,7 @@ impl Element for Notes {
                 };
                 let dp = pianoroll::y_to_pitch(at.1 as f32, lo, hi, r.grid) - press_pitch;
                 pianoroll::move_notes_from(&mut self.notes, &orig, dt, dp, lo, hi, limit);
-                self.notes_event()
+                Events::none()
             }
             Some(Drag::Velocity { index }) => {
                 pianoroll::set_velocity(
@@ -680,7 +686,7 @@ impl Element for Notes {
                     index,
                     pianoroll::velocity_at(r.velocity, at.1),
                 );
-                self.notes_event()
+                Events::none()
             }
             Some(Drag::VelocityBlock {
                 press_velocity,
@@ -688,7 +694,7 @@ impl Element for Notes {
             }) => {
                 let dv = pianoroll::velocity_at(r.velocity, at.1) - press_velocity;
                 pianoroll::nudge_velocities_from(&mut self.notes, &orig, dv);
-                self.notes_event()
+                Events::none()
             }
             Some(Drag::OscMark { index }) => {
                 if let Some(m) = self.osc.get_mut(index) {
@@ -697,7 +703,7 @@ impl Element for Notes {
                     let t = snap_to(time, self.snap).max(0.0);
                     m.time = limit.map_or(t, |l| t.min(l));
                 }
-                self.osc_event()
+                Events::none()
             }
             Some(Drag::Marquee { anchor, pitch }) => {
                 // The time span drives the **group's** selection, which the
@@ -723,8 +729,14 @@ impl Element for Notes {
     }
 
     fn release(&mut self, _at: (f64, f64), _input: &Input) -> Events {
-        self.drag = None;
-        Events::none()
+        // What the drag amounts to, once — see `drag`. A marquee edited
+        // nothing: it swept a selection, which is screen state and was reported
+        // as it went.
+        match self.drag.take() {
+            Some(Drag::OscMark { .. }) => self.osc_event(),
+            Some(Drag::Marquee { .. }) | None => Events::none(),
+            Some(_) => self.notes_event(),
+        }
     }
 
     /// The block operations, addressed to whatever the pointer is over: `q`
@@ -1340,11 +1352,15 @@ mod tests {
         assert!((r.notes[0].start - 200.0).abs() < 1.0, "{:?}", r.notes[0]);
         assert_eq!(r.notes[0].pitch, 64.0);
         assert_eq!(r.notes[0].dur, 100.0, "a move keeps the duration");
-        let msgs = events.into_messages();
+        // The note follows the hand and says nothing: one gesture is one edit.
+        assert!(events.is_empty(), "a frame of a drag is not an edit");
+
+        // The release is the edit, and it carries the whole list.
+        let msgs = r
+            .release(to, &input(&m, rect(), axis(1000.0)))
+            .into_messages();
         assert_eq!(msgs[0][0], OscType::String("notes".into()));
         assert_eq!(msgs[0].len(), 1 + 5, "the tag plus a quintuple per note");
-
-        assert!(r.release(to, &input(&m, rect(), axis(1000.0))).is_empty());
         assert!(r.drag.is_none());
     }
 

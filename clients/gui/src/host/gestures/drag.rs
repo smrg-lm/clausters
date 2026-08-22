@@ -480,6 +480,15 @@ impl Gestures {
                 transport_follows_selection(host, def_id, id, start, len, true);
             }
         }
+        // A moved or trimmed clip leaves as **one intent at the end**, for the
+        // reason the two arms above give: the placement followed the hand all
+        // along, and this is the edit it amounts to.
+        if let Some(Drag::Clip { id, .. }) = self.drag.clone() {
+            self.drag = None;
+            emit_clip(host, &mut out, def_id, id);
+            out.push(GestureEffect::Redraw(def_id));
+            return out;
+        }
         if let Some(Drag::Element { at, grab, .. }) = self.drag.take() {
             // What the drag *delivers*, as against what it showed along the
             // way. The grab is the front's to undo, whatever came back.

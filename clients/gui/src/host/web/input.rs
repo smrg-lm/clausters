@@ -317,6 +317,21 @@ impl WebApp {
                 let Some(slot) = self.canvases.get_mut(&def) else {
                     return;
                 };
+                // **A release the page never saw.** The primary button can come
+                // up outside the browser window -- over another application,
+                // after an alt-tab -- and no event reaches the document; winit
+                // synthesizes a button event only from a move that *reports* a
+                // change, which that move does not. So the drag is still held,
+                // and this move looks exactly like a drag step: whatever is in
+                // hand teleports to wherever the pointer came back in. A
+                // desktop window cannot lose a release, so this is the browser
+                // shell's job -- ending the gesture **where it was last seen**,
+                // not where the pointer now is, which is what makes the two
+                // fronts deliver the same press -> drag -> release.
+                if slot.gestures.dragging() && slot.buttons.get() & 1 == 0 {
+                    self.on_release(def);
+                    return;
+                }
                 slot.cursor = (position.x, position.y);
                 if slot.gestures.dragging() {
                     self.on_move(def);

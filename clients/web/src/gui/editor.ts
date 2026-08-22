@@ -221,6 +221,17 @@ export class Editor {
     /** Which **edit layer** of each clip the hand is on. Screen state. */
     private editLayer = new Map<number, string>();
     /**
+     * The **run of edits one gesture has produced**: the widget and the version
+     * it started from, or `null` between gestures. See {@link Editor.stale},
+     * which is the only thing that reads it.
+     */
+    private run: [number, number] | null = null;
+    /**
+     * The version this editor was at when that run last landed — the way it
+     * notices the composition moving by a route that was not a gesture.
+     */
+    private runEnd: number = FIRST_VERSION;
+    /**
      * The **value axis** each curve is drawn against — remembered rather than
      * recomputed, which is screen state for the same reason the edit layer is.
      *
@@ -486,6 +497,10 @@ export class Editor {
      */
     refresh(): void {
         this.rederive = true;
+        // The arrangement moved by a route no gesture took, which is exactly
+        // what ends a run: a step still in flight was made against a picture
+        // that is now gone, and {@link Editor.stale} has to say so.
+        this.run = null;
     }
 
     /**
@@ -783,7 +798,16 @@ export class Editor {
         }
         // Only what this editor draws is this editor's to answer.
         if (!this.owns(id)) return false;
-        if (this.stale(against)) {
+        // **A gesture is a run, not an edit.** A host that reports as it goes
+        // stamps every step with the version *it* holds, and it only learns a
+        // new one when an acknowledgement reaches it — which a hand outruns. The
+        // run is what tells those apart from an edit that really was overtaken.
+        if (this.version !== this.runEnd) {
+            // Something moved the composition between one gesture and the next
+            // (a script, a button, a redefine). Whatever run was open is over.
+            this.run = null;
+        }
+        if (this.stale(against, id)) {
             // The composition moved under the gesture, by a route no gesture
             // produced. The edit is not applied and not merged: an edit-back
             // payload is absolute *and* whole, so applying one made against an
@@ -792,7 +816,9 @@ export class Editor {
             this.acknowledge(seq, "the composition changed since this edit");
             return false;
         }
+        if (this.run === null || this.run[0] !== id) this.run = [id, against || this.version];
         const changed = this.route(args);
+        this.runEnd = this.version;
         // Answered whatever happened, and answered with a *value*: applied,
         // transformed and refused are one message.
         this.acknowledge(seq, this.reason);
@@ -953,8 +979,15 @@ export class Editor {
      * Whether an edit made against document version `against` has been overtaken.
      * Zero is *unstated* rather than a version, and unstated applies unchecked.
      */
-    private stale(against: number): boolean {
-        return Boolean(against) && against !== this.version;
+    private stale(against: number, widgetId: number): boolean {
+        if (!against || against === this.version) return false;
+        // A version this editor has moved past is **not** overtaken when the
+        // versions in between are the ones *this widget's own gesture* made.
+        // Anything else that moved the document ends the run (see `apply`), so a
+        // script's edit, a second editor's or a redefine still overtakes a
+        // gesture in flight, which is what the check is for.
+        const run = this.run;
+        return !(run !== null && run[0] === widgetId && against >= run[1]);
     }
 
     /**
