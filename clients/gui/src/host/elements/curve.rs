@@ -51,11 +51,13 @@ pub struct Curve {
 #[derive(Debug, Clone, Copy)]
 enum Grab {
     Point(usize),
-    /// A segment bent by a vertical drag, `last_y` re-anchored every step
-    /// (incremental, like a knob) so a bend has no dead zone.
+    /// A segment bent by a vertical drag, measured **from the press**: the y it
+    /// started at and the curvature it had. Absolute, not incremental — see
+    /// [`bpf::bend_curve`] for what the incremental form got wrong.
     Segment {
         index: usize,
-        last_y: f64,
+        press_y: f64,
+        from: f32,
     },
 }
 
@@ -339,7 +341,8 @@ impl Element for Curve {
         {
             self.grab = Some(Grab::Segment {
                 index,
-                last_y: at.1,
+                press_y: at.1,
+                from: self.points.get(index).map_or(0.0, |p| p.curve),
             });
             return Claim::take();
         }
@@ -362,10 +365,13 @@ impl Element for Curve {
         let ax = self.axes(input.rect, input.metrics, input.time);
         match &mut self.grab {
             Some(Grab::Point(i)) => ax.move_point(&mut self.points, *i, at.0, at.1),
-            Some(Grab::Segment { index, last_y }) => {
-                let dy_frac = (*last_y - at.1) / ax.body.h.max(1.0) as f64;
-                *last_y = at.1;
-                bpf::drag_curve(&mut self.points, *index, dy_frac);
+            Some(Grab::Segment {
+                index,
+                press_y,
+                from,
+            }) => {
+                let dy_frac = (*press_y - at.1) / ax.body.h.max(1.0) as f64;
+                bpf::bend_curve(&mut self.points, *index, dy_frac, *from);
             }
             None => return Events::none(),
         }
@@ -553,8 +559,7 @@ mod tests {
         assert_eq!(c.points.len(), 2);
     }
 
-    /// A segment drag bends it incrementally, re-anchored every step, which is
-    /// what keeps a bend from having a dead zone.
+    /// A segment drag bends it, measured from the press.
     #[test]
     fn a_segment_drag_bends_it() {
         let m = Metrics::default();
@@ -573,6 +578,46 @@ mod tests {
         let before = bpf::value_at(&c.points, 50.0);
         c.drag((x, field.y as f64), &input(&m, rect, None));
         assert!(bpf::value_at(&c.points, 50.0) > before, "bent upward");
+    }
+
+    /// **A bend is where the pointer is, not where it has been.** The
+    /// incremental form -- each step measured from the last -- drifts twice
+    /// over: the clamp eats the motion spent past the limit, so coming back
+    /// leaves the bend short by however far it went, and a pointer that has
+    /// left the element keeps accumulating whatever motion still arrives, so
+    /// the shape falls out of phase with the hand. Both were reported as one
+    /// symptom: "al salir el cursor del area sigue sumando, se pierde el offset
+    /// original y se desfasa el cursor del movimiento".
+    #[test]
+    fn a_bend_is_absolute_against_the_press() {
+        let m = Metrics::default();
+        let rect = Rect::new(0.0, 0.0, 120.0, 120.0);
+        let field = controls::body_rect(rect, false, &m);
+        let x = field.x as f64 + field.w as f64 * 0.5;
+        let mid = field.y as f64 + field.h as f64 * 0.5;
+        let at = |dy: f64| (x, mid - dy);
+
+        let mut c = ramp();
+        c.press(at(0.0), &input(&m, rect, None));
+        assert!(matches!(c.grab, Some(Grab::Segment { index: 0, .. })));
+        c.drag(at(20.0), &input(&m, rect, None));
+        let twenty = c.points[0].curve;
+
+        // Far past the field -- and past the clamp -- and back to the same
+        // twenty pixels: the same bend, because the same cursor position has
+        // one answer.
+        for dy in [400.0, 4000.0, -4000.0, 20.0] {
+            c.drag(at(dy), &input(&m, rect, None));
+        }
+        assert_eq!(
+            c.points[0].curve, twenty,
+            "the excursion left no offset behind"
+        );
+
+        // And back to the press: no bend at all, which is what "in phase with
+        // the hand" means at the one position where it can be checked exactly.
+        c.drag(at(0.0), &input(&m, rect, None));
+        assert_eq!(c.points[0].curve, 0.0);
     }
 
     /// A body draws no chrome of its own: the same points, in the same

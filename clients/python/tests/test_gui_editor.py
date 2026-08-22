@@ -435,6 +435,39 @@ def test_editing_a_curve_does_not_move_the_axis_it_is_drawn_against():
     assert wide["points_max"] > 4000.0, "and the ceiling grew to hold the curve"
 
 
+def test_undoing_a_curve_edit_tells_the_host_what_to_draw():
+    """An undo that moves the model and says nothing is a dead button: the host
+    goes on drawing the shape the hand left.
+
+    The case that needed saying: a **layered** clip draws an aggregate, and the
+    curve an edit configures is a *member* of it — so the widget an undo has to
+    correct is not the one the edited element is registered against."""
+    from clausters.form import Element
+    from clausters.seq import Automation
+
+    env = Automation.from_points([(0, 200.0, 1, 0.0), (2, 900.0, 2, 0.0),
+                                  (4, 300.0, 1, 0.0)], target=None, name="sweep")
+    attached = Aggregate([(0.0, Clang(SeqEvent(instrument="drone", dur=4.0))),
+                          (0.0, Element(env, duration=4.0))], name="sweep")
+    ed = editor(Aggregate([(0.0, Aggregate([(0.0, attached)], name="sweep"))], name="song"))
+    host = _FakeHost()
+    ed.open(host)
+    (lane,) = lanes(ed.draw())
+    (clip,) = clips(lane)
+
+    assert ed.apply("/gui_event", [clip["id"], SEQ, UNSTATED, "points",
+                                   0.0, 300.0, 1, 0.0,
+                                   2 * BEAT, 500.0, 1, 0.0,
+                                   4 * BEAT, 100.0, 1, 0.0]) is True
+    host.acks.clear()
+
+    assert ed.undo() is True
+    assert env.to_points()[0:2] == pytest.approx([0.0, 200.0]), "the model stepped back"
+    pushed = {wid: props for _seq, sets in host.acks for wid, props in sets}
+    assert clip["id"] in pushed, "and the clip was told to draw it"
+    assert list(pushed[clip["id"]]["points"])[0:2] == pytest.approx([0.0, 200.0])
+
+
 # ---- the base level: a nested aggregate collapses to a summary, or expands ----
 
 def test_a_nested_aggregate_is_a_labeled_rectangle_until_it_is_expanded():

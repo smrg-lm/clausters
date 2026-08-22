@@ -1930,6 +1930,21 @@ export class Editor {
         for (const [wid, drawn] of this.rolls) {
             if (drawn === element) return wid;
         }
+        // **A layered clip draws an aggregate, and an edit inside it names a
+        // member.** A simultaneous aggregate is one clip with its members'
+        // bodies over each other, so the curve an edit configures is not the
+        // element any clip is registered against — and without this an undo of
+        // that curve moved the model and told the host nothing, which is a dead
+        // button with the drawing left on the edited shape.
+        for (const [wid, placed] of this.clips) {
+            const held = placed.member !== null ? placed.member.element : this.element;
+            if (
+                held instanceof Aggregate &&
+                held.handles.some((h) => h === member || h.element === element)
+            ) {
+                return wid;
+            }
+        }
         return null;
     }
 

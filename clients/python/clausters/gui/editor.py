@@ -1847,6 +1847,18 @@ class Editor:
         for wid, drawn in self._rolls.items():
             if drawn is element:
                 return wid
+        # **A layered clip draws an aggregate, and an edit inside it names a
+        # member.** A simultaneous aggregate is one clip with its members'
+        # bodies over each other, so the curve an edit configures is not the
+        # element any clip is registered against -- and without this an undo of
+        # that curve moved the model and told the host nothing, which is a dead
+        # button with the drawing left on the edited shape.
+        for wid, placed in self._clips.items():
+            held = placed.member.element if placed.member is not None else self.element
+            if isinstance(held, Aggregate) and any(
+                h is member or h.element is element for h in held.handles
+            ):
+                return wid
         return None
 
     def undo(self) -> bool:

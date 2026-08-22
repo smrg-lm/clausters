@@ -335,6 +335,24 @@ pub fn remove_point(points: &mut Vec<BpfPoint>, i: usize) -> bool {
 /// segment negative curvature lifts the middle; for a falling one it is the
 /// reverse), clamped to a visually useful range.
 pub fn drag_curve(points: &mut [BpfPoint], i: usize, dy_frac: f64) {
+    let from = points.get(i).map_or(0.0, |p| p.curve);
+    bend_curve(points, i, dy_frac, from);
+}
+
+/// Bends segment `i` to the curvature `from` plus `dy_frac` of the field —
+/// **absolute against the press**, which is what `from` is for.
+///
+/// The relative form (each step measured from the last, like a knob) drifts,
+/// and a curve is not a knob: a knob is dragged under a locked pointer with
+/// nothing on screen to stay level with, while a segment is a shape the hand is
+/// pointing at. Two things went wrong with it. The clamp **eats motion** — drag
+/// past the limit and the steps beyond it are swallowed, so coming back leaves
+/// the bend short by however far it went — and a pointer that leaves the
+/// element keeps accumulating whatever motion still arrives, so the curve is out
+/// of phase with the hand from then on. Anchored at the press there is one
+/// answer for a given cursor position: leave the area, come back, and the shape
+/// is where the pointer says it is.
+pub fn bend_curve(points: &mut [BpfPoint], i: usize, dy_frac: f64, from: f32) {
     if i + 1 >= points.len() {
         return;
     }
@@ -342,7 +360,7 @@ pub fn drag_curve(points: &mut [BpfPoint], i: usize, dy_frac: f64) {
     let delta = (dy_frac * 16.0) as f32;
     let p = &mut points[i];
     p.shape = SHAPE_CURVE;
-    p.curve = (p.curve + if rising { -delta } else { delta }).clamp(-CURVE_LIMIT, CURVE_LIMIT);
+    p.curve = (from + if rising { -delta } else { delta }).clamp(-CURVE_LIMIT, CURVE_LIMIT);
 }
 
 /// The breakpoint list as the flat OSC argument tail of the edit-back event

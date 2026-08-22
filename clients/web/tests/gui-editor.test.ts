@@ -375,6 +375,49 @@ test("editing a curve does not move the axis it is drawn against", () => {
     assert.ok((wide.points_max as number) > 4000.0, "and the ceiling grew");
 });
 
+test("undoing a curve edit tells the host what to draw", () => {
+    // An undo that moves the model and says nothing is a dead button: the host
+    // goes on drawing the shape the hand left. The case that needed saying: a
+    // **layered** clip draws an aggregate, and the curve an edit configures is a
+    // *member* of it — so the widget an undo has to correct is not the one the
+    // edited element is registered against.
+    const env = Automation.fromPoints(
+        [[0.0, 200.0, 1, 0.0], [2.0, 900.0, 2, 0.0], [4.0, 300.0, 1, 0.0]],
+        null,
+        { name: "sweep" },
+    );
+    const attached = new Aggregate(
+        [
+            [0.0, new Clang(new SeqEvent({ instrument: "drone", dur: 4.0 }))],
+            [0.0, new Element(env, null, 4.0)],
+        ],
+        "concrete",
+        { name: "sweep" },
+    );
+    const ed = editor(new Aggregate([[0.0, attached]], "concrete", { name: "song" }));
+    const host = new FakeHost();
+    ed.open(asHost(host));
+    const clip = clipsOf(lanes(ed.draw())[0] as GuiNode)[0] as GuiNode;
+
+    assert.equal(
+        ed.apply("/gui_event", [
+            clip.id as number, SEQ, UNSTATED, "points",
+            0.0, 300.0, 1, 0.0,
+            2 * BEAT, 500.0, 1, 0.0,
+            4 * BEAT, 100.0, 1, 0.0,
+        ]),
+        true,
+    );
+    host.acks.length = 0;
+
+    assert.equal(ed.undo(), true);
+    assert.equal(env.toPoints()[1], 200.0, "the model stepped back");
+    const pushed = host.corrections();
+    assert.ok(pushed.has(clip.id as number), "and the clip was told to draw it");
+    const props = pushed.get(clip.id as number) as Record<string, PropValue>;
+    assert.equal((props.points as number[])[1], 200.0);
+});
+
 // ---- the history ----
 
 test("a run of gestures undoes back to where it started", () => {
@@ -492,7 +535,7 @@ test("a drag is one run, and its own older versions are not stale", () => {
     ed.open(asHost(host));
     const clip = clipsOf(lanes(ed.draw())[1] as GuiNode)[0] as GuiNode;
     const member = (piece.handles[1]?.element as Aggregate).handles[0];
-    const drawnAt = ed.version;
+    const drawnAt = host.versions.at(-1) as number;
 
     for (const beat of [1.0, 2.0, 3.0, 4.0, 5.0]) {
         assert.equal(
@@ -501,7 +544,7 @@ test("a drag is one run, and its own older versions are not stale", () => {
         );
     }
     assert.equal(member?.offset, 5.0, "the last frame is where it is");
-    assert.notEqual(ed.version, drawnAt);
+    assert.notEqual(host.versions.at(-1), drawnAt, "the document moved under the run");
 
     // A change by no gesture at all ends the run, so a step arriving after it
     // is refused — which is what the version is for. The offset has to be a

@@ -2297,6 +2297,38 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   an acknowledgement should not be lost to saturation in the first place. That
   is the carrier's, and is not what this entry fixed.)*
 
+- ✅ **A bent segment drifted out of phase with the hand** *(found 2026-08-22 by
+  the user, right after the release-only rule landed: "al salir el cursor del
+  area sigue sumando, se pierde el offset original y se desfasa el cursor del
+  movimiento — esto ya paso con otros elementos graficos")*. The bend was
+  **incremental**: each step measured from the last, re-anchored every frame,
+  which the comment defended as "like a knob". A curve is not a knob — a knob is
+  dragged under a locked pointer with nothing on screen to stay level with,
+  while a segment is a shape the hand is pointing at — and the relative form
+  drifts twice over. The clamp **eats motion**: drag past the limit and the
+  steps spent beyond it are swallowed, so coming back leaves the bend short by
+  however far it went. And a pointer that has left the element keeps
+  accumulating whatever motion still arrives, so the shape is out of phase from
+  then on. Now anchored at the press (`bpf::bend_curve` sets rather than adds,
+  from the curvature the press found), so a given cursor position has one
+  answer: leave the area, come back, and the shape is where the pointer says it
+  is. The user's note that this has been seen on other graphical elements is
+  worth acting on — **any drag whose value is accumulated per frame rather than
+  measured from the press has the same two defects**, and the knobs and numbers
+  are the ones to read next (they may be right: a locked pointer has no absolute
+  position to measure from).
+
+- ✅ **An undo of a curve edit moved the model and told the host nothing**
+  *(found the same day, and only visible once a curve could be edited at all)*.
+  A **layered** clip draws an aggregate, and since the curve edit was fixed to
+  name the member that carries the automation, the widget an undo has to correct
+  is no longer the one the edited element is registered against: `_widget_of`
+  searched the clips by their own element and the rolls, found neither, and
+  answered `None`. So the inverse was applied, the `Automation` stepped back,
+  and the picture went on drawing the shape the hand had left — a dead button
+  with the sound and the drawing disagreeing. It now falls back to the clip
+  whose aggregate **holds** that member. In both clients, with the test in both.
+
 - ⬜ **A page burns the main thread while nothing is happening.** Measured on
   `clients/web/examples/composer.html` through the DevTools protocol: **67% of
   the main thread, idle** — no transport running, no pointer moving, no
