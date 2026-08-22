@@ -90,8 +90,11 @@ class FakeHost {
     open(_tree: GuiNode, _options: unknown = {}): { id: number } {
         return { id: 999 };
     }
-    define(_id: number, _tree: GuiNode): { id: number } {
+    /** The whole trees `define` was handed — one per redefine. */
+    defines: GuiNode[] = [];
+    define(_id: number, tree: GuiNode): { id: number } {
         this.defined += 1;
+        this.defines.push(tree);
         return { id: 999 };
     }
     set(): void {}
@@ -729,6 +732,77 @@ test("an undone trim puts the window back on a take that configures nothing", ()
     assert.ok(props, "the clip a trim moved is not the lane the intent names");
     assert.equal(props.start, 0.0, "window and all");
     assert.equal(props.dur, was);
+});
+
+test("a redefine leaves the editor able to edit", () => {
+    // A redefine moves the version so a gesture in flight comes back stale —
+    // and the **document** has to move with it. The crate refuses an edit whose
+    // `against` version is not the document's, ahead of it as loudly as behind
+    // (the two would not be talking about the same piece), so a version bumped
+    // on this side alone answered every later gesture with a refusal nobody
+    // asked for: the clip did not move, and there was not even a reason to show.
+    const piece = song();
+    const ed = editor(piece, { quant: 0.25 });
+    const host = new FakeHost();
+    ed.open(asHost(host));
+    let clip = clipsOf(lanes(ed.draw())[1] as GuiNode)[0] as GuiNode;
+    const member = (piece.handles[1]?.element as Aggregate).handles[0];
+    // One edit first, so the document exists: the versions can only diverge
+    // once there is a document holding one.
+    assert.equal(ed.apply("/gui_event", clipEvent(clip.id as number, 3 * BEAT, 2 * BEAT)), true);
+
+    ed.update();
+    assert.ok(host.defines.length > 0, "the window was redefined");
+
+    clip = clipsOf(lanes(ed.draw())[1] as GuiNode)[0] as GuiNode;
+    assert.equal(ed.apply("/gui_event", clipEvent(clip.id as number, 5 * BEAT, 2 * BEAT)), true);
+    assert.equal(member?.offset, 5.0, "and the edit landed");
+});
+
+test("a structural edit redefines the window and so does its undo", () => {
+    // A placement is a prop the host can be told about; a widget that was not
+    // there is not. The second half of a split — and the clip an undone split
+    // takes away again — can only arrive as a whole tree, so the editor that
+    // drew the window redefines it.
+    const [piece] = takeSong();
+    const ed = editor(piece);
+    const host = new FakeHost();
+    ed.open(asHost(host));
+    const clip = clipsOf(lanes(ed.draw())[0] as GuiNode)[0] as GuiNode;
+    host.defines.length = 0;
+
+    assert.equal(
+        ed.apply("/gui_event", [clip.id as number, SEQ, UNSTATED, "split", 1.0 * BEAT]),
+        true,
+    );
+    assert.equal(host.defines.length, 1, "the split redefined the window");
+    const drawnNow = () =>
+        clipsOf(lanes(host.defines[host.defines.length - 1] as GuiNode)[0] as GuiNode).length;
+    assert.equal(drawnNow(), 2, "with both halves in it");
+
+    host.defines.length = 0;
+    assert.equal(ed.undo(), true);
+    assert.equal(host.defines.length, 1, "and so did the undo of it");
+    assert.equal(drawnNow(), 1, "back to the one clip");
+
+    host.defines.length = 0;
+    assert.equal(ed.redo(), true);
+    assert.equal(host.defines.length, 1, "and the redo redefines too");
+    assert.equal(drawnNow(), 2, "and the redo brings it back");
+});
+
+test("a placement edit does not redefine the window", () => {
+    // The other half of the rule, and the reason it is not "redraw after every
+    // edit": a redefine rebuilds every widget and drops what the host had in
+    // flight, which is exactly wrong for a drag.
+    const ed = editor(song(), { quant: 0.25 });
+    const host = new FakeHost();
+    ed.open(asHost(host));
+    const clip = clipsOf(lanes(ed.draw())[1] as GuiNode)[0] as GuiNode;
+    host.defines.length = 0;
+    assert.equal(ed.apply("/gui_event", clipEvent(clip.id as number, 5 * BEAT, 2 * BEAT)), true);
+    assert.equal(ed.undo(), true);
+    assert.equal(host.defines.length, 0, "a placement travels as a prop, there and back");
 });
 
 test("a split gives two windows over one buffer", () => {

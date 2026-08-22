@@ -417,6 +417,12 @@ whether anything moved and `stale` says whether the refusal was someone else
 having changed the document underneath you, which is a different thing to tell a
 person than "not here".
 
+A **structural** edit redraws itself. A split, a join or a cut changes which
+clips exist, and a widget that was not there cannot travel as a property — so the
+editor redefines the window for those, and for an undo of one. A placement, a
+length or a curve does not: it is a value the host already has a widget for, and
+it travels with the acknowledgement.
+
 ### Undo: the history belongs with the document
 
 The editor's undo is not the editor's. The history lives in the same crate as

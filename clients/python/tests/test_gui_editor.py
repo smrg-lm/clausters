@@ -627,6 +627,8 @@ class _FakeHost:
         #: learns about the state its next gesture will name back.
         self.answers = []
         self._ids = itertools.count(10_000)
+        #: The whole trees `define` was handed -- one per redefine.
+        self.defines = []
         #: Messages `poll` hands out, and what `dispatch` was asked to route.
         self.inbox = []
         self.dispatched = []
@@ -649,7 +651,10 @@ class _FakeHost:
         self.answers.append((seq, doc_version, reason))
 
     def define(self, id, tree):
-        pass
+        #: How many whole trees this host was handed -- what says a redefine
+        #: happened, since a redefine is the only channel a widget that was not
+        #: there can arrive by.
+        self.defines.append((id, tree))
 
     def poll(self, timeout=0.0):
         return self.inbox.pop(0) if self.inbox else None
@@ -1820,6 +1825,76 @@ def test_an_undone_trim_puts_the_window_back_on_a_take_that_configures_nothing()
     pushed = {wid: props for _seq, sets in host.acks for wid, props in sets}
     assert clip["id"] in pushed, "the clip a trim moved is not the lane it names"
     assert pushed[clip["id"]]["start"] == pytest.approx(0.0), "window and all"
+
+
+def test_a_redefine_leaves_the_editor_able_to_edit():
+    """A redefine moves the version so a gesture in flight comes back stale --
+    and the **document** has to move with it. The crate refuses an edit whose
+    `against` version is not the document's, ahead of it as loudly as behind
+    (the two would not be talking about the same piece), so a version bumped on
+    this side alone answered every later gesture with a refusal nobody asked
+    for: the clip did not move, and there was not even a reason to show."""
+    ed = editor(quant=0.25)
+    host = _FakeHost()
+    ed.open(host)
+    (_, lead) = lanes(ed.draw())
+    (roll,) = clips(lead)
+    member = ed._clips[roll["id"]].member
+    # One edit first, so the document exists: the versions can only diverge
+    # once there is a document holding one.
+    assert ed.apply(*clip_event(roll["id"], 3 * BEAT, 2 * BEAT)) is True
+
+    ed.update()
+    assert host.defines, "the window was redefined"
+
+    (_, lead) = lanes(ed.draw())
+    (roll,) = clips(lead)
+    assert ed.apply(*clip_event(roll["id"], 5 * BEAT, 2 * BEAT)) is True
+    assert member.offset == pytest.approx(5.0), "and the edit landed"
+
+
+def test_a_structural_edit_redefines_the_window_and_so_does_its_undo():
+    """A placement is a prop the host can be told about; a widget that was not
+    there is not. The second half of a split -- and the clip an undone split
+    takes away again -- can only arrive as a whole tree, so the editor that drew
+    the window redefines it. Without this the document and the objects the
+    script holds had two clips while the picture had one, until something
+    happened to redraw."""
+    song, _take = _take_song()
+    ed = editor(song)
+    host = _FakeHost()
+    ed.open(host)
+    (lane,) = lanes(ed.draw())
+    (clip,) = clips(lane)
+    host.defines.clear()
+
+    assert ed.apply("/gui_event", [clip["id"], SEQ, UNSTATED, "split", 1.0 * BEAT]) is True
+    assert len(host.defines) == 1, "the split redefined the window"
+    assert len(clips(lanes(host.defines[-1][1])[0])) == 2, "with both halves in it"
+
+    host.defines.clear()
+    assert ed.undo() is True
+    assert len(host.defines) == 1, "and so did the undo of it"
+    assert len(clips(lanes(host.defines[-1][1])[0])) == 1, "back to the one clip"
+
+    host.defines.clear()
+    assert ed.redo() is True
+    assert len(clips(lanes(host.defines[-1][1])[0])) == 2, "and the redo brings it back"
+
+
+def test_a_placement_edit_does_not_redefine_the_window():
+    """The other half of the rule, and the reason it is not "redraw after every
+    edit": a redefine rebuilds every widget and drops what the host had in
+    flight, which is exactly wrong for a drag."""
+    ed = editor(quant=0.25)
+    host = _FakeHost()
+    ed.open(host)
+    (_, lead) = lanes(ed.draw())
+    (roll,) = clips(lead)
+    host.defines.clear()
+    assert ed.apply(*clip_event(roll["id"], 5 * BEAT, 2 * BEAT)) is True
+    assert ed.undo() is True
+    assert host.defines == [], "a placement travels as a prop, there and back"
 
 
 def test_a_split_gives_two_windows_over_one_buffer():

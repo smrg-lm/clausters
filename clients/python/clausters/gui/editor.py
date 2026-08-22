@@ -207,6 +207,11 @@ class Editor:
         #: composition does not change when it moves, and the document is
         #: explicit that what a view is currently editing is never part of it.
         self._edit_layer: dict = {}
+        #: Whether the last edit changed **which members exist** -- a split, a
+        #: join, a cord. A placement is a prop the host can be told about; a
+        #: widget that was not there is not, so this is what says a redefine is
+        #: owed. Read and cleared by `_restructure`.
+        self._restructured = False
         #: The **oldest version an incoming edit may name**: raised whenever
         #: the composition moves by a route that is not a host event, and by
         #: nothing else. See `_stale`, the only thing that reads it.
@@ -650,6 +655,16 @@ class Editor:
         if self._host is None or self._window is None:
             raise RuntimeError("open(host) the editor first")
         self._version += 1
+        # **And the document moves with it.** The crate refuses an edit whose
+        # `against` version is not the document's -- ahead of it as loudly as
+        # behind, since the two would not be talking about the same piece -- so
+        # a version bumped here and nowhere else left the editor answering
+        # "this edit was made against a different document" to every gesture
+        # after the redefine, silently and forever. Re-deriving stamps the
+        # document with the version this window is now drawing; it is what
+        # `refresh` does, and a redefine is the case that most needs it (the
+        # tree it redraws is usually one the log did not make).
+        self._rederive = True
         self._host.define(self._window, self.draw())
         # The host drops what it had in flight on a redefine, so what it needs
         # from here is the version the new picture is at.
@@ -742,6 +757,10 @@ class Editor:
         # `_route` collected, and a refusal is simply the previous value among
         # them. Applied, transformed and refused are one message.
         self._acknowledge(seq, reason=self._reason)
+        # ...and *then* the redefine, when the gesture added or removed a
+        # member: the answer retires what the host had in flight, and the new
+        # tree is what shows a clip that was not there.
+        self._restructure()
         return changed
 
     def _route(self, args) -> bool:
@@ -1230,8 +1249,10 @@ class Editor:
             self._resync(self._widget_of(element, member) or 0)
             return False
         # No projection: the tree already *is* what the intent says. What the
-        # index has to learn is the element that was not there a moment ago.
+        # index has to learn is the element that was not there a moment ago --
+        # and so does the window, which has one clip where there are now two.
         self._rederive = True
+        self._restructured = True
         return self._changed()
 
     def _tail(self, element, at: float, length: float):
@@ -1348,6 +1369,7 @@ class Editor:
         keep.dur = total
         self._project(outcome["effective"])
         self._rederive = True
+        self._restructured = True
         return self._changed()
 
     def _joined_element(self, elements: list, segments: list):
@@ -1516,6 +1538,7 @@ class Editor:
         # a pair of controls naming a bus, which no intent describes yet. The
         # held document is behind after it, and says so.
         self._rederive = True
+        self._restructured = True
         self._changed()
         return True
 
@@ -1770,6 +1793,29 @@ class Editor:
         auto.refill()
         return True
 
+    def _restructure(self) -> bool:
+        """Redefine the window when the last edit changed **which members
+        exist**, and say whether it did.
+
+        A placement, a length, a curve and a note list are **props**: the host
+        is told and it draws them. A widget that was not there a moment ago --
+        the second half of a split, the clip an undone cut brings back -- is
+        not a prop, and no acknowledgement can carry one. The only channel for
+        it is a redefine, so the editor that drew the window is what owes it:
+        without this the document and the objects the script holds had two
+        clips while the picture had one, until something happened to redraw.
+
+        It is deliberately **not** a redraw after every edit. A redefine
+        rebuilds every widget and drops what the host had in flight, which is
+        exactly wrong for a drag and exactly right for a structural edit."""
+        if not self._restructured:
+            return False
+        self._restructured = False
+        if self._host is None or self._window is None:
+            return False
+        self.update()
+        return True
+
     def _redrawn(self, element, member) -> "int | None":
         """Bring the **drawn record** of one placement back in step with the
         arrangement, and say which widget draws it.
@@ -1812,6 +1858,9 @@ class Editor:
             by_id[int(node)] = handle
             if int(node) not in keep:
                 aggregate.remove(handle)
+                # A placement that is gone takes a widget with it, and no prop
+                # says "this clip is not there any more".
+                self._restructured = True
         # ...and the offsets the document states, for the ones that stayed —
         # plus the ones that are **back**, which is what an undo of a cut is.
         # The element itself outlives its placement (the node index still names
@@ -1847,6 +1896,9 @@ class Editor:
                 continue
             found = self._by_node.get(int(node))
             if found is not None:
+                # ...and one that is **back** -- the undo of a cut, of a split,
+                # of a join -- needs a widget nobody drew.
+                self._restructured = True
                 restored = aggregate.add(found[2], offset, m.get("dur"))
                 # **The placement keeps the id the document gave it.** A handle
                 # that came back unstamped is a new node to the next conversion,
@@ -1941,6 +1993,12 @@ class Editor:
         self.dirty = True
         self._follow_render()
         self._corrections = []
+        # A step that changed which members exist is answered with a new tree
+        # rather than with props: the widgets the corrections name are about to
+        # be rebuilt, and the clip an undone split takes away has no prop that
+        # says so.
+        if self._restructure():
+            return True
         for wid in widgets:
             self._resync(wid)
         self._acknowledge(0)

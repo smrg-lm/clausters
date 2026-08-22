@@ -174,6 +174,11 @@ placement is a **window onto** an element, so shortening a clip over its own
 notes plays fewer of them and keeps them all — lengthen it again and they come
 back.
 
+A **structural** edit redraws itself: a split, a join or a cut changes which
+clips exist, and a widget that was not there cannot travel as a property, so the
+editor redefines the window — for the edit and for an undo of it. A placement, a
+length or a curve travels with the acknowledgement instead.
+
 An intent states the **whole** value, and **absence is a value**: a `place`
 carrying no `dur` is a placement with *no length*, and the element's own is what
 plays. That is what an undo of the first resize of a clip hands back — before it

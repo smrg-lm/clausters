@@ -2454,25 +2454,64 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   `an_undone_trim_puts_the_window_back_on_a_take_that_configures_nothing` in
   both clients, and `an_undone_first_resize_puts_the_clips_width_back` in the
   host (whose `Owner` now holds the session's takes, since the length rule ends
-  at the samples). The envelope half of the report is **not** reproduced: a
-  layered clip's curve undoes model and picture together, with a test in both
-  clients, so whatever failed there is a different shape of body and is still
-  open.
+  at the samples). The **envelope half of the report was already closed** by the
+  entry above it — the undo that moved the model and told the host nothing —
+  and re-reading it here confirmed as much: a layered clip's curve moves,
+  undoes and redoes model and picture together, in the shape `gui_composer`
+  builds and across a mixed run of gestures undone to the beginning, with a
+  test in both clients. What was still broken was the length beside it, which
+  is why one report named the two together.
 
-- ⬜ **A structural edit is never redrawn, so an undo of one cannot be either.**
-  Found while reading every editable body against the rule above. A split, a
-  join, a cut and a paste change *which members exist*, and neither client
-  redefines the window afterwards: the host emits the verb and holds nothing
+- ✅ **A structural edit is never redrawn, so an undo of one could not be
+  either.** Found while reading every editable body against the rule above. A
+  split, a join, a cut and a cord change *which members exist*, and neither
+  client redefined the window: the host emits the verb and holds nothing
   (`gestures::keys::clip_verb` — "it answers with the tree that now stands,
-  exactly as it answers a drag"), the editor applies it to the arrangement and
-  marks itself for re-derivation, and nothing calls `update()`. No example calls
-  it either. So the second clip of a split exists in the document and in the
-  objects the script holds, and the picture shows one clip until something
-  redraws — and an undo of it has the same gap in reverse. A prop push cannot
-  close this: adding or removing a widget is a redefine, which is a decision
-  about *when* one happens (every structural edit? on a flag the projection
-  raises?) and about what happens to the corrections and the in-flight edits a
-  redefine drops, so it is written down rather than patched.
+  exactly as it answers a drag"), the editor applied it to the arrangement, and
+  nothing called `update()`. No example calls it either. So the second half of a
+  split existed in the document and in the objects the script holds while the
+  picture had one clip, until something happened to redraw — and an undo of it
+  had the same gap in reverse.
+
+  **The channel decides, and it is both halves of one rule.** An acknowledgement
+  can carry any *value* a widget already has — a placement, a length, a curve, a
+  note list, a take's window — and cannot carry a widget. So a structural edit
+  redefines, forward and backward alike (an undo of a split takes a clip away,
+  which is as unsayable in props as adding one), and a placement edit does not: a
+  redefine rebuilds every widget and drops what the host has in flight, which is
+  exactly wrong for a drag. The editor that drew the window is what owes the
+  redefine, since it is the only party that can build the tree.
+
+  Two things this pulled in with it, both live and neither visible from the
+  outside:
+
+  - **A redefine left the editor unable to edit.** `update()` bumped the
+    client's version and the document's stayed where it was; the crate refuses
+    an edit whose `against` version is not the document's — *ahead* of it as
+    loudly as behind, since the two would not be talking about the same piece —
+    so every gesture after a redefine came back refused, with no reason to show
+    and the clip simply not moving. It now re-derives the document at the version
+    it is drawing, which is what `refresh` already did for a script's edit.
+    `a_redefine_leaves_the_editor_able_to_edit` in both clients; it only bites
+    once a document exists, which is why nothing had caught it.
+  - **The two clients disagreed about the node index, and one of them was
+    right by accident.** Python added to it and kept elements that had left the
+    tree; the port cleared the map on every re-derivation. An element that is
+    gone is still named by the inverses in the log, and putting it back means
+    placing *that object* again — a rebuilt one is a different identity to every
+    widget and every pending edit — so the port's undo of a cut, and its redo of
+    a split, quietly did nothing: the node came back in the document with
+    nothing left to place. Now both keep it, deliberately and with the reason
+    written down. This is the non-divergence rule doing exactly what it is for:
+    one of the two was a rule and the other a habit, and only reading them
+    against each other says which.
+
+  Three tests in each client, each failing without its fix:
+  `a_structural_edit_redefines_the_window_and_so_does_its_undo` (split, undo,
+  redo — the model *and* the tree the host is handed),
+  `a_redefine_leaves_the_editor_able_to_edit`, and
+  `a_placement_edit_does_not_redefine_the_window`, which is the half that keeps
+  a drag cheap.
 
 - ⬜ **The browser's lost release is guarded and the guard is unverified.** A
   page can lose a button-up — it comes up outside the window, over another

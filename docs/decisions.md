@@ -5227,6 +5227,50 @@ always come back while an undone resize did not — not because samples are
 special, but because a payload of values has no way to express "unchanged" and a
 placement did.
 
+## A placement is a prop; a widget that was not there is a redefine
+
+The acknowledgement can carry any *value* a widget already has — a placement, a
+length, a curve, a note list, the window over a take's samples — and that is the
+cheap channel: the host adopts it without rebuilding anything and without losing
+what it has in flight. It cannot carry a widget. So a **structural** edit — a
+split, a join, a cut, a paste, a cord drawn in a patcher: anything that changes
+*which members exist* — has exactly one channel, and it is a whole-tree
+`/gui_def`.
+
+Who owes it is the editor that drew the window. The host emits the verb and
+holds nothing ("it answers with the tree that now stands, exactly as it answers
+a drag"), so an owner that only applied the intent left the document and the
+objects the script holds with two clips while the picture had one, until
+something happened to redraw. Nothing did: no example calls `update()`, and
+none should have to.
+
+The rule is therefore *both* halves, and the second is what keeps it honest:
+
+- **A structural edit redefines**, forward and backward alike. An undo of a
+  split takes a clip away, which is as unsayable in props as adding one.
+- **A placement edit does not.** A redefine rebuilds every widget and drops what
+  the host had in flight, which is exactly wrong for a drag and would turn every
+  frame of one into a new tree.
+
+Two things this pulled in with it, both of which had been quietly wrong:
+
+**A redefine moves the version, and the document has to move with it.** The
+crate refuses an edit whose `against` version is not the document's — ahead of
+it as loudly as behind, since the two would then not be talking about the same
+piece — so a version bumped on the client's side alone answered every gesture
+after a redefine with a refusal nobody asked for, and with no reason to show:
+the clip simply stopped moving. The redefine now re-derives the document at the
+version it is drawing, which is what `refresh` already did for the case where a
+script edits the tree.
+
+**The node index is added to, not replaced.** An element that has left the tree
+is still named by the inverses in the log, and putting it back means placing
+*that object* again — a rebuilt one is a different identity to every widget and
+every pending edit. The Python client kept stale entries and worked; the port
+cleared the map on each re-derivation and lost the restore, so an undo of a cut
+and a redo of a split quietly did nothing. One of those was a rule and the other
+was a habit, and finding out which is the whole of what a port is for.
+
 ## The acknowledgement is a stamped state push, not a reply code
 
 A GUI host holds no data, so every edit it produces is a **proposal**. Between

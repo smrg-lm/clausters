@@ -221,6 +221,13 @@ export class Editor {
     /** Which **edit layer** of each clip the hand is on. Screen state. */
     private editLayer = new Map<number, string>();
     /**
+     * Whether the last edit changed **which members exist** — a split, a join, a
+     * cord. A placement is a prop the host can be told about; a widget that was
+     * not there is not, so this is what says a redefine is owed. Read and
+     * cleared by {@link Editor.restructure}.
+     */
+    private restructured = false;
+    /**
      * The **oldest version an incoming edit may name**: raised whenever the
      * composition moves by a route that is not a host event, and by nothing
      * else. See {@link Editor.stale}, which is the only thing that reads it.
@@ -749,6 +756,14 @@ export class Editor {
             throw new Error("open(host) the editor first");
         }
         this.version += 1;
+        // **And the document moves with it.** The crate refuses an edit whose
+        // `against` version is not the document's — ahead of it as loudly as
+        // behind, since the two would not be talking about the same piece — so
+        // a version bumped here and nowhere else left the editor answering
+        // "this edit was made against a different document" to every gesture
+        // after the redefine, silently and forever. Re-deriving stamps the
+        // document with the version this window is now drawing.
+        this.rederive = true;
         this.host.define(this.windowId, this.draw());
         this.announce();
     }
@@ -823,6 +838,10 @@ export class Editor {
         // Answered whatever happened, and answered with a *value*: applied,
         // transformed and refused are one message.
         this.acknowledge(seq, this.reason);
+        // ...and *then* the redefine, when the gesture added or removed a
+        // member: the answer retires what the host had in flight, and the new
+        // tree is what shows a clip that was not there.
+        this.restructure();
         return changed;
     }
 
@@ -1282,8 +1301,10 @@ export class Editor {
             return false;
         }
         // No projection: the tree already *is* what the intent says. What the
-        // index has to learn is the element that was not there a moment ago.
+        // index has to learn is the element that was not there a moment ago —
+        // and so does the window, which has one clip where there are now two.
         this.rederive = true;
+        this.restructured = true;
         return this.changed();
     }
 
@@ -1419,6 +1440,7 @@ export class Editor {
         keep.dur = total;
         this.project(outcome.effective);
         this.rederive = true;
+        this.restructured = true;
         return this.changed();
     }
 
@@ -1616,6 +1638,7 @@ export class Editor {
         // a pair of controls naming a bus, which no intent describes yet. The
         // held document is behind after it, and says so.
         this.rederive = true;
+        this.restructured = true;
         this.changed();
         return true;
     }
@@ -1683,7 +1706,15 @@ export class Editor {
             const document = toDocument(this.element, { version: this.version });
             this.doc?.free();
             this.doc = new Document(document);
-            this.byNode = new Map();
+            // **The index is added to, not replaced.** An element that has left
+            // the tree — a clip a cut removed, the half a join swallowed — is
+            // still named by the inverses in the log, and putting it back is
+            // placing *that object* again rather than rebuilding one from a
+            // node (a rebuilt element is a different identity to every widget
+            // and every pending edit). Clearing here made an undo of a cut, and
+            // a redo of a split, quietly do nothing: the node came back in the
+            // document and there was nothing left to place. This is what the
+            // Python client does, and the two must be one program.
             this.index(this.element, null, null);
             this.nextNode = nextNodeId(this.element);
             this.rederive = false;
@@ -1851,6 +1882,30 @@ export class Editor {
      * Bring the **drawn record** of one placement back in step with the
      * arrangement, and say which widget draws it.
      */
+    /**
+     * Redefine the window when the last edit changed **which members exist**,
+     * and say whether it did.
+     *
+     * A placement, a length, a curve and a note list are **props**: the host is
+     * told and it draws them. A widget that was not there a moment ago — the
+     * second half of a split, the clip an undone cut brings back — is not a
+     * prop, and no acknowledgement can carry one. The only channel for it is a
+     * redefine, so the editor that drew the window is what owes it: without this
+     * the document and the objects the script holds had two clips while the
+     * picture had one, until something happened to redraw.
+     *
+     * Deliberately **not** a redraw after every edit. A redefine rebuilds every
+     * widget and drops what the host had in flight, which is exactly wrong for a
+     * drag and exactly right for a structural edit.
+     */
+    private restructure(): boolean {
+        if (!this.restructured) return false;
+        this.restructured = false;
+        if (this.host === null || this.windowId === null) return false;
+        this.update();
+        return true;
+    }
+
     private redrawn(element: Element, member: Member | null): number | null {
         const wid = this.widgetOf(element, member);
         const placed = wid === null ? undefined : this.clips.get(wid);
@@ -1888,7 +1943,12 @@ export class Editor {
             const node = docIdOf(handle);
             if (node === null) continue;
             byId.set(node, handle);
-            if (!keep.has(node)) aggregate.remove(handle);
+            if (!keep.has(node)) {
+                // A placement that is gone takes a widget with it, and no prop
+                // says "this clip is not there any more".
+                aggregate.remove(handle);
+                this.restructured = true;
+            }
         }
         // ...and the offsets the document states, for the ones that stayed — plus
         // the ones that are **back**, which is what an undo of a cut is. The
@@ -1922,6 +1982,9 @@ export class Editor {
                 continue;
             }
             if (target !== undefined) {
+                // ...and one that is **back** — the undo of a cut, of a split,
+                // of a join — needs a widget nobody drew.
+                this.restructured = true;
                 const restored = aggregate.add(
                     target[2],
                     offset,
@@ -2021,6 +2084,11 @@ export class Editor {
         this.dirty = true;
         this.followRender();
         this.corrections = [];
+        // A step that changed which members exist is answered with a new tree
+        // rather than with props: the widgets the corrections name are about to
+        // be rebuilt, and the clip an undone split takes away has no prop that
+        // says so.
+        if (this.restructure()) return true;
         for (const wid of widgets) this.resync(wid);
         this.acknowledge(0);
         this.corrections = [];

@@ -96,16 +96,9 @@ repeated per frame — and **what leads the phase now is what that sitting did n
 finish**, followed by the destination the track was blocking and the one surface
 it named on its way past.*
 
-- ⬜ **A structural edit is never redrawn, so an undo of one cannot be either**
-  *(`clients/gui/PLAN.md`, Found by use)* — what the reading of the editable
-  bodies left standing: a split, a join, a cut and a paste change which members
-  exist, and nothing redefines the window, so the picture and the document
-  disagree until something redraws. First because it is the other half of "edited
-  by hand, heard, **undone**, redone", and because it is a decision (when a
-  redefine happens, and what it does to the edits in flight) rather than a patch.
 - ⬜ **The other drags that accumulate per frame** *(`clients/gui/PLAN.md`,
   Found by use)* — a bend was relative and drifted twice over; the knobs, the
-  numbers and the roll's velocity drags are the ones to read next. Second
+  numbers and the roll's velocity drags are the ones to read next. First
   because it is the same defect that pass fixed, in the places it was not looked
   for, and it is a reading rather than a design.
 - ⬜ **A page burns the main thread while nothing is happening**
@@ -113,7 +106,7 @@ it named on its way past.*
   composer page idle, and the same 67% while playing, which is what makes the
   playhead jitter. It is the browser front's own (native reads the shm header
   and polls nothing), and the entry says to measure per stage before changing
-  anything. Third because every page the phase adds pays it.
+  anything. Second because every page the phase adds pays it.
 - ⬜ **W16 — Example parity with the Python client**. Its named track (the
   arrangement layer, the editor, the transport, the engraver) is closed; what
   remains is the milestone itself, and it is the larger half: about forty
