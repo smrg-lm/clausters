@@ -1022,6 +1022,16 @@ export class Editor {
                     ]),
                 );
             }
+            const held = placed.member !== null ? placed.member.element : this.element;
+            if (held instanceof Vector) {
+                // A take's **window** is as much of what this widget draws as
+                // its placement is: an undone trim puts the frames back, and
+                // nothing else would say so. Stated even when it is zero —
+                // absence is a value here as everywhere, and a prop left out is
+                // a prop left standing.
+                props.start = Number(held.start);
+                props.loop = Boolean(held.loop);
+            }
         }
         const element = this.rolls.get(widgetId);
         if (element !== undefined) props.notes = flatNotes(this.notesOf(element));
@@ -1766,15 +1776,25 @@ export class Editor {
      * host to go on drawing the clip exactly where it was, and look like a dead
      * button.
      */
-    private project(intent: Intent): number | null {
+    private project(intent: Intent): Set<number> {
         const found = this.byNode.get(Math.trunc(Number(intent.node ?? -1)));
-        if (found === undefined) return null;
+        if (found === undefined) return new Set();
         const [owner, member, element] = found;
+        const moved = new Set<number>();
         if (intent.intent === "place" && owner !== null && member !== null) {
-            owner.move(member, Number(intent.offset), intent.dur ?? null);
+            owner.move(member, Number(intent.offset));
+            // **A `place` states the whole placement, so absence is a value.**
+            // An intent with no `dur` says this member takes the element's own
+            // length again — which is exactly what the inverse of the *first*
+            // resize of a clip has to say. `Aggregate.move` reads a null as
+            // "leave the length alone", the opposite, so it is written here
+            // instead of passed to it.
+            member.dur = intent.dur === undefined || intent.dur === null
+                ? null
+                : Number(intent.dur);
         } else if (intent.intent === "configure") {
             if (!this.configure(element, (intent.config ?? {}) as Record<string, unknown>)) {
-                return null;
+                return new Set();
             }
         } else if (intent.intent === "setmembers") {
             const members = (intent.members ?? []) as Record<string, unknown>[];
@@ -1783,14 +1803,23 @@ export class Editor {
             // The element decides which, because the intent names a node and the
             // node is whichever of the two it is.
             if (element instanceof Aggregate) {
-                if (!this.setPlacements(element, members)) return null;
+                if (!this.setPlacements(element, members)) return new Set();
+                // ...and the drawn record of every member it states, since the
+                // clip a trim or a split moved is not the aggregate the intent
+                // names.
+                for (const handle of element.handles) {
+                    const wid = this.redrawn(handle.element, handle);
+                    if (wid !== null) moved.add(wid);
+                }
             } else if (!this.setNotes(element, members)) {
-                return null;
+                return new Set();
             }
         } else {
-            return null;
+            return new Set();
         }
-        return this.redrawn(element, member);
+        const wid = this.redrawn(element, member);
+        if (wid !== null) moved.add(wid);
+        return moved;
     }
 
     /**
@@ -1827,8 +1856,12 @@ export class Editor {
         const placed = wid === null ? undefined : this.clips.get(wid);
         if (placed !== undefined && member !== null) {
             placed.offset = this.beatsToUnits(member.offset + placed.base);
-            const length = member.length;
-            if (length !== null) placed.dur = this.beatsToUnits(Number(length));
+            // Through the same rule the draw used, not a shorter one of its
+            // own: a placement whose length went back to *unstated* is drawn at
+            // the element's own length, and a member with neither reaches the
+            // element's extent — which `member.length` alone cannot say, so the
+            // record kept the size the gesture left.
+            placed.dur = this.drawnDur(element, member);
         }
         return wid;
     }
@@ -1868,23 +1901,26 @@ export class Editor {
             const node = Math.trunc(Number(holder.id));
             const handle = byId.get(node);
             const offset = Number(m.offset ?? 0.0);
-            const config = holder.config as Record<string, unknown> | undefined;
-            if (config !== undefined) {
-                // A member carries its node, and a node carries what the leaf is
-                // configured as: a trimmed take's window, an edited curve's
-                // points. Written here so one `setmembers` can state the whole of
-                // what a gesture did — and so an undo of it restores both.
-                const target = this.byNode.get(node);
-                if (target !== undefined) this.configure(target[2], config);
-            }
+            // A member carries its node, and a node carries what the leaf is
+            // configured as: a trimmed take's window, an edited curve's points.
+            // Written here so one `setmembers` states the whole of what a
+            // gesture did — and so an undo of it restores both. **Absence is a
+            // value**: a node with no configuration is a leaf configured as it
+            // was made, which is what the state before a trim is, so the empty
+            // table is written rather than skipped. Skipping it left the window
+            // over the samples where the trim had put it while the placement
+            // went back — a clip the right size showing the wrong frames.
+            const config = (holder.config ?? {}) as Record<string, unknown>;
+            const target = this.byNode.get(node);
+            if (target !== undefined) this.configure(target[2], config);
             if (handle !== undefined) {
+
                 aggregate.move(handle, offset);
                 // ...and the length the document states, which a split, a join
                 // and an undo of either all change.
                 handle.dur = m.dur === undefined || m.dur === null ? null : Number(m.dur);
                 continue;
             }
-            const target = this.byNode.get(node);
             if (target !== undefined) {
                 const restored = aggregate.add(
                     target[2],
@@ -1979,8 +2015,7 @@ export class Editor {
         if (intents === undefined) return false;
         const widgets = new Set<number>();
         for (const intent of intents) {
-            const wid = this.project(intent);
-            if (wid !== null) widgets.add(wid);
+            for (const wid of this.project(intent)) widgets.add(wid);
         }
         this.version = document.version;
         this.dirty = true;
@@ -2225,6 +2260,37 @@ export class Editor {
      * axis), with the body (or **bodies**) its kind calls for. Registers what it
      * drew, which is what the edit-back path resolves against.
      */
+    /**
+     * The length one clip is drawn at, **in beats** — the placement's when it
+     * overrides, else the element's own, else what the element extends to.
+     *
+     * One rule, in one place, because two of them is how a picture and a model
+     * come to disagree: the draw asks this, and so does every path that has to
+     * put a placement back ({@link Editor.redrawn}, after an inverse or a redo).
+     */
+    private drawnBeats(element: Element, member: Member | null): number {
+        let beats = member !== null && member.dur !== null ? member.dur : null;
+        if (beats === null && element instanceof Element) beats = element.duration;
+        if (beats === null) beats = this.extentOf(element);
+        return beats;
+    }
+
+    /**
+     * The same length in **timeline units**, which needs the body: a take with no
+     * duration given is as long as it is (1 unit = 1 sample).
+     */
+    private drawnDur(
+        element: Element,
+        member: Member | null,
+        body?: Record<string, unknown>,
+    ): number {
+        const beats = this.drawnBeats(element, member);
+        const drawn = body ?? this.bodyFor(element, beats);
+        return "buffer" in drawn && beats <= 0.0
+            ? Number((element as Vector).buffer.frames ?? 0)
+            : this.beatsToUnits(beats);
+    }
+
     private clipFor(
         element: Element,
         base: number,
@@ -2233,18 +2299,9 @@ export class Editor {
     ): GuiNode {
         const wid = this.newId();
         const offset = this.beatsToUnits(base);
-        // The length shown, in beats: the placement's when it overrides, else the
-        // element's own.
-        let durBeats = member !== null && member.dur !== null ? member.dur : null;
-        if (durBeats === null && element instanceof Element) durBeats = element.duration;
-        if (durBeats === null) durBeats = this.extentOf(element);
-
+        const durBeats = this.drawnBeats(element, member);
         const body = this.bodyFor(element, durBeats);
-        // A take with no duration given is as long as it is (1 unit = 1 sample).
-        const dur =
-            "buffer" in body && durBeats <= 0.0
-                ? Number((element as Vector).buffer.frames ?? 0)
-                : this.beatsToUnits(durBeats);
+        const dur = this.drawnDur(element, member, body);
 
         // The placement's own base: a clip's offset is absolute on the shared
         // axis, a member's offset is relative to its aggregate.

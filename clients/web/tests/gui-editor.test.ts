@@ -670,6 +670,67 @@ test("a trim moves the window and is undone as one", () => {
     assert.equal(take.start, 0.0);
 });
 
+test("an undone first resize gives the element its own length back", () => {
+    // The inverse of the first resize of a clip carries **no** duration at all,
+    // because before it the placement stated none — and absence is a value: the
+    // member takes the element's own length again. Read as "leave the length
+    // alone", the log stepped back, `undo` answered true and the clip kept the
+    // size the hand had given it, which is a dead button on every clip nobody
+    // had resized yet.
+    const piece = song();
+    const ed = editor(piece, { quant: 0.25 });
+    const host = new FakeHost();
+    ed.open(asHost(host));
+    const clip = clipsOf(lanes(ed.draw())[1] as GuiNode)[0] as GuiNode;
+    const member = (piece.handles[1]?.element as Aggregate).handles[0];
+    assert.equal(member?.dur, null, "nothing has stated a length for it");
+    const was = clip.dur as number;
+
+    assert.equal(
+        ed.apply("/gui_event", clipEvent(clip.id as number, 2 * BEAT, 1 * BEAT)),
+        true,
+    );
+    assert.equal(member?.dur, 1.0);
+    host.acks.length = 0;
+
+    assert.equal(ed.undo(), true);
+    assert.equal(member?.dur, null, "the placement states no length again");
+    const props = host.corrections().get(clip.id as number);
+    assert.ok(props, "and the host was told, or the picture keeps the hand's size");
+    assert.equal(props.dur, was);
+});
+
+test("an undone trim puts the window back on a take that configures nothing", () => {
+    // The same rule one level down. A trim states the placement *and* the
+    // window over the samples in one `setmembers`, so its inverse states the
+    // member as it was — and a take nobody has configured has no configuration
+    // in it at all. Skipped as "nothing to write", the clip went back to its
+    // old size still reading the frames the trim had left it on: the right
+    // rectangle over the wrong sound.
+    const take = new Vector(buffer(7), null, 4.0);
+    const audio = new Aggregate([[0.0, take]], "concrete", { name: "audio" });
+    const piece = new Aggregate([[0.0, audio]], "concrete", { name: "song" });
+    const ed = editor(piece);
+    const host = new FakeHost();
+    ed.open(asHost(host));
+    const clip = clipsOf(lanes(ed.draw())[0] as GuiNode)[0] as GuiNode;
+    const was = clip.dur as number;
+
+    assert.equal(
+        ed.apply("/gui_event", clipEvent(clip.id as number, BEAT, 3 * BEAT, BEAT)),
+        true,
+    );
+    assert.equal(take.start, BEAT);
+    host.acks.length = 0;
+
+    assert.equal(ed.undo(), true);
+    assert.equal(take.start, 0.0, "the frames the trim hid are back");
+    const props = host.corrections().get(clip.id as number);
+    assert.ok(props, "the clip a trim moved is not the lane the intent names");
+    assert.equal(props.start, 0.0, "window and all");
+    assert.equal(props.dur, was);
+});
+
 test("a split gives two windows over one buffer", () => {
     const [piece] = takeSong();
     const ed = editor(piece);

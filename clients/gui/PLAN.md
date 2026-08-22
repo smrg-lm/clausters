@@ -2393,38 +2393,86 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   edit-back resolves to its own widget's placement, roll or curve — a foreign
   route, the case that can touch anything, still raises the floor.
 
-- ⬜ **Undo is not one behaviour: it answers some gestures and not others**
+- ✅ **Undo is not one behaviour: it answers some gestures and not others**
   *(found 2026-08-22 by the user, in `gui_composer`: "achicar un clip pianoroll
-  con el agarre del clip no responde a undo", and earlier the same day "el
-  contenido de los clips (envolvente) y el cambio de duracion por agarre del
-  clip no vuelven")*. Every route already records an intent through the crate's
-  log -- there is no gesture here that forgot to -- so what differs is what the
-  **inverse can say**, and that has to be read per element and per gesture
-  rather than per bug.
+  con el agarre del clip no responde a undo", and "el contenido de los clips
+  (envolvente) y el cambio de duracion por agarre del clip no vuelven"; then,
+  on the shape of the fix: "undo/redo sucede en el host que muestra el arreglo y
+  se tiene que reflejar en el documento y las estructuras de datos instanciadas
+  del cliente ... la edicion de muestras tambien responde a undo/redo. Esto es
+  algo de bajo nivel que puede afectar distintos tipos de componentes y
+  estructuras de datos en distintos contextos")*. Every route already recorded
+  an intent through the crate's log, and the crate was right in every case
+  measured — the document stepped back correctly each time. What was wrong is
+  the **projection**: writing an intent back onto the instantiated data, three
+  implementations read the same thing wrong in the same way.
 
-  One cause is measured. A clip drawn from a member with **no explicit
-  duration** takes the element's own length; resizing it records `place` with a
-  `dur`, and the inverse of that is a `place` with **no** `dur` -- which the
-  projection reads as *leave the duration alone*
-  (`Aggregate.move(member, offset, dur=None)`, and the same in the TypeScript
-  port). So the first resize of a clip is the one undo cannot reverse: the log
-  steps back, `undo()` answers `True`, and the member keeps the length the hand
-  gave it. A second resize undoes correctly, which is why it reads as
-  intermittent. The fix is a decision, not a patch: either the document
-  distinguishes *absent* from *unset* on a placement's `dur`, or a placement
-  always carries the resolved one and "no duration" stops being a state an
-  inverse has to name.
+  **The rule, now stated as one** (`docs/decisions.md`, "An intent states the
+  whole value, so absence is a value"): an intent states the value the edit
+  results in, *whole*, so a field it does not carry is that field's **absence**,
+  and absence is written. A `place` with no `dur` is a placement with **no
+  length** — the element's own is what plays — not "leave the length alone".
 
-  The envelope is the other half and is **not** reproduced yet: the layered
-  clip's curve undoes model and picture together, with a test in both clients
-  (`undoing_a_curve_edit_tells_the_host_what_to_draw`), so whatever failed in
-  `gui_composer` is a different shape of body -- which is the entry's real
-  point. **The rule to hold is one behaviour per element according to what that
-  element is**, so what has to happen is a pass over every editable body (a
-  placement, a trim, a roll's notes, a curve, a take's window) asking of each:
-  what does its inverse state, what does the projection do with it, and what
-  does the widget end up drawing. Three of those five have been fixed one at a
-  time this week, which is the sign the reading is owed.
+  What that fixed, each of which was a live defect:
+
+  - **The first resize of a clip could not be undone.** Its inverse carries no
+    `dur` at all, because before it the placement stated none; every projection
+    passed that to a convenience method whose `None` means *unchanged*
+    (`Aggregate.move(member, offset, dur=None)`, the same in TypeScript, and
+    `if let Some(dur) = dur` in the host's own `adopt`). So the log stepped
+    back, `undo()` answered `True`, and the clip kept the size the hand had
+    given it. A *second* resize undid correctly, which is why it read as
+    intermittent. This is the case the user reported.
+  - **An undone trim left the window over the samples where the trim put it.**
+    A trim states the placement *and* the window in one `setmembers`, so its
+    inverse states the member as it was — and a take nobody has configured has
+    no `config` at all, which the projection skipped as "nothing to write". The
+    clip went back to its old size still reading the wrong frames. The existing
+    trim test passed only because its take carried an `instrument`.
+  - **An intent over an aggregate moved one widget.** A trim, a split, a join
+    and a cut are one `setmembers` over a *lane*, and the projection answered
+    with the lane's own widget, so every clip the edit moved stayed drawn where
+    the hand had left it. It now answers with every member it states, and a
+    resync carries a take's window (`start`/`loop`) as well as its placement,
+    since that is as much of "what this widget should be drawing".
+  - **The drawn length had two rules.** The draw resolved it as *placement →
+    element's own → the element's extent → the samples*; the path that puts a
+    placement back knew only the first two. Both now ask one function
+    (`_drawn_beats`/`_drawn_dur`, `drawnBeats`/`drawnDur`, `tree::clip_dur`),
+    which is what makes the picture unable to disagree with the model.
+
+  **The samples were already right, and are the same rule seen from lower
+  down**: a destructive edit's inverse carries the values it painted over and
+  the host replays them onto the buffer it drew from
+  (`a_stroke_reaches_the_buffer_and_the_picture_and_undo_puts_both_back`). That
+  is why an undone stroke always came back while an undone resize did not — not
+  because samples are special, but because a payload of values has no way to
+  express *unchanged* and a placement did.
+
+  Three implementations, three tests, each of which fails without its fix:
+  `an_undone_first_resize_gives_the_element_its_own_length_back` and
+  `an_undone_trim_puts_the_window_back_on_a_take_that_configures_nothing` in
+  both clients, and `an_undone_first_resize_puts_the_clips_width_back` in the
+  host (whose `Owner` now holds the session's takes, since the length rule ends
+  at the samples). The envelope half of the report is **not** reproduced: a
+  layered clip's curve undoes model and picture together, with a test in both
+  clients, so whatever failed there is a different shape of body and is still
+  open.
+
+- ⬜ **A structural edit is never redrawn, so an undo of one cannot be either.**
+  Found while reading every editable body against the rule above. A split, a
+  join, a cut and a paste change *which members exist*, and neither client
+  redefines the window afterwards: the host emits the verb and holds nothing
+  (`gestures::keys::clip_verb` — "it answers with the tree that now stands,
+  exactly as it answers a drag"), the editor applies it to the arrangement and
+  marks itself for re-derivation, and nothing calls `update()`. No example calls
+  it either. So the second clip of a split exists in the document and in the
+  objects the script holds, and the picture shows one clip until something
+  redraws — and an undo of it has the same gap in reverse. A prop push cannot
+  close this: adding or removing a widget is a redefine, which is a decision
+  about *when* one happens (every structural edit? on a flag the projection
+  raises?) and about what happens to the corrections and the in-flight edits a
+  redefine drops, so it is written down rather than patched.
 
 - ⬜ **The browser's lost release is guarded and the guard is unverified.** A
   page can lose a button-up — it comes up outside the window, over another

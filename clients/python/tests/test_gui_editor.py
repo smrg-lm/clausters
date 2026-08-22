@@ -1761,6 +1761,67 @@ def test_a_trim_moves_the_window_and_is_undone_as_one():
     assert take.start == pytest.approx(0.0)
 
 
+def test_an_undone_first_resize_gives_the_element_its_own_length_back():
+    """The inverse of the first resize of a clip carries **no** duration at all,
+    because before it the placement stated none -- and absence is a value: the
+    member takes the element's own length again. Read as "leave the length
+    alone", the log stepped back, `undo` answered True and the clip kept the
+    size the hand had given it, which is a dead button on every clip nobody had
+    resized yet."""
+    ed = editor(quant=0.25)
+    host = _FakeHost()
+    ed.open(host)
+    (_, lead) = lanes(ed.draw())
+    (roll,) = clips(lead)
+    placed = ed._clips[roll["id"]]
+    member = placed.member
+    assert member.dur is None, "nothing has stated a length for it"
+    was = placed.dur
+
+    assert ed.apply(*clip_event(roll["id"], member.offset * BEAT, 1.0 * BEAT)) is True
+    assert member.dur == pytest.approx(1.0)
+    host.acks.clear()
+
+    assert ed.undo() is True
+    assert member.dur is None, "the placement states no length again"
+    assert placed.dur == pytest.approx(was), "and the drawn record says the same"
+    pushed = {wid: props for _seq, sets in host.acks for wid, props in sets}
+    assert pushed[roll["id"]]["dur"] == pytest.approx(was), "and the host was told"
+
+
+def test_an_undone_trim_puts_the_window_back_on_a_take_that_configures_nothing():
+    """The same rule one level down. A trim states the placement *and* the
+    window over the samples in one `setmembers`, so its inverse states the
+    member as it was -- and a take nobody has configured has no configuration in
+    it at all. Skipped as "nothing to write", the clip went back to its old size
+    still reading the frames the trim had left it on: the right rectangle over
+    the wrong sound."""
+    # A **bare** take: no window and no configuration at all, so the member the
+    # inverse states carries no `config` key for the projection to find.
+    take = Vector(ServerBuffer(bufnum=7, frames=int(4 * BEAT), channels=1,
+                               sample_rate=SR), duration=4.0)
+    song = Aggregate([(0.0, Aggregate([(0.0, take)], name="audio"))], name="song")
+    ed = editor(song)
+    host = _FakeHost()
+    ed.open(host)
+    (lane,) = lanes(ed.draw())
+    (clip,) = clips(lane)
+    placed = ed._clips[clip["id"]]
+    was = (placed.offset, placed.dur)
+
+    assert ed.apply("/gui_event", [clip["id"], SEQ, UNSTATED, "clip",
+                                   BEAT, 3 * BEAT, BEAT]) is True
+    assert take.start == pytest.approx(BEAT)
+    host.acks.clear()
+
+    assert ed.undo() is True
+    assert take.start == pytest.approx(0.0), "the frames the trim hid are back"
+    assert (placed.offset, placed.dur) == pytest.approx(was), "and so is the clip"
+    pushed = {wid: props for _seq, sets in host.acks for wid, props in sets}
+    assert clip["id"] in pushed, "the clip a trim moved is not the lane it names"
+    assert pushed[clip["id"]]["start"] == pytest.approx(0.0), "window and all"
+
+
 def test_a_split_gives_two_windows_over_one_buffer():
     """The cut: the first half keeps the head it had and stops early, the second
     begins where it left off -- one buffer, two windows -- and it is one edit,

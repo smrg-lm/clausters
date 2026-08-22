@@ -395,12 +395,20 @@ result["outcome"]["effective"]   # {"intent": "place", "node": 3, "offset": 4.0}
 result["outcome"]["reason"]      # "snapped to the grid"
 ```
 
-Two properties are worth knowing because they change how you write against it.
+Three properties are worth knowing because they change how you write against it.
 
 An intent is **absolute**: it states the value the edit *results in*, never an
 increment. So applying one twice leaves the same document, and a view that drew
 an edit optimistically can leave its picture standing over whatever comes back
 instead of recomputing anything.
+
+It states the **whole** value, so **absence is a value**. A `place` describes a
+placement entirely: one carrying no `dur` is a placement with *no length*, and
+the element's own is what plays. That is not a shorthand for "leave the length as
+it is", and where it matters is an inverse — the undo of the first resize of a
+clip has no `dur` to carry, because before that resize there was none. The same
+holds a level down: a member whose node carries no configuration is a leaf
+configured as it was made, which is what an undone trim hands back.
 
 There is **no success flag to branch on**. `effective` is the edit describing the
 document as it now stands, so *applied*, *applied transformed* and *refused* are

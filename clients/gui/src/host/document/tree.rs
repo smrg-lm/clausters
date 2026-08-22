@@ -278,19 +278,7 @@ fn clip_of(
         node: member.node.id,
     });
     let take = take_of(&member.node, look);
-    // The length shown: the placement's where it overrides, else the element's
-    // own, else **the samples'** — a take placed 1:1 is as long as it is,
-    // which is the one length nobody has to state — else a beat, because a clip
-    // with no length at all would be a line.
-    let dur = member
-        .dur
-        .or(member.node.duration)
-        .or_else(|| {
-            take.and_then(|t| t.frames)
-                .map(|f| f as f64 / look.units_per_beat)
-        })
-        .filter(|d| *d > 0.0)
-        .unwrap_or(1.0);
+    let dur = clip_dur(member, look.takes, look.units_per_beat);
     let mut props = Map::new();
     props.insert("id".into(), json!(widget));
     props.insert("type".into(), json!("field"));
@@ -429,6 +417,37 @@ fn take_editors(
 }
 
 /// The samples a node draws, when it names some and somebody resolved it.
+/// The length a clip is drawn at, in beats: the placement's where it overrides,
+/// else the element's own, else **the samples'** — a take placed 1:1 is as long
+/// as it is, which is the one length nobody has to state — else a beat, because
+/// a clip with no length at all would be a line.
+///
+/// One rule, in one place. The draw asks it, and so does the adoption of an
+/// applied edit ([`super::super::Host::adopt`]): a placement whose length went
+/// back to *unstated* has to be redrawn at whatever that means here, and an
+/// adopter with a shorter rule of its own left the clip at the size the hand
+/// had given it — which is an undo that moves the document and not the picture.
+pub(crate) fn clip_dur(
+    member: &Member,
+    takes: Option<&super::sources::Takes>,
+    units_per_beat: f64,
+) -> Beats {
+    member
+        .dur
+        .or(member.node.duration)
+        .or_else(|| {
+            takes
+                .and_then(|t| match &member.node.body {
+                    Body::Vector { source, .. } => t.get(source.source),
+                    _ => None,
+                })
+                .and_then(|t| t.frames)
+                .map(|f| f as f64 / units_per_beat)
+        })
+        .filter(|d| *d > 0.0)
+        .unwrap_or(1.0)
+}
+
 fn take_of(node: &Node, look: &Look<'_>) -> Option<super::sources::Take> {
     let Body::Vector { source, .. } = &node.body else {
         return None;

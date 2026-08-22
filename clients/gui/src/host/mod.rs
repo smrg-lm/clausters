@@ -1815,12 +1815,24 @@ impl Host {
             return;
         };
         let units = owner.units_per_beat;
-        let moves: Vec<(i32, f64, Option<f64>)> = applied
+        let moves: Vec<(i32, f64, f64)> = applied
             .iter()
             .filter(|a| a.applied)
             .filter_map(|a| match &a.effective {
-                clausters_document::Intent::Place { node, offset, dur } => {
-                    owner.widget_of(*node).map(|w| (w, *offset, *dur))
+                clausters_document::Intent::Place { node, offset, .. } => {
+                    // **The length is read back out of the document, not off
+                    // the intent.** A `Place` states the whole placement, so an
+                    // intent with no `dur` says this member takes the element's
+                    // own length again — the inverse of the first resize of a
+                    // clip says exactly that — and "no dur, leave the width
+                    // alone" left the clip at the size the hand had given it
+                    // while the document went back: an undo that moves the
+                    // model and not the picture. Asking the document through
+                    // the drawing's own rule cannot disagree with the drawing.
+                    let dur = owner
+                        .member_of(*node)
+                        .map(|m| document::tree::clip_dur(m, Some(&owner.takes), units))?;
+                    owner.widget_of(*node).map(|w| (w, *offset, dur))
                 }
                 _ => None,
             })
@@ -1832,9 +1844,7 @@ impl Host {
                 } = &mut w.kind
             {
                 *o = offset * units;
-                if let Some(dur) = dur {
-                    *d = dur * units;
-                }
+                *d = dur * units;
             }
         }
     }

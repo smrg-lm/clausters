@@ -97,6 +97,13 @@ pub struct Owner {
     /// over what you opened is a decision, not a default**, so a caller that
     /// wants it says where.
     pub save_path: Option<std::path::PathBuf>,
+    /// The session's samples, when somebody resolved them: what a take's own
+    /// length is, for the one case a placement does not state it.
+    ///
+    /// Held for the same reason [`Self::units_per_beat`] is — adopting an
+    /// applied edit back onto the picture has to reach the rule the drawing
+    /// used, and that rule ends at the samples.
+    pub takes: sources::Takes,
     /// Which document node each widget's gestures address.
     ///
     /// The one thing this module adds to the crate, and the one thing only a
@@ -132,6 +139,7 @@ impl Owner {
             rules: Rules::none(),
             units_per_beat: 48_000.0,
             save_path: None,
+            takes: sources::Takes::default(),
             nodes: HashMap::new(),
         }
     }
@@ -148,6 +156,34 @@ impl Owner {
     pub fn with_units_per_beat(mut self, units: f64) -> Self {
         self.units_per_beat = units;
         self
+    }
+
+    /// The samples this document's sources resolved to, for the length rule.
+    pub fn with_takes(mut self, takes: sources::Takes) -> Self {
+        self.takes = takes;
+        self
+    }
+
+    /// The **placement** of a node — the member that holds it, which is where a
+    /// length lives.
+    ///
+    /// A node knows what it is; only its member knows how long it is placed
+    /// for, and that is what a picture is drawn from. Read out of the document
+    /// *after* an edit has landed, so it is the state that now holds rather
+    /// than what an intent said about it.
+    pub fn member_of(&self, node: NodeId) -> Option<&clausters_document::Member> {
+        fn walk(n: &clausters_document::Node, id: NodeId) -> Option<&clausters_document::Member> {
+            for m in n.members() {
+                if m.node.id == id {
+                    return Some(m);
+                }
+                if let Some(found) = walk(&m.node, id) {
+                    return Some(found);
+                }
+            }
+            None
+        }
+        walk(&self.document.root, node)
     }
 
     /// Which widget draws `node`, if one does — the binding read the other way,
@@ -912,6 +948,93 @@ mod window_verb_tests {
             offset_of(&host),
             0.0,
             "the undo moved the picture, not only the document"
+        );
+    }
+
+    /// The length half of the same rule, and the case that was broken: a clip
+    /// whose placement states **no** length is drawn at the element's own, so
+    /// the inverse of the first resize of one carries no `dur` at all — and an
+    /// adopter reading that as "leave the width alone" left the clip at the
+    /// size the hand had given it while the document went back.
+    #[test]
+    fn an_undone_first_resize_puts_the_clips_width_back() {
+        use crate::host::widget::WidgetKind;
+
+        let def_id = 1;
+        let mut clang = Node::new(
+            NodeId(2),
+            Body::Clang {
+                config: Opaque::default(),
+                fires: None,
+            },
+        );
+        // The element's own length, and no placement length over it: exactly
+        // what a clip nobody has resized yet is.
+        clang.duration = Some(2.0);
+        let doc = Document::new(Node::new(
+            NodeId(1),
+            Body::Aggregate {
+                grouping: Grouping::Concrete,
+                members: vec![Member {
+                    offset: 0.0,
+                    dur: None,
+                    node: clang,
+                }],
+                config: Opaque::none(),
+            },
+        ));
+        let drawn = super::tree::draw(
+            &doc,
+            &super::tree::Look {
+                first_id: def_id + 1,
+                units_per_beat: 100.0,
+                ..super::tree::Look::default()
+            },
+            "t",
+        );
+        let mut owner = Owner::new(doc).with_units_per_beat(100.0);
+        for b in &drawn.bindings {
+            owner.bind(b.widget, b.node);
+        }
+        let clip = drawn.bindings[0].widget;
+        let mut host = Host::new();
+        host.handle_packet(
+            crate::host::OscPacket::Message(crate::host::OscMessage {
+                addr: "/gui_def".into(),
+                args: vec![OscType::Int(def_id), OscType::String(drawn.def.to_string())],
+            }),
+            crate::host::ClientId::Udp(std::net::SocketAddr::from((
+                std::net::Ipv4Addr::LOCALHOST,
+                9000,
+            ))),
+        );
+        host.owner = Some(owner);
+
+        let dur_of = |host: &Host| match host.widget_kind(def_id, clip) {
+            Some(WidgetKind::Clip { dur, .. }) => *dur,
+            other => panic!("clip {clip} is {other:?}"),
+        };
+        assert_eq!(dur_of(&host), 200.0, "two beats at 100 units a beat");
+
+        let seq = host.outbox.borrow_mut().stamp(def_id, clip);
+        assert!(host.answer_own(
+            def_id,
+            clip,
+            seq,
+            &[
+                OscType::String("clip".into()),
+                OscType::Float(0.0),
+                OscType::Float(100.0),
+            ]
+        ));
+        assert_eq!(dur_of(&host), 100.0, "the hand shortened it to one beat");
+
+        let seq = host.outbox.borrow_mut().stamp(def_id, def_id);
+        assert!(host.answer_own(def_id, def_id, seq, &[OscType::String("undo".into())]));
+        assert_eq!(
+            dur_of(&host),
+            200.0,
+            "and the undo gave the element's own length back to the picture"
         );
     }
 

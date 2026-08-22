@@ -174,6 +174,12 @@ placement is a **window onto** an element, so shortening a clip over its own
 notes plays fewer of them and keeps them all — lengthen it again and they come
 back.
 
+An intent states the **whole** value, and **absence is a value**: a `place`
+carrying no `dur` is a placement with *no length*, and the element's own is what
+plays. That is what an undo of the first resize of a clip hands back — before it
+there was no length to restore — and the same holds one level down, where a
+member with no configuration is a leaf configured as it was made.
+
 Two dedicated views open on one element instead of the multitrack:
 `openPianoroll(host, element)` for an editable note grid, and
 `openSignal(host, element)` for the editor-grade waveform of a rendered element

@@ -5181,6 +5181,52 @@ discipline: it is the only thing that applies an edit. A client does not apply
 and then report; it hands over the document and the intent and receives the new
 document plus the outcome.
 
+## An intent states the whole value, so absence is a value
+
+The rule the document is built on has an edge nothing had written down, and
+three independent implementations got it wrong in the same way. An intent is
+**absolute**: it states the value the edit results in. A `place` therefore
+states the *whole* placement, and a placement that carries no `dur` is a
+placement with **no length** — the member takes the element's own. That is not
+a shorthand for "leave the length as it is", and the difference only becomes
+visible in an inverse: the undo of the *first* resize of a clip has no `dur` to
+carry, because before that resize there was none.
+
+Every projection of an intent onto instantiated data read that absence as
+"unchanged", because that is what the convenience method underneath does —
+`Aggregate.move(member, offset, dur=None)` leaves the length alone, and so did
+the host's own adoption (`if let Some(dur) = dur`). The result was a document
+that stepped back correctly while the picture and the objects the script holds
+kept the size the hand had given them: `undo` answers *true*, the log is right,
+and the clip does not move. It reads as a dead button, and it was reported as
+one.
+
+So the rule is stated as a rule, and it holds wherever an intent is written
+onto something instantiated — the arrangement objects a client holds, the
+widgets a host draws, a leaf's configuration:
+
+- **A field the intent does not carry is that field's absence, and absence is
+  written.** A `place` with no `dur` writes *no length*; a member whose node
+  carries no `config` is a leaf configured as it was made, so the empty table is
+  written rather than skipped (an undone trim that skipped it left the window
+  over the samples where the trim had put it, under a clip that had gone back to
+  its old size).
+- **What a picture shows is one rule, in one place.** The length a clip is drawn
+  at — the placement's, else the element's own, else the samples', else a beat —
+  is asked by the draw *and* by every path that puts a placement back. Two
+  implementations of it is how a picture and a model come to disagree without
+  anything failing.
+- **An intent over an aggregate moves every member it states.** A trim, a split
+  and a join are one `setmembers` over a lane, and answering with only the lane's
+  own widget left each clip drawn as the hand had left it.
+
+The samples are the same rule seen from further down, and they already followed
+it: a destructive edit's inverse carries the values it painted over, and the
+host replays them onto the buffer it drew from. That is why an undone stroke has
+always come back while an undone resize did not — not because samples are
+special, but because a payload of values has no way to express "unchanged" and a
+placement did.
+
 ## The acknowledgement is a stamped state push, not a reply code
 
 A GUI host holds no data, so every edit it produces is a **proposal**. Between

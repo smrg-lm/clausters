@@ -949,6 +949,16 @@ class Editor:
                 props["points"] = _flat_points(
                     [x for t, v, shape, curve in _quads(auto.to_points())
                      for x in (self.beats_to_units(t), v, shape, curve)])
+            held = (placed.member.element if placed.member is not None
+                    else self.element)
+            if isinstance(held, Vector):
+                # A take's **window** is as much of what this widget draws as
+                # its placement is: an undone trim puts the frames back, and
+                # nothing else would say so. Stated even when it is zero --
+                # absence is a value here as everywhere, and a prop left out is
+                # a prop left standing.
+                props["start"] = float(held.start)
+                props["loop"] = bool(held.loop)
         element = self._rolls.get(widget_id)
         if element is not None:
             props["notes"] = _flat_notes(self._notes(element))
@@ -1666,9 +1676,15 @@ class Editor:
                             quant=self.quant, label=label)
         return outcome
 
-    def _project(self, intent: dict) -> "int | None":
-        """Write an intent's value onto the arrangement, and say which widget
-        was drawing it.
+    def _project(self, intent: dict) -> set:
+        """Write an intent's value onto the arrangement, and say which widgets
+        were drawing it.
+
+        **Several**, when the intent is one an aggregate carries for all of its
+        members: a trim, a split, a join and a cut are one `setmembers` over a
+        lane, and the widgets whose picture it changed are the lane's clips.
+        Answering with only the lane left every one of them drawn as the hand
+        had left it.
 
         The editor is to the document what the host is to the editor: it emits
         an intent and adopts the value that comes back. Nothing here decides
@@ -1687,14 +1703,25 @@ class Editor:
         and looked like a dead button."""
         found = self._by_node.get(int(intent.get("node", -1)))
         if found is None:
-            return None
+            return set()
         owner, member, element = found
         kind = intent.get("intent")
+        moved = set()
         if kind == "place" and owner is not None and member is not None:
-            owner.move(member, float(intent["offset"]), intent.get("dur"))
+            owner.move(member, float(intent["offset"]))
+            # **A `place` states the whole placement, so absence is a value.**
+            # An intent with no `dur` says this member takes the element's own
+            # length again -- which is exactly what the inverse of the *first*
+            # resize of a clip has to say, since before it there was no
+            # placement length at all. `Aggregate.move` reads a `None` as
+            # "leave the length alone", the opposite, so it is written here
+            # instead of passed to it: with it passed, the document went back
+            # and the clip kept the size the hand had given it, and undo looked
+            # like a dead button on every clip that had never been resized.
+            member.dur = None if intent.get("dur") is None else float(intent["dur"])
         elif kind == "configure":
             if not self._configure(element, intent.get("config") or {}):
-                return None
+                return set()
         elif kind == "setmembers":
             members = intent.get("members", [])
             # Two things carry members and they are not the same thing: a
@@ -1703,12 +1730,22 @@ class Editor:
             # node is whichever of the two it is.
             if isinstance(element, Aggregate):
                 if not self._set_placements(element, members):
-                    return None
+                    return set()
+                # ...and the drawn record of every member it states, since the
+                # clip a trim or a split moved is not the aggregate the intent
+                # names.
+                for handle in element.handles:
+                    wid = self._redrawn(handle.element, handle)
+                    if wid is not None:
+                        moved.add(wid)
             elif not self._set_notes(element, members):
-                return None
+                return set()
         else:
-            return None
-        return self._redrawn(element, member)
+            return set()
+        wid = self._redrawn(element, member)
+        if wid is not None:
+            moved.add(wid)
+        return moved
 
     def _configure(self, element, config: dict) -> bool:
         """Write a leaf's configuration onto what the arrangement holds.
@@ -1747,9 +1784,12 @@ class Editor:
         placed = self._clips.get(wid) if wid is not None else None
         if placed is not None and member is not None:
             placed.offset = self.beats_to_units(member.offset + placed.base)
-            length = member.length
-            if length is not None:
-                placed.dur = self.beats_to_units(float(length))
+            # Through the same rule the draw used, not a shorter one of its own:
+            # a placement whose length went back to *unstated* is drawn at the
+            # element's own length, and a member with neither reaches the
+            # element's extent -- which `member.length` alone cannot say, so the
+            # record kept the size the gesture left.
+            placed.dur = self._drawn_dur(element, member)
         return wid
 
     def _set_placements(self, aggregate, members: list) -> bool:
@@ -1784,15 +1824,19 @@ class Editor:
                 continue
             handle = by_id.get(int(node))
             offset = float(m.get("offset", 0.0))
-            config = (m.get("node") or {}).get("config")
-            if config is not None:
-                # A member carries its node, and a node carries what the leaf
-                # is configured as: a trimmed take's window, an edited curve's
-                # points. Written here so one `setmembers` can state the whole
-                # of what a gesture did -- and so an undo of it restores both.
-                found = self._by_node.get(int(node))
-                if found is not None:
-                    self._configure(found[2], config)
+            # A member carries its node, and a node carries what the leaf is
+            # configured as: a trimmed take's window, an edited curve's points.
+            # Written here so one `setmembers` states the whole of what a
+            # gesture did -- and so an undo of it restores both. **Absence is a
+            # value**: a node with no configuration is a leaf configured as it
+            # was made, which is what the state before a trim is, so the empty
+            # table is written rather than skipped. Skipping it left the window
+            # over the samples where the trim had put it while the placement
+            # went back -- a clip the right size showing the wrong frames.
+            config = (m.get("node") or {}).get("config") or {}
+            found = self._by_node.get(int(node))
+            if found is not None:
+                self._configure(found[2], config)
             if handle is not None:
                 aggregate.move(handle, offset)
                 # ...and the length the document states, which a split, a join
@@ -1882,9 +1926,7 @@ class Editor:
         widgets = set()
         if key == "undone":
             for intent in step["undone"]:
-                wid = self._project(intent)
-                if wid is not None:
-                    widgets.add(wid)
+                widgets |= self._project(intent)
         else:
             # A redo now reports the intents it applied, so it is the *same
             # shape* as an undo and takes the same path. It used to adopt the
@@ -1894,9 +1936,7 @@ class Editor:
             # old position, because only one of the two routes kept the drawn
             # record.
             for intent in step.get("redone") or []:
-                wid = self._project(intent)
-                if wid is not None:
-                    widgets.add(wid)
+                widgets |= self._project(intent)
         self._version = document.version
         self.dirty = True
         self._follow_render()
@@ -2132,26 +2172,39 @@ class Editor:
         self._lanes[wid] = label
         return lane
 
+    def _drawn_beats(self, element, member) -> float:
+        """The length one clip is drawn at, **in beats** — the placement's when
+        it overrides, else the element's own, else what the element extends to.
+
+        One rule, in one place, because two of them is how a picture and a
+        model come to disagree: the draw asks this, and so does every path that
+        has to put a placement back (`_redrawn`, after an inverse or a redo)."""
+        beats = member.dur if (member is not None and member.dur is not None) else None
+        if beats is None and isinstance(element, Element):
+            beats = element.duration
+        if beats is None:
+            beats = self._extent(element)
+        return beats
+
+    def _drawn_dur(self, element, member, body=None) -> float:
+        """The same length in **timeline units**, which needs the body: a take
+        with no duration given is as long as it is (1 unit = 1 sample)."""
+        beats = self._drawn_beats(element, member)
+        if body is None:
+            body = self._body_for(element, beats)
+        if "buffer" in body and beats <= 0.0:
+            return float(element.wraps.frames)
+        return self.beats_to_units(beats)
+
     def _clip_for(self, element, base: float, owner, member) -> dict:
         """One `clip`: the element placed at ``base`` beats (absolute on the shared
         axis), with the body (or **bodies**) its kind calls for. Registers what it
         drew, which is what the edit-back path resolves against."""
         wid = self._new_id()
         offset = self.beats_to_units(base)
-        # The length shown, in beats: the placement's when it overrides, else the
-        # element's own.
-        dur_beats = member.dur if (member is not None and member.dur is not None) else None
-        if dur_beats is None and isinstance(element, Element):
-            dur_beats = element.duration
-        if dur_beats is None:
-            dur_beats = self._extent(element)
-
+        dur_beats = self._drawn_beats(element, member)
         body = self._body_for(element, dur_beats)
-        # A take with no duration given is as long as it is (1 unit = 1 sample).
-        if "buffer" in body and dur_beats <= 0.0:
-            dur = float(element.wraps.frames)
-        else:
-            dur = self.beats_to_units(dur_beats)
+        dur = self._drawn_dur(element, member, body)
 
         # The placement's own base: a clip's offset is absolute on the shared axis,
         # a member's offset is relative to its aggregate.

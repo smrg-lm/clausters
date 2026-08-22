@@ -669,7 +669,11 @@ fn run_session(
         owner = owner.saving_to(out);
     }
     look.apply(&mut host);
-    host.owner = Some(owner.with_units_per_beat(tree::Look::default().units_per_beat));
+    host.owner = Some(
+        owner
+            .with_units_per_beat(tree::Look::default().units_per_beat)
+            .with_takes(load.takes.clone()),
+    );
     let origin = ClientId::Udp(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)));
     host.handle_packet(
         OscPacket::Message(OscMessage {
