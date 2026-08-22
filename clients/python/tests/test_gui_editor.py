@@ -10,6 +10,7 @@ import itertools
 import pytest
 
 from clausters.defs import SynthDef, control, in_, out, sine
+from clausters.defs.ugens import points_to_env
 from clausters.defs.buffer import Buffer as ServerBuffer
 from clausters.form import (Aggregate, Element, Generator, Clang, Sequence,
                             Track, Vector)
@@ -392,6 +393,46 @@ def test_a_layered_clip_routes_a_curve_edit_to_the_member_that_carries_it():
     assert ed.can_undo and ed.undo_label == "edit the curve"
     ed.undo()
     assert env.to_points()[0:2] == pytest.approx([0.0, 200.0])
+
+
+def test_editing_a_curve_does_not_move_the_axis_it_is_drawn_against():
+    """A break-point's place on screen is its value **against the clip's value
+    axis**, so an axis recomputed from the break-points moves every point
+    whenever one is dragged -- the curve jumps under the hand editing it, and
+    the point being dragged is the only one that appears to stay put."""
+    from clausters.form import Element
+    from clausters.seq import Automation
+
+    env = Automation.from_points([(0, 200.0, 1, 0.0), (2, 900.0, 2, 0.0),
+                                  (4, 300.0, 1, 0.0)], target=None, name="sweep")
+    attached = Aggregate([(0.0, Clang(SeqEvent(instrument="drone", dur=4.0))),
+                          (0.0, Element(env, duration=4.0))], name="sweep")
+    ed = editor(Aggregate([(0.0, Aggregate([(0.0, attached)], name="sweep"))], name="song"))
+    first = _find(ed.draw(), lambda n: "points" in n)
+    axis = (first["points_min"], first["points_max"])
+
+    def drag(value):
+        (lane,) = lanes(ed.draw())
+        (c,) = clips(lane)
+        assert ed.apply("/gui_event", [c["id"], SEQ, UNSTATED, "points",
+                                       0.0, 200.0, 1, 0.0,
+                                       2 * BEAT, value, 2, 0.0,
+                                       4 * BEAT, 300.0, 1, 0.0]) is True
+        return _find(ed.draw(), lambda n: "points" in n)
+
+    # Up to the ceiling the host clamps a drag to, and back down again.
+    for value in (axis[1], 400.0, 250.0):
+        again = drag(value)
+        assert (again["points_min"], again["points_max"]) == axis
+
+    # It **widens** for a curve that no longer fits -- a script's edit, an undo
+    # of a taller one -- because the picture must show the data. It never
+    # narrows, which is what keeps a drag from rescaling.
+    env.env = points_to_env([0.0, 200.0, 1, 0.0, 2.0, 4000.0, 1, 0.0])
+    ed.refresh()
+    wide = _find(ed.draw(), lambda n: "points" in n)
+    assert wide["points_min"] == axis[0], "the floor it had is kept"
+    assert wide["points_max"] > 4000.0, "and the ceiling grew to hold the curve"
 
 
 # ---- the base level: a nested aggregate collapses to a summary, or expands ----

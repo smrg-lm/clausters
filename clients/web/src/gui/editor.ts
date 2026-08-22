@@ -220,6 +220,16 @@ export class Editor {
     private patchGeometry = new Map<Aggregate, Record<number, [number, number]>>();
     /** Which **edit layer** of each clip the hand is on. Screen state. */
     private editLayer = new Map<number, string>();
+    /**
+     * The **value axis** each curve is drawn against — remembered rather than
+     * recomputed, which is screen state for the same reason the edit layer is.
+     *
+     * A break-point's position on screen is its value *against this axis*, so an
+     * axis derived from the break-points moves every point whenever any one of
+     * them is dragged: the curve jumps under the hand editing it, and the point
+     * being dragged is the only one that appears not to move.
+     */
+    private curveAxis = new WeakMap<Automation, [number, number]>();
     private corrections: [number, Record<string, PropValue>][] = [];
     private reason: string | undefined = undefined;
     private mode: "multitrack" | "pianoroll" | "signal" = "multitrack";
@@ -2211,6 +2221,39 @@ export class Editor {
      * on the timeline, so it is one clip — dragging it moves the whole aggregate,
      * and the bodies overlay instead of hiding each other.
      */
+    /**
+     * The value axis this curve is drawn against — the one it was **first** drawn
+     * against, kept.
+     *
+     * `curveRange` answers what the break-points alone would ask for, and that is
+     * the right answer exactly once: recomputed on every redraw it makes an edit
+     * rescale the picture, so dragging one point visibly moves every other one.
+     * The axis is therefore remembered per `Automation` and only ever
+     * **widened**, when a curve no longer fits inside it (a script replaced the
+     * envelope, an undo restored a taller one) — never narrowed, so a point
+     * dragged down and back up leaves the drawing where it was.
+     */
+    private axisFor(
+        auto: Automation,
+        points: readonly [number, number, number, number][],
+    ): [number, number] {
+        let [lo, hi] = curveRange(points);
+        const kept = this.curveAxis.get(auto);
+        if (kept !== undefined) {
+            const [klo, khi] = kept;
+            const values = points.length > 0 ? points.map(([, v]) => v) : [0.0];
+            // **One side at a time.** Only the end that stopped holding the data
+            // moves; taking the union of the two padded ranges would drop the
+            // floor as well whenever the ceiling grew, which is the same jump one
+            // step removed.
+            if (Math.min(...values) >= klo) lo = klo;
+            if (Math.max(...values) <= khi) hi = khi;
+            if (lo === klo && hi === khi) return kept;
+        }
+        this.curveAxis.set(auto, [lo, hi]);
+        return [lo, hi];
+    }
+
     private bodyFor(element: Element, limit: number | null = null): Record<string, unknown> {
         // A simultaneous aggregate first: it is one thing on the timeline, and
         // its members' bodies layer (each keeps its own value axis).
@@ -2230,7 +2273,7 @@ export class Editor {
                 ([t, v, shape, curve]) =>
                     [this.beatsToUnits(t), v, shape, curve] as [number, number, number, number],
             );
-            const [lo, hi] = curveRange(points);
+            const [lo, hi] = this.axisFor(auto, points);
             // The curve keeps its own value axis: an envelope's units are not
             // the pitches under it. `points_min`/`points_max` are written in
             // **wire form** because the builder has no option for them — the

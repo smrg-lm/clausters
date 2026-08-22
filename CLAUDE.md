@@ -111,8 +111,25 @@ is here because of that:
   satisfy an example** — that is how a scaffold becomes a norm. An example
   that cannot be written with the supported surface is reporting a missing
   feature, and the feature is decided on its own merits, in both clients.
+- **An example that exists twice is one example in two languages.** Same
+  material, same names, and **the same calls to the same API in the same
+  order** — not merely the same result on screen. Where one client's spelling
+  differs the call is still the same call (`Session.page` is the page's
+  `Session.live`); where a *platform* makes one line impossible, that line is
+  named in the example's own prose and the gap is written into a plan. Two
+  programs that produce a similar picture by different calls are a divergence,
+  not a port: **when a port lands, put the two side by side and read them
+  against each other**, verb by verb, before believing either one.
 - **The host is one**, native and browser: the same Rust, compiled twice.
-  There is no "web version" of a widget, a renderer or a rule.
+  There is no "web version" of a widget, a renderer or a rule. **A behaviour
+  that differs between the two is a defect, always** — never a platform's
+  quirk, never something the page "does differently". The same holds for a
+  behaviour that differs between the two *clients*: the drawing rules live in
+  the host and the mapping rules in the shared crate, so when one client does
+  something the other does not, the question is never "what does this client do
+  wrong" but **"why are these two programs not the same program"** — and the
+  answer is almost always a call the port improvised. Diagnose that before
+  diagnosing the symptom.
 - **The clients do not draw.** A client names what to look at (`plot`,
   `scope`, a widget in a GuiDef) and the host draws it. Anyone who would
   rather draw their own canvas is writing their own program, and that is

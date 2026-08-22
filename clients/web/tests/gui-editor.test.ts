@@ -28,6 +28,7 @@ import type { SourceLike } from "../src/form/index.ts";
 import { Editor } from "../src/gui/editor.ts";
 import type { GuiHost, PropValue } from "../src/gui/host.ts";
 import { Event as SeqEvent } from "../src/seq/event.ts";
+import { pointsToEnv } from "../src/defs/ugens/index.ts";
 import { Automation } from "../src/seq/automation.ts";
 import { Timeline } from "../src/seq/timeline.ts";
 import type { GuiNode } from "../src/gui/guidef.ts";
@@ -319,6 +320,59 @@ test("a layered clip routes a curve edit to the member that carries it", () => {
     assert.equal(ed.undoLabel, "edit the curve");
     ed.undo();
     assert.equal(env.toPoints()[1], 200.0);
+});
+
+test("editing a curve does not move the axis it is drawn against", () => {
+    // A break-point's place on screen is its value **against the clip's value
+    // axis**, so an axis recomputed from the break-points moves every point
+    // whenever one is dragged — the curve jumps under the hand editing it, and
+    // the point being dragged is the only one that appears to stay put.
+    const env = Automation.fromPoints(
+        [[0.0, 200.0, 1, 0.0], [2.0, 900.0, 2, 0.0], [4.0, 300.0, 1, 0.0]],
+        null,
+        { name: "sweep" },
+    );
+    const attached = new Aggregate(
+        [
+            [0.0, new Clang(new SeqEvent({ instrument: "drone", dur: 4.0 }))],
+            [0.0, new Element(env, null, 4.0)],
+        ],
+        "concrete",
+        { name: "sweep" },
+    );
+    const ed = editor(new Aggregate([[0.0, attached]], "concrete", { name: "song" }));
+    const curve = () => clipsOf(lanes(ed.draw())[0] as GuiNode)[0] as GuiNode;
+    const first = curve();
+    const axis = [first.points_min, first.points_max];
+
+    const drag = (value: number) => {
+        const c = curve();
+        assert.equal(
+            ed.apply("/gui_event", [
+                c.id as number, SEQ, UNSTATED, "points",
+                0.0, 200.0, 1, 0.0,
+                2 * BEAT, value, 2, 0.0,
+                4 * BEAT, 300.0, 1, 0.0,
+            ]),
+            true,
+        );
+        return curve();
+    };
+
+    // Up to the ceiling the host clamps a drag to, and back down again.
+    for (const value of [axis[1] as number, 400.0, 250.0]) {
+        const again = drag(value);
+        assert.deepEqual([again.points_min, again.points_max], axis);
+    }
+
+    // It **widens** for a curve that no longer fits — a script's edit, an undo
+    // of a taller one — because the picture must show the data, and only on the
+    // side that stopped holding it.
+    env.env = pointsToEnv([0.0, 200.0, 1, 0.0, 2.0, 4000.0, 1, 0.0]);
+    ed.refresh();
+    const wide = curve();
+    assert.equal(wide.points_min, axis[0], "the floor it had is kept");
+    assert.ok((wide.points_max as number) > 4000.0, "and the ceiling grew");
 });
 
 // ---- the history ----

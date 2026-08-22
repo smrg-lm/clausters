@@ -31,6 +31,7 @@ aggregate or resolves it), so it needs no protocol of its own.
 
 import copy
 import itertools
+import weakref
 
 from .. import _native
 from .handle import WindowHandle
@@ -206,6 +207,19 @@ class Editor:
         #: composition does not change when it moves, and the document is
         #: explicit that what a view is currently editing is never part of it.
         self._edit_layer: dict = {}
+        #: The **value axis** each curve is drawn against, by `Automation` —
+        #: remembered rather than recomputed, which is screen state for the same
+        #: reason the edit layer is.
+        #:
+        #: A break-point's position on screen is its value *against this axis*,
+        #: so an axis derived from the break-points moves every point whenever
+        #: any one of them is dragged: the curve jumps under the hand that is
+        #: editing it, and the point being dragged is the only one that appears
+        #: not to move. So the axis is fixed the first time a curve is drawn and
+        #: kept, widening only when the data no longer fits inside it — never
+        #: shrinking, so a point dragged down and back up leaves the picture
+        #: where it was.
+        self._curve_axis: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
         #: patch widget id -> (logical `Aggregate`, its box-order member handles) —
         #: the directed-patch view of a logical aggregate, for its edit-back route.
         self._patches: dict = {}
@@ -2106,6 +2120,34 @@ class Editor:
             self._rolls[wid] = roll
         return clip(id=wid, offset=offset, dur=dur, label=_name(element), **body)
 
+    def _axis_for(self, auto, points) -> tuple:
+        """The value axis this curve is drawn against — the one it was **first**
+        drawn against, kept.
+
+        `_curve_range` answers what the break-points alone would ask for, and
+        that is the right answer exactly once: recomputed on every redraw it
+        makes an edit rescale the picture, so dragging one point visibly moves
+        every other one. The axis is therefore remembered per `Automation` and
+        only ever **widened**, when a curve no longer fits inside it (a script
+        replaced the envelope, an undo restored a taller one) — never narrowed,
+        so a point dragged down and back up leaves the drawing where it was.
+        """
+        lo, hi = _curve_range(points)
+        kept = self._curve_axis.get(auto)
+        if kept is not None:
+            klo, khi = kept
+            values = [float(p[1]) for p in points] or [0.0]
+            # **One side at a time.** Only the end that stopped holding the data
+            # moves; taking the union of the two padded ranges would drop the
+            # floor as well whenever the ceiling grew, which is the same jump
+            # one step removed.
+            lo = klo if min(values) >= klo else lo
+            hi = khi if max(values) <= khi else hi
+            if (lo, hi) == kept:
+                return kept
+        self._curve_axis[auto] = (lo, hi)
+        return lo, hi
+
     def _body_for(self, element, limit=None) -> dict:
         """The clip-body props an element draws with — and a **simultaneous** aggregate
         draws with *all of its members'*, layered in one clip.
@@ -2135,7 +2177,7 @@ class Editor:
         if auto is not None:
             points = [(self.beats_to_units(t), v, shape, curve)
                       for t, v, shape, curve in _quads(auto.to_points())]
-            lo, hi = _curve_range(points)
+            lo, hi = self._axis_for(auto, points)
             # **Flat, because these quads are already resolved.** A `points`
             # argument of *tuples* is read as `(t, v, curve_spec)` and resolved,
             # so handing it `(t, v, shape, curve)` re-reads the shape number as a

@@ -2248,6 +2248,20 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   overriding `editable` where given, on both paths, in both builders and in
   `docs/gui-protocol.md`.
 
+- ✅ **A curve jumped under the hand editing it** *(found 2026-08-22 by the
+  user, dragging the composer's envelope: "al mover el punto o la línea de la
+  envolvente el dibujo salta de posición")*. A break-point's place on screen is
+  its value **against the clip's value axis**, and both clients derived that
+  axis from the break-points on every redraw (`_curve_range`: their own range
+  plus a tenth of headroom). So an edit rescaled the picture: dragging one
+  point moved *every other one*, and the point under the cursor was the only
+  one that appeared to stay put. Nothing in the host was wrong — it drew what
+  it was given, twice, correctly. The axis is now **remembered** per
+  `Automation`, screen state exactly as the edit layer is, and widened only on
+  the side that stopped holding the data (a script's replacement, an undo of a
+  taller curve); never narrowed, so a point dragged down and back up leaves the
+  drawing where it was. In both clients, with the test in both.
+
 - ⬜ **A page burns the main thread while nothing is happening.** Measured on
   `clients/web/examples/composer.html` through the DevTools protocol: **67% of
   the main thread, idle** — no transport running, no pointer moving, no
