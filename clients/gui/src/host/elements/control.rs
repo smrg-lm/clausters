@@ -11,10 +11,13 @@
 //! - **absolute** ([`Track`]) — a position inside a rectangle *is* the value.
 //!   The rectangle is snapshotted at the press, because the groove a drag is
 //!   measured against may not move under it.
-//! - **incremental** ([`Dial`]) — a delta, re-anchored every step against the
-//!   value as it stands now. A control pinned at an end has no dead zone:
-//!   reversing direction moves it at once instead of sticking and jumping,
-//!   which a press-time snapshot would have to unwind.
+//! - **offset from the press** ([`Dial`]) — how far the cursor has travelled
+//!   *since the press*, against the value the press found. There is no groove
+//!   on screen to point at, so the gesture is a distance rather than a
+//!   position — but it is measured from one fixed anchor, which is what a
+//!   curve's bend already does, and for the same two reasons: a per-step delta
+//!   drifts out of phase once the pointer leaves the element, and the clamp at
+//!   an end eats the motion spent past it.
 //!
 //! The third family — snapshotted, a press-time origin plus a container's axis
 //! and a snap — belongs to the leaves placed on a time axis and lands with
@@ -97,49 +100,52 @@ fn fraction(body: Rect, vertical: bool, at: (f64, f64)) -> f32 {
     }
 }
 
-/// The **incremental** drag: the height the delta is scaled against and the
-/// cursor's last position, re-anchored every step.
+/// The drag **measured from the press**: where the cursor went down, the
+/// fraction the value stood at there, and the height the travel is scaled
+/// against. `None` when nothing is being dragged.
 #[derive(Debug, Clone, Default)]
-pub(super) struct Dial(Option<(f64, f32)>);
+pub(super) struct Dial(Option<Anchor>);
+
+/// What the press fixes, and what every step of the drag is read against.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct Anchor {
+    /// Where the press landed.
+    y: f64,
+    /// The value's fraction at that moment.
+    t: f32,
+    /// The control body's height at the press: how far a full range is.
+    body_h: f32,
+}
 
 impl Dial {
-    /// Takes the press and asks for the pointer grab: a knob turns further than
-    /// the screen is tall, and locking the cursor is the front's job, not the
-    /// widget's. Nothing is reported — the press alone changes no value.
-    pub(super) fn press(&mut self, body_h: f32, at: (f64, f64)) -> Claim {
-        self.0 = Some((at.1, body_h));
-        Claim::take().grabbing()
+    /// Takes the press and anchors on it. Nothing is reported — the press alone
+    /// changes no value, and a knob that emitted on every click would send a
+    /// value nobody turned.
+    pub(super) fn press(&mut self, r: &Range, body_h: f32, at: (f64, f64)) -> Claim {
+        self.0 = Some(Anchor {
+            y: at.1,
+            t: r.fraction(),
+            body_h,
+        });
+        Claim::take()
     }
 
-    /// One step from a cursor position: the delta since the last step, which is
-    /// then the new anchor.
+    /// One step: the value the press found, moved by how far the cursor has
+    /// travelled since. A given cursor position has **one** answer, so leaving
+    /// the element and coming back leaves the value where the pointer says it
+    /// is — the same rule a curve's bend follows, and the reason neither needs
+    /// the pointer captured to stay in phase with the hand.
     pub(super) fn drag(&mut self, r: &mut Range, at: (f64, f64)) -> Events {
-        let Some((last_y, body_h)) = self.0 else {
+        let Some(a) = self.0 else {
             return Events::none();
         };
-        self.0 = Some((at.1, body_h));
-        self.step(r, at.1 - last_y, body_h)
-    }
-
-    /// One step from a **delta**, which is what a grabbed pointer sends: the
-    /// cursor is not travelling, so there is no position to anchor against.
-    pub(super) fn drag_relative(&mut self, r: &mut Range, delta: (f64, f64)) -> Events {
-        let Some((_, body_h)) = self.0 else {
-            return Events::none();
-        };
-        self.step(r, delta.1, body_h)
+        let t = (a.t + controls::drag_fraction_delta(at.1 - a.y, a.body_h)).clamp(0.0, 1.0);
+        r.set_fraction(t);
+        Events::value(OscType::Float(r.value))
     }
 
     pub(super) fn release(&mut self) {
         self.0 = None;
-    }
-
-    /// Adds `dy`'s worth to the value **as it stands now** (not to a press-time
-    /// snapshot), so a control pinned at an end has no dead zone.
-    fn step(&self, r: &mut Range, dy: f64, body_h: f32) -> Events {
-        let t = (r.fraction() + controls::drag_fraction_delta(dy, body_h)).clamp(0.0, 1.0);
-        r.set_fraction(t);
-        Events::value(OscType::Float(r.value))
     }
 }
 

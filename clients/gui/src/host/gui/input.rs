@@ -1,12 +1,8 @@
 //! winit-side input adapters: translate pointer/wheel/keyboard events into
 //! calls on the shared gesture machine ([`crate::host::gestures`]) and carry
-//! out its effects over this front's sinks — the OSC transports (`/gui_event`),
-//! winit redraw requests, and the native pointer grab. All gesture *logic*
-//! lives in the machine; this file only snapshots the per-call context (frame
+//! out its effects over this front's sinks — the OSC transports (`/gui_event`)
+//! and winit redraw requests. All gesture *logic* lives in the machine; this file only snapshots the per-call context (frame
 //! buffer size, modifiers, the GPU slots' lane counts) and applies effects.
-
-use tracing::debug;
-use winit::window::{CursorGrabMode, Window};
 
 use crate::host::gestures::{ClipEdit, ClipVerb, GestureCtx, GestureEffect};
 use crate::host::widget::element::Key as HostKey;
@@ -67,7 +63,7 @@ impl App {
     }
 
     /// Carries out a gesture's effects: events over the window's transport,
-    /// repaints, releasing the pointer grab.
+    /// repaints.
     fn apply_gesture_effects(&mut self, effects: Vec<GestureEffect>) {
         for effect in effects {
             match effect {
@@ -86,7 +82,6 @@ impl App {
                     }
                 }
                 GestureEffect::Redraw(def_id) => self.redraw(def_id),
-                GestureEffect::ReleasePointer(def_id) => self.release_pointer(def_id),
                 // A desktop window is not inside a document: there is nothing
                 // to hand the focus back to, so the ring simply runs out and
                 // the next Tab enters it again. (In a page this is what keeps a
@@ -97,20 +92,15 @@ impl App {
     }
 
     /// Press on a widget: the machine acts by kind and possibly starts a drag.
-    /// The grab callback is this front's pointer lock for knob/number drags.
     pub(super) fn on_press(&mut self, def_id: i32) {
         let Some((cx, cy)) = self.windows.get(&def_id).map(|w| w.cursor) else {
             return;
         };
         let ctx = self.gesture_ctx(def_id);
-        // The window handle is cloned out so the grab closure borrows nothing
-        // of `self` while the machine holds the host and the gesture state.
-        let win = self.windows.get(&def_id).map(|w| w.gpu.window.clone());
-        let mut grab = || win.as_deref().is_some_and(|w| grab_pointer(w, def_id));
         let Some(ws) = self.windows.get_mut(&def_id) else {
             return;
         };
-        let effects = ws.gestures.press(&mut self.host, &ctx, cx, cy, &mut grab);
+        let effects = ws.gestures.press(&mut self.host, &ctx, cx, cy);
         self.apply_gesture_effects(effects);
     }
 
@@ -124,8 +114,7 @@ impl App {
         self.apply_gesture_effects(effects);
     }
 
-    /// Release: the machine finishes the drag (button up, wire landing) and
-    /// may ask for the pointer grab to be dropped.
+    /// Release: the machine finishes the drag (button up, wire landing).
     pub(super) fn on_release(&mut self, def_id: i32) {
         let Some((cx, cy)) = self.windows.get(&def_id).map(|w| w.cursor) else {
             return;
@@ -148,25 +137,6 @@ impl App {
             return;
         };
         let effects = ws.gestures.wheel(&mut self.host, &ctx, cx, cy, steps);
-        self.apply_gesture_effects(effects);
-    }
-
-    /// Relative motion while some window's knob/number drag holds the pointer
-    /// lock (raw `DeviceEvent::MouseMotion` deltas; only one pointer drag runs
-    /// at a time, so the first locked window is the target).
-    pub(super) fn on_relative_motion(&mut self, dy: f64) {
-        let Some(def_id) = self
-            .windows
-            .iter()
-            .find_map(|(d, ws)| ws.gestures.locked().then_some(*d))
-        else {
-            return;
-        };
-        let ctx = self.gesture_ctx(def_id);
-        let Some(ws) = self.windows.get_mut(&def_id) else {
-            return;
-        };
-        let effects = ws.gestures.relative_motion(&mut self.host, &ctx, dy);
         self.apply_gesture_effects(effects);
     }
 
@@ -324,31 +294,4 @@ impl App {
         let effects = ws.gestures.reset_timelines(&mut self.host, &ctx);
         self.apply_gesture_effects(effects);
     }
-
-    /// Releases the pointer grab a knob/number drag took and restores the cursor.
-    fn release_pointer(&self, def_id: i32) {
-        if let Some(ws) = self.windows.get(&def_id) {
-            let _ = ws.gpu.window.set_cursor_grab(CursorGrabMode::None);
-            ws.gpu.window.set_cursor_visible(true);
-        }
-    }
-}
-
-/// Grabs the pointer for a knob/number drag so motion keeps arriving even
-/// over the window decorations or past its edges, where `CursorMoved`
-/// otherwise stops (the title-bar/out-of-surface gap). Tries `Locked` first —
-/// the cursor stays put and motion comes as relative `DeviceEvent::MouseMotion`
-/// (the canonical knob feel, unbounded range) — and falls back to `Confined`,
-/// which keeps the cursor inside the client area (so it cannot reach the title
-/// bar) and is still driven by `CursorMoved`. Returns whether the pointer was
-/// *locked* (which motion source the drag should read).
-fn grab_pointer(window: &Window, def_id: i32) -> bool {
-    if window.set_cursor_grab(CursorGrabMode::Locked).is_ok() {
-        window.set_cursor_visible(false);
-        return true;
-    }
-    if let Err(e) = window.set_cursor_grab(CursorGrabMode::Confined) {
-        debug!("gui_def {def_id}: no pointer grab for the drag ({e})");
-    }
-    false
 }

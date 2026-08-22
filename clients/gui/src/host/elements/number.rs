@@ -79,15 +79,12 @@ impl Element for Number {
     }
 
     fn press(&mut self, at: (f64, f64), input: &Input) -> Claim {
-        self.drag.press(control::body(&self.range, input).h, at)
+        let body_h = control::body(&self.range, input).h;
+        self.drag.press(&self.range, body_h, at)
     }
 
     fn drag(&mut self, at: (f64, f64), _input: &Input) -> Events {
         self.drag.drag(&mut self.range, at)
-    }
-
-    fn drag_relative(&mut self, delta: (f64, f64), _input: &Input) -> Events {
-        self.drag.drag_relative(&mut self.range, delta)
     }
 
     fn release(&mut self, _at: (f64, f64), _input: &Input) -> Events {
@@ -128,7 +125,7 @@ mod tests {
             time: None,
         };
         n.press((40.0, 12.0), &input);
-        n.drag_relative((0.0, -20.0), &input);
+        n.drag((40.0, -8.0), &input);
         assert!(n.range.value > 5.0, "up is more: {}", n.range.value);
         assert_eq!(n.value(), Some(OscType::Float(n.range.value)));
     }

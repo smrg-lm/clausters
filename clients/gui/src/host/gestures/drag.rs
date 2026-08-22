@@ -128,10 +128,6 @@ impl Gestures {
             return out;
         };
         match drag {
-            // A grabbed element is driven by `relative_motion` for the same
-            // reason: the cursor is not travelling, so these positions are not
-            // the gesture.
-            Drag::Element { grab: true, .. } => {}
             Drag::Element { at, .. } => {
                 let events = element::with(host, ctx, at, |el, input| el.drag((cx, cy), input));
                 if let Some(events) = events {
@@ -489,43 +485,13 @@ impl Gestures {
             out.push(GestureEffect::Redraw(def_id));
             return out;
         }
-        if let Some(Drag::Element { at, grab, .. }) = self.drag.take() {
-            // What the drag *delivers*, as against what it showed along the
-            // way. The grab is the front's to undo, whatever came back.
+        if let Some(Drag::Element { at, .. }) = self.drag.take() {
+            // What the drag *delivers*, as against what it showed along the way.
             let events = element::with(host, ctx, at, |el, input| el.release((cx, cy), input));
             if let Some(events) = events {
                 element::report(host, &mut out, ctx, at.id, events);
             }
-            if grab {
-                out.push(GestureEffect::ReleasePointer(def_id));
-            }
             out.push(GestureEffect::Redraw(def_id));
-        }
-        out
-    }
-
-    /// Relative pointer motion while a **locked** knob/number drag is active
-    /// (native pointer lock: the cursor stays put, motion arrives as deltas).
-    /// A no-op for any other drag state.
-    pub fn relative_motion(
-        &mut self,
-        host: &mut Host,
-        ctx: &GestureCtx,
-        dy: f64,
-    ) -> Vec<GestureEffect> {
-        let mut out = Vec::new();
-        if let Some(Drag::Element { at, grab: true, .. }) = self.drag {
-            let events = element::with(host, ctx, at, |el, input| {
-                el.drag_relative((0.0, dy), input)
-            });
-            if let Some(events) = events {
-                let silent = events.is_empty();
-                element::report(host, &mut out, ctx, at.id, events);
-                if silent {
-                    out.push(GestureEffect::Redraw(ctx.def_id));
-                }
-            }
-            return out;
         }
         out
     }

@@ -17,9 +17,8 @@
 //! **Voice mode is the one thing it cannot do for itself.** With `voice` set,
 //! a held key sounds a server def, and only the host has a leg to the server.
 //! So the element *asks*: a note it reports carries a [`Voice`] request beside
-//! it, and the host starts or gates the synth. That is the same shape as the
-//! pointer grab a knob asks for — what only the front can do, named in what the
-//! element returns.
+//! it, and the host starts or gates the synth: what only the front can do,
+//! named in what the element returns.
 
 use clausters_core::osc::OscType;
 use serde_json::{Map, Value};

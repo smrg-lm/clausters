@@ -119,7 +119,7 @@ fn a_press_opens_the_menus_list_and_changes_nothing_yet() {
     let mut host = menu_host();
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 600, 400);
-    let effects = g.press(&mut host, &ctx, 40.0, 40.0, &mut || false);
+    let effects = g.press(&mut host, &ctx, 40.0, 40.0);
     let popup = menu_popup(&host, 7).expect("the list is open");
     assert!(popup.h > 0.0 && popup.w > 0.0);
     assert_eq!(menu_index(&host, 7), 0, "opening picks nothing");
@@ -136,7 +136,7 @@ fn a_press_on_a_row_picks_that_option_and_closes() {
     let mut host = menu_host();
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 600, 400);
-    g.press(&mut host, &ctx, 40.0, 40.0, &mut || false);
+    g.press(&mut host, &ctx, 40.0, 40.0);
     // A click is a press **and** a release: the machine now refuses a press
     // arriving mid-drag, which is what a bare second press models.
     g.release(&mut host, &ctx, 40.0, 40.0);
@@ -149,7 +149,6 @@ fn a_press_on_a_row_picks_that_option_and_closes() {
         &ctx,
         popup.x as f64 + 5.0,
         popup.y as f64 + row_h * 1.5,
-        &mut || false,
     );
     assert!(menu_popup(&host, 7).is_none(), "the list closes");
     assert_eq!(menu_index(&host, 7), 1);
@@ -168,11 +167,11 @@ fn a_press_outside_the_list_only_closes_it() {
     let mut host = menu_host();
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 600, 400);
-    g.press(&mut host, &ctx, 40.0, 40.0, &mut || false);
+    g.press(&mut host, &ctx, 40.0, 40.0);
     // A click is a press **and** a release: the machine now refuses a press
     // arriving mid-drag, which is what a bare second press models.
     g.release(&mut host, &ctx, 40.0, 40.0);
-    let effects = g.press(&mut host, &ctx, 550.0, 380.0, &mut || false);
+    let effects = g.press(&mut host, &ctx, 550.0, 380.0);
     assert!(menu_popup(&host, 7).is_none());
     assert_eq!(menu_index(&host, 7), 0, "nothing picked");
     assert!(
@@ -195,7 +194,7 @@ fn a_list_with_no_room_below_opens_upwards() {
     );
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 600, 200);
-    g.press(&mut host, &ctx, 40.0, 180.0, &mut || false);
+    g.press(&mut host, &ctx, 40.0, 180.0);
     let popup = menu_popup(&host, 7).unwrap();
     assert!(popup.y + popup.h <= 200.0, "the list fits in the window");
 }
@@ -289,11 +288,10 @@ fn a_press_on_a_bound_toggle_flips_the_stack_it_drives() {
 
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 600, 400);
-    let mut grab = || false;
     // The toggle sits in the window's top strip (its declared height), and
     // the press lands on its box, at the left of the cell — the rest of that
     // strip is the layout's air, not the control.
-    let mut effects = g.press(&mut host, &ctx, 20.0, 20.0, &mut grab);
+    let mut effects = g.press(&mut host, &ctx, 20.0, 20.0);
     effects.extend(g.release(&mut host, &ctx, 20.0, 20.0));
 
     assert_eq!(page(&host), 1, "the toggle's value became the page");
@@ -322,8 +320,7 @@ fn dragging_a_box_selects_it_moves_it_and_emits_the_move() {
     let b0 = patch::obj_rect(area, &before, 0, 1.0);
     // Grab the box body, clear of the outlet pin at the bottom-centre.
     let (px, py) = ((b0.x + 12.0) as f64, (b0.y + 8.0) as f64);
-    let mut grab = || false;
-    g.press(&mut host, &ctx, px, py, &mut grab);
+    g.press(&mut host, &ctx, px, py);
     assert_eq!(selection_of(&host), vec![0]);
     g.drag_to(&mut host, &ctx, px + 150.0, py + 80.0);
     let effects = g.release(&mut host, &ctx, px + 150.0, py + 80.0);
@@ -349,7 +346,7 @@ fn a_plain_drag_marquees_and_shift_pans_leaving_the_selection() {
     let before = patch_of(&host);
     // A plain drag from the empty middle-bottom over the two stacked boxes.
     let b1 = patch::obj_rect(area, &before, 1, 1.0);
-    g.press(&mut host, &plain, 300.0, 390.0, &mut || false);
+    g.press(&mut host, &plain, 300.0, 390.0);
     g.drag_to(&mut host, &plain, (b1.x - 2.0) as f64, 2.0);
     assert_eq!(
         selection_of(&host),
@@ -361,7 +358,7 @@ fn a_plain_drag_marquees_and_shift_pans_leaving_the_selection() {
     assert!(!g.dragging());
     // Shift+drag on empty canvas pans (the heavy-view convention): it starts
     // no marquee and leaves the selection untouched.
-    g.press(&mut host, &shift, 300.0, 390.0, &mut || false);
+    g.press(&mut host, &shift, 300.0, 390.0);
     g.drag_to(&mut host, &shift, 330.0, 360.0);
     assert_eq!(
         selection_of(&host),
@@ -371,7 +368,7 @@ fn a_plain_drag_marquees_and_shift_pans_leaving_the_selection() {
     g.release(&mut host, &shift, 330.0, 360.0);
     assert_eq!(selection_of(&host), vec![0, 1], "Shift+drag does not clear");
     // A plain click on empty canvas (a zero-size marquee) clears the set.
-    g.press(&mut host, &plain, 300.0, 390.0, &mut || false);
+    g.press(&mut host, &plain, 300.0, 390.0);
     g.release(&mut host, &plain, 300.0, 390.0);
     assert!(selection_of(&host).is_empty());
 }
@@ -386,7 +383,7 @@ fn a_cord_drag_from_an_outlet_lands_on_an_inlet() {
     let before = patch_of(&host);
     // Grab dac's outlet, drop on... first detach: grab tone's outlet.
     let (px, py) = patch::port_pin(area, &before, 0, patch::Side::Out, 0, 1.0);
-    g.press(&mut host, &ctx, px as f64, py as f64, &mut || false);
+    g.press(&mut host, &ctx, px as f64, py as f64);
     assert!(g.dragging(), "a press on a port starts the cord");
     // Released over dac's inlet: the cord lands, no move is emitted.
     let (ix, iy) = patch::port_pin(area, &before, 1, patch::Side::In, 0, 1.0);
@@ -422,7 +419,7 @@ fn dragging_the_empty_plane_pans_both_axes() {
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 600, 400);
     // A press on the container's empty area (away from the child) grabs it.
-    g.press(&mut host, &ctx, 500.0, 350.0, &mut || false);
+    g.press(&mut host, &ctx, 500.0, 350.0);
     assert!(g.dragging());
     let effects = g.drag_to(&mut host, &ctx, 450.0, 300.0);
     let v = view_of(&host, 20);
@@ -446,7 +443,7 @@ fn the_plane_pans_every_direction_from_its_origin() {
         (view_of(&host, 20).view_x, view_of(&host, 20).view_y),
         (0.0, 0.0)
     );
-    g.press(&mut host, &ctx, 500.0, 350.0, &mut || false);
+    g.press(&mut host, &ctx, 500.0, 350.0);
     let effects = g.drag_to(&mut host, &ctx, 560.0, 390.0);
     let v = view_of(&host, 20);
     assert_eq!((v.view_x, v.view_y), (-60.0, -40.0), "down/right moves it");
@@ -525,7 +522,7 @@ fn a_vertical_scroll_view_is_the_workspace_constrained_by_configuration() {
     assert_eq!(v.view_x, 0.0, "the x axis is not pannable");
     assert_eq!(v.view_y, scroll::WHEEL_PAN_PX, "the wheel scrolls down");
     // A drag on the plane likewise moves only y.
-    g.press(&mut host, &ctx, 500.0, 350.0, &mut || false);
+    g.press(&mut host, &ctx, 500.0, 350.0);
     g.drag_to(&mut host, &ctx, 400.0, 300.0);
     let v = view_of(&host, 20);
     assert_eq!(v.view_x, 0.0);
@@ -558,7 +555,7 @@ fn a_widget_inside_the_workspace_still_takes_the_press() {
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 600, 400);
     // Over the toggle's box: the widget wins, no pan drag starts.
-    let effects = g.press(&mut host, &ctx, 8.0, 25.0, &mut || false);
+    let effects = g.press(&mut host, &ctx, 8.0, 25.0);
     assert!(
         effects
             .iter()
@@ -580,7 +577,7 @@ fn a_widget_inside_the_workspace_still_takes_the_press() {
         }),
         from(),
     );
-    g.press(&mut host, &ctx, 50.0, 25.0, &mut || false);
+    g.press(&mut host, &ctx, 50.0, 25.0);
     assert!(g.dragging(), "the scrolled-away widget is not hit");
 }
 
@@ -594,7 +591,7 @@ fn slider_press_and_drag_set_the_value_and_emit() {
     let ctx = GestureCtx::new(1, 400, 100);
     // The slider is natural-thick: a strip under the window's margin, not
     // the whole pane, so the press aims inside it.
-    let effects = g.press(&mut host, &ctx, 200.0, 25.0, &mut || false);
+    let effects = g.press(&mut host, &ctx, 200.0, 25.0);
     assert!(g.dragging());
     let after_press = slider_value(&host, 10);
     assert!(after_press > 2.5, "press near the middle raises 2.5");
@@ -620,7 +617,7 @@ fn button_press_emits_one_and_release_emits_zero() {
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 200, 100);
     // A button is one control line tall (its natural height).
-    let effects = g.press(&mut host, &ctx, 100.0, 16.0, &mut || false);
+    let effects = g.press(&mut host, &ctx, 100.0, 16.0);
     assert!(g.dragging(), "held until it is let go");
     assert!(effects.iter().any(|e| matches!(
         e,
@@ -640,7 +637,7 @@ fn toggle_press_flips_the_state() {
         host_from(r#"{"type":"window","children":[{"id":30,"type":"toggle","value":0}]}"#);
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 200, 100);
-    let effects = g.press(&mut host, &ctx, 14.0, 16.0, &mut || false);
+    let effects = g.press(&mut host, &ctx, 14.0, 16.0);
     assert_eq!(
         host.window_def(1)
             .unwrap()
@@ -671,8 +668,11 @@ fn toggle_press_flips_the_state() {
     );
 }
 
+/// A knob is turned by cursor positions like everything else: what it reads out
+/// of them is the travel since the press, which is the element's own business.
+/// Nothing is captured, so it is the same gesture on either front.
 #[test]
-fn knob_press_records_the_grab_result_and_locked_ignores_cursor_motion() {
+fn a_knob_turns_on_cursor_motion_and_captures_nothing() {
     let mut host = host_from(
         r#"{"type":"window","children":[
             {"id":40,"type":"knob","min":0.0,"max":1.0,"value":0.5}]}"#,
@@ -682,16 +682,23 @@ fn knob_press_records_the_grab_result_and_locked_ignores_cursor_motion() {
     // A knob is as tall as its disc plus its read-out (its natural height), so
     // it is a strip at the top of the window, and the disc is centred across
     // it: the press aims at the dial, not merely at the cell.
-    g.press(&mut host, &ctx, 100.0, 30.0, &mut || true);
-    assert!(g.locked());
-    // Locked: cursor motion is ignored (relative deltas drive it instead).
-    let effects = g.drag_to(&mut host, &ctx, 22.0, 80.0);
-    assert!(effects.is_empty());
-    let effects = g.relative_motion(&mut host, &ctx, -20.0);
+    g.press(&mut host, &ctx, 100.0, 30.0);
+    // Dragging up turns it, from wherever the cursor now is -- including well
+    // off the disc, which is where a knob's travel normally ends up.
+    let effects = g.drag_to(&mut host, &ctx, 22.0, 10.0);
     assert!(effects.contains(&GestureEffect::Redraw(1)));
-    // Release asks the front to drop the pointer grab.
-    let effects = g.release(&mut host, &ctx, 22.0, 80.0);
-    assert!(effects.contains(&GestureEffect::ReleasePointer(1)));
+    let turned = host
+        .window_def(1)
+        .unwrap()
+        .find(40)
+        .unwrap()
+        .kind
+        .event_value();
+    assert!(
+        matches!(turned, Some(OscType::Float(v)) if v > 0.5),
+        "up is more: {turned:?}"
+    );
+    g.release(&mut host, &ctx, 22.0, 10.0);
 }
 
 /// **The air a layout leaves around a control is the window's, not the
@@ -725,13 +732,7 @@ fn a_toggle_does_not_flip_from_the_air_beside_it() {
     assert!(cell.h > 60.0, "the row made the cell tall: {}", cell.h);
     let mid = (cell.y + cell.h * 0.5) as f64;
     // Past the box and its one-word label, on the box's own row.
-    let effects = g.press(
-        &mut host,
-        &ctx,
-        (cell.x + cell.w) as f64 - 4.0,
-        mid,
-        &mut || false,
-    );
+    let effects = g.press(&mut host, &ctx, (cell.x + cell.w) as f64 - 4.0, mid);
     assert_eq!(value(&host), Some(OscType::Int(0)), "nothing flipped");
     assert!(
         !effects
@@ -742,11 +743,11 @@ fn a_toggle_does_not_flip_from_the_air_beside_it() {
     g.release(&mut host, &ctx, (cell.x + cell.w) as f64 - 4.0, mid);
     // The column of air under the box, on the box's own x.
     let low = (cell.y + cell.h) as f64 - 4.0;
-    g.press(&mut host, &ctx, (cell.x + 6.0) as f64, low, &mut || false);
+    g.press(&mut host, &ctx, (cell.x + 6.0) as f64, low);
     assert_eq!(value(&host), Some(OscType::Int(0)), "nor did the air below");
     g.release(&mut host, &ctx, (cell.x + 6.0) as f64, low);
     // The box itself does flip it.
-    g.press(&mut host, &ctx, (cell.x + 6.0) as f64, mid, &mut || false);
+    g.press(&mut host, &ctx, (cell.x + 6.0) as f64, mid);
     assert_eq!(value(&host), Some(OscType::Int(1)));
 }
 
@@ -765,15 +766,26 @@ fn a_knob_is_grabbed_by_its_disc_and_not_by_the_corners_of_its_cell() {
     let ctx = GestureCtx::new(1, 200, 200);
     // The far left of the cell, on the same row as the dial's centre: inside
     // the rectangle, nowhere near the drawn disc.
-    g.press(&mut host, &ctx, 4.0, 30.0, &mut || true);
-    assert!(
-        !g.locked(),
+    g.press(&mut host, &ctx, 4.0, 30.0);
+    g.drag_to(&mut host, &ctx, 4.0, 10.0);
+    assert_eq!(
+        value_of(&host, 40),
+        Some(OscType::Float(0.5)),
         "the corner of the cell does not turn the value"
     );
-    g.release(&mut host, &ctx, 4.0, 30.0);
+    g.release(&mut host, &ctx, 4.0, 10.0);
     // The dial itself still does.
-    g.press(&mut host, &ctx, 100.0, 30.0, &mut || true);
-    assert!(g.locked());
+    g.press(&mut host, &ctx, 100.0, 30.0);
+    g.drag_to(&mut host, &ctx, 100.0, 10.0);
+    assert!(
+        matches!(value_of(&host, 40), Some(OscType::Float(v)) if v > 0.5),
+        "the disc turns"
+    );
+}
+
+/// One widget's current value, as `/gui_query` would read it.
+fn value_of(host: &Host, id: i32) -> Option<OscType> {
+    host.window_def(1)?.find(id)?.kind.event_value()
 }
 
 #[test]
@@ -786,7 +798,7 @@ fn waveform_press_and_drag_select_a_range() {
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 800, 300);
     // Press inside the view body (right of the y-ruler strip), then drag.
-    let effects = g.press(&mut host, &ctx, 400.0, 150.0, &mut || false);
+    let effects = g.press(&mut host, &ctx, 400.0, 150.0);
     assert!(has_emit_tag(&effects, 50, "selection"));
     let effects = g.drag_to(&mut host, &ctx, 600.0, 150.0);
     assert!(has_emit_tag(&effects, 50, "selection"));
@@ -813,7 +825,7 @@ fn a_marquee_restricts_in_value_only_where_the_plan_asks_for_it() {
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 800, 300);
     // The default plan, swept with height: the span, and nothing else.
-    g.press(&mut host, &ctx, 400.0, 80.0, &mut || false);
+    g.press(&mut host, &ctx, 400.0, 80.0);
     let effects = g.drag_to(&mut host, &ctx, 600.0, 200.0);
     let args = emitted_args(&effects, 50).expect("the sweep reports");
     assert_eq!(args.len(), 3, "a plain drag is a time span: {args:?}");
@@ -827,7 +839,7 @@ fn a_marquee_restricts_in_value_only_where_the_plan_asks_for_it() {
     let mut host = host_from(boxed);
     host.set_timeline_total(50, 1000);
     let mut g = Gestures::default();
-    g.press(&mut host, &ctx, 400.0, 80.0, &mut || false);
+    g.press(&mut host, &ctx, 400.0, 80.0);
     let effects = g.drag_to(&mut host, &ctx, 600.0, 200.0);
     assert!(has_emit_tag(&effects, 50, "selection"));
     // The payload grew by the two numbers, and only when there are two.
@@ -842,7 +854,7 @@ fn a_marquee_restricts_in_value_only_where_the_plan_asks_for_it() {
     // A sweep along one height, under the same plan, clears it: a new selection
     // replaces the old one whole rather than keeping a finished gesture's band.
     g.release(&mut host, &ctx, 600.0, 200.0);
-    g.press(&mut host, &ctx, 400.0, 150.0, &mut || false);
+    g.press(&mut host, &ctx, 400.0, 150.0);
     let effects = g.drag_to(&mut host, &ctx, 600.0, 150.0);
     let args = emitted_args(&effects, 50).expect("the second sweep reports");
     assert_eq!(args.len(), 3, "one axis is the two numbers it always was");
@@ -863,7 +875,7 @@ fn the_box_step_falls_through_to_the_plain_sweep() {
     host.set_timeline_total(51, 1000);
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 800, 300);
-    g.press(&mut host, &ctx, 400.0, 80.0, &mut || false);
+    g.press(&mut host, &ctx, 400.0, 80.0);
     let effects = g.drag_to(&mut host, &ctx, 600.0, 200.0);
     let args = emitted_args(&effects, 51).expect("the sweep reports");
     assert_eq!(
@@ -890,7 +902,7 @@ fn a_spectral_view_reports_no_value_range() {
     host.set_timeline_total(51, 1000);
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 800, 300);
-    g.press(&mut host, &ctx, 400.0, 80.0, &mut || false);
+    g.press(&mut host, &ctx, 400.0, 80.0);
     let effects = g.drag_to(&mut host, &ctx, 600.0, 200.0);
     let args = emitted_args(&effects, 51).expect("the sweep reports");
     assert_eq!(
@@ -1224,7 +1236,7 @@ fn a_drag_pans_the_frequency_axis_and_r_resets_it() {
     g.wheel(&mut host, &ctx, 400.0, 150.0, 6.0); // zoom in, so there is slack
     let (start, len) = x_window(&host, 80);
     assert!(len < 1.0 && start > 0.0);
-    g.press(&mut host, &ctx, 400.0, 150.0, &mut || false);
+    g.press(&mut host, &ctx, 400.0, 150.0);
     assert!(g.dragging(), "the axis was grabbed");
     let effects = g.drag_to(&mut host, &ctx, 500.0, 150.0);
     assert!(has_emit_tag(&effects, 80, "view_x"));
@@ -1275,19 +1287,19 @@ fn a_lanes_plan_grabs_the_clip_first_and_locates_where_there_is_none() {
     // Over the first clip (the axis spans 0..10000 samples over the body):
     // the element wins, and the drag moves it.
     let on_clip = body.x as f64 + body.w as f64 * 0.02;
-    g.press(&mut host, &ctx, on_clip, midy, &mut || false);
+    g.press(&mut host, &ctx, on_clip, midy);
     assert!(g.dragging(), "the clip under the cursor was grabbed");
     g.release(&mut host, &ctx, on_clip, midy);
 
     // Empty lane space: the element declines and the lane's own plan
     // locates the transport there.
     let empty = body.x as f64 + body.w as f64 * 0.5;
-    let effects = g.press(&mut host, &ctx, empty, midy, &mut || false);
+    let effects = g.press(&mut host, &ctx, empty, midy);
     assert!(has_emit_tag(&effects, 70, "locate"));
     assert!(!g.dragging());
 
     // The header strip, left of the axis: no clip, no position, no locate.
-    let effects = g.press(&mut host, &ctx, body.x as f64 - 10.0, midy, &mut || false);
+    let effects = g.press(&mut host, &ctx, body.x as f64 - 10.0, midy);
     assert!(
         !has_emit_tag(&effects, 70, "locate"),
         "a press beside the axis names no time"
@@ -1316,7 +1328,7 @@ fn shift_drag_pans_whatever_timeline_view_is_under_it() {
         ctx.shift = true;
         // Near the top edge, where a free-standing ruler (the shortest of
         // the four) also lands.
-        g.press(&mut host, &ctx, 500.0, 8.0, &mut || false);
+        g.press(&mut host, &ctx, 500.0, 8.0);
         assert!(g.dragging(), "shift+press on {view} started no drag");
         g.drag_to(&mut host, &ctx, 300.0, 8.0);
         let start_after = host.timeline_nav(80).unwrap().0.start;
@@ -1347,13 +1359,7 @@ fn a_sweep_on_the_roll_selects_the_time_span_and_the_notes_inside_it() {
     // Sweep the first tenth of the axis, over every pitch the window shows.
     let x0 = grid.x as f64 + 1.0;
     let x1 = grid.x as f64 + grid.w as f64 * 0.1;
-    let effects = g.press(
-        &mut host,
-        &ctx,
-        x0,
-        (grid.y + grid.h) as f64 - 1.0,
-        &mut || false,
-    );
+    let effects = g.press(&mut host, &ctx, x0, (grid.y + grid.h) as f64 - 1.0);
     assert!(has_emit_tag(&effects, 90, "selection"));
     g.drag_to(&mut host, &ctx, x1, grid.y as f64 + 1.0);
     let key = host.timeline_key(90).unwrap();
@@ -1393,7 +1399,7 @@ fn the_gestures_prop_repoints_a_modifier_without_touching_the_element() {
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 800, 300);
     // Plain drag: pans, and never touches the selection.
-    g.press(&mut host, &ctx, 500.0, 150.0, &mut || false);
+    g.press(&mut host, &ctx, 500.0, 150.0);
     g.drag_to(&mut host, &ctx, 300.0, 150.0);
     assert!(host.timeline_nav(95).unwrap().0.start > start_before);
     let key = host.timeline_key(95).unwrap();
@@ -1402,7 +1408,7 @@ fn the_gestures_prop_repoints_a_modifier_without_touching_the_element() {
     // ...and Shift now does what a plain drag used to.
     let mut ctx = GestureCtx::new(1, 800, 300);
     ctx.shift = true;
-    g.press(&mut host, &ctx, 400.0, 150.0, &mut || false);
+    g.press(&mut host, &ctx, 400.0, 150.0);
     g.drag_to(&mut host, &ctx, 600.0, 150.0);
     assert!(host.timelines().state(key).unwrap().sel_len > 0.0);
 }
@@ -1419,12 +1425,12 @@ fn a_gui_set_of_the_table_keeps_the_modifiers_it_does_not_name() {
     set_prop(&mut host, 96, "gestures", r#"{"drag":"locate"}"#);
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 800, 300);
-    let effects = g.press(&mut host, &ctx, 400.0, 150.0, &mut || false);
+    let effects = g.press(&mut host, &ctx, 400.0, 150.0);
     assert!(has_emit_tag(&effects, 96, "locate"), "the set took effect");
     // Shift was not named, so it still pans.
     let mut ctx = GestureCtx::new(1, 800, 300);
     ctx.shift = true;
-    g.press(&mut host, &ctx, 400.0, 150.0, &mut || false);
+    g.press(&mut host, &ctx, 400.0, 150.0);
     assert!(g.dragging(), "the default shift plan survived the set");
 }
 
@@ -1483,7 +1489,7 @@ fn the_windows_one_axis_answers_off_the_lanes() {
     // And Shift+drag pans it.
     let start = nav(&host).start;
     ctx.shift = true;
-    g.press(&mut host, &ctx, below_x, below_y, &mut || false);
+    g.press(&mut host, &ctx, below_x, below_y);
     g.drag_to(&mut host, &ctx, below_x - 120.0, below_y);
     assert!(
         nav(&host).start > start,
@@ -1532,7 +1538,7 @@ fn the_wheel_does_not_fall_through_an_element_that_draws() {
     // reach over any element is the intended one.
     let start = nav(&host).start;
     ctx.shift = true;
-    g.press(&mut host, &ctx, over_x, over_y, &mut || false);
+    g.press(&mut host, &ctx, over_x, over_y);
     g.drag_to(&mut host, &ctx, over_x - 120.0, over_y);
     assert!(
         nav(&host).start > start,
@@ -1569,7 +1575,7 @@ fn shift_drag_over_a_clip_pans_the_lane_it_is_on() {
         &mut fx,
     );
     let before = host.timelines().nav(key).unwrap().start;
-    g.press(&mut host, &ctx, 700.0, 100.0, &mut || false);
+    g.press(&mut host, &ctx, 700.0, 100.0);
     g.drag_to(&mut host, &ctx, 500.0, 100.0);
     let after = host.timelines().nav(key).unwrap().start;
     assert!(
@@ -1640,7 +1646,7 @@ fn a_press_on_the_lane_header_works_its_controls_and_edits_back() {
 
     // The mute toggles and says so.
     let (x, y) = mid(parts.mute.expect("the lane offers a mute"));
-    let effects = g.press(&mut host, &ctx, x, y, &mut || false);
+    let effects = g.press(&mut host, &ctx, x, y);
     assert!(has_emit_tag(&effects, 70, "mute"));
     assert_eq!(lane_header_of(&host).mute, Some(true));
 
@@ -1648,7 +1654,7 @@ fn a_press_on_the_lane_header_works_its_controls_and_edits_back() {
     // taking it while the drag runs.
     let fader = parts.fader.expect("the lane offers a fader");
     let (x, y) = mid(fader);
-    let effects = g.press(&mut host, &ctx, x, y, &mut || false);
+    let effects = g.press(&mut host, &ctx, x, y);
     assert!(has_emit_tag(&effects, 70, "level"));
     assert!((lane_header_of(&host).level.unwrap() - 0.5).abs() < 0.05);
     g.drag_to(&mut host, &ctx, (fader.x + fader.w) as f64, y);
@@ -1658,7 +1664,7 @@ fn a_press_on_the_lane_header_works_its_controls_and_edits_back() {
     // The name row names no control: the press falls through to the lane,
     // which names no position beside its axis either.
     let (x, y) = mid(parts.label);
-    let effects = g.press(&mut host, &ctx, x, y, &mut || false);
+    let effects = g.press(&mut host, &ctx, x, y);
     assert!(!has_emit_tag(&effects, 70, "locate"));
 }
 
@@ -1731,7 +1737,7 @@ fn a_press_selects_the_layer_it_lands_on_and_the_background_is_the_clips() {
         (lane.x + lane.w * 0.25) as f64,
         (lane.y + lane.h * 0.5) as f64,
     );
-    let selected = g.press(&mut host, &ctx, on_line.0, on_line.1, &mut || false);
+    let selected = g.press(&mut host, &ctx, on_line.0, on_line.1);
     assert!(g.dragging(), "the segment took the press");
     // Selecting is announced, once, in the same word a `/gui_set layer` takes:
     // a script that follows the hand hears where it went.
@@ -1754,7 +1760,7 @@ fn a_press_selects_the_layer_it_lands_on_and_the_background_is_the_clips() {
 
     // On a point: the same layer, and the drag reports the whole list in the
     // envelope's own units, tagged `points`.
-    g.press(&mut host, &ctx, peak.0, peak.1, &mut || false);
+    g.press(&mut host, &ctx, peak.0, peak.1);
     assert!(g.dragging());
     g.drag_to(&mut host, &ctx, peak.0, (lane.y + lane.h) as f64 - 1.0);
     let effects = g.release(&mut host, &ctx, peak.0, (lane.y + lane.h) as f64 - 1.0);
@@ -1770,7 +1776,7 @@ fn a_press_selects_the_layer_it_lands_on_and_the_background_is_the_clips() {
         (lane.x + lane.w * 0.75) as f64,
         (lane.y + lane.h * 0.5) as f64,
     );
-    g.press(&mut host, &ctx, away.0, away.1, &mut || false);
+    g.press(&mut host, &ctx, away.0, away.1);
     g.drag_to(&mut host, &ctx, away.0 + 40.0, away.1);
     g.release(&mut host, &ctx, away.0 + 40.0, away.1);
     assert!(
@@ -1832,11 +1838,11 @@ fn a_press_repeated_mid_drag_does_not_re_anchor_the_gesture() {
 
     // One press, then a drag upward, with a repeated press on every step —
     // exactly the stream a browser produces.
-    g.press(&mut host, &ctx, on_line.0, on_line.1, &mut || false);
+    g.press(&mut host, &ctx, on_line.0, on_line.1);
     assert!(g.dragging(), "the segment took the press");
     for dy in [10.0, 20.0, 30.0] {
         g.drag_to(&mut host, &ctx, on_line.0, on_line.1 - dy);
-        g.press(&mut host, &ctx, on_line.0, on_line.1 - dy, &mut || false);
+        g.press(&mut host, &ctx, on_line.0, on_line.1 - dy);
     }
     let with_repeats = bend(&g.release(&mut host, &ctx, on_line.0, on_line.1 - 30.0));
 
@@ -1850,7 +1856,7 @@ fn a_press_repeated_mid_drag_does_not_re_anchor_the_gesture() {
     );
     clean.sync_track_totals();
     let mut g2 = Gestures::default();
-    g2.press(&mut clean, &ctx, on_line.0, on_line.1, &mut || false);
+    g2.press(&mut clean, &ctx, on_line.0, on_line.1);
     for dy in [10.0, 20.0, 30.0] {
         g2.drag_to(&mut clean, &ctx, on_line.0, on_line.1 - dy);
     }
@@ -1891,7 +1897,7 @@ fn trimming_a_clips_head_moves_its_window_over_the_samples() {
     // A quarter of the way in: two of the eight frames.
     let quarter = (clip.x + clip.w * 0.25) as f64;
 
-    g.press(&mut host, &ctx, on_start_grip, midy, &mut || false);
+    g.press(&mut host, &ctx, on_start_grip, midy);
     g.drag_to(&mut host, &ctx, quarter, midy);
     let effects = g.release(&mut host, &ctx, quarter, midy);
     let args = effects
@@ -1921,7 +1927,7 @@ fn trimming_a_clips_head_moves_its_window_over_the_samples() {
     // ...and the end edge stops where the contents does, because this clip
     // does not loop: there is nothing past the eighth frame to show or play.
     let on_end_grip = (clip.x + clip.w - grip_w * 0.5) as f64;
-    g.press(&mut host, &ctx, on_end_grip, midy, &mut || false);
+    g.press(&mut host, &ctx, on_end_grip, midy);
     g.drag_to(&mut host, &ctx, (clip.x + clip.w) as f64 + 400.0, midy);
     g.release(&mut host, &ctx, (clip.x + clip.w) as f64 + 400.0, midy);
     let (start, dur) = clip_window(&host, 81);
@@ -2110,7 +2116,7 @@ fn a_locked_layer_hands_the_press_to_the_clip_it_is_drawn_in() {
         (clip.x + clip.w * 0.5) as f64,
         (clip.y + clip.h * 0.5) as f64,
     );
-    g.press(&mut host, &ctx, on_note.0, on_note.1, &mut || false);
+    g.press(&mut host, &ctx, on_note.0, on_note.1);
     let effects = g.drag_to(&mut host, &ctx, on_note.0 + 60.0, on_note.1);
     g.release(&mut host, &ctx, on_note.0 + 60.0, on_note.1);
     assert!(
@@ -2202,7 +2208,7 @@ fn a_note_dragged_in_a_clip_stops_at_the_clips_edge() {
     let midy = (clip.y + clip.h * 0.5) as f64;
     let on_note = (clip.x + clip.w * 0.1) as f64;
 
-    g.press(&mut host, &ctx, on_note, midy, &mut || false);
+    g.press(&mut host, &ctx, on_note, midy);
     assert!(g.dragging(), "the press grabbed the note");
     // Drag far past the clip's right edge: the note travels, and its **tail**
     // parks on the edge — the whole note stays inside, not just its onset.
@@ -2250,7 +2256,7 @@ fn a_press_on_a_clips_grip_resizes_it_rather_than_the_note_under_it() {
     let midy = (clip.y + clip.h * 0.5) as f64;
     let on_grip = (clip.x + clip.w - m.grip_w * 0.5) as f64;
 
-    g.press(&mut host, &ctx, on_grip, midy, &mut || false);
+    g.press(&mut host, &ctx, on_grip, midy);
     assert!(g.dragging(), "the press was taken");
     let dragged = g.drag_to(&mut host, &ctx, on_grip + 60.0, midy);
     let effects = g.release(&mut host, &ctx, on_grip + 60.0, midy);
@@ -2273,7 +2279,7 @@ fn a_press_on_a_clips_grip_resizes_it_rather_than_the_note_under_it() {
     // Clear of the grip, the same note is the body's again — which is the half
     // of the rule that keeps the roll editable at all.
     let on_note = (clip.x + clip.w * 0.93) as f64;
-    g.press(&mut host, &ctx, on_note, midy, &mut || false);
+    g.press(&mut host, &ctx, on_note, midy);
     g.drag_to(&mut host, &ctx, on_note - 40.0, midy);
     let effects = g.release(&mut host, &ctx, on_note - 40.0, midy);
     assert!(has_emit_tag(&effects, 81, "notes"), "the note moved");
@@ -2306,7 +2312,7 @@ fn a_clip_shrinks_to_one_sample_and_the_zoom_brings_it_back() {
 
     // Grab the end and drag it far past the start — past the lane, even.
     let on_grip = (clip.x + clip.w - m.grip_w * 0.5) as f64;
-    g.press(&mut host, &ctx, on_grip, midy, &mut || false);
+    g.press(&mut host, &ctx, on_grip, midy);
     g.drag_to(&mut host, &ctx, clip.x as f64 - 300.0, midy);
     g.release(&mut host, &ctx, clip.x as f64 - 300.0, midy);
     assert_eq!(
@@ -2351,7 +2357,7 @@ fn a_clip_shrinks_to_one_sample_and_the_zoom_brings_it_back() {
     // And the same gesture grows it back — the state is reversible, which is
     // what "it disappeared" meant.
     let back = (x1 - 1.0) as f64;
-    g.press(&mut host, &ctx, back, midy, &mut || false);
+    g.press(&mut host, &ctx, back, midy);
     assert!(g.dragging(), "the clip offers its edge again");
     g.drag_to(&mut host, &ctx, back + 200.0, midy);
     g.release(&mut host, &ctx, back + 200.0, midy);
@@ -2384,7 +2390,7 @@ fn a_clip_dragged_to_the_edge_pulls_the_view_along() {
 
     // Grab the clip and drag it hard against the right edge.
     // (past the lane's 96 px header strip, so the press lands on the clip)
-    g.press(&mut host, &ctx, 300.0, 100.0, &mut || false);
+    g.press(&mut host, &ctx, 300.0, 100.0);
     assert!(g.dragging(), "the press grabbed the clip");
     g.drag_to(&mut host, &ctx, 790.0, 100.0);
     let parked = clip_offset(&host, 71);
@@ -2453,7 +2459,7 @@ fn dragging_from_the_full_view_scrolls_instead_of_zooming_out() {
     // Drag the far clip past the end and hold at the edge. It spans
     // 9000..10000 of a 10000-sample axis drawn over the body (96..800), so
     // it occupies roughly the last 70 px.
-    g.press(&mut host, &ctx, 760.0, 100.0, &mut || false);
+    g.press(&mut host, &ctx, 760.0, 100.0);
     assert!(g.dragging(), "the press grabbed the far clip");
     g.drag_to(&mut host, &ctx, 790.0, 100.0);
     for _ in 0..20 {
@@ -2490,7 +2496,7 @@ fn the_left_edge_scrolls_back_and_stops_at_the_origin() {
     host.pan_timeline(70, 9000.0);
     let (before, _) = host.timeline_nav(70).unwrap();
     assert!(before.start > 0.0);
-    g.press(&mut host, &ctx, 400.0, 100.0, &mut || false);
+    g.press(&mut host, &ctx, 400.0, 100.0);
     g.drag_to(&mut host, &ctx, 10.0, 100.0);
     for _ in 0..10 {
         g.tick(&mut host, &ctx, 10.0, 0.0, 1.0 / 30.0);
@@ -2563,7 +2569,7 @@ fn a_press_on_the_score_selects_the_element_and_emits_its_id() {
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 1012, 412);
     // the notehead sits at page (500, 200) -> child rect origin (6, 6)
-    let effects = g.press(&mut host, &ctx, 556.0, 196.0, &mut || false);
+    let effects = g.press(&mut host, &ctx, 556.0, 196.0);
     assert_eq!(element_emits(&effects), vec!["n1".to_string()]);
     assert_eq!(score_selected(&host).as_deref(), Some("n1"));
     // Clicking the same element again selects nothing new, so the script hears
@@ -2571,14 +2577,14 @@ fn a_press_on_the_score_selects_the_element_and_emits_its_id() {
     // because it may become a drag, and the machine refuses a second press while
     // it is.
     g.release(&mut host, &ctx, 556.0, 196.0);
-    let again = g.press(&mut host, &ctx, 556.0, 196.0, &mut || false);
+    let again = g.press(&mut host, &ctx, 556.0, 196.0);
     assert!(
         element_emits(&again).is_empty(),
         "a re-press re-reported the selection: {again:?}"
     );
     // blank paper clears it, reported as an empty id
     g.release(&mut host, &ctx, 556.0, 196.0);
-    let cleared = g.press(&mut host, &ctx, 106.0, 386.0, &mut || false);
+    let cleared = g.press(&mut host, &ctx, 106.0, 386.0);
     assert_eq!(element_emits(&cleared), vec![String::new()]);
     assert_eq!(score_selected(&host), None);
 }
@@ -2610,7 +2616,7 @@ fn dragging_a_note_up_the_staff_transposes_it_in_diatonic_steps() {
     let ctx = GestureCtx::new(1, 1012, 412);
     // grab the notehead at page (500, 200); the page is fitted 1:1, so a
     // diatonic step is the default 90 page units = 90 px
-    g.press(&mut host, &ctx, 556.0, 196.0, &mut || false);
+    g.press(&mut host, &ctx, 556.0, 196.0);
     // Two steps up. The displacement is drawn while the drag lasts and reports
     // nothing on the way — so what the machine owes it is the frame that draws
     // it, and the edit only travels on release.
@@ -2629,7 +2635,7 @@ fn a_press_that_does_not_move_the_note_stays_a_selection() {
     let mut host = score_host();
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 1012, 412);
-    g.press(&mut host, &ctx, 556.0, 196.0, &mut || false);
+    g.press(&mut host, &ctx, 556.0, 196.0);
     // wandering back and forth within one step is not an edit
     g.drag_to(&mut host, &ctx, 556.0, 240.0);
     let effects = g.release(&mut host, &ctx, 556.0, 240.0);
@@ -2653,7 +2659,7 @@ fn a_read_only_score_selects_but_a_drag_does_not_transpose() {
     );
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 1012, 412);
-    let picked = g.press(&mut host, &ctx, 556.0, 196.0, &mut || false);
+    let picked = g.press(&mut host, &ctx, 556.0, 196.0);
     assert_eq!(element_emits(&picked), vec!["n1".to_string()]);
     assert_eq!(score_selected(&host).as_deref(), Some("n1"));
     // two full steps up: nothing is displaced, and nothing is asked for
@@ -2740,7 +2746,6 @@ fn piano_press_glissando_and_release_emit_midi_shaped_notes() {
         &ctx,
         (c.x + c.w * 0.5) as f64,
         (c.y + c.h - 1.0) as f64,
-        &mut || false,
     );
     let notes = note_emits(&effects);
     assert_eq!(notes.len(), 1);
@@ -2782,7 +2787,6 @@ fn piano_glissando_across_two_keys_releases_each_left_key() {
         &ctx,
         (c.x + c.w * 0.5) as f64,
         (c.y + c.h - 1.0) as f64,
-        &mut || false,
     );
     let d = piano::key_rect(&l, 62).unwrap();
     g.drag_to(
@@ -2822,7 +2826,6 @@ fn piano_fixed_velocity_and_grayed_keys() {
         &ctx,
         (c.x + 2.0) as f64,
         (c.y + c.h - 1.0) as f64,
-        &mut || false,
     );
     assert_eq!(note_emits(&effects)[0].1, 90);
     g.release(&mut host, &ctx, c.x as f64, c.y as f64);
@@ -2834,7 +2837,6 @@ fn piano_fixed_velocity_and_grayed_keys() {
         &ctx,
         (c.x + 2.0) as f64,
         (c.y + c.h - 1.0) as f64,
-        &mut || false,
     );
     assert!(note_emits(&effects).is_empty());
     assert!(piano_pressed(&host).is_empty());
@@ -2886,7 +2888,7 @@ fn piano_overview_drag_pans_and_wheel_zooms() {
     // Drag along the strip: the window pans with the cursor.
     let x0 = piano::overview_key_x(strip, 66) as f64;
     let x1 = piano::overview_key_x(strip, 78) as f64;
-    let effects = g.press(&mut host, &ctx, x0, sy, &mut || false);
+    let effects = g.press(&mut host, &ctx, x0, sy);
     assert!(note_emits(&effects).is_empty(), "the strip plays no note");
     let effects = g.drag_to(&mut host, &ctx, x1, sy);
     assert!(has_emit_tag(&effects, 70, "range"));
@@ -2908,7 +2910,7 @@ fn piano_voice_mode_tracks_one_node_per_held_pitch() {
     let ctx = GestureCtx::new(1, 712, 132);
     let c = piano::key_rect(&l, 60).unwrap();
     let (cx, cy) = ((c.x + 2.0) as f64, (c.y + c.h - 1.0) as f64);
-    g.press(&mut host, &ctx, cx, cy, &mut || false);
+    g.press(&mut host, &ctx, cx, cy);
     let voices = host.voices_of(70).to_vec();
     assert_eq!(voices.len(), 1);
     assert_eq!(voices[0].0, 60);
@@ -2928,7 +2930,7 @@ fn piano_voice_mode_tracks_one_node_per_held_pitch() {
     g.release(&mut host, &ctx, cx, cy);
     assert!(host.voices_of(70).is_empty());
     // A freed widget releases whatever is still held.
-    g.press(&mut host, &ctx, cx, cy, &mut || false);
+    g.press(&mut host, &ctx, cx, cy);
     assert!(!host.voices_of(70).is_empty());
     host.handle_packet(
         OscPacket::Message(OscMessage {
@@ -3011,7 +3013,7 @@ fn a_press_focuses_the_field_and_typing_emits_on_every_keystroke() {
     let ctx = GestureCtx::new(1, 600, 400);
     // A press focuses the field and says so — but does not edit it, so there
     // is no value event: a click is not an edit.
-    let e = g.press(&mut host, &ctx, 30.0, 15.0, &mut || false);
+    let e = g.press(&mut host, &ctx, 30.0, 15.0);
     assert_eq!(host.focused(), Some((1, 5)));
     assert_eq!(focus_events(&e), vec![(5, true)]);
     assert!(emitted_string(&e).is_none());
@@ -3037,7 +3039,7 @@ fn dragging_a_selection_repaints_even_though_it_reports_nothing() {
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 600, 400);
     let mut clip = crate::host::clipboard::Clip::default();
-    g.press(&mut host, &ctx, 10.0, 15.0, &mut || false);
+    g.press(&mut host, &ctx, 10.0, 15.0);
     for ch in "hello".chars() {
         g.key(&mut host, &ctx, Key::Char(ch), &mut clip);
     }
@@ -3068,11 +3070,11 @@ fn a_press_elsewhere_moves_the_focus_and_reports_both_ends() {
     let mut host = two_field_host();
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 600, 400);
-    g.press(&mut host, &ctx, 30.0, 30.0, &mut || false);
+    g.press(&mut host, &ctx, 30.0, 30.0);
     // A click is a press and a release; a bare second press is not one.
     g.release(&mut host, &ctx, 30.0, 30.0);
     assert_eq!(host.focused(), Some((1, 5)));
-    let e = g.press(&mut host, &ctx, 330.0, 30.0, &mut || false);
+    let e = g.press(&mut host, &ctx, 330.0, 30.0);
     assert_eq!(host.focused(), Some((1, 6)));
     assert_eq!(
         focus_events(&e),
@@ -3091,11 +3093,11 @@ fn a_press_on_a_widget_that_takes_no_focus_clears_it() {
     );
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 600, 400);
-    g.press(&mut host, &ctx, 30.0, 10.0, &mut || false);
+    g.press(&mut host, &ctx, 30.0, 10.0);
     // A click is a press and a release; a bare second press is not one.
     g.release(&mut host, &ctx, 30.0, 10.0);
     assert_eq!(host.focused(), Some((1, 5)));
-    let e = g.press(&mut host, &ctx, 30.0, 60.0, &mut || false);
+    let e = g.press(&mut host, &ctx, 30.0, 60.0);
     assert_eq!(host.focused(), None);
     assert_eq!(focus_events(&e), vec![(5, false)]);
 }
@@ -3198,7 +3200,7 @@ fn enter_inserts_a_newline_only_in_a_multiline_field() {
     // Single-line: Enter is inert (no send-on-Enter).
     let mut host = text_host();
     let mut g = Gestures::default();
-    g.press(&mut host, &ctx, 30.0, 15.0, &mut || false);
+    g.press(&mut host, &ctx, 30.0, 15.0);
     let e = key(&g, &mut host, &ctx, Key::Enter).unwrap();
     assert!(emitted_string(&e).is_none());
     assert_eq!(text_value(&host, 5), "");
@@ -3207,7 +3209,7 @@ fn enter_inserts_a_newline_only_in_a_multiline_field() {
         r#"{"type":"window","margin":0,"children":[{"id":5,"type":"text","multiline":true}]}"#,
     );
     let mut g = Gestures::default();
-    g.press(&mut host, &ctx, 30.0, 30.0, &mut || false);
+    g.press(&mut host, &ctx, 30.0, 30.0);
     // A click is a press and a release; a bare second press is not one.
     g.release(&mut host, &ctx, 30.0, 30.0);
     key(&g, &mut host, &ctx, Key::Char('a'));
@@ -3221,7 +3223,7 @@ fn cut_and_paste_move_text_through_the_clipboard() {
     let mut g = Gestures::default();
     let mut ctx = GestureCtx::new(1, 600, 400);
     let mut clip = crate::host::clipboard::Clip::default();
-    g.press(&mut host, &ctx, 30.0, 15.0, &mut || false);
+    g.press(&mut host, &ctx, 30.0, 15.0);
     for ch in "abc".chars() {
         g.key(&mut host, &ctx, Key::Char(ch), &mut clip);
     }
@@ -3348,7 +3350,7 @@ fn a_pan_past_the_axis_end_stops_at_its_floor() {
     set_x_window(&mut host, 80, 0.30, 0.05);
     let mut seen = Vec::new();
     for _ in 0..8 {
-        g.press(&mut host, &ctx, 100.0, 150.0, &mut || false);
+        g.press(&mut host, &ctx, 100.0, 150.0);
         g.drag_to(&mut host, &ctx, 790.0, 150.0);
         g.release(&mut host, &ctx, 790.0, 150.0);
         seen.push(shown_x_window(&host, 80));
@@ -3391,7 +3393,7 @@ fn a_pan_down_the_axis_and_back_returns_the_zoom() {
     // them as the axis is wide -- and it speeds up on the way down as the
     // floor opens the window under it.
     let pan = |g: &mut Gestures, host: &mut Host, from: f64, to: f64| {
-        g.press(host, &ctx, from, 150.0, &mut || false);
+        g.press(host, &ctx, from, 150.0);
         g.drag_to(host, &ctx, to, 150.0);
         g.release(host, &ctx, to, 150.0);
     };
@@ -3439,7 +3441,7 @@ fn a_scripted_window_finer_than_the_analysis_is_opened_too() {
         "the axis showed a window finer than its bins: {shown:?}"
     );
     // And the pointer arriving changes nothing: it reads the same window.
-    g.press(&mut host, &ctx, 400.0, 150.0, &mut || false);
+    g.press(&mut host, &ctx, 400.0, 150.0);
     let effects = g.drag_to(&mut host, &ctx, 400.0, 150.0);
     g.release(&mut host, &ctx, 400.0, 150.0);
     assert!(
@@ -3453,19 +3455,17 @@ fn a_scripted_window_finer_than_the_analysis_is_opened_too() {
 
 /// Two of the smallest possible elements: one that takes every press and
 /// reports how many it has taken, one that never takes any.
-/// A registered element that exercises the **whole** gesture sequence: it
-/// takes a press (optionally asking for the pointer grab), follows the cursor
-/// while it is held — absolutely, or by accumulating deltas when the grab was
-/// granted — and reports the total on release. Which of those a real leaf does
-/// is its own business; what the machine promises is that all four arrive.
+/// A registered element that exercises the **whole** gesture sequence: it takes
+/// a press, follows the cursor while it is held, and reports the total on
+/// release. What a real leaf makes of those positions is its own business; what
+/// the machine promises is that all three arrive.
 #[derive(Debug, Clone)]
 struct TestPad {
     taken: i32,
     claims: bool,
-    grabs: bool,
-    /// Where the cursor last was, or how far it has moved under a grab.
+    /// Where the cursor last was.
     moved: (f64, f64),
-    /// How many `drag`/`drag_relative` steps arrived.
+    /// How many `drag` steps arrived.
     steps: i32,
 }
 
@@ -3489,8 +3489,7 @@ impl crate::Element for TestPad {
             return crate::Claim::Decline;
         }
         self.taken += 1;
-        let claim = crate::Claim::value(OscType::Int(self.taken));
-        if self.grabs { claim.grabbing() } else { claim }
+        crate::Claim::value(OscType::Int(self.taken))
     }
 
     fn drag(
@@ -3499,16 +3498,6 @@ impl crate::Element for TestPad {
         _input: &crate::host::widget::element::Input,
     ) -> crate::host::widget::element::Events {
         self.moved = at;
-        self.steps += 1;
-        crate::host::widget::element::Events::none()
-    }
-
-    fn drag_relative(
-        &mut self,
-        delta: (f64, f64),
-        _input: &crate::host::widget::element::Input,
-    ) -> crate::host::widget::element::Events {
-        self.moved = (self.moved.0 + delta.0, self.moved.1 + delta.1);
         self.steps += 1;
         crate::host::widget::element::Events::none()
     }
@@ -3540,10 +3529,6 @@ fn pad(
             .get("claims")
             .and_then(|v| v.as_bool())
             .unwrap_or(true),
-        grabs: props
-            .get("grabs")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false),
         moved: (0.0, 0.0),
         steps: 0,
     }))
@@ -3590,7 +3575,7 @@ fn a_registered_element_takes_the_press_and_its_value_leaves() {
     );
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 600, 400);
-    let effects = g.press(&mut host, &ctx, 300.0, 200.0, &mut || false);
+    let effects = g.press(&mut host, &ctx, 300.0, 200.0);
     assert_eq!(pad_taken(&host, 5), 1, "the element saw the press");
     assert!(
         effects.iter().any(|e| matches!(
@@ -3616,9 +3601,8 @@ fn a_claim_holds_the_press_through_the_drag_and_the_release() {
     );
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 600, 400);
-    g.press(&mut host, &ctx, 300.0, 200.0, &mut || false);
+    g.press(&mut host, &ctx, 300.0, 200.0);
     assert!(g.dragging(), "a taken press is held");
-    assert!(!g.locked(), "and ungrabbed unless the element asked");
     g.drag_to(&mut host, &ctx, 300.0, 260.0);
     g.drag_to(&mut host, &ctx, 300.0, 290.0);
     let effects = g.release(&mut host, &ctx, 300.0, 290.0);
@@ -3635,59 +3619,6 @@ fn a_claim_holds_the_press_through_the_drag_and_the_release() {
     crate::unregister("test_pad");
 }
 
-/// An element that asks for the **pointer grab** gets what the front granted,
-/// not what it wanted: the machine routes relative motion only when the grab
-/// actually happened, and gives the grab back on release.
-#[test]
-fn a_grabbed_drag_is_driven_by_relative_motion_and_released() {
-    crate::register("test_pad", pad);
-    let doc = r#"{"type":"window","margin":0,"children":[
-            {"id":5,"type":"test_pad","grabs":true}]}"#;
-
-    // The front granted it: cursor positions are not the gesture, deltas are.
-    let mut host = host_from(doc);
-    let mut g = Gestures::default();
-    let ctx = GestureCtx::new(1, 600, 400);
-    g.press(&mut host, &ctx, 300.0, 200.0, &mut || true);
-    assert!(g.locked());
-    g.drag_to(&mut host, &ctx, 300.0, 999.0); // ignored while locked
-    g.relative_motion(&mut host, &ctx, 7.0);
-    g.relative_motion(&mut host, &ctx, 5.0);
-    let effects = g.release(&mut host, &ctx, 300.0, 200.0);
-    assert_eq!(
-        emitted(&effects, 5),
-        vec![vec![
-            OscType::String("pad".into()),
-            OscType::Int(2),
-            OscType::Float(12.0)
-        ]],
-        "the deltas accumulated, the positions did not: {effects:?}"
-    );
-    assert!(
-        effects.contains(&GestureEffect::ReleasePointer(1)),
-        "the grab goes back: {effects:?}"
-    );
-
-    // The front refused (a page has no pointer lock): the same element is
-    // driven by positions instead, and nothing is released.
-    let mut host = host_from(doc);
-    let mut g = Gestures::default();
-    g.press(&mut host, &ctx, 300.0, 200.0, &mut || false);
-    assert!(!g.locked());
-    g.drag_to(&mut host, &ctx, 300.0, 260.0);
-    let effects = g.release(&mut host, &ctx, 300.0, 260.0);
-    assert_eq!(
-        emitted(&effects, 5),
-        vec![vec![
-            OscType::String("pad".into()),
-            OscType::Int(1),
-            OscType::Float(260.0)
-        ]]
-    );
-    assert!(!effects.contains(&GestureEffect::ReleasePointer(1)));
-    crate::unregister("test_pad");
-}
-
 /// Declining is the other half of the contract: the press goes back to the
 /// chain, which here is the plane under it — so it pans, exactly as a press on
 /// a lane's empty space or a patcher's bare canvas does.
@@ -3701,7 +3632,7 @@ fn a_declined_press_falls_through_to_the_plane() {
     );
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 600, 400);
-    g.press(&mut host, &ctx, 100.0, 100.0, &mut || false);
+    g.press(&mut host, &ctx, 100.0, 100.0);
     assert_eq!(pad_taken(&host, 5), 0, "it declined");
     g.drag_to(&mut host, &ctx, 140.0, 100.0);
     g.release(&mut host, &ctx, 140.0, 100.0);
@@ -3764,7 +3695,7 @@ fn a_dragged_sample_leaves_as_one_absolute_intent() {
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 800, 300);
 
-    g.press(&mut host, &ctx, 400.0, 100.0, &mut || false);
+    g.press(&mut host, &ctx, 400.0, 100.0);
     // The grab shows at once: the hand sees the value it is holding before
     // anyone has applied anything.
     let held = host
@@ -3853,7 +3784,7 @@ fn grabbing_a_sample_declines_when_they_are_not_drawn() {
     host.set_timeline_total(50, 100_000);
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 800, 300);
-    g.press(&mut host, &ctx, 400.0, 100.0, &mut || false);
+    g.press(&mut host, &ctx, 400.0, 100.0);
     assert!(
         host.widget_kind(1, 50)
             .and_then(|k| k.pending_edit())
@@ -3884,7 +3815,7 @@ fn a_stroke_writes_every_sample_it_passes_and_leaves_as_one_intent() {
     let ctx = GestureCtx::new(1, 800, 300);
 
     // Two events far apart: the samples between them are the test.
-    g.press(&mut host, &ctx, 100.0, 100.0, &mut || false);
+    g.press(&mut host, &ctx, 100.0, 100.0);
     g.drag_to(&mut host, &ctx, 700.0, 200.0);
     let held = host
         .widget_kind(1, 50)
@@ -3937,7 +3868,7 @@ fn a_stroke_leaving_its_lane_clamps_to_its_own_channels_end() {
 
     // Press low in the **lower** lane (channel 1), then drag straight up past
     // the top of the window.
-    g.press(&mut host, &ctx, 100.0, 230.0, &mut || false);
+    g.press(&mut host, &ctx, 100.0, 230.0);
     let held = host
         .widget_kind(1, 50)
         .and_then(|k| k.pending_edit())
@@ -3978,7 +3909,7 @@ fn a_stroke_dragged_off_the_view_writes_nothing_past_the_last_visible_sample() {
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 800, 300);
 
-    g.press(&mut host, &ctx, 100.0, 100.0, &mut || false);
+    g.press(&mut host, &ctx, 100.0, 100.0);
     // Far outside the window, the way a hand that keeps going leaves it.
     g.drag_to(&mut host, &ctx, 4000.0, 150.0);
     let held = host
@@ -4007,7 +3938,7 @@ fn drawing_is_refused_out_loud_when_a_pixel_is_more_than_a_sample() {
     host.set_timeline_total(50, 100_000);
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 800, 300);
-    let effects = g.press(&mut host, &ctx, 400.0, 100.0, &mut || false);
+    let effects = g.press(&mut host, &ctx, 400.0, 100.0);
     assert!(
         has_emit_tag(&effects, 50, "refused"),
         "the refusal is visible"

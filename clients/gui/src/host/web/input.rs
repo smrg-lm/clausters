@@ -66,8 +66,7 @@ impl WebApp {
     /// to the page outbox (a bound widget already forwarded inside the
     /// machine), and a repaint of the canvas the effect names — a linked-view
     /// mutation can name a *different* def than the one gestured on, and with a
-    /// canvas each that now lands where it belongs. There is no pointer grab in
-    /// the browser (the grab callback returns `false`), so releases are no-ops.
+    /// canvas each that now lands where it belongs.
     pub(super) fn apply_gesture_effects(&mut self, effects: Vec<GestureEffect>) {
         for effect in effects {
             match effect {
@@ -103,7 +102,6 @@ impl WebApp {
                     });
                 }
                 GestureEffect::Redraw(def_id) => self.request_redraw(def_id),
-                GestureEffect::ReleasePointer(_) => {}
                 // The focus stepped past the ring: **blur the canvas**, so the
                 // browser's own tab order carries on to whatever the document
                 // holds after this GuiDef. Without it a mounted def is a
@@ -123,9 +121,7 @@ impl WebApp {
         let Some(slot) = self.canvases.get_mut(&def) else {
             return;
         };
-        let effects = slot
-            .gestures
-            .press(&mut self.host, &ctx, cx, cy, &mut || false);
+        let effects = slot.gestures.press(&mut self.host, &ctx, cx, cy);
         self.apply_gesture_effects(effects);
         // A clip drag needs the frame tick even on an otherwise still window:
         // held against a lane's edge it scrolls the view, and a standing cursor

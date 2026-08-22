@@ -942,9 +942,8 @@ pub(crate) type SelectRequest = ((f64, f64), Option<(f64, f64)>);
 /// The one thing a keyboard cannot do for itself: sounding a held key is a
 /// `/synth_new` on the audio server, and only the host has a leg to it. So the
 /// element names the pitch and the host performs it, using the
-/// [`VoiceSpec`] the same element declares — the shape a pointer grab already
-/// has, which is *what only the front can do, named in what the element
-/// returns*.
+/// [`VoiceSpec`] the same element declares: *what only the front can do, named
+/// in what the element returns*.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Voice {
     pub pitch: i32,
@@ -1123,23 +1122,14 @@ pub enum Claim {
 /// do for itself.
 ///
 /// It is deliberately not a taxonomy of drags. The *kind* of drag — absolute
-/// (a position in a rect becomes a fraction), incremental (a delta re-anchored
-/// each step) or snapshotted (a press-time origin plus an axis) — is the
-/// element's own business, because the element holds the state. What is left is
-/// what only the front and the machine can do.
+/// (a position in a rect becomes a fraction), offset from the press (a travel
+/// against the value the press found) or snapshotted (a press-time origin plus
+/// an axis) — is the element's own business, because the element holds the
+/// state. What is left is what only the front and the machine can do.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Take {
     /// What to report on `/gui_event` for the press itself.
     pub events: Events,
-    /// Ask the front for a **pointer grab**: the cursor stays put and motion
-    /// arrives as relative deltas ([`Element::drag_relative`]) instead of
-    /// positions. What a knob wants, so a turn is not bounded by the screen.
-    /// The front answers — a page has no pointer lock — and the machine routes
-    /// whichever way it answered.
-    ///
-    /// It is one of the two things only the front and the machine can do: the
-    /// *kind* of drag is the element's, because the element holds the state.
-    pub grab: bool,
     /// Ask the machine to keep **ticking** this drag while the cursor is held
     /// past the edge of the axis the element sits on, panning that axis under
     /// it — what a note dragged off the right of a lane needs, since a held
@@ -1174,14 +1164,6 @@ impl Claim {
             events,
             ..Take::default()
         })
-    }
-
-    /// ...and grab the pointer for the drag this press opens.
-    pub fn grabbing(self) -> Self {
-        match self {
-            Claim::Take(t) => Claim::Take(Take { grab: true, ..t }),
-            decline => decline,
-        }
     }
 
     /// ...and keep the axis scrolling while the drag is held past its edge.
@@ -1882,14 +1864,6 @@ pub trait Element: fmt::Debug {
     /// — the drag's state is the element's, because the element is the only
     /// thing that knows what its drag means — and reports what changed.
     fn drag(&mut self, _at: (f64, f64), _input: &Input) -> Events {
-        Events::none()
-    }
-
-    /// The same, for a drag the front **grabbed the pointer** for
-    /// ([`Take::grab`]): the cursor stays put, so motion arrives as a delta
-    /// rather than as a position. An element that asked for the grab must
-    /// implement this one; an element that did not never sees it.
-    fn drag_relative(&mut self, _delta: (f64, f64), _input: &Input) -> Events {
         Events::none()
     }
 

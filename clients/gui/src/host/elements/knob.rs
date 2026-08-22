@@ -1,12 +1,13 @@
 //! `knob` — a value turned by how far you drag, not by where you point.
 //!
-//! The **incremental** drag, and the leaf that proves the pointer grab: a knob
-//! turns further than the screen is tall, so the press asks the front to lock
-//! the cursor and motion arrives as deltas. Whether it got the lock is the
-//! front's answer — a page has no pointer lock — and the element does not have
-//! to know: the machine routes positions or deltas accordingly, and the step is
-//! the same either way. The math itself is [`super::control::Dial`]'s, shared
-//! with `number`.
+//! The drag **measured from the press**: a knob has no groove on screen to
+//! point at, so what turns it is how far the cursor has travelled since it went
+//! down — against the value the press found, never against the value as it
+//! stands. That is what keeps it in phase with the hand without capturing the
+//! pointer: leave the disc, cross the whole window, come back, and the value is
+//! what the cursor's distance says it is. A per-step delta would not be, which
+//! is the same defect a curve's bend had, and the same fix. The math itself is
+//! [`super::control::Dial`]'s, shared with `number`.
 
 use serde_json::{Map, Value};
 
@@ -115,15 +116,12 @@ impl Element for Knob {
     }
 
     fn press(&mut self, at: (f64, f64), input: &Input) -> Claim {
-        self.drag.press(control::body(&self.range, input).h, at)
+        let body_h = control::body(&self.range, input).h;
+        self.drag.press(&self.range, body_h, at)
     }
 
     fn drag(&mut self, at: (f64, f64), _input: &Input) -> Events {
         self.drag.drag(&mut self.range, at)
-    }
-
-    fn drag_relative(&mut self, delta: (f64, f64), _input: &Input) -> Events {
-        self.drag.drag_relative(&mut self.range, delta)
     }
 
     fn release(&mut self, _at: (f64, f64), _input: &Input) -> Events {
@@ -158,58 +156,65 @@ mod tests {
         }
     }
 
-    /// The press asks for the grab and reports nothing: turning has not started
+    /// The press takes the drag and reports nothing: turning has not started
     /// yet, and a knob that emitted on every click would send a value nobody
-    /// changed.
+    /// changed. It asks for no pointer capture — the travel since the press is
+    /// the gesture, and it is measured the same way on either front.
     #[test]
-    fn the_press_grabs_and_reports_nothing() {
+    fn the_press_takes_the_drag_and_reports_nothing() {
         let m = Metrics::default();
         let mut k = from_props(&props(r#"{"value":0.5}"#));
         match k.press((30.0, 40.0), &input(&m)) {
-            Claim::Take(Take { events, grab, .. }) => {
-                assert!(grab, "a knob wants the pointer");
-                assert!(events.is_empty(), "and reports nothing yet");
+            Claim::Take(Take { events, .. }) => {
+                assert!(events.is_empty(), "and reports nothing yet")
             }
-            other => panic!("expected a grabbing take, got {other:?}"),
+            other => panic!("expected a take, got {other:?}"),
         }
         assert_eq!(k.range.value, 0.5, "and moves nothing");
     }
 
-    /// Dragging up raises the value and dragging down lowers it, whichever way
-    /// the motion arrives — a locked pointer sends the delta, an unlocked one
-    /// sends positions the element differences itself.
+    /// Dragging up raises the value and dragging down lowers it, and what the
+    /// value is depends only on **where the cursor is**, not on the path it
+    /// took: the same position twice is the same value twice.
     #[test]
-    fn positions_and_deltas_turn_it_the_same_way() {
+    fn a_position_has_one_answer_however_it_was_reached() {
         let m = Metrics::default();
-        let by_position = {
+        let straight = {
             let mut k = from_props(&props(r#"{"value":0.5}"#));
             k.press((30.0, 40.0), &input(&m));
-            k.drag((30.0, 30.0), &input(&m));
             k.drag((30.0, 20.0), &input(&m));
             k.range.value
         };
-        let by_delta = {
+        let wandering = {
             let mut k = from_props(&props(r#"{"value":0.5}"#));
             k.press((30.0, 40.0), &input(&m));
-            k.drag_relative((0.0, -10.0), &input(&m));
-            k.drag_relative((0.0, -10.0), &input(&m));
+            k.drag((30.0, 30.0), &input(&m));
+            k.drag((900.0, 500.0), &input(&m)); // off the disc, off the window
+            k.drag((30.0, 20.0), &input(&m));
             k.range.value
         };
-        assert!(by_position > 0.5, "up is more: {by_position}");
-        assert_eq!(by_position, by_delta, "one step, two ways of arriving");
+        assert!(straight > 0.5, "up is more: {straight}");
+        assert_eq!(straight, wandering, "the hand's route is not the gesture");
     }
 
-    /// Re-anchoring every step is what removes the dead zone: pinned at an end,
-    /// reversing direction moves it at once instead of unwinding a snapshot.
+    /// Pinned at an end, the motion spent past it is **kept**: the anchor does
+    /// not move, so coming back down is exactly as far as it says. It is the
+    /// same rule the bend follows, and the reason a drag that left the widget
+    /// does not come back out of phase.
     #[test]
-    fn a_pinned_knob_reverses_immediately() {
+    fn a_pinned_knob_comes_back_where_the_cursor_says() {
         let m = Metrics::default();
         let mut k = from_props(&props(r#"{"value":1.0}"#));
         k.press((30.0, 40.0), &input(&m));
-        k.drag_relative((0.0, -500.0), &input(&m)); // far past the top
+        k.drag((30.0, -460.0), &input(&m)); // far past the top
         assert_eq!(k.range.value, 1.0);
-        k.drag_relative((0.0, 10.0), &input(&m));
-        assert!(k.range.value < 1.0, "one step down, not five hundred");
+        k.drag((30.0, 40.0), &input(&m)); // back where it started
+        assert_eq!(
+            k.range.value, 1.0,
+            "the press's own value, not a wound-up one"
+        );
+        k.drag((30.0, 60.0), &input(&m));
+        assert!(k.range.value < 1.0, "below the press is below the value");
     }
 
     /// Nothing turns without a press behind it, and the release drops the
@@ -218,10 +223,10 @@ mod tests {
     fn a_drag_without_a_press_turns_nothing() {
         let m = Metrics::default();
         let mut k = from_props(&props(r#"{"value":0.5}"#));
-        assert!(k.drag_relative((0.0, -20.0), &input(&m)).is_empty());
+        assert!(k.drag((30.0, 20.0), &input(&m)).is_empty());
         assert_eq!(k.range.value, 0.5);
         k.press((30.0, 40.0), &input(&m));
         k.release((30.0, 40.0), &input(&m));
-        assert!(k.drag_relative((0.0, -20.0), &input(&m)).is_empty());
+        assert!(k.drag((30.0, 20.0), &input(&m)).is_empty());
     }
 }

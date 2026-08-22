@@ -401,9 +401,9 @@ With G24h the follow-ups G24 opened are all closed; further piano-roll work (e.g
 
 - ✅ **G26 — The measuring plot: views, rulers, multichannel, readout + the free-standing `plot()`** *(done 2026-07-14)*: the G8 `plot` grows from a bare trace into a **measurement** view while staying static (no zoom/pan/edit — the heavy views own navigation). It gains **views** (`view` prop; `PlotView`, an enum on purpose so future forms — a histogram, a phase plot — extend it without touching the wiring): **signal** — value against time/index, every channel drawn (stacked lanes or `overlay` traces), the whole sequence always contributing (polyline or per-column min/max envelope: no visual aliasing), the value axis `[min, max]` with **either side omitted auto-fitting to the data** (the arbitrary-range sequence case; the string `"auto"` releases a side live) — and **spectrum** — the Welch-averaged magnitude spectrum per channel in dB over the four spectrogram scales (linear/log/mel/bark), analyzed **once at the widget's mutation points** (parse / bulk load / `/gui_set`) through `spectrogram::Stft` (the shared-core FFT, so it agrees with the spectrogram bin for bin) and drawn through the identical `display_to_hz` geometry the rulers use. New chrome, all shared math: a generic 1-2-5 **value ruler** (`ruler::value_ticks`, any range — not amplitude-tied), a **horizontal** frequency ruler (`ruler::hz_ticks_h`, width-fitted labels), the x ruler in samples or clock time, and a **hover readout** (hairline + dot + the exact sample's index/time and value, or the bin's frequency-per-scale and dB) in the overlay pass. The bulk paths keep every interleaved channel (native mmap and browser fetch alike). Python: the `guidef.plot` builder grows the props, and the new **free-standing `clausters.plot(obj, …)`** (the visual sibling of `play`) opens **one individual window per call** on the ambient GUI host (the session's, else one it boots lazily, no client leg) — dispatching a **def** (`SynthDef`/`FaustDef`/`GraphDef` + its `defs` members: an ephemeral NRT session renders `dur` seconds of its output), an **`Env`** (rendered through the engine's own `EnvGen`, gate-released at its sustain point), a **`Buffer`** (fetched live with its shape/rate), or any **iterable of numbers** (a `Pseq`/`Pwhite`/list, materialized up to `n`, range auto-fitted). Tests: tick fitting/collisions for the new rulers, the per-channel analysis peaks, decimation bounds, parse/apply round-trips, and the Python dispatch + NRT render paths against a fake host.
 
-- ✅ **G27 — Shared gesture machine: one interaction state machine for both fronts**: retire the two divergent per-front drag machines (the native front's full one; the browser's `host/web/` mini-`Drag` covering only slider/knob/button) in favor of **one** press → drag → release → wheel interpreter in the agnostic core, so every editor gesture the native front has — selection, pan/zoom, BPF editing, clip placement, the whole piano-roll editing set — reaches the browser by rewiring, not by reimplementation. The machine (`host/gestures/`: the `Drag` state + `Gestures::press/drag_to/release/wheel/relative_motion` and the keyboard block operations) mutates the `Host` through the existing `interact`/model doors and returns `GestureEffect`s (emit/redraw/release-pointer) for the front's own sinks; the front supplies a per-call `GestureCtx` (framebuffer, modifiers, the GPU slots' lane counts — the one front-owned datum) and a pointer-grab callback at press (native pointer lock; a front without one returns false). Two legs:
+- ✅ **G27 — Shared gesture machine: one interaction state machine for both fronts**: retire the two divergent per-front drag machines (the native front's full one; the browser's `host/web/` mini-`Drag` covering only slider/knob/button) in favor of **one** press → drag → release → wheel interpreter in the agnostic core, so every editor gesture the native front has — selection, pan/zoom, BPF editing, clip placement, the whole piano-roll editing set — reaches the browser by rewiring, not by reimplementation. The machine (`host/gestures/`: the `Drag` state + `Gestures::press/drag_to/release/wheel` and the keyboard block operations) mutates the `Host` through the existing `interact`/model doors and returns `GestureEffect`s (emit/redraw) for the front's own sinks; the front supplies a per-call `GestureCtx` (framebuffer, modifiers, the GPU slots' lane counts — the one front-owned datum) and nothing else. Two legs:
   - ✅ **Leg 1 — extract + native rewire** *(done 2026-07-15)*: the machine extracted with **no behavior change**; `host/gui/input.rs` reduced to winit adapters (context snapshot + effect application), the piano-roll press/keyboard ops folded into the machine, MIDI painting kept native (`host/gui/midi.rs` — the virtual port is a device). The gestures became unit-testable without a window or GPU for the first time (press/drag/release/wheel dispatch tests over a JSON-built host).
-  - ✅ **Leg 2 — browser rewire** *(done 2026-07-15)*: the `#[cfg(not(wasm32))]` lifted from `gestures` and from the `interact` gesture helpers it drives (they are pure; the cfg only reflected native-only use); `host/web/`'s mini-`Drag` deleted and its pointer/wheel/keyboard events routed through the same machine (`GestureEffect`s to the outbox/binding surface; the grab callback returns false — Pointer Lock stays a later refinement; the piano-roll clipboard is page-wide, modifiers tracked via `ModifiersChanged`), so the browser gained selection, pan/zoom, BPF/clip editing and the whole piano-roll editing set by rewiring, with zero new gesture logic. The browser posture re-stated in the docs (`docs/clients.md`, `docs/architecture.md`, `docs/decisions.md`): from "display + `/gui_set` parity" to full editing gestures. Verification: `check-wasm.sh` gates the lifted cfgs; a browser smoke (headless Chrome over CDP, real input events on the wasm bundle) drove a selection drag, a wheel zoom and a BPF edit end to end, each emitting its `/gui_event` payload.
+  - ✅ **Leg 2 — browser rewire** *(done 2026-07-15)*: the `#[cfg(not(wasm32))]` lifted from `gestures` and from the `interact` gesture helpers it drives (they are pure; the cfg only reflected native-only use); `host/web/`'s mini-`Drag` deleted and its pointer/wheel/keyboard events routed through the same machine (`GestureEffect`s to the outbox/binding surface; the piano-roll clipboard is page-wide, modifiers tracked via `ModifiersChanged`), so the browser gained selection, pan/zoom, BPF/clip editing and the whole piano-roll editing set by rewiring, with zero new gesture logic. The browser posture re-stated in the docs (`docs/clients.md`, `docs/architecture.md`, `docs/decisions.md`): from "display + `/gui_set` parity" to full editing gestures. Verification: `check-wasm.sh` gates the lifted cfgs; a browser smoke (headless Chrome over CDP, real input events on the wasm bundle) drove a selection drag, a wheel zoom and a BPF edit end to end, each emitting its `/gui_event` payload.
 
 - ✅ **G28 — Multichannel live scopes: one rule for `bus` + `channels`, instrument rulers, a visible trigger** *(done 2026-07-16)*: the C37 verb generalized so monitoring stereo/multichannel/HOA sets is one coherent rule — *the verb monitors `channels` consecutive buses from `bus`, each view presents them its way* — instead of three per-view special cases. The `scope` and `spectrum` widgets grew a `channels` prop reading that many **adjacent** tap rings from `tap` (the phasescope's existing adjacency convention, now the family's): the oscilloscope draws stacked lanes or color-coded `overlay` traces, searching the trigger in the **first** channel and applying the found alignment to all (true relative phase across channels); the spectrum folds one FFT state per channel and overlays one color-coded curve each. The trigger became **visible**: a faint level line in the trigger channel's lane and a `lock`/`free` corner read-out (`oscil::align` now reports whether it fired). Both widgets gained **axis rulers** as owned strips (the G20b posture — a ruler measures its widget's axis, it is not a free-standing element; recorded in the ruler-as-widget discussion): `ruler` (ms of the window / Hz on the active `freq_scale`, via the shared tick machinery) and `ruler_y` (value / dB), shown by default, `"off"` hides, all live via `/gui_set`. The tick's tap window became the typed `TapWindow` (interleaved channels + lock flag) shared by scope and phasescope on both fronts. The composite "analyzer" stays **client-side composition** (a GuiDef of menu + number + scope; deliberately no monolithic widget). Python: `channels`/`overlay`/`ruler`/`ruler_y` on the builders; the verb takes `channels=` (a `Bus` brings its own count; `view="phase"` is the fixed two-channel case, erroring on any other explicit count) and its docs read as a brief user manual. Tests: multichannel parse/apply and adjacent `taps_read`, the interleaved tick alignment on the first channel, per-channel spectrum states, and the Python channel semantics.
 
@@ -1423,7 +1423,7 @@ The temptation, once a leaf is an object, is one god-context carrying everything
 
 **Two things out.**
 
-4. **Effects** — `GestureEffect` (emit, redraw, release-pointer): what the element asks the front to do. Exists today.
+4. **Effects** — `GestureEffect` (emit, redraw): what the element asks the front to do. Exists today.
 5. **Declarations** — what the element *is* and what it *needs*: its value, its `/gui_query` fields, the buses it reads, the bulk it wants loaded, the GPU slot it claims. One `Needs` + `info` + `value`. This is what the tree collectors read instead of matching on a kind.
 
 Everything else — the drag's geometry, the caret, the open list, the held key, the selection, the marquee — is **state, and state lives in the element**.
@@ -1442,7 +1442,7 @@ The surface, with the milestone each part lands in:
 | `frame/items.rs` + `frame/draw.rs` | `draw(&self, d, ctx)`, or a declared GPU slot | ✅ K1 / K3 |
 | the `is_bare_surface` query | `is_bare_surface(&self)` | ✅ K1 |
 | `FrameInputs`' live reads | `ctx.world` — one read-only context | ✅ K3 |
-| a `gestures/press.rs` arm + a `Drag` variant + a `drag.rs` arm + a `release` arm + the `interact` sub-hit | `press` / `drag` / `drag_relative` / `release` / `wheel`, with the drag's state **inside the element** | ✅ K4 |
+| a `gestures/press.rs` arm + a `Drag` variant + a `drag.rs` arm + a `release` arm + the `interact` sub-hit | `press` / `drag` / `release` / `wheel`, with the drag's state **inside the element** | ✅ K4 |
 | the `interact::read` payload readers | the gesture's own `Events` (K4); the non-gesture read has no consumer | ✅ K5 |
 | the `gestures/keys.rs` arms + `focused_text` | `accepts_focus` / `key` | ✅ K6 |
 | the tree collectors (live buses, taps, node groups, GPU slots) | `needs(&self) -> Needs` — the whole declaration | ✅ K3 (bulk with `signal`, ✅ K7) |
@@ -1507,9 +1507,9 @@ One ordering detail worth stating because it was previously a known cost: **the 
 
   **The three proving leaves ported with the seam**, one commit each after it: `meter` (the smallest thing that reads the world — one bus, and the rate picks the table), `nodes` (a queried document plus the `server_attached` placeholder) and `canvas` (the slot declaration carrying a shader). Each was an arm in build, apply, the frame's collect and the frame's draw, plus — for the first two — an item struct copied out of the tree for a draw that never needed the tree; each is now one file in `host/elements/` with its tests beside it, and `WidgetKind` is three variants shorter. The prop parsers they share with the schema widened to `pub(crate)`, which is what an element outside the `widget` module needs to read the same props the same way.
 
-- ✅ **K4 — The element owns its interaction.** The largest single simplification in the track and the one that makes the API consistent: a widget's own geometry and press-time snapshot were parked in the gesture machine as `Drag` variants only because the widget could not hold them. What the machine keeps is the **sequence** — press → drag → release → wheel, the pointer grab — and the containers' navigation plans, which move a coordinate system rather than a widget. What the element gains is the **meaning**: `press` returns a `Claim` that holds the press, `drag` is handed the cursor and mutates *itself*, `drag_relative` is the same for a grabbed pointer, `release` delivers. Beside the plans sits `Drag::Element`, which carries no geometry at all.
+- ✅ **K4 — The element owns its interaction.** The largest single simplification in the track and the one that makes the API consistent: a widget's own geometry and press-time snapshot were parked in the gesture machine as `Drag` variants only because the widget could not hold them. What the machine keeps is the **sequence** — press → drag → release → wheel — and the containers' navigation plans, which move a coordinate system rather than a widget. What the element gains is the **meaning**: `press` returns a `Claim` that holds the press, `drag` is handed the cursor and mutates *itself*, `release` delivers. Beside the plans sits `Drag::Element`, which carries no geometry at all.
 
-  **The `Claim` says one thing, not two.** The design named two flags — grab the pointer, tick the edge scroll — and only the first landed. The grab is real and is the front's answer rather than the widget's wish (a page has no pointer lock, and the machine routes positions or deltas accordingly, which the element never learns). The edge scroll's only drag today is a `clip`'s, and a clip is a **container** that keeps its own drag; the flag lands with the first *element* that runs off an edge, which is also what will settle how the axis under it is panned. Adding it against no consumer would have been guesswork, the same call `Needs`' bulk half got in K3.
+  **The `Claim` says one thing, not two.** The design named two flags — grab the pointer, tick the edge scroll — and only the first landed; the grab was later removed outright, since a knob measured from its press needs no capture (see "A knob is a locked pointer on the desktop and a travelling one in a page", Found by use). The edge scroll's only drag today is a `clip`'s, and a clip is a **container** that keeps its own drag; the flag lands with the first *element* that runs off an edge, which is also what will settle how the axis under it is panned. Adding it against no consumer would have been guesswork, the same call `Needs`' bulk half got in K3.
 
   **What an element reports is `Events`** — a list of messages, not a value — because the case that is not one value is a patcher's release reporting a `"move"` per box. The bound-vs-event decision stays where it was, on one restated rule: a single argument is a value and takes the value road, anything longer is a tagged edit-back payload.
 
@@ -2556,30 +2556,48 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   combination that drifts. What the reading did turn up is below, and it is a
   different defect.
 
-- ⬜ **A knob is a locked pointer on the desktop and a travelling one in a
+- ✅ **A knob is a locked pointer on the desktop and a travelling one in a
   page.** Found by the reading above, and it is the standing rule's own case
-  rather than a drag's. `Dial::press` asks for the pointer grab, and the machine
-  honours what the front answers: `grab = take.grab && grab()`. The desktop
-  front locks the cursor (`gui::input::grab_pointer` →
-  `CursorGrabMode::Locked`, falling back to `Confined`) and then drives the
-  element with raw `DeviceEvent::MouseMotion` deltas; **the browser front passes
-  `&mut || false`** (`web::input::on_press`) and has no device-event path at
-  all, so the very same knob is driven by travelling cursor positions. The
-  element differences them itself and lands on the same value, which is what the
-  test above asserts — but the *gesture* is not the same one: in a page the
-  cursor walks away from the knob, the drag ends at the edge of the window
-  instead of turning as far as the hand goes, and the pointer is visible where
-  the desktop hides it.
+  rather than a drag's. `Dial::press` asked for the pointer grab and the machine
+  honoured what the front answered: the desktop front locked the cursor
+  (`CursorGrabMode::Locked`, falling back to `Confined`) and drove the element
+  with raw `DeviceEvent::MouseMotion` deltas, while the browser front passed
+  `&mut || false` and had no device-event path at all. The element differenced
+  the positions itself and landed on the same value — but the *gesture* was not
+  the same one: in a page the cursor walked away from the knob and the drag
+  ended at the edge of the window, where the desktop hid the pointer and turned
+  as far as the hand went.
 
-  The shape of the fix is known and small — winit's web backend implements
-  `CursorGrabMode::Locked` as `requestPointerLock`, so it is the same
-  `grab_pointer` call, a `device_event` hook forwarding `MouseMotion` to
-  `Gestures::relative_motion` (six lines, mirroring `gui/app.rs`), and the
-  release dropping the lock. It is **not attempted here** because none of it can
-  be verified without a browser and a hand: pointer lock needs a user gesture,
-  and this session already carries one entry for a browser guard nobody has seen
-  work. Written down so the next pass takes it with a page open rather than on
-  trust.
+  **The fix is the opposite of the one this entry sketched, and the sketch was
+  tried first.** Locking the pointer in a page cannot be made to work, and the
+  reasons are worth keeping because they are winit's rather than ours: web's
+  `set_cursor_grab(Locked)` calls `requestPointerLock` and returns `Ok(())`
+  whatever the browser then decides, so `grab()` answers "locked" for a lock
+  that may never happen; the delta it is supposed to be paid in is emitted only
+  from a `pointermove` **carrying no button**, which is Chrome's `-1` and not
+  Firefox's `0`, so the same drag would be dead in one of the two browsers; and
+  the deltas come from `getCoalescedEvents()`, whose list is empty for a
+  synthesized event, so no page test could ever drive one. With `grab` true the
+  machine stops reading positions — and the knob moved on the press and never
+  again.
+
+  **A knob does not need the cursor captured.** What it needs is the thing the
+  bend already had two entries above: a value measured from **one fixed anchor**
+  — the press — rather than accumulated per step. `Dial` now records where the
+  press landed, the fraction the value stood at there and the body's height, and
+  every step is `t_press + drag_fraction_delta(cy - y_press, body_h)`. A given
+  cursor position has one answer, so the pointer may leave the disc, cross the
+  window and come back with the value exactly where it says; the motion spent
+  past an end is kept rather than eaten, which is what makes coming back
+  faithful. One algorithm, one gesture, both fronts, and nothing for a platform
+  to answer differently.
+
+  So the capture machinery had no user left and is **gone**: `Take::grab`,
+  `Claim::grabbing()`, `Element::drag_relative`, `Drag::Element`'s `grab` field,
+  `Gestures::locked`/`relative_motion`, `GestureEffect::ReleasePointer`, the
+  grab callback the `press` signature took on both fronts, and the native
+  front's `grab_pointer`/`release_pointer`/`device_event` path. `number` follows
+  `knob`, as it always has.
 
 - ⬜ **A page burns the main thread while nothing is happening.** Measured on
   `clients/web/examples/composer.html` through the DevTools protocol: **67% of

@@ -36,17 +36,12 @@ impl Gestures {
     /// them sees it), and why Shift on a patcher's empty canvas still pans the
     /// workspace *around* the patcher: the canvas declines and the plane
     /// outside it takes over.
-    ///
-    /// `grab` is the front's pointer-grab attempt for a knob/number drag
-    /// (returns whether the pointer was *locked*); a front without pointer lock
-    /// returns `false`.
     pub fn press(
         &mut self,
         host: &mut Host,
         ctx: &GestureCtx,
         cx: f64,
         cy: f64,
-        grab: &mut dyn FnMut() -> bool,
     ) -> Vec<GestureEffect> {
         let mut out = Vec::new();
         // **One press per gesture**, which is the single-pointer rule the touch
@@ -141,7 +136,7 @@ impl Gestures {
                     // container that offers it sits.
                     GestureStep::Element if !element_ran => {
                         element_ran = true;
-                        self.element_press(host, ctx, &hit, cx, cy, grab, &mut out)
+                        self.element_press(host, ctx, &hit, cx, cy, &mut out)
                     }
                     GestureStep::Element => false,
                     action => {
@@ -424,7 +419,6 @@ impl Gestures {
     /// One function, because a widget and a container's **body** differ only in
     /// the address ([`element::At`]) — everything the machine does with the
     /// claim is the same, and a second copy of it is how the two would drift.
-    #[allow(clippy::too_many_arguments)] // an address, the context, a cursor, the grab
     fn element_at(
         &mut self,
         host: &mut Host,
@@ -432,17 +426,14 @@ impl Gestures {
         at: element::At,
         cx: f64,
         cy: f64,
-        grab: &mut dyn FnMut() -> bool,
         out: &mut Vec<GestureEffect>,
     ) -> bool {
         let claim = element::press(host, ctx, at, cx, cy).unwrap_or(Claim::Decline);
         let Claim::Take(take) = claim else {
             return false;
         };
-        let grab = take.grab && grab();
         self.drag = Some(Drag::Element {
             at,
-            grab,
             edge: take.edge_scroll,
         });
         element::report(host, out, ctx, at.id, take.events);
@@ -464,7 +455,6 @@ impl Gestures {
     /// Returns `true` when a **content** layer took the press. The placement
     /// layer's own gesture (the move, the edges) is the caller's, because it is
     /// the container's and not an element's.
-    #[allow(clippy::too_many_arguments)] // a hit, the context, a cursor, the grab
     fn clip_layer_press(
         &mut self,
         host: &mut Host,
@@ -472,7 +462,6 @@ impl Gestures {
         h: &interact::ClipHit,
         cx: f64,
         cy: f64,
-        grab: &mut dyn FnMut() -> bool,
         out: &mut Vec<GestureEffect>,
     ) -> bool {
         // The clip's own axis, which is the coordinate system every layer of it
@@ -536,14 +525,13 @@ impl Gestures {
                 ..at
             },
         );
-        self.element_at(host, ctx, at, cx, cy, grab, out)
+        self.element_at(host, ctx, at, cx, cy, out)
     }
 
     /// The press the containers handed down: what the widget under the cursor
     /// does with it — a control's value, a note, a break-point, a clip, a piano
     /// key, a cord. Returns whether it was consumed; declining (empty space in
     /// a lane, a patch's bare canvas) hands the press back to the chain.
-    #[allow(clippy::too_many_arguments)] // one press: a hit, the context, a cursor
     fn element_press(
         &mut self,
         host: &mut Host,
@@ -551,7 +539,6 @@ impl Gestures {
         hit: &Hit,
         cx: f64,
         cy: f64,
-        grab: &mut dyn FnMut() -> bool,
         out: &mut Vec<GestureEffect>,
     ) -> bool {
         let Hit {
@@ -619,7 +606,7 @@ impl Gestures {
                     // up and the pixels that resize are the same pixels by
                     // construction rather than by a precedence written down
                     // twice.
-                    if self.clip_layer_press(host, ctx, &h, cx, cy, grab, out) {
+                    if self.clip_layer_press(host, ctx, &h, cx, cy, out) {
                         return true;
                     }
                     let press_sample = interact::sample_at(
@@ -657,7 +644,6 @@ impl Gestures {
                     element::At::widget(id, rect, scale, indent),
                     cx,
                     cy,
-                    grab,
                     out,
                 );
             }

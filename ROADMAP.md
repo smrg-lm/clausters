@@ -96,19 +96,12 @@ repeated per frame — and **what leads the phase now is what that sitting did n
 finish**, followed by the destination the track was blocking and the one surface
 it named on its way past.*
 
-- ⬜ **A knob is a locked pointer on the desktop and a travelling one in a page**
-  *(`clients/gui/PLAN.md`, Found by use)* — what the reading of the other drags
-  turned up: none of them accumulates wrongly, but the browser front answers the
-  pointer-grab request with `false` and has no device-event path, so the same
-  widget is one gesture natively and another in a page. First because it is the
-  standing rule's own case and the fix is known and small; it waits only on a
-  browser and a hand, since pointer lock cannot be verified without either.
 - ⬜ **A page burns the main thread while nothing is happening**
   *(`clients/gui/PLAN.md`, Found by use)* — 67% of the main thread with the
   composer page idle, and the same 67% while playing, which is what makes the
   playhead jitter. It is the browser front's own (native reads the shm header
   and polls nothing), and the entry says to measure per stage before changing
-  anything. Second because every page the phase adds pays it.
+  anything. First because every page the phase adds pays it.
 - ⬜ **W16 — Example parity with the Python client**. Its named track (the
   arrangement layer, the editor, the transport, the engraver) is closed; what
   remains is the milestone itself, and it is the larger half: about forty

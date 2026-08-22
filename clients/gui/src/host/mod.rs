@@ -2826,7 +2826,7 @@ mod tests {
             (rect.x + rect.w - 2.0) as f64,
             (rect.y + rect.h * 0.5) as f64,
         );
-        g.press(&mut host, &ctx, x, y, &mut || false);
+        g.press(&mut host, &ctx, x, y);
         g.release(&mut host, &ctx, x, y);
         let dragged = match queried(&mut host, "value") {
             Some(OscType::Float(v)) => v,

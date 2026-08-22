@@ -6440,3 +6440,70 @@ the page has no way to be instantiated until the engine grows one (a wasm DSP
 module behind the worklet, or the Faust interpreter backend executed in our own
 engine). The SDK installed here is what W7 would have had to install; the
 decision it still owes is its own.
+
+
+## A knob is measured from its press, so no front captures the pointer
+
+*2026-08-22.*
+
+A knob has no groove on screen to point at, so what turns it is a distance
+rather than a position — and there are two ways to read that distance. The
+first: accumulate the step since the last event, re-anchoring every frame. The
+second: measure the travel since the **press**, against the value the press
+found. They agree while the pointer stays on the widget and part company the
+moment it does not.
+
+The host had the first one, and paid for it twice. A drag whose pointer left the
+element kept accumulating whatever motion still arrived, so the value fell out of
+phase with the hand; and the clamp at an end **ate** the motion spent past it, so
+coming back left the value short by however far the hand had gone. The same pair
+of defects had already been found and fixed on a curve's bend, which is now
+anchored at the press (`bpf::bend_curve` sets rather than adds). A knob was left
+incremental on the argument that it is different — a knob has nothing on screen
+to stay level with, so nothing to be out of phase *with*, and a pinned control
+that reverses immediately reads better than one that has to unwind.
+
+The reason to accumulate was that the cursor was expected to be **captured**: the
+desktop front locked the pointer at the press (`CursorGrabMode::Locked`) and drove
+the element with raw device deltas, so there were no positions to measure from.
+The browser front had no such path, so the very same widget was one gesture in a
+window and another in a page — which is a defect under the standing rule, not a
+platform's prerogative.
+
+**Making the page capture the pointer was tried and does not work**, and the
+reasons are winit's web backend rather than ours:
+
+- `set_cursor_grab(Locked)` calls `requestPointerLock` and returns `Ok(())`
+  whatever the browser decides afterwards, so the front's answer — the very thing
+  the machine routes on — is a guess. Nothing synchronous can do better: the lock
+  resolves asynchronously, and the press has to decide now.
+- The deltas it would be paid in are emitted only from a `pointermove` that
+  carries **no button** (`PointerEvent.button == -1`). Chrome reports `-1` on a
+  move; Firefox reports `0` while the button is down and takes the chorded-button
+  path instead, where no motion event is emitted at all. The knob would be dead
+  in one of the two browsers — the same Chrome/Firefox split that once delivered
+  a press per frame.
+- Those deltas come from `getCoalescedEvents()`, whose list is **empty for a
+  synthesized event**, so no page test could drive a captured knob even where it
+  worked.
+
+So the capture is gone and the measurement changed instead: `Dial` records where
+the press landed, the fraction the value stood at there and the body's height,
+and every step is `t_press + drag_fraction_delta(cy - y_press, body_h)`, clamped.
+A cursor position has **one** answer, so the pointer may leave the disc, cross
+the window and come back with the value exactly where it says, and the motion
+spent past an end is kept rather than eaten. `number` follows `knob`; the
+absolute controls (`slider`) never had the question.
+
+**What this costs** is the pinned-reversal the incremental form gave: past an
+end, the hand has to travel back to the anchor before the value moves. That is
+not a trade-off so much as the same rule applied honestly — the value is where
+the cursor says, at an end as everywhere else — and it is what the bend already
+does.
+
+**What it removes** is a whole seam: `Take::grab`, `Claim::grabbing()`,
+`Element::drag_relative`, `Gestures::locked`/`relative_motion`,
+`GestureEffect::ReleasePointer`, the grab callback `Gestures::press` took, and
+the native front's `grab_pointer`/`release_pointer`/`device_event` path. No
+element asks a front for the pointer any more, and a gesture is made of cursor
+positions on both fronts — which is what makes the two the same program.

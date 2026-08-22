@@ -11,10 +11,8 @@ use std::time::{Duration, Instant};
 use clausters_core::osc::{OscMessage, OscPacket, OscType, encode};
 use tracing::warn;
 use winit::application::ApplicationHandler;
-use winit::event::{
-    DeviceEvent, DeviceId, ElementState, MouseButton, MouseScrollDelta, WindowEvent,
-};
-use winit::event_loop::{ActiveEventLoop, ControlFlow, DeviceEvents};
+use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
+use winit::event_loop::{ActiveEventLoop, ControlFlow};
 use winit::keyboard::{Key, NamedKey};
 use winit::window::WindowId;
 
@@ -463,9 +461,6 @@ impl App {
 impl ApplicationHandler<UserEvent> for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         self.resumed = true;
-        // Deliver raw motion while focused, so a locked knob/number drag reads its
-        // relative `DeviceEvent::MouseMotion` (the pointer-lock path in `on_press`).
-        event_loop.listen_device_events(DeviceEvents::WhenFocused);
         for (id, origin) in std::mem::take(&mut self.pending) {
             self.open_window(event_loop, id, origin);
         }
@@ -529,17 +524,6 @@ impl ApplicationHandler<UserEvent> for App {
                 Err(e) => warn!("malformed OSC reply from the audio server: {e}"),
             },
         }
-    }
-
-    /// Raw relative motion drives a *locked* knob/number drag. The pointer is
-    /// locked in place (so it cannot wander onto the title bar or out of the
-    /// window, where `CursorMoved` is lost), and its movement arrives here as a
-    /// device delta instead — the gesture machine applies it incrementally.
-    fn device_event(&mut self, _: &ActiveEventLoop, _: DeviceId, event: DeviceEvent) {
-        let DeviceEvent::MouseMotion { delta: (_, dy) } = event else {
-            return;
-        };
-        self.on_relative_motion(dy);
     }
 
     /// After handling events, schedule the next wake-up: a ~30 fps repaint for

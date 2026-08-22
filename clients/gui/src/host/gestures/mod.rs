@@ -4,11 +4,11 @@
 //! The machine owns the in-progress [`Drag`] and turns pointer/wheel/keyboard
 //! input into tree mutations (through the [`interact`] doors and the widget
 //! model modules) plus a list of [`GestureEffect`]s for whatever only the front
-//! can do: emitting `/gui_event` over its transport, requesting repaints,
-//! releasing a pointer grab. The front supplies the per-call [`GestureCtx`]
-//! (framebuffer size, modifier keys, the heavy views' lane counts — the one
-//! datum that lives in front-side GPU slots) and, at press time, a pointer-grab
-//! callback (native pointer lock; a front without one returns `false`).
+//! can do: emitting `/gui_event` over its transport and requesting repaints.
+//! The front supplies the per-call [`GestureCtx`] (framebuffer size, modifier
+//! keys, the heavy views' lane counts — the one datum that lives in front-side
+//! GPU slots) and nothing else: every gesture is made of cursor positions, on
+//! either front, so neither has anything to capture.
 //!
 //! The module is platform-agnostic (no winit, no web-sys): the native windowed
 //! front ([`super::gui`]) and the browser front (`super::web`) both drive it,
@@ -64,8 +64,6 @@ pub enum GestureEffect {
     /// Repaint the window rooted at this def id (a gesture on one window may
     /// touch linked views in others, so this is not always the pressed window).
     Redraw(i32),
-    /// Release the pointer grab a knob/number drag took on window `def_id`.
-    ReleasePointer(i32),
     /// The keyboard focus **left this window's tree** — Tab stepped past the
     /// last stop on the ring, or there was no ring at all.
     ///
@@ -130,22 +128,17 @@ impl GestureCtx {
 /// scrolling a coordinate system, which is a property of that system and not of
 /// anything drawn in it — or [`Drag::Element`], which carries no geometry at
 /// all: what the drag *means* lives in the element, where its state belongs,
-/// and what the machine keeps is the sequence and the pointer grab.
+/// and what the machine keeps is the sequence.
 #[derive(Clone)]
 enum Drag {
     /// An element is holding the press. The machine remembers only what it
     /// alone can answer for: **where** it is ([`element::At`] — which widget or
     /// which body of which container, the placement the press was measured
-    /// against, the axis it was placed on) and whether the front granted a
-    /// pointer grab, which decides whether motion arrives as a position or as a
-    /// delta — plus whether it asked for the axis under it to keep scrolling
-    /// while the cursor is held past an edge, which is the group's to pan and
-    /// not the element's ([`Take::edge_scroll`](super::widget::element::Take::edge_scroll)).
-    Element {
-        at: element::At,
-        grab: bool,
-        edge: bool,
-    },
+    /// against, the axis it was placed on) — plus whether it asked for the axis
+    /// under it to keep scrolling while the cursor is held past an edge, which
+    /// is the group's to pan and not the element's
+    /// ([`Take::edge_scroll`](super::widget::element::Take::edge_scroll)).
+    Element { at: element::At, edge: bool },
     /// Panning a timeline view's (waveform/spectrogram) window from a snapshot
     /// (Shift+drag).
     Pan {
@@ -304,13 +297,6 @@ impl Gestures {
             ),
             Some(_) => Grab::Other,
         }
-    }
-
-    /// Whether the active drag is a *locked* one — driven by relative deltas
-    /// ([`Self::relative_motion`]), not by cursor positions. What an element
-    /// asked for and the front granted.
-    pub fn locked(&self) -> bool {
-        matches!(self.drag, Some(Drag::Element { grab: true, .. }))
     }
 
     /// Whether a drag is currently held against the edge of the axis it is on,
