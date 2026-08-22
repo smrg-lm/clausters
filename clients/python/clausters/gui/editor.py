@@ -1327,15 +1327,22 @@ class Editor:
         element's `clausters.seq.Automation`, with their times converted from
         timeline units to beats. The `Env` is the automation's source of truth, so
         this *is* the edit — the next render plays the curve as drawn."""
-        element = (placed.member.element if placed.member is not None
-                   else self.element)
+        clip = (placed.member.element if placed.member is not None
+                else self.element)
+        # **The leaf that carries the curve, not the clip that draws it.** A
+        # simultaneous aggregate is one clip with its members' bodies layered,
+        # so an envelope drawn on it belongs to a *member* — and a `Configure`
+        # addressed to the aggregate replaced an empty configuration with a
+        # `points` the crate had nowhere to keep: the edit reported success,
+        # changed nothing and left no undo behind.
+        element, member = _curve_owner(clip, placed.member)
         auto = _automation(element)
         if auto is None or not values:
             return False
         flat = []
         for t, v, shape, curve in _quads(list(values)):
             flat += [self.units_to_beats(t), float(v), int(shape), float(curve)]
-        node = self._node_id(element)
+        node = self._node_id(element, member)
         if node is None:
             return False
         # **Through the log, like every other edit.** A curve's break-points are
@@ -2201,8 +2208,15 @@ class Editor:
             # will unwind — which is what "the notes flicker, jump and return"
             # was. The refusal itself has always been correct; what was missing
             # is that nothing told the widget in advance.
+            #
+            # **The roll's own key, not the clip's.** ``editable`` is a
+            # statement about the whole clip and reaches every body it carries,
+            # so saying it here locked the *envelope* drawn over these notes as
+            # well — a sweep whose curve drew and could not be touched. A body
+            # says its own with ``notes_editable``, as it already keeps its own
+            # value axis with ``points_min``/``points_max``.
             if _editable_timeline(element) is None:
-                body["editable"] = False
+                body["notes_editable"] = False
             return body
         # No body: a collapsed aggregate (or an element with nothing to draw) is the
         # labeled rectangle — the summary of the level above it.
@@ -2374,6 +2388,25 @@ def _roll_owner(element):
                 return m.element
         return None
     return element
+
+
+def _curve_owner(element, member=None):
+    """The element whose `clausters.seq.Automation` a clip's curve body draws —
+    what a ``"points"`` edit-back is written onto — and the member handle that
+    places it.
+
+    The mirror of `_roll_owner`, and needed for the same reason: a
+    **simultaneous** aggregate draws as one clip with its members' bodies
+    layered, so the curve under the cursor is a member's and the intent has to
+    name that member's node. Anything else answers with itself and the handle it
+    was placed by.
+    """
+    if (isinstance(element, Aggregate) and len(element) > 1
+            and element.temporal_relation() == SIMULTANEOUS):
+        for handle in element.handles:
+            if _automation(handle.element) is not None:
+                return handle.element, handle
+    return element, member
 
 
 def _editable_timeline(element):

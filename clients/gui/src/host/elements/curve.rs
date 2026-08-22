@@ -86,7 +86,11 @@ pub(crate) fn body(props: &Map<String, Value>) -> Option<Curve> {
         exp: props.get("exp").and_then(truthy).unwrap_or(false),
         label: None,
         grab: None,
-        editable: props.get("editable").and_then(truthy).unwrap_or(true),
+        // The curve's own, before the clip-wide `editable` -- an envelope over
+        // a roll that cannot be written is the ordinary case (a generator's
+        // notes are a rendering; the curve shaping them is not), and one key
+        // for both bodies made the curve inherit a refusal meant for the roll.
+        editable: super::body_editable(props, "points_editable"),
     })
 }
 
@@ -559,6 +563,36 @@ mod tests {
     /// the element was built, placed and collected, and the pass called a
     /// default that paints nothing. The test beside this one drove `draw`
     /// instead, so it passed throughout.
+    /// **A clip-wide refusal is not the curve's.** A simultaneous aggregate
+    /// draws as one clip with its members' bodies layered, and the ordinary
+    /// case is a rendered generator's notes -- read-only -- under an envelope
+    /// that is not. Both bodies read one props map, so before `points_editable`
+    /// the curve inherited the roll's `editable: false` and the envelope drew
+    /// but could not be touched.
+    #[test]
+    fn a_read_only_roll_does_not_lock_the_curve_over_it() {
+        let layered = props(
+            r#"{"notes":[0.0,100.0,60.0,100,0],"notes_editable":false,
+                "points":[0.0,0.2,1,0.0,1.0,0.9,1,0.0],
+                "points_min":0.0,"points_max":1.0}"#,
+        );
+        let curve = body(&layered).expect("a curve body");
+        assert!(
+            curve.editable,
+            "the roll's refusal is the roll's, and says nothing about the curve"
+        );
+        // The clip-wide key still reaches both, which is what it is for.
+        let whole = props(r#"{"points":[0.0,0.2,1,0.0,1.0,0.9,1,0.0],"editable":false}"#);
+        assert!(!body(&whole).expect("a curve body").editable);
+
+        // And the curve's own key overrides it in the other direction.
+        let mixed = props(
+            r#"{"points":[0.0,0.2,1,0.0,1.0,0.9,1,0.0],
+                "editable":false,"points_editable":true}"#,
+        );
+        assert!(body(&mixed).expect("a curve body").editable);
+    }
+
     #[test]
     fn a_clip_body_draws_the_line() {
         use crate::host::widget::element::TimeSpace;

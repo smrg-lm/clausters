@@ -1922,6 +1922,37 @@ row in `docs/gui-props.md`, or a paragraph in this plan's parity section.
 
 ## Found by use: the running list of fixes
 
+- ✅ **The document writer took every wrapped object for a preserved node**
+  *(found 2026-08-22 chasing the curve that would not edit, and the more serious
+  of the two)*. `preserved()` asks whether a base `Element` is holding a **raw
+  document node** — the format's own rule that what a writer does not understand
+  it preserves. The Python client spells that `isinstance(element.wraps, dict)`;
+  this one spelled it `typeof wraps === "object"`, which is true of *every*
+  instance there is. So a base `Element` wrapping an `Automation` — the
+  arrangement's own way of holding a curve — was written out as the
+  automation's **fields** (`levels`, `times`, `buf`, `bus`, …) instead of as the
+  `generator` node with its break-points, and the two clients wrote **different
+  documents for one composition**. Downstream: `leafConfig` answered `{}`, so
+  the editor's curve edit was refused by the crate with "this body holds no
+  configuration" — while `applyPoints` still reported success, changed nothing
+  and left no undo behind. Fixed by testing for a **plain** object (its
+  prototype is `Object.prototype` or null), and the parity suite gained the case
+  that would have caught it: `gen-form-vectors.py` had no `Automation` in any of
+  its five compositions, which is the whole reason a divergence in the document
+  format survived a suite built to compare documents.
+
+- ✅ **A curve edit named the clip that drew it instead of the leaf that carries
+  it** *(found the same day, in both clients)*. `applyPoints` addressed its
+  `configure` intent to `placed.member.element` — which for a layered clip is
+  the **aggregate**, not the member holding the `Automation`. `automationOf`
+  descends into a simultaneous aggregate, so the curve was found and the sound
+  followed, but an aggregate is not a leaf: the intent replaced an empty
+  configuration, the crate had nowhere to keep the points, and the edit reported
+  success with nothing changed and nothing to undo. The notes route had had
+  `rollOwner` for exactly this since it was written; the curve route never grew
+  its mirror. Now it has one (`curveOwner`/`_curve_owner`), and both clients
+  carry the test.
+
 - ✅ **A clip's curve body drew nothing — in every client.** A `clip` carrying
   `points` laid out as an empty rectangle: the automation lane of the multitrack
   editor, in a page *and* in a native window. `Element::draw_body` defaults to

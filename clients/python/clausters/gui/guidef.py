@@ -1372,7 +1372,9 @@ def clip(*, offset: float = 0.0, dur: float, data=None, blob: int | None = None,
          db_ceil: float | None = None, freq_scale: str | None = None,
          colormap: int | None = None, notes=None, points=None,
          exp: bool | None = None, min: float | None = None, max: float | None = None,
-         editable: bool | None = None, start: float | None = None, loop: bool | None = None,
+         editable: bool | None = None, notes_editable: bool | None = None,
+         points_editable: bool | None = None,
+         start: float | None = None, loop: bool | None = None,
          fit: bool | None = None, layer: str | None = None, hidden: str | None = None,
          label: str | None = None, color: str | None = None, id: int | None = None, **props
          ) -> dict:
@@ -1428,14 +1430,22 @@ def clip(*, offset: float = 0.0, dur: float, data=None, blob: int | None = None,
       For an audio take placed 1:1, that is the take's frame count.
     - ``min``/``max`` — the waveform value range, or the low/high pitch of a
       piano-roll (default the bipolar ``-1``/``1``).
-    - ``editable`` — whether a hand may edit this clip's **body** (default
-      true). Set it false where the body draws a *rendering* rather than the
-      thing itself — the notes of a pattern, a curve this editor cannot write —
-      and the roll or the curve refuses the press instead of offering a drag it
-      will unwind. The refusal is visible (a ``"refused"`` event carrying the
-      reason) and it consumes the press, so nothing behind it turns a refused
-      edit into a selection. It says nothing about the clip's own drag: a
-      read-only body still moves and resizes as a placement.
+    - ``editable`` — whether a hand may edit this clip's **bodies** (default
+      true), *all* of them: it is a statement about the clip. Set it false where
+      the body draws a *rendering* rather than the thing itself — the notes of a
+      pattern, a curve this editor cannot write — and the roll or the curve
+      refuses the press instead of offering a drag it will unwind. The refusal
+      is visible (a ``"refused"`` event carrying the reason) and it consumes the
+      press, so nothing behind it turns a refused edit into a selection. It says
+      nothing about the clip's own drag: a read-only body still moves and
+      resizes as a placement.
+    - ``notes_editable`` / ``points_editable`` — the same answer for **one**
+      body, overriding ``editable`` where they are given. A clip whose bodies
+      layer needs them: an envelope over a pattern's notes is the ordinary case,
+      and there the roll is a rendering that cannot be written while the curve
+      over it is the thing itself. It is the split ``min``/``max`` already has
+      from ``points_min``/``points_max``, for the same reason — two bodies, one
+      props map.
 
     A clip is a **window onto a segment of its samples**, not a rectangle the
     samples are stretched into:
@@ -1477,7 +1487,10 @@ def clip(*, offset: float = 0.0, dur: float, data=None, blob: int | None = None,
                        points=_flat_points(points) if points is not None else None,
                        min=min, max=max, start=start, layer=layer, hidden=hidden,
                        label=label, color=color)
-    for key, flag in (("exp", exp), ("editable", editable), ("loop", loop), ("fit", fit)):
+    for key, flag in (("exp", exp), ("editable", editable),
+                      ("notes_editable", notes_editable),
+                      ("points_editable", points_editable),
+                      ("loop", loop), ("fit", fit)):
         if flag is not None:
             extra[key] = 1 if flag else 0
     return node("field", id=id, dur=dur, **extra, **props)

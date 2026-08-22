@@ -724,6 +724,116 @@
    },
    "flat": [],
    "relation": "successive"
+  },
+  "a_curve_on_its_event": {
+   "document": {
+    "version": 1,
+    "root": {
+     "id": 1,
+     "kind": "aggregate",
+     "grouping": "concrete",
+     "members": [
+      {
+       "offset": 0.0,
+       "node": {
+        "id": 2,
+        "name": "sweep",
+        "kind": "aggregate",
+        "grouping": "concrete",
+        "members": [
+         {
+          "offset": 0.0,
+          "node": {
+           "id": 3,
+           "duration": 4.0,
+           "kind": "clang",
+           "config": {
+            "type": "note",
+            "instrument": "drone",
+            "dur": 4.0,
+            "legato": 0.8,
+            "stretch": 1.0,
+            "amp": 0.1,
+            "add_action": 1,
+            "target": 0,
+            "has_gate": false,
+            "octave": 5.0,
+            "root": 0.0,
+            "scale": [
+             0,
+             2,
+             4,
+             5,
+             7,
+             9,
+             11
+            ]
+           }
+          }
+         },
+         {
+          "offset": 0.0,
+          "node": {
+           "id": 4,
+           "duration": 4.0,
+           "kind": "generator",
+           "config": {
+            "generator": "freq",
+            "points": [
+             0.0,
+             200.0,
+             1.0,
+             0.0,
+             2.0,
+             900.0,
+             2.0,
+             0.0,
+             4.0,
+             300.0,
+             1.0,
+             0.0
+            ]
+           }
+          }
+         }
+        ]
+       }
+      }
+     ]
+    }
+   },
+   "flat": [
+    {
+     "beat": 0.0,
+     "event": {
+      "type": "note",
+      "instrument": "drone",
+      "dur": 4.0,
+      "legato": 0.8,
+      "stretch": 1.0,
+      "amp": 0.1,
+      "add_action": 1,
+      "target": 0,
+      "has_gate": false,
+      "octave": 5.0,
+      "root": 0.0,
+      "scale": [
+       0,
+       2,
+       4,
+       5,
+       7,
+       9,
+       11
+      ]
+     }
+    },
+    {
+     "beat": 0.0,
+     "item": "Automation"
+    }
+   ],
+   "relation": "simultaneous"
   }
  },
  "session": {

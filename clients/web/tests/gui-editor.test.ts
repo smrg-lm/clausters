@@ -20,13 +20,15 @@ import { loadCore } from "../src/base/core.ts";
 import {
     Aggregate,
     Clang,
+    Element,
     Track,
     Vector,
 } from "../src/form/index.ts";
-import type { Element, SourceLike } from "../src/form/index.ts";
+import type { SourceLike } from "../src/form/index.ts";
 import { Editor } from "../src/gui/editor.ts";
 import type { GuiHost, PropValue } from "../src/gui/host.ts";
 import { Event as SeqEvent } from "../src/seq/event.ts";
+import { Automation } from "../src/seq/automation.ts";
 import { Timeline } from "../src/seq/timeline.ts";
 import type { GuiNode } from "../src/gui/guidef.ts";
 
@@ -271,6 +273,52 @@ test("a clip over a generator refuses a note edit, and says why", () => {
     );
     assert.ok(host.reasons.at(-1), "a refusal with no reason teaches 'sometimes it fails'");
     assert.ok(host.corrections().has(wid), "the notes as they still are went back");
+});
+
+test("a layered clip routes a curve edit to the member that carries it", () => {
+    // The composer's `sweep` lane: an envelope over a note that is not an
+    // editable timeline. The aggregate is not a leaf, so a `configure`
+    // addressed to *it* replaced an empty configuration and the crate had
+    // nowhere to keep the points — the edit reported success, changed nothing
+    // and left no undo behind.
+    const env = Automation.fromPoints(
+        [[0.0, 200.0, 1, 0.0], [2.0, 900.0, 2, 0.0], [4.0, 300.0, 1, 0.0]],
+        null,
+        { name: "sweep" },
+    );
+    const attached = new Aggregate(
+        [
+            [0.0, new Clang(new SeqEvent({ instrument: "drone", dur: 4.0 }))],
+            [0.0, new Element(env, null, 4.0)],
+        ],
+        "concrete",
+        { name: "sweep" },
+    );
+    const ed = editor(new Aggregate([[0.0, attached]], "concrete", { name: "song" }));
+    const clip = clipsOf(lanes(ed.draw())[0] as GuiNode)[0] as GuiNode;
+
+    assert.ok(clip.points, "the curve is drawn");
+    // The roll's refusal is the roll's: it does not reach the curve over it.
+    assert.equal(clip.notes_editable, 0);
+    assert.equal(clip.editable, undefined, "the clip-wide key would lock the curve too");
+
+    assert.equal(
+        ed.apply("/gui_event", [
+            clip.id as number, SEQ, UNSTATED, "points",
+            0.0, 300.0, 1, 0.0,
+            2 * BEAT, 500.0, 1, 0.0,
+            4 * BEAT, 100.0, 1, 0.0,
+        ]),
+        true,
+    );
+    const points = env.toPoints();
+    assert.equal(points[1], 300.0);
+    assert.equal(points[5], 500.0);
+    // ...and it is an edit like any other, so it is in the history.
+    assert.equal(ed.canUndo, true);
+    assert.equal(ed.undoLabel, "edit the curve");
+    ed.undo();
+    assert.equal(env.toPoints()[1], 200.0);
 });
 
 // ---- the history ----

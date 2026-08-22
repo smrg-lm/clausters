@@ -107,6 +107,23 @@ const compositions: Record<string, () => Aggregate> = {
         return new Aggregate([[0.0, pair]], "concrete", { name: "song" });
     },
 
+    a_curve_over_a_rendering() {
+        const curve = Automation.fromPoints(
+            [[0.0, 200.0, 1, 0.0], [2.0, 900.0, 2, 0.0], [4.0, 300.0, 1, 0.0]],
+            null,
+            { name: "freq" },
+        );
+        const voice = new Clang(
+            new SeqEvent({ instrument: "drone", dur: 4.0, legato: 1.0, amp: 0.12 }),
+        );
+        const pair = new Aggregate(
+            [[0.0, voice], [0.0, new Element(curve, null, 4.0)]],
+            "concrete",
+            { name: "sweep" },
+        );
+        return new Aggregate([[0.0, pair]], "concrete", { name: "song" });
+    },
+
     a_nested_aggregate() {
         const inner = new Aggregate(
             [

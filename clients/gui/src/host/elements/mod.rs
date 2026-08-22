@@ -23,7 +23,31 @@
 //! use it today; both are on by default, since a feature is here so a build can
 //! *drop* a family and never so it has to ask for one.
 
+use serde_json::{Map, Value};
+
 use super::widget::element::Constructor;
+use super::widget::parse::truthy;
+
+/// Whether a hand may edit **one body** of a clip, from the props the clip
+/// carries.
+///
+/// Two keys answer it and the order is the point. `editable` is the statement
+/// about the *clip* — it reaches every body the clip has, which is what the
+/// `/gui_set` route already says of it — so a body that needs its own answer
+/// reads `own` first: `notes_editable` for the roll, `points_editable` for the
+/// curve. Without that split there is no way to say the one thing a rendered
+/// generator needs said, which is that its notes cannot be written while the
+/// envelope drawn over them can.
+///
+/// The default is editable, because a clip that says nothing offers what it
+/// draws.
+pub(crate) fn body_editable(props: &Map<String, Value>, own: &str) -> bool {
+    props
+        .get(own)
+        .or_else(|| props.get("editable"))
+        .and_then(truthy)
+        .unwrap_or(true)
+}
 
 mod button;
 mod canvas;

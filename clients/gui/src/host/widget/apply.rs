@@ -105,6 +105,20 @@ fn apply_clip_body(widget: &mut Widget, key: &str, v: &Value) -> bool {
             }
             landed
         }
+        // Each body's **own** editability, against the clip-wide `editable`
+        // above: a roll that is a rendering of a generator cannot be written
+        // while the envelope drawn over it can, and one key for both bodies
+        // could not say it.
+        "notes_editable" | "points_editable" => {
+            let role = if key == "notes_editable" {
+                Notes
+            } else {
+                Curve
+            };
+            widget
+                .clip_body_mut(role)
+                .is_some_and(|k| apply_kind(k, "editable", v))
+        }
         "points" | "exp" => {
             widget.ensure_body(Curve);
             widget

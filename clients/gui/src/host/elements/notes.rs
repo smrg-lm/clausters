@@ -180,8 +180,12 @@ pub(crate) fn body(props: &Map<String, Value>) -> Option<Notes> {
         min: number(props, "min", PITCH_MIN),
         max: number(props, "max", PITCH_MAX),
         // A clip's prop, because a clip is what a script addresses: a body
-        // carries no id of its own.
-        editable: props.get("editable").and_then(truthy).unwrap_or(true),
+        // carries no id of its own. **Its own first**: `editable` is the
+        // statement about the whole clip and reaches every body, so a roll that
+        // is read-only while the curve over it is not says so with
+        // `notes_editable` -- the same split `points_min` already has from
+        // `min`.
+        editable: super::body_editable(props, "notes_editable"),
         ..empty_body()
     })
 }
@@ -1659,6 +1663,28 @@ mod tests {
                 None
             )
             .is_none()
+        );
+    }
+
+    /// The roll's half of the split `points_editable` opened: `notes_editable`
+    /// locks the roll alone, and the clip-wide `editable` still locks it too.
+    /// The curve's half is asserted beside the curve, where its field is
+    /// visible.
+    #[test]
+    fn the_roll_reads_its_own_editable_before_the_clip_s() {
+        let notes = r#""notes":[0.0,100.0,60.0,100,0]"#;
+        let read = |json: &str| body(&props(json)).expect("notes").editable;
+        assert!(
+            read(&format!("{{{notes}}}")),
+            "a clip that says nothing offers the drag"
+        );
+        assert!(!read(&format!(r#"{{{notes},"notes_editable":false}}"#)));
+        assert!(!read(&format!(r#"{{{notes},"editable":false}}"#)));
+        assert!(
+            read(&format!(
+                r#"{{{notes},"editable":false,"notes_editable":true}}"#
+            )),
+            "its own key answers before the clip's"
         );
     }
 

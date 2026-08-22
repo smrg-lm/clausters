@@ -81,6 +81,21 @@ def an_envelope_on_its_event():
     return Aggregate([(0.0, pair)], name="song")
 
 
+def a_curve_over_a_rendering():
+    """The composer's `sweep` lane: an envelope over a note that is *not* an
+    editable timeline. One clip, two layered bodies — and the two say their
+    editability separately, which is the whole point of the case. Before
+    ``notes_editable`` the roll's refusal was written as the clip's ``editable``
+    and the curve inherited it: an envelope that drew and could not be touched.
+    """
+    curve = Automation.from_points([(0.0, 200.0, 1, 0.0), (2.0, 900.0, 2, 0.0),
+                                    (4.0, 300.0, 1, 0.0)], None, name="freq")
+    voice = Clang(SeqEvent(instrument="drone", dur=4.0, legato=1.0, amp=0.12))
+    pair = Aggregate([(0.0, voice), (0.0, Element(curve, duration=4.0))],
+                     name="sweep")
+    return Aggregate([(0.0, pair)], name="song")
+
+
 def a_nested_aggregate():
     """A nested aggregate is a labeled rectangle — its summary — until it is
     expanded into lanes of its own."""
@@ -106,6 +121,7 @@ CASES = [
     ("a_windowed_take", a_windowed_take, {}, False),
     ("a_joined_take", a_joined_take, {}, False),
     ("an_envelope_on_its_event", an_envelope_on_its_event, {}, False),
+    ("a_curve_over_a_rendering", a_curve_over_a_rendering, {}, False),
     ("a_nested_aggregate", a_nested_aggregate, {}, False),
     ("a_nested_aggregate_expanded", a_nested_aggregate, {}, True),
     ("a_patch", a_patch, {}, False),

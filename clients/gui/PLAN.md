@@ -2230,6 +2230,24 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   standalone door taking its body-shaped branch), which is exactly why it
   survived: two doors that look alike and only one of them wired.
   `a_clip_body_draws_the_line` now goes through the one a clip uses.
+- ✅ **One `editable` for two bodies, so a read-only roll locked the curve
+  over it** *(found 2026-08-22 by the user, looking at the composer example:
+  "no se pueden editar el lane bass y sweep")*. A simultaneous aggregate draws
+  as one clip with its members' bodies **layered**, and both bodies read **one
+  props map** — so the roll's `editable: false`, which is correct (a `Clang`'s
+  notes are a rendering), reached `curve::body` as well. The envelope drew and
+  refused every press. The clip stayed draggable throughout, which is exactly
+  why it read as "the lane does not edit" rather than as a dead widget: a
+  read-only curve answers `false` from `layer_hit` and the press falls through.
+  The `/gui_set` route had already decided what `editable` *means* — "it reaches
+  every body the clip carries, because it is a statement about the clip and not
+  about one of them" — so the build path reading it per body was the half that
+  never got the memo, and the client saying a body's business with a clip-wide
+  key was the other half. Fixed with the split `min`/`max` already had from
+  `points_min`/`points_max`: `notes_editable` and `points_editable`, each
+  overriding `editable` where given, on both paths, in both builders and in
+  `docs/gui-protocol.md`.
+
 - ⬜ **A page burns the main thread while nothing is happening.** Measured on
   `clients/web/examples/composer.html` through the DevTools protocol: **67% of
   the main thread, idle** — no transport running, no pointer moving, no

@@ -571,15 +571,19 @@ function body(element: Element, ids: Ids): DocNode {
  * `null` for an element it understands.
  */
 function preserved(element: Element): DocNode | null {
-    if (
-        Object.getPrototypeOf(element) === Element.prototype &&
-        element.wraps !== null &&
-        typeof element.wraps === "object" &&
-        !Array.isArray(element.wraps)
-    ) {
-        return element.wraps as DocNode;
-    }
-    return null;
+    if (Object.getPrototypeOf(element) !== Element.prototype) return null;
+    // **A raw node is a plain object, and nothing else is.** The Python client
+    // spells this `isinstance(element.wraps, dict)`; `typeof x === "object"` is
+    // not that test — it is true of every instance there is, so a base
+    // `Element` wrapping an `Automation` (the arrangement's own way of holding
+    // a curve) was written out as *the automation's fields* instead of as the
+    // generator node with its break-points. The two clients wrote different
+    // documents for one composition, and the edit that follows the write had
+    // nothing to configure.
+    const wraps = element.wraps as object | null;
+    if (wraps === null || typeof wraps !== "object") return null;
+    const proto = Object.getPrototypeOf(wraps);
+    return proto === Object.prototype || proto === null ? (wraps as DocNode) : null;
 }
 
 /**

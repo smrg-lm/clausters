@@ -1410,14 +1410,21 @@ export class Editor {
      * the edit — the next render plays the curve as drawn.
      */
     private applyPoints(placed: Placed, values: readonly unknown[]): boolean {
-        const element = placed.member !== null ? placed.member.element : this.element;
+        const clip = placed.member !== null ? placed.member.element : this.element;
+        // **The leaf that carries the curve, not the clip that draws it.** A
+        // simultaneous aggregate is one clip with its members' bodies layered,
+        // so an envelope drawn on it belongs to a *member* — and a `configure`
+        // addressed to the aggregate replaced an empty configuration with a
+        // `points` the crate had nowhere to keep: the edit reported success,
+        // changed nothing and left no undo behind.
+        const [element, member] = curveOwner(clip, placed.member);
         const auto = automationOf(element);
         if (auto === null || values.length === 0) return false;
         const flat: number[] = [];
         for (const [t, v, shape, curve] of quads(values.map((x) => Number(x)))) {
             flat.push(this.unitsToBeats(t), Number(v), Math.trunc(shape), Number(curve));
         }
-        const node = this.nodeId(element);
+        const node = this.nodeId(element, member);
         if (node === null) return false;
         // **Through the log, like every other edit.** A curve's break-points are a
         // leaf's configuration, so the intent is a `configure` — and it replaces
@@ -2295,7 +2302,17 @@ export class Editor {
             // forward-only generator when there is no editable timeline behind
             // them, so the roll refuses the press instead of offering a drag it
             // will unwind.
-            if (editableTimeline(element) === null) body.editable = false;
+            //
+            // **The roll's own key, not the clip's.** `editable` is a statement
+            // about the whole clip and reaches every body it carries, so saying
+            // it here locked the *envelope* drawn over these notes as well — a
+            // sweep whose curve drew and could not be touched. A body says its
+            // own with `notes_editable`, as it already keeps its own value axis
+            // with `points_min`/`points_max`.
+            // The builder's own name, so the flag is coerced the way every
+            // other clip flag is (`0`/`1` on the wire) and the two clients
+            // emit one GuiDef rather than two spellings of one.
+            if (editableTimeline(element) === null) body.notesEditable = false;
             return body;
         }
         // No body: a collapsed aggregate (or an element with nothing to draw) is
@@ -2500,6 +2517,31 @@ function quintuples(flat: readonly number[]): [number, number, number, number, n
         ]);
     }
     return out;
+}
+
+/**
+ * The element whose `Automation` a clip's curve body draws — what a `"points"`
+ * edit-back is written onto — and the member handle that places it.
+ *
+ * The mirror of `rollOwner`, and needed for the same reason: a **simultaneous**
+ * aggregate draws as one clip with its members' bodies layered, so the curve
+ * under the cursor is a member's and the intent has to name that member's node.
+ * Anything else answers with itself and the handle it was placed by.
+ */
+function curveOwner(
+    element: Element,
+    member: Member | null = null,
+): [Element, Member | null] {
+    if (
+        element instanceof Aggregate &&
+        element.length > 1 &&
+        element.temporalRelation() === SIMULTANEOUS
+    ) {
+        for (const h of element.handles) {
+            if (automationOf(h.element) !== null) return [h.element, h];
+        }
+    }
+    return [element, member];
 }
 
 /**

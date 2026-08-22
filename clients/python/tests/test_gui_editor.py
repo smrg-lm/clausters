@@ -359,6 +359,41 @@ def test_a_layered_clip_routes_a_note_edit_to_the_member_that_carries_it():
     assert [it.get("midinote") for _b, it in tl.range(0.0, float("inf"))] == [67]
 
 
+def test_a_layered_clip_routes_a_curve_edit_to_the_member_that_carries_it():
+    """The mirror of the note case, and the one that was broken: the aggregate
+    is not a leaf, so a `configure` addressed to *it* replaced an empty
+    configuration and the crate had nowhere to keep the points — the edit
+    reported success, changed nothing and left no undo behind."""
+    from clausters.form import Element
+    from clausters.seq import Automation
+
+    env = Automation.from_points([(0, 200.0, 1, 0.0), (2, 900.0, 2, 0.0),
+                                  (4, 300.0, 1, 0.0)], target=None, name="sweep")
+    # The notes half is a `Clang` — a rendering, with no editable timeline —
+    # which is what the composer's sweep lane holds and what made the whole clip
+    # read as locked.
+    attached = Aggregate([(0.0, Clang(SeqEvent(instrument="drone", dur=4.0))),
+                          (0.0, Element(env, duration=4.0))], name="sweep")
+    ed = editor(Aggregate([(0.0, Aggregate([(0.0, attached)], name="sweep"))], name="song"))
+    (lane,) = lanes(ed.draw())
+    (c,) = clips(lane)
+    assert c["points"], "the curve is drawn"
+    # The roll's refusal is the roll's: it does not reach the curve over it.
+    assert c.get("notes_editable") == 0
+    assert "editable" not in c, "the clip-wide key would lock the curve too"
+
+    assert ed.apply("/gui_event", [c["id"], SEQ, UNSTATED, "points",
+                                   0.0, 300.0, 1, 0.0,
+                                   2 * BEAT, 500.0, 1, 0.0,
+                                   4 * BEAT, 100.0, 1, 0.0]) is True
+    assert env.to_points()[0:2] == pytest.approx([0.0, 300.0])
+    assert env.to_points()[4:6] == pytest.approx([2.0, 500.0])
+    # ...and it is an edit like any other, so it is in the history.
+    assert ed.can_undo and ed.undo_label == "edit the curve"
+    ed.undo()
+    assert env.to_points()[0:2] == pytest.approx([0.0, 200.0])
+
+
 # ---- the base level: a nested aggregate collapses to a summary, or expands ----
 
 def test_a_nested_aggregate_is_a_labeled_rectangle_until_it_is_expanded():
@@ -1517,7 +1552,10 @@ def test_a_clip_over_a_generator_draws_its_notes_read_only():
     ed = editor(Aggregate([(0.0, lane)], name="song"))
     clip = _find(ed.draw(), lambda n: "notes" in n)
     assert clip is not None, "a pattern lane draws its bounced notes"
-    assert clip.get("editable") == 0, "and says they are read-only"
+    # **The roll's own key.** `editable` is the clip's and reaches every body it
+    # carries, which locked the envelope of a layered clip along with the notes.
+    assert clip.get("notes_editable") == 0, "and says they are read-only"
+    assert "editable" not in clip
 
     # A track's own notes are editable, which is what says the flag is the
     # contents' and not the widget's.

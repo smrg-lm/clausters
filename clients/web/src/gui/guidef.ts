@@ -1554,14 +1554,27 @@ export function clip(
         min?: number;
         max?: number;
         /**
-         * Whether a hand may edit this clip's **body** (default true). False
-         * where the body draws a *rendering* rather than the thing itself — the
-         * notes of a pattern, a curve this editor cannot write — so the roll or
-         * the curve refuses the press instead of offering a drag it will
-         * unwind. The refusal is visible and consumes the press; the clip's own
-         * move and resize are untouched.
+         * Whether a hand may edit this clip's **bodies** (default true), *all*
+         * of them: it is a statement about the clip. False where the body draws
+         * a *rendering* rather than the thing itself — the notes of a pattern, a
+         * curve this editor cannot write — so the roll or the curve refuses the
+         * press instead of offering a drag it will unwind. The refusal is
+         * visible and consumes the press; the clip's own move and resize are
+         * untouched.
          */
         editable?: boolean;
+        /**
+         * The same answer for **one** body, overriding {@link clip}'s
+         * `editable` where it is given. A clip whose bodies layer needs it: an
+         * envelope over a pattern's notes is the ordinary case, and there the
+         * roll is a rendering that cannot be written while the curve over it is
+         * the thing itself. It is the split `min`/`max` already has from
+         * `pointsMin`/`pointsMax`, for the same reason — two bodies, one props
+         * map.
+         */
+        notesEditable?: boolean;
+        /** The curve body's own editability; see `notesEditable`. */
+        pointsEditable?: boolean;
         /**
          * The source frame this clip's own time zero reads (default 0). A clip
          * is a **window onto a segment of its buffer**: one timeline sample
@@ -1600,7 +1613,8 @@ export function clip(
     const {
         offset = 0.0, dur, cache, path, buffer, data, blob, channels,
         baseBucket, view, windowSize, hop, dbFloor, dbCeil, freqScale, colormap,
-        notes, points, exp, min, max, editable, start, loop, fit, layer, hidden,
+        notes, points, exp, min, max, editable, notesEditable, pointsEditable,
+        start, loop, fit, layer, hidden,
         label: text, ...rest
     } = options;
     return node("field", {
@@ -1623,6 +1637,8 @@ export function clip(
             ["min", min],
             ["max", max],
             ["editable", flag(editable)],
+            ["notes_editable", flag(notesEditable)],
+            ["points_editable", flag(pointsEditable)],
             ["start", start],
             ["loop", flag(loop)],
             ["fit", flag(fit)],

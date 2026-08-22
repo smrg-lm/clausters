@@ -1,5 +1,76 @@
 {
  "cases": {
+  "a_curve_over_a_rendering": {
+   "expand": false,
+   "extent": 4.0,
+   "quant": 0.0,
+   "tree": {
+    "children": [
+     {
+      "axes": {
+       "x": {
+        "sample_rate": 48000.0,
+        "tempo": 2.0
+       }
+      },
+      "children": [
+       {
+        "dur": 96000.0,
+        "id": 10000,
+        "label": "sweep",
+        "max": 62.0,
+        "min": 58.0,
+        "notes": [
+         0.0,
+         96000.0,
+         60.0,
+         15,
+         0
+        ],
+        "notes_editable": 0,
+        "offset": 0.0,
+        "points": [
+         0.0,
+         200.0,
+         1,
+         0.0,
+         48000.0,
+         900.0,
+         2,
+         0.0,
+         96000.0,
+         300.0,
+         1,
+         0.0
+        ],
+        "points_max": 970.0,
+        "points_min": 130.0,
+        "type": "field"
+       }
+      ],
+      "id": 10001,
+      "label": "sweep",
+      "type": "field"
+     },
+     {
+      "axes": {
+       "x": {
+        "sample_rate": 48000.0,
+        "tempo": 2.0,
+        "unit": "beats"
+       }
+      },
+      "h": 20.0,
+      "type": "field"
+     }
+    ],
+    "flow": "col",
+    "h": 520,
+    "title": "Composition",
+    "type": "window",
+    "w": 1000
+   }
+  },
   "a_joined_take": {
    "expand": false,
    "extent": 2.5,
@@ -80,7 +151,6 @@
       "children": [
        {
         "dur": 24000.0,
-        "editable": 0,
         "id": 10000,
         "label": "clang",
         "max": 62.0,
@@ -92,12 +162,12 @@
          13,
          0
         ],
+        "notes_editable": 0,
         "offset": 0.0,
         "type": "field"
        },
        {
         "dur": 24000.0,
-        "editable": 0,
         "id": 10001,
         "label": "clang",
         "max": 66.0,
@@ -109,6 +179,7 @@
          13,
          0
         ],
+        "notes_editable": 0,
         "offset": 24000.0,
         "type": "field"
        }
@@ -152,7 +223,6 @@
       "children": [
        {
         "dur": 24000.0,
-        "editable": 0,
         "id": 10000,
         "label": "clang",
         "max": 62.0,
@@ -164,12 +234,12 @@
          13,
          0
         ],
+        "notes_editable": 0,
         "offset": 0.0,
         "type": "field"
        },
        {
         "dur": 24000.0,
-        "editable": 0,
         "id": 10001,
         "label": "clang",
         "max": 66.0,
@@ -181,6 +251,7 @@
          13,
          0
         ],
+        "notes_editable": 0,
         "offset": 24000.0,
         "type": "field"
        }
