@@ -32,6 +32,7 @@
 import type { MsgArg } from "../base/osc.ts";
 import type { Server } from "./server/index.ts";
 import { resolveServer } from "./wire.ts";
+import type { PatchViewOptions, PatchWindow } from "../plot.ts";
 
 export class GraphBusRef {
     readonly name: string;
@@ -247,6 +248,34 @@ export class GraphDef {
         }
         await target.command("/def_send", ["graph", ...payload], timeout);
         return this.name;
+    }
+
+    /**
+     * Open this def's **structure** as a directed `patch` view in its own
+     * window on the ambient GUI host — the level-1 patcher drawn from the def
+     * itself (the inverse of building it), the host laying the boxes out as an
+     * inverted tree. One window per call, the `plot` posture; this shows the
+     * def's *structure*, where `plot(this)` renders its *sound*.
+     *
+     * `defs` maps a member's def name to the `SynthDef` it was built from, so a
+     * box's ports are typed (a control feeding an `In` is an inlet, one feeding
+     * an `Out` an outlet); a member whose def is not resolvable draws port-less
+     * (no cords). `label` captions the patch panel (defaults to `"graphdef"` —
+     * the panel names *what* is drawn, not the def's name); `host` is an
+     * explicit `GuiHost`, absent resolves the ambient one. Resolves with a
+     * `PatchWindow` (`close()`).
+     */
+    async plotDef(
+        defs: Record<string, unknown> = {},
+        options: PatchViewOptions = {},
+    ): Promise<PatchWindow> {
+        const { GraphPatch } = await import("./patch.ts");
+        const { openPatchView } = await import("../plot.ts");
+        return openPatchView(GraphPatch.fromGraphdef(this, defs), {
+            label: "graphdef",
+            title: this.name,
+            ...options,
+        });
     }
 
     /**

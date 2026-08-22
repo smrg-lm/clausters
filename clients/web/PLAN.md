@@ -1039,10 +1039,31 @@ stops), and `Document`/`Log` grew synchronous constructors beside their
 awaiting `open`, because an edit answers the host in the same turn and an
 `await` in the middle of that is a window for a second gesture.
 
-What is **not** ported, and is a surface this client lacks rather than a
-decision: **`DefPatch`** — level 2 of the patcher, a def's internal UGen graph
-as boxes. Nothing in the editor needs it; `gui_patch2.py` is the example that
-does.
+**`DefPatch` — level 2 of the patcher — landed on 2026-08-22**, with the window
+that opens it: a def's internal UGen graph as boxes, `PatchWindow`, and
+`plotDef()` on `SynthDef`, `FaustDef` and `GraphDef` (level 1 had the model and
+no opener). `tests/patch-parity.test.ts` freezes what the *Python* models decode
+five defs into — the boxes, the cords and the widget schema — and asserts this
+client reads the same, and `examples/patch2.html` is `gui_patch2.py`'s page.
+
+Two things it turned up, neither a decision:
+
+- **The inlet labels come from each client's own builder signatures**, which is
+  the one place the two must read their own source: Python uses `inspect`, this
+  one `Function.prototype.toString()` (the parity suite's own trick, now in the
+  package as `ugenInputNames`). Same fact, each language's way to it. Where the
+  two deliberately spell a parameter differently — the resonant filters' `rq`
+  against `res` — the caption differs with it, and the parity test declares that
+  table rather than hiding it.
+- **`PlotWindow` was missing `onClosed`**, which the Python one has and the
+  patch example needs; it is there now on both window handles.
+- **The ambient verbs needed a `Session` to have run first**, and said so
+  nowhere: `plot`, `scope` and now `plotDef` resolve a host of their own, and a
+  `GuiHost`'s id allocators are core registries — so on a page that had opened
+  nothing else, the first call died inside `new Registry` on a wasm module
+  nobody had loaded. In Python the same call needs nothing, which is what makes
+  this a divergence rather than a platform's price: `resolveHost` awaits
+  `loadOsc()` itself now, and the verbs resolve what they need on every page.
 
 The parity suite is the point of the whole thing:
 `tests/editor-parity.test.ts` freezes the tree the *Python* editor draws for one
@@ -1878,13 +1899,14 @@ that are nobody's feature. It is deliberately last and deliberately open — it
 gathers loose ends rather than opening a layer, and an entry leaves it as soon
 as some other milestone has a better claim on it.
 
-- **`defs/patch.ts`** — `GraphPatch` and `DefPatch`, the models behind
-  `def.plot_def()`, which open a def's **structure** (not its sound) as a
-  `patch` view. The widget has existed since W2 and `examples/composer.html`
-  drives one by hand; what is missing is the model that reads a def and emits
-  `{boxes, cords}`, plus the `PatchWindow` handle. W21's inventory listed
-  `defs/patch.py` as unclaimed and it still is; it lands here unless the def
-  layer is opened for something else first.
+- ✅ **`defs/patch.ts`** — both patch models and the `PatchWindow` handle are
+  in (level 1 with the editor, level 2 on 2026-08-22), so this entry is closed;
+  what is left of it is an *example*, not a surface: `gui_patch1.py` has no page
+  yet, which is W16's queue.
+- **`SynthDef`'s roots are `outputs` in Python and `roots` here**, and both
+  constructors take `*roots` — a public attribute spelled two ways, found while
+  porting the Def view (which reads it). One of the two names is wrong and the
+  reference client picks which.
 - **`Session.connectGui(url)` is a verb this client invented**, and it does two
   things at once: *connect* and *adopt*. Its adopting half briefly had a
   reference counterpart (`session.adopt_gui` / `adoptGui`), which left with the

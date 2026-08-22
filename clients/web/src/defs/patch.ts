@@ -35,9 +35,11 @@
 // draw a logical aggregate, and the gap is named rather than papered over.
 
 import { patchCompile } from "../core/clausters_core_web.js";
+import { FaustDef } from "./faustdef.ts";
 import { GraphDef } from "./graphdef.ts";
 import { SynthDef } from "./synthdef.ts";
-import { Control, Ugen } from "./ugens/index.ts";
+import { Control, Ugen, ugenInputNames } from "./ugens/index.ts";
+import type { Channel, ControlRate, UgenRate } from "./ugens/index.ts";
 
 /**
  * A UGen that **reads** a bus (an inlet when its bus is a control), and the port
@@ -54,8 +56,15 @@ const WRITERS: Record<string, PortRate> = {
     OutCtl: "control",
 };
 
-/** The rate a cord runs at. */
+/** The rate a cord runs at — the two a **server bus** has. */
 export type PortRate = "audio" | "control";
+
+/**
+ * The rate a cord is *drawn* at. Level 2 adds a third weight over the bus
+ * rates: **init** (`ir`) — a scalar read once at init time, never a bus, so it
+ * exists only inside one def's graph and the widget dashes it.
+ */
+export type CordRate = PortRate | "init";
 
 /** A port as a caller writes it: a bare name (audio), or `[name, rate]`. */
 export type PortSpec = string | readonly [name: string, rate: PortRate];
@@ -64,15 +73,42 @@ export type PortSpec = string | readonly [name: string, rate: PortRate];
 export interface Port {
     name: string;
     dir: "in" | "out";
-    rate: PortRate;
+    rate: CordRate;
 }
 
-/** One box: the def it instantiates, and its ports. */
+/** What a level-2 box *is*, which is what {@link DefPatch.toSynthdef} rebuilds from. */
+export type BoxKind = "ugen" | "control" | "const" | "faust" | "faust-opaque";
+
+/**
+ * One box: the def it instantiates, and its ports. A level-1 box is a whole def
+ * and carries nothing else; a level-2 box also says what it is (`kind`) and
+ * keeps what it was decoded from, which is what makes the decode reversible.
+ */
 export interface Box {
     def: string;
     ports: Port[];
-    /** The host's layout role, for a level-2 box; absent means `"object"`. */
+    /** The host's layout role; absent means `"object"`. */
     role?: string;
+    /** Level 2 only: what this box is. */
+    kind?: BoxKind;
+    /** A `"ugen"` box's node, as {@link DefPatch.toSynthdef} rebuilds it. */
+    ugen?: {
+        kind: string;
+        rate?: UgenRate;
+        op?: string;
+        label?: string;
+        static?: Record<string, unknown>;
+    };
+    /** A `"control"` box's control. */
+    control?: {
+        name: string;
+        default: number;
+        rate?: ControlRate;
+        lag?: number;
+        lagDown?: number;
+    };
+    /** A `"const"` box's literal value. */
+    const?: number;
 }
 
 /** One cord, its endpoints flat indices into each box's `ports`. */
@@ -408,4 +444,370 @@ export function patchToWidget(
         );
     }
     return { boxes: drawn, cords: flat };
+}
+
+// ===================================================================
+// Level 2: the Def-view — a SynthDef/FaustDef as its internal graph.
+// ===================================================================
+
+/**
+ * A UGen calculation rate → the cord type the widget draws. `ir` (init /
+ * scalar) is the level-2 third weight (dashed); `dr` (demand) has no bus weight
+ * of its own, so it reads as control. An **unset** UGen rate defaults to audio:
+ * most UGens are audio-rate, and the exact per-kind default is the server's,
+ * not the client's — an honest headless heuristic for a view.
+ */
+const UGEN_RATE: Record<string, CordRate> = {
+    ar: "audio",
+    kr: "control",
+    ir: "init",
+    dr: "control",
+};
+
+/** A control **type** → the cord type. A scalar (`ir`) control is an init cord. */
+const CONTROL_RATE: Record<string, CordRate> = {
+    kr: "control",
+    control: "control",
+    tr: "control",
+    trigger: "control",
+    ir: "init",
+    scalar: "init",
+};
+
+/** Faust signal ops that are controls (a UI label), drawn as source boxes. */
+const FAUST_CONTROL_OPS = new Set(["hslider", "vslider", "nentry", "button", "checkbox"]);
+
+/**
+ * The cord type of `node`'s output — `"audio"`/`"control"`/`"init"` — for
+ * drawing and typing a cord. A `Ugen` maps its calc rate (unset → audio); a
+ * `Control` maps its type (unset → control); a bare number is a constant
+ * (init).
+ */
+function rateOf(node: unknown): CordRate {
+    if (node instanceof Ugen) return UGEN_RATE[node.rate ?? ""] ?? "audio";
+    if (node instanceof Control) return CONTROL_RATE[node.rate ?? ""] ?? "control";
+    return "init";
+}
+
+/**
+ * The box caption for a UGen: the operator name for the generic op UGens (so
+ * `a.mul(b)` reads `mul`, not `BinaryOpUGen`), the kind otherwise.
+ */
+function ugenLabel(u: Ugen): string {
+    if (u.op && (u.kind === "BinaryOpUGen" || u.kind === "UnaryOpUGen")) return u.op;
+    return u.kind;
+}
+
+/**
+ * A value box's caption: a compact number (an integer-valued float drops its
+ * trailing `.0`, others keep a few significant digits).
+ */
+function formatConst(value: unknown): string {
+    const f = Number(value);
+    if (!Number.isFinite(f)) return String(value);
+    return Number.isInteger(f) ? String(f) : String(Number(f.toPrecision(6)));
+}
+
+/**
+ * The flat index of a box's single outlet in its `ports` — the inlets come
+ * first, so it is the inlet count.
+ */
+function outletFlat(box: Box): number {
+    return box.ports.filter((p) => p.dir === "in").length;
+}
+
+/**
+ * Every `Ugen` reachable from `outputs` in the def's topological order (a UGen
+ * after its inputs), each once — the same post-order `SynthDef` serialization
+ * walks, so in the decode a box's input boxes always precede it.
+ */
+function topoUgens(outputs: readonly Channel[]): Ugen[] {
+    const ordered: Ugen[] = [];
+    const seen = new Set<Ugen>();
+    const visit = (node: unknown): void => {
+        if (!(node instanceof Ugen) || seen.has(node)) return;
+        seen.add(node);
+        for (const input of node.inputs) visit(input);
+        ordered.push(node);
+    };
+    for (const o of outputs) visit(o);
+    return ordered;
+}
+
+/**
+ * A level-2 patch — the internal graph of a single `SynthDef`/`FaustDef`, its
+ * UGen (or Faust op) boxes wired by internal cords. Built as a **read-only
+ * view**: {@link DefPatch.fromSynthdef} / {@link DefPatch.fromFaustdef} decode a
+ * def's in-memory graph so it draws as its boxes; {@link DefPatch.toWidget}
+ * renders it for the `patch` widget exactly as level 1, plus the init (`ir`)
+ * cord type; {@link DefPatch.toSynthdef} reconstructs the SynthDef (the decode
+ * is faithful — the round trip reproduces the spec).
+ *
+ * A cord here is an **internal wire**, never an allocated server bus — that is
+ * the whole difference from {@link GraphPatch}.
+ */
+export class DefPatch {
+    /**
+     * Each box, carrying a `kind` and a layout `role`. A **ugen** box:
+     * `{def, kind:"ugen", role:"object", ugen:{…}, ports:[…]}`. A **control**
+     * box: `{def, kind:"control", role:"source", control:{…}, ports:[outlet]}`.
+     * A **const** value box: `{def, kind:"const", role:"const", const, ports:
+     * [outlet]}`. A **faust** box mirrors ugen without the rebuild fields.
+     */
+    boxes: Box[] = [];
+    /**
+     * Each cord — flat port indices into each box's `ports` (an outlet → an
+     * inlet).
+     */
+    cords: Cord[] = [];
+    /**
+     * Box indices of the def's output roots (its `out`/side-effect UGens or the
+     * Faust output signals), in order — what {@link DefPatch.toSynthdef}
+     * rebuilds.
+     */
+    roots: number[] = [];
+
+    // ---- decoding a SynthDef's UGen graph ----
+
+    /**
+     * Decode a `SynthDef`'s in-memory UGen graph into a level-2 patch: every
+     * UGen a box, every referenced control a **source** box, every constant a
+     * **value** box, and every input a cord. Each box carries a layout role, so
+     * the host draws it as an inverted tree — controls pinned to the top row,
+     * value boxes tucked above the box they feed, sinks at the bottom.
+     */
+    static fromSynthdef(sdef: SynthDef): DefPatch {
+        const patch = new DefPatch();
+        const ordered = topoUgens(sdef.roots);
+        // Controls first (one box per unique name — the pinned source row), then
+        // the UGens in the def's own order (each after the inputs that feed it).
+        const controls = new Map<string, number>();
+        for (const u of ordered) {
+            for (const input of u.inputs) {
+                if (input instanceof Control && !controls.has(input.name)) {
+                    controls.set(input.name, patch.boxes.length);
+                    patch.addControl(input);
+                }
+            }
+        }
+        const ugenBox = new Map<Ugen, number>();
+        for (const u of ordered) {
+            ugenBox.set(u, patch.boxes.length);
+            patch.addUgen(u);
+        }
+        for (const u of ordered) {
+            const bi = ugenBox.get(u)!;
+            u.inputs.forEach((input, pos) => {
+                let src: number;
+                if (input instanceof Ugen) src = ugenBox.get(input)!;
+                else if (input instanceof Control) src = controls.get(input.name)!;
+                else src = patch.addConst(input); // a literal → its own value box
+                patch.connect(src, outletFlat(patch.boxes[src]!), bi, pos);
+            });
+        }
+        patch.roots = sdef.roots.map((o) => ugenBox.get(o as Ugen)!);
+        return patch;
+    }
+
+    private addUgen(u: Ugen): void {
+        const names = ugenInputNames(u.kind) ?? [];
+        const inlets: Port[] = u.inputs.map((input, pos) => ({
+            name: names[pos] ?? String(pos),
+            dir: "in",
+            rate: rateOf(input),
+        }));
+        this.boxes.push({
+            def: ugenLabel(u),
+            kind: "ugen",
+            role: "object",
+            ugen: {
+                kind: u.kind,
+                rate: u.rate,
+                op: u.op,
+                label: u.label,
+                static: u.staticFields,
+            },
+            ports: [...inlets, { name: "", dir: "out", rate: rateOf(u) }],
+        });
+    }
+
+    private addControl(c: Control): void {
+        this.boxes.push({
+            def: c.name,
+            kind: "control",
+            role: "source",
+            control: {
+                name: c.name,
+                default: c.default,
+                rate: c.rate,
+                lag: c.lag,
+                lagDown: c.lagDown,
+            },
+            ports: [{ name: "", dir: "out", rate: rateOf(c) }],
+        });
+    }
+
+    /**
+     * Add a **value** box for a literal input and answer its index — a source
+     * with a single init-rate outlet, captioned with the number.
+     */
+    private addConst(value: unknown): number {
+        this.boxes.push({
+            def: formatConst(value),
+            kind: "const",
+            role: "const",
+            const: Number(value),
+            ports: [{ name: "", dir: "out", rate: "init" }],
+        });
+        return this.boxes.length - 1;
+    }
+
+    private connect(fb: number, fp: number, tb: number, tp: number): void {
+        this.cords.push({ from_box: fb, from_port: fp, to_box: tb, to_port: tp });
+    }
+
+    // ---- decoding a FaustDef ----
+
+    /**
+     * Decode a `FaustDef` into a level-2 patch. A **signal-tree** def
+     * (`FaustDef.fromSignals`) decodes node for node — every signal op a box,
+     * every control (slider/button) a source box, every operand a cord. A
+     * **box-tree** or **source** def is opaque (its internals are the Faust
+     * compiler's, not reconstructable client-side), so it draws as a single
+     * box. Faust cords carry no server-bus rate, so they read as audio; a
+     * control's is control.
+     */
+    static fromFaustdef(fdef: FaustDef): DefPatch {
+        const patch = new DefPatch();
+        if (fdef.kind === "signals") {
+            const memo = new Map<object, number>();
+            const payload = fdef.patchPayload as { signals?: unknown[] } | undefined;
+            for (const node of payload?.signals ?? []) {
+                const root = patch.signalBox(node, memo);
+                if (root !== undefined) patch.roots.push(root);
+            }
+        } else {
+            patch.boxes.push({
+                def: fdef.name,
+                kind: "faust-opaque",
+                role: "object",
+                ports: [{ name: "", dir: "out", rate: "audio" }],
+            });
+            patch.roots.push(0);
+        }
+        return patch;
+    }
+
+    /**
+     * Build the box for one Faust signal node (post-order, so operands precede
+     * it); answers its index, or `undefined` for a bare number (which the caller
+     * turns into a value box). Shared nodes dedup by identity.
+     */
+    private signalBox(node: unknown, memo: Map<object, number>): number | undefined {
+        if (node === null || typeof node !== "object") return undefined;
+        const key = node as object;
+        const seen = memo.get(key);
+        if (seen !== undefined) return seen;
+        const spec = node as { op?: string; in?: unknown[]; label?: string };
+        const op = spec.op ?? "?";
+        const isControl = FAUST_CONTROL_OPS.has(op);
+        const operands = isControl ? [] : [...(spec.in ?? [])];
+        const children = operands.map((o) => this.signalBox(o, memo));
+        const bi = this.boxes.length;
+        memo.set(key, bi);
+        const inlets: Port[] = operands.map((_, i) => ({
+            name: String(i),
+            dir: "in",
+            rate: "audio",
+        }));
+        this.boxes.push({
+            def: isControl ? (spec.label ?? op) : op,
+            kind: "faust",
+            role: isControl ? "source" : "object",
+            ports: [
+                ...inlets,
+                { name: "", dir: "out", rate: isControl ? "control" : "audio" },
+            ],
+        });
+        operands.forEach((operand, pos) => {
+            const child = children[pos];
+            const src = child ?? this.addConst(operand);
+            this.connect(src, outletFlat(this.boxes[src]!), bi, pos);
+        });
+        return bi;
+    }
+
+    // ---- the GUI view + the SynthDef round trip ----
+
+    /**
+     * The patch as the `patch` widget draws it — boxes with split
+     * inlets/outlets and flat cord quadruples (see {@link patchToWidget}), the
+     * same schema level 1 uses, with init cords dashed.
+     */
+    toWidget(geometry: Record<number, readonly [number, number]> = {}): PatchWidget {
+        return patchToWidget(this.boxes, this.cords, geometry);
+    }
+
+    /**
+     * Reconstruct the `SynthDef` this patch represents — the inverse of
+     * {@link DefPatch.fromSynthdef}. Each box is rebuilt from its cords
+     * (following them back to the sources, so a shared box rebuilds once and
+     * value boxes resolve to their numbers). Only a UGen-graph patch rebuilds;
+     * a Faust patch has no SynthDef.
+     */
+    toSynthdef(name: string): SynthDef {
+        const incoming = new Map<number, Map<number, number>>();
+        for (const c of this.cords) {
+            const wired = incoming.get(c.to_box) ?? new Map<number, number>();
+            wired.set(c.to_port, c.from_box);
+            incoming.set(c.to_box, wired);
+        }
+        const built = new Map<number, Channel>();
+        const build = (bi: number): Channel => {
+            const done = built.get(bi);
+            if (done !== undefined) return done;
+            const box = this.boxes[bi]!;
+            let node: Channel;
+            if (box.kind === "control") {
+                const cc = box.control!;
+                node = new Control(cc.name, cc.default, {
+                    rate: cc.rate,
+                    lag: cc.lag,
+                    lagDown: cc.lagDown,
+                });
+            } else if (box.kind === "const") {
+                node = box.const!;
+            } else if (box.kind === "ugen") {
+                const wired = incoming.get(bi) ?? new Map<number, number>();
+                const inputs: Channel[] = [];
+                for (let pos = 0; pos < outletFlat(box); pos++) {
+                    inputs.push(build(wired.get(pos)!));
+                }
+                const uu = box.ugen!;
+                node = new Ugen(uu.kind, inputs, {
+                    rate: uu.rate,
+                    op: uu.op,
+                    label: uu.label,
+                    static: uu.static,
+                });
+            } else {
+                throw new Error(
+                    "toSynthdef only rebuilds a UGen-graph patch (fromSynthdef)",
+                );
+            }
+            built.set(bi, node);
+            return node;
+        };
+        const roots = this.roots.map((bi) => {
+            const node = build(bi);
+            // A root is an output UGen by construction; a hand-built patch whose
+            // root is a control or a number is not a def, and says so here
+            // rather than in the serializer.
+            if (!(node instanceof Ugen)) {
+                throw new Error(`box ${bi} is not a UGen, so it is no def root`);
+            }
+            return node;
+        });
+        return new SynthDef(name, ...roots);
+    }
 }

@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: the patcher, level 2</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 76rem; }
+      #note, #log { max-width: 52rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+      #stage { align-self: stretch; height: min(70vh, 620px); }
+      #stage canvas { display: block; width: 100%; height: 100%; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">The web port of the Python client's
+<code>gui_patch2.py</code>: <b>the patcher, level 2</b> — a single def's
+internal UGen graph, drawn.
+
+This is the level-2 half of the patcher; level 1 is whole defs wired by server
+buses. The two are one directed, typed grammar apart by what a box <i>is</i>: at
+level 1 a box is a <b>whole def</b> and a cord <i>is</i> a <b>server bus</b>;
+here a box is a <b>UGen</b> (or a Faust signal op) and a cord is an <b>internal
+wire</b> of the one def — never an allocated bus. Level 2 adds a third cord
+weight over level 1's audio (<code>ar</code>, heavy) / control (<code>kr</code>,
+thin): <b>init</b> (<code>ir</code>, dashed) — a scalar read once at init time.
+
+The Def view is a <b>read-only representation</b>, decoded from the def's own
+structure — no server, no sound. Two verbs open it, distinct on purpose:
+
+<code>someDef.plotDef()</code> draws the def's <b>structure</b> — its UGen boxes
+and the cords between them — the picture this example is about;
+<code>plot(someDef)</code> renders the def's <b>sound</b> — its output waveform.
+
+Both a <code>SynthDef</code> and a <code>FaustDef</code> decode:
+<code>SynthDef.plotDef</code> reads the in-memory UGen graph (every UGen a box,
+every input a cord; a constant input stays the box's value, uncorded), and
+<code>FaustDef.plotDef</code> reads a signal-tree def the same way (a box-tree or
+source def is opaque, so it draws as one box). The decode is faithful —
+<code>DefPatch.fromSynthdef(sdef).toSynthdef(name)</code> reproduces the original
+spec — so what you see is exactly what the def is.
+
+<i>The one thing the Python example does and this does not:</i> hold each window
+open until you close it and then open the next by itself. A page has one canvas
+rather than a window manager, so the two views take turns on it — open one,
+close it, open the other. Everything else is the same call in the same order,
+and no audio server is involved either way.</div>
+
+      <div class="row">
+        <button id="synth">the SynthDef — level 2</button>
+        <button id="faust">the FaustDef — level 2</button>
+        <button id="close" disabled>close the view</button>
+      </div>
+
+      <div id="stage"></div>
+      <pre id="log"></pre>
+    </main>
+
+    <script type="module">
+      import { guiHost } from "../dist/index.js";
+      import { SynthDef, FaustDef, DefPatch } from "../dist/defs/index.js";
+      import { control, out, sine } from "../dist/defs/ugens/index.js";
+      import { hslider, sin } from "../dist/defs/signals.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => { $("log").textContent += line + "\n"; };
+
+      // ---- A SynthDef with all three cord weights ----
+      //
+      // A small SynthDef, built to show every cord type in one picture: audio
+      // cords (heavy) carry the sound, a control cord (thin) is the tremolo
+      // LFO, and an init cord (dashed) is the scalar `detune` read once at note
+      // start. Each UGen becomes a box — inlets named from the builder's own
+      // signature (`out(bus, signal)` -> `bus`/`signal`), the arithmetic and op
+      // UGens named by their operation (`Mul`, `Add`, `midicps` …) — and every
+      // input a cord, unless it is a constant (then it stays the box's value,
+      // drawn as a plain inlet).
+      function tremoloSine() {
+        const freq = control("freq", 220.0);                    // kr control
+        const amp = control("amp", 0.2);                        // kr control
+        const detune = control("detune", 1.5, { rate: "ir" });  // ir (scalar)
+        // A control-rate tremolo: a kr sine, unipolar. Its cords are thin.
+        const tremolo = sine(control("lfo", 5.0)).atRate("kr").mul(0.5).add(0.5);
+        const carrier = sine(freq.mul(detune));   // detune feeds an ir cord
+        const sig = carrier.mul(amp).mul(tremolo); // audio cords (heavy)
+        return new SynthDef("tremolo_sine", out(0.0, sig), out(1.0, sig));
+      }
+
+      const synthDef = tremoloSine();
+
+      // The model behind the picture — usable headless. Print its structure so
+      // the view can be corroborated against it: every box carries a layout
+      // `role` (a `source` control, a `const` value box, or a plain `object`
+      // UGen) that the host uses to lay the graph out as an inverted tree.
+      const patch = DefPatch.fromSynthdef(synthDef);
+      log(`${synthDef.name} decoded into ${patch.boxes.length} boxes, `
+        + `${patch.cords.length} cords`);
+      for (const [i, box] of patch.boxes.entries()) {
+        const inlets = box.ports
+          .filter((p) => p.dir === "in")
+          .map((p) => p.name || "-");
+        log(`  box ${i}: ${box.def.padEnd(10)} `
+          + `[${(box.role ?? "object").padStart(7)}] `
+          + `inlets=${JSON.stringify(inlets)}`);
+      }
+
+      // The decode is faithful: rebuilding the SynthDef reproduces the spec.
+      const rebuilt = patch.toSynthdef(synthDef.name);
+      log("round trip reproduces the spec: "
+        + (JSON.stringify(rebuilt.spec()) === JSON.stringify(synthDef.spec())));
+
+      // ---- A FaustDef signal tree, decoded the same way ----
+      //
+      // A Faust signal graph decodes node for node: every op a box, every
+      // operand a cord, the `hslider` a source box. The grammar is the same as
+      // the SynthDef's.
+      function fmTone() {
+        const freq = hslider("freq", 220.0, 20.0, 2000.0, 0.1);
+        const gain = hslider("gain", 0.2, 0.0, 1.0, 0.01);
+        const modulator = sin(freq.mul(3.0)).mul(40.0);
+        return FaustDef.fromSignals("fm_tone", sin(freq.add(modulator)).mul(gain));
+      }
+
+      const faustDef = fmTone();
+      const faustPatch = DefPatch.fromFaustdef(faustDef);
+      log(`\n${faustDef.name} decoded into ${faustPatch.boxes.length} boxes, `
+        + `${faustPatch.cords.length} cords`);
+
+      // ---- The views: one Def view at a time ----
+      //
+      // `plotDef()` opens each def's structure on the page's GUI host. Pan with
+      // a drag on the empty canvas, zoom with the wheel — the patch sits in a
+      // scroll workspace, so a graph bigger than the canvas stays reachable.
+      //
+      // The one step a window does not need: a tab draws into a canvas of its
+      // own, so the page places the host's surface in the stage and `fit` keeps
+      // the view the size of that element. A script gets an OS window instead,
+      // and asks for its size in the same call.
+      let open = null;
+      let unfit = null;
+
+      async function show(aDef, kind) {
+        if (open !== null) return;
+        log(`\nthe ${kind} (level 2) — close the view to open the other`);
+        open = await aDef.plotDef({ title: `${kind} — level 2` });
+        const surface = await guiHost();
+        $("stage").append(surface.canvas);
+        unfit?.();
+        unfit = surface.fit(open.id, $("stage"));
+        open.onClosed(release);
+        $("close").disabled = false;
+      }
+
+      function release() {
+        unfit?.();
+        unfit = null;
+        open = null;
+        $("close").disabled = true;
+      }
+
+      $("synth").onclick = () => show(synthDef, "SynthDef");
+      $("faust").onclick = () => show(faustDef, "FaustDef");
+      $("close").onclick = () => { open?.close(); release(); };
+    </script>
+  </body>
+</html>

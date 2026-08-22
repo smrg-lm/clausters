@@ -94,8 +94,8 @@ produce the same tree, the same document and the same engraving. Using it on
 document written two ways, an edit per frame, a bend that drifted, a press
 repeated per frame — and the two findings it left behind (the knob's captured
 pointer, the page that burned a main thread with nothing happening) are paid.
-**What leads the phase now is the destination the track was blocking**, followed
-by the one surface it named on its way past.*
+**What leads the phase now is the destination the track was blocking** — the
+one surface it named on its way past, `DefPatch`, is in.*
 
 - ⬜ **W16 — Example parity with the Python client**. Its named track (the
   arrangement layer, the editor, the transport, the engraver) is closed; what
@@ -106,11 +106,6 @@ by the one surface it named on its way past.*
   **catalog row**, which the project's example rule no longer allows a book to
   hold, and for the **same name**, which the pages already do not keep
   (`gui_composer.py` is `composer.html`).
-- ⬜ **`DefPatch` — level 2 of the patcher** *(`clients/web/PLAN.md`, W16)*, the
-  one surface the port left named rather than built: a def's internal UGen graph
-  as boxes, which `gui_patch2.py` is the example of. A missing surface is a
-  defect under the non-divergence rule, so it is ordered here rather than
-  waiting for the example that needs it.
 - ⬜ **W24 — The completeness pass**, and the parity gaps that plan already
   carries with reasons (the record formatters, `connectGui`, the two leftover
   names — `defs/patch.ts` is no longer among them).

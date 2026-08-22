@@ -141,6 +141,20 @@ the tree. The mapping is one rule, not a heuristic per case:
   per member, its ports typed from the def it wraps, and a cord drawn there
   rewrites the members onto a shared bus.
 
+The same patcher draws a def **on its own**, as a way to *look at its
+structure*. `someDef.plotDef()` opens one window per call showing the def as a
+directed patch — distinct from `plot(someDef)`, which shows the def's *sound*
+(its rendered waveform). It reads at **two levels**: a `GraphDef` draws as its
+member nodes wired by buses (the same picture the logical aggregate shows); a
+`SynthDef` or `FaustDef` draws one level deeper, as its **internal graph** —
+every UGen (or Faust signal op) a box, every input a cord, the def's controls the
+source boxes and its literals small value boxes. A cord is coloured by rate —
+contrasting primaries at one width, audio red, control blue, and level 2's third,
+**init** (`ir`, yellow and dashed), a scalar read once at init time. The host lays
+the boxes out on its own. The Def view is **read-only** — the faithful picture of
+what the def is (`DefPatch.fromSynthdef(sdef).toSynthdef(name)` reproduces the
+original spec); it needs no audio server.
+
 ```ts
 const editor = new gui.Editor(song, {
     sampleRate: engine.context.sampleRate,

@@ -26,6 +26,7 @@ import type { Server } from "./server/index.ts";
 import { resolveServer } from "./wire.ts";
 import { ChannelList, Control, Ugen } from "./ugens/index.ts";
 import type { Channel } from "./ugens/index.ts";
+import type { PatchViewOptions, PatchWindow } from "../plot.ts";
 
 /**
  * One serialized UGen input: a reference to an earlier UGen, to a control,
@@ -199,6 +200,28 @@ export class SynthDef {
      */
     dumpDef(): string {
         return JSON.stringify(this.spec());
+    }
+
+    /**
+     * Open this def's **structure** as a directed `patch` view in its own
+     * window on the ambient GUI host — the level-2 patcher drawn from the def's internal UGen graph (every UGen a box, every input a cord),
+     * the host laying the boxes out as an inverted tree. One window per call,
+     * the `plot` posture; this shows the def's *structure*, where `plot(this)`
+     * renders its *sound*.
+     *
+     * `label` captions the patch panel (defaults to `"synthdef"` — the panel
+     * names *what* is drawn, not the def's name); `host` is an explicit
+     * `GuiHost`, absent resolves the ambient one. Resolves with a
+     * `PatchWindow` (`close()`).
+     */
+    async plotDef(options: PatchViewOptions = {}): Promise<PatchWindow> {
+        const { DefPatch } = await import("./patch.ts");
+        const { openPatchView } = await import("../plot.ts");
+        return openPatchView(DefPatch.fromSynthdef(this), {
+            label: "synthdef",
+            title: this.name,
+            ...options,
+        });
     }
 
     /** The control names this def declares, in first-seen order. */

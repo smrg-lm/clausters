@@ -22,6 +22,7 @@ import type { Server } from "./server/index.ts";
 import { resolveServer } from "./wire.ts";
 import { Signal } from "./signals.ts";
 import type { SignalNode } from "./signals.ts";
+import type { PatchViewOptions, PatchWindow } from "../plot.ts";
 
 /** Which of the three payload forms a def carries. */
 export type FaustDefKind = "signals" | "box" | "source";
@@ -38,6 +39,14 @@ export class FaustDef {
         this.name = name;
         this.payload = payload;
         this.kind = kind;
+    }
+
+    /**
+     * @internal — how {@link DefPatch} reads a signal tree back out. The twin of
+     * the Python client's `_payload`: private to the package, not surface.
+     */
+    get patchPayload(): unknown {
+        return this.payload;
     }
 
     // --- constructors ---
@@ -106,6 +115,32 @@ export class FaustDef {
 
     /** bus-selecting controls every Faust synth also accepts. */
     static readonly reserved = ["out", "in"] as const;
+
+    /**
+     * Open this def's **structure** as a directed `patch` view in its own
+     * window on the ambient GUI host — the level-2 patcher drawn from the def's
+     * signal graph (every signal op a box, every operand a cord), the host
+     * laying the boxes out as an inverted tree. One window per call, the `plot`
+     * posture; this shows the def's *structure*, where `plot(this)` renders its
+     * *sound*.
+     *
+     * A **signal-tree** def ({@link FaustDef.fromSignals}) decodes node for
+     * node; a **box-tree** or **source** def is opaque and draws as a single box
+     * (its internals are the Faust compiler's, not reconstructable
+     * client-side). `label` captions the patch panel (defaults to `"faustdef"`
+     * — the panel names *what* is drawn, not the def's name); `host` is an
+     * explicit `GuiHost`, absent resolves the ambient one. Resolves with a
+     * `PatchWindow` (`close()`).
+     */
+    async plotDef(options: PatchViewOptions = {}): Promise<PatchWindow> {
+        const { DefPatch } = await import("./patch.ts");
+        const { openPatchView } = await import("../plot.ts");
+        return openPatchView(DefPatch.fromFaustdef(this), {
+            label: "faustdef",
+            title: this.name,
+            ...options,
+        });
+    }
 
     /**
      * The control names this def declares (UI labels), in tree order. The

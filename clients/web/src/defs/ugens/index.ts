@@ -40,6 +40,20 @@
 // The per-bin expressions `pvKernel` takes are a module of their own,
 // `defs/pv_expr`, exactly where the Python client keeps them.
 
+// The submodules as namespaces, for `ugenInputNames` at the bottom: it reads
+// the builders' own parameter lists, so it needs the callables themselves and
+// not only their re-exported names.
+import * as buf from "./buf.ts";
+import * as demand from "./demand.ts";
+import * as env from "./env.ts";
+import * as filter from "./filter.ts";
+import * as graph from "./graph.ts";
+import * as io from "./io.ts";
+import * as osc from "./osc.ts";
+import * as pan from "./pan.ts";
+import * as spectral from "./spectral.ts";
+import * as trig from "./trig.ts";
+
 export {
     ChannelList,
     Control,
@@ -247,3 +261,101 @@ export {
     xLine,
 } from "./env.ts";
 export type { Curve } from "./env.ts";
+
+// ---- the inlet labels a patcher's Def view reads ----
+
+/**
+ * Kinds whose builder parameters do **not** line up with the wire's input order
+ * — a variadic run, a static field sitting between two inputs — so their names
+ * would mislabel the inlets and the Def view falls back to positional ones.
+ * The same set the Python client declares, and the same reasons: the
+ * divergences `tests/ugen-catalog.test.ts` contrasts against the server.
+ */
+const INPUT_NAMES_MISALIGNED = new Set([
+    "EnvGen",
+    "SendReply",
+    "Dseq",
+    "Poll",
+    "DiskIn",
+    "DiskOut",
+    "PV_Kernel",
+]);
+
+/** Lazily built `kind -> [parameter name, …]` — see {@link ugenInputNames}. */
+let INPUT_NAMES: Map<string, string[]> | null = null;
+
+/**
+ * The positional parameter names of the builder that makes each UGen kind, read
+ * from the `new Ugen("Kind", …)` literal in this module's own functions (a
+ * builder is not named after its kind: `in_` builds `In`, `oscN` builds `OscN`).
+ *
+ * The Python client reads the same thing with `inspect`; this one reads
+ * `Function.prototype.toString()`, which under node's type stripping still
+ * carries the parameter list — the language's own way to the one fact, not a
+ * different fact. A destructured options object is not positional and stops the
+ * list, since everything past it is named rather than wired in order.
+ */
+function buildInputNames(): Map<string, string[]> {
+    const names = new Map<string, string[]>();
+    const modules = [buf, demand, env, filter, graph, io, osc, pan, spectral, trig];
+    for (const value of modules.flatMap((m) => Object.values(m))) {
+        if (typeof value !== "function") continue;
+        const src = value.toString();
+        if (/^class\s/.test(src)) continue;
+        const kind = /new Ugen\(\s*"([A-Za-z_0-9]+)"/.exec(src)?.[1];
+        if (kind === undefined || names.has(kind)) continue;
+        names.set(kind, positionalParams(src));
+    }
+    return names;
+}
+
+/** The positional parameter names in a function's source, in order. */
+function positionalParams(src: string): string[] {
+    const open = src.indexOf("(");
+    if (open < 0) return [];
+    let depth = 0;
+    let end = -1;
+    for (let i = open; i < src.length; i++) {
+        const c = src[i]!;
+        if ("([{".includes(c)) depth++;
+        else if (")]}".includes(c) && --depth === 0) {
+            end = i;
+            break;
+        }
+    }
+    if (end < 0) return [];
+    const out: string[] = [];
+    let d = 0;
+    let start = 0;
+    const inner = src.slice(open + 1, end);
+    for (let i = 0; i <= inner.length; i++) {
+        const c = inner[i];
+        if (i === inner.length || (c === "," && d === 0)) {
+            const piece = inner.slice(start, i).trim().replace(/\s+/g, " ");
+            start = i + 1;
+            if (!piece) continue;
+            // An options object carries named fields, not a positional input.
+            if (piece.startsWith("{")) break;
+            const name = piece.split("=")[0]!.trim();
+            if (name) out.push(name);
+        } else if ("([{".includes(c!)) d++;
+        else if (")]}".includes(c!)) d--;
+    }
+    return out;
+}
+
+/**
+ * The positional input names of the builder for UGen `kind`, or `undefined`
+ * when no single builder maps to it cleanly — the generic op UGens
+ * (`BinaryOpUGen`/`UnaryOpUGen`, built by the nodes' own methods) and the kinds
+ * whose parameters do not line up with the wire order. `undefined` means the
+ * caller labels the inlets positionally.
+ *
+ * What reads it is the patcher's Def view ({@link DefPatch}), which captions a
+ * UGen box's inlets with the names a caller of that builder types.
+ */
+export function ugenInputNames(kind: string): string[] | undefined {
+    if (INPUT_NAMES_MISALIGNED.has(kind)) return undefined;
+    INPUT_NAMES ??= buildInputNames();
+    return INPUT_NAMES.get(kind);
+}

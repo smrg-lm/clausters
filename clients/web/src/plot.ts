@@ -39,6 +39,7 @@
 // ```
 
 import { main } from "./base/main.ts";
+import { loadOsc } from "./base/osc.ts";
 import { asDef, exprChannels, isExpr } from "./defs/asdef.ts";
 import { Buffer } from "./defs/buffer.ts";
 import { FaustDef } from "./defs/faustdef.ts";
@@ -96,10 +97,99 @@ export class PlotWindow {
         return this;
     }
 
+    /**
+     * Calls `handler` when the viewer closes this window (a `/gui_closed`).
+     * `null` clears it.
+     */
+    onClosed(handler: (() => void) | null): this {
+        this.host.setClosedHandler(this.id, handler);
+        return this;
+    }
+
     /** Closes the window (`/gui_free`). */
     close(): void {
         this.host.close(this.id);
     }
+}
+
+/**
+ * One open patcher window — a def's **structure** (not its sound): its GUI
+ * `host`, the window `id` and the `patch` widget's id.
+ *
+ * ```ts
+ * const win = await myGraphdef.plotDef();
+ * win.close();
+ * ```
+ */
+export class PatchWindow {
+    readonly host: GuiHost;
+    readonly id: number;
+    readonly widgetId: number;
+
+    constructor(host: GuiHost, id: number, widgetId: number) {
+        this.host = host;
+        this.id = id;
+        this.widgetId = widgetId;
+    }
+
+    /** Live-sets the patch widget's props (`label`, `boxes`, `cords`…) through `/gui_set`. */
+    set(props: Record<string, PropValue>): this {
+        this.host.set(this.widgetId, props);
+        return this;
+    }
+
+    /**
+     * Calls `handler` when the viewer closes this window (a `/gui_closed`).
+     * `null` clears it.
+     */
+    onClosed(handler: (() => void) | null): this {
+        this.host.setClosedHandler(this.id, handler);
+        return this;
+    }
+
+    /** Closes the window (`/gui_free`). */
+    close(): void {
+        this.host.close(this.id);
+    }
+}
+
+/** What a def's `plotDef` takes. */
+export interface PatchViewOptions {
+    /** Captions the patch panel; absent, the caller's own default. */
+    label?: string;
+    /** Window width. */
+    w?: number;
+    /** Window height. */
+    h?: number;
+    /** Window title; absent, the def's name. */
+    title?: string;
+    /** An explicit host; absent, the ambient one. */
+    host?: GuiHost;
+}
+
+/**
+ * Open a {@link GraphPatch} or {@link DefPatch} as a directed `patch` view in
+ * its own window on the ambient GUI host — the structure opener behind the
+ * `plotDef` methods. One window per call, the `plot` posture: the patch sits in
+ * a `scroll` workspace (pan/zoom), no audio server involved. The **host lays
+ * the boxes out** and sizes the scrollable canvas from the graph's own extent
+ * (never below the window), so the model carries no geometry: a small graph
+ * centres in the window, a large one fills the content and pans.
+ *
+ * @internal — exported for the def classes' `plotDef`, which is the surface.
+ */
+export async function openPatchView(
+    model: { toWidget(): { boxes: Record<string, unknown>[]; cords: number[] } },
+    options: PatchViewOptions = {},
+): Promise<PatchWindow> {
+    const { label, w = 1000, h = 700, title, host: explicitHost } = options;
+    const host = explicitHost ?? await resolveHost();
+    const widgetId = host.allocId();
+    const view = guidef.patch({ id: widgetId, ...model.toWidget(), label });
+    const workspace = guidef.scroll({ id: host.allocId() }, view);
+    const tree = guidef.window({ title: title ?? label ?? "patch", w, h }, workspace);
+    const handle = host.open(tree);
+    return new PatchWindow(host, handle.id, widgetId);
 }
 
 /** What `plot` accepts. */
@@ -408,6 +498,12 @@ export async function resolveHost(): Promise<GuiHost> {
     const session = main.currentSession as { guiHost?: GuiHost | null } | null;
     const sessionHost = session?.guiHost ?? null;
     if (sessionHost) return sessionHost;
+    // A host of our own: the core wasm has to be in before one exists (its id
+    // allocators are core registries), and the ambient verbs are exactly the
+    // surface that resolves what it needs rather than asking for it. A page
+    // that opened a `Session` first has already paid this; one that only wants
+    // to look at something has not.
+    await loadOsc();
     ownHost ??= await GuiHost.page();
     return ownHost;
 }
