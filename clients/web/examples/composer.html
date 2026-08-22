@@ -75,9 +75,7 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
 
     <script type="module">
       import {
-        loadOsc, loadCore, pageConnection, server as engine, Server,
-        Buffer, Event, GuiHost, guiHost, gui, seq, form, defs, render,
-        TempoClock,
+        Session, Buffer, Event, guiHost, gui, seq, form, defs,
       } from "../dist/index.js";
 
       const el = (id) => document.getElementById(id);
@@ -87,7 +85,7 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
       const QUANT = 0.5;   // the drag grid: half a beat
       const SWEEP = 4.0;   // the sweep's length in beats (the curve's, and its voice's)
 
-      let server, host, page, clock, editor = null, win = null, unfit = null;
+      let session, server, SR, editor = null, win = null, unfit = null;
 
       // ---- the instrument that plays a buffer ----
       // The notes use the server's stock `default` def; the **take** needs an
@@ -121,19 +119,28 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
       };
 
       // ---- the takes ----
-      // Bounced the way a composition really makes one: rendered offline — in
-      // this tab, faster than real time — and installed as a server buffer. Two
-      // different notes, so that joining the two clips is a real join: an
-      // element that reads both, back to back, rather than two placements of
-      // one buffer.
+      // Bounced the way a composition really makes one: an **offline session**
+      // renders the note faster than real time, and the samples are installed
+      // as a server buffer. Two different notes, so that joining the two clips
+      // is a real join: an element that reads both, back to back, rather than
+      // two placements of one buffer.
+      //
+      // *The one line that cannot be the Python example's:* it writes the
+      // bounce to a WAV and loads it with `Buffer.read`, because a composition
+      // on a machine has a folder to keep its takes beside the session file. A
+      // tab has neither, so the samples go straight into the engine's own
+      // memory (`Buffer.fromSamples`, in-page only). Everything above and
+      // below this line is the same call in the same order.
       async function bounce(midinote, beats = 2.0) {
-        const stats = await render(
-          new seq.Pbind({ midinote: new seq.Pseq([midinote], 1), dur: beats,
-                          legato: 1.0, amp: 0.3 }),
-          { channels: 1, tempo: TEMPO },
-        );
+        const offline = await Session.nrt({ tempo: TEMPO });
+        // One octave under the melody rather than three: the take has to be
+        // *heard* moving when a clip is dragged.
+        offline.play(new seq.Pbind({ midinote: new seq.Pseq([midinote], 1),
+                                     dur: beats, legato: 1.0, amp: 0.3 }));
+        const stats = await offline.render({ sampleRate: SR, channels: 1 });
+        offline.close();
         log(`bounced ${stats.frames} frames of take (midinote ${midinote})`);
-        return Buffer.fromSamples(stats.samples, 1, stats.sampleRate, { server });
+        return Buffer.fromSamples(stats.samples, 1, SR, { server });
       }
 
       // ---- the composition ----
@@ -189,7 +196,10 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
       }
 
       // The transport bar rides *under* the lanes as the editor's `extra`: its
-      // widgets are the script's, and the editor never touches their ids.
+      // widgets are the script's, and the editor never touches their ids. The
+      // `status` label is what makes a press *report where it is looked at* — a
+      // GUI example whose only feedback is a line of text somewhere else is read
+      // by nobody pressing the button.
       const bar = () => gui.panel(
         { layout: "row", h: 34, gap: 8.0 },
         gui.button({ name: "play", label: "play" }),
@@ -198,47 +208,83 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
         gui.button({ name: "rewind", label: "rewind" }),
         gui.button({ name: "undo", label: "undo" }),
         gui.button({ name: "redo", label: "redo" }),
+        gui.label("", { name: "status", align: "start" }),
       );
+
+      /** Report in the **window**, not only in the page's log. */
+      const say = (message) => {
+        log(message);
+        win?.widget("status").set({ text: message });
+      };
+
+      /** Each button acts on its press (1) and ignores the release. */
+      const press = (fn) => (value) => { if (value === 1) fn(); };
+
+      /**
+       * Play from the top when the last pass ran out.
+       *
+       * The transport **parks at the end** of a pass rather than rewinding, so a
+       * bare play from there starts at the end and sounds nothing — which reads
+       * as a dead button unless you know to press stop first. The parking itself
+       * is right: it is what lets a pause resume where the music got to.
+       */
+      function play() {
+        const { transport } = editor;
+        if (transport.extent !== null && transport.at >= transport.extent()) {
+          editor.locate(0.0);
+        }
+        editor.play(server, session.clock);
+      }
 
       async function run() {
         el("start").disabled = true;
-        await loadOsc();
-        await loadCore();
-        const raw = await engine({ channels: 2 });
-        await raw.resume();
-        server = await Server.open(await pageConnection());
-        host = await GuiHost.page();
-        page = await guiHost();
-        el("stage").append(page.canvas);
+        // One session, as the Python example opens one: it owns the server, the
+        // clock and the GUI host. `page` is this client's `live` — the engine is
+        // the tab's own rather than a process this line started.
+        session = await Session.page({ tempo: TEMPO, latency: 0.1, channels: 2 });
+        server = session.server;
+        SR = (await server.queryInfo()).nominalSampleRate;
 
         await sampler().send(server);
         await drone().send(server);
         const [buf, other] = [await bounce(60), await bounce(48)];
         await server.sync();
 
-        clock = new TempoClock(TEMPO).start();
+        const host = await session.gui();
         editor = new gui.Editor(await compose(buf, other), {
-          sampleRate: raw.context.sampleRate,
+          sampleRate: SR,
           tempo: TEMPO,
           quant: QUANT,
           follow: true,        // what is sounding follows the edit
           extra: [bar()],
-          title: "composer",
+          title: "Composer",
         });
         win = editor.open(host);
+
+        // The one step a window does not need: a tab draws into a canvas of its
+        // own, and `fit` keeps the host's window the size of the element.
+        const surface = await guiHost();
+        el("stage").append(surface.canvas);
         unfit?.();
-        unfit = page.fit(win.id, el("stage"));
+        unfit = surface.fit(win.id, el("stage"));
 
-        // The buttons are the script's: the editor ignores their events, and
-        // the window handle resolves them by name.
-        win.widget("play").onEvent((down) => { if (down) editor.render(server, clock); });
-        win.widget("pause").onEvent((down) => { if (down) editor.pause(); });
-        win.widget("stop").onEvent((down) => { if (down) editor.stop(); });
-        win.widget("rewind").onEvent((down) => { if (down) editor.locate(0.0); });
-        win.widget("undo").onEvent((down) => { if (down) report("undo", editor.undo()); });
-        win.widget("redo").onEvent((down) => { if (down) report("redo", editor.redo()); });
+        session.start();                    // the clock runs the routines
+        win.widget("play").onEvent(press(play));
+        win.widget("pause").onEvent(press(() => editor.pause()));
+        win.widget("stop").onEvent(press(() => editor.stop()));
+        win.widget("rewind").onEvent(press(() => editor.locate(0.0)));
+        // Undo and redo are **not** the editor's own history: the log lives in
+        // the shared crate, beside the document it inverts, so a script editing
+        // the arrangement or a second view on the same composition steps back
+        // through the same one.
+        win.widget("undo").onEvent(press(() => report("undo", editor.undo())));
+        win.widget("redo").onEvent(press(() => report("redo", editor.redo())));
+        editor.locate(0.0);                 // the cursor waits at the top
 
-        // A pass ends by itself; this is the one loop that has to notice.
+        // A pass ends by itself; this is the one loop that has to notice. Where
+        // the Python example polls the window's stream, the editor here
+        // subscribes to it (`open` listens), so this is the transport's half of
+        // that loop and nothing else.
         setInterval(() => editor.transport.update(), 100);
         // What the *model* says after a gesture that changed something — the
         // point of the page: the numbers below are the arrangement's, not the
@@ -251,16 +297,16 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
           const before = editor.undoLabel;
           queueMicrotask(() => {
             if (editor.undoLabel === before && !editor.dirty) return;
-            log(`${tag}: the piece is now ${editor.extent().toFixed(2)} beats`
+            say(`${tag}: the piece is now ${editor.extent().toFixed(2)} beats`
               + `${editor.canUndo ? `, undo: ${editor.undoLabel}` : ""}`);
           });
         });
 
-        log("press play — drag a clip to move it, an edge to trim it, and edit "
+        say("press play — drag a clip to move it, an edge to trim it, and edit "
           + "while it sounds");
       }
 
-      const report = (what, did) => log(did ? `  ${what}` : `  nothing to ${what}`);
+      const report = (what, did) => say(did ? `  ${what}` : `  nothing to ${what}`);
 
       el("start").onclick = () => run().catch((error) => log(`error: ${error}`));
     </script>

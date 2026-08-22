@@ -1898,6 +1898,20 @@ as some other milestone has a better claim on it.
   quant)`, the classmethod that constructs and starts in one call (the instance
   `play` is here, the shortcut is not), and `ServerError`, which W21 already
   listed as missing and portable and which nothing has since claimed.
+- **`Buffer.fromSamples` exists here and nowhere else** *(found 2026-08-22
+  putting the two composer examples side by side)*. It is how a page installs a
+  bounce it just rendered — the in-page engine shares memory, so the samples go
+  straight in — and the Python client has no counterpart at all. Its own answer
+  is the other half of the same gap: `Buffer.read(path)` (and the `read_*`
+  family) reads a file into a buffer, which a tab cannot do because it has no
+  filesystem. So the two clients get a take into a buffer by two different
+  verbs, and neither verb exists in the other. Two things to decide on their
+  merits, not by whichever example needed one first: whether `from_samples`
+  belongs in the Python client (`Session.embed` shares memory too, so the
+  capability is not the page's alone), and whether `Buffer.read` has a web
+  spelling over a **URL** rather than a path. Until then it is the one line the
+  composer examples cannot share, and both say so where they diverge.
+
 - **The general rule this slot enforces**: a name that exists in one client and
   not the other is either a *feature* some milestone owns, or a *difference*
   `docs/gui-props.md` and this plan's parity section record with a reason.
@@ -1921,6 +1935,24 @@ differences that are written down somewhere — a milestone that owns them, a
 row in `docs/gui-props.md`, or a paragraph in this plan's parity section.
 
 ## Found by use: the running list of fixes
+
+- ✅ **The composer example was a second program, not the same one in another
+  language** *(found 2026-08-22, when the user asked why the two examples were
+  not identical after the curve was fixed in one and not the other)*. The
+  arrangement matched lane for lane, which is what the earlier pass fixed — but
+  everything around it had been improvised: the page assembled `engine()`,
+  `Server.open(pageConnection())` and a bare `TempoClock` where the script opens
+  **one `Session`**; it bounced its takes through the free `render()` instead of
+  an **offline session**; it called `editor.render(...)` where the script calls
+  `editor.play(...)`, so the transport parked at the end read as a dead button
+  with no rewind; it had no `status` label, so a press reported to a log below
+  the window instead of *in* it; and it never located the cursor at the top. The
+  page now makes the same calls in the same order (`Session.page` is this
+  client's `live`), and the **one** line it cannot share is named where it sits:
+  a tab has no folder, so the bounce is installed with `Buffer.fromSamples`
+  where the script writes a WAV and loads it with `Buffer.read`. That difference
+  is a real gap in both directions and is written down as one (root `PLAN.md`,
+  W24) rather than settled by an example.
 
 - ✅ **The document writer took every wrapped object for a preserved node**
   *(found 2026-08-22 chasing the curve that would not edit, and the more serious

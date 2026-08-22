@@ -419,7 +419,7 @@ bar = panel(button(name="play", label="play"),
             button(name="redo", label="redo"),
             button(name="save", label="save"),
             button(name="open", label="open"),
-            label("", name="status", align="left"),
+            label("", name="status", align="start"),
             layout="row", h=34.0)
 
 
