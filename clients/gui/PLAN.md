@@ -2356,6 +2356,46 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   guard the repeats swallow a third of the bend. Five older tests modelled a
   *click* as a bare press and now release first, which is what a click is.
 
+- ⬜ **An acknowledgement should not be lost to saturation** *(the user's own
+  note, 2026-08-22, taken while the release-only rule was landing: "igualmente
+  los acks no deberian fallar por saturacion. Eso hay que verlo despues
+  tambien")*. Two changes shipped that day made the symptom go away without
+  answering this: an edit now leaves on the release, so one gesture is one round
+  trip rather than sixty, and an editor now accepts a **run** of edits from one
+  widget naming versions it has moved past. Both are right on their own terms,
+  and neither says why a burst of events could outrun the answers in the first
+  place. What to look at: the page's carrier is in-process and its
+  acknowledgement still arrives after the host has emitted the next event, so
+  the question is whether the ack path is queued where it could be delivered in
+  the same turn, and whether a host that is behind should be told to stop
+  emitting rather than have its events refused one by one. Native has the same
+  shape over IPC and happens to keep up, which is not an answer either.
+
+- ⬜ **The browser's lost release is guarded and the guard is unverified.** A
+  page can lose a button-up — it comes up outside the window, over another
+  application, after an alt-tab — where a desktop window cannot, and winit
+  synthesizes a button event only from a move that *reports* a change. So
+  `web::input` ends the drag itself when the DOM says no button is down
+  (`CanvasSlot::buttons`, a capture-phase listener). It is small and its
+  reasoning is sound, and **nothing has exercised it**: the case did not
+  reproduce under Chrome DevTools, and the two hypotheses tried alongside it
+  were measured and dropped. Worth either a way to drive it or a decision that
+  it stays on trust, rather than sitting as code nobody has seen work.
+
+- ⬜ **The other drags that accumulate per frame** *(named 2026-08-22 by the
+  user while the curve's bend was fixed: "esto ya paso con otros elementos
+  graficos")*. A bend was relative — each step measured from the last — and drew
+  two defects from it: the clamp ate the motion spent past the limit, and a
+  pointer that left the element kept accumulating. Anchoring at the press ended
+  both, and **any other drag whose value is accumulated rather than measured
+  from the press has the same two**. The ones to read are `control.rs` (knob,
+  number) and the velocity/block drags in `notes.rs`. The knobs may well be
+  right as they are: they ask for a **pointer grab**, and a locked pointer has
+  no absolute position to measure from — which is exactly why they accumulate,
+  and why the answer there is a virtual cursor rather than a press anchor. The
+  point of the entry is to read each one and say which it is, rather than
+  assuming the shape from the file it sits in.
+
 - ⬜ **A page burns the main thread while nothing is happening.** Measured on
   `clients/web/examples/composer.html` through the DevTools protocol: **67% of
   the main thread, idle** — no transport running, no pointer moving, no

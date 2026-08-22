@@ -1,9 +1,11 @@
 # Roadmap — the order the open work is taken in
 
-*Rewritten 2026-08-21 (twice: the second time when the arrangement, the editor,
-the transport and the engraver all reached the web client, which is what Phase 1
-was ordered for), and before that the same day, when the phase of things found by
-use was taken whole — its last entry being a design question rather than a fix.
+*Rewritten 2026-08-22, when a sitting with the composer example turned up eight
+defects across the host, both clients and the document writer, and left three
+findings behind that now lead the phase. Before that: 2026-08-21 (twice: the
+second time when the arrangement, the editor, the transport and the engraver all
+reached the web client, which is what Phase 1 was ordered for), and the same day
+before it, when the phase of things found by use was taken whole — its last entry being a design question rather than a fix.
 Before that: 2026-08-20, four times — when the
 overview work closed, when the four
 entries it had left behind were taken — the join that draws an edge, a page's
@@ -47,11 +49,11 @@ window draws rather than stopping at a bucket.
 
 **The violation that led this list is paid**: the arrangement, the document and
 the editor now exist in both clients, held together by parity suites rather than
-by care. What leads it instead is what taking that port turned up — one measured
-defect and one surface it named but did not build — followed by the destination
-the port was blocking. Behind them, one track that is genuinely later.
-Everything else is in the section after them, named so that "not scheduled"
-reads as a decision.
+by care. What leads it instead is what **using** them turned up — three findings
+the editing pass of 2026-08-22 recorded and did not take — followed by the
+surface the port named but did not build, and the destination it was blocking.
+Behind them, one track that is genuinely later. Everything else is in the
+section after them, named so that "not scheduled" reads as a decision.
 
 **A larger question was opened while that phase was taken and is deliberately
 not in this order**, because it is not work to schedule: what the *second*
@@ -86,10 +88,31 @@ right — that is the normal failure, not a sign the work vanished.
 outstanding violation. **The named track is in** — `src/form/`,
 `gui/transport.ts`, `gui/editor.ts`, `gui/notation/` and `defs/patch.ts` all
 landed on 2026-08-21, each with a parity suite that asserts the two clients
-produce the same tree, the same document and the same engraving. What is left of
-the phase is the destination the track was blocking, and one surface the track
-named on its way past.*
+produce the same tree, the same document and the same engraving. Using it on
+2026-08-22 turned up eight defects in one sitting — a curve that drew nothing, a
+document written two ways, an edit per frame, a bend that drifted, a press
+repeated per frame — and **what leads the phase now is what that sitting did not
+finish**, followed by the destination the track was blocking and the one surface
+it named on its way past.*
 
+- ⬜ **An acknowledgement should not be lost to saturation**
+  *(`clients/gui/PLAN.md`, Found by use)* — the user's own note, and the one
+  question the editing pass left standing rather than answered. Two changes made
+  the symptom go away — an edit leaves on the release, and an editor accepts a
+  run of edits from one widget — and neither says why a burst could outrun the
+  answers at all. First because everything above it now depends on that round
+  trip behaving.
+- ⬜ **The other drags that accumulate per frame** *(`clients/gui/PLAN.md`,
+  Found by use)* — a bend was relative and drifted twice over; the knobs, the
+  numbers and the roll's velocity drags are the ones to read next. Second
+  because it is the same defect the pass just fixed, in the places it was not
+  looked for, and it is a reading rather than a design.
+- ⬜ **A page burns the main thread while nothing is happening**
+  *(`clients/gui/PLAN.md`, Found by use)* — 67% of the main thread with the
+  composer page idle, and the same 67% while playing, which is what makes the
+  playhead jitter. It is the browser front's own (native reads the shm header
+  and polls nothing), and the entry says to measure per stage before changing
+  anything. Third because every page the phase adds pays it.
 - ⬜ **W16 — Example parity with the Python client**. Its named track (the
   arrangement layer, the editor, the transport, the engraver) is closed; what
   remains is the milestone itself, and it is the larger half: about forty
@@ -104,13 +127,6 @@ named on its way past.*
   as boxes, which `gui_patch2.py` is the example of. A missing surface is a
   defect under the non-divergence rule, so it is ordered here rather than
   waiting for the example that needs it.
-- ⬜ **A page burns the main thread while nothing is happening**
-  *(`clients/gui/PLAN.md`, Found by use)* — 67% of the main thread with the
-  composer page idle, and the same 67% while playing, which is what makes the
-  playhead jitter. It is the browser front's own (native reads the shm header
-  and polls nothing), and the entry says to measure per stage before changing
-  anything. Ordered here because it is the only thing found by use that is
-  still open, and because every page the phase adds pays it.
 - ⬜ **W24 — The completeness pass**, and the parity gaps that plan already
   carries with reasons (the record formatters, `connectGui`, the two leftover
   names — `defs/patch.ts` is no longer among them).
