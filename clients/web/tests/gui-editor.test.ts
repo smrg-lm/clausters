@@ -524,7 +524,7 @@ test("every acknowledgement carries the version the next gesture names back", ()
     assert.ok((host.versions.at(-1) as number) > 1, "an edit moves it");
 });
 
-test("a drag is one run, and its own older versions are not stale", () => {
+test("a drag reporting as it goes is not stale against its own answers", () => {
     // A host that reports as it goes stamps every step with the version *it*
     // holds, and it only learns a new one when an acknowledgement reaches it —
     // which a hand outruns. Refusing those is refusing the drag: every step
@@ -546,8 +546,8 @@ test("a drag is one run, and its own older versions are not stale", () => {
     assert.equal(member?.offset, 5.0, "the last frame is where it is");
     assert.notEqual(host.versions.at(-1), drawnAt, "the document moved under the run");
 
-    // A change by no gesture at all ends the run, so a step arriving after it
-    // is refused — which is what the version is for. The offset has to be a
+    // A change by no gesture at all raises the floor, so a step arriving after
+    // it is refused — which is what the version is for. The offset has to be a
     // *new* one: a step asking for where the clip already sits changes nothing
     // and would answer false whatever the rule said.
     ed.refresh();
@@ -566,17 +566,47 @@ test("an edit made against a superseded version is refused and answered", () => 
     const take = clipsOf(lanes(drawn)[0] as GuiNode)[0] as GuiNode;
     const roll = clipsOf(lanes(drawn)[1] as GuiNode)[0] as GuiNode;
     const version = host.versions.at(-1) as number;
-    // **Another widget** edits the composition first, which is what a script or
-    // a second editor looks like from in here. The same widget editing twice is
-    // a drag, and a drag is one gesture whose own older versions are its own.
+    // The composition moves by a route the host never saw — a script editing
+    // the arrangement behind the editor's back and saying so, which is also
+    // what a second editor and a redefine look like from in here. Another
+    // *gesture* is not that: its versions are ones this host is about to be
+    // told about.
     ed.apply("/gui_event", clipEvent(take.id as number, 5 * BEAT, 2 * BEAT));
+    ed.refresh();
     host.acks.length = 0;
 
-    // A second gesture naming the version *before* that edit.
+    // A gesture naming the version *before* all that.
     const stale = [roll.id, SEQ, version, "clip", 7 * BEAT, 2 * BEAT];
     assert.equal(ed.apply("/gui_event", stale), false);
     assert.ok(host.reasons.at(-1), "and it says the composition changed");
     assert.ok(host.corrections().has(roll.id as number), "with the state as it stands");
+});
+
+test("two gestures inside one round trip are both applied", () => {
+    // The acknowledgement is not lost, and nothing is saturated: a host stamps
+    // every event with the version it was last *told*, and it is told only when
+    // an answer arrives. Two gestures begun inside one round trip name the same
+    // version, and refusing the second because the first had already moved the
+    // composition is refusing a hand for being faster than a poll loop.
+    const piece = song();
+    const ed = editor(piece, { quant: 0.25 });
+    const host = new FakeHost();
+    ed.open(asHost(host));
+    const drawn = ed.draw();
+    const take = clipsOf(lanes(drawn)[0] as GuiNode)[0] as GuiNode;
+    const roll = clipsOf(lanes(drawn)[1] as GuiNode)[0] as GuiNode;
+    const version = host.versions.at(-1) as number;
+
+    assert.equal(
+        ed.apply("/gui_event", [take.id as number, SEQ, version, "clip", 3 * BEAT, 2 * BEAT]),
+        true,
+    );
+    host.acks.length = 0;
+    assert.equal(
+        ed.apply("/gui_event", [roll.id as number, SEQ + 1, version, "clip", 7 * BEAT, 2 * BEAT]),
+        true,
+    );
+    assert.equal(host.corrections().has(roll.id as number), false, "and no snap back");
 });
 
 test("a host that cannot name a version is applied unchecked", () => {

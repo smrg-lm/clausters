@@ -2356,20 +2356,75 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   guard the repeats swallow a third of the bend. Five older tests modelled a
   *click* as a bare press and now release first, which is what a click is.
 
-- ⬜ **An acknowledgement should not be lost to saturation** *(the user's own
+- ✅ **An acknowledgement should not be lost to saturation** *(the user's own
   note, 2026-08-22, taken while the release-only rule was landing: "igualmente
   los acks no deberian fallar por saturacion. Eso hay que verlo despues
-  tambien")*. Two changes shipped that day made the symptom go away without
-  answering this: an edit now leaves on the release, so one gesture is one round
-  trip rather than sixty, and an editor now accepts a **run** of edits from one
-  widget naming versions it has moved past. Both are right on their own terms,
-  and neither says why a burst of events could outrun the answers in the first
-  place. What to look at: the page's carrier is in-process and its
-  acknowledgement still arrives after the host has emitted the next event, so
-  the question is whether the ack path is queued where it could be delivered in
-  the same turn, and whether a host that is behind should be told to stop
-  emitting rather than have its events refused one by one. Native has the same
-  shape over IPC and happens to keep up, which is not an answer either.
+  tambien")*. **No acknowledgement was ever lost.** Both legs are reliable and
+  neither drops: natively the host speaks TCP by default and a page's carrier is
+  two in-process queues with no bound. What the note saw was an edit **refused**,
+  and the refusal was the staleness check turning the round trip's own latency
+  into a conflict.
+
+  The two sub-questions the entry left open, answered rather than fixed. *Could
+  the ack path be delivered in the same turn?* No, on either platform, and not
+  by plumbing: the page drains the host's outbox on a **33 ms interval**
+  (`page.ts`) and feeds the answer back through winit's event-loop proxy, so a
+  round trip is two queues wide; native is a socket. *Should a host that is
+  behind be told to stop emitting?* No — back-pressure trades a refused edit for
+  a stalled hand, which is the wrong way round for a gesture that tracks the
+  pointer, and it is unnecessary because an edit-back payload is absolute and
+  whole, so a late report simply wins. The answers lag by construction, and the
+  mechanism has to be correct with them arbitrarily late.
+
+  So the fix is in the check. The host stamps every event with the version it
+  was last *told*, so an event naming a version the owner has moved past is the
+  ordinary case, not a collision. The owner now keeps a **floor** — the version
+  at which the document last moved by a route no event produced (a script, a
+  second editor, a re-derivation, a history step) — and refuses only an edit
+  naming something below it; every other older version is one of its own answers
+  still in flight. The rule it replaces (*a run of edits from one widget is one
+  gesture*) was the same insight scoped too narrowly: it saved the drag it was
+  written for and still refused **the next gesture whenever two began inside one
+  round trip**, which is well inside 33 ms of hand. In both clients, with
+  `two_gestures_inside_one_round_trip_are_both_applied` in both, and the wire
+  rule rewritten in `docs/gui-protocol.md`. The trade-off, stated because it is
+  the reason the narrow rule existed: a whole payload is now applied over a
+  version another *widget's* gesture moved, which is safe only because every
+  edit-back resolves to its own widget's placement, roll or curve — a foreign
+  route, the case that can touch anything, still raises the floor.
+
+- ⬜ **Undo is not one behaviour: it answers some gestures and not others**
+  *(found 2026-08-22 by the user, in `gui_composer`: "achicar un clip pianoroll
+  con el agarre del clip no responde a undo", and earlier the same day "el
+  contenido de los clips (envolvente) y el cambio de duracion por agarre del
+  clip no vuelven")*. Every route already records an intent through the crate's
+  log -- there is no gesture here that forgot to -- so what differs is what the
+  **inverse can say**, and that has to be read per element and per gesture
+  rather than per bug.
+
+  One cause is measured. A clip drawn from a member with **no explicit
+  duration** takes the element's own length; resizing it records `place` with a
+  `dur`, and the inverse of that is a `place` with **no** `dur` -- which the
+  projection reads as *leave the duration alone*
+  (`Aggregate.move(member, offset, dur=None)`, and the same in the TypeScript
+  port). So the first resize of a clip is the one undo cannot reverse: the log
+  steps back, `undo()` answers `True`, and the member keeps the length the hand
+  gave it. A second resize undoes correctly, which is why it reads as
+  intermittent. The fix is a decision, not a patch: either the document
+  distinguishes *absent* from *unset* on a placement's `dur`, or a placement
+  always carries the resolved one and "no duration" stops being a state an
+  inverse has to name.
+
+  The envelope is the other half and is **not** reproduced yet: the layered
+  clip's curve undoes model and picture together, with a test in both clients
+  (`undoing_a_curve_edit_tells_the_host_what_to_draw`), so whatever failed in
+  `gui_composer` is a different shape of body -- which is the entry's real
+  point. **The rule to hold is one behaviour per element according to what that
+  element is**, so what has to happen is a pass over every editable body (a
+  placement, a trim, a roll's notes, a curve, a take's window) asking of each:
+  what does its inverse state, what does the projection do with it, and what
+  does the widget end up drawing. Three of those five have been fixed one at a
+  time this week, which is the sign the reading is owed.
 
 - ⬜ **The browser's lost release is guarded and the guard is unverified.** A
   page can lose a button-up — it comes up outside the window, over another

@@ -1258,7 +1258,7 @@ def test_every_acknowledgement_carries_the_version_the_next_gesture_names_back()
     assert version > FIRST_VERSION, "an applied edit moved it"
 
 
-def test_a_drag_is_one_run_and_its_own_older_versions_are_not_stale():
+def test_a_drag_reporting_as_it_goes_is_not_stale_against_its_own_answers():
     """A drag emits a value per frame, each stamped with the version the *host*
     holds -- and a host only learns a new one when an acknowledgement reaches
     it. Refusing those is refusing the drag: every step after the first comes
@@ -1281,15 +1281,9 @@ def test_a_drag_is_one_run_and_its_own_older_versions_are_not_stale():
     assert placement.offset == pytest.approx(5.0 * BEAT), "the last frame is where it is"
     assert ed._version != drawn_at
 
-    # ...and the run is this widget's alone. A *second* widget naming the same
-    # old version is the case the check exists for, and is still refused.
-    (other,) = clips(_bass)
-    assert ed.apply("/gui_event", [other["id"], SEQ + 1, drawn_at, "clip",
-                                   6.0 * BEAT, float(BEAT)]) is False
-
-    # A change by no gesture at all ends the run, so a step arriving after it is
-    # refused as well -- which is what the version is for. The offset has to be
-    # a *new* one: a step asking for where the clip already sits changes nothing
+    # A change by no gesture at all raises the floor, so a step arriving after
+    # it is refused -- which is what the version is for. The offset has to be a
+    # *new* one: a step asking for where the clip already sits changes nothing
     # and would answer False whatever the rule said.
     ed.refresh()
     assert ed.apply("/gui_event", [clip["id"], SEQ + 2, drawn_at, "clip",
@@ -1297,12 +1291,40 @@ def test_a_drag_is_one_run_and_its_own_older_versions_are_not_stale():
     assert placement.offset == pytest.approx(5.0 * BEAT), "and it did not move"
 
 
+def test_two_gestures_inside_one_round_trip_are_both_applied():
+    """The acknowledgement is not lost, and nothing is saturated: the host
+    stamps every event with the version it was last *told*, and it is told only
+    when an answer arrives. Two gestures begun inside one round trip therefore
+    name the same version, and refusing the second one because the first had
+    already moved the composition is refusing a hand for being faster than a
+    poll loop. Only a route the host never saw overtakes an edit."""
+    ed = two_clips()
+    host = _FakeHost()
+    ed.open(host)
+    (lead, bass) = lanes(ed.draw())
+    (first,) = clips(lead)
+    (second,) = clips(bass)
+    drawn_at = ed._version
+
+    assert ed.apply("/gui_event", [first["id"], SEQ, drawn_at, "clip",
+                                   2.0 * BEAT, float(BEAT)]) is True
+    # The answer to that one has not reached the host, so this names the same
+    # version -- which is what "before the acknowledgement" looks like on the
+    # wire, whichever carrier is under it.
+    assert ed.apply("/gui_event", [second["id"], SEQ + 1, drawn_at, "clip",
+                                   3.0 * BEAT, float(BEAT)]) is True
+    assert ed._clips[first["id"]].offset == pytest.approx(2.0 * BEAT)
+    assert ed._clips[second["id"]].offset == pytest.approx(3.0 * BEAT)
+    (_, corrections) = host.acks[-1]
+    assert corrections == [], "and neither was answered with a snap back"
+
+
 def test_an_edit_made_against_a_superseded_version_is_refused_and_answered():
     """O4's acceptance. The composition moved between the picture the gesture
-    was made against and the gesture arriving -- here by another edit, which is
-    what a script or a second editor looks like from in here. The late one comes
-    back as the state that holds rather than landing on top of what arrived in
-    between."""
+    was made against and the gesture arriving -- by a route the host never saw,
+    which is what a script or a second editor is from in here. The late one
+    comes back as the state that holds rather than landing on top of what
+    arrived in between."""
     ed = two_clips()
     host = _FakeHost()
     ed.open(host)
@@ -1313,8 +1335,12 @@ def test_an_edit_made_against_a_superseded_version_is_refused_and_answered():
     placement = ed._clips[late["id"]]
     was = (placement.offset, placement.dur)
 
-    # Something else edits the composition first.
+    # The composition moves by a route the host never saw -- a script editing
+    # the arrangement behind the editor's back and saying so, which is also what
+    # a second editor and a redefine look like from in here. Another *gesture*
+    # is not that: its versions are ones this host is about to be told about.
     ed.apply("/gui_event", [other["id"], SEQ, drawn_at, "clip", 3.0 * BEAT, float(BEAT)])
+    ed.refresh()
     assert ed._version != drawn_at
 
     stale = ed.apply(
@@ -1378,6 +1404,7 @@ def test_a_stale_note_edit_is_answered_with_the_notes_as_they_stand():
     (other,) = clips(bass)
     drawn_at = ed._version
     ed.apply("/gui_event", [other["id"], SEQ, drawn_at, "clip", 3.0 * BEAT, float(BEAT)])
+    ed.refresh()
 
     assert ed.apply(
         "/gui_event",

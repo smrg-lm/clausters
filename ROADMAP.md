@@ -49,9 +49,10 @@ window draws rather than stopping at a bucket.
 
 **The violation that led this list is paid**: the arrangement, the document and
 the editor now exist in both clients, held together by parity suites rather than
-by care. What leads it instead is what **using** them turned up — three findings
-the editing pass of 2026-08-22 recorded and did not take — followed by the
-surface the port named but did not build, and the destination it was blocking.
+by care. What leads it instead is what **using** them turned up — what is left of
+the findings the editing pass of 2026-08-22 recorded and did not take — followed
+by the surface the port named but did not build, and the destination it was
+blocking.
 Behind them, one track that is genuinely later. Everything else is in the
 section after them, named so that "not scheduled" reads as a decision.
 
@@ -95,18 +96,18 @@ repeated per frame — and **what leads the phase now is what that sitting did n
 finish**, followed by the destination the track was blocking and the one surface
 it named on its way past.*
 
-- ⬜ **An acknowledgement should not be lost to saturation**
-  *(`clients/gui/PLAN.md`, Found by use)* — the user's own note, and the one
-  question the editing pass left standing rather than answered. Two changes made
-  the symptom go away — an edit leaves on the release, and an editor accepts a
-  run of edits from one widget — and neither says why a burst could outrun the
-  answers at all. First because everything above it now depends on that round
-  trip behaving.
+- ⬜ **Undo is not one behaviour: it answers some gestures and not others**
+  *(`clients/gui/PLAN.md`, Found by use)* — resizing a clip by its edge does not
+  come back, and the measured cause is that the inverse of a `place` that gave a
+  member a duration cannot say *there was none*. First because the destination
+  this order serves says "edited by hand, heard, **undone**, redone", and
+  because the entry is a reading of all five editable bodies against one rule
+  rather than the fourth fix of a case this week.
 - ⬜ **The other drags that accumulate per frame** *(`clients/gui/PLAN.md`,
   Found by use)* — a bend was relative and drifted twice over; the knobs, the
   numbers and the roll's velocity drags are the ones to read next. Second
-  because it is the same defect the pass just fixed, in the places it was not
-  looked for, and it is a reading rather than a design.
+  because it is the same defect that pass fixed, in the places it was not looked
+  for, and it is a reading rather than a design.
 - ⬜ **A page burns the main thread while nothing is happening**
   *(`clients/gui/PLAN.md`, Found by use)* — 67% of the main thread with the
   composer page idle, and the same 67% while playing, which is what makes the

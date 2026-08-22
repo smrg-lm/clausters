@@ -5220,6 +5220,26 @@ is worse than it looks: relative intents must be rebased against a corrected
 state, and rebasing is exactly the netcode replay that would require the host to
 hold an executable copy of the document.
 
+**The answers lag, and staleness is measured against a floor rather than
+against the lag.** The host stamps every event with the version it was last
+*told*, and it is told only when an acknowledgement arrives — so on any carrier
+an event naming a version the owner has already moved past is the ordinary case,
+not a collision. The page's is the extreme: the host's outbox is drained on a
+33 ms interval and the answer goes back through the event loop's proxy, so a
+round trip is two queues wide and a hand crosses it easily. Making the ack path
+same-turn is not available on either platform (native is a socket, the page is a
+queue in each direction), and the alternative — telling a host that is behind to
+stop emitting — trades a refused edit for a stalled hand, which is the wrong way
+round for a gesture that has to track the pointer. So the mechanism is built to
+be correct with the answers arbitrarily late: the owner keeps a **floor**, the
+version at which the document last moved by a route no event produced (a script,
+a second editor, a re-derivation, a history step), and refuses only an edit
+naming something below it. Every other older version is one of the owner's own
+answers in flight. The earlier rule — *a run of edits from one widget is one
+gesture* — was this same insight scoped too narrowly: it saved the drag it was
+written for and still refused the next gesture whenever two began inside one
+round trip.
+
 What this replaces is worth recording, because it is the honest reason the
 acknowledgement never seemed necessary. Consistency was being maintained by
 **duplicating the owner's rule in the view**: the lane's snap grid travels in
