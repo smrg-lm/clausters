@@ -213,10 +213,11 @@ export interface InitOutput {
     readonly wasm_bindgen_ac0f9960a408a037___convert__closures_____invoke___wasm_bindgen_ac0f9960a408a037___JsValue______true__1__5: (a: number, b: number, c: any) => void;
     readonly wasm_bindgen_ac0f9960a408a037___convert__closures_____invoke___wasm_bindgen_ac0f9960a408a037___JsValue______true__1__6: (a: number, b: number, c: any) => void;
     readonly wasm_bindgen_ac0f9960a408a037___convert__closures_____invoke___wasm_bindgen_ac0f9960a408a037___JsValue______true__1__7: (a: number, b: number, c: any) => void;
-    readonly wasm_bindgen_ac0f9960a408a037___convert__closures_____invoke___web_sys_80b4f796a3c8b06___features__gen_MessageEvent__MessageEvent______true_: (a: number, b: number, c: any) => void;
-    readonly wasm_bindgen_ac0f9960a408a037___convert__closures_____invoke___wasm_bindgen_ac0f9960a408a037___JsValue______true__1__9: (a: number, b: number, c: any) => void;
+    readonly wasm_bindgen_ac0f9960a408a037___convert__closures_____invoke___web_sys_80b4f796a3c8b06___features__gen_MouseEvent__MouseEvent______true_: (a: number, b: number, c: any) => void;
+    readonly wasm_bindgen_ac0f9960a408a037___convert__closures_____invoke___web_sys_80b4f796a3c8b06___features__gen_MouseEvent__MouseEvent______true__9: (a: number, b: number, c: any) => void;
     readonly wasm_bindgen_ac0f9960a408a037___convert__closures_____invoke___wasm_bindgen_ac0f9960a408a037___JsValue______true__1__10: (a: number, b: number, c: any) => void;
     readonly wasm_bindgen_ac0f9960a408a037___convert__closures_____invoke___wasm_bindgen_ac0f9960a408a037___JsValue______true__1__11: (a: number, b: number, c: any) => void;
+    readonly wasm_bindgen_ac0f9960a408a037___convert__closures_____invoke___wasm_bindgen_ac0f9960a408a037___JsValue______true__1__12: (a: number, b: number, c: any) => void;
     readonly wasm_bindgen_ac0f9960a408a037___convert__closures_____invoke_______true_: (a: number, b: number) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;

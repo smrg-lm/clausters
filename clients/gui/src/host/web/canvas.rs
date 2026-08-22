@@ -76,11 +76,20 @@ pub(super) struct CanvasSlot {
     pub(super) touch: Option<u64>,
     /// This canvas' gesture state — the shared machine both fronts drive.
     pub(super) gestures: Gestures,
-    /// Modifier keys (winit `ModifiersChanged`), snapshotted into each
-    /// [`GestureCtx`] so Shift-pan/Ctrl-edit/Alt-select work as on the desktop.
-    pub(super) shift: bool,
-    pub(super) ctrl: bool,
-    pub(super) alt: bool,
+    /// **Which modifier keys are down**, as the browser reported them on the
+    /// last pointer or wheel event over this canvas: shift, ctrl, alt, in that
+    /// bit order. Snapshotted into each [`GestureCtx`] so Shift-pan /
+    /// Ctrl-edit / Alt-select work as on the desktop.
+    ///
+    /// Read from the **event** rather than tracked from winit's
+    /// `ModifiersChanged`, which a page gets only while the canvas has DOM
+    /// focus (`window_target.rs`: `has_focus.get() && …`). A reader who has not
+    /// clicked the canvas yet holds Shift and pans nothing; one who releases it
+    /// after clicking away leaves the front believing it is still down, and a
+    /// plain drag pans. Every pointer event carries `shiftKey`/`ctrlKey`/
+    /// `altKey` whatever has focus, which is the same fact without the gap —
+    /// the reason [`CanvasSlot::buttons`] is read the same way.
+    pub(super) mods: Rc<Cell<u8>>,
     /// The retained history per watched **bus** — the browser half of
     /// `retention`, filled from the `/bus_tapStream.reply` store exactly as the
     /// native tick fills it from the segment. What each *view* makes of a
@@ -96,11 +105,12 @@ pub(super) struct CanvasSlot {
 /// rectangle nothing draws into.
 pub(super) struct PointerListener {
     window: web_sys::Window,
-    closure: Closure<dyn FnMut(web_sys::PointerEvent)>,
+    closure: Closure<dyn FnMut(web_sys::MouseEvent)>,
 }
 
-/// The three events a gesture is made of, watched together.
-const POINTER_EVENTS: [&str; 3] = ["pointerdown", "pointermove", "pointerup"];
+/// The events a gesture is made of, watched together — the three pointer ones
+/// and the wheel, which carries the modifiers a zoom is qualified by.
+const POINTER_EVENTS: [&str; 4] = ["pointerdown", "pointermove", "pointerup", "wheel"];
 
 impl Drop for PointerListener {
     fn drop(&mut self) {
@@ -115,6 +125,13 @@ impl Drop for PointerListener {
 }
 
 impl CanvasSlot {
+    /// Shift, ctrl, alt as of the last pointer or wheel event (see
+    /// [`CanvasSlot::mods`]).
+    pub(super) fn modifiers(&self) -> (bool, bool, bool) {
+        let m = self.mods.get();
+        (m & 1 != 0, m & 2 != 0, m & 4 != 0)
+    }
+
     pub(super) fn new(window: Arc<Window>) -> Self {
         Self {
             window,
@@ -123,20 +140,19 @@ impl CanvasSlot {
             visible: true,
             cursor: (0.0, 0.0),
             buttons: Rc::new(Cell::new(0)),
+            mods: Rc::new(Cell::new(0)),
             pointer_listener: None,
             touch: None,
             gestures: Gestures::default(),
-            shift: false,
-            ctrl: false,
-            alt: false,
             histories: HashMap::new(),
             pending_bulk: Vec::new(),
         }
     }
 
-    /// Follows the browser's own **button state** on this canvas, so a release
-    /// the page never saw is caught on the next move (see
-    /// [`CanvasSlot::buttons`]).
+    /// Follows the browser's own **button state** and **modifier keys** on this
+    /// canvas, so a release the page never saw is caught on the next move (see
+    /// [`CanvasSlot::buttons`]) and a Shift-drag means Shift whether or not the
+    /// canvas has been clicked yet (see [`CanvasSlot::mods`]).
     ///
     /// On `window` in the capture phase, so the mask is already stored by the
     /// time winit's own handler turns the event into a `CursorMoved`. Anything
@@ -150,14 +166,23 @@ impl CanvasSlot {
             return;
         };
         let buttons = self.buttons.clone();
+        let mods = self.mods.clone();
         let target = canvas.clone();
-        let closure = Closure::<dyn FnMut(web_sys::PointerEvent)>::new(
-            move |event: web_sys::PointerEvent| {
+        let closure =
+            Closure::<dyn FnMut(web_sys::MouseEvent)>::new(move |event: web_sys::MouseEvent| {
                 if event.target().as_ref() == Some(target.as_ref()) {
-                    buttons.set(event.buttons());
+                    // A wheel event is a `MouseEvent` too but carries no button
+                    // mask worth reading, so only the pointer ones set it.
+                    if let Some(pointer) = event.dyn_ref::<web_sys::PointerEvent>() {
+                        buttons.set(pointer.buttons());
+                    }
+                    mods.set(
+                        u8::from(event.shift_key())
+                            | u8::from(event.ctrl_key()) << 1
+                            | u8::from(event.alt_key()) << 2,
+                    );
                 }
-            },
-        );
+            });
         let mut attached = false;
         for name in POINTER_EVENTS {
             attached |= window

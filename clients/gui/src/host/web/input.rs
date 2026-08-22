@@ -48,9 +48,7 @@ impl WebApp {
         // The same rate the frame draws with, so a gesture over a measured
         // axis resolves the same hertz the reader is looking at.
         ctx.sample_rate = self.server_rate;
-        ctx.shift = slot.shift;
-        ctx.ctrl = slot.ctrl;
-        ctx.alt = slot.alt;
+        (ctx.shift, ctx.ctrl, ctx.alt) = slot.modifiers();
         if let Some(render) = slot.render.as_ref() {
             for (id, view) in &render.waveforms {
                 ctx.slot_channels.insert(*id, view.view.num_channels());
@@ -302,11 +300,18 @@ impl WebApp {
                 }
                 slot.request_redraw();
             }
+            // The keyboard's own path, for a modifier held with no pointer
+            // event to carry it — a Ctrl+Z over a focused canvas. The pointer
+            // events are the other writer of the same three flags, and the
+            // authoritative one for a gesture (see `CanvasSlot::mods`).
             WindowEvent::ModifiersChanged(mods) => {
                 if let Some(slot) = self.canvases.get_mut(&def) {
-                    slot.shift = mods.state().shift_key();
-                    slot.ctrl = mods.state().control_key();
-                    slot.alt = mods.state().alt_key();
+                    let state = mods.state();
+                    slot.mods.set(
+                        u8::from(state.shift_key())
+                            | u8::from(state.control_key()) << 1
+                            | u8::from(state.alt_key()) << 2,
+                    );
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {

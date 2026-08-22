@@ -2662,6 +2662,19 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   `HitArea::Region` is that distinction, named so the next boundary can ask for
   it: the same rectangle, taken at its edge.
 
+- ✅ **A page lost the modifier keys until its canvas had been clicked**
+  *(found the same day, reading the one above: Shift over a patcher is what
+  makes it decline and the workspace pan, and Shift did nothing)*. The browser
+  front tracked shift/ctrl/alt from winit's `ModifiersChanged`, which its web
+  backend emits **only while the canvas has DOM focus**
+  (`window_target.rs`: `has_focus.get() && …`). A reader who had not clicked the
+  canvas yet held Shift and panned nothing; one who released it after clicking
+  away left the front believing it was still down, so a plain drag panned. Both
+  halves of "sometimes with, sometimes without". Every pointer and wheel event
+  carries `shiftKey`/`ctrlKey`/`altKey` whatever has focus, so the front reads
+  them there — the same listener, and the same reason, as the button mask it
+  already reads that way. `ModifiersChanged` stays as the keyboard's path.
+
 These are not milestones and they are not future directions. They are what
 **using the thing** turns up — an eye pass over an example, a path read while
 doing something else, a behaviour that is correct and unclear — recorded the day
