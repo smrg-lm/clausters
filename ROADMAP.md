@@ -96,11 +96,13 @@ repeated per frame — and **what leads the phase now is what that sitting did n
 finish**, followed by the destination the track was blocking and the one surface
 it named on its way past.*
 
-- ⬜ **The other drags that accumulate per frame** *(`clients/gui/PLAN.md`,
-  Found by use)* — a bend was relative and drifted twice over; the knobs, the
-  numbers and the roll's velocity drags are the ones to read next. First
-  because it is the same defect that pass fixed, in the places it was not looked
-  for, and it is a reading rather than a design.
+- ⬜ **A knob is a locked pointer on the desktop and a travelling one in a page**
+  *(`clients/gui/PLAN.md`, Found by use)* — what the reading of the other drags
+  turned up: none of them accumulates wrongly, but the browser front answers the
+  pointer-grab request with `false` and has no device-event path, so the same
+  widget is one gesture natively and another in a page. First because it is the
+  standing rule's own case and the fix is known and small; it waits only on a
+  browser and a hand, since pointer lock cannot be verified without either.
 - ⬜ **A page burns the main thread while nothing is happening**
   *(`clients/gui/PLAN.md`, Found by use)* — 67% of the main thread with the
   composer page idle, and the same 67% while playing, which is what makes the

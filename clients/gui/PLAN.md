@@ -2524,19 +2524,62 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   were measured and dropped. Worth either a way to drive it or a decision that
   it stays on trust, rather than sitting as code nobody has seen work.
 
-- ⬜ **The other drags that accumulate per frame** *(named 2026-08-22 by the
+- ✅ **The other drags that accumulate per frame** *(named 2026-08-22 by the
   user while the curve's bend was fixed: "esto ya paso con otros elementos
-  graficos")*. A bend was relative — each step measured from the last — and drew
-  two defects from it: the clamp ate the motion spent past the limit, and a
-  pointer that left the element kept accumulating. Anchoring at the press ended
-  both, and **any other drag whose value is accumulated rather than measured
-  from the press has the same two**. The ones to read are `control.rs` (knob,
-  number) and the velocity/block drags in `notes.rs`. The knobs may well be
-  right as they are: they ask for a **pointer grab**, and a locked pointer has
-  no absolute position to measure from — which is exactly why they accumulate,
-  and why the answer there is a virtual cursor rather than a press anchor. The
-  point of the entry is to read each one and say which it is, rather than
-  assuming the shape from the file it sits in.
+  graficos")*. The entry asked for a reading rather than a change — "read each
+  one and say which it is, rather than assuming the shape from the file it sits
+  in" — and the reading is the answer. **No drag was accumulating wrongly.**
+  Every continuous drag in the host is one of the two correct forms:
+
+  - **Absolute, the groove snapshotted at the press** — `control.rs`'s `Track`,
+    which is the slider. A position inside the rectangle *is* the value, and the
+    rectangle is taken at the press because the groove may move under the hand.
+  - **Press-anchored, measured from a snapshot** — the roll's velocity drags and
+    its note block (`notes.rs`): a single bar follows the cursor's height
+    (absolute, like a slider), and a block nudges `orig` by
+    `velocity_at(cursor) - press_velocity`, which is the bend's fixed form
+    already. The note block is the same shape (`press_time`, `press_pitch`,
+    `orig`).
+  - **Incremental, and correctly so** — `control.rs`'s `Dial`, the knob and the
+    number. It re-anchors every step *on purpose*: a knob has no groove on
+    screen to stay level with, so there is nothing to be out of phase with, and
+    the clamp eating motion past an end is the wanted behaviour rather than the
+    bend's defect — pinned at the top, reversing moves at once instead of
+    unwinding a snapshot. Both were already written down in the module and are
+    held by tests (`positions_and_deltas_turn_it_the_same_way`,
+    `a_pinned_knob_reverses_immediately`). This is exactly the "they may well be
+    right" the entry allowed for, and it is why it asked to look rather than to
+    fix.
+
+  So the answer to the user's note is that the bend was the only one of its
+  kind: it was relative *and* pointed at a shape on screen, which is the
+  combination that drifts. What the reading did turn up is below, and it is a
+  different defect.
+
+- ⬜ **A knob is a locked pointer on the desktop and a travelling one in a
+  page.** Found by the reading above, and it is the standing rule's own case
+  rather than a drag's. `Dial::press` asks for the pointer grab, and the machine
+  honours what the front answers: `grab = take.grab && grab()`. The desktop
+  front locks the cursor (`gui::input::grab_pointer` →
+  `CursorGrabMode::Locked`, falling back to `Confined`) and then drives the
+  element with raw `DeviceEvent::MouseMotion` deltas; **the browser front passes
+  `&mut || false`** (`web::input::on_press`) and has no device-event path at
+  all, so the very same knob is driven by travelling cursor positions. The
+  element differences them itself and lands on the same value, which is what the
+  test above asserts — but the *gesture* is not the same one: in a page the
+  cursor walks away from the knob, the drag ends at the edge of the window
+  instead of turning as far as the hand goes, and the pointer is visible where
+  the desktop hides it.
+
+  The shape of the fix is known and small — winit's web backend implements
+  `CursorGrabMode::Locked` as `requestPointerLock`, so it is the same
+  `grab_pointer` call, a `device_event` hook forwarding `MouseMotion` to
+  `Gestures::relative_motion` (six lines, mirroring `gui/app.rs`), and the
+  release dropping the lock. It is **not attempted here** because none of it can
+  be verified without a browser and a hand: pointer lock needs a user gesture,
+  and this session already carries one entry for a browser guard nobody has seen
+  work. Written down so the next pass takes it with a page open rather than on
+  trust.
 
 - ⬜ **A page burns the main thread while nothing is happening.** Measured on
   `clients/web/examples/composer.html` through the DevTools protocol: **67% of
