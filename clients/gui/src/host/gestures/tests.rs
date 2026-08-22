@@ -137,6 +137,9 @@ fn a_press_on_a_row_picks_that_option_and_closes() {
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 600, 400);
     g.press(&mut host, &ctx, 40.0, 40.0, &mut || false);
+    // A click is a press **and** a release: the machine now refuses a press
+    // arriving mid-drag, which is what a bare second press models.
+    g.release(&mut host, &ctx, 40.0, 40.0);
     let popup = menu_popup(&host, 7).unwrap();
     // The middle row: the option a click on it means, wherever the list
     // was placed (it hangs below the field, or above it near an edge).
@@ -166,6 +169,9 @@ fn a_press_outside_the_list_only_closes_it() {
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 600, 400);
     g.press(&mut host, &ctx, 40.0, 40.0, &mut || false);
+    // A click is a press **and** a release: the machine now refuses a press
+    // arriving mid-drag, which is what a bare second press models.
+    g.release(&mut host, &ctx, 40.0, 40.0);
     let effects = g.press(&mut host, &ctx, 550.0, 380.0, &mut || false);
     assert!(menu_popup(&host, 7).is_none());
     assert_eq!(menu_index(&host, 7), 0, "nothing picked");
@@ -1773,6 +1779,87 @@ fn a_press_selects_the_layer_it_lands_on_and_the_background_is_the_clips() {
     );
     assert_eq!(active_layer(&host, 81), "placement");
 }
+/// **A press repeated mid-drag is not a new gesture**, which is the
+/// single-pointer rule the touch slot states for fingers and nothing stated for
+/// the pointer.
+///
+/// A browser's event stream repeats it: winit turns any `pointermove` carrying
+/// a button (`PointerEvent.button != -1`, which some browsers report on a plain
+/// move) into a synthesized `MouseInput` whose state is *pressed* while that
+/// button is down, so a drag arrives as a fresh press per frame. Taking those
+/// re-runs every press-time decision, and a bend anchored at the press is
+/// re-anchored to wherever the pointer is now -- the incremental drift the
+/// absolute form was written to end, coming back through the door beside it.
+/// The desktop's stream cannot do it, which is why it read as a platform
+/// difference; the fix is here, so both fronts hand the machine one press.
+#[test]
+fn a_press_repeated_mid_drag_does_not_re_anchor_the_gesture() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"children":[
+            {"id":80,"type":"field","label":"automation","children":[
+                {"id":81,"type":"field","offset":0.0,"dur":1000.0,
+                 "points":[0.0,0.0,1,0.0, 500.0,1.0,1,0.0, 1000.0,0.0,1,0.0],
+                 "points_min":0.0,"points_max":1.0}]}]}"#,
+    );
+    host.sync_track_totals();
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 800, 200);
+    let lane = host
+        .layout_window(1, 800, 200)
+        .unwrap()
+        .iter()
+        .find(|p| p.widget.id == Some(81))
+        .expect("the clip is placed")
+        .rect;
+    let on_line = (
+        (lane.x + lane.w * 0.25) as f64,
+        (lane.y + lane.h * 0.5) as f64,
+    );
+    // What the gesture amounts to: the break-point list the release reports.
+    let bend = |effects: &[GestureEffect]| {
+        effects
+            .iter()
+            .find_map(|e| match e {
+                GestureEffect::Emit {
+                    widget_id: 81,
+                    args,
+                    ..
+                } if args.first() == Some(&OscType::String("points".into())) => Some(args.clone()),
+                _ => None,
+            })
+            .expect("the release reports the curve")
+    };
+
+    // One press, then a drag upward, with a repeated press on every step —
+    // exactly the stream a browser produces.
+    g.press(&mut host, &ctx, on_line.0, on_line.1, &mut || false);
+    assert!(g.dragging(), "the segment took the press");
+    for dy in [10.0, 20.0, 30.0] {
+        g.drag_to(&mut host, &ctx, on_line.0, on_line.1 - dy);
+        g.press(&mut host, &ctx, on_line.0, on_line.1 - dy, &mut || false);
+    }
+    let with_repeats = bend(&g.release(&mut host, &ctx, on_line.0, on_line.1 - 30.0));
+
+    // The same drag, pressed once, is the truth to match.
+    let mut clean = host_from(
+        r#"{"type":"window","margin":0,"children":[
+            {"id":80,"type":"field","label":"automation","children":[
+                {"id":81,"type":"field","offset":0.0,"dur":1000.0,
+                 "points":[0.0,0.0,1,0.0, 500.0,1.0,1,0.0, 1000.0,0.0,1,0.0],
+                 "points_min":0.0,"points_max":1.0}]}]}"#,
+    );
+    clean.sync_track_totals();
+    let mut g2 = Gestures::default();
+    g2.press(&mut clean, &ctx, on_line.0, on_line.1, &mut || false);
+    for dy in [10.0, 20.0, 30.0] {
+        g2.drag_to(&mut clean, &ctx, on_line.0, on_line.1 - dy);
+    }
+    let once = bend(&g2.release(&mut clean, &ctx, on_line.0, on_line.1 - 30.0));
+    assert_eq!(
+        with_repeats, once,
+        "the repeated presses re-anchored the bend"
+    );
+}
 
 /// The wire name of the layer a container is being edited on — what a
 /// `/gui_query` would report and what the `"layer"` payload announces.
@@ -2479,14 +2566,18 @@ fn a_press_on_the_score_selects_the_element_and_emits_its_id() {
     let effects = g.press(&mut host, &ctx, 556.0, 196.0, &mut || false);
     assert_eq!(element_emits(&effects), vec!["n1".to_string()]);
     assert_eq!(score_selected(&host).as_deref(), Some("n1"));
-    // Pressing the same element again selects nothing new, so the script hears
-    // nothing — the press is still held, because it may become a drag.
+    // Clicking the same element again selects nothing new, so the script hears
+    // nothing. Each click is a press **and** a release: the press alone is held,
+    // because it may become a drag, and the machine refuses a second press while
+    // it is.
+    g.release(&mut host, &ctx, 556.0, 196.0);
     let again = g.press(&mut host, &ctx, 556.0, 196.0, &mut || false);
     assert!(
         element_emits(&again).is_empty(),
         "a re-press re-reported the selection: {again:?}"
     );
     // blank paper clears it, reported as an empty id
+    g.release(&mut host, &ctx, 556.0, 196.0);
     let cleared = g.press(&mut host, &ctx, 106.0, 386.0, &mut || false);
     assert_eq!(element_emits(&cleared), vec![String::new()]);
     assert_eq!(score_selected(&host), None);
@@ -2978,6 +3069,8 @@ fn a_press_elsewhere_moves_the_focus_and_reports_both_ends() {
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 600, 400);
     g.press(&mut host, &ctx, 30.0, 30.0, &mut || false);
+    // A click is a press and a release; a bare second press is not one.
+    g.release(&mut host, &ctx, 30.0, 30.0);
     assert_eq!(host.focused(), Some((1, 5)));
     let e = g.press(&mut host, &ctx, 330.0, 30.0, &mut || false);
     assert_eq!(host.focused(), Some((1, 6)));
@@ -2999,6 +3092,8 @@ fn a_press_on_a_widget_that_takes_no_focus_clears_it() {
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 600, 400);
     g.press(&mut host, &ctx, 30.0, 10.0, &mut || false);
+    // A click is a press and a release; a bare second press is not one.
+    g.release(&mut host, &ctx, 30.0, 10.0);
     assert_eq!(host.focused(), Some((1, 5)));
     let e = g.press(&mut host, &ctx, 30.0, 60.0, &mut || false);
     assert_eq!(host.focused(), None);
@@ -3113,6 +3208,8 @@ fn enter_inserts_a_newline_only_in_a_multiline_field() {
     );
     let mut g = Gestures::default();
     g.press(&mut host, &ctx, 30.0, 30.0, &mut || false);
+    // A click is a press and a release; a bare second press is not one.
+    g.release(&mut host, &ctx, 30.0, 30.0);
     key(&g, &mut host, &ctx, Key::Char('a'));
     let e = key(&g, &mut host, &ctx, Key::Enter).unwrap();
     assert_eq!(emitted_string(&e).as_deref(), Some("a\n"));

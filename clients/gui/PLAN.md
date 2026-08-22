@@ -2329,6 +2329,33 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   with the sound and the drawing disagreeing. It now falls back to the clip
   whose aggregate **holds** that member. In both clients, with the test in both.
 
+- ✅ **A browser delivered a press per frame, so every gesture re-anchored
+  itself** *(found 2026-08-22 by the user, after the bend was made absolute:
+  fixed on the desktop, unchanged in the page — "me extrana que suceda solo en
+  una de las dos plataformas porque la implementacion DEBE SER LA MISMA", which
+  is exactly right and is what found it)*. Winit's web backend turns any
+  `pointermove` **carrying a button** into a synthesized `MouseInput` whose
+  state is *pressed* while that button is down (`window_target.rs`: `let state =
+  if buttons.contains(button.into()) { Pressed } else { Released }`), and
+  `PointerEvent.button` is `-1` on a plain move only where a browser follows the
+  spec. So a drag arrived as a **fresh press on every frame**, the front took
+  each one, and every press-time decision was re-run: a bend's origin, a note's
+  press time, a clip's grab sample, all re-anchored to wherever the pointer had
+  got to. That is the incremental drift the absolute forms were written to end,
+  coming back through the door beside them — and it is why the page kept
+  behaving like the code before the fix while the desktop, whose stream cannot
+  repeat a press, behaved like the code after it.
+
+  Fixed in the **machine** rather than in the browser front (`Gestures::press`
+  returns early while a drag is in flight), because the single-pointer rule --
+  one press, one drag, one release, already stated for fingers in the touch slot
+  -- is the machine's and not a platform's: a press arriving mid-drag is never a
+  new gesture, whether a stream repeated it or a second button was chorded onto
+  the first. `a_press_repeated_mid_drag_does_not_re_anchor_the_gesture` drives
+  the browser's stream against the desktop's and asserts one answer; without the
+  guard the repeats swallow a third of the bend. Five older tests modelled a
+  *click* as a bare press and now release first, which is what a click is.
+
 - ⬜ **A page burns the main thread while nothing is happening.** Measured on
   `clients/web/examples/composer.html` through the DevTools protocol: **67% of
   the main thread, idle** — no transport running, no pointer moving, no

@@ -349,6 +349,26 @@ impl WebApp {
                 button: MouseButton::Left,
                 ..
             } => match state {
+                // **One press per gesture.** The browser's event stream can
+                // repeat it, and the desktop's cannot: winit turns any
+                // `pointermove` carrying a button (`PointerEvent.button != -1`)
+                // into a synthesized `MouseInput` whose state is *pressed*
+                // while that button is still down -- so a drag delivers a fresh
+                // press on **every frame**. Chrome reports `-1` on a move and
+                // never triggers it; Firefox reports `0` and triggers it
+                // throughout, which is how a bend anchored at the press came to
+                // re-anchor every frame and drift exactly as the relative form
+                // it replaced did.
+                //
+                // The machine is single-pointer by design -- one press, one
+                // drag, one release, the rule the touch slot already states --
+                // so a press arriving mid-drag is never a new gesture, whatever
+                // produced it: a repeat, or a second button chorded onto the
+                // first. Dropping it here is what makes the two fronts hand the
+                // host the same stream.
+                // A press repeated mid-drag is dropped by the machine itself
+                // (`Gestures::press`), which is where the single-pointer rule
+                // belongs: both fronts hand it the same stream.
                 ElementState::Pressed => self.on_press(def),
                 ElementState::Released => self.on_release(def),
             },

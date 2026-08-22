@@ -49,6 +49,28 @@ impl Gestures {
         grab: &mut dyn FnMut() -> bool,
     ) -> Vec<GestureEffect> {
         let mut out = Vec::new();
+        // **One press per gesture**, which is the single-pointer rule the touch
+        // slot already states for fingers and nothing stated for the pointer. A
+        // press arriving while a drag is in flight is never a new gesture: it is
+        // a second button chorded onto the first, or a stream that repeated the
+        // one already in hand -- and a browser's does. Winit turns any
+        // `pointermove` carrying a button (`PointerEvent.button != -1`) into a
+        // synthesized `MouseInput` whose state is *pressed* while that button is
+        // down, so a drag arrives as a fresh press **per frame**; taking it
+        // re-runs every press-time decision, and anything anchored at the press
+        // -- a bend's origin, a note's press time, a clip's grab sample -- is
+        // re-anchored to where the pointer is now. That is the incremental drift
+        // the absolute forms were written to end, coming back in through the
+        // door beside them.
+        //
+        // Here rather than in the browser front, because the fronts must hand
+        // this machine the same press -> drag -> release and the rule is the
+        // machine's, not a platform's. The one thing a front still owes it is a
+        // release it can lose (`web::input`, the pointer that comes up outside
+        // the window), since without one the drag below would never end.
+        if self.dragging() {
+            return out;
+        }
         // An element that **declared** an overlay is modal: it is over
         // everything, so it is tested before the tree and it swallows the press
         // either way — on its own area it acts, anywhere else it closes, the
