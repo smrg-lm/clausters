@@ -81,12 +81,15 @@ test("GuiHost: a built panel defines, queries and frees on a native host", {
         const tree = controlPanel();
         const win = gui.open(tree);
 
-        // Every id-less widget was assigned in place, out of the client's
-        // recycling window, and the names resolve to them.
+        // Every id-less widget was assigned out of the client's recycling
+        // window, and the names resolve to them. The ids ride in the document
+        // that went out; the tree that was written is left as it was written,
+        // which is what lets one view open twice.
         assert.ok(win.id >= BASE_ID, `window id ${win.id} is below the base`);
         assert.deepEqual(win.widgetNames(), ["cutoff", "freq", "view"]);
         const freq = win.widget("freq");
-        assert.equal(freq.id, tree.children?.[1]?.children?.[0]?.id);
+        assert.ok(freq.id >= BASE_ID, `widget id ${freq.id} is below the base`);
+        assert.equal(tree.children?.[1]?.children?.[0]?.id, undefined);
 
         // The host holds what was sent — a `/gui_query` round trip.
         const info = await freq.query();

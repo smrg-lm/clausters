@@ -23,6 +23,7 @@ import { resolveServer } from "./wire.ts";
 import { Signal } from "./signals.ts";
 import type { SignalNode } from "./signals.ts";
 import type { PatchViewOptions, PatchWindow } from "../plot.ts";
+import type { ControlInfo } from "./info.ts";
 
 /** Which of the three payload forms a def carries. */
 export type FaustDefKind = "signals" | "box" | "source";
@@ -152,6 +153,70 @@ export class FaustDef {
         if (this.kind !== "source") collectLabels(this.payload, names);
         return names;
     }
+
+    /**
+     * This def's control surface as `ControlInfo` entries, in tree order — the
+     * shape all three def families answer with.
+     *
+     * A Faust control is the one that **brings its own range**: an
+     * `hslider`/`vslider`/`nentry` declares `init`, `min`, `max` and `step`
+     * where it is written, so a GUI control built from one needs nothing else.
+     * A `button`/`checkbox` is a 0/1 control and says so. The reserved
+     * `in`/`out` bus controls are not included.
+     */
+    controls(): ControlInfo[] {
+        const params: ControlInfo[] = [];
+        if (this.kind !== "source") collectParams(this.payload, params);
+        return params;
+    }
+
+    /** One control by name, as a `ControlInfo` — `fd.control("cutoff")`. */
+    control(name: string): ControlInfo {
+        for (const info of this.controls()) {
+            if (info.name === name) return info;
+        }
+        throw new Error(
+            `'${this.name}' declares no control '${name}' ` +
+                `(it has: ${this.controlNames().join(", ") || "none"})`,
+        );
+    }
+}
+
+/**
+ * Every UI control in a signal/box payload, as `ControlInfo` in tree order.
+ *
+ * Faust puts the range where the control is declared, so this is a read rather
+ * than a lookup: an `hslider` carries `init`/`min`/`max`/`step`, a
+ * `button`/`checkbox` is 0/1 with no step.
+ */
+function collectParams(node: unknown, out: ControlInfo[]): void {
+    if (Array.isArray(node)) {
+        for (const item of node) collectParams(item, out);
+        return;
+    }
+    if (node === null || typeof node !== "object") return;
+    const record = node as Record<string, unknown>;
+    const op = record.op;
+    const label = record.label;
+    if (
+        typeof op === "string" && CONTROL_OPS.has(op) && typeof label === "string"
+        && !out.some((p) => p.name === label)
+    ) {
+        if (op === "button" || op === "checkbox") {
+            out.push({ name: label, default: 0.0, rate: "kr", min: 0.0, max: 1.0 });
+        } else {
+            const info: ControlInfo = {
+                name: label,
+                default: Number(record.init ?? 0.0),
+                rate: "kr",
+            };
+            if (typeof record.min === "number") info.min = record.min;
+            if (typeof record.max === "number") info.max = record.max;
+            if (typeof record.step === "number") info.step = record.step;
+            out.push(info);
+        }
+    }
+    for (const value of Object.values(record)) collectParams(value, out);
 }
 
 function collectLabels(node: unknown, out: string[]): void {

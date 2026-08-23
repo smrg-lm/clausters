@@ -2222,6 +2222,20 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 
 ## Found by use: the running list of fixes
 
+- ⬜ **A blob has no live door, so a page cannot change the samples it drew**
+  *(found 2026-08-23, porting the `Source` to TypeScript)*. `/gui_set` takes
+  `data` (inline samples) or `reload` (re-read the `path` a widget was built
+  with), and that pair covers a native client exactly: short samples ride
+  inline and change inline, long ones spill to a file the client rewrites in
+  place. A **page has no file** — its bulk carrier is a blob beside the
+  `/gui_def` — so a source past the inline ceiling has no way to change what a
+  live widget draws, and the client refuses rather than pretending. The fix is
+  the host's: either a `/gui_set` that carries a blob argument, or a browser
+  `path` the wasm front can re-fetch (`host/fetch.rs` already fetches one at
+  define time; `reload` is what it does not do). Until then, a page redraws by
+  re-defining the window, and the two clients differ in what `Source.set` can
+  do — which is the reason this is written down rather than left to be
+  rediscovered.
 - ⬜ **The host's binds follow the server's rule: every carrier takes an
   address, loopback by default** *(named 2026-08-23)*. The rule and the table
   live in the root `PLAN.md`'s "Found by use", which owns it — both fronts

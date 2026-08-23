@@ -150,7 +150,12 @@ def web_props() -> dict:
                 if depth == 0:
                     break
         params = strip_comments(src[start:end + 1])
-        body = src[end:]
+        # The body, bounded by the next top-level declaration: a function that
+        # builds no node is not a builder, and reading past its end would
+        # attribute its parameters to whichever builder follows it in the file
+        # (`source`'s carriers landing on `layout`, which is how this was found).
+        nxt = re.search(r"\nexport (?:function|const|class) ", src[end:])
+        body = src[end:end + nxt.start()] if nxt else src[end:]
         kind = re.search(r'node\(\s*"([a-z]+)"', body)
         if not kind:
             continue

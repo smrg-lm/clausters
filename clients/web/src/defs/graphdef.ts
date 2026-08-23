@@ -33,6 +33,7 @@ import type { MsgArg } from "../base/osc.ts";
 import type { Server } from "./server/index.ts";
 import { resolveServer } from "./wire.ts";
 import type { PatchViewOptions, PatchWindow } from "../plot.ts";
+import type { ControlInfo } from "./info.ts";
 
 export class GraphBusRef {
     readonly name: string;
@@ -132,6 +133,13 @@ export class GraphDef {
     private readonly members_: MemberSpec[] = [];
     private readonly surface_: Record<string, Record<string, unknown>[]> = {};
     private readonly defaults_: Record<string, number> = {};
+    /**
+     * Port name → `[min, max, step]`, the range a port is meant to be driven
+     * over. It rides no wire: the surface spec carries the targets and the
+     * default, and the range is the client's statement about how the port is
+     * meant to be operated.
+     */
+    private readonly ranges_ = new Map<string, [number, number, number | null]>();
 
     constructor(name: string) {
         this.name = String(name);
@@ -203,14 +211,68 @@ export class GraphDef {
      * (each a `PortTarget`, optionally `.scaled(...)`). `defaultValue` is
      * applied at instantiation unless overridden.
      */
-    port(name: string, targets: readonly PortTarget[], defaultValue?: number): void {
+    port(
+        name: string,
+        targets: readonly PortTarget[],
+        defaultValue?: number,
+        { min, max, step }: { min?: number; max?: number; step?: number } = {},
+    ): void {
         if (targets.length === 0) {
             throw new TypeError(`surface port '${name}' needs at least one target`);
+        }
+        if ((min === undefined) !== (max === undefined)) {
+            throw new TypeError(
+                `surface port '${name}': a range is min *and* max, and it is ` +
+                    "either declared or not",
+            );
         }
         this.surface_[String(name)] = targets.map((t) => t.asSpec());
         if (defaultValue !== undefined) {
             this.defaults_[String(name)] = Number(defaultValue);
         }
+        if (min !== undefined) {
+            this.ranges_.set(String(name), [Number(min), Number(max), step ?? null]);
+        }
+    }
+
+    /**
+     * This def's surface ports as `ControlInfo` entries, in declaration order —
+     * the shape all three def families answer with, so a GUI reads one of them
+     * the same way. `targets` names what each port drives inside, and the range
+     * is whatever {@link GraphDef.port} declared.
+     */
+    controls(): ControlInfo[] {
+        const out: ControlInfo[] = [];
+        for (const [name, targets] of Object.entries(this.surface_)) {
+            const [min, max, step] = this.ranges_.get(name) ?? [undefined, undefined, null];
+            const info: ControlInfo = {
+                name,
+                default: this.defaults_[name] ?? 0.0,
+                rate: "kr",
+                targets: targets.map((t) => ({
+                    member: t.member as number,
+                    control: t.control as string,
+                    mul: (t.mul as number | undefined) ?? 1.0,
+                    add: (t.add as number | undefined) ?? 0.0,
+                })),
+            };
+            if (min !== undefined) {
+                info.min = min;
+                info.max = max;
+            }
+            if (step !== null) info.step = step;
+            out.push(info);
+        }
+        return out;
+    }
+
+    /** One surface port by name, as a `ControlInfo` — `gd.control("mix")`. */
+    control(name: string): ControlInfo {
+        for (const info of this.controls()) {
+            if (info.name === name) return info;
+        }
+        const has = Object.keys(this.surface_).join(", ") || "none";
+        throw new Error(`'${this.name}' declares no surface port '${name}' (it has: ${has})`);
     }
 
     /** The `GraphDefSpec` object the server's `/def_send graph` validates. */

@@ -103,10 +103,21 @@ export class WidgetHandle {
  */
 export class WindowHandle extends WidgetHandle {
     private readonly names: Map<string, number>;
+    /**
+     * widget id → the def control it was built from, collected by the id walk
+     * — what {@link WindowHandle.bind} wires in one verb.
+     */
+    private readonly controls: Map<number, string>;
 
-    constructor(host: GuiHost, id: number, names: Map<string, number>) {
+    constructor(
+        host: GuiHost,
+        id: number,
+        names: Map<string, number>,
+        controls: Map<number, string> = new Map(),
+    ) {
         super(host, id);
         this.names = names;
+        this.controls = controls;
     }
 
     /** The `WidgetHandle` for the widget built with `name: …`. */
@@ -129,9 +140,86 @@ export class WindowHandle extends WidgetHandle {
      *
      * @internal
      */
-    refreshNames(names: Map<string, number>): void {
+    refreshNames(names: Map<string, number>, controls?: Map<number, string>): void {
         this.names.clear();
         for (const [name, id] of names) this.names.set(name, id);
+        if (controls === undefined) return;
+        this.controls.clear();
+        for (const [id, control] of controls) this.controls.set(id, control);
+    }
+
+    /**
+     * Wire every widget built from a def control straight to `node`.
+     *
+     * The counterpart of {@link knob} taking a control: the widget already
+     * knows which control it draws, so the whole surface is one verb instead of
+     * one hand-typed string per widget:
+     *
+     * ```ts
+     * const w = await view({}, knob(freq), slider(amp)).open();
+     * w.bind(synth);
+     * ```
+     *
+     * Each becomes a `/gui_bind` forwarding `address <node> <control> <value>`
+     * — the host talks to the audio server itself, with no round trip through
+     * this script (see `GuiHost.bind`, which is still there for anything that
+     * is not a def control: a bus, an arbitrary address, another widget).
+     *
+     * **Two widgets on one control both bind**, both set the node, and neither
+     * is told when the other moves; the host fires an apply rather than a
+     * second binding, so they settle rather than cascade. That drift is yours
+     * to make and is not detected.
+     *
+     * `node` is a `Node` (a `Synth`, a `Group`, a GraphDef instance) or a bare
+     * node id. Throws when no widget in this window was built from a control,
+     * which can only be a mistake.
+     */
+    bind(
+        node: { id: number } | number | string,
+        ...rest: (string | number | { address?: string })[]
+    ): this {
+        if (typeof node === "string") {
+            throw new TypeError(
+                "a window binds a node, not an address — the one-at-a-time form " +
+                    'is on the widget: win.widget("freq").bind("/node_set", node, "freq")',
+            );
+        }
+        const options = typeof rest[0] === "object" ? rest[0] : {};
+        const address = options.address ?? "/node_set";
+        if (this.controls.size === 0) {
+            throw new Error(
+                "no widget in this window was built from a def control, so " +
+                    "there is nothing to bind — build them from controls " +
+                    "(knob(freq), slider(sd.control(\"amp\"))), or bind one at a time " +
+                    "with win.widget(\"freq\").bind(\"/node_set\", node, \"freq\")",
+            );
+        }
+        const target = typeof node === "number" ? node : node.id;
+        for (const [id, control] of this.controls) {
+            this.host.bind(id, address, target, control);
+        }
+        return this;
+    }
+
+    /**
+     * Drop every binding {@link WindowHandle.bind} made, so the widgets' values
+     * come back as `/gui_event`s to this script.
+     */
+    unbind(): this {
+        for (const id of this.controls.keys()) this.host.unbind(id);
+        return this;
+    }
+
+    /**
+     * `widget name -> def control name` for every widget in this window built
+     * from a control — what {@link WindowHandle.bind} wires.
+     */
+    controlMap(): Map<string, string> {
+        const byId = new Map<number, string>();
+        for (const [name, id] of this.names) byId.set(id, name);
+        const out = new Map<string, string>();
+        for (const [id, control] of this.controls) out.set(byId.get(id) ?? control, control);
+        return out;
     }
 
     /** Whether this window binds `name`. */

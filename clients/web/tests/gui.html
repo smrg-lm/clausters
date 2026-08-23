@@ -99,8 +99,13 @@
         const win = host.open(tree);
         log(`window ${win.id}, widgets ${win.widgetNames().join(", ")}`);
 
-        // The ids were assigned into the tree in place.
-        if (typeof tree.children[1].id !== "number") {
+        // The ids were assigned in the document that went out, not in the
+        // tree that was written -- an id names a live widget and a view is a
+        // definition, so the handle is what resolves them.
+        if (typeof tree.children[1].id === "number") {
+          throw new Error("the view was written into; ids belong to the instance");
+        }
+        if (!(win.widget("freq").id >= 1000)) {
           throw new Error("the knob was never assigned an id");
         }
 

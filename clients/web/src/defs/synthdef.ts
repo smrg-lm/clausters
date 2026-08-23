@@ -27,6 +27,7 @@ import { resolveServer } from "./wire.ts";
 import { ChannelList, Control, Ugen } from "./ugens/index.ts";
 import type { Channel } from "./ugens/index.ts";
 import type { PatchViewOptions, PatchWindow } from "../plot.ts";
+import type { ControlInfo } from "./info.ts";
 
 /**
  * One serialized UGen input: a reference to an earlier UGen, to a control,
@@ -228,4 +229,74 @@ export class SynthDef {
     controlNames(): string[] {
         return this.spec().controls.map((c) => c.name);
     }
+
+    /**
+     * This def's control surface as `ControlInfo` entries, in spec order — the
+     * shape all three def families answer with, so a GUI reads one of them the
+     * same way:
+     *
+     * ```ts
+     * await view({}, ...sd.controls().map((c) => knob(c))).open();
+     * ```
+     *
+     * The range is the one a `control` declared; it is absent where nothing
+     * did.
+     */
+    controls(): ControlInfo[] {
+        return this.graphControls().map(controlInfo);
+    }
+
+    /**
+     * One control by name, as a `ControlInfo` — `sd.control("freq")`, what a
+     * GUI control is handed when the graph's own `Control` object is not in
+     * reach. (Python spells this `sd["freq"]`; a class here cannot take a
+     * bracket without an index signature over everything else on it.)
+     */
+    control(name: string): ControlInfo {
+        for (const c of this.graphControls()) {
+            if (c.name === name) return controlInfo(c);
+        }
+        throw new Error(
+            `'${this.name}' declares no control '${name}' ` +
+                `(it has: ${this.controlNames().join(", ") || "none"})`,
+        );
+    }
+
+    /**
+     * The `Control` objects the graph references, in first-seen order — the
+     * same walk `spec` does, kept here so the range never has to survive a
+     * round trip through the wire, which does not carry it.
+     */
+    private graphControls(): Control[] {
+        const seen = new Map<string, Control>();
+        const stack: unknown[] = [...this.roots];
+        while (stack.length > 0) {
+            const node = stack.shift();
+            if (node instanceof Control) {
+                if (!seen.has(node.name)) seen.set(node.name, node);
+            } else if (node instanceof Ugen) {
+                stack.unshift(...node.inputs);
+            }
+        }
+        // `spec` is the order of record; this walk only has to find the objects.
+        const order = new Map(this.controlNames().map((name, i) => [name, i]));
+        return [...seen.values()].sort(
+            (a, b) => (order.get(a.name) ?? order.size) - (order.get(b.name) ?? order.size),
+        );
+    }
+}
+
+/**
+ * A graph's `Control` as the `ControlInfo` every def family answers with — one
+ * shape for the GUI to read, whichever family declared it.
+ */
+export function controlInfo(c: Control): ControlInfo {
+    const [min, max] = c.range ?? [undefined, undefined];
+    const info: ControlInfo = { name: c.name, default: c.default, rate: c.rate ?? "kr" };
+    if (min !== undefined) {
+        info.min = min;
+        info.max = max;
+    }
+    if (c.step !== null) info.step = c.step;
+    return info;
 }

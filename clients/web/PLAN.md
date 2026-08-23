@@ -1918,7 +1918,7 @@ as some other milestone has a better claim on it.
   in (level 1 with the editor, level 2 on 2026-08-22), so this entry is closed;
   what is left of it is an *example*, not a surface: `gui_patch1.py` has no page
   yet, which is W16's queue.
-- ⬜ **The GUI node becomes a `View` (ports the Python client's C39)**. In
+- ✅ **The GUI node becomes a `View` (ports the Python client's C39)** *(done 2026-08-23)*. In
   Python a `guidef` builder no longer returns a bare object: it returns a `View`
   — the GUI's counterpart of a `SynthDef`, a tree a program composes and then
   sends — and the tree is the subject of the sentence, `window(...).open()`
@@ -1980,6 +1980,52 @@ as some other milestone has a better claim on it.
     equivalent is `guiHost()` / `newGuiHost()`, whose naming is the entry two
     below — the two decisions land together or the page ends up with two ambient
     rules.
+
+  **What landed**, and the four places the port had to decide rather than
+  transliterate:
+
+  - `View` is a class whose **own properties are the document**, with the state
+    that is not the document in `#private` fields — so `JSON.stringify` writes
+    what it always wrote and nothing on the wire moved. `find`/`names` are the
+    index, the bracket stays the document key, a duplicate name is refused where
+    a tree is built *and* where the host client walks a hand-written one, and a
+    nested view scopes its names.
+  - **Ids are stamped into a copy**, as in Python: `GuiHost.stamp` returns the
+    document, the caller's tree is never written into, and the same subtree
+    nested twice gets two id runs for free.
+  - `view()` is the root builder, `window` its older spelling, and a root that is
+    not a `window` is framed client-side in a hugging one.
+  - **The spill is the platform's, and it is the one real difference.** Python
+    spills past 2048 floats to a temp raw-f32 file the host maps; a page has no
+    temp file, so a source rides a **blob** beside the JSON — and the index is
+    assigned by `open` from where the bytes land, which is `blob: 0` ceasing to
+    be a correspondence kept by hand. The threshold and the decision are the
+    same in both. What is *not* the same: the host has no live door for a blob
+    (`/gui_set` takes `data` inline or `reload` for a path), so `Source.set`
+    refuses on a spilled source here where Python rewrites the file and
+    re-reads it. That gap is the host's and is written in `clients/gui/PLAN.md`.
+  - **A control is told from an option bag by its `default`.** Python separates
+    them by position — one positional, the rest keywords — and TypeScript has
+    one positional slot, so `knob(freq)` vs `knob({name: "freq"})` is decided on
+    the shape: both carry a `name`, only a control carries a `default`.
+  - **`sd.control("freq")` where Python writes `sd["freq"]`**: a class here
+    cannot take a bracket without an index signature over everything else on it.
+    `controls()` is a method for the same reason Python has a property — each
+    language's own spelling of one surface.
+  - **The port found a defect in the reference client and fixed it there**: a
+    `Control` *is* a signal, and `min`/`max` on a signal are the binary
+    operators, so the range shipping as attributes of those names shadowed them
+    — for every control, since the attribute was set to `None` when no range was
+    declared. Read through `range`/`step` now, in both clients. TypeScript's
+    compiler refused the override Python had accepted in silence, which is the
+    whole argument for porting before the examples.
+
+  **What did not land, and why**: `open()` with **no** element still draws on
+  the page's default canvas rather than making one of its own. The surface is
+  in (`view(...).open(el)` mounts into an element, canvas made and fitted for
+  you), but a canvas per def only *shows* once the host's web front stops being
+  singular — the entry below this one. Landing it first would append N canvases
+  with one of them drawing.
 
 - **`SynthDef`'s roots are `outputs` in Python and `roots` here**, and both
   constructors take `*roots` — a public attribute spelled two ways, found while
@@ -2046,13 +2092,15 @@ as some other milestone has a better claim on it.
     clock, gui)`) the way it takes a server, and `attach()` is the connect. A
     session installing a host it did not open is the constructor, not a verb.
 
-- **`Session.connectGui(url)` is a verb this client invented** — *connect* and
-  *adopt* in one call — and the reference answered it on 2026-08-23 (C47): a
-  session installs a host it did not open **through the constructor**, the way
-  it takes a `Server`, and connecting is `GuiHost.attach()`. So the verb is
-  dropped rather than matched, and both halves are ported instead. Its removal
-  rides with the entry above, which is where the three names are settled
-  together.
+- ✅ **`Session.connectGui(url)` is a verb this client invented** — *connect*
+  and *adopt* in one call — **dropped 2026-08-23** with the `View` port. The
+  reference answered it (C47): a session installs a host it did not open
+  **through the constructor**, the way it takes a `Server`, and connecting is
+  `GuiHost.attach()` — `GuiHost.connect(url)` here, which is the same verb over
+  the carrier this client has. Both halves landed instead of the one that did
+  two things: `new Session(server, clock, await GuiHost.connect(url))`, and
+  `GuiHost.page`/`connect` adopting the ambient registration first-wins with
+  `stop()` giving it up.
 - **Two names the sweep of 2026-08-03 left over**, each too small to own a
   milestone and neither a difference with a reason: `Routine.run(func, clock,
   quant)`, the classmethod that constructs and starts in one call (the instance

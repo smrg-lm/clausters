@@ -29,6 +29,9 @@
 
 import { Env, envToPoints, pointsToEnv, resolveCurve } from "../defs/ugens/index.ts";
 import type { Curve } from "../defs/ugens/index.ts";
+import { samplesToBlob } from "../base/bulk.ts";
+import type { GuiHost } from "./host.ts";
+import type { WindowHandle } from "./handle.ts";
 
 export { Env, envToPoints, pointsToEnv };
 export type { Curve };
@@ -36,6 +39,10 @@ export type { Curve };
 /**
  * One node of a GuiDef tree: its `type`, its props, and (for a container)
  * its `children`. `name` is the client-only handle name, never on the wire.
+ *
+ * Every builder returns a {@link View}, which is this shape with a name index
+ * and an `open` on it; the interface stays because a hand-written object
+ * literal is still a legal tree everywhere one is taken.
  */
 export interface GuiNode {
     type: string;
@@ -44,6 +51,418 @@ export interface GuiNode {
     children?: GuiNode[];
     [prop: string]: unknown;
 }
+
+/**
+ * Inline `data` ceiling: at most this many floats ride the GuiDef JSON.
+ * Anything longer travels as a **blob** beside it — the bulk path, where the
+ * samples are bytes rather than JSON numbers. The same number the Python
+ * client uses, so a source of the same length makes the same decision in both.
+ */
+export const INLINE_MAX = 2048;
+
+/**
+ * The prop names a {@link Source} may stand in for: the logical one (`data`,
+ * "the samples") and the carriers themselves, so a tree written the long way
+ * can adopt a source without moving the option.
+ */
+export const SOURCE_PROPS = ["data", "blob", "path", "cache", "buffer"] as const;
+
+/**
+ * The samples a view draws, as something you hold — and can change.
+ *
+ * A signal view is fed one of several ways, and the wire spells each as its own
+ * prop: `data` (a small array inline in the JSON), `blob` (an index into the
+ * message's trailing binary arguments), `path` (a mapped raw-f32 file, native
+ * hosts only), `cache` (a prebuilt peak pyramid), `buffer` (a server buffer
+ * number). Which one is right is a question about **size and where the samples
+ * already are**, not about what is being drawn — and `blob: 0` in particular is
+ * a correspondence kept by hand between the widget and the `open` call that had
+ * better pass that blob first.
+ *
+ * A `Source` answers it and stays addressable:
+ *
+ * ```ts
+ * const sig = source(samples);
+ * const v = view({ title: "a take" }, waveform({ name: "wave", data: sig }));
+ * const win = await v.open();
+ *
+ * sig.set(otherSamples);      // the definition and every open view follow
+ * ```
+ *
+ * It is the same relation a `control` has with a knob: the entry point named
+ * once, and referred to instead of copied. One source in two views is **one
+ * payload and two references**, which is what makes the blobs interchangeable —
+ * said by the program rather than by convention, and the index assigned for
+ * you.
+ *
+ * **The carrier is decided once**, when the source is made, from what it first
+ * holds: a short array stays inline, a long one becomes a blob. `set` writes
+ * through that same carrier, because a widget already on screen was built
+ * around it.
+ */
+export class Source {
+    readonly #carrier: (typeof SOURCE_PROPS)[number];
+    #value: number[] | number | string | Uint8Array;
+    readonly #fixed: Props;
+    /**
+     * `{node, prop}` for every node this source was placed in — the definitions
+     * it feeds, rewritten by `set` so a later `open` sends what it holds now.
+     */
+    readonly #bound: { node: GuiNode; prop: string }[] = [];
+    /**
+     * `{host, id}` for every live widget drawing it, so `set` reaches what is
+     * already on screen. An entry leaves when the host recycles the widget.
+     */
+    readonly #live: { host: GuiHost; id: number }[] = [];
+
+    constructor(
+        samples?: ArrayLike<number> | Iterable<number> | null,
+        {
+            buffer,
+            path,
+            cache,
+            channels,
+            sampleRate,
+            baseBucket,
+        }: {
+            buffer?: number;
+            path?: string;
+            cache?: string;
+            channels?: number;
+            sampleRate?: number;
+            baseBucket?: number;
+        } = {},
+    ) {
+        const named = [samples, buffer, path, cache].filter((x) => x !== undefined && x !== null);
+        if (named.length !== 1) {
+            throw new TypeError(
+                "a source names its samples exactly one way: an iterable of " +
+                    "floats, or buffer/path/cache for samples that already live " +
+                    "somewhere the host can reach",
+            );
+        }
+        this.#fixed = drop([
+            ["channels", channels],
+            ["sample_rate", sampleRate],
+            ["base_bucket", baseBucket],
+        ]);
+        if (buffer !== undefined && buffer !== null) {
+            this.#carrier = "buffer";
+            this.#value = buffer;
+        } else if (path !== undefined && path !== null) {
+            this.#carrier = "path";
+            this.#value = path;
+        } else if (cache !== undefined && cache !== null) {
+            this.#carrier = "cache";
+            this.#value = cache;
+        } else {
+            const values = [...(samples as Iterable<number>)].map(Number);
+            if (values.length <= INLINE_MAX) {
+                this.#carrier = "data";
+                this.#value = values;
+            } else {
+                this.#carrier = "blob";
+                this.#value = samplesToBlob(values);
+            }
+        }
+    }
+
+    /**
+     * How these samples travel: `"data"`, `"blob"`, `"path"`, `"cache"` or
+     * `"buffer"`. Decided when the source is made and fixed for its life.
+     */
+    get carrier(): (typeof SOURCE_PROPS)[number] {
+        return this.#carrier;
+    }
+
+    /** The blob bytes this source rides in, for a `blob` carrier. @internal */
+    get bytes(): Uint8Array | null {
+        return this.#carrier === "blob" ? (this.#value as Uint8Array) : null;
+    }
+
+    /**
+     * The carrier props this source expands to — what a builder puts into the
+     * node in place of the prop it was passed as. A `blob` source expands to
+     * its fixed props only: the index is the position its bytes take in the
+     * `/gui_def` message, which `GuiHost.open` assigns.
+     */
+    props(): Props {
+        if (this.#carrier === "blob") return { ...this.#fixed };
+        return { [this.#carrier]: this.#value, ...this.#fixed } as Props;
+    }
+
+    /** @internal Records a node this source feeds, so `set` rewrites it. */
+    bindTo(node: GuiNode, prop: string): void {
+        this.#bound.push({ node, prop });
+    }
+
+    /** @internal Records a live widget drawing this source. */
+    addLive(host: GuiHost, id: number): void {
+        this.#live.push({ host, id });
+    }
+
+    /** @internal Forgets a widget the host recycled. */
+    dropLive(host: GuiHost, id: number): void {
+        for (let i = this.#live.length - 1; i >= 0; i--) {
+            const held = this.#live[i]!;
+            if (held.host === host && held.id === id) this.#live.splice(i, 1);
+        }
+    }
+
+    /**
+     * Point this source at other samples: the **definitions** that hold it are
+     * rewritten, and every widget already drawing it is told to redraw.
+     *
+     * A view open twice is updated twice — the samples belong to the definition,
+     * so both instances follow; the per-instance door stays
+     * `win.widget("wave").set(...)`.
+     *
+     * Only a source that *holds* its samples inline takes this. One that names a
+     * server buffer or a cache is a reference to samples somebody else owns:
+     * change them where they live and call {@link Source.reload}. And a source
+     * past the inline ceiling rides a blob, which the host has no live door for
+     * in a page — that gap is `clients/gui/PLAN.md`'s, not this call's to fake.
+     */
+    set(samples: ArrayLike<number> | Iterable<number>): this {
+        if (this.#carrier !== "data") {
+            throw new TypeError(
+                `this source is carried as a ${this.#carrier}, which it cannot ` +
+                    "rewrite from here — change the samples where they live and " +
+                    "call reload(), or make the source from a short array so it " +
+                    "stays inline",
+            );
+        }
+        const values = [...(samples as Iterable<number>)].map(Number);
+        if (values.length > INLINE_MAX) {
+            throw new RangeError(
+                `${values.length} samples do not fit the inline carrier this ` +
+                    `source was made with (at most ${INLINE_MAX}). A source's ` +
+                    "carrier is fixed when it is made, because a widget on screen " +
+                    "was built around it",
+            );
+        }
+        this.#value = values;
+        for (const { node } of this.#bound) rewriteSource(node, this.props());
+        for (const { host, id } of [...this.#live]) host.set(id, { data: values });
+        return this;
+    }
+
+    /**
+     * Tell every widget drawing this source to read it again — the samples are
+     * where they were and they moved (a server buffer recorded into, a cache
+     * rebuilt, a file rewritten from outside).
+     */
+    reload(): this {
+        for (const { host, id } of [...this.#live]) host.set(id, { reload: 1 });
+        return this;
+    }
+}
+
+/**
+ * The samples a view draws, as a {@link Source} — held, referred to, and
+ * changed in place of being copied into a prop.
+ *
+ * Give it an iterable of floats, or name samples that already live somewhere
+ * the host can reach: `buffer` (a server buffer number), `path` (a raw
+ * little-endian f32 file it maps) or `cache` (a prebuilt peak pyramid).
+ * `channels` de-interleaves it, `sampleRate` gives the time ruler its unit and
+ * `baseBucket` sizes the peak pyramid.
+ */
+export function source(
+    samples?: ArrayLike<number> | Iterable<number> | null,
+    options: {
+        buffer?: number;
+        path?: string;
+        cache?: string;
+        channels?: number;
+        sampleRate?: number;
+        baseBucket?: number;
+    } = {},
+): Source {
+    return new Source(samples, options);
+}
+
+/** Put `props` into `node` in place of whatever carrier it held. */
+function rewriteSource(node: GuiNode, props: Props): void {
+    for (const key of SOURCE_PROPS) delete node[key];
+    Object.assign(node, props);
+}
+
+/** The node types that scope the names inside them (a nested view). */
+const SCOPES = new Set(["window"]);
+
+/**
+ * One node of a GuiDef tree, as the thing a program composes and then opens —
+ * the GUI's counterpart of a `SynthDef`.
+ *
+ * Built by the builders in this module, never directly: `knob(...)`,
+ * `layout(a, b)` and `view(...)` all return one. Composition is nesting, and
+ * the object *is* the document — its own properties are what
+ * `JSON.stringify` writes, so nothing on the wire changes:
+ *
+ * ```ts
+ * const v = view({}, layout({ flow: "col" }, knob({ name: "freq" }), slider({ name: "amp" })));
+ * v.find("freq").min = 110.0;          // still the plain node underneath
+ * const w = v.open();                  // a live window
+ * w.widget("freq").set({ value: 440.0 });
+ * ```
+ *
+ * `v.type` and `v["min"]` are the document, as they have always been; the
+ * *name* index is {@link View.find} / {@link View.names}, which keeps the two
+ * addressings from colliding. On the live side the index is the name
+ * (`w.widget("freq")`), because a `WindowHandle` has no document to index.
+ */
+export class View implements GuiNode {
+    declare type: string;
+    declare id?: number;
+    declare name?: string;
+    declare children?: GuiNode[];
+    [prop: string]: unknown;
+
+    /**
+     * `name -> node` for this view's own scope, built once at construction
+     * from the children's already-built scopes — so composing a tree costs one
+     * pass over each node, not one per lookup.
+     */
+    readonly #scope: Map<string, GuiNode>;
+
+    /**
+     * The def control this widget was built from (`knob(freq)`), so
+     * `WindowHandle.bind` knows what it drives. Client-side only; the name is
+     * all that reaches the wire.
+     */
+    #control: unknown = null;
+
+    /**
+     * The {@link Source} objects feeding this node's props, so opening it can
+     * tell each which live widget draws it — and, for a blob source, where its
+     * bytes went in the message. Client-side only.
+     */
+    readonly #sources: { prop: string; source: Source }[] = [];
+
+    /** Build a view from the document `props`, in the order they were written. */
+    constructor(props: Record<string, unknown>) {
+        Object.assign(this, props);
+        this.#scope = View.#scopeOf(this);
+    }
+
+    /**
+     * `name -> node` for one node's scope: every named descendant, stopping
+     * the descent at a nested view (which is registered by its own name and
+     * keeps the names inside it).
+     *
+     * The node's *own* name is not in its scope — a view is not found inside
+     * itself; it is found in the scope of whatever contains it. A child built
+     * as a `View` already has its scope, so a tree costs one pass per node.
+     */
+    static #scopeOf(node: GuiNode): Map<string, GuiNode> {
+        const scope = new Map<string, GuiNode>();
+        for (const child of node.children ?? []) {
+            const inner = child instanceof View ? child.#scope : View.#scopeOf(child);
+            if (typeof child.name === "string" && child.name) {
+                View.#claim(scope, child.name, child);
+            }
+            if (SCOPES.has(child.type)) continue; // a nested view keeps its names
+            for (const [innerName, innerNode] of inner) View.#claim(scope, innerName, innerNode);
+        }
+        return scope;
+    }
+
+    /** Record `name -> node`, refusing a name already taken in this scope. */
+    static #claim(scope: Map<string, GuiNode>, name: string, node: GuiNode): void {
+        if (scope.has(name)) {
+            throw new Error(
+                `duplicate widget name "${name}" in one view — a name is how this ` +
+                    "client addresses a widget, so two widgets cannot share one. " +
+                    "Rename one, or put them in nested views, which scope their names.",
+            );
+        }
+        scope.set(name, node);
+    }
+
+    /**
+     * The names reachable in this view's scope, in tree order. A nested view
+     * contributes its own name, not the names inside it.
+     */
+    names(): string[] {
+        return [...this.#scope.keys()];
+    }
+
+    /**
+     * The named widget in this view's scope.
+     *
+     * Throws if nothing carries that name here — including when the name is
+     * inside a nested view, which is a scope of its own:
+     * `v.find("osc1").find("freq")`.
+     */
+    find(name: string): GuiNode {
+        const found = this.#scope.get(name);
+        if (found === undefined) {
+            const here = this.names().join(", ") || "none";
+            throw new Error(`no widget named "${name}" in this view (names here: ${here})`);
+        }
+        return found;
+    }
+
+    /** The def control this widget was built from, or `null`. */
+    get control(): unknown {
+        return this.#control;
+    }
+
+    /** @internal Records the control a widget builder read its props off. */
+    setControl(control: unknown): this {
+        this.#control = control;
+        return this;
+    }
+
+    /** The sources feeding this node's props. @internal */
+    get sources(): readonly { prop: string; source: Source }[] {
+        return this.#sources;
+    }
+
+    /** @internal Records a source this node's prop was built from. */
+    addSource(prop: string, held: Source): this {
+        this.#sources.push({ prop, source: held });
+        return this;
+    }
+
+    /** This view as the GuiDef document `/gui_def` takes (names stripped). */
+    toJson(): string {
+        return toJson(this);
+    }
+
+    /**
+     * Open this view on a GUI host and return its `WindowHandle`.
+     *
+     * The resource is the subject: `view(...).open()` rather than
+     * `host.open(view(...))`. `host` follows the ambient rule every other
+     * visual verb follows (`plot`, `scope`) — the one registered with
+     * `setAmbientHost`, else the current or default session's host when one is
+     * up, else a host the ambient layer opens on this page and owns.
+     *
+     * `element` is where a page draws it: the view takes that element's box,
+     * and the canvas inside it is made for you. A host reached over a socket
+     * has windows of its own and refuses an element; a page that names none
+     * draws on the page's canvas.
+     *
+     * It is `async` because the page's host boots asynchronously (the core
+     * wasm, the GPU device) — the one difference from the Python client's
+     * `View.open`, which has a process to talk to and nothing to await.
+     */
+    async open(
+        element?: Element | null,
+        {
+            id,
+            blobs = [],
+            host,
+        }: { id?: number; blobs?: readonly Uint8Array[]; host?: GuiHost } = {},
+    ): Promise<WindowHandle> {
+        const target = host ?? (await (await import("../plot.ts")).resolveHost());
+        return target.open(this, { id, blobs, element });
+    }
+}
+
+
 
 /**
  * The options every widget takes: the client-side `id`/`name`, the place
@@ -213,22 +632,25 @@ export interface TimelineOptions extends WidgetOptions {
 
 /** Where a heavy view's samples come from, in the host's precedence order. */
 export interface SourceOptions extends WidgetOptions {
+    // Every carrier prop also takes a {@link Source}: the logical `data` is
+    // where one usually goes, and the carriers themselves accept it so a tree
+    // written the long way can adopt a source without moving the option.
     /**
      * A prebuilt peak-pyramid file (fetched in the browser); the most compact
      * bulk path — the raw samples are never loaded.
      */
-    cache?: string;
+    cache?: string | Source;
     /** A file of raw little-endian `f32` samples the host maps (fetches). */
-    path?: string;
+    path?: string | Source;
     /** A server buffer number, pulled over the host's client leg. */
-    buffer?: number;
+    buffer?: number | Source;
     /** A short signal inline in the JSON. */
-    data?: readonly number[];
+    data?: readonly number[] | Source;
     /**
      * The index of a binary blob carried beside the JSON (see
      * `samplesToBlob` and `GuiHost.define`).
      */
-    blob?: number;
+    blob?: number | Source;
     /**
      * The interleaved channel count of `path`/`data`/`blob` (default 1);
      * every channel is kept and drawn.
@@ -305,9 +727,25 @@ function kids(children: readonly GuiNode[] | undefined): GuiNode[] | undefined {
 export function node(
     type: string,
     options: { id?: number; name?: string; children?: readonly GuiNode[] } & Props = {},
-): GuiNode {
+): View {
     const { id, name, children, ...props } = options;
-    const out: GuiNode = { type };
+    const held = new Map<string, Source>();
+    for (const key of SOURCE_PROPS) {
+        const value = props[key];
+        if (value instanceof Source) {
+            held.set(key, value);
+            delete props[key];
+        }
+    }
+    for (const [key, value] of Object.entries(props)) {
+        if (value instanceof Source) {
+            throw new TypeError(
+                `${type}: a source names a view's samples, so it goes in a prop ` +
+                    `that is one of ${SOURCE_PROPS.join(", ")} — not "${key}"`,
+            );
+        }
+    }
+    const out: Record<string, unknown> = { type };
     if (id !== undefined) {
         if (!Number.isInteger(id)) {
             throw new TypeError(
@@ -321,7 +759,13 @@ export function node(
     Object.assign(out, props);
     const list = kids(children);
     if (list) out.children = list;
-    return out;
+    const built = new View(out);
+    for (const [key, value] of held) {
+        rewriteSource(built, value.props());
+        built.addSource(key, value);
+        value.bindTo(built, key);
+    }
+    return built;
 }
 
 // ---- containers ----
@@ -594,15 +1038,29 @@ export function signal(
 
 
 /**
- * A top-level `window` container (a GuiDef root). It takes no id — the root's
- * id is the `/gui_def` argument.
+ * A view's **root**: a container that becomes an OS window (a canvas, in the
+ * browser) when nothing holds it, and an ordinary component when something
+ * does. It takes no id — a root's id is the `/gui_def` argument.
+ *
+ * There is one node type, not two. A view with no parent is a window, so this
+ * is the container to reach for when the thing being built is the whole of
+ * what a window shows; nested in another view it is a panel that **scopes its
+ * names** ({@link View.find}), which is what lets two copies of one strip each
+ * hold their own `freq`.
+ *
+ * Any node opens ({@link View.open}): `knob({}).open()` is a window that is a
+ * knob. Use `view()` when the window's own properties matter — a title, a
+ * size, a theme — since a root that is not one is framed in a window that hugs
+ * whatever it holds.
  *
  * `w`/`h` size the OS window (the canvas, in the browser); `layout` places
  * the children, tuned by `margin`/`gap`/`cols`. A fixed-height bar over a
  * weighted content area over a fixed status strip — the application shell —
- * is just `window({ layout: "col" }, bar({ h: 28 }), content(), status({ h: 20 }))`.
+ * is just `view({ layout: "col" }, bar({ h: 28 }), content(), status({ h: 20 }))`.
+ *
+ * `window` is the older spelling of this builder and still works.
  */
-export function window(
+export function view(
     options: ContainerOptions & {
         title?: string;
         flow?: string;
@@ -616,7 +1074,7 @@ export function window(
     hug?: boolean;
     } = {},
     ...children: GuiNode[]
-): GuiNode {
+): View {
     const { title, flow, layout, margin, gap, cols, hug, theme, ...rest } = options;
     return node("window", {
         ...rest,
@@ -632,6 +1090,12 @@ export function window(
         children: [...(options.children ?? []), ...children],
     });
 }
+
+/**
+ * The older spelling of {@link view}, kept because it is what every tree
+ * written before the root rule says. One node type, one builder.
+ */
+export const window = view;
 
 /**
  * A nestable `panel` container. As a child it takes the same place props as
@@ -820,30 +1284,150 @@ function rangeProps(options: RangeOptions): [Props, Props] {
     ];
 }
 
-/** A rotary `knob` over a continuous range. */
-export function knob(options: RangeOptions = {}): GuiNode {
-    const [rest, props] = rangeProps(options);
-    return node("knob", { ...rest, ...props });
+
+/**
+ * Anything a control widget can be built from: the graph's own `Control`
+ * object, or the `ControlInfo` every def family answers with
+ * (`sd.control("freq")`, `fd.control("cutoff")`, `gd.control("mix")`).
+ */
+export interface ControlLike {
+    name: string;
+    default: number;
+    /**
+     * The graph `Control`'s own read of its range. A `ControlInfo` carries
+     * `min`/`max` instead, which a control widget falls back to — the field is
+     * not declared here because on a `Control` those two names are the binary
+     * operators.
+     */
+    range?: [number, number] | null;
+    step?: number | null;
+}
+
+/**
+ * Whether `x` is a control rather than an option bag.
+ *
+ * Both carry a `name` — a control's is the one the server addresses, an option
+ * bag's is the handle index — so the tell is `default`, which every control has
+ * (a `Control` object and a `ControlInfo` alike) and no widget option is. In
+ * Python the two are told apart by position, one positional and the rest
+ * keywords; TypeScript has one positional slot, so it reads the shape.
+ */
+function isControl(x: unknown): x is ControlLike {
+    return x !== null && typeof x === "object"
+        && typeof (x as ControlLike).name === "string"
+        && typeof (x as ControlLike).default === "number";
+}
+
+/**
+ * A control's own props for a widget built from it: its name, its default as
+ * the value, and its range.
+ *
+ * The **entry point named once**. A def's control is the only thing that knows
+ * what it is meant to be driven over, and a widget that copies those numbers by
+ * hand is a second declaration nothing checks.
+ *
+ * Explicit options win: the control says what it is, the call says how to draw
+ * it. That includes `name`, which is the handle's index — the two are usually
+ * the same string and need not be.
+ */
+function fromControl(
+    control: ControlLike,
+    given: Props,
+    { needsRange }: { needsRange: boolean },
+): Props {
+    // A `ControlInfo` carries `min`/`max` where a graph `Control` answers
+    // `range` — and only a number counts, because on a `Control` those two
+    // names are the binary operators and reading them finds a function.
+    const info = control as { min?: unknown; max?: unknown };
+    const [lo, hi] = control.range
+        ?? (typeof info.min === "number" ? [info.min, info.max as number] : [undefined, undefined]);
+    if (needsRange && lo === undefined && given.min === undefined) {
+        throw new Error(
+            `control '${control.name}' declares no range, so there is nothing to ` +
+                "draw it over — give it one where it is declared " +
+                `(control("${control.name}", …, { min: …, max: … })), or spell ` +
+                "min/max here",
+        );
+    }
+    const own = drop([
+        ["name", control.name],
+        ["label", control.name],
+        ["value", control.default],
+        ["min", lo],
+        ["max", hi],
+        ["step", control.step ?? undefined],
+    ]);
+    for (const [key, value] of Object.entries(given)) {
+        if (value !== undefined) own[key] = value;
+    }
+    return own;
+}
+
+/**
+ * Splits a control widget's arguments: `knob(freq, { … })` or `knob({ … })`.
+ * Returns the control (or `null`) and the option bag.
+ */
+function controlArgs<T>(
+    first: ControlLike | T | undefined,
+    second: T | undefined,
+): [ControlLike | null, T] {
+    if (first !== undefined && isControl(first)) {
+        return [first, (second ?? {}) as T];
+    }
+    return [null, ((first ?? second ?? {}) as T)];
+}
+
+/**
+ * A rotary `knob` over a continuous range.
+ *
+ * Takes a def's control first — `knob(freq)`, `knob(sd.control("freq"))` — and
+ * reads its name, its default and its range off it, so the numbers are
+ * declared once where the control is. Options still win over the control:
+ * `knob(freq, { max: 2000 })` draws it over a wider range than it declares.
+ */
+export function knob(control?: ControlLike | RangeOptions, options?: RangeOptions): View {
+    const [source_, opts] = controlArgs<RangeOptions>(control, options);
+    const [rest, props] = rangeProps(opts);
+    // `rest` last: the control says what it is, the call says how to draw it,
+    // and `name` is the one key both carry (the handle's index against the
+    // control's own).
+    const built = source_ === null
+        ? { ...rest, ...props }
+        : { ...fromControl(source_, props, { needsRange: true }), ...rest };
+    return node("knob", built).setControl(source_);
 }
 
 /**
  * A continuous `slider`. `vertical` lays it out along the y axis (min at the
  * bottom) instead of horizontally.
+ *
+ * Takes a def's control first, like {@link knob}.
  */
-export function slider(options: RangeOptions & { vertical?: boolean } = {}): GuiNode {
-    const { vertical, ...plain } = options;
+export function slider(
+    control?: ControlLike | (RangeOptions & { vertical?: boolean }),
+    options?: RangeOptions & { vertical?: boolean },
+): View {
+    const [source_, opts] = controlArgs<RangeOptions & { vertical?: boolean }>(control, options);
+    const { vertical, ...plain } = opts;
     const [rest, props] = rangeProps(plain);
+    const built = source_ === null
+        ? { ...rest, ...props }
+        : { ...fromControl(source_, props, { needsRange: true }), ...rest };
     // Only a vertical slider says so: the host reads the prop's absence as
     // horizontal, and the Python builder emits nothing for a false one.
     return node("slider", {
-        ...rest, ...props, ...drop([["vertical", vertical || undefined]]),
-    });
+        ...built, ...drop([["vertical", vertical || undefined]]),
+    }).setControl(source_);
 }
 
-/** A draggable numeric read-out over a range. */
-export function number(options: RangeOptions = {}): GuiNode {
-    const [rest, props] = rangeProps(options);
-    return node("number", { ...rest, ...props });
+/** A draggable numeric read-out over a range. Takes a control, like {@link knob}. */
+export function number(control?: ControlLike | RangeOptions, options?: RangeOptions): View {
+    const [source_, opts] = controlArgs<RangeOptions>(control, options);
+    const [rest, props] = rangeProps(opts);
+    const built = source_ === null
+        ? { ...rest, ...props }
+        : { ...fromControl(source_, props, { needsRange: true }), ...rest };
+    return node("number", built).setControl(source_);
 }
 
 /** A momentary push `button` (emits `1` on press, `0` on release). */
@@ -856,13 +1440,18 @@ export function button(
 
 /** A boolean `toggle`. `value` rides as `1`/`0` (OSC has no bool). */
 export function toggle(
-    options: WidgetOptions & { label?: string; value?: boolean; textSize?: number } = {},
-): GuiNode {
-    const { label: text, value, textSize, ...rest } = options;
-    return node("toggle", {
-        ...rest,
-        ...drop([["label", text], ["value", flag(value)], ["text_size", textSize]]),
-    });
+    control?: ControlLike | (WidgetOptions & { label?: string; value?: boolean; textSize?: number }),
+    options?: WidgetOptions & { label?: string; value?: boolean; textSize?: number },
+): View {
+    type ToggleOptions = WidgetOptions & { label?: string; value?: boolean; textSize?: number };
+    const [source_, opts] = controlArgs<ToggleOptions>(control, options);
+    const { label: text, value, textSize, ...rest } = opts;
+    const props = drop([["label", text], ["value", flag(value)], ["text_size", textSize]]);
+    // A toggle needs no range: it is 0/1 whatever the control declares.
+    const built = source_ === null
+        ? { ...rest, ...props }
+        : { ...fromControl(source_, props, { needsRange: false }), ...rest };
+    return node("toggle", built).setControl(source_);
 }
 
 /**
@@ -1823,7 +2412,9 @@ function sourceProps(options: Pick<SourceOptions,
         ["cache", cache],
         ["path", path],
         ["buffer", buffer],
-        ["data", data === undefined ? undefined : [...data]],
+        // A `Source` passes through untouched — `node` expands it into the
+        // carrier it picked; anything else is read into an array here.
+        ["data", data === undefined || data instanceof Source ? data : [...data]],
         ["blob", blob],
         ["channels", channels],
     ]);
@@ -1931,4 +2522,4 @@ function stripNames(tree: GuiNode): GuiNode {
  * reads through `blob`. Flat bytes at the boundary, the rule the rest of the
  * client follows.
  */
-export { samplesToBlob } from "../base/bulk.ts";
+export { samplesToBlob };

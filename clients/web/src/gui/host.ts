@@ -28,13 +28,15 @@ import { encodeImmediateBundle } from "../base/osc.ts";
 import type { Connection } from "../base/connection.ts";
 import { WsConnection } from "../base/connection.ts";
 import { ReplyTimeout } from "../errors.ts";
-import { toJson } from "./guidef.ts";
+import { toJson, view, View } from "./guidef.ts";
+import type { Source } from "./guidef.ts";
 import type { GuiNode } from "./guidef.ts";
 import { GuiIdAllocator } from "./ids.ts";
 import type { IdShare } from "../base/core.ts";
 import { WidgetHandle, WindowHandle } from "./handle.ts";
 import type { EventArgs } from "./handle.ts";
-import { guiHost, pageGuiConnection } from "./page.ts";
+import { canvasIn, guiHost, pageGuiConnection } from "./page.ts";
+import { ambientHost, setAmbientHost } from "./ambient.ts";
 import type { ClaustersGui } from "./page.ts";
 
 // The page's own host — the singleton, its canvases and the carrier over it —
@@ -131,6 +133,19 @@ export class GuiHost {
     private readonly handlers = new Set<(msg: OscMessage) => void>();
     private readonly pending = new Set<Pending>();
     private readonly listener: (packet: Uint8Array) => void;
+    /**
+     * The page surface this host draws on, when it is an in-page one — where a
+     * def's canvas comes from. `null` for a host reached over a socket, which
+     * has windows of its own and no document to mount into.
+     */
+    page: ClaustersGui | null = null;
+    /** Window id → the disposer that stops following its element's box. */
+    private readonly fitted = new Map<number, () => void>();
+    /**
+     * Widget id → the sources that widget draws, so a recycled widget stops
+     * being one of the live ends a `Source.set` reaches.
+     */
+    private readonly sources = new Map<number, Source[]>();
 
     /**
      * Drives the host behind `connection`. The core wasm must be loaded first
@@ -160,17 +175,37 @@ export class GuiHost {
      */
     static async page(
         target?: Promise<ClaustersGui> | ClaustersGui,
-        { share }: { share?: IdShare } = {},
+        { share, adoptAmbient = true }: { share?: IdShare; adoptAmbient?: boolean } = {},
     ): Promise<GuiHost> {
-        return new GuiHost(await pageGuiConnection(target), { share });
+        const gui = await (target ?? guiHost());
+        const host = new GuiHost(await pageGuiConnection(gui), { share });
+        host.page = gui;
+        if (adoptAmbient) host.adoptAmbient();
+        return host;
+    }
+
+    /**
+     * Register as the **ambient** host when none is, first-wins — so
+     * `view(...).open()`, `plot` and `scope` land here instead of opening a
+     * second host. The mirror of the audio `Server`'s default-session
+     * adoption, and `stop` gives the registration up.
+     */
+    adoptAmbient(): this {
+        if (ambientHost() === null) setAmbientHost(this);
+        return this;
     }
 
     /**
      * A `GuiHost` driving a **native** `clausters-gui --ws` host over a
      * WebSocket (default `ws://127.0.0.1:57220`).
      */
-    static async connect(url = `ws://127.0.0.1:${DEFAULT_WS_PORT}`): Promise<GuiHost> {
-        return new GuiHost(await WsConnection.open(url));
+    static async connect(
+        url = `ws://127.0.0.1:${DEFAULT_WS_PORT}`,
+        { share, adoptAmbient = true }: { share?: IdShare; adoptAmbient?: boolean } = {},
+    ): Promise<GuiHost> {
+        const host = new GuiHost(await WsConnection.open(url), { share });
+        if (adoptAmbient) host.adoptAmbient();
+        return host;
     }
 
     // ---- windows: open / close (the tree is a `window`-rooted GuiDef) ----
@@ -194,11 +229,40 @@ export class GuiHost {
      */
     open(
         tree: GuiNode,
-        { id, blobs = [] }: { id?: number; blobs?: readonly Uint8Array[] } = {},
+        {
+            id,
+            blobs = [],
+            element,
+        }: { id?: number; blobs?: readonly Uint8Array[]; element?: Element | null } = {},
     ): WindowHandle {
         const wid = id ?? this.allocId();
-        const handle = this.define(wid, tree, blobs);
+        // The wire opens an OS window for a `window`-rooted def and nothing
+        // else, so a root that is not one is framed here: any node opens, and
+        // the frame hugs whatever it holds rather than padding it out.
+        const root = tree.type === "window" ? tree : view({ hug: true }, tree);
+        let canvas: HTMLCanvasElement | undefined;
+        if (element != null) {
+            if (this.page === null) {
+                throw new Error(
+                    "this host has windows of its own, not a document to mount " +
+                        "into — an element is only meaningful for a host on this page",
+                );
+            }
+            canvas = canvasIn(element);
+            // Before the `/gui_def`: the carrier attaches the page's default
+            // canvas when a def is fed, and `attach` is idempotent, so the
+            // canvas chosen here is the one the def keeps.
+            this.page.attach(wid, canvas);
+        }
+        const handle = this.define(wid, root, blobs);
         this.opened.add(wid);
+        if (canvas !== undefined && element != null && this.page !== null) {
+            this.fitted.get(wid)?.();
+            // The host never reads the DOM, so the page reports the box — and
+            // keeps reporting it, since an element's size and the display's
+            // scale move independently.
+            this.fitted.set(wid, this.page.fit(wid, element, canvas));
+        }
         return handle;
     }
 
@@ -233,7 +297,9 @@ export class GuiHost {
             this.recycleSubtree(id, true);
         }
         const names = new Map<string, number>();
-        this.register(tree, id, names);
+        const controls = new Map<number, string>();
+        const extra: Uint8Array[] = [];
+        const document = this.stamp(tree, id, names, controls, extra, blobs.length);
         // A redraw takes fresh ids from the pool, so a handler kept under the
         // old id would be orphaned -- or fire for whatever widget inherited
         // that number. A callback belongs to the widget the *name* points at.
@@ -242,12 +308,12 @@ export class GuiHost {
             const wid = names.get(name);
             if (wid !== undefined) this.onEventHandlers.set(wid, func);
         }
-        this.send("/gui_def", ["i", id], toJson(tree), ...blobs);
+        this.send("/gui_def", ["i", id], toJson(document), ...blobs, ...extra);
         if (previous !== undefined) {
-            previous.refreshNames(names);
+            previous.refreshNames(names, controls);
             return previous;
         }
-        const handle = new WindowHandle(this, id, names);
+        const handle = new WindowHandle(this, id, names, controls);
         this.handles.set(id, handle);
         return handle;
     }
@@ -262,20 +328,77 @@ export class GuiHost {
     }
 
     /**
-     * Walks `node` (whose id is `nodeId`): assigns a fresh id to every id-less
-     * descendant **in place**, records each id's children (the subtree `free`
-     * recycles), and collects name → id. The root carries no id in the tree —
-     * it is the `/gui_def` argument — so its id is passed in.
+     * Walks `node` (whose id is `nodeId`) and returns **a copy** carrying the
+     * ids: every id-less descendant gets a fresh one, each id's children are
+     * recorded (the subtree `free` recycles), and name → id is collected. The
+     * root carries no id in the tree — it is the `/gui_def` argument — so its
+     * id is passed in.
+     *
+     * It copies rather than writing into the caller's tree because **an id
+     * names a live widget and a view is a definition**: one view opens as many
+     * times as you like, each window with ids of its own. Copying is also what
+     * makes the same subtree nested twice work — node identity never enters,
+     * so the two places get two id runs and the host is not told to build one
+     * widget twice.
+     *
+     * A duplicate `name` is refused here as well as where a view is built: a
+     * hand-written object literal reaches this walk without passing a builder,
+     * and a shadowed widget would draw and be unreachable.
      */
-    private register(node: GuiNode, nodeId: number, names: Map<string, number>): void {
-        if (typeof node.name === "string" && node.name) names.set(node.name, nodeId);
-        const childIds: number[] = [];
-        for (const child of node.children ?? []) {
-            child.id ??= this.allocId();
-            childIds.push(child.id);
-            this.register(child, child.id, names);
+    private stamp(
+        node: GuiNode,
+        nodeId: number,
+        names: Map<string, number>,
+        controls: Map<number, string>,
+        blobs: Uint8Array[],
+        blobBase: number,
+    ): GuiNode {
+        if (typeof node.name === "string" && node.name) {
+            if (names.has(node.name)) {
+                throw new Error(
+                    `duplicate widget name "${node.name}" in one tree — a name is ` +
+                        "how this client addresses a widget, so two widgets cannot " +
+                        "share one.",
+                );
+            }
+            names.set(node.name, nodeId);
         }
+        const control = node instanceof View ? node.control : null;
+        if (control !== null && control !== undefined) {
+            controls.set(nodeId, (control as { name: string }).name);
+        }
+        const out: GuiNode = { type: node.type };
+        for (const [key, value] of Object.entries(node)) {
+            if (key !== "children") out[key] = value;
+        }
+        if (node instanceof View) {
+            for (const { source } of node.sources) {
+                source.addLive(this, nodeId);
+                const held = this.sources.get(nodeId);
+                if (held === undefined) this.sources.set(nodeId, [source]);
+                else held.push(source);
+                // A blob source rides its bytes beside the JSON, and the index
+                // is where they land in *this* message — which is why nobody
+                // has to keep `blob: 0` in step with the open call by hand.
+                const bytes = source.bytes;
+                if (bytes !== null) {
+                    out.blob = blobBase + blobs.length;
+                    blobs.push(bytes);
+                }
+            }
+        }
+        const childIds: number[] = [];
+        const stamped: GuiNode[] = [];
+        for (const child of node.children ?? []) {
+            const cid = child.id ?? this.allocId();
+            childIds.push(cid);
+            const sub = this.stamp(child, cid, names, controls, blobs, blobBase);
+            sub.id = cid;
+            stamped.push(sub);
+        }
+        if (stamped.length > 0) out.children = stamped;
         this.children.set(nodeId, childIds);
+        return out;
     }
 
     /**
@@ -288,6 +411,8 @@ export class GuiHost {
         for (const child of this.children.get(id) ?? []) {
             this.recycleSubtree(child, false);
         }
+        for (const held of this.sources.get(id) ?? []) held.dropLive(this, id);
+        this.sources.delete(id);
         this.children.delete(id);
         this.onEventHandlers.delete(id);
         if (keepRoot) return;
@@ -301,6 +426,8 @@ export class GuiHost {
      * frees the subtree and, for a `window` root, its window.
      */
     close(id: number): void {
+        this.fitted.get(id)?.();
+        this.fitted.delete(id);
         this.free(id);
         this.opened.delete(id);
     }
@@ -596,6 +723,9 @@ export class GuiHost {
      * here, as it is in the protocol. Pending queries reject.
      */
     stop(): void {
+        if (ambientHost() === this) setAmbientHost(null);
+        for (const dispose of this.fitted.values()) dispose();
+        this.fitted.clear();
         this.connection.removeReply(this.listener);
         for (const p of this.pending) {
             clearTimeout(p.timer);

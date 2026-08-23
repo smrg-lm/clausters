@@ -145,7 +145,7 @@ b.use(() => new Synth("beep"));   // reaches b, whatever the page's default is
 
 ### The GUI leg
 
-`s.gui()` opens the session's host once and wires it to **this session's** engine, so a bound widget reaches this server and not the page's — the browser parallel of the Python client's `session.gui()`, which boots a `clausters-gui` process pointed at its session's server. `s.connectGui(url)` drives a native `--ws` host instead.
+`s.gui()` opens the session's host once and wires it to **this session's** engine, so a bound widget reaches this server and not the page's — the browser parallel of the Python client's `session.gui()`, which boots a `clausters-gui` process pointed at its session's server. A session drives a native `--ws` host instead by being **given** one — `new Session(server, clock, await GuiHost.connect(url))` — the way it is given a `Server` it did not open.
 
 `s.guiHost` reads back what the session has without opening anything.
 

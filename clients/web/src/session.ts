@@ -130,11 +130,18 @@ export class Session extends Environment {
      * resolves *this* session's server and random root — which is what keeps
      * several sessions isolated from each other and from the default one.
      */
-    constructor(server: Server, clock?: TempoClock) {
+    /**
+     * `gui` is a host this session drives instead of opening one — the visual
+     * half of taking a `Server` the session did not open, and the way a session
+     * adopts a host reached with `GuiHost.connect`. `gui()` then returns it
+     * rather than opening anything.
+     */
+    constructor(server: Server, clock?: TempoClock, gui?: GuiHost) {
         super();
         this.server = server;
         this.clock = clock ?? new TempoClock();
         this.clock.session = this;
+        this.gui_ = gui ?? null;
     }
 
     // ---- the factories (the "defaults", explicit) ----
@@ -242,7 +249,12 @@ export class Session extends Environment {
      * which boots a `clausters-gui` process pointed at its session's server.
      *
      * Idempotent: repeated calls return the same `GuiHost`. It is owned by
-     * the session and released on `close`.
+     * the session and released on `close`. A session **given** a host (the
+     * constructor's `gui`) is already settled: this returns that host and
+     * opens nothing — the same way a `Server` is taken rather than opened when
+     * the constructor is used. That is how a session drives a native
+     * `clausters-gui --ws` host: `new Session(server, clock, await
+     * GuiHost.connect(url))`.
      *
      * A session on the page's shared engine gets the page's host (canvas in
      * `<body>` included); one holding its own engine gets a host of its own,
@@ -271,19 +283,6 @@ export class Session extends Environment {
             this.gui_ = await GuiHost.page(undefined, { share });
         }
         return this.gui_;
-    }
-
-    /**
-     * A `GuiHost` driving a **native** `clausters-gui --ws` host instead, for
-     * a session whose windows belong on the desktop. Installed as this
-     * session's host when it has none yet, so `gui()` returns it afterwards;
-     * a session that already has one keeps it, and the connected host is
-     * returned all the same.
-     */
-    async connectGui(url?: string): Promise<GuiHost> {
-        const host = await GuiHost.connect(url);
-        this.gui_ ??= host;
-        return host;
     }
 
     // ---- driving ----

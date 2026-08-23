@@ -45,7 +45,7 @@ the children come after it:
 ```ts
 import { gui } from "clausters";
 
-gui.window(
+gui.view(
     { title: "filter", w: 520, h: 260, flow: "col" },
     gui.label("a filter", { h: 24 }),
     gui.panel(
@@ -67,6 +67,52 @@ gui.window(
 `viewZoom` becomes `view_zoom`. Inside an `axes` pair the keys are the wire's
 own (`sample_rate`, `sel_start`), since that object goes through untouched.
 
+**A builder returns a `View`, and the view opens itself.** The tree is the
+subject of the sentence — `view(...).open()` rather than `host.open(view(...))`
+— the way a def is (`synthdef.send(server)`), and there is one root builder,
+not two: a view with a parent is a component, a view with **no** parent is the
+window, and any node opens (`knob({...}).open()` is a window that is a knob).
+The document is unchanged: a `View`'s own properties are the JSON, so
+`JSON.stringify` writes what it always wrote. What is added is the name index
+(`v.find("cutoff")`, `v.names()`) and `open`; the bracket stays the document
+key, because the two addressings cannot share one. `window` is the older
+spelling of `view` and still works.
+
+**No widget carries an id.** You pass `name` instead, and `open` hands back a
+window handle you index by name. The ids are allocated **in the document that
+goes out**, never written into the tree you wrote — which is what lets one view
+open as many times as you like, each window with ids of its own, and what makes
+the same subtree nested twice two widgets rather than one.
+
+**The element goes in `open`, and a page that names none gets a canvas.**
+`view(...).open(el)` mounts the view into that element's box: the canvas inside
+it is made and fitted for you, so `attach`/`fit` stop being something a script
+writes. A host reached over a socket has windows of its own and refuses an
+element.
+
+**The samples are a `source`, not a carrier.** `waveform({ data: sig })`, where
+`sig = source(samples)` decides how they travel and stays addressable —
+`sig.set(other)` rewrites the definitions holding it and pushes to every live
+widget. The threshold is the Python client's, so a source of the same length
+makes the same decision in both; **what differs is the spill**. A page has no
+temp file, so a source past the ceiling rides a **blob** beside the JSON and its
+index is assigned at `open` — which is `blob: 0` stopping being a
+correspondence kept by hand. The blob has no live door in the host, so `set` on
+a spilled source refuses rather than pretending; a native client rewrites its
+file and re-reads it.
+
+**A control widget is built from the control it drives.** `control` grew
+`min`/`max`/`step` — the range the control is meant to be driven over — and
+`knob(freq)`, `slider(sd.control("amp"))`, `number` and `toggle` read the name,
+the default and the range off it. All three def families answer with the same
+`ControlInfo` shape (`sd.control(...)`, `fd.control(...)`, `gd.control(...)`,
+and `.controls()`), and none of it rides a wire but Faust's. Where Python writes
+`sd["freq"]`, this client writes `sd.control("freq")`: a class here cannot take
+a bracket without an index signature over everything else on it. Then the whole
+surface binds in one verb — `win.bind(synth)`, `win.unbind()`,
+`win.controlMap()` — and `win.widget("freq").bind(...)` is still there for a
+bus, another widget or an arbitrary address.
+
 **Nothing is pumped.** The page already has an event loop, so the Python
 client's `pump` has no counterpart: a handler fires when the message arrives.
 Building and opening are synchronous; anything that waits for the host to
@@ -82,10 +128,16 @@ const info = await win.widget("cutoff").query();   // a round trip, so awaited
 Getting the host is the asynchronous part, since it loads wasm:
 `const host = await GuiHost.page();`.
 
-**Two ways to have a host.** `GuiHost.page()` is the wasm host on this page's
-canvas — the ordinary one; `GuiHost.connect(url)` drives a *native*
-`clausters-gui --ws` from the tab, which is the same object over a different
-carrier. A `Session` opened with `Session.page()` carries one either way.
+**Two ways to have a host, and one ambient rule.** `GuiHost.page()` is the wasm
+host on this page's canvas — the ordinary one; `GuiHost.connect(url)` drives a
+*native* `clausters-gui --ws` from the tab, which is the same object over a
+different carrier and is this client's `attach`: it connects to a host it did
+not open. Either becomes the **ambient** host if none is registered (first-wins,
+the mirror of the audio server's default-session adoption), which is why
+`view(...).open()` needs no argument, and `stop()` gives the registration up. A
+`Session` opened with `Session.page()` carries one either way; a session drives
+a host it did not open by being **given** one — `new Session(server, clock,
+await GuiHost.connect(url))` — the way it is given a `Server`.
 `newGuiHost()` boots an instance that is **not** the page's — its own engine
 unless you hand it one — for a document holding several independent
 instruments, and there you `attach(defId, canvas)` your own canvas.

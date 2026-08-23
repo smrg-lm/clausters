@@ -504,6 +504,10 @@ export async function resolveHost(): Promise<GuiHost> {
     // that opened a `Session` first has already paid this; one that only wants
     // to look at something has not.
     await loadOsc();
-    ownHost ??= await GuiHost.page();
+    // Not the ambient one: this host is the *fallback* of the ambient ladder,
+    // and registering it would make the fallback outrank a session opened
+    // afterwards. The reference client draws the same line
+    // (`plot._ambient_host` boots with `adopt_ambient=False`).
+    ownHost ??= await GuiHost.page(undefined, { adoptAmbient: false });
     return ownHost;
 }

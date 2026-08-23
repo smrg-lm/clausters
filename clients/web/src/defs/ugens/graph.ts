@@ -331,11 +331,33 @@ export class Control extends SynthLeaf {
     readonly rate?: ControlRate;
     readonly lag?: number;
     readonly lagDown?: number;
+    /**
+     * The range this control is meant to be driven over — what a GUI control
+     * needs to draw it, and the one thing about a control only its author
+     * knows. It rides no wire: the server takes any float, so this is a
+     * statement about the surface, not a constraint (see `ControlInfo`, which
+     * a FaustDef fills from its own `hslider` declaration).
+     *
+     * **Held privately and read through {@link Control.range} / {@link
+     * Control.step}**: a control is a signal, and `min`/`max` on a signal are
+     * the binary operators (`freq.min(other)` composes a `BinaryOpUGen`), so a
+     * field of either name shadows the operator.
+     */
+    readonly #min?: number;
+    readonly #max?: number;
+    readonly #step?: number;
 
     constructor(
         name: string,
         defaultValue = 0.0,
-        options: { rate?: ControlRate; lag?: number; lagDown?: number } = {},
+        options: {
+            rate?: ControlRate;
+            lag?: number;
+            lagDown?: number;
+            min?: number;
+            max?: number;
+            step?: number;
+        } = {},
     ) {
         super();
         this.name = String(name);
@@ -343,6 +365,15 @@ export class Control extends SynthLeaf {
         this.rate = options.rate;
         this.lag = options.lag;
         this.lagDown = options.lagDown;
+        this.#min = options.min;
+        this.#max = options.max;
+        this.#step = options.step;
+        if ((this.#min === undefined) !== (this.#max === undefined)) {
+            throw new TypeError(
+                `control '${this.name}': a range is min *and* max, and it is ` +
+                    "either declared or not",
+            );
+        }
         if (this.rate !== undefined && !CONTROL_RATES.has(this.rate)) {
             throw new TypeError(
                 `unknown control type '${this.rate}'; use one of ` +
@@ -354,10 +385,28 @@ export class Control extends SynthLeaf {
         }
     }
 
+    /**
+     * `[min, max]` — the range this control is meant to be driven over — or
+     * `null` when it declares none.
+     *
+     * The read side of the `min`/`max` a control is declared with, and the same
+     * pair `ControlInfo` answers, so a widget built from either reads one
+     * thing.
+     */
+    get range(): [number, number] | null {
+        return this.#min === undefined ? null : [this.#min, this.#max as number];
+    }
+
+    /** The increment this control is meant to move in, or `null`. */
+    get step(): number | null {
+        return this.#step ?? null;
+    }
+
     /** The full identity used to detect conflicting reuses of a name. */
     signature(): string {
         return JSON.stringify([this.default, this.rate ?? null, this.lag ?? null,
-            this.lagDown ?? null]);
+            this.lagDown ?? null, this.#min ?? null, this.#max ?? null,
+            this.#step ?? null]);
     }
 }
 
@@ -365,11 +414,24 @@ export class Control extends SynthLeaf {
  * A named control (`/synth_new`/`/node_set` parameter). `rate` is its type (`"tr"`
  * trigger, `"ir"` scalar, or the default `kr`); `lag` (with an optional
  * `lagDown`) smooths a `kr` control. See `Control`.
+ *
+ * `min`/`max` (and an optional `step`) declare the range the control is meant
+ * to be driven over, which is what a GUI control is built from —
+ * `knob(freq)` reads the name, the default and the range off it. The range
+ * **rides no wire**: the server takes any float for any control, so declaring
+ * it says how the control should be presented, not what it will accept.
  */
 export function control(
     name: string,
     defaultValue = 0.0,
-    options: { rate?: ControlRate; lag?: number; lagDown?: number } = {},
+    options: {
+        rate?: ControlRate;
+        lag?: number;
+        lagDown?: number;
+        min?: number;
+        max?: number;
+        step?: number;
+    } = {},
 ): Control {
     return new Control(name, defaultValue, options);
 }

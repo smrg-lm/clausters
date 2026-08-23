@@ -122,6 +122,32 @@ export interface ClaustersGui {
     close(): void;
 }
 
+/**
+ * The canvas a view mounted into `element` draws on: the element itself when
+ * it *is* a canvas, else one this module made inside it before, else a fresh
+ * one appended to it.
+ *
+ * A page names the box it wants a view in — a `<div>` its layout sizes — and
+ * the canvas is an implementation detail of drawing into that box, so nobody
+ * has to make one. Memoized on the element so re-opening into the same box
+ * keeps its GPU surface instead of stacking canvases.
+ */
+export function canvasIn(element: Element): HTMLCanvasElement {
+    if (element instanceof HTMLCanvasElement) return element;
+    const held = mounted.get(element);
+    if (held !== undefined && held.isConnected) return held;
+    const canvas = document.createElement("canvas");
+    canvas.style.display = "block";
+    canvas.style.width = "100%";
+    canvas.style.height = "100%";
+    element.append(canvas);
+    mounted.set(element, canvas);
+    return canvas;
+}
+
+/** element → the canvas `canvasIn` made in it. */
+const mounted = new WeakMap<Element, HTMLCanvasElement>();
+
 let instance: Promise<ClaustersGui> | null = null;
 
 /**
