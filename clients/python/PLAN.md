@@ -708,6 +708,18 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
 
 ## Found by use: the running list of fixes and open questions
 
+- ✅ **A control's range shadowed the operators of the same name** *(found and
+  fixed 2026-08-23, porting C42 to TypeScript)*. C42 gave `Control` the
+  attributes `min`/`max`, and a `Control` **is a signal**: `min`/`max` on a
+  signal are the binary operators (`freq.min(other)` composes a
+  `BinaryOpUGen`). The attribute shadowed the method for *every* control, ranged
+  or not — a control with no range set `self.min = None`, so `freq.min(2.0)`
+  raised `'NoneType' object is not callable`. Held privately now and read
+  through `Control.range` / `Control.step`, the same pair `ControlInfo` already
+  answered, and `_from_control` reads that instead of two attributes. Nothing in
+  the client called `Control.min`, which is why no test saw it; TypeScript's
+  compiler refused the override outright, and that is the argument for porting
+  a reform before writing the examples against it.
 - ✅ **A curve was drawn with a shape it did not have.** `Editor._body_for`
   handed `clip(points=…)` a list of already-resolved `(t, v, shape, curve)`
   quads, but a `points` argument of *tuples* is read as `(t, v, curve_spec)` and

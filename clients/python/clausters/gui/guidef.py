@@ -1023,7 +1023,7 @@ def _from_control(control, given: dict, props: dict, *, needs_range: bool) -> di
     The **entry point named once**. A def's control is the only thing that knows
     what it is meant to be driven over, and a widget that copies those numbers by
     hand is a second declaration nothing checks. Anything with ``name``,
-    ``default`` and (for a range widget) ``min``/``max`` is accepted — the
+    ``default`` and (for a range widget) a ``range`` is accepted — the
     graph's own `clausters.defs.Control` object, or the
     `clausters.defs.info.ControlInfo` every def family answers with
     (``sd["freq"]``, ``fd["cutoff"]``, ``gd["mix"]``), which is also what a
@@ -1040,7 +1040,7 @@ def _from_control(control, given: dict, props: dict, *, needs_range: bool) -> di
             f"not a def's control: {control!r} — pass a control (from "
             "`clausters.defs.control`, or a def's `sd['freq']`) or spell "
             "min=/max=/value= yourself")
-    lo, hi = getattr(control, "min", None), getattr(control, "max", None)
+    lo, hi = getattr(control, "range", None) or (None, None)
     if needs_range and lo is None and given.get("min") is None:
         raise ValueError(
             f"control {name!r} declares no range, so there is nothing to draw "

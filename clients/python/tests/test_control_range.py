@@ -228,3 +228,23 @@ def test_bind_takes_a_node_or_a_bare_id():
     host._osc.sent.clear()
     w.bind(_FakeNode())
     assert host._osc.sent[0][4] == 2001
+
+
+def test_a_control_is_still_a_signal_where_min_and_max_are_operators():
+    """Found by the TypeScript port, whose compiler refused what Python had
+    accepted in silence: a control *is* a signal, and `min`/`max` on a signal
+    are the binary operators (`freq.min(other)` composes a `BinaryOpUGen`). The
+    range first shipped as attributes of those names, which shadowed them — for
+    every control, ranged or not, since the attribute was set to `None`. It is
+    read through `range`/`step` now, the same pair `ControlInfo` answers."""
+    from clausters.defs import control
+
+    plain = control("freq", 440.0)
+    assert plain.range is None
+    assert plain.min(2.0).kind == "BinaryOpUGen"
+    assert plain.max(2.0).kind == "BinaryOpUGen"
+
+    ranged = control("cutoff", 800.0, min=100.0, max=5000.0, step=1.0)
+    assert ranged.range == (100.0, 5000.0)
+    assert ranged.step == 1.0
+    assert ranged.min(2.0).kind == "BinaryOpUGen"

@@ -243,6 +243,12 @@ sd = SynthDef("voice", out(0.0, sine(freq=freq) * 0.2))
 knob(freq)              # name, default and range: all from the control
 ```
 
+They are declared as `min=`/`max=` and read back as `freq.range` (a `(min, max)`
+pair, or `None`) and `freq.step` — not as attributes of those names, because a
+control **is a signal** and `min`/`max` on a signal are the binary operators
+(`freq.min(other)` composes a `BinaryOpUGen`). `ControlInfo` answers the same
+`range`, so a widget built from either reads one thing.
+
 It is the one thing about a control only the person writing the graph knows, and
 writing it here is what stops a GUI from declaring it a second time where nothing
 checks the two against each other. A widget built from a control takes the

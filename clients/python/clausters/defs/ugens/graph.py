@@ -145,10 +145,17 @@ class Control(_Node):
         #: is a statement about the surface, not a constraint (see
         #: `clausters.defs.info.ControlInfo`, which a FaustDef fills from its
         #: own ``hslider`` declaration).
-        self.min = None if min is None else float(min)
-        self.max = None if max is None else float(max)
-        self.step = None if step is None else float(step)
-        if (self.min is None) != (self.max is None):
+        #:
+        #: **Held privately and read through `range`/`step`**: a control is a
+        #: signal, and `min`/`max` on a signal are the binary operators
+        #: (``freq.min(other)`` composes a ``BinaryOpUGen``). An attribute of
+        #: either name shadows the operator, which is how the range first
+        #: shipped and what the TypeScript port caught, its compiler refusing
+        #: the same override Python had accepted in silence.
+        self._min = None if min is None else float(min)
+        self._max = None if max is None else float(max)
+        self._step = None if step is None else float(step)
+        if (self._min is None) != (self._max is None):
             raise ValueError(
                 f"control {self.name!r}: a range is min *and* max, and it is "
                 "either declared or not")
@@ -160,10 +167,27 @@ class Control(_Node):
         if self.lag_down is not None and self.lag is None:
             raise ValueError("lag_down requires lag (the up time)")
 
+    @property
+    def range(self):
+        """``(min, max)`` — the range this control is meant to be driven over —
+        or ``None`` when it declares none.
+
+        The read side of the ``min=``/``max=`` a control is declared with, and
+        the same property `clausters.defs.info.ControlInfo` answers, so a widget
+        built from either reads one thing. It is a property rather than two
+        attributes because ``min``/``max`` on a signal are the binary operators.
+        """
+        return None if self._min is None else (self._min, self._max)
+
+    @property
+    def step(self):
+        """The increment this control is meant to move in, or ``None``."""
+        return self._step
+
     def _signature(self):
         """The full identity used to detect conflicting reuses of a name."""
         return (self.default, self.rate, self.lag, self.lag_down,
-                self.min, self.max, self.step)
+                self._min, self._max, self._step)
 
     def __repr__(self):
         return f"Control({self.name!r}, {self.default!r})"
