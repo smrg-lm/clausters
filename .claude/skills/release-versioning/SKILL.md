@@ -34,12 +34,37 @@ package, never the wire.
    reverse does not hold — a minor bump can ship without touching either counter.
 4. **At `1.0.0`** the semantics become the standard post-1.0 ones (major breaks,
    minor adds, patch fixes); the ABI counters keep their role unchanged.
-5. **A counter moves once per release, not once per commit.** If the same
-   boundary changes again before that number has shipped (no tag yet), **amend**
-   the existing bump and its comment instead of bumping past it — a counter
-   states the distance from the last *published* boundary, not the history of
-   how the release got there. The same holds for the SemVer tier rule 3 drags
-   along: one breaking tier per release, however many breaking changes it took.
+5. **"Published" means *tagged*, everywhere in this document — and the two
+   kinds of number do opposite things with that.** This rule used to say a
+   counter "states the distance from the last published boundary" and told you
+   to **amend** an unshipped bump rather than move past it. That was wrong for
+   the ABI counters, it contradicted the release procedure below (step 2 asks
+   only whether a counter *moved* since the last tag, never whether it moved by
+   one), and its ambiguity is what made it unenforceable: read "published" as
+   "in the tree" and every bump is legal, read it as "tagged" and every bump is
+   a violation, so whichever reading suited the moment was always available.
+   The split now, with the reason each way:
+
+   - **The ABI counters bump whenever their boundary changes — per commit is
+     correct, and gaps are free.** Both are compared by **equality and nothing
+     else** (`header.abi_version != ABI_VERSION` in `clausters-core/src/shm.rs`,
+     `got != CORE_ABI_VERSION` in `clients/python/clausters/_native.py`).
+     Nothing subtracts them, orders them or counts them, so "distance" was a
+     quantity with no consumer. What per-commit bumping *does* buy is real: in
+     this source checkout the staged `_bin`/`_libs` copy wins over `target/`,
+     and a counter that moved makes a stale staging fail with *"speaks ABI v21,
+     this binding v22"* instead of an `AttributeError` at some later call site.
+     Under the amend rule both sides would read the same number all cycle and
+     that failure would surface as a missing symbol.
+   - **The SemVer tier moves once per unreleased cycle.** Here the old rule was
+     right and stays: a version is consumer-facing and ordering-sensitive, and
+     bumping the breaking tier twice before a tag invents a release that never
+     existed. If the tier has already moved since the last tag, a further
+     breaking change rides the bump that is already there.
+
+   So a counter is *not* the last tag's plus one, and it is not meant to be;
+   check that it **differs**, which is rule 3's trigger and all any consumer
+   reads.
 
 Rationale (why the decouple) is in `docs/decisions.md`.
 
@@ -61,10 +86,22 @@ the last tag, fix it as its own commit first, then release.
    `package.json` that disagrees with the crate. The other three are on trust,
    and `clients/gui` in particular has drifted before precisely because no root
    build reads its manifest.
-2. **Both ABI counters against the last tag** —
-   `git show <last-tag>:src/server/ipc.rs | grep ABI_VERSION` and the same for
-   `crates/clausters-ffi/src/lib.rs`'s `CORE_ABI_VERSION`. If either moved, rule
-   3 above requires the breaking tier to have moved too; check, don't assume.
+2. **Both ABI counters and the SemVer tier against the last tag** —
+   `.claude/skills/release-versioning/versions.sh`, which prints all three and
+   exits non-zero if it cannot find one. Read it by rule 5: a counter that
+   **differs** is what rule 3 triggers on — by how much is not a question and a
+   gap is not a defect — while the version is the one that must have moved its
+   breaking tier **exactly once** since the tag. Two steps there (0.8.1 → 0.9.0
+   → 0.10.0) invented a release that never existed; settle on one before
+   tagging rather than tagging both.
+
+   The script **searches** for each constant instead of naming its path, and
+   that is the point rather than tidiness: `ABI_VERSION` has already moved file
+   once (`src/server/ipc.rs` → `crates/clausters-core/src/shm.rs`), and the
+   hardcoded `git show <tag>:src/server/ipc.rs | grep ABI_VERSION` this step
+   used to be went on returning an empty string afterwards — which reads
+   exactly like "did not move". A check whose failure mode is silence is not a
+   check, which is the same defect rule 5 had in prose.
 3. **Rehearse the gate before the tag exists.** `gh workflow run release.yml
    --ref main` runs `release.yml`'s `verify` job — the full fmt/clippy/rustdoc
    feature matrix plus `cargo test` on the default set and on `+embed` — with
