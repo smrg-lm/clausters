@@ -255,6 +255,25 @@ server.quit()                          # or stop it altogether
 
 Ownership is what separates them, all the way down. An attached handle did not start the process, so `close()` releases the connection and leaves the server standing; stopping it is `quit()`, which the server obeys over the wire. Unlike a bare `Server(...)`, `attach()` verifies: a handle pointing where nobody answers raises there and then, rather than dropping every later message into a UDP void that reports nothing back. It also **reconciles** — a server this client did not launch may have been booted with other flags, so the handle re-reads the real capacities (`query_info`) and resizes its allocators to them instead of trusting its own `options`.
 
+The GUI host has the same pair, and ownership means the same thing there. **`GuiHost.attach()`** connects to a host already running — one left behind by a script that ended, one launched from a terminal, one another process owns — and `stop()` then closes the connection and leaves the host standing, windows and all:
+
+```python
+from clausters.gui import GuiHost, view, label
+
+gui = GuiHost().attach()               # raises if no host answers there
+view(label(text="from a second script"), title="Panel").open(host=gui)
+gui.stop()                             # the host keeps running
+```
+
+It verifies like the server's, over UDP — the one carrier a host always listens on, so the probe is valid whichever one you then talk over. There is no reconcile step: a host publishes no capacities to resize a handle from. What it does share is the widget-id namespace, so **two handles on one host want `share=`** (the same arithmetic as two clients on one server), or both start naming widgets at 1000.
+
+A session takes a host it did not start the same way it takes a server: through the constructor, not a verb of its own.
+
+```python
+session = Session(Server(port=57130).attach(), gui=GuiHost().attach())
+session.gui()                          # that host; nothing is launched
+```
+
 From a terminal, the same three verbs need no script (see [the command line](cli.md)):
 
 ```sh

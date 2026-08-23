@@ -59,6 +59,11 @@ class GuiHost:
     def __init__(self, host: str = "127.0.0.1", port: int = DEFAULT_PORT,
                  transport: str = "tcp", interface=None, share=None):
         self.target = (host, port)
+        #: whether this handle built its own carrier — a supplied ``interface``
+        #: may reach a host over something that does not answer a UDP probe, so
+        #: `attach` does not verify one (the audio `clausters.defs.Server` draws
+        #: the same line).
+        self._own_carrier = interface is None
         if interface is not None:
             self._osc = interface
         elif transport == "tcp":
@@ -143,10 +148,54 @@ class GuiHost:
             ready_timeout=ready_timeout).start()
         self.start()
         if adopt_ambient:
-            from . import ambient_host, set_ambient_host
+            self._adopt_ambient()
+        return self
 
-            if ambient_host() is None:
-                set_ambient_host(self)
+    def _adopt_ambient(self):
+        """Register as the ambient host when none is, first-wins — the mirror of
+        `clausters.defs.Server.boot`'s ``adopt_default``."""
+        from . import ambient_host, set_ambient_host
+
+        if ambient_host() is None:
+            set_ambient_host(self)
+
+    def attach(self, *, timeout: float = 0.3, adopt_ambient: bool = True) -> "GuiHost":
+        """Connect this handle to a host **already running** at its address, and
+        return ``self``.
+
+        The other half of `boot`, for the host nobody here started: one left
+        behind by a script that ended, one launched from a terminal, one another
+        process owns. Ownership is the difference and it runs through the pair —
+        this handle did not start the process, so `stop` closes the connection
+        and leaves the host standing, windows and all.
+
+        Unlike a bare ``GuiHost(...).start()``, this **verifies**: a handle
+        pointing where nobody answers raises here, rather than sending every
+        later ``/gui_def`` into a void that reports nothing back.
+
+        The probe goes over UDP whatever carrier this handle then talks over
+        (`clausters.launch.gui_is_up`), so it says the host's front is bound,
+        not that its TCP leg is up — a host started with ``--no-tcp`` answers the
+        probe and then refuses a ``transport="tcp"`` connection.
+
+        Args:
+            timeout: seconds to wait for the ``/gui_query`` probe.
+            adopt_ambient: make this the ambient host when none is registered,
+                exactly as `boot` does.
+
+        Returns: ``self``, so ``GuiHost(port=…).attach()`` reads as one
+        expression.
+        """
+        from ..errors import ServerError
+        from ..launch import gui_is_up
+
+        if self._own_carrier and not gui_is_up(*self.target, timeout=timeout):
+            raise ServerError(
+                f"no GUI host answers at {self.target[0]}:{self.target[1]} — "
+                "`boot()` one there, or point this handle where one is running")
+        self.start()
+        if adopt_ambient:
+            self._adopt_ambient()
         return self
 
     def start(self) -> "GuiHost":

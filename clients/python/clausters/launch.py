@@ -39,7 +39,8 @@ from . import _cli
 from .base._oscinterface import OscUdpInterface
 from .errors import ServerError
 
-__all__ = ["ServerProcess", "GuiProcess", "default_shm_path", "server_is_up", "DEFAULT_PORT"]
+__all__ = ["ServerProcess", "GuiProcess", "default_shm_path", "server_is_up", "gui_is_up",
+           "DEFAULT_PORT"]
 
 #: The audio server's fixed UDP port (``osc::server::DEFAULT_PORT``). The server
 #: binary always binds this; it is not a CLI option.
@@ -77,6 +78,23 @@ def server_is_up(host: str = "127.0.0.1", port: int = DEFAULT_PORT,
     osc = OscUdpInterface().start()
     try:
         osc.send_msg((host, port), "/server_status")
+        return osc.recv(timeout) is not None
+    finally:
+        osc.close()
+
+
+def gui_is_up(host: str = "127.0.0.1", port: int = GUI_DEFAULT_PORT,
+              timeout: float = 0.3) -> bool:
+    """Whether a GUI host already answers at ``host:port``.
+
+    The `server_is_up` of the visual side, and the probe `GuiProcess` waits on:
+    a host replies ``/gui_info`` to ``/gui_query`` even for a widget id it does
+    not have, so the reply alone says the front is bound. It goes over UDP,
+    which the host always listens on (TCP can be turned off, UDP cannot), so the
+    probe is valid whatever carrier the client will then talk over."""
+    osc = OscUdpInterface().start()
+    try:
+        osc.send_msg((host, port), "/gui_query", 0)
         return osc.recv(timeout) is not None
     finally:
         osc.close()
@@ -364,8 +382,8 @@ class GuiProcess(_Process):
         return argv
 
     def _wait_ready(self, deadline: float):
-        """Poll ``/gui_query`` until the host answers (its UDP front is bound). A
-        fresh host replies ``/gui_info`` even for a missing widget id."""
+        """Poll until the host answers, on one socket (`gui_is_up` is the same
+        probe as a single shot, for a host this process did not start)."""
         osc = OscUdpInterface().start()
         try:
             while time.monotonic() < deadline:

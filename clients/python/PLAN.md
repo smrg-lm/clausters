@@ -547,6 +547,62 @@ the def already has removes the asymmetry rather than papering over it.
   apart from its control, `unbind`, the empty-window refusal, a node or a bare
   id, and a redraw leaving the window bindable.
 
+- ✅ **C47 — The host this handle did not start: `attach`, and a session that
+  takes one** *(done 2026-08-23)*. The question W24 could not port until the
+  reference answered it: the page reaches a host by three names (`guiHost()`,
+  `newGuiHost()`, `Session.connectGui(url)`), and `connectGui` is a verb this
+  client never had. Answering it by renaming the three would have invented a
+  fourth rule; the answer is that **the host already had the server's pair, with
+  half of it unnamed**. `GuiHost(host, port)` was an attach that did not verify,
+  and `boot` was the only verb.
+
+  What landed:
+
+  - **`GuiHost.attach()`**, the peer of `Server.attach()` — verify, connect,
+    adopt the ambient registration (`adopt_ambient`, first-wins), own no
+    process. `stop` already read ownership off `_process`, so an attached host
+    is left standing, windows and all; the verb only had to stop lying about
+    having checked. `clausters.launch.gui_is_up` is the probe, the `server_is_up`
+    of the visual side: `/gui_query 0` answered by `/gui_info`, which a host
+    replies to even for a widget id it does not have.
+  - **The probe goes over UDP whatever carrier the handle then uses**, because
+    UDP is the one leg the host cannot turn off (`--no-tcp` exists, no
+    `--no-udp` does). So it says *the front is bound*, not *your carrier is up* —
+    a host started with `--no-tcp` answers the probe and then refuses a
+    `transport="tcp"` connection. Written into the docstring rather than
+    papered over.
+  - **A supplied `interface` skips the verification** (`_own_carrier`), the same
+    line `Server.attach` draws: a carrier this module does not know about may
+    reach a host that answers no UDP probe.
+  - **`Session(server, gui=host)`** — the visual half of taking a `Server` the
+    session did not boot. Not a verb: the session already accepts a server
+    through the constructor and has no `attach_server`, so the GUI gets the same
+    door. `gui()` then returns that host and launches nothing, which is the
+    idempotence it already had, stated for a host it was handed.
+  - **`Session.connectGui(url)` falls**, and it falls without being replaced:
+    it did *connect* and *adopt* in one call, and both halves now exist
+    separately and symmetrically with the server's. Recorded for the port in
+    `clients/web/PLAN.md` (W24).
+
+  What this does **not** decide, deliberately: whether a host may be remote.
+  It may — `GuiHost` is a plain OSC client to any address — but the useful
+  topology (host and server together where the screen and the device are, script
+  anywhere) is a **bind** question, and the binds are the server's and the
+  host's, not this client's. It went to `clients/gui/PLAN.md` and `PLAN.md`
+  instead. Two things would degrade under it and are written down there: the
+  `path` carrier of a `Source` (the client writes a temp file the host mmaps —
+  one filesystem assumed, so remote means inline-only under the 2 KB ceiling)
+  and `--data-dir` (the GuiDef store is the host's).
+
+  Tests: in `tests/test_gui_host.py` — the refusal, the supplied carrier that is
+  not probed, the process it does not own, ambient adoption first-wins with
+  `stop` giving it up, and a session taking a host it did not boot. Example:
+  `examples/gui_attach.py`, which plays both parts in one run (boot, attach a
+  second handle with an `IdShare`, a window from each, and the guest letting go
+  while both windows stay). Docs: the GUI half of "Several servers, and the one
+  you did not start" in `docs/src/sessions.md`, and `attach` named beside `boot`
+  in `docs/src/gui.md`.
+
 - ⬜ **C44 (analysis, not scheduled) — the inverse direction: a widget inside a
   def**. Faust's model, where `hslider` *is* the control declaration, suggests
   `play(sine(freq=knob(min=110, max=880)))` — the widget coerced into a control

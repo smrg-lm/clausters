@@ -60,6 +60,11 @@ class Session(Environment):
             `OscNrtInterface` for offline rendering.
         clock: the `TempoClock` that sequences it; a fresh one at tempo 1.0 is
             created when omitted.
+        gui: a `clausters.gui.GuiHost` this session drives instead of booting
+            one -- the visual half of taking a `Server` the session did not
+            start, and the way a session adopts a host reached with
+            `clausters.gui.GuiHost.attach`. `gui` then returns it rather than
+            launching anything.
 
     Closing the session closes its server, so the common shape is a context
     manager:
@@ -71,7 +76,7 @@ class Session(Environment):
     ```
     """
 
-    def __init__(self, server: Server, clock: TempoClock | None = None):
+    def __init__(self, server: Server, clock: TempoClock | None = None, gui=None):
         super().__init__()          # Environment: its own RNG root + server slot
         self.server = server
         self.clock = clock if clock is not None else TempoClock()
@@ -79,10 +84,13 @@ class Session(Environment):
         #: session's server/rng (``current_tt.clock.session``), keeping several
         #: sessions isolated from each other and from the default session.
         self.clock.session = self
-        #: the GUI host opened lazily by `gui`, if any; it owns its own process
-        #: and is stopped with the session. The server owns any process it
-        #: booted (see `Server.boot` / `live`), stopped via ``server.close``.
-        self._gui = None
+        #: the session's GUI host: the one handed to the constructor, or the one
+        #: `gui` boots lazily. Stopped with the session — and `GuiHost.stop`
+        #: stops the ``clausters-gui`` process only if that host booted it, so a
+        #: host reached with `clausters.gui.GuiHost.attach` is left standing.
+        #: The server works the same way (see `Server.boot` / `Server.attach`),
+        #: stopped via ``server.close``.
+        self._gui = gui
         #: external OSC destinations opened by `destination`, closed with the
         #: session.
         self._destinations = []
@@ -265,7 +273,10 @@ class Session(Environment):
         on `close` (or interpreter exit).
 
         Idempotent: repeated calls return the same `GuiHost` (the ``port`` and
-        other options of the first call stand).
+        other options of the first call stand). A session **given** a host (the
+        constructor's ``gui``) is already settled: this returns that host and
+        launches nothing, so the arguments below are ignored -- the same way
+        `Server` is taken rather than booted when the constructor is used.
 
         The host booted here also becomes the **ambient** one if none is
         registered yet (`clausters.gui.GuiHost.boot`'s ``adopt_ambient``), so
@@ -484,13 +495,15 @@ class Session(Environment):
 
     def close(self):
         """Close the underlying `Server` and release the clock's master-clock
-        tracker (from `lock_to_server`), if any. Also stops the GUI host (`gui`)
-        and, if `live` launched a server, that process too — so nothing is left
-        running. Done automatically when the session is used as a context manager
+        tracker (from `lock_to_server`), if any. Also stops the GUI host and, if
+        `live` launched a server, that process too — so nothing this session
+        started is left running. What it did **not** start it leaves standing:
+        `clausters.gui.GuiHost.stop` ends a ``clausters-gui`` process only when
+        that host booted it, so an attached host keeps its windows. Done automatically when the session is used as a context manager
         and, for launched processes, on interpreter exit."""
         self.deactivate()      # a closed session is nobody's ambient one
         if self._gui is not None:
-            self._gui.stop()   # stops its clausters-gui process too
+            self._gui.stop()   # its process too, if that host booted one
                                # (and gives up the ambient registration)
             self._gui = None
         for dest in self._destinations:

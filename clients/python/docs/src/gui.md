@@ -74,9 +74,11 @@ nobody frames. (`window` is the older spelling of `view` and still works.)
 of a `SynthDef`: a tree you compose and then send, not a live widget. So the
 tree is the subject of the sentence (`view(...).open()`), the way a def is
 (`synthdef.send(server)`), and `open()` finds the host the way `plot` and
-`scope` do: the one `GuiHost().boot()` or `Session.gui()` registered, else one
-it boots. Pass `host=` to say which, and `gui.open(tree)` still works — it is
-the low-level door `open()` goes through.
+`scope` do: the one `GuiHost().boot()`, `GuiHost().attach()` or
+`Session.gui()` registered, else one it boots. Pass `host=` to say which, and
+`gui.open(tree)` still works — it is the low-level door `open()` goes through.
+(`attach()` is the host this handle did not start; see
+[Sessions](sessions.md#several-servers-and-the-one-you-did-not-start).)
 
 **No widget has an id.** You passed `name=` instead, and `open` hands back a
 window handle you index by name — `win["cutoff"]`. The host does use integer

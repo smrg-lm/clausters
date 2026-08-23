@@ -51,9 +51,17 @@ class _Recorder:
 
     def __init__(self):
         self.sent = []
+        self.started = False
+
+    def start(self):
+        self.started = True
+        return self
 
     def send_msg(self, target, *args):
         self.sent.append(args)
+
+    def close(self):
+        self.started = False
 
 
 def test_open_assigns_ids_in_the_document_it_sends_and_leaves_the_tree_alone():
@@ -215,3 +223,62 @@ def test_load_names_a_persisted_def_and_allocates_nothing():
     assert host._osc.sent == [("/gui_load", "mixer")]
     assert host._alloc.in_use == 0
     assert host._children == {}
+
+
+# ---- attach: the host this handle did not start -------------------------
+
+def test_attach_refuses_an_address_nobody_answers():
+    """The whole point of the verb over a bare `start()`: a handle pointing
+    nowhere says so here, instead of dropping every later `/gui_def` into a
+    void that reports nothing back."""
+    from clausters.errors import ServerError
+
+    with pytest.raises(ServerError, match="no GUI host answers"):
+        GuiHost(port=57997).attach(timeout=0.05)
+
+
+def test_attach_does_not_probe_a_supplied_carrier():
+    """A carrier this module does not know about may reach a host that answers
+    no UDP probe, so the verification is skipped there — the line
+    `clausters.defs.Server.attach` draws with ``_own_carrier``."""
+    iface = _Recorder()
+    host = GuiHost(port=57997, interface=iface).attach(adopt_ambient=False)
+    assert iface.started
+
+
+def test_attach_owns_no_process():
+    """Ownership is what separates `attach` from `boot`, and `stop` reads it
+    off this: no process here means the host is left standing."""
+    host = GuiHost(port=57997, interface=_Recorder()).attach(adopt_ambient=False)
+    assert host._process is None
+
+
+def test_attach_adopts_the_ambient_host_first_wins():
+    from clausters.gui import ambient_host, set_ambient_host
+
+    set_ambient_host(None)
+    try:
+        first = GuiHost(port=57997, interface=_Recorder()).attach()
+        assert ambient_host() is first
+        second = GuiHost(port=57996, interface=_Recorder()).attach()
+        assert ambient_host() is first          # already registered, not displaced
+        third = GuiHost(port=57995, interface=_Recorder()).attach(adopt_ambient=False)
+        assert ambient_host() is first
+        first.stop()
+        assert ambient_host() is None           # stopping gives the registration up
+    finally:
+        set_ambient_host(None)
+
+
+def test_a_session_takes_a_host_it_did_not_boot():
+    """The visual half of taking a `Server` the session did not start: the
+    constructor, not a verb of its own — and then `gui` launches nothing."""
+    from clausters import Session
+    from clausters.base import OscNrtInterface
+    from clausters.defs import Server
+
+    host = GuiHost(port=57997, interface=_Recorder())
+    session = Session(Server(interface=OscNrtInterface()), gui=host)
+    assert session.gui() is host
+    assert session.gui_host is host
+    assert host._process is None
