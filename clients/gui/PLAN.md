@@ -2222,6 +2222,12 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 
 ## Found by use: the running list of fixes
 
+- ⬜ **The host's binds follow the server's rule: every carrier takes an
+  address, loopback by default** *(named 2026-08-23)*. The rule and the table
+  live in the root `PLAN.md`'s "Found by use", which owns it — both fronts
+  change together. The host's half: `--ws` binds `0.0.0.0` today and becomes
+  `--ws [addr:]port` defaulting to loopback, and the TCP leg **stays** loopback
+  whatever else moves, because it is the one that is on by default.
 - ✅ **A clip's curve body drew nothing, in both fronts.** `Element::draw_body`
   paints nothing by default and `Curve` never overrode it, so an automation
   clip — the multitrack editor's whole envelope lane — was an empty rectangle

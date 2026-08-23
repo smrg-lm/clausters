@@ -1596,6 +1596,34 @@ Anything unresolved lives here or under "Future directions", both **after** the
 tracks: never inside the milestone that happened to be open, and never among
 finished work, where a pending item reads as done.
 
+- ⬜ **Every carrier takes an address, and all three default to loopback**
+  *(named 2026-08-23, deciding whether a GUI host may be remote)*. The two OSC
+  fronts are siblings and bind differently, and neither is quite right:
+
+  | leg | audio server | GUI host |
+  | --- | --- | --- |
+  | UDP | `127.0.0.1`, always on | `127.0.0.1`, always on |
+  | TCP | `--tcp <port>` → **`0.0.0.0`** | on by default → `127.0.0.1` |
+  | WS | `--ws <port>` → **`0.0.0.0`** | `--ws <port>` → **`0.0.0.0`** |
+
+  Choosing a carrier is not consenting to the network, and today it is: a
+  `--tcp` or a `--ws` for a client on the same machine opens the port to the
+  LAN. The fix is one shape for all three — `--tcp [addr:]port`,
+  `--ws [addr:]port`, **loopback by default**, and `--ws 0.0.0.0:57120` for
+  whoever means the LAN, which makes the widening a typed decision instead of a
+  side effect. The WebSocket leg is not an exception: a page served locally
+  reaches `ws://127.0.0.1` either way, so the common case pays nothing.
+
+  The GUI host's TCP is the one that must *stay* loopback whatever else changes
+  — it is on by default, so it is the leg a default-configured host exposes.
+
+  Remote is then something you ask for, which is where it belongs: two things
+  degrade under it and neither is a bind — a `Source`'s `path` carrier (the
+  client writes a temp file the host mmaps, so one filesystem is assumed, and
+  remote means inline-only under the 2 KB ceiling) and `--data-dir` (the GuiDef
+  store is the host's). `GuiHost.attach()` is unaffected: it is a verb of
+  *ownership*, not of distance, and its real case is local — a host left
+  running, one launched from a terminal.
 - ✅ **A transport addressed in samples still needs a beat grid** *(noticed 2026-08-16 while closing T5, which left it open on purpose; fixed the same day, on the user's "look at the smell and find a solution")*. `/transport_play`, `/transport_stop`, `/transport_locateSample` and `/transport_loop` all refused until `/transport_set` had defined a grid, because every `/transport_*` command but that one always had. For an audio editor that meant declaring a tempo it never reads — `examples/transport_seek.py` set one and said in a comment that it was arbitrary, which is exactly what a smell is: a comment apologising for a call.
 
   **The fix is that the transport stops being optional and the grid starts being.** `OscServer.transport` was an `Option<Transport>` doing two jobs — "is there a transport" and "is there a grid" — and those are different questions the moment a position exists in samples. It is now a plain `Transport` that exists from boot, with `defined` saying whether `origin_sample`/`tempo` mean anything; `defined` is the wire field of the same name, so the reply did not change shape and no client had to learn a new one. Only the two commands that name a **beat** refuse without a grid: `/transport_locate`, and `/transport_play` *given a position*. Everything else — a bare play, a stop, `/transport_group`, `/transport_locateSample`, `/transport_loop`, and `/sched_atTransport`, which needed a bound group and not a tempo — is in samples and now needs nothing.

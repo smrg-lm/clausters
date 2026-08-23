@@ -2016,14 +2016,43 @@ as some other milestone has a better claim on it.
   example port (W16), because a page written against the current three doors is
   a page written twice.
 
-- **`Session.connectGui(url)` is a verb this client invented**, and it does two
-  things at once: *connect* and *adopt*. Its adopting half briefly had a
-  reference counterpart (`session.adopt_gui` / `adoptGui`), which left with the
-  notebook track that was its only caller, so the whole verb is invented again
-  and the question is back to one: does the reference client want a session to
-  install a host it did not open? Answer that first — the standing rule says
-  the reference leads — and `connectGui` follows from it, either dropped in
-  favour of the explicit pair or matched by a shortcut there.
+  **Decided 2026-08-23**, all three:
+
+  - **The view opens itself, and the element goes in `open`.** `view(...).open(el)`
+    — the element positional, `host=` by keyword, exactly the shape the reference
+    client settled in C41 (`open(*blobs, id=None, host=None)`) with one platform
+    argument added. `guiHost().open(tree)` stays as the low-level door it is in
+    Python, and `page.fit(id, el)` stops being something an author writes: `open`
+    calls it. The two-doors-at-once shape every page uses today
+    (`GuiHost.page()` for the driver, `guiHost()` for the surface, then `fit`) is
+    what this replaces.
+  - **With no element, `open()` makes a canvas and appends it.** The literal
+    continuation of the reference client's sentence — *a view with no parent is a
+    window* becomes *a view with no element is a canvas* — and it is what makes
+    several canvases in one document fall out rather than being a feature. The
+    machinery is already there: `newGuiHost` appends nothing, `attach(defId,
+    canvas)` takes one per def, and the host's own web front is the one piece
+    still singular (`window`/`render`/`current_def` in `host/web.rs`), which is
+    the *other* W24 entry and this one's only dependency. Taking the page's
+    default canvas instead was the alternative, and it breaks at the second
+    view — which is the case this whole entry exists for.
+  - **The three names collapse onto the reference's rule** (C47, done
+    2026-08-23): `GuiHost.boot(adopt_ambient=…)` / `GuiHost.attach()`,
+    first-wins, `stop()` giving the registration up. `guiHost()` keeps its memo
+    as *the page's host with the page's default canvas* and becomes the ambient
+    one; `newGuiHost()` is its instance counterpart. **`Session.connectGui(url)`
+    goes**: it did *connect* and *adopt* in one call, and the reference now has
+    both halves separately — the constructor takes a host (`new Session(server,
+    clock, gui)`) the way it takes a server, and `attach()` is the connect. A
+    session installing a host it did not open is the constructor, not a verb.
+
+- **`Session.connectGui(url)` is a verb this client invented** — *connect* and
+  *adopt* in one call — and the reference answered it on 2026-08-23 (C47): a
+  session installs a host it did not open **through the constructor**, the way
+  it takes a `Server`, and connecting is `GuiHost.attach()`. So the verb is
+  dropped rather than matched, and both halves are ported instead. Its removal
+  rides with the entry above, which is where the three names are settled
+  together.
 - **Two names the sweep of 2026-08-03 left over**, each too small to own a
   milestone and neither a difference with a reason: `Routine.run(func, clock,
   quant)`, the classmethod that constructs and starts in one call (the instance

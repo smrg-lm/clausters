@@ -106,26 +106,21 @@ written (finish one client, then port), and it is why the port now goes ahead of
 everything the phase was ordered for: **W16's acceptance is that a pair reads as
 the same calls in the same order**, so an example ported against the surface the
 web client has today is an example written twice. The three entries the reform
-left behind lead the phase, and the first of them is the one it could not answer
-from the native side.*
-
-- ⬜ **What `open()` means where there is no window: the page, the canvas and
-  the document** *(`clients/web/PLAN.md`, W24)*. First because it is a decision
-  and the rest is work. The reform settled the native half — a view with no
-  parent is a window — and a page has no window, so the sentence is unfinished
-  exactly where the user has been asking about it: several canvases in one
-  document, each the page's equivalent of one opened view. It is one decision
-  with three surfaces (where a mounted view's box comes from, what `open()` with
-  no element does, and the three names a host arrives by — `guiHost`,
-  `newGuiHost`, `connectGui`), and answering it subsumes the `connectGui` entry
-  that has sat in W24 since the sweep.
+left behind lead the phase. The decision that led them was taken the same day —
+`view(...).open(el)`, a canvas of its own where no element is named, and the
+page's three host names collapsed onto the reference's `boot`/`attach` pair — so
+what is left of it is work, and the port carries it.*
 
 - ⬜ **The GUI node becomes a `View`** *(`clients/web/PLAN.md`, W24)* — the port
   itself, whose shape that entry now states in six pieces: the view object and
   its name index, the duplicate-name error, ids per instance, the root that
   decides, the `source`, the control's range, and the bind against it. It is
   written there rather than here so the two clients do not re-derive it
-  differently, which is the whole reason the shape was written down at all.
+  differently, which is the whole reason the shape was written down at all. It
+  now carries the page decision as well — the element in `open`, a canvas where
+  none is named, `connectGui` dropped for a constructor slot and `attach` — and
+  the host's web front going from one canvas to N is its only dependency, the
+  entry beside it in W24.
 
 - ⬜ **A control has a range and no curve, and no step** *(`clients/gui/PLAN.md`,
   Found by use)*. The host draws a control linearly over `min..max` and that is
@@ -142,6 +137,14 @@ from the native side.*
   a score's `display_list`. The samples got the object; these are the same shape
   and did not, because their builders flatten them before the node exists. Take
   it before the port, so the port carries one rule rather than two.
+
+- ⬜ **Every carrier takes an address, and all three default to loopback**
+  *(`PLAN.md`, Found by use; the host's half in `clients/gui/PLAN.md`)*. Named
+  while deciding whether a GUI host may be remote: it may, and the useful
+  topology is a bind question rather than a client one. Choosing a carrier is
+  not consenting to the network, and today `--tcp` and `--ws` open the port to
+  the LAN on both fronts. Here because it touches the server and the host at
+  once and nothing above it depends on it — not because it is urgent.
 
 - ⬜ **C45 — The examples pass** *(`clients/python/PLAN.md`, the API reform
   track)*. The reform changed how an example is *written* and 30 of the 70
