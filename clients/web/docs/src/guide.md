@@ -6,7 +6,7 @@ What follows is the layers from the bottom up, and — at the end — the three 
 
 ## The core: what is not written in TypeScript
 
-Everything that is a *value* or a *time* comes from `clausters-core` compiled to wasm, the same crate the server itself runs and the same one the Python client reaches through its C ABI. The OSC bytes, the beat/second/sample conversions, the bar grid, the NTP timetag, the beat-ordered scheduler queue, the seeded random stream, the builtins, the node/bus/buffer allocators: all of them are calls into that bundle.
+Everything that is a *value* or a *time* comes from `clausters-core` compiled to wasm, the same crate the server itself runs and the same one the Python client reaches through its C ABI. The OSC bytes, the beat/second/sample conversions, the bar grid, the NTP timetag, the beat-ordered scheduler queue, the seeded random stream, the builtins — the operators and conversions (`midicps`, `dbamp`, …) and the **range maps** (`linlin`, `linexp`, `explin`, `expexp`, `lincurve`, `curvelin`, `range`, `exprange`) — the node/bus/buffer allocators: all of them are calls into that bundle.
 
 This is not an optimization. It is what makes a page numerically **equal** to the server and to the other client rather than merely close: a seeded pattern replays identically in three languages, and a beat resolves to the same instant on both sides of a socket, because there is one implementation.
 

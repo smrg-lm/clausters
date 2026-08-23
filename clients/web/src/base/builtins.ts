@@ -15,6 +15,7 @@
 import {
     binary as coreBinary,
     degree_to_midinote as coreDegreeToMidinote,
+    map as coreMap,
     unary as coreUnary,
 } from "../core/clausters_core_web.js";
 
@@ -90,10 +91,10 @@ export const ne = bin("ne");
 export const bitand = bin("bitand");
 export const bitor = bin("bitor");
 export const bitxor = bin("bitxor");
-export const lshift = bin("lshift");
-export const rshift = bin("rshift");
+export const leftshift = bin("lshift");
+export const rightshift = bin("rshift");
 export const hypot = bin("hypot");
-export const hypotApx = bin("hypot_apx");
+export const hypotapx = bin("hypot_apx");
 export const ring1 = bin("ring1");
 export const ring2 = bin("ring2");
 export const ring3 = bin("ring3");
@@ -132,11 +133,11 @@ export const sqrt = un("sqrt");
 export const floor = un("floor");
 export const ceil = un("ceil");
 export const rint = un("rint");
-export const asInt = un("as_int");
-export const asFloat = un("as_float");
+export const asinteger = un("as_int");
+export const asfloat = un("as_float");
 export const squared = un("squared");
 export const cubed = un("cubed");
-export const recip = un("recip");
+export const reciprocal = un("recip");
 export const frac = un("frac");
 export const sign = un("sign");
 export const sinh = un("sinh");
@@ -155,6 +156,84 @@ export const dbamp = un("dbamp");
 export const ampdb = un("ampdb");
 export const octcps = un("octcps");
 export const cpsoct = un("cpsoct");
+
+// ---- range maps (SuperCollider's warp family) ----
+//
+// Reading a value out of one range and writing it into another, which is what a
+// control's position, a spec and an envelope's curve all are. The formulas live
+// once in `clausters_core::warp`, so a value mapped here, the same map on the
+// audio thread and the curve the GUI host draws are one curve.
+
+/** What an out-of-range input is trimmed to before it is mapped. */
+export type Clip = "minmax" | "min" | "max" | "none";
+
+const mapOp = (
+    op: string,
+    x: Num,
+    inLo: number,
+    inHi: number,
+    outLo: number,
+    outHi: number,
+    curve: number,
+    clip: Clip,
+): Num =>
+    isSeq(x)
+        ? x.map((v) => coreMap(op, clip, v, inLo, inHi, outLo, outHi, curve))
+        : coreMap(op, clip, x, inLo, inHi, outLo, outHi, curve);
+
+/** `x` off a linear range onto a linear one. */
+export const linlin = (
+    x: Num, inLo: number, inHi: number, outLo: number, outHi: number, clip: Clip = "minmax",
+): Num => mapOp("linlin", x, inLo, inHi, outLo, outHi, 0, clip);
+
+/**
+ * `x` off a linear range onto an exponential one — a fader position to a
+ * frequency. The output ends must not straddle zero; one *at* zero is nudged to
+ * the smallest same-signed value rather than giving a NaN.
+ */
+export const linexp = (
+    x: Num, inLo: number, inHi: number, outLo: number, outHi: number, clip: Clip = "minmax",
+): Num => mapOp("linexp", x, inLo, inHi, outLo, outHi, 0, clip);
+
+/** `x` off an exponential range onto a linear one — a frequency to a fader position. */
+export const explin = (
+    x: Num, inLo: number, inHi: number, outLo: number, outHi: number, clip: Clip = "minmax",
+): Num => mapOp("explin", x, inLo, inHi, outLo, outHi, 0, clip);
+
+/** `x` off an exponential range onto another. */
+export const expexp = (
+    x: Num, inLo: number, inHi: number, outLo: number, outHi: number, clip: Clip = "minmax",
+): Num => mapOp("expexp", x, inLo, inHi, outLo, outHi, 0, clip);
+
+/**
+ * `x` off a linear range onto one **bent** by `curve`: 0 is linear, negative
+ * builds fast then slow (the shape a fader wants), positive the reverse. Unlike
+ * {@link linexp} the bend spans zero freely.
+ */
+export const lincurve = (
+    x: Num, inLo: number, inHi: number, outLo: number, outHi: number,
+    curve = -4, clip: Clip = "minmax",
+): Num => mapOp("lincurve", x, inLo, inHi, outLo, outHi, curve, clip);
+
+/** The inverse of {@link lincurve}: off a bent range onto a linear one. */
+export const curvelin = (
+    x: Num, inLo: number, inHi: number, outLo: number, outHi: number,
+    curve = -4, clip: Clip = "minmax",
+): Num => mapOp("curvelin", x, inLo, inHi, outLo, outHi, curve, clip);
+
+/**
+ * A **bipolar** value (−1..1) onto `lo`..`hi`, linearly.
+ *
+ * Nothing is trimmed: a UGen knows its own signal range and a bare value does
+ * not, so an input past −1..1 overshoots the output by the same proportion
+ * instead of being clipped to an assumption.
+ */
+export const range = (x: Num, lo = 0, hi = 1): Num =>
+    mapOp("range", x, -1, 1, lo, hi, 0, "none");
+
+/** A **bipolar** value onto `lo`..`hi` exponentially. Untrimmed, for the reason {@link range} gives. */
+export const exprange = (x: Num, lo = 0.01, hi = 1): Num =>
+    mapOp("exprange", x, -1, 1, lo, hi, 0, "none");
 
 /**
  * Scale degree → MIDI note number in the pitch space `octave`/`root`, with

@@ -501,6 +501,14 @@ export function graph_bus_reserved(): Uint32Array;
 export function lissajous(left: Float32Array, right: Float32Array): Float32Array;
 
 /**
+ * JS face: one range map by name (`"linlin"`, `"linexp"`, `"lincurve"`, ...),
+ * with `clip` naming what an out-of-range input is trimmed to (`"minmax"`,
+ * `"min"`, `"max"`, `"none"`). `curve` is read only by the bent pair and the
+ * input bounds only by the maps that have an input range.
+ */
+export function map(op: string, clip: string, x: number, in_lo: number, in_hi: number, out_lo: number, out_hi: number, curve: number): number;
+
+/**
  * JS face: the boot-derived node-id partition for a node table of
  * `max_nodes` slots — `{clientBase, clientCapacity, autoBase, autoCapacity,
  * midiBase, midiCapacity}`, the same formula the server applies.
@@ -665,6 +673,7 @@ export interface InitOutput {
     readonly log_redoLabel: (a: number) => [number, number];
     readonly log_undo: (a: number, b: number) => [number, number, number, number];
     readonly log_undoLabel: (a: number) => [number, number];
+    readonly map: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => [number, number, number];
     readonly node_id_partition: (a: number) => [number, number, number];
     readonly osc_decode_packet: (a: number, b: number) => [number, number, number];
     readonly osc_decode_packet_timed: (a: number, b: number) => [number, number, number];

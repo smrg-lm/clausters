@@ -1539,6 +1539,31 @@ where it came from).
   **What it does not do**, unchanged from what is written above: an input inserted in the middle stays breaking, the clients still materialise every default (the wire has no sparse form), and `/ugen_query` still reports `name, default` per input — publishing optionality would change the reply's shape in three packages and nothing needs it yet.
 
 
+- ⬜ **`LinLin`/`LinExp` as UGens, over the warp family the core already
+  carries** *(named 2026-08-23, adding the warp family to `clausters_core`)*.
+  The eight range maps — `linlin`, `linexp`, `explin`, `expexp`, `lincurve`,
+  `curvelin`, `range`, `exprange` — now exist as **value** functions in
+  `clausters_core::warp`, reached by both clients, so a script maps a fader
+  position to a frequency without writing the arithmetic. A **signal** cannot:
+  there is no `LinExp` UGen (scsynth has one) and no `LinLin` pseudo-UGen, so
+  `saw(...).linexp(-1, 1, 200, 8000)` is unwritable and a def spells the
+  multiply-and-add by hand — which is exactly the drift the shared core exists
+  to prevent, since a def's hand arithmetic and a client's `linexp` are then two
+  implementations of one map.
+
+  **The formulas are not the work; the plumbing is.** `warp::apply_map` is the
+  body of every one of them and a UGen would call it per sample, so what this
+  milestone actually decides is the *shape*: they are five- and six-ary, so
+  they cannot join the `BinaryOpUGen`/`UnaryOpUGen` tables the way `midicps`
+  did, and each needs a descriptor in `dsp::registry`, an entry in
+  `docs/schemas.md`, a builder in `clients/python/clausters/defs/ugens` and its
+  TypeScript mirror, plus a row in the contrast tests that already caught eleven
+  drifted builders. Two questions come with it: whether the bounds are UGen
+  inputs (modulatable, which scsynth's `LinExp` allows) or init-rate like a
+  ramp's geometry, and whether `range`/`exprange` are UGens at all or the
+  method sclang makes them — a composition of `madd` that reads the signal's
+  own polarity, which our graph does not track.
+
 - ⬜ **The builders could be generated from the catalog instead of contrasted against it** *(named 2026-08-16, after the two contrast tests together caught eleven drifted builders, ten misspelled parameters and one UGen a client never got)*. The server's registry is the source of truth and each client hand-writes a mirror of it; the tests prove the mirrors agree, which is strictly weaker than not having mirrors. Generating `defs/ugens/*.py` and `defs/ugens/*.ts` from the registry would delete the class of bug rather than detect it.
 
   **The user's condition, stated when the idea was raised** *(2026-08-16)*: it is worth having **if the corroboration happens at compile time**. That points at the shape — not a generator anyone must remember to run, but a checked-in generated file plus a build step that regenerates and **fails on a diff**, the way `docs/bindings.md` is enforced by `tests/bindings.rs`. A generator whose output is not verified by the build is one more thing to forget.

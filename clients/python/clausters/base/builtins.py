@@ -20,15 +20,24 @@ from .. import _native
 
 BinaryOp = _native.BinaryOp
 UnaryOp = _native.UnaryOp
+MapOp = _native.MapOp
+Clip = _native.Clip
 
 
 def _is_seq(x):
-    return isinstance(x, (list, tuple))
+    """Whether `x` is a sequence of numbers rather than one number.
+
+    Anything iterable that is not a string counts, so the idiomatic Python
+    spellings all work — `midicps(range(0, 120))`, a generator, a `Buffer`'s
+    samples — rather than only the two types a first pass happened to name.
+    """
+    return not isinstance(x, (str, bytes)) and hasattr(x, "__iter__")
 
 
 def _extend(seq, n):
+    seq = list(seq)
     length = len(seq)
-    return [seq[i % length] for i in range(n)]
+    return [seq[i % length] for i in _py.range(n)]
 
 
 def _unop(op, x):
@@ -71,8 +80,8 @@ def ne(a, b): return _binop(BinaryOp.NE, a, b)
 def bitand(a, b): return _binop(BinaryOp.AND, a, b)
 def bitor(a, b): return _binop(BinaryOp.OR, a, b)
 def bitxor(a, b): return _binop(BinaryOp.XOR, a, b)
-def lshift(a, b): return _binop(BinaryOp.LSH, a, b)
-def rshift(a, b): return _binop(BinaryOp.RSH, a, b)
+def leftshift(a, b): return _binop(BinaryOp.LSH, a, b)
+def rightshift(a, b): return _binop(BinaryOp.RSH, a, b)
 def hypot(a, b): return _binop(BinaryOp.HYPOT, a, b)
 def ring1(a, b): return _binop(BinaryOp.RING1, a, b)
 def ring2(a, b): return _binop(BinaryOp.RING2, a, b)
@@ -92,13 +101,13 @@ def fold2(a, b): return _binop(BinaryOp.FOLD2, a, b)
 def wrap2(a, b): return _binop(BinaryOp.WRAP2, a, b)
 def gcd(a, b): return _binop(BinaryOp.GCD, a, b)
 def lcm(a, b): return _binop(BinaryOp.LCM, a, b)
-def hypot_apx(a, b): return _binop(BinaryOp.HYPOT_APX, a, b)
+def hypotapx(a, b): return _binop(BinaryOp.HYPOT_APX, a, b)
 
 
 # ---- unary primitives (native, f32) ----
 
 def neg(x): return _unop(UnaryOp.NEG, x)
-def abso(x): return _unop(UnaryOp.ABS, x)
+def abs(x): return _unop(UnaryOp.ABS, x)
 def sin(x): return _unop(UnaryOp.SIN, x)
 def cos(x): return _unop(UnaryOp.COS, x)
 def tan(x): return _unop(UnaryOp.TAN, x)
@@ -112,11 +121,11 @@ def sqrt(x): return _unop(UnaryOp.SQRT, x)
 def floor(x): return _unop(UnaryOp.FLOOR, x)
 def ceil(x): return _unop(UnaryOp.CEIL, x)
 def rint(x): return _unop(UnaryOp.RINT, x)
-def as_int(x): return _unop(UnaryOp.INTCAST, x)
-def as_float(x): return _unop(UnaryOp.FLOATCAST, x)
+def asinteger(x): return _unop(UnaryOp.INTCAST, x)
+def asfloat(x): return _unop(UnaryOp.FLOATCAST, x)
 def squared(x): return _unop(UnaryOp.SQUARED, x)
 def cubed(x): return _unop(UnaryOp.CUBED, x)
-def recip(x): return _unop(UnaryOp.RECIP, x)
+def reciprocal(x): return _unop(UnaryOp.RECIP, x)
 def frac(x): return _unop(UnaryOp.FRAC, x)
 def sign(x): return _unop(UnaryOp.SIGN, x)
 def log2(x): return _unop(UnaryOp.LOG2, x)
@@ -139,14 +148,85 @@ def octcps(x): return _unop(UnaryOp.OCTCPS, x)
 def cpsoct(x): return _unop(UnaryOp.CPSOCT, x)
 
 
-# Selector → function, so AbstractObject value subclasses can dispatch by the
-# same operator names the graph layer uses.
+# ---- range maps (native, f32 — SuperCollider's warp family) ----
+#
+# Reading a value out of one range and writing it into another, which is what a
+# control's position, a spec and an envelope's curve all are. The formulas live
+# once in ``clausters_core::warp``, so a value mapped here, the same map on the
+# audio thread and the curve the GUI host draws are one curve.
+#
+# ``clip`` says what an out-of-range input is trimmed to before it is mapped:
+# ``"minmax"`` (both ends, SuperCollider's default), ``"min"``, ``"max"``, or
+# ``"none"`` to extrapolate.
+
+def _map(op, x, in_lo, in_hi, out_lo, out_hi, curve=0.0, clip="minmax"):
+    mode = Clip[clip.upper()] if isinstance(clip, str) else Clip(clip)
+    if _is_seq(x):
+        x = [float(v) for v in x]
+    return _native.map_range(op, mode, x, float(in_lo), float(in_hi),
+                             float(out_lo), float(out_hi), float(curve))
+
+
+def linlin(x, in_lo, in_hi, out_lo, out_hi, clip="minmax"):
+    """`x` off a linear range onto a linear one."""
+    return _map(MapOp.LINLIN, x, in_lo, in_hi, out_lo, out_hi, clip=clip)
+
+
+def linexp(x, in_lo, in_hi, out_lo, out_hi, clip="minmax"):
+    """`x` off a linear range onto an exponential one -- a fader position to a
+    frequency. The output ends must not straddle zero; one *at* zero is nudged
+    to the smallest same-signed value rather than giving a NaN."""
+    return _map(MapOp.LINEXP, x, in_lo, in_hi, out_lo, out_hi, clip=clip)
+
+
+def explin(x, in_lo, in_hi, out_lo, out_hi, clip="minmax"):
+    """`x` off an exponential range onto a linear one -- a frequency to a fader
+    position."""
+    return _map(MapOp.EXPLIN, x, in_lo, in_hi, out_lo, out_hi, clip=clip)
+
+
+def expexp(x, in_lo, in_hi, out_lo, out_hi, clip="minmax"):
+    """`x` off an exponential range onto another."""
+    return _map(MapOp.EXPEXP, x, in_lo, in_hi, out_lo, out_hi, clip=clip)
+
+
+def lincurve(x, in_lo, in_hi, out_lo, out_hi, curve=-4.0, clip="minmax"):
+    """`x` off a linear range onto one **bent** by ``curve``: 0 is linear,
+    negative builds fast then slow (the shape a fader wants), positive the
+    reverse. Unlike `linexp` the bend spans zero freely."""
+    return _map(MapOp.LINCURVE, x, in_lo, in_hi, out_lo, out_hi, curve, clip)
+
+
+def curvelin(x, in_lo, in_hi, out_lo, out_hi, curve=-4.0, clip="minmax"):
+    """The inverse of `lincurve`: off a bent range onto a linear one."""
+    return _map(MapOp.CURVELIN, x, in_lo, in_hi, out_lo, out_hi, curve, clip)
+
+
+def range(x, lo=0.0, hi=1.0):
+    """A **bipolar** value (``-1``..``1``) onto ``lo``..``hi``, linearly.
+
+    Nothing is trimmed: a UGen knows its own signal range and a bare value does
+    not, so an input past ``-1``..``1`` overshoots the output by the same
+    proportion instead of being clipped to an assumption."""
+    return _map(MapOp.RANGE, x, -1.0, 1.0, lo, hi, clip="none")
+
+
+def exprange(x, lo=0.01, hi=1.0):
+    """A **bipolar** value onto ``lo``..``hi`` exponentially. Untrimmed, for the
+    reason `range` gives."""
+    return _map(MapOp.EXPRANGE, x, -1.0, 1.0, lo, hi, clip="none")
+
+
+# Wire selector → function, so AbstractObject value subclasses can dispatch by
+# the operator names the graph layer puts on the wire. The two spellings differ
+# where SuperCollider's name and the protocol's do (`as_int` -> `asinteger`):
+# the key is the def format's, the value is this client's.
 UNARY = {
-    "neg": neg, "abs": abso, "sin": sin, "cos": cos, "tan": tan, "asin": asin,
+    "neg": neg, "abs": abs, "sin": sin, "cos": cos, "tan": tan, "asin": asin,
     "acos": acos, "atan": atan, "exp": exp, "log": log, "log10": log10,
     "log2": log2, "sqrt": sqrt, "floor": floor, "ceil": ceil, "rint": rint,
-    "as_int": as_int, "as_float": as_float, "squared": squared, "cubed": cubed,
-    "recip": recip, "frac": frac, "sign": sign, "sinh": sinh, "cosh": cosh,
+    "as_int": asinteger, "as_float": asfloat, "squared": squared, "cubed": cubed,
+    "recip": reciprocal, "frac": frac, "sign": sign, "sinh": sinh, "cosh": cosh,
     "tanh": tanh, "distort": distort, "softclip": softclip, "midicps": midicps,
     "cpsmidi": cpsmidi, "midiratio": midiratio, "ratiomidi": ratiomidi,
     "dbamp": dbamp, "ampdb": ampdb, "octcps": octcps, "cpsoct": cpsoct,
@@ -155,10 +235,10 @@ BINARY = {
     "add": add, "sub": sub, "mul": mul, "div": div, "mod": mod, "pow": pow,
     "min": min, "max": max, "atan2": atan2, "gt": gt, "lt": lt, "ge": ge,
     "le": le, "eq": eq, "ne": ne, "bitand": bitand, "bitor": bitor,
-    "bitxor": bitxor, "lshift": lshift, "rshift": rshift, "hypot": hypot,
+    "bitxor": bitxor, "lshift": leftshift, "rshift": rightshift, "hypot": hypot,
     "ring1": ring1, "ring2": ring2, "ring3": ring3, "ring4": ring4,
     "sumsqr": sumsqr, "difsqr": difsqr, "sqrsum": sqrsum, "sqrdif": sqrdif,
     "absdif": absdif, "thresh": thresh, "clip2": clip2, "excess": excess,
     "round": round, "trunc": trunc, "fold2": fold2, "wrap2": wrap2,
-    "gcd": gcd, "lcm": lcm, "hypot_apx": hypot_apx,
+    "gcd": gcd, "lcm": lcm, "hypot_apx": hypotapx,
 }

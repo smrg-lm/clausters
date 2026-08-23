@@ -604,6 +604,39 @@ pub fn binary(op: &str, a: f64, b: f64) -> Result<f64, JsError> {
     Ok(builtins::apply_binary(op, a as f32, b as f32) as f64)
 }
 
+/// JS face: one range map by name (`"linlin"`, `"linexp"`, `"lincurve"`, ...),
+/// with `clip` naming what an out-of-range input is trimmed to (`"minmax"`,
+/// `"min"`, `"max"`, `"none"`). `curve` is read only by the bent pair and the
+/// input bounds only by the maps that have an input range.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+#[allow(clippy::too_many_arguments)]
+pub fn map(
+    op: &str,
+    clip: &str,
+    x: f64,
+    in_lo: f64,
+    in_hi: f64,
+    out_lo: f64,
+    out_hi: f64,
+    curve: f64,
+) -> Result<f64, JsError> {
+    let op = clausters_core::warp::MapOp::from_name(op)
+        .ok_or_else(|| JsError::new(&format!("unknown range map '{op}'")))?;
+    let clip = clausters_core::warp::Clip::from_name(clip)
+        .ok_or_else(|| JsError::new(&format!("unknown clip mode '{clip}'")))?;
+    Ok(clausters_core::warp::apply_map(
+        op,
+        x as f32,
+        in_lo as f32,
+        in_hi as f32,
+        out_lo as f32,
+        out_hi as f32,
+        curve as f32,
+        clip,
+    ) as f64)
+}
+
 /// JS face: scale degree → MIDI note number in the pitch space
 /// `octave`/`root`, with floored octave wrapping (sclang semantics). An empty
 /// `scale` yields middle C.

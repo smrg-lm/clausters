@@ -3,6 +3,7 @@
 use super::*;
 use clausters_core::builtins::{self, BinaryOp, UnaryOp};
 use clausters_core::measure;
+use clausters_core::warp;
 
 /// Applies unary `op` to `input` (broadcast if `in_len == 1`) into `out`,
 /// writing `n` samples. Returns 0 on success, -1 on an unknown op, -2 on a
@@ -59,6 +60,47 @@ pub unsafe extern "C" fn clausters_core_binary(
     let bv = unsafe { std::slice::from_raw_parts(b, b_len) };
     let o = unsafe { std::slice::from_raw_parts_mut(out, n) };
     builtins::binary_slice(op, av, bv, o);
+    0
+}
+
+/// Applies range map `op` to `input` (broadcast if `in_len == 1`) into `out`,
+/// writing `n` samples — the `linlin`/`linexp`/... family, over a whole
+/// sequence in one crossing.
+///
+/// The map's own numbers are scalars: a range is a statement about the surface
+/// a value is read on, so it is one range for the whole sequence rather than a
+/// range per element. `curve` is read only by `lincurve`/`curvelin` and the
+/// input bounds only by the six maps that have an input range. Returns 0 on
+/// success, -1 on an unknown op or clip mode, -2 on a null pointer or a
+/// non-broadcast length mismatch.
+///
+/// # Safety
+/// `input` must be readable for `in_len` `f32`s and `out` writable for `n`.
+#[unsafe(no_mangle)]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn clausters_core_map(
+    op: u32,
+    clip: u32,
+    input: *const f32,
+    in_len: usize,
+    in_lo: f32,
+    in_hi: f32,
+    out_lo: f32,
+    out_hi: f32,
+    curve: f32,
+    out: *mut f32,
+    n: usize,
+) -> i32 {
+    let (Some(op), Some(clip)) = (warp::MapOp::from_u32(op), warp::Clip::from_u32(clip)) else {
+        return -1;
+    };
+    if input.is_null() || out.is_null() || (in_len != 1 && in_len != n) {
+        return -2;
+    }
+    // SAFETY: caller guarantees the ranges above.
+    let a = unsafe { std::slice::from_raw_parts(input, in_len) };
+    let o = unsafe { std::slice::from_raw_parts_mut(out, n) };
+    warp::map_slice(op, a, o, in_lo, in_hi, out_lo, out_hi, curve, clip);
     0
 }
 

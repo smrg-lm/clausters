@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 21
+CORE_ABI_VERSION = 22
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -149,6 +149,29 @@ class UnaryOp(IntEnum):
     SOFTCLIP = 36
 
 
+class MapOp(IntEnum):
+    """Range maps; values match ``clausters_core::warp::MapOp``."""
+
+    LINLIN = 0
+    LINEXP = 1
+    EXPLIN = 2
+    EXPEXP = 3
+    LINCURVE = 4
+    CURVELIN = 5
+    RANGE = 6
+    EXPRANGE = 7
+
+
+class Clip(IntEnum):
+    """What an out-of-range input is trimmed to before it is mapped; values
+    match ``clausters_core::warp::Clip``."""
+
+    MINMAX = 0
+    MIN = 1
+    MAX = 2
+    NONE = 3
+
+
 class Window(IntEnum):
     """Smoothing-window types; values match ``clausters_core::window::Window``
     and the ``wintype`` an ``FFT``/``IFFT`` UGen carries."""
@@ -204,6 +227,15 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_core_binary.restype = ctypes.c_int32
     lib.clausters_core_binary.argtypes = [
         ctypes.c_uint32, f32p, ctypes.c_size_t, f32p, ctypes.c_size_t, f32p, ctypes.c_size_t,
+    ]
+    # Range maps (ABI v22): the `linlin`/`linexp`/... family, a whole sequence
+    # per crossing. The map's own numbers are scalars -- one range for the
+    # sequence, not a range per element.
+    lib.clausters_core_map.restype = ctypes.c_int32
+    lib.clausters_core_map.argtypes = [
+        ctypes.c_uint32, ctypes.c_uint32, f32p, ctypes.c_size_t,
+        ctypes.c_float, ctypes.c_float, ctypes.c_float, ctypes.c_float, ctypes.c_float,
+        f32p, ctypes.c_size_t,
     ]
     lib.clausters_core_whitenoise.argtypes = [ctypes.c_uint64, f32p, ctypes.c_size_t]
     # Smoothing windows (ABI v4): the same shapes the server's FFT chain applies.
@@ -1146,6 +1178,24 @@ def binary(op: int, a, b):
     if rc != 0:
         raise ValueError(f"clausters_core_binary failed ({rc})")
     return out[0] if (a_scalar and b_scalar) else out
+
+
+def map_range(op: int, clip: int, x, in_lo: float, in_hi: float,
+              out_lo: float, out_hi: float, curve: float):
+    """Applies range map `op` to a scalar or sequence; returns a float for a
+    scalar input, else an `array('f')`. The bounds are scalars: a range is a
+    statement about the surface a value is read on, so it is one range for the
+    whole sequence."""
+    a, scalar = _as_array(x)
+    n = len(a)
+    out = array("f", bytes(4 * n))
+    rc = lib().clausters_core_map(
+        int(op), int(clip), _ptr(a), n,
+        in_lo, in_hi, out_lo, out_hi, curve, _ptr(out), n,
+    )
+    if rc != 0:
+        raise ValueError(f"clausters_core_map failed ({rc})")
+    return out[0] if scalar else out
 
 
 def white_noise(seed: int, n: int) -> array:

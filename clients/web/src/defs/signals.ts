@@ -33,8 +33,8 @@ const BINARY: Record<string, string> = {
 const UNARY: Record<string, string> = {
     abs: "abs", floor: "floor", ceil: "ceil", sin: "sin", cos: "cos",
     tan: "tan", asin: "asin", acos: "acos", atan: "atan", exp: "exp",
-    log: "log", log10: "log10", sqrt: "sqrt", asInt: "intcast",
-    asFloat: "floatcast",
+    log: "log", log10: "log10", sqrt: "sqrt", as_int: "intcast",
+    as_float: "floatcast",
 };
 
 const nodeOf = (x: SignalInput): SignalNode => (x instanceof Signal ? x.node : x);
@@ -95,8 +95,8 @@ export class Signal {
     bitand(x: SignalInput): Signal { return this.compose("bitand", x); }
     bitor(x: SignalInput): Signal { return this.compose("bitor", x); }
     bitxor(x: SignalInput): Signal { return this.compose("bitxor", x); }
-    lshift(x: SignalInput): Signal { return this.compose("lshift", x); }
-    rshift(x: SignalInput): Signal { return this.compose("rshift", x); }
+    leftshift(x: SignalInput): Signal { return this.compose("lshift", x); }
+    rightshift(x: SignalInput): Signal { return this.compose("rshift", x); }
 
     /**
      * This signal on the **right** of `x op this` — the number-on-the-left
@@ -122,9 +122,9 @@ export class Signal {
     log10(): Signal { return this.composeUnary("log10"); }
     sqrt(): Signal { return this.composeUnary("sqrt"); }
     /** Faust's `intcast`. */
-    asInt(): Signal { return this.composeUnary("asInt"); }
+    asinteger(): Signal { return this.composeUnary("as_int"); }
     /** Faust's `floatcast`. */
-    asFloat(): Signal { return this.composeUnary("asFloat"); }
+    asfloat(): Signal { return this.composeUnary("as_float"); }
 }
 
 /** Coerces a number or `Signal` into a `Signal`. */

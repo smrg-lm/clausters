@@ -64,7 +64,7 @@ DEGREES = [
 ]
 
 UNARY = ["midicps", "cpsmidi", "midiratio", "ratiomidi", "dbamp", "ampdb",
-         "octcps", "cpsoct", "squared", "cubed", "recip", "distort",
+         "octcps", "cpsoct", "squared", "cubed", "reciprocal", "distort",
          "softclip", "log2", "tanh", "frac", "sign"]
 UNARY_INPUTS = [60.0, 69.0, 440.0, 0.5, -0.5, 1.5, 3.0, -12.0]
 

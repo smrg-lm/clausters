@@ -2338,6 +2338,45 @@ can be represented.
 
 Two decisions from U4, one of them since reversed.
 
+**One exponential curve, and the clients get the whole warp family.** Reading a
+value out of one range and writing it into another is the same act at four
+scales — an envelope segment between two levels, an `XLine`'s ramp, a control's
+position under a knob, a client mapping a fader to a frequency — and it was
+written three times before it was written once. `envshape`'s exponential shape,
+`envshape`'s bent one and `dsp::line`'s `XLine` each carried their own formula
+and their own answer to the levels an exponential has none for.
+
+`clausters_core::warp` is that act, once. Its shape is what keeps it that way:
+a map **reads** a position out of one range and **writes** it into another, each
+half in the same three flavours (linear, exponential, bent), so the eight names
+SuperCollider gives the family — `linlin`, `linexp`, `explin`, `expexp`,
+`lincurve`, `curvelin`, `range`, `exprange` — are pairs of six primitives and no
+curve is computed twice. The bent pair shares its two coefficients between both
+directions, so a curve and its inverse cannot drift.
+
+**Zero has no ratio, and that is now one function.** `warp::exp_ends` nudges an
+endpoint within `1e-5` of zero to that epsilon with the sign it had, and reports
+a pair straddling zero as having no exponential at all, which every caller falls
+back to the linear map on. SuperCollider's own answer is a `NaN` (or an author
+who was supposed to know better), and this crate answers instead for a reason
+that is not audio at all: the same curve is what an editor **draws**, and a
+`NaN` there is not a wrong sound but a vanished pixel.
+
+**Against sclang the agreement is a tolerance, not bit equality**, and
+deliberately so: the formulas are reproduced shape for shape and asserted
+against sclang's own values, but sclang computes in `f64` and associates left to
+right where this computes in `f32`, the precision the server computes in. `f32`
+is the one that matters — it is what makes a value a client maps and the same
+map on the audio thread agree. `Clip` carries sclang's `prune` including its
+sequential comparisons, so a reversed range prunes the way sclang prunes one;
+`range`/`exprange` prune nothing, because a UGen knows its own `signalRange` and
+a bare value does not.
+
+**What is not here yet is the signal side.** There are no `LinLin`/`LinExp`
+UGens, so a def still writes the arithmetic by hand; when they land they bind
+these same functions rather than restating them, which is the whole point of the
+module existing before they do.
+
 **`Line`/`XLine` are a ramp of their own, not the segment engine.** U4 first
 built them as `EnvGen` with its header filled in — a gate held open, one
 segment, no release node — assembled in the wrapper's stack frame. The appeal
@@ -3049,11 +3088,23 @@ constant is on the left, which a method cannot express, there are free functions
 
 Two consequences worth stating, because they look like drift and are not.
 
-**A method name is not always the wire name.** The selector *is* what crosses
-(`as_int`, `hypot_apx`), and the method takes the idiomatic spelling (`asInt()`,
-`hypotApx()`) with the mapping in the class. The same holds for the Faust signal
-API, where `asInt()` emits Faust's `intcast`. The language surface is the
-language's; the vocabulary is the protocol's.
+**A method name is not always the wire name — and the method's is
+SuperCollider's, not the language's.** The selector *is* what crosses (`as_int`,
+`hypot_apx`, `recip`, `lshift`), and it stays as the def format spells it: those
+names are in stored SynthDefs, in `docs/schemas.md` and in the frozen parity
+vectors, so renaming them would be a format change for a cosmetic gain. What a
+*user* types is a different question, and it was answered wrong at first — the
+web client took the idiomatic TypeScript spelling (`asInt()`, `hypotApx()`)
+while the Python client took a third one (`abso`, `as_int`, `recip`), so the two
+clients disagreed with each other **and** with the language they are a port of.
+
+The rule now: **a client's name is SuperCollider's, all lowercase, joined** —
+`asinteger`, `asfloat`, `reciprocal`, `leftshift`, `rightshift`, `hypotapx`,
+`abs`. Lowercasing sclang's camelCase is not new; it is what the operator table
+already did for `bitand`/`bitor`/`bitxor`, now applied to the six that had
+drifted. So a reader who knows SuperCollider types the same call in both
+clients, and neither client's idiom overrides the vocabulary. The mapping from
+that name to the wire selector lives in the class, in one line each.
 
 **Parity is asserted on the emitted spec, not on the source.** The two clients
 cannot be compared expression for expression, so `clients/web/tests/def-parity.

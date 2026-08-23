@@ -167,7 +167,11 @@ pub fn lin_value(t: f32, lo: f32, hi: f32) -> f32 {
 #[inline]
 pub fn exp_unit(x: f32, lo: f32, hi: f32) -> f32 {
     match exp_ends(lo, hi) {
-        Some((lo, hi)) => (x / lo).ln() / (hi / lo).ln(),
+        // `x` passes the same rule the ends do: an input *at* zero on a range
+        // whose low end was nudged off zero has to land on that end, not on
+        // `ln(0)`. Nudging both is what makes this the exact inverse of
+        // `exp_value` at the endpoints.
+        Some((lo, hi)) => (exp_endpoint(x) / lo).ln() / (hi / lo).ln(),
         None => lin_unit(x, lo, hi),
     }
 }
@@ -512,6 +516,9 @@ mod tests {
         assert_eq!(exp_endpoint(0.0), EXP_EPSILON);
         assert_eq!(exp_endpoint(-0.0), -EXP_EPSILON);
         assert_eq!(exp_ends(-1.0, 1.0), None, "a sign change has no ratio");
+        // The input side takes the rule too: at the low end, not at `ln(0)`.
+        assert_eq!(explin(0.0, 0.0, 1.0, 0.0, 1.0, Clip::MinMax), 0.0);
+        assert!(expexp(0.0, 0.0, 1.0, 1.0, 100.0, Clip::MinMax).is_finite());
         // and the fallback is exactly the linear map
         assert_eq!(exp_value(0.25, -1.0, 1.0), lin_value(0.25, -1.0, 1.0));
     }

@@ -19,7 +19,7 @@ function resonance(rq?: Channel, q?: Channel): Channel {
         }
         return 1.0 / q;
     }
-    return q.recip();
+    return q.reciprocal();
 }
 
 /** The resonance of the two-pole filters: `rq` (1/Q, 0 = infinite) or `q`. */

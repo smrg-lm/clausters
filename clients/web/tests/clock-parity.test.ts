@@ -132,7 +132,7 @@ const expected = (y: number | string): number =>
 const TRANSCENDENTAL = new Set([
     "sin", "cos", "tan", "asin", "acos", "atan", "atan2", "exp", "exp10",
     "log", "log2", "log10", "sinh", "cosh", "tanh", "pow", "hypot",
-    "hypot_apx", "midicps", "cpsmidi", "midiratio", "ratiomidi", "dbamp",
+    "hypotapx", "midicps", "cpsmidi", "midiratio", "ratiomidi", "dbamp",
     "ampdb", "octcps", "cpsoct",
 ]);
 

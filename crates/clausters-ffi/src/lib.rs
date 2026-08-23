@@ -118,7 +118,7 @@ pub use time::*;
 /// `/buffer_stream`: a run of buckets somebody else measured, folded into a
 /// cache in place, so a client that cannot map the memory a recording is
 /// filling still draws it.
-pub const CORE_ABI_VERSION: u32 = 21;
+pub const CORE_ABI_VERSION: u32 = 22;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

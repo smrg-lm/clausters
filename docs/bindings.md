@@ -46,6 +46,7 @@ thought about the other side", write `gap` — that is what it is for.
 |---|---|---|
 | `clausters_core_unary` | `unary` | |
 | `clausters_core_binary` | `binary` | |
+| `clausters_core_map` | `map` | `idiom` — the range maps (`linlin`, `linexp`, `lincurve`, …). C takes a whole sequence and writes it through an out pointer, as it does for the op tables above; wasm maps one value, and the client loops — the same split `unary`/`binary` already have, for the same reason (a ctypes call is worth batching, a wasm-bindgen call is not) |
 | `clausters_core_whitenoise` | — | **gap** — `JsRng` steps values one at a time; there is no buffer fill, so a browser cannot reproduce a server noise stream in one call |
 | `clausters_core_window` | — | **gap** — the FFT smoothing windows. Nothing in the browser transforms anything: a spectrum is a view and the GUI host draws it, reaching `spectrum` and `window` as a Rust caller of the core |
 | `clausters_core_stats` | `channel_stats` | `idiom` — the peak and RMS of one channel of an interleaved buffer; C writes the pair through an out pointer, wasm returns it as a two-element array |

@@ -119,11 +119,11 @@ export abstract class SynthExpr<TSelf, TOperand = OpOperand> {
     bitand<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("bitand", x); }
     bitor<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("bitor", x); }
     bitxor<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("bitxor", x); }
-    lshift<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("lshift", x); }
-    rshift<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("rshift", x); }
+    leftshift<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("lshift", x); }
+    rightshift<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("rshift", x); }
     hypot<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("hypot", x); }
     /** The cheap hypotenuse approximation (`hypot_apx` on the wire). */
-    hypotApx<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("hypot_apx", x); }
+    hypotapx<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("hypot_apx", x); }
     ring1<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("ring1", x); }
     ring2<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("ring2", x); }
     ring3<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("ring3", x); }
@@ -161,12 +161,12 @@ export abstract class SynthExpr<TSelf, TOperand = OpOperand> {
     ceil(): TSelf { return this.unop("ceil"); }
     rint(): TSelf { return this.unop("rint"); }
     /** Truncate towards zero to an integer value (`as_int` on the wire). */
-    asInt(): TSelf { return this.unop("as_int"); }
+    asinteger(): TSelf { return this.unop("as_int"); }
     /** The identity that documents a value as a float (`as_float`). */
-    asFloat(): TSelf { return this.unop("as_float"); }
+    asfloat(): TSelf { return this.unop("as_float"); }
     squared(): TSelf { return this.unop("squared"); }
     cubed(): TSelf { return this.unop("cubed"); }
-    recip(): TSelf { return this.unop("recip"); }
+    reciprocal(): TSelf { return this.unop("recip"); }
     frac(): TSelf { return this.unop("frac"); }
     sign(): TSelf { return this.unop("sign"); }
     sinh(): TSelf { return this.unop("sinh"); }

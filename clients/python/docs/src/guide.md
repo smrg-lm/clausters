@@ -4,7 +4,7 @@ The package is three layers plus a thin convenience wrapper. The split is delibe
 
 ## `clausters.base` — server-agnostic timing and values
 
-- `builtins` — scalar and list math, computed as `f32` through the native core, so a value the client computes equals the one the server's UGens would compute.
+- `builtins` — scalar and sequence math, computed as `f32` through the native core, so a value the client computes equals the one the server's UGens would compute. Two families: the operator/conversion set every SuperCollider user knows (`midicps`, `dbamp`, `clip2`, …) and the **range maps** (`linlin`, `linexp`, `explin`, `expexp`, `lincurve`, `curvelin`, `range`, `exprange`), which read a value out of one range and write it into another. All of them take a sequence as readily as a number — `midicps(range(0, 120))` maps a hundred and twenty notes in one crossing — and a sequence is anything iterable, not one blessed type.
 - `absobject` — operator overloading, the base for composing values and signals.
 - `stream` — `Routine`/`Stream`, the `yield` coroutine layer. A routine must never block the clock thread.
 - `clock` — `TempoClock`, **timing only**: it schedules and paces, it does not talk to the server.
