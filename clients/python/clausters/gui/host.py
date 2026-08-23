@@ -268,7 +268,8 @@ class GuiHost:
                              if wid in self._on_event}
             self._recycle_subtree(id, keep_root=True)
         names: dict = {}
-        doc = self._stamp(tree, id, names)
+        controls: dict = {}
+        doc = self._stamp(tree, id, names, controls)
         if root_handler is not None:
             self._on_event[id] = root_handler
         for name, func in inherited.items():
@@ -281,8 +282,10 @@ class GuiHost:
             # reference the caller kept goes on resolving names correctly.
             previous._names.clear()
             previous._names.update(names)
+            previous._controls.clear()
+            previous._controls.update(controls)
             return previous
-        handle = WindowHandle(self, id, names)
+        handle = WindowHandle(self, id, names, controls)
         self._handles[id] = handle
         return handle
 
@@ -298,10 +301,13 @@ class GuiHost:
         """
         self._osc.send_msg(self.target, "/gui_load", name)
 
-    def _stamp(self, node: dict, node_id: int, names: dict) -> dict:
+    def _stamp(self, node: dict, node_id: int, names: dict, controls: dict) -> dict:
         """A **copy** of ``node`` with a fresh id on every id-less descendant:
         the document ``/gui_def`` is sent, plus ``name -> id`` collected into
-        ``names`` and each id's children recorded (the subtree `free` recycles).
+        ``names`` and each id's children recorded (the subtree `free` recycles),
+        and ``controls`` collecting ``widget id -> def control name`` for every
+        widget built from a control (what
+        `clausters.gui.handle.WindowHandle.bind` wires).
 
         The caller's tree is never written into. That is what makes a `View` a
         definition rather than an instance: the same tree opens twice, and the
@@ -325,6 +331,9 @@ class GuiHost:
                     "one (the second would shadow the first, which would still "
                     "draw and be unreachable)")
             names[name] = node_id
+        held_control = getattr(node, "_control", None)
+        if held_control is not None:
+            controls[node_id] = held_control.name
         for held in getattr(node, "_sources", ()):
             held._live.append((self, node_id))
             self._sources.setdefault(node_id, []).append(held)
@@ -336,7 +345,7 @@ class GuiHost:
             for child in children:
                 cid = int(child["id"]) if "id" in child else self.alloc_id()
                 child_ids.append(cid)
-                sub = self._stamp(child, cid, names)
+                sub = self._stamp(child, cid, names, controls)
                 sub["id"] = cid
                 stamped.append(sub)
             out["children"] = stamped

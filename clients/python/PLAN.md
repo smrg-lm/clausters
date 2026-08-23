@@ -502,29 +502,50 @@ the def already has removes the asymmetry rather than papering over it.
   range never reaching the wire, the identity conflict, the derived surface, the
   keyword override and the two refusals.
 
-- ⬜ **C43 — The binding is made against the control, not against a widget id**.
-  Today a widget and a def control meet only as a string typed twice
-  (`win["freq"].bind("/node_set", synth.id, "freq")`), and nothing checks that
-  the control exists or that the ranges agree. A `View` built from control
-  objects already knows which control each widget drives, so the whole surface
-  binds in one verb.
+- ✅ **C43 — The binding is made against the control, not against a widget id**
+  *(done 2026-08-23)*. A widget and a def control used to meet only as a string
+  typed twice (`win["freq"].bind("/node_set", synth.id, "freq")`), and nothing
+  checked that the control existed. A view built from control objects already
+  knows which control each widget drives, so the whole surface binds in one verb.
 
   ```python
-  sd.send(server)
-  synth = Synth(sd, server=server)
+  synth = Synth("voice", server=server)
 
   w = view(knob(freq), slider(amp)).open()
-  w.bind(synth)         # every widget carrying a control of that def is wired
-                        # to /gui_bind "/node_set" synth.id <control>
+  w.bind(synth)         # one /gui_bind per control widget:
+                        # /node_set <synth> <control> <value>
   w.unbind()
   ```
 
-  It is still `/gui_bind` underneath — the low-level form stays for anything
+  `knob`/`slider`/`number`/`toggle` keep the control they were built from on the
+  node (`View._control`, client-side, never on the wire), the id walk collects
+  `widget id -> control name` alongside the names it already collected, and the
+  handle carries it — refreshed in place on a redraw, like the names, so a
+  rebound window is never wiring ids that recycled. `WindowHandle.controls`
+  reports what is there.
+
+  **The name and the control are two different things**, usually spelled the
+  same. The widget's `name` is the handle's index; the control name is what the
+  server is told. `knob(freq, name="pitch")` binds `pitch` to `freq`, and an
+  explicit `name=` is taken out of the props before the control's own is
+  applied — which is the collision that showed up the moment the test asked for
+  it.
+
+  It is still `/gui_bind` underneath, and the low-level form stays for anything
   that is not a def control (a bus, another widget, an arbitrary address).
-  **Two widgets on one control is legal and drifts**: both bind, both set the
-  synth, neither is told when the other moves, and the host fires an apply
-  rather than a second binding. That is the user's inconsistency to make, not
-  the client's to detect; it is documented, not guarded.
+  `bind` takes a `Node` or a bare id, and refuses a window where **no** widget
+  was built from a control, which can only be a mistake. **Two widgets on one
+  control is legal and drifts**: both bind, both set the node, neither is told
+  when the other moves, and the host fires an apply rather than a second
+  binding. That is the user's inconsistency to make, not the client's to detect;
+  it is documented, not guarded.
+
+  Docs: the GUI page's binding section. Example: `gui_bind.py` grew a second
+  control (`amp`) precisely so the one verb has more than one thing to wire, and
+  binds the panel with `win.bind(synth)`. Tests: in
+  `tests/test_control_range.py` — the surface bound in one verb, a widget named
+  apart from its control, `unbind`, the empty-window refusal, a node or a bare
+  id, and a redraw leaving the window bindable.
 
 - ⬜ **C44 (analysis, not scheduled) — the inverse direction: a widget inside a
   def**. Faust's model, where `hslider` *is* the control declaration, suggests

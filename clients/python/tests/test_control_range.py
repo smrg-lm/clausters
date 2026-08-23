@@ -120,3 +120,111 @@ def test_a_toggle_needs_no_range():
 def test_something_that_is_not_a_control_is_refused():
     with pytest.raises(TypeError, match="not a def's control"):
         knob(7)
+
+
+# ---- the binding is made against the control ----
+
+def _bound_host(port):
+    from clausters.gui import GuiHost
+
+    host = GuiHost("127.0.0.1", port)
+    host._osc = _Recorder()
+    return host
+
+
+class _Recorder:
+    def __init__(self):
+        self.sent = []
+
+    def start(self):
+        return self
+
+    def send_msg(self, target, *args):
+        self.sent.append(args)
+
+
+def test_the_whole_surface_binds_in_one_verb():
+    """A widget built from a control already knows what it drives, so the
+    binding stops being a string typed twice."""
+    from clausters.gui import view
+
+    sd, freq, amp = _voice()
+    host = _bound_host(57988)
+    w = view(knob(freq), slider(amp)).open(host=host)
+
+    host._osc.sent.clear()
+    w.bind(1001)
+    assert sorted(host._osc.sent) == sorted([
+        ("/gui_bind", w["freq"].id, "server", "/node_set", 1001, "freq"),
+        ("/gui_bind", w["amp"].id, "server", "/node_set", 1001, "amp"),
+    ])
+
+
+def test_a_widget_named_apart_from_its_control_still_binds_the_control():
+    """The name is the handle's index and the control is what the server is
+    told; they are usually the same string and need not be."""
+    from clausters.gui import view
+
+    _, freq, _ = _voice()
+    host = _bound_host(57987)
+    w = view(knob(freq, name="pitch")).open(host=host)
+
+    host._osc.sent.clear()
+    w.bind(1002)
+    assert host._osc.sent == [("/gui_bind", w["pitch"].id, "server",
+                               "/node_set", 1002, "freq")]
+    assert w.controls == {"pitch": "freq"}
+
+
+def test_unbind_gives_every_control_widget_back_to_the_script():
+    from clausters.gui import view
+
+    _, freq, amp = _voice()
+    host = _bound_host(57986)
+    w = view(knob(freq), slider(amp)).open(host=host)
+
+    host._osc.sent.clear()
+    w.bind(1003).unbind()
+    assert [m for m in host._osc.sent if len(m) == 2] == [
+        ("/gui_bind", w["freq"].id), ("/gui_bind", w["amp"].id)]
+
+
+def test_a_window_with_no_control_widget_says_so():
+    from clausters.gui import label, view
+
+    host = _bound_host(57985)
+    w = view(label("nothing to bind")).open(host=host)
+    with pytest.raises(ValueError, match="nothing to bind"):
+        w.bind(1004)
+
+
+def test_a_redraw_keeps_the_window_bindable():
+    """The handle is refreshed in place on a redefine, and its controls with it
+    — a rebound window must not be wiring ids that recycled."""
+    from clausters.gui import view
+
+    _, freq, _ = _voice()
+    host = _bound_host(57984)
+    w = view(knob(freq)).open(host=host)
+    host.define(int(w), view(knob(freq)))
+
+    host._osc.sent.clear()
+    w.bind(1005)
+    assert host._osc.sent == [("/gui_bind", w["freq"].id, "server",
+                               "/node_set", 1005, "freq")]
+
+
+def test_bind_takes_a_node_or_a_bare_id():
+    """A `Synth` is what a script holds; an id is what a responder reports."""
+    from clausters.gui import view
+
+    _, freq, _ = _voice()
+    host = _bound_host(57983)
+    w = view(knob(freq)).open(host=host)
+
+    class _FakeNode:
+        id = 2001
+
+    host._osc.sent.clear()
+    w.bind(_FakeNode())
+    assert host._osc.sent[0][4] == 2001

@@ -1950,6 +1950,14 @@ as some other milestone has a better claim on it.
     props-parity manifest treats `control` as *not a prop* (it is a source of
     `name`/`value`/`min`/`max`), so the parameter is each client's own
     spelling.
+  - **The binding is made against the control.** A control widget keeps the
+    control it was built from, the id walk collects `widget id -> control name`
+    beside the names, and the handle binds the whole surface in one verb:
+    `win.bind(synth)` (a node or a bare id), `win.unbind()`, `win.controls`.
+    The widget's *name* is the handle's index and the *control* name is what
+    the server is told — usually the same string, and an explicit `name=` wins.
+    Still `/gui_bind` underneath, with the one-at-a-time form kept for a bus,
+    another widget or an arbitrary address.
   - `view.open({host})` resolves the **ambient** host exactly as `plot`/`scope`
     do. Python made that symmetric with the ambient server: `GuiHost.boot`
     grew `adopt_ambient` (first-wins, the mirror of `Server.boot`'s

@@ -109,11 +109,14 @@ class WindowHandle(int):
     _host: "GuiHost"
     #: widget name -> its current id, refreshed on every redraw.
     _names: "dict[str, int]"
+    #: widget id -> the def control that widget was built from, for `bind`.
+    _controls: "dict[int, str]"
 
-    def __new__(cls, host, wid: int, names: dict):
+    def __new__(cls, host, wid: int, names: dict, controls: "dict | None" = None):
         obj = super().__new__(cls, wid)
         obj._host = host
         obj._names = names  # name -> current id
+        obj._controls = dict(controls or {})
         return obj
 
     def __getitem__(self, name: str) -> WidgetHandle:
@@ -148,6 +151,59 @@ class WindowHandle(int):
     def handle(self) -> WidgetHandle:
         """A `WidgetHandle` for the window root itself (to `set` its props)."""
         return WidgetHandle(self._host, int(self))
+
+    def bind(self, node, *, address: str = "/node_set") -> "WindowHandle":
+        """Wire every widget built from a def control straight to ``node``.
+
+        The counterpart of `clausters.gui.guidef.knob` taking a control: the
+        widget already knows which control it draws, so the whole surface is one
+        verb instead of one hand-typed string per widget::
+
+            w = view(knob(freq), slider(amp)).open()
+            w.bind(synth)
+
+        Each becomes a ``/gui_bind`` forwarding ``address <node> <control>
+        <value>`` — the host talks to the audio server itself, with no
+        round-trip through this script (see `clausters.gui.host.GuiHost.bind`,
+        which is still there for anything that is not a def control: a bus, an
+        arbitrary address, another widget).
+
+        **Two widgets on one control both bind**, both set the node, and neither
+        is told when the other moves; the host fires an apply rather than a
+        second binding, so they settle rather than cascade. That drift is yours
+        to make and is not detected.
+
+        ``node`` is a `clausters.defs.node.Node` (a `Synth`, a `Group`, a
+        GraphDef instance) or a bare node id.
+
+        Raises `ValueError` when no widget in this window was built from a
+        control, which can only be a mistake.
+        """
+        if not self._controls:
+            raise ValueError(
+                "no widget in this window was built from a def control, so "
+                "there is nothing to bind — build them from controls "
+                "(knob(freq), slider(sd['amp'])), or bind one at a time with "
+                "win['freq'].bind('/node_set', node, 'freq')")
+        target = int(getattr(node, "id", node))
+        for wid, control in self._controls.items():
+            self._host.bind(wid, address, target, control)
+        return self
+
+    def unbind(self) -> "WindowHandle":
+        """Undo `bind`: every control widget emits ``/gui_event`` to this script
+        again."""
+        for wid in self._controls:
+            self._host.unbind(wid)
+        return self
+
+    @property
+    def controls(self) -> dict:
+        """``widget name -> def control name`` for every widget in this window
+        built from a control — what `bind` wires."""
+        by_id = {wid: name for name, wid in self._names.items()}
+        return {by_id.get(wid, control): control
+                for wid, control in self._controls.items()}
 
     def set(self, **props) -> "WindowHandle":
         """``/gui_set`` the window root's own properties."""

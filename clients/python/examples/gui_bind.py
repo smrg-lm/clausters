@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
-"""A bound knob drives a synth directly: the value bypasses the script.
+"""A bound panel drives a synth directly: the values bypass the script.
 
-The low-latency interactive path: a knob *bound* to a running synth's control
-(`clausters.gui.host.GuiHost.bind`) sends its value **straight to the audio
-server** on every turn, with no round-trip through this Python process. An
-unbound knob would instead emit a ``/gui_event`` back here; binding swaps that
-for a direct ``/node_set`` to the server.
+The low-latency interactive path: a control *bound* to a running synth sends its
+value **straight to the audio server** on every turn, with no round-trip through
+this Python process. An unbound control would instead emit a ``/gui_event`` back
+here; binding swaps that for a direct ``/node_set`` to the server.
+
+The controls are built from the def's own `clausters.defs.control` objects, so
+each widget already knows which control it drives and the window binds in one
+verb -- ``win.bind(synth)`` -- instead of one hand-typed name per widget.
 
 The point of the binding is that it lives **in the GUI host, not in this
-script**: ``/gui_bind`` registers ``knob "freq" -> /node_set <node> freq`` inside
+script**: ``/gui_bind`` registers ``knob -> /node_set <node> freq`` inside
 the host, and the host forwards every change to the audio server on its own. So
 while the host runs, the knob drives the pitch with nothing going through Python
 -- turn it and nothing prints here. (A binding baked into a *saved standalone*
@@ -35,7 +38,7 @@ import time
 
 from clausters import Session
 from clausters.defs import SynthDef, control, out, sine
-from clausters.gui import knob
+from clausters.gui import knob, layout, slider
 from clausters.defs import Synth
 
 # %% [markdown]
@@ -50,49 +53,50 @@ server = session.server
 gui = session.gui()
 
 
-#: The control the knob drives, declared **with the range it is meant to be
-#: turned over**. That range is the one thing about a control only the graph's
-#: author knows, so it is written here and read by the knob -- rather than the
-#: same two numbers typed a second time beside the widget, where nothing checks
-#: them against each other.
+#: The controls the panel drives, each declared **with the range it is meant to
+#: be turned over**. That range is the one thing about a control only the graph's
+#: author knows, so it is written here and read by the widget -- rather than the
+#: same two numbers typed a second time beside it, where nothing checks them
+#: against each other.
 FREQ = control("freq", 220.0, min=110.0, max=880.0)
+AMP = control("amp", 0.2, min=0.0, max=0.5)
 
 
 def beep(name: str = "gui_bind_beep") -> SynthDef:
-    """A quiet stereo sine whose frequency is the `freq` control (default
-    220 Hz) -- the binding target `/node_set <node> freq <value>` drives."""
-    sig = sine(freq=FREQ) * 0.2
+    """A quiet stereo sine whose frequency and level are the `freq` and `amp`
+    controls -- what the bindings `/node_set <node> <control> <value>` drive."""
+    sig = sine(freq=FREQ) * AMP
     return SynthDef(name, out(0.0, sig), out(1.0, sig))
 
 
 beep().send(server)
-synth = Synth("gui_bind_beep", {"freq": 220.0}, server=server)
+synth = Synth("gui_bind_beep", server=server)   # the def's own defaults
 
 # %% [markdown]
-# ## A named knob, bound to the synth's freq
-# One knob is all this window has to show, so the window *is* the knob: any node
-# opens, and a root that is not a `view` is framed in a window that hugs what it
-# holds -- no `w`, no `h`, and no `weight` stretching a control over an empty
-# pane. Write `view(...)` when the window's own properties matter (a title, a
-# size, a theme); here nothing does.
+# ## A panel of the def's controls, bound to the synth
+# Each widget is built from the def's own control: its name, its default and its
+# range all come from `FREQ`/`AMP`, so the widget and the graph cannot disagree
+# about what "freq" is. The name each takes is the control's, which is what the
+# script addresses it by -- it never picks an id.
 #
-# The knob is built from the def's own control: its name, its default and its
-# range all come from `FREQ`, so the widget and the graph cannot disagree about
-# what "freq" is. The name it takes is the control's, which is what the script
-# addresses it by -- it never picks an id.
+# So the window knows what it drives, and `win.bind(synth)` wires the whole
+# surface at once: one `/gui_bind` per control widget, each forwarding
+# `/node_set <node> <control> <value>`. Binding one at a time is still there
+# (`win["freq"].bind("/node_set", synth.id, "freq")`) and is what you reach for
+# when the target is not a def control -- a bus, another widget, an arbitrary
+# address.
 #
 # The view is the subject either way: `v.open()` rather than `host.open(v)`, on
-# the host `session.gui()` already made ambient. `bind` registers the forward in
-# the host.
+# the host `session.gui()` already made ambient.
 
 # %%
-v = knob(FREQ)
+v = layout(knob(FREQ), slider(AMP), flow="col")
 
 win = v.open()
-win["freq"].bind("/node_set", synth.id, "freq")
+win.bind(synth)
 win.on_closed(lambda: globals().__setitem__("_closed", True))
-print(f"knob bound to synth {synth.id} freq; turn it -- the pitch follows "
-      "directly and nothing prints here (no script round-trip)")
+print(f"bound to synth {synth.id}: {win.controls} -- turn them, the sound "
+      "follows directly and nothing prints here (no script round-trip)")
 
 # %% [markdown]
 # ## Drive it

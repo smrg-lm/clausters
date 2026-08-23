@@ -283,14 +283,30 @@ it without the script at all.
 A widget can be **bound**, and then its value bypasses this process entirely.
 
 To the **audio server** — the low-latency path, since nothing waits on Python's
-scheduler:
+scheduler. When the widgets were [built from the def's
+controls](#a-control-widget-is-built-from-the-control-it-drives), each already
+knows what it drives, so the whole surface is one verb:
+
+```python
+win = view(knob(freq), slider(amp)).open()
+win.bind(synth)          # /node_set <synth> freq, /node_set <synth> amp
+win.unbind()             # they emit /gui_event here again
+```
+
+`win.controls` says what is there (`{"freq": "freq", "amp": "amp"}` — the
+widget's name on the left, the control it drives on the right; they need not be
+the same string). A window where nothing was built from a control refuses to
+bind, since that can only be a mistake.
+
+One at a time is the same thing spelled out, and is what you reach for when the
+target is *not* a def control:
 
 ```python
 win["cutoff"].bind("/node_set", 1000, "freq")
 ```
 
-Now turning that knob sends `/node_set 1000 freq <value>` straight from the
-host. To **another widget** — its value lands on that widget's prop:
+Turning that knob sends `/node_set 1000 freq <value>` straight from the host.
+To **another widget** — its value lands on that widget's prop:
 
 ```python
 win["picker"].bind_widget(win["pages"], "index")

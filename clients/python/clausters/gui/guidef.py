@@ -274,13 +274,17 @@ class View(dict):
     `clausters.gui.handle.WindowHandle` has no document to index.
     """
 
-    __slots__ = ("_scope", "_sources")
+    __slots__ = ("_scope", "_sources", "_control")
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         #: the `Source` objects feeding this node's props, so opening it can
         #: tell each which live widget draws it. Client-side only.
         self._sources: list = []
+        #: the def control this widget was built from (`knob(freq)`), so
+        #: `clausters.gui.handle.WindowHandle.bind` knows what it drives.
+        #: Client-side only; the name is all that reaches the wire.
+        self._control = None
         #: ``name -> View`` for this view's own scope, built once at
         #: construction from the children's already-built scopes — so composing
         #: a tree costs one pass over each node, not one per lookup.
@@ -1003,7 +1007,16 @@ def scroll(*children, axis: str | None = None, zoom: bool | None = None,
     return node("plane", id=id, children=children, **extra, **props)
 
 
-def _from_control(control, given: dict, *, needs_range: bool) -> dict:
+def _built_from(widget: View, control) -> View:
+    """Remember the control a widget was built from, so a handle can bind the
+    whole surface at once (`clausters.gui.handle.WindowHandle.bind`). Nothing of
+    it reaches the wire but the name it already took."""
+    if control is not None:
+        widget._control = control
+    return widget
+
+
+def _from_control(control, given: dict, props: dict, *, needs_range: bool) -> dict:
     """A control's own props for a widget built from it: its name, its default
     as the value, and its range.
 
@@ -1017,7 +1030,9 @@ def _from_control(control, given: dict, *, needs_range: bool) -> dict:
     FaustDef fills from its ``hslider``.
 
     Explicit keywords win: the control says what it is, the call says how to draw
-    it.
+    it. That includes ``name=``, which is the handle's index and is taken out of
+    ``props`` here so it does not collide with the control's own — the two are
+    usually the same string and need not be.
     """
     name = getattr(control, "name", None)
     if not isinstance(name, str):
@@ -1031,6 +1046,9 @@ def _from_control(control, given: dict, *, needs_range: bool) -> dict:
             f"control {name!r} declares no range, so there is nothing to draw "
             "it over — give it one where it is declared "
             f"(control({name!r}, ..., min=…, max=…)), or spell min=/max= here")
+    given = dict(given)
+    if "name" in props:
+        given["name"] = props.pop("name")
     from_control = _drop_none(name=name, label=name,
                               value=getattr(control, "default", None),
                               min=lo, max=hi, step=getattr(control, "step", None))
@@ -1074,8 +1092,8 @@ def knob(control=None, *, label: str | None = None, min: float | None = None,
     so rather than being drawn over a guess."""
     extra = _drop_none(label=label, min=min, max=max, value=value, text_size=text_size, color=color)
     if control is not None:
-        extra = _from_control(control, extra, needs_range=True)
-    return node("knob", id=id, **extra, **props)
+        extra = _from_control(control, extra, props, needs_range=True)
+    return _built_from(node("knob", id=id, **extra, **props), control)
 
 
 def slider(control=None, *, label: str | None = None, min: float | None = None,
@@ -1089,10 +1107,10 @@ def slider(control=None, *, label: str | None = None, min: float | None = None,
     Takes a def's control positionally, like `knob`."""
     extra = _drop_none(label=label, min=min, max=max, value=value, text_size=text_size, color=color)
     if control is not None:
-        extra = _from_control(control, extra, needs_range=True)
+        extra = _from_control(control, extra, props, needs_range=True)
     if vertical:
         extra["vertical"] = True
-    return node("slider", id=id, **extra, **props)
+    return _built_from(node("slider", id=id, **extra, **props), control)
 
 
 def number(control=None, *, label: str | None = None, min: float | None = None,
@@ -1105,8 +1123,8 @@ def number(control=None, *, label: str | None = None, min: float | None = None,
     Takes a def's control positionally, like `knob`."""
     extra = _drop_none(label=label, min=min, max=max, value=value, text_size=text_size, color=color)
     if control is not None:
-        extra = _from_control(control, extra, needs_range=True)
-    return node("number", id=id, **extra, **props)
+        extra = _from_control(control, extra, props, needs_range=True)
+    return _built_from(node("number", id=id, **extra, **props), control)
 
 
 def button(*, label: str | None = None, text_size: float | None = None, color: str | None = None,
@@ -1130,12 +1148,12 @@ def toggle(control=None, *, label: str | None = None, value: bool | None = None,
     if value is not None:
         extra["value"] = 1 if value else 0
     if control is not None:
-        extra = _from_control(control, extra, needs_range=False)
+        extra = _from_control(control, extra, props, needs_range=False)
         extra.pop("min", None)
         extra.pop("max", None)
         extra.pop("step", None)
         extra["value"] = 1 if extra.get("value") else 0
-    return node("toggle", id=id, **extra, **props)
+    return _built_from(node("toggle", id=id, **extra, **props), control)
 
 
 def text(*, value: str | None = None, label: str | None = None, text_size: float | None = None,
