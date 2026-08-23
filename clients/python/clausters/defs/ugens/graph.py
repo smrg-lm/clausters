@@ -132,33 +132,12 @@ class Control(_Node):
     the `SynthDef` gathers the controls a graph references, in first-seen
     order."""
 
-    def __init__(self, name, default=0.0, rate=None, lag=None, lag_down=None,
-                 min=None, max=None, step=None):
+    def __init__(self, name, default=0.0, rate=None, lag=None, lag_down=None):
         self.name = str(name)
         self.default = float(default)
         self.rate = None if rate is None else str(rate)
         self.lag = None if lag is None else float(lag)
         self.lag_down = None if lag_down is None else float(lag_down)
-        #: The range this control is meant to be driven over — what a GUI
-        #: control needs to draw it, and the one thing about a control only its
-        #: author knows. It rides no wire: the server takes any float, so this
-        #: is a statement about the surface, not a constraint (see
-        #: `clausters.defs.info.ControlInfo`, which a FaustDef fills from its
-        #: own ``hslider`` declaration).
-        #:
-        #: **Held privately and read through `range`/`step`**: a control is a
-        #: signal, and `min`/`max` on a signal are the binary operators
-        #: (``freq.min(other)`` composes a ``BinaryOpUGen``). An attribute of
-        #: either name shadows the operator, which is how the range first
-        #: shipped and what the TypeScript port caught, its compiler refusing
-        #: the same override Python had accepted in silence.
-        self._min = None if min is None else float(min)
-        self._max = None if max is None else float(max)
-        self._step = None if step is None else float(step)
-        if (self._min is None) != (self._max is None):
-            raise ValueError(
-                f"control {self.name!r}: a range is min *and* max, and it is "
-                "either declared or not")
         if self.rate is not None and self.rate not in _CONTROL_RATES:
             raise ValueError(
                 f"unknown control type {self.rate!r}; use one of "
@@ -167,52 +146,26 @@ class Control(_Node):
         if self.lag_down is not None and self.lag is None:
             raise ValueError("lag_down requires lag (the up time)")
 
-    @property
-    def range(self):
-        """``(min, max)`` — the range this control is meant to be driven over —
-        or ``None`` when it declares none.
-
-        The read side of the ``min=``/``max=`` a control is declared with, and
-        the same property `clausters.defs.info.ControlInfo` answers, so a widget
-        built from either reads one thing. It is a property rather than two
-        attributes because ``min``/``max`` on a signal are the binary operators.
-        """
-        return None if self._min is None else (self._min, self._max)
-
-    @property
-    def step(self):
-        """The increment this control is meant to move in, or ``None``."""
-        return self._step
-
     def _signature(self):
         """The full identity used to detect conflicting reuses of a name."""
-        return (self.default, self.rate, self.lag, self.lag_down,
-                self._min, self._max, self._step)
+        return (self.default, self.rate, self.lag, self.lag_down)
 
     def __repr__(self):
         return f"Control({self.name!r}, {self.default!r})"
 
 
-def control(name, default=0.0, rate=None, lag=None, lag_down=None,
-            min=None, max=None, step=None) -> Control:
+def control(name, default=0.0, rate=None, lag=None, lag_down=None) -> Control:
     """A named control (``/synth_new``/``/node_set`` parameter). ``rate`` is its type
     (``"tr"`` trigger, ``"ir"`` scalar, or the default ``kr``); ``lag`` (with an
     optional ``lag_down``) smooths a ``kr`` control.
 
-    ``min``/``max`` (with an optional ``step``) declare the **range it is meant
-    to be driven over** — the one thing about a control only the person writing
-    the graph knows, and what a GUI control reads instead of being handed the
-    same two numbers a second time::
-
-        freq = control("freq", 220.0, min=110.0, max=880.0)
-        sd = SynthDef("voice", out(0.0, sine(freq=freq)))
-        knob(freq)                      # name, value and range, all from here
-
-    It rides no wire: the server takes any float for any control, so a range is
-    a statement about the surface rather than a constraint. See `Control`.
+    A control declares **no range**: it is a signal in a graph, and the range a
+    knob is drawn over is the knob's (``knob(freq, min=110.0, max=880.0)``).
+    The one exception is a FaustDef, whose ``hslider`` declares its range inside
+    the DSP and reports it back — see `clausters.defs.info.ControlInfo`.
+    See `Control`.
     """
-    return Control(name, default, rate=rate, lag=lag, lag_down=lag_down,
-                   min=min, max=max, step=step)
+    return Control(name, default, rate=rate, lag=lag, lag_down=lag_down)
 
 
 def _channel(m):

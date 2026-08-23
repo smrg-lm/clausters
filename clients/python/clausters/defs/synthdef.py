@@ -36,9 +36,7 @@ from .ugens import ChannelList, Control, Ugen
 def _control_info(c) -> ControlInfo:
     """A graph's `clausters.defs.Control` as the `ControlInfo` every def family
     answers with — one shape for the GUI to read, whichever family declared it."""
-    lo, hi = c.range or (None, None)
-    return ControlInfo(name=c.name, default=c.default, rate=c.rate or "kr",
-                       min=lo, max=hi, step=c.step)
+    return ControlInfo(name=c.name, default=c.default, rate=c.rate or "kr")
 
 
 class SynthDef:

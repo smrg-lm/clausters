@@ -101,17 +101,18 @@ correspondence kept by hand. The blob has no live door in the host, so `set` on
 a spilled source refuses rather than pretending; a native client rewrites its
 file and re-reads it.
 
-**A control widget is built from the control it drives.** `control` grew
-`min`/`max`/`step` — the range the control is meant to be driven over — and
-`knob(freq)`, `slider(sd.control("amp"))`, `number` and `toggle` read the name,
-the default and the range off it. All three def families answer with the same
-`ControlInfo` shape (`sd.control(...)`, `fd.control(...)`, `gd.control(...)`,
-and `.controls()`), and none of it rides a wire but Faust's. Where Python writes
-`sd["freq"]`, this client writes `sd.control("freq")`: a class here cannot take
-a bracket without an index signature over everything else on it. Then the whole
-surface binds in one verb — `win.bind(synth)`, `win.unbind()`,
-`win.controlMap()` — and `win.widget("freq").bind(...)` is still there for a
-bus, another widget or an arbitrary address.
+**A control widget is built from the control it drives.** `knob(freq)`,
+`slider(sd.control("amp"))`, `number` and `toggle` read the control's **name**
+and **default** off it, so the widget and the graph cannot disagree about what
+`"freq"` is; the **range is the widget's** (`knob(freq, { min: 110.0, max:
+880.0 })`), since a control is a signal in a graph and says nothing about how a
+knob is drawn. Only a Faust parameter arrives with a range, from the `hslider`
+that declared it. All three def families answer with the same `ControlInfo`
+shape, spelled `sd.control("freq")` where Python writes `sd["freq"]`: a class
+here cannot take a bracket without an index signature over everything else on
+it. Then the whole surface binds in one verb — `win.bind(synth)`,
+`win.unbind()`, `win.controlMap()` — and `win.widget("freq").bind(...)` is still
+there for a bus, another widget or an arbitrary address.
 
 **Nothing is pumped.** The page already has an event loop, so the Python
 client's `pump` has no counterpart: a handler fires when the message arrives.

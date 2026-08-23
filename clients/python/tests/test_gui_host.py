@@ -210,7 +210,7 @@ def test_the_id_is_never_positional():
     # The argument that *is* positional reads without a keyword.
     assert guidef.label("hello")["text"] == "hello"
     assert guidef.meter(4)["bus"] == 4
-    assert guidef.knob(_control("freq", 220.0, min=110.0, max=880.0))["name"] == "freq"
+    assert guidef.knob(_control("freq", 220.0), min=110.0, max=880.0)["name"] == "freq"
     assert guidef.menu(["sine", "saw"])["options"] == ["sine", "saw"]
     assert guidef.panel(guidef.button())["children"][0]["type"] == "button"
 

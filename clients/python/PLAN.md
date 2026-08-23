@@ -446,61 +446,67 @@ the def already has removes the asymmetry rather than papering over it.
 
 #### Part 2 — the GUI and the audio server
 
-- ✅ **C42 — A control declares its range, and a widget reads it** *(done
-  2026-08-23)*. The slot already existed and was a quarter filled:
-  `ControlInfo` carries `min`/`max`/`step`, populated by a `FaustDef` (Faust
-  declares them in its `hslider`) and `None` everywhere else. `control()` grew
-  the same three, `GraphDef.port` takes them too, and all three families answer
-  with one shape — so a control widget reads any of them the same way.
+- ✅ **C42 — A widget is built from the control it drives** *(done 2026-08-23;
+  **corrected the same day**, see below)*. A `knob`, `slider`, `number` or
+  `toggle` takes a def's control positionally and reads its **name** — what
+  `/node_set` addresses — and its **default**, so the widget and the graph
+  cannot disagree about what `"freq"` is and nobody types the name twice.
 
   ```python
-  freq = control("freq", 220.0, min=110.0, max=880.0)
+  freq = control("freq", 220.0)
   sd = SynthDef("voice", out(0.0, sine(freq=freq) * 0.2))
 
-  knob(freq)                                    # name, value and range, from the control
-  slider(sd["amp"], label="level")              # or indexed off the def
-  view(*[knob(c) for c in sd.controls]).open()  # the whole surface, derived
-
-  knob(control("x", 0.0))                       # error: 'x' declares no range
-  knob(control("x", 0.0), min=0.0, max=1.0)     # declared where it is used
+  knob(freq, min=110.0, max=880.0)              # name and value, from the control
+  slider(sd["amp"], min=0.0, max=1.0, label="level")     # or indexed off the def
+  view(*[knob(c, min=0.0, max=1.0) for c in sd.controls]).open()
   ```
 
-  `sd["freq"]`, `fd["cutoff"]` and `gd["mix"]` all give a `ControlInfo`, which
-  is the unifying move: a `SynthDef` keeps the `Control` objects its graph
-  references (`_controls`, the same first-seen order `spec` walks) rather than
-  reading the range back off a wire that does not carry it; a `FaustDef` reads
-  its own payload, where Faust put `init`/`min`/`max`/`step` beside the control;
-  a `GraphDef` port keeps what `port()` declared, alongside the targets it
-  drives. The range also joined a control's `_signature`, so two uses of one
-  name with different ranges are the conflict they are.
+  `sd["freq"]`, `fd["cutoff"]` and `gd["mix"]` all give a `ControlInfo`, which is
+  the unifying move: a `SynthDef` keeps the `Control` objects its graph
+  references (`_controls`, the same first-seen order `spec` walks); a `FaustDef`
+  reads its own payload; a `GraphDef` port answers with the targets it drives.
 
-  **Where the range lives, and the cost of that**: a `SynthDef`'s wire does not
-  carry `min`/`max` and nothing was added to it — the server takes any float for
-  any control, so a range is a statement about the *surface*, not a constraint.
-  The consequence is stated rather than worked around: a def **queried back off
-  a running server** reports a range only for a FaustDef. Teaching
-  `/def_send synth` to carry one is a server change and is not smuggled in here.
+  **The correction, decided by the user the day it shipped: the range does not
+  belong to a def.** It first landed as `control(..., min=, max=, step=)` and
+  `GraphDef.port(..., min=, max=)`, with the widget reading them. That is wrong
+  twice over:
+
+  - **A control is a signal.** It says what value flows into a graph, not how a
+    knob should be drawn — and the two names collide outright, because `min`/`max`
+    on a signal are the **binary operators** (`freq.min(other)` composes a
+    `BinaryOpUGen`). The attributes shadowed the methods for *every* control,
+    ranged or not, since one without a range set them to `None`. Nothing in the
+    client called them, so no test saw it; TypeScript's compiler refused the
+    override outright, which is how it was found.
+  - **A GraphDef port is the same category**: a name the server takes any float
+    for, declared by hand for the sake of a GUI. It had no range before this
+    milestone either, so removing it touches nothing older.
+
+  So `min`/`max` are **spelled on the widget**, and a control that has no range
+  of its own says so rather than being drawn over a guess. The one control that
+  arrives with a range is a **Faust** parameter, and that is not an exception
+  this client makes: `hslider(label, init, min, max, step)` cannot be written
+  without one, the compiled DSP reports it back, and `ControlInfo` has carried
+  the three fields all along with only that family filling them. Faust's syntax
+  showing through, not a range clausters declares.
 
   **What the host cannot draw, written down rather than faked.** `props::Range`
-  is `{value, min, max, label, text_size}`: linear, no step, no curve. So `step`
-  reaches the widget as a prop nothing reads yet, and a **named spec**
-  (`spec="freq"` → 20..20000 *exponential*) was deliberately **not** shipped — a
-  spec that silently drew linear would be worse than none. Both are one entry in
-  `clients/gui/PLAN.md`, to be done together, since a curve without a step
-  leaves `midinote` wrong.
+  is `{value, min, max, label, text_size}`: linear, no step, no curve. A **named
+  spec** (`spec="freq"` → 20..20000 *exponential*) was deliberately **not**
+  shipped — a spec that silently drew linear would be worse than none. That is
+  one entry in `clients/gui/PLAN.md`, and it survives the correction unchanged:
+  it was always about what a *widget* can express.
 
   The props-parity manifest learned that `control` is **not a prop**: it is a
-  *source* of `name`/`value`/`min`/`max`, so it is a parameter each client
-  spells its own way rather than a key on the wire. (That test caught it, which
-  is what it is for.)
+  *source* of `name`/`value`, so it is a parameter each client spells its own way
+  rather than a key on the wire. (That test caught it, which is what it is for.)
 
-  Docs: the defs page gains "The range a control is driven over" (including the
-  query-back asymmetry), the GUI page "A control widget is built from the control
-  it drives". Example: `gui_bind.py` declares `FREQ` once and the knob is
-  `knob(FREQ)` — the widget and the graph can no longer disagree about what
-  "freq" is. Tests: `tests/test_control_range.py` — the three families, the
-  range never reaching the wire, the identity conflict, the derived surface, the
-  keyword override and the two refusals.
+  Docs: the defs page gains "A widget is built from the control it drives", the
+  GUI page the same section from the widget's side. Example: `gui_bind.py`
+  declares `FREQ`/`AMP` once and each widget spells the range it is turned over.
+  Tests: `tests/test_control_range.py` — the three families answering one shape,
+  a control taking no range at all (and its operators still composing), Faust
+  bringing its own, the keyword override and the two refusals.
 
 - ✅ **C43 — The binding is made against the control, not against a widget id**
   *(done 2026-08-23)*. A widget and a def control used to meet only as a string
@@ -708,18 +714,23 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
 
 ## Found by use: the running list of fixes and open questions
 
-- ✅ **A control's range shadowed the operators of the same name** *(found and
-  fixed 2026-08-23, porting C42 to TypeScript)*. C42 gave `Control` the
-  attributes `min`/`max`, and a `Control` **is a signal**: `min`/`max` on a
-  signal are the binary operators (`freq.min(other)` composes a
-  `BinaryOpUGen`). The attribute shadowed the method for *every* control, ranged
-  or not — a control with no range set `self.min = None`, so `freq.min(2.0)`
-  raised `'NoneType' object is not callable`. Held privately now and read
-  through `Control.range` / `Control.step`, the same pair `ControlInfo` already
-  answered, and `_from_control` reads that instead of two attributes. Nothing in
-  the client called `Control.min`, which is why no test saw it; TypeScript's
-  compiler refused the override outright, and that is the argument for porting
-  a reform before writing the examples against it.
+- ✅ **A control's range shadowed the operators of the same name, and the range
+  did not belong there at all** *(found and fixed 2026-08-23, porting C42 to
+  TypeScript)*. C42 gave `Control` the attributes `min`/`max`, and a `Control`
+  **is a signal**: `min`/`max` on a signal are the binary operators
+  (`freq.min(other)` composes a `BinaryOpUGen`). The attribute shadowed the
+  method for *every* control, ranged or not — a control with no range set
+  `self.min = None`, so `freq.min(2.0)` raised `'NoneType' object is not
+  callable`. Nothing in the client called it, which is why no test saw it;
+  TypeScript's compiler refused the override outright.
+
+  The first fix was to read the range through `range`/`step` instead. The user
+  rejected that as treating the symptom: if `min`/`max` cannot be written on a
+  signal, it is because **they are not a property of one** — the range is how a
+  *knob* is drawn, so it belongs to the widget. Removed from `control()` and
+  from `GraphDef.port()` (which had none before C42 either), spelled on the
+  widget in both clients, and only a Faust parameter still arrives with one,
+  because `hslider` cannot be written without it. See C42, corrected.
 - ✅ **A curve was drawn with a shape it did not have.** `Editor._body_for`
   handed `clip(points=…)` a list of already-resolved `(t, v, shape, curve)`
   quads, but a `points` argument of *tuples* is read as `(t, v, curve_spec)` and

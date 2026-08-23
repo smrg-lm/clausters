@@ -1017,17 +1017,24 @@ def _built_from(widget: View, control) -> View:
 
 
 def _from_control(control, given: dict, props: dict, *, needs_range: bool) -> dict:
-    """A control's own props for a widget built from it: its name, its default
-    as the value, and its range.
+    """A control's own props for a widget built from it: its name and its
+    default as the value — plus a range only where the control genuinely has
+    one.
 
-    The **entry point named once**. A def's control is the only thing that knows
-    what it is meant to be driven over, and a widget that copies those numbers by
-    hand is a second declaration nothing checks. Anything with ``name``,
-    ``default`` and (for a range widget) a ``range`` is accepted — the
-    graph's own `clausters.defs.Control` object, or the
-    `clausters.defs.info.ControlInfo` every def family answers with
-    (``sd["freq"]``, ``fd["cutoff"]``, ``gd["mix"]``), which is also what a
-    FaustDef fills from its ``hslider``.
+    The **entry point named once**, for what a def actually knows: what the
+    control is called (which is what ``/node_set`` addresses) and what it starts
+    at. Anything with ``name`` and ``default`` is accepted — the graph's own
+    `clausters.defs.Control` object, or the `clausters.defs.info.ControlInfo`
+    every def family answers with (``sd["freq"]``, ``fd["cutoff"]``,
+    ``gd["mix"]``).
+
+    **The range is the widget's**, and it is spelled here:
+    ``knob(freq, min=110.0, max=880.0)``. A control is a signal in a graph and a
+    port is a name the server takes any float for; neither says how a knob
+    should be drawn. The one control that arrives with a range is a **Faust**
+    parameter, because ``hslider(label, init, min, max, step)`` cannot be
+    written without one and the compiled DSP reports it back — Faust's syntax
+    showing through, not a range this client declares.
 
     Explicit keywords win: the control says what it is, the call says how to draw
     it. That includes ``name=``, which is the handle's index and is taken out of
@@ -1043,9 +1050,9 @@ def _from_control(control, given: dict, props: dict, *, needs_range: bool) -> di
     lo, hi = getattr(control, "range", None) or (None, None)
     if needs_range and lo is None and given.get("min") is None:
         raise ValueError(
-            f"control {name!r} declares no range, so there is nothing to draw "
-            "it over — give it one where it is declared "
-            f"(control({name!r}, ..., min=…, max=…)), or spell min=/max= here")
+            f"control {name!r} has no range to be drawn over — spell one on the "
+            f"widget (knob({name}, min=…, max=…)). Only a FaustDef's parameter "
+            "brings its own, from the hslider that declared it")
     given = dict(given)
     if "name" in props:
         given["name"] = props.pop("name")

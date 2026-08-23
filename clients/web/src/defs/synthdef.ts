@@ -291,12 +291,5 @@ export class SynthDef {
  * shape for the GUI to read, whichever family declared it.
  */
 export function controlInfo(c: Control): ControlInfo {
-    const [min, max] = c.range ?? [undefined, undefined];
-    const info: ControlInfo = { name: c.name, default: c.default, rate: c.rate ?? "kr" };
-    if (min !== undefined) {
-        info.min = min;
-        info.max = max;
-    }
-    if (c.step !== null) info.step = c.step;
-    return info;
+    return { name: c.name, default: c.default, rate: c.rate ?? "kr" };
 }

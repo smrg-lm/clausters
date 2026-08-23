@@ -103,21 +103,26 @@ options — so an ordinary tree mentions no ids at all.
 ### A control widget is built from the control it drives
 
 A `knob`, `slider`, `number` or `toggle` takes a **def's control** positionally,
-and reads its name, its default and the range it declared:
+and reads its name and its default off it:
 
 ```python
-freq = control("freq", 220.0, min=110.0, max=880.0)
+freq = control("freq", 220.0)
 sd = SynthDef("voice", out(0.0, sine(freq=freq) * 0.2))
 
-knob(freq)                              # the control object you held
-slider(sd["amp"], label="level")        # or one indexed off the def
-view(*[knob(c) for c in sd.controls])   # the whole surface, derived
+knob(freq, min=110.0, max=880.0)             # the control object you held
+slider(sd["amp"], min=0.0, max=1.0, label="level")   # or one off the def
+view(*[knob(c, min=0.0, max=1.0) for c in sd.controls])
 ```
 
+**The range is the widget's**: a control is a signal in the graph and says
+nothing about how a knob is drawn, so `min`/`max` are spelled here. A control
+with no range of its own says so rather than being drawn over a guess — which is
+every control but a **Faust** parameter, whose `hslider` declares one inside the
+DSP and reports it back (and a keyword still wins over it: the control says what
+it is, the call says how to draw it).
+
 All three def families answer the same way — `sd["freq"]`, `fd["cutoff"]`,
-`gd["mix"]` — so the widget does not care which built it. A keyword still wins
-where you spell one: the control says what it is, the call says how to draw it.
-A control that declares no range says so instead of being drawn over a guess.
+`gd["mix"]` — so the widget does not care which built it.
 
 The widget's `name` becomes the control's name, which is what the handle
 addresses it by, and what [binding](#values-that-never-come-back-to-the-script) uses to

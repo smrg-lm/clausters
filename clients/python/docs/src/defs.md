@@ -231,46 +231,39 @@ An unknown `rate`, or a `lag_down` without a `lag`, raises a `ValueError` at bui
 
 Each **UGen output** also carries a calculation **rate** — `ir` (init), `kr` (control), `ar` (audio), `dr` (demand). It defaults per kind (signal UGens are `ar`, `rand` / `sample_rate` are `ir`, the demand sources are `dr`); set it explicitly with `Ugen.at_rate`, e.g. `sine(5.0).at_rate("kr")` for a control-rate LFO. The full rate model and its coercion rules live in the [Clausters server book](https://clausters.readthedocs.io/) (schemas / OSC reference).
 
-### The range a control is driven over
+### A widget is built from the control it drives
 
-`control` also takes `min`/`max` (and an optional `step`): the range the control
-is *meant* to be driven over.
+A def knows two things about a control: its **name** — what `/node_set`
+addresses — and its **default**. A widget built from one reads both, so the
+widget and the graph cannot disagree about what `"freq"` is, and the handle
+addresses the widget by the control's name.
 
 ```python
-freq = control("freq", 220.0, min=110.0, max=880.0)
+freq = control("freq", 220.0)
 sd = SynthDef("voice", out(0.0, sine(freq=freq) * 0.2))
 
-knob(freq)              # name, default and range: all from the control
+knob(freq, min=110.0, max=880.0)     # name and default from the control
 ```
 
-They are declared as `min=`/`max=` and read back as `freq.range` (a `(min, max)`
-pair, or `None`) and `freq.step` — not as attributes of those names, because a
-control **is a signal** and `min`/`max` on a signal are the binary operators
-(`freq.min(other)` composes a `BinaryOpUGen`). `ControlInfo` answers the same
-`range`, so a widget built from either reads one thing.
+**The range is the widget's**, and it is spelled there. A control is a *signal*
+in the graph and a `GraphDef` port is a name the server takes any float for;
+neither says how a knob should be drawn, and no range rides any wire — nothing
+validates a `/node_set` against one.
 
-It is the one thing about a control only the person writing the graph knows, and
-writing it here is what stops a GUI from declaring it a second time where nothing
-checks the two against each other. A widget built from a control takes the
-control's **name** too, which is how the handle addresses it.
-
-The range **rides no wire**: the server takes any float for any control, so this
-is a statement about the surface rather than a constraint, and nothing validates
-a `/node_set` against it. One consequence worth knowing: a def *queried back off
-a running server* reports a range only for a **FaustDef**, whose `hslider`
-declares one in the compiled DSP — the other families' ranges live in the
-`SynthDef`/`GraphDef` object you built.
+The exception is a **FaustDef**, whose parameters arrive with a range because
+`hslider(label, init, min, max, step)` cannot be written without one and the
+compiled DSP reports it back. That is Faust's syntax showing through, not
+something this client declares — and it is why `ControlInfo` has carried
+`min`/`max`/`step` all along while only that family fills them.
 
 All three families answer with the same shape, so a GUI reads any of them alike:
 
 ```python
-sd["freq"]                  # a ControlInfo: name, default, rate, min, max, step
-fd["cutoff"]                # from Faust's own hslider
+sd["freq"]                  # a ControlInfo: name, default, rate
+fd["cutoff"]                # plus min/max/step, from Faust's own hslider
 gd["mix"]                   # a surface port, plus the targets it drives inside
-[knob(c) for c in sd.controls]
+[knob(c, min=0.0, max=1.0) for c in sd.controls]
 ```
-
-A `GraphDef` port takes the range on `port(..., min=…, max=…)`.
 
 ### The UGen set
 

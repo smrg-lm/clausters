@@ -108,9 +108,6 @@ class GraphDef:
         self._members: list[dict] = []
         self._surface: dict[str, list[dict]] = {}
         self._defaults: dict[str, float] = {}
-        #: port name -> ``(min, max, step)`` — client-side, like a control's
-        #: range: what a GUI needs and what no wire carries.
-        self._ranges: dict[str, tuple] = {}
 
     def bus(self, name: str, *, rate: str = "audio", channels: int = 1) -> GraphBusRef:
         """Declares a private internal bus (``rate`` ``"audio"`` or
@@ -153,46 +150,32 @@ class GraphDef:
         view -- `clausters.defs.GraphPatch.from_graphdef`."""
         return [dict(m) for m in self._members]
 
-    def port(self, name: str, *targets: _Target, default: float | None = None,
-             min: float | None = None, max: float | None = None,
-             step: float | None = None):
+    def port(self, name: str, *targets: _Target, default: float | None = None):
         """Defines a surface port mapping ``name`` to one or more member
         controls (each a `_Target`, optionally ``.scaled(...)``).
         ``default`` is applied at instantiation unless overridden.
 
-        ``min``/``max`` (with an optional ``step``) declare the **range the port
-        is meant to be driven over**, exactly as `clausters.defs.control` does
-        for a SynthDef's control — so a GUI reads all three def families the same
-        way (`controls`). It rides no wire: the surface spec carries the targets
-        and the default, and the range is the client's statement about how the
-        port is meant to be operated."""
+        A port declares **no range**: like a SynthDef's control it is a name the
+        server takes any float for, and the range a knob is drawn over belongs
+        to the knob (``knob(gd["mix"], min=0.0, max=1.0)``)."""
         if not targets:
             raise ValueError(f"surface port {name!r} needs at least one target")
-        if (min is None) != (max is None):
-            raise ValueError(
-                f"surface port {name!r}: a range is min *and* max, and it is "
-                "either declared or not")
         self._surface[str(name)] = [t._as_dict() for t in targets]
         if default is not None:
             self._defaults[str(name)] = float(default)
-        if min is not None:
-            self._ranges[str(name)] = (float(min), float(max),
-                                       None if step is None else float(step))
 
     @property
     def controls(self) -> list:
         """This def's surface ports as `clausters.defs.info.ControlInfo`
         entries, in declaration order — the shape all three def families answer
         with, so a GUI reads one of them the same way. ``targets`` names what
-        each port drives inside, and the range is whatever `port` declared."""
+        each port drives inside."""
         from .info import ControlInfo
 
         out = []
         for name, targets in self._surface.items():
-            lo, hi, step = self._ranges.get(name, (None, None, None))
             out.append(ControlInfo(
                 name=name, default=self._defaults.get(name, 0.0),
-                min=lo, max=hi, step=step,
                 targets=tuple((t.get("member"), t.get("control"),
                                t.get("mul", 1.0), t.get("add", 0.0))
                               for t in targets)))

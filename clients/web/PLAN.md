@@ -1954,17 +1954,17 @@ as some other milestone has a better claim on it.
     uses — and that difference is `idiom`, to be written into `docs/bindings.md`
     rather than left as two policies. The threshold and the choice itself are the
     same in both clients.
-  - **A control widget is built from the control it drives.** `control()` grew
-    `min`/`max`/`step` — the range the control is meant to be driven over —
-    and `knob(freq)`, `slider(sd["freq"])`, `number`, `toggle` read the name,
-    the default and the range off it. All three def families answer with one
-    `ControlInfo` shape (`sd["freq"]`, `fd["cutoff"]`, `gd["mix"]`, and
-    `.controls`), which is the part that must not be re-derived differently:
-    a FaustDef's range comes from its `hslider` and the other two from what the
-    author declared, and **none of it rides a wire but Faust's**. The
-    props-parity manifest treats `control` as *not a prop* (it is a source of
-    `name`/`value`/`min`/`max`), so the parameter is each client's own
-    spelling.
+  - **A control widget is built from the control it drives.** `knob(freq)`,
+    `slider(sd["amp"])`, `number` and `toggle` read the control's **name** and
+    **default** off it. All three def families answer with one `ControlInfo`
+    shape (`sd["freq"]`, `fd["cutoff"]`, `gd["mix"]`, and `.controls`), which is
+    the part that must not be re-derived differently. **The range is the
+    widget's** — a control is a signal and a port is a name the server takes any
+    float for, so neither says how a knob is drawn; only a **Faust** parameter
+    arrives with one, from the `hslider` that could not have been written
+    without it, and that is the only range on any wire. The props-parity
+    manifest treats `control` as *not a prop* (it is a source of `name`/`value`),
+    so the parameter is each client's own spelling.
   - **The binding is made against the control.** A control widget keeps the
     control it was built from, the id walk collects `widget id -> control name`
     beside the names, and the handle binds the whole surface in one verb:
@@ -2012,13 +2012,15 @@ as some other milestone has a better claim on it.
     cannot take a bracket without an index signature over everything else on it.
     `controls()` is a method for the same reason Python has a property — each
     language's own spelling of one surface.
-  - **The port found a defect in the reference client and fixed it there**: a
-    `Control` *is* a signal, and `min`/`max` on a signal are the binary
-    operators, so the range shipping as attributes of those names shadowed them
-    — for every control, since the attribute was set to `None` when no range was
-    declared. Read through `range`/`step` now, in both clients. TypeScript's
-    compiler refused the override Python had accepted in silence, which is the
-    whole argument for porting before the examples.
+  - **The port found a defect in the reference client, and the fix turned into a
+    design correction**: a `Control` *is* a signal, and `min`/`max` on a signal
+    are the binary operators, so a range shipping as attributes of those names
+    shadowed them — for every control, since the attribute was `None` when no
+    range was declared. TypeScript's compiler refused the override Python had
+    accepted in silence. The answer was not to rename the read but to take the
+    range off the def entirely: **it belongs to the GUI widget** (C42's own
+    entry has it). That is the argument for porting before the examples, twice
+    over — the port found the defect, and the defect found the design.
 
   **What did not land, and why**: `open()` with **no** element still draws on
   the page's default canvas rather than making one of its own. The surface is

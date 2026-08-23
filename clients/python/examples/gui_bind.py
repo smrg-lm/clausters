@@ -53,13 +53,13 @@ server = session.server
 gui = session.gui()
 
 
-#: The controls the panel drives, each declared **with the range it is meant to
-#: be turned over**. That range is the one thing about a control only the graph's
-#: author knows, so it is written here and read by the widget -- rather than the
-#: same two numbers typed a second time beside it, where nothing checks them
-#: against each other.
-FREQ = control("freq", 220.0, min=110.0, max=880.0)
-AMP = control("amp", 0.2, min=0.0, max=0.5)
+#: The controls the panel drives. A control is a **name and a default** -- what
+#: `/node_set` addresses and what the synth starts at -- and a widget built from
+#: one reads both, so the two cannot disagree about what "freq" is. The *range*
+#: is not here: a control is a signal in the graph and says nothing about how a
+#: knob should be drawn, so each widget below spells its own.
+FREQ = control("freq", 220.0)
+AMP = control("amp", 0.2)
 
 
 def beep(name: str = "gui_bind_beep") -> SynthDef:
@@ -74,10 +74,10 @@ synth = Synth("gui_bind_beep", server=server)   # the def's own defaults
 
 # %% [markdown]
 # ## A panel of the def's controls, bound to the synth
-# Each widget is built from the def's own control: its name, its default and its
-# range all come from `FREQ`/`AMP`, so the widget and the graph cannot disagree
-# about what "freq" is. The name each takes is the control's, which is what the
-# script addresses it by -- it never picks an id.
+# Each widget is built from the def's own control: its name and its default come
+# from `FREQ`/`AMP`, and the range it is turned over is the widget's own. The
+# name each takes is the control's, which is what the script addresses it by --
+# it never picks an id.
 #
 # So the window knows what it drives, and `win.bind(synth)` wires the whole
 # surface at once: one `/gui_bind` per control widget, each forwarding
@@ -90,7 +90,9 @@ synth = Synth("gui_bind_beep", server=server)   # the def's own defaults
 # the host `session.gui()` already made ambient.
 
 # %%
-v = layout(knob(FREQ), slider(AMP), flow="col")
+v = layout(knob(FREQ, min=110.0, max=880.0),
+           slider(AMP, min=0.0, max=0.5),
+           flow="col")
 
 win = v.open()
 win.bind(synth)

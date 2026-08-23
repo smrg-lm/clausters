@@ -1294,10 +1294,9 @@ export interface ControlLike {
     name: string;
     default: number;
     /**
-     * The graph `Control`'s own read of its range. A `ControlInfo` carries
-     * `min`/`max` instead, which a control widget falls back to — the field is
-     * not declared here because on a `Control` those two names are the binary
-     * operators.
+     * A `ControlInfo`'s range, which only a **Faust** parameter fills — read
+     * structurally, because on a graph `Control` `min`/`max` are the binary
+     * operators and naming the fields here would collide with them.
      */
     range?: [number, number] | null;
     step?: number | null;
@@ -1319,12 +1318,19 @@ function isControl(x: unknown): x is ControlLike {
 }
 
 /**
- * A control's own props for a widget built from it: its name, its default as
- * the value, and its range.
+ * A control's own props for a widget built from it: its name and its default as
+ * the value — plus a range only where the control genuinely has one.
  *
- * The **entry point named once**. A def's control is the only thing that knows
- * what it is meant to be driven over, and a widget that copies those numbers by
- * hand is a second declaration nothing checks.
+ * The **entry point named once**, for what a def actually knows: what the
+ * control is called (which is what `/node_set` addresses) and what it starts at.
+ *
+ * **The range is the widget's**, and it is spelled on the call:
+ * `knob(freq, { min: 110.0, max: 880.0 })`. A control is a signal in a graph and
+ * a GraphDef port is a name the server takes any float for; neither says how a
+ * knob should be drawn. The one control that arrives with a range is a **Faust**
+ * parameter, because `hslider(label, init, min, max, step)` cannot be written
+ * without one and the compiled DSP reports it back — Faust's syntax showing
+ * through, not a range this client declares.
  *
  * Explicit options win: the control says what it is, the call says how to draw
  * it. That includes `name`, which is the handle's index — the two are usually
@@ -1335,18 +1341,17 @@ function fromControl(
     given: Props,
     { needsRange }: { needsRange: boolean },
 ): Props {
-    // A `ControlInfo` carries `min`/`max` where a graph `Control` answers
-    // `range` — and only a number counts, because on a `Control` those two
-    // names are the binary operators and reading them finds a function.
+    // Only a number counts: on a graph `Control` `min`/`max` are the binary
+    // operators, so reading them finds a function rather than a range.
     const info = control as { min?: unknown; max?: unknown };
     const [lo, hi] = control.range
         ?? (typeof info.min === "number" ? [info.min, info.max as number] : [undefined, undefined]);
     if (needsRange && lo === undefined && given.min === undefined) {
         throw new Error(
-            `control '${control.name}' declares no range, so there is nothing to ` +
-                "draw it over — give it one where it is declared " +
-                `(control("${control.name}", …, { min: …, max: … })), or spell ` +
-                "min/max here",
+            `control '${control.name}' has no range to be drawn over — spell one ` +
+                `on the widget (knob(${control.name}, { min: …, max: … })). Only a ` +
+                "FaustDef's parameter brings its own, from the hslider that " +
+                "declared it",
         );
     }
     const own = drop([
@@ -1381,9 +1386,10 @@ function controlArgs<T>(
  * A rotary `knob` over a continuous range.
  *
  * Takes a def's control first — `knob(freq)`, `knob(sd.control("freq"))` — and
- * reads its name, its default and its range off it, so the numbers are
- * declared once where the control is. Options still win over the control:
- * `knob(freq, { max: 2000 })` draws it over a wider range than it declares.
+ * reads its **name** and its **default** off it, so the widget and the graph
+ * cannot disagree about what `"freq"` is. The **range is the widget's**:
+ * `knob(freq, { min: 110.0, max: 880.0 })`. Only a Faust parameter arrives with
+ * one, and an option still wins over it.
  */
 export function knob(control?: ControlLike | RangeOptions, options?: RangeOptions): View {
     const [source_, opts] = controlArgs<RangeOptions>(control, options);

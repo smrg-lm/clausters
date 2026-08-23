@@ -3285,16 +3285,15 @@ finished work, where a pending item reads as done.
   readable.
 
 - ⬜ **A control has a range and no curve, and no step** *(noted 2026-08-23,
-  with the Python client's control-range work)*. `props::Range` is
+  with the Python client's control-widget work)*. `props::Range` is
   `{value, min, max, label, text_size}`: a knob, a slider and a number are
   **linear over min..max**, and that is the whole of it. Two things the clients
   can now say and the host cannot draw:
 
-  - **A step.** A control declares one (Faust's `hslider` carries it, and
-    `clausters.defs.control` now takes it), it reaches the widget as a `step`
-    prop, and nothing reads it — the drag is continuous whatever it says. A
-    quantized dial is the obvious use, and a `number` over integers the
-    commonest.
+  - **A step.** A widget can be given one (and a Faust parameter arrives with
+    one, from its `hslider`), it reaches the host as a `step` prop, and nothing
+    reads it — the drag is continuous whatever it says. A quantized dial is the
+    obvious use, and a `number` over integers the commonest.
   - **A curve.** There is none at all, which is what makes a *named spec*
     (sclang's `\freq`: 20..20000 **exponential**) something the client
     deliberately did not ship — a `spec="freq"` that silently drew linear

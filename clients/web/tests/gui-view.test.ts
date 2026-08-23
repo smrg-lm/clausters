@@ -296,9 +296,9 @@ test("a source in a prop that names no samples is refused", () => {
 
 // ---- a control widget is built from the control it drives -------------------
 
-test("a knob built from a control reads its name, default and range", () => {
-    const freq = control("freq", 440.0, { min: 110.0, max: 880.0 });
-    const k = knob(freq);
+test("a knob built from a control reads its name and default; the range is the widget's", () => {
+    const freq = control("freq", 440.0);
+    const k = knob(freq, { min: 110.0, max: 880.0 });
     assert.deepEqual({ ...k }, {
         type: "knob",
         name: "freq",
@@ -310,17 +310,21 @@ test("a knob built from a control reads its name, default and range", () => {
 });
 
 test("an option wins over the control", () => {
-    const freq = control("freq", 440.0, { min: 110.0, max: 880.0 });
-    const k = knob(freq, { max: 2000.0, name: "pitch" });
-    assert.equal(k["max"], 2000.0);
+    const freq = control("freq", 440.0);
+    const k = knob(freq, { min: 110.0, max: 880.0, name: "pitch" });
     assert.equal(k.name, "pitch");
     assert.equal(k["label"], "freq", "the label is still the control's");
 });
 
 test("a control with no range says so instead of being guessed at", () => {
-    assert.throws(() => knob(control("freq", 440.0)), /declares no range/);
-    // ...unless the call spells one.
+    assert.throws(() => knob(control("freq", 440.0)), /no range to be drawn over/);
     assert.equal(knob(control("freq", 440.0), { min: 1.0, max: 2.0 })["min"], 1.0);
+});
+
+test("a control is still a signal, where min and max are the operators", () => {
+    const freq = control("freq", 440.0);
+    assert.equal(freq.min(2.0).kind, "BinaryOpUGen");
+    assert.equal(freq.max(2.0).kind, "BinaryOpUGen");
 });
 
 test("a toggle needs no range", () => {
@@ -339,9 +343,10 @@ test("an option bag is not mistaken for a control", () => {
 
 test("the whole surface binds in one verb", () => {
     const { host, sent } = fakeHost();
-    const freq = control("freq", 440.0, { min: 110.0, max: 880.0 });
-    const amp = control("amp", 0.2, { min: 0.0, max: 1.0 });
-    const win = host.open(view({}, knob(freq), slider(amp)));
+    const freq = control("freq", 440.0);
+    const amp = control("amp", 0.2);
+    const win = host.open(view({}, knob(freq, { min: 110.0, max: 880.0 }),
+        slider(amp, { min: 0.0, max: 1.0 })));
 
     const before = sent().length;
     win.bind({ id: 1000 });
@@ -356,8 +361,8 @@ test("the whole surface binds in one verb", () => {
 
 test("a widget named apart from its control still binds the control", () => {
     const { host, sent } = fakeHost();
-    const freq = control("freq", 440.0, { min: 110.0, max: 880.0 });
-    const win = host.open(view({}, knob(freq, { name: "pitch" })));
+    const freq = control("freq", 440.0);
+    const win = host.open(view({}, knob(freq, { name: "pitch", min: 110.0, max: 880.0 })));
 
     const before = sent().length;
     win.bind(1000);
@@ -374,8 +379,8 @@ test("a window with no control widget says there is nothing to bind", () => {
 
 test("unbind gives every control widget back to the script", () => {
     const { host, sent } = fakeHost();
-    const freq = control("freq", 440.0, { min: 110.0, max: 880.0 });
-    const win = host.open(view({}, knob(freq)));
+    const freq = control("freq", 440.0);
+    const win = host.open(view({}, knob(freq, { min: 110.0, max: 880.0 })));
     win.bind(1000);
     const before = sent().length;
     win.unbind();
