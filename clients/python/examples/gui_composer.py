@@ -439,7 +439,7 @@ def say(message: str):
 gui = session.gui()
 editor = Editor(song, sample_rate=SR, tempo=TEMPO, quant=QUANT,
                 follow=True, extra=[bar], title="Composer")
-win = editor.open(gui)
+win = editor.open()
 print(f"opened window {win} — drag a clip to move it, an edge to resize it")
 
 # %% [markdown]

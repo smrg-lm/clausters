@@ -52,18 +52,7 @@ import tempfile
 import time
 
 from clausters import Session
-from clausters.gui import (
-    clip,
-    label,
-    menu,
-    panel,
-    pianoroll,
-    samples_to_file,
-    timeruler,
-    track,
-    waveform,
-    window,
-)
+from clausters.gui import (clip, label, menu, panel, pianoroll, samples_to_file, timeruler, track, view, waveform)
 from clausters.seq import Pbind, Pseq, Pwhite
 
 SR = 48_000.0
@@ -126,7 +115,7 @@ def column(tag: str, gestures: dict | None):
     )
 
 
-scene = window(
+scene = view(
     panel(column("default", None), column("reversed", REVERSED), layout="row"),
     panel(label(text="right column:"),
           menu(name="preset", options=PRESETS, label="gestures"),

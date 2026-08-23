@@ -31,7 +31,7 @@ import time
 from clausters import Session
 from clausters.defs import SynthDef, control, out, sine
 from clausters.defs.node import AddAction
-from clausters.gui import nodetree, window
+from clausters.gui import nodetree, view
 from clausters.defs import Group, Synth
 
 # %% [markdown]
@@ -56,7 +56,7 @@ Synth("beep", {"freq": 330.0}, target=group.id, action=AddAction.TAIL, server=se
 # One `nodetree` widget rooted at the root group (0), named so `open` resolves it.
 
 # %%
-win = gui.open(window(
+win = gui.open(view(
     nodetree(name="tree", group=0, controls=True, label="node tree"),
     title="Live node tree", w=420, h=520))
 win.on_closed(lambda: globals().__setitem__("_closed", True))

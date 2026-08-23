@@ -92,7 +92,7 @@ import tempfile
 from clausters import Session
 from clausters.render import read_soundfile
 from clausters.defs import Buffer, Synth, SynthDef, control, out, play_buf
-from clausters.gui import peaks_cache_file, samples_to_file, spectrogram, waveform, window
+from clausters.gui import peaks_cache_file, samples_to_file, spectrogram, view, waveform
 from clausters.seq import Pbind, Pseq, Pwhite
 
 SR = 48_000.0
@@ -200,7 +200,7 @@ SELECT_PLAN = {"drag": "select", "ctrl": "select_box select"}
 
 
 def scene(path: str) -> dict:
-    return window(
+    return view(
         waveform(name="wave", path=path, channels=2, sample_rate=SR,
                  gestures=SELECT_PLAN),
         spectrogram(name="spect", path=path, channels=2, sample_rate=SR,

@@ -67,7 +67,7 @@ import time
 from clausters import Buffer, Session, Synth, SynthDef
 from clausters.defs import control
 from clausters.defs.ugens import line, out, record_buf, sine
-from clausters.gui import timeruler, waveform, window
+from clausters.gui import timeruler, view, waveform
 
 #: How many glissandi record at once, and how long they run. The count is a
 #: command-line argument so the same file is a demonstration and a stress test.
@@ -113,7 +113,7 @@ print(f"takes: buffers {takes[0].bufnum}..{takes[-1].bufnum}, "
 
 # %%
 LANES = 1  # the navigation group every lane and the ruler share
-win = gui.open(window(
+win = gui.open(view(
     *[waveform(name=f"take{i}", buffer=t.bufnum, sample_rate=rate,
                fills=True, ruler="off", ruler_y="off", link=LANES)
       for i, t in enumerate(takes)],

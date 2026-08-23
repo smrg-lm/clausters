@@ -65,7 +65,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from clausters.gui import GuiHost, knob, label, panel, slider, toggle, window
+from clausters.gui import GuiHost, knob, label, panel, slider, toggle, view
 
 # Level 1: the host style file -- the whole host warms up.
 HOST_THEME = """\
@@ -107,7 +107,7 @@ theme_file.write_text(HOST_THEME)
 # by-eye test. Drop it and the same window draws its arcs stepped.
 gui = GuiHost().boot(extra_args=("--theme", str(theme_file), "--msaa", "4"))
 
-win = gui.open(window(
+win = gui.open(view(
     controls("host theme (file)"),
     panel(controls("theme group (cool)"),
           panel(controls("nested group (darker)"), layout="col", theme=NESTED),

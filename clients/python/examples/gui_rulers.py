@@ -44,7 +44,7 @@ import tempfile
 import time
 
 from clausters import Session
-from clausters.gui import menu, panel, samples_to_file, spectrogram, toggle, waveform, window
+from clausters.gui import menu, panel, samples_to_file, spectrogram, toggle, view, waveform
 from clausters.seq import Pbind, Pseq, Pwhite
 
 SR = 48_000.0
@@ -85,7 +85,7 @@ def scene(path: str) -> dict:
     # The two heavy views take a full row each; the unit controls share one
     # compact row underneath (a nested `row` panel), so the views keep most of
     # the window. Every widget is *named*, so the script drives it by name.
-    return window(
+    return view(
         waveform(name="wave", path=path, channels=2, sample_rate=SR,
                  tempo=TEMPO, quant=QUANT, bit_depth=16),
         spectrogram(name="spect", path=path, channels=2, sample_rate=SR,

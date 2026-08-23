@@ -52,7 +52,7 @@ import time
 
 from clausters import Session
 from clausters.defs import DoneAction, Env, SynthDef, control, env_gen, out, sine
-from clausters.gui import label, piano, window
+from clausters.gui import label, piano, view
 from clausters.defs import Synth
 
 # %% [markdown]
@@ -99,7 +99,7 @@ voice().send(server)
 
 # %%
 def scene() -> dict:
-    return window(
+    return view(
         label("click/drag plays; drag the strip to pan, wheel to zoom"),
         piano(name="keys", min=48, max=84, active_min=21, active_max=108, label="keys"),
         title="Piano -> server voices", w=900, h=260, layout="col",

@@ -22,7 +22,7 @@ import json
 
 from ..base import _osclib
 from ..base._oscinterface import OscTcpInterface, OscUdpInterface
-from .guidef import to_json
+from .guidef import to_json, view as _view
 from .handle import WindowHandle
 from .ids import GuiIdAllocator
 
@@ -181,7 +181,18 @@ class GuiHost:
         `clausters.gui.handle.WindowHandle` **is** the window id (an ``int``) and
         also resolves the tree's ``name``d widgets: ``win["cutoff"].set(…)``.
         Editing the open window is `set`; closing it is `close`. Any trailing
-        ``blobs`` ride along exactly as in `define`."""
+        ``blobs`` ride along exactly as in `define`.
+
+        **Any root opens.** A view with no parent is a window, so a root that is
+        not one — a `clausters.gui.guidef.layout`, a lone `clausters.gui.guidef.knob`
+        — is framed here in a window that **hugs** it: the frame is the client's,
+        adds nothing but the OS window the wire needs (only a ``window``-rooted
+        def becomes one), and is invisible to the handle, which goes on resolving
+        the tree's names. Reach for `clausters.gui.guidef.view` when the window's
+        own properties matter — a title, a size, a theme — since those are
+        properties of a root nobody frames."""
+        if tree.get("type") != "window":
+            tree = _view(tree, hug=True)
         if id is None:
             id = self.alloc_id()
         handle = self.define(id, tree, *blobs)
@@ -297,7 +308,7 @@ class GuiHost:
 
         The root carries no id in the tree — it is the ``/gui_def`` argument —
         so its id is passed in. A **duplicate name is refused** here, as it is
-        when a `clausters.gui.view.View` is built: the name is how the handle
+        when a `clausters.gui.guidef.View` is built: the name is how the handle
         addresses a widget, and a silent last-wins would leave the shadowed one
         drawing and unreachable.
         """

@@ -146,7 +146,7 @@ the tree. The mapping is one rule, not a heuristic per case:
 from clausters.gui import Editor
 
 editor = Editor(song, sample_rate=SR, tempo=2.0, quant=0.5, follow=True)
-editor.open(gui)                    # the arrangement, as a multitrack window
+editor.open()                       # the arrangement, as a multitrack window
 editor.render(server, clock)        # play it; the playhead sweeps the clips
 
 while editor.window is not None:

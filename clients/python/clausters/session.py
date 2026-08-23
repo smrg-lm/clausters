@@ -287,7 +287,7 @@ class Session(Environment):
 
         Returns:
             A started `clausters.gui.GuiHost`. Open a view on it with
-            `clausters.gui.view.View.open`, edit it with ``set`` and close it
+            `clausters.gui.guidef.View.open`, edit it with ``set`` and close it
             with `clausters.gui.GuiHost.close`.
         """
         if self._gui is not None:

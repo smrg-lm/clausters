@@ -35,7 +35,7 @@ import time
 
 from clausters import Session
 from clausters.defs import SynthDef, control, out, sine
-from clausters.gui import knob, window
+from clausters.gui import knob
 from clausters.defs import Synth
 
 # %% [markdown]
@@ -62,19 +62,19 @@ synth = Synth("gui_bind_beep", {"freq": 220.0}, server=server)
 
 # %% [markdown]
 # ## A named knob, bound to the synth's freq
-# The view is the subject: `window(...).open()` rather than `host.open(...)`, on
-# the host `session.gui()` already made ambient. The knob is *named*, not
+# One knob is all this window has to show, so the window *is* the knob: any node
+# opens, and a root that is not a `view` is framed in a window that hugs what it
+# holds -- no `w`, no `h`, and no `weight` stretching a control over an empty
+# pane. Write `view(...)` when the window's own properties matter (a title, a
+# size, a theme); here nothing does.
+#
+# The view is the subject either way: `v.open()` rather than `host.open(v)`, on
+# the host `session.gui()` already made ambient. And the knob is *named*, not
 # numbered -- the script addresses it by that name and never picks an id. `bind`
 # registers the forward in the host.
-#
-# A control knows how big it wants to be, and `hug` on the window makes the
-# window follow it: one knob is all this window has to show, so the window *is*
-# the knob -- no `w`, no `h`, and no `weight` stretching it over an empty pane.
 
 # %%
-v = window(
-    knob(name="freq", label="freq", min=110.0, max=880.0, value=220.0),
-    title="Bound knob -> synth freq", hug=True, layout="col")
+v = knob(name="freq", label="freq", min=110.0, max=880.0, value=220.0)
 
 win = v.open()
 win["freq"].bind("/node_set", synth.id, "freq")

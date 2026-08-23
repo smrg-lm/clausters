@@ -60,7 +60,7 @@ import os
 import sys
 
 from clausters.defs import SynthDef, control, out, sine
-from clausters.gui import knob, window
+from clausters.gui import knob, view
 
 #: The instrument's def name; the GuiDef's ``boot`` /synth_new references it, and it
 #: is the file stem under ``defs/synthdefs``.
@@ -101,7 +101,7 @@ def scene() -> dict:
       tree on ``/gui_def``; here we write the file ourselves, so it is only for
       symmetry with that path.
     """
-    return window(
+    return view(
         # `hug` sizes the window to what it holds -- this one holds a knob,
         # so the window is the knob: no size to declare and none to keep in
         # step with it.

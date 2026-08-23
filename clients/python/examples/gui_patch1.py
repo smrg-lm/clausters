@@ -61,7 +61,7 @@ import sys
 
 from clausters import Session
 from clausters.defs import GraphPatch, SynthDef, control, in_, lag, out, sine
-from clausters.gui import button, panel, patch, scroll, window
+from clausters.gui import button, panel, patch, scroll, view
 from clausters.defs import Group
 
 TEMPO = 2.0
@@ -147,7 +147,7 @@ transport = panel(button(name="render", label="render"),
                   button(name="stop", label="stop"), layout="row", h=48)
 
 gui = session.gui()
-win = gui.open(window(
+win = gui.open(view(
     scroll(patch(name="patch", **p.to_widget(), label="patch"), name="workspace"),
     transport, title="Patch — level 1", w=720, h=680, layout="col"))
 session.start()

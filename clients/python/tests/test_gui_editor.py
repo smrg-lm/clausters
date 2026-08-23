@@ -613,6 +613,22 @@ def test_the_composition_grows_when_a_clip_is_dragged_past_the_end():
 
 # ---- the transport: a cursor, and seeking to it ----
 
+def test_the_editor_opens_on_the_ambient_host_like_every_other_view():
+    """The editor was the one resource that had to be handed a host. It now
+    resolves the ambient one, the same rule `View.open`, `plot` and `scope`
+    already shared."""
+    from clausters.gui import set_ambient_host
+
+    host = _FakeHost()
+    ed = editor()
+    previous = set_ambient_host(host)
+    try:
+        assert ed.open() == 1
+    finally:
+        set_ambient_host(previous)
+    assert ed._host is host
+
+
 class _FakeHost:
     """Records the `/gui_set`s the editor sends (the lanes' playhead chrome) and
     the acknowledgements it answers events with, and hands out widget ids like

@@ -34,7 +34,7 @@ import time
 
 from clausters import Session
 from clausters.defs import SynthDef, control, out, sine
-from clausters.gui import panel, scope, window
+from clausters.gui import panel, scope, view
 from clausters.defs import Synth
 
 # %% [markdown]
@@ -58,7 +58,7 @@ synth = Synth("tone", {"freq": 220.0}, server=server)
 # so it shows the same signal drifting -- why triggering exists. Both named.
 
 # %%
-win = gui.open(window(
+win = gui.open(view(
     panel(scope(0, name="triggered", window_ms=15.0, trigger=0.0,
                 label="triggered (level 0.0)"),
           scope(0, name="free", window_ms=15.0, trigger=9.0,

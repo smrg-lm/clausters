@@ -53,6 +53,7 @@ oscilloscope, ``gui_analyzer`` for the phasescope and live spectrum,
 
 from .editor import Editor
 from .guidef import (
+    View,
     bpf,
     button,
     canvas,
@@ -97,13 +98,13 @@ from .guidef import (
     stack,
     text,
     toggle,
+    view,
     timeruler,
     track,
     waveform,
     window,
 )
 from .handle import WidgetHandle, WindowHandle
-from .view import View
 from .host import DEFAULT_PORT, GuiHost
 from .transport import Transport
 
@@ -148,6 +149,7 @@ __all__ = [
     "WindowHandle",
     "View",
     "node",
+    "view",
     "window",
     "layout",
     "plane",

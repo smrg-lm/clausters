@@ -23,7 +23,7 @@ Run it cell by cell (Shift+Enter), or as a plain script --
 # %%
 import sys
 
-from clausters.gui import GuiHost, knob, slider, waveform, window
+from clausters.gui import GuiHost, knob, slider, view, waveform
 
 # %% [markdown]
 # ## Launch a headless host
@@ -40,7 +40,7 @@ gui = GuiHost().boot(extra_args=("--headless",))
 # `open` assigns each a fresh id and hands back a handle that resolves the names.
 
 # %%
-win = gui.open(window(
+win = gui.open(view(
     knob(name="cutoff", label="cutoff", min=20.0, max=20000.0, value=800.0),
     slider(name="res", label="res", min=0.0, max=1.0, value=0.2),
     waveform(name="wave", buffer=0),

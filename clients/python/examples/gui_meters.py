@@ -40,7 +40,7 @@ import wave
 
 from clausters import Session
 from clausters.defs import Bus
-from clausters.gui import meter, panel, scope, waveform, window
+from clausters.gui import meter, panel, scope, view, waveform
 
 # %% [markdown]
 # ## Launch the server and the GUI
@@ -88,7 +88,7 @@ bus = Bus.control(server=server)
 # names.
 
 # %%
-win = gui.open(window(
+win = gui.open(view(
     panel(meter(bus.index, rate="control", name="level",
                 min=-1.0, max=1.0, label="bus"),
           scope(bus.index, rate="control", name="trace",

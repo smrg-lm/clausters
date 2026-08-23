@@ -43,7 +43,7 @@ it as a plain script.
 import sys
 
 from clausters import Event, Session
-from clausters.gui import button, notation, panel, window
+from clausters.gui import button, notation, panel, view
 from clausters.seq.timeline import Playhead, Timeline
 
 # One beat per second, so an engraved millisecond is a beat/1000 -- score time
@@ -99,7 +99,7 @@ def playback_timeline(notes: list) -> Timeline:
 def scene(display_list: dict, sample_rate: float) -> dict:
     """A minimal transport over the engraved page. Every widget is *named*, so
     the script drives it by name and never picks an id."""
-    return window(
+    return view(
         panel(button(name="play", label="play"),
               button(name="stop", label="stop"),
               layout="row", h=34.0),

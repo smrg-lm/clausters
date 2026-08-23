@@ -31,7 +31,7 @@ import math
 import sys
 import time
 
-from clausters.gui import GuiHost, label, samples_to_blob, waveform, window
+from clausters.gui import GuiHost, label, samples_to_blob, view, waveform
 
 # %% [markdown]
 # ## Launch the GUI host
@@ -58,7 +58,7 @@ def decaying_sine(n: int, cycles: float) -> list:
 # ~8000 f32 (~32 KB) keeps the def (JSON + blob) inside one UDP datagram.
 blob = samples_to_blob(decaying_sine(8_000, cycles=120.0))
 
-v = window(
+v = view(
     label(name="caption", text="Decaying sine (wheel: zoom, drag: pan, R: reset)"),
     waveform(name="wave", blob=0),
     title="clausters-gui - waveform", w=720, h=360, layout="col")

@@ -31,7 +31,7 @@ import tempfile
 import time
 
 from clausters import Session
-from clausters.gui import GuiHost, plot, samples_to_file, window
+from clausters.gui import GuiHost, plot, samples_to_file, view
 from clausters.seq import Pbind, Pseq, Pwhite
 
 SR = 48_000.0
@@ -65,7 +65,7 @@ print(f"wrote {os.path.getsize(path)} B of raw f32; the host maps it (no OSC)")
 
 # %%
 gui = GuiHost().boot()
-win = gui.open(window(
+win = gui.open(view(
     plot(name="render", path=path, min=-1.0, max=1.0, label="NRT render (mono)"),
     title="Plot of an NRT render", w=720, h=300))
 win.on_closed(lambda: globals().__setitem__("_closed", True))

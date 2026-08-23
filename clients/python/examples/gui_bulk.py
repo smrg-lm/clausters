@@ -49,8 +49,7 @@ import wave
 
 from clausters import Session
 from clausters.base.bulk import blob_to_samples
-from clausters.gui import (button, label, panel, peaks_cache_file,
-                           samples_to_file, waveform, window)
+from clausters.gui import (button, label, panel, peaks_cache_file, samples_to_file, view, waveform)
 
 SR = 48_000
 
@@ -132,7 +131,7 @@ print(f"server exported buffer {bufnum} -> {os.path.getsize(exported_path)} B")
 #: the zoom at which a sample is a thing you can grab.
 EDITABLE = [round(math.sin(i * math.tau / 32) * 0.8, 4) for i in range(64)]
 
-win = gui.open(window(
+win = gui.open(view(
     waveform(name="cache", cache=cache_path),                 # prebuilt peak cache
     waveform(name="raw", path=raw_path),                      # raw f32, host maps it
     waveform(name="exported", path=exported_path, channels=1),  # a server buffer export

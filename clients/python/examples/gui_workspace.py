@@ -44,7 +44,7 @@ it as a plain script.
 import sys
 import time
 
-from clausters.gui import GuiHost, button, knob, label, panel, scroll, toggle, window
+from clausters.gui import GuiHost, button, knob, label, panel, scroll, toggle, view
 
 # The plane's content area, in content units (the workspace's own coordinates).
 PLANE_W, PLANE_H = 1600.0, 1200.0
@@ -97,7 +97,7 @@ def horizontal_strip() -> dict:
 
 # %%
 def workspace() -> dict:
-    return window(
+    return view(
         panel(panel(label("free plane — drag to pan, wheel to zoom"),
                     button(name="reset", label="reset view", w=120.0),
                     layout="row", h=26.0, margin=0),

@@ -71,7 +71,6 @@ loaders:
       - clausters.form.render
       - clausters.gui
       - clausters.gui.guidef
-      - clausters.gui.view
       - clausters.gui.editor
       - clausters.gui.host
       - clausters.gui.notation

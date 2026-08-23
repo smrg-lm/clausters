@@ -45,7 +45,7 @@ import time
 
 from clausters import Session
 from clausters.defs import DoneAction, Env, SynthDef, env_gen, out, sine
-from clausters.gui import bpf, button, env_to_points, label, menu, points_to_env, window
+from clausters.gui import bpf, button, env_to_points, label, menu, points_to_env, view
 from clausters.defs import Synth
 
 # %% [markdown]
@@ -72,7 +72,7 @@ START_ENV = Env([0.0, 1.0, 0.4, 0.0], [0.05, 0.3, 1.2], ["exp", -4.0, "sin"])
 # next). `Env.step` builds SC's "step" sequences separately.
 CURVES = ["lin", "exp", "sin", "welch", "sqr", "cub", "hold", -4.0, 4.0]
 
-win = gui.open(window(
+win = gui.open(view(
     label(name="hint", text="drag points/segments; Ctrl+click adds/removes; play sends it"),
     bpf(name="env", points=env_to_points(START_ENV), min=0.0, max=1.0,
         duration=2.0, label="amp env"),

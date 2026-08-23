@@ -1924,6 +1924,13 @@ as some other milestone has a better claim on it.
     last-wins, which leaves the shadowed widget drawing and unreachable.
   - A **nested view scopes its names**: a `window`-typed node inside another
     tree keeps its names to itself and is found by its own name.
+  - **The root decides.** `window()` is `view()`, one node type rather than
+    two: a view with a parent is a component, a view with no parent is the
+    window, and any node opens. The wire type stays `"window"` (only a
+    window-rooted def becomes an OS window), so a non-window root is **framed**
+    client-side in a hugging window — and in a page, where a def is mounted into
+    an element rather than opened as a window, the frame is the same decision
+    made against the element's box.
   - `view.open({host})` resolves the **ambient** host exactly as `plot`/`scope`
     do. Python made that symmetric with the ambient server: `GuiHost.boot`
     grew `adopt_ambient` (first-wins, the mirror of `Server.boot`'s

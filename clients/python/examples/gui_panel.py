@@ -28,7 +28,7 @@ and a GPU adapter.
 import sys
 import time
 
-from clausters.gui import GuiHost, button, knob, menu, number, panel, slider, toggle, window
+from clausters.gui import GuiHost, button, knob, menu, number, panel, slider, toggle, view
 
 #: The named controls, so the script drives and listens to them by name.
 CONTROLS = ("cutoff", "res", "gain", "mix", "bypass", "reset", "wave")
@@ -49,7 +49,7 @@ gui = GuiHost().boot()
 # then send.
 
 # %%
-v = window(
+v = view(
     panel(knob(name="cutoff", label="cutoff", min=20.0, max=20000.0, value=800.0),
           knob(name="res", label="res", min=0.0, max=1.0, value=0.3),
           number(name="gain", label="gain", min=-24.0, max=24.0, value=0.0),

@@ -61,7 +61,7 @@ it as a plain script.
 import sys
 
 from clausters import Event, Session, play
-from clausters.gui import button, notation, panel, window
+from clausters.gui import button, notation, panel, view
 from clausters.seq.timeline import Playhead, Timeline
 
 # Six bars in ABC -- the readable way to type a score by hand; verovio reads MEI
@@ -96,7 +96,7 @@ def scene(display_list: dict, sample_rate: float) -> dict:
     — so the script drives each by name and never picks an id. The bar is chrome:
     a fixed height, so the page takes all the rest however the window is
     resized."""
-    return window(
+    return view(
         panel(button(name="rewind", label="|<"),
               button(name="play", label="play"),
               button(name="pause", label="pause"),

@@ -38,7 +38,7 @@ import tempfile
 import time
 
 from clausters import Session
-from clausters.gui import samples_to_file, spectrogram, waveform, window
+from clausters.gui import samples_to_file, spectrogram, view, waveform
 from clausters.seq import Pbind, Pseq, Pwhite
 
 SR = 48_000.0
@@ -69,7 +69,7 @@ samples_to_file(list(inter), raw_path)
 session = Session.live()
 gui = session.gui()
 
-win = gui.open(window(
+win = gui.open(view(
     waveform(name="wave", path=raw_path, channels=2, sample_rate=SR, link=1),
     spectrogram(name="spect", path=raw_path, channels=2, sample_rate=SR,
                 window_size=1024, db_floor=-90.0, link=1, ruler="off"),

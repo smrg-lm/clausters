@@ -63,7 +63,7 @@ import time
 
 from clausters import Session
 from clausters.defs import DoneAction, Env, SynthDef, control, env_gen, out, sine
-from clausters.gui import button, knob, label, menu, panel, scope, slider, window
+from clausters.gui import button, knob, label, menu, panel, scope, slider, view
 from clausters.defs import Synth
 
 # %% [markdown]
@@ -115,7 +115,7 @@ sidebar = panel(knob(name="freq", label="freq", min=55.0, max=880.0, value=220.0
 out_scope = scope(0, channels=2, window_ms=25.0, label="output")
 work_area = panel(sidebar, out_scope, layout="row", weight=1.0, gap=4)
 
-win = gui.open(window(menu_bar, work_area, label(name="status", text="ready", h=24),
+win = gui.open(view(menu_bar, work_area, label(name="status", text="ready", h=24),
                       title="gui_shell", w=760, h=420, layout="col",
                       margin=0, gap=0))
 print(f"opened window {win}")

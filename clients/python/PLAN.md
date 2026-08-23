@@ -381,34 +381,61 @@ the def already has removes the asymmetry rather than papering over it.
     `control()` inside a def is exactly that, so the asymmetry closes rather
     than widening.
 
-- ⬜ **C41 — `view()` is the root, and a root with no parent is a window**.
-  `window()` is renamed `view()` and the distinction "window vs container"
-  becomes positional: a `View` with a parent is a component, a `View` with no
-  parent is the window/canvas. `open()` on *any* node works — `knob(freq).open()`
-  is a window that is a knob.
+- ✅ **C41 — `view()` is the root, and a root with no parent is a window**
+  *(done 2026-08-23)*. `window()` is renamed `view()` and the distinction
+  "window vs container" becomes positional: a view with a parent is a component,
+  a view with no parent is the window. `open()` works on *any* node.
 
   ```python
-  view(layout(knob(a), knob(b))).open()   # a window with two knobs
-  layout(knob(a), knob(b)).open()         # the same window; the root decides
-  knob(a).open()                          # a window that is one knob
+  view(layout(knob(a), knob(b)), title="voice").open()   # a titled window
+  layout(knob(a), knob(b)).open()                        # a window of two knobs
+  knob(a).open()                                         # a window that is a knob
   ```
 
   **The tradeoff, stated because it is not free**: the *wire* type stays
   `"window"` — `Host::window_defs` keys the renderable document by window-rooted
-  def id, and a non-window root lives only in the generic registry and is not
-  drawn as a window. So `open()` on a non-window root **wraps** the tree in a
-  `"window"` node client-side. That wrapper must be invisible: the handle's name
-  index sees through it, and re-parenting the same `View` into another must not
-  leave it behind. `window` stays as an alias of `view` for one release rather
-  than breaking every example at once.
+  def id (`host/mod.rs`, `if node.kind == "window"`), and a non-window root lives
+  only in the generic registry and is not drawn as a window. So `GuiHost.open`
+  **frames** a non-window root in a `"window"` node client-side, with `hug=True`
+  so the frame adds nothing but the OS window the wire needs. The frame is
+  invisible: it takes the root id, the content becomes its one child, and the
+  handle goes on resolving the tree's names. It is done in `GuiHost.open` rather
+  than in `View.open` so the low-level door behaves the same. `view()` is then
+  what you write when the window's own properties matter — a title, a size, a
+  theme — since those belong to a root nobody frames. `window` stays as an alias
+  of `view`.
+
+  **A module named `view` cannot coexist with a builder named `view`.** `View`
+  had been given its own `clausters/gui/view.py` in C39; `from clausters.gui
+  import view` then resolves to the *submodule*, not the function, and binding
+  the name in `__init__` on top of it is a shadowing that depends on import
+  order. `View` moved into `guidef.py`, which is where every builder that returns
+  one already lives, and the submodule is gone. (`clients/gui/src/tree.rs` is the
+  Rust side of the same job, if a separate module is ever wanted again — the name
+  to use is `tree`, not `view`.)
 
   **`into=` is deferred, and here is why**: there is no wire verb that adds a
   child to a live widget — `/gui_def id json` builds a *whole* tree and
   re-sending an id redefines it, dropping pending edits and reassigning ids. So
-  `windowA(into=windowB)` can only be "insert into B's `View` and redefine B",
+  `windowA(into=windowB)` can only be "insert into B's view and redefine B",
   which is correct at build time and lossy at run time. Build-time nesting is
   what C39 already gives (`view(a, b)`); a live `into=` needs a host verb and
   belongs to the GUI track, named there rather than faked here.
+
+  **The editor joins the same shape**, which was listed below as a thing this
+  track must not leave behind: `Editor.open`, `open_signal` and `open_pianoroll`
+  took the host as a required positional — the last resource that had to be
+  handed one. They now default to the ambient host like everything else.
+
+  Docs: the client book's GUI page leads with the root rule and the three
+  spellings; the composition page's editor opens with no argument. Examples: the
+  32 `gui_*.py` that built a tree now say `view(`, and `gui_bind.py` drops its
+  wrapper entirely — one knob is all that window has to show, so the window *is*
+  the knob (checked by ear: the bare root still binds and drives the synth).
+  Restyling the rest of the examples to `v.open()` is C45's pass, not this one.
+  Tests: the frame's shape and invisibility, a lone control opening, and the
+  alias (`tests/test_view.py`); the editor's ambient host
+  (`tests/test_gui_editor.py`).
 
 #### Part 2 — the GUI and the audio server
 
@@ -529,10 +556,9 @@ the def already has removes the asymmetry rather than papering over it.
   that return a node*. That collision predates this track and gets worse once
   the builder's return value can also `open()` — one of the two names has to
   give, and this track decides which rather than leaving both.
-- **`Editor` joins the same shape.** `Editor.open(host)` is the one place a
-  resource takes the host as a required positional; once a `View` opens itself,
-  the editor's draw is a `View` and `Editor.open()` resolves the ambient host
-  like everything else.
+- ✅ **`Editor` joins the same shape.** `Editor.open(host)` was the one place a
+  resource took the host as a required positional; it resolves the ambient host
+  like everything else now (landed with C41).
 - **`name` means two things and should not.** On a root it is the *persistence*
   name the host stores for `/gui_load`; on a child it is the client's index.
   `define(name)` should carry the first so the prop is left meaning only the

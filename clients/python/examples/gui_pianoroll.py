@@ -50,7 +50,7 @@ import time
 
 from clausters import Session
 from clausters.base import Routine
-from clausters.gui import label, pianoroll, toggle, window
+from clausters.gui import label, pianoroll, toggle, view
 from clausters.seq import Pbind, Pseq
 
 # %% [markdown]
@@ -98,7 +98,7 @@ SCALE = [
 NOTES = [(beats(s), beats(d), p, v) for (s, d, p, v) in SCALE]
 OSC = [(beats(0.0), "/bar"), (beats(2.0), "/bar")]
 
-win = gui.open(window(
+win = gui.open(view(
     label(name="hint", text="drag notes; Ctrl+click adds/removes; velocity lane; play loops it",
           text_size=1.4, h=20),
     pianoroll(name="roll", notes=NOTES, osc=OSC, min=48, max=84, snap=beats(0.25),

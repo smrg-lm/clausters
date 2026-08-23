@@ -46,7 +46,7 @@ Reach for `node` when there is nothing to convert.
 ## The four containers
 
 ```python
-from clausters.gui import field, layout, plane, window
+from clausters.gui import field, layout, plane, view
 ```
 
 | Builder | Axes | What it gives its children |
@@ -179,7 +179,7 @@ take = [0.0] * 1024          # whatever you have; a path or a buffer is likelier
 axis = {"unit": "beats", "tempo": 2.0, "quant": 4.0,
         "sample_rate": SR, "link": 1}
 
-v = window(
+v = view(
     # -- the chrome: a picker bound to the page stack under it
     layout(menu(["arrangement", "graph"], name="picker"),
            slider(name="scroll", min=0.0, max=8 * BEAT),

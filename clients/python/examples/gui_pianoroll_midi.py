@@ -37,7 +37,7 @@ import time
 
 from clausters import Session
 from clausters.base import MidiReceiver
-from clausters.gui import label, pianoroll, window
+from clausters.gui import label, pianoroll, view
 from clausters.responders import MidiFunc
 
 # %% [markdown]
@@ -58,7 +58,7 @@ def beats(b: float) -> float:
     return b * SAMPLES_PER_BEAT
 
 
-win = gui.open(window(
+win = gui.open(view(
     label(name="hint", text='play into "clausters-in" -- the keys land in the roll',
           text_size=1.4, h=20),
     pianoroll(name="roll", notes=[], min=48, max=84, snap=beats(0.25),

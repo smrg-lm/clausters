@@ -57,8 +57,7 @@ adapter.
 import sys
 import time
 
-from clausters.gui import (GuiHost, button, knob, label, menu, panel, slider,
-                           text, toggle, window)
+from clausters.gui import (GuiHost, button, knob, label, menu, panel, slider, text, toggle, view)
 
 LOREM = ("a wrapped label lays its words out on their own measured width, "
          "drops the lines that overflow its rect, and aligns each line "
@@ -119,7 +118,7 @@ def controls() -> dict:
 
 # %%
 gui = GuiHost().boot()
-win = gui.open(window(
+win = gui.open(view(
     label(name="title", text="title", text_size=3.0, align="center", h=40.0),
     sizes(), alphabet(), alignments(), controls(),
     title="Text", w=980, h=820, layout="col"))

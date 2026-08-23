@@ -58,7 +58,7 @@ import time
 
 from clausters import Session
 from clausters.defs import SynthDef, control, out, sine
-from clausters.gui import panel, phasescope, signal, spectrum, window
+from clausters.gui import panel, phasescope, signal, spectrum, view
 from clausters.defs import Synth
 
 # %% [markdown]
@@ -112,7 +112,7 @@ synth = Synth("stereo_image", {"freq": 220.0}, server=server)
 # pannable exactly like one computed from a file.
 RETAIN = 8.0
 
-win = gui.open(window(
+win = gui.open(view(
     # The labels are sized for the boxes they sit in: these two share the
     # window's width, so a caption that reads well across a whole row comes
     # back clipped with an ellipsis here -- the host truncates a line that does

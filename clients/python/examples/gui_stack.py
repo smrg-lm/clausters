@@ -49,7 +49,7 @@ import math
 import sys
 import time
 
-from clausters.gui import GuiHost, label, menu, panel, slider, spectrogram, stack, waveform, window
+from clausters.gui import GuiHost, label, menu, panel, slider, spectrogram, stack, view, waveform
 
 SR = 48_000
 
@@ -97,7 +97,7 @@ gui = GuiHost().boot()
 # the room the chrome does not.
 
 # %%
-win = gui.open(window(
+win = gui.open(view(
     panel(label("view:", w=48.0),
           menu(["waveform", "spectrogram"], name="picker", index=0),
           layout="row", h=32.0),

@@ -75,6 +75,18 @@ class _Placed:
         self.dur = float(dur)
 
 
+def _resolve_host(host):
+    """The host an ``open`` acts on: the one named, else the ambient one — the
+    same resolution `clausters.gui.guidef.View.open`, `clausters.plot` and
+    `clausters.scope` share, so an editor is not the one resource that has to be
+    handed a host."""
+    if host is not None:
+        return host
+    from ..plot import _ambient_host
+
+    return _ambient_host()
+
+
 class Editor:
     """A composition on screen: the arrangement tree drawn as a multitrack view,
     editable back into the tree.
@@ -375,14 +387,17 @@ class Editor:
         return scroll(view, id=self._new_id(),
                       content_w=content[0], content_h=content[1])
 
-    def open(self, host, id: int | None = None) -> "WindowHandle":
+    def open(self, host=None, id: int | None = None) -> "WindowHandle":
         """`draw` the composition and open it on ``host`` (a
-        `clausters.gui.host.GuiHost`).
+        `clausters.gui.host.GuiHost`), or on the **ambient** host when none is
+        named — the same rule `clausters.gui.guidef.View.open`, `clausters.plot`
+        and `clausters.scope` follow.
 
         Returns the **window handle** `clausters.gui.host.GuiHost.open` hands
         back: it equals the window id, and it also resolves the tree's named
         widgets, so the transport buttons are reachable by name
         (``win["play"].on_event(...)``)."""
+        host = _resolve_host(host)
         self._host = self.transport.host = host
         self._mode = "multitrack"
         self._window = host.open(self.draw(), id=id)
@@ -563,11 +578,12 @@ class Editor:
                 "a buffer, and open that)")
         return {k: v for k, v in body.items() if k in ("buffer", "channels")}
 
-    def open_signal(self, host, element=None, *, layers=("peak", "rms"),
+    def open_signal(self, host=None, element=None, *, layers=("peak", "rms"),
                     id: int | None = None) -> "WindowHandle":
         """`draw` a single **rendered** element as a dedicated signal view and
-        open it on ``host`` — the editor-grade view of one element's samples, as
-        opposed to `open`, where the same samples are only a clip's body.
+        open it on ``host`` (or the ambient host, like `open`) — the
+        editor-grade view of one element's samples, as opposed to `open`, where
+        the same samples are only a clip's body.
 
         ``layers`` is what the picture measures, and the `layers` property
         changes it **live** on the open view: ``("peak", "rms")`` is the
@@ -588,6 +604,7 @@ class Editor:
         # finding out at the first repaint would leave an empty window behind.
         stack = tuple(_measure(m) for m in layers)
         self._source_of(element)
+        host = _resolve_host(host)
         self._host = self.transport.host = host
         self._mode = "signal"
         self._signal_element = element
@@ -598,9 +615,11 @@ class Editor:
         self._announce()
         return self._window
 
-    def open_pianoroll(self, host, element=None, id: int | None = None) -> "WindowHandle":
+    def open_pianoroll(self, host=None, element=None,
+                       id: int | None = None) -> "WindowHandle":
         """`draw` a single events element as a **dedicated piano-roll** window
-        and open it on ``host`` — the editor-grade note view (a keyboard, an
+        and open it on ``host`` (or the ambient host, like `open`) — the
+        editor-grade note view (a keyboard, an
         editable note grid, a velocity lane, an OSC-event lane) of one MIDI/OSC
         element, as opposed to `open`, where the same notes are only a clip body.
 
@@ -613,6 +632,7 @@ class Editor:
         and address, not the full message).
 
         Returns the **window handle**, like `open`."""
+        host = _resolve_host(host)
         self._host = self.transport.host = host
         self._mode = "pianoroll"
         self._roll_element = self.element if element is None else element

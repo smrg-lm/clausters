@@ -36,7 +36,7 @@ import time
 
 from clausters import Session
 from clausters.defs import Bus
-from clausters.gui import canvas, window
+from clausters.gui import canvas, view
 
 SHADER = """
 fn shade(uv: vec2<f32>, frag: vec4<f32>) -> vec4<f32> {
@@ -70,7 +70,7 @@ bus = Bus.control(server=server)  # the bus the shader's green channel follows
 # slot stays script-driven). Named, so `open` resolves it.
 
 # %%
-win = gui.open(window(
+win = gui.open(view(
     canvas(name="shader", shader=SHADER, buses=[-1, bus.index], label="shader"),
     title="Canvas (shader)", w=560, h=560))
 win.on_closed(lambda: globals().__setitem__("_closed", True))

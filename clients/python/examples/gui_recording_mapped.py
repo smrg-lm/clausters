@@ -54,7 +54,7 @@ import time
 from clausters import Buffer, Session, Synth, SynthDef
 from clausters.defs import control
 from clausters.defs.ugens import line, out, record_buf, sine
-from clausters.gui import button, label, panel, timeruler, waveform, window
+from clausters.gui import button, label, panel, timeruler, view, waveform
 from clausters.ipc import ShmClient
 
 #: The four takes, and the finished one beside them.
@@ -133,7 +133,7 @@ print(f"the finished take: {_samples / 1e6:.1f} MB of samples, "
 # it is written everywhere, and that is a different picture.
 
 # %%
-win = gui.open(window(
+win = gui.open(view(
     panel(button(name="record", label="record 4 takes"),
           button(name="edit", label="another peer silences the middle of take 1"),
           label(name="log", text="press record"),

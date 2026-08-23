@@ -193,12 +193,12 @@ Live coding wants the whole system reachable from one interpreter: a separate au
 
 ```python
 from clausters import Session
-from clausters.gui import window, label
+from clausters.gui import view, label
 
 session = Session.live()       # attaches, or boots a server (segment auto-chosen)
 gui = session.gui()            # clausters-gui, wired to that server + same segment
 
-win = window(label(name="greeting", text="hello"), title="Panel", w=320, h=120).open()
+win = view(label(name="greeting", text="hello"), title="Panel", w=320, h=120).open()
 win["greeting"].set(text="edited live")  # edit the widget by name
 win.close()                              # close the window
 
@@ -221,12 +221,12 @@ If you are not using a `Session`, the server and the GUI host each carry their o
 
 ```python
 from clausters.defs import Server
-from clausters.gui import GuiHost, window, label
+from clausters.gui import GuiHost, view, label
 
 server = Server().boot()                                  # a server process starts
 gui = GuiHost().boot(server=f"{server.target.host}:{server.target.port}", shm=server.shm)
 
-window(label(name="greeting", text="hi"), title="Panel", w=320, h=120).open()
+view(label(name="greeting", text="hi"), title="Panel", w=320, h=120).open()
 # ...
 gui.stop()        # stops the clausters-gui process
 server.close()    # stops the server process

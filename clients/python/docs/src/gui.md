@@ -33,11 +33,11 @@ Start the host and open a window. `GuiHost().boot()` launches a
 `clausters-gui` process and connects to it; no audio server is involved yet.
 
 ```python
-from clausters.gui import GuiHost, button, knob, label, menu, panel, slider, window
+from clausters.gui import GuiHost, button, knob, label, menu, panel, slider, view
 
 gui = GuiHost().boot()
 
-v = window(
+v = view(
     label("a filter", h=24),
     panel(knob(name="cutoff", label="cutoff", min=20.0, max=20000.0, value=800.0),
           knob(name="res", label="res", min=0.0, max=1.0, value=0.3),
@@ -51,12 +51,28 @@ v = window(
 win = v.open()
 ```
 
-A window appears. Three things about that tree are worth noticing before
+A window appears. Four things about that tree are worth noticing before
 anything else.
+
+**A view with no parent is a window.** There is one container, `view`, not a
+window type and a panel type: nested in another view it is a panel, and at the
+root it is the window. Any node opens, so the frame is only there when you want
+its properties:
+
+```python
+view(knob(name="freq"), title="voice", w=200, h=200).open()   # a titled window
+layout(knob(name="freq"), knob(name="res")).open()            # a window of two knobs
+knob(name="freq").open()                                      # a window that is a knob
+```
+
+The last two are framed for you, in a window that hugs what it holds — the wire
+opens an OS window for a `window`-rooted document and nothing else. Reach for
+`view()` when a title, a size or a theme matters, since those belong to a root
+nobody frames. (`window` is the older spelling of `view` and still works.)
 
 **The view opens itself.** A builder returns a `View` — the GUI's counterpart
 of a `SynthDef`: a tree you compose and then send, not a live widget. So the
-tree is the subject of the sentence (`window(...).open()`), the way a def is
+tree is the subject of the sentence (`view(...).open()`), the way a def is
 (`synthdef.send(server)`), and `open()` finds the host the way `plot` and
 `scope` do: the one `GuiHost().boot()` or `Session.gui()` registered, else one
 it boots. Pass `host=` to say which, and `gui.open(tree)` still works — it is
@@ -129,7 +145,8 @@ capabilities are props**: whether a view navigates, carries a selection or
 edits back is a choice over any presentation, not a different kind of widget.
 
 From here on the snippets are **trees**, not whole scripts: each one is
-something you wrap in `window(...)` and `open()` on the host you already booted.
+something you `open()` on the host you already booted, wrapped in `view(...)`
+when the window's own properties matter.
 
 ## The keyboard, and where it points
 
@@ -185,7 +202,7 @@ is a stack of control-high rows, and `weight=1.0` is what stretches something
 past its natural size:
 
 ```python
-window(
+view(
     panel(label("transport"), h=28),      # chrome, at the height it names
     waveform(name="take", data=take, weight=1.0),   # the work surface takes the rest
     layout="col", margin=8.0, gap=6.0)
@@ -198,7 +215,7 @@ column the other way round, a grid counts its cells. That is the strip above
 without the number:
 
 ```python
-window(
+view(
     panel(label("transport"), button(label="play"), layout="row", hug=True),
     waveform(name="take", data=take, weight=1.0),
     layout="col", margin=8.0, gap=6.0)
@@ -495,7 +512,7 @@ range of amplitudes and leaves the spectrogram beside it showing the whole
 band, while the time span they share moves for both.
 
 ```python
-window(
+view(
     waveform(name="wave", data=take, ruler="time", link=1),
     spectrogram(data=take, link=1),
     layout="col")
@@ -515,11 +532,11 @@ it:
   (`timeruler`).
 
 ```python
-from clausters.gui import clip, timeruler, track, window
+from clausters.gui import clip, timeruler, track, view
 
 BEAT = 24_000.0          # samples per beat at 48 kHz, two beats a second
 
-v = window(
+v = view(
     track(clip(name="a", offset=0.0, dur=4 * BEAT, data=take, label="take"),
           clip(name="b", offset=4 * BEAT, dur=2 * BEAT,
                notes=[(0.0, BEAT, 60), (BEAT, BEAT, 67)]),
@@ -733,7 +750,7 @@ and a **parameter** is a value the mount supplies:
 
 ```python
 from clausters.bundle import Bundle
-from clausters.gui import knob, label, meter, panel, scope, toggle, window
+from clausters.gui import knob, label, meter, panel, scope, toggle, view
 
 b = Bundle("fm-voice")
 freq = b.param("freq", float, default=220.0, min=60.0, max=700.0)
@@ -744,7 +761,7 @@ voice = b.synthdef(fm_voice())          # named "fm-voice.voice"
 trem  = b.synthdef(tremolo())
 graph = b.graphdef(rig(voice, trem))    # a GraphDef: members wired by buses
 
-b.gui(window(
+b.gui(view(
     panel(label("the GraphDef's surface", weight=3),
           toggle(label="play", value=True, bind=["/node_run", node], weight=1),
           layout="row", h=30),

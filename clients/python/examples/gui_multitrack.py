@@ -59,9 +59,7 @@ from pathlib import Path
 
 from clausters import Session
 from clausters.defs import DoneAction, Env, SynthDef, control, env_gen, out, sine
-from clausters.gui import (Transport, button, clip, label, layout, menu,
-                           samples_to_file, scroll, slider, timeruler, toggle,
-                           track, window)
+from clausters.gui import (Transport, button, clip, label, layout, menu, samples_to_file, scroll, slider, timeruler, toggle, track, view)
 from clausters.seq import Event, Playhead, Timeline
 
 TEMPO = 2.0            # beats per second (120 bpm)
@@ -338,7 +336,7 @@ RULER_OPTIONS = ["ruler: shown", "ruler: hidden"]
 UNIT_OPTIONS = [f"unit: {u}" for u in UNITS]
 COLOR_OPTIONS = [f"colors: {c}" for c in COLORMAPS]
 
-win = gui.open(window(
+win = gui.open(view(
     # -- 1. the menu bar: one menu per view option, each cycling its choices
     layout(menu(RULER_OPTIONS, label="View", name="m_ruler",
                 w=menu_w("View", RULER_OPTIONS)),

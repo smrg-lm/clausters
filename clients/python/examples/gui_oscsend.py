@@ -63,7 +63,7 @@ import time
 
 from clausters import Session
 from clausters.defs import SynthDef, control, out, sine
-from clausters.gui import label, text, window
+from clausters.gui import label, text, view
 from clausters.defs import Synth
 
 # %% [markdown]
@@ -116,7 +116,7 @@ synth = Synth("gui_oscsend_beep", {"freq": 220.0}, server=server)
 # pad. Both are *named*, so the script listens to each by name.
 
 # %%
-win = gui.open(window(
+win = gui.open(view(
     label("type an OSC message; it is sent to the server as you type", h=28.0),
     text(name="field", value=f"/node_set {synth.id} freq 220", h=40.0),
     label("a multiline scratch pad (Enter = newline); not sent", h=28.0),
