@@ -1,8 +1,11 @@
 # Roadmap — the order the open work is taken in
 
-*Rewritten 2026-08-22, when a sitting with the composer example turned up eight
-defects across the host, both clients and the document writer, and left three
-findings behind that now lead the phase. Before that: 2026-08-21 (twice: the
+*Rewritten 2026-08-23, when the Python client's GUI surface was reformed and the
+reference client moved while the port stood still — so what leads Phase 1 is the
+port of that reform, and the three things the reform wrote down rather than
+faked. Before that: 2026-08-22, when a sitting with the composer example turned
+up eight defects across the host, both clients and the document writer. Before
+that: 2026-08-21 (twice: the
 second time when the arrangement, the editor, the transport and the engraver all
 reached the web client, which is what Phase 1 was ordered for), and the same day
 before it, when the phase of things found by use was taken whole — its last entry being a design question rather than a fix.
@@ -49,10 +52,12 @@ window draws rather than stopping at a bucket.
 
 **The violation that led this list is paid**: the arrangement, the document and
 the editor now exist in both clients, held together by parity suites rather than
-by care. What leads it instead is what **using** them turned up — what is left of
-the findings the editing pass of 2026-08-22 recorded and did not take — followed
-by the surface the port named but did not build, and the destination it was
-blocking.
+by care. **A new one leads it**, and it is the healthy kind — the reference
+client was reformed and the port has not caught up, which is the build strategy
+working rather than failing. So the order is: the one decision the reform could
+not take from the native side, then the port of the reform, then the two gaps it
+wrote down instead of faking, then the examples, and only then the destination
+the phase was ordered for.
 Behind them, one track that is genuinely later. Everything else is in the
 section after them, named so that "not scheduled" reads as a decision.
 
@@ -89,28 +94,82 @@ right — that is the normal failure, not a sign the work vanished.
 outstanding violation. **The named track is in** — `src/form/`,
 `gui/transport.ts`, `gui/editor.ts`, `gui/notation/` and `defs/patch.ts` all
 landed on 2026-08-21, each with a parity suite that asserts the two clients
-produce the same tree, the same document and the same engraving. Using it on
-2026-08-22 turned up eight defects in one sitting — a curve that drew nothing, a
-document written two ways, an edit per frame, a bend that drifted, a press
-repeated per frame — and the two findings it left behind (the knob's captured
-pointer, the page that burned a main thread with nothing happening) are paid.
-**What leads the phase now is the destination the track was blocking** — the
-one surface it named on its way past, `DefPatch`, is in.*
+produce the same tree, the same document and the same engraving, and `DefPatch`
+closed the one surface it named on its way past.*
 
-- ⬜ **W16 — Example parity with the Python client**. Its named track (the
-  arrangement layer, the editor, the transport, the engraver) is closed; what
-  remains is the milestone itself, and it is the larger half: about forty
+***What leads it now is a violation the phase created.** On 2026-08-23 the
+Python client's GUI surface was reformed — a builder returns a view that opens
+itself, any root opens, ids belong to the instance, the samples are a source, a
+control declares its range and a window binds against it — and the reference
+client moved while the port stood still. That is the standing rule working as
+written (finish one client, then port), and it is why the port now goes ahead of
+everything the phase was ordered for: **W16's acceptance is that a pair reads as
+the same calls in the same order**, so an example ported against the surface the
+web client has today is an example written twice. The three entries the reform
+left behind lead the phase, and the first of them is the one it could not answer
+from the native side.*
+
+- ⬜ **What `open()` means where there is no window: the page, the canvas and
+  the document** *(`clients/web/PLAN.md`, W24)*. First because it is a decision
+  and the rest is work. The reform settled the native half — a view with no
+  parent is a window — and a page has no window, so the sentence is unfinished
+  exactly where the user has been asking about it: several canvases in one
+  document, each the page's equivalent of one opened view. It is one decision
+  with three surfaces (where a mounted view's box comes from, what `open()` with
+  no element does, and the three names a host arrives by — `guiHost`,
+  `newGuiHost`, `connectGui`), and answering it subsumes the `connectGui` entry
+  that has sat in W24 since the sweep.
+
+- ⬜ **The GUI node becomes a `View`** *(`clients/web/PLAN.md`, W24)* — the port
+  itself, whose shape that entry now states in six pieces: the view object and
+  its name index, the duplicate-name error, ids per instance, the root that
+  decides, the `source`, the control's range, and the bind against it. It is
+  written there rather than here so the two clients do not re-derive it
+  differently, which is the whole reason the shape was written down at all.
+
+- ⬜ **A control has a range and no curve, and no step** *(`clients/gui/PLAN.md`,
+  Found by use)*. The host draws a control linearly over `min..max` and that is
+  all: a `step` now reaches it as a prop nothing reads, and there is no warp at
+  all — which is why a **named spec** (`spec="freq"`, 20..20000 exponential) was
+  deliberately not shipped, one that silently drew linear being worse than none.
+  Both are one prop on `props::Range` plus the drag math, and they are taken
+  together because a curve without a step leaves `midinote` wrong. It is in the
+  phase because the clients can now *say* both and the host can draw neither,
+  which is a surface that half works.
+
+- ⬜ **A `Source` for the other heavy props** *(`clients/python/PLAN.md`, Found
+  by use)* — a roll's `notes`, a curve's `points`, a patcher's `boxes`/`cords`,
+  a score's `display_list`. The samples got the object; these are the same shape
+  and did not, because their builders flatten them before the node exists. Take
+  it before the port, so the port carries one rule rather than two.
+
+- ⬜ **C45 — The examples pass** *(`clients/python/PLAN.md`, the API reform
+  track)*. The reform changed how an example is *written* and 30 of the 70
+  entries are `gui_*`; the pass rewrites them and organizes them in the same
+  sitting (the flat directory is a prefix pretending to be a folder, and the two
+  clients do not agree on names). It sits here, ahead of W16, because it decides
+  the layout and the names **both** clients then use — porting examples into a
+  taxonomy that is about to change is the same work twice.
+
+- ⬜ **W16 — Example parity with the Python client**. Its named track is closed;
+  what remains is the milestone itself, and it is the larger half: about forty
   Python examples have no page, most of them GUI ones, and each lands with the
-  surface it needs rather than as a queue. Two things about the entry's own
-  text are stale and are fixed in the plan before it is taken — it asks for a
-  **catalog row**, which the project's example rule no longer allows a book to
-  hold, and for the **same name**, which the pages already do not keep
-  (`gui_composer.py` is `composer.html`).
-- ⬜ **W24 — The completeness pass**, and the parity gaps that plan already
-  carries with reasons (the record formatters, `connectGui`, the two leftover
-  names — `defs/patch.ts` is no longer among them).
+  surface it needs rather than as a queue. Its own text was corrected on
+  2026-08-23 — it no longer asks for a catalogue or for the same name, and it
+  now states the dependency above.
+
+- ⬜ **W24 — The completeness pass**, and what is left of the parity gaps that
+  plan already carries with reasons (the record formatters, the two leftover
+  names, `Buffer.fromSamples` against `Buffer.read`).
+
 - ⬜ **W7** (the Faust surfaces), **W9** (MIDI), **W15** (the bundle writer) —
   unported features, each owned, none on the path to the complete example.
+
+- ⬜ **C44 — the inverse direction: a widget inside a def** *(`clients/python/
+  PLAN.md`, the API reform track)*, deliberately last and possibly never: it is
+  recorded as an analysis with a reservation, since it inverts the dependency
+  (`defs` would import `gui`) and autogenerates the one thing `/node_set`
+  addresses by.
 
 ## Phase 2 — the spectral editor
 

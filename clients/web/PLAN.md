@@ -1002,9 +1002,24 @@ port, so a bundle can be authored in the same language the page is written in.
 ### W16 - Example parity with the Python client
 
 *Deferred out of W5*, which ported the examples that run in a page as they
-stand and left the rest. This closes the gap, so the two example sets read as
-one catalogue: same name, same instrument, same point of interest, one written
-as a script and one as a page.
+stand and left the rest. This closes the gap, so a Python example and its page
+read as **one example in two languages**: same material, same names, the same
+calls to the same API in the same order, one written as a script and one as a
+page. Not one *catalogue* — no book enumerates them, and the page keeps its own
+spelling rather than the script's name (below).
+
+**It is now blocked, and by something that is not porting effort.** The Python
+client's GUI surface was reformed on 2026-08-23 (its plan's "The client API
+reform" track, C39–C43 and C46): a builder returns a `View` that opens itself,
+`window()` is `view()` and any root opens, ids belong to the instance, the
+samples a view draws are a `source`, a control declares its range and a widget
+reads it, and a window binds against the controls it was built from. Every one
+of those changes what an example *says*, so a page ported against the surface
+this client has today is a page that has to be written twice. The port of that
+reform — its shape is in W24, "The GUI node becomes a `View`" — goes first, and
+this milestone's acceptance is exactly what makes that an order rather than a
+preference: two programs that produce a similar picture by different calls are a
+divergence, not a port.
 
 - The remaining `clients/python/examples/` ported to `clients/web/examples/`, each named after the example it mirrors — **the page's own spelling**: a hyphen for the underscore, and without the `gui_` prefix, which says which *process* runs it and means nothing to a page (`gui_composer.py` is `composer.html`, `offline_render.py` is `offline.html`). Where a page's name cannot be read back to a script's, the page's header comment says which example it is.
 - Most of what is left is **not** blocked on porting effort but on a surface this client does not have yet — MIDI, automation, the transport grid, an offline render, the box algebra, the UGens outside the shipped set. Each such example lands with (or after) the milestone that opens its surface, which is why this slot is a destination rather than a queue.
@@ -1970,6 +1985,37 @@ as some other milestone has a better claim on it.
   constructors take `*roots` — a public attribute spelled two ways, found while
   porting the Def view (which reads it). One of the two names is wrong and the
   reference client picks which.
+- ⬜ **What `open()` means where there is no window: the page, the canvas and
+  the document** *(named 2026-08-23, with the Python client's API reform)*. The
+  reform settled the native half — *a view with no parent is a window*, and a
+  root that is not a `view` is framed in one client-side, because the wire opens
+  an OS window for a `window`-rooted def and nothing else. A page has no OS
+  window, so the same sentence has to be finished here, and it is the question
+  that has been sitting under `guiHost()` all along rather than a consequence of
+  the reform:
+
+  - **A page's `ClaustersGui` bridge owns a canvas**, and a def mounted into an
+    element is drawn against that element's box. So the page's counterpart of
+    "with no parent" is "with no element": what does `view(...).open()` do in a
+    tab — take the whole default canvas, append a canvas of its own, or refuse
+    until told where? Every page today says it in two doors at once
+    (`GuiHost.page()` for the driver, `guiHost()` for the surface, then
+    `page.fit(win.id, el("stage"))`), which is legitimate platform idiom with
+    the wrong shape: **the element belongs in `open`**, the way the host does.
+  - **`guiHost()` / `newGuiHost()` / `Session.connectGui()` are three names for
+    where a host comes from**, and the reform gave the reference client one rule
+    for that — `GuiHost.boot(adopt_ambient=…)`, first-wins, the mirror of
+    `Server.boot`'s `adopt_default`, with `stop()` giving the registration up.
+    The page's three doors are answered by porting that rule, not by renaming
+    them one at a time.
+  - **Several canvases in one document** is the user's own framing of it: each
+    canvas the page's equivalent of one opened view. That is what makes this a
+    decision about the *document* the page is, and not only about a default.
+
+  It is one decision with three surfaces, and it is taken **before** the
+  example port (W16), because a page written against the current three doors is
+  a page written twice.
+
 - **`Session.connectGui(url)` is a verb this client invented**, and it does two
   things at once: *connect* and *adopt*. Its adopting half briefly had a
   reference counterpart (`session.adopt_gui` / `adoptGui`), which left with the
