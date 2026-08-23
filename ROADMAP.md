@@ -1,9 +1,9 @@
 # Roadmap — the order the open work is taken in
 
-*Rewritten 2026-08-23, when the Python client's GUI surface was reformed and the
-reference client moved while the port stood still — so what leads Phase 1 is the
-port of that reform, and the three things the reform wrote down rather than
-faked. Before that: 2026-08-22, when a sitting with the composer example turned
+*Rewritten 2026-08-23 (twice: the second time once the port of the GUI reform had
+landed the same day, so what leads Phase 1 is the half of it that waits on the
+host, the gaps the reform wrote down rather than faked, and the question about
+the widgets it did not ask). Before that: 2026-08-22, when a sitting with the composer example turned
 up eight defects across the host, both clients and the document writer. Before
 that: 2026-08-21 (twice: the
 second time when the arrangement, the editor, the transport and the engraver all
@@ -97,34 +97,29 @@ landed on 2026-08-21, each with a parity suite that asserts the two clients
 produce the same tree, the same document and the same engraving, and `DefPatch`
 closed the one surface it named on its way past.*
 
-***What leads it now is a violation the phase created.** On 2026-08-23 the
-Python client's GUI surface was reformed — a builder returns a view that opens
-itself, any root opens, ids belong to the instance, the samples are a source, a
-control declares its range and a window binds against it — and the reference
-client moved while the port stood still. That is the standing rule working as
-written (finish one client, then port), and it is why the port now goes ahead of
-everything the phase was ordered for: **W16's acceptance is that a pair reads as
-the same calls in the same order**, so an example ported against the surface the
-web client has today is an example written twice. The three entries the reform
-left behind lead the phase. The decision that led them was taken the same day —
-`view(...).open(el)`, a canvas of its own where no element is named, and the
-page's three host names collapsed onto the reference's `boot`/`attach` pair — so
-what is left of it is work, and the port carries it.*
+***The violation the phase created on 2026-08-23 is already paid.** The Python
+client's GUI surface was reformed — a builder returns a view that opens itself,
+any root opens, ids belong to the instance, the samples are a source, a widget is
+built from the control it drives and a window binds against it — and the port
+landed the same day rather than being scheduled, which is the build strategy
+working as written. What the port left behind is what leads the phase now: one
+half of a landed surface waiting on the host, two gaps the reform wrote down
+instead of faking, and a question about the widgets it did not ask.*
 
-- ⬜ **The GUI node becomes a `View`** *(`clients/web/PLAN.md`, W24)* — the port
-  itself, whose shape that entry now states in six pieces: the view object and
-  its name index, the duplicate-name error, ids per instance, the root that
-  decides, the `source`, the control's range, and the bind against it. It is
-  written there rather than here so the two clients do not re-derive it
-  differently, which is the whole reason the shape was written down at all. It
-  now carries the page decision as well — the element in `open`, a canvas where
-  none is named, `connectGui` dropped for a constructor slot and `attach` — and
-  the host's web front going from one canvas to N is its only dependency, the
-  entry beside it in W24.
+- ⬜ **The host's web front goes from one canvas to N** *(`clients/web/PLAN.md`,
+  W24)*. `window`/`render`/`current_def` in `clients/gui/src/host/web.rs` are
+  singular — "the browser shows one at a time" — and the native front already
+  keeps one surface per `window`-rooted def, so the model is ported, not
+  invented. **First because a surface is half-landed on it**: `view(...).open(el)`
+  mounts into an element today, but `open()` with *no* element still draws on
+  the page's canvas rather than making one of its own, which was the decision
+  taken with the port. Two reversals ride along (the element supplies the
+  canvas; its size comes from a `ResizeObserver`), and an off-screen canvas
+  skipping its tick is what makes a document of fifty of them possible.
 
 - ⬜ **A control has a range and no curve, and no step** *(`clients/gui/PLAN.md`,
   Found by use)*. The host draws a control linearly over `min..max` and that is
-  all: a `step` now reaches it as a prop nothing reads, and there is no warp at
+  all: a `step` reaches it as a prop nothing reads, and there is no warp at
   all — which is why a **named spec** (`spec="freq"`, 20..20000 exponential) was
   deliberately not shipped, one that silently drew linear being worse than none.
   Both are one prop on `props::Range` plus the drag math, and they are taken
@@ -145,6 +140,17 @@ what is left of it is work, and the port carries it.*
   not consenting to the network, and today `--tcp` and `--ws` open the port to
   the LAN on both fronts. Here because it touches the server and the host at
   once and nothing above it depends on it — not because it is urgent.
+
+- ⬜ **What kind of thing is a button?** *(`clients/python/PLAN.md`, Found by
+  use)*. Two gaps and the design question they hang from: `button` is the one
+  control widget that takes no def control, so `button(gate)` cannot be written
+  and a **trigger** is exactly the case that wants it; `toggle` takes no range,
+  though `min`/`max` *are* its two values. Both wait on the question under them
+  — an "Accept" in a dialog is not a piano key, press-is-the-event is right for
+  an instrument and arguably wrong for a command button, and one element serves
+  both today. Here, ahead of the examples, because a pass that rewrites thirty
+  of them writes buttons throughout and would bless whichever reading it
+  assumed.
 
 - ⬜ **C45 — The examples pass** *(`clients/python/PLAN.md`, the API reform
   track)*. The reform changed how an example is *written* and 30 of the 70

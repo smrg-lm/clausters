@@ -714,6 +714,44 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
 
 ## Found by use: the running list of fixes and open questions
 
+- ⬜ **`button` takes no control, `toggle` takes no range, and behind both is
+  the same unasked question: what kind of thing is a button?** *(named
+  2026-08-23 by the user, reading the four control widgets after C42's
+  correction)*. Two concrete gaps and one design question they hang from. Both
+  clients, one surface.
+
+  - **`button` is not in `_from_control`.** `knob`, `slider`, `number` and
+    `toggle` take a def's control positionally; `button` does not, so
+    `button(gate)` cannot be written — and a **trigger control (`rate="tr"`) is
+    exactly the case that wants it**. The host's side is already right: a
+    `button` emits `1` on *press* and `0` on release
+    (`clients/gui/src/host/elements/button.rs`, "the press *is* the event"), so
+    a bound button fires at the moment a `tr` wants and the trailing `0` is the
+    one a trigger ignores by definition. Nothing but the client surface is
+    missing.
+  - **`toggle` could carry a range**, since `min`/`max` *are* its two values —
+    it is the one control whose range is not a span to be drawn over but the
+    pair it alternates between. Today it sends `1`/`0` unconditionally, which
+    means a control that is meant to switch between two other numbers (a
+    bypass at `0.0`/`0.7`, a mode at `1`/`2`) cannot be driven by one without a
+    binding that scales. Worth analysing rather than adding: it may want
+    `on=`/`off=` rather than `min=`/`max=`, and it interacts with what
+    `/gui_bind` can scale.
+  - **The question under both**: *is a GUI button one thing?* An "Accept" /
+    "Cancel" in a dialog is not a piano key and not a patch's trigger button.
+    Press-is-the-event is right for an instrument — you want the note at the
+    down-stroke — and arguably wrong for a command button, where every desktop
+    convention lets you press, slide off and release to cancel. Today one
+    element serves both, and giving `button` a control would quietly bless the
+    instrument reading for all of them. So the order is: decide whether the two
+    roles are one element with a prop or two elements, **then** decide what a
+    control means on it. `piano`/`keys` is the precedent for the instrument
+    role already existing as its own element.
+
+  Where each part lands if it is taken: the widget surface in both clients'
+  `gui` modules, the reference in `docs/gui-protocol.md`, and — only if the two
+  roles turn out to be two behaviours — an element or a prop in
+  `clients/gui/PLAN.md`.
 - ✅ **A control's range shadowed the operators of the same name, and the range
   did not belong there at all** *(found and fixed 2026-08-23, porting C42 to
   TypeScript)*. C42 gave `Control` the attributes `min`/`max`, and a `Control`
