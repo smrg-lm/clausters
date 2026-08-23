@@ -155,3 +155,103 @@ def test_a_view_with_no_host_opens_on_the_ambient_one():
     finally:
         set_ambient_host(previous)
     assert len(host.opened) == 1
+
+
+# ---- the source: the samples a view draws, as a thing you hold ----
+
+def _host_with_recorder(port):
+    from clausters.gui import GuiHost
+
+    host = GuiHost("127.0.0.1", port)
+    host._osc = _Recorder()
+    return host
+
+
+def test_a_source_expands_into_the_carrier_it_picked():
+    from clausters.gui import source, waveform
+
+    sig = source([0.1, 0.2, 0.3], channels=1, sample_rate=48_000.0)
+    w = waveform(name="wave", data=sig)
+    assert sig.carrier == "data"
+    assert w["data"] == [0.1, 0.2, 0.3] and w["sample_rate"] == 48_000.0
+    assert "blob" not in w and "path" not in w
+
+
+def test_a_long_source_spills_to_a_file_the_host_maps():
+    import os
+
+    from clausters.gui import source, waveform
+    from clausters.gui.guidef import INLINE_MAX
+
+    sig = source([0.0] * (INLINE_MAX + 1))
+    w = waveform(data=sig)
+    assert sig.carrier == "path"
+    assert "data" not in w and os.path.exists(w["path"])
+
+
+def test_one_source_in_two_views_is_one_payload_and_two_references():
+    from clausters.gui import source, waveform
+
+    sig = source([0.5])
+    a, b = waveform(name="a", data=sig), waveform(name="b", data=sig)
+    sig.set([0.25, 0.75])
+    assert a["data"] == [0.25, 0.75] and b["data"] == [0.25, 0.75]
+
+
+def test_set_reaches_every_widget_already_drawing_it():
+    from clausters.gui import source, waveform
+
+    host = _host_with_recorder(57991)
+    sig = source([0.5])
+    v = view(waveform(name="wave", data=sig))
+    a, b = v.open(host=host), v.open(host=host)
+
+    host._osc.sent.clear()
+    sig.set([0.25])
+    assert sorted(m[1] for m in host._osc.sent) == sorted([a["wave"].id, b["wave"].id])
+    assert all(m[0] == "/gui_set" and m[2] == "data" for m in host._osc.sent)
+
+
+def test_a_freed_widget_stops_being_a_live_end():
+    from clausters.gui import source, waveform
+
+    host = _host_with_recorder(57990)
+    sig = source([0.5])
+    win = view(waveform(name="wave", data=sig)).open(host=host)
+    host.close(win)
+
+    host._osc.sent.clear()
+    sig.set([0.25])
+    assert host._osc.sent == [], "the window is gone; nothing is drawing it"
+
+
+def test_a_spilled_source_is_rewritten_where_it_is_and_re_read():
+    """The host's two doors: inline samples are replaced with `data`, a mapped
+    file is rewritten in place and re-read with `reload`. The path never moves,
+    because the widget on screen was built around it."""
+    from clausters.gui import source, waveform
+    from clausters.gui.guidef import INLINE_MAX
+
+    host = _host_with_recorder(57989)
+    sig = source([0.0] * (INLINE_MAX + 1))
+    path = sig.props()["path"]
+    win = view(waveform(name="wave", data=sig)).open(host=host)
+
+    host._osc.sent.clear()
+    sig.set([1.0] * (INLINE_MAX + 1))
+    assert sig.props()["path"] == path
+    assert host._osc.sent == [("/gui_set", win["wave"].id, "reload", 1)]
+
+
+def test_a_source_that_names_samples_it_does_not_own_refuses_set():
+    from clausters.gui import source
+
+    with pytest.raises(TypeError, match="reload"):
+        source(buffer=3).set([0.1])
+
+
+def test_a_source_goes_in_a_prop_that_names_samples():
+    from clausters.gui import knob, source
+
+    with pytest.raises(TypeError, match="not 'value'"):
+        knob(value=source([0.1]))

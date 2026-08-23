@@ -76,6 +76,10 @@ class GuiHost:
         #: id -> its child ids, for every widget this client defined — the
         #: subtree `free` walks to return the whole branch's ids to the pool.
         self._children: dict[int, list[int]] = {}
+        #: id -> the `clausters.gui.guidef.Source` objects that widget draws, so
+        #: a freed widget stops being one of the live ends a `Source.set`
+        #: pushes to.
+        self._sources: dict[int, list] = {}
         #: window id -> the handle handed out for it, so a redraw can
         #: refresh it in place instead of orphaning the caller's copy.
         self._handles: dict = {}
@@ -321,6 +325,9 @@ class GuiHost:
                     "one (the second would shadow the first, which would still "
                     "draw and be unreachable)")
             names[name] = node_id
+        for held in getattr(node, "_sources", ()):
+            held._live.append((self, node_id))
+            self._sources.setdefault(node_id, []).append(held)
         out = dict(node)
         child_ids: list[int] = []
         children = node.get("children")
@@ -343,6 +350,8 @@ class GuiHost:
         so the pool ignores it."""
         for cid in self._children.pop(id, ()):
             self._recycle_subtree(cid, keep_root=False)
+        for held in self._sources.pop(id, ()):
+            held._live[:] = [end for end in held._live if end != (self, id)]
         self._on_event.pop(id, None)
         if keep_root:
             return

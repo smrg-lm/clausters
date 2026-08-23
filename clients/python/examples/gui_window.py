@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-"""Open a real window from one declarative GuiDef: a navigable waveform.
+"""Open a real window from one view: a navigable waveform, fed by a source.
 
-The "first pixels" example. It builds a ``window`` containing a ``label`` and the
-heavy ``waveform`` view, fed a generated signal as a binary blob carried in the
-same ``/gui_def`` message, and opens it on a ``clausters-gui`` host. The host
-opens an actual window and renders the waveform; the wheel zooms toward the
-pointer, left-drag pans, ``R`` resets, ``Esc`` (or the close button) closes it.
+The "first pixels" example. It builds a ``view`` containing a ``label`` and the
+heavy ``waveform``, fed a generated signal through a `source`, and opens it on a
+``clausters-gui`` host. The host opens an actual window and renders the
+waveform; the wheel zooms toward the pointer, left-drag pans, ``R`` resets,
+``Esc`` (or the close button) closes it. Then the source is pointed at other
+samples and the same window redraws.
 
-No audio server is involved -- the signal is generated here and shipped in the
-def -- so this boots only the GUI host.
+No audio server is involved -- the signal is generated here -- so this boots
+only the GUI host.
 
 This file is organized as ``# %%`` cells (the VS Code / Jupyter convention) and
 **runs out of the box**. Install once, from the repo root::
@@ -21,9 +22,10 @@ Run it cell by cell (Shift+Enter), or as a plain script --
 host with `GuiHost().boot()`; by hand that is ``clausters-gui``. Needs a display
 and a GPU adapter.
 
-The signal is kept small enough that the whole def (JSON + blob) fits one UDP
-datagram (~64 KB); the shared/streamed bulk path for large buffers is
-``gui_bulk.py``.
+A source picks how its samples travel: a short list rides inline in the JSON,
+and this one -- 8000 floats, past that ceiling -- spills to a mapped file, so
+nothing rides OSC at all. Naming a carrier by hand (``blob=``, ``path=``,
+``cache=``, ``buffer=``) is still supported and is what ``gui_bulk.py`` shows.
 """
 
 # %%
@@ -31,7 +33,7 @@ import math
 import sys
 import time
 
-from clausters.gui import GuiHost, label, samples_to_blob, view, waveform
+from clausters.gui import GuiHost, label, source, view, waveform
 
 # %% [markdown]
 # ## Launch the GUI host
@@ -44,9 +46,11 @@ from clausters.gui import GuiHost, label, samples_to_blob, view, waveform
 gui = GuiHost().boot()
 
 # %% [markdown]
-# ## A small signal, shipped as a blob in the def
-# `samples_to_blob` packs the f32 samples; the waveform reads blob index 0, which
-# rides beside the JSON in the same `/gui_def` message.
+# ## A signal, held as a source
+# A `source` is the samples as something you keep: the view is handed the source,
+# not a carrier, and the source decides how they get there. 8000 floats is past
+# the inline ceiling, so it spills to a mapped file -- `sig.carrier` says
+# `"path"` -- and the `/gui_def` message carries no samples at all.
 
 # %%
 def decaying_sine(n: int, cycles: float) -> list:
@@ -55,22 +59,32 @@ def decaying_sine(n: int, cycles: float) -> list:
     return [math.sin(2 * math.pi * cycles * i / n) * math.exp(-3.0 * i / n) for i in range(n)]
 
 
-# ~8000 f32 (~32 KB) keeps the def (JSON + blob) inside one UDP datagram.
-blob = samples_to_blob(decaying_sine(8_000, cycles=120.0))
+sig = source(decaying_sine(8_000, cycles=120.0))
 
 v = view(
     label(name="caption", text="Decaying sine (wheel: zoom, drag: pan, R: reset)"),
-    waveform(name="wave", blob=0),
+    waveform(name="wave", data=sig),
     title="clausters-gui - waveform", w=720, h=360, layout="col")
 
-win = v.open(blob)
+win = v.open()
 win.on_closed(lambda: globals().__setitem__("_closed", True))
 print("the host opened a window; zoom/pan the waveform, close it to stop")
 
 # %% [markdown]
+# ## Point the source at other samples
+# The window is not rebuilt and the view is not touched: the source is the
+# entry point, so changing it is what redraws. A spilled source rewrites its own
+# file and tells the view to read it again; an inline one sends the new samples.
+
+# %%
+time.sleep(2.0)
+sig.set(decaying_sine(8_000, cycles=40.0))
+print("the same window now draws a slower sine")
+
+# %% [markdown]
 # ## Keep it open
-# Nothing to drive -- the waveform is navigated with the mouse. Wait for the
-# close, then stop the host.
+# Nothing else to drive -- the waveform is navigated with the mouse. Wait for
+# the close, then stop the host.
 
 # %%
 _closed = False

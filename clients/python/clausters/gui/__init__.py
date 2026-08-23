@@ -53,6 +53,7 @@ oscilloscope, ``gui_analyzer`` for the phasescope and live spectrum,
 
 from .editor import Editor
 from .guidef import (
+    Source,
     View,
     bpf,
     button,
@@ -93,6 +94,7 @@ from .guidef import (
     scroll,
     signal,
     slider,
+    source,
     spectrogram,
     spectrum,
     stack,
@@ -148,6 +150,8 @@ __all__ = [
     "WidgetHandle",
     "WindowHandle",
     "View",
+    "Source",
+    "source",
     "node",
     "view",
     "window",

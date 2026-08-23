@@ -329,18 +329,14 @@ the def already has removes the asymmetry rather than papering over it.
   same subtree nested twice (`tests/test_gui_host.py`), plus the two
   `tests/test_gui_ids.py` cases that read ids off the tree.
 
-- ⬜ **C46 — The source: the data a view draws is an object, not an index**
-  *(after C40, which it needs; numbered past the track's last label so the
-  numbers already written here keep their places)*. `signal`'s documentation
-  already names the thing — **the source** — and already lists its five
-  carriers for addressable samples: `data` (inline JSON), `blob` (an index into
-  the message's trailing OSC blobs), `buffer` (a server buffer number), `path`
-  (a mapped file), `cache` (a peak pyramid). Choosing among them is the
-  caller's, and `blob=0` is a correspondence kept by hand between two places in
-  the program: the widget says `blob=0` and `open(blob)` had better pass that
-  blob first. The blobs are arguments of the **message**, not of the widget,
-  which is why they read as interchangeable — any view can point at any index,
-  and two can point at one.
+- ✅ **C46 — The source: the data a view draws is an object, not an index**
+  *(done 2026-08-23; numbered past the track's last label so the numbers already
+  written here keep their places)*. `signal`'s documentation already named the
+  thing — **the source** — and already listed its five carriers for addressable
+  samples: `data` (inline JSON), `blob` (an index into the message's trailing OSC
+  blobs), `buffer` (a server buffer number), `path` (a mapped file), `cache` (a
+  peak pyramid). Choosing among them was the caller's, and `blob=0` was a
+  correspondence kept by hand between two places in the program.
 
   ```python
   sig = source(decaying_sine(8_000, 120.0))
@@ -350,36 +346,47 @@ the def already has removes the asymmetry rather than papering over it.
            title="...", w=720, h=360, flow="col")
 
   win = v.open()             # no positional blobs: they come out of the tree
-  sig.set(other_samples)     # the entry point, addressable
+  sig.set(other_samples)     # the definition and every open view follow
   ```
 
   What it settles:
 
-  - **The object picks the carrier**, not the person writing the view: small
-    rides inline, medium rides as a blob that `open()` numbers, large goes to a
-    mapped file with its peak cache. `blob=0` leaves the surface.
-  - **One source in two widgets is one payload and two references** — what
-    "interchangeable" means, said by the program rather than by convention.
-  - **`set` is the update door**, and the place the policy that is scattered
-    today belongs: small data updates through `/gui_set`, large data by
-    rewriting the file and `peaks_cache_update_file`.
-  - It generalizes without extra shape: a source binds to a **(widget, prop)**
-    pair, not to `data` alone. Every heavy prop is the same case — a roll's
-    `notes`, a curve's `points`, a patcher's `boxes`/`cords`, a score's
-    `display_list`.
+  - **The object picks the carrier**, not the person writing the view: short
+    stays inline, long spills to a temp raw-f32 file the host maps. The
+    threshold and the spill are `guidef.INLINE_MAX` / `guidef.spill`, which
+    `clausters.plot` now takes too — "how large data reaches the host" decided
+    once rather than in two places.
+  - **One source in two views is one payload and two references** — what
+    "interchangeable" meant, said by the program rather than by convention.
+  - **`set` is the update door.** A source records the definitions it feeds
+    (rewritten so a later `open` sends what it holds now) and the live widgets
+    drawing it (`(host, id)`, dropped when the host recycles the widget).
 
-  Three things to decide before writing it:
+  **The carrier is fixed when the source is made, and that is a finding, not a
+  simplification.** The host does not apply a live `path` change: its two doors
+  are `/gui_set data` (inline samples only — "the samples are now these") and
+  `/gui_set reload` ("they are where they were, and they moved"). So a spilled
+  source keeps its own path for life and `set` rewrites that file and re-reads
+  it, while an inline one sends the samples. Handing an inline source more than
+  `INLINE_MAX` samples raises rather than silently switching carriers under a
+  widget that was built around one. A source that *names* samples it does not
+  own — a `buffer`, a `cache` — refuses `set` and offers `reload`.
 
-  - **Definition versus instance, again.** The source belongs to the `View`;
-    `set` acts on what is open. With the view open twice, `sig.set()` updates
-    both — it is the definition's data — and the per-instance door stays
-    `w["wave"].set(data=…)`. Same cut as `SynthDef`/`Synth`.
-  - **The name.** `data` is already a prop, so the object cannot take it;
-    `source` is what the documentation calls it already.
-  - **The precedent is the one named in the conversation**: every builder
-    argument today is a scalar or a node, and this adds a third kind. A
-    `control()` inside a def is exactly that, so the asymmetry closes rather
-    than widening.
+  **What it does not cover.** Only the signal family's samples. The same object
+  is the right shape for the other heavy props — a roll's `notes`, a curve's
+  `points`, a patcher's `boxes`/`cords`, a score's `display_list` — but those are
+  normalized by their builders (`_flat_points`, `_flat_notes`) *before* the node
+  exists, so a source there is a change in each builder rather than the one
+  expansion point `node` gives for `data`. Written into "Future directions"
+  rather than half-done here.
+
+  Docs: the client book's "Where the samples come from" leads with the source and
+  keeps the carrier table for naming one by hand. Example: `gui_window.py` drops
+  `blob=0` and its positional blob, and gains the redraw — 8000 floats is past
+  the inline ceiling, so it spills and the `/gui_def` carries no samples at all.
+  Tests: `tests/test_view.py` — the carrier choice, the spill, one source in two
+  views, the live push, a freed widget leaving the live ends, the rewrite-and-
+  reload of a spilled source, and the two refusals.
 
 - ✅ **C41 — `view()` is the root, and a root with no parent is a window**
   *(done 2026-08-23)*. `window()` is renamed `view()` and the distinction
@@ -819,3 +826,17 @@ work, where a pending item reads as done.)*
   **The other half was the real one, and it is taken.** Playing onto a stopped clock stops being silent at the one moment it can only be a mistake: a program that **ends** with a session's clock still queued and never driven prints one line on stderr naming `session.start()`, `session.run(seconds)` and `session.render()`. Not at `play` time, which was the tempting shape and is wrong — queueing before the drive starts is the normal way to build a score, offline *and* live, so a warning there would fire on almost every correct script. And only a **session's** clock: a bare `TempoClock` belongs to whoever built it (a transport, a test, another library object), and items left on its queue are that owner's business. `tests/test_session.py::test_a_score_left_on_a_clock_nobody_drove_says_so` runs both halves in a subprocess, since an exit warning cannot be observed from inside the program that would emit it.
 
 - ⬜ **Four UGen builders take their statics positionally, interleaved with real inputs** *(noted 2026-07-19 with M30's introspection work, not scheduled; moved here 2026-08-20 from the middle of the milestone list, where a pending item reads as done)*. Four `clausters.defs.ugens` callables take their **static** (non-signal) fields as ordinary positional parameters, interleaved with real inputs: `poll(trig, signal, label, trig_id)` — the worst, its `label` sits *between* two inputs — plus `disk_in`, `disk_out` and `pv_kernel`. `fft` and `conv` show the intended convention: statics behind a `*`, keyword-only, which makes their positional parameters line up with the wire exactly. Aligning the four would shrink the anti-drift exception list in `tests/test_session.py` to the three cases the wire genuinely forces (`EnvGen`, `SendReply`, `Dseq` — a variadic run last on the wire cannot be followed by a positional parameter in Python). It is deliberately **not** done as a side effect of the introspection work: it breaks the client's source API, so it belongs to a release that bumps the breaking tier.
+
+- ⬜ **A `Source` for the other heavy props** *(noted 2026-08-23, with C46)*.
+  The source object covers the signal family's samples, and the same shape is
+  right for every other prop that carries a payload rather than a scalar: a
+  roll's `notes`, a curve's `points`, a patcher's `boxes`/`cords`, a score's
+  `display_list`. What stops it from being one change is that those are
+  **normalized by their builders** (`_flat_points`, `_flat_notes`, `_flat_osc`)
+  before the node exists, so a `Source` handed to one is flattened as if it were
+  a list — while `data` reaches `node` untouched, which is the single expansion
+  point C46 could use. Each of them needs its builder to let a source through,
+  and `Source.set` needs the same flattening on the way back out (an edited
+  structure rides as the JSON string its own `/gui_set` already takes). Worth
+  doing when one of those props is next edited live from a script; until then a
+  source there would be a surface that only half works.

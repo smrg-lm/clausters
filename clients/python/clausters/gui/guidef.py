@@ -159,6 +159,7 @@ axis. Live via ``set`` (as JSON, the ``theme`` convention).
 """
 
 import array
+import atexit
 import json
 import sys
 from ..base.bulk import samples_to_blob as _samples_to_blob
@@ -166,6 +167,8 @@ from ..defs.ugens import env_to_points, points_to_env  # re-exported; shared wit
 
 __all__ = [
     "View",
+    "Source",
+    "source",
     "node",
     "view",
     "window",
@@ -271,10 +274,13 @@ class View(dict):
     `clausters.gui.handle.WindowHandle` has no document to index.
     """
 
-    __slots__ = ("_scope",)
+    __slots__ = ("_scope", "_sources")
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        #: the `Source` objects feeding this node's props, so opening it can
+        #: tell each which live widget draws it. Client-side only.
+        self._sources: list = []
         #: ``name -> View`` for this view's own scope, built once at
         #: construction from the children's already-built scopes — so composing
         #: a tree costs one pass over each node, not one per lookup.
@@ -386,6 +392,223 @@ def _claim(scope: dict, name: str, node):
     scope[name] = node
 
 
+# ------------------------------------------------------------------ the source
+
+
+#: Inline ``data`` ceiling: at most this many floats ride the GuiDef JSON.
+#: Anything longer spills to a temp raw-``f32`` file the host maps — the bulk
+#: path, where the samples never touch OSC. The same number `clausters.plot`
+#: has always used, now in one place.
+INLINE_MAX = 2048
+
+#: Temp sample files this module spilled, removed at interpreter exit.
+_tmp_files: list[str] = []
+
+
+def spill(samples) -> str:
+    """Write `samples` to a temp raw little-endian ``f32`` file and return its
+    path, remembering it so it is removed when the interpreter exits.
+
+    The bulk path's one implementation: `Source` and `clausters.plot` both take
+    it, so "how large data reaches the host" is decided once.
+    """
+    import os
+    import tempfile
+
+    fd, path = tempfile.mkstemp(prefix="clausters_gui_", suffix=".f32")
+    os.close(fd)
+    samples_to_file(samples, path)
+    _tmp_files.append(path)
+    return path
+
+
+@atexit.register
+def _remove_spilled():
+    import os
+
+    for path in _tmp_files:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+
+class Source:
+    """The samples a view draws, as something you hold — and can change.
+
+    A signal view is fed one of several ways, and the wire spells each as its
+    own prop: ``data`` (a small list inline in the JSON), ``blob`` (an index
+    into the message's trailing binary arguments), ``path`` (a mapped raw-f32
+    file), ``cache`` (a prebuilt peak pyramid), ``buffer`` (a server buffer
+    number). Which one is right is a question about **size and where the samples
+    already are**, not about what you are drawing — and ``blob=0`` in particular
+    is a correspondence kept by hand between the widget and the ``open`` call
+    that had better pass that blob first.
+
+    A `Source` answers it for you and stays addressable::
+
+        sig = source(samples)
+        v = view(waveform(name="wave", data=sig), title="a take")
+        win = v.open()
+
+        sig.set(other_samples)     # the definition and every open view follow
+
+    It is the same relation a `clausters.defs.control` has with a knob: the
+    entry point named once, and referred to instead of copied. Pass it to the
+    prop that names the input you mean (``data``, for samples); the object
+    decides how they travel, so the view never mentions a carrier.
+
+    One source in two views is **one payload and two references** — which is
+    what makes the blobs interchangeable, said by the program rather than by
+    convention.
+
+    **The carrier is decided once**, when the source is made, from what it first
+    holds: a short list stays inline, a long one spills to a temp raw-f32 file
+    that the source keeps for its life. `set` then writes through that same
+    carrier, because a widget already on screen was built around it — inline
+    samples are replaced with a ``/gui_set data``, and a file is **rewritten in
+    place** and re-read with a ``/gui_set reload``, which is the host's own pair
+    of doors for "the samples are now these" and "they are where they were, and
+    they moved".
+    """
+
+    __slots__ = ("_carrier", "_value", "_props", "_bound", "_live")
+
+    def __init__(self, samples=None, *, buffer: "int | None" = None,
+                 path: "str | None" = None, cache: "str | None" = None,
+                 channels: "int | None" = None, sample_rate: "float | None" = None,
+                 base_bucket: "int | None" = None):
+        given = [x for x in (samples, buffer, path, cache) if x is not None]
+        if len(given) != 1:
+            raise TypeError(
+                "a source names its samples exactly one way: an iterable of "
+                "floats, or buffer=/path=/cache= for samples that already live "
+                "somewhere the host can reach")
+        #: the fixed props every carrier carries alongside the samples.
+        self._props = _drop_none(channels=channels, sample_rate=sample_rate,
+                                 base_bucket=base_bucket)
+        #: ``(node, prop)`` for every node this source was placed in — the
+        #: definitions it feeds, rewritten by `set` so a later `open` sends the
+        #: samples it holds now.
+        self._bound: list = []
+        #: ``(host, widget_id)`` for every live widget drawing it, so `set`
+        #: reaches what is already on screen. An entry leaves when the host
+        #: recycles the widget.
+        self._live: list = []
+        if buffer is not None:
+            self._carrier, self._value = "buffer", int(buffer)
+        elif path is not None:
+            self._carrier, self._value = "path", str(path)
+        elif cache is not None:
+            self._carrier, self._value = "cache", str(cache)
+        else:
+            values = [float(x) for x in samples]
+            if len(values) <= INLINE_MAX:
+                self._carrier, self._value = "data", values
+            else:
+                self._carrier, self._value = "path", spill(values)
+
+    @property
+    def carrier(self) -> str:
+        """How these samples travel: ``"data"``, ``"path"``, ``"cache"`` or
+        ``"buffer"``. Decided when the source is made and fixed for its life."""
+        return self._carrier
+
+    def props(self) -> dict:
+        """The carrier props this source expands to — what a builder puts into
+        the node in place of the prop it was passed as."""
+        return {self._carrier: self._value, **self._props}
+
+    def set(self, samples) -> "Source":
+        """Point this source at other samples: the **definitions** that hold it
+        are rewritten, and every widget already drawing it is told to redraw.
+
+        A view open twice is updated twice — the samples belong to the
+        definition, so both instances follow; the per-instance door stays
+        ``win["wave"].set(...)``.
+
+        Only a source that *holds* its samples takes this. One that names a
+        server buffer or a cache is a reference to samples somebody else owns:
+        change them where they live and call `reload`.
+        """
+        if self._carrier not in ("data", "path"):
+            raise TypeError(
+                f"this source names a {self._carrier}, which it does not own — "
+                "change the samples where they live and call reload()")
+        values = [float(x) for x in samples]
+        if self._carrier == "data":
+            if len(values) > INLINE_MAX:
+                raise ValueError(
+                    f"{len(values)} samples do not fit the inline carrier this "
+                    f"source was made with (at most {INLINE_MAX}). A source's "
+                    "carrier is fixed when it is made, because a widget on "
+                    "screen was built around it — make this one from a long "
+                    "list, or from a path=, so it spills from the start")
+            self._value = values
+            for node, prop in self._bound:
+                _rewrite_source(node, prop, self.props())
+            for host, wid in list(self._live):
+                host.set(wid, data=values)
+            return self
+        # A file: rewritten **where it is**, so every widget re-reads the same
+        # path. `reload` is the host's door for exactly this.
+        samples_to_file(values, self._value)
+        for host, wid in list(self._live):
+            host.set(wid, reload=1)
+        return self
+
+    def reload(self) -> "Source":
+        """Tell every widget drawing this source to read it again — the samples
+        are where they were and they moved (a file rewritten from outside, a
+        server buffer recorded into, a cache rebuilt)."""
+        for host, wid in list(self._live):
+            host.set(wid, reload=1)
+        return self
+
+    def __repr__(self) -> str:
+        held = len(self._value) if self._carrier == "data" else self._value
+        return f"<Source {self._carrier}={held!r}, {len(self._live)} live>"
+
+
+def _samples_arg(data):
+    """A ``data=`` argument as it goes into the node: a `Source` passes through
+    untouched (`node` expands it into its carrier), anything else is read into a
+    list here."""
+    if data is None or isinstance(data, Source):
+        return data
+    return list(data)
+
+
+#: The prop names a `Source` may stand in for: the logical one (``data``, "the
+#: samples") and the carriers themselves, so a tree written the long way can
+#: adopt a source without moving the keyword.
+SOURCE_PROPS = ("data", "blob", "path", "cache", "buffer")
+
+
+def _rewrite_source(node: dict, prop: str, props: dict):
+    """Put ``props`` into ``node`` in place of whatever carrier it held."""
+    for key in SOURCE_PROPS:
+        node.pop(key, None)
+    node.update(props)
+
+
+def source(samples=None, *, buffer: "int | None" = None, path: "str | None" = None,
+           cache: "str | None" = None, channels: "int | None" = None,
+           sample_rate: "float | None" = None,
+           base_bucket: "int | None" = None) -> Source:
+    """The samples a view draws, as a `Source` — held, referred to, and changed
+    in place of being copied into a prop.
+
+    Give it an iterable of floats, or name samples that already live somewhere
+    the host can reach: ``buffer=`` (a server buffer number), ``path=`` (a raw
+    little-endian f32 file it maps) or ``cache=`` (a prebuilt peak pyramid, see
+    `peaks_cache_file`). ``channels`` de-interleaves it, ``sample_rate`` gives
+    the time ruler its unit and ``base_bucket`` sizes the peak pyramid.
+    """
+    return Source(samples, buffer=buffer, path=path, cache=cache, channels=channels,
+                  sample_rate=sample_rate, base_bucket=base_bucket)
+
+
 # ------------------------------------------------------------------- the nodes
 
 def node(type: str, *, children=None, id: int | None = None, **props) -> View:
@@ -403,6 +626,17 @@ def node(type: str, *, children=None, id: int | None = None, **props) -> View:
     raise here rather than shadowing each other silently.
     """
     out: dict = {"type": type}
+    sources = {}
+    for key in SOURCE_PROPS:
+        held = props.get(key)
+        if isinstance(held, Source):
+            sources[key] = held
+            props.pop(key)
+    for key, value in props.items():
+        if isinstance(value, Source):
+            raise TypeError(
+                f"{type}: a source names a view's samples, so it goes in a prop "
+                f"that is one of {', '.join(SOURCE_PROPS)} — not {key!r}")
     if id is not None:
         if not isinstance(id, int) or isinstance(id, bool):
             raise TypeError(
@@ -419,7 +653,12 @@ def node(type: str, *, children=None, id: int | None = None, **props) -> View:
                     "id is a keyword argument, so children come first: "
                     f"{type}(child, ..., id=…)")
         out["children"] = kids
-    return View(out)
+    built = View(out)
+    for key, held in sources.items():
+        _rewrite_source(built, key, held.props())
+        held._bound.append((built, key))
+        built._sources.append(held)
+    return built
 
 
 # --------------------------------------------------------------- the model
@@ -600,7 +839,7 @@ def signal(*, view: str | None = None, data=None, blob: int | None = None,
     none of them fills the clip and reads through the clip's own window, which
     is every take written as a clip prop.
     """
-    extra = _drop_none(view=view, data=list(data) if data is not None else None,
+    extra = _drop_none(view=view, data=_samples_arg(data),
                        blob=blob, buffer=buffer, path=path, cache=cache,
                        retention=retention,
                        bus=bus, rate=rate, channels=channels, base_bucket=base_bucket,
@@ -978,7 +1217,7 @@ def waveform(*, data=None, blob: int | None = None, buffer: int | None = None,
     another group id to move the view, or to a negative value to unlink it
     (it keeps the view it had). Only the vertical window ``y_start``/``y_len``
     stays per-view."""
-    extra = _drop_none(data=list(data) if data is not None else None,
+    extra = _drop_none(data=_samples_arg(data),
                        blob=blob, buffer=buffer, path=path, cache=cache,
                        channels=channels, base_bucket=base_bucket, measure=measure,
                        color=color)
@@ -1045,7 +1284,7 @@ def spectrogram(*, data=None, blob: int | None = None, buffer: int | None = None
     ``link`` joins a shared navigation group exactly as on the `waveform` —
     the classic composition is a waveform lane and a spectrogram lane of the
     same render under one ``link``, scrolling and selecting in lockstep."""
-    extra = _drop_none(data=list(data) if data is not None else None,
+    extra = _drop_none(data=_samples_arg(data),
                        blob=blob, buffer=buffer, path=path, cache=cache,
                        channels=channels, window_size=window_size, hop=hop,
                        db_floor=db_floor, db_ceil=db_ceil, freq_scale=freq_scale,
@@ -1352,7 +1591,7 @@ def plot(*, data=None, blob: int | None = None,
     cursor: sample index/time and the **sample's value** on the signal view,
     the bin's frequency (per the scale) and level in dB on the spectrum view.
     """
-    extra = _drop_none(data=list(data) if data is not None else None,
+    extra = _drop_none(data=_samples_arg(data),
                        blob=blob, path=path, cache=cache, buffer=buffer,
                        channels=channels, fft_size=fft_size,
                        db_floor=db_floor, db_ceil=db_ceil, freq_scale=freq_scale,
@@ -1678,7 +1917,7 @@ def clip(*, offset: float = 0.0, dur: float, data=None, blob: int | None = None,
     extra = _drop_none(offset=offset, view=view, window_size=window_size, hop=hop,
                        db_floor=db_floor, db_ceil=db_ceil, freq_scale=freq_scale,
                        colormap=colormap,
-                       data=list(data) if data is not None else None,
+                       data=_samples_arg(data),
                        blob=blob, buffer=buffer, path=path, cache=cache,
                        channels=channels, base_bucket=base_bucket,
                        notes=_flat_notes(notes) if notes is not None else None,

@@ -433,8 +433,29 @@ reach that differently:
 
 ### Where the samples come from
 
-A view never carries a megabyte over OSC if it does not have to. In the host's
-precedence order:
+Most of the time you should not have to choose. A **source** is the samples as
+something you hold: hand it to the view instead of a carrier, and it picks one
+by size — short stays inline, long spills to a file the host maps.
+
+```python
+sig = source(take)                          # or source(buffer=b), source(path=p)
+v = view(waveform(name="wave", data=sig), title="a take")
+win = v.open()
+
+sig.set(other_samples)     # the view redraws; the window is not rebuilt
+```
+
+A source is also the *entry point*, which is what makes it worth holding: one
+source in two views is one payload and two references, and `set` reaches the
+definition and every window already drawing it. The carrier is fixed when the
+source is made — a widget on screen was built around it — so `set` writes
+through the same one: inline samples are replaced, and a spilled file is
+rewritten where it is and re-read. For samples somebody else owns (a server
+buffer, a cache) there is nothing to set: change them where they live and call
+`sig.reload()`.
+
+The carriers are still there to name by hand, and a view never carries a
+megabyte over OSC if it does not have to. In the host's precedence order:
 
 | Prop | What it is |
 |---|---|

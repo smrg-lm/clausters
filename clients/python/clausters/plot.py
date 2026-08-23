@@ -49,29 +49,18 @@ plot(my_graphdef, view="spectrum")          # its averaged spectrum
 ```
 """
 
-import atexit
 import itertools
-import os
-import tempfile
 
 from .defs.buffer import Buffer
 from .defs.node import Synth
 
 __all__ = ["plot", "PlotWindow", "PatchWindow"]
 
-#: Inline `data` ceiling: at most this many floats ride the GuiDef JSON; more
-#: go through a temp raw-f32 file the host maps (the bulk path).
-_INLINE_MAX = 2048
-
 #: The module-level GUI host the ambient verbs (`plot`, `clausters.scope`)
 #: boot lazily when no session brought one, and the server its client leg
 #: points at (``None`` for the leg-less host `plot` alone needs).
 _own_host = None
 _own_host_server = None
-#: Temp files behind open plots, removed at interpreter exit.
-_tmp_files: list[str] = []
-
-
 class PlotWindow:
     """One open plot window: its GUI ``host``, the window ``id`` and the plot
     widget's id, so the display stays adjustable after the fact::
@@ -194,14 +183,12 @@ def plot(obj, *, dur: float = 1.0, controls=None, defs=(), n: int = 1024,
         # No rate: clock time is meaningless, so the x axis reads in counts.
         props["ruler"] = "samples"
     props = {k: v for k, v in props.items() if v is not None}
-    if len(samples) <= _INLINE_MAX:
+    if len(samples) <= guidef.INLINE_MAX:
         widget = guidef.plot(id=widget_id, data=[float(x) for x in samples], **props)
     else:
-        fd, path = tempfile.mkstemp(prefix="clausters_plot_", suffix=".f32")
-        os.close(fd)
-        guidef.samples_to_file(samples, path)
-        _tmp_files.append(path)
-        widget = guidef.plot(id=widget_id, path=path, **props)
+        # The bulk path's one implementation, shared with `guidef.Source`: the
+        # samples spill to a temp raw-f32 file the host maps, removed at exit.
+        widget = guidef.plot(id=widget_id, path=guidef.spill(samples), **props)
     if h is None:
         h = 260 if chans <= 1 else 160 + 140 * chans
     tree = guidef.window(widget, title=title or label or "plot", w=w, h=h)
@@ -421,11 +408,3 @@ def _ambient_host(server=None):
     _own_host_server = server
     return _own_host
 
-
-@atexit.register
-def _cleanup():
-    for path in _tmp_files:
-        try:
-            os.remove(path)
-        except OSError:
-            pass

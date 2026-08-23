@@ -1931,6 +1931,14 @@ as some other milestone has a better claim on it.
     client-side in a hugging window — and in a page, where a def is mounted into
     an element rather than opened as a window, the frame is the same decision
     made against the element's box.
+  - **The samples are a `source`, not a carrier.** `waveform({data: sig})`,
+    where `sig` picks inline-versus-spilled by size and stays addressable
+    (`sig.set(...)` rewrites the definitions it feeds and pushes to every live
+    widget). The page has no temp files, so the spill is whatever this platform's
+    bulk path is — a Blob URL, an OPFS file, whatever `gui_bulk`'s page already
+    uses — and that difference is `idiom`, to be written into `docs/bindings.md`
+    rather than left as two policies. The threshold and the choice itself are the
+    same in both clients.
   - `view.open({host})` resolves the **ambient** host exactly as `plot`/`scope`
     do. Python made that symmetric with the ambient server: `GuiHost.boot`
     grew `adopt_ambient` (first-wins, the mirror of `Server.boot`'s
