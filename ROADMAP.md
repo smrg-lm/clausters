@@ -1,7 +1,11 @@
 # Roadmap — the order the open work is taken in
 
-*Rewritten 2026-08-23 (three times: the last once the GUI reform's port had
-landed whole — including the page decision, which turned out to need nothing
+*Rewritten 2026-08-23 (four times: the last after the warp family reached the
+core and both clients, which put the shared half of the control-range item in
+place and turned up three things that had never been written down — a wire
+vocabulary with three exceptions in it, a version that lives in five files, and
+the range maps' missing signal side. Before that: three times, the third once
+the GUI reform's port had landed whole — including the page decision, which turned out to need nothing
 from the host that W4 had not already shipped — so what leads Phase 1 is the
 gaps the reform wrote down rather than faked and the question about the widgets
 it did not ask). Before that: 2026-08-22, when a sitting with the composer example turned
@@ -98,6 +102,16 @@ landed on 2026-08-21, each with a parity suite that asserts the two clients
 produce the same tree, the same document and the same engraving, and `DefPatch`
 closed the one surface it named on its way past.*
 
+***What the warp family changed, on 2026-08-23.** The shared numeric half of
+the item that leads this phase is built: SuperCollider's eight range maps and
+the exponential-endpoint rule now live once in `clausters_core::warp`, reached
+by both clients, and the three copies of that curve the tree carried — the
+envelope's exponential shape, its bent one, and the server's `XLine` — read it
+instead of restating it. That is why the first entry below is smaller than it
+was, and why three new ones sit behind it: the family has no signal side yet,
+and doing it turned up a wire vocabulary with three exceptions in it and a
+version number that lives in five files.*
+
 ***The violation the phase created on 2026-08-23 is already paid.** The Python
 client's GUI surface was reformed — a builder returns a view that opens itself,
 any root opens, ids belong to the instance, the samples are a source, a widget is
@@ -108,14 +122,18 @@ now: two gaps the reform wrote down instead of faking, and a question about the
 widgets it did not ask.*
 
 - ⬜ **A control has a range and no curve, and no step** *(`clients/gui/PLAN.md`,
-  Found by use)*. The host draws a control linearly over `min..max` and that is
-  all: a `step` reaches it as a prop nothing reads, and there is no warp at
-  all — which is why a **named spec** (`spec="freq"`, 20..20000 exponential) was
-  deliberately not shipped, one that silently drew linear being worse than none.
-  Both are one prop on `props::Range` plus the drag math, and they are taken
-  together because a curve without a step leaves `midinote` wrong. It is in the
-  phase because the clients can now *say* both and the host can draw neither,
-  which is a surface that half works.
+  Found by use)*. **Leads the phase, and its shared half is now built.** The
+  host draws a control linearly over `min..max` and that is all: a `step`
+  reaches it as a prop nothing reads, and there is no warp at all — which is why
+  a **named spec** (`spec="freq"`, 20..20000 exponential) was deliberately not
+  shipped, one that silently drew linear being worse than none. What the entry
+  asked for first — that a warp live in shared geometry rather than being
+  re-derived per client — landed on 2026-08-23 as `clausters_core::warp`, so the
+  curve the host has to draw is now a function it reads (`curve_unit`/
+  `curve_value`, `exp_unit`/`exp_value`) rather than one it invents. What is
+  left is the host's own: two props on `props::Range`, the parse, the drag math,
+  and the builders in both clients. Still taken together, because a curve
+  without a step leaves `midinote` wrong.
 
 - ⬜ **A `Source` for the other heavy props** *(`clients/python/PLAN.md`, Found
   by use)* — a roll's `notes`, a curve's `points`, a patcher's `boxes`/`cords`,
@@ -139,6 +157,39 @@ widgets it did not ask.*
   Here rather than earlier because nothing waits on it — but it is the one
   entry of the web book's "What the browser changes" that is not a platform
   difference, so it should not sit unnamed.
+
+- ⬜ **Three wire selectors carry a spelling the table meant to leave behind**
+  *(`PLAN.md`, Found by use)*. The operator vocabulary is lowercase and joined
+  in seventy places and carries an underscore in three — `as_int`, `as_float`,
+  `hypot_apx` — and the plan entry that added the last of them says outright it
+  was being lowercased "like every other name in that table". The client half
+  is already done (both now spell every operator SuperCollider's way), so only
+  the wire lags. Here rather than earlier because it is a **format** change: a
+  stored def carries the selector, so the work is choosing between an alias
+  arm for a release and taking the break while the major is `0` — and neither
+  is decided.
+
+- ⬜ **`LinLin`/`LinExp` as UGens, over the warp family the core already
+  carries** *(`PLAN.md`, Future directions)*. The eight range maps are value
+  functions in both clients since 2026-08-23; a **signal** still cannot be
+  mapped, so a def writes the multiply-and-add by hand — which is two
+  implementations of one map, the exact thing the shared core exists to
+  prevent. The formulas are done and `warp::apply_map` is the body; what a
+  milestone decides is the shape (five- and six-ary, so they cannot join the
+  operator tables) and two questions: whether the bounds are modulatable
+  inputs or init-rate like a ramp's geometry, and whether `range`/`exprange`
+  are UGens at all or the `madd` composition sclang makes them, which reads a
+  signal polarity our graph does not track.
+
+- ⬜ **A release bumps one version in five places and four of them are checked
+  by nothing** *(`PLAN.md`, Future directions)*. The root `Cargo.toml`, every
+  crate under `crates/`, `pyproject.toml`, `package.json` and `clients/gui`'s
+  own workspace and lockfile; only the crate↔`package.json` pair is verified,
+  and `clients/gui` has drifted before for exactly that reason. The choice is
+  between a check that reports the drift and `version.workspace = true` plus a
+  writer for the two non-Cargo manifests, which makes it impossible. Here
+  because nothing waits on it and it is felt only at a tag — but it is felt
+  every time.
 
 - ⬜ **What kind of thing is a button?** *(`clients/python/PLAN.md`, Found by
   use)*. Two gaps and the design question they hang from: `button` is the one

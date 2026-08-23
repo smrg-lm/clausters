@@ -1564,6 +1564,29 @@ where it came from).
   method sclang makes them — a composition of `madd` that reads the signal's
   own polarity, which our graph does not track.
 
+- ⬜ **A release bumps one version in five places and four of them are checked
+  by nothing** *(named 2026-08-23, fixing the versioning rule and finding the
+  check only covered the rule's own half)*. The version lives in the root
+  `Cargo.toml`, every crate under `crates/`, `clients/python/pyproject.toml`,
+  `clients/web/package.json`, and `clients/gui/Cargo.toml` with its own lockfile
+  (an independent workspace, so it needs `cargo update -p clausters-gui
+  --offline` after the edit). **Only one pair is verified** — `npm run
+  check-package` refuses a `package.json` that disagrees with the crate — and
+  `clients/gui` has drifted before precisely because no root build reads its
+  manifest. `versions.sh` does not close this: it answers the *rule* question
+  (did a counter move since the last tag, did the tier move once) and reads only
+  the root manifest.
+
+  The fix is one of two shapes and they are not the same work. A **check** — the
+  script grows a pass that reads all five and fails on disagreement, cheap and
+  it only catches the mistake after it is made. Or a **single source** — the
+  crates take `version.workspace = true` (they do not today), and the two
+  non-Cargo manifests are written from it by a small script, so there is one
+  number to edit rather than five to keep equal. The second is what makes the
+  drift impossible rather than reported, and it is the one worth taking, with
+  the caveat that `clients/gui` is its own workspace and inherits nothing from
+  the root.
+
 - ⬜ **The builders could be generated from the catalog instead of contrasted against it** *(named 2026-08-16, after the two contrast tests together caught eleven drifted builders, ten misspelled parameters and one UGen a client never got)*. The server's registry is the source of truth and each client hand-writes a mirror of it; the tests prove the mirrors agree, which is strictly weaker than not having mirrors. Generating `defs/ugens/*.py` and `defs/ugens/*.ts` from the registry would delete the class of bug rather than detect it.
 
   **The user's condition, stated when the idea was raised** *(2026-08-16)*: it is worth having **if the corroboration happens at compile time**. That points at the shape — not a generator anyone must remember to run, but a checked-in generated file plus a build step that regenerates and **fails on a diff**, the way `docs/bindings.md` is enforced by `tests/bindings.rs`. A generator whose output is not verified by the build is one more thing to forget.
@@ -1620,6 +1643,31 @@ reading rather than a queue that empties.
 Anything unresolved lives here or under "Future directions", both **after** the
 tracks: never inside the milestone that happened to be open, and never among
 finished work, where a pending item reads as done.
+
+- ⬜ **Three wire selectors carry a spelling the table meant to leave behind**
+  *(named 2026-08-23, once the clients' own names were settled)*. The operator
+  vocabulary is lowercase and joined — `bitand`, `bitor`, `bitxor`, `lshift`,
+  `rshift`, `midicps`, `softclip`, seventy of them — with **three exceptions**
+  that carry an underscore: `as_int`, `as_float` and `hypot_apx`. It is not a
+  second convention; it is a leak, and the plan says so in its own words at the
+  entry that added the last of them, which describes `hypot_apx` as *"lowercased
+  like every other name in that table, as `as_int` already is"*. The intent was
+  stated and the opposite shipped.
+
+  **The client half is already done**, which is what leaves this visible and
+  small: both clients now spell every operator SuperCollider's way
+  (`asinteger`, `asfloat`, `hypotapx`), and each maps its name to the selector
+  in one line. So only the wire lags, and the rename is `asint`/`asfloat`/
+  `hypotapx` — or `asinteger`, if the selector should read as the method does.
+
+  **What it costs is a format change, which is why it was deferred rather than
+  taken with the client rename.** A stored SynthDef carries the selector, so
+  every persisted def using one of the three stops loading; `docs/schemas.md`
+  lists them; the frozen parity vectors freeze them; and the two Faust `_UNARY`
+  tables key on them. The compatible shape is to **accept both and emit the
+  new** for a release — `UnaryOp::from_name` already resolves by a table, so an
+  alias arm is small — and the incompatible one is to take the break while the
+  major is `0`. Neither is decided here.
 
 - ⬜ **Every carrier takes an address, and all three default to loopback**
   *(named 2026-08-23, deciding whether a GUI host may be remote)*. The two OSC
