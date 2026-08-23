@@ -194,6 +194,355 @@ everything is an element, in one of two modes — *generated* data, or the
 
   **Boundaries, recorded so the milestone does not grow:** the document is not the undo history (that is the host's, per session, never written — GUI H track), a save is not an undo boundary, and the document does not persist logical material even when it can point at it. Python: `form` reads and writes it, the `Editor` opens and saves one; `docs/decisions.md` for the plugin analogy and the preserve-what-you-do-not-understand rule; the client book's composition page for the user-facing half; an example that saves a composition, reopens it and re-renders.
 
+### The client API reform: the GUI element as an object (client arc, phased)
+
+A reform of the client's GUI surface, in two parts: **first the shape of the
+objects** (a builder returns a thing, not an anonymous `dict`), **then their
+interaction with the audio server** (a widget takes the control it drives).
+Both are done **with the host and the wire as they are** — every milestone here
+is client-side. Where one of them wants something the host or the server does
+not offer, that is named as a limit and left to the GUI/server tracks rather
+than smuggled in.
+
+The premise, in one line: a `SynthDef` is an object that builds a JSON AST and
+knows how to send itself; `guidef.window()` returns a bare `dict` and knows
+nothing, which is why the host had to become the subject of the sentence
+(`host.open(tree)`) while every other resource is its own subject
+(`sd.send(server)`, `plot(obj, host=None)`). Giving the GUI node the same shape
+the def already has removes the asymmetry rather than papering over it.
+
+#### Part 1 — the objects
+
+- ✅ **C39 — `View`: a GUI node is an object that carries a tree** *(done
+  2026-08-23)*. Every builder in `clausters.gui.guidef` returns a `View`
+  (`clausters.gui.view`) instead of a `dict`. `View` **is a `dict` subclass**, so
+  the JSON it produces is byte-identical to today's and neither the wire, the
+  host, nor `to_json` changes; what it adds is behaviour: the name index
+  (`find`/`names`), `to_json()` and `open()`, with composition by nesting
+  unchanged at the call site. The UGen analogy is the one to keep: a `View` is a
+  node of an AST that a program builds and then sends, not a live widget — the
+  live widget is what `open()` returns.
+
+  ```python
+  # The builders compose exactly as they do today; the value is now a View.
+  v = window(
+      layout(
+          knob(name="freq", label="freq", min=110.0, max=880.0, value=220.0),
+          slider(name="amp", label="amp", min=0.0, max=1.0, value=0.2),
+          flow="col"),
+      title="voice")
+
+  v.to_json()      # the same document /gui_def already takes
+  w = v.open()     # a live window, on the ambient host
+  w["freq"].set(value=440.0)
+  ```
+
+  **The bracket is the dict key, not the name.** The plan first asked for
+  `View.__getitem__(name)`; that collides head-on with the thing `View` *is* —
+  `node["type"]`, `child["id"]` and `node.get("children")` are read all over the
+  client and by the host's own id walk, so one bracket cannot mean both. The
+  document is addressed by key (`v["min"]`) and the tree by name (`v.find("freq")`,
+  `v.names()`). On the **live** side the bracket stays the name (`w["freq"]`),
+  where there is no document to collide with — a `WindowHandle` indexes nothing
+  else.
+
+  **The name is a client-side index, and it must stop being an id.** The host
+  does not read a widget's `name` at all (`to_json` strips it before the document
+  goes out; only the *root*'s survives, and there it means "persist this def"),
+  so `w["freq"]` is a table the client builds by walking the tree. Two
+  consequences landed with it: a **duplicate name in one scope is an error**,
+  raised both where the `View` is built and where `GuiHost._register` walks a
+  hand-written tree — not the silent last-wins of before, which left the shadowed
+  widget drawing and unreachable (the project's recorded stance on silent
+  shadowing is `src/osc/server/dispatch.rs`); and a **nested `View` scopes its
+  names**, so two sub-views can both hold a `freq` and `v.find("osc1").find("freq")`
+  reaches one of them. (Open: whether a flat `"osc1/freq"` path is offered as
+  well, and how a `WindowHandle` indexes a nested view — the handle's map is
+  still flat, which no tree exercises yet because nothing nests a `window`. It
+  will once `view()` lands in C41.)
+
+  **The ambient host, made symmetric with the ambient server.** `open()` with no
+  `host=` resolves the way `plot`/`scope` already did, and two adoptions were
+  added so that resolution actually finds the host a script booted:
+  `GuiHost.boot(adopt_ambient=True)` registers itself when none is registered —
+  the mirror of `Server.boot`'s `adopt_default`, first-wins, spelled the same way
+  — and `stop()` gives the registration up. `Session.gui()` inherits it through
+  the same call. The ambient layer's own owned host (`plot._ambient_host`) boots
+  with `adopt_ambient=False`, because it is the fallback and must stay
+  replaceable (`scope` reboots it wired to a server).
+
+  Docs: the client book's GUI page opens with the view-opens-itself form and the
+  sessions page states the adoption rule; `clausters.gui.view` added to the API
+  reference. Examples: `gui_window.py` and `gui_bind.py` (the two smallest, one
+  per door — a free-standing `GuiHost().boot()` and a `session.gui()`).
+  Tests: `tests/test_view.py`, plus the duplicate-name refusal in
+  `tests/test_gui_host.py`. **Not ported to TypeScript yet** — the shape is
+  written into `clients/web/PLAN.md`.
+
+- ✅ **C40 — Ids belong to the instance, not to the tree** *(done 2026-08-23)*.
+  `GuiHost._register` stamped `child["id"]` **into the caller's dict** and reused
+  whatever it found (`if "id" not in child`), so a `View` opened twice handed the
+  second instance the first one's widget ids; the host answers a colliding id by
+  **skipping the subtree with a warning** (`registry.rs`, `"widget id {id}
+  already in use, skipping"`), so the second window drew wrong instead of
+  failing. This was the one defect blocking everything above: a def that cannot
+  be instanced twice is not a def.
+
+  **Ids were already automatic — what was wrong is where they were written.**
+  Nobody spells an id: `alloc_id` draws them from the client's pool and the walk
+  hands them out. Stamping them *into the caller's tree* is what turned a
+  definition into an instance. And the host cannot take the job over, not even
+  with a change: `/gui_def <id> …` takes the id as its argument and `/gui_set`,
+  `/gui_free` and `/gui_bind` all address by it, so a host-assigned id would have
+  to be reported back and every command would start waiting for a reply. The
+  client-side pool is what makes the whole surface fire-and-forget — the same
+  reason the audio server does not assign node ids either.
+
+  **The walk copies.** `_register` became `_stamp`, which returns a *copy* of the
+  tree with the ids filled in; that copy is what is serialized, and the caller's
+  tree is never written into. The plan first asked for an id map in the handle
+  keyed by path — that turned out to be bookkeeping for something the copy gives
+  for free: every visit builds a fresh node and asks for a fresh id, so node
+  identity never enters, and the **same `View` nested twice in one tree** gets two
+  id runs exactly as two `open()`s do. The handle keeps only what it already
+  kept, `name -> id`.
+
+  ```python
+  strip = window(knob(name="gain"), toggle(name="mute"))
+
+  a, b = strip.open(), strip.open()     # two windows, two id runs, one view
+  a["gain"].set(value=0.5)              # b is not touched
+  ```
+
+  The `View` stays free of ids; an explicit `node(id=…)` is still honoured and is
+  then the caller's problem, exactly as an explicit node id is on the server — a
+  hand-picked id on a subtree used twice **is** used twice, and the host skips the
+  second. The duplicate-name rule from C39 already forces a repeated *named*
+  sub-view to be named apart or not named at all, so the handle's name index
+  stays unambiguous under this.
+
+  Docs: the `guidef` header and `define`/`open` say "in the document it sends";
+  the client book's GUI page gains the two-windows-from-one-view block and the
+  sessions page stops telling the reader to read an assigned id back out of the
+  tree. Example: `gui_panel.py` opens its panel twice and drives both by the same
+  names. Tests: ids read out of the sent JSON, one tree opened twice, and the
+  same subtree nested twice (`tests/test_gui_host.py`), plus the two
+  `tests/test_gui_ids.py` cases that read ids off the tree.
+
+- ⬜ **C46 — The source: the data a view draws is an object, not an index**
+  *(after C40, which it needs; numbered past the track's last label so the
+  numbers already written here keep their places)*. `signal`'s documentation
+  already names the thing — **the source** — and already lists its five
+  carriers for addressable samples: `data` (inline JSON), `blob` (an index into
+  the message's trailing OSC blobs), `buffer` (a server buffer number), `path`
+  (a mapped file), `cache` (a peak pyramid). Choosing among them is the
+  caller's, and `blob=0` is a correspondence kept by hand between two places in
+  the program: the widget says `blob=0` and `open(blob)` had better pass that
+  blob first. The blobs are arguments of the **message**, not of the widget,
+  which is why they read as interchangeable — any view can point at any index,
+  and two can point at one.
+
+  ```python
+  sig = source(decaying_sine(8_000, 120.0))
+
+  v = view(label(name="caption", text="..."),
+           waveform(name="wave", data=sig),
+           title="...", w=720, h=360, flow="col")
+
+  win = v.open()             # no positional blobs: they come out of the tree
+  sig.set(other_samples)     # the entry point, addressable
+  ```
+
+  What it settles:
+
+  - **The object picks the carrier**, not the person writing the view: small
+    rides inline, medium rides as a blob that `open()` numbers, large goes to a
+    mapped file with its peak cache. `blob=0` leaves the surface.
+  - **One source in two widgets is one payload and two references** — what
+    "interchangeable" means, said by the program rather than by convention.
+  - **`set` is the update door**, and the place the policy that is scattered
+    today belongs: small data updates through `/gui_set`, large data by
+    rewriting the file and `peaks_cache_update_file`.
+  - It generalizes without extra shape: a source binds to a **(widget, prop)**
+    pair, not to `data` alone. Every heavy prop is the same case — a roll's
+    `notes`, a curve's `points`, a patcher's `boxes`/`cords`, a score's
+    `display_list`.
+
+  Three things to decide before writing it:
+
+  - **Definition versus instance, again.** The source belongs to the `View`;
+    `set` acts on what is open. With the view open twice, `sig.set()` updates
+    both — it is the definition's data — and the per-instance door stays
+    `w["wave"].set(data=…)`. Same cut as `SynthDef`/`Synth`.
+  - **The name.** `data` is already a prop, so the object cannot take it;
+    `source` is what the documentation calls it already.
+  - **The precedent is the one named in the conversation**: every builder
+    argument today is a scalar or a node, and this adds a third kind. A
+    `control()` inside a def is exactly that, so the asymmetry closes rather
+    than widening.
+
+- ⬜ **C41 — `view()` is the root, and a root with no parent is a window**.
+  `window()` is renamed `view()` and the distinction "window vs container"
+  becomes positional: a `View` with a parent is a component, a `View` with no
+  parent is the window/canvas. `open()` on *any* node works — `knob(freq).open()`
+  is a window that is a knob.
+
+  ```python
+  view(layout(knob(a), knob(b))).open()   # a window with two knobs
+  layout(knob(a), knob(b)).open()         # the same window; the root decides
+  knob(a).open()                          # a window that is one knob
+  ```
+
+  **The tradeoff, stated because it is not free**: the *wire* type stays
+  `"window"` — `Host::window_defs` keys the renderable document by window-rooted
+  def id, and a non-window root lives only in the generic registry and is not
+  drawn as a window. So `open()` on a non-window root **wraps** the tree in a
+  `"window"` node client-side. That wrapper must be invisible: the handle's name
+  index sees through it, and re-parenting the same `View` into another must not
+  leave it behind. `window` stays as an alias of `view` for one release rather
+  than breaking every example at once.
+
+  **`into=` is deferred, and here is why**: there is no wire verb that adds a
+  child to a live widget — `/gui_def id json` builds a *whole* tree and
+  re-sending an id redefines it, dropping pending edits and reassigning ids. So
+  `windowA(into=windowB)` can only be "insert into B's `View` and redefine B",
+  which is correct at build time and lossy at run time. Build-time nesting is
+  what C39 already gives (`view(a, b)`); a live `into=` needs a host verb and
+  belongs to the GUI track, named there rather than faked here.
+
+#### Part 2 — the GUI and the audio server
+
+- ⬜ **C42 — A control declares its range, and a widget reads it**. The slot
+  already exists and is half-filled: `ControlInfo` carries `min`/`max`/`step`,
+  populated by a `FaustDef` (Faust declares them in its `hslider`/`vslider`) and
+  `None` for every other family. `control()` grows the same optional
+  `min`/`max`/`step`, or a named `spec` that expands to them, so the four
+  families describe their surface the same way; and a control widget accepts a
+  control **object** in place of a hand-copied range.
+
+  ```python
+  freq = control("freq", 220.0, min=110.0, max=880.0)
+  amp  = control("amp", 0.2, spec="amp")        # a named range, expanded here
+
+  sd = SynthDef("voice", out(0.0, sine(freq=freq) * amp))
+
+  knob(freq)                                    # name, value and range: all from the control
+  slider(sd["amp"], label="level")              # or indexed off the def
+  view(*[knob(c) for c in sd.controls]).open()  # the whole surface, derived
+
+  knob(control("x", 0.0))                       # error: 'x' declares no range
+  knob(control("x", 0.0), min=0.0, max=1.0)     # declared where it is used
+  ```
+
+  **Where the range lives, and the cost of that**: a `SynthDef`'s wire does not
+  carry `min`/`max`, so a range declared in `control()` is known to the
+  *authoring script* and not to the server — `query_defs` on a synth def keeps
+  reporting `None`, and a def fetched by name from a running server yields no
+  range for anything but Faust. That asymmetry is accepted here rather than
+  fixed: teaching `/def_send synth` to carry a range is a server change, and it
+  is written down in the server plan instead of being worked around client-side.
+  The alternative considered and rejected was declaring the range on the widget
+  only — it re-splits what `ControlInfo` already unified, and leaves the Faust
+  path with two sources for one number. Server-side range *checking* is
+  explicitly not part of this: the range is a display mapping, not a
+  constraint.
+
+- ⬜ **C43 — The binding is made against the control, not against a widget id**.
+  Today a widget and a def control meet only as a string typed twice
+  (`win["freq"].bind("/node_set", synth.id, "freq")`), and nothing checks that
+  the control exists or that the ranges agree. A `View` built from control
+  objects already knows which control each widget drives, so the whole surface
+  binds in one verb.
+
+  ```python
+  sd.send(server)
+  synth = Synth(sd, server=server)
+
+  w = view(knob(freq), slider(amp)).open()
+  w.bind(synth)         # every widget carrying a control of that def is wired
+                        # to /gui_bind "/node_set" synth.id <control>
+  w.unbind()
+  ```
+
+  It is still `/gui_bind` underneath — the low-level form stays for anything
+  that is not a def control (a bus, another widget, an arbitrary address).
+  **Two widgets on one control is legal and drifts**: both bind, both set the
+  synth, neither is told when the other moves, and the host fires an apply
+  rather than a second binding. That is the user's inconsistency to make, not
+  the client's to detect; it is documented, not guarded.
+
+- ⬜ **C44 (analysis, not scheduled) — the inverse direction: a widget inside a
+  def**. Faust's model, where `hslider` *is* the control declaration, suggests
+  `play(sine(freq=knob(min=110, max=880)))` — the widget coerced into a control
+  and its window opened by `play`. Recorded as a direction with a reservation,
+  not as work: it inverts the dependency (`defs` would import `gui`, where
+  today the arrow runs the other way and deliberately so — the arrangement's
+  `gui → form` rule is the precedent), and it autogenerates the control's name,
+  which is the one thing `/node_set` addresses by. If it is done, the coercion
+  runs in **one direction only** (`knob → Control`, never a `Control` growing a
+  widget) and `name=` is mandatory.
+
+- ⬜ **C45 — The examples pass: rewritten against the new surface, and organized
+  while they are open**. Every milestone in this track changes how an example is
+  *written*, and 30 of the 70 entries in `clients/python/examples/` are `gui_*`.
+  Nothing runs them — not CI, not any build — so they are rewritten by hand and
+  by eye, and re-running each one is the acceptance of the milestone that
+  changed it. Since they all have to be opened anyway, they get organized in the
+  same pass rather than in a separate sweep later.
+
+  Four things to fix while they are open, none of them cosmetic:
+
+  - **The flat directory is a prefix pretending to be a folder.** 70 files in
+    one directory, half of them disambiguated by a `gui_` prefix, is a
+    taxonomy typed into filenames. Subdirectories instead — the prefix becomes
+    the folder and disappears from the name.
+  - **The two clients do not agree on names.** `gui_scope.py` is `scope.html`,
+    `scoping.py` is `scoping.html`, `gui_composer.py` is `composer.html`, and
+    `clients/web/examples/` is flat too with a few directories mixed in. The
+    standing rule says an example that exists twice is **one example in two
+    languages**; a reader cannot pair them if the names do not. One layout and
+    one set of names across both clients, decided here and applied to both.
+  - **The pair has to be read, not assumed.** For each pair, the two files go
+    side by side and are read verb by verb: same material, same names, the same
+    calls in the same order. A divergence found there is a plan entry, not a
+    local patch to whichever file is in front of you.
+  - **What is missing gets named.** An example that cannot be written against
+    the supported surface is reporting a gap, and the gap is written into the
+    plan — the client is never modified to satisfy an example.
+
+  Two things this milestone does **not** do: it does not add a catalog of
+  examples to any book (each example documents itself; a book names the
+  directory and at most one entry point), and it does not renumber or re-scope
+  the repository-root `examples/`, which drives the server rather than the
+  client and moves with the server's own track.
+
+#### What this track must not break
+
+- **Non-divergence.** Every milestone here lands in the web client in the same
+  commit or leaves `clients/web/PLAN.md` naming the shape the port must follow.
+  `View` is a plain object over the same JSON in both languages; the name index,
+  the duplicate-name error and the id-per-instance rule are the same rule
+  written twice, and if either turns out to be numeric it belongs in
+  `clausters-core` instead.
+- **The ambient verbs keep their meaning.** `clausters.plot`/`clausters.scope`
+  are *verbs that open a window*; `guidef.plot`/`guidef.scope` are *builders
+  that return a node*. That collision predates this track and gets worse once
+  the builder's return value can also `open()` — one of the two names has to
+  give, and this track decides which rather than leaving both.
+- **`Editor` joins the same shape.** `Editor.open(host)` is the one place a
+  resource takes the host as a required positional; once a `View` opens itself,
+  the editor's draw is a `View` and `Editor.open()` resolves the ambient host
+  like everything else.
+- **`name` means two things and should not.** On a root it is the *persistence*
+  name the host stores for `/gui_load`; on a child it is the client's index.
+  `define(name)` should carry the first so the prop is left meaning only the
+  second — or the two are named apart. Decide it in C39, before either spelling
+  spreads.
+- **The examples are the acceptance.** 29 of the `gui_*.py` examples address
+  widgets by name and one holds a builder's return value; when this track is
+  done, the two spellings are one, and the pair of every ported example is read
+  side by side, verb by verb.
+
 ### The notebook client (`clausters-jupyter`) — moved to the `jupyter` branch
 
 Shipped 2026-08-03/04 and taken off `main` on 2026-08-05. The package worked,

@@ -2,10 +2,15 @@
 """A scripted instrument panel: controls that round-trip values and events.
 
 It builds a ``window`` of standard controls -- knobs, sliders, a number, a
-toggle, a button and a menu -- opens it as one GuiDef, then both *drives* a
-widget live with ``set`` and *listens* for the events your interactions emit
-(turn a knob, click the button) and the close the host sends when you close the
-window. No audio server is involved, so this boots only the GUI host.
+toggle, a button and a menu -- opens it **twice**, then both *drives* a widget
+live with ``set`` and *listens* for the events your interactions emit (turn a
+knob, click the button) and the close the host sends when you close a window.
+No audio server is involved, so this boots only the GUI host.
+
+The two windows are the point of the second half: a view is a definition, so
+opening it again gives a second instance with widget ids of its own. The
+script holds one handle per window and addresses every control by name through
+it -- the same names, two independent panels.
 
 This file is organized as ``# %%`` cells (the VS Code / Jupyter convention) and
 **runs out of the box**. Install once, from the repo root::
@@ -37,12 +42,14 @@ CONTROLS = ("cutoff", "res", "gain", "mix", "bypass", "reset", "wave")
 gui = GuiHost().boot()
 
 # %% [markdown]
-# ## The panel
+# ## The panel, as a view
 # A row of knobs over a row of mixed controls. Every widget is *named*, not
-# numbered -- the script never picks an id.
+# numbered -- the script never picks an id. The builders return a `View`: a tree
+# you compose and then open, the way a `SynthDef` is a graph you compose and
+# then send.
 
 # %%
-win = gui.open(window(
+v = window(
     panel(knob(name="cutoff", label="cutoff", min=20.0, max=20000.0, value=800.0),
           knob(name="res", label="res", min=0.0, max=1.0, value=0.3),
           number(name="gain", label="gain", min=-24.0, max=24.0, value=0.0),
@@ -52,29 +59,57 @@ win = gui.open(window(
           button(name="reset", label="reset"),
           menu(name="wave", options=["sine", "saw", "square"], index=1, label="wave"),
           layout="row"),
-    title="Filter", w=560, h=300, layout="col"))
+    title="Filter", w=560, h=300, layout="col")
+
+# %% [markdown]
+# ## Two windows from one view
+# `open()` is what makes an *instance*: it allocates the widget ids and sends the
+# document, leaving `v` as it was written. So the same view opens twice and the
+# two panels share nothing but their names.
+
+# %%
+a = v.open()
+b = v.open()
+b.set(title="Filter (2)")
+print(f"two windows from one view: cutoff is {a['cutoff'].id} in one "
+      f"and {b['cutoff'].id} in the other")
 
 # %% [markdown]
 # ## Drive and listen
-# Nudge the cutoff live (the `set` path), then register a per-widget `on_event`:
-# each handle fires with the new value(s) when the host's messages are pumped. No
-# ids, no manual matching.
+# Nudge the first panel's cutoff live (the `set` path), then register a
+# per-widget `on_event` on both: each handle fires with the new value(s) when the
+# host's messages are pumped. No ids, no manual matching -- and turning the knob
+# in one window leaves the other where it was.
 
 # %%
 time.sleep(0.5)
-win["cutoff"].set(value=2000.0)
-print("set cutoff to 2000; now interact with the window...")
+a["cutoff"].set(value=2000.0)
+print("set the first panel's cutoff to 2000; now interact with the windows...")
 
-for name in CONTROLS:
-    win[name].on_event(lambda *value, name=name: print(f"{name}: {value}"))
+for tag, win in (("1", a), ("2", b)):
+    for name in CONTROLS:
+        win[name].on_event(
+            lambda *value, tag=tag, name=name: print(f"{tag} {name}: {value}"))
+
+_open = {int(a), int(b)}
+
+
+def _closed_one(win):
+    """Stop only once both windows are gone."""
+    _open.discard(int(win))
+    print(f"window closed ({len(_open)} left)")
+    globals()["_closed"] = not _open
+
+
 _closed = False
-win.on_closed(lambda: (print("window closed"), globals().__setitem__("_closed", True)))
+a.on_closed(lambda: _closed_one(a))
+b.on_closed(lambda: _closed_one(b))
 
 
 def run(seconds: float | None = None) -> None:
     """Dispatches panel events for ``seconds``.
 
-    Script-run there is no bound and the window is what ends it; the
+    Script-run there is no bound and the windows are what end it; the
     ``seconds`` argument is for a cell run, where a notebook wants the loop to
     give the prompt back.
     """
@@ -90,4 +125,4 @@ if __name__ == "__main__" and not hasattr(sys, "ps1"):
     finally:
         gui.stop()
 else:
-    print("panel up - run(10) to dispatch events, gui.stop() to end")
+    print("panels up - run(10) to dispatch events, gui.stop() to end")

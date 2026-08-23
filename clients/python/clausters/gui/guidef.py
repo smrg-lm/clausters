@@ -39,9 +39,10 @@ positional slot belongs to what the widget is made of — a container's children
 (``panel(knob(), slider())``), a label's text (``label("hello")``), a meter's
 bus (``meter(4)``), a menu's options — so an ordinary tree mentions no ids at
 all. `GuiHost.open` / `GuiHost.define` then assigns each widget a fresh
-host-unique id and **writes it into your dict in place**, so after
-``host.open(tree)`` a widget you kept a reference to reads back as
-``widget["id"]``.
+host-unique id **in the document it sends**, leaving the tree you wrote as you
+wrote it. An id names a live widget, so it belongs to the instance `open` hands
+back, not to the definition: the way to a widget is its ``name`` through that
+handle (``win["cutoff"]``), and one tree opens as many times as you like.
 
 Passing ``id=`` explicitly stays supported for the cases that need a fixed
 number (small ints are fine — the host client allocates from 1000 up, so hand
@@ -162,6 +163,7 @@ import json
 import sys
 from ..base.bulk import samples_to_blob as _samples_to_blob
 from ..defs.ugens import env_to_points, points_to_env  # re-exported; shared with seq.automation
+from .view import View
 
 __all__ = [
     "node",
@@ -213,13 +215,19 @@ __all__ = [
 ]
 
 
-def node(type: str, *, children=None, id: int | None = None, **props) -> dict:
-    """A generic widget node ``{id?, type, ...props, children?}``.
+def node(type: str, *, children=None, id: int | None = None, **props) -> View:
+    """A generic widget node ``{id?, type, ...props, children?}``, as a `View`.
 
     The building block every other helper wraps. ``children`` is an iterable of
     nodes for a container and any other keyword is a property (kept verbatim, so
     its int/float type is preserved). ``id`` is keyword-only here as it is in
     every builder — normally left out, so the host assigns one.
+
+    The value is a `clausters.gui.view.View` — a ``dict`` subclass, so the
+    document is exactly what it always was, and the tree can also be looked up by
+    name (`View.find`) and opened (`View.open`). Building it is where a
+    **duplicate name** is caught: two widgets sharing one name in a single view
+    raise here rather than shadowing each other silently.
     """
     out: dict = {"type": type}
     if id is not None:
@@ -238,7 +246,7 @@ def node(type: str, *, children=None, id: int | None = None, **props) -> dict:
                     "id is a keyword argument, so children come first: "
                     f"{type}(child, ..., id=…)")
         out["children"] = kids
-    return out
+    return View(out)
 
 
 # --------------------------------------------------------------- the model
@@ -253,7 +261,7 @@ def node(type: str, *, children=None, id: int | None = None, **props) -> dict:
 def layout(*children, flow: str | None = None, index: int | None = None,
            margin: float | None = None, gap: float | None = None, cols: int | None = None,
            theme: dict | None = None, color: str | None = None, id: int | None = None,
-           **props) -> dict:
+           **props) -> View:
     """A container with **no axes**, arranging its children by ``flow``.
 
     ``flow`` is ``"row"``, ``"col"`` (the default), ``"grid"``, ``"free"`` — or
@@ -278,7 +286,7 @@ def plane(*children, flow: str | None = None, axis: str | None = None,
           view_y: float | None = None, view_zoom: float | None = None,
           boxes=None, cords=None, margin: float | None = None, gap: float | None = None,
           cols: int | None = None, theme: dict | None = None, color: str | None = None,
-          id: int | None = None, **props) -> dict:
+          id: int | None = None, **props) -> View:
     """A container with **two axes locked to one scale**: a pannable, zoomable
     plane in content units.
 
@@ -307,7 +315,7 @@ def field(*children, axes: dict | None = None, offset: float | None = None,
           snap: float | None = None, header_w: float | None = None, mute: bool | None = None,
           solo: bool | None = None, level: float | None = None, h: float | None = None,
           theme: dict | None = None, color: str | None = None, id: int | None = None,
-          **props) -> dict:
+          **props) -> View:
     """A container with **two independent axes** — the time/value container.
 
     One container, told apart by what is placed on it: holding other fields it
@@ -350,7 +358,7 @@ def signal(*, view: str | None = None, data=None, blob: int | None = None,
            at: float | None = None, dur: float | None = None,
            start: float | None = None, loop: bool | None = None,
            axes: dict | None = None, label: str | None = None,
-           color: str | None = None, id: int | None = None, **props) -> dict:
+           color: str | None = None, id: int | None = None, **props) -> View:
     """**Every view of a signal**, as the one element they are: a presentation
     of a source, with the capabilities offered over it.
 
@@ -437,7 +445,7 @@ def signal(*, view: str | None = None, data=None, blob: int | None = None,
 def window(*children, title: str | None = None, w: int | None = None, h: int | None = None,
            flow: str | None = None, layout: str | None = None, margin: float | None = None,
            gap: float | None = None, cols: int | None = None, hug: bool | None = None,
-           theme: dict | None = None, **props) -> dict:
+           theme: dict | None = None, **props) -> View:
     """A top-level ``window`` container (a GuiDef root). It takes no id.
 
     ``w``/``h`` size the OS window; ``layout`` (``row``/``col``/``grid``/
@@ -466,7 +474,7 @@ def window(*children, title: str | None = None, w: int | None = None, h: int | N
 def panel(*children, flow: str | None = None, layout: str | None = None,
           margin: float | None = None, gap: float | None = None, cols: int | None = None,
           hug: bool | None = None, theme: dict | None = None, color: str | None = None,
-          id: int | None = None, **props) -> dict:
+          id: int | None = None, **props) -> View:
     """A nestable ``panel`` container; ``layout`` is ``row``/``col``/``grid``/``free``.
 
     ``margin`` insets the children, ``gap`` separates them, ``cols`` fixes the
@@ -491,7 +499,7 @@ def panel(*children, flow: str | None = None, layout: str | None = None,
 
 def stack(*children, index: int | None = None, margin: float | None = None,
           hug: bool | None = None, theme: dict | None = None, color: str | None = None,
-          id: int | None = None, **props) -> dict:
+          id: int | None = None, **props) -> View:
     """A ``stack`` container showing **one child at a time**: the one at ``index``.
 
     The shown page fills the container (``margin`` insets it); the hidden ones
@@ -529,7 +537,7 @@ def scroll(*children, axis: str | None = None, zoom: bool | None = None,
            view_zoom: float | None = None, flow: str | None = None, layout: str | None = None,
            margin: float | None = None, gap: float | None = None, cols: int | None = None,
            theme: dict | None = None, color: str | None = None, id: int | None = None,
-           **props) -> dict:
+           **props) -> View:
     """A ``scroll`` container: a 2D workspace onto a virtual content area.
 
     The children lay out into a content area larger than the widget, seen
@@ -568,7 +576,7 @@ def scroll(*children, axis: str | None = None, zoom: bool | None = None,
 
 def label(text: str = "", *, text_size: float | None = None, wrap: bool | None = None,
           align: str | None = None, color: str | None = None, id: int | None = None, **props
-          ) -> dict:
+          ) -> View:
     """Static ``label`` text, passed positionally: ``label("hello")``.
 
     ``text_size`` is the glyph scale over the host's font (default 2.0 —
@@ -587,7 +595,7 @@ def label(text: str = "", *, text_size: float | None = None, wrap: bool | None =
 
 def knob(*, label: str | None = None, min: float | None = None, max: float | None = None,
          value: float | None = None, text_size: float | None = None, color: str | None = None,
-         id: int | None = None, **props) -> dict:
+         id: int | None = None, **props) -> View:
     """A rotary ``knob`` over a continuous range. ``text_size`` scales its
     label and value read-out."""
     extra = _drop_none(label=label, min=min, max=max, value=value, text_size=text_size, color=color)
@@ -596,7 +604,7 @@ def knob(*, label: str | None = None, min: float | None = None, max: float | Non
 
 def slider(*, label: str | None = None, min: float | None = None, max: float | None = None,
            value: float | None = None, vertical: bool = False, text_size: float | None = None,
-           color: str | None = None, id: int | None = None, **props) -> dict:
+           color: str | None = None, id: int | None = None, **props) -> View:
     """A continuous ``slider`` over a range. ``vertical=True`` lays it out along
     the y axis (min at the bottom, max at the top) instead of horizontally.
     ``text_size`` scales its label and value read-out."""
@@ -608,7 +616,7 @@ def slider(*, label: str | None = None, min: float | None = None, max: float | N
 
 def number(*, label: str | None = None, min: float | None = None, max: float | None = None,
            value: float | None = None, text_size: float | None = None, color: str | None = None,
-           id: int | None = None, **props) -> dict:
+           id: int | None = None, **props) -> View:
     """A draggable numeric read-out over a range. ``text_size`` scales its
     label and value."""
     extra = _drop_none(label=label, min=min, max=max, value=value, text_size=text_size, color=color)
@@ -616,7 +624,7 @@ def number(*, label: str | None = None, min: float | None = None, max: float | N
 
 
 def button(*, label: str | None = None, text_size: float | None = None, color: str | None = None,
-           id: int | None = None, **props) -> dict:
+           id: int | None = None, **props) -> View:
     """A momentary push ``button`` (emits ``1`` on press, ``0`` on release).
     ``text_size`` scales its face label."""
     extra = _drop_none(label=label, text_size=text_size, color=color)
@@ -624,7 +632,7 @@ def button(*, label: str | None = None, text_size: float | None = None, color: s
 
 
 def toggle(*, label: str | None = None, value: bool | None = None, text_size: float | None = None,
-           color: str | None = None, id: int | None = None, **props) -> dict:
+           color: str | None = None, id: int | None = None, **props) -> View:
     """A boolean ``toggle``. ``value`` is sent as ``1``/``0`` (OSC has no bool).
     ``text_size`` scales its label."""
     extra = _drop_none(label=label, text_size=text_size, color=color)
@@ -635,7 +643,7 @@ def toggle(*, label: str | None = None, value: bool | None = None, text_size: fl
 
 def text(*, value: str | None = None, label: str | None = None, text_size: float | None = None,
          multiline: bool | None = None, color: str | None = None, id: int | None = None, **props
-         ) -> dict:
+         ) -> View:
     """An editable ``text`` field. The user types into it and the entered string
     is emitted as a ``/gui_event`` (or forwarded to the server when bound) on
     **every** edit — like a slider's value, never gated on Enter. ``multiline``
@@ -650,7 +658,7 @@ def text(*, value: str | None = None, label: str | None = None, text_size: float
 
 def menu(options=(), *, index: int | None = None, label: str | None = None,
          text_size: float | None = None, color: str | None = None, id: int | None = None, **props
-         ) -> dict:
+         ) -> View:
     """A ``menu`` over ``options`` (a list of strings), emitting the chosen
     ``index``.
 
@@ -679,7 +687,7 @@ def waveform(*, data=None, blob: int | None = None, buffer: int | None = None,
              playhead_loop_start: float | None = None, playhead_loop_len: float | None = None,
              y_start: float | None = None,
              y_len: float | None = None, link: int | None = None, axes: dict | None = None,
-             color: str | None = None, id: int | None = None, **props) -> dict:
+             color: str | None = None, id: int | None = None, **props) -> View:
     """The heavy ``waveform`` view, fed its samples one of several ways (in the
     host's precedence order):
 
@@ -813,7 +821,7 @@ def spectrogram(*, data=None, blob: int | None = None, buffer: int | None = None
                 playhead_loop_start: float | None = None,
                 playhead_loop_len: float | None = None, y_start: float | None = None,
                 y_len: float | None = None, link: int | None = None, axes: dict | None = None,
-                color: str | None = None, id: int | None = None, **props) -> dict:
+                color: str | None = None, id: int | None = None, **props) -> View:
     """The heavy ``spectrogram`` (STFT time-frequency) view, fed like the
     `waveform`: a mapped ``path`` of raw little-endian ``f32``, a server
     ``buffer``, inline ``data``/``blob``, or a prebuilt single-channel STFT
@@ -866,7 +874,7 @@ def spectrogram(*, data=None, blob: int | None = None, buffer: int | None = None
 
 def meter(bus: int = 0, *, rate: str = "audio", min: float | None = None,
           max: float | None = None, label: str | None = None, color: str | None = None,
-          id: int | None = None, **props) -> dict:
+          id: int | None = None, **props) -> View:
     """A level ``meter`` on ``bus``, read from the audio server's shared-memory
     segment each frame (zero OSC messages; the host must be started with
     ``--shm`` pointing at the server's segment).
@@ -890,7 +898,7 @@ def scope(bus: int = 0, *, rate: str = "audio", channels: int | None = None,
           trigger: float | None = None, hold: bool | None = None, min: float | None = None,
           max: float | None = None, ruler: "bool | str | None" = None,
           ruler_y: "bool | str | None" = None, label: str | None = None, color: str | None = None,
-          axes: dict | None = None, id: int | None = None, **props) -> dict:
+          axes: dict | None = None, id: int | None = None, **props) -> View:
     """A time-domain ``scope`` over ``channels`` **adjacent** buses starting at
     ``bus`` (bus 0 is the first hardware output), in one of two rates.
 
@@ -926,7 +934,7 @@ def scope(bus: int = 0, *, rate: str = "audio", channels: int | None = None,
 
 def phasescope(bus: int = 0, *, window_ms: float | None = None, hold: bool | None = None,
                label: str | None = None, color: str | None = None,
-               id: int | None = None, **props) -> dict:
+               id: int | None = None, **props) -> View:
     """A ``phasescope`` (goniometer) of the stereo pair ``bus`` (left) and
     ``bus + 1`` (right) — the adjacent-channel layout the whole family uses —
     drawn as the 45°-rotated Lissajous figure: vertical is the mid
@@ -951,7 +959,7 @@ def spectrum(bus: int = 0, *, channels: int | None = None, fft_size: int | None 
              view_start: float | None = None, view_len: float | None = None,
              ruler: "bool | str | None" = None, ruler_y: "bool | str | None" = None,
              label: str | None = None, color: str | None = None, axes: dict | None = None, id: int | None = None, **props
-             ) -> dict:
+             ) -> View:
     """A live ``spectrum`` (spectroscope) over ``channels`` **adjacent**
     audio buses starting at ``bus``: one forward FFT per channel per frame of
     the newest ``fft_size`` window (default 2048), magnitudes in dB over
@@ -991,7 +999,7 @@ def spectrum(bus: int = 0, *, channels: int | None = None, fft_size: int | None 
 
 
 def nodetree(*, group: int = 0, controls: bool | None = None, label: str | None = None,
-             color: str | None = None, id: int | None = None, **props) -> dict:
+             color: str | None = None, id: int | None = None, **props) -> View:
     """A live ``nodetree`` view of the audio server's node tree rooted at ``group``
     (default the root group ``0``). The host mirrors the server's tree over its
     client leg (it must be started with ``--server``), refreshing on node
@@ -1006,7 +1014,7 @@ def nodetree(*, group: int = 0, controls: bool | None = None, label: str | None 
 
 def bpf(*, points=None, min: float | None = None, max: float | None = None,
         duration: float | None = None, exp: bool | None = None, label: str | None = None,
-        color: str | None = None, axes: dict | None = None, id: int | None = None, **props) -> dict:
+        color: str | None = None, axes: dict | None = None, id: int | None = None, **props) -> View:
     """A drawable ``bpf`` break-point function — the envelope editor.
 
     Breakpoints ``(time, value)`` plus a per-segment shape using the server's
@@ -1111,7 +1119,7 @@ def plot(*, data=None, blob: int | None = None,
                  ruler_y: str | None = None, fft_size: int | None = None,
                  db_floor: float | None = None, db_ceil: float | None = None,
                  freq_scale: str | None = None, label: str | None = None, color: str | None = None,
-                 axes: dict | None = None, id: int | None = None, **props) -> dict:
+                 axes: dict | None = None, id: int | None = None, **props) -> View:
     """A static ``plot`` of a signal — measurement without navigation. Unlike
     the heavy `waveform`, it does not zoom, pan or edit; it is the catalog's
     "plot of an NRT-generated signal/file", grown x/y rulers, multichannel
@@ -1173,7 +1181,7 @@ def score(*, display_list: dict | None = None, playhead: float | None = None,
           playhead_at: float | None = None, playhead_loop_start: float | None = None,
           playhead_loop_len: float | None = None, sample_rate: float | None = None,
           selected: str | None = None, editable: bool | None = None, color: str | None = None,
-          id: int | None = None, **props) -> dict:
+          id: int | None = None, **props) -> View:
     """An engraved music-notation ``score`` page.
 
     The host is only the renderer: it fits the engraved page into the widget
@@ -1256,7 +1264,7 @@ def track(*clips, label: str | None = None, height: float | None = None, snap: f
           playhead_at: float | None = None, playhead: float | None = None,
           playhead_loop_start: float | None = None, playhead_loop_len: float | None = None,
           link: int | None = None, theme: dict | None = None, color: str | None = None,
-          axes: dict | None = None, id: int | None = None, **props) -> dict:
+          axes: dict | None = None, id: int | None = None, **props) -> View:
     """A multitrack ``track`` lane holding `clip` children placed on a shared
     time axis — the DAW-style track editor's lane. ``label`` names it in a left
     header; ``height`` is its lane weight when several tracks stack under one
@@ -1328,7 +1336,7 @@ def track(*clips, label: str | None = None, height: float | None = None, snap: f
 def timeruler(*, h: float = 20.0, ruler: str | None = None, sample_rate: float | None = None,
               tempo: float | None = None, beat_at: float | None = None, quant: float | None = None,
               link: int | None = None, theme: dict | None = None, color: str | None = None,
-              axes: dict | None = None, id: int | None = None, **props) -> dict:
+              axes: dict | None = None, id: int | None = None, **props) -> View:
     """A free-standing **time ruler**: the shared axis drawn as a strip the
     document places — a DAW's ruler above its tracks.
 
@@ -1377,7 +1385,7 @@ def clip(*, offset: float = 0.0, dur: float, data=None, blob: int | None = None,
          start: float | None = None, loop: bool | None = None,
          fit: bool | None = None, layer: str | None = None, hidden: str | None = None,
          label: str | None = None, color: str | None = None, id: int | None = None, **props
-         ) -> dict:
+         ) -> View:
     """One ``clip`` on a `track`: a placed rectangle spanning ``[offset, offset +
     dur]`` in timeline sample units (the graphic unit — length = duration). Its
     body is one of three:
@@ -1506,7 +1514,7 @@ def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | No
               playhead_at: float | None = None, playhead: float | None = None,
               playhead_loop_start: float | None = None, playhead_loop_len: float | None = None,
               y_start: float | None = None, y_len: float | None = None, label: str | None = None,
-              color: str | None = None, axes: dict | None = None, id: int | None = None, **props) -> dict:
+              color: str | None = None, axes: dict | None = None, id: int | None = None, **props) -> View:
     """The dedicated editor-grade ``pianoroll`` view: a piano keyboard gutter, a
     note grid, an optional velocity lane and an OSC-event lane — the timeline
     sibling of the compact `clip` piano-roll body, drawing the **same notes** with
@@ -1578,7 +1586,7 @@ def piano(*, min: int | None = None, max: int | None = None, active_min: int | N
           active_max: int | None = None, pan: bool | None = None, overview: bool | None = None,
           velocity: int | None = None, channel: int | None = None, voice: str | None = None,
           voice_args=None, label: str | None = None, color: str | None = None,
-          id: int | None = None, **props) -> dict:
+          id: int | None = None, **props) -> View:
     """The playable ``piano`` virtual keyboard: keys laid out with real piano
     proportions (equal white keys, narrower/shorter black keys distributed as on
     the physical instrument), resizing freely with the widget.
@@ -1632,7 +1640,7 @@ def piano(*, min: int | None = None, max: int | None = None, active_min: int | N
 
 
 def patch(*, boxes=None, cords=None, label: str | None = None, color: str | None = None,
-          id: int | None = None, **props) -> dict:
+          id: int | None = None, **props) -> View:
     """A ``patch`` **patcher**: a directed, typed signal graph (a level-1
     `clausters.defs.GraphPatch`, compiling to a `clausters.defs.GraphDef`), drawn
     as boxes with **inlets on top and outlets on the bottom** and a **cord** per
@@ -1678,7 +1686,7 @@ def patch(*, boxes=None, cords=None, label: str | None = None, color: str | None
 
 
 def canvas(shader: str | None = None, *, params=None, buses=None, label: str | None = None,
-           color: str | None = None, id: int | None = None, **props) -> dict:
+           color: str | None = None, id: int | None = None, **props) -> View:
     """A ``canvas`` running a script-supplied WGSL shader over the widget area --
     custom visuals (ShaderToy-style).
 

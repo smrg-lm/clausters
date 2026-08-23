@@ -179,7 +179,7 @@ take = [0.0] * 1024          # whatever you have; a path or a buffer is likelier
 axis = {"unit": "beats", "tempo": 2.0, "quant": 4.0,
         "sample_rate": SR, "link": 1}
 
-win = gui.open(window(
+v = window(
     # -- the chrome: a picker bound to the page stack under it
     layout(menu(["arrangement", "graph"], name="picker"),
            slider(name="scroll", min=0.0, max=8 * BEAT),
@@ -210,7 +210,9 @@ win = gui.open(window(
     signal(name="detail", view="trace", data=take, navigable=False,
            selectable=True, axes={"y": {"unit": "db"}}, h=120.0),
 
-    title="built from the model", w=900, h=560, flow="col"))
+    title="built from the model", w=900, h=560, flow="col")
+
+win = v.open()
 
 win["picker"].bind_widget(win["pages"], "index")
 win["scroll"].bind_widget(win["lane"], "view_start")

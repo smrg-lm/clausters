@@ -103,6 +103,7 @@ from .guidef import (
     window,
 )
 from .handle import WidgetHandle, WindowHandle
+from .view import View
 from .host import DEFAULT_PORT, GuiHost
 from .transport import Transport
 
@@ -145,6 +146,7 @@ __all__ = [
     "Transport",
     "WidgetHandle",
     "WindowHandle",
+    "View",
     "node",
     "window",
     "layout",

@@ -61,16 +61,12 @@ def test_allocator_ignores_ids_it_never_handed_out():
     assert a.in_use == 1
 
 
-# ---- ids filled in place, freed subtree recycled ----
+# ---- ids assigned per instance, freed subtree recycled ----
 
 def test_close_returns_the_whole_subtree_to_the_pool():
     host = _host()
-    inner = button()
-    pane = panel(inner)
-    win = host.open(window(pane))
-    ids = {int(win), pane["id"], inner["id"]}
-    assert len(ids) == 3
-    assert host._alloc.in_use == 3
+    win = host.open(window(panel(button())))
+    assert host._alloc.in_use == 3          # the window, the panel, the button
     host.close(win)
     assert host._alloc.in_use == 0
     assert int(win) not in host._open
@@ -94,9 +90,10 @@ def test_names_resolve_to_handles_and_never_ride_the_wire():
     win = host.open(window(k))
     # Subscript and attribute both resolve to the assigned id.
     assert isinstance(win["cutoff"], WidgetHandle)
-    assert win["cutoff"].id == k["id"]
-    assert win.cutoff.id == k["id"]
+    assert win["cutoff"].id >= 1000 and win["cutoff"].id != int(win)
+    assert win.cutoff.id == win["cutoff"].id
     assert "cutoff" in win and win.names() == ["cutoff"]
+    assert "id" not in k, "the id is the instance's, not the document's"
     # The client-only name is stripped from the /gui_def JSON.
     addr, _id, js = host._osc.sent[0][0], host._osc.sent[0][1], host._osc.sent[0][2]
     assert addr == "/gui_def"

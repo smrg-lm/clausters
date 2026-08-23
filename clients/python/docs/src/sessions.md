@@ -198,14 +198,14 @@ from clausters.gui import window, label
 session = Session.live()       # attaches, or boots a server (segment auto-chosen)
 gui = session.gui()            # clausters-gui, wired to that server + same segment
 
-win = gui.open(window(label(name="greeting", text="hello"), title="Panel", w=320, h=120))
+win = window(label(name="greeting", text="hello"), title="Panel", w=320, h=120).open()
 win["greeting"].set(text="edited live")  # edit the widget by name
 win.close()                              # close the window
 
 session.close()                          # stops whatever the session started; leaving the interpreter would too
 ```
 
-`GuiHost` opens, edits and closes windows: `open` sends a `window`-rooted GuiDef and returns a **window handle** (it *is* the window id and also resolves the tree's named widgets), `set` edits a live widget, and `close` closes it (`close_all` closes every window still open). You need not pick ids: name a widget and address it through the handle (`win["greeting"]`), or omit both and read the assigned id back from the widget dict. Repeated `session.gui()` calls return the same host.
+A view opens itself on the session's host: `session.gui()` registers it as the **ambient** host (first-wins, as the default session adopts the first free-standing `Server.boot()`), so `open()` needs no argument, and `host=` says which when there is more than one. `View.open` sends a `window`-rooted GuiDef and returns a **window handle** (it *is* the window id and also resolves the tree's named widgets), `set` edits a live widget, and `close` closes it (`close_all` closes every window still open). You need not pick ids at all: name a widget and address it through the handle (`win["greeting"]`). The ids ride only in the document that goes out — the tree you wrote is left as you wrote it, which is what lets one view open as many times as you like, each window with ids of its own. Repeated `session.gui()` calls return the same host.
 
 The visual server binary ships **bundled in the same package** as the audio server (built from the independent `clients/gui` workspace, stripped), so there is nothing extra to install — the launcher finds it out of the box. In a source checkout a binary built under `clients/gui/target` is used, and `CLAUSTERS_GUI_BIN` overrides the lookup. See [Getting started](getting-started.md#the-visual-server-gui) for building a lighter, server-only install.
 
@@ -226,7 +226,7 @@ from clausters.gui import GuiHost, window, label
 server = Server().boot()                                  # a server process starts
 gui = GuiHost().boot(server=f"{server.target.host}:{server.target.port}", shm=server.shm)
 
-gui.open(window(label(name="greeting", text="hi"), title="Panel", w=320, h=120))
+window(label(name="greeting", text="hi"), title="Panel", w=320, h=120).open()
 # ...
 gui.stop()        # stops the clausters-gui process
 server.close()    # stops the server process

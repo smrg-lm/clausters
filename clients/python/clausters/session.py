@@ -267,6 +267,13 @@ class Session(Environment):
         Idempotent: repeated calls return the same `GuiHost` (the ``port`` and
         other options of the first call stand).
 
+        The host booted here also becomes the **ambient** one if none is
+        registered yet (`clausters.gui.GuiHost.boot`'s ``adopt_ambient``), so
+        ``view.open()``, `clausters.plot` and `clausters.scope` land on this
+        session's host instead of booting a second one. First-wins, as the
+        default session adopts the first free-standing ``Server.boot()``; a host
+        registered by hand keeps its place.
+
         Args:
             port: the GUI host's own port (script -> host, UDP and TCP alike);
                 ``None`` uses the host default (57210).
@@ -279,9 +286,9 @@ class Session(Environment):
             ready_timeout: seconds to wait for the host to answer.
 
         Returns:
-            A started `clausters.gui.GuiHost`. Use `clausters.gui.GuiHost.open`
-            to open a window, `set` to edit it and `clausters.gui.GuiHost.close`
-            to close it.
+            A started `clausters.gui.GuiHost`. Open a view on it with
+            `clausters.gui.view.View.open`, edit it with ``set`` and close it
+            with `clausters.gui.GuiHost.close`.
         """
         if self._gui is not None:
             return self._gui
@@ -484,6 +491,7 @@ class Session(Environment):
         self.deactivate()      # a closed session is nobody's ambient one
         if self._gui is not None:
             self._gui.stop()   # stops its clausters-gui process too
+                               # (and gives up the ambient registration)
             self._gui = None
         for dest in self._destinations:
             dest.close()

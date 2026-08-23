@@ -1903,6 +1903,35 @@ as some other milestone has a better claim on it.
   in (level 1 with the editor, level 2 on 2026-08-22), so this entry is closed;
   what is left of it is an *example*, not a surface: `gui_patch1.py` has no page
   yet, which is W16's queue.
+- ⬜ **The GUI node becomes a `View` (ports the Python client's C39)**. In
+  Python a `guidef` builder no longer returns a bare object: it returns a `View`
+  — the GUI's counterpart of a `SynthDef`, a tree a program composes and then
+  sends — and the tree is the subject of the sentence, `window(...).open()`
+  rather than `host.open(window(...))`. The shape this port must follow, so the
+  two do not re-derive it differently:
+
+  - `View` **is the plain JSON object** the builders already produce (a `dict`
+    subclass there; here the natural spelling is a class whose instances
+    serialize to the same document, or the object itself with the index kept
+    beside it — whichever keeps `JSON.stringify` byte-identical to today's).
+    Nothing on the wire, in the host or in the serializer changes.
+  - The **document is addressed by key and the tree by name**: `v.type`,
+    `v.props` / index access for the document; `v.find(name)` and `v.names()`
+    for the index. The single bracket cannot mean both, which is the one place
+    the Python plan corrected itself while landing.
+  - A **duplicate name in one scope is an error** where the tree is built, and
+    again where the host client walks a hand-written tree — never a silent
+    last-wins, which leaves the shadowed widget drawing and unreachable.
+  - A **nested view scopes its names**: a `window`-typed node inside another
+    tree keeps its names to itself and is found by its own name.
+  - `view.open({host})` resolves the **ambient** host exactly as `plot`/`scope`
+    do. Python made that symmetric with the ambient server: `GuiHost.boot`
+    grew `adopt_ambient` (first-wins, the mirror of `Server.boot`'s
+    `adopt_default`) and `stop()` gives the registration up. This client's
+    equivalent is `guiHost()` / `newGuiHost()`, whose naming is the entry two
+    below — the two decisions land together or the page ends up with two ambient
+    rules.
+
 - **`SynthDef`'s roots are `outputs` in Python and `roots` here**, and both
   constructors take `*roots` — a public attribute spelled two ways, found while
   porting the Def view (which reads it). One of the two names is wrong and the

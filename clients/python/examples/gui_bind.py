@@ -62,17 +62,21 @@ synth = Synth("gui_bind_beep", {"freq": 220.0}, server=server)
 
 # %% [markdown]
 # ## A named knob, bound to the synth's freq
-# The knob is *named*, not numbered -- the script addresses it by that name and
-# never picks an id. `bind` registers the forward in the host.
+# The view is the subject: `window(...).open()` rather than `host.open(...)`, on
+# the host `session.gui()` already made ambient. The knob is *named*, not
+# numbered -- the script addresses it by that name and never picks an id. `bind`
+# registers the forward in the host.
 #
 # A control knows how big it wants to be, and `hug` on the window makes the
 # window follow it: one knob is all this window has to show, so the window *is*
 # the knob -- no `w`, no `h`, and no `weight` stretching it over an empty pane.
 
 # %%
-win = gui.open(window(
+v = window(
     knob(name="freq", label="freq", min=110.0, max=880.0, value=220.0),
-    title="Bound knob -> synth freq", hug=True, layout="col"))
+    title="Bound knob -> synth freq", hug=True, layout="col")
+
+win = v.open()
 win["freq"].bind("/node_set", synth.id, "freq")
 win.on_closed(lambda: globals().__setitem__("_closed", True))
 print(f"knob bound to synth {synth.id} freq; turn it -- the pitch follows "

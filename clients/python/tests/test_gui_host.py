@@ -55,22 +55,83 @@ class _Recorder:
         self.sent.append(args)
 
 
-def test_open_assigns_missing_widget_ids_in_place():
+def test_open_assigns_ids_in_the_document_it_sends_and_leaves_the_tree_alone():
+    """Ids identify a live widget, so they belong to the instance, not to the
+    document: the tree the caller wrote is never written into, and the ids ride
+    only in the JSON that goes out."""
+    import json
+
     from clausters.gui import guidef
 
     host = GuiHost("127.0.0.1", 57998)
     host._osc = _Recorder()
-    knob = guidef.knob(label="freq")            # no id: assigned at open
-    slider = guidef.slider(id=7)                # explicit id: kept verbatim
+    k = guidef.knob(label="freq")                # no id: assigned at open
+    s = guidef.slider(id=7)                      # explicit id: kept verbatim
     inner = guidef.button()
-    panel = guidef.panel(inner)                 # nested id-less children too
-    win_a = host.open(guidef.window(knob, slider, panel))
+    pane = guidef.panel(inner)                   # nested id-less children too
+    tree = guidef.window(k, s, pane)
+    win_a = host.open(tree)
     win_b = host.open(guidef.window(guidef.knob()))
-    # Assigned in place, host-unique across windows, disjoint from hand ids.
-    assigned = [knob["id"], panel["id"], inner["id"], win_a, win_b]
-    assert len(set(assigned)) == len(assigned)
-    assert all(i >= 1000 for i in assigned)
-    assert slider["id"] == 7
+
+    assert "id" not in k and "id" not in pane and "id" not in inner
+    assert s["id"] == 7, "an id the caller picked stays where it was written"
+
+    sent = json.loads(host._osc.sent[0][2])
+    knob_id, slider_id, panel_id = [c["id"] for c in sent["children"]]
+    inner_id = sent["children"][2]["children"][0]["id"]
+    assert slider_id == 7
+    assigned = [knob_id, panel_id, inner_id, int(win_a), int(win_b)]
+    assert len(set(assigned)) == len(assigned)   # host-unique across windows
+    assert all(i >= 1000 for i in assigned)      # disjoint from hand ids
+
+
+def test_one_tree_opens_twice_with_ids_of_its_own_each_time():
+    """A def that cannot be instanced twice is not a def. Each `open` allocates
+    a fresh run, and the two windows never share a widget id."""
+    import json
+
+    from clausters.gui import guidef
+
+    host = GuiHost("127.0.0.1", 57995)
+    host._osc = _Recorder()
+    strip = guidef.window(guidef.knob(name="gain"), guidef.toggle(name="mute"))
+    a, b = host.open(strip), host.open(strip)
+
+    assert int(a) != int(b)
+    assert a["gain"].id != b["gain"].id
+    ids = [{c["id"] for c in json.loads(msg[2])["children"]}
+           for msg in host._osc.sent]
+    assert ids[0].isdisjoint(ids[1])
+
+
+def test_the_same_subtree_nested_twice_gets_two_id_runs():
+    """The nesting case the old in-place walk could not answer: one object, two
+    places in the tree. Sharing one id run would have the host skip the second
+    subtree ("widget id already in use") and the window would draw wrong."""
+    import json
+
+    from clausters.gui import guidef
+
+    host = GuiHost("127.0.0.1", 57994)
+    host._osc = _Recorder()
+    strip = guidef.panel(guidef.knob())
+    host.open(guidef.window(strip, strip))
+
+    left, right = json.loads(host._osc.sent[0][2])["children"]
+    assert left["id"] != right["id"]
+    assert left["children"][0]["id"] != right["children"][0]["id"]
+
+
+def test_a_duplicate_name_is_refused_when_the_tree_is_registered():
+    """The handle addresses a widget by name, so a repeated name is refused
+    here too -- not only where a `View` is built, since a hand-written dict
+    tree reaches `open` without passing through a builder."""
+    host = GuiHost("127.0.0.1", 57996)
+    host._osc = _Recorder()
+    tree = {"type": "window", "children": [{"type": "knob", "name": "freq"},
+                                           {"type": "slider", "name": "freq"}]}
+    with pytest.raises(ValueError, match="duplicate widget name 'freq'"):
+        host.open(tree)
 
 
 def test_a_redraw_keeps_named_handlers_and_refreshes_the_handle():

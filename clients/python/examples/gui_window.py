@@ -36,7 +36,9 @@ from clausters.gui import GuiHost, label, samples_to_blob, waveform, window
 # %% [markdown]
 # ## Launch the GUI host
 # `GuiHost().boot()` starts a windowed `clausters-gui` process and returns a host
-# connected to it (stopped by `stop`, or on interpreter exit).
+# connected to it (stopped by `stop`, or on interpreter exit). It also becomes
+# the *ambient* host, which is why `open()` below needs no argument -- the same
+# first-wins rule `Server.boot()` follows for the default session.
 
 # %%
 gui = GuiHost().boot()
@@ -56,10 +58,12 @@ def decaying_sine(n: int, cycles: float) -> list:
 # ~8000 f32 (~32 KB) keeps the def (JSON + blob) inside one UDP datagram.
 blob = samples_to_blob(decaying_sine(8_000, cycles=120.0))
 
-win = gui.open(window(
+v = window(
     label(name="caption", text="Decaying sine (wheel: zoom, drag: pan, R: reset)"),
     waveform(name="wave", blob=0),
-    title="clausters-gui - waveform", w=720, h=360, layout="col"), blob)
+    title="clausters-gui - waveform", w=720, h=360, layout="col")
+
+win = v.open(blob)
 win.on_closed(lambda: globals().__setitem__("_closed", True))
 print("the host opened a window; zoom/pan the waveform, close it to stop")
 

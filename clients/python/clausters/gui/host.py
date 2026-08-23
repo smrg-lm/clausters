@@ -99,7 +99,7 @@ class GuiHost:
 
     def boot(self, server: "str | None" = None, *, shm: "str | None" = None,
              verbose: int = 0, data_dir=None, extra_args=(),
-             ready_timeout: float = 10.0) -> "GuiHost":
+             ready_timeout: float = 10.0, adopt_ambient: bool = True) -> "GuiHost":
         """Start the ``clausters-gui`` process **this handle is for**, connect
         to it, and return ``self``.
 
@@ -122,6 +122,12 @@ class GuiHost:
             data_dir: the host's ``--data-dir`` for its GuiDef store.
             extra_args: extra host CLI tokens.
             ready_timeout: seconds to wait for the host to answer.
+            adopt_ambient: make this the **ambient** host when none is
+                registered (`clausters.gui.set_ambient_host`), so ``view.open()``,
+                `clausters.plot` and `clausters.scope` land here instead of
+                booting a second host. First-wins, exactly as
+                `clausters.defs.Server.boot`'s ``adopt_default``: an ambient host
+                already registered is not displaced.
 
         Returns: ``self``, so ``GuiHost().boot()`` reads as one expression.
         """
@@ -131,7 +137,13 @@ class GuiHost:
             server=server, shm=shm, port=self.target[1], verbose=verbose,
             data_dir=data_dir, extra_args=extra_args,
             ready_timeout=ready_timeout).start()
-        return self.start()
+        self.start()
+        if adopt_ambient:
+            from . import ambient_host, set_ambient_host
+
+            if ambient_host() is None:
+                set_ambient_host(self)
+        return self
 
     def start(self) -> "GuiHost":
         self._osc.start()
@@ -139,7 +151,11 @@ class GuiHost:
 
     def stop(self):
         """Close the connection and, if this host `boot`-ed a ``clausters-gui``
-        process, stop it too."""
+        process, stop it too. A host that was the ambient one stops being it."""
+        from . import ambient_host, set_ambient_host
+
+        if ambient_host() is self:
+            set_ambient_host(None)
         self._osc.close()
         if self._process is not None:
             self._process.close()
@@ -160,7 +176,8 @@ class GuiHost:
         A thin, id-managing wrapper over `define`: with ``id=None`` an id is
         assigned for you (and remembered so `close` / `close_all` can free it);
         pass an explicit ``id`` to name the root yourself. Id-less **widgets**
-        inside ``tree`` are assigned too, in place — see `define`. The returned
+        inside ``tree`` are assigned too, in the copy that is sent — the tree
+        itself is untouched, so it can be opened again (see `define`). The returned
         `clausters.gui.handle.WindowHandle` **is** the window id (an ``int``) and
         also resolves the tree's ``name``d widgets: ``win["cutoff"].set(…)``.
         Editing the open window is `set`; closing it is `close`. Any trailing
@@ -199,12 +216,15 @@ class GuiHost:
         referenced by index from a widget's ``blob`` property.
 
         Widgets built **without an id** (`clausters.gui.guidef` builders take
-        ``id=None``) get a fresh host-unique one here, **written into the
-        caller's dict in place** — so after ``define``/`open` the widget you
-        kept a reference to reads back as ``widget["id"]``, ready for `set` /
-        `bind`. Ids you did pick are kept verbatim; they share one recycling
-        namespace across every window on this host (allocation starts at 1000,
-        so hand ids below 1000 never collide with assigned ones).
+        ``id=None``) get a fresh host-unique one here, in the **copy that is
+        sent** — the caller's tree is left as it was written. So one tree opens
+        as many times as you like, each instance with its own ids, and the way
+        to a widget is its name through the returned handle rather than an id
+        read back out of the document. Ids you did pick are kept verbatim; they
+        share one recycling namespace across every window on this host
+        (allocation starts at 1000, so hand ids below 1000 never collide with
+        assigned ones) — and a hand-picked id on a subtree used **twice** in one
+        tree is used twice, which the host answers by skipping the second.
 
         Any widget given a ``name`` is bound in the returned handle:
         ``define``/`open` walk the tree once, and ``win["cutoff"]`` resolves to
@@ -233,14 +253,14 @@ class GuiHost:
                              if wid in self._on_event}
             self._recycle_subtree(id, keep_root=True)
         names: dict = {}
-        self._register(tree, id, names)
+        doc = self._stamp(tree, id, names)
         if root_handler is not None:
             self._on_event[id] = root_handler
         for name, func in inherited.items():
             wid = names.get(name)
             if wid is not None:
                 self._on_event[wid] = func
-        self._osc.send_msg(self.target, "/gui_def", id, to_json(tree), *blobs)
+        self._osc.send_msg(self.target, "/gui_def", id, to_json(doc), *blobs)
         if previous is not None:
             # Refreshed **in place**: one window is one handle, so every
             # reference the caller kept goes on resolving names correctly.
@@ -263,22 +283,47 @@ class GuiHost:
         """
         self._osc.send_msg(self.target, "/gui_load", name)
 
-    def _register(self, node: dict, node_id: int, names: dict):
-        """Walk ``node`` (whose id is ``node_id``): assign a fresh id to every
-        id-less descendant **in place**, record each id's children (the subtree
-        `free` recycles), and collect ``name -> id``. The root carries no id in
-        the tree — it is the ``/gui_def`` argument — so its id is passed in."""
+    def _stamp(self, node: dict, node_id: int, names: dict) -> dict:
+        """A **copy** of ``node`` with a fresh id on every id-less descendant:
+        the document ``/gui_def`` is sent, plus ``name -> id`` collected into
+        ``names`` and each id's children recorded (the subtree `free` recycles).
+
+        The caller's tree is never written into. That is what makes a `View` a
+        definition rather than an instance: the same tree opens twice, and the
+        *same* sub-view nested twice in one tree gets two id runs, instead of
+        both branches sharing one and the host skipping the second (its
+        ``"widget id already in use"``). Ids identify a live widget, so they
+        belong to what `open` hands back, not to the document.
+
+        The root carries no id in the tree — it is the ``/gui_def`` argument —
+        so its id is passed in. A **duplicate name is refused** here, as it is
+        when a `clausters.gui.view.View` is built: the name is how the handle
+        addresses a widget, and a silent last-wins would leave the shadowed one
+        drawing and unreachable.
+        """
         name = node.get("name")
         if isinstance(name, str) and name:
+            if name in names:
+                raise ValueError(
+                    f"duplicate widget name {name!r} in one tree — the handle "
+                    "addresses a widget by name, so two widgets cannot share "
+                    "one (the second would shadow the first, which would still "
+                    "draw and be unreachable)")
             names[name] = node_id
+        out = dict(node)
         child_ids: list[int] = []
-        for child in node.get("children", ()):
-            if "id" not in child:
-                child["id"] = self.alloc_id()
-            cid = child["id"]
-            child_ids.append(cid)
-            self._register(child, cid, names)
+        children = node.get("children")
+        if children:
+            stamped = []
+            for child in children:
+                cid = int(child["id"]) if "id" in child else self.alloc_id()
+                child_ids.append(cid)
+                sub = self._stamp(child, cid, names)
+                sub["id"] = cid
+                stamped.append(sub)
+            out["children"] = stamped
         self._children[node_id] = child_ids
+        return out
 
     def _recycle_subtree(self, id: int, *, keep_root: bool):
         """Return ``id``'s subtree ids to the pool and forget its child map and

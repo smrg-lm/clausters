@@ -37,7 +37,7 @@ from clausters.gui import GuiHost, button, knob, label, menu, panel, slider, win
 
 gui = GuiHost().boot()
 
-win = gui.open(window(
+v = window(
     label("a filter", h=24),
     panel(knob(name="cutoff", label="cutoff", min=20.0, max=20000.0, value=800.0),
           knob(name="res", label="res", min=0.0, max=1.0, value=0.3),
@@ -46,17 +46,37 @@ win = gui.open(window(
           button(name="reset", label="reset"),
           menu(name="wave", options=["sine", "saw", "square"], index=0),
           layout="row", h=40),
-    title="filter", w=520, h=260, layout="col"))
+    title="filter", w=520, h=260, layout="col")
+
+win = v.open()
 ```
 
-A window appears. Two things about that tree are worth noticing before
+A window appears. Three things about that tree are worth noticing before
 anything else.
+
+**The view opens itself.** A builder returns a `View` — the GUI's counterpart
+of a `SynthDef`: a tree you compose and then send, not a live widget. So the
+tree is the subject of the sentence (`window(...).open()`), the way a def is
+(`synthdef.send(server)`), and `open()` finds the host the way `plot` and
+`scope` do: the one `GuiHost().boot()` or `Session.gui()` registered, else one
+it boots. Pass `host=` to say which, and `gui.open(tree)` still works — it is
+the low-level door `open()` goes through.
 
 **No widget has an id.** You passed `name=` instead, and `open` hands back a
 window handle you index by name — `win["cutoff"]`. The host does use integer
-ids on the wire, and `open` allocated them for you; a name is client-side only
-and never travels. Unlike an id (which recycles when a window is freed), a name
-is stable, which is what a live edit addresses against.
+ids on the wire, and `open` allocated them for you — **in the document it
+sends**, not in the tree you wrote, because an id names a *live* widget and the
+view is a definition. That is what lets one view open twice:
+
+```python
+a = v.open()
+b = v.open()              # a second window; its own ids, the same view
+a["cutoff"].set(value=200.0)   # b is not touched
+```
+
+A name is client-side only and never travels. Unlike an id (which recycles when
+a window is freed), a name is stable, which is what a live edit addresses
+against.
 
 **The children came first.** The positional slot of every builder belongs to
 what the widget is made of — a container's children, a label's text, a menu's
@@ -109,7 +129,7 @@ capabilities are props**: whether a view navigates, carries a selection or
 edits back is a choice over any presentation, not a different kind of widget.
 
 From here on the snippets are **trees**, not whole scripts: each one is
-something you pass to `gui.open(window(...))` on the host you already booted.
+something you wrap in `window(...)` and `open()` on the host you already booted.
 
 ## The keyboard, and where it points
 
@@ -499,7 +519,7 @@ from clausters.gui import clip, timeruler, track, window
 
 BEAT = 24_000.0          # samples per beat at 48 kHz, two beats a second
 
-win = gui.open(window(
+v = window(
     track(clip(name="a", offset=0.0, dur=4 * BEAT, data=take, label="take"),
           clip(name="b", offset=4 * BEAT, dur=2 * BEAT,
                notes=[(0.0, BEAT, 60), (BEAT, BEAT, 67)]),
@@ -508,7 +528,9 @@ win = gui.open(window(
                points=[(0.0, 0.0), (3 * BEAT, 1.0, "exp"), (6 * BEAT, 0.0)]),
           label="filter", link=1),
     timeruler(link=1, ruler="beats", tempo=2.0, h=22.0),
-    title="a multitrack", w=900, h=420, layout="col"))
+    title="a multitrack", w=900, h=420, layout="col")
+
+win = v.open()
 ```
 
 A clip's **bodies layer**: a take, note events over it, an automation curve
