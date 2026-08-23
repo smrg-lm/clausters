@@ -94,4 +94,5 @@ pub mod scale;
 pub mod shm;
 pub mod spectrum;
 pub mod tempoclock;
+pub mod warp;
 pub mod window;

@@ -13,10 +13,9 @@
 //! first sample: like scsynth's, these ramps are not modulatable, and a def
 //! that changes `end` or `dur` mid-flight changes nothing.
 
-use crate::dsp::{DoneAction, ProcessCtx, UGen, at};
+use clausters_core::warp;
 
-/// Below this magnitude an endpoint counts as zero for the exponential ramp.
-const EXP_EPSILON: f64 = 1e-5;
+use crate::dsp::{DoneAction, ProcessCtx, UGen, at};
 
 /// Which of the two ramps a [`Line`] is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -48,9 +47,12 @@ enum Advance {
 /// the closed form and the landing is committed exactly anyway — when the
 /// counter runs out the level is *assigned* `end`, never merely approached.
 ///
-/// An exponential ramp through or to zero is undefined; a zero endpoint is
-/// nudged to a tiny same-signed value and a sign change falls back to a linear
-/// step, so `XLine(0, 1, …)` is a very steep rise rather than a `NaN`.
+/// An exponential ramp through or to zero is undefined, and what happens then
+/// is [`clausters_core::warp::exp_ends`]'s to say rather than this module's: a
+/// zero endpoint is nudged to a tiny same-signed level and a sign change falls
+/// back to a linear step, so `XLine(0, 1, …)` is a very steep rise rather
+/// than a `NaN`. The envelope shapes read the same rule, which is what keeps a
+/// ramp and the curve an editor draws from being two answers.
 pub struct Line {
     shape: LineShape,
     /// Inputs are read on the first sample and never again; this says whether
@@ -101,30 +103,23 @@ impl Line {
         self.end = end;
         self.level = start;
 
-        let ratio_exists = self.shape == LineShape::Exponential;
-        let (a, b) = if ratio_exists {
-            // Nudge a zero endpoint to the smallest same-signed level the ratio
-            // can be taken of. `copysign` on a zero keeps its sign, so a ramp
-            // from -0.0 still goes the way its target says.
-            let nudge = |v: f64| {
-                if v.abs() < EXP_EPSILON {
-                    EXP_EPSILON.copysign(v)
-                } else {
-                    v
-                }
-            };
-            (nudge(start), nudge(end))
-        } else {
-            (start, end)
-        };
+        // Which levels an exponential ramp actually runs between, and whether
+        // it can run at all -- zero has no ratio and a sign change has no
+        // exponential. That rule is `warp::exp_ends`, the one the envelope
+        // shapes read too, so this ramp cannot drift from the curve an editor
+        // draws. It is asked in `f32`, the precision the levels arrived in.
+        let ends = (self.shape == LineShape::Exponential)
+            .then(|| warp::exp_ends(start as f32, end as f32))
+            .flatten();
 
-        if ratio_exists && a.signum() == b.signum() {
+        if let Some((a, b)) = ends {
+            let (a, b) = (a as f64, b as f64);
             self.advance = Advance::Multiply;
             self.level = a;
             self.step = (b / a).powf(1.0 / samples as f64);
         } else {
             self.advance = Advance::Add;
-            self.step = (b - a) / samples as f64;
+            self.step = (end - start) / samples as f64;
         }
     }
 }

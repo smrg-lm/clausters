@@ -39,26 +39,11 @@ pub fn shape_value(shape: i32, c: f32, a: f32, b: f32, t: f32) -> f32 {
         // Hold: stay at the start level; the jump to the target happens when
         // the segment completes.
         SHAPE_HOLD => a,
-        // Exponential: needs same-sign, non-zero levels; a crossing through or
-        // to zero is undefined, so nudge zeros to a tiny same-signed value and
-        // fall back to linear across a sign change.
-        SHAPE_EXPONENTIAL => {
-            let a = if a.abs() < 1e-5 {
-                1e-5_f32.copysign(a)
-            } else {
-                a
-            };
-            let b = if b.abs() < 1e-5 {
-                1e-5_f32.copysign(b)
-            } else {
-                b
-            };
-            if a.signum() == b.signum() {
-                a * (b / a).powf(t)
-            } else {
-                a + t * (b - a)
-            }
-        }
+        // Exponential: equal ratios, which is exactly the map `warp` writes
+        // between two levels — including the rule for the levels that have no
+        // ratio (a zero endpoint, a sign change). That rule is the server's
+        // `XLine`'s too, so it is read from one place rather than restated.
+        SHAPE_EXPONENTIAL => crate::warp::exp_value(t, a, b),
         // Sine: equal-power ease in/out (half a cosine).
         SHAPE_SINE => a + (b - a) * (1.0 - (PI * t).cos()) * 0.5,
         // Welch: a quarter sine, concave for a rise and convex for a fall.
@@ -71,13 +56,7 @@ pub fn shape_value(shape: i32, c: f32, a: f32, b: f32, t: f32) -> f32 {
         }
         // Custom curvature: `c` bends the segment (0 == linear, positive builds
         // slowly then fast, negative the reverse).
-        SHAPE_CURVE => {
-            if c.abs() < 0.001 {
-                a + t * (b - a)
-            } else {
-                a + (b - a) * (1.0 - (t * c).exp()) / (1.0 - c.exp())
-            }
-        }
+        SHAPE_CURVE => crate::warp::curve_value(t, a, b, c),
         // Squared / cubed: interpolate the square/cube root linearly, then raise
         // back. Squared clamps to non-negative levels (its root is real only
         // there); cubed uses the sign-preserving real cube root.
