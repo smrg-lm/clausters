@@ -1,9 +1,10 @@
 # Roadmap — the order the open work is taken in
 
-*Rewritten 2026-08-23 (twice: the second time once the port of the GUI reform had
-landed the same day, so what leads Phase 1 is the half of it that waits on the
-host, the gaps the reform wrote down rather than faked, and the question about
-the widgets it did not ask). Before that: 2026-08-22, when a sitting with the composer example turned
+*Rewritten 2026-08-23 (three times: the last once the GUI reform's port had
+landed whole — including the page decision, which turned out to need nothing
+from the host that W4 had not already shipped — so what leads Phase 1 is the
+gaps the reform wrote down rather than faked and the question about the widgets
+it did not ask). Before that: 2026-08-22, when a sitting with the composer example turned
 up eight defects across the host, both clients and the document writer. Before
 that: 2026-08-21 (twice: the
 second time when the arrangement, the editor, the transport and the engraver all
@@ -102,20 +103,9 @@ client's GUI surface was reformed — a builder returns a view that opens itself
 any root opens, ids belong to the instance, the samples are a source, a widget is
 built from the control it drives and a window binds against it — and the port
 landed the same day rather than being scheduled, which is the build strategy
-working as written. What the port left behind is what leads the phase now: one
-half of a landed surface waiting on the host, two gaps the reform wrote down
-instead of faking, and a question about the widgets it did not ask.*
-
-- ⬜ **The host's web front goes from one canvas to N** *(`clients/web/PLAN.md`,
-  W24)*. `window`/`render`/`current_def` in `clients/gui/src/host/web.rs` are
-  singular — "the browser shows one at a time" — and the native front already
-  keeps one surface per `window`-rooted def, so the model is ported, not
-  invented. **First because a surface is half-landed on it**: `view(...).open(el)`
-  mounts into an element today, but `open()` with *no* element still draws on
-  the page's canvas rather than making one of its own, which was the decision
-  taken with the port. Two reversals ride along (the element supplies the
-  canvas; its size comes from a `ResizeObserver`), and an off-screen canvas
-  skipping its tick is what makes a document of fifty of them possible.
+working as written, page decision and all. What is left of it leads the phase
+now: two gaps the reform wrote down instead of faking, and a question about the
+widgets it did not ask.*
 
 - ⬜ **A control has a range and no curve, and no step** *(`clients/gui/PLAN.md`,
   Found by use)*. The host draws a control linearly over `min..max` and that is

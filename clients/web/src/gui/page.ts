@@ -42,14 +42,20 @@ const DEFAULT_CANVAS = { width: 480, height: 420 };
 export interface ClaustersGui {
     bridge: GuiBridge;
     /**
-     * The page's default canvas — the one a page that does not make its own
-     * draws into. `attach` hands it to a def.
+     * The page's **fallback** canvas: what a def fed straight through the
+     * binding surface draws on, with nobody having said where. `attach` hands
+     * it to a def given no canvas of its own, and it is appended to `<body>`
+     * the first time that happens — so a page whose views all name their own
+     * place never finds an empty canvas in the document.
+     *
+     * A view opened through `GuiHost.open` does **not** use it: it gets a
+     * canvas of its own, which is where `WindowHandle.canvas` points.
      */
     canvas: HTMLCanvasElement;
     /**
      * Gives a `window`-rooted def a canvas to draw into, before its
      * `/gui_def` is fed. The host holds one canvas per def, so a document can
-     * show several at once; omit `canvas` to use the page's default one.
+     * show several at once; omit `canvas` to use the page's fallback one.
      *
      * **Idempotent per def**: a def that already has a canvas keeps it, and a
      * second call is ignored. That is what lets a caller that owns where a
@@ -76,13 +82,15 @@ export interface ClaustersGui {
      * component follows; a script that opens its own window calls it once,
      * after `open`, and gets the same behaviour:
      *
+     * `GuiHost.open` calls this for a view given an element, so a script
+     * normally never does:
+     *
      * ```js
-     * const win = host.open(tree);
-     * const stop = (await guiHost()).fit(win.id, container);
+     * const win = host.open(tree, { element: container });
      * ```
      *
      * Returns the disposer that stops observing (the canvas keeps its last
-     * size). `canvas` defaults to the page's shared one.
+     * size). `canvas` defaults to the page's fallback one.
      */
     fit(
         defId: number,
@@ -148,6 +156,26 @@ export function canvasIn(element: Element): HTMLCanvasElement {
 /** element → the canvas `canvasIn` made in it. */
 const mounted = new WeakMap<Element, HTMLCanvasElement>();
 
+/**
+ * A canvas of a view's own, appended to the document — what a view opened with
+ * **no element** draws on.
+ *
+ * *A view with no parent is a window* is the rule the reference client settled;
+ * a page has no window, so the sentence finishes here: a view with no element
+ * is a canvas. That is what makes several canvases in one document fall out of
+ * opening several views, rather than being a feature — the host has kept one
+ * surface per `window`-rooted def since W4, and this is the client side finally
+ * asking for them.
+ */
+export function newCanvas(): HTMLCanvasElement {
+    const canvas = document.createElement("canvas");
+    canvas.width = DEFAULT_CANVAS.width;
+    canvas.height = DEFAULT_CANVAS.height;
+    canvas.style.display = "block";
+    document.body.append(canvas);
+    return canvas;
+}
+
 let instance: Promise<ClaustersGui> | null = null;
 
 /**
@@ -202,17 +230,24 @@ async function boot(audio?: ClaustersServer): Promise<ClaustersGui> {
     // The page makes the canvas and hands it over, rather than waiting for one
     // to be appended and grabbing it: that is the ownership a document has, and
     // the only way several canvases can exist at once. This one is the page's
-    // default, in <body> where the older single-canvas pages expect it; a
-    // component supplies its own to `attach`.
+    // **fallback** — what a def fed straight through the binding surface draws
+    // on, with nobody having said where. A view opened through `GuiHost.open`
+    // gets a canvas of its own instead (`newCanvas`), and a component supplies
+    // one to `attach`.
     //
-    // Only the page's host gets one. An instance from `newGuiHost` belongs to
-    // whoever asked for it, and appending a canvas to <body> on their behalf
-    // would put it somewhere they did not choose.
+    // It is appended **when it is first used**, not here: a page whose views
+    // all name their own place must not find an empty canvas in <body> that
+    // nothing ever draws on. `newGuiHost` never appends at all — that instance
+    // belongs to whoever asked for it, and putting a canvas in <body> on their
+    // behalf would put it somewhere they did not choose.
     const canvas = document.createElement("canvas");
     canvas.width = DEFAULT_CANVAS.width;
     canvas.height = DEFAULT_CANVAS.height;
     canvas.style.display = "block";
-    if (audio === undefined) document.body.append(canvas);
+    const useFallback = () => {
+        if (audio === undefined && !canvas.isConnected) document.body.append(canvas);
+        return canvas;
+    };
 
     // This host's server leg, wired once — and under a client tag of its own.
     // The host is a *second* client of this engine beside the page's script,
@@ -247,7 +282,7 @@ async function boot(audio?: ClaustersServer): Promise<ClaustersGui> {
         attach: (defId, element) => {
             if (canvases.has(defId)) return;
             canvases.add(defId);
-            bridge.attach(defId, element ?? canvas);
+            bridge.attach(defId, element ?? useFallback());
         },
         detach: (defId) => {
             if (!canvases.delete(defId)) return;
@@ -260,7 +295,7 @@ async function boot(audio?: ClaustersServer): Promise<ClaustersGui> {
             bridge.close();
         },
         fit: (defId, element, target) => {
-            const surface = target ?? canvas;
+            const surface = target ?? useFallback();
             const apply = () => {
                 const { width, height, scale } = canvasBox(element);
                 surface.width = width;

@@ -36,7 +36,7 @@
     <script type="module">
       import {
         loadOsc, pageConnection, server as engine, Server, Synth,
-        SynthDef, GuiHost, guiHost, gui,
+        SynthDef, GuiHost, gui,
       } from "../dist/index.js";
       import { control, out, sine } from "../dist/defs/index.js";
 
@@ -87,7 +87,6 @@
         // The GUI side: the same panel a script would write, over the in-page
         // host — nothing here names a carrier.
         const host = await GuiHost.page();
-        const { canvas } = await guiHost();
         const tree = gui.window(
           { title: "driven from TypeScript", w: 480, h: 300, layout: "col",
             margin: 8.0, gap: 8.0 },
@@ -97,6 +96,9 @@
           gui.slider({ name: "cutoff", min: 0.0, max: 1.0, value: 0.2, h: 110 }),
         );
         const win = host.open(tree);
+        // The canvas this window got, not a page-wide one: `open` makes a view
+        // its own, which is what lets a document hold several.
+        const canvas = win.canvas;
         log(`window ${win.id}, widgets ${win.widgetNames().join(", ")}`);
 
         // The ids were assigned in the document that went out, not in the

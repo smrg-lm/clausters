@@ -84,11 +84,14 @@ goes out**, never written into the tree you wrote — which is what lets one vie
 open as many times as you like, each window with ids of its own, and what makes
 the same subtree nested twice two widgets rather than one.
 
-**The element goes in `open`, and a page that names none gets a canvas.**
-`view(...).open(el)` mounts the view into that element's box: the canvas inside
-it is made and fitted for you, so `attach`/`fit` stop being something a script
-writes. A host reached over a socket has windows of its own and refuses an
-element.
+**The element goes in `open`, and a view that names none gets a canvas of its
+own.** `view(...).open(el)` mounts the view into that element's box — the canvas
+inside it is made and fitted for you, so `attach`/`fit` stop being something a
+script writes — and `view(...).open()` appends a canvas to the document. That is
+how *a view with no parent is a window* finishes in a page: **a view with no
+element is a canvas**, so a document holds as many as it opens, and
+`win.canvas` is the one this window draws on. A host reached over a socket has
+windows of its own and refuses an element.
 
 **The samples are a `source`, not a carrier.** `waveform({ data: sig })`, where
 `sig = source(samples)` decides how they travel and stays addressable —
@@ -148,12 +151,18 @@ fetches rather than a file it maps; a `buffer` is still pulled over the host's
 client leg. Everything else about the source precedence is identical.
 
 **The canvas is an element, and the document places it.** There is no window
-manager: a GuiDef rooted in a `window` draws into a canvas that CSS sizes,
-appended for you by default or handed over with `attach`. Sizes stay what they
-always were — logical pixels resolved through the page's `devicePixelRatio` —
-so a tree written for the desktop comes up the same size in a tab. That
-substitution is what makes a bundle mountable in the flow of a page: see
+manager: a GuiDef rooted in a `window` draws into a canvas that CSS sizes — one
+per def, so several windows are several canvases. `open` makes each view its
+own (in the element you name, else appended to the document) and hands it back
+as `win.canvas`; closing the window releases it. Sizes stay what they always
+were — logical pixels resolved through the page's `devicePixelRatio` — so a tree
+written for the desktop comes up the same size in a tab. That substitution is
+what makes a bundle mountable in the flow of a page: see
 [Components](components.md).
+
+A def fed straight through the binding surface, with nobody having said where,
+draws on the page's **fallback** canvas — appended the first time that happens,
+so a document whose views all name their own place never carries an empty one.
 
 **The keyboard is shared with the page.** A canvas is focusable, and while it
 holds the focus the host reads the keys: click a `text` field to type into it,

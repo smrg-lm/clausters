@@ -38,7 +38,7 @@
     -->
     <script type="module">
       import {
-        Bus, GuiHost, Server, Synth, SynthDef, gui, guiHost, loadOsc,
+        Bus, GuiHost, Server, Synth, SynthDef, gui, loadOsc,
         pageConnection, seq, server as engine,
       } from "../dist/index.js";
       import { control, outCtl } from "../dist/defs/index.js";
@@ -125,7 +125,6 @@
 
         // ---- the editor half: the curve drawn, edited, and played back ----
         const host = await GuiHost.page();
-        const { canvas } = await guiHost();
         const win = host.open(gui.window(
           { title: "automation", w: 480, h: 300, layout: "col", margin: 8.0 },
           gui.bpf({
@@ -133,6 +132,7 @@
             duration: 4.0, h: 284,
           }),
         ));
+        const canvas = win.canvas;   // this window's own, made by `open`
         const edits = [];
         win.widget("curve").onEvent((...args) => edits.push(args));
         await sleep(600);

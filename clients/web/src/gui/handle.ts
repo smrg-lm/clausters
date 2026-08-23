@@ -108,6 +108,17 @@ export class WindowHandle extends WidgetHandle {
      * — what {@link WindowHandle.bind} wires in one verb.
      */
     private readonly controls: Map<number, string>;
+    /**
+     * The canvas this window draws on in a page — the one `open` made for it,
+     * from the element it was given or of its own. `null` for a window on a
+     * host that has windows of its own (a native `--ws` host), which has no
+     * document to be in.
+     *
+     * Platform idiom with no counterpart in the Python client, where a window
+     * is a window: what a page needs it for is pointing at the thing it opened
+     * (a pointer event, a scroll into view, a CSS class).
+     */
+    canvas: HTMLCanvasElement | null = null;
 
     constructor(
         host: GuiHost,

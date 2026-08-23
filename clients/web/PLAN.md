@@ -2022,12 +2022,23 @@ as some other milestone has a better claim on it.
     entry has it). That is the argument for porting before the examples, twice
     over — the port found the defect, and the defect found the design.
 
-  **What did not land, and why**: `open()` with **no** element still draws on
-  the page's default canvas rather than making one of its own. The surface is
-  in (`view(...).open(el)` mounts into an element, canvas made and fitted for
-  you), but a canvas per def only *shows* once the host's web front stops being
-  singular — the entry below this one. Landing it first would append N canvases
-  with one of them drawing.
+  **The page decision landed whole, and the note that said otherwise was
+  wrong.** It first shipped with `open()`-without-an-element still drawing on
+  the page's shared canvas, on the claim that a canvas per def waits on the
+  host's web front — which **W4 already delivered on 2026-08-08**: the browser
+  front has kept one `CanvasSlot` per `window`-rooted def, with its own surface,
+  gesture state and visibility flag, ever since. The stale sentence was read out
+  of W4's own *specification* text and repeated as if it were open work. Nothing
+  in Rust was missing; the client was simply not asking for the canvases the host
+  already had.
+
+  So `open()` with no element now appends **a canvas of its own**
+  (`page.newCanvas`), the page's canvas becomes the **fallback** for a def fed
+  straight through the binding surface — appended the first time that happens,
+  so a document whose views all name their place carries no empty one — and
+  `WindowHandle.canvas` is where a page points at what it opened, which is what
+  three pages had been using `guiHost().canvas` for. `scope.html` reports it:
+  "3 canvases sized" where it used to say 1.
 
 - **`SynthDef`'s roots are `outputs` in Python and `roots` here**, and both
   constructors take `*roots` — a public attribute spelled two ways, found while

@@ -35,7 +35,7 @@ import { GuiIdAllocator } from "./ids.ts";
 import type { IdShare } from "../base/core.ts";
 import { WidgetHandle, WindowHandle } from "./handle.ts";
 import type { EventArgs } from "./handle.ts";
-import { canvasIn, guiHost, pageGuiConnection } from "./page.ts";
+import { canvasIn, guiHost, newCanvas, pageGuiConnection } from "./page.ts";
 import { ambientHost, setAmbientHost } from "./ambient.ts";
 import type { ClaustersGui } from "./page.ts";
 
@@ -240,21 +240,27 @@ export class GuiHost {
         // else, so a root that is not one is framed here: any node opens, and
         // the frame hugs whatever it holds rather than padding it out.
         const root = tree.type === "window" ? tree : view({ hug: true }, tree);
+        if (element != null && this.page === null) {
+            throw new Error(
+                "this host has windows of its own, not a document to mount " +
+                    "into — an element is only meaningful for a host on this page",
+            );
+        }
         let canvas: HTMLCanvasElement | undefined;
-        if (element != null) {
-            if (this.page === null) {
-                throw new Error(
-                    "this host has windows of its own, not a document to mount " +
-                        "into — an element is only meaningful for a host on this page",
-                );
-            }
-            canvas = canvasIn(element);
-            // Before the `/gui_def`: the carrier attaches the page's default
-            // canvas when a def is fed, and `attach` is idempotent, so the
-            // canvas chosen here is the one the def keeps.
+        if (this.page !== null) {
+            // A page has no window manager, so *a view with no parent is a
+            // window* finishes here: with an element, the view takes that
+            // element's box; with none, it gets a canvas of its own. Either
+            // way it is this view's canvas and not a page-wide one, which is
+            // what lets a document hold as many as it opens.
+            canvas = element != null ? canvasIn(element) : newCanvas();
+            // Before the `/gui_def`: the carrier attaches the page's fallback
+            // canvas to a def fed without one, and `attach` is idempotent, so
+            // the canvas chosen here is the one the def keeps.
             this.page.attach(wid, canvas);
         }
         const handle = this.define(wid, root, blobs);
+        handle.canvas = canvas ?? null;
         this.opened.add(wid);
         if (canvas !== undefined && element != null && this.page !== null) {
             this.fitted.get(wid)?.();

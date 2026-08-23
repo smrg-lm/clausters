@@ -16,6 +16,7 @@
       }
       canvas {
         display: block;
+        margin: 0 12px 12px;
       }
       #bar {
         display: flex;
@@ -78,7 +79,7 @@
     <script type="module">
       import {
         loadOsc, pageConnection, server as engine, Server, Bus, Synth,
-        SynthDef, GuiHost, guiHost, gui,
+        SynthDef, GuiHost, gui,
       } from "../dist/index.js";
       import { control, lpf, out, saw } from "../dist/defs/index.js";
 
@@ -116,8 +117,6 @@
       // canvas; `GuiHost.connect(url)` would drive a native one, and nothing
       // below this line would change.
       let host = await GuiHost.page();
-      const { canvas } = await guiHost();
-      canvas.style.margin = "0 12px 12px";
 
       const panel = () => gui.window(
         { title: "a tone", w: 520, h: 300, layout: "col", margin: 8.0, gap: 8.0 },
@@ -174,9 +173,15 @@
 
       // ---- the three demos, each opened through the same `GuiHost` ----
 
+      // One window at a time here, so each demo closes the last -- and closing
+      // takes its canvas with it, because `open` gives every view one of its
+      // own. A page that wanted the three side by side would just not close.
       let win = null;
       const open = (tree, blobs = []) => {
-        if (win) win.close();
+        if (win) {
+          win.canvas.remove();
+          win.close();
+        }
         win = host.open(tree, { blobs });
         return win;
       };
