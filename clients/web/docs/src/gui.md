@@ -144,7 +144,8 @@ a host it did not open by being **given** one — `new Session(server, clock,
 await GuiHost.connect(url))` — the way it is given a `Server`.
 `newGuiHost()` boots an instance that is **not** the page's — its own engine
 unless you hand it one — for a document holding several independent
-instruments, and there you `attach(defId, canvas)` your own canvas.
+instruments. It appends no canvas of its own; its views take the elements they
+are opened in, like any other.
 
 **Bulk data is fetched, not mapped.** A `path` or a `cache` is a URL the host
 fetches rather than a file it maps; a `buffer` is still pulled over the host's
@@ -172,9 +173,14 @@ order carries on — so a GuiDef mounted in the flow of a page is never a
 keyboard trap. A script points the focus itself with
 `win.widget("name").focus()`, and hears every move as a `"focus"` event.
 
-**The typeface is the page's to hand over.** The browser bundle carries the
-host's glyph rasterizer but no face, so text draws with the embedded bitmap one
-until the page fetches an outline font and passes the bytes:
+**The typeface is the page's to hand over** — and this one is a **divergence,
+not an idiom**. The browser bundle carries the host's glyph rasterizer but no
+face, so text draws with the embedded bitmap one until the page fetches an
+outline font and passes the bytes. It goes through the raw binding because there
+is no `/gui_*` verb for a typeface: a native host takes one only at launch
+(`--font`), so a page can change its face at runtime and a window cannot. That
+gap is written down in `clients/gui/PLAN.md`, and closing it will move this call
+onto the client where it belongs.
 
 ```ts
 const face = await fetch("/fonts/DejaVuSansMono.ttf").then((r) => r.arrayBuffer());

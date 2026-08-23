@@ -131,6 +131,15 @@ widgets it did not ask.*
   the LAN on both fronts. Here because it touches the server and the host at
   once and nothing above it depends on it — not because it is urgent.
 
+- ⬜ **A typeface is a wasm binding, so only the browser can change one**
+  *(`clients/gui/PLAN.md`, Found by use)*. There is no `/gui_*` verb for a
+  face: the browser front takes one at runtime through the raw binding and the
+  native front only at launch (`--font`). A wasm export grew surface the
+  protocol never had, which is the case the non-divergence rule names outright.
+  Here rather than earlier because nothing waits on it — but it is the one
+  entry of the web book's "What the browser changes" that is not a platform
+  difference, so it should not sit unnamed.
+
 - ⬜ **What kind of thing is a button?** *(`clients/python/PLAN.md`, Found by
   use)*. Two gaps and the design question they hang from: `button` is the one
   control widget that takes no def control, so `button(gate)` cannot be written

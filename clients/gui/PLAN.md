@@ -2222,6 +2222,38 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 
 ## Found by use: the running list of fixes
 
+- ⬜ **A typeface is a wasm binding, so only the browser can change one**
+  *(found 2026-08-23, reading the web book's "What the browser changes" against
+  the reference client)*. The browser front takes a face at **runtime** —
+  `bridge.font(bytes)`, `src/host/web/bridge.rs` — and the native front takes
+  one only at **launch**, from `--font <path>` or `[gui] font`
+  (`src/host/fontfile.rs`). There is **no `/gui_*` verb** for it at all, so the
+  difference is not a client's to close: it is a wasm export that grew surface
+  the protocol never had, which is the case the standing rule names outright
+  ("a binding, a door, a wasm export or a convenience wrapper may not grow
+  surface the other client lacks"). The web book documents it as a prestation,
+  with example code, which is how it went unnoticed.
+
+  Three ends, and the first decides the rest:
+
+  - **The host**: a wire verb (`/gui_font <blob>`, the bytes beside it as a
+    `/gui_def`'s do) so a face can be handed over after launch on either front.
+    The native side already has the machinery — `fontfile.rs` parses into the
+    rasterizer's tables and drops the bytes, so the source is a `&[u8]` either
+    way. Loading one relayouts nothing (the sizing table never followed the
+    typeface), which is what makes a late hand-over safe.
+  - **The reference client**: `GuiHost.font(bytes)` over that verb, and
+    `GuiProcess(font=...)` for the launch flag it does not surface today (a
+    Python script passes `extra_args=["--font", path]`, which is the launcher
+    admitting it has no opinion).
+  - **The web client**: the same `GuiHost.font(bytes)`, so a page stops reaching
+    under the client to the bridge for it — and the book's section stops being
+    the place a capability is announced.
+
+  Until then it is a **known divergence** rather than an oversight, and it is
+  the one thing in that section that is not platform: a browser has no
+  filesystem and a desktop has no `fetch`, but *when* a face may be handed over
+  is a decision, not a platform.
 - ⬜ **A blob has no live door, so a page cannot change the samples it drew**
   *(found 2026-08-23, porting the `Source` to TypeScript)*. `/gui_set` takes
   `data` (inline samples) or `reload` (re-read the `path` a widget was built
