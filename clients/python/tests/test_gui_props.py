@@ -60,8 +60,11 @@ MANIFEST = ROOT / "docs/gui-props.md"
 
 sys.path.insert(0, str(ROOT / "clients/python"))
 
-# Never a widget prop: the client-side identity keys and the child list.
-NOT_A_PROP = {"id", "name", "children"}
+# Never a widget prop: the client-side identity keys, the child list, and the
+# def control a control widget is built *from* — that one is a source of props
+# (`name`, `value`, `min`, `max`), not one itself, so it is a parameter every
+# client grows in its own spelling rather than a key on the wire.
+NOT_A_PROP = {"id", "name", "children", "control"}
 
 
 def snake(name: str) -> str:

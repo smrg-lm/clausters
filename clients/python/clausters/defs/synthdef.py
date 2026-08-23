@@ -28,7 +28,16 @@ context is touched, so defs build concurrently.
 import json
 
 from ._wire import resolve as _resolve, send_def
+from .info import ControlInfo
 from .ugens import ChannelList, Control, Ugen
+
+
+
+def _control_info(c) -> ControlInfo:
+    """A graph's `clausters.defs.Control` as the `ControlInfo` every def family
+    answers with — one shape for the GUI to read, whichever family declared it."""
+    return ControlInfo(name=c.name, default=c.default, rate=c.rate or "kr",
+                       min=c.min, max=c.max, step=c.step)
 
 
 class SynthDef:
@@ -218,6 +227,45 @@ class SynthDef:
         """The control names this def declares, in spec order (parallels
         `FaustDef.control_names`)."""
         return [c["name"] for c in self.spec()["controls"]]
+
+    @property
+    def controls(self) -> list:
+        """This def's control surface as `clausters.defs.info.ControlInfo`
+        entries, in spec order — the shape all three def families answer with,
+        so a GUI reads one of them the same way::
+
+            view(*[knob(c) for c in sd.controls]).open()
+
+        The range is the one a `clausters.defs.control` declared; it is ``None``
+        where nothing did."""
+        return [_control_info(c) for c in self._controls()]
+
+    def __getitem__(self, name: str):
+        """One control by name, as a `clausters.defs.info.ControlInfo` —
+        ``sd["freq"]``, what a GUI control is handed when the graph's own
+        `clausters.defs.Control` object is not in reach."""
+        for c in self._controls():
+            if c.name == name:
+                return _control_info(c)
+        raise KeyError(
+            f"{self.name!r} declares no control {name!r} "
+            f"(it has: {', '.join(self.control_names()) or 'none'})")
+
+    def _controls(self) -> list:
+        """The `Control` objects the graph references, in first-seen order —
+        the same walk `spec` does, kept here so the range never has to survive a
+        round trip through the wire (which does not carry it)."""
+        seen: dict = {}
+        stack = list(self.outputs)
+        while stack:
+            node = stack.pop(0)
+            if isinstance(node, Control):
+                seen.setdefault(node.name, node)
+            elif isinstance(node, Ugen):
+                stack = list(node.inputs) + stack
+        # `spec` is the order of record; this walk only has to find the objects.
+        order = {name: i for i, name in enumerate(self.control_names())}
+        return sorted(seen.values(), key=lambda c: order.get(c.name, len(order)))
 
     def plot_def(self, *, label: str | None = None, w: int = 1000, h: int = 700,
                  title: str | None = None, host=None):

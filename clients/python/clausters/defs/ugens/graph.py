@@ -132,12 +132,26 @@ class Control(_Node):
     the `SynthDef` gathers the controls a graph references, in first-seen
     order."""
 
-    def __init__(self, name, default=0.0, rate=None, lag=None, lag_down=None):
+    def __init__(self, name, default=0.0, rate=None, lag=None, lag_down=None,
+                 min=None, max=None, step=None):
         self.name = str(name)
         self.default = float(default)
         self.rate = None if rate is None else str(rate)
         self.lag = None if lag is None else float(lag)
         self.lag_down = None if lag_down is None else float(lag_down)
+        #: The range this control is meant to be driven over — what a GUI
+        #: control needs to draw it, and the one thing about a control only its
+        #: author knows. It rides no wire: the server takes any float, so this
+        #: is a statement about the surface, not a constraint (see
+        #: `clausters.defs.info.ControlInfo`, which a FaustDef fills from its
+        #: own ``hslider`` declaration).
+        self.min = None if min is None else float(min)
+        self.max = None if max is None else float(max)
+        self.step = None if step is None else float(step)
+        if (self.min is None) != (self.max is None):
+            raise ValueError(
+                f"control {self.name!r}: a range is min *and* max, and it is "
+                "either declared or not")
         if self.rate is not None and self.rate not in _CONTROL_RATES:
             raise ValueError(
                 f"unknown control type {self.rate!r}; use one of "
@@ -148,17 +162,33 @@ class Control(_Node):
 
     def _signature(self):
         """The full identity used to detect conflicting reuses of a name."""
-        return (self.default, self.rate, self.lag, self.lag_down)
+        return (self.default, self.rate, self.lag, self.lag_down,
+                self.min, self.max, self.step)
 
     def __repr__(self):
         return f"Control({self.name!r}, {self.default!r})"
 
 
-def control(name, default=0.0, rate=None, lag=None, lag_down=None) -> Control:
+def control(name, default=0.0, rate=None, lag=None, lag_down=None,
+            min=None, max=None, step=None) -> Control:
     """A named control (``/synth_new``/``/node_set`` parameter). ``rate`` is its type
     (``"tr"`` trigger, ``"ir"`` scalar, or the default ``kr``); ``lag`` (with an
-    optional ``lag_down``) smooths a ``kr`` control. See `Control`."""
-    return Control(name, default, rate=rate, lag=lag, lag_down=lag_down)
+    optional ``lag_down``) smooths a ``kr`` control.
+
+    ``min``/``max`` (with an optional ``step``) declare the **range it is meant
+    to be driven over** — the one thing about a control only the person writing
+    the graph knows, and what a GUI control reads instead of being handed the
+    same two numbers a second time::
+
+        freq = control("freq", 220.0, min=110.0, max=880.0)
+        sd = SynthDef("voice", out(0.0, sine(freq=freq)))
+        knob(freq)                      # name, value and range, all from here
+
+    It rides no wire: the server takes any float for any control, so a range is
+    a statement about the surface rather than a constraint. See `Control`.
+    """
+    return Control(name, default, rate=rate, lag=lag, lag_down=lag_down,
+                   min=min, max=max, step=step)
 
 
 def _channel(m):

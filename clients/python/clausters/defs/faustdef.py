@@ -167,6 +167,31 @@ class FaustDef:
             _collect_labels(self._payload, names)
         return names
 
+    @property
+    def controls(self) -> list:
+        """This def's control surface as `clausters.defs.info.ControlInfo`
+        entries, in tree order — the shape all three def families answer with.
+
+        A Faust control is the one that **brings its own range**: an
+        ``hslider``/``vslider``/``nentry`` declares ``init``, ``min``, ``max``
+        and ``step`` where it is written, so a GUI control built from one needs
+        nothing else. A ``button``/``checkbox`` is a 0/1 control and says so.
+        The reserved ``in``/``out`` bus controls are not included."""
+        params: list = []
+        if self.kind in ("signals", "box"):
+            _collect_params(self._payload, params)
+        return params
+
+    def __getitem__(self, name: str):
+        """One control by name, as a `clausters.defs.info.ControlInfo` —
+        ``fd["cutoff"]``, carrying the range Faust declared."""
+        for info in self.controls:
+            if info.name == name:
+                return info
+        raise KeyError(
+            f"{self.name!r} declares no control {name!r} "
+            f"(it has: {', '.join(self.control_names()) or 'none'})")
+
     #: bus-selecting controls every Faust synth also accepts.
     reserved = ("out", "in")
 
@@ -198,6 +223,39 @@ class FaustDef:
 
 
 _CONTROL_OPS = {"hslider", "vslider", "nentry", "button", "checkbox"}
+
+
+def _collect_params(node, out: list):
+    """Every UI control in a signal/box payload, as `ControlInfo` in tree order.
+
+    Faust puts the range where the control is declared, so this is a read rather
+    than a lookup: an ``hslider`` carries ``init``/``min``/``max``/``step``, a
+    ``button``/``checkbox`` is 0/1 with no step.
+    """
+    from .info import ControlInfo
+
+    node = getattr(node, "node", node)   # a `signals.Signal` wraps its dict
+    if isinstance(node, dict):
+        op = node.get("op")
+        label = node.get("label")
+        if op in _CONTROL_OPS and isinstance(label, str) \
+                and not any(p.name == label for p in out):
+            if op in ("button", "checkbox"):
+                out.append(ControlInfo(name=label, default=0.0, min=0.0, max=1.0))
+            else:
+                out.append(ControlInfo(
+                    name=label, default=float(node.get("init", 0.0)),
+                    min=_maybe(node.get("min")), max=_maybe(node.get("max")),
+                    step=_maybe(node.get("step"))))
+        for value in node.values():
+            _collect_params(value, out)
+    elif isinstance(node, (list, tuple)):
+        for value in node:
+            _collect_params(value, out)
+
+
+def _maybe(x):
+    return None if x is None else float(x)
 
 
 def _collect_labels(node, out: list[str]):

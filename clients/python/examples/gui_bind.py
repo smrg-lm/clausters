@@ -50,10 +50,18 @@ server = session.server
 gui = session.gui()
 
 
+#: The control the knob drives, declared **with the range it is meant to be
+#: turned over**. That range is the one thing about a control only the graph's
+#: author knows, so it is written here and read by the knob -- rather than the
+#: same two numbers typed a second time beside the widget, where nothing checks
+#: them against each other.
+FREQ = control("freq", 220.0, min=110.0, max=880.0)
+
+
 def beep(name: str = "gui_bind_beep") -> SynthDef:
     """A quiet stereo sine whose frequency is the `freq` control (default
     220 Hz) -- the binding target `/node_set <node> freq <value>` drives."""
-    sig = sine(freq=control("freq", 220.0)) * 0.2
+    sig = sine(freq=FREQ) * 0.2
     return SynthDef(name, out(0.0, sig), out(1.0, sig))
 
 
@@ -68,13 +76,17 @@ synth = Synth("gui_bind_beep", {"freq": 220.0}, server=server)
 # pane. Write `view(...)` when the window's own properties matter (a title, a
 # size, a theme); here nothing does.
 #
+# The knob is built from the def's own control: its name, its default and its
+# range all come from `FREQ`, so the widget and the graph cannot disagree about
+# what "freq" is. The name it takes is the control's, which is what the script
+# addresses it by -- it never picks an id.
+#
 # The view is the subject either way: `v.open()` rather than `host.open(v)`, on
-# the host `session.gui()` already made ambient. And the knob is *named*, not
-# numbered -- the script addresses it by that name and never picks an id. `bind`
-# registers the forward in the host.
+# the host `session.gui()` already made ambient. `bind` registers the forward in
+# the host.
 
 # %%
-v = knob(name="freq", label="freq", min=110.0, max=880.0, value=220.0)
+v = knob(FREQ)
 
 win = v.open()
 win["freq"].bind("/node_set", synth.id, "freq")

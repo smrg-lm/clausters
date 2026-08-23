@@ -1003,6 +1003,41 @@ def scroll(*children, axis: str | None = None, zoom: bool | None = None,
     return node("plane", id=id, children=children, **extra, **props)
 
 
+def _from_control(control, given: dict, *, needs_range: bool) -> dict:
+    """A control's own props for a widget built from it: its name, its default
+    as the value, and its range.
+
+    The **entry point named once**. A def's control is the only thing that knows
+    what it is meant to be driven over, and a widget that copies those numbers by
+    hand is a second declaration nothing checks. Anything with ``name``,
+    ``default`` and (for a range widget) ``min``/``max`` is accepted — the
+    graph's own `clausters.defs.Control` object, or the
+    `clausters.defs.info.ControlInfo` every def family answers with
+    (``sd["freq"]``, ``fd["cutoff"]``, ``gd["mix"]``), which is also what a
+    FaustDef fills from its ``hslider``.
+
+    Explicit keywords win: the control says what it is, the call says how to draw
+    it.
+    """
+    name = getattr(control, "name", None)
+    if not isinstance(name, str):
+        raise TypeError(
+            f"not a def's control: {control!r} — pass a control (from "
+            "`clausters.defs.control`, or a def's `sd['freq']`) or spell "
+            "min=/max=/value= yourself")
+    lo, hi = getattr(control, "min", None), getattr(control, "max", None)
+    if needs_range and lo is None and given.get("min") is None:
+        raise ValueError(
+            f"control {name!r} declares no range, so there is nothing to draw "
+            "it over — give it one where it is declared "
+            f"(control({name!r}, ..., min=…, max=…)), or spell min=/max= here")
+    from_control = _drop_none(name=name, label=name,
+                              value=getattr(control, "default", None),
+                              min=lo, max=hi, step=getattr(control, "step", None))
+    from_control.update({k: v for k, v in given.items() if v is not None})
+    return from_control
+
+
 def label(text: str = "", *, text_size: float | None = None, wrap: bool | None = None,
           align: str | None = None, color: str | None = None, id: int | None = None, **props
           ) -> View:
@@ -1022,33 +1057,55 @@ def label(text: str = "", *, text_size: float | None = None, wrap: bool | None =
     return node("label", id=id, text=text, **extra, **props)
 
 
-def knob(*, label: str | None = None, min: float | None = None, max: float | None = None,
-         value: float | None = None, text_size: float | None = None, color: str | None = None,
+def knob(control=None, *, label: str | None = None, min: float | None = None,
+         max: float | None = None, value: float | None = None,
+         text_size: float | None = None, color: str | None = None,
          id: int | None = None, **props) -> View:
     """A rotary ``knob`` over a continuous range. ``text_size`` scales its
-    label and value read-out."""
+    label and value read-out.
+
+    Pass a **def's control** positionally and the knob is built from it — its
+    name, its default as the value, and the range it declared::
+
+        freq = control("freq", 220.0, min=110.0, max=880.0)
+        knob(freq)                  # or knob(sd["freq"]), knob(fd["cutoff"])
+
+    The keywords still win where you spell one, and a control with no range says
+    so rather than being drawn over a guess."""
     extra = _drop_none(label=label, min=min, max=max, value=value, text_size=text_size, color=color)
+    if control is not None:
+        extra = _from_control(control, extra, needs_range=True)
     return node("knob", id=id, **extra, **props)
 
 
-def slider(*, label: str | None = None, min: float | None = None, max: float | None = None,
-           value: float | None = None, vertical: bool = False, text_size: float | None = None,
-           color: str | None = None, id: int | None = None, **props) -> View:
+def slider(control=None, *, label: str | None = None, min: float | None = None,
+           max: float | None = None, value: float | None = None, vertical: bool = False,
+           text_size: float | None = None, color: str | None = None,
+           id: int | None = None, **props) -> View:
     """A continuous ``slider`` over a range. ``vertical=True`` lays it out along
     the y axis (min at the bottom, max at the top) instead of horizontally.
-    ``text_size`` scales its label and value read-out."""
+    ``text_size`` scales its label and value read-out.
+
+    Takes a def's control positionally, like `knob`."""
     extra = _drop_none(label=label, min=min, max=max, value=value, text_size=text_size, color=color)
+    if control is not None:
+        extra = _from_control(control, extra, needs_range=True)
     if vertical:
         extra["vertical"] = True
     return node("slider", id=id, **extra, **props)
 
 
-def number(*, label: str | None = None, min: float | None = None, max: float | None = None,
-           value: float | None = None, text_size: float | None = None, color: str | None = None,
+def number(control=None, *, label: str | None = None, min: float | None = None,
+           max: float | None = None, value: float | None = None,
+           text_size: float | None = None, color: str | None = None,
            id: int | None = None, **props) -> View:
     """A draggable numeric read-out over a range. ``text_size`` scales its
-    label and value."""
+    label and value.
+
+    Takes a def's control positionally, like `knob`."""
     extra = _drop_none(label=label, min=min, max=max, value=value, text_size=text_size, color=color)
+    if control is not None:
+        extra = _from_control(control, extra, needs_range=True)
     return node("number", id=id, **extra, **props)
 
 
@@ -1060,13 +1117,24 @@ def button(*, label: str | None = None, text_size: float | None = None, color: s
     return node("button", id=id, **extra, **props)
 
 
-def toggle(*, label: str | None = None, value: bool | None = None, text_size: float | None = None,
-           color: str | None = None, id: int | None = None, **props) -> View:
+def toggle(control=None, *, label: str | None = None, value: bool | None = None,
+           text_size: float | None = None, color: str | None = None,
+           id: int | None = None, **props) -> View:
     """A boolean ``toggle``. ``value`` is sent as ``1``/``0`` (OSC has no bool).
-    ``text_size`` scales its label."""
+    ``text_size`` scales its label.
+
+    Takes a def's control positionally, like `knob` — a 0/1 control (a Faust
+    ``checkbox``, a `clausters.defs.control` with no range) needs none, so no
+    range is required here."""
     extra = _drop_none(label=label, text_size=text_size, color=color)
     if value is not None:
         extra["value"] = 1 if value else 0
+    if control is not None:
+        extra = _from_control(control, extra, needs_range=False)
+        extra.pop("min", None)
+        extra.pop("max", None)
+        extra.pop("step", None)
+        extra["value"] = 1 if extra.get("value") else 0
     return node("toggle", id=id, **extra, **props)
 
 

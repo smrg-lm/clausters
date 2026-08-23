@@ -231,6 +231,41 @@ An unknown `rate`, or a `lag_down` without a `lag`, raises a `ValueError` at bui
 
 Each **UGen output** also carries a calculation **rate** — `ir` (init), `kr` (control), `ar` (audio), `dr` (demand). It defaults per kind (signal UGens are `ar`, `rand` / `sample_rate` are `ir`, the demand sources are `dr`); set it explicitly with `Ugen.at_rate`, e.g. `sine(5.0).at_rate("kr")` for a control-rate LFO. The full rate model and its coercion rules live in the [Clausters server book](https://clausters.readthedocs.io/) (schemas / OSC reference).
 
+### The range a control is driven over
+
+`control` also takes `min`/`max` (and an optional `step`): the range the control
+is *meant* to be driven over.
+
+```python
+freq = control("freq", 220.0, min=110.0, max=880.0)
+sd = SynthDef("voice", out(0.0, sine(freq=freq) * 0.2))
+
+knob(freq)              # name, default and range: all from the control
+```
+
+It is the one thing about a control only the person writing the graph knows, and
+writing it here is what stops a GUI from declaring it a second time where nothing
+checks the two against each other. A widget built from a control takes the
+control's **name** too, which is how the handle addresses it.
+
+The range **rides no wire**: the server takes any float for any control, so this
+is a statement about the surface rather than a constraint, and nothing validates
+a `/node_set` against it. One consequence worth knowing: a def *queried back off
+a running server* reports a range only for a **FaustDef**, whose `hslider`
+declares one in the compiled DSP — the other families' ranges live in the
+`SynthDef`/`GraphDef` object you built.
+
+All three families answer with the same shape, so a GUI reads any of them alike:
+
+```python
+sd["freq"]                  # a ControlInfo: name, default, rate, min, max, step
+fd["cutoff"]                # from Faust's own hslider
+gd["mix"]                   # a surface port, plus the targets it drives inside
+[knob(c) for c in sd.controls]
+```
+
+A `GraphDef` port takes the range on `port(..., min=…, max=…)`.
+
 ### The UGen set
 
 `clausters.defs.ugens` exposes a callable per UGen kind in the server's registry (the arithmetic kinds come from operators rather than callables — see [Operators compose UGens](#operators-compose-ugens)):

@@ -1939,6 +1939,17 @@ as some other milestone has a better claim on it.
     uses — and that difference is `idiom`, to be written into `docs/bindings.md`
     rather than left as two policies. The threshold and the choice itself are the
     same in both clients.
+  - **A control widget is built from the control it drives.** `control()` grew
+    `min`/`max`/`step` — the range the control is meant to be driven over —
+    and `knob(freq)`, `slider(sd["freq"])`, `number`, `toggle` read the name,
+    the default and the range off it. All three def families answer with one
+    `ControlInfo` shape (`sd["freq"]`, `fd["cutoff"]`, `gd["mix"]`, and
+    `.controls`), which is the part that must not be re-derived differently:
+    a FaustDef's range comes from its `hslider` and the other two from what the
+    author declared, and **none of it rides a wire but Faust's**. The
+    props-parity manifest treats `control` as *not a prop* (it is a source of
+    `name`/`value`/`min`/`max`), so the parameter is each client's own
+    spelling.
   - `view.open({host})` resolves the **ambient** host exactly as `plot`/`scope`
     do. Python made that symmetric with the ambient server: `GuiHost.boot`
     grew `adopt_ambient` (first-wins, the mirror of `Server.boot`'s

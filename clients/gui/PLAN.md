@@ -3263,3 +3263,27 @@ finished work, where a pending item reads as done.
   is to make `label_strip` `pub(crate)` and call it. Not folded into the plate
   pass because a cleanup riding in a legibility fix is how a diff stops being
   readable.
+
+- ⬜ **A control has a range and no curve, and no step** *(noted 2026-08-23,
+  with the Python client's control-range work)*. `props::Range` is
+  `{value, min, max, label, text_size}`: a knob, a slider and a number are
+  **linear over min..max**, and that is the whole of it. Two things the clients
+  can now say and the host cannot draw:
+
+  - **A step.** A control declares one (Faust's `hslider` carries it, and
+    `clausters.defs.control` now takes it), it reaches the widget as a `step`
+    prop, and nothing reads it — the drag is continuous whatever it says. A
+    quantized dial is the obvious use, and a `number` over integers the
+    commonest.
+  - **A curve.** There is none at all, which is what makes a *named spec*
+    (sclang's `\freq`: 20..20000 **exponential**) something the client
+    deliberately did not ship — a `spec="freq"` that silently drew linear
+    would be worse than not having it. A warp belongs here, in the shared
+    geometry the display already has for frequency axes
+    (`display_to_hz`/`freq_scale`), not as a mapping each client re-derives:
+    two implementations of one curve is how the same control comes to feel
+    different in two places.
+
+  Both are one prop each on `Range` plus their use in the drag math. Do them
+  together: a spec is the pair, and shipping the curve without the step leaves
+  `\midinote` (integers over a linear range) still wrong.

@@ -10,6 +10,7 @@ the host's own Rust tests (`clients/gui/src/host/tcp.rs`).
 import pytest
 
 from clausters.base import OscTcpInterface, OscUdpInterface
+from clausters.defs import control as _control
 from clausters.gui import GuiHost
 
 
@@ -187,8 +188,12 @@ def test_the_id_is_never_positional():
     own contents — and the two ways of getting that wrong both raise."""
     from clausters.gui import guidef
 
-    # A leaf takes no positional at all (its contents are all keywords)...
+    # A leaf with no contents takes no positional at all...
     with pytest.raises(TypeError, match="positional"):
+        guidef.button(7)  # pyright: ignore[reportCallIssue] - the point of the test
+    # ...and a control's positional is the *def control* it is built from, so an
+    # id-shaped number is refused as the non-control it is.
+    with pytest.raises(TypeError, match="not a def's control"):
         guidef.knob(7)  # pyright: ignore[reportCallIssue] - the point of the test
     # ...and a container's positionals are its children, so a stray id-shaped
     # placeholder is refused as the non-node it is.
@@ -197,6 +202,7 @@ def test_the_id_is_never_positional():
     # The argument that *is* positional reads without a keyword.
     assert guidef.label("hello")["text"] == "hello"
     assert guidef.meter(4)["bus"] == 4
+    assert guidef.knob(_control("freq", 220.0, min=110.0, max=880.0))["name"] == "freq"
     assert guidef.menu(["sine", "saw"])["options"] == ["sine", "saw"]
     assert guidef.panel(guidef.button())["children"][0]["type"] == "button"
 

@@ -59,10 +59,16 @@ class ControlInfo:
     step: "float | None" = None
     targets: tuple = ()
 
+    @property
+    def range(self) -> "tuple | None":
+        """``(min, max)``, or ``None`` when this control declares no range."""
+        return None if self.min is None else (self.min, self.max)
+
     def __str__(self) -> str:
         out = f"{self.name}={self.default:g} {self.rate}"
         if self.min is not None:
-            out += f" [{self.min:g}..{self.max:g} step {self.step:g}]"
+            step = f" step {self.step:g}" if self.step is not None else ""
+            out += f" [{self.min:g}..{self.max:g}{step}]"
         for member, control, mul, add in self.targets:
             out += f" -> {member}.{control}"
             if (mul, add) != (1.0, 0.0):

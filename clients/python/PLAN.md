@@ -446,21 +446,18 @@ the def already has removes the asymmetry rather than papering over it.
 
 #### Part 2 — the GUI and the audio server
 
-- ⬜ **C42 — A control declares its range, and a widget reads it**. The slot
-  already exists and is half-filled: `ControlInfo` carries `min`/`max`/`step`,
-  populated by a `FaustDef` (Faust declares them in its `hslider`/`vslider`) and
-  `None` for every other family. `control()` grows the same optional
-  `min`/`max`/`step`, or a named `spec` that expands to them, so the four
-  families describe their surface the same way; and a control widget accepts a
-  control **object** in place of a hand-copied range.
+- ✅ **C42 — A control declares its range, and a widget reads it** *(done
+  2026-08-23)*. The slot already existed and was a quarter filled:
+  `ControlInfo` carries `min`/`max`/`step`, populated by a `FaustDef` (Faust
+  declares them in its `hslider`) and `None` everywhere else. `control()` grew
+  the same three, `GraphDef.port` takes them too, and all three families answer
+  with one shape — so a control widget reads any of them the same way.
 
   ```python
   freq = control("freq", 220.0, min=110.0, max=880.0)
-  amp  = control("amp", 0.2, spec="amp")        # a named range, expanded here
+  sd = SynthDef("voice", out(0.0, sine(freq=freq) * 0.2))
 
-  sd = SynthDef("voice", out(0.0, sine(freq=freq) * amp))
-
-  knob(freq)                                    # name, value and range: all from the control
+  knob(freq)                                    # name, value and range, from the control
   slider(sd["amp"], label="level")              # or indexed off the def
   view(*[knob(c) for c in sd.controls]).open()  # the whole surface, derived
 
@@ -468,18 +465,42 @@ the def already has removes the asymmetry rather than papering over it.
   knob(control("x", 0.0), min=0.0, max=1.0)     # declared where it is used
   ```
 
+  `sd["freq"]`, `fd["cutoff"]` and `gd["mix"]` all give a `ControlInfo`, which
+  is the unifying move: a `SynthDef` keeps the `Control` objects its graph
+  references (`_controls`, the same first-seen order `spec` walks) rather than
+  reading the range back off a wire that does not carry it; a `FaustDef` reads
+  its own payload, where Faust put `init`/`min`/`max`/`step` beside the control;
+  a `GraphDef` port keeps what `port()` declared, alongside the targets it
+  drives. The range also joined a control's `_signature`, so two uses of one
+  name with different ranges are the conflict they are.
+
   **Where the range lives, and the cost of that**: a `SynthDef`'s wire does not
-  carry `min`/`max`, so a range declared in `control()` is known to the
-  *authoring script* and not to the server — `query_defs` on a synth def keeps
-  reporting `None`, and a def fetched by name from a running server yields no
-  range for anything but Faust. That asymmetry is accepted here rather than
-  fixed: teaching `/def_send synth` to carry a range is a server change, and it
-  is written down in the server plan instead of being worked around client-side.
-  The alternative considered and rejected was declaring the range on the widget
-  only — it re-splits what `ControlInfo` already unified, and leaves the Faust
-  path with two sources for one number. Server-side range *checking* is
-  explicitly not part of this: the range is a display mapping, not a
-  constraint.
+  carry `min`/`max` and nothing was added to it — the server takes any float for
+  any control, so a range is a statement about the *surface*, not a constraint.
+  The consequence is stated rather than worked around: a def **queried back off
+  a running server** reports a range only for a FaustDef. Teaching
+  `/def_send synth` to carry one is a server change and is not smuggled in here.
+
+  **What the host cannot draw, written down rather than faked.** `props::Range`
+  is `{value, min, max, label, text_size}`: linear, no step, no curve. So `step`
+  reaches the widget as a prop nothing reads yet, and a **named spec**
+  (`spec="freq"` → 20..20000 *exponential*) was deliberately **not** shipped — a
+  spec that silently drew linear would be worse than none. Both are one entry in
+  `clients/gui/PLAN.md`, to be done together, since a curve without a step
+  leaves `midinote` wrong.
+
+  The props-parity manifest learned that `control` is **not a prop**: it is a
+  *source* of `name`/`value`/`min`/`max`, so it is a parameter each client
+  spells its own way rather than a key on the wire. (That test caught it, which
+  is what it is for.)
+
+  Docs: the defs page gains "The range a control is driven over" (including the
+  query-back asymmetry), the GUI page "A control widget is built from the control
+  it drives". Example: `gui_bind.py` declares `FREQ` once and the knob is
+  `knob(FREQ)` — the widget and the graph can no longer disagree about what
+  "freq" is. Tests: `tests/test_control_range.py` — the three families, the
+  range never reaching the wire, the identity conflict, the derived surface, the
+  keyword override and the two refusals.
 
 - ⬜ **C43 — The binding is made against the control, not against a widget id**.
   Today a widget and a def control meet only as a string typed twice
