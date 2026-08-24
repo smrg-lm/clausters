@@ -126,22 +126,14 @@ faking closed on 2026-08-24 — the control's curve and step, and the source for
 the heavy props that are not samples — so what is left of it is the question
 about the widgets it did not ask.*
 
-***What leads the phase now is a consistency pass**, three entries that are
-maintenance rather than features: a wasm export that grew surface the protocol
-never had, three wire selectors spelled the way the table meant to leave behind,
-and — behind them, and only if a release is being cut — the version that lives
-in five places. The binds went the same way on 2026-08-24: every carrier takes
-an address and all six legs default to loopback, so choosing a transport stopped
-opening a port to the LAN.*
-
-- ⬜ **A typeface is a wasm binding, so only the browser can change one**
-  *(`clients/gui/PLAN.md`, Found by use)*. There is no `/gui_*` verb for a
-  face: the browser front takes one at runtime through the raw binding and the
-  native front only at launch (`--font`). A wasm export grew surface the
-  protocol never had, which is the case the non-divergence rule names outright.
-  Here rather than earlier because nothing waits on it — but it is the one
-  entry of the web book's "What the browser changes" that is not a platform
-  difference, so it should not sit unnamed.
+***What leads the phase is a consistency pass**, maintenance rather than
+features, and two thirds of it landed on 2026-08-24: every carrier took an
+address and all six legs went loopback, so choosing a transport stopped opening
+a port to the LAN, and the typeface stopped being a wasm export the protocol
+had no verb for (`/gui_font`, the same call in both clients). What is left of it
+is the three wire selectors spelled the way the table meant to leave behind and,
+behind them and only if a release is being cut, the version that lives in five
+places.*
 
 - ⬜ **Three wire selectors carry a spelling the table meant to leave behind**
   *(`PLAN.md`, Found by use)*. The operator vocabulary is lowercase and joined

@@ -194,3 +194,17 @@ test("GuiHost: a hand-picked id is kept, and an unknown widget answers empty", {
         assert.equal((await gui.query(4242)).type, "");
     });
 });
+
+test("GuiHost: a typeface a host cannot read leaves it drawing", {
+    skip: !hasHost,
+}, async () => {
+    await withHost(async (gui) => {
+        gui.open(window({}, label("hello", { id: 7 })), { id: 1 });
+        // `/gui_font` carries the bytes and no id: a face is the host's, not a
+        // window's. Junk is refused the way a build with no rasterizer refuses
+        // a real face -- a log, not a failure -- so the window is still there
+        // and still answering afterwards.
+        gui.font(new Uint8Array([0, 1, 0, 0, 110, 111]));
+        assert.equal((await gui.query(7)).type, "label");
+    });
+});

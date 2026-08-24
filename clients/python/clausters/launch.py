@@ -349,6 +349,11 @@ class GuiProcess(_Process):
             default 57210.
         verbose: host log verbosity, like `ServerProcess`.
         data_dir: ``--data-dir`` for the GuiDef store; ``None`` uses the default.
+        font: the typeface to draw text with (``--font``), a path to a
+            TrueType/OpenType file; ``None`` leaves the host with the face it
+            finds. Only a host built with a rasterizer reads it. A face may also
+            be handed over later, over the wire, with
+            `clausters.gui.GuiHost.font`.
         extra_args: extra CLI tokens appended verbatim.
         binary: an explicit host-binary path; ``None`` locates it.
     """
@@ -358,13 +363,15 @@ class GuiProcess(_Process):
 
     def __init__(self, server: "str | None" = None, *, shm: "str | None" = None,
                  port: int = GUI_DEFAULT_PORT, verbose: int = 0, data_dir=None,
-                 extra_args=(), binary=None, ready_timeout: float = 10.0):
+                 font=None, extra_args=(), binary=None,
+                 ready_timeout: float = 10.0):
         super().__init__()
         self.server = server
         self.shm = shm
         self.port = port
         self._verbose = verbose
         self._data_dir = data_dir
+        self._font = font
         self._extra = list(extra_args)
         self._binary = binary
         self.ready_timeout = ready_timeout
@@ -377,6 +384,8 @@ class GuiProcess(_Process):
             argv += ["--shm", self.shm]
         if self._data_dir is not None:
             argv += ["--data-dir", str(self._data_dir)]
+        if self._font is not None:
+            argv += ["--font", str(self._font)]
         argv += _verbosity_flags(self._verbose)
         argv += self._extra
         return argv

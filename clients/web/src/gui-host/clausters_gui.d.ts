@@ -72,18 +72,6 @@ export class GuiBridge {
      */
     feed(packet: Uint8Array): void;
     /**
-     * Draws text with the typeface in `bytes` — a TrueType/OpenType face the
-     * page fetched, which is the browser's half of the host's font seam (a
-     * native host maps a file instead).
-     *
-     * Only a bundle built with the `font-atlas` feature carries a rasterizer;
-     * any other logs and keeps drawing with the embedded bitmap face, which is
-     * also what happens if the bytes are not a readable face. Loading one
-     * relayouts nothing — a size table never followed the typeface — so it may
-     * be called at any point, before or after the first `/gui_def`.
-     */
-    font(bytes: Uint8Array): void;
-    /**
      * Overlays the host's size metrics from a JSON object of
      * `{"role": number}` entries — the browser form of the native
      * `[gui.metrics]` config table, the reserved `scale` density key included.
@@ -196,7 +184,6 @@ export interface InitOutput {
     readonly guibridge_def: (a: number, b: number, c: number, d: number) => void;
     readonly guibridge_detach: (a: number, b: number) => void;
     readonly guibridge_feed: (a: number, b: number, c: number) => void;
-    readonly guibridge_font: (a: number, b: number, c: number) => void;
     readonly guibridge_metrics: (a: number, b: number, c: number) => void;
     readonly guibridge_msaa: (a: number, b: number) => void;
     readonly guibridge_poll: (a: number) => [number, number];

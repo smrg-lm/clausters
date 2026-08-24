@@ -822,6 +822,24 @@ Antialiasing is not a prop at all: smoothing every edge is one setting of the
 **host** (`--msaa 4`, or `msaa = 4` under `[gui]`), because it is the render
 pass that is multisampled — one attachment per window, nothing per widget.
 
+The **typeface** is the host's too, for the same reason, and it may be handed
+over at any point:
+
+```python
+gui.font(Path("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf").read_bytes())
+```
+
+A raw TrueType/OpenType file, drawn by every window the host has open and every
+one it opens later — a face is a property of the host, not of a window, so the
+call carries no id. Loading one **relayouts nothing**: the sizing table never
+followed the typeface, so the same tree comes up the same size before and after.
+What changes is that `text_size` becomes continuous rather than quantized to
+half-steps of the cell, which a bitmap glyph's own pixels require. The
+launch-time spelling is `GuiProcess(font=...)` (the host's `--font`), for a face
+that should be in place before the first window opens, and a host built without
+a rasterizer keeps drawing with its embedded bitmap face — the floor every build
+draws on, and what a face it cannot read leaves it on.
+
 Panning, sweeping a selection and locating the transport are the
 **container's** gestures, so any container may carry a `gestures` table keyed
 by modifier chord, each value a plan of steps in order:

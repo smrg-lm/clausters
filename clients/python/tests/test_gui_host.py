@@ -225,6 +225,15 @@ def test_load_names_a_persisted_def_and_allocates_nothing():
     assert host._children == {}
 
 
+def test_font_hands_a_typeface_over_with_no_id():
+    """``/gui_font`` carries the bytes and nothing else: a face is a property
+    of the host, not of a window, so it names none and allocates nothing."""
+    host = GuiHost(interface=_Recorder())
+    host.font(b"\x00\x01\x00\x00face")
+    assert host._osc.sent == [("/gui_font", b"\x00\x01\x00\x00face")]
+    assert host._alloc.in_use == 0
+
+
 # ---- attach: the host this handle did not start -------------------------
 
 def test_attach_refuses_an_address_nobody_answers():

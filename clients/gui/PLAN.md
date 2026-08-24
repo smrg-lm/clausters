@@ -107,6 +107,7 @@ The protocol is deliberately generic - not "windows". The root of a GuiDef may b
 | `/gui_free` | `id` | Destroy a widget and its subtree (or a whole def by its root id). The group-free analogue. |
 | `/gui_query` | `id` | Request a `/gui_info` reply describing a widget's current state. |
 | `/gui_load` | `name` | Load a persisted GuiDef from the def store by name (standalone / saved-app path). |
+| `/gui_font` | `blob` | Draw text with this typeface from now on (a TrueType/OpenType file). No id: a face is the host's, not a window's. |
 
 ### Events and replies (gui host -> script)
 
@@ -2222,7 +2223,7 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 
 ## Found by use: the running list of fixes
 
-- ⬜ **A typeface is a wasm binding, so only the browser can change one**
+- ✅ **A typeface is a wasm binding, so only the browser can change one**
   *(found 2026-08-23, reading the web book's "What the browser changes" against
   the reference client)*. The browser front takes a face at **runtime** —
   `bridge.font(bytes)`, `src/host/web/bridge.rs` — and the native front takes
@@ -2254,6 +2255,25 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   the one thing in that section that is not platform: a browser has no
   filesystem and a desktop has no `fetch`, but *when* a face may be handed over
   is a decision, not a platform.
+
+  **Done 2026-08-24, and the first end is what settled the other two.**
+  `/gui_font <blob>` is the verb: raw TrueType/OpenType bytes, **no id** — a
+  face is a property of the host and not of a window, which is also what makes
+  a late hand-over safe (nothing relayouts; every open window redraws, and the
+  effect is the `Redraw` the protocol already had). A build without the
+  rasterizer, and a face it cannot read, both log and keep drawing with the
+  embedded bitmap one — the floor every build draws on, so the verb never fails
+  a client. Both clients got the same call in the same place, `host.font(bytes)`
+  beside `load`, and `GuiProcess(font=…)` surfaces the launch flag the launcher
+  had no opinion about.
+
+  **The wasm export is gone rather than kept beside it**: `GuiBridge::font`,
+  `WebEvent::Face` and `FetchedFace` were the door under the client, and leaving
+  them would have been two ways to do one thing on one front only. What survives
+  the change is the platform's genuine half — a page fetches the bytes, a native
+  host maps a file — and the web book's "What the browser changes" is one entry
+  shorter for it. Watched by hand: a windowed host given DejaVu Sans Mono over
+  the wire redrew with it, and fourteen junk bytes warned and left it drawing.
 - ⬜ **A blob has no live door, so a page cannot change the samples it drew**
   *(found 2026-08-23, porting the `Source` to TypeScript)*. `/gui_set` takes
   `data` (inline samples) or `reload` (re-read the `path` a widget was built

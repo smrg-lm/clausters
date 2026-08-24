@@ -350,6 +350,29 @@ class GuiHost:
         """
         self._osc.send_msg(self.target, "/gui_load", name)
 
+    def font(self, face: bytes):
+        """``/gui_font <blob>`` — draw text with this typeface from now on.
+
+        ``face`` is a raw TrueType/OpenType file (the host's rasterizer does not
+        decompress WOFF2). A face is a property of the **host**, not of a
+        window, so the call carries no id and every window it has open — and
+        every one it opens later — draws with it.
+
+        Loading one **relayouts nothing**: the size table never followed the
+        typeface, so the same tree comes up the same size before and after and a
+        face may be handed over at any point. What changes is that ``text_size``
+        becomes continuous rather than quantized to half-steps of the cell,
+        which a bitmap glyph's own pixels require.
+
+        A host built without a rasterizer logs and keeps drawing with its
+        embedded bitmap face — which is what it also does with bytes it cannot
+        read. Neither is an error here: the bitmap face is the floor every build
+        draws on. The launch-time spelling is `clausters.launch.GuiProcess`'s
+        ``font=`` (the host's ``--font``), for a face that should be in place
+        before the first window opens.
+        """
+        self._osc.send_msg(self.target, "/gui_font", bytes(face))
+
     def _stamp(self, node: dict, node_id: int, names: dict, controls: dict) -> dict:
         """A **copy** of ``node`` with a fresh id on every id-less descendant:
         the document ``/gui_def`` is sent, plus ``name -> id`` collected into

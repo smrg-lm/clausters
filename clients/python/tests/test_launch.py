@@ -22,6 +22,14 @@ def test_start_refuses_a_port_already_in_use():
         hold.close()
 
 
+def test_a_launched_host_carries_the_typeface_it_was_given():
+    # The launch-time half of `GuiHost.font`: a face that should be in place
+    # before the first window opens is the host's own flag, not a message.
+    assert "--font" not in GuiProcess()._argv()
+    argv = GuiProcess(font="/usr/share/fonts/x.ttf")._argv()
+    assert argv[argv.index("--font") + 1] == "/usr/share/fonts/x.ttf"
+
+
 @pytest.mark.skipif(not __import__("sys").platform.startswith("linux"),
                     reason="PR_SET_PDEATHSIG is Linux-only")
 def test_the_child_dies_with_a_killed_interpreter():

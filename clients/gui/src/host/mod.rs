@@ -498,6 +498,19 @@ pub const GUI_QUERY: &str = "/gui_query";
 pub const GUI_ACK: &str = "/gui_ack";
 pub const GUI_BIND: &str = "/gui_bind";
 pub const GUI_LOAD: &str = "/gui_load";
+/// `/gui_font <blob>` — the typeface every window draws text with, handed over
+/// after launch.
+///
+/// A face is bytes on both fronts — a native host maps a file, a page fetches a
+/// URL — so *reaching* them is the platform's and *when they may be handed
+/// over* is not. Without this verb the browser could change its face at runtime
+/// through the raw binding and a window could only take one at launch
+/// (`--font`), which is a wasm export growing surface the protocol never had.
+///
+/// It carries no id: a face is a property of the **host**, not of a window (the
+/// size table never followed the typeface), which is also what makes a late
+/// hand-over safe — nothing relayouts, every open window simply redraws.
+pub const GUI_FONT: &str = "/gui_font";
 pub const GUI_INFO: &str = "/gui_info";
 pub const GUI_EVENT: &str = "/gui_event";
 pub const GUI_CLOSED: &str = "/gui_closed";
@@ -1027,6 +1040,7 @@ impl Host {
             GUI_ACK => self.on_ack(&msg.args),
             GUI_BIND => self.on_bind(&msg.args, from),
             GUI_LOAD => self.on_load(&msg.args, from, effects),
+            GUI_FONT => self.on_font(&msg.args, from, effects),
             other => debug!("{from}: ignoring unhandled address {other}"),
         }
     }
@@ -1197,6 +1211,46 @@ impl Host {
             from,
             effects,
         );
+    }
+
+    /// `/gui_font <blob>` — draw text with this typeface from now on.
+    ///
+    /// The bytes are a raw TrueType/OpenType file. Loading one relayouts
+    /// nothing (the size table never followed the face), so every open window
+    /// redraws and comes up the same size. A build without a rasterizer (the
+    /// `font-atlas` feature) says so and keeps drawing with its embedded bitmap
+    /// face, which is what a refused face does too.
+    fn on_font(&mut self, args: &[OscType], from: ClientId, effects: &mut Vec<HostEffect>) {
+        let Some(bytes) = json_arg(args, 0) else {
+            return warn!("{from}: {GUI_FONT} needs a blob argument (a TrueType/OpenType file)");
+        };
+        #[cfg(feature = "font-atlas")]
+        {
+            struct WireFace<'a>(&'a [u8]);
+            impl FontSource for WireFace<'_> {
+                fn face(&self) -> Option<Vec<u8>> {
+                    Some(self.0.to_vec())
+                }
+            }
+            if !self.load_face(&WireFace(bytes)) {
+                return warn!(
+                    "{from}: {GUI_FONT}: those {} bytes are not a typeface this host can read",
+                    bytes.len()
+                );
+            }
+            info!("{from}: {GUI_FONT}: drawing text with the face it handed over");
+            for id in self.window_def_ids() {
+                effects.push(HostEffect::Redraw(id));
+            }
+        }
+        #[cfg(not(feature = "font-atlas"))]
+        {
+            let _ = (bytes, effects);
+            warn!(
+                "{from}: {GUI_FONT}: this host was built without a rasterizer (the `font-atlas` \
+                 feature); drawing with the embedded bitmap face"
+            );
+        }
     }
 
     /// `/gui_set <id> <k> <v> ...` — update one live widget's properties, in the
@@ -2689,6 +2743,28 @@ mod tests {
     const TREE: &str = r#"{"type":"window","title":"Filter","children":[
         {"id":10,"type":"knob","label":"cutoff","min":20.0,"max":20000.0,"value":800.0}
     ]}"#;
+
+    /// A face this host cannot use is **not an error**: the embedded bitmap
+    /// face is the floor every build draws on, so `/gui_font` never fails a
+    /// client and never redraws a window it did not change. (A build without
+    /// the rasterizer takes the same path, one branch earlier.)
+    #[test]
+    fn a_typeface_the_host_cannot_read_leaves_it_drawing() {
+        let mut host = Host::new();
+        host.handle_packet(def_msg(1, TREE), from());
+        let font = OscPacket::Message(OscMessage {
+            addr: GUI_FONT.into(),
+            args: vec![OscType::Blob(b"not a typeface".to_vec())],
+        });
+        assert!(
+            host.handle_packet(font, from()).is_empty(),
+            "nothing to redraw: the face did not change"
+        );
+        assert!(
+            host.window_def(1).is_some(),
+            "and the window is where it was"
+        );
+    }
 
     #[test]
     fn window_def_opens_a_window_and_stores_the_typed_def() {

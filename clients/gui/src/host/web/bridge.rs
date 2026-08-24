@@ -178,28 +178,6 @@ impl GuiBridge {
         self.send(WebEvent::Msaa(samples));
     }
 
-    /// Draws text with the typeface in `bytes` — a TrueType/OpenType face the
-    /// page fetched, which is the browser's half of the host's font seam (a
-    /// native host maps a file instead).
-    ///
-    /// Only a bundle built with the `font-atlas` feature carries a rasterizer;
-    /// any other logs and keeps drawing with the embedded bitmap face, which is
-    /// also what happens if the bytes are not a readable face. Loading one
-    /// relayouts nothing — a size table never followed the typeface — so it may
-    /// be called at any point, before or after the first `/gui_def`.
-    pub fn font(&self, bytes: &[u8]) {
-        #[cfg(feature = "font-atlas")]
-        self.send(WebEvent::Face(bytes.to_vec()));
-        #[cfg(not(feature = "font-atlas"))]
-        {
-            let _ = bytes;
-            log(
-                "this host was built without a rasterizer (the `font-atlas` feature); \
-                 drawing with the embedded bitmap face",
-            );
-        }
-    }
-
     /// Feeds one reply packet from the in-page engine (a streamed `/bus_stream.reply`, a
     /// `/bus_tapStream.reply`, a `/buffer_query.reply`/`/buffer_getRange.reply`, a `/clock_query.reply`) into the host —
     /// the inbound half of [`connect_page`](Self::connect_page), the same

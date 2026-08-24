@@ -182,28 +182,28 @@ order carries on — so a GuiDef mounted in the flow of a page is never a
 keyboard trap. A script points the focus itself with
 `win.widget("name").focus()`, and hears every move as a `"focus"` event.
 
-**The typeface is the page's to hand over** — and this one is a **divergence,
-not an idiom**. The browser bundle carries the host's glyph rasterizer but no
-face, so text draws with the embedded bitmap one until the page fetches an
-outline font and passes the bytes. It goes through the raw binding because there
-is no `/gui_*` verb for a typeface: a native host takes one only at launch
-(`--font`), so a page can change its face at runtime and a window cannot. That
-gap is written down in `clients/gui/PLAN.md`, and closing it will move this call
-onto the client where it belongs.
+**The typeface is the page's to hand over.** The browser bundle carries the
+host's glyph rasterizer but no face — a font is hundreds of kilobytes with a
+license of its own — so text draws with the embedded bitmap one until something
+hands over an outline face. Reaching the bytes is the platform's half (a page
+fetches a URL, a native host maps a file), and *handing them over* is the
+protocol's: `host.font(bytes)` is `/gui_font`, the same call in both clients,
+and the launch-time spelling is the host's own `--font <path>`.
 
 ```ts
 const face = await fetch("/fonts/DejaVuSansMono.ttf").then((r) => r.arrayBuffer());
-(await guiHost()).bridge.font(new Uint8Array(face));
+host.font(new Uint8Array(face));
 ```
 
 It must be a raw **TrueType/OpenType** file (the rasterizer does not decompress
 WOFF2, so a Google Fonts CSS URL is not one), served with CORS if it comes from
 another origin — a CSS `@font-face` cannot serve here, since the host draws into
-a canvas and never reads the document's fonts. Loading one relayouts nothing:
-the sizing table never followed the typeface, so the same tree comes up the same
-size before and after, and it may be handed over at any point. What changes is
-that `textSize` is then continuous rather than quantized to half-steps of the
-cell, which a bitmap glyph's own pixels require.
+a canvas and never reads the document's fonts. A face is a property of the
+**host**, not of a window, so the call carries no id. Loading one relayouts
+nothing: the sizing table never followed the typeface, so the same tree comes up
+the same size before and after, and it may be handed over at any point. What
+changes is that `textSize` is then continuous rather than quantized to
+half-steps of the cell, which a bitmap glyph's own pixels require.
 
 Composition (IME) and the system clipboard stay the **page's**: a canvas cannot
 host an input method, so the host reads the keys it is handed and no more, and

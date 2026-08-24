@@ -334,6 +334,32 @@ export class GuiHost {
     }
 
     /**
+     * `/gui_font <blob>` — draw text with this typeface from now on.
+     *
+     * `face` is a raw TrueType/OpenType file (the host's rasterizer does not
+     * decompress WOFF2, so a Google Fonts CSS URL is not one), served with CORS
+     * if it comes from another origin — a CSS `@font-face` cannot serve here,
+     * since the host draws into a canvas and never reads the document's fonts.
+     * A face is a property of the **host**, not of a window, so the call
+     * carries no id and every window it has open — and every one it opens
+     * later — draws with it.
+     *
+     * Loading one **relayouts nothing**: the size table never followed the
+     * typeface, so the same tree comes up the same size before and after and a
+     * face may be handed over at any point. What changes is that `textSize`
+     * becomes continuous rather than quantized to half-steps of the cell, which
+     * a bitmap glyph's own pixels require.
+     *
+     * A host built without a rasterizer logs and keeps drawing with its
+     * embedded bitmap face — which is what it also does with bytes it cannot
+     * read. Neither is an error here: the bitmap face is the floor every build
+     * draws on.
+     */
+    font(face: Uint8Array): void {
+        this.send("/gui_font", face);
+    }
+
+    /**
      * Walks `node` (whose id is `nodeId`) and returns **a copy** carrying the
      * ids: every id-less descendant gets a fresh one, each id's children are
      * recorded (the subtree `free` recycles), and name → id is collected. The
