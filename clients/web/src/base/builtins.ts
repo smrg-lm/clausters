@@ -207,8 +207,10 @@ export const expexp = (
 
 /**
  * `x` off a linear range onto one **bent** by `curve`: 0 is linear, negative
- * builds fast then slow (the shape a fader wants), positive the reverse. Unlike
- * {@link linexp} the bend spans zero freely.
+ * builds fast then slow — most of the output spent on the first half of the
+ * input — and positive the reverse, which is the fine-at-the-bottom feel a
+ * frequency or an amplitude control wants. Unlike {@link linexp} the bend spans
+ * zero freely.
  */
 export const lincurve = (
     x: Num, inLo: number, inHi: number, outLo: number, outHi: number,

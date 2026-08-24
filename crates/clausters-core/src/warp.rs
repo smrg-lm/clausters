@@ -188,9 +188,11 @@ pub fn exp_value(t: f32, lo: f32, hi: f32) -> f32 {
 }
 
 /// Where `x` sits in `lo..hi` on an axis **bent** by `curve`: 0 is linear,
-/// negative builds fast then slow (sclang's −4 default, the shape a fader
-/// wants), positive the reverse. Unlike [`exp_unit`] this one spans zero and
-/// changes sign freely, which is what makes it the general control curve.
+/// negative builds fast then slow — most of the range spent on the first half
+/// of the input, sclang's −4 default — and positive the reverse, which is the
+/// fine-at-the-bottom feel a frequency or an amplitude control wants. Unlike
+/// [`exp_unit`] this one spans zero and changes sign freely, which is what
+/// makes it the general control curve.
 #[inline]
 pub fn curve_unit(x: f32, lo: f32, hi: f32, curve: f32) -> f32 {
     let Some((a, b, _)) = curve_terms(lo, hi, curve) else {

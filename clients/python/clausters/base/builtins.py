@@ -192,8 +192,10 @@ def expexp(x, in_lo, in_hi, out_lo, out_hi, clip="minmax"):
 
 def lincurve(x, in_lo, in_hi, out_lo, out_hi, curve=-4.0, clip="minmax"):
     """`x` off a linear range onto one **bent** by ``curve``: 0 is linear,
-    negative builds fast then slow (the shape a fader wants), positive the
-    reverse. Unlike `linexp` the bend spans zero freely."""
+    negative builds fast then slow — most of the output spent on the first half
+    of the input — and positive the reverse, which is the fine-at-the-bottom
+    feel a frequency or an amplitude control wants. Unlike `linexp` the bend
+    spans zero freely."""
     return _map(MapOp.LINCURVE, x, in_lo, in_hi, out_lo, out_hi, curve, clip)
 
 
