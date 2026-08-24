@@ -1949,6 +1949,36 @@
       ]
     },
     {
+      "name": "RangeMapUGen",
+      "arity": 6,
+      "inputs": [
+        {
+          "name": "in",
+          "default": 0.0
+        },
+        {
+          "name": "in_lo",
+          "default": 0.0
+        },
+        {
+          "name": "in_hi",
+          "default": 1.0
+        },
+        {
+          "name": "out_lo",
+          "default": 0.0
+        },
+        {
+          "name": "out_hi",
+          "default": 1.0
+        },
+        {
+          "name": "curve",
+          "default": 0.0
+        }
+      ]
+    },
+    {
       "name": "RecordBuf",
       "arity": 10,
       "inputs": [

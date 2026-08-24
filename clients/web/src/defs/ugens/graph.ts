@@ -40,6 +40,18 @@ export const BINOP_OPS = new Set([
     "thresh", "clip2", "excess", "round", "trunc", "fold2", "wrap2", "gcd",
     "lcm", "hypotapx",
 ]);
+/**
+ * @internal — the range maps a `RangeMapUGen` may carry (`clausters_core`'s
+ * `warp` family): the **same** function the value functions in `base/builtins`
+ * compute with, so a signal mapped in a def and a fader position mapped in the
+ * script land in the same place. The two bipolar maps (`range`/`exprange`) are
+ * deliberately absent: they read the input's own polarity, which sclang knows
+ * per UGen and this graph does not track, so the map is written with its input
+ * range instead.
+ */
+export const MAP_OPS = new Set([
+    "linlin", "linexp", "explin", "expexp", "lincurve", "curvelin",
+]);
 /** @internal — the operator names a `UnaryOpUGen` may carry; see `BINOP_OPS`. */
 export const UNOP_OPS = new Set([
     "neg", "abs", "sin", "cos", "tan", "asin", "acos", "atan", "exp", "log",
@@ -185,11 +197,79 @@ export abstract class SynthExpr<TSelf, TOperand = OpOperand> {
 }
 
 /**
+ * The half of the graph surface that only a **UGen graph** has: the range
+ * maps, which compose a `RangeMapUGen` and therefore mean nothing to a per-bin
+ * expression (`PvExpr` extends `SynthExpr` for the operators and stops here).
+ * `Ugen`, `Control` and `ChannelList` all reach it.
+ */
+export abstract class GraphExpr<TSelf, TOperand = OpOperand>
+    extends SynthExpr<TSelf, TOperand> {
+    protected abstract narop(
+        selector: string,
+        args: readonly Channel[],
+        clip: string,
+    ): TSelf;
+
+    // ---- the range maps: sclang's own, the signal half of the value
+    // functions in `base/builtins`. `clip` says what an out-of-range input is
+    // trimmed to before it is mapped — `"minmax"` (the default, both ends),
+    // `"min"`, `"max"` or `"none"` (extrapolate) — the same argument, spelled
+    // the same way, as on the value side.
+
+    /** This signal off a linear range onto a linear one. */
+    linlin(inLo: Channel, inHi: Channel, outLo: Channel, outHi: Channel,
+           clip = "minmax"): TSelf {
+        return this.narop("linlin", [inLo, inHi, outLo, outHi], clip);
+    }
+
+    /**
+     * Off a linear range onto an exponential one — an LFO onto a frequency.
+     * The output ends must not straddle zero; one *at* zero is nudged to the
+     * smallest same-signed value rather than giving a NaN.
+     */
+    linexp(inLo: Channel, inHi: Channel, outLo: Channel, outHi: Channel,
+           clip = "minmax"): TSelf {
+        return this.narop("linexp", [inLo, inHi, outLo, outHi], clip);
+    }
+
+    /** Off an exponential range onto a linear one — a frequency onto a fader
+     * position. */
+    explin(inLo: Channel, inHi: Channel, outLo: Channel, outHi: Channel,
+           clip = "minmax"): TSelf {
+        return this.narop("explin", [inLo, inHi, outLo, outHi], clip);
+    }
+
+    /** Off an exponential range onto another. */
+    expexp(inLo: Channel, inHi: Channel, outLo: Channel, outHi: Channel,
+           clip = "minmax"): TSelf {
+        return this.narop("expexp", [inLo, inHi, outLo, outHi], clip);
+    }
+
+    /**
+     * Off a linear range onto one **bent** by `curve`: 0 is linear, negative
+     * builds fast then slow — most of the output spent on the first half of
+     * the input — and positive the reverse, which is the fine-at-the-bottom
+     * feel a frequency or an amplitude control wants. Unlike `linexp` the bend
+     * spans zero freely.
+     */
+    lincurve(inLo: Channel, inHi: Channel, outLo: Channel, outHi: Channel,
+             curve: Channel = -4.0, clip = "minmax"): TSelf {
+        return this.narop("lincurve", [inLo, inHi, outLo, outHi, curve], clip);
+    }
+
+    /** The inverse of `lincurve`: off a bent range onto a linear one. */
+    curvelin(inLo: Channel, inHi: Channel, outLo: Channel, outHi: Channel,
+             curve: Channel = -4.0, clip = "minmax"): TSelf {
+        return this.narop("curvelin", [inLo, inHi, outLo, outHi, curve], clip);
+    }
+}
+
+/**
  * A single-channel expression: the leaves of the graph (`Ugen`, `Control`),
  * as opposed to the `ChannelList` that holds several. A leaf op against a
  * scalar or another leaf yields a `Ugen`, against a list a `ChannelList`.
  */
-export abstract class SynthLeaf extends SynthExpr<Ugen> {
+export abstract class SynthLeaf extends GraphExpr<Ugen> {
     protected binop<T extends OpOperand>(
         selector: string,
         other: T,
@@ -208,6 +288,14 @@ export abstract class SynthLeaf extends SynthExpr<Ugen> {
 
     protected unop(selector: string): Ugen {
         return this.unopWith(selector);
+    }
+
+    protected narop(
+        selector: string,
+        args: readonly Channel[],
+        clip: string,
+    ): Ugen {
+        return mapUgen(this, selector, args, clip);
     }
 
     /** @internal — this leaf on the **left** of a binary op. */
@@ -239,6 +327,26 @@ export abstract class SynthLeaf extends SynthExpr<Ugen> {
  * their dedicated alias kinds, everything else becomes a `BinaryOpUGen`
  * carrying the operator name.
  */
+/**
+ * One `RangeMapUGen` over `node`. The clip rides as static config and is
+ * omitted when it is the wire's own default, so a def that says nothing about
+ * trimming carries nothing about it.
+ */
+function mapUgen(
+    node: Channel,
+    selector: string,
+    args: readonly Channel[],
+    clip: string,
+): Ugen {
+    if (!MAP_OPS.has(selector)) {
+        throw new TypeError(`no n-ary UGen for '${selector}'`);
+    }
+    return new Ugen("RangeMapUGen", [node, ...args], {
+        op: selector,
+        static: clip === "minmax" ? undefined : { clip },
+    });
+}
+
 function leafOp(selector: string, left: Channel, right: Channel): Ugen {
     const kind = BINOP_UGEN[selector];
     if (kind !== undefined) return new Ugen(kind, [left, right]);
@@ -454,7 +562,7 @@ export function channelUnop(m: Channel, selector: string): Channel {
  * single-channel input is an error: index it or `mix` it down. Build one
  * with `dup`, `chans`, or a literal array where one is accepted.
  */
-export class ChannelList extends SynthExpr<ChannelList> {
+export class ChannelList extends GraphExpr<ChannelList> {
     readonly items: Channel[];
 
     constructor(items: ChannelList | readonly Channel[]) {
@@ -520,6 +628,16 @@ export class ChannelList extends SynthExpr<ChannelList> {
 
     protected unop(selector: string): ChannelList {
         return new ChannelList(this.items.map((m) => channelUnop(m, selector)));
+    }
+
+    protected narop(
+        selector: string,
+        args: readonly Channel[],
+        clip: string,
+    ): ChannelList {
+        return new ChannelList(
+            this.items.map((m) => mapUgen(m, selector, args, clip)),
+        );
     }
 
     /** Sets every member's output rate (see `Ugen.atRate`). */

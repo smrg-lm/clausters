@@ -120,6 +120,11 @@ pub struct UGenSpec {
     /// resolves it against the shared `clausters_core::builtins` operator table.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub op: Option<String>,
+    /// `RangeMapUGen`: what an out-of-range input is trimmed to before it is
+    /// mapped — `"minmax"` (the default), `"min"`, `"max"` or `"none"`.
+    /// Ignored by every other kind.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clip: Option<String>,
     /// Side-effect UGens: `SendReply`'s command name (the OSC address it
     /// replies with, default `/reply`) or `Poll`'s label (default `poll`).
     /// Ignored by every other kind.
@@ -420,6 +425,7 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
             let resolved = match family {
                 OpFamily::Unary => builtins::UnaryOp::from_name(name).map(|o| o as u32),
                 OpFamily::Binary => builtins::BinaryOp::from_name(name).map(|o| o as u32),
+                OpFamily::Map => clausters_core::warp::MapOp::from_name(name).map(|o| o as u32),
             };
             op_index = Some(resolved.ok_or_else(|| {
                 format!(
@@ -428,11 +434,22 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
                 )
             })?);
         }
+        // The clip is `RangeMapUGen`'s other static field: a name, resolved
+        // here so a typo fails the def rather than silently trimming nothing.
+        let clip = match u.clip.as_deref().filter(|s| !s.is_empty()) {
+            None => None,
+            Some(name) => Some(
+                clausters_core::warp::Clip::from_name(name)
+                    .ok_or_else(|| format!("ugens[{i}] ({}): unknown clip '{name}'", u.kind))?
+                    as u32,
+            ),
+        };
         let mut config = UGenConfig {
             path: u.path.clone(),
             looping: u.looping,
             format: u.format.clone(),
             op: op_index,
+            clip,
             label: u.label.clone(),
             fft_size: u.fft_size,
             hop: u.hop,

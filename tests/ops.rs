@@ -41,6 +41,26 @@ fn render_const(json: &str) -> f32 {
     blk[0]
 }
 
+/// One rendered block of audio bus 0 — for the defs whose output moves within
+/// it, which `render_const` refuses by construction.
+fn render_block(json: &str) -> Vec<f32> {
+    let def = compile(serde_json::from_str::<SynthDefSpec>(json).unwrap()).unwrap();
+    let mut synth = UGenSynth::new(Arc::new(def), SR, SEED_STRIDE);
+    let mut buses = Buses::new(ControlBuses::new(16), 8);
+    buses.clear_audio();
+    let mut ctx = ProcessCtx {
+        sample_rate: SR,
+        full_sample_rate: SR,
+        buses: &buses,
+        buffers: &[],
+        offset: 0,
+        frames: BLOCK_SIZE,
+        transport: Default::default(),
+    };
+    synth.process(&mut ctx);
+    buses.audio(0).to_vec()
+}
+
 fn compile_err(json: &str) -> String {
     compile(serde_json::from_str::<SynthDefSpec>(json).unwrap()).unwrap_err()
 }
@@ -188,4 +208,91 @@ fn deferred_s3_operators_resolve_and_compute() {
     assert!((op("hypotapx", 3.0, 4.0) - expected).abs() < 1e-6);
     // The spelling a def stored before the rename carries still resolves.
     assert_eq!(op("hypot_apx", 3.0, 4.0), op("hypotapx", 3.0, 4.0));
+}
+
+// ---- RangeMapUGen: the warp family over a signal ----
+
+/// The map a def runs and the map a client computes a value with are one
+/// function, so a mapped signal lands exactly where the same map lands off the
+/// audio thread. Asserted against `clausters_core::warp` rather than against a
+/// number typed here, which would be a second implementation of the thing this
+/// UGen exists not to have.
+#[test]
+fn range_map_ugen_maps_a_signal_through_the_shared_map() {
+    use clausters::clausters_core::warp::{self, Clip, MapOp};
+    for (op, curve) in [
+        (MapOp::Linlin, 0.0f32),
+        (MapOp::Linexp, 0.0),
+        (MapOp::Explin, 0.0),
+        (MapOp::Expexp, 0.0),
+        (MapOp::Lincurve, -4.0),
+        (MapOp::Curvelin, -4.0),
+    ] {
+        let (x, in_lo, in_hi, out_lo, out_hi) = (0.3f32, 0.1f32, 1.0f32, 20.0f32, 20000.0f32);
+        let json = format!(
+            r#"{{
+            "name": "m",
+            "ugens": [
+                {{"kind": "RangeMapUGen", "op": "{}", "inputs": [
+                    {{"const": {x}}}, {{"const": {in_lo}}}, {{"const": {in_hi}}},
+                    {{"const": {out_lo}}}, {{"const": {out_hi}}}, {{"const": {curve}}}]}},
+                {{"kind": "Out", "inputs": [{{"const": 0.0}}, {{"ugen": 0}}]}}
+            ]
+        }}"#,
+            op.name()
+        );
+        let want = warp::apply_map(op, x, in_lo, in_hi, out_lo, out_hi, curve, Clip::MinMax);
+        assert_eq!(render_const(&json), want, "{}", op.name());
+    }
+}
+
+/// The clip is the map's, not the UGen's own idea: `none` extrapolates past the
+/// input range exactly as the value function does.
+#[test]
+fn range_map_ugen_takes_the_clip_by_name() {
+    let def = |clip: &str| {
+        format!(
+            r#"{{
+            "name": "mc",
+            "ugens": [
+                {{"kind": "RangeMapUGen", "op": "linlin", "clip": "{clip}", "inputs": [
+                    {{"const": 2.0}}, {{"const": 0.0}}, {{"const": 1.0}},
+                    {{"const": 0.0}}, {{"const": 10.0}}]}},
+                {{"kind": "Out", "inputs": [{{"const": 0.0}}, {{"ugen": 0}}]}}
+            ]
+        }}"#
+        )
+    };
+    // Five inputs throughout, so this also says the curve is a declared tail:
+    // a map that never reads one is written without it.
+    assert_eq!(render_const(&def("minmax")), 10.0);
+    assert_eq!(render_const(&def("none")), 20.0);
+    assert!(compile_err(&def("sideways")).contains("unknown clip"));
+}
+
+/// A **modulated** range is legal and is the same map: the block cannot prepare
+/// one set of coefficients, so it prepares per sample and must land in the same
+/// place. Driven by a ramp so the bounds really move within the block.
+#[test]
+fn range_map_ugen_follows_a_bound_that_moves() {
+    use clausters::clausters_core::warp::{self, Clip, MapOp};
+    let json = r#"{
+        "name": "mm",
+        "ugens": [
+            {"kind": "Line", "inputs": [{"const": 10.0}, {"const": 20.0},
+                                        {"const": 0.001}, {"const": 0.0}]},
+            {"kind": "RangeMapUGen", "op": "linlin", "inputs": [
+                {"const": 0.5}, {"const": 0.0}, {"const": 1.0},
+                {"const": 0.0}, {"ugen": 0}]},
+            {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 1}]}
+        ]
+    }"#;
+    let block = render_block(json);
+    // The first sample sits at the ramp's start, the block is not constant, and
+    // every sample is the shared map of the bound at that sample.
+    assert_eq!(
+        block[0],
+        warp::apply_map(MapOp::Linlin, 0.5, 0.0, 1.0, 0.0, 10.0, 0.0, Clip::MinMax)
+    );
+    assert!(block[63] > block[0], "a moving bound moves the output");
 }

@@ -28,6 +28,16 @@ _BINOP_OPS = frozenset({
     "thresh", "clip2", "excess", "round", "trunc", "fold2", "wrap2", "gcd",
     "lcm", "hypotapx",
 })
+#: The range maps (`clausters_core::warp`), composed as a ``RangeMapUGen``
+#: whose ``op`` is the map's name — the **same** function
+#: `clausters.base.builtins` computes a value with, so a signal mapped in a def
+#: and a fader position mapped in the script land in the same place. The two
+#: bipolar maps (``range``/``exprange``) are deliberately absent: they read the
+#: input's own polarity, which sclang knows per UGen and this graph does not
+#: track, so the map is written with its input range instead.
+_MAP_OPS = frozenset({
+    "linlin", "linexp", "explin", "expexp", "lincurve", "curvelin",
+})
 _UNOP_OPS = frozenset({
     "neg", "abs", "sin", "cos", "tan", "asin", "acos", "atan", "exp", "log",
     "log10", "log2", "sqrt", "floor", "ceil", "rint", "asint", "asfloat",
@@ -37,7 +47,70 @@ _UNOP_OPS = frozenset({
 })
 
 
-class _Node(SynthExpr):
+class _RangeMaps:
+    """The six range maps as methods on a graph node — sclang's own, and the
+    signal half of `clausters.base.builtins`'s value functions.
+
+    ``clip`` says what an out-of-range input is trimmed to before it is mapped:
+    ``"minmax"`` (the default, both ends), ``"min"``, ``"max"`` or ``"none"``
+    (extrapolate). It is the same argument, spelled the same way, as on the
+    value side.
+    """
+
+    def _compose_narop(self, selector, *args, **static):
+        raise NotImplementedError
+
+    def linlin(self, in_lo, in_hi, out_lo, out_hi, clip="minmax"):
+        """This signal off a linear range onto a linear one."""
+        return self._compose_narop(
+            "linlin", in_lo, in_hi, out_lo, out_hi, clip=clip)
+
+    def linexp(self, in_lo, in_hi, out_lo, out_hi, clip="minmax"):
+        """Off a linear range onto an exponential one — an LFO onto a
+        frequency. The output ends must not straddle zero; one *at* zero is
+        nudged to the smallest same-signed value rather than giving a NaN."""
+        return self._compose_narop(
+            "linexp", in_lo, in_hi, out_lo, out_hi, clip=clip)
+
+    def explin(self, in_lo, in_hi, out_lo, out_hi, clip="minmax"):
+        """Off an exponential range onto a linear one — a frequency onto a
+        fader position."""
+        return self._compose_narop(
+            "explin", in_lo, in_hi, out_lo, out_hi, clip=clip)
+
+    def expexp(self, in_lo, in_hi, out_lo, out_hi, clip="minmax"):
+        """Off an exponential range onto another."""
+        return self._compose_narop(
+            "expexp", in_lo, in_hi, out_lo, out_hi, clip=clip)
+
+    def lincurve(self, in_lo, in_hi, out_lo, out_hi, curve=-4.0,
+                 clip="minmax"):
+        """Off a linear range onto one **bent** by ``curve``: 0 is linear,
+        negative builds fast then slow — most of the output spent on the first
+        half of the input — and positive the reverse, which is the
+        fine-at-the-bottom feel a frequency or an amplitude control wants.
+        Unlike `linexp` the bend spans zero freely."""
+        return self._compose_narop(
+            "lincurve", in_lo, in_hi, out_lo, out_hi, curve, clip=clip)
+
+    def curvelin(self, in_lo, in_hi, out_lo, out_hi, curve=-4.0,
+                 clip="minmax"):
+        """The inverse of `lincurve`: off a bent range onto a linear one."""
+        return self._compose_narop(
+            "curvelin", in_lo, in_hi, out_lo, out_hi, curve, clip=clip)
+
+
+def _map_ugen(node, selector, args, clip):
+    """One ``RangeMapUGen`` over ``node``. The clip rides as static config and
+    is omitted when it is the wire's own default, so a def that says nothing
+    about trimming carries nothing about it."""
+    if selector not in _MAP_OPS:
+        raise TypeError(f"no n-ary UGen for {selector!r}")
+    static = None if clip == "minmax" else {"clip": str(clip)}
+    return Ugen("RangeMapUGen", [node, *args], op=selector, static=static)
+
+
+class _Node(_RangeMaps, SynthExpr):
     """Shared operator dispatch for graph leaves (`Ugen`, `Control`): `+ - * /`
     compose the dedicated alias kinds; every other operator and math method
     (`%`, `min`, comparisons, `.sin()`, `.midicps()`, …) composes a generic
@@ -68,8 +141,8 @@ class _Node(SynthExpr):
             raise TypeError(f"no unary UGen for operator {selector!r}")
         return Ugen("UnaryOpUGen", [self], op=selector)
 
-    def _compose_narop(self, selector, *args):
-        raise TypeError(f"no n-ary UGen for {selector!r}")
+    def _compose_narop(self, selector, *args, clip="minmax"):
+        return _map_ugen(self, selector, args, clip)
 
     def dup(self, n=2) -> "ChannelList":
         """This node repeated (by reference) as ``n`` channels — see `dup`."""
@@ -194,7 +267,7 @@ def _channel_binop(a, selector, b):
     return _builtins.BINARY[selector](a, b)
 
 
-class ChannelList(SynthExpr):
+class ChannelList(_RangeMaps, SynthExpr):
     """An ordered list of channels — the client's multichannel container.
 
     Members are graph leaves (`Ugen`/`Control`) or plain numbers. Operators
@@ -256,8 +329,10 @@ class ChannelList(SynthExpr):
             [_channel_binop(b, selector, a) for a, b in self._pairs(other)]
         )
 
-    def _compose_narop(self, selector, *args):
-        raise TypeError(f"no n-ary UGen for {selector!r}")
+    def _compose_narop(self, selector, *args, clip="minmax"):
+        return ChannelList(
+            [_map_ugen(m, selector, args, clip) for m in self.items]
+        )
 
     def at_rate(self, rate: str) -> "ChannelList":
         """Sets every member's output rate (see `Ugen.at_rate`)."""

@@ -81,6 +81,15 @@ const fdef = FaustDef.fromSignals("blown", signals.hslider("freq", 440, 50, 2000
 - **The demand streams** — `dseq`, `dxrand`, `dbrown` and the rest have no samples, only a next value, and they yield one each time a driver (`demand`, `duty`, `tduty`) asks. A stream's items may be streams themselves, which is what makes a sequence of phrases expressible; `repeats` of `0` means endlessly. Because a stream is *pulled*, it cannot be shared: two drivers reading one `dseq` take alternate items from it, so give each its own.
 - **The stereo field** — `pan2`, `panAz`, `rotate2`, `midSide` and `stereoWidth` produce several channels, and a UGen has one output, so each returns a `ChannelList` the same way `dup` does.
 
+The **maths** on a graph is the operator methods (`.mul()`, `.midicps()`, `.distort()`, `.clip2()` …) and the six **range maps** beside them — `linlin`, `linexp`, `explin`, `expexp`, `lincurve`, `curvelin`, with the same arguments and the same `clip` as the value functions above, so an LFO mapped in the def and a fader position mapped in the page read one implementation:
+
+```js
+const lfo = sine(0.2).atRate("kr");
+const sweep = sine(lfo.linexp(-1.0, 1.0, 200.0, 8000.0));
+```
+
+Every bound may itself be a signal, so a range can be modulated. sclang's bipolar `range`/`exprange` are deliberately not methods: they read a UGen's declared polarity, which this graph does not track, so a def writes the input range out and says what it means.
+
 `diskIn`/`diskOut` are the one pair that only means something against a **native** server: they stream the server's own filesystem, which a tab does not have.
 
 A `FaustDef` is built from a signal expression (`fromSignals`), a box tree or Faust source (`fromSource`) — the last only against a native server, the in-page engine having no Faust compiler in it. `GraphDef` wires several of either into one named, instantiable configuration with a port surface.

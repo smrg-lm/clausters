@@ -148,32 +148,129 @@ impl Clip {
 }
 
 // ---- the six primitives: three ways to read a position, three to write one ----
+//
+// Each one is `prepare(bounds).at(x)`: the coefficients a map's bounds settle
+// live in [`Read`]/[`Write`] and the formula is written once, there. A caller
+// with fixed bounds — a UGen over a block, a client mapping an array — prepares
+// once and pays only the per-sample half; a caller with moving bounds spells
+// the same call and pays both, which is exactly what these six do.
+
+/// Where a map **reads** a position from: an input axis with everything that
+/// does not depend on `x` already worked out.
+///
+/// The axis that turns out flat is not a case at [`Read::at`] time: an
+/// exponential range straddling zero, and a bend under the flat threshold, both
+/// *become* [`Read::Lin`] here, which is where the fallback the primitives
+/// document actually happens.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Read {
+    Lin { lo: f32, hi: f32 },
+    Exp { lo: f32, ln_ratio: f32 },
+    Curve { a: f32, b: f32, curve: f32 },
+}
+
+impl Read {
+    #[inline]
+    fn lin(lo: f32, hi: f32) -> Read {
+        Read::Lin { lo, hi }
+    }
+
+    #[inline]
+    fn exp(lo: f32, hi: f32) -> Read {
+        match exp_ends(lo, hi) {
+            Some((lo_e, hi_e)) => Read::Exp {
+                lo: lo_e,
+                ln_ratio: (hi_e / lo_e).ln(),
+            },
+            None => Read::Lin { lo, hi },
+        }
+    }
+
+    #[inline]
+    fn curve(lo: f32, hi: f32, curve: f32) -> Read {
+        match curve_terms(lo, hi, curve) {
+            Some((a, b, _)) => Read::Curve { a, b, curve },
+            None => Read::Lin { lo, hi },
+        }
+    }
+
+    #[inline]
+    fn at(self, x: f32) -> f32 {
+        match self {
+            Read::Lin { lo, hi } => (x - lo) / (hi - lo),
+            // `x` passes the same rule the ends do: an input *at* zero on a
+            // range whose low end was nudged off zero has to land on that end,
+            // not on `ln(0)`. Nudging both is what makes this the exact inverse
+            // of `Write::Exp` at the endpoints.
+            Read::Exp { lo, ln_ratio } => (exp_endpoint(x) / lo).ln() / ln_ratio,
+            Read::Curve { a, b, curve } => ((b - x) / a).ln() / curve,
+        }
+    }
+}
+
+/// Where a map **writes** a position to: an output axis, prepared like
+/// [`Read`] and the exact inverse of it axis for axis.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Write {
+    Lin { lo: f32, span: f32 },
+    Exp { lo: f32, ratio: f32 },
+    Curve { a: f32, b: f32, grow: f32 },
+}
+
+impl Write {
+    #[inline]
+    fn lin(lo: f32, hi: f32) -> Write {
+        Write::Lin { lo, span: hi - lo }
+    }
+
+    #[inline]
+    fn exp(lo: f32, hi: f32) -> Write {
+        match exp_ends(lo, hi) {
+            Some((lo_e, hi_e)) => Write::Exp {
+                lo: lo_e,
+                ratio: hi_e / lo_e,
+            },
+            None => Write::lin(lo, hi),
+        }
+    }
+
+    #[inline]
+    fn curve(lo: f32, hi: f32, curve: f32) -> Write {
+        match curve_terms(lo, hi, curve) {
+            Some((a, b, grow)) => Write::Curve { a, b, grow },
+            None => Write::lin(lo, hi),
+        }
+    }
+
+    #[inline]
+    fn at(self, t: f32) -> f32 {
+        match self {
+            Write::Lin { lo, span } => t * span + lo,
+            Write::Exp { lo, ratio } => ratio.powf(t) * lo,
+            Write::Curve { a, b, grow } => b - a * grow.powf(t),
+        }
+    }
+}
 
 /// Where `x` sits in `lo..hi`, as a 0..1 position on a **linear** axis.
 #[inline]
 pub fn lin_unit(x: f32, lo: f32, hi: f32) -> f32 {
-    (x - lo) / (hi - lo)
+    Read::lin(lo, hi).at(x)
 }
 
 /// `t` written back into `lo..hi` linearly. The inverse of [`lin_unit`].
 #[inline]
 pub fn lin_value(t: f32, lo: f32, hi: f32) -> f32 {
-    t * (hi - lo) + lo
+    Write::lin(lo, hi).at(t)
 }
 
 /// Where `x` sits in `lo..hi` on an **exponential** axis: the position whose
 /// ratio to `lo` is `x`'s, which is what makes every octave — every decade,
-/// every doubling — take the same space.
+/// every doubling — take the same space. A range straddling zero has no ratio,
+/// so it reads linearly (see [`exp_ends`]).
 #[inline]
 pub fn exp_unit(x: f32, lo: f32, hi: f32) -> f32 {
-    match exp_ends(lo, hi) {
-        // `x` passes the same rule the ends do: an input *at* zero on a range
-        // whose low end was nudged off zero has to land on that end, not on
-        // `ln(0)`. Nudging both is what makes this the exact inverse of
-        // `exp_value` at the endpoints.
-        Some((lo, hi)) => (exp_endpoint(x) / lo).ln() / (hi / lo).ln(),
-        None => lin_unit(x, lo, hi),
-    }
+    Read::exp(lo, hi).at(x)
 }
 
 /// `t` written back into `lo..hi` exponentially — `lo·(hi/lo)^t`. The inverse
@@ -181,10 +278,7 @@ pub fn exp_unit(x: f32, lo: f32, hi: f32) -> f32 {
 /// `XLine` run.
 #[inline]
 pub fn exp_value(t: f32, lo: f32, hi: f32) -> f32 {
-    match exp_ends(lo, hi) {
-        Some((lo, hi)) => (hi / lo).powf(t) * lo,
-        None => lin_value(t, lo, hi),
-    }
+    Write::exp(lo, hi).at(t)
 }
 
 /// Where `x` sits in `lo..hi` on an axis **bent** by `curve`: 0 is linear,
@@ -195,20 +289,14 @@ pub fn exp_value(t: f32, lo: f32, hi: f32) -> f32 {
 /// makes it the general control curve.
 #[inline]
 pub fn curve_unit(x: f32, lo: f32, hi: f32, curve: f32) -> f32 {
-    let Some((a, b, _)) = curve_terms(lo, hi, curve) else {
-        return lin_unit(x, lo, hi);
-    };
-    ((b - x) / a).ln() / curve
+    Read::curve(lo, hi, curve).at(x)
 }
 
 /// `t` written back into `lo..hi` along the same bend. The inverse of
 /// [`curve_unit`].
 #[inline]
 pub fn curve_value(t: f32, lo: f32, hi: f32, curve: f32) -> f32 {
-    let Some((a, b, grow)) = curve_terms(lo, hi, curve) else {
-        return lin_value(t, lo, hi);
-    };
-    b - a * grow.powf(t)
+    Write::curve(lo, hi, curve).at(t)
 }
 
 /// The two coefficients a bend is written with, shared by both directions so
@@ -226,45 +314,32 @@ fn curve_terms(lo: f32, hi: f32, curve: f32) -> Option<(f32, f32, f32)> {
 }
 
 // ---- the eight named maps, each one pair of the primitives above ----
+//
+// Each is its [`Map`] applied once. A caller that maps *many* values off one
+// pair of ranges builds the `Map` itself and keeps it.
 
 /// Linear in, linear out.
 #[inline]
 pub fn linlin(x: f32, in_lo: f32, in_hi: f32, out_lo: f32, out_hi: f32, clip: Clip) -> f32 {
-    lin_value(
-        lin_unit(clip.prune(x, in_lo, in_hi), in_lo, in_hi),
-        out_lo,
-        out_hi,
-    )
+    Map::new(MapOp::Linlin, in_lo, in_hi, out_lo, out_hi, 0.0, clip).at(x)
 }
 
 /// Linear in, exponential out — a fader position to a frequency.
 #[inline]
 pub fn linexp(x: f32, in_lo: f32, in_hi: f32, out_lo: f32, out_hi: f32, clip: Clip) -> f32 {
-    exp_value(
-        lin_unit(clip.prune(x, in_lo, in_hi), in_lo, in_hi),
-        out_lo,
-        out_hi,
-    )
+    Map::new(MapOp::Linexp, in_lo, in_hi, out_lo, out_hi, 0.0, clip).at(x)
 }
 
 /// Exponential in, linear out — a frequency to a fader position.
 #[inline]
 pub fn explin(x: f32, in_lo: f32, in_hi: f32, out_lo: f32, out_hi: f32, clip: Clip) -> f32 {
-    lin_value(
-        exp_unit(clip.prune(x, in_lo, in_hi), in_lo, in_hi),
-        out_lo,
-        out_hi,
-    )
+    Map::new(MapOp::Explin, in_lo, in_hi, out_lo, out_hi, 0.0, clip).at(x)
 }
 
 /// Exponential in, exponential out.
 #[inline]
 pub fn expexp(x: f32, in_lo: f32, in_hi: f32, out_lo: f32, out_hi: f32, clip: Clip) -> f32 {
-    exp_value(
-        exp_unit(clip.prune(x, in_lo, in_hi), in_lo, in_hi),
-        out_lo,
-        out_hi,
-    )
+    Map::new(MapOp::Expexp, in_lo, in_hi, out_lo, out_hi, 0.0, clip).at(x)
 }
 
 /// Linear in, **bent** out by `curve`.
@@ -278,12 +353,7 @@ pub fn lincurve(
     curve: f32,
     clip: Clip,
 ) -> f32 {
-    curve_value(
-        lin_unit(clip.prune(x, in_lo, in_hi), in_lo, in_hi),
-        out_lo,
-        out_hi,
-        curve,
-    )
+    Map::new(MapOp::Lincurve, in_lo, in_hi, out_lo, out_hi, curve, clip).at(x)
 }
 
 /// **Bent** in by `curve`, linear out. The inverse of [`lincurve`].
@@ -297,11 +367,7 @@ pub fn curvelin(
     curve: f32,
     clip: Clip,
 ) -> f32 {
-    lin_value(
-        curve_unit(clip.prune(x, in_lo, in_hi), in_lo, in_hi, curve),
-        out_lo,
-        out_hi,
-    )
+    Map::new(MapOp::Curvelin, in_lo, in_hi, out_lo, out_hi, curve, clip).at(x)
 }
 
 /// A **bipolar** value (−1..1) into `lo..hi`, linearly — sclang's `range`.
@@ -312,14 +378,14 @@ pub fn curvelin(
 /// silently trimmed to an assumption.
 #[inline]
 pub fn range(x: f32, lo: f32, hi: f32) -> f32 {
-    linlin(x, -1.0, 1.0, lo, hi, Clip::None)
+    Map::new(MapOp::Range, 0.0, 0.0, lo, hi, 0.0, Clip::None).at(x)
 }
 
 /// A **bipolar** value (−1..1) into `lo..hi`, exponentially — sclang's
 /// `exprange`. Unpruned for the reason [`range`] gives.
 #[inline]
 pub fn exprange(x: f32, lo: f32, hi: f32) -> f32 {
-    linexp(x, -1.0, 1.0, lo, hi, Clip::None)
+    Map::new(MapOp::Exprange, 0.0, 0.0, lo, hi, 0.0, Clip::None).at(x)
 }
 
 // ---- the op table: one map by integer, over a scalar or a whole sequence ----
@@ -384,11 +450,88 @@ impl MapOp {
     }
 }
 
-/// One map by op. `curve` is read only by the bent pair and `in_lo`/`in_hi`
-/// only by the six that have an input range; the rest ignore them, so one
-/// signature serves the table.
-// One op plus the six numbers a map is written with: the table's shape, the
-// way `apply_binary(op, a, b)` is the binary table's.
+/// A map with its **bounds already resolved**: the two prepared axes and the
+/// clip, so mapping one more value costs the arithmetic and nothing else.
+///
+/// This is where a map's formula lives; the eight named functions and
+/// [`apply_map`] are each one of these built and applied once. Build it
+/// yourself where the bounds hold still and the values do not — a UGen over a
+/// block, a client mapping an array — and the per-value cost loses the parts
+/// that only the bounds decide: the zero-straddling test, `ln(hi/lo)`,
+/// `exp(curve)` and the bend's two terms. Two of those are transcendentals, so
+/// on the bent and the exponential-input maps this is the difference between
+/// one call per value and three.
+///
+/// It is `Copy` and holds six numbers: a UGen keeps one per block on the stack,
+/// never on the heap.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Map {
+    clip: Clip,
+    in_lo: f32,
+    in_hi: f32,
+    read: Read,
+    write: Write,
+}
+
+impl Map {
+    /// The map `op` runs between these ranges. `curve` is read only by the bent
+    /// pair and `in_lo`/`in_hi` only by the six that have an input range; the
+    /// rest ignore them, so one signature serves the table.
+    ///
+    /// `range`/`exprange` ignore the input range **and** the clip: they are the
+    /// −1..1 map, unpruned, for the reason [`range`] gives.
+    #[allow(clippy::too_many_arguments)]
+    #[inline]
+    pub fn new(
+        op: MapOp,
+        in_lo: f32,
+        in_hi: f32,
+        out_lo: f32,
+        out_hi: f32,
+        curve: f32,
+        clip: Clip,
+    ) -> Map {
+        let bipolar = |write: Write| Map {
+            clip: Clip::None,
+            in_lo: -1.0,
+            in_hi: 1.0,
+            read: Read::lin(-1.0, 1.0),
+            write,
+        };
+        let between = |read: Read, write: Write| Map {
+            clip,
+            in_lo,
+            in_hi,
+            read,
+            write,
+        };
+        match op {
+            MapOp::Linlin => between(Read::lin(in_lo, in_hi), Write::lin(out_lo, out_hi)),
+            MapOp::Linexp => between(Read::lin(in_lo, in_hi), Write::exp(out_lo, out_hi)),
+            MapOp::Explin => between(Read::exp(in_lo, in_hi), Write::lin(out_lo, out_hi)),
+            MapOp::Expexp => between(Read::exp(in_lo, in_hi), Write::exp(out_lo, out_hi)),
+            MapOp::Lincurve => {
+                between(Read::lin(in_lo, in_hi), Write::curve(out_lo, out_hi, curve))
+            }
+            MapOp::Curvelin => {
+                between(Read::curve(in_lo, in_hi, curve), Write::lin(out_lo, out_hi))
+            }
+            MapOp::Range => bipolar(Write::lin(out_lo, out_hi)),
+            MapOp::Exprange => bipolar(Write::exp(out_lo, out_hi)),
+        }
+    }
+
+    /// One value through the map: trimmed by the clip, read off the input axis,
+    /// written onto the output one.
+    #[inline]
+    pub fn at(&self, x: f32) -> f32 {
+        self.write
+            .at(self.read.at(self.clip.prune(x, self.in_lo, self.in_hi)))
+    }
+}
+
+/// One value through the map `op` between these ranges — [`Map::new`] applied
+/// once, which is what every named map above is.
 #[allow(clippy::too_many_arguments)]
 #[inline]
 pub fn apply_map(
@@ -401,22 +544,16 @@ pub fn apply_map(
     curve: f32,
     clip: Clip,
 ) -> f32 {
-    match op {
-        MapOp::Linlin => linlin(x, in_lo, in_hi, out_lo, out_hi, clip),
-        MapOp::Linexp => linexp(x, in_lo, in_hi, out_lo, out_hi, clip),
-        MapOp::Explin => explin(x, in_lo, in_hi, out_lo, out_hi, clip),
-        MapOp::Expexp => expexp(x, in_lo, in_hi, out_lo, out_hi, clip),
-        MapOp::Lincurve => lincurve(x, in_lo, in_hi, out_lo, out_hi, curve, clip),
-        MapOp::Curvelin => curvelin(x, in_lo, in_hi, out_lo, out_hi, curve, clip),
-        MapOp::Range => range(x, out_lo, out_hi),
-        MapOp::Exprange => exprange(x, out_lo, out_hi),
-    }
+    Map::new(op, in_lo, in_hi, out_lo, out_hi, curve, clip).at(x)
 }
 
 /// The same map over a whole sequence, into a caller-provided output — the
 /// shape a client maps an array with, and the one the C ABI and the wasm face
 /// both call. `input` broadcasts when it holds a single value, exactly as
 /// [`crate::builtins::at`] does; no allocation, so the audio thread may call it.
+///
+/// The bounds are one pair for the whole sequence, so the [`Map`] is built once
+/// and every element pays only [`Map::at`].
 #[allow(clippy::too_many_arguments)]
 pub fn map_slice(
     op: MapOp,
@@ -429,17 +566,9 @@ pub fn map_slice(
     curve: f32,
     clip: Clip,
 ) {
+    let map = Map::new(op, in_lo, in_hi, out_lo, out_hi, curve, clip);
     for (i, o) in out.iter_mut().enumerate() {
-        *o = apply_map(
-            op,
-            crate::builtins::at(input, i),
-            in_lo,
-            in_hi,
-            out_lo,
-            out_hi,
-            curve,
-            clip,
-        );
+        *o = map.at(crate::builtins::at(input, i));
     }
 }
 
@@ -450,6 +579,83 @@ mod tests {
     /// The reference values are SuperCollider's, computed in sclang and
     /// rounded — the family exists to agree with it, so the agreement is
     /// asserted rather than described.
+    /// **Every map is still the pair of primitives it is documented as**, bit
+    /// for bit. Preparing the bounds once moved the formulas behind
+    /// [`Read`]/[`Write`], so this is what says the table still wires each op
+    /// to the right two axes — and that hoisting the invariants did not shift a
+    /// single result, which it may not: a def and the client control driving it
+    /// read the same map, and a last-ulp difference between them is drift.
+    #[test]
+    fn each_named_map_is_the_pair_of_primitives_it_documents() {
+        let ranges = [
+            (0.0f32, 1.0f32, 20.0f32, 20000.0f32),
+            (-1.0, 1.0, 100.0, 0.5),
+            (20.0, 20000.0, 0.0, 1.0),
+            (-5.0, 5.0, -1.0, 1.0),
+            // A zero end (nudged) and a sign change (the linear fallback).
+            (0.0, 1.0, 0.0, 880.0),
+            (-1.0, 1.0, -20.0, 20.0),
+        ];
+        let same = |what: &str, a: f32, b: f32| {
+            assert!(
+                a.to_bits() == b.to_bits() || (a.is_nan() && b.is_nan()),
+                "{what}: {a} != {b}"
+            );
+        };
+        for &(il, ih, ol, oh) in &ranges {
+            for &curve in &[0.0f32, -4.0, 4.0, 0.0005] {
+                for &clip in &[Clip::MinMax, Clip::Min, Clip::Max, Clip::None] {
+                    for step in -3..=13 {
+                        let x = il + (ih - il) * (step as f32 / 10.0);
+                        let t = lin_unit(clip.prune(x, il, ih), il, ih);
+                        let e = exp_unit(clip.prune(x, il, ih), il, ih);
+                        let c = curve_unit(clip.prune(x, il, ih), il, ih, curve);
+                        same(
+                            "linlin",
+                            linlin(x, il, ih, ol, oh, clip),
+                            lin_value(t, ol, oh),
+                        );
+                        same(
+                            "linexp",
+                            linexp(x, il, ih, ol, oh, clip),
+                            exp_value(t, ol, oh),
+                        );
+                        same(
+                            "explin",
+                            explin(x, il, ih, ol, oh, clip),
+                            lin_value(e, ol, oh),
+                        );
+                        same(
+                            "expexp",
+                            expexp(x, il, ih, ol, oh, clip),
+                            exp_value(e, ol, oh),
+                        );
+                        same(
+                            "lincurve",
+                            lincurve(x, il, ih, ol, oh, curve, clip),
+                            curve_value(t, ol, oh, curve),
+                        );
+                        same(
+                            "curvelin",
+                            curvelin(x, il, ih, ol, oh, curve, clip),
+                            lin_value(c, ol, oh),
+                        );
+                        same(
+                            "range",
+                            range(x, ol, oh),
+                            lin_value(lin_unit(x, -1.0, 1.0), ol, oh),
+                        );
+                        same(
+                            "exprange",
+                            exprange(x, ol, oh),
+                            exp_value(lin_unit(x, -1.0, 1.0), ol, oh),
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     #[test]
     fn the_four_range_maps_agree_with_sclang() {
         let c = Clip::MinMax;

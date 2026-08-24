@@ -7,7 +7,7 @@ dispatch hooks a subclass implements:
 - ``_compose_unop(selector)``           — unary
 - ``_compose_binop(selector, other)``   — binary
 - ``_rcompose_binop(selector, other)``  — reflected binary (``other <op> self``)
-- ``_compose_narop(selector, *args)``   — n-ary
+- ``_compose_narop(selector, *args, **static)`` — n-ary (the range maps)
 
 The ``selector`` strings are the same operator names used by
 `clausters.base.builtins` (value side) and by
@@ -29,7 +29,7 @@ class AbstractObject:
     def _rcompose_binop(self, selector, other):
         raise NotImplementedError(f"{type(self).__name__}._rcompose_binop")
 
-    def _compose_narop(self, selector, *args):
+    def _compose_narop(self, selector, *args, **static):
         raise NotImplementedError(f"{type(self).__name__}._compose_narop")
 
     # --- unary operators ---

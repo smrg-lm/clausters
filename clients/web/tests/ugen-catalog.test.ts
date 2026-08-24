@@ -50,6 +50,7 @@ const NO_BUILDER: Record<string, string> = {
     Div: "built by the `/` operator on a graph node",
     BinaryOpUGen: "built by every other binary selector on a graph node",
     UnaryOpUGen: "built by every unary selector method on a graph node",
+    RangeMapUGen: "built by every range-map method on a graph node",
 };
 
 /**

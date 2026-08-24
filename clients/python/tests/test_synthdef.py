@@ -14,6 +14,7 @@ from clausters.defs import (
     Env,
     SynthDef,
     Ugen,
+    chans,
     control,
     env_gen,
     local_in,
@@ -122,6 +123,38 @@ def test_math_operators_compose_op_ugens():
     # A reflected op keeps operand order.
     refl = SynthDef("r", out(0.0, 2.0 - a)).spec()
     assert refl["ugens"][-2]["kind"] == "Sub"  # + - * / keep their alias kinds
+
+
+def test_range_maps_compose_one_map_ugen():
+    # The warp family over a signal: one `RangeMapUGen` carrying the map by
+    # name, which is the same function the value side computes with. The clip
+    # rides as static config and is written only when it is not the default.
+    lfo = sine(0.2)
+    spec = SynthDef("m", out(0.0, lfo.linexp(-1.0, 1.0, 200.0, 8000.0))).spec()
+    assert spec["ugens"][-2] == {
+        "kind": "RangeMapUGen", "op": "linexp",
+        "inputs": [{"ugen": 0}, {"const": -1.0}, {"const": 1.0},
+                   {"const": 200.0}, {"const": 8000.0}],
+    }
+    # The bent pair carries sclang's -4 default rather than the wire's inert 0.
+    bent = SynthDef("b", out(0.0, sine(1.0).lincurve(-1.0, 1.0, 0.0, 1.0))).spec()
+    assert bent["ugens"][-2]["inputs"][-1] == {"const": -4.0}
+    assert "clip" not in bent["ugens"][-2]
+    clipped = SynthDef(
+        "c", out(0.0, sine(1.0).linlin(-1.0, 1.0, 0.0, 1.0, clip="none"))).spec()
+    assert clipped["ugens"][-2]["clip"] == "none"
+    # A bound may be a signal: a modulated range is a legal graph.
+    moved = SynthDef(
+        "v", out(0.0, sine(1.0).linlin(-1.0, 1.0, 0.0, sine(0.1)))).spec()
+    assert moved["ugens"][-2]["inputs"][-1] == {"ugen": 1}
+    # A channel list maps every channel.
+    both = SynthDef(
+        "l", out(0.0, chans(sine(1.0), sine(2.0)).linlin(-1.0, 1.0, 0.0, 1.0))
+    ).spec()
+    assert [u["kind"] for u in both["ugens"]].count("RangeMapUGen") == 2
+    # The two bipolar maps read a polarity this graph does not track.
+    with pytest.raises(TypeError):
+        sine(1.0)._compose_narop("range", 0.0, 1.0)
 
 
 def test_unknown_selector_raises():

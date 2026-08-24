@@ -41,6 +41,7 @@ use crate::dsp::noise::{
 use crate::dsp::osc::{Osc, OscN, Shaper, VOsc};
 use crate::dsp::pan::{Pan, PanAz, PanKind, RotKind, Rotate, Select, SelectKind};
 use crate::dsp::phase::{Lf, LfShape, Phasor, Pulse, Saw, TransportPos};
+use crate::dsp::rangemap::RangeMap;
 use crate::dsp::reply::{Poll, SendReply, SendTrig};
 use crate::dsp::scalar::{Rand, SampleRate};
 use crate::dsp::sine::Sine;
@@ -73,10 +74,15 @@ pub struct UGenConfig {
     pub looping: bool,
     /// `DiskOut` WAV sample format (`int16` | `int24` | `float`).
     pub format: Option<String>,
-    /// Special-index operator for `BinaryOpUGen`/`UnaryOpUGen` — a
-    /// `clausters_core::builtins` opcode discriminant, validated at compile
-    /// time and read by their `build`.
+    /// Special-index operator for `BinaryOpUGen`/`UnaryOpUGen`/`RangeMapUGen`
+    /// — a `clausters_core::builtins` (or `warp::MapOp`) opcode discriminant,
+    /// validated at compile time and read by their `build`.
     pub op: Option<u32>,
+    /// `RangeMapUGen`: what an out-of-range input is trimmed to before it is
+    /// mapped — a `clausters_core::warp::Clip` discriminant, resolved from the
+    /// spec's name at compile time. `None` is the default (`minmax`, sclang's
+    /// and the value functions'). Ignored by every other kind.
+    pub clip: Option<u32>,
     /// Static string tag for the side-effect UGens: `SendReply`'s command
     /// name (the OSC address it replies with, default `/reply`) and `Poll`'s
     /// label (default `poll`). Ignored by every other kind.
@@ -288,6 +294,8 @@ pub enum SpectralRole {
 pub enum OpFamily {
     Unary,
     Binary,
+    /// The range maps (`clausters_core::warp`), carried by `RangeMapUGen`.
+    Map,
 }
 
 /// The audio-bus role a UGen plays, for the dependency analysis
@@ -504,6 +512,21 @@ const I_NONE: &[UGenInput] = &[];
 const I_A: &[UGenInput] = &[inp("a", 0.0)];
 const I_AB: &[UGenInput] = &[inp("a", 0.0), inp("b", 0.0)];
 const I_ABC: &[UGenInput] = &[inp("a", 0.0), inp("b", 0.0), inp("c", 0.0)];
+/// `RangeMapUGen`'s six slots. The four bounds are required — a map with a
+/// range it was not given is not "leave it alone" but "pick a number for me" —
+/// while `curve` is the declared tail: 0 is *no bend*, which is the inert value
+/// the rule asks for, and the four maps that do not read it ignore whatever
+/// arrives. (A client's `lincurve` still passes sclang's −4 rather than
+/// leaning on this: the wire default is the inert one, the client's is the
+/// useful one.)
+const I_MAP: &[UGenInput] = &[
+    inp("in", 0.0),
+    inp("in_lo", 0.0),
+    inp("in_hi", 1.0),
+    inp("out_lo", 0.0),
+    inp("out_hi", 1.0),
+    inp_opt("curve", 0.0),
+];
 /// The non-band-limited modulation shapes. The two with a duty cycle
 /// declare a third input; the two without do not, so `/ugen_query` never reports
 /// an inlet the UGen ignores.

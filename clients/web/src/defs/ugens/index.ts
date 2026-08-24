@@ -57,6 +57,7 @@ import * as trig from "./trig.ts";
 export {
     ChannelList,
     Control,
+    GraphExpr,
     SynthExpr,
     SynthLeaf,
     Ugen,

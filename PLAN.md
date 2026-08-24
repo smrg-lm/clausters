@@ -1539,8 +1539,9 @@ where it came from).
   **What it does not do**, unchanged from what is written above: an input inserted in the middle stays breaking, the clients still materialise every default (the wire has no sparse form), and `/ugen_query` still reports `name, default` per input — publishing optionality would change the reply's shape in three packages and nothing needs it yet.
 
 
-- ⬜ **`LinLin`/`LinExp` as UGens, over the warp family the core already
-  carries** *(named 2026-08-23, adding the warp family to `clausters_core`)*.
+- ✅ **`LinLin`/`LinExp` as UGens, over the warp family the core already
+  carries** *(named 2026-08-23, adding the warp family to `clausters_core`;
+  done 2026-08-24)*.
   The eight range maps — `linlin`, `linexp`, `explin`, `expexp`, `lincurve`,
   `curvelin`, `range`, `exprange` — now exist as **value** functions in
   `clausters_core::warp`, reached by both clients, so a script maps a fader
@@ -1563,6 +1564,38 @@ where it came from).
   ramp's geometry, and whether `range`/`exprange` are UGens at all or the
   method sclang makes them — a composition of `madd` that reads the signal's
   own polarity, which our graph does not track.
+
+  **Done, and the shape is one kind rather than eight.** `RangeMapUGen` carries
+  the map by **name** in its `op` field over `in, in_lo, in_hi, out_lo, out_hi[,
+  curve]`, which is the argument `BinaryOpUGen` already makes: a math operation
+  is an entry in a shared table, not a kind. `clip` rides beside it as static
+  config (`minmax` by default, as on the value side), `curve` is the declared
+  optional tail — 0 is *no bend*, the inert value the tail rule asks for, while
+  a client's `lincurve` passes sclang's −4 — and the four bounds are ordinary
+  inputs, so **a range may be modulated**. Both clients spell it as methods on
+  a graph node (`lfo.linexp(-1, 1, 200, 8000)`), the sixth of which is where
+  the TypeScript side grew `GraphExpr`: `PvExpr` borrows `SynthExpr` for the
+  operators and must not inherit a map that composes a UGen.
+
+  **The two questions the entry left are answered by what they cost.** The
+  bounds are **inputs**, not init-rate: they are what a modulated map is made
+  of, and the price of moving them is paid by the def that moves them, not by
+  every def. And `range`/`exprange` are **not** UGens — the value functions keep
+  them — because they read the input's own polarity, which sclang knows per
+  UGen and this graph does not track: a def that means −1..1 writes −1..1 and
+  says what it means, which is one word longer and never wrong.
+
+  **The efficiency half is in the core, and it is what kept one implementation
+  of the curves.** A map's bounds settle a good part of its arithmetic —
+  the zero-straddling test, `ln(hi/lo)`, `exp(curve)`, the bend's two terms, two
+  of them transcendentals — so `warp::Map` is the prepared form and the eight
+  named functions are each one of those built and applied once. The UGen builds
+  one per **block** when every bound is a constant (the ordinary def) and one
+  per sample when a bound moves; `map_slice` builds one per array. Nothing was
+  restated to get that: the primitives now *are* `Read`/`Write`, and
+  `each_named_map_is_the_pair_of_primitives_it_documents` asserts bit equality
+  over a sweep, because a def and the client control driving it read the same
+  map and a last-ulp difference between them is drift.
 
 - ⬜ **A release bumps one version in five places and four of them are checked
   by nothing** *(named 2026-08-23, fixing the versioning rule and finding the

@@ -14,6 +14,12 @@ server's generic ``BinaryOpUGen``/``UnaryOpUGen``, computed by the same
 ahead of time and the UGen on the audio thread agree bit-for-bit). The point of
 interest is the `SynthDef`: it does real per-sample maths, no Faust needed.
 
+The **range maps** are part of that surface and are shown here too:
+``.linexp()`` and its five siblings map a signal off one range onto another
+through the very function the script's own ``linexp`` computes with. The
+vibrato below is the case worth reading — a vibrato is a *ratio*, not an
+offset — and its bounds are themselves signals, which a map allows.
+
 This file is organized as ``# %%`` cells (the VS Code / Jupyter convention).
 Offline does not mean run-once: change an operator in the def cell and re-render
 in the next one.
@@ -39,8 +45,10 @@ def maths_lead(name: str = "maths_lead") -> SynthDef:
     amp = control("amp", 0.3)
 
     freq = note.midicps()                       # UnaryOpUGen: MIDI note -> Hz
-    vib = sine(5.0) * (freq * 0.01)          # 1% vibrato (Mul, then +)
-    tone = sine(freq + vib)
+    # A 1% vibrato as a *ratio*: the LFO is mapped exponentially onto
+    # freq*0.99..freq*1.01, so the bend is the same interval at every pitch.
+    # Both bounds are signals here -- a map's ranges are ordinary inputs.
+    tone = sine(sine(5.0).linexp(-1.0, 1.0, freq * 0.99, freq * 1.01))
 
     shaped = tone.distort()                      # UnaryOpUGen: soft saturation
     # A unipolar LFO clipped to 0.8 -> a gentle tremolo (>=, clip2 both compose).

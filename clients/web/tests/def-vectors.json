@@ -330,6 +330,156 @@
       }
     },
     {
+      "name": "range_maps",
+      "spec": {
+        "name": "maps",
+        "controls": [],
+        "ugens": [
+          {
+            "kind": "Sine",
+            "inputs": [
+              {
+                "const": 0.2
+              }
+            ],
+            "rate": "kr"
+          },
+          {
+            "kind": "RangeMapUGen",
+            "inputs": [
+              {
+                "ugen": 0
+              },
+              {
+                "const": -1.0
+              },
+              {
+                "const": 1.0
+              },
+              {
+                "const": 200.0
+              },
+              {
+                "const": 8000.0
+              }
+            ],
+            "op": "linexp"
+          },
+          {
+            "kind": "Sine",
+            "inputs": [
+              {
+                "ugen": 1
+              }
+            ]
+          },
+          {
+            "kind": "Sine",
+            "inputs": [
+              {
+                "const": 0.7
+              }
+            ]
+          },
+          {
+            "kind": "RangeMapUGen",
+            "inputs": [
+              {
+                "ugen": 3
+              },
+              {
+                "const": -1.0
+              },
+              {
+                "const": 1.0
+              },
+              {
+                "const": 0.0
+              },
+              {
+                "const": 0.5
+              },
+              {
+                "const": -4.0
+              }
+            ],
+            "op": "lincurve",
+            "clip": "none"
+          },
+          {
+            "kind": "Mul",
+            "inputs": [
+              {
+                "ugen": 2
+              },
+              {
+                "ugen": 4
+              }
+            ]
+          },
+          {
+            "kind": "Sine",
+            "inputs": [
+              {
+                "const": 3.0
+              }
+            ]
+          },
+          {
+            "kind": "Sine",
+            "inputs": [
+              {
+                "const": 0.1
+              }
+            ]
+          },
+          {
+            "kind": "RangeMapUGen",
+            "inputs": [
+              {
+                "ugen": 6
+              },
+              {
+                "const": -1.0
+              },
+              {
+                "const": 1.0
+              },
+              {
+                "const": 0.0
+              },
+              {
+                "ugen": 7
+              }
+            ],
+            "op": "linlin"
+          },
+          {
+            "kind": "Mul",
+            "inputs": [
+              {
+                "ugen": 5
+              },
+              {
+                "ugen": 8
+              }
+            ]
+          },
+          {
+            "kind": "Out",
+            "inputs": [
+              {
+                "const": 0.0
+              },
+              {
+                "ugen": 9
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
       "name": "mix_fold",
       "spec": {
         "name": "fold",

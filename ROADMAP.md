@@ -112,9 +112,10 @@ maps and the exponential-endpoint rule now live once in
 curve the tree carried — the envelope's exponential shape, its bent one, and
 the server's `XLine` — read it instead of restating it. The control's own curve
 and step, which that half was built for, closed on 2026-08-24 and are gone from
-this list. What the family left behind sits at the end of the phase: it has no
-signal side yet, and doing it turned up a wire vocabulary with three exceptions
-in it and a version number that lives in five files.*
+this list. What the family left behind is paid too: it has its signal side since
+2026-08-24 (`RangeMapUGen`, one kind carrying the map by name), and the wire
+vocabulary it turned up was cleaned the same day. Only the version number that
+lives in five files is still open, below.*
 
 ***The violation the phase created on 2026-08-23 is already paid.** The Python
 client's GUI surface was reformed — a builder returns a view that opens itself,
@@ -134,18 +135,6 @@ three wire selectors that carried an underscore against their own table's rule
 were renamed, with the old spellings accepted for good so nothing stored had to
 be rewritten. What is left of that group is the version that lives in five
 places, below, and it is felt only at a tag.*
-
-- ⬜ **`LinLin`/`LinExp` as UGens, over the warp family the core already
-  carries** *(`PLAN.md`, Future directions)*. The eight range maps are value
-  functions in both clients since 2026-08-23; a **signal** still cannot be
-  mapped, so a def writes the multiply-and-add by hand — which is two
-  implementations of one map, the exact thing the shared core exists to
-  prevent. The formulas are done and `warp::apply_map` is the body; what a
-  milestone decides is the shape (five- and six-ary, so they cannot join the
-  operator tables) and two questions: whether the bounds are modulatable
-  inputs or init-rate like a ramp's geometry, and whether `range`/`exprange`
-  are UGens at all or the `madd` composition sclang makes them, which reads a
-  signal polarity our graph does not track.
 
 - ⬜ **A release bumps one version in five places and four of them are checked
   by nothing** *(`PLAN.md`, Future directions)*. The root `Cargo.toml`, every

@@ -30,6 +30,13 @@ computed by the same shared core the client uses off the audio thread. So a
 value computed ahead of time and the UGen on the audio thread agree
 bit for bit. Nothing here needs Faust: the def does real per-sample maths.
 
+The <b>range maps</b> are part of that surface and are shown here too:
+<code>.linexp()</code> and its five siblings map a signal off one range onto
+another through the very function the page's own <code>linexp</code> computes
+with. The vibrato below is the case worth reading — a vibrato is a
+<i>ratio</i>, not an offset — and its bounds are themselves signals, which a
+map allows.
+
 This is the port where the <b>method form</b> is the point. Where the Python
 client writes <code>sine(5) * (freq * 0.01)</code>, TypeScript has no operator
 overloading, so it writes <code>sine(5).mul(freq.mul(0.01))</code>. The two
@@ -60,8 +67,12 @@ emit the same spec JSON, which is exactly what the parity vectors assert.</div>
         const amp = control("amp", 0.3);
 
         const freq = note.midicps();                  // MIDI note -> Hz
-        const vib = sine(5.0).mul(freq.mul(0.01));    // 1% vibrato
-        const tone = sine(freq.add(vib));
+        // A 1% vibrato as a *ratio*: the LFO is mapped exponentially onto
+        // freq*0.99..freq*1.01, so the bend is the same interval at every
+        // pitch. Both bounds are signals here -- a map's ranges are inputs.
+        const tone = sine(
+          sine(5.0).linexp(-1.0, 1.0, freq.mul(0.99), freq.mul(1.01)),
+        );
 
         const shaped = tone.distort();                // soft saturation
         // A unipolar LFO clipped to 0.8: a gentle tremolo.

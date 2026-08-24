@@ -132,6 +132,19 @@ const synthdefs: Record<string, () => SynthDef> = {
         );
     },
 
+    range_maps: () => {
+        const lfo = sine(0.2).atRate("kr");
+        return new SynthDef(
+            "maps",
+            out(
+                0.0,
+                sine(lfo.linexp(-1.0, 1.0, 200.0, 8000.0))
+                    .mul(sine(0.7).lincurve(-1.0, 1.0, 0.0, 0.5, -4.0, "none"))
+                    .mul(sine(3.0).linlin(-1.0, 1.0, 0.0, sine(0.1))),
+            ),
+        );
+    },
+
     typed_controls_env: () => {
         const gate = control("gate", 1.0, { rate: "tr" });
         const cutoff = control("cutoff", 800.0, { lag: 0.1, lagDown: 0.5 });

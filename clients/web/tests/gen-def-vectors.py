@@ -81,6 +81,19 @@ def synth_cases():
         SynthDef("ops", out(0.0, sine(440.0).distort().max(0.1))).spec(),
     ))
 
+    # The range maps over a signal: an LFO onto a frequency, a bend with a
+    # clip that is not the default, and a bound that is itself a signal.
+    lfo = sine(0.2).at_rate("kr")
+    cases.append((
+        "range_maps",
+        SynthDef(
+            "maps",
+            out(0.0, sine(lfo.linexp(-1.0, 1.0, 200.0, 8000.0))
+                * sine(0.7).lincurve(-1.0, 1.0, 0.0, 0.5, -4.0, clip="none")
+                * sine(3.0).linlin(-1.0, 1.0, 0.0, sine(0.1))),
+        ).spec(),
+    ))
+
     # The fused forms and a mix fold (sum4 + sum3 chunking).
     voices = [sine(110.0 * (n + 1)) for n in range(7)]
     cases.append((

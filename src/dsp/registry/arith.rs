@@ -16,6 +16,14 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
     desc_op("UnaryOpUGen", Fixed(1), I_A, OpFamily::Unary, |c, _| {
         Box::new(UnaryOp::from_index(c.op.unwrap_or(0)))
     }),
+    // The range maps (`clausters_core::warp`), one generic kind carrying the
+    // map by name -- the same argument `BinaryOpUGen` makes, and the same
+    // function a client computes a *value* with, so a mapped signal and a
+    // mapped fader position cannot drift. `clip` rides as static config beside
+    // `op`; the bounds are ordinary inputs, so a range may be modulated.
+    desc_op("RangeMapUGen", Fixed(6), I_MAP, OpFamily::Map, |c, _| {
+        Box::new(RangeMap::from_index(c.op.unwrap_or(0), c.clip.unwrap_or(0)))
+    }),
     // Fused forms scsynth optimizes (fixed kinds, not op-table entries).
     desc(
         "MulAdd",

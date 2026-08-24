@@ -417,6 +417,29 @@ sdef = SynthDef("lead", out(0.0, sig * lfo))
 
 The `+ - * /` operators keep their dedicated `Add`/`Sub`/`Mul`/`Div` kinds (so existing defs are byte-identical); every other operator becomes an op UGen. Operators and math methods come from the shared `AbstractObject`, so the *same* expression composes a Faust graph, a UGen graph, or concrete numbers depending on what it is applied to. Only a selector with no server op raises `TypeError`. A `FaustDef` is still the tool for genuinely custom per-sample DSP (recursion, tables, sample-accurate feedback); a SynthDef now covers ordinary maths as well as wiring.
 
+**Mapping a range is part of that maths**, and it is the one place the two
+sides used to be written twice. The six range maps are methods on any graph
+node — the same names, the same arguments and the same `clip` as the value
+functions in `clausters.base.builtins`, over the server's `RangeMapUGen`:
+
+```python
+from clausters.defs import SynthDef, out, sine
+
+lfo = sine(0.2).at_rate("kr")
+sweep = sine(lfo.linexp(-1.0, 1.0, 200.0, 8000.0))   # -1..1 onto 200..8000 Hz
+amp = sine(0.7).lincurve(-1.0, 1.0, 0.0, 0.5, curve=-4.0)
+sdef = SynthDef("sweep", out(0.0, sweep * amp))
+```
+
+`linlin`, `linexp`, `explin`, `expexp`, `lincurve` and `curvelin` all read the
+same `clausters-core` function the script's own `linexp` does, so an LFO mapped
+in the def and a fader position mapped in Python land in the same place. `clip`
+says what an out-of-range input is trimmed to first — `"minmax"` (the default),
+`"min"`, `"max"` or `"none"` — and every bound may itself be a signal, so a
+range can be modulated. sclang's bipolar `range`/`exprange` are deliberately not
+methods here: they read a UGen's declared polarity, which this graph does not
+track, so a def writes the input range out and says what it means.
+
 Feedback within a block uses the `LocalIn` / `LocalOut` pair. `LocalIn` must be emitted before its `LocalOut`; the topological walk guarantees that as long as the output graph reaches the `local_in` before the `local_out`. Make the `local_out` one of the def's outputs so its write stays in the graph:
 
 ```python
