@@ -1,3 +1,6 @@
+import { AbstractObject } from "../../base/absobject.ts";
+import type { Composed, Fan } from "../../base/absobject.ts";
+
 // The graph itself: a UGen node, a control, a channel list (mirrors
 // `clausters/defs/ugens/graph.py`).
 //
@@ -6,14 +9,10 @@
 // as an explicit container, never implicit expansion) — plus the fused
 // arithmetic the server has dedicated kinds for.
 //
-// **Composition is by method, not by operator.** TypeScript has no operator
-// overloading, so where the Python client writes `sine(freq) * amp` this one
-// writes `sine(freq).mul(amp)`, and every other operator or math method
-// (`mod`, `min`/`max`, comparisons, `.sin()`, `.midicps()`, `.distort()` …)
-// is a method carrying the same operator **name** the wire uses — so the two
-// clients emit identical specs. The free `add`/`sub`/`mul`/`div` functions at
-// the bottom take the number-on-the-left case (`sub(1, sig)`), which a method
-// cannot.
+// **Composition is by method, not by operator** — the vocabulary and the
+// reason are `base/absobject`, which this branch extends. The free
+// `add`/`sub`/`mul`/`div` functions at the bottom take the number-on-the-left
+// case (`sub(1, sig)`), which a method cannot.
 
 // The four arithmetic selectors keep their dedicated alias kinds, so the
 // emitted graphs match the Python client's byte for byte.
@@ -74,9 +73,10 @@ export type OpOperand = Channel | ChannelList | readonly Channel[];
  * A math method's result: a list operand fans the result out, anything else
  * keeps the receiver's shape.
  */
-export type OpResult<TSelf, TOther> = TOther extends ChannelList | readonly Channel[]
-    ? ChannelList
-    : TSelf;
+export type OpResult<TSelf, TOther> = Composed<TSelf, TOther, ChannelFan>;
+
+/** A list operand fans a result out into a `ChannelList`; see `Fan`. */
+export type ChannelFan = Fan<ChannelList | readonly Channel[], ChannelList>;
 
 const isLeaf = (x: unknown): x is SynthLeaf => x instanceof SynthLeaf;
 /**
@@ -95,115 +95,14 @@ export const isList = (x: unknown): x is ChannelList | readonly Channel[] =>
  * this branch, not members of it; the name avoids `Graph*` because `GraphDef`
  * already means a configuration of member nodes wired by buses.
  *
- * It also carries the shared math surface: `add`/`sub`/`mul`/`div` compose
- * the dedicated alias kinds, everything else a generic
- * `BinaryOpUGen`/`UnaryOpUGen` carrying the operator name.
- *
- * That surface is the one thing here that is not about UGens — it is the
- * operator vocabulary of the shared builtins table — so `TOperand` opens it
- * to a subclass whose operands are not channels: `defs/pv_expr`'s per-bin
- * terms compose the same names into their own tree. (The Python client keeps
- * the vocabulary in `base.absobject` for the same reason.)
+ * The operator surface it inherits is `base/absobject`'s and is about the
+ * shared builtins vocabulary rather than about UGens — `defs/pv_expr` composes
+ * the same names into a per-bin tree from the same base. What this branch adds
+ * is the half that only a UGen graph has: the **range maps**, which compose a
+ * `RangeMapUGen`.
  */
-export abstract class SynthExpr<TSelf, TOperand = OpOperand> {
-    protected abstract binop<T extends TOperand>(
-        selector: string,
-        other: T,
-    ): OpResult<TSelf, T>;
-    protected abstract unop(selector: string): TSelf;
-
-    // --- binary ---
-    add<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("add", x); }
-    sub<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("sub", x); }
-    mul<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("mul", x); }
-    div<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("div", x); }
-    mod<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("mod", x); }
-    pow<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("pow", x); }
-    min<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("min", x); }
-    max<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("max", x); }
-    atan2<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("atan2", x); }
-    gt<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("gt", x); }
-    lt<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("lt", x); }
-    ge<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("ge", x); }
-    le<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("le", x); }
-    eq<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("eq", x); }
-    ne<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("ne", x); }
-    bitand<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("bitand", x); }
-    bitor<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("bitor", x); }
-    bitxor<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("bitxor", x); }
-    leftshift<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("lshift", x); }
-    rightshift<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("rshift", x); }
-    hypot<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("hypot", x); }
-    /** The cheap hypotenuse approximation (`hypotapx` on the wire). */
-    hypotapx<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("hypotapx", x); }
-    ring1<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("ring1", x); }
-    ring2<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("ring2", x); }
-    ring3<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("ring3", x); }
-    ring4<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("ring4", x); }
-    sumsqr<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("sumsqr", x); }
-    difsqr<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("difsqr", x); }
-    sqrsum<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("sqrsum", x); }
-    sqrdif<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("sqrdif", x); }
-    absdif<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("absdif", x); }
-    thresh<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("thresh", x); }
-    clip2<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("clip2", x); }
-    excess<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("excess", x); }
-    round<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("round", x); }
-    trunc<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("trunc", x); }
-    fold2<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("fold2", x); }
-    wrap2<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("wrap2", x); }
-    gcd<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("gcd", x); }
-    lcm<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("lcm", x); }
-
-    // --- unary ---
-    neg(): TSelf { return this.unop("neg"); }
-    abs(): TSelf { return this.unop("abs"); }
-    sin(): TSelf { return this.unop("sin"); }
-    cos(): TSelf { return this.unop("cos"); }
-    tan(): TSelf { return this.unop("tan"); }
-    asin(): TSelf { return this.unop("asin"); }
-    acos(): TSelf { return this.unop("acos"); }
-    atan(): TSelf { return this.unop("atan"); }
-    exp(): TSelf { return this.unop("exp"); }
-    log(): TSelf { return this.unop("log"); }
-    log10(): TSelf { return this.unop("log10"); }
-    log2(): TSelf { return this.unop("log2"); }
-    sqrt(): TSelf { return this.unop("sqrt"); }
-    floor(): TSelf { return this.unop("floor"); }
-    ceil(): TSelf { return this.unop("ceil"); }
-    rint(): TSelf { return this.unop("rint"); }
-    /** Truncate towards zero to an integer value (`asint` on the wire). */
-    asinteger(): TSelf { return this.unop("asint"); }
-    /** The identity that documents a value as a float (`asfloat`). */
-    asfloat(): TSelf { return this.unop("asfloat"); }
-    squared(): TSelf { return this.unop("squared"); }
-    cubed(): TSelf { return this.unop("cubed"); }
-    reciprocal(): TSelf { return this.unop("recip"); }
-    frac(): TSelf { return this.unop("frac"); }
-    sign(): TSelf { return this.unop("sign"); }
-    sinh(): TSelf { return this.unop("sinh"); }
-    cosh(): TSelf { return this.unop("cosh"); }
-    tanh(): TSelf { return this.unop("tanh"); }
-    distort(): TSelf { return this.unop("distort"); }
-    softclip(): TSelf { return this.unop("softclip"); }
-    midicps(): TSelf { return this.unop("midicps"); }
-    cpsmidi(): TSelf { return this.unop("cpsmidi"); }
-    midiratio(): TSelf { return this.unop("midiratio"); }
-    ratiomidi(): TSelf { return this.unop("ratiomidi"); }
-    dbamp(): TSelf { return this.unop("dbamp"); }
-    ampdb(): TSelf { return this.unop("ampdb"); }
-    octcps(): TSelf { return this.unop("octcps"); }
-    cpsoct(): TSelf { return this.unop("cpsoct"); }
-}
-
-/**
- * The half of the graph surface that only a **UGen graph** has: the range
- * maps, which compose a `RangeMapUGen` and therefore mean nothing to a per-bin
- * expression (`PvExpr` extends `SynthExpr` for the operators and stops here).
- * `Ugen`, `Control` and `ChannelList` all reach it.
- */
-export abstract class GraphExpr<TSelf, TOperand = OpOperand>
-    extends SynthExpr<TSelf, TOperand> {
+export abstract class SynthExpr<TSelf, TOperand = OpOperand>
+    extends AbstractObject<TSelf, TOperand, ChannelFan> {
     protected abstract narop(
         selector: string,
         args: readonly Channel[],
@@ -269,7 +168,7 @@ export abstract class GraphExpr<TSelf, TOperand = OpOperand>
  * as opposed to the `ChannelList` that holds several. A leaf op against a
  * scalar or another leaf yields a `Ugen`, against a list a `ChannelList`.
  */
-export abstract class SynthLeaf extends GraphExpr<Ugen> {
+export abstract class SynthLeaf extends SynthExpr<Ugen> {
     protected binop<T extends OpOperand>(
         selector: string,
         other: T,
@@ -562,7 +461,7 @@ export function channelUnop(m: Channel, selector: string): Channel {
  * single-channel input is an error: index it or `mix` it down. Build one
  * with `dup`, `chans`, or a literal array where one is accepted.
  */
-export class ChannelList extends GraphExpr<ChannelList> {
+export class ChannelList extends SynthExpr<ChannelList> {
     readonly items: Channel[];
 
     constructor(items: ChannelList | readonly Channel[]) {

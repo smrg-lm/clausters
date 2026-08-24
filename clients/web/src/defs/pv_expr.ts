@@ -30,8 +30,9 @@
 // compute is available per bin, with the same formulas — a rendered kernel is
 // bit-identical between real-time and offline.
 
-import { BINOP_OPS, SynthExpr, UNOP_OPS } from "./ugens/graph.ts";
-import type { OpResult } from "./ugens/graph.ts";
+import { AbstractObject } from "../base/absobject.ts";
+import type { Composed, Fan } from "../base/absobject.ts";
+import { BINOP_OPS, UNOP_OPS } from "./ugens/graph.ts";
 
 // `+ - * /` compose dedicated alias kinds in UGen graphs, but in a bin
 // expression every operator is a wire name; these four map straight through.
@@ -41,20 +42,28 @@ const ARITH = new Set(["add", "sub", "mul", "div"]);
 export type PvOperand = PvExpr | number;
 
 /**
+ * What a math method answers here: always another term. Nothing in a per-bin
+ * expression fans a result out the way a channel list does in a UGen graph, so
+ * the base's fan-out pair is `never` — this alias is only what a deferred
+ * conditional type has to be spelled as.
+ */
+type PvResult<T> = Composed<PvExpr, T, Fan<never, never>>;
+
+/**
  * A node of a symbolic per-bin expression. Build these by composing the
  * module's terms (`mag`, `phase`, …) with the math methods; pass the result
  * to `pvKernel`, which serializes it with `pvTokens`.
  */
-export abstract class PvExpr extends SynthExpr<PvExpr, PvOperand> {
+export abstract class PvExpr extends AbstractObject<PvExpr, PvOperand> {
     protected binop<T extends PvOperand>(
         selector: string,
         other: T,
-    ): OpResult<PvExpr, T> {
+    ): PvResult<T> {
         return new PvBinNode(
             binopName(selector),
             this,
             operand(other),
-        ) as unknown as OpResult<PvExpr, T>;
+        ) as unknown as PvResult<T>;
     }
 
     protected unop(selector: string): PvExpr {

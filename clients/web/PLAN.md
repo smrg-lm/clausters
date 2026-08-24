@@ -2157,6 +2157,35 @@ row in `docs/gui-props.md`, or a paragraph in this plan's parity section.
 
 ## Found by use: the running list of fixes
 
+- ✅ **The operator vocabulary had no home, so the class trees differed**
+  *(found 2026-08-24, adding the range maps to both clients and having to
+  decide where the TypeScript ones could go; fixed the same day)*. Python
+  overloads `+ - * /`, so its operator base is a neutral `AbstractObject` in
+  `base/absobject.py`, and every expression family hangs off it: the UGen
+  graph, the Faust one, the per-bin `PvExpr`. TypeScript has no overloading, so
+  the equivalent is a class **full of methods** — and that class had never been
+  given a home: it was written inside `defs/ugens/graph.ts` and called
+  `SynthExpr`, so `PvExpr`, which wants exactly the same vocabulary per bin,
+  extended the UGen module to get it. Nothing was wrong with the *surface*; the
+  two trees differed because of where the code happened to live, which is the
+  kind of asymmetry that decides the next question wrongly.
+
+  It decided one immediately: a range map is a method that composes a
+  `RangeMapUGen`, so putting the six on `SynthExpr` would have given `PvExpr` a
+  `.linexp()` that Python's has not — a divergence created by the shape of the
+  file. That is what `GraphExpr` was for when the maps landed, and it is gone
+  now.
+
+  **`base/absobject.ts` is the home, `AbstractObject` the name it already has
+  in the other client**, beside the value functions that compute the same
+  operators. `PvExpr` extends it directly; `SynthExpr` means the UGen-graph
+  branch again and carries what only that branch has. The one thing a typed
+  language needs here and an untyped one does not is `Fan` — which operand kind
+  fans a result out and into what (a channel list in the graph, nothing per
+  bin) — kept as one type because the pair only ever travels together. No
+  surface moved and no emitted spec changed, which the parity vectors say
+  without being touched.
+
 - ✅ **The composer example was a second program, not the same one in another
   language** *(found 2026-08-22, when the user asked why the two examples were
   not identical after the curve was fixed in one and not the other)*. The

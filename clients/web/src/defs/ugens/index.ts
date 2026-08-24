@@ -57,7 +57,6 @@ import * as trig from "./trig.ts";
 export {
     ChannelList,
     Control,
-    GraphExpr,
     SynthExpr,
     SynthLeaf,
     Ugen,
@@ -73,7 +72,8 @@ export {
     sum3,
     sum4,
 } from "./graph.ts";
-export type { Channel, ControlRate, OpOperand, OpResult, UgenRate } from "./graph.ts";
+export type {
+    Channel, ChannelFan, ControlRate, OpOperand, OpResult, UgenRate } from "./graph.ts";
 
 export {
     brownNoise,

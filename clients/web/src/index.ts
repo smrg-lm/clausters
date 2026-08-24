@@ -55,6 +55,11 @@ export type { SessionOptions } from "./session.ts";
 export { defaultSession, main } from "./base/main.ts";
 export type { Main, SessionLike } from "./base/main.ts";
 export { Environment, RandomContext } from "./base/environment.ts";
+// The operator vocabulary as methods, exported the way the Python client
+// exports `AbstractObject` from `clausters.base`: what a subclass implements
+// to make one written expression compose a graph, a per-bin program or a value.
+export { AbstractObject } from "./base/absobject.ts";
+export type { Composed, Fan } from "./base/absobject.ts";
 export { play } from "./play.ts";
 export type { Playable, PlayOptions } from "./play.ts";
 export { plot, PatchWindow, PlotWindow } from "./plot.ts";
