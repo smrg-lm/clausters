@@ -132,7 +132,16 @@ interface Param {
  */
 function params(fn: Function): Param[] {
     const src = fn.toString();
+    const arrow = src.indexOf("=>");
     const open = src.indexOf("(");
+    // A single parameter may have lost its parentheses (`bufnum=>new Ugen(…)`):
+    // the transpiler that strips the types is free to drop them, and then the
+    // first `(` in the source belongs to the **body**, whose arguments would be
+    // read as a signature. Everything with parentheses falls through below.
+    if (arrow >= 0 && (open < 0 || open > arrow)) {
+        const head = src.slice(0, arrow).trim();
+        return head ? [{ name: head }] : [];
+    }
     assert.ok(open >= 0, `no parameter list in ${src.slice(0, 60)}`);
     let depth = 0;
     let end = -1;
@@ -206,7 +215,17 @@ test("the TS builders match the server's UGen catalog", () => {
         const ps = params(fn);
         const alias = ALIASES[kind.name] ?? {};
         const want = kind.inputs.map((i) => alias[i.name] ?? camel(i.name));
-        const got = ps.map((p) => p.name);
+        // A parameter that shares its name with something else in its module
+        // reaches here **renamed with a numeric suffix** (`trig` -> `trig2`):
+        // these signatures are read off the transpiled function, and keeping
+        // names unique is the transpiler's business, not a drift. Only that
+        // exact shape is forgiven, and only against the slot it lines up with.
+        const got = ps.map((p, k) => {
+            const w = want[k];
+            return w !== undefined && new RegExp(`^${w}\\d+$`).test(p.name)
+                ? w
+                : p.name;
+        });
 
         const declared = kind.name in TRAILING;
         // An options object carries named slots, so the positional contrast
