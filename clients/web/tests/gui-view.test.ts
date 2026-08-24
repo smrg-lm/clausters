@@ -22,6 +22,7 @@ import { scoreView } from "../src/gui/notation/view.ts";
 import { setAmbientHost } from "../src/gui/ambient.ts";
 import {
     bpf,
+    button,
     clip,
     INLINE_MAX,
     knob,
@@ -426,6 +427,55 @@ test("a control is still a signal, where min and max are the operators", () => {
 test("a toggle needs no range", () => {
     const gate = control("gate", 1.0);
     assert.equal(toggle(gate)["value"], 1.0);
+});
+
+// ---- what kind of thing a button is ----------------------------------------
+
+test("a button is built from the control it drives", () => {
+    // A gate is a control like any other: the button takes it first and reads
+    // the name `/node_set` addresses.
+    const gate = control("gate", 0.0);
+    const b = button(gate, { label: "hold" });
+    assert.equal(b.name, "gate");
+    assert.equal(b["label"], "hold");
+    assert.equal(b["value"], undefined, "a button holds nothing between presses");
+    assert.equal(b["mode"], undefined, "the gate is the default and rides as an absence");
+});
+
+test("the bang is a press against a trigger", () => {
+    const trig = control("fire", 0.0, { rate: "tr" });
+    const b = button(trig, { mode: "press" });
+    assert.equal(b["mode"], "press");
+    assert.equal(b.name, "fire");
+});
+
+test("a press button refuses a control that holds what it is sent", () => {
+    // The press would leave `on` standing forever: a category error, not a
+    // preference.
+    assert.throws(
+        () => button(control("gate", 0.0), { mode: "press" }),
+        /would leave it at `on` forever/,
+    );
+    // A button driving no control has no such trouble: one `/gui_event`
+    // message *is* an event, so nothing holds anything.
+    assert.equal(button({ mode: "press", label: "fire" })["mode"], "press");
+});
+
+test("an unknown button mode says which two there are", () => {
+    assert.throws(
+        () => button({ label: "x", mode: "click" as "gate" }),
+        /unknown button mode/,
+    );
+});
+
+test("the two values a switch sends are a pair and not a range", () => {
+    // A bypass lives at 0.0/0.7 and a mode at 1/2, and neither is a span a
+    // widget could be drawn over.
+    assert.equal(toggle(control("byp", 0.0), { on: 0.7, off: 0.0 })["on"], 0.7);
+    const b = button(control("duck", 0.0), { on: 0.7, off: 0.0 });
+    assert.equal(b["on"], 0.7);
+    assert.equal(b["off"], 0.0);
+    assert.equal(b["min"], undefined);
 });
 
 test("an option bag is not mistaken for a control", () => {

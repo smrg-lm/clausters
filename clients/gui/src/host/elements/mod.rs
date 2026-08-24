@@ -49,6 +49,24 @@ pub(crate) fn body_editable(props: &Map<String, Value>, own: &str) -> bool {
         .unwrap_or(true)
 }
 
+/// A switch's value on the wire: an `Int` while it is a whole number, a
+/// `Float` once it is not.
+///
+/// `button` and `toggle` sent `1`/`0` before either could carry another pair,
+/// because OSC has no bool and an int is what every reader of a
+/// `/gui_event` already parses. A def that names its own two values —
+/// a bypass at `0.0`/`0.7`, a mode at `1`/`2` — must not turn those readers'
+/// ints into floats behind them, so the type follows the number rather than
+/// the fact that a pair was named.
+pub(crate) fn switch_value(v: f32) -> clausters_core::osc::OscType {
+    use clausters_core::osc::OscType;
+    if v.fract() == 0.0 && v.abs() <= i32::MAX as f32 {
+        OscType::Int(v as i32)
+    } else {
+        OscType::Float(v)
+    }
+}
+
 mod button;
 mod canvas;
 mod control;

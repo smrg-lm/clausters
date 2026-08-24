@@ -1256,24 +1256,86 @@ def number(control=None, *, label: str | None = None, min: float | None = None,
     return _built_from(node("number", id=id, **extra, **props), control)
 
 
-def button(*, label: str | None = None, text_size: float | None = None, color: str | None = None,
+def button(control=None, *, label: str | None = None, mode: str | None = None,
+           on: float | None = None, off: float | None = None,
+           text_size: float | None = None, color: str | None = None,
            id: int | None = None, **props) -> View:
-    """A momentary push ``button`` (emits ``1`` on press, ``0`` on release).
-    ``text_size`` scales its face label."""
-    extra = _drop_none(label=label, text_size=text_size, color=color)
-    return node("button", id=id, **extra, **props)
+    """A push ``button``, whose **press is the event**. ``text_size`` scales its
+    face label.
+
+    ``mode`` says which of the two pointer primitives reaches the server:
+
+    - ``"gate"`` (the default) sends ``on`` at the press and ``off`` when the
+      button is let go, so the value lasts exactly as long as the button is
+      held — what an `clausters.defs.ugens.env_gen` gate reads, and what a
+      trigger control ignores the tail of by definition.
+    - ``"press"`` sends ``on`` at the press and nothing after it: the bang.
+
+    Pass a **def's control** positionally and the button is built from it, like
+    `knob` — a gate needs no range, so none is required here::
+
+        gate = control("gate", 0.0)
+        trig = control("trig", 0.0, rate="tr")
+
+        button(gate, label="hold")                  # 1 while held, 0 on release
+        button(trig, mode="press", label="fire")    # one message, the bang
+
+    **A widget cannot make a value instantaneous**: what is sent is held by
+    whoever receives it. So ``mode="press"`` against a def's control is only a
+    bang where the control returns to zero on its own — a ``rate="tr"``, which
+    the server resets after one block — and building it over any other control
+    raises, since it would leave ``on`` standing forever. A button that drives
+    no control has no such trouble: it emits a ``/gui_event`` and one message
+    *is* an event.
+
+    ``on``/``off`` are the two values it sends (``1``/``0`` by default). A
+    button driving an amplitude sends that amplitude::
+
+        button(amp, on=0.7, off=0.0, label="duck")
+
+    Press and release are the primitives, and a **click** — a press and a
+    release that landed inside — is a composed gesture rather than a mode."""
+    if mode is not None and mode not in ("gate", "press"):
+        raise ValueError(
+            f"unknown button mode {mode!r}; use \"gate\" (on while held) or "
+            "\"press\" (one message, the bang)")
+    extra = _drop_none(label=label, mode=mode, on=on, off=off,
+                       text_size=text_size, color=color)
+    if control is not None:
+        if mode == "press" and getattr(control, "rate", None) not in ("tr", "trigger"):
+            raise ValueError(
+                f"button(mode=\"press\") drives {getattr(control, 'name', control)!r}, "
+                "which holds what it is sent: the press would leave it at `on` "
+                "forever. Declare the control a trigger (rate=\"tr\"), which the "
+                "server resets after one block, or use the default gate mode")
+        extra = _from_control(control, extra, props, needs_range=False)
+        # A button holds no value between presses, so the control's default has
+        # nothing to seed here: `on`/`off` are what it sends, and its own name
+        # is what the binding addresses.
+        for gone in ("min", "max", "step", "value"):
+            extra.pop(gone, None)
+    return _built_from(node("button", id=id, **extra, **props), control)
 
 
 def toggle(control=None, *, label: str | None = None, value: bool | None = None,
+           on: float | None = None, off: float | None = None,
            text_size: float | None = None, color: str | None = None,
            id: int | None = None, **props) -> View:
-    """A boolean ``toggle``. ``value`` is sent as ``1``/``0`` (OSC has no bool).
-    ``text_size`` scales its label.
+    """A boolean ``toggle``. ``value`` is its state; what it *sends* is ``on``
+    or ``off``, ``1``/``0`` by default (OSC has no bool). ``text_size`` scales
+    its label.
 
     Takes a def's control positionally, like `knob` — a 0/1 control (a Faust
     ``checkbox``, a `clausters.defs.control` with no range) needs none, so no
-    range is required here."""
-    extra = _drop_none(label=label, text_size=text_size, color=color)
+    range is required here.
+
+    The state is a boolean; **the two values it stands for need not be**. A
+    bypass lives at ``0.0``/``0.7`` and a mode at ``1``/``2``, and neither is a
+    span a widget could be drawn over — which is why they are a pair and not a
+    ``min``/``max``::
+
+        toggle(bypass, on=0.7, off=0.0, label="wet")"""
+    extra = _drop_none(label=label, on=on, off=off, text_size=text_size, color=color)
     if value is not None:
         extra["value"] = 1 if value else 0
     if control is not None:

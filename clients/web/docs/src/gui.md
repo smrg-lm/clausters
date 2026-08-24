@@ -114,8 +114,8 @@ counterpart here: the option is spelled `displayList` where Python spells
 `display_list`, and that is the whole of the difference.
 
 **A control widget is built from the control it drives.** `knob(freq)`,
-`slider(sd.control("amp"))`, `number` and `toggle` read the control's **name**
-and **default** off it, so the widget and the graph cannot disagree about what
+`slider(sd.control("amp"))`, `number`, `toggle` and `button` read the control's
+**name** and **default** off it, so the widget and the graph cannot disagree about what
 `"freq"` is; the **range is the widget's** (`knob(freq, { min: 110.0, max:
 880.0 })`), since a control is a signal in a graph and says nothing about how a
 knob is drawn. Only a Faust parameter arrives with a range, from the `hslider`
@@ -125,6 +125,14 @@ here cannot take a bracket without an index signature over everything else on
 it. Then the whole surface binds in one verb — `win.bind(synth)`,
 `win.unbind()`, `win.controlMap()` — and `win.widget("freq").bind(...)` is still
 there for a bus, another widget or an arbitrary address.
+
+The two switches spell the same thing in both clients and need no idiom of their
+own: `button(gate, { label: "hold" })` sends `on` while it is held and `off` when
+it is let go, `button(fire, { mode: "press" })` sends one message and nothing
+after it, and both switches carry the pair `on`/`off` (`1`/`0` by default) rather
+than a boolean. Building a `"press"` button over a control that is not a trigger
+throws here too, for the same reason: the press would leave `on` standing
+forever.
 
 **Nothing is pumped.** The page already has an event loop, so the Python
 client's `pump` has no counterpart: a handler fires when the message arrives.

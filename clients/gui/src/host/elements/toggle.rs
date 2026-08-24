@@ -3,6 +3,12 @@
 //! The click with no drag behind it: a press flips the state and reports it,
 //! and everything after the press is nothing. Which is why it is two lines and
 //! not a `Drag` variant.
+//!
+//! **The state is a boolean; the two values it sends need not be.** What is
+//! drawn is a box that is filled or empty, and what is sent is `on` or `off` —
+//! `1`/`0` unless the def named another pair, since a bypass lives at
+//! `0.0`/`0.7` and a mode at `1`/`2` and neither is a span a widget could be
+//! drawn over.
 
 use serde_json::{Map, Value};
 
@@ -15,12 +21,17 @@ use crate::host::widget::element::{Claim, Ctx, Element, HitArea, Input};
 use crate::host::widget::parse;
 use crate::host::widget::size::{Natural, control_box, text_box};
 
+use super::switch_value;
+
 /// A boolean on/off control.
 #[derive(Debug, Clone)]
 pub struct Toggle {
     pub value: bool,
     pub label: Option<String>,
     pub text_size: f32,
+    /// The two values the state stands for on the wire.
+    pub on: f32,
+    pub off: f32,
 }
 
 pub(super) fn build(
@@ -35,6 +46,15 @@ fn from_props(props: &Map<String, Value>) -> Toggle {
         value: props.get("value").and_then(parse::truthy).unwrap_or(false),
         label: parse::label(props),
         text_size: parse::text_size(props),
+        on: parse::number(props, "on", 1.0),
+        off: parse::number(props, "off", 0.0),
+    }
+}
+
+impl Toggle {
+    /// The value the state stands for.
+    fn sent(&self) -> f32 {
+        if self.value { self.on } else { self.off }
     }
 }
 
@@ -44,6 +64,8 @@ impl Element for Toggle {
             "value" => parse::truthy(v).map(|b| self.value = b).is_some(),
             "label" => parse::set_label(&mut self.label, v),
             "text_size" => parse::set_size(&mut self.text_size, v),
+            "on" => parse::set_f(&mut self.on, v),
+            "off" => parse::set_f(&mut self.off, v),
             _ => false,
         }
     }
@@ -80,7 +102,7 @@ impl Element for Toggle {
     }
 
     fn value(&self) -> Option<OscType> {
-        Some(OscType::Int(self.value as i32))
+        Some(switch_value(self.sent()))
     }
 
     fn info(&self) -> Vec<(String, Value)> {
@@ -102,7 +124,7 @@ impl Element for Toggle {
 
     fn press(&mut self, _at: (f64, f64), _input: &Input) -> Claim {
         self.value = !self.value;
-        Claim::value(OscType::Int(self.value as i32))
+        Claim::value(switch_value(self.sent()))
     }
 
     fn clone_box(&self) -> Box<dyn Element> {

@@ -102,8 +102,8 @@ options — so an ordinary tree mentions no ids at all.
 
 ### A control widget is built from the control it drives
 
-A `knob`, `slider`, `number` or `toggle` takes a **def's control** positionally,
-and reads its name and its default off it:
+A `knob`, `slider`, `number`, `toggle` or `button` takes a **def's control**
+positionally, and reads its name and its default off it:
 
 ```python
 freq = control("freq", 220.0)
@@ -154,6 +154,47 @@ that silently drew the wrong curve would be worse than no name at all.
 The widget's `name` becomes the control's name, which is what the handle
 addresses it by, and what [binding](#values-that-never-come-back-to-the-script) uses to
 reach the synth.
+
+### The two switches, and what a press means
+
+A `button` is momentary and a `toggle` latches, and both send a **pair of
+values** rather than a boolean: `on` and `off`, `1`/`0` unless you name another
+pair. A bypass lives at `0.0`/`0.7` and a mode at `1`/`2`, and neither is a span
+a widget could be drawn over — which is why it is a pair and not a `min`/`max`:
+
+```python
+toggle(sd["bypass"], on=0.7, off=0.0, label="wet")
+```
+
+A button's `mode` says which of the two pointer primitives reaches the server:
+
+```python
+gate = control("gate", 0.0)
+fire = control("fire", 0.0, rate="tr")
+
+button(gate, label="hold")                  # `on` while held, `off` on release
+button(fire, mode="press", label="fire")    # one message, the bang
+```
+
+- `"gate"` (the default) sends `on` at the press and `off` when the button is
+  let go, so the value lasts exactly as long as the button is held — what an
+  `env_gen` gate reads, and what a trigger control ignores the tail of by
+  definition.
+- `"press"` sends `on` at the press and **nothing** after it.
+
+**A widget cannot make a value instantaneous.** What is sent is held by whoever
+receives it, so `"press"` is a bang only against something that returns to zero
+on its own: a trigger control (`rate="tr"`), which the server resets after one
+block. Over any other control it would leave `on` standing forever, and the
+client refuses to build that pair rather than letting you find it by ear. A
+button driving no control has no such trouble — it emits a `/gui_event` and one
+message *is* an event.
+
+**Press and release are the primitives, and a click is not a mode.** Everything
+else a pointer does to a button is composed from the two: a click is a press and
+a release that landed inside, a double click is two of those inside a window.
+Those are gestures, and what a `mode` says is only which primitive reaches the
+server.
 
 ### Driving it, and listening
 

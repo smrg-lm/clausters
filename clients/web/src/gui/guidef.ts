@@ -1455,6 +1455,12 @@ export interface ControlLike {
      */
     range?: [number, number] | null;
     step?: number | null;
+    /**
+     * The control type the def declared (`"kr"`, `"tr"`, `"ir"`), which
+     * {@link button} reads: only a trigger returns to zero on its own, so only
+     * a trigger can be driven by a button that sends nothing on release.
+     */
+    rate?: string | null;
 }
 
 /**
@@ -1591,23 +1597,127 @@ export function number(control?: ControlLike | RangeOptions, options?: RangeOpti
     return node("number", built).setControl(source_);
 }
 
-/** A momentary push `button` (emits `1` on press, `0` on release). */
-export function button(
-    options: WidgetOptions & { label?: string; textSize?: number } = {},
-): GuiNode {
-    const { label: text, textSize, ...rest } = options;
-    return node("button", { ...rest, ...drop([["label", text], ["text_size", textSize]]) });
+/**
+ * A `button`'s options: which primitive reaches the server, and the two values
+ * it sends.
+ */
+export interface ButtonOptions extends WidgetOptions {
+    label?: string;
+    /**
+     * Which pointer primitive reaches the server: `"gate"` (the default) sends
+     * `on` at the press and `off` at the release, `"press"` sends `on` and
+     * nothing after it.
+     */
+    mode?: "gate" | "press";
+    /** What the press sends, and what the release sends under `"gate"`. */
+    on?: number;
+    off?: number;
+    textSize?: number;
 }
 
-/** A boolean `toggle`. `value` rides as `1`/`0` (OSC has no bool). */
-export function toggle(
-    control?: ControlLike | (WidgetOptions & { label?: string; value?: boolean; textSize?: number }),
-    options?: WidgetOptions & { label?: string; value?: boolean; textSize?: number },
+/**
+ * A push `button`, whose **press is the event**.
+ *
+ * `mode` says which of the two pointer primitives reaches the server:
+ *
+ * - `"gate"` (the default) sends `on` at the press and `off` when the button is
+ *   let go, so the value lasts exactly as long as the button is held — what an
+ *   envelope's gate reads, and what a trigger control ignores the tail of by
+ *   definition.
+ * - `"press"` sends `on` at the press and nothing after it: the bang.
+ *
+ * Takes a def's control first, like {@link knob} — a gate needs no range, so
+ * none is required here:
+ *
+ * ```ts
+ * button(gate, { label: "hold" });               // 1 while held, 0 on release
+ * button(trig, { mode: "press", label: "fire" }); // one message, the bang
+ * ```
+ *
+ * **A widget cannot make a value instantaneous**: what is sent is held by
+ * whoever receives it. So `mode: "press"` against a def's control is only a
+ * bang where the control returns to zero on its own — a `rate: "tr"`, which the
+ * server resets after one block — and building it over any other control
+ * throws, since it would leave `on` standing forever. A button that drives no
+ * control has no such trouble: it emits a `/gui_event` and one message *is* an
+ * event.
+ *
+ * `on`/`off` are the two values it sends (`1`/`0` by default). Press and
+ * release are the primitives, and a **click** — a press and a release that
+ * landed inside — is a composed gesture rather than a mode.
+ */
+export function button(
+    control?: ControlLike | ButtonOptions,
+    options?: ButtonOptions,
 ): View {
-    type ToggleOptions = WidgetOptions & { label?: string; value?: boolean; textSize?: number };
+    const [source_, opts] = controlArgs<ButtonOptions>(control, options);
+    const { label: text, mode, on, off, textSize, ...rest } = opts;
+    if (mode !== undefined && mode !== "gate" && mode !== "press") {
+        throw new Error(
+            `unknown button mode '${mode}'; use "gate" (on while held) or ` +
+                '"press" (one message, the bang)',
+        );
+    }
+    const props = drop([
+        ["label", text], ["mode", mode], ["on", on], ["off", off],
+        ["text_size", textSize],
+    ]);
+    let built;
+    if (source_ === null) {
+        built = { ...rest, ...props };
+    } else {
+        if (mode === "press" && source_.rate !== "tr" && source_.rate !== "trigger") {
+            throw new Error(
+                `button(mode: "press") drives '${source_.name}', which holds what it ` +
+                    "is sent: the press would leave it at `on` forever. Declare the " +
+                    'control a trigger (rate: "tr"), which the server resets after one ' +
+                    "block, or use the default gate mode",
+            );
+        }
+        // A button holds no value between presses, so the control's default has
+        // nothing to seed here: `on`/`off` are what it sends, and its own name
+        // is what the binding addresses.
+        const { min: _min, max: _max, step: _step, value: _value, ...own } =
+            fromControl(source_, props, { needsRange: false });
+        built = { ...own, ...rest };
+    }
+    return node("button", built).setControl(source_);
+}
+
+/** A `toggle`'s options: its state, and the two values that state stands for. */
+export interface ToggleOptions extends WidgetOptions {
+    label?: string;
+    /** The state the box is drawn in. */
+    value?: boolean;
+    /** The two values that state stands for on the wire. */
+    on?: number;
+    off?: number;
+    textSize?: number;
+}
+
+/**
+ * A boolean `toggle`. `value` is its state; what it *sends* is `on` or `off`,
+ * `1`/`0` by default (OSC has no bool).
+ *
+ * The state is a boolean; **the two values it stands for need not be**. A
+ * bypass lives at `0.0`/`0.7` and a mode at `1`/`2`, and neither is a span a
+ * widget could be drawn over — which is why they are a pair and not a
+ * `min`/`max`:
+ *
+ * ```ts
+ * toggle(bypass, { on: 0.7, off: 0.0, label: "wet" });
+ * ```
+ */
+export function toggle(
+    control?: ControlLike | ToggleOptions,
+    options?: ToggleOptions,
+): View {
     const [source_, opts] = controlArgs<ToggleOptions>(control, options);
-    const { label: text, value, textSize, ...rest } = opts;
-    const props = drop([["label", text], ["value", flag(value)], ["text_size", textSize]]);
+    const { label: text, value, on, off, textSize, ...rest } = opts;
+    const props = drop([
+        ["label", text], ["value", flag(value)], ["on", on], ["off", off],
+        ["text_size", textSize],
+    ]);
     // A toggle needs no range: it is 0/1 whatever the control declares.
     const built = source_ === null
         ? { ...rest, ...props }

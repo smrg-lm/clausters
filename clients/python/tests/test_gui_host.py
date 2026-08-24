@@ -198,11 +198,14 @@ def test_the_id_is_never_positional():
 
     # A leaf with no contents takes no positional at all...
     with pytest.raises(TypeError, match="positional"):
-        guidef.button(7)  # pyright: ignore[reportCallIssue] - the point of the test
-    # ...and a control's positional is the *def control* it is built from, so an
-    # id-shaped number is refused as the non-control it is.
-    with pytest.raises(TypeError, match="not a def's control"):
-        guidef.knob(7)  # pyright: ignore[reportCallIssue] - the point of the test
+        guidef.text(7)  # pyright: ignore[reportCallIssue] - the point of the test
+    # ...and a control widget's positional is the *def control* it is built
+    # from, so an id-shaped number is refused as the non-control it is. Every
+    # one of the five takes it, `button` included: what it drives is a gate or
+    # a trigger, which is a control like any other.
+    for build in (guidef.knob, guidef.slider, guidef.number, guidef.toggle, guidef.button):
+        with pytest.raises(TypeError, match="not a def's control"):
+            build(7)  # pyright: ignore[reportCallIssue] - the point of the test
     # ...and a container's positionals are its children, so a stray id-shaped
     # placeholder is refused as the non-node it is.
     with pytest.raises(TypeError, match="must be a widget node"):

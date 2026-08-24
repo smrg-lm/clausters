@@ -210,8 +210,8 @@ impl WidgetKind {
     }
 
     /// The current value as an OSC primitive for a `/gui_event`, or `None` for a
-    /// non-interactive widget. A `button` reports `1` (it is momentary; the press
-    /// is the event).
+    /// non-interactive widget. A `button` reports its `on` value (it is
+    /// momentary either way; the press is the event).
     pub fn event_value(&self) -> Option<OscType> {
         self.as_element().and_then(Element::value)
     }

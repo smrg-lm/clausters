@@ -17,7 +17,7 @@ import pytest
 
 from clausters.defs import FaustDef, GraphDef, SynthDef, control, out, sine
 from clausters.defs.signals import checkbox, hslider
-from clausters.gui import knob, number, slider, toggle
+from clausters.gui import button, knob, number, slider, toggle
 
 
 def _voice():
@@ -120,9 +120,54 @@ def test_a_toggle_needs_no_range():
     assert toggle(control("bypass", 1.0))["value"] == 1
 
 
+# ---- what kind of thing a button is ----
+
+def test_a_button_is_built_from_the_control_it_drives():
+    """A gate is a control like any other: the button takes it positionally and
+    reads the name `/node_set` addresses."""
+    gate = control("gate", 0.0)
+    b = button(gate, label="hold")
+    assert b["name"] == "gate" and b["label"] == "hold"
+    assert "value" not in b, "a button holds nothing between presses"
+    assert "mode" not in b, "the gate is the default and rides as an absence"
+
+
+def test_the_bang_is_a_press_against_a_trigger():
+    """`press` sends `on` and nothing after it, which is a bang only where
+    something returns to zero on its own."""
+    trig = control("fire", 0.0, rate="tr")
+    b = button(trig, mode="press")
+    assert b["mode"] == "press" and b["name"] == "fire"
+
+
+def test_a_press_button_refuses_a_control_that_holds_what_it_is_sent():
+    """The one refusal this widget makes: the press would leave `on` standing
+    forever, so the pair is a category error rather than a preference."""
+    with pytest.raises(ValueError, match="would leave it at `on` forever"):
+        button(control("gate", 0.0), mode="press")
+    # A button driving no control has no such trouble: one `/gui_event` message
+    # *is* an event, so nothing holds anything.
+    assert button(mode="press", label="fire")["mode"] == "press"
+
+
+def test_an_unknown_button_mode_says_which_two_there_are():
+    with pytest.raises(ValueError, match="unknown button mode"):
+        button(label="x", mode="click")
+
+
+def test_the_two_values_a_switch_sends_are_a_pair_and_not_a_range():
+    """A bypass lives at 0.0/0.7 and a mode at 1/2, and neither is a span a
+    widget could be drawn over."""
+    assert toggle(control("byp", 0.0), on=0.7, off=0.0)["on"] == 0.7
+    b = button(control("duck", 0.0), on=0.7, off=0.0)
+    assert (b["on"], b["off"]) == (0.7, 0.0)
+    assert "min" not in b and "max" not in b
+
+
 def test_something_that_is_not_a_control_is_refused():
-    with pytest.raises(TypeError, match="not a def's control"):
-        knob(7)
+    for build in (knob, toggle, button):
+        with pytest.raises(TypeError, match="not a def's control"):
+            build(7)
 
 
 # ---- the binding is made against the control ----

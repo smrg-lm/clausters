@@ -3387,3 +3387,26 @@ finished work, where a pending item reads as done.
   drew its handle mirrored: the drag put the value where the hand was and the
   picture showed the other end. Reading both directions out of one primitive
   is what fixes it, and `Range::axis` — which had no other caller — is gone.
+
+- ⬜ **The gesture machine knows no click.** *(found 2026-08-24, answering
+  "what kind of thing is a button?")* Press and release are the primitives the
+  machine reports, and every composition over them is absent: a **click** (a
+  press and a release that landed inside the widget — cancellable by sliding off
+  before letting go, which is every desktop convention for a command button), a
+  **double click**, a **long press**. Nothing under `host/gestures/` mentions
+  any of them, so the absence is a gap rather than a placement.
+
+  The button's `mode` deliberately did **not** grow them: it says which
+  primitive reaches the *server*, and these are interface gestures, composed
+  from both primitives and belonging to whoever composes gestures. The one that
+  is actually wanted today is the click, because a command button that fires at
+  the down-stroke gives the hand no way to change its mind — and thirty-three of
+  the repository's thirty-three buttons are command buttons.
+
+  What it costs: the machine holds a press already (a `Claim::Take` reaches
+  `release`), so a click is that plus the hit test at the release, and a double
+  click is a press-time window the machine would have to keep. What it needs
+  deciding is what an element *sees* — a second callback beside `press`/`release`,
+  or a composed event the machine reports on its own — and the client half of it
+  (`on_press`/`on_release`, and a click over them) is written in
+  `clients/python/PLAN.md`, Found by use.

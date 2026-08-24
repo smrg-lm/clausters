@@ -10,6 +10,16 @@ The controls are built from the def's own `clausters.defs.control` objects, so
 each widget already knows which control it drives and the window binds in one
 verb -- ``win.bind(synth)`` -- instead of one hand-typed name per widget.
 
+**The two shapes a control signal comes in** are the two buttons. A button's
+press *is* the event, and its ``mode`` says which of the two pointer primitives
+reaches the server: the default ``"gate"`` sends its ``on`` at the press and its
+``off`` at the release, so the value lasts exactly as long as the button is
+held; ``"press"`` sends one message and nothing after it -- the bang. A widget
+cannot make a value instantaneous, so the bang is only a bang against a control
+that returns to zero on its own: a trigger (``rate="tr"``), which the server
+resets after one block. Hold one button and the note sustains; hit the other and
+a blip fires, both with no Python in the path.
+
 The point of the binding is that it lives **in the GUI host, not in this
 script**: ``/gui_bind`` registers ``knob -> /node_set <node> freq`` inside
 the host, and the host forwards every change to the audio server on its own. So
@@ -37,8 +47,8 @@ import sys
 import time
 
 from clausters import Session
-from clausters.defs import SynthDef, control, out, sine
-from clausters.gui import knob, layout, slider
+from clausters.defs import Env, SynthDef, control, env_gen, out, sine
+from clausters.gui import button, knob, layout, slider
 from clausters.defs import Synth
 
 # %% [markdown]
@@ -61,11 +71,27 @@ gui = session.gui()
 FREQ = control("freq", 220.0)
 AMP = control("amp", 0.2)
 
+#: The two shapes a control signal comes in, and the reason a button has a mode.
+#: `GATE` is an ordinary control the graph reads as a gate: the envelope
+#: sustains while it is held and releases when it falls, so a button must send
+#: both edges. `FIRE` is a **trigger** (`rate="tr"`), which the server resets to
+#: zero after one block -- so a button that sends only the press is a bang
+#: against it, and could not be one against `GATE`, where the value would stand
+#: forever.
+GATE = control("gate", 0.0)
+FIRE = control("fire", 0.0, rate="tr")
+
 
 def beep(name: str = "gui_bind_beep") -> SynthDef:
     """A quiet stereo sine whose frequency and level are the `freq` and `amp`
-    controls -- what the bindings `/node_set <node> <control> <value>` drive."""
-    sig = sine(freq=FREQ) * AMP
+    controls -- what the bindings `/node_set <node> <control> <value>` drive.
+
+    Two envelopes over the same tone say what the two buttons do: a sustaining
+    one the `gate` holds open, and a percussive one the `fire` trigger restarts
+    from the top each time it arrives."""
+    held = env_gen(Env.asr(0.02, 1.0, 0.4), gate=GATE)
+    blip = env_gen(Env.perc(0.005, 0.35), gate=FIRE)
+    sig = sine(freq=FREQ) * (held + blip) * AMP
     return SynthDef(name, out(0.0, sig), out(1.0, sig))
 
 
@@ -88,23 +114,37 @@ synth = Synth("gui_bind_beep", server=server)   # the def's own defaults
 #
 # The view is the subject either way: `v.open()` rather than `host.open(v)`, on
 # the host `session.gui()` already made ambient.
+#
+# The buttons bind by the same verb and the same rule as the knob: each one was
+# built from a control, so `win.bind(synth)` wires all four.
 
 # %%
 v = layout(knob(FREQ, min=110.0, max=880.0),
            slider(AMP, min=0.0, max=0.5),
+           # A gate needs no range: the button sends its two values, `1`/`0`
+           # unless another pair is named. Held, so both edges reach the server.
+           button(GATE, label="hold"),
+           # And the bang: `on` at the press and nothing after it. Written
+           # against `GATE` instead, this would raise -- the press would leave
+           # the gate standing open forever.
+           button(FIRE, mode="press", label="fire"),
            flow="col")
 
 win = v.open()
 win.bind(synth)
 win.on_closed(lambda: globals().__setitem__("_closed", True))
 print(f"bound to synth {synth.id}: {win.controls} -- turn them, the sound "
-      "follows directly and nothing prints here (no script round-trip)")
+      "follows directly and nothing prints here (no script round-trip). "
+      "Hold `hold` and the note sustains for as long as you hold it; hit "
+      "`fire` and a blip sounds once per press.")
 
 # %% [markdown]
 # ## Drive it
-# Nothing to do but wait: the bound knob sends its value to the server, not here,
-# so this loop only pumps events to notice the window closing. Turn the knob and
-# hear the pitch follow with no Python in the path.
+# Nothing to do but wait: every bound widget sends its value to the server, not
+# here, so this loop only pumps events to notice the window closing. Turn the
+# knob and hear the pitch follow with no Python in the path; hold `hold` for a
+# sustained note and tap `fire` for a blip, and notice that the difference
+# between them is one prop.
 
 # %%
 _closed = False

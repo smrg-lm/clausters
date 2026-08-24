@@ -714,44 +714,88 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
 
 ## Found by use: the running list of fixes and open questions
 
-- ⬜ **`button` takes no control, `toggle` takes no range, and behind both is
+- ✅ **`button` takes no control, `toggle` takes no range, and behind both is
   the same unasked question: what kind of thing is a button?** *(named
-  2026-08-23 by the user, reading the four control widgets after C42's
-  correction)*. Two concrete gaps and one design question they hang from. Both
-  clients, one surface.
+  2026-08-23 by the user; answered and fixed 2026-08-24)*. Two concrete gaps
+  and one design question they hang from. Both clients, one surface.
 
-  - **`button` is not in `_from_control`.** `knob`, `slider`, `number` and
-    `toggle` take a def's control positionally; `button` does not, so
-    `button(gate)` cannot be written — and a **trigger control (`rate="tr"`) is
-    exactly the case that wants it**. The host's side is already right: a
-    `button` emits `1` on *press* and `0` on release
-    (`clients/gui/src/host/elements/button.rs`, "the press *is* the event"), so
-    a bound button fires at the moment a `tr` wants and the trailing `0` is the
-    one a trigger ignores by definition. Nothing but the client surface is
-    missing.
-  - **`toggle` could carry a range**, since `min`/`max` *are* its two values —
-    it is the one control whose range is not a span to be drawn over but the
-    pair it alternates between. Today it sends `1`/`0` unconditionally, which
-    means a control that is meant to switch between two other numbers (a
-    bypass at `0.0`/`0.7`, a mode at `1`/`2`) cannot be driven by one without a
-    binding that scales. Worth analysing rather than adding: it may want
-    `on=`/`off=` rather than `min=`/`max=`, and it interacts with what
-    `/gui_bind` can scale.
-  - **The question under both**: *is a GUI button one thing?* An "Accept" /
-    "Cancel" in a dialog is not a piano key and not a patch's trigger button.
-    Press-is-the-event is right for an instrument — you want the note at the
-    down-stroke — and arguably wrong for a command button, where every desktop
-    convention lets you press, slide off and release to cancel. Today one
-    element serves both, and giving `button` a control would quietly bless the
-    instrument reading for all of them. So the order is: decide whether the two
-    roles are one element with a prop or two elements, **then** decide what a
-    control means on it. `piano`/`keys` is the precedent for the instrument
-    role already existing as its own element.
+  **The question was answered by splitting the layer, not the element.** Press
+  and release are the **primitives**, and everything else a pointer does to a
+  button is composed from them: a click is a press and a release that landed
+  inside, a double click is two of those inside a window. Those are *gestures*
+  and belong to the gesture machine — so a "command button" never was a second
+  kind of element, and `click` is not a mode. What a mode says is only **which
+  primitive reaches the server**, which makes it a prop and leaves `button` one
+  element. (`keys` stays the precedent for the instrument role that genuinely
+  earns an element: it has pitch, velocity and voices; a button has none.)
 
-  Where each part lands if it is taken: the widget surface in both clients'
-  `gui` modules, the reference in `docs/gui-protocol.md`, and — only if the two
-  roles turn out to be two behaviours — an element or a prop in
-  `clients/gui/PLAN.md`.
+  So `button` grew `mode`, in the two shapes a control signal comes in:
+
+  - `"gate"` (the default, and what shipped before) sends `on` at the press and
+    `off` at the release, so the value lasts exactly as long as the button is
+    held — an `env_gen` gate, and what a `tr` ignores the tail of by definition.
+  - `"press"` sends `on` and nothing after it: the bang.
+
+  **A widget cannot make a value instantaneous**, which is the finding under
+  the whole entry and the one thing the original text had wrong (it read the
+  host's press-is-the-event as already serving a trigger). What is sent is
+  *held* by whoever receives it. So `press` is a bang only against something
+  that returns to zero on its own — a `rate="tr"` control, which the server
+  resets after one block — or against a script, for which one `/gui_event`
+  message *is* an event. Both clients **refuse** to build a `press` button over
+  any other control rather than letting it be found by ear: it would leave `on`
+  standing forever, which is a category error and not a preference. That
+  refusal is the one place the widget reads a control's `rate`.
+
+  This is also why there is no "gate rate" in SuperCollider and never was: a
+  trigger needed a control type because the *server* has to do something the
+  value alone cannot express, and a gate does not. The widget declares when it
+  emits; the graph declares how the value is read.
+
+  **`toggle`'s range turned out to be a pair, and `button` takes the same one.**
+  Not `min`/`max`: a range is a span a widget is drawn over, and these are two
+  discrete values. Both switches carry `on`/`off` (`1`/`0` by default), so a
+  bypass at `0.0`/`0.7` or a mode at `1`/`2` is driven without a binding that
+  scales — and `/gui_bind` needed no change, since the element already emits the
+  final value. Pd's `tgl` and its settable `nonzero` is the precedent; the wire
+  type follows the number (an `Int` while it is whole), so every reader that
+  parses today's `1`/`0` as an int keeps doing so.
+
+  `button` also joined `_from_control`, which was the first gap: it takes a
+  def's control positionally like the other four, dropping the control's default
+  rather than seeding a `value` it holds nothing in.
+
+  Lands in: `clients/gui/src/host/elements/button.rs` and `toggle.rs` (plus
+  `elements::switch_value`), both clients' `gui` modules, `docs/gui-protocol.md`
+  ("The two switches, and what a press means"), the GUI page of both books.
+  Tests: `tests/test_control_range.py` and `tests/gui-view.test.ts` — the button
+  built from a control, the bang against a trigger, the refusal, the unknown
+  mode, and the pair that is not a range; in the host, the press mode's silent
+  release and the pair it was given. Example: `gui_bind.py`, which grew the two
+  buttons over two envelopes (checked by ear: `hold` sustains while held, `fire`
+  blips once per press, neither through Python).
+
+- ⬜ **A button's event is read by hand, thirteen times: the callbacks are
+  `on_press`/`on_release`, and `click` is the gesture over them** *(found
+  2026-08-24, taking the entry above; scoped by the user to leave the server
+  half separate)*. `on_event(value)` delivers a control's value, which is right
+  for a knob and is not what a button has: thirteen examples filter the release
+  out by hand, three of them defining the identical
+  `press = lambda fn: (lambda value: fn() if value == 1 else None)`. The
+  primitives deserve their own verbs — `on_press`, `on_release` — and the
+  composed **click** (a press and a release that landed inside, cancellable by
+  sliding off, which is every desktop convention for a command button) is a
+  gesture the host would report rather than a mode the element carries. That
+  half is `clients/gui/PLAN.md` (Future directions, "The gesture machine knows
+  no click"); this one is the client surface over it, in both clients.
+
+  Deliberately **not** taken with the mode above: that one is the interaction
+  with the *server* (what value stream reaches `/node_set`) and this one is the
+  interface, where a button is a command and not a control signal. Every
+  `button` in the repository's thirty-three uses is the second kind, so this is
+  the half that actually improves the examples — which is also why it wants to
+  land before C45 rewrites them.
+
 - ✅ **A control's range shadowed the operators of the same name, and the range
   did not belong there at all** *(found and fixed 2026-08-23, porting C42 to
   TypeScript)*. C42 gave `Control` the attributes `min`/`max`, and a `Control`
