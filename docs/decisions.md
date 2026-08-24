@@ -842,6 +842,15 @@ boundary is exactly the scsynth plugin-ABI lesson: every binary seam is
 versioned and verified where it is crossed. SemVer is left to govern the
 *package* — what `cargo`/`pip` resolves — where it belongs.
 
+**Where the package's number is written** is a separate question, and it had the
+same shape as the drift this section exists to prevent: one number, ten files,
+one checked pair. The crates inherit `[workspace.package].version` now, the five
+manifests that cannot inherit anything are written by `scripts/set-version.sh`,
+and `tests/versions.rs` fails when any of them disagrees — including when a
+crate writes its own number instead of inheriting, which is how the next one
+would drift. The two ABI counters are deliberately *not* in that machinery: they
+are not the package's number and do not move with it.
+
 The one **linkage** rule keeps them from drifting into contradiction: a release
 that bumps either counter must also bump SemVer's breaking tier (the minor while
 the major is `0`, per standard pre-1.0 SemVer where the minor acts as the major;

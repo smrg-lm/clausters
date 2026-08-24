@@ -1,6 +1,6 @@
 ---
 name: release-versioning
-description: How to version a Clausters release — the package SemVer versus the two binary ABI counters (ABI_VERSION for embed/IPC, CORE_ABI_VERSION for the core FFI), which of the three answers which question, the pre-1.0 and post-1.0 release rules, and the one-way linkage that makes an ABI bump drag SemVer's breaking tier along — and the procedure for cutting one: the five manifests the version lives in, rehearsing the release gate with `gh workflow run release.yml` before the tag exists, tagging, and what is one-way after it. Consult before cutting or tagging a release, before bumping any version number, before changing the shm segment layout or either C ABI surface, and when deciding whether a change is breaking.
+description: How to version a Clausters release — the package SemVer versus the two binary ABI counters (ABI_VERSION for embed/IPC, CORE_ABI_VERSION for the core FFI), which of the three answers which question, the pre-1.0 and post-1.0 release rules, and the one-way linkage that makes an ABI bump drag SemVer's breaking tier along — and the procedure for cutting one: the one place the version is written and the script that spreads it, rehearsing the release gate with `gh workflow run release.yml` before the tag exists, tagging, and what is one-way after it. Consult before cutting or tagging a release, before bumping any version number, before changing the shm segment layout or either C ABI surface, and when deciding whether a change is breaking.
 ---
 
 # Versioning: SemVer of the package vs. the binary ABI counters
@@ -78,14 +78,17 @@ does not open by choosing a number. So the tag to cut is whatever
 procedure. If the rules above say the tier is wrong for what accumulated since
 the last tag, fix it as its own commit first, then release.
 
-1. **One version, five places.** The root `Cargo.toml`, every crate under
-   `crates/`, `clients/python/pyproject.toml`, `clients/web/package.json` and
-   `clients/gui/Cargo.toml` (plus its own lockfile — it is an independent
-   workspace, so `cargo update -p clausters-gui --offline` after editing).
-   **Only one pair is checked by anything**: `npm run check-package` refuses a
-   `package.json` that disagrees with the crate. The other three are on trust,
-   and `clients/gui` in particular has drifted before precisely because no root
-   build reads its manifest.
+1. **One version, one command.** The number is decided in the root
+   `Cargo.toml`'s `[workspace.package].version`, which the eight Cargo crates
+   **inherit** (`version.workspace = true`). The five files that cannot inherit
+   it — `clients/gui/Cargo.toml` (an independent workspace) with its lockfile,
+   `clients/python/pyproject.toml`, `clients/web/package.json` and its
+   `package-lock.json` — are written by **`scripts/set-version.sh <x.y.z>`**,
+   which also regenerates both lockfiles; run with no argument it prints what
+   every file says. Nothing here is on trust any more:
+   `tests/versions.rs` fails when any of them disagrees, and when a Cargo crate
+   writes its own number instead of inheriting. (Before that: `clients/gui` had
+   drifted, and `package-lock.json` was found two minors behind.)
 2. **Both ABI counters and the SemVer tier against the last tag** —
    `.claude/skills/release-versioning/versions.sh`, which prints all three and
    exits non-zero if it cannot find one. Read it by rule 5: a counter that

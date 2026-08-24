@@ -1597,9 +1597,9 @@ where it came from).
   over a sweep, because a def and the client control driving it read the same
   map and a last-ulp difference between them is drift.
 
-- ⬜ **A release bumps one version in five places and four of them are checked
+- ✅ **A release bumps one version in five places and four of them are checked
   by nothing** *(named 2026-08-23, fixing the versioning rule and finding the
-  check only covered the rule's own half)*. The version lives in the root
+  check only covered the rule's own half; done 2026-08-24)*. The version lives in the root
   `Cargo.toml`, every crate under `crates/`, `clients/python/pyproject.toml`,
   `clients/web/package.json`, and `clients/gui/Cargo.toml` with its own lockfile
   (an independent workspace, so it needs `cargo update -p clausters-gui
@@ -1619,6 +1619,29 @@ where it came from).
   drift impossible rather than reported, and it is the one worth taking, with
   the caveat that `clients/gui` is its own workspace and inherits nothing from
   the root.
+
+  **Both shapes, because neither closes it alone.** The eight Cargo crates take
+  `version.workspace = true`, so the number is *decided* once, in the root
+  `[workspace.package]`. The five files that cannot inherit anything —
+  `clients/gui/Cargo.toml` with its lockfile, `pyproject.toml`,
+  `package.json` with its lockfile — are **written** by
+  `scripts/set-version.sh <x.y.z>`, which regenerates both lockfiles and, given
+  no argument, prints what every file says. And because a script is a thing to
+  remember, `tests/versions.rs` contrasts all of them and fails when one
+  disagrees — including when a Cargo crate writes its own number instead of
+  inheriting, which is how the *next* crate would drift.
+
+  **It found one on the way**, which is the entry's own argument arriving on
+  time: `clients/web/package-lock.json` was a sixth place and had been sitting
+  at `0.8.1` since two minors ago. It was not in the entry's list of five and
+  nothing had ever looked at it.
+
+  The one seam this moved is the web package's own checker
+  (`tools/check-package.mjs`), which read the root `[package] version` and had
+  to learn `[workspace.package]`; `versions.sh` in the skill matched
+  `^version` and would have read `version.workspace = true` as "true", so it
+  matches `^version = ` now. The release procedure is one line and one command
+  in `BUILD.md` and in the skill.
 
 - ⬜ **The builders could be generated from the catalog instead of contrasted against it** *(named 2026-08-16, after the two contrast tests together caught eleven drifted builders, ten misspelled parameters and one UGen a client never got)*. The server's registry is the source of truth and each client hand-writes a mirror of it; the tests prove the mirrors agree, which is strictly weaker than not having mirrors. Generating `defs/ugens/*.py` and `defs/ugens/*.ts` from the registry would delete the class of bug rather than detect it.
 

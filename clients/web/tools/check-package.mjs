@@ -24,10 +24,14 @@ const pkg = JSON.parse(readFileSync(join(here, "package.json"), "utf8"));
 //
 // The package, the crate and the Python wheel are one release: the repo's
 // SemVer. (The binary ABIs are counted separately -- see the root CLAUDE.md.)
+// The crates inherit `[workspace.package].version`, so that is where the one
+// number is written; `scripts/set-version.sh` writes this file from it and
+// `tests/versions.rs` contrasts every manifest that cannot inherit.
 const cargo = readFileSync(join(here, "..", "..", "Cargo.toml"), "utf8");
-const crateVersion = /^\[package\][^[]*?^version = "([^"]+)"/ms.exec(cargo)?.[1];
+const crateVersion =
+    /^\[workspace\.package\][^[]*?^version = "([^"]+)"/ms.exec(cargo)?.[1];
 if (!crateVersion) {
-    problems.push("could not read the workspace crate version from Cargo.toml");
+    problems.push("could not read [workspace.package].version from Cargo.toml");
 } else if (crateVersion !== pkg.version) {
     problems.push(
         `package.json is ${pkg.version} but the crate is ${crateVersion}: ` +

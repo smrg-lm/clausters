@@ -112,10 +112,10 @@ maps and the exponential-endpoint rule now live once in
 curve the tree carried — the envelope's exponential shape, its bent one, and
 the server's `XLine` — read it instead of restating it. The control's own curve
 and step, which that half was built for, closed on 2026-08-24 and are gone from
-this list. What the family left behind is paid too: it has its signal side since
-2026-08-24 (`RangeMapUGen`, one kind carrying the map by name), and the wire
-vocabulary it turned up was cleaned the same day. Only the version number that
-lives in five files is still open, below.*
+this list. What the family left behind is paid too, all of it on 2026-08-24: it has its
+signal side (`RangeMapUGen`, one kind carrying the map by name), the wire
+vocabulary it turned up was cleaned, and the version that lived in ten files now
+lives in one.*
 
 ***The violation the phase created on 2026-08-23 is already paid.** The Python
 client's GUI surface was reformed — a builder returns a view that opens itself,
@@ -127,24 +127,16 @@ faking closed on 2026-08-24 — the control's curve and step, and the source for
 the heavy props that are not samples — so what is left of it is the question
 about the widgets it did not ask.*
 
-***The consistency pass that led the phase is paid**, on 2026-08-24: every
-carrier took an address and all six legs went loopback, so choosing a transport
-stopped opening a port to the LAN; the typeface stopped being a wasm export the
-protocol had no verb for (`/gui_font`, the same call in both clients); and the
-three wire selectors that carried an underscore against their own table's rule
-were renamed, with the old spellings accepted for good so nothing stored had to
-be rewritten. What is left of that group is the version that lives in five
-places, below, and it is felt only at a tag.*
-
-- ⬜ **A release bumps one version in five places and four of them are checked
-  by nothing** *(`PLAN.md`, Future directions)*. The root `Cargo.toml`, every
-  crate under `crates/`, `pyproject.toml`, `package.json` and `clients/gui`'s
-  own workspace and lockfile; only the crate↔`package.json` pair is verified,
-  and `clients/gui` has drifted before for exactly that reason. The choice is
-  between a check that reports the drift and `version.workspace = true` plus a
-  writer for the two non-Cargo manifests, which makes it impossible. Here
-  because nothing waits on it and it is felt only at a tag — but it is felt
-  every time.
+***The consistency pass that led the phase is paid whole**, on 2026-08-24:
+every carrier took an address and all six legs went loopback, so choosing a
+transport stopped opening a port to the LAN; the typeface stopped being a wasm
+export the protocol had no verb for (`/gui_font`, the same call in both
+clients); the three wire selectors that carried an underscore against their own
+table's rule were renamed, with the old spellings accepted for good so nothing
+stored had to be rewritten; and the release's version number, which lived in ten
+files with one pair checked, is written in one place and spread by one script.
+What leads the phase now is the question about the widgets the GUI reform did
+not ask.*
 
 - ⬜ **What kind of thing is a button?** *(`clients/python/PLAN.md`, Found by
   use)*. Two gaps and the design question they hang from: `button` is the one

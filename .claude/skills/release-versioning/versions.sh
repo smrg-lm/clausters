@@ -38,7 +38,9 @@ row() {  # label, constant-or-pattern, kind
         [ -n "$wp" ] && was=$(value "$tag" "$wp" "pub const $name")
         [ -n "$np" ] && now=$(value "" "${np#./}" "pub const $name")
     else
-        was=$(value "$tag" Cargo.toml '^version'); now=$(value "" Cargo.toml '^version')
+        # `^version = ` and not `^version`: the crates inherit the number now
+        # (`version.workspace = true`), and that line would read as "true".
+        was=$(value "$tag" Cargo.toml '^version = '); now=$(value "" Cargo.toml '^version = ')
     fi
     if [ -z "${was:-}" ] || [ -z "${now:-}" ]; then
         printf '%-17s %-9s -> %-9s  ERROR: not found (%s)\n' \

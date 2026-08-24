@@ -12,9 +12,19 @@ members = [
 ]
 resolver = "3"
 
+# **The one place the package version is written.** Eight crates carried the
+# same number and nothing checked that they still agreed; they inherit it now
+# (`version.workspace = true`), and the three manifests that cannot inherit —
+# `clients/gui` is its own workspace, and `pyproject.toml`/`package.json` are
+# not Cargo's — are written from here by `scripts/set-version.sh` and contrasted
+# by `tests/versions.rs`. Bumping a release is editing this line and running
+# that script; the rules for *which* number are the `release-versioning` skill's.
+[workspace.package]
+version = "0.10.0"
+
 [package]
 name = "clausters"
-version = "0.10.0"
+version.workspace = true
 edition = "2024"
 license = "GPL-3.0-or-later"
 description = "A real-time audio synthesis server in the style of SuperCollider's scsynth, controlled over OSC, with Faust JIT-compiled synth definitions."
