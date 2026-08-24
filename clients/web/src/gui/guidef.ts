@@ -1278,8 +1278,11 @@ export interface RangeOptions extends WidgetOptions {
      * The grid a **drag** lands on, in the value's own units: `1` over
      * `0..127` is the integers a MIDI note number wants, and a FaustDef's
      * parameter arrives with the one its `hslider` declared. Counted from
-     * `min`, and never past `max`. A value *you* send is drawn as sent — the
-     * step is a rule about the hand, not a constraint on the document.
+     * `min` and never past `max`: a grid that does not divide the range
+     * (`0..10` by `3`) stops on the last whole step, `9`, rather than on an
+     * off-grid `10`, and a reversed range (`min > max`) steps from its own
+     * `min` downward. A value *you* send is drawn as sent — the step is a rule
+     * about the hand, not a constraint on the document.
      */
     step?: number;
     value?: number;

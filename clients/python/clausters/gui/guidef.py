@@ -1131,7 +1131,10 @@ def slider(control=None, *, label: str | None = None, min: float | None = None,
     ``step`` is the grid a **drag** lands on, in the value's own units —
     ``step=1.0`` over ``0..127`` is the integers a MIDI note number wants, and
     a FaustDef's parameter arrives with the one its ``hslider`` declared. It is
-    counted from ``min`` and never leaves the range. A value *you* send
+    counted from ``min`` and never leaves the range: a grid that does not
+    divide it (``0..10`` by ``3``) stops on the last whole step, ``9``, rather
+    than on an off-grid ``10``, and a reversed range (``min > max``) steps from
+    its own ``min`` downward. A value *you* send
     (``value=``, or `clausters.gui.handle.WidgetHandle.set`) is drawn as sent:
     the step is a rule about the hand, not a constraint on the document."""
     extra = _drop_none(label=label, min=min, max=max, curve=curve, step=step,
