@@ -188,15 +188,24 @@ impl BinaryOp {
             Wrap2 => "wrap2",
             Gcd => "gcd",
             Lcm => "lcm",
-            // Lowercase/snake_case like every other name in this table, which
-            // is our spelling convention even where scsynth's selector is
-            // camelCase (`asInteger` is `as_int` here for the same reason).
-            HypotApx => "hypot_apx",
+            // Lowercase and **joined**, like every other name in this table,
+            // even where sclang's selector is camelCase (`hypotApx`), and like
+            // `asint`/`asfloat` for the same reason.
+            HypotApx => "hypotapx",
         }
     }
 
     /// Resolves a wire name to the operator (the inverse of [`name`](Self::name)).
+    ///
+    /// A def stored before the vocabulary lost its three underscores still
+    /// loads: `hypot_apx` resolves here and nothing emits it. That tolerance is
+    /// **input-only and permanent** — one line, no schedule, and the reason a
+    /// rename of a name that is inside stored documents cost nothing.
     pub fn from_name(name: &str) -> Option<BinaryOp> {
+        let name = match name {
+            "hypot_apx" => "hypotapx",
+            other => other,
+        };
         (0..)
             .map_while(BinaryOp::from_u32)
             .find(|op| op.name() == name)
@@ -330,8 +339,8 @@ impl UnaryOp {
             Floor => "floor",
             Ceil => "ceil",
             Rint => "rint",
-            IntCast => "as_int",
-            FloatCast => "as_float",
+            IntCast => "asint",
+            FloatCast => "asfloat",
             Squared => "squared",
             Cubed => "cubed",
             Recip => "recip",
@@ -355,7 +364,16 @@ impl UnaryOp {
     }
 
     /// Resolves a wire name to the operator (the inverse of [`name`](Self::name)).
+    ///
+    /// A def stored before the vocabulary lost its three underscores still
+    /// loads: `as_int` and `as_float` resolve here and nothing emits them —
+    /// input-only and permanent, like [`BinaryOp::from_name`]'s.
     pub fn from_name(name: &str) -> Option<UnaryOp> {
+        let name = match name {
+            "as_int" => "asint",
+            "as_float" => "asfloat",
+            other => other,
+        };
         (0..)
             .map_while(UnaryOp::from_u32)
             .find(|op| op.name() == name)
@@ -1010,6 +1028,34 @@ mod tests {
         }
         assert_eq!(BinaryOp::from_name("nope"), None);
         assert_eq!(UnaryOp::from_name("nope"), None);
+    }
+
+    /// **The vocabulary is lowercase and joined, with no exceptions.** Three
+    /// names carried an underscore against the table's own stated rule; the
+    /// underscored spellings still *resolve*, because they are inside defs
+    /// stored before the rename, and nothing emits them any more.
+    #[test]
+    fn the_underscored_spellings_still_load_and_are_never_written() {
+        assert_eq!(UnaryOp::from_name("as_int"), Some(UnaryOp::IntCast));
+        assert_eq!(UnaryOp::from_name("as_float"), Some(UnaryOp::FloatCast));
+        assert_eq!(BinaryOp::from_name("hypot_apx"), Some(BinaryOp::HypotApx));
+        assert_eq!(UnaryOp::IntCast.name(), "asint");
+        assert_eq!(UnaryOp::FloatCast.name(), "asfloat");
+        assert_eq!(BinaryOp::HypotApx.name(), "hypotapx");
+        for op in (0..).map_while(BinaryOp::from_u32) {
+            assert!(
+                !op.name().contains('_'),
+                "{} carries an underscore",
+                op.name()
+            );
+        }
+        for op in (0..).map_while(UnaryOp::from_u32) {
+            assert!(
+                !op.name().contains('_'),
+                "{} carries an underscore",
+                op.name()
+            );
+        }
     }
 
     #[test]

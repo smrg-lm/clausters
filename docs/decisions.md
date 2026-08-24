@@ -2483,7 +2483,7 @@ later.
 
 **`Changed` reproduces sclang's halved difference.** It is a pseudo-UGen there,
 `HPZ1(in).abs > threshold`, and `HPZ1`'s gain is 0.5 — so a step of 1.0 registers
-as 0.5. Reproduced rather than corrected, on the same rule as `hypot_apx` in U0:
+as 0.5. Reproduced rather than corrected, on the same rule as `hypotapx` in U0:
 a def ported from sclang must not change value. Documented everywhere it is
 reachable, because it will otherwise be found by someone whose threshold
 mysteriously does nothing.
@@ -3089,10 +3089,17 @@ constant is on the left, which a method cannot express, there are free functions
 Two consequences worth stating, because they look like drift and are not.
 
 **A method name is not always the wire name — and the method's is
-SuperCollider's, not the language's.** The selector *is* what crosses (`as_int`,
-`hypot_apx`, `recip`, `lshift`), and it stays as the def format spells it: those
+SuperCollider's, not the language's.** The selector *is* what crosses (`asint`,
+`hypotapx`, `recip`, `lshift`), and it stays as the def format spells it: those
 names are in stored SynthDefs, in `docs/schemas.md` and in the frozen parity
-vectors, so renaming them would be a format change for a cosmetic gain. What a
+vectors, so renaming one is a format change and not a spelling preference. (This
+paragraph said "renaming them would be a format change for a cosmetic gain" and
+used `as_int`/`hypot_apx` as its examples, which is the sentence three
+underscores hid behind: the wire's own convention is lowercase and **joined**,
+those three broke it, and a convention with three exceptions is not one. They
+were renamed on 2026-08-24, at the price the paragraph names and no more —
+`from_name` resolves the underscored spellings for good, so a def stored before
+the rename loads and nothing emits them again.) What a
 *user* types is a different question, and it was answered wrong at first — the
 web client took the idiomatic TypeScript spelling (`asInt()`, `hypotApx()`)
 while the Python client took a third one (`abso`, `as_int`, `recip`), so the two

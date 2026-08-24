@@ -38,12 +38,12 @@ export const BINOP_OPS = new Set([
     "bitand", "bitor", "bitxor", "lshift", "rshift", "hypot", "ring1", "ring2",
     "ring3", "ring4", "sumsqr", "difsqr", "sqrsum", "sqrdif", "absdif",
     "thresh", "clip2", "excess", "round", "trunc", "fold2", "wrap2", "gcd",
-    "lcm", "hypot_apx",
+    "lcm", "hypotapx",
 ]);
 /** @internal — the operator names a `UnaryOpUGen` may carry; see `BINOP_OPS`. */
 export const UNOP_OPS = new Set([
     "neg", "abs", "sin", "cos", "tan", "asin", "acos", "atan", "exp", "log",
-    "log10", "log2", "sqrt", "floor", "ceil", "rint", "as_int", "as_float",
+    "log10", "log2", "sqrt", "floor", "ceil", "rint", "asint", "asfloat",
     "squared", "cubed", "recip", "frac", "sign", "sinh", "cosh", "tanh",
     "distort", "softclip", "midicps", "cpsmidi", "midiratio", "ratiomidi",
     "dbamp", "ampdb", "octcps", "cpsoct",
@@ -122,8 +122,8 @@ export abstract class SynthExpr<TSelf, TOperand = OpOperand> {
     leftshift<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("lshift", x); }
     rightshift<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("rshift", x); }
     hypot<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("hypot", x); }
-    /** The cheap hypotenuse approximation (`hypot_apx` on the wire). */
-    hypotapx<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("hypot_apx", x); }
+    /** The cheap hypotenuse approximation (`hypotapx` on the wire). */
+    hypotapx<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("hypotapx", x); }
     ring1<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("ring1", x); }
     ring2<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("ring2", x); }
     ring3<T extends TOperand>(x: T): OpResult<TSelf, T> { return this.binop("ring3", x); }
@@ -160,10 +160,10 @@ export abstract class SynthExpr<TSelf, TOperand = OpOperand> {
     floor(): TSelf { return this.unop("floor"); }
     ceil(): TSelf { return this.unop("ceil"); }
     rint(): TSelf { return this.unop("rint"); }
-    /** Truncate towards zero to an integer value (`as_int` on the wire). */
-    asinteger(): TSelf { return this.unop("as_int"); }
-    /** The identity that documents a value as a float (`as_float`). */
-    asfloat(): TSelf { return this.unop("as_float"); }
+    /** Truncate towards zero to an integer value (`asint` on the wire). */
+    asinteger(): TSelf { return this.unop("asint"); }
+    /** The identity that documents a value as a float (`asfloat`). */
+    asfloat(): TSelf { return this.unop("asfloat"); }
     squared(): TSelf { return this.unop("squared"); }
     cubed(): TSelf { return this.unop("cubed"); }
     reciprocal(): TSelf { return this.unop("recip"); }

@@ -221,13 +221,13 @@ def exprange(x, lo=0.01, hi=1.0):
 
 # Wire selector → function, so AbstractObject value subclasses can dispatch by
 # the operator names the graph layer puts on the wire. The two spellings differ
-# where SuperCollider's name and the protocol's do (`as_int` -> `asinteger`):
+# where SuperCollider's name and the protocol's do (`asint` -> `asinteger`):
 # the key is the def format's, the value is this client's.
 UNARY = {
     "neg": neg, "abs": abs, "sin": sin, "cos": cos, "tan": tan, "asin": asin,
     "acos": acos, "atan": atan, "exp": exp, "log": log, "log10": log10,
     "log2": log2, "sqrt": sqrt, "floor": floor, "ceil": ceil, "rint": rint,
-    "as_int": asinteger, "as_float": asfloat, "squared": squared, "cubed": cubed,
+    "asint": asinteger, "asfloat": asfloat, "squared": squared, "cubed": cubed,
     "recip": reciprocal, "frac": frac, "sign": sign, "sinh": sinh, "cosh": cosh,
     "tanh": tanh, "distort": distort, "softclip": softclip, "midicps": midicps,
     "cpsmidi": cpsmidi, "midiratio": midiratio, "ratiomidi": ratiomidi,
@@ -242,5 +242,5 @@ BINARY = {
     "sumsqr": sumsqr, "difsqr": difsqr, "sqrsum": sqrsum, "sqrdif": sqrdif,
     "absdif": absdif, "thresh": thresh, "clip2": clip2, "excess": excess,
     "round": round, "trunc": trunc, "fold2": fold2, "wrap2": wrap2,
-    "gcd": gcd, "lcm": lcm, "hypot_apx": hypotapx,
+    "gcd": gcd, "lcm": lcm, "hypotapx": hypotapx,
 }

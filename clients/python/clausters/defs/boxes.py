@@ -62,8 +62,8 @@ _BINARY = {
 _UNARY = {
     "abs": "abs", "floor": "floor", "ceil": "ceil", "sin": "sin", "cos": "cos",
     "tan": "tan", "asin": "asin", "acos": "acos", "atan": "atan", "exp": "exp",
-    "log": "log", "log10": "log10", "sqrt": "sqrt", "as_int": "intcast",
-    "as_float": "floatcast",
+    "log": "log", "log10": "log10", "sqrt": "sqrt", "asint": "intcast",
+    "asfloat": "floatcast",
 }
 
 

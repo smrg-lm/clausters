@@ -126,25 +126,14 @@ faking closed on 2026-08-24 — the control's curve and step, and the source for
 the heavy props that are not samples — so what is left of it is the question
 about the widgets it did not ask.*
 
-***What leads the phase is a consistency pass**, maintenance rather than
-features, and two thirds of it landed on 2026-08-24: every carrier took an
-address and all six legs went loopback, so choosing a transport stopped opening
-a port to the LAN, and the typeface stopped being a wasm export the protocol
-had no verb for (`/gui_font`, the same call in both clients). What is left of it
-is the three wire selectors spelled the way the table meant to leave behind and,
-behind them and only if a release is being cut, the version that lives in five
-places.*
-
-- ⬜ **Three wire selectors carry a spelling the table meant to leave behind**
-  *(`PLAN.md`, Found by use)*. The operator vocabulary is lowercase and joined
-  in seventy places and carries an underscore in three — `as_int`, `as_float`,
-  `hypot_apx` — and the plan entry that added the last of them says outright it
-  was being lowercased "like every other name in that table". The client half
-  is already done (both now spell every operator SuperCollider's way), so only
-  the wire lags. Here rather than earlier because it is a **format** change: a
-  stored def carries the selector, so the work is choosing between an alias
-  arm for a release and taking the break while the major is `0` — and neither
-  is decided.
+***The consistency pass that led the phase is paid**, on 2026-08-24: every
+carrier took an address and all six legs went loopback, so choosing a transport
+stopped opening a port to the LAN; the typeface stopped being a wasm export the
+protocol had no verb for (`/gui_font`, the same call in both clients); and the
+three wire selectors that carried an underscore against their own table's rule
+were renamed, with the old spellings accepted for good so nothing stored had to
+be rewritten. What is left of that group is the version that lives in five
+places, below, and it is felt only at a tag.*
 
 - ⬜ **`LinLin`/`LinExp` as UGens, over the warp family the core already
   carries** *(`PLAN.md`, Future directions)*. The eight range maps are value

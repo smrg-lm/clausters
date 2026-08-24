@@ -1644,8 +1644,9 @@ Anything unresolved lives here or under "Future directions", both **after** the
 tracks: never inside the milestone that happened to be open, and never among
 finished work, where a pending item reads as done.
 
-- ⬜ **Three wire selectors carry a spelling the table meant to leave behind**
-  *(named 2026-08-23, once the clients' own names were settled)*. The operator
+- ✅ **Three wire selectors carry a spelling the table meant to leave behind**
+  *(named 2026-08-23, once the clients' own names were settled; done
+  2026-08-24)*. The operator
   vocabulary is lowercase and joined — `bitand`, `bitor`, `bitxor`, `lshift`,
   `rshift`, `midicps`, `softclip`, seventy of them — with **three exceptions**
   that carry an underscore: `as_int`, `as_float` and `hypot_apx`. It is not a
@@ -1668,6 +1669,28 @@ finished work, where a pending item reads as done.
   new** for a release — `UnaryOp::from_name` already resolves by a table, so an
   alias arm is small — and the incompatible one is to take the break while the
   major is `0`. Neither is decided here.
+
+  **Decided and done: `asint`, `asfloat`, `hypotapx`, with the old spellings
+  accepted for good.** The short forms rather than the methods' names, because
+  the wire is not the client's vocabulary and never was — `recip` and `lshift`
+  cross as they are while a user types `reciprocal` and `leftshift`, so
+  "lowercase and joined" is the whole rule the three were breaking, and
+  `asinteger` would have been a second decision smuggled in behind a fix.
+
+  The compatible shape, and **without a schedule attached**: `from_name`
+  resolves `as_int`, `as_float` and `hypot_apx`, `name()` never emits them, and
+  that tolerance is permanent. It is three lines on the input side of one table
+  — it is not a deprecation with a removal date, so nothing is postponed by it,
+  and it is what makes renaming a name that lives *inside stored documents*
+  cost nothing: a def written by an older release goes on loading.
+
+  **No version number moved**, and that was checked rather than assumed. The
+  two ABI counters read discriminants and not names, so neither boundary
+  changed; and the SemVer tier has already moved twice since `v0.8.1` (the tree
+  says `0.10.0`), so under the release rule a further breaking change rides the
+  bump that is already there. `docs/decisions.md` carries the amendment, since
+  the paragraph that said renaming these "would be a format change for a
+  cosmetic gain" is the sentence the three underscores had been hiding behind.
 
 - ✅ **Every carrier takes an address, and all three default to loopback**
   *(named 2026-08-23, deciding whether a GUI host may be remote; done

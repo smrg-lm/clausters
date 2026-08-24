@@ -185,5 +185,7 @@ fn deferred_s3_operators_resolve_and_compute() {
     assert_eq!(op("lcm", 4.0, 6.0), 12.0);
     // 3 + 4 - (sqrt(2) - 1) * 3.
     let expected = 7.0 - (std::f64::consts::SQRT_2 - 1.0) as f32 * 3.0;
-    assert!((op("hypot_apx", 3.0, 4.0) - expected).abs() < 1e-6);
+    assert!((op("hypotapx", 3.0, 4.0) - expected).abs() < 1e-6);
+    // The spelling a def stored before the rename carries still resolves.
+    assert_eq!(op("hypot_apx", 3.0, 4.0), op("hypotapx", 3.0, 4.0));
 }

@@ -26,11 +26,11 @@ _BINOP_OPS = frozenset({
     "bitand", "bitor", "bitxor", "lshift", "rshift", "hypot", "ring1", "ring2",
     "ring3", "ring4", "sumsqr", "difsqr", "sqrsum", "sqrdif", "absdif",
     "thresh", "clip2", "excess", "round", "trunc", "fold2", "wrap2", "gcd",
-    "lcm", "hypot_apx",
+    "lcm", "hypotapx",
 })
 _UNOP_OPS = frozenset({
     "neg", "abs", "sin", "cos", "tan", "asin", "acos", "atan", "exp", "log",
-    "log10", "log2", "sqrt", "floor", "ceil", "rint", "as_int", "as_float",
+    "log10", "log2", "sqrt", "floor", "ceil", "rint", "asint", "asfloat",
     "squared", "cubed", "recip", "frac", "sign", "sinh", "cosh", "tanh",
     "distort", "softclip", "midicps", "cpsmidi", "midiratio", "ratiomidi",
     "dbamp", "ampdb", "octcps", "cpsoct",
