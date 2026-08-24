@@ -77,6 +77,8 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
       let score = null;      // the open document: engraved, editable, undoable
       let byId = new Map();  // MEI id -> the note it draws, rebuilt per page
       let dl = null;         // the page as it stands, what a pass is built from
+      let engraved = null;   // the same page as a `source`, so an edit reaches
+                             // the definition and every window at once
       let clock = null, transport = null, selected = null;
 
       // The melody, written as the client's own events — the inverse
@@ -93,7 +95,12 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
       // score scrolls down the systems and the wheel zooms into a dense bar.
       // `editable` is what opts the page into pitch dragging; without it the
       // view is read-only, which is what a plain plot of a score wants.
-      const scene = (displayList) => gui.window(
+      // `engraved` is a `source` holding the display list, not the list itself:
+      // an edit re-engraves the score and calls `engraved.set(...)`, which
+      // reaches this definition *and* every window drawing it. Handed the raw
+      // object the view would draw the same page and the definition would go
+      // stale the first time a note moved.
+      const scene = (engraved) => gui.window(
         { title: "score", layout: "col", margin: 8.0, gap: 8.0 },
         gui.panel(
           { layout: "row", h: 34, gap: 8.0 },
@@ -105,7 +112,7 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
           gui.button({ name: "undo", label: "undo" }),
           gui.button({ name: "redo", label: "redo" }),
         ),
-        notation.scoreView(displayList, {
+        notation.scoreView(engraved, {
           name: "page", editable: true, width: 1000.0,
         }),
       );
@@ -115,9 +122,11 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
       // which is what leaves the edited note selected.
       const refresh = () => {
         dl = score.displayList();
-        // One prop, not a bag of layers: the whole page travels as
-        // `display_list`, which is what the builder sends too.
-        win.widget("page").set({ displayList: notation.pageJson(dl) });
+        // `engraved.set` is the whole of it: the source rewrites the definition
+        // and pushes the drawing layers to every window already showing them,
+        // so a second window (or a re-open of this one) shows the score as
+        // edited rather than as engraved.
+        engraved.set(dl);
         byId = new Map(dl.notes.map((note) => [note.id, note]));
       };
 
@@ -198,7 +207,8 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
 
         dl = score.displayList();
         byId = new Map(dl.notes.map((note) => [note.id, note]));
-        win = host.open(scene(dl));
+        engraved = gui.source(undefined, { displayList: dl });
+        win = host.open(scene(engraved));
         unfit?.();
         unfit = page.fit(win.id, el("stage"));
 

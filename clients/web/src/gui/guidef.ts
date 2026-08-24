@@ -30,7 +30,7 @@
 import { Env, envToPoints, pointsToEnv, resolveCurve } from "../defs/ugens/index.ts";
 import type { Curve } from "../defs/ugens/index.ts";
 import { samplesToBlob } from "../base/bulk.ts";
-import type { GuiHost } from "./host.ts";
+import type { GuiHost, PropValue } from "./host.ts";
 import type { WindowHandle } from "./handle.ts";
 
 export { Env, envToPoints, pointsToEnv };
@@ -61,23 +61,42 @@ export interface GuiNode {
 export const INLINE_MAX = 2048;
 
 /**
- * The prop names a {@link Source} may stand in for: the logical one (`data`,
- * "the samples") and the carriers themselves, so a tree written the long way
- * can adopt a source without moving the option.
+ * The sample prop names a {@link Source} may stand in for: the logical one
+ * (`data`, "the samples") and the carriers themselves, so a tree written the
+ * long way can adopt a source without moving the option.
  */
 export const SOURCE_PROPS = ["data", "blob", "path", "cache", "buffer"] as const;
 
 /**
- * The samples a view draws, as something you hold — and can change.
+ * The **structure** prop names a {@link Source} may stand in for — the heavy
+ * props that carry a payload rather than a scalar and are not samples. Each
+ * rides in the prop it is named by, so unlike the sample carriers there is
+ * nothing to choose: what the source adds is that the payload stays
+ * addressable after the definition is written. `STRUCTURES` (below, beside the
+ * flat wire forms) says how each one normalizes.
+ */
+export const STRUCTURE_PROPS = [
+    "points", "notes", "osc", "boxes", "cords", "display_list",
+] as const;
+
+/** How a payload travels: a sample carrier, or the structure prop it is. */
+export type Carrier = (typeof SOURCE_PROPS)[number] | (typeof STRUCTURE_PROPS)[number];
+
+/**
+ * The payload a view draws, as something you hold — and can change.
  *
- * A signal view is fed one of several ways, and the wire spells each as its own
- * prop: `data` (a small array inline in the JSON), `blob` (an index into the
- * message's trailing binary arguments), `path` (a mapped raw-f32 file, native
- * hosts only), `cache` (a prebuilt peak pyramid), `buffer` (a server buffer
- * number). Which one is right is a question about **size and where the samples
- * already are**, not about what is being drawn — and `blob: 0` in particular is
- * a correspondence kept by hand between the widget and the `open` call that had
- * better pass that blob first.
+ * A widget's heavy props are the ones that carry a **payload rather than a
+ * scalar**, and there are two families of them. The samples of a signal view,
+ * which the wire spells several ways — `data` (a small array inline in the
+ * JSON), `blob` (an index into the message's trailing binary arguments), `path`
+ * (a mapped raw-f32 file, native hosts only), `cache` (a prebuilt peak
+ * pyramid), `buffer` (a server buffer number) — where which one is right is a
+ * question about **size and where the samples already are**, not about what is
+ * being drawn, and `blob: 0` in particular is a correspondence kept by hand
+ * between the widget and the `open` call that had better pass that blob first.
+ * And the **structures**: a curve's `points`, a roll's `notes` and `osc`, a
+ * patcher's `boxes` and `cords`, a score's `displayList` — each of which rides
+ * in its own prop and has exactly one way to travel.
  *
  * A `Source` answers it and stays addressable:
  *
@@ -87,6 +106,10 @@ export const SOURCE_PROPS = ["data", "blob", "path", "cache", "buffer"] as const
  * const win = await v.open();
  *
  * sig.set(otherSamples);      // the definition and every open view follow
+ *
+ * const env = source(undefined, { points: [[0.0, 0.0], [1.0, 1.0, "exp"]] });
+ * await view({}, bpf({ points: env })).open();
+ * env.set([[0.0, 1.0], [1.0, 0.0]]);        // the same, for a structure
  * ```
  *
  * It is the same relation a `control` has with a knob: the entry point named
@@ -95,14 +118,20 @@ export const SOURCE_PROPS = ["data", "blob", "path", "cache", "buffer"] as const
  * said by the program rather than by convention, and the index assigned for
  * you.
  *
- * **The carrier is decided once**, when the source is made, from what it first
- * holds: a short array stays inline, a long one becomes a blob. `set` writes
- * through that same carrier, because a widget already on screen was built
- * around it.
+ * **The carrier is decided once**, when the source is made. For samples it is
+ * decided from what it first holds: a short array stays inline, a long one
+ * becomes a blob, and `set` writes through that same carrier because a widget
+ * already on screen was built around it. For a structure the carrier is the
+ * **prop itself**: it is normalized to its flat wire form on the way into a
+ * definition and on the way out of {@link Source.set}, which sends the whole
+ * list (or the engraved page) through the `/gui_set` door that prop already
+ * has.
  */
 export class Source {
-    readonly #carrier: (typeof SOURCE_PROPS)[number];
-    #value: number[] | number | string | Uint8Array;
+    readonly #carrier: Carrier;
+    #value: unknown;
+    /** Whether the payload is a structure (its own prop) rather than samples. */
+    readonly #structure: boolean;
     readonly #fixed: Props;
     /**
      * `{node, prop}` for every node this source was placed in — the definitions
@@ -121,24 +150,29 @@ export class Source {
             buffer,
             path,
             cache,
+            points,
+            notes,
+            osc,
+            boxes,
+            cords,
+            displayList,
             channels,
             sampleRate,
             baseBucket,
-        }: {
-            buffer?: number;
-            path?: string;
-            cache?: string;
-            channels?: number;
-            sampleRate?: number;
-            baseBucket?: number;
-        } = {},
+        }: SourceInput = {},
     ) {
+        const held = ([
+            ["points", points], ["notes", notes], ["osc", osc], ["boxes", boxes],
+            ["cords", cords], ["display_list", displayList],
+        ] as const).filter(([, v]) => v !== undefined && v !== null);
         const named = [samples, buffer, path, cache].filter((x) => x !== undefined && x !== null);
-        if (named.length !== 1) {
+        if (named.length + held.length !== 1) {
             throw new TypeError(
-                "a source names its samples exactly one way: an iterable of " +
-                    "floats, or buffer/path/cache for samples that already live " +
-                    "somewhere the host can reach",
+                "a source names its payload exactly one way: an iterable of " +
+                    "floats (or buffer/path/cache for samples that already live " +
+                    "somewhere the host can reach), or one of " +
+                    `${STRUCTURE_PROPS.join("/")} for a structure that rides in ` +
+                    "its own prop",
             );
         }
         this.#fixed = drop([
@@ -146,7 +180,18 @@ export class Source {
             ["sample_rate", sampleRate],
             ["base_bucket", baseBucket],
         ]);
-        if (buffer !== undefined && buffer !== null) {
+        this.#structure = held.length > 0;
+        if (this.#structure && Object.keys(this.#fixed).length > 0) {
+            throw new TypeError(
+                "channels/sampleRate/baseBucket describe samples, and this " +
+                    `source carries a ${held[0]![0]} structure`,
+            );
+        }
+        if (this.#structure) {
+            this.#carrier = held[0]![0];
+            this.#value = held[0]![1];
+            this.props(); // normalized now, so a malformed structure is caught here
+        } else if (buffer !== undefined && buffer !== null) {
             this.#carrier = "buffer";
             this.#value = buffer;
         } else if (path !== undefined && path !== null) {
@@ -168,10 +213,13 @@ export class Source {
     }
 
     /**
-     * How these samples travel: `"data"`, `"blob"`, `"path"`, `"cache"` or
-     * `"buffer"`. Decided when the source is made and fixed for its life.
+     * How this payload travels: for samples `"data"`, `"blob"`, `"path"`,
+     * `"cache"` or `"buffer"`; for a structure the **prop itself**
+     * (`"points"`, `"notes"`, `"osc"`, `"boxes"`, `"cords"`,
+     * `"display_list"`), which is the only way it can travel. Decided when the
+     * source is made and fixed for its life.
      */
-    get carrier(): (typeof SOURCE_PROPS)[number] {
+    get carrier(): Carrier {
         return this.#carrier;
     }
 
@@ -181,14 +229,26 @@ export class Source {
     }
 
     /**
-     * The carrier props this source expands to — what a builder puts into the
-     * node in place of the prop it was passed as. A `blob` source expands to
-     * its fixed props only: the index is the position its bytes take in the
-     * `/gui_def` message, which `GuiHost.open` assigns.
+     * The wire props this source expands to — what a builder puts into the node
+     * in place of the prop it was passed as. A `blob` source expands to its
+     * fixed props only: the index is the position its bytes take in the
+     * `/gui_def` message, which `GuiHost.open` assigns. A structure is
+     * normalized here, so a definition carries the same flat form it would have
+     * carried written out by hand.
      */
     props(): Props {
+        if (this.#structure) return STRUCTURES[this.#carrier]!.props(this.#value);
         if (this.#carrier === "blob") return { ...this.#fixed };
         return { [this.#carrier]: this.#value, ...this.#fixed } as Props;
+    }
+
+    /**
+     * The node keys this source's expansion occupies, so a rewrite clears
+     * exactly what the last one wrote — the five carriers for samples (they are
+     * one slot spelled five ways), the prop's own keys for a structure.
+     */
+    slots(): readonly string[] {
+        return this.#structure ? STRUCTURES[this.#carrier]!.slots : SOURCE_PROPS;
     }
 
     /** @internal Records a node this source feeds, so `set` rewrites it. */
@@ -210,20 +270,33 @@ export class Source {
     }
 
     /**
-     * Point this source at other samples: the **definitions** that hold it are
-     * rewritten, and every widget already drawing it is told to redraw.
+     * Point this source at another payload: the **definitions** that hold it
+     * are rewritten, and every widget already drawing it is told to redraw.
      *
-     * A view open twice is updated twice — the samples belong to the definition,
-     * so both instances follow; the per-instance door stays
+     * A view open twice is updated twice — the payload belongs to the
+     * definition, so both instances follow; the per-instance door stays
      * `win.widget("wave").set(...)`.
      *
-     * Only a source that *holds* its samples inline takes this. One that names a
-     * server buffer or a cache is a reference to samples somebody else owns:
-     * change them where they live and call {@link Source.reload}. And a source
-     * past the inline ceiling rides a blob, which the host has no live door for
-     * in a page — that gap is `clients/gui/PLAN.md`'s, not this call's to fake.
+     * A **structure** always takes this: it is normalized the way its builder
+     * would have normalized it, and rides out through the `/gui_set` door its
+     * prop already has (a flat list as the JSON string a scalar-only wire
+     * needs, an engraved page as the whole `display_list`). Of the sample
+     * carriers only the inline one takes it: a source that names a server
+     * buffer or a cache is a reference to samples somebody else owns — change
+     * them where they live and call {@link Source.reload} — and a source past
+     * the inline ceiling rides a blob, which the host has no live door for in a
+     * page: that gap is `clients/gui/PLAN.md`'s, not this call's to fake.
      */
-    set(samples: ArrayLike<number> | Iterable<number>): this {
+    set(payload: ArrayLike<number> | Iterable<number> | unknown): this {
+        if (this.#structure) {
+            this.#value = payload;
+            const props = this.props();
+            for (const { node } of this.#bound) rewriteSource(node, props, this.slots());
+            const live = this.liveProps();
+            for (const { host, id } of [...this.#live]) host.set(id, live);
+            return this;
+        }
+        const samples = payload as ArrayLike<number> | Iterable<number>;
         if (this.#carrier !== "data") {
             throw new TypeError(
                 `this source is carried as a ${this.#carrier}, which it cannot ` +
@@ -242,7 +315,7 @@ export class Source {
             );
         }
         this.#value = values;
-        for (const { node } of this.#bound) rewriteSource(node, this.props());
+        for (const { node } of this.#bound) rewriteSource(node, this.props(), this.slots());
         for (const { host, id } of [...this.#live]) host.set(id, { data: values });
         return this;
     }
@@ -253,38 +326,98 @@ export class Source {
      * rebuilt, a file rewritten from outside).
      */
     reload(): this {
+        if (this.#structure) {
+            throw new TypeError(
+                `a ${this.#carrier} source holds its own payload, so there is ` +
+                    "nowhere for it to have moved — call set() with the structure " +
+                    "it should draw now",
+            );
+        }
         for (const { host, id } of [...this.#live]) host.set(id, { reload: 1 });
         return this;
     }
+
+    /**
+     * What a `/gui_set` carries for this structure. The same props a definition
+     * takes, except for an engraved page: the wire spells the page as five
+     * props in a definition and as the one `display_list` live, which is the
+     * host's door for replacing a drawing in place.
+     */
+    private liveProps(): Record<string, PropValue> {
+        if (this.#carrier === "display_list") {
+            // `props()` is already the drawing layers, which is exactly what a
+            // live page replaces — the client-side keys of a display list (its
+            // `notes`) never ride the wire, here or in a definition.
+            return { display_list: this.props() } as Record<string, PropValue>;
+        }
+        return this.props() as Record<string, PropValue>;
+    }
+}
+
+/** What a {@link Source} may be made of: samples, or one structure. */
+export interface SourceInput {
+    /** A server buffer number the host reads the samples from. */
+    buffer?: number;
+    /** A raw little-endian f32 file the host maps (native hosts only). */
+    path?: string;
+    /** A prebuilt peak pyramid. */
+    cache?: string;
+    /** A `bpf`'s break-points. */
+    points?: PointSpec;
+    /** A roll's notes. */
+    notes?: NoteSpec;
+    /** A roll's OSC event flags. */
+    osc?: OscEventSpec;
+    /** A patcher's boxes. */
+    boxes?: readonly unknown[];
+    /** A patcher's cords. */
+    cords?: readonly number[];
+    /** An engraved `score` page. */
+    displayList?: Record<string, unknown>;
+    /** De-interleaves the samples into this many channels. */
+    channels?: number;
+    /** The samples' rate, which gives a time ruler its unit. */
+    sampleRate?: number;
+    /** The peak pyramid's base bucket. */
+    baseBucket?: number;
 }
 
 /**
- * The samples a view draws, as a {@link Source} — held, referred to, and
+ * The payload a view draws, as a {@link Source} — held, referred to, and
  * changed in place of being copied into a prop.
  *
- * Give it an iterable of floats, or name samples that already live somewhere
- * the host can reach: `buffer` (a server buffer number), `path` (a raw
- * little-endian f32 file it maps) or `cache` (a prebuilt peak pyramid).
+ * For **samples**, give it an iterable of floats, or name samples that already
+ * live somewhere the host can reach: `buffer` (a server buffer number), `path`
+ * (a raw little-endian f32 file it maps) or `cache` (a prebuilt peak pyramid).
  * `channels` de-interleaves it, `sampleRate` gives the time ruler its unit and
  * `baseBucket` sizes the peak pyramid.
+ *
+ * For a **structure**, name the prop it is: `points` (a `bpf`'s break-points),
+ * `notes` / `osc` (a roll's notes and event flags), `boxes` / `cords` (a
+ * patcher's boxes and wires) or `displayList` (an engraved `score` page). It
+ * takes the same form the builder's own option takes, is normalized the same
+ * way, and {@link Source.set} replaces it live:
+ *
+ * ```ts
+ * const page = source(undefined, { displayList: engraved });
+ * await view({}, score({ displayList: page, editable: true })).open();
+ * page.set(reEngraved);              // after applying an edit
+ * ```
  */
 export function source(
     samples?: ArrayLike<number> | Iterable<number> | null,
-    options: {
-        buffer?: number;
-        path?: string;
-        cache?: string;
-        channels?: number;
-        sampleRate?: number;
-        baseBucket?: number;
-    } = {},
+    options: SourceInput = {},
 ): Source {
     return new Source(samples, options);
 }
 
-/** Put `props` into `node` in place of whatever carrier it held. */
-function rewriteSource(node: GuiNode, props: Props): void {
-    for (const key of SOURCE_PROPS) delete node[key];
+/**
+ * Put `props` into `node` in place of the keys the source it belongs to
+ * occupies — its {@link Source.slots}, not every key a source could ever
+ * write, so one heavy prop's source never clears another's.
+ */
+function rewriteSource(node: GuiNode, props: Props, slots: readonly string[]): void {
+    for (const key of slots) delete node[key];
     Object.assign(node, props);
 }
 
@@ -730,7 +863,7 @@ export function node(
 ): View {
     const { id, name, children, ...props } = options;
     const held = new Map<string, Source>();
-    for (const key of SOURCE_PROPS) {
+    for (const key of [...SOURCE_PROPS, ...STRUCTURE_PROPS]) {
         const value = props[key];
         if (value instanceof Source) {
             held.set(key, value);
@@ -740,8 +873,9 @@ export function node(
     for (const [key, value] of Object.entries(props)) {
         if (value instanceof Source) {
             throw new TypeError(
-                `${type}: a source names a view's samples, so it goes in a prop ` +
-                    `that is one of ${SOURCE_PROPS.join(", ")} — not "${key}"`,
+                `${type}: a source names a view's payload, so it goes in a prop ` +
+                    `that is one of ${[...SOURCE_PROPS, ...STRUCTURE_PROPS].join(", ")}` +
+                    ` — not "${key}"`,
             );
         }
     }
@@ -761,7 +895,7 @@ export function node(
     if (list) out.children = list;
     const built = new View(out);
     for (const [key, value] of held) {
-        rewriteSource(built, value.props());
+        rewriteSource(built, value.props(), value.slots());
         built.addSource(key, value);
         value.bindTo(built, key);
     }
@@ -832,8 +966,8 @@ export function plane(
         viewY?: number;
         viewZoom?: number;
         flow?: string;
-        boxes?: readonly unknown[];
-        cords?: readonly number[];
+        boxes?: readonly unknown[] | Source;
+        cords?: readonly number[] | Source;
     } = {},
     ...children: GuiNode[]
 ): GuiNode {
@@ -851,8 +985,8 @@ export function plane(
             ["view_x", viewX],
             ["view_y", viewY],
             ["view_zoom", viewZoom],
-            ["boxes", boxes === undefined ? undefined : [...boxes]],
-            ["cords", cords === undefined ? undefined : cords.map((n) => Math.trunc(n))],
+            ["boxes", held(boxes, (v) => [...v])],
+            ["cords", held(cords, flatCords)],
             ["flow", flow ?? arrangement],
             ["margin", margin],
             ["gap", gap],
@@ -1934,7 +2068,7 @@ export function nodetree(
  */
 export function bpf(
     options: WidgetOptions & {
-        points?: PointSpec;
+        points?: PointSpec | Source;
         min?: number;
         max?: number;
         duration?: number;
@@ -1947,7 +2081,7 @@ export function bpf(
         ...rest,
         ...axes({}, drop([["min", min], ["max", max]])),
         ...drop([
-            ["points", points === undefined ? undefined : flatPoints(points)],
+            ["points", held(points, flatPoints)],
             ["duration", duration],
             ["exp", flag(exp)],
             ["label", text],
@@ -1968,8 +2102,8 @@ export function bpf(
  */
 export function pianoroll(
     options: TimelineOptions & {
-        notes?: NoteSpec;
-        osc?: OscEventSpec;
+        notes?: NoteSpec | Source;
+        osc?: OscEventSpec | Source;
         min?: number;
         max?: number;
         snap?: number;
@@ -1986,8 +2120,8 @@ export function pianoroll(
     return node("notes", {
         ...timelineProps(timeline, drop([["min", min], ["max", max]])),
         ...drop([
-            ["notes", notes === undefined ? undefined : flatNotes(notes)],
-            ["osc", osc === undefined ? undefined : flatOsc(osc)],
+            ["notes", held(notes, flatNotes)],
+            ["osc", held(osc, flatOsc)],
             ["snap", snap],
             ["velocity", flag(velocity)],
             ["osc_lane", flag(oscLane)],
@@ -2164,8 +2298,8 @@ export function clip(
         dbCeil?: number;
         freqScale?: string;
         colormap?: number;
-        notes?: NoteSpec;
-        points?: PointSpec;
+        notes?: NoteSpec | Source;
+        points?: PointSpec | Source;
         exp?: boolean;
         min?: number;
         max?: number;
@@ -2247,8 +2381,8 @@ export function clip(
             ["db_ceil", dbCeil],
             ["freq_scale", freqScale],
             ["colormap", colormap],
-            ["notes", notes === undefined ? undefined : flatNotes(notes)],
-            ["points", points === undefined ? undefined : flatPoints(points)],
+            ["notes", held(notes, flatNotes)],
+            ["points", held(points, flatPoints)],
             ["exp", flag(exp)],
             ["min", min],
             ["max", max],
@@ -2284,7 +2418,7 @@ export function clip(
  */
 export function score(
     options: WidgetOptions & {
-        displayList?: Record<string, unknown>;
+        displayList?: Record<string, unknown> | Source;
         playhead?: number;
         playheadAt?: number;
         /** The loop region the sweeping cursor wraps inside, in ms. */
@@ -2299,7 +2433,6 @@ export function score(
         displayList, playhead, playheadAt, playheadLoopStart, playheadLoopLen,
         sampleRate, selected, editable, ...rest
     } = options;
-    const dl = displayList ?? {};
     return node("score", {
         ...rest,
         ...drop([
@@ -2310,12 +2443,12 @@ export function score(
             ["sample_rate", sampleRate],
             ["selected", selected],
             ["editable", editable],
-            ["vb", dl.vb],
-            ["glyphs", dl.glyphs],
-            ["prims", dl.prims],
-            ["cursors", dl.cursors],
-            ["step", dl.step],
         ]),
+        // A source goes in as itself and `node` expands it into the five;
+        // anything else is expanded here.
+        ...(displayList instanceof Source
+            ? { display_list: displayList }
+            : scorePage(displayList ?? {})),
     });
 }
 
@@ -2333,8 +2466,8 @@ export function score(
  */
 export function patch(
     options: WidgetOptions & {
-        boxes?: readonly unknown[];
-        cords?: readonly number[];
+        boxes?: readonly unknown[] | Source;
+        cords?: readonly number[] | Source;
         label?: string;
     } = {},
 ): GuiNode {
@@ -2342,8 +2475,8 @@ export function patch(
     return node("plane", {
         ...rest,
         ...drop([
-            ["boxes", boxes === undefined ? undefined : [...boxes]],
-            ["cords", cords === undefined ? undefined : cords.map((n) => Math.trunc(n))],
+            ["boxes", held(boxes, (v) => [...v])],
+            ["cords", held(cords, flatCords)],
             ["label", text],
         ]),
     });
@@ -2504,6 +2637,54 @@ export function flatNotes(notes: NoteSpec): number[] {
         );
     }
     return out;
+}
+
+/** A patcher's `cords` as the flat `[fromBox, outlet, toBox, inlet, …]` ints. */
+export function flatCords(cords: readonly number[]): number[] {
+    return cords.map((n) => Math.trunc(n));
+}
+
+/**
+ * An engraved page as the props a **definition** carries it in: the wire spells
+ * a `score`'s drawing as five keys, one per part of the display list, and
+ * `GuiHost.set` spells the same page as the one `display_list`.
+ */
+export function scorePage(displayList: Record<string, unknown>): Props {
+    const dl = displayList ?? {};
+    return drop([
+        ["vb", dl.vb],
+        ["glyphs", dl.glyphs],
+        ["prims", dl.prims],
+        ["cursors", dl.cursors],
+        ["step", dl.step],
+    ]);
+}
+
+/**
+ * The {@link STRUCTURE_PROPS}, each with how a value of it normalizes to the
+ * props a definition carries and the node keys that expansion occupies (all but
+ * the engraved page write the prop they are named by).
+ */
+const STRUCTURES: Record<string, { props: (v: unknown) => Props; slots: readonly string[] }> = {
+    points: { props: (v) => ({ points: flatPoints(v as PointSpec) }), slots: ["points"] },
+    notes: { props: (v) => ({ notes: flatNotes(v as NoteSpec) }), slots: ["notes"] },
+    osc: { props: (v) => ({ osc: flatOsc(v as OscEventSpec) }), slots: ["osc"] },
+    boxes: { props: (v) => ({ boxes: [...(v as readonly unknown[])] }), slots: ["boxes"] },
+    cords: { props: (v) => ({ cords: flatCords(v as readonly number[]) }), slots: ["cords"] },
+    display_list: {
+        props: (v) => scorePage(v as Record<string, unknown>),
+        slots: ["vb", "glyphs", "prims", "cursors", "step"],
+    },
+};
+
+/**
+ * A structure argument as it goes into the node: a {@link Source} passes
+ * through untouched (`node` expands it into the props it carries), anything
+ * else is normalized here — the same call the source would have made.
+ */
+function held<T>(value: T | Source | undefined, flatten: (v: T) => unknown): unknown {
+    if (value === undefined || value instanceof Source) return value;
+    return flatten(value);
 }
 
 /** An `osc` argument as the flat `time, label` pairs the host reads. */

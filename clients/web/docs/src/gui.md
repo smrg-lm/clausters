@@ -104,6 +104,15 @@ correspondence kept by hand. The blob has no live door in the host, so `set` on
 a spilled source refuses rather than pretending; a native client rewrites its
 file and re-reads it.
 
+**A structure is a `source` too, and there the two clients are identical.** A
+`bpf`'s `points`, a roll's `notes` and `osc`, a patcher's `boxes` and `cords`, a
+`score`'s `displayList`: `source(undefined, { points })` names the prop it is,
+`bpf({ points: env })` takes it in place of the value, and `env.set(...)`
+rewrites the definitions and every live widget. Nothing spills — a structure
+rides in its own prop, which is its only carrier — so the paragraph above has no
+counterpart here: the option is spelled `displayList` where Python spells
+`display_list`, and that is the whole of the difference.
+
 **A control widget is built from the control it drives.** `knob(freq)`,
 `slider(sd.control("amp"))`, `number` and `toggle` read the control's **name**
 and **default** off it, so the widget and the graph cannot disagree about what

@@ -10,7 +10,7 @@
 // is the only thing a page needs on top of the transport the timeline views
 // already use.
 
-import { score, scroll } from "../guidef.ts";
+import { score, scroll, Source } from "../guidef.ts";
 import type { GuiNode } from "../guidef.ts";
 import { Transport } from "../transport.ts";
 import type { TransportOptions } from "../transport.ts";
@@ -35,8 +35,11 @@ export interface ScoreViewOptions {
 
 /**
  * Wrap an engraved display list in a `scroll` sized to the page, ready to drop
- * into a window. The content area is `width` wide and as tall as the page's
- * aspect needs, so a multi-system score scrolls down the systems.
+ * into a window. The page is an object, or a {@link Source} holding one so a
+ * re-engrave reaches the definition and every window at once
+ * (`source(undefined, { displayList })`). The content area is `width` wide and
+ * as tall as the page's aspect needs, so a multi-system score scrolls down the
+ * systems.
  *
  * `zoom` enables cursor-anchored zoom to read a dense passage, and it also
  * decides the pan axes: **zoomed in, the page is wider than the view**, so x has
@@ -48,7 +51,7 @@ export interface ScoreViewOptions {
  * that applies the `"transpose"` round trip passes `editable: true`.
  */
 export function scoreView(
-    displayList: Record<string, unknown>,
+    displayList: Record<string, unknown> | Source,
     {
         scrollId,
         scoreId,
@@ -59,7 +62,11 @@ export function scoreView(
         editable,
     }: ScoreViewOptions = {},
 ): GuiNode {
-    const vb = (displayList.vb as number[] | undefined) ?? [1.0, 1.0];
+    // The scroll is sized from the page, so the size has to be readable here
+    // whether the page arrived as an object or as a `Source` holding one — the
+    // source's own expansion is what a definition carries.
+    const page = displayList instanceof Source ? displayList.props() : displayList;
+    const vb = (page.vb as number[] | undefined) ?? [1.0, 1.0];
     const w = vb[0] ?? 1.0;
     const aspect = w ? (vb[1] ?? 1.0) / w : 1.0;
     const height = Math.round(width * aspect * 10) / 10;

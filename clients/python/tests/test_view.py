@@ -255,3 +255,94 @@ def test_a_source_goes_in_a_prop_that_names_samples():
 
     with pytest.raises(TypeError, match="not 'value'"):
         knob(value=source([0.1]))
+
+
+# ---- the same object for the structures: points, notes, boxes, a page ----
+
+def test_a_structure_source_expands_into_the_flat_wire_form():
+    """The source normalizes exactly as the builder's own keyword does, so a
+    definition carries the same thing whichever way it was written."""
+    from clausters.gui import bpf, source
+
+    env = source(points=[(0.0, 0.0), (1.0, 1.0, "exp")])
+    a = bpf(points=env)
+    b = bpf(points=[(0.0, 0.0), (1.0, 1.0, "exp")])
+    assert env.carrier == "points"
+    assert a["points"] == b["points"] == [0.0, 0.0, 1, 0.0, 1.0, 1.0, 2, 0.0]
+
+
+def test_a_structure_set_rewrites_the_definition_and_the_live_widget():
+    from clausters.gui import pianoroll, source
+
+    host = _host_with_recorder(57988)
+    roll = source(notes=[(0.0, 1.0, 60)])
+    v = view(pianoroll(name="roll", notes=roll))
+    win = v.open(host=host)
+
+    host._osc.sent.clear()
+    roll.set([(0.0, 2.0, 62, 90)])
+    assert v.find("roll")["notes"] == [0.0, 2.0, 62.0, 90, 0]
+    assert host._osc.sent == [
+        ("/gui_set", win["roll"].id, "notes", "[0.0, 2.0, 62.0, 90, 0]")]
+
+
+def test_an_engraved_page_is_five_props_in_a_definition_and_one_live():
+    """The wire spells a page as its parts in a `/gui_def` and as the whole
+    `display_list` in a `/gui_set`, which is the host's door for replacing a
+    drawing in place. One source covers both."""
+    import json
+
+    from clausters.gui import score, source
+
+    host = _host_with_recorder(57987)
+    page = source(display_list={"vb": [10, 20], "glyphs": {}, "prims": []})
+    v = view(score(name="page", display_list=page))
+    win = v.open(host=host)
+    assert v.find("page")["vb"] == [10, 20] and "display_list" not in v.find("page")
+
+    host._osc.sent.clear()
+    page.set({"vb": [30, 40], "glyphs": {}, "prims": [7]})
+    assert v.find("page")["vb"] == [30, 40] and v.find("page")["prims"] == [7]
+    msg = host._osc.sent[0]
+    assert msg[:3] == ("/gui_set", win["page"].id, "display_list")
+    assert json.loads(msg[3])["vb"] == [30, 40]
+
+
+def test_a_page_rewrite_drops_the_part_the_new_one_does_not_have():
+    from clausters.gui import score, source
+
+    page = source(display_list={"vb": [1, 2], "glyphs": {}, "prims": [], "cursors": [3]})
+    n = score(display_list=page)
+    assert n["cursors"] == [3]
+    page.set({"vb": [1, 2], "glyphs": {}, "prims": []})
+    assert "cursors" not in n, "the last expansion's keys are what a rewrite clears"
+
+
+def test_two_sources_on_one_widget_do_not_clear_each_other():
+    """A clip draws samples and notes at once, and each source owns its own
+    slots: rewriting one leaves the other's props exactly where they were."""
+    from clausters.gui import clip, source
+
+    take = source([0.1, 0.2])
+    roll = source(notes=[(0.0, 1.0, 60)])
+    c = clip(dur=2.0, data=take, notes=roll)
+    roll.set([(0.0, 1.0, 64)])
+    assert c["data"] == [0.1, 0.2]
+    take.set([0.3])
+    assert c["notes"] == [0.0, 1.0, 64.0, 100, 0]
+
+
+def test_a_structure_source_names_exactly_one_prop():
+    from clausters.gui import source
+
+    with pytest.raises(TypeError, match="exactly one way"):
+        source(points=[], notes=[])
+    with pytest.raises(TypeError, match="describe samples"):
+        source(notes=[], channels=2)
+
+
+def test_a_structure_source_has_nowhere_to_reload_from():
+    from clausters.gui import source
+
+    with pytest.raises(TypeError, match="set"):
+        source(points=[]).reload()

@@ -1,7 +1,8 @@
 # Roadmap — the order the open work is taken in
 
-*Rewritten 2026-08-24, when the control's curve and step closed and the entry
-that led Phase 1 left the list. Before that: 2026-08-23 (four times: the last after the warp family reached the
+*Rewritten 2026-08-24, twice: the second time when the heavy props that are not
+samples got the source object, which emptied the reform's list of gaps. Before
+that, the same day, when the control's curve and step closed. Before that: 2026-08-23 (four times: the last after the warp family reached the
 core and both clients, which put the shared half of the control-range item in
 place and turned up three things that had never been written down — a wire
 vocabulary with three exceptions in it, a version that lives in five files, and
@@ -118,16 +119,10 @@ client's GUI surface was reformed — a builder returns a view that opens itself
 any root opens, ids belong to the instance, the samples are a source, a widget is
 built from the control it drives and a window binds against it — and the port
 landed the same day rather than being scheduled, which is the build strategy
-working as written, page decision and all. What is left of it leads the phase
-now: one of the two gaps the reform wrote down instead of faking — the other,
-the control's curve and step, closed on 2026-08-24 — and a question about the
-widgets it did not ask.*
-
-- ⬜ **A `Source` for the other heavy props** *(`clients/python/PLAN.md`, Found
-  by use)* — a roll's `notes`, a curve's `points`, a patcher's `boxes`/`cords`,
-  a score's `display_list`. The samples got the object; these are the same shape
-  and did not, because their builders flatten them before the node exists. Take
-  it before the port, so the port carries one rule rather than two.
+working as written, page decision and all. Both gaps it wrote down instead of
+faking closed on 2026-08-24 — the control's curve and step, and the source for
+the heavy props that are not samples — so what is left of it is the question
+about the widgets it did not ask.*
 
 - ⬜ **Every carrier takes an address, and all three default to loopback**
   *(`PLAN.md`, Found by use; the host's half in `clients/gui/PLAN.md`)*. Named

@@ -61,7 +61,7 @@ it as a plain script.
 import sys
 
 from clausters import Event, Session, play
-from clausters.gui import button, notation, panel, view
+from clausters.gui import button, notation, panel, source, view
 from clausters.seq.timeline import Playhead, Timeline
 
 # Six bars in ABC -- the readable way to type a score by hand; verovio reads MEI
@@ -89,13 +89,20 @@ TEMPO = 1.0
 # ## The window
 
 # %%
-def scene(display_list: dict, sample_rate: float) -> dict:
+def scene(engraved, sample_rate: float) -> dict:
     """A transport bar over a scrollable, zoomable view of the engraved score.
 
     Every widget is *named* — the seven transport buttons and the ``score`` page
     — so the script drives each by name and never picks an id. The bar is chrome:
     a fixed height, so the page takes all the rest however the window is
-    resized."""
+    resized.
+
+    ``engraved`` is a `clausters.gui.source` holding the display list, not the
+    list itself: an edit re-engraves the score and calls ``engraved.set(...)``,
+    which
+    reaches this definition *and* every window drawing it. Handed the raw dict
+    the view would draw the same page and the definition would go stale the
+    first time a note moved."""
     return view(
         panel(button(name="rewind", label="|<"),
               button(name="play", label="play"),
@@ -105,7 +112,7 @@ def scene(display_list: dict, sample_rate: float) -> dict:
               button(name="undo", label="undo"),
               button(name="redo", label="redo"),
               layout="row", h=34.0),
-        notation.score_view(display_list, name="score",
+        notation.score_view(engraved, name="score",
                             width=880.0, sample_rate=sample_rate, editable=True),
         layout="col", title="Engraved score (verovio -> GPU)", w=920, h=420,
     )
@@ -146,7 +153,8 @@ session = Session.live(tempo=TEMPO)
 server = session.server
 sr = float(server.options.sample_rate)
 gui = session.gui()
-win = gui.open(scene(dl, sr))
+engraved = source(display_list=dl)
+win = gui.open(scene(engraved, sr))
 
 session.start()                     # the clock runs the routines
 
@@ -192,10 +200,15 @@ def refresh_page():
     """Re-engrave the score and replace the drawn page in place, rebuilding
     the id index. Every edit ends here -- a drag, an undo, a redo -- since
     all the host needs is the new display list; the host keeps the playhead
-    and selection across the swap."""
+    and selection across the swap.
+
+    ``engraved.set`` is the whole of it: the source rewrites the definition and
+    pushes the drawing layers to every window already showing them, so a second
+    window (or a re-open of this one) shows the score as edited rather than as
+    engraved."""
     global dl, by_id
     dl = score.display_list()
-    win["score"].set(display_list=notation.page_json(dl))
+    engraved.set(dl)
     by_id = {note["id"]: note for note in dl["notes"]}
 
 def undo():

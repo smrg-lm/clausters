@@ -12,13 +12,15 @@ from __future__ import annotations
 
 from ..transport import Transport
 
-def score_view(display_list: dict, *, scroll_id: int | None = None,
+def score_view(display_list, *, scroll_id: int | None = None,
                score_id: int | None = None, name: str | None = None,
                width: float = 1000.0, zoom: bool = True,
                sample_rate: float | None = None,
                editable: bool | None = None) -> dict:
     """Wrap an engraved ``display_list`` in a `scroll` sized to the page, ready
-    to drop into a window. The content area is ``width`` wide and as tall as the
+    to drop into a window. The page is a dict, or a
+    `clausters.gui.guidef.Source` holding one so a re-engrave reaches the
+    definition and every window at once (``source(display_list=…)``). The content area is ``width`` wide and as tall as the
     page's aspect needs, so a multi-system score scrolls down the systems.
 
     ``zoom`` enables cursor-anchored zoom to read a dense passage, and it also
@@ -37,9 +39,13 @@ def score_view(display_list: dict, *, scroll_id: int | None = None,
     tags the inner `score` so a driver can address it by name — the page the
     transport anchors, and the one a re-engrave pushes back — instead of tracking
     its id (``win[name].set(display_list=…)``)."""
-    from ..guidef import score, scroll
+    from ..guidef import Source, score, scroll
 
-    vb = display_list.get("vb") or [1.0, 1.0]
+    # The scroll is sized from the page, so the size has to be readable here
+    # whether the page arrived as a dict or as a `clausters.gui.guidef.Source`
+    # holding one — the source's own expansion is what a definition carries.
+    page = display_list.props() if isinstance(display_list, Source) else display_list
+    vb = page.get("vb") or [1.0, 1.0]
     aspect = (vb[1] / vb[0]) if vb[0] else 1.0
     height = round(width * aspect, 1)
     return scroll(

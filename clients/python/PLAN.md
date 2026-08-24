@@ -999,3 +999,32 @@ work, where a pending item reads as done.)*
   structure rides as the JSON string its own `/gui_set` already takes). Worth
   doing when one of those props is next edited live from a script; until then a
   source there would be a surface that only half works.
+
+  **Closed 2026-08-24.** A source now names a **structure** as well as samples
+  — `source(points=…)`, `notes=`, `osc=`, `boxes=`, `cords=`, `display_list=`,
+  one keyword per prop, under the same "exactly one way" rule the carriers
+  already had — and every builder that flattens lets one through instead of
+  flattening it (`_held`, the mirror of `_samples_arg`). The normalization is
+  not duplicated: `_STRUCTURES` is the one table saying how each prop reaches
+  the wire, `Source.props` calls it, and the builder calls the same function
+  when it is handed a plain value, so both spellings put the identical flat
+  list in the definition.
+
+  What the carrier question becomes for a structure is *nothing to decide*: it
+  rides in the prop it is named by, which is why `reload` refuses there — a
+  structure holds its own payload and has nowhere to have moved from. The
+  engraved page is the one that travels two ways, and the source hides it: a
+  definition carries the display list as its five parts and a `/gui_set`
+  carries the whole `display_list`, so `Source.set` picks the door rather than
+  the caller.
+
+  **A latent defect fell out of it.** `_rewrite_source` cleared *every* carrier
+  key on the node it rewrote, which was right while a node could hold one
+  source; a clip holds two (its take and its notes), and the first `set` would
+  have cleared the other's prop. Each source now clears its own `slots()`.
+
+  Shipped in both clients, case for case, with `notation.score_view` taking a
+  page held as a source (it reads the page's size through `props()`) and both
+  score examples driving their round trip through one — an edit reaches the
+  definition too, so a re-open shows the score as edited rather than as
+  engraved.

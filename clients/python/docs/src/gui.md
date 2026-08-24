@@ -569,6 +569,51 @@ the detail reads the take back with `Buffer.get_samples` once it is finished.
 `stop()` cancels the subscription and leaves the caches readable; `free()` drops
 them.
 
+### The structures are held the same way
+
+Samples are one kind of heavy prop; the others are the **structures** — a
+`bpf`'s `points`, a roll's `notes` and `osc`, a patcher's `boxes` and `cords`,
+a `score`'s `display_list`. They are the same relation and they take the same
+object: name the prop the source *is*, and hand it to the builder in place of
+the value.
+
+```python
+env = source(points=[(0.0, 0.0), (1.0, 1.0, "exp")])
+win = view(bpf(name="env", points=env, editable=True)).open()
+
+env.set([(0.0, 1.0), (0.5, 0.3, "exp"), (1.0, 0.0)])   # every view follows
+```
+
+A structure has nothing to choose: it rides in its own prop, which is the
+carrier. What the source adds is that the payload stays **addressable** after
+the definition is written — one source in two views is one payload and two
+references, `set` reaches the definition and every window already drawing it,
+and the value is normalized on the way out exactly as the builder's own keyword
+normalizes it, so both spellings put the same flat list on the wire.
+
+An engraved page is the one that travels two ways, and the source hides it: a
+definition carries the display list as its parts (`vb`, `glyphs`, `prims`,
+`cursors`, `step`) and a live update carries the whole `display_list`, which is
+the host's door for replacing a drawing in place. `page.set(...)` picks the
+right one.
+
+```python
+engraved = source(display_list=score.display_list())
+win = view(notation.score_view(engraved, name="page", editable=True)).open()
+
+# a "transpose" event came back: apply it and hand the page back
+score.transpose_to(xml_id, position)
+engraved.set(score.display_list())
+```
+
+The source takes the display list whole and sends only its drawing layers, so
+`page_json` — the same layers as a JSON string — is what a **hand-driven**
+`win["page"].set(display_list=…)` still needs, and not something a source asks
+you for.
+
+There is no `reload()` for a structure — it holds its own payload, so there is
+nowhere for it to have moved.
+
 ### The axes carry the chrome
 
 A ruler, the visible window, the selection, the playhead and the value range

@@ -438,16 +438,20 @@ def _remove_spilled():
 
 
 class Source:
-    """The samples a view draws, as something you hold — and can change.
+    """The payload a view draws, as something you hold — and can change.
 
-    A signal view is fed one of several ways, and the wire spells each as its
-    own prop: ``data`` (a small list inline in the JSON), ``blob`` (an index
-    into the message's trailing binary arguments), ``path`` (a mapped raw-f32
-    file), ``cache`` (a prebuilt peak pyramid), ``buffer`` (a server buffer
-    number). Which one is right is a question about **size and where the samples
-    already are**, not about what you are drawing — and ``blob=0`` in particular
-    is a correspondence kept by hand between the widget and the ``open`` call
-    that had better pass that blob first.
+    A widget's heavy props are the ones that carry a **payload rather than a
+    scalar**, and there are two families of them. The samples of a signal view,
+    which the wire spells several ways — ``data`` (a small list inline in the
+    JSON), ``blob`` (an index into the message's trailing binary arguments),
+    ``path`` (a mapped raw-f32 file), ``cache`` (a prebuilt peak pyramid),
+    ``buffer`` (a server buffer number) — where which one is right is a question
+    about **size and where the samples already are**, not about what you are
+    drawing, and ``blob=0`` in particular is a correspondence kept by hand
+    between the widget and the ``open`` call that had better pass that blob
+    first. And the **structures**: a curve's ``points``, a roll's ``notes`` and
+    ``osc``, a patcher's ``boxes`` and ``cords``, a score's ``display_list`` —
+    each of which rides in its own prop and has exactly one way to travel.
 
     A `Source` answers it for you and stays addressable::
 
@@ -457,49 +461,72 @@ class Source:
 
         sig.set(other_samples)     # the definition and every open view follow
 
+        env = source(points=[(0.0, 0.0), (1.0, 1.0, "exp")])
+        view(bpf(points=env)).open()
+        env.set([(0.0, 1.0), (1.0, 0.0)])          # the same, for a structure
+
     It is the same relation a `clausters.defs.control` has with a knob: the
     entry point named once, and referred to instead of copied. Pass it to the
-    prop that names the input you mean (``data``, for samples); the object
-    decides how they travel, so the view never mentions a carrier.
+    prop that names the input you mean; the object decides how it travels, so
+    the view never mentions a carrier.
 
     One source in two views is **one payload and two references** — which is
     what makes the blobs interchangeable, said by the program rather than by
     convention.
 
-    **The carrier is decided once**, when the source is made, from what it first
-    holds: a short list stays inline, a long one spills to a temp raw-f32 file
-    that the source keeps for its life. `set` then writes through that same
-    carrier, because a widget already on screen was built around it — inline
-    samples are replaced with a ``/gui_set data``, and a file is **rewritten in
-    place** and re-read with a ``/gui_set reload``, which is the host's own pair
-    of doors for "the samples are now these" and "they are where they were, and
-    they moved".
+    **The carrier is decided once**, when the source is made. For samples it is
+    decided from what it first holds: a short list stays inline, a long one
+    spills to a temp raw-f32 file that the source keeps for its life; `set` then
+    writes through that same carrier, because a widget already on screen was
+    built around it — inline samples are replaced with a ``/gui_set data``, and
+    a file is **rewritten in place** and re-read with a ``/gui_set reload``,
+    which is the host's own pair of doors for "the samples are now these" and
+    "they are where they were, and they moved". For a structure the carrier is
+    the **prop itself**: it is normalized to its flat wire form on the way into
+    a definition and on the way out of `set`, which sends the whole list (or the
+    engraved page) through the ``/gui_set`` door that prop already has.
     """
 
-    __slots__ = ("_carrier", "_value", "_props", "_bound", "_live")
+    __slots__ = ("_carrier", "_value", "_props", "_bound", "_live", "_structure")
 
     def __init__(self, samples=None, *, buffer: "int | None" = None,
                  path: "str | None" = None, cache: "str | None" = None,
+                 points=None, notes=None, osc=None, boxes=None, cords=None,
+                 display_list: "dict | None" = None,
                  channels: "int | None" = None, sample_rate: "float | None" = None,
                  base_bucket: "int | None" = None):
+        held = _drop_none(points=points, notes=notes, osc=osc, boxes=boxes,
+                          cords=cords, display_list=display_list)
         given = [x for x in (samples, buffer, path, cache) if x is not None]
-        if len(given) != 1:
+        if len(given) + len(held) != 1:
             raise TypeError(
-                "a source names its samples exactly one way: an iterable of "
-                "floats, or buffer=/path=/cache= for samples that already live "
-                "somewhere the host can reach")
+                "a source names its payload exactly one way: an iterable of "
+                "floats (or buffer=/path=/cache= for samples that already live "
+                "somewhere the host can reach), or one of "
+                f"{'=/'.join(STRUCTURE_PROPS)}= for a structure that rides in "
+                "its own prop")
         #: the fixed props every carrier carries alongside the samples.
         self._props = _drop_none(channels=channels, sample_rate=sample_rate,
                                  base_bucket=base_bucket)
+        #: whether the payload is a structure (which rides in a prop of its
+        #: own) rather than samples (which choose among carriers).
+        self._structure = bool(held)
+        if self._structure and self._props:
+            raise TypeError(
+                "channels/sample_rate/base_bucket describe samples, and this "
+                f"source carries a {next(iter(held))} structure")
         #: ``(node, prop)`` for every node this source was placed in — the
         #: definitions it feeds, rewritten by `set` so a later `open` sends the
-        #: samples it holds now.
+        #: payload it holds now.
         self._bound: list = []
         #: ``(host, widget_id)`` for every live widget drawing it, so `set`
         #: reaches what is already on screen. An entry leaves when the host
         #: recycles the widget.
         self._live: list = []
-        if buffer is not None:
+        if self._structure:
+            (self._carrier, self._value), = held.items()
+            self.props()  # normalized now, so a malformed structure is caught here
+        elif buffer is not None:
             self._carrier, self._value = "buffer", int(buffer)
         elif path is not None:
             self._carrier, self._value = "path", str(path)
@@ -514,27 +541,57 @@ class Source:
 
     @property
     def carrier(self) -> str:
-        """How these samples travel: ``"data"``, ``"path"``, ``"cache"`` or
-        ``"buffer"``. Decided when the source is made and fixed for its life."""
+        """How this payload travels: for samples ``"data"``, ``"path"``,
+        ``"cache"`` or ``"buffer"``; for a structure the **prop itself**
+        (``"points"``, ``"notes"``, ``"osc"``, ``"boxes"``, ``"cords"``,
+        ``"display_list"``), which is the only way it can travel. Decided when
+        the source is made and fixed for its life."""
         return self._carrier
 
     def props(self) -> dict:
-        """The carrier props this source expands to — what a builder puts into
-        the node in place of the prop it was passed as."""
+        """The wire props this source expands to — what a builder puts into the
+        node in place of the prop it was passed as. A structure is normalized
+        here, so a definition carries the same flat form it would have carried
+        written out by hand."""
+        if self._structure:
+            return _STRUCTURES[self._carrier][0](self._value)
         return {self._carrier: self._value, **self._props}
 
-    def set(self, samples) -> "Source":
-        """Point this source at other samples: the **definitions** that hold it
-        are rewritten, and every widget already drawing it is told to redraw.
+    def slots(self) -> tuple:
+        """The node keys this source's expansion occupies, so a rewrite clears
+        exactly what the last one wrote — the five carriers for samples (they
+        are one slot spelled five ways), the prop's own keys for a structure."""
+        if self._structure:
+            return _STRUCTURES[self._carrier][1]
+        return SOURCE_PROPS
 
-        A view open twice is updated twice — the samples belong to the
+    def set(self, payload) -> "Source":
+        """Point this source at another payload: the **definitions** that hold
+        it are rewritten, and every widget already drawing it is told to
+        redraw.
+
+        A view open twice is updated twice — the payload belongs to the
         definition, so both instances follow; the per-instance door stays
         ``win["wave"].set(...)``.
 
-        Only a source that *holds* its samples takes this. One that names a
+        A **structure** always takes this: it is normalized the way its builder
+        would have normalized it, and rides out through the ``/gui_set`` door
+        its prop already has (a flat list as the JSON string a scalar-only wire
+        needs, an engraved page as the whole ``display_list``). Of the sample
+        carriers only the two that *hold* the samples take it. One that names a
         server buffer or a cache is a reference to samples somebody else owns:
         change them where they live and call `reload`.
         """
+        if self._structure:
+            self._value = payload
+            props = self.props()
+            for node, _ in self._bound:
+                _rewrite_source(node, props, self.slots())
+            live = self._live_props()
+            for host, wid in list(self._live):
+                host.set(wid, **live)
+            return self
+        samples = payload
         if self._carrier not in ("data", "path"):
             raise TypeError(
                 f"this source names a {self._carrier}, which it does not own — "
@@ -549,8 +606,8 @@ class Source:
                     "screen was built around it — make this one from a long "
                     "list, or from a path=, so it spills from the start")
             self._value = values
-            for node, prop in self._bound:
-                _rewrite_source(node, prop, self.props())
+            for node, _ in self._bound:
+                _rewrite_source(node, self.props(), self.slots())
             for host, wid in list(self._live):
                 host.set(wid, data=values)
             return self
@@ -565,12 +622,29 @@ class Source:
         """Tell every widget drawing this source to read it again — the samples
         are where they were and they moved (a file rewritten from outside, a
         server buffer recorded into, a cache rebuilt)."""
+        if self._structure:
+            raise TypeError(
+                f"a {self._carrier} source holds its own payload, so there is "
+                "nowhere for it to have moved — call set() with the structure "
+                "it should draw now")
         for host, wid in list(self._live):
             host.set(wid, reload=1)
         return self
 
+    def _live_props(self) -> dict:
+        """What a ``/gui_set`` carries for this structure. The same props a
+        definition takes, except for an engraved page: the wire spells the page
+        as five props in a definition and as the one ``display_list`` live,
+        which is the host's door for replacing a drawing in place."""
+        if self._carrier == "display_list":
+            # `props()` is already the drawing layers, which is exactly what a
+            # live page replaces — the client-side keys of a display list (its
+            # `notes`) never ride the wire, here or in a definition.
+            return {"display_list": self.props()}
+        return self.props()
+
     def __repr__(self) -> str:
-        held = len(self._value) if self._carrier == "data" else self._value
+        held = self._value if self._carrier in ("path", "cache", "buffer") else len(self._value)
         return f"<Source {self._carrier}={held!r}, {len(self._live)} live>"
 
 
@@ -583,33 +657,51 @@ def _samples_arg(data):
     return list(data)
 
 
-#: The prop names a `Source` may stand in for: the logical one (``data``, "the
-#: samples") and the carriers themselves, so a tree written the long way can
-#: adopt a source without moving the keyword.
+#: The sample prop names a `Source` may stand in for: the logical one
+#: (``data``, "the samples") and the carriers themselves, so a tree written the
+#: long way can adopt a source without moving the keyword. The **structure**
+#: props it may stand in for are `STRUCTURE_PROPS`, declared with the
+#: normalizers that give each one its wire form.
 SOURCE_PROPS = ("data", "blob", "path", "cache", "buffer")
 
 
-def _rewrite_source(node: dict, prop: str, props: dict):
-    """Put ``props`` into ``node`` in place of whatever carrier it held."""
-    for key in SOURCE_PROPS:
+def _rewrite_source(node: dict, props: dict, slots):
+    """Put ``props`` into ``node`` in place of the keys the source it belongs to
+    occupies — its `Source.slots`, not every key a source could ever write, so
+    one heavy prop's source never clears another's."""
+    for key in slots:
         node.pop(key, None)
     node.update(props)
 
 
 def source(samples=None, *, buffer: "int | None" = None, path: "str | None" = None,
-           cache: "str | None" = None, channels: "int | None" = None,
-           sample_rate: "float | None" = None,
+           cache: "str | None" = None, points=None, notes=None, osc=None,
+           boxes=None, cords=None, display_list: "dict | None" = None,
+           channels: "int | None" = None, sample_rate: "float | None" = None,
            base_bucket: "int | None" = None) -> Source:
-    """The samples a view draws, as a `Source` — held, referred to, and changed
+    """The payload a view draws, as a `Source` — held, referred to, and changed
     in place of being copied into a prop.
 
-    Give it an iterable of floats, or name samples that already live somewhere
-    the host can reach: ``buffer=`` (a server buffer number), ``path=`` (a raw
-    little-endian f32 file it maps) or ``cache=`` (a prebuilt peak pyramid, see
-    `peaks_cache_file`). ``channels`` de-interleaves it, ``sample_rate`` gives
-    the time ruler its unit and ``base_bucket`` sizes the peak pyramid.
+    For **samples**, give it an iterable of floats, or name samples that already
+    live somewhere the host can reach: ``buffer=`` (a server buffer number),
+    ``path=`` (a raw little-endian f32 file it maps) or ``cache=`` (a prebuilt
+    peak pyramid, see `peaks_cache_file`). ``channels`` de-interleaves it,
+    ``sample_rate`` gives the time ruler its unit and ``base_bucket`` sizes the
+    peak pyramid.
+
+    For a **structure**, name the prop it is: ``points=`` (a `bpf`'s
+    break-points), ``notes=`` / ``osc=`` (a roll's notes and event flags),
+    ``boxes=`` / ``cords=`` (a patcher's boxes and wires) or ``display_list=``
+    (an engraved `score` page). It takes the same form the builder's own keyword
+    takes, is normalized the same way, and `Source.set` replaces it live::
+
+        page = source(display_list=notation.page_json(dl))
+        view(score(display_list=page, editable=True)).open()
+        page.set(notation.page_json(dl))     # after applying an edit
     """
-    return Source(samples, buffer=buffer, path=path, cache=cache, channels=channels,
+    return Source(samples, buffer=buffer, path=path, cache=cache, points=points,
+                  notes=notes, osc=osc, boxes=boxes, cords=cords,
+                  display_list=display_list, channels=channels,
                   sample_rate=sample_rate, base_bucket=base_bucket)
 
 
@@ -631,7 +723,7 @@ def node(type: str, *, children=None, id: int | None = None, **props) -> View:
     """
     out: dict = {"type": type}
     sources = {}
-    for key in SOURCE_PROPS:
+    for key in SOURCE_PROPS + STRUCTURE_PROPS:
         held = props.get(key)
         if isinstance(held, Source):
             sources[key] = held
@@ -639,8 +731,9 @@ def node(type: str, *, children=None, id: int | None = None, **props) -> View:
     for key, value in props.items():
         if isinstance(value, Source):
             raise TypeError(
-                f"{type}: a source names a view's samples, so it goes in a prop "
-                f"that is one of {', '.join(SOURCE_PROPS)} — not {key!r}")
+                f"{type}: a source names a view's payload, so it goes in a prop "
+                f"that is one of {', '.join(SOURCE_PROPS + STRUCTURE_PROPS)} — "
+                f"not {key!r}")
     if id is not None:
         if not isinstance(id, int) or isinstance(id, bool):
             raise TypeError(
@@ -659,7 +752,7 @@ def node(type: str, *, children=None, id: int | None = None, **props) -> View:
         out["children"] = kids
     built = View(out)
     for key, held in sources.items():
-        _rewrite_source(built, key, held.props())
+        _rewrite_source(built, held.props(), held.slots())
         held._bound.append((built, key))
         built._sources.append(held)
     return built
@@ -718,8 +811,8 @@ def plane(*children, flow: str | None = None, axis: str | None = None,
     """
     extra = _drop_none(flow=flow, axis=axis, content_w=content_w, content_h=content_h,
                        view_x=view_x, view_y=view_y, view_zoom=view_zoom,
-                       boxes=list(boxes) if boxes is not None else None,
-                       cords=[int(x) for x in cords] if cords is not None else None,
+                       boxes=_held(boxes, _flat_boxes),
+                       cords=_held(cords, _flat_cords),
                        margin=margin, gap=gap, cols=cols, theme=theme, color=color)
     if zoom is not None:
         extra["zoom"] = 1 if zoom else 0
@@ -1598,7 +1691,7 @@ def bpf(*, points=None, min: float | None = None, max: float | None = None,
     Setting is live too: ``GuiHost.set(id, points=json.dumps(flat))`` replaces
     the whole list (a ``/gui_set`` value is a scalar, so the array rides as its
     JSON string)."""
-    extra = _drop_none(points=_flat_points(points) if points is not None else None,
+    extra = _drop_none(points=_held(points, _flat_points),
                        duration=duration, label=label, color=color)
     extra.update(_axes(axes, min=min, max=max))
     if exp is not None:
@@ -1644,6 +1737,57 @@ def _flat_notes(notes) -> list:
         channel = int(n[4]) if len(n) > 4 else 0
         out += [start, dur, pitch, velocity, channel]
     return out
+
+
+def _flat_boxes(boxes) -> list:
+    """A patcher's ``boxes`` as the list the wire carries — each box its own
+    ``{"def": name, "inlets": [...], "outlets": [...], "x": …, "y": …}`` dict,
+    kept verbatim (the schema is the host's, not this client's to reshape)."""
+    return list(boxes)
+
+
+def _flat_cords(cords) -> list:
+    """A patcher's ``cords`` as the flat ``[from_box, outlet, to_box, inlet,
+    ...]`` int list."""
+    return [int(x) for x in cords]
+
+
+def _score_props(display_list) -> dict:
+    """An engraved page as the props a **definition** carries it in: the wire
+    spells a `score`'s drawing as five keys, one per part of the display list,
+    and `GuiHost.set` spells the same page as the one ``display_list``."""
+    dl = dict(display_list or {})
+    return _drop_none(vb=dl.get("vb"), glyphs=dl.get("glyphs"),
+                      prims=dl.get("prims"), cursors=dl.get("cursors"),
+                      step=dl.get("step"))
+
+
+#: The **structure** props a `Source` may stand in for: for each one, how a
+#: value of it normalizes to the props a definition carries, and the node keys
+#: that expansion occupies (all but the engraved page write the prop they are
+#: named by). A structure has one way to travel — its own prop — so unlike the
+#: sample carriers there is nothing to choose, and what the source adds is that
+#: the payload stays addressable after the definition is written.
+_STRUCTURES = {
+    "points": (lambda v: {"points": _flat_points(v)}, ("points",)),
+    "notes": (lambda v: {"notes": _flat_notes(v)}, ("notes",)),
+    "osc": (lambda v: {"osc": _flat_osc(v)}, ("osc",)),
+    "boxes": (lambda v: {"boxes": _flat_boxes(v)}, ("boxes",)),
+    "cords": (lambda v: {"cords": _flat_cords(v)}, ("cords",)),
+    "display_list": (_score_props, ("vb", "glyphs", "prims", "cursors", "step")),
+}
+
+#: The structure prop names, in the order a message names them.
+STRUCTURE_PROPS = tuple(_STRUCTURES)
+
+
+def _held(value, flatten):
+    """A structure argument as it goes into the node: a `Source` passes through
+    untouched (`node` expands it into the props it carries), anything else is
+    normalized here — the same call the source would have made."""
+    if value is None or isinstance(value, Source):
+        return value
+    return flatten(value)
 
 
 def _flat_osc(osc) -> list:
@@ -1796,14 +1940,15 @@ def score(*, display_list: dict | None = None, playhead: float | None = None,
 
     All are settable live with ``GuiHost.set(score_id, playhead_at=…)``.
     """
-    dl = dict(display_list or {})
     extra = _drop_none(color=color, playhead=playhead, playhead_at=playhead_at,
                        playhead_loop_start=playhead_loop_start,
                        playhead_loop_len=playhead_loop_len,
                        sample_rate=sample_rate, selected=selected,
-                       editable=editable, vb=dl.get("vb"), glyphs=dl.get("glyphs"),
-                       prims=dl.get("prims"), cursors=dl.get("cursors"),
-                       step=dl.get("step"))
+                       editable=editable)
+    if isinstance(display_list, Source):
+        extra["display_list"] = display_list   # `node` expands it into the five
+    else:
+        extra.update(_score_props(display_list))
     return node("score", id=id, **extra, **props)
 
 
@@ -2042,8 +2187,8 @@ def clip(*, offset: float = 0.0, dur: float, data=None, blob: int | None = None,
                        data=_samples_arg(data),
                        blob=blob, buffer=buffer, path=path, cache=cache,
                        channels=channels, base_bucket=base_bucket,
-                       notes=_flat_notes(notes) if notes is not None else None,
-                       points=_flat_points(points) if points is not None else None,
+                       notes=_held(notes, _flat_notes),
+                       points=_held(points, _flat_points),
                        min=min, max=max, start=start, layer=layer, hidden=hidden,
                        label=label, color=color)
     for key, flag in (("exp", exp), ("editable", editable),
@@ -2113,8 +2258,8 @@ def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | No
     host's live input; a script can equally paint via a `clausters.responders.
     MidiFunc` and ``/gui_set``)."""
     extra = _drop_none(
-        notes=_flat_notes(notes) if notes is not None else None,
-        osc=_flat_osc(osc) if osc is not None else None,
+        notes=_held(notes, _flat_notes),
+        osc=_held(osc, _flat_osc),
         snap=snap, label=label, color=color)
     extra.update(_axes(
         axes, min=min, max=max, link=link, ruler=ruler,
@@ -2230,8 +2375,8 @@ def patch(*, boxes=None, cords=None, label: str | None = None, color: str | None
     the cord to its `GraphPatch` and re-renders — the clips' edit-back pattern.
     """
     extra = _drop_none(
-        boxes=list(boxes) if boxes is not None else None,
-        cords=[int(x) for x in cords] if cords is not None else None,
+        boxes=_held(boxes, _flat_boxes),
+        cords=_held(cords, _flat_cords),
         label=label, color=color)
     return node("plane", id=id, **extra, **props)
 

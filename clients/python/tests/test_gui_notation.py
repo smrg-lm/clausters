@@ -139,6 +139,21 @@ def test_score_view_places_the_rate_on_the_inner_score():
     assert inner["sample_rate"] == 48000.0
 
 
+def test_score_view_sizes_itself_from_a_page_held_as_a_source():
+    """The scroll reads the page's own size, so it has to reach it through a
+    source too — and the page then follows an edit into every window."""
+    from clausters.gui import source
+
+    page = source(display_list={"vb": [1000, 500], "glyphs": {}, "prims": []})
+    view = notation.score_view(page, scroll_id=10, score_id=11, width=800.0)
+    assert view["content_h"] == 400.0
+    inner = view["children"][0]
+    assert inner["vb"] == [1000, 500] and "display_list" not in inner
+
+    page.set({"vb": [1000, 500], "glyphs": {}, "prims": [{"kind": "line"}]})
+    assert inner["prims"] == [{"kind": "line"}]
+
+
 @functools.cache
 def _editor_alive() -> bool:
     """Whether this verovio can edit at all.

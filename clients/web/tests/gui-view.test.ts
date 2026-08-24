@@ -18,12 +18,17 @@ import type { Connection } from "../src/base/connection.ts";
 import { decodePacket, loadOsc } from "../src/base/osc.ts";
 import { control } from "../src/defs/ugens/index.ts";
 import { GuiHost } from "../src/gui/host.ts";
+import { scoreView } from "../src/gui/notation/view.ts";
 import { setAmbientHost } from "../src/gui/ambient.ts";
 import {
+    bpf,
+    clip,
     INLINE_MAX,
     knob,
     label,
     layout,
+    pianoroll,
+    score,
     slider,
     source,
     toggle,
@@ -32,6 +37,7 @@ import {
     waveform,
     window as windowAlias,
 } from "../src/gui/guidef.ts";
+import type { GuiNode } from "../src/gui/guidef.ts";
 
 const here = new URL(".", import.meta.url);
 await loadOsc(await readFile(new URL("../dist/core/clausters_core_web_bg.wasm", here)));
@@ -290,8 +296,98 @@ test("a freed widget stops being a live end", () => {
 test("a source in a prop that names no samples is refused", () => {
     assert.throws(
         () => knob({ label: source([0.5]) as unknown as string }),
-        /a source names a view's samples/,
+        /a source names a view's payload/,
     );
+});
+
+// ---- the same object for the structures: points, notes, boxes, a page -------
+
+test("a structure source expands into the flat wire form", () => {
+    const env = source(undefined, { points: [[0.0, 0.0], [1.0, 1.0, "exp"]] });
+    const a = bpf({ points: env });
+    const b = bpf({ points: [[0.0, 0.0], [1.0, 1.0, "exp"]] });
+    assert.equal(env.carrier, "points");
+    assert.deepEqual(a["points"], [0.0, 0.0, 1, 0.0, 1.0, 1.0, 2, 0.0]);
+    assert.deepEqual(a["points"], b["points"]);
+});
+
+test("a structure set rewrites the definition and the live widget", () => {
+    const { host, sent } = fakeHost();
+    const roll = source(undefined, { notes: [[0.0, 1.0, 60]] });
+    const v = view({}, pianoroll({ name: "roll", notes: roll }));
+    const win = host.open(v);
+
+    const before = sent().length;
+    roll.set([[0.0, 2.0, 62, 90]]);
+    assert.deepEqual(v.find("roll")!["notes"], [0.0, 2.0, 62, 90, 0]);
+    const after = sent().slice(before).filter((m) => m.addr === "/gui_set");
+    assert.deepEqual(after.map((m) => [m.args[0], m.args[1], m.args[2]]), [
+        [win.widget("roll").id, "notes", "[0,2,62,90,0]"],
+    ]);
+});
+
+test("an engraved page is five props in a definition and one live", () => {
+    const { host, sent } = fakeHost();
+    const page = source(undefined, { displayList: { vb: [10, 20], glyphs: {}, prims: [] } });
+    const v = view({}, score({ name: "page", displayList: page }));
+    const win = host.open(v);
+    assert.deepEqual(v.find("page")!["vb"], [10, 20]);
+    assert.equal(v.find("page")!["display_list"], undefined);
+
+    const before = sent().length;
+    page.set({ vb: [30, 40], glyphs: {}, prims: [7] });
+    assert.deepEqual(v.find("page")!["vb"], [30, 40]);
+    assert.deepEqual(v.find("page")!["prims"], [7]);
+    const msg = sent().slice(before).find((m) => m.addr === "/gui_set")!;
+    assert.deepEqual([msg.args[0], msg.args[1]], [win.widget("page").id, "display_list"]);
+    assert.deepEqual(JSON.parse(String(msg.args[2])).vb, [30, 40]);
+});
+
+test("a page rewrite drops the part the new one does not have", () => {
+    const page = source(undefined, {
+        displayList: { vb: [1, 2], glyphs: {}, prims: [], cursors: [3] },
+    });
+    const n = score({ displayList: page });
+    assert.deepEqual(n["cursors"], [3]);
+    page.set({ vb: [1, 2], glyphs: {}, prims: [] });
+    assert.equal(n["cursors"], undefined, "the last expansion's keys are what a rewrite clears");
+});
+
+test("two sources on one widget do not clear each other", () => {
+    const take = source([0.1, 0.2]);
+    const roll = source(undefined, { notes: [[0.0, 1.0, 60]] });
+    const c = clip({ dur: 2.0, data: take, notes: roll });
+    roll.set([[0.0, 1.0, 64]]);
+    assert.deepEqual(c["data"], [0.1, 0.2]);
+    take.set([0.3]);
+    assert.deepEqual(c["notes"], [0.0, 1.0, 64, 100, 0]);
+});
+
+test("a structure source names exactly one prop", () => {
+    assert.throws(
+        () => source(undefined, { points: [], notes: [] }),
+        /exactly one way/,
+    );
+    assert.throws(
+        () => source(undefined, { notes: [], channels: 2 }),
+        /describe samples/,
+    );
+});
+
+test("a score view sizes itself from a page held as a source", () => {
+    const page = source(undefined, { displayList: { vb: [1000, 500], glyphs: {}, prims: [] } });
+    const v = scoreView(page, { scrollId: 10, scoreId: 11, width: 800.0 });
+    assert.equal(v["content_h"], 400.0);
+    const inner = (v["children"] as GuiNode[])[0]!;
+    assert.deepEqual(inner["vb"], [1000, 500]);
+    assert.equal(inner["display_list"], undefined);
+
+    page.set({ vb: [1000, 500], glyphs: {}, prims: [{ kind: "line" }] });
+    assert.deepEqual(inner["prims"], [{ kind: "line" }]);
+});
+
+test("a structure source has nowhere to reload from", () => {
+    assert.throws(() => source(undefined, { points: [] }).reload(), /set\(\)/);
 });
 
 // ---- a control widget is built from the control it drives -------------------
