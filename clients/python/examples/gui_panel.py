@@ -2,7 +2,8 @@
 """A scripted instrument panel: controls that round-trip values and events.
 
 It builds a ``window`` of standard controls -- knobs, sliders, a number, a
-toggle, a button and a menu -- opens it **twice**, then both *drives* a widget
+toggle, a button and a menu, two of them non-linear (a curved knob and a
+stepped number) -- opens it **twice**, then both *drives* a widget
 live with ``set`` and *listens* for the events your interactions emit (turn a
 knob, click the button) and the close the host sends when you close a window.
 No audio server is involved, so this boots only the GUI host.
@@ -50,9 +51,11 @@ gui = GuiHost().boot()
 
 # %%
 v = view(
-    panel(knob(name="cutoff", label="cutoff", min=20.0, max=20000.0, value=800.0),
+    panel(knob(name="cutoff", label="cutoff", min=20.0, max=20000.0, value=800.0,
+               curve=4.0),
           knob(name="res", label="res", min=0.0, max=1.0, value=0.3),
-          number(name="gain", label="gain", min=-24.0, max=24.0, value=0.0),
+          number(name="gain", label="gain", min=-24.0, max=24.0, value=0.0,
+                 step=1.0),
           layout="row"),
     panel(slider(name="mix", label="mix", min=0.0, max=1.0, value=0.5),
           toggle(name="bypass", label="bypass", value=False),
@@ -60,6 +63,18 @@ v = view(
           menu(name="wave", options=["sine", "saw", "square"], index=1, label="wave"),
           layout="row"),
     title="Filter", w=560, h=300, layout="col")
+
+# %% [markdown]
+# ## How the travel becomes the value
+# Two of those are not linear. The cutoff knob carries `curve=4.0`, so half its
+# travel is spent below 2.5 kHz instead of leaving 20..2000 Hz in a hairline --
+# the bend `lincurve` runs, read by the host out of the shared core. The gain
+# number carries `step=1.0`, so a drag lands on whole decibels and prints
+# `-3.0`, never `-3.0417`. Turn the `res` knob beside them to feel the
+# difference: it is linear and continuous, which is the default.
+#
+# The step is a rule about the hand: the `set` below sends 2000.0 to a curved
+# knob and it is drawn at 2000.0, because a control shows what it was told.
 
 # %% [markdown]
 # ## Two windows from one view

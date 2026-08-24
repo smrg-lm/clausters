@@ -1,6 +1,7 @@
 # Roadmap — the order the open work is taken in
 
-*Rewritten 2026-08-23 (four times: the last after the warp family reached the
+*Rewritten 2026-08-24, when the control's curve and step closed and the entry
+that led Phase 1 left the list. Before that: 2026-08-23 (four times: the last after the warp family reached the
 core and both clients, which put the shared half of the control-range item in
 place and turned up three things that had never been written down — a wire
 vocabulary with three exceptions in it, a version that lives in five files, and
@@ -102,15 +103,15 @@ landed on 2026-08-21, each with a parity suite that asserts the two clients
 produce the same tree, the same document and the same engraving, and `DefPatch`
 closed the one surface it named on its way past.*
 
-***What the warp family changed, on 2026-08-23.** The shared numeric half of
-the item that leads this phase is built: SuperCollider's eight range maps and
-the exponential-endpoint rule now live once in `clausters_core::warp`, reached
-by both clients, and the three copies of that curve the tree carried — the
-envelope's exponential shape, its bent one, and the server's `XLine` — read it
-instead of restating it. That is why the first entry below is smaller than it
-was, and why three new ones sit behind it: the family has no signal side yet,
-and doing it turned up a wire vocabulary with three exceptions in it and a
-version number that lives in five files.*
+***What the warp family left, on 2026-08-23.** SuperCollider's eight range
+maps and the exponential-endpoint rule now live once in
+`clausters_core::warp`, reached by both clients, and the three copies of that
+curve the tree carried — the envelope's exponential shape, its bent one, and
+the server's `XLine` — read it instead of restating it. The control's own curve
+and step, which that half was built for, closed on 2026-08-24 and are gone from
+this list. What the family left behind sits at the end of the phase: it has no
+signal side yet, and doing it turned up a wire vocabulary with three exceptions
+in it and a version number that lives in five files.*
 
 ***The violation the phase created on 2026-08-23 is already paid.** The Python
 client's GUI surface was reformed — a builder returns a view that opens itself,
@@ -118,22 +119,9 @@ any root opens, ids belong to the instance, the samples are a source, a widget i
 built from the control it drives and a window binds against it — and the port
 landed the same day rather than being scheduled, which is the build strategy
 working as written, page decision and all. What is left of it leads the phase
-now: two gaps the reform wrote down instead of faking, and a question about the
+now: one of the two gaps the reform wrote down instead of faking — the other,
+the control's curve and step, closed on 2026-08-24 — and a question about the
 widgets it did not ask.*
-
-- ⬜ **A control has a range and no curve, and no step** *(`clients/gui/PLAN.md`,
-  Found by use)*. **Leads the phase, and its shared half is now built.** The
-  host draws a control linearly over `min..max` and that is all: a `step`
-  reaches it as a prop nothing reads, and there is no warp at all — which is why
-  a **named spec** (`spec="freq"`, 20..20000 exponential) was deliberately not
-  shipped, one that silently drew linear being worse than none. What the entry
-  asked for first — that a warp live in shared geometry rather than being
-  re-derived per client — landed on 2026-08-23 as `clausters_core::warp`, so the
-  curve the host has to draw is now a function it reads (`curve_unit`/
-  `curve_value`, `exp_unit`/`exp_value`) rather than one it invents. What is
-  left is the host's own: two props on `props::Range`, the parse, the drag math,
-  and the builders in both clients. Still taken together, because a curve
-  without a step leaves `midinote` wrong.
 
 - ⬜ **A `Source` for the other heavy props** *(`clients/python/PLAN.md`, Found
   by use)* — a roll's `notes`, a curve's `points`, a patcher's `boxes`/`cords`,

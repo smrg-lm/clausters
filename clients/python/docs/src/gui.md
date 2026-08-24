@@ -124,6 +124,33 @@ it is, the call says how to draw it).
 All three def families answer the same way — `sd["freq"]`, `fd["cutoff"]`,
 `gd["mix"]` — so the widget does not care which built it.
 
+And the range is **linear** unless the widget says otherwise. Two keywords say
+otherwise, and a control that wants both spells both:
+
+```python
+slider(sd["amp"], min=0.0, max=1.0, curve=4.0)        # fine at the bottom
+number(label="note", min=0.0, max=127.0, step=1.0)   # whole note numbers
+```
+
+`curve` bends the range the handle travels: `0` (the default) is linear,
+negative spends most of the range on the first half of the travel and positive
+on the last half — the fine-at-the-bottom feel a frequency or an amplitude
+control wants. It is the same bend `lincurve` runs and an envelope
+segment runs on the audio thread, because the host reads it out of the shared
+core rather than deriving one of its own: a control feels the way the value it
+produces was computed.
+
+`step` is the grid a **drag** lands on, in the value's own units. It is counted
+from `min` and never leaves the range, so a grid that does not divide it
+(`0..10` by `3`) stops at `9` rather than on an off-grid `10`. A Faust
+parameter arrives with the step its `hslider` declared, like its range. A value
+*you* send — `value=`, or `win.widget("note").set(value=...)` — is drawn as sent: the
+step is a rule about the hand, not a constraint on what the script may say.
+
+There is deliberately no *named* spec (`spec="freq"` for 20..20000
+exponential). These two keywords are what one would be built out of, and a name
+that silently drew the wrong curve would be worse than no name at all.
+
 The widget's `name` becomes the control's name, which is what the handle
 addresses it by, and what [binding](#values-that-never-come-back-to-the-script) uses to
 reach the synth.

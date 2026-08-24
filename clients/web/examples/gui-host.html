@@ -126,10 +126,13 @@
           { layout: "row" },
           gui.knob({ name: "freq", label: "freq", min: 50.0, max: 2000.0,
                      value: 220.0 }),
+          // `curve` bends the travel: half the sweep is spent below about 1 kHz
+          // instead of leaving the low end in a hairline. `step` is the grid a
+          // drag lands on, here whole hundredths of the amplitude.
           gui.knob({ name: "cutoff", label: "cutoff", min: 100.0, max: 8000.0,
-                     value: 2000.0 }),
+                     value: 2000.0, curve: 4.0 }),
           gui.slider({ name: "amp", label: "amp", min: 0.0, max: 0.5,
-                       value: 0.2, vertical: true, w: 90 }),
+                       value: 0.2, step: 0.01, vertical: true, w: 90 }),
         ),
         gui.panel(
           { layout: "row", h: 44 },

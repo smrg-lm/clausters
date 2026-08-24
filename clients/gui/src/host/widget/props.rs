@@ -16,6 +16,7 @@
 //! model should not walk 800 lines of them to reach it. Each one owns its own
 //! `apply`/`parse` where it has one, so a new prop on a bundle is one edit.
 
+use clausters_core::warp;
 use serde_json::Value;
 
 use super::WidgetKind;
@@ -962,12 +963,28 @@ impl Rate {
 }
 
 /// The shared payload of the continuous controls (`slider`/`knob`/`number`): a
-/// value clamped to a range, with an optional label.
+/// value clamped to a range, with an optional label — plus the two rules that
+/// say *how* the handle's travel becomes that value, the **curve** it is read
+/// along and the **step** it lands on.
 #[derive(Debug, Clone)]
 pub struct Range {
     pub value: f32,
     pub min: f32,
     pub max: f32,
+    /// The bend of the axis between `min` and `max`: `0` is linear, negative
+    /// spends most of the range on the first half of the travel, positive on
+    /// the last half — which is the fine-at-the-bottom feel a frequency or an
+    /// amplitude control wants. It is
+    /// [`clausters_core::warp`]'s curve — the same one an envelope segment and
+    /// a client's `lincurve` run — so a control does not feel one way here and
+    /// another where the value was computed.
+    pub curve: f32,
+    /// The grid a **drag** lands on, in the value's own units: `0` is
+    /// continuous, `1` over `0..127` is the integers `\midinote` wants, and a
+    /// Faust parameter arrives with the one its `hslider` declared. A value the
+    /// script *sends* is drawn as sent — the step is a rule about the hand, not
+    /// a constraint on the document.
+    pub step: f32,
     pub label: Option<String>,
     /// The glyph scale the control's label and value read-out draw at.
     pub text_size: f32,
@@ -982,31 +999,44 @@ impl Range {
             value,
             min,
             max,
+            curve: number(props, "curve", 0.0),
+            step: number(props, "step", 0.0),
             label: label(props),
             text_size: text_size(props),
         }
     }
 
-    /// This control's value axis — the range its handle travels.
-    pub(crate) fn axis(&self) -> crate::viewport::Axis {
-        crate::viewport::Axis::ranged(
-            self.min as f64,
-            self.max as f64,
-            crate::viewport::Unit::Norm,
-        )
-    }
-
-    /// The value as a 0..1 fraction of the range (for rendering).
+    /// The value as a 0..1 fraction of the range (for rendering): where the
+    /// handle sits along the bend the drag reads.
+    ///
+    /// The **exact inverse** of [`set_fraction`](Self::set_fraction), curve and
+    /// all, so the handle is drawn where a drag would have to leave it — which
+    /// a reversed range (`min > max`, a legitimate control) did not use to get:
+    /// this read the value off a normalized axis while the write read it off
+    /// the declared ends, and the handle came out mirrored.
     pub fn fraction(&self) -> f32 {
-        self.axis().fraction_clamped(self.value as f64) as f32
+        warp::curve_unit(self.value, self.min, self.max, self.curve).clamp(0.0, 1.0)
     }
 
-    /// Sets the value from a 0..1 fraction of the range (for interaction).
+    /// Sets the value from a 0..1 fraction of the range (for interaction):
+    /// along the curve, then onto the step's grid.
     pub fn set_fraction(&mut self, t: f32) {
-        // Not `value_at_clamped`: a reversed range (`min > max`) is a legitimate
-        // control, and the axis normalizes its bounds, so the value is read off
-        // the declared ends rather than the sorted ones.
-        self.value = self.min + t.clamp(0.0, 1.0) * (self.max - self.min);
+        let v = warp::curve_value(t.clamp(0.0, 1.0), self.min, self.max, self.curve);
+        self.value = self.snap(v);
+    }
+
+    /// `v` on the step's grid, counted from `min` and never past `max` — the
+    /// clamp is a step count rather than a clamp on the value, so a grid that
+    /// does not divide the range (`0..10` by `3`) ends on `9` instead of an
+    /// off-grid `10`. Unstepped, `v` unchanged.
+    fn snap(&self, v: f32) -> f32 {
+        let step = self.step.abs().copysign(self.max - self.min);
+        if step == 0.0 || !step.is_finite() {
+            return v;
+        }
+        let last = ((self.max - self.min) / step).floor().max(0.0);
+        let n = ((v - self.min) / step).round().clamp(0.0, last);
+        self.min + n * step
     }
 }
 

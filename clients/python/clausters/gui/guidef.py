@@ -1083,7 +1083,8 @@ def label(text: str = "", *, text_size: float | None = None, wrap: bool | None =
 
 
 def knob(control=None, *, label: str | None = None, min: float | None = None,
-         max: float | None = None, value: float | None = None,
+         max: float | None = None, curve: float | None = None, step: float | None = None,
+         value: float | None = None,
          text_size: float | None = None, color: str | None = None,
          id: int | None = None, **props) -> View:
     """A rotary ``knob`` over a continuous range. ``text_size`` scales its
@@ -1096,23 +1097,45 @@ def knob(control=None, *, label: str | None = None, min: float | None = None,
         knob(freq)                  # or knob(sd["freq"]), knob(fd["cutoff"])
 
     The keywords still win where you spell one, and a control with no range says
-    so rather than being drawn over a guess."""
-    extra = _drop_none(label=label, min=min, max=max, value=value, text_size=text_size, color=color)
+    so rather than being drawn over a guess.
+
+    ``curve`` and ``step`` say how the travel becomes the value; see `slider`,
+    which spells them out."""
+    extra = _drop_none(label=label, min=min, max=max, curve=curve, step=step,
+                       value=value, text_size=text_size, color=color)
     if control is not None:
         extra = _from_control(control, extra, props, needs_range=True)
     return _built_from(node("knob", id=id, **extra, **props), control)
 
 
 def slider(control=None, *, label: str | None = None, min: float | None = None,
-           max: float | None = None, value: float | None = None, vertical: bool = False,
+           max: float | None = None, curve: float | None = None, step: float | None = None,
+           value: float | None = None, vertical: bool = False,
            text_size: float | None = None, color: str | None = None,
            id: int | None = None, **props) -> View:
     """A continuous ``slider`` over a range. ``vertical=True`` lays it out along
     the y axis (min at the bottom, max at the top) instead of horizontally.
     ``text_size`` scales its label and value read-out.
 
-    Takes a def's control positionally, like `knob`."""
-    extra = _drop_none(label=label, min=min, max=max, value=value, text_size=text_size, color=color)
+    Takes a def's control positionally, like `knob`.
+
+    ``curve`` bends the range the handle travels: ``0`` (the default) is
+    linear, negative spends most of the range on the first half of the travel,
+    positive on the last half — the fine-at-the-bottom feel a frequency or an
+    amplitude control wants. It is the same bend `lincurve` runs, and the host
+    reads it out of the shared core, so a control feels the way the value it
+    produces was computed::
+
+        slider(amp, min=0.0, max=1.0, curve=4.0)
+
+    ``step`` is the grid a **drag** lands on, in the value's own units —
+    ``step=1.0`` over ``0..127`` is the integers a MIDI note number wants, and
+    a FaustDef's parameter arrives with the one its ``hslider`` declared. It is
+    counted from ``min`` and never leaves the range. A value *you* send
+    (``value=``, or `clausters.gui.handle.WidgetHandle.set`) is drawn as sent:
+    the step is a rule about the hand, not a constraint on the document."""
+    extra = _drop_none(label=label, min=min, max=max, curve=curve, step=step,
+                       value=value, text_size=text_size, color=color)
     if control is not None:
         extra = _from_control(control, extra, props, needs_range=True)
     if vertical:
@@ -1121,14 +1144,17 @@ def slider(control=None, *, label: str | None = None, min: float | None = None,
 
 
 def number(control=None, *, label: str | None = None, min: float | None = None,
-           max: float | None = None, value: float | None = None,
+           max: float | None = None, curve: float | None = None, step: float | None = None,
+           value: float | None = None,
            text_size: float | None = None, color: str | None = None,
            id: int | None = None, **props) -> View:
     """A draggable numeric read-out over a range. ``text_size`` scales its
     label and value.
 
-    Takes a def's control positionally, like `knob`."""
-    extra = _drop_none(label=label, min=min, max=max, value=value, text_size=text_size, color=color)
+    Takes a def's control positionally, like `knob`. ``step=1.0`` is what makes
+    it a whole-number entry; ``curve`` bends its drag, as on `slider`."""
+    extra = _drop_none(label=label, min=min, max=max, curve=curve, step=step,
+                       value=value, text_size=text_size, color=color)
     if control is not None:
         extra = _from_control(control, extra, props, needs_range=True)
     return _built_from(node("number", id=id, **extra, **props), control)

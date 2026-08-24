@@ -3316,7 +3316,7 @@ finished work, where a pending item reads as done.
   pass because a cleanup riding in a legibility fix is how a diff stops being
   readable.
 
-- ⬜ **A control has a range and no curve, and no step** *(noted 2026-08-23,
+- ✅ **A control has a range and no curve, and no step** *(noted 2026-08-23,
   with the Python client's control-widget work)*. `props::Range` is
   `{value, min, max, label, text_size}`: a knob, a slider and a number are
   **linear over min..max**, and that is the whole of it. Two things the clients
@@ -3338,3 +3338,27 @@ finished work, where a pending item reads as done.
   Both are one prop each on `Range` plus their use in the drag math. Do them
   together: a spec is the pair, and shipping the curve without the step leaves
   `\midinote` (integers over a linear range) still wrong.
+
+  **Closed 2026-08-24, both at once.** `props::Range` carries `curve` and
+  `step`, parsed with the rest and live over `/gui_set`, and both drags read
+  them: `fraction`/`set_fraction` are `warp::curve_unit`/`warp::curve_value`
+  now, so the bend is the core's one function and not a second copy — a `curve`
+  of 0 falls through to the linear map *inside* the core, which is why an
+  unbent control computes exactly what it always did. The value a drag produces
+  then lands on the step's grid, counted from `min` and clamped as a step
+  **count** rather than as a value, so a grid that does not divide the range
+  (`0..10` by `3`) stops on the last whole step instead of on an off-grid end,
+  and a reversed range steps from its own `min` downward. The step is a rule
+  about the **hand**: a value the script sends is drawn as sent, because a
+  control shows what it was told. Both clients grew the two keywords on
+  `knob`/`slider`/`number` — a Faust parameter's own step already arrived
+  through the control it was built from — and `docs/gui-protocol.md` states the
+  pair. The named spec is still deliberately absent, and it is now client-side
+  sugar over these two rather than a capability nothing has.
+
+  **It turned up a defect of the same math on the way.** `fraction` read the
+  value off a *normalized* axis while `set_fraction` wrote it against the
+  declared ends, so a **reversed** range (`min > max`, a legitimate control)
+  drew its handle mirrored: the drag put the value where the hand was and the
+  picture showed the other end. Reading both directions out of one primitive
+  is what fixes it, and `Range::axis` — which had no other caller — is gone.

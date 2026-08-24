@@ -1266,18 +1266,36 @@ export interface RangeOptions extends WidgetOptions {
     label?: string;
     min?: number;
     max?: number;
+    /**
+     * The bend of the range the handle travels: `0` (the default) is linear,
+     * negative spends most of the range on the first half of the travel and
+     * positive on the last half — the fine-at-the-bottom feel a frequency or
+     * an amplitude control wants. The same bend `lincurve` runs, read by the
+     * host out of the shared core.
+     */
+    curve?: number;
+    /**
+     * The grid a **drag** lands on, in the value's own units: `1` over
+     * `0..127` is the integers a MIDI note number wants, and a FaustDef's
+     * parameter arrives with the one its `hslider` declared. Counted from
+     * `min`, and never past `max`. A value *you* send is drawn as sent — the
+     * step is a rule about the hand, not a constraint on the document.
+     */
+    step?: number;
     value?: number;
     textSize?: number;
 }
 
 function rangeProps(options: RangeOptions): [Props, Props] {
-    const { label: text, min, max, value, textSize, ...rest } = options;
+    const { label: text, min, max, curve, step, value, textSize, ...rest } = options;
     return [
         rest,
         drop([
             ["label", text],
             ["min", min],
             ["max", max],
+            ["curve", curve],
+            ["step", step],
             ["value", value],
             ["text_size", textSize],
         ]),

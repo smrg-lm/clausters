@@ -893,6 +893,8 @@ mod tests {
             value: 800.0,
             min: 20.0,
             max: 20000.0,
+            curve: 0.0,
+            step: 0.0,
             label: Some("cutoff".into()),
             text_size: Metrics::default().text_scale,
         };
