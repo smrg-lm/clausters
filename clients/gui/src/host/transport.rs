@@ -29,18 +29,20 @@ use super::{ClientId, Host, HostEffect};
 /// so both can run on one machine without colliding.
 pub const DEFAULT_PORT: u16 = 57210;
 
-/// Binds the script front's TCP leg on `port` for the headless loop: the
+/// Binds the script front's TCP leg at `bind` for the headless loop: the
 /// hub's reader threads wake `socket` (the front's own UDP socket) with a
 /// zero-length datagram whenever a frame is queued.
-pub fn bind_tcp(socket: &UdpSocket, port: u16, max_frame: usize) -> io::Result<TcpHub> {
-    TcpHub::bind(("127.0.0.1", port), wake_target(socket)?, max_frame)
+pub fn bind_tcp(socket: &UdpSocket, bind: SocketAddr, max_frame: usize) -> io::Result<TcpHub> {
+    TcpHub::bind(bind, wake_target(socket)?, max_frame)
 }
 
-/// Binds the script front's WebSocket leg on `port` for the headless loop —
-/// same wake pattern as TCP. Bound like the audio server's `--ws` (reachable
-/// beyond loopback: a browser on another machine is the point).
-pub fn bind_ws(socket: &UdpSocket, port: u16, max_frame: usize) -> io::Result<WsHub> {
-    WsHub::bind(("0.0.0.0", port), wake_target(socket)?, max_frame)
+/// Binds the script front's WebSocket leg at `bind` for the headless loop —
+/// same wake pattern as TCP. Where it listens is the caller's: like the audio
+/// server's `--ws`, the flag defaults to loopback and an interface is named to
+/// widen it (a browser on another machine is a decision, not a side effect of
+/// asking for the carrier).
+pub fn bind_ws(socket: &UdpSocket, bind: SocketAddr, max_frame: usize) -> io::Result<WsHub> {
+    WsHub::bind(bind, wake_target(socket)?, max_frame)
 }
 
 fn wake_target(socket: &UdpSocket) -> io::Result<SocketAddr> {

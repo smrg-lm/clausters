@@ -24,6 +24,7 @@
 
 use serde::Deserialize;
 use std::collections::BTreeMap;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 /// The whole configuration tree: one section per audience. Unknown keys are
 /// ignored (forward compatibility), and every field is optional.
@@ -208,28 +209,29 @@ pub struct StandaloneConfig {
     pub data_dir: Option<String>,
 }
 
-/// A transport toggle that may also carry a port: `tcp = true` (default port),
-/// `tcp = false` (off), or `tcp = 57110` (a specific port).
-#[derive(Debug, Clone, Copy, Deserialize)]
+/// A transport toggle that may also carry a bind: `tcp = true` (default port
+/// on the default interface), `tcp = false` (off), `tcp = 57110` (a port), or
+/// `tcp = "0.0.0.0:57110"` (an address, a port, or both — the spelling the
+/// command-line flags take, see [`PortChoice::parse`]).
+#[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum PortSetting {
     /// `true`/`false`: on at the program's default port, or off.
     Enabled(bool),
     /// A concrete port number (implies on).
     Port(u16),
+    /// `[addr:]port` as a string (implies on): `"0.0.0.0:57110"`,
+    /// `"0.0.0.0"` (the port still follows the base), `"[::1]:57110"`.
+    Bind(String),
 }
 
-impl PortSetting {
-    /// Resolves to the port to bind, or `None` when disabled. `default_port` is
-    /// the program's own default for this transport.
-    pub fn resolve(self, default_port: u16) -> Option<u16> {
-        match self {
-            PortSetting::Enabled(true) => Some(default_port),
-            PortSetting::Enabled(false) => None,
-            PortSetting::Port(p) => Some(p),
-        }
-    }
-}
+/// The interface a carrier binds when nothing names one: **loopback**.
+///
+/// Choosing a carrier is not consenting to the network. A `--tcp` or a `--ws`
+/// asked for on behalf of a client on this machine used to open the port to
+/// the LAN, so the widening is now something written down — `--ws
+/// 0.0.0.0:57120` — rather than a side effect of picking a transport.
+pub const DEFAULT_BIND: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
 
 /// How far a WebSocket front sits from its program's base port when it is given
 /// no number of its own. It shares the TCP namespace, so it cannot share the
@@ -237,62 +239,93 @@ impl PortSetting {
 /// host.
 pub const WS_PORT_OFFSET: u16 = 10;
 
-/// What a transport was asked to do with its port, before the base port is
+/// What a transport was asked to do with its bind, before the base port is
 /// known.
 ///
 /// Both programs here bind several fronts around one **base** port — UDP or the
 /// script-facing front binds it, TCP follows it, WebSocket sits
-/// [`WS_PORT_OFFSET`] above — and both accept the same three answers per
-/// transport: follow the base, sit at a number, stay off. The answer cannot be
-/// turned into a port as it is read, because `--tcp` may come before the
-/// `--port` it follows, so it is recorded here and resolved once the whole
-/// command line (and the config beneath it) is in.
+/// [`WS_PORT_OFFSET`] above — and both accept the same answers per transport:
+/// follow the base, sit at a number, stay off, on whichever interface was named
+/// or on [`DEFAULT_BIND`] when none was. The answer cannot be turned into an
+/// address as it is read, because `--tcp` may come before the `--port` it
+/// follows, so it is recorded here and resolved once the whole command line
+/// (and the config beneath it) is in.
 ///
 /// This is the shared half of what used to be two copies of the same rule, one
 /// per binary, the second of which encoded "follow the base" as a port-zero
 /// sentinel.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PortChoice {
-    /// Bind the base port this transport is measured from.
-    Follow,
-    /// Bind this number, wherever the base ended up.
-    At(u16),
+    /// Bind the base port this transport is measured from, on this interface.
+    Follow(Option<IpAddr>),
+    /// Bind this number, wherever the base ended up, on this interface.
+    At(Option<IpAddr>, u16),
     /// Do not bind at all.
     Off,
 }
 
-impl From<PortSetting> for PortChoice {
-    fn from(setting: PortSetting) -> Self {
-        match setting {
-            PortSetting::Enabled(true) => PortChoice::Follow,
+impl TryFrom<PortSetting> for PortChoice {
+    type Error = String;
+
+    fn try_from(setting: PortSetting) -> Result<Self, String> {
+        Ok(match setting {
+            PortSetting::Enabled(true) => PortChoice::Follow(None),
             PortSetting::Enabled(false) => PortChoice::Off,
-            PortSetting::Port(port) => PortChoice::At(port),
-        }
+            PortSetting::Port(port) => PortChoice::At(None, port),
+            PortSetting::Bind(text) => PortChoice::parse(&text)?,
+        })
     }
 }
 
 impl PortChoice {
-    /// The port to bind, or `None` when this transport stays off. `base` is
+    /// Reads the one spelling every carrier's flag and config value takes,
+    /// `[addr:]port`: a bare port (`57110`), an address and a port
+    /// (`0.0.0.0:57110`, `[::1]:57110`), or an address alone (`0.0.0.0`), which
+    /// leaves the port following the base. Addresses are literals — a hostname
+    /// is not resolved here, since a name can answer with several.
+    pub fn parse(token: &str) -> Result<Self, String> {
+        if let Ok(port) = token.parse::<u16>() {
+            return Ok(PortChoice::At(None, port));
+        }
+        if let Ok(addr) = token.parse::<SocketAddr>() {
+            return Ok(PortChoice::At(Some(addr.ip()), addr.port()));
+        }
+        if let Ok(addr) = token.parse::<IpAddr>() {
+            return Ok(PortChoice::Follow(Some(addr)));
+        }
+        Err(format!(
+            "{token:?} is not [addr:]port (a port, an address, or both: 57110, \
+             0.0.0.0:57110, 0.0.0.0, [::1]:57110)"
+        ))
+    }
+
+    /// The address to bind, or `None` when this transport stays off. `base` is
     /// what [`PortChoice::Follow`] means for *this* transport — the program's
-    /// base port, already offset for a WebSocket front.
-    pub fn resolve(self, base: u16) -> Option<u16> {
+    /// base port, already offset for a WebSocket front — and an unnamed
+    /// interface is [`DEFAULT_BIND`].
+    pub fn resolve(self, base: u16) -> Option<SocketAddr> {
         match self {
-            PortChoice::Follow => Some(base),
-            PortChoice::At(port) => Some(port),
+            PortChoice::Follow(addr) => Some(SocketAddr::new(addr.unwrap_or(DEFAULT_BIND), base)),
+            PortChoice::At(addr, port) => Some(SocketAddr::new(addr.unwrap_or(DEFAULT_BIND), port)),
             PortChoice::Off => None,
         }
     }
 
     /// The choice a transport ends up with, in the precedence every option
     /// here follows: a command-line flag wins, else the config file's setting,
-    /// else `default` (what the program does when nobody says anything).
+    /// else `default` (what the program does when nobody says anything). The
+    /// error is a config value that is not `[addr:]port`; the caller names the
+    /// key it came from.
     pub fn pick(
         flag: Option<PortChoice>,
         setting: Option<PortSetting>,
         default: PortChoice,
-    ) -> Self {
-        flag.or_else(|| setting.map(PortChoice::from))
-            .unwrap_or(default)
+    ) -> Result<Self, String> {
+        match (flag, setting) {
+            (Some(flag), _) => Ok(flag),
+            (None, Some(setting)) => PortChoice::try_from(setting),
+            (None, None) => Ok(default),
+        }
     }
 }
 
@@ -575,43 +608,64 @@ mod tests {
     fn a_transport_follows_the_base_port_it_is_measured_from() {
         // The rule both binaries bind by: follow the base, sit at a number, or
         // stay off -- and the WebSocket front's base is the program's, offset.
+        // An unnamed interface is loopback, in all three.
         let base = 57130;
-        assert_eq!(PortChoice::Follow.resolve(base), Some(57130));
-        assert_eq!(PortChoice::At(57145).resolve(base), Some(57145));
+        let local = |port| Some(SocketAddr::new(DEFAULT_BIND, port));
+        assert_eq!(PortChoice::Follow(None).resolve(base), local(57130));
+        assert_eq!(PortChoice::At(None, 57145).resolve(base), local(57145));
         assert_eq!(PortChoice::Off.resolve(base), None);
         assert_eq!(
-            PortChoice::Follow.resolve(base + WS_PORT_OFFSET),
-            Some(57140)
+            PortChoice::Follow(None).resolve(base + WS_PORT_OFFSET),
+            local(57140)
         );
+    }
+
+    #[test]
+    fn a_carrier_binds_loopback_until_an_address_says_otherwise() {
+        // The one spelling every flag and every config value takes. A port
+        // alone stays on loopback -- asking for a transport is not asking for
+        // the network -- and the widening is the address written down.
+        let base = 57110;
+        let at = |text: &str| PortChoice::parse(text).unwrap().resolve(base).unwrap();
+        assert_eq!(at("57120"), "127.0.0.1:57120".parse().unwrap());
+        assert_eq!(at("0.0.0.0:57120"), "0.0.0.0:57120".parse().unwrap());
+        // An address alone leaves the port where the base put it.
+        assert_eq!(at("0.0.0.0"), "0.0.0.0:57110".parse().unwrap());
+        assert_eq!(at("[::1]:57120"), "[::1]:57120".parse().unwrap());
+        assert_eq!(at("::"), "[::]:57110".parse().unwrap());
+        // A hostname is not an address here: a name can answer with several.
+        assert!(PortChoice::parse("localhost:57120").is_err());
+        assert!(PortChoice::parse("").is_err());
     }
 
     #[test]
     fn a_flag_wins_over_the_config_and_the_config_over_the_default() {
         // The precedence every option here follows, in the one place that now
         // states it for a port.
-        let off = Some(PortSetting::Enabled(false));
+        let off = || Some(PortSetting::Enabled(false));
+        let pick = |flag, setting| PortChoice::pick(flag, setting, PortChoice::Follow(None));
         assert_eq!(
-            PortChoice::pick(Some(PortChoice::At(9)), off, PortChoice::Follow),
-            PortChoice::At(9)
+            pick(Some(PortChoice::At(None, 9)), off()),
+            Ok(PortChoice::At(None, 9))
         );
-        assert_eq!(
-            PortChoice::pick(None, off, PortChoice::Follow),
-            PortChoice::Off
-        );
-        assert_eq!(
-            PortChoice::pick(None, None, PortChoice::Follow),
-            PortChoice::Follow
-        );
-        // A configured number and a configured `true` are the two other shapes
-        // the file can take.
+        assert_eq!(pick(None, off()), Ok(PortChoice::Off));
+        assert_eq!(pick(None, None), Ok(PortChoice::Follow(None)));
+        // A configured number, a configured `true` and a configured bind are
+        // the three shapes the file can take.
         assert_eq!(
             PortChoice::pick(None, Some(PortSetting::Port(57145)), PortChoice::Off),
-            PortChoice::At(57145)
+            Ok(PortChoice::At(None, 57145))
         );
         assert_eq!(
             PortChoice::pick(None, Some(PortSetting::Enabled(true)), PortChoice::Off),
-            PortChoice::Follow
+            Ok(PortChoice::Follow(None))
         );
+        assert_eq!(
+            pick(None, Some(PortSetting::Bind("0.0.0.0:57145".into()))),
+            Ok(PortChoice::At(Some("0.0.0.0".parse().unwrap()), 57145))
+        );
+        // A config value that is not [addr:]port is reported, not ignored.
+        assert!(pick(None, Some(PortSetting::Bind("nowhere".into()))).is_err());
     }
 
     #[test]
@@ -703,8 +757,20 @@ mod tests {
         assert_eq!(cfg.server.max_nodes, Some(2048));
         assert_eq!(cfg.server.max_ugen_inputs, Some(16));
         assert_eq!(cfg.server.persist, Some(false));
-        assert_eq!(cfg.server.tcp.unwrap().resolve(57110), Some(57110));
-        assert_eq!(cfg.server.ws.unwrap().resolve(57120), Some(9000));
+        let bind = |setting: PortSetting, base| {
+            PortChoice::try_from(setting)
+                .unwrap()
+                .resolve(base)
+                .unwrap()
+        };
+        assert_eq!(
+            bind(cfg.server.tcp.unwrap(), 57110),
+            "127.0.0.1:57110".parse().unwrap()
+        );
+        assert_eq!(
+            bind(cfg.server.ws.unwrap(), 57120),
+            "127.0.0.1:9000".parse().unwrap()
+        );
         assert_eq!(
             cfg.server.midi.unwrap().resolve("clausters"),
             Some("synth".into())
@@ -739,9 +805,6 @@ mod tests {
 
     #[test]
     fn port_and_midi_toggles_resolve() {
-        assert_eq!(PortSetting::Enabled(true).resolve(57110), Some(57110));
-        assert_eq!(PortSetting::Enabled(false).resolve(57110), None);
-        assert_eq!(PortSetting::Port(1234).resolve(57110), Some(1234));
         assert_eq!(MidiSetting::Enabled(false).resolve("clausters"), None);
         assert_eq!(
             MidiSetting::Name("x".into()).resolve("clausters"),

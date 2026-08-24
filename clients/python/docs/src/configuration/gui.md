@@ -22,8 +22,8 @@ Every key is optional, and unknown keys are ignored.
 | Key | Type | Default | Flag | What it sets |
 | --- | --- | --- | --- | --- |
 | `host_port` | integer | `57210` | `--port` | The port of the host's script-facing front (UDP and TCP alike) |
-| `tcp` | boolean or port | `true` — on at `host_port` | `--tcp [port]` / `--no-tcp` | The front's TCP leg, which is how a `/gui_def` tree escapes the datagram limit (and the Python client's default carrier) |
-| `ws` | boolean or port | off; `true` means `57220` | `--ws [port]` | The front's WebSocket leg — a page driving a native host |
+| `tcp` | boolean, port or bind | `true` — on at `host_port`, on loopback | `--tcp [[addr:]port]` / `--no-tcp` | The front's TCP leg, which is how a `/gui_def` tree escapes the datagram limit (and the Python client's default carrier) |
+| `ws` | boolean, port or bind | off; `true` means `57220`, on loopback | `--ws [[addr:]port]` | The front's WebSocket leg — a page driving a native host |
 | `max_frame` | integer (bytes) | `16777216` (16 MiB) | `--max-frame` | Largest OSC frame on the stream legs, TCP and WebSocket alike |
 | `server` | string `host:port` | off | `--server` | Also attach the **client leg** to a running audio server: what a `buffer`-fed waveform and a bound widget need |
 | `shm` | string (path) | off | `--shm` | Map the audio server's shared-memory segment (its own `--shm` path) for zero-message meters, scopes and playheads |
@@ -33,6 +33,15 @@ Every key is optional, and unknown keys are ignored.
 | `msaa` | integer | `1` — off | `--msaa` | Antialiasing: the MSAA sample count of every window's render pass (`4` is the usual smoothing). One multisampled attachment per window and nothing per widget; a count the GPU does not offer for the surface format falls back to `1` |
 | `theme` | table | the built-in dark theme | `--theme <path>` | Color-role overrides — [the table below](#guitheme) |
 | `metrics` | table | the generated table | — | Size-role overrides — [the table below](#guimetrics) |
+
+Every leg binds **loopback** until an address says otherwise, the audio
+server's own rule: `tcp`, `ws` and the flags that override them take a bind
+(`"0.0.0.0:57220"`, `"0.0.0.0"`, `"[::1]:57210"`), and `--udp [addr:]port`
+moves the UDP leg by itself. A host reachable from another machine is therefore
+something written down — worth knowing before you write it, since two things
+degrade over that distance and neither is a bind: a source's `path` carrier
+writes a file the host maps, so client and host are assumed to share a
+filesystem, and `data_dir` names the *host's* GuiDef store.
 
 Two flags have no configuration key: `--standalone [name]` (which reads
 `[standalone]`, below) and `--config <path>`, which replaces the whole

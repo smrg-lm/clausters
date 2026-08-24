@@ -2268,12 +2268,17 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   re-defining the window, and the two clients differ in what `Source.set` can
   do — which is the reason this is written down rather than left to be
   rediscovered.
-- ⬜ **The host's binds follow the server's rule: every carrier takes an
-  address, loopback by default** *(named 2026-08-23)*. The rule and the table
-  live in the root `PLAN.md`'s "Found by use", which owns it — both fronts
-  change together. The host's half: `--ws` binds `0.0.0.0` today and becomes
-  `--ws [addr:]port` defaulting to loopback, and the TCP leg **stays** loopback
-  whatever else moves, because it is the one that is on by default.
+- ✅ **The host's binds follow the server's rule: every carrier takes an
+  address, loopback by default** *(named 2026-08-23, done 2026-08-24 with the
+  server's half)*. The rule and the table live in the root `PLAN.md`'s "Found by
+  use", which owns it — both fronts changed together. The host's half: `--ws`
+  bound `0.0.0.0` and now takes `--ws [[addr:]port]` defaulting to loopback, the
+  TCP leg **stayed** loopback, and the UDP leg grew the flag it never had
+  (`--udp [addr:]port`) so the three read the same. What the host contributed to
+  the diagnosis is that its `bind_ws` and the windowed front's `run` each wrote
+  an address into their own body, one of them disagreeing with the headless
+  path's neighbour two functions above; they take a `SocketAddr` now and decide
+  nothing.
 - ✅ **A clip's curve body drew nothing, in both fronts.** `Element::draw_body`
   paints nothing by default and `Curve` never overrode it, so an automation
   clip — the multitrack editor's whole envelope lane — was an empty rectangle

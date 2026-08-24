@@ -1,8 +1,10 @@
 # Roadmap — the order the open work is taken in
 
-*Rewritten 2026-08-24, twice: the second time when the heavy props that are not
-samples got the source object, which emptied the reform's list of gaps. Before
-that, the same day, when the control's curve and step closed. Before that: 2026-08-23 (four times: the last after the warp family reached the
+*Rewritten 2026-08-24, three times: the third when every carrier took an
+address and all six legs went loopback, which was the last entry ahead of the
+consistency pass that now leads. Before that, the same day, when the heavy
+props that are not samples got the source object, which emptied the reform's
+list of gaps, and before that when the control's curve and step closed. Before that: 2026-08-23 (four times: the last after the warp family reached the
 core and both clients, which put the shared half of the control-range item in
 place and turned up three things that had never been written down — a wire
 vocabulary with three exceptions in it, a version that lives in five files, and
@@ -124,13 +126,13 @@ faking closed on 2026-08-24 — the control's curve and step, and the source for
 the heavy props that are not samples — so what is left of it is the question
 about the widgets it did not ask.*
 
-- ⬜ **Every carrier takes an address, and all three default to loopback**
-  *(`PLAN.md`, Found by use; the host's half in `clients/gui/PLAN.md`)*. Named
-  while deciding whether a GUI host may be remote: it may, and the useful
-  topology is a bind question rather than a client one. Choosing a carrier is
-  not consenting to the network, and today `--tcp` and `--ws` open the port to
-  the LAN on both fronts. Here because it touches the server and the host at
-  once and nothing above it depends on it — not because it is urgent.
+***What leads the phase now is a consistency pass**, three entries that are
+maintenance rather than features: a wasm export that grew surface the protocol
+never had, three wire selectors spelled the way the table meant to leave behind,
+and — behind them, and only if a release is being cut — the version that lives
+in five places. The binds went the same way on 2026-08-24: every carrier takes
+an address and all six legs default to loopback, so choosing a transport stopped
+opening a port to the LAN.*
 
 - ⬜ **A typeface is a wasm binding, so only the browser can change one**
   *(`clients/gui/PLAN.md`, Found by use)*. There is no `/gui_*` verb for a

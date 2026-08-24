@@ -70,9 +70,11 @@ persist = true           # persist/reload defs; false is like --no-persist
 # data_dir = "/path"     # def store location (else the XDG data dir)
 # shm = "/clausters"     # shared-memory segment path for local clients
 # tcp = true             # TCP transport (on by default at the base port):
-#                        # false disables it, a port number moves it
+#                        # false disables it, a port number moves it, and a
+#                        # string binds it ("0.0.0.0:57110")
 # ws = 57120             # WebSocket transport: true = the base port + 10,
-#                        # or a number
+#                        # a number, or "0.0.0.0:57120" to reach it from
+#                        # another machine
 # max_frame = 16777216   # largest OSC frame on TCP/WebSocket, in bytes
 # max_clients = 64       # concurrent stream clients, TCP + WebSocket combined
 # max_stream_buses = 4096  # buses one /bus_stream subscription may list; a
@@ -93,10 +95,11 @@ clock = "sample"         # real-time session clock timebase: "sample" (default,
 [gui]                    # the GUI host
 host_port = 57210        # port for the host's script-facing front (UDP + TCP)
 # tcp = true             # the front's TCP leg (on by default at host_port):
-#                        # false disables it, a port number moves it
+#                        # false disables it, a port number moves it, and a
+#                        # string binds it ("0.0.0.0:57210")
 # ws = true              # the front's WebSocket leg (off by default): true for
-#                        # host_port + 10 (57220), or a port number —
-#                        # browser-reachable, the same toggle as the server's
+#                        # host_port + 10 (57220), a port number, or a bind
+#                        # string — the same toggle as the server's
 # max_frame = 16777216   # largest OSC frame on the stream legs (TCP and
 #                        # WebSocket), in bytes
 # server = "127.0.0.1:57110"  # also attach the client leg to this audio server
@@ -143,12 +146,20 @@ port or name. TCP is the one transport that is **on by default** (at the base
 port, alongside UDP), so its `true` is the implicit state and `false` (or
 `--no-tcp`) is the meaningful override.
 
+A transport key may also carry the **bind** its flag takes, as a string:
+`tcp = "0.0.0.0:57110"`, `ws = "0.0.0.0"` (the port still follows the base),
+`tcp = "[::1]:57110"`. Every carrier binds **loopback** until one of these says
+otherwise — asking for a transport is not asking for the network — and the same
+`[addr:]port` spelling is what `--udp`, `--tcp` and `--ws` accept on the command
+line.
+
 `port` is the **base** the others are measured from: UDP binds it, TCP follows
 it and WebSocket sits ten above, so moving one number moves the whole server and
 several run side by side, one per port. A transport that should sit somewhere
 else says so with its own key (or `--udp`/`--tcp`/`--ws` on the command line);
 UDP is the one that cannot be turned off, since it is the door a client probes
-to find the server at all. The virtual MIDI port's default name follows too — a
+to find the server at all, and it binds loopback like the rest until `--udp`
+names an address. The virtual MIDI port's default name follows too — a
 server off 57110 opens `clausters:<port>` rather than a second `clausters`.
 
 ## Per-program use
@@ -161,7 +172,7 @@ server off 57110 opens `clausters:<port>` rather than a second `clausters`.
   `--no-persist`). A flag on the command line overrides the file. `--udp` has no
   key of its own: in a file, write the base in `port` and give `tcp` a number.
 - **GUI host** — the `[gui]` section supplies the defaults for `clausters-gui`
-  (`--port`, `--tcp`/`--no-tcp`, `--max-frame`, `--server`, `--shm`,
+  (`--port`, `--tcp`/`--no-tcp`, `--ws`, `--max-frame`, `--server`, `--shm`,
   `--data-dir`, `--headless`); the `[standalone]`
   section supplies the standalone launch. The `[gui.theme]` table restyles the
   host's color roles; `--theme <path>` lays a free-standing theme file — the

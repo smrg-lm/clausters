@@ -91,7 +91,7 @@ with the server started as
 cargo run --release -- --ws          # from the repository root; 57120 by default
 ```
 
-Nothing else in the page changes — that one line is the only place a carrier is named. A `--ws` server also compiles Faust, which the in-page engine cannot: it is a build without the Faust compiler's LLVM.
+The server binds **loopback**, which is all a page served from this machine needs; a page on another machine reaches it only if the server was started with the address said out loud (`--ws 0.0.0.0:57120`). Nothing else in the page changes — that one line is the only place a carrier is named. A `--ws` server also compiles Faust, which the in-page engine cannot: it is a build without the Faust compiler's LLVM.
 
 ## Where to go next
 

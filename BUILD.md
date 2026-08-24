@@ -369,9 +369,11 @@ seq).
 The main groups of options (all detailed in `--help` and in
 [`docs/configuration.md`](docs/configuration.md)):
 
-- **Transports** — `--tcp [port]` (length-prefixed OSC over TCP), `--ws [port]`
-  (OSC over WebSocket, reachable from a browser), `--shm <path>` (shared-memory
-  segment for local clients), `--midi [name]` (virtual MIDI input port).
+- **Transports** — `--tcp [[addr:]port]` (length-prefixed OSC over TCP),
+  `--ws [[addr:]port]` (OSC over WebSocket, reachable from a browser),
+  `--shm <path>` (shared-memory segment for local clients), `--midi [name]`
+  (virtual MIDI input port). Every carrier binds **loopback** unless its flag
+  names an interface (`--ws 0.0.0.0:57120`).
 - **Audio I/O & pools** — `--sample-rate`, `--inputs`/`--outputs`,
   `--audio-buses`/`--control-buses`, `--max-nodes`, `--max-buffers`, and the
   other pre-allocated pool sizes.

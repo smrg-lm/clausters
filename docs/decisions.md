@@ -6558,3 +6558,44 @@ does.
 the native front's `grab_pointer`/`release_pointer`/`device_event` path. No
 element asks a front for the pointer any more, and a gesture is made of cursor
 positions on both fronts — which is what makes the two the same program.
+
+
+## Choosing a carrier is not consenting to the network
+
+Every carrier's flag was a port and nothing else, and the two fronts had drifted
+into three different answers about where they listened: the audio server bound
+UDP on loopback and TCP and WebSocket on `0.0.0.0`; the GUI host bound UDP and
+TCP on loopback and WebSocket on `0.0.0.0`. Nothing said any of it — a `--tcp`
+or a `--ws` asked for on behalf of a client on the same machine opened the port
+to the LAN, and the one leg that is on by default (the host's TCP) was loopback
+only by luck of which file it was written in.
+
+So the flags take the address: `--udp [addr:]port`, `--tcp [[addr:]port]`,
+`--ws [[addr:]port]`, on both programs, in one shared parser
+(`config::PortChoice::parse`) — a bare port, an address alone (the port still
+follows the base), or both. **Loopback is the default in all six legs**, and the
+widening is a decision written on the command line: `--ws 0.0.0.0:57120` for
+whoever means the network. The WebSocket leg is not the exception it looks
+like — a page served from this machine reaches `ws://127.0.0.1` either way, so
+the common case pays nothing.
+
+- **The bind belongs to the flag, not to the leg's own module.** `bind_tcp`,
+  `bind_ws` and the windowed front's `run` used to name `"127.0.0.1"` or
+  `"0.0.0.0"` in their bodies, which is how one front came to differ from the
+  other without anybody choosing it. They take a `SocketAddr` now and where it
+  points is settled once, where the line is read.
+- **A config value says it the same way.** `tcp = "0.0.0.0:57110"` is the same
+  string the flag takes, beside the `true`/`false`/port the key already
+  accepted, so nothing has two spellings.
+- **A typo is an error, not a bare flag.** A token after `--ws` that is not a
+  bind used to fall through as "no argument" and resurface as `unknown
+  argument: 0.0.0.0:57121`; it is now reported against the flag that owns it.
+  Addresses are literals — a hostname would resolve to several and the flag
+  binds one.
+
+**Remote is then something asked for**, which is where it belongs, and two
+things degrade under it — neither of them a bind, both worth naming before they
+are found by ear. A GUI source's `path` carrier writes a temp file the host
+maps, so client and host are assumed to share a filesystem; over a distance only
+the inline ceiling is left. And `--data-dir` names the *host's* GuiDef store,
+not the script's.

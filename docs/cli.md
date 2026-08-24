@@ -23,7 +23,8 @@ documented in [the Python client book](https://clausters-python.readthedocs.io/)
 
 ```
 clausters [--port <n>] [--workers <n>] [--shm <path>] [--data-dir <dir>]
-          [--no-persist] [--prune-defs] [--udp [port]] [--tcp [port] | --no-tcp] [--ws [port]]
+          [--no-persist] [--prune-defs] [--udp [addr:]port]
+          [--tcp [[addr:]port] | --no-tcp] [--ws [[addr:]port]]
           [--midi [name]] [--sample-rate <hz>]
 ```
 
@@ -34,13 +35,22 @@ sits ten above. Moving that one number moves the whole server, which is what
 lets several run side by side on one machine — see
 [Configuration](configuration.md#schema) for the rule in full.
 
+**Every carrier binds loopback**, and every carrier's flag takes an address:
+`[addr:]port` is a port (`--ws 57120`), an address (`--tcp 0.0.0.0`, the port
+still follows the base), or both (`--ws 0.0.0.0:57120`, `--tcp [::1]:57110`).
+Choosing a carrier is not consenting to the network — a `--ws` for a browser on
+this machine reaches `ws://127.0.0.1` either way — so reaching the server from
+another machine is a decision written on the command line rather than a side
+effect of picking a transport. Addresses are literals: a hostname is not
+resolved here, since a name can answer with several.
+
 | Flag | Value | Default | What it does |
 | --- | --- | --- | --- |
 | `--port` | port | `57110` | The base OSC port. |
-| `--udp` | port (optional) | the base port | Moves the UDP front alone. UDP cannot be turned off: it is the door a client probes to find the server. |
-| `--tcp` | port (optional) | the base port | Length-prefixed OSC over TCP — the command plane, on by default. Bare, it follows the base port. |
+| `--udp` | `[addr:]port` (optional) | the base port, loopback | Moves the UDP front alone. UDP cannot be turned off: it is the door a client probes to find the server. |
+| `--tcp` | `[addr:]port` (optional) | the base port, loopback | Length-prefixed OSC over TCP — the command plane, on by default. Bare, it follows the base port. |
 | `--no-tcp` | — | — | Disables TCP entirely (a UDP-only server). |
-| `--ws` | port (optional) | the base port + 10 | Also accept OSC over WebSocket (`ws://host:port/`), reachable from a browser. Off unless asked for. |
+| `--ws` | `[addr:]port` (optional) | the base port + 10, loopback | Also accept OSC over WebSocket (`ws://host:port/`), reachable from a browser. Off unless asked for. |
 | `--max-frame` | bytes | `16777216` | Largest OSC frame on the stream transports. A denial-of-service ceiling, not a protocol limit; UDP keeps its ~64 KB datagram cap regardless. |
 | `--max-clients` | count | `64` | Concurrent stream clients, TCP and WebSocket combined. A connection past the ceiling is dropped at accept; UDP is connectionless and unaffected. |
 | `--max-stream-buses` | count | `4096` | Bus indices one `/bus_stream` subscription may list. A subscription is one client's whole live picture — a page of many canvases asks for a bus per meter — so the ceiling scales with a document, not with a widget. What a given client may ask for is this clamped by what one reply carries over its carrier, and `/server_query.reply` reports **that** number to it. |
@@ -114,7 +124,8 @@ score with one that makes no sound (a final `/node_free`) to set the duration.
 
 ```
 clausters-gui [--port <n>] [--server <host:port>] [--shm <path>] [--headless]
-              [--tcp [port] | --no-tcp] [--ws [port]] [--max-frame <bytes>]
+              [--udp [addr:]port] [--tcp [[addr:]port] | --no-tcp]
+              [--ws [[addr:]port]] [--max-frame <bytes>]
               [--data-dir <dir>] [--standalone [name]] [--config <path>]
               [--theme <path>] [--font <path>] [--msaa <n>]
               [--follow-block <seconds>]
@@ -127,9 +138,16 @@ optional **client leg** into a running audio server. What travels over each is
 | Flag | Value | Default | What it does |
 | --- | --- | --- | --- |
 | `--port` | port | `57210` | The host's own base port for the script-facing front (UDP and TCP). |
-| `--tcp` | port (optional) | the host port | The front's TCP leg, on by default; the flag only moves it. |
+| `--udp` | `[addr:]port` (optional) | the host port, loopback | Moves the UDP leg alone. It cannot be turned off: it is the door a script finds this host on. |
+| `--tcp` | `[addr:]port` (optional) | the host port, loopback | The front's TCP leg, on by default; the flag only moves it. |
 | `--no-tcp` | — | — | Disables the TCP leg (a UDP-only front). |
-| `--ws` | port (optional) | the host port + 10 | Also accept `/gui_*` over WebSocket, reachable from a browser. |
+| `--ws` | `[addr:]port` (optional) | the host port + 10, loopback | Also accept `/gui_*` over WebSocket, reachable from a browser. |
+
+The host's legs bind by the server's rule above: loopback unless the flag names
+an interface, so `--ws 0.0.0.0:57220` is what puts a host in reach of a browser
+on another machine. Two things degrade over that distance and neither is a
+bind — a source's `path` carrier writes a file the host maps, so one filesystem
+is assumed, and `--data-dir` names the *host's* GuiDef store.
 | `--max-frame` | bytes | `16777216` | Largest OSC frame on the stream legs. |
 | `--server` | host:port | off | Also attach the client leg to a running audio server. Needed for widgets that reference a server buffer number, and for bound widgets (`/gui_bind`) to forward their value. |
 | `--shm` | path | off | Map the audio server's shared-memory segment (its own `--shm` path) for meters and scopes with no per-frame messages. Unix only. |

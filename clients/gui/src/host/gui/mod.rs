@@ -98,15 +98,16 @@ pub enum UserEvent {
 /// hands over its own in-memory segment — and because *which counter a playhead
 /// reads* is settled where the source is made, not here.
 ///
-/// `tcp` is the script front's TCP carrier — `(port, max_frame)` — bound here
+/// `tcp` is the script front's TCP carrier — `(bind, max_frame)` — bound here
 /// because its reader threads feed the event loop through its proxy (no wake
-/// datagram: the proxy is the wake); `None` leaves the front UDP-only.
+/// datagram: the proxy is the wake); `None` leaves the front UDP-only. Where
+/// each leg listens is the caller's, loopback unless a flag named otherwise.
 pub fn run(
     host: Host,
     socket: Arc<UdpSocket>,
     bus: Option<Arc<dyn BusSource>>,
-    tcp: Option<(u16, usize)>,
-    ws: Option<(u16, usize)>,
+    tcp: Option<(SocketAddr, usize)>,
+    ws: Option<(SocketAddr, usize)>,
 ) -> Result<(), String> {
     let event_loop = EventLoop::<UserEvent>::with_user_event()
         .build()
@@ -122,9 +123,9 @@ pub fn run(
         .spawn(move || transport_loop(recv_socket, script_proxy))
         .map_err(|e| e.to_string())?;
     // The framed TCP leg of the same front, straight into the event loop.
-    if let Some((port, max_frame)) = tcp {
+    if let Some((bind, max_frame)) = tcp {
         let tcp_proxy = proxy.clone();
-        let bound = super::tcp::bind_with_sink(("127.0.0.1", port), max_frame, move |event| {
+        let bound = super::tcp::bind_with_sink(bind, max_frame, move |event| {
             let user_event = match event {
                 super::tcp::TcpEvent::Connected(id, stream) => {
                     UserEvent::TcpConnected { id, stream }
@@ -134,14 +135,14 @@ pub fn run(
             };
             tcp_proxy.send_event(user_event).is_ok()
         })
-        .map_err(|e| format!("failed to bind TCP port {port}: {e}"))?;
+        .map_err(|e| format!("failed to bind TCP {bind}: {e}"))?;
         tracing::info!("clausters-gui host listening on tcp://{bound} (script -> host)");
     }
     // The WebSocket leg (`--ws`), the browser's carrier — same shape as TCP:
     // the connection threads feed the event loop through its proxy.
-    if let Some((port, max_frame)) = ws {
+    if let Some((bind, max_frame)) = ws {
         let ws_proxy = proxy.clone();
-        let bound = super::ws::bind_with_sink(("0.0.0.0", port), max_frame, move |event| {
+        let bound = super::ws::bind_with_sink(bind, max_frame, move |event| {
             let user_event = match event {
                 super::ws::WsEvent::Connected(id, reply, raw) => {
                     UserEvent::WsConnected { id, reply, raw }
@@ -151,7 +152,7 @@ pub fn run(
             };
             ws_proxy.send_event(user_event).is_ok()
         })
-        .map_err(|e| format!("failed to bind WebSocket port {port}: {e}"))?;
+        .map_err(|e| format!("failed to bind WebSocket {bind}: {e}"))?;
         tracing::info!(
             "clausters-gui host listening on ws://{bound} (script -> host, browser-reachable)"
         );

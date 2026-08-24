@@ -2,7 +2,7 @@ use clausters::server::render::{RenderConfig, Score, render_to_wav};
 
 const USAGE: &str = "\
 usage:
-  clausters [--port <n>] [--workers <n>] [--shm <path>] [--data-dir <dir>] [--no-persist] [--prune-defs] [--udp [port]] [--tcp [port] | --no-tcp] [--ws [port]] [--midi [name]] [--sample-rate <hz>]
+  clausters [--port <n>] [--workers <n>] [--shm <path>] [--data-dir <dir>] [--no-persist] [--prune-defs] [--udp [addr:]port] [--tcp [[addr:]port] | --no-tcp] [--ws [[addr:]port]] [--midi [name]] [--sample-rate <hz>]
                                                real-time server (OSC on UDP + TCP 57110)
       --port <n>           the base OSC port, default 57110: UDP binds it and
                            TCP follows it, so one flag moves the whole server
@@ -40,9 +40,9 @@ usage:
       --max-buffers <n>        buffer pool size (default 4096)
       --max-graph-children <n> per-group child capacity (default 512)
       --max-ugen-inputs <n>    accepted inputs per UGen (default 32, the max)
-      --udp [port]         move the UDP front alone, off the base port. UDP is
+      --udp [addr:]port    move the UDP front alone, off the base port. UDP is
                            always on: it is the door a client boots against
-      --tcp [port]         length-prefixed OSC over TCP — on by default at the
+      --tcp [[addr:]port]  length-prefixed OSC over TCP — on by default at the
                            base port; the flag only moves it (RT only)
       --no-tcp             disable the TCP transport (UDP-only server)
       --max-frame <bytes>  largest OSC frame on the stream transports (TCP and
@@ -56,9 +56,14 @@ usage:
                            (default 4096); a client's own ceiling is this
                            clamped by what its carrier carries in one packet,
                            and /server_query.reply reports that number
-      --ws [port]          also accept OSC over WebSocket, reachable from a
+      --ws [[addr:]port]   also accept OSC over WebSocket, reachable from a
                            browser (RT only; default the base port + 10, so
                            57120; ws://host:port/)
+                           Every carrier above binds **loopback** unless its
+                           flag names an interface: `--ws 0.0.0.0:57120` opens
+                           it to the network, `--tcp 0.0.0.0` opens TCP on the
+                           base port. Choosing a carrier is not consenting to
+                           the network, so the widening is written down
       --midi [name]        open a virtual MIDI input port (RT only; default
                            name \"clausters\"; connect with aconnect/qpwgraph)
       --pin <cpu[,cpu..]>  CPU affinity (Linux, experimental; needs a build
@@ -138,6 +143,28 @@ fn main() {
 
 fn parse_workers(value: &str) -> Result<usize, String> {
     value.parse().map_err(|e| format!("--workers: {e}"))
+}
+
+/// Reads a carrier flag's optional `[addr:]port` argument: the next token,
+/// unless the line has run out or the next token is another flag — a bare
+/// `--tcp` follows the base port on the default interface. A token that is
+/// there and is not a bind is an error rather than a bare flag followed by a
+/// stray argument, which is how a typo used to read.
+#[cfg(feature = "realtime")]
+fn bind_flag(
+    flag: &str,
+    it: &mut std::slice::Iter<'_, String>,
+) -> Result<clausters_core::config::PortChoice, String> {
+    use clausters_core::config::PortChoice;
+    let Some(next) = it.clone().next() else {
+        return Ok(PortChoice::Follow(None));
+    };
+    if next.starts_with("--") {
+        return Ok(PortChoice::Follow(None));
+    }
+    let choice = PortChoice::parse(next).map_err(|e| format!("{flag}: {e}\n{USAGE}"))?;
+    it.next();
+    Ok(choice)
 }
 
 /// The virtual MIDI port's default name. A server off the default OSC port
@@ -263,10 +290,10 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     // base is only known once the whole line is read, since `--tcp` may come
     // before `--port` on it.
     let mut base_port: u16 = cfg.port.unwrap_or(DEFAULT_PORT);
-    // `--udp <port>`: the UDP front alone, off the base. There is no way to turn
-    // it off — it is the door `/server_status` answers on, so a client can find
-    // this server at all.
-    let mut udp_at: Option<u16> = None;
+    // `--udp [addr:]port`: the UDP front alone, off the base. There is no way
+    // to turn it off — it is the door `/server_status` answers on, so a client
+    // can find this server at all.
+    let mut cli_udp: Option<PortChoice> = None;
     // What the command line asks of each stream front, if it asks anything;
     // `None` leaves the answer to the config and then to the default, which
     // `PortChoice::pick` settles below in that order.
@@ -337,25 +364,13 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 base_port = value.parse().map_err(|e| format!("--port: {e}"))?;
             }
             "--udp" => {
-                // Optional port, like --tcp; bare, UDP stays on the base port.
-                if let Some(next) = it.clone().next()
-                    && let Ok(p) = next.parse::<u16>()
-                {
-                    udp_at = Some(p);
-                    it.next();
-                }
+                // Optional bind, like --tcp; bare, UDP stays on the base port.
+                cli_udp = Some(bind_flag("--udp", &mut it)?);
             }
             "--tcp" => {
-                // Optional port; bare, it follows the base port (a separate
+                // Optional bind; bare, it follows the base port (a separate
                 // namespace from UDP's, so sharing the number is fine).
-                let mut choice = PortChoice::Follow;
-                if let Some(next) = it.clone().next()
-                    && let Ok(p) = next.parse::<u16>()
-                {
-                    choice = PortChoice::At(p);
-                    it.next();
-                }
-                cli_tcp = Some(choice);
+                cli_tcp = Some(bind_flag("--tcp", &mut it)?);
             }
             "--no-tcp" => cli_tcp = Some(PortChoice::Off),
             "--max-frame" => {
@@ -379,17 +394,10 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                     .map_err(|e| format!("--max-stream-buses: {e}"))?;
             }
             "--ws" => {
-                // Optional port; bare, it follows the base port offset by
+                // Optional bind; bare, it follows the base port offset by
                 // WS_PORT_OFFSET, since both it and --tcp bind a TCP listener
                 // and would collide on the same number.
-                let mut choice = PortChoice::Follow;
-                if let Some(next) = it.clone().next()
-                    && let Ok(p) = next.parse::<u16>()
-                {
-                    choice = PortChoice::At(p);
-                    it.next();
-                }
-                cli_ws = Some(choice);
+                cli_ws = Some(bind_flag("--ws", &mut it)?);
             }
             "--midi" => {
                 // Optional virtual-port name; the next token unless it's a flag.
@@ -538,14 +546,22 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // Every flag is in: settle the ports against the base the line ended with.
-    let udp_port = udp_at.unwrap_or(base_port);
+    // Every flag is in: settle the binds against the base the line ended with.
+    // Each carrier answers where it listens, interface included, and an unnamed
+    // interface is loopback in all three — asking for a transport is not asking
+    // for the network.
+    let udp_bind = PortChoice::pick(cli_udp, None, PortChoice::Follow(None))?
+        .resolve(base_port)
+        .expect("--udp never turns the front off");
     // TCP is on by default (the command plane for large payloads); the config's
     // `tcp = false` — or `--no-tcp` — turns it off. WebSocket is opt-in.
-    let tcp_port = PortChoice::pick(cli_tcp, cfg.tcp, PortChoice::Follow).resolve(base_port);
-    let ws_port = PortChoice::pick(cli_ws, cfg.ws, PortChoice::Off)
+    let tcp_bind = PortChoice::pick(cli_tcp, cfg.tcp, PortChoice::Follow(None))
+        .map_err(|e| format!("[server].tcp: {e}"))?
+        .resolve(base_port);
+    let ws_bind = PortChoice::pick(cli_ws, cfg.ws, PortChoice::Off)
+        .map_err(|e| format!("[server].ws: {e}"))?
         .resolve(base_port.saturating_add(WS_PORT_OFFSET));
-    let midi_port = midi_setting.and_then(|m| m.resolve(&default_midi_name(udp_port)));
+    let midi_port = midi_setting.and_then(|m| m.resolve(&default_midi_name(udp_bind.port())));
 
     // `--list-devices` answers and stops: it is a question about the machine,
     // not a way to start a server.
@@ -644,7 +660,7 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             backend.sample_rate
         );
     }
-    let mut osc = OscServer::bind(("127.0.0.1", udp_port), info, handle)?;
+    let mut osc = OscServer::bind(udp_bind, info, handle)?;
     // Before the listeners: the TCP/WS hubs capture the ceiling when they bind.
     osc.set_max_frame(max_frame);
     osc.set_max_clients(max_clients);
@@ -693,12 +709,12 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         }
         shared = Some(segment);
     }
-    if let Some(port) = tcp_port {
-        let bound = osc.listen_tcp(("0.0.0.0", port))?;
+    if let Some(bind) = tcp_bind {
+        let bound = osc.listen_tcp(bind)?;
         tracing::info!("OSC on TCP {bound} (length-prefixed)");
     }
-    if let Some(port) = ws_port {
-        let bound = osc.listen_ws(("0.0.0.0", port))?;
+    if let Some(bind) = ws_bind {
+        let bound = osc.listen_ws(bind)?;
         tracing::info!("OSC on WebSocket {bound} (ws://, browser-reachable)");
     }
     if let Some(name) = &midi_port {

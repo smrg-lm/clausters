@@ -105,13 +105,17 @@ class ServerOptions:
     #: DSP worker threads for parallel groups (``--workers``).
     workers: "int | None" = None
     #: The TCP command plane: ``False`` disables it (``--no-tcp``), ``True``
-    #: forces it on at the default port, a number moves it (``--tcp <port>``).
-    #: It is on by default server-side; ``None`` leaves that as is.
-    tcp: "bool | int | None" = None
+    #: forces it on at the default port, a number moves it, and a string binds
+    #: it (``--tcp [addr:]port``: ``"0.0.0.0:57110"``, ``"0.0.0.0"``). It is on
+    #: by default server-side; ``None`` leaves that as is. Every carrier binds
+    #: loopback unless the address says otherwise.
+    tcp: "bool | int | str | None" = None
     #: OSC over WebSocket: ``True`` opens it at the default port (57120), a
-    #: number picks the port (``--ws [port]``). There is no off flag — leave
-    #: ``None`` and keep it out of the server's config to run without it.
-    ws: "bool | int | None" = None
+    #: number picks the port, a string binds it (``--ws [addr:]port``, e.g.
+    #: ``"0.0.0.0:57120"`` for a browser on another machine). There is no off
+    #: flag — leave ``None`` and keep it out of the server's config to run
+    #: without it.
+    ws: "bool | int | str | None" = None
     #: Virtual MIDI input: ``True`` opens it with the default name, a string
     #: names the port (``--midi [name]``).
     midi: "bool | str | None" = None

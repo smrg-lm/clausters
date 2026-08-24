@@ -88,7 +88,8 @@ The project is a workspace with several coordinated parts:
 **Transports**
 
 - OSC over **UDP** (scsynth-compatible) and **TCP** (both on by default, one
-  port), and **WebSocket** (`--ws`, reachable from a browser page).
+  port), and **WebSocket** (`--ws`, reachable from a browser page). Each binds
+  loopback unless its flag names an address (`--ws 0.0.0.0:57120`).
 - Local transports: **shared memory** (`--shm`, with the sample clock and
   control buses readable in mapped memory) and an in-process **C ABI** for
   embedding the server in another program.

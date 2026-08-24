@@ -41,8 +41,8 @@ newer build stays readable by an older one.
 | `persist` | boolean | `true` | `--no-persist` | Reload the def store on boot and write new defs to it |
 | `data_dir` | string (path) | `$CLAUSTERS_DATA_DIR`, else the XDG data dir | `--data-dir` | Where the def store (`defs/`, `midi.json`, `boot.json`) lives |
 | `shm` | string (path) | off | `--shm` | The shared-memory segment local clients map (put it on `/dev/shm`). One that already exists is attached to, never truncated: the first server on a segment owns its command plane and its buffers, a later one plays what the owner published |
-| `tcp` | boolean or port | `true` — on at the base `port`, beside UDP | `--tcp [port]` / `--no-tcp` | Length-prefixed OSC over TCP |
-| `ws` | boolean or port | off; `true` means the base `port` + 10 | `--ws [port]` | OSC over WebSocket, reachable from a browser |
+| `tcp` | boolean, port or bind | `true` — on at the base `port`, beside UDP, on loopback | `--tcp [[addr:]port]` / `--no-tcp` | Length-prefixed OSC over TCP |
+| `ws` | boolean, port or bind | off; `true` means the base `port` + 10, on loopback | `--ws [[addr:]port]` | OSC over WebSocket, reachable from a browser |
 | `max_frame` | integer (bytes) | `16777216` (16 MiB) | `--max-frame` | Largest OSC frame on the stream transports (TCP and WebSocket) |
 | `max_clients` | integer | `64` | `--max-clients` | Concurrent stream clients, TCP and WebSocket combined |
 | `midi` | boolean or string | off; `true` means `"clausters"` | `--midi [name]` | Virtual MIDI input port, by name |
@@ -52,12 +52,20 @@ Three keys are **toggles that may carry a value** — `tcp`, `ws` and `midi`:
 and a number (a string, for `midi`) enables it at that specific port (name). TCP
 is the one transport on by default, so its meaningful setting is `false`.
 
+`tcp` and `ws` also take a **bind** as a string — `"0.0.0.0:57110"`,
+`"0.0.0.0"` (the port still follows the base), `"[::1]:57110"` — because every
+carrier binds **loopback** until one says otherwise. Choosing a transport is not
+consenting to the network: a browser on this machine reaches `ws://127.0.0.1`
+either way, so the address is what a server on the LAN says out loud. The same
+`[addr:]port` spelling is what `--udp`, `--tcp` and `--ws` take, and
+`ServerOptions(ws="0.0.0.0:57120")` is how the client passes one on.
+
 `port` is the **base** the others are measured from, which is what lets several
 servers share a machine: one number moves UDP and TCP together, and WebSocket
 sits ten above it. UDP alone cannot be turned off — it is the door a client
 probes to find a server — and the virtual MIDI port's default name follows the
 port too, so a second server opens `clausters:<port>` instead of a second
-`clausters`. On the command line `--udp [port]` moves the UDP front by itself;
+`clausters`. On the command line `--udp [addr:]port` moves the UDP front by itself;
 in a file, write the base in `port` and give `tcp` a number of its own.
 
 Two keys size a **slab built once at boot** rather than a live limit:

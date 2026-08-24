@@ -42,20 +42,27 @@ use clausters_gui::host::shm::HeadClock;
 const USAGE: &str = "\
 usage:
   clausters-gui [--port <n>] [--server <host:port>] [--shm <path>] [--headless]
-                [--tcp [port] | --no-tcp] [--ws [port]] [--max-frame <bytes>]
+                [--udp [addr:]port] [--tcp [[addr:]port] | --no-tcp]
+                [--ws [[addr:]port]] [--max-frame <bytes>]
                 [--data-dir <dir>] [--standalone [name]] [--config <path>]
                 [--session <file> [--save-to <file>]]
                 [--theme <path>] [--font <path>] [--msaa <n>]
                 [--follow-block <seconds>]
       --port <n>            port for the GUI host's server front
                             (script -> host, UDP and TCP); default 57210
-      --tcp [port]          length-prefixed OSC over TCP — on by default at the
+      --udp [addr:]port     move the UDP leg alone, off the host port. UDP is
+                            always on: it is the door a script finds this host on
+      --tcp [[addr:]port]   length-prefixed OSC over TCP — on by default at the
                             host port; the flag only moves it
       --no-tcp              disable the TCP leg (UDP-only front)
-      --ws [port]           also accept /gui_* over WebSocket, reachable from a
+      --ws [[addr:]port]    also accept /gui_* over WebSocket, reachable from a
                             browser (default the host port + 10, so 57220;
                             ws://host:port/) — the same flag the audio server
                             takes
+                            Every leg above binds **loopback** unless its flag
+                            names an interface: `--ws 0.0.0.0:57220` opens it to
+                            the network. Choosing a carrier is not consenting to
+                            the network, so the widening is written down
       --max-frame <bytes>   largest OSC frame on the stream legs, TCP and
                             WebSocket alike (default 16 MiB). A DoS ceiling,
                             not a protocol limit; UDP keeps the ~64 KB
@@ -180,6 +187,27 @@ fn main() -> ExitCode {
     }
 }
 
+/// Reads a carrier flag's optional `[addr:]port` argument: the next token,
+/// unless the line has run out or the next token is another flag — a bare
+/// `--tcp` follows the host port on the default interface. A token that is
+/// there and is not a bind is an error rather than a bare flag followed by a
+/// stray argument, which is how a typo used to read. The audio server's
+/// `bind_flag`, over this binary's peekable iterator.
+fn bind_flag(
+    flag: &str,
+    it: &mut std::iter::Peekable<std::slice::Iter<'_, String>>,
+) -> Result<PortChoice, String> {
+    let Some(next) = it.peek() else {
+        return Ok(PortChoice::Follow(None));
+    };
+    if next.starts_with("--") {
+        return Ok(PortChoice::Follow(None));
+    }
+    let choice = PortChoice::parse(next).map_err(|e| format!("{flag}: {e}\n{USAGE}"))?;
+    it.next();
+    Ok(choice)
+}
+
 fn run(args: &[String]) -> Result<(), String> {
     // CLI overrides are collected as `Option`s, then resolved against the config
     // file (the compiled default is the last fallback). Precedence per option:
@@ -188,6 +216,7 @@ fn run(args: &[String]) -> Result<(), String> {
     // What each leg was asked for, if the line says anything; `None` leaves it
     // to the config and then to the default. The base port may still be moved
     // by a later `--port`, so nothing is resolved until the whole line is read.
+    let mut cli_udp: Option<PortChoice> = None;
     let mut cli_tcp: Option<PortChoice> = None;
     let mut cli_ws: Option<PortChoice> = None;
     let mut cli_max_frame: Option<usize> = None;
@@ -213,30 +242,20 @@ fn run(args: &[String]) -> Result<(), String> {
                     .ok_or_else(|| format!("--port needs a value\n{USAGE}"))?;
                 cli_port = Some(v.parse().map_err(|e| format!("--port: {e}"))?);
             }
+            "--udp" => {
+                // Optional bind; without one, UDP rides the host port.
+                cli_udp = Some(bind_flag("--udp", &mut it)?);
+            }
             "--tcp" => {
-                // Optional port; without one, the TCP leg rides the host port.
-                let mut choice = PortChoice::Follow;
-                if let Some(next) = it.peek()
-                    && let Ok(p) = next.parse::<u16>()
-                {
-                    choice = PortChoice::At(p);
-                    it.next();
-                }
-                cli_tcp = Some(choice);
+                // Optional bind; without one, the TCP leg rides the host port.
+                cli_tcp = Some(bind_flag("--tcp", &mut it)?);
             }
             "--no-tcp" => cli_tcp = Some(PortChoice::Off),
             "--ws" => {
-                // Optional port; without one it follows the host port offset by
+                // Optional bind; without one it follows the host port offset by
                 // WS_PORT_OFFSET, since the WS leg binds its own TCP listener
                 // and cannot share the TCP number (the audio server's pattern).
-                let mut choice = PortChoice::Follow;
-                if let Some(next) = it.peek()
-                    && let Ok(p) = next.parse::<u16>()
-                {
-                    choice = PortChoice::At(p);
-                    it.next();
-                }
-                cli_ws = Some(choice);
+                cli_ws = Some(bind_flag("--ws", &mut it)?);
             }
             "--max-frame" => {
                 let v = it
@@ -332,14 +351,23 @@ fn run(args: &[String]) -> Result<(), String> {
         None => Config::load(),
     };
     let port = cli_port.or(cfg.gui.host_port).unwrap_or(DEFAULT_PORT);
+    // Each leg answers where it listens, interface included, and an unnamed
+    // interface is loopback in all three — the audio server's rule, and the
+    // reason `--ws` no longer opens the host to the LAN by picking a carrier.
+    let udp_bind = PortChoice::pick(cli_udp, None, PortChoice::Follow(None))?
+        .resolve(port)
+        .expect("--udp never turns the leg off");
     // The TCP leg is on by default at the host port; `--no-tcp` (or
-    // `tcp = false` in the config) turns it off, a port moves it.
-    let tcp_port = PortChoice::pick(cli_tcp, cfg.gui.tcp, PortChoice::Follow).resolve(port);
+    // `tcp = false` in the config) turns it off, a bind moves it.
+    let tcp_bind = PortChoice::pick(cli_tcp, cfg.gui.tcp, PortChoice::Follow(None))
+        .map_err(|e| format!("[gui].tcp: {e}"))?
+        .resolve(port);
     // The WebSocket leg is opt-in (`--ws`, or `ws = true`/a port in the
     // config), the audio server's own semantics; following the host port means
     // a host moved off 57210 takes its WS leg along instead of leaving it on
     // the default's neighbour.
-    let ws_port = PortChoice::pick(cli_ws, cfg.gui.ws, PortChoice::Off)
+    let ws_bind = PortChoice::pick(cli_ws, cfg.gui.ws, PortChoice::Off)
+        .map_err(|e| format!("[gui].ws: {e}"))?
         .resolve(port.saturating_add(WS_PORT_OFFSET));
     let max_frame = cli_max_frame
         .or(cfg.gui.max_frame)
@@ -404,7 +432,7 @@ fn run(args: &[String]) -> Result<(), String> {
     // separates this from `--standalone` and is named in the plan rather than
     // implied here.
     if let Some(path) = session_path {
-        return run_session(&path, save_to.as_deref(), port, look, shm, server);
+        return run_session(&path, save_to.as_deref(), udp_bind, look, shm, server);
     }
 
     // Standalone: boot a saved GuiDef against an embedded server, no separate
@@ -433,11 +461,11 @@ fn run(args: &[String]) -> Result<(), String> {
                     dir.display()
                 )
             })?;
-            return run_standalone(&name, store, &dir, port, run_boot, look);
+            return run_standalone(&name, store, &dir, udp_bind, run_boot, look);
         }
         #[cfg(not(feature = "standalone"))]
         {
-            let _ = (&name, &resolved_dir, port, run_boot, look);
+            let _ = (&name, &resolved_dir, udp_bind, run_boot, look);
             return Err("this clausters-gui was built without standalone support; \
                         rebuild with `--features standalone` (it links the embedded server)"
                 .to_string());
@@ -446,8 +474,8 @@ fn run(args: &[String]) -> Result<(), String> {
 
     let store = resolved_dir.as_deref().and_then(open_store);
 
-    let socket = UdpSocket::bind(("127.0.0.1", port))
-        .map_err(|e| format!("failed to bind UDP port {port}: {e}"))?;
+    let socket =
+        UdpSocket::bind(udp_bind).map_err(|e| format!("failed to bind UDP {udp_bind}: {e}"))?;
     let local = socket.local_addr().map_err(|e| e.to_string())?;
 
     let mut host = Host::new();
@@ -475,9 +503,10 @@ fn run(args: &[String]) -> Result<(), String> {
         }
         // The TCP/WS legs' readers wake the serve loop through its own UDP
         // socket.
-        let hub = match tcp_port {
-            Some(p) => {
-                let hub = transport::bind_tcp(&socket, p, max_frame).map_err(|e| e.to_string())?;
+        let hub = match tcp_bind {
+            Some(bind) => {
+                let hub =
+                    transport::bind_tcp(&socket, bind, max_frame).map_err(|e| e.to_string())?;
                 tracing::info!(
                     "clausters-gui host listening on tcp://{} (script -> host)",
                     hub.local_addr()
@@ -486,9 +515,10 @@ fn run(args: &[String]) -> Result<(), String> {
             }
             None => None,
         };
-        let ws_hub = match ws_port {
-            Some(p) => {
-                let hub = transport::bind_ws(&socket, p, max_frame).map_err(|e| e.to_string())?;
+        let ws_hub = match ws_bind {
+            Some(bind) => {
+                let hub =
+                    transport::bind_ws(&socket, bind, max_frame).map_err(|e| e.to_string())?;
                 tracing::info!(
                     "clausters-gui host listening on ws://{} (script -> host, browser-reachable)",
                     hub.local_addr()
@@ -516,8 +546,8 @@ fn run(args: &[String]) -> Result<(), String> {
             host,
             Arc::new(socket),
             bus,
-            tcp_port.map(|p| (p, max_frame)),
-            ws_port.map(|p| (p, max_frame)),
+            tcp_bind.map(|bind| (bind, max_frame)),
+            ws_bind.map(|bind| (bind, max_frame)),
         )
     }
 }
@@ -589,7 +619,7 @@ fn open_store(dir: &Path) -> Option<GuiStore> {
 fn run_session(
     path: &str,
     save_to: Option<&str>,
-    port: u16,
+    udp_bind: SocketAddr,
     look: Look,
     #[cfg_attr(not(feature = "standalone"), allow(unused_variables))] shm: Option<String>,
     #[cfg_attr(not(feature = "standalone"), allow(unused_variables))] player: Option<String>,
@@ -699,8 +729,8 @@ fn run_session(
         None => tracing::info!("session: read-only — pass --save-to <file> for Ctrl+S to write"),
     }
 
-    let socket = UdpSocket::bind(("127.0.0.1", port))
-        .map_err(|e| format!("failed to bind UDP port {port}: {e}"))?;
+    let socket =
+        UdpSocket::bind(udp_bind).map_err(|e| format!("failed to bind UDP {udp_bind}: {e}"))?;
     gui::run(host, Arc::new(socket), bus, None, None)
 }
 
@@ -1041,7 +1071,7 @@ fn run_standalone(
     name: &str,
     store: GuiStore,
     data_dir: &Path,
-    port: u16,
+    udp_bind: SocketAddr,
     run_boot: bool,
     look: Look,
 ) -> Result<(), String> {
@@ -1127,8 +1157,8 @@ fn run_standalone(
 
     // gui::run still wants a script-front socket, unused in standalone (a
     // script could still attach over UDP; the TCP and WS legs stay off here).
-    let socket = UdpSocket::bind(("127.0.0.1", port))
-        .map_err(|e| format!("failed to bind UDP port {port}: {e}"))?;
+    let socket =
+        UdpSocket::bind(udp_bind).map_err(|e| format!("failed to bind UDP {udp_bind}: {e}"))?;
     tracing::info!("standalone: opening GuiDef \"{name}\" (id {id})");
     gui::run(host, Arc::new(socket), None, None, None)
 }

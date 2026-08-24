@@ -1669,8 +1669,9 @@ finished work, where a pending item reads as done.
   alias arm is small — and the incompatible one is to take the break while the
   major is `0`. Neither is decided here.
 
-- ⬜ **Every carrier takes an address, and all three default to loopback**
-  *(named 2026-08-23, deciding whether a GUI host may be remote)*. The two OSC
+- ✅ **Every carrier takes an address, and all three default to loopback**
+  *(named 2026-08-23, deciding whether a GUI host may be remote; done
+  2026-08-24)*. The two OSC
   fronts are siblings and bind differently, and neither is quite right:
 
   | leg | audio server | GUI host |
@@ -1697,6 +1698,31 @@ finished work, where a pending item reads as done.
   store is the host's). `GuiHost.attach()` is unaffected: it is a verb of
   *ownership*, not of distance, and its real case is local — a host left
   running, one launched from a terminal.
+
+  **Done, and it was six legs rather than the four the table named.** The audio
+  server's TCP is *also* on by default, so a plain `clausters` was already
+  listening on `0.0.0.0:57110` with nobody having asked for anything; that is
+  the one this fixes that the entry had not noticed. All six now take the same
+  spelling — `--udp [addr:]port`, `--tcp [[addr:]port]`, `--ws [[addr:]port]` on
+  both programs — read by one parser in the shared core
+  (`config::PortChoice::parse`): a bare port, an address alone (the port still
+  follows the base), or both, IPv6 included. **Loopback is the default in all
+  six**, and `--ws 0.0.0.0:57120` is what says the network out loud. The config
+  keys take the same string (`tcp = "0.0.0.0:57110"`), beside the
+  `true`/`false`/port they already took, and the Python client's
+  `ServerOptions(tcp=…, ws=…)` passes one through.
+
+  Two things came out of doing it. The bind used to be written **inside each
+  leg's own module** — `bind_tcp` said `"127.0.0.1"`, `bind_ws` said
+  `"0.0.0.0"`, the windowed front repeated both — which is exactly how one front
+  came to differ from the other with nobody choosing it; they take a
+  `SocketAddr` now and the address is settled once, where the command line is
+  read. And a token after `--ws` that is not a bind used to fall through as "no
+  argument" and resurface as `unknown argument: 0.0.0.0:57121`, so a typo
+  silently left the leg on its default; it is now an error against the flag that
+  owns it. The rationale is in `docs/decisions.md` ("Choosing a carrier is not
+  consenting to the network"); watched by hand with `ss` over all six legs,
+  default and widened.
 - ✅ **A transport addressed in samples still needs a beat grid** *(noticed 2026-08-16 while closing T5, which left it open on purpose; fixed the same day, on the user's "look at the smell and find a solution")*. `/transport_play`, `/transport_stop`, `/transport_locateSample` and `/transport_loop` all refused until `/transport_set` had defined a grid, because every `/transport_*` command but that one always had. For an audio editor that meant declaring a tempo it never reads — `examples/transport_seek.py` set one and said in a comment that it was arbitrary, which is exactly what a smell is: a comment apologising for a call.
 
   **The fix is that the transport stops being optional and the grid starts being.** `OscServer.transport` was an `Option<Transport>` doing two jobs — "is there a transport" and "is there a grid" — and those are different questions the moment a position exists in samples. It is now a plain `Transport` that exists from boot, with `defined` saying whether `origin_sample`/`tempo` mean anything; `defined` is the wire field of the same name, so the reply did not change shape and no client had to learn a new one. Only the two commands that name a **beat** refuse without a grid: `/transport_locate`, and `/transport_play` *given a position*. Everything else — a bare play, a stop, `/transport_group`, `/transport_locateSample`, `/transport_loop`, and `/sched_atTransport`, which needed a bound group and not a tempo — is in samples and now needs nothing.
