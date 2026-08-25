@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: one take, opened on its own</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 66rem; }
+      #note { font-size: 13px; line-height: 1.5; max-width: 46rem; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; max-height: 14rem;
+            overflow-y: auto; }
+      #stage { width: 1000px; max-width: 100%; height: 520px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">One take, opened on its own: the editor's dedicated signal
+view.
+
+In the multitrack a take is a <b>clip's body</b> — drawn at a clip's size, next
+to everything else in the piece. This opens the same element by itself, at the
+size of a window: <code>Editor.openSignal</code>, the sibling of the dedicated
+piano roll.
+
+<b>The stack.</b> <code>layers: ["peak", "rms"]</code> draws two measures of one
+take: what the signal <i>reached</i> (the min/max envelope) and what it
+<i>held</i> (the level inside it). They are measures of <b>one</b> view — one
+axis, one ruler, one selection, one playhead, one upload of the samples — and
+the toggle shows and hides the body over the peaks, which costs one message and
+does not move the view. <b>The measure costs no second read</b>: both pictures
+come off the same peak pyramid, so zooming cross-fades them together.
+
+<b>A selection is of the element.</b> Sweep a range and the editor keeps it in
+<b>beats</b>, naming the element it was swept on — the value an operation is
+handed, not screen state. And <b>a generator has no samples</b> until it is
+rendered, so asking one for a signal view is refused before any window
+exists.</div>
+
+      <button id="run">bounce and open</button>
+      <div id="stage"></div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/views/take.py, call for call:
+      the sampler def, the bounced phrase, the `Vector` over the buffer, the
+      signal view with its two measures, the transport buttons, the live
+      `layers` toggle, the selection read-out, and the generator's refusal.
+
+      The platform's one difference is the take's route into the buffer: the
+      script renders to a WAV and reads it back with `Buffer.read`, and a tab
+      has no file, so the samples go straight in with `Buffer.fromSamples` --
+      the same verb the script's client has, for a take that never becomes a
+      file. And the script's `run()` loop has no counterpart: the page's event
+      loop is what polls.
+
+      Serve clients/web (the package root) and open /examples/views/take.html.
+      Build it first: ./build.sh
+    -->
+    <script type="module">
+      import { Buffer, Session, form, gui, seq } from "../../dist/index.js";
+      import { SynthDef, control, out, playBuf } from "../../dist/defs/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => {
+        $("log").textContent += line + "\n";
+        $("log").scrollTop = $("log").scrollHeight;
+      };
+
+      const TEMPO = 2.0;   // beats per second (120 bpm)
+
+      /** Plays a buffer once, at the length its event gives it. */
+      function sampler(name = "take") {
+        const buf = control("buf", 0.0, { rate: "ir" });
+        const amp = control("amp", 0.8, { rate: "ir" });
+        const sig = playBuf(buf, 0.0, 1.0, 0.0).mul(amp);
+        return new SynthDef(name, out(0.0, sig), out(1.0, sig));
+      }
+
+      const PHRASE = [48, 55, 60, 67, 64, 60, 55, 52, 60, 67, 72, 67];
+      const BEATS = PHRASE.length;          // one note per beat
+      const WITH_BODY = ["peak", "rms"];
+      const BARE = ["peak"];
+
+      async function run() {
+        $("run").disabled = true;
+        const session = await Session.embed({ tempo: TEMPO, latency: 0.1 });
+        const server = session.server;
+        await sampler().send(server);
+        // The rate the engine actually came up at — the script reads it off
+        // its server's options; here it is what the server reports.
+        const SR = (await server.queryInfo()).actualSampleRate;
+
+        // The take, bounced offline and installed in the engine's pool.
+        const offline = await Session.nrt({ tempo: TEMPO });
+        offline.play(new seq.Pbind({
+          midinote: new seq.Pseq(PHRASE, 1), dur: 1.0, legato: 0.9, amp: 0.35,
+        }));
+        const bounced = await offline.render({ sampleRate: SR, channels: 1 });
+        const buf = await Buffer.fromSamples(bounced.samples, 1, SR, { server });
+        const take = new form.Vector(buf, null, BEATS, { instrument: "take" });
+        log(`bounced and loaded the phrase: buffer ${buf.bufnum}, ${buf.frames} frames`);
+
+        const bar = gui.panel(
+          { layout: "row", h: 34.0 },
+          gui.button({ name: "play", label: "play" }),
+          gui.button({ name: "stop", label: "stop" }),
+          gui.toggle({ name: "body", label: "rms", value: true }),
+        );
+
+        await session.gui();
+        const editor = new gui.Editor(take, {
+          sampleRate: SR, tempo: TEMPO, extra: [bar], title: "Clausters take",
+        });
+        const win = await editor.openSignal(undefined, undefined, {
+          layers: WITH_BODY, stage: $("stage"),
+        });
+        session.start();
+
+        // Show or hide the level body over the peaks — **one message, no
+        // redraw**. The measure is a live prop, so assigning `layers` on an
+        // open view sends a single `/gui_set` and the picture changes where it
+        // stands: the zoom, the selection and the playhead do not move.
+        win.widget("play").onClick(() => editor.play(server, session.clock));
+        win.widget("stop").onClick(() => editor.stop());
+        win.widget("body").onEvent((value) => {
+          editor.layers = Number(value) ? WITH_BODY : BARE;
+        });
+        editor.locate(0.0);
+        log("wheel zooms, Shift+drag pans, a plain drag sweeps a selection");
+        log("press play to hear it — the playhead is where the audio is");
+
+        // What a signal view will not open: a generator has no samples until it
+        // is rendered, and the call says so before any window exists.
+        const generator = new form.Sequence(
+          new seq.Pbind({ midinote: new seq.Pseq([60, 62], 1), dur: 1.0 }));
+        try {
+          await new gui.Editor(generator, { sampleRate: SR, tempo: TEMPO }).openSignal();
+          log("no refusal — which would be the bug");
+        } catch (err) {
+          log(`a generator asked for a signal view: ${err.message}`);
+        }
+      }
+
+      $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
+    </script>
+  </body>
+</html>

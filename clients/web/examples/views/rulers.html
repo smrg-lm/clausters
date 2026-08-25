@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: configurable editor rulers</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 62rem; }
+      #note { font-size: 13px; line-height: 1.5; max-width: 46rem; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; max-height: 14rem;
+            overflow-y: auto; }
+      #stage { width: 960px; max-width: 100%; height: 720px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">Configurable editor rulers, switched live from widgets in
+the same GUI.
+
+Every axis of the two heavy views is a ruler with selectable units, each drawn
+in its <b>own strip</b> beside the view, each optional per axis, and each
+retunable at runtime through <code>set</code> — which is what the menus in this
+window do. The <b>time axis</b> reads <code>time</code>, <code>samples</code> or
+<code>beats</code> (musical time on the client's grid: <code>tempo</code>,
+<code>beatAt</code>, <code>quant</code>); the waveform's <b>amplitude axis</b>
+reads <code>norm</code>, <code>db</code>, <code>bits</code> or
+<code>percent</code>; the spectrogram's <b>frequency axis</b> follows
+<code>freqScale</code> — <code>log</code>, <code>linear</code>,
+<code>mel</code> or <code>bark</code>.
+
+Every axis also <b>navigates vertically</b>: the wheel over a y-ruler strip
+zooms that axis around the cursor, dragging pans it, <b>R</b> resets. The
+visible window is the <code>yStart</code>/<code>yLen</code> pair, reported back
+as <code>view_y</code>, and the tick layout is adaptive — it measures its own
+labels, so zooming keeps revealing finer, non-colliding rungs.</div>
+
+      <button id="run">open the views</button>
+      <div id="stage"></div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/views/rulers.py, call for call:
+      the offline phrase at a known tempo, the two heavy views over one payload,
+      the three menus and the toggle, and the handlers that translate each pick
+      into the matching `set`.
+
+      The one difference is the payload's carrier, as in `linked`: the script
+      maps a `.f32` file and the page hands the samples over as a `source`.
+
+      Serve clients/web (the package root) and open /examples/views/rulers.html.
+      Build it first: ./build.sh
+    -->
+    <script type="module">
+      import { Session, gui, seq } from "../../dist/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => {
+        $("log").textContent += line + "\n";
+        $("log").scrollTop = $("log").scrollHeight;
+      };
+
+      const SR = 48000.0;
+      const TEMPO = 2.0;   // beats per second (120 BPM), the grid the beats ruler shows
+      const QUANT = 4.0;   // beats per bar
+
+      const TIME_UNITS = ["time", "samples", "beats"];
+      const AMP_UNITS = ["norm", "db", "bits", "percent"];
+      const FREQ_SCALES = ["log", "linear", "mel", "bark"];
+
+      // The two heavy views take a full row each; the unit controls share one
+      // compact row underneath, so the views keep most of the window. Every
+      // widget is *named*, so the script drives it by name.
+      const scene = (phrase) => gui.view(
+        { title: "Rulers: units per axis", w: 960, h: 720, layout: "col" },
+        gui.waveform({
+          name: "wave", data: phrase, channels: 2, sampleRate: SR,
+          tempo: TEMPO, quant: QUANT, bitDepth: 16,
+        }),
+        gui.spectrogram({
+          name: "spect", data: phrase, channels: 2, sampleRate: SR,
+          windowSize: 1024, tempo: TEMPO, quant: QUANT,
+        }),
+        gui.panel(
+          // `hug` is the strip saying "I am as tall as what I hold": the menus
+          // know their own height and the panel composes them, so no number
+          // here has to be kept in step with the controls.
+          { layout: "row", hug: true },
+          gui.menu(TIME_UNITS, { name: "time", label: "time axis" }),
+          gui.menu(AMP_UNITS, { name: "amp", label: "amplitude axis" }),
+          gui.menu(FREQ_SCALES, { name: "freq", label: "frequency scale" }),
+          gui.toggle({ name: "yaxis", label: "vertical rulers", value: true }),
+        ),
+      );
+
+      let ampUnit = "norm";   // remembered so the toggle can restore it
+
+      async function run() {
+        $("run").disabled = true;
+
+        const nrt = await Session.nrt({ tempo: TEMPO });
+        nrt.play(new seq.Pbind({
+          degree: new seq.Pseq([0, 2, 4, 7], 8),
+          dur: 0.5,
+          amp: new seq.Pwhite(0.3, 0.7),
+        }));
+        const take = await nrt.render({ sampleRate: SR, channels: 2 });
+        log(`rendered ${take.frames} frames (${(take.frames / SR).toFixed(2)} s, `
+          + `${(take.frames / SR * TEMPO).toFixed(1)} beats) offline`);
+
+        const session = await Session.embed();
+        await session.gui();
+        const win = await scene(gui.source(take.samples)).open($("stage"));
+        log(`opened window ${win.id} — click the menus to cycle each axis' unit`);
+
+        win.widget("time").onEvent((index) => {
+          const unit = TIME_UNITS[Number(index)];
+          win.widget("wave").set({ ruler: unit });
+          win.widget("spect").set({ ruler: unit });
+          log(`time axis -> ${unit}`);
+        });
+        win.widget("amp").onEvent((index) => {
+          ampUnit = AMP_UNITS[Number(index)];
+          win.widget("wave").set({ rulerY: ampUnit });
+          log(`amplitude axis -> ${ampUnit}`);
+        });
+        win.widget("freq").onEvent((index) => {
+          const scale = FREQ_SCALES[Number(index)];
+          win.widget("spect").set({ freqScale: scale });
+          log(`frequency scale -> ${scale}`);
+        });
+        win.widget("yaxis").onEvent((value) => {
+          const on = Boolean(Number(value));
+          win.widget("wave").set({ rulerY: on ? ampUnit : "off" });
+          win.widget("spect").set({ rulerY: on ? "hz" : "off" });
+          log(`vertical rulers -> ${on ? "on" : "off"}`);
+        });
+
+        const onViewY = (tag, ...vals) => {
+          if (tag === "view_y" && vals.length >= 2) {
+            log(`vertical window: start=${vals[0].toFixed(3)} len=${vals[1].toFixed(3)}`);
+          }
+        };
+        win.widget("wave").onEvent(onViewY);
+        win.widget("spect").onEvent(onViewY);
+      }
+
+      $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
+    </script>
+  </body>
+</html>
