@@ -179,6 +179,11 @@ pub struct ClaustersHeadless {
     segment: Arc<Segment>,
     channels: usize,
     quit: bool,
+    /// Staged loads in flight: `(ticket, buffer index, destination)`. A staged
+    /// buffer is not the buffer until it is ended, so nothing here is reachable
+    /// from the engine.
+    staged: Vec<(u64, usize, Arc<crate::dsp::buffer::Buffer>)>,
+    next_load: u64,
 }
 
 impl ClaustersHeadless {
@@ -214,6 +219,8 @@ impl ClaustersHeadless {
             segment,
             channels,
             quit: false,
+            staged: Vec::new(),
+            next_load: 0,
         })
     }
 
@@ -354,6 +361,83 @@ impl ClaustersHeadless {
             sample_rate,
         ));
         self.server.install_buffer(index, buffer)
+    }
+
+    /// Begins a **staged** load: allocates the destination and returns a
+    /// ticket, without copying any samples.
+    ///
+    /// [`buffer_load`](Self::buffer_load) copies everything in one call, which
+    /// is right for a short take and wrong for a long one: on the thread that
+    /// owes the next block, a five-minute stereo take measures at some 14x the
+    /// browser's render quantum (`examples/measure_turn.rs`). A count-based
+    /// serving budget cannot divide it, because it is one call — so the load
+    /// is divided instead, and the host paces it: `begin`, then
+    /// [`buffer_load_chunk`](Self::buffer_load_chunk) as often as it likes,
+    /// then [`buffer_load_end`](Self::buffer_load_end).
+    ///
+    /// **Nothing is visible until `end`.** The buffer under `index` is
+    /// untouched while the staged one fills, so the engine never reads a half
+    /// written take — the same "a job replaces the buffer wholesale" rule the
+    /// async `/buffer_*` path follows. Dropping the ticket without ending it
+    /// simply discards the work.
+    pub fn buffer_load_begin(
+        &mut self,
+        index: usize,
+        channels: usize,
+        sample_rate: f64,
+        frames: usize,
+    ) -> Result<u64, String> {
+        if channels == 0 {
+            return Err("a staged load needs at least one channel".into());
+        }
+        let buffer = crate::dsp::buffer::Buffer::zeroed(frames, channels, sample_rate);
+        self.next_load += 1;
+        let ticket = self.next_load;
+        self.staged.push((ticket, index, Arc::new(buffer)));
+        Ok(ticket)
+    }
+
+    /// Copies one run of interleaved samples into a staged load at flat sample
+    /// offset `at`. Costs exactly what it copies, which is the point: the host
+    /// chooses the run and therefore the deadline it fits in
+    /// ([`ServeBudget::install_frames`](crate::osc::server::ServeBudget) is the
+    /// number to size it from).
+    pub fn buffer_load_chunk(
+        &mut self,
+        ticket: u64,
+        at: usize,
+        data: &[f32],
+    ) -> Result<(), String> {
+        let Some((_, _, buffer)) = self.staged.iter().find(|(t, _, _)| *t == ticket) else {
+            return Err(format!("no staged load {ticket}"));
+        };
+        if at + data.len() > buffer.len() {
+            return Err(format!(
+                "chunk at {at} of {} samples runs past the staged buffer's {}",
+                data.len(),
+                buffer.len()
+            ));
+        }
+        for (i, value) in data.iter().enumerate() {
+            buffer.set_at(at + i, *value);
+        }
+        Ok(())
+    }
+
+    /// Installs a staged load and makes it the buffer. One pointer swap: the
+    /// samples were already written by the chunks.
+    pub fn buffer_load_end(&mut self, ticket: u64) -> Result<(), String> {
+        let Some(pos) = self.staged.iter().position(|(t, _, _)| *t == ticket) else {
+            return Err(format!("no staged load {ticket}"));
+        };
+        let (_, index, buffer) = self.staged.remove(pos);
+        buffer.raise_frontier(buffer.frames());
+        self.server.install_buffer(index, buffer)
+    }
+
+    /// Discards a staged load without installing it.
+    pub fn buffer_load_cancel(&mut self, ticket: u64) {
+        self.staged.retain(|(t, _, _)| *t != ticket);
     }
 }
 

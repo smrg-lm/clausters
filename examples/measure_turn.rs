@@ -110,13 +110,53 @@ fn main() {
         );
     }
 
+    // 1c) The same load, staged. The host paces it; what matters is the worst
+    // single chunk, since that is what lands inside one quantum.
+    println!(
+        "\nstaged load, worst single chunk (budget: {} frames):",
+        clausters::osc::server::ServeBudget::default().install_frames
+    );
+    for &(label, frames, ch) in &[
+        ("1 min stereo", 2_880_000, 2),
+        ("5 min stereo", 14_400_000, 2),
+        ("30 min stereo", 86_400_000, 2),
+    ] {
+        let mut server = ClaustersHeadless::new(SR, CH, 0.0).unwrap();
+        let data = vec![0.5f32; frames * ch];
+        let step = clausters::osc::server::ServeBudget::default().install_frames * ch;
+        let t0 = Instant::now();
+        let ticket = server.buffer_load_begin(0, ch, SR, frames).unwrap();
+        let mut worst: f64 = 0.0;
+        let mut chunks = 0;
+        for (i, run) in data.chunks(step).enumerate() {
+            let t = Instant::now();
+            server.buffer_load_chunk(ticket, i * step, run).unwrap();
+            worst = worst.max(t.elapsed().as_secs_f64() * 1000.0);
+            chunks += 1;
+        }
+        let t = Instant::now();
+        server.buffer_load_end(ticket).unwrap();
+        let end_ms = t.elapsed().as_secs_f64() * 1000.0;
+        let total = t0.elapsed().as_secs_f64() * 1000.0;
+        let mb = data.len() as f64 * 4.0 / 1_048_576.0;
+        println!(
+            "  {label:14} {mb:7.1} MB  chunk {worst:6.3} ms  end {end_ms:6.3} ms  \
+({chunks} chunks, {total:.0} ms wall)  {}",
+            if worst.max(end_ms) > QUANTUM_MS {
+                "OVER".to_string()
+            } else {
+                "fits".into()
+            }
+        );
+    }
+
     // 2) A burst of small jobs, budgeted vs not.
     println!("\n64 small allocations arriving at once:");
     for &budget in &[usize::MAX, 4] {
         let mut server = ClaustersHeadless::new(SR, CH, 0.0).unwrap();
         server.set_budget(clausters::osc::server::ServeBudget {
-            ring_packets: usize::MAX,
             nrt_jobs: budget,
+            ..clausters::osc::server::ServeBudget::UNLIMITED
         });
         for i in 0..64 {
             server.send(&msg(

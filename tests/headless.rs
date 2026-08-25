@@ -233,8 +233,8 @@ fn a_burst_of_buffer_jobs_is_spread_over_turns() {
     // submitted them, on the thread that owes the next block.
     let mut server = ClaustersHeadless::new(SR, CHANNELS, 0.0).unwrap();
     server.set_budget(ServeBudget {
-        ring_packets: usize::MAX,
         nrt_jobs: 4,
+        ..ServeBudget::UNLIMITED
     });
     for i in 0..16 {
         assert!(server.send(&msg(
@@ -272,7 +272,7 @@ fn a_burst_of_packets_is_spread_over_turns() {
     let mut server = ClaustersHeadless::new(SR, CHANNELS, 0.0).unwrap();
     server.set_budget(ServeBudget {
         ring_packets: 3,
-        nrt_jobs: usize::MAX,
+        ..ServeBudget::UNLIMITED
     });
     for i in 0..9 {
         assert!(server.send(&msg(
@@ -325,4 +325,91 @@ fn nothing_runs_before_its_turn() {
     assert!(replies(&server).is_empty());
     pull(&mut server, 1);
     assert!(replies(&server).iter().any(|m| m.addr == "/done"));
+}
+
+// ---- B6 step 2a: a long take is loaded in chunks ----
+
+/// Reads the first `count` samples of buffer `index` back through
+/// `/buffer_get`, as a client would.
+fn buffer_head(server: &mut ClaustersHeadless, index: i32, count: i32) -> Vec<f32> {
+    let mut args = vec![OscType::Int(index)];
+    args.extend((0..count).map(OscType::Int));
+    assert!(server.send(&msg("/buffer_get", args)));
+    pull(server, 1);
+    replies(server)
+        .into_iter()
+        .find(|m| m.addr == "/buffer_get.reply")
+        .map(|m| {
+            m.args
+                .iter()
+                .filter_map(|a| match a {
+                    OscType::Float(f) => Some(*f),
+                    _ => None,
+                })
+                .collect()
+        })
+        .expect("a /buffer_get.reply carrying the samples")
+}
+
+#[test]
+fn a_staged_load_matches_the_one_shot_load() {
+    // The chunked path must produce exactly the buffer the whole-payload path
+    // produces -- otherwise "the same thing, paced" is not what it is.
+    let frames = 5_000;
+    let channels = 2;
+    let data: Vec<f32> = (0..frames * channels)
+        .map(|i| (i as f32 / 997.0).sin())
+        .collect();
+
+    let mut one = ClaustersHeadless::new(SR, CHANNELS, 0.0).unwrap();
+    one.buffer_load(0, channels, SR, &data).unwrap();
+
+    let mut staged = ClaustersHeadless::new(SR, CHANNELS, 0.0).unwrap();
+    let ticket = staged.buffer_load_begin(0, channels, SR, frames).unwrap();
+    // Paced the way a host would: a chunk at a time, from the budget.
+    let step = ServeBudget::default().install_frames * channels;
+    for (i, run) in data.chunks(step).enumerate() {
+        staged.buffer_load_chunk(ticket, i * step, run).unwrap();
+    }
+    staged.buffer_load_end(ticket).unwrap();
+
+    assert_eq!(
+        buffer_head(&mut one, 0, 64),
+        buffer_head(&mut staged, 0, 64)
+    );
+}
+
+#[test]
+fn a_staged_load_is_invisible_until_it_ends() {
+    // A half-written take must never be readable: the engine sees the previous
+    // buffer until the swap, which is the rule the async path already follows.
+    let mut server = ClaustersHeadless::new(SR, CHANNELS, 0.0).unwrap();
+    server.buffer_load(0, 1, SR, &[1.0; 8]).unwrap();
+
+    let ticket = server.buffer_load_begin(0, 1, SR, 8).unwrap();
+    server.buffer_load_chunk(ticket, 0, &[9.0; 4]).unwrap();
+    assert_eq!(buffer_head(&mut server, 0, 8), vec![1.0; 8]);
+
+    server.buffer_load_chunk(ticket, 4, &[9.0; 4]).unwrap();
+    server.buffer_load_end(ticket).unwrap();
+    assert_eq!(buffer_head(&mut server, 0, 8), vec![9.0; 8]);
+}
+
+#[test]
+fn a_cancelled_load_installs_nothing() {
+    let mut server = ClaustersHeadless::new(SR, CHANNELS, 0.0).unwrap();
+    server.buffer_load(0, 1, SR, &[1.0; 8]).unwrap();
+    let ticket = server.buffer_load_begin(0, 1, SR, 8).unwrap();
+    server.buffer_load_chunk(ticket, 0, &[9.0; 8]).unwrap();
+    server.buffer_load_cancel(ticket);
+    assert!(server.buffer_load_end(ticket).is_err());
+    assert_eq!(buffer_head(&mut server, 0, 8), vec![1.0; 8]);
+}
+
+#[test]
+fn a_chunk_past_the_end_is_refused() {
+    let mut server = ClaustersHeadless::new(SR, CHANNELS, 0.0).unwrap();
+    let ticket = server.buffer_load_begin(0, 1, SR, 8).unwrap();
+    assert!(server.buffer_load_chunk(ticket, 4, &[0.0; 8]).is_err());
+    assert!(server.buffer_load_chunk(999, 0, &[0.0; 1]).is_err());
 }

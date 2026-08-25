@@ -806,15 +806,49 @@ entries keep their original paths as a record of what shipped where. See
      zeroed pages and the price resurfaces as page faults on the audio thread.
      A native number bounds the browser's from below — it can say an operation
      cannot fit, never that one does.
-  2. **The Worker, and the NRT runner in it.** A slim wasm shell beside
-     `clausters-web` exporting `server::nrt::run_job` — the third caller of a
-     door that already has two. Jobs and results cross as transferred
-     `ArrayBuffer`s over a `MessagePort` transferred into the worklet, feature-
-     detected at boot with a handshake and falling back to a main-thread relay
-     (Safari's port transfer into a worklet is the one piece no documentation
-     here settles). The install on the worklet side is chunked under step 1's
-     budget. **`/buffer_alloc` stops being paid in the audio callback**, which
-     is the whole point.
+  2. The install, then the Worker — the measurement split this in two, and the
+     first half turned out to be the one that mattered.
+
+     a. ✅ **A long take is loaded in chunks** *(done 2026-08-25)* — a staged
+        load on the pulled server: `buffer_load_begin` allocates and returns a
+        ticket, `buffer_load_chunk` copies one run, `buffer_load_end` installs
+        with one pointer swap, `buffer_load_cancel` discards. **Nothing is
+        visible until `end`**, so the engine never reads a half-written take —
+        the same "a job replaces the buffer wholesale" rule the async path
+        follows. The host paces it and `ServeBudget::install_frames` (4800, a
+        tenth of a second of stereo) is the number to size the run from.
+        Four tests in `tests/headless.rs`, one of them asserting the staged
+        buffer is sample-for-sample the one-shot buffer.
+
+        **What it measured**: a one-minute stereo take went from 7.4 ms (2.8x
+        the quantum) to a **worst chunk of 0.040 ms**, and a five-minute take
+        from 34.4 ms (12.9x) to **0.127 ms**; `end` itself is a microsecond,
+        which is what a pointer swap should cost. Both numbers the step existed
+        to close are closed.
+
+        **And the reduction it found.** A thirty-minute stereo take (659 MB) has
+        a worst chunk of **45 ms** — the destination being faulted in during the
+        copy, not the copy itself — and it is already past iOS Safari's ~350 MB
+        ceiling. So the browser gets a **buffer-size ceiling** rather than a
+        best effort, written on `clients/web/docs/src/platform.md` when the
+        in-page number replaces this native one. Material that long streams; it
+        does not pool.
+
+     b. ⬜ **The Worker, and the NRT runner in it.** A slim wasm shell beside
+        `clausters-web` exporting `server::nrt::run_job` — the third caller of a
+        door that already has two. Jobs and results cross as transferred
+        `ArrayBuffer`s over a `MessagePort` transferred into the worklet,
+        feature-detected at boot with a handshake and falling back to a
+        main-thread relay (Safari's port transfer into a worklet is the one
+        piece no documentation here settles). Results land through the staged
+        load of (a), so the copy is already paced.
+
+        **Delegation is per job kind, not wholesale**: `Alloc` and `AllocRead`
+        are worth sending out (I/O and decode, nothing to send but parameters),
+        `Write` too (it only reads the buffer and produces a file). The jobs
+        carrying an `Arc<Buffer>` of current contents — `Read`, `Gen`, `Set`,
+        `Edit`, `Fill` — would have to ship megabytes out and back to save
+        arithmetic, so they stay where the samples are, under (a)'s budget.
   3. **OPFS: the page gets a filesystem.** `createSyncAccessHandle` is dedicated-
      worker-only by standard, so it lives exactly where step 2 put the runner.
      `/buffer_allocRead` stops being a path with nothing behind it, and

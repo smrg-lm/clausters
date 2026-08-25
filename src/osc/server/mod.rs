@@ -771,6 +771,11 @@ pub struct ServeBudget {
     pub ring_packets: usize,
     /// Buffer jobs (`/buffer_*`) started per turn when the runner is inline.
     pub nrt_jobs: usize,
+    /// Frames a host should copy per staged-load chunk
+    /// (`ClaustersHeadless::buffer_load_chunk`). Not enforced here — the host
+    /// owns the loop and this is the number to size it from; it lives with the
+    /// others so a caller reads one budget rather than three conventions.
+    pub install_frames: usize,
 }
 
 impl ServeBudget {
@@ -779,6 +784,7 @@ impl ServeBudget {
     pub const UNLIMITED: Self = Self {
         ring_packets: usize::MAX,
         nrt_jobs: usize::MAX,
+        install_frames: usize::MAX,
     };
 }
 
@@ -791,6 +797,10 @@ impl Default for ServeBudget {
         Self {
             ring_packets: 256,
             nrt_jobs: 4,
+            // A tenth of a second of stereo: measured at well under a tenth of
+            // the render quantum, and large enough that a minute-long take is
+            // some six hundred chunks rather than a hundred thousand.
+            install_frames: 4_800,
         }
     }
 }
