@@ -57,6 +57,12 @@ socket. Swapping to a <code>--ws</code> server is the one line marked below.</di
       <pre id="log"></pre>
     </main>
 
+    <!--
+      The web sibling of the **server's** example `examples/demand.py` (the
+      root directory, not the client's): a page's name reads back to a script's
+      there rather than under clients/python, which is why the pairing count
+      over the client examples does not see it.
+    -->
     <script type="module">
       import {
         loadOsc, pageConnection, server as engine, Server, Synth, SynthDef,

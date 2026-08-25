@@ -53,6 +53,14 @@ after that line is the same code.</div>
       <pre id="log"></pre>
     </main>
 
+    <!--
+      The web sibling of the **server's** example `examples/synthdef.py` (the
+      root directory, not the client's): the same graph composed with the
+      lowercase callables and sent, here played and retuned live instead of
+      rendered offline. A page's name reads back to a script's there rather
+      than under clients/python, which is why the pairing count over the client
+      examples does not see it.
+    -->
     <script type="module">
       import {
         loadOsc, pageConnection, WsConnection, server as engine, Server,

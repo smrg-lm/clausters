@@ -1012,7 +1012,7 @@ port, so a bundle can be authored in the same language the page is written in.
 
 **Acceptance:** the W4 bundle parity vector runs both ways — what the TS writer emits and what the Python writer emits are byte-identical for the same input, and each resolves through the browser's wasm door to the same mount; `examples/editors/document/` rebuilt from the TS writer draws the same page.
 
-### W16 - Example parity with the Python client
+### ✅ W16 - Example parity with the Python client *(done 2026-08-25)*
 
 *Deferred out of W5*, which ported the examples that run in a page as they
 stand and left the rest. This closes the gap, so a Python example and its page
@@ -1054,7 +1054,7 @@ not a detail of it. Until then `clients/web/examples/editors/composer.html` cove
 widgets with no model behind them — which is what the host's own bugs need to be
 reproducible in a browser, and it is where G32b was found.
 
-**The porting is under way, and the count is the milestone's own measure.**
+**Done, and the count is the milestone's own measure.**
 On 2026-08-25 the pairing stood at **19 pairs, 47 scripts with no page, 12 pages
 with no script**. Two batches the same day took it to **33 pairs, 33 scripts
 alone, 11 pages alone**: `basics/hello-note`, `basics/envelope`, and the whole
@@ -2694,11 +2694,32 @@ finished work, where a pending item reads as done.
   expecting one example in two languages currently finds two, and nothing else
   says so.
 
-- ⬜ **Thirty-three scripts have no page, and eleven pages have no script**
-  *(counted 2026-08-24 as 47/12, recounted 2026-08-25 after two batches of
-  ports)*. W16's real size, stated as a number rather than as "about forty":
-  **33 pairs, 33 scripts alone, 11 pages alone**, counting a directory with an
-  `index.html` as its own name.
+- ✅ **Forty-seven scripts have no page, and twelve pages have no script**
+  *(counted 2026-08-24; closed 2026-08-25, when every script that can have a
+  page had one)*. W16's real size, stated as a number rather than as "about
+  forty", and then paid: it went 19/47/12 → **55 pairs, 11 scripts alone, 11
+  pages alone**, counting a directory with an `index.html` as its own name.
+
+  **The eleven scripts left are each accounted for**, which is what the
+  milestone's acceptance asks: three belong to another milestone's acceptance
+  (`faust/boxes-library` to **W7**, `io/midi-responder` and
+  `editors/pianoroll-midi` to **W9**); seven have **no page by nature**, each
+  with its reason below; and `io/osc-responder` is **paired under another
+  name**, `io/responders.html`, which says so in its own header.
+
+  **And the eleven pages left are too.** Six are a page's own subject with no
+  script behind it — `components/demo`, `components/lifecycle`,
+  `editors/document`, `panels/graph-controls` (a bundle mounted as a component),
+  `panels/two-hosts`, `basics/engine` (the platform itself). One,
+  `io/responders`, is the pair above. The remaining four turned out not to be
+  gaps at all: **their siblings are the *server's* examples**, in the root
+  `examples/` directory that the pairing count never looks at —
+  `basics/demand` ↔ `examples/demand.py`, `basics/synth` ↔
+  `examples/synthdef.py`, `transport/sequencing` ↔ `examples/sequencing.py` —
+  and `panels/host` is the carrier contrast that `panels/skeleton` and
+  `panels/attach` show between them. All four now say which example they are, in
+  their own headers, which is what the layout rule asks of a page whose name
+  cannot be read back to a script's.
 
   **What the 33 are, so "a destination rather than a queue" is a statement with
   a list under it.** 27 are portable with the surface this client has today —

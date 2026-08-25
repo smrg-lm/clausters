@@ -1,7 +1,9 @@
 # Roadmap — the order the open work is taken in
 
-*Rewritten 2026-08-25, three times: the third when `panels/` finished and W16's
-remaining order was written down — including the one verb a page of it is
+*Rewritten 2026-08-25, four times: the fourth when **W16 closed** — every
+script that can have a page has one, and the eleven that cannot are each
+accounted for in the plan. Before that, the third, when `panels/` finished and
+W16's remaining order was written down — including the one verb a page of it was
 waiting on. Before that, the second, when W24 closed — its four loose ends and
 the sweep that says there are no more — and W16's porting began, which is what
 leads the phase now. Before that, the same day, when the web smokes got a runner and a CI step — and,
@@ -159,7 +161,18 @@ five cases (`scripts/smoke-web.sh`) in place of three scripts that ran nowhere,
 and a CI job that calls it. The two bundle pages' `?smoke=1` modes fired for the
 first time and passed — which is the good outcome, not the expected one. The
 entry's own claim that CI ran `clients/web/test.sh` was false too: it ran
-neither. What leads the phase now is W16, which was waiting on exactly this.*
+neither.*
+
+***W16 is closed**, on 2026-08-25: every Python example that can have a page has
+one — 55 pairs, from 19 — and the eleven that cannot are each accounted for in
+`clients/web/PLAN.md`, three of them moved into the acceptance of the milestone
+that owns them. The pass paid for itself several times over in defects nothing
+else would have found: a server that adopted no default, a GUI handle that could
+not draw, a clock that could not be locked, a blob with no live door, and the
+host's own theme and metrics, which were wasm exports the protocol had no verb
+for. What leads the phase now is **W24's successor list** — there is none, so
+what is left of Phase 1 is the three unported features below and the decision
+that was always meant to be last.*
 
 ***The consistency pass that led the phase is paid whole**, on 2026-08-24:
 every carrier took an address and all six legs went loopback, so choosing a
@@ -172,40 +185,12 @@ files with one pair checked, is written in one place and spread by one script.
 What leads the phase now is the question about the widgets the GUI reform did
 not ask.*
 
-- ⬜ **W16 — Example parity with the Python client**, under way, and this is
-  the order the rest of it goes in. Two batches on 2026-08-25 took the count
-  from **19 pairs / 47 scripts alone / 12 pages alone** to **33 / 33 / 11**:
-  `basics/` is done and `panels/` is done but for one. What the pass is *for*
-  showed up again in the second batch — an attached `GuiHost` could not draw,
-  which no test had asked — and that is why the pages are worth writing beyond
-  the pages.
-
-  Next, in this order:
-
-  1. ~~**`/gui_theme`**~~ — done 2026-08-25, and it was two verbs: `/gui_theme`
-     and `/gui_metrics`, the wasm exports gone, `GuiHost.theme(table)` /
-     `.metrics(table)` in both clients. `panels/style` is written and the folder
-     is complete.
-  2. **`views/` (12 pages)** — the biggest remaining folder and all of it
-     portable today: plot, scope, nodetree, rulers, take, window, bulk, linked,
-     analyzer, plotting, scoping's siblings.
-  3. **`editors/` (6)**, then **`spectral/` (3)**, **`transport/` (2)**,
-     **`buffers/` (2)** and the two `io/` ones the web can carry
-     (`osc-destination`, `osc-responder`, over the WebSocket bridge where the
-     script has UDP).
-  4. **The five pages with no script** that are gaps rather than surface —
-     `panels/host`, `basics/synth`, `basics/demand`, `transport/sequencing`,
-     `io/responders`.
-
-  Not on this list, and named so the absence reads as a decision: `io/live-udp`
-  and `io/embedded` have **no page by nature**, and `views/recording-mapped`
-  says so in its own docstring ("a page can map nothing"). The three that wait
-  on a milestone now **belong** to it — `faust/boxes-library` is part of
-  **W7**'s acceptance, `io/midi-responder` and `editors/pianoroll-midi` of
-  **W9**'s — so no page is left orphaned in a list that cannot take it.
-
 - ⬜ **W7** (the Faust surfaces), **W9** (MIDI), **W15** (the bundle writer) —
-  unported features, each owned, none on the path to the complete example.
+  unported features, each owned, none on the path to the complete example. Two
+  of them now carry a page apiece as part of their acceptance, moved there when
+  W16 closed: `faust/boxes-library` rides with **W7** (it cannot be written
+  until a page has a Faust compiler) and `io/midi-responder` and
+  `editors/pianoroll-midi` with **W9**.
 
 - ⬜ **C44 — the inverse direction: a widget inside a def** *(`clients/python/
   PLAN.md`, the API reform track)*, deliberately last and possibly never: it is
