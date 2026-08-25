@@ -56,7 +56,7 @@ Instances share the browser tab and nothing else, so two of them may use the ver
 
 Two clients on the **same** engine are the other arrangement, and there the ids do collide: both allocators start at the same base. They split the space instead, each taking one slice of it — `Session.page({ share: { index: 1, of: 2 } })`, with the other client given index 0. The slices are equal and in a fixed order, so they are disjoint by arithmetic and the two clients need no channel to agree; a session's share governs both of its legs, the server's node, bus and buffer ids and its host's widget ids alike.
 
-What each pair differs in is only what a page wants by default. `guiHost()` and `server()` are memoized and come with the page's default canvas; `newGuiHost()` and `engine()` are neither, since a host that is not the page's has no business appending a canvas to `<body>`. `examples/two-hosts.html` shows the whole arrangement end to end.
+What each pair differs in is only what a page wants by default. `guiHost()` and `server()` are memoized and come with the page's default canvas; `newGuiHost()` and `engine()` are neither, since a host that is not the page's has no business appending a canvas to `<body>`. `examples/panels/two-hosts.html` shows the whole arrangement end to end.
 
 ## Defs and the `Server`
 
@@ -137,7 +137,7 @@ play(new seq.Pbind({ degree: new seq.Pseq([0, 2, 4]), dur: 0.5 }));
 new Synth("beep", { freq: 440 });           // and the bare constructor too
 ```
 
-`play` dispatches by kind — an `Event` or a plain object of event keys, an event pattern, a `Routine` or a bare generator, a def or a bare expression, a `Timeline`, a `Buffer`, an `Automation` — and returns something that knows how to end what just started. `examples/verbs.html` visits every kind. Its siblings take the same samples and do something else with it: `plot` draws it and `render` evaluates it offline, while `scope` watches the buses whatever is playing writes to — all covered in [The ambient verbs](verbs.md).
+`play` dispatches by kind — an `Event` or a plain object of event keys, an event pattern, a `Routine` or a bare generator, a def or a bare expression, a `Timeline`, a `Buffer`, an `Automation` — and returns something that knows how to end what just started. `examples/basics/verbs.html` visits every kind. Its siblings take the same samples and do something else with it: `plot` draws it and `render` evaluates it offline, while `scope` watches the buses whatever is playing writes to — all covered in [The ambient verbs](verbs.md).
 
 Resolution is one ladder, and it is worth knowing because it is what makes several sessions safe on one page:
 

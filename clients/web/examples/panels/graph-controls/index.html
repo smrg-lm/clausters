@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters graph controls</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; }
+      #note { font-size: 13px; white-space: pre-wrap; max-width: 44rem; }
+      /* The document places the component: its canvas fills the box CSS
+         gives it, and the element tells the host the pixels. */
+      fm-trem { display: block; width: 680px; height: 400px; max-width: 100%; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">a GraphDef's control surface as one web component: the
+bundle below (authored by make_bundle.py with the Python client) boots an FM
+voice -> tremolo graph on the wasm engine in this tab, and every knob sets a
+named surface port of the running graph — no server process, no script in
+between. The power button is the autoplay gesture.</div>
+      <fm-trem></fm-trem>
+    </main>
+
+    <!--
+      The component page of examples/graph-controls (see make_bundle.py for
+      the authoring half and the bundle's contents).
+
+      The bundle ships its own ES module: importing it registers the <fm-trem>
+      tag and **nothing of the TypeScript client is loaded** — the run time is
+      the engine, the host and the mount (dist/runtime.js).
+
+      Serve from clients/web — the PACKAGE ROOT, never this folder: the
+      imports below reach ../../dist/, which must stay inside the served
+      root (serving graph-controls/ itself turns them into 404s/MIME
+      errors). From clients/web:  python3 -m http.server  and open
+      /examples/panels/graph-controls/.
+
+      ?smoke=1 asserts the chain end to end — the graph's LFO streaming on
+      **this instance's own** control bus (the /graph_new instantiated and
+      sounding) and an /node_set of a named surface port on its own node id,
+      accepted without /fail — beaconing the verdict as a fetch, the standard
+      web-smoke posture under headless Chrome.
+    -->
+    <script type="module">
+      import "./bundle/index.js";   // registers <fm-trem>
+      import { startPage, server } from "../../../dist/runtime.js";
+      import { loadOsc, encodeMessage, decodePacket } from "../../../dist/base/osc.js";
+
+      const smoke = new URLSearchParams(location.search).has("smoke");
+      const element = document.querySelector("fm-trem");
+      const verdict = (text) => {
+        document.getElementById("note").textContent = text;
+        document.title = text.split("\n")[0];
+        fetch(`/smoke-verdict-${encodeURIComponent(text.split("\n")[0])}`)
+          .catch(() => {});
+      };
+
+      element.addEventListener("clausters-error", (e) =>
+        verdict(`FAIL: ${e.detail.error}`));
+      element.addEventListener("clausters-ready", (e) => {
+        if (smoke) {
+          startPage()
+            .then(() => smokeAsserts(e.detail.id))
+            .catch((err) => verdict(`FAIL: ${err}`));
+        }
+      });
+
+      async function smokeAsserts(id) {
+        await loadOsc();
+        const engine = await server();
+        // The bus and the node this instance was allocated — not fixed
+        // numbers: that is the difference between a bundle and a component.
+        const { lfo, graph } = element.symbols;
+        const seen = new Set();
+        let failed = null;
+        engine.addReply((bytes) => {
+          for (const { addr, args } of decodePacket(bytes)) {
+            if (addr === "/fail") failed = JSON.stringify(args);
+            if (addr !== "/bus_stream.reply") continue;
+            for (let i = 0; i + 1 < args.length; i += 2) {
+              if (args[i] === lfo) seen.add(args[i + 1]);
+            }
+          }
+        });
+        // A named surface port over the raw singleton — the same message the
+        // knobs' bind sends host-side, to this instance's own graph node.
+        engine.send(encodeMessage("/node_set",
+          [["i", graph], ["s", "rate"], ["f", 9.0]]));
+        const t0 = performance.now();
+        for (;;) {
+          if (failed) throw new Error(`/fail: ${failed}`);
+          const moving = [...seen].filter((v) => v > 0.05 && v < 0.95);
+          if (moving.length >= 3) {
+            return verdict(`PASS: graph component up (GuiDef ${id}, node ` +
+              `${graph}, lfo bus ${lfo}); LFO streaming (${moving.length} ` +
+              `values); surface /node_set accepted`);
+          }
+          if (performance.now() - t0 > 20000) {
+            throw new Error(`LFO never streamed ` +
+              `(${JSON.stringify([...seen])})`);
+          }
+          await new Promise((r) => setTimeout(r, 100));
+        }
+      }
+    </script>
+  </body>
+</html>

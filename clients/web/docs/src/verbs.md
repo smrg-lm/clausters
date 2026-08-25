@@ -111,7 +111,7 @@ play(buffer);
 
 `Buffer.fromSamples` is the browser's render-then-load with the file taken out of the middle — the samples go into a buffer on the page's engine directly, since the carrier shares memory with it. The render is *samples* now: random-access audio, sliceable and playable like any other.
 
-`examples/offline.html` runs the whole loop — render, look, download, play back.
+`examples/buffers/offline-render.html` runs the whole loop — render, look, download, play back.
 
 ## See also
 

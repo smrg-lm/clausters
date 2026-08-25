@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: multichannel without expansion</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 46rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+      .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">The web port of the Python client's
+<code>multichannel.py</code>: <b>a channel list, and the fold back down</b>.
+
+<code>dup(() =&gt; sine(freq.add(rand(-3, 3))), 12)</code> <b>evaluates</b> its
+callable twelve times — twelve distinct sines, each with its own frozen
+<code>rand</code> detune, a thick unison bank. (<code>dup(node, 12)</code>
+would repeat one sine <i>by reference</i>: cheap, but twelve identical
+channels.) Operators <b>broadcast</b> over the list, so one envelope scales
+every channel with no loop written, and <code>mix(bank)</code> folds the twelve
+back to one signal through the server's fused sums. The last
+<code>dup(sig)</code> is the reference kind at its best: the mixed signal
+fanned to buses 0 and 1 — stereo out of one graph.
+
+Everything sounds through the <b>in-page engine</b>: no server process, no
+socket. Swapping to a <code>--ws</code> server is the one line marked below.</div>
+
+      <div class="row">
+        <button id="start">start</button>
+        <button id="play" disabled>play the phrase</button>
+      </div>
+
+      <pre id="log"></pre>
+    </main>
+
+    <script type="module">
+      import {
+        loadOsc, pageConnection, server as engine, Server, Synth,
+        SynthDef, TempoClock, Routine,
+      } from "../../dist/index.js";
+      import { DoneAction, Env, control, dup, envGen, mix, out, rand, sine } from "../../dist/defs/index.js";
+
+      const el = (id) => document.getElementById(id);
+      const log = (line) => { el("log").textContent += line + "\n"; };
+
+      const VOICES = 12;
+
+      // ---- the def: a detuned unison bank around `freq` ----
+      const unison = () => {
+        const freq = control("freq", 110.0);
+        const gate = control("gate", 1.0);
+        const amp = control("amp", 0.1);
+        const env = envGen(Env.asr(0.4, 1.0, 1.2), {
+          gate, doneAction: DoneAction.FREE_SELF,
+        });
+        // The callable form: twelve evaluations, twelve `rand` draws.
+        const bank = dup(() => sine(freq.add(rand(-3.0, 3.0))), VOICES);
+        const sig = mix(bank).mul(env.mul(amp).div(VOICES));
+        return new SynthDef("web_unison", out(0.0, dup(sig)));
+      };
+
+      let server = null;
+      let clock = null;
+
+      async function start() {
+        await loadOsc();
+        await (await engine({ channels: 2 })).resume();
+        // The one line that names a carrier: `WsConnection.open(url)` here
+        // sends the very same phrase to a `clausters --ws` server instead.
+        server = await Server.open(await pageConnection());
+
+        const def = unison();
+        await def.send(server);
+        log(`def '${def.name}' loaded: ${VOICES} sines mixed to one, `
+          + "fanned to two buses");
+
+        clock = new TempoClock(2.0, { timebase: await server.sampleTimebase() });
+        clock.start();
+        el("start").disabled = true;
+        el("play").disabled = false;
+      }
+
+      const mtof = (midi) => 440.0 * 2.0 ** ((midi - 69.0) / 12.0);
+
+      function play() {
+        new Routine(function* () {
+          for (const [midi, dur] of [[45, 3.0], [52, 3.0], [50, 4.0]]) {
+            const voice = new Synth("web_unison", {
+              freq: mtof(midi), amp: 0.4,
+            }, { server });
+            log(`voice on node ${voice.id} at MIDI ${midi}`);
+            yield dur - 0.5;
+            // Timed, not immediate: the bundle is stamped with the routine's
+            // logical beat, so the release lands where the music says.
+            // Every argument is tagged: a JS number is a double with no
+            // int/float distinction, and a control value has to be a float.
+            server.sendBundle([
+              ["/node_set", ["i", voice.id], "gate", ["f", 0.0]],
+            ]);
+            yield 0.5;
+          }
+          log("phrase done — each voice freed itself when its release ended");
+        }).play(clock);
+      }
+
+      el("start").onclick = () => start().catch((err) => log(`error: ${err}`));
+      el("play").onclick = play;
+    </script>
+  </body>
+</html>

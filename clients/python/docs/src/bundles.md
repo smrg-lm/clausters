@@ -103,10 +103,10 @@ cargo run --features standalone --bin clausters-gui -- \
     --standalone fm-voice --data-dir <dir>
 ```
 
-Worked examples: `clients/web/examples/piano/make_bundle.py` (a keyboard whose
+Worked examples: `clients/web/examples/panels/piano/make_bundle.py` (a keyboard whose
 keys the host itself turns into voices) and
-`clients/web/examples/graph-controls/make_bundle.py` (a GraphDef's control
-surface), with `clients/web/examples/document/` showing both mounted in one
+`clients/web/examples/panels/graph-controls/make_bundle.py` (a GraphDef's control
+surface), with `clients/web/examples/editors/document/` showing both mounted in one
 interactive text. The format itself — the manifest, the two sigils, the
 two-phase mount — is documented in the server guide's
 [clients chapter](https://clausters.readthedocs.io/en/latest/clients.html).

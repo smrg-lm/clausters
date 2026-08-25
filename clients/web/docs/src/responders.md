@@ -41,4 +41,4 @@ A receiver can also be given a clock (`new OscReceiver(connection, { clock })`),
 
 MIDI. `MidiFunc` and MIDI destinations are a separate milestone, since in a browser both directions are one API (Web MIDI) and neither exists in this package yet.
 
-The repository's `examples/responders.html` is the worked example: a def reports its own onsets with `SendReply`, a responder answers each one with a synth, and two more keep the count of what is alive.
+The repository's `examples/io/responders.html` is the worked example: a def reports its own onsets with `SendReply`, a responder answers each one with a synth, and two more keep the count of what is alive.

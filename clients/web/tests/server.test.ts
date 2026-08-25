@@ -180,7 +180,7 @@ test("the example's voice def compiles and its gate releases it", {
     skip: !hasServer,
 }, async () => {
     await withServer(async (server) => {
-        // The graph examples/synth.html builds, kept honest here: a resonant
+        // The graph examples/basics/synth.html builds, kept honest here: a resonant
         // filter given its resonance as a Q, under an ADSR whose gate is a
         // plain control (a `tr` one would reset itself and release the note
         // the instant it opened).

@@ -24,7 +24,7 @@ cargo run --release --example bench          # Rust: cargo run --example <name>
 python3 examples/sequencing.py               # root Python: from a checkout, no install
 
 pip install ./clients/python                 # installed-package scripts:
-python clients/python/examples/hello_note.py #   ...run from anywhere
+python clients/python/examples/basics/hello_note.py #   ...run from anywhere
 
 cd clients/web && npm install && ./build.sh  # web pages: build, then serve
 python3 -m http.server                       #   http://localhost:8000/examples/...

@@ -344,7 +344,7 @@ dashed), a scalar read once at init time. The host lays the boxes out on its own
 graph drawing). The Def-view is **read-only** — the faithful picture of what the
 def is; it needs no audio server.
 
-`clients/python/examples/gui_composer.py` is the whole loop in one script: a take
+`clients/python/examples/editors/composer.py` is the whole loop in one script: a take
 bounced offline and loaded from disk, a melody, a pattern, all three composed,
 edited on screen, heard, undone, saved as a session and opened again. And to *work through* everything this chapter
 argues — interactively, one block at a time, building that same piece — see

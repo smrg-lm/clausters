@@ -3,7 +3,7 @@
 
 A native standalone bundle is a data directory the host and server read by
 listing it; HTTP cannot list directories, so serving a bundle to the browser
-boot (`bootBundle`, `<clausters-bundle>`, examples/standalone.html) requires
+boot (`bootBundle`, `<clausters-bundle>`, examples/panels/standalone.html) requires
 this one extra file at the bundle's root. It
 enumerates the persisted defs (file stems, exactly as saved) and names the
 GuiDef; the optional "buffers" map (server buffer index -> audio URL relative

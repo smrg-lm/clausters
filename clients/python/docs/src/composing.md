@@ -39,7 +39,7 @@ editor.play()      # hear the piece as it now stands
 No polling loop, no dispatch table: one call drains the window's pending
 events into the arrangement, and one call plays the result. (A self-contained
 *script* form of the very same piece — transport buttons on screen, a poll
-loop — is `examples/gui_composer.py`; the tutorial points at it at the end.)
+loop — is `examples/editors/composer.py`; the tutorial points at it at the end.)
 
 ## What you will build
 

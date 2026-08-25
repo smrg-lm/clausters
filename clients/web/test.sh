@@ -191,8 +191,8 @@ if [ -z "$PY" ]; then
     else PY=python3; fi
 fi
 if PYTHONPATH=../python "$PY" -c "import clausters.bundle" 2>/dev/null; then
-    for example in graph-controls piano; do
-        (cd "examples/$example" && PYTHONPATH=../../../python "$PY" make_bundle.py >/dev/null)
+    for example in panels/graph-controls panels/piano; do
+        (cd "examples/$example" && PYTHONPATH=../../../../python "$PY" make_bundle.py >/dev/null)
     done
     run_page components.html  # bundles as components: N canvases in one document
     run_page lifecycle.html   # and the unmount: a hundred of them come and go

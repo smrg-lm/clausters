@@ -1,8 +1,11 @@
 # Roadmap — the order the open work is taken in
 
-*Rewritten 2026-08-24, five times: the fifth when the button question closed
+*Rewritten 2026-08-24, six times: the sixth when the examples pass closed — one
+folder per subject in both clients, the `gui_` prefix gone, and the pairing
+countable for the first time, which is what W16 was waiting for. Before that,
+the same day, when the button question closed
 whole — its interface half, three verbs over events no binding touches, which
-emptied the phase down to the examples pass. Before that, the same day, when the
+emptied the phase down to that pass. Before that, the same day, when the
 same question was answered on its server side: a mode saying which pointer
 primitive reaches `/node_set`, and the two switches carrying a pair of values
 instead of a range. Before that, the same day, when
@@ -156,20 +159,20 @@ files with one pair checked, is written in one place and spread by one script.
 What leads the phase now is the question about the widgets the GUI reform did
 not ask.*
 
-- ⬜ **C45 — The examples pass** *(`clients/python/PLAN.md`, the API reform
-  track)*. The reform changed how an example is *written* and 30 of the 70
-  entries are `gui_*`; the pass rewrites them and organizes them in the same
-  sitting (the flat directory is a prefix pretending to be a folder, and the two
-  clients do not agree on names). It sits here, ahead of W16, because it decides
-  the layout and the names **both** clients then use — porting examples into a
-  taxonomy that is about to change is the same work twice.
+- ⬜ **Both web smoke scripts fail before they assert anything**
+  *(`clients/web/PLAN.md`, Found by use)*. Found while C45 moved the pages, and
+  proved by an A/B worktree to predate it: the standalone and components smokes
+  boot the page and then never see the stream they judge by. Neither runs in
+  CI, so between them they currently assert nothing — which is why this sits
+  ahead of the porting work that would lean on them.
 
-- ⬜ **W16 — Example parity with the Python client**. Its named track is closed;
-  what remains is the milestone itself, and it is the larger half: about forty
-  Python examples have no page, most of them GUI ones, and each lands with the
-  surface it needs rather than as a queue. Its own text was corrected on
-  2026-08-23 — it no longer asks for a catalogue or for the same name, and it
-  now states the dependency above.
+- ⬜ **W16 — Example parity with the Python client**. What it was waiting for is
+  in: C45 decided the layout and the names on 2026-08-24, and both directories
+  now carry the same folders, so a script and its page sit in the same place
+  under the same name. That pass also counted the work exactly — **19 pairs, 47
+  scripts with no page, 12 pages with no script** — and wrote the two pairs that
+  turned out not to be pairs into `clients/web/PLAN.md`. Each page lands with
+  the surface it needs rather than as a queue.
 
 - ⬜ **W24 — The completeness pass**, and what is left of the parity gaps that
   plan already carries with reasons (the record formatters, the two leftover
@@ -216,6 +219,13 @@ example, and none blocks anything that is.
 - **The GUI host's own documentation** — `K16`/`K16a`/`K16b`/`K16c`. Waits on
   nothing; costs a decision about a fourth mdBook that the project's three-book
   rule does not currently allow.
+- **The double click and the long press, and whichever gestures a pass over the
+  usual ones turns up** *(`clients/gui/PLAN.md`, Future directions)*. Named when
+  the click closed on 2026-08-24: unlike the click, which was the machine's own
+  hit test asked a second time, these need a **clock** — a press-time window and
+  a timer — so both grow state the gesture machine does not have and a threshold
+  somebody has to choose. No widget wants one, which is why it is a review of
+  what a GUI's gesture vocabulary should be rather than two items to build.
 - **`G31g`** — engraving refinements (tuplets, full polyphony, spelling).
 - **Server transport items** `T2`–`T4`, and `R12` (a release verifies
   something). `T2` did not stop being optional when `T5` landed, and the

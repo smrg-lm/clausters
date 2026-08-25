@@ -82,7 +82,7 @@ function frozen(model: DefPatch | GraphPatch): Case {
     };
 }
 
-/** The def every cord weight is drawn from — `examples/patch2.html`'s own. */
+/** The def every cord weight is drawn from — `examples/editors/patch2.html`'s own. */
 function tremoloSine(): SynthDef {
     const freq = control("freq", 220.0);
     const amp = control("amp", 0.2);

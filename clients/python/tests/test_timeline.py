@@ -6,7 +6,7 @@ driven offline (`clock.render()`) into a recording destination, so play / locate
 no server, no real time. `stop` is checked at the queue level (it unscheds the
 feeder). `follow_transport` is checked by feeding a simulated `/transport_query.reply`
 broadcast over loopback (no live server). The full multi-client lockstep is the
-manual E2E in `clients/python/examples/transport_conductor.py`.
+manual E2E in `clients/python/examples/transport/conductor.py`.
 """
 
 import socket

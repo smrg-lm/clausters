@@ -102,11 +102,11 @@ clock.start()
 head.follow_transport(server, quant=4)   # obey the transport; start on a bar
 ```
 
-`follow_transport` registers `/server_notify` and an `OscFunc` on `/transport_query.reply` (the [responder layer](responders.md)) so it reacts to the broadcast, then applies the current state once. Because every follower computes from the *same* broadcast state, they roll in lockstep: beat-aligned in plain wall-clock mode, and **sample-exact** when each clock is also `lock_to` the server. The everyone-is-symmetric design makes this simple — every client (including the one issuing the commands, if it follows too) reacts to the same broadcast identically. `transport_conductor.py` ([Examples](examples.md)) shows two followers rolling together; `unfollow_transport()` releases it.
+`follow_transport` registers `/server_notify` and an `OscFunc` on `/transport_query.reply` (the [responder layer](responders.md)) so it reacts to the broadcast, then applies the current state once. Because every follower computes from the *same* broadcast state, they roll in lockstep: beat-aligned in plain wall-clock mode, and **sample-exact** when each clock is also `lock_to` the server. The everyone-is-symmetric design makes this simple — every client (including the one issuing the commands, if it follows too) reacts to the same broadcast identically. `conductor.py` ([Examples](examples.md)) shows two followers rolling together; `unfollow_transport()` releases it.
 
 ## A worked example: two clients, one bar
 
-`transport_sync.py` runs two completely independent client pairs — each its own `Server` and `TempoClock`, the state two separate programs would hold — and lands a note from each on the same bar. The check uses public state only, so any client on the same transport computes the same number:
+`sync.py` runs two completely independent client pairs — each its own `Server` and `TempoClock`, the state two separate programs would hold — and lands a note from each on the same bar. The check uses public state only, so any client on the same transport computes the same number:
 
 ```python
 import math
@@ -207,7 +207,7 @@ continues the frozen sound.
 | Continue rather than restart, client-side | `transport.resume()` (not `play()`) |
 | Ask whether a seek means anything | `editor.locatable` |
 
-`transport_freeze.py` in the examples freezes a generative texture and resumes
+`freeze.py` in the examples freezes a generative texture and resumes
 it, which is the way to hear the difference between continuing and restarting.
 
 ## See also
@@ -216,5 +216,5 @@ it, which is the way to hear the difference between continuing and restarting.
 - [Routines and clocks](routines-and-clocks.md) — the playhead (`TempoClock`) and the routines you start on the bar.
 - [Receiving OSC and MIDI](responders.md) — the responder layer the live-change reaction uses.
 - [Sessions](sessions.md) — the handle that bundles a clock and a server, with `join_transport`.
-- [Examples](examples.md) — `transport_sync.py` (two clients on one bar) and `osc_responder.py` (the live transport reaction).
+- [Examples](examples.md) — `sync.py` (two clients on one bar) and `osc_responder.py` (the live transport reaction).
 - The **[Clausters server book](https://clausters.readthedocs.io/)** — `/transport_set` and `/clock_query` on the wire.

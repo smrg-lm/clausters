@@ -109,7 +109,7 @@ just the dispatch:
   that just landed (with its own refusal, if it had one).
 - `docs/src/guide.md` — the one sentence in "Sessions and the ambient verbs"
   that lists the kinds.
-- `examples/verbs.html` — the tour that visits every kind, and its closing list
+- `examples/basics/verbs.html` — the tour that visits every kind, and its closing list
   of the ones it cannot visit yet.
 - `tests/session.html` — the sweep that asserts every kind `play` dispatches is
   **audible**; its verdict names them, so a kind missing there is visible in
@@ -194,7 +194,7 @@ plus the W0 codec and carrier suites) and the two headless-Chrome acceptances,
 `tests/client.html` (the carrier seam) and `tests/defs.html` (a def built,
 sent, played — asserted **audible** on an analyser — read back out of the node
 tree and freed, over the in-page engine with no server process). Example:
-`examples/synth.html`, the same def and the same code over either carrier, the
+`examples/basics/synth.html`, the same def and the same code over either carrier, the
 choice being the one line that names one.
 
 ### ✅ W2 - GUI host driver (`GuiHost` + GuiDef builders)
@@ -240,7 +240,7 @@ with the builders, opened on the in-page host, then **played with** — the
 gestures are synthesized as pointer events on the host's own canvas, so an
 unbound slider's move comes back as a `/gui_event` while the bound knob drives
 the engine in the same tab (asserted by reading the node's control back), and
-closing the window frees the subtree. Example: `examples/gui-host.html`, now
+closing the window frees the subtree. Example: `examples/panels/host.html`, now
 the product client rather than the B-track harness — the bound and the scripted
 control paths side by side, a `/bus_stream`-fed meter/scope loop, the linked
 waveform + spectrogram, and one button that swaps the in-page host for a native
@@ -311,7 +311,7 @@ emitted bundle bytes under both timebases, the patterns and the timeline, and
 two WS cases against a real `clausters --ws`) and four headless-Chrome
 acceptances, the new one being `tests/seq.html`: a pattern on the in-page
 engine's own sample clock, its notes' starts and ends read back off the
-server's notifications. Example: `examples/sequencing.html` - the generative
+server's notifications. Example: `examples/transport/sequencing.html` - the generative
 half and the seekable half side by side.
 
 Not in scope, by the plan's own division, each now its own milestone:
@@ -342,7 +342,7 @@ data.
 
 - **The host, from one canvas to N** (`clients/gui/src/host/web.rs`): `window`/`render`/`current_def` are singular today ("the browser shows one at a time"); they become a map keyed by def id — a wgpu surface, a size, a gesture state and a visibility flag each. The native front already keeps one surface per `window`-rooted GuiDef, so the model is ported, not invented. Two reversals ride along: the **element supplies the canvas** (winit's `with_canvas`, instead of `guiHost()` hunting for the one winit appended to `<body>`), and its size comes from the element (`ResizeObserver` + `devicePixelRatio`). A canvas out of the viewport is skipped on the tick and drops its buses from the `/bus_stream`/`/bus_tapStream` sets — a document can hold fifty canvases with three in view, and the browser's own compositing skip does not stop *our* host from computing or the server from streaming.
 - **The bundle grows a contract** (`clausters_core::bundle`, opened to the browser by `clausters-core-web` and to Python by `clausters-ffi`): `bundle.json` gains a symbol table, declared `params` and presets, and becomes a file **both** legs read (absent, the native host keeps listing the directory as today). The GuiDef record becomes a *template* with two kinds of hole — `@symbol`, an id the page allocates, and `$param`, a value the tag supplies — while widget ids stay local `1..N` and are offset by an allocated base. **Holes live only in the GuiDef record**, so def payloads are byte-identical between instances and are sent once; the authoring rule that follows is that a bus or a node reaches a def **as a control**, never as a baked constant (which is exactly why today's `piano_voice`, with its `out_ctl(0.0, env)`, cannot be mounted twice). Resolution is two pure functions — `requirements(manifest)` then `resolve(template, allocation, params)` — with the caller allocating in between, so nothing is added to the `/gui_*` protocol and no state to the host.
-- **The component** (`src/elements.ts`, `src/runtime.ts`): a custom element owning its canvas, with the declared parameters as attributes and `preset` beside them, mounted in two phases — the GuiDef opens and draws on connect, and the engine half (defs, buffers, boot) goes out on the first page gesture, since the AudioContext is page-wide and N power buttons would be wrong. Failures stay per component. A new **slim run-time entry**, `dist/runtime.js`, carries the engine, the host, the codec and the mount and *not* the builders — today's `examples/piano/index.html` imports the whole package facade to use none of it.
+- **The component** (`src/elements.ts`, `src/runtime.ts`): a custom element owning its canvas, with the declared parameters as attributes and `preset` beside them, mounted in two phases — the GuiDef opens and draws on connect, and the engine half (defs, buffers, boot) goes out on the first page gesture, since the AudioContext is page-wide and N power buttons would be wrong. Failures stay per component. A new **slim run-time entry**, `dist/runtime.js`, carries the engine, the host, the codec and the mount and *not* the builders — today's `examples/panels/piano/index.html` imports the whole package facade to use none of it.
 - **The authoring API** (`clausters.bundle`, Python first, Node after): a writer over the existing builders that holds the symbol table, so the author names things instead of numbering them, declares `params` and presets, validates through the core before emitting — an unmountable bundle is unwritable — and generates the five-line ES module that registers the tag.
 
 **Acceptance:** a page interleaving prose with three components — two instances of one bundle and one of another, all authored from Python and mounted with no client library loaded — draws three canvases; the two instances of the same bundle hold different buses and node ids while their def was sent once; a `freq` attribute makes one audibly different from its sibling (asserted on a control bus); a component scrolled out of view stops streaming; one component's failure leaves the rest of the page up; and the same bundles still run on the desktop, `--standalone` and loopback.
@@ -401,8 +401,8 @@ acceptances, the new one being `tests/components.html` — two instances of one
 bundle plus one of another interleaved with prose: three canvases drawn, distinct
 nodes and buses with one def sent, `freq="110"` resolved on the second, the
 off-screen component streaming nothing, and the broken one failing alone.
-Examples: `examples/piano/` and `examples/graph-controls/` ported to the writer,
-and `examples/document/` — the interactive text the milestone is for.
+Examples: `examples/panels/piano/` and `examples/panels/graph-controls/` ported to the writer,
+and `examples/editors/document/` — the interactive text the milestone is for.
 
 Not in scope, deliberately, each now its own milestone: window *management*
 (**W14** — an element removed from the DOM does not free its def; a
@@ -533,7 +533,7 @@ there). Three things are worth carrying forward:
   a client rule.** A stream is *pulled*, so two drivers reading one `dseq` node
   take alternate items from it and each hears half the pattern. The builders
   cannot prevent it (the node is a perfectly good input twice over), so it is
-  written where it is met: the book's def chapter, and `examples/demand.html`,
+  written where it is met: the book's def chapter, and `examples/basics/demand.html`,
   whose duration stream is a factory for exactly this reason.
 
 `conv` and `partconvFrames` land in `spectral.ts` beside the chain, where the
@@ -552,8 +552,8 @@ survives, a `duty` pulling two `dseq`s visits both its pitches with nothing
 sent after the synth starts, the `midSide` round trip returns each tone to its
 own channel while `stereoWidth(…, 0)` folds both onto both, and `svfMorph`
 sweeps the response from lowpass to highpass on one control. Examples:
-`examples/spectral.html`, the port of `spectral.py` with the wipe live under
-the hand instead of rendered offline, and `examples/demand.html`, the
+`examples/spectral/chain.html`, the port of `chain.py` with the wipe live under
+the hand instead of rendered offline, and `examples/basics/demand.html`, the
 sequence that lives in the def. Book: the def chapter now names the three
 families that are not read like the rest.
 
@@ -635,7 +635,7 @@ silence once freed, `/done` narrowed by a template, a def's `SendTrig` and
 and fifteen headless-Chrome acceptances, the new one being
 `tests/responders.html` — the same matching on the in-page engine, plus a
 responder that names no receiver resolving the ambient session's server.
-Example: `examples/responders.html`, the port of `osc_responder.py` — a def
+Example: `examples/io/responders.html`, the port of `osc_responder.py` — a def
 reports its onsets with `SendReply` and a responder answers each with a synth,
 so what arrives is what plays. Book: "Receiving: responders".
 
@@ -734,10 +734,10 @@ trace locked, and a buffer read back in chunks) and six headless-Chrome
 acceptances, the new one being `tests/data.html`: a def feeds a bus and a tap,
 the script subscribes to both and reads a generated buffer, and every figure is
 checked as a number (**since W26** — it drew them on a canvas until then).
-Examples: `examples/scope.html`, the three paths in one page, each under the
+Examples: `examples/views/meters.html`, the three paths in one page, each under the
 host view that reads it (**rebuilt by W26**; it drew its own canvas before);
-and `examples/editor.html`, the
-port of the Python client's `gui_editor.py` — a decoded file in a server
+and `examples/views/editor.html`, the
+port of the Python client's `editor.py` — a decoded file in a server
 buffer, drawn by the **host** as a linked waveform and spectrogram, with a
 transport whose playhead is anchored to the engine clock and whose pause is
 `/node_run`. Book chapter: "Reading the server".
@@ -793,7 +793,7 @@ the script), `stop` holding it, then the same curve seeded into a `bpf` widget,
 **bent by a synthesized drag**, coming back as shape 5 with a curvature, and
 the rebuilt lane reading 544 where the straight one read 2107 — the drawn
 curve and the played one being one object. Example:
-`examples/automation-lane.html`, the port of `automation_lane.py` with the
+`examples/transport/automation-lane.html`, the port of `automation_lane.py` with the
 editor beside it (the Python one renders offline, which a page has no drive
 for). Book: "Automation: a curve driving a control", in the routines chapter.
 
@@ -845,7 +845,7 @@ keeps it, plus the facade verb it was owed.
   (`_grid_beat`) and a test was already reaching through the underscore, while
   the example and two book pages recomputed it by hand from `transport()` and
   the timebase. It is public there now, with `joined` beside it, so the two
-  clients name the same thing — and `transport_sync.py`'s `next_bar_sample`
+  clients name the same thing — and `sync.py`'s `next_bar_sample`
   is a line shorter for it.
 - **A decode divergence found by the port** (`crates/clausters-core-web`): an
   OSC **timetag argument** crossed to JS as raw NTP seconds where the Python
@@ -868,7 +868,7 @@ server — a wall-clock and a sample-locked client join one grid, agree on it
 and land their notes under 50 ms apart, and a playhead follows a conductor's
 play / locate / stop over the wire and stops following on
 `unfollowTransport` — and the eighth is the decode-parity vector. Example:
-`examples/transport-sync.html`, the port of `transport_sync.py` with the
+`examples/transport/sync.html`, the port of `sync.py` with the
 following half Python's does not have — driven headlessly, a client joining
 2.6 beats late still sounded at grid beat 4.011 alongside one that had been
 waiting. Book: the joining and following sections of "The transport".
@@ -948,7 +948,7 @@ sample-identical replay, an expression refused for being wider than the
 render's outputs, `until` bounding an endless pattern, and the three rendered
 envelopes matching the Python client's drawn curves. The page half is
 `tests/plot.html`: the six kinds each opening a window the host reports back.
-Example: `examples/offline.html` — a phrase rendered at 60x real time, looked
+Example: `examples/buffers/offline-render.html` — a phrase rendered at 60x real time, looked
 at, downloaded and played back through a buffer, with the seed demonstrated on
 a noisy def. Book: "The ambient verbs: play, plot, render".
 
@@ -985,7 +985,7 @@ output (the survivor paused, so it is the only thing sounding) and off the
 exercised end to end is the *socket*: the packet is the one a native `--ws` host
 sends, delivered through `deliver` rather than by a host process, since a
 component mounts into the in-page host and nothing there closes a canvas.
-Example: `examples/lifecycle.html` — instruments added and removed by hand, with
+Example: `examples/components/lifecycle.html` — instruments added and removed by hand, with
 the pools' occupancy on screen.
 
 ### W15 - The TypeScript bundle writer
@@ -997,7 +997,7 @@ port, so a bundle can be authored in the same language the page is written in.
 - `src/bundle-writer.ts` (authoring, **not** part of the slim `dist/runtime.js`): the TS counterpart of `clausters.bundle.Bundle` — the symbol table, the bundle-prefixed def names, the declared `params` and presets, validation through the core wasm door (`check_def_payload` and the `requirements`/`resolve` pair) before emitting, and the generated five-line ES module that registers the tag. An unmountable bundle stays unwritable, on this leg too.
 - Runs in Node (a file writer) and in the page (an in-memory bundle mounted without a round trip through disk), the two being the same code over a small output seam.
 
-**Acceptance:** the W4 bundle parity vector runs both ways — what the TS writer emits and what the Python writer emits are byte-identical for the same input, and each resolves through the browser's wasm door to the same mount; `examples/document/` rebuilt from the TS writer draws the same page.
+**Acceptance:** the W4 bundle parity vector runs both ways — what the TS writer emits and what the Python writer emits are byte-identical for the same input, and each resolves through the browser's wasm door to the same mount; `examples/editors/document/` rebuilt from the TS writer draws the same page.
 
 ### W16 - Example parity with the Python client
 
@@ -1021,14 +1021,14 @@ this milestone's acceptance is exactly what makes that an order rather than a
 preference: two programs that produce a similar picture by different calls are a
 divergence, not a port.
 
-- The remaining `clients/python/examples/` ported to `clients/web/examples/`, each named after the example it mirrors — **the page's own spelling**: a hyphen for the underscore, and without the `gui_` prefix, which says which *process* runs it and means nothing to a page (`gui_composer.py` is `composer.html`, `offline_render.py` is `offline.html`). Where a page's name cannot be read back to a script's, the page's header comment says which example it is.
+- The remaining `clients/python/examples/` ported to `clients/web/examples/`, each named after the example it mirrors — **the page's own spelling**: a hyphen for the underscore, and without the `gui_` prefix, which says which *process* runs it and means nothing to a page (`composer.py` is `composer.html`, `offline_render.py` is `offline.html`). Where a page's name cannot be read back to a script's, the page's header comment says which example it is.
 - Most of what is left is **not** blocked on porting effort but on a surface this client does not have yet — MIDI, automation, the transport grid, an offline render, the box algebra, the UGens outside the shipped set. Each such example lands with (or after) the milestone that opens its surface, which is why this slot is a destination rather than a queue.
 - The examples that are Python-process shaped by nature (a launcher, a live UDP peer, a native GUI shell) have no page counterpart and stay unported. **This is stated where a reader is, not in a catalog** — the project's example rule keeps the books out of enumerating them, so the absence is recorded in this plan, and the *nearest* page says in its header what its Python sibling does that a tab cannot.
 
 **Acceptance:** every Python example either has a web page named after it or a reason stated in this plan for having none, and each ported page runs on the in-page engine with the carrier line marked. And, for a pair that exists twice, the stronger check the `examples` skill now states: the two are **one example in two languages** — same material, same names, the same calls to the same API in the same order — so a port is finished when the two screens can be put side by side and read as the same piece.
 
 The largest single item behind this, named here because it is a **track and not
-an example**: `gui_composer.py` needs the **arrangement layer** — `clausters.form`
+an example**: `composer.py` needs the **arrangement layer** — `clausters.form`
 (elements placed recursively, and the rendering that flattens them) plus the
 multitrack `Editor` and its transport, roughly two thousand lines of Python with
 no TypeScript counterpart — and it pulls W13 (the offline bounce of its take)
@@ -1036,7 +1036,7 @@ with it; the automation lane it also needs is here since W11. No design is stage
 cross-client rule says the reference client is finished and polished first, then
 ported, with whatever is language-agnostic pushed into the shared core as it is
 written; deciding *what* goes down there is the first question of that milestone,
-not a detail of it. Until then `clients/web/examples/composer.html` covers the
+not a detail of it. Until then `clients/web/examples/editors/composer.html` covers the
 **host** half — the lanes, clips, shared axis, drag grid and gestures, built as
 widgets with no model behind them — which is what the host's own bugs need to be
 reproducible in a browser, and it is where G32b was found.
@@ -1059,7 +1059,7 @@ that opens it: a def's internal UGen graph as boxes, `PatchWindow`, and
 `plotDef()` on `SynthDef`, `FaustDef` and `GraphDef` (level 1 had the model and
 no opener). `tests/patch-parity.test.ts` freezes what the *Python* models decode
 five defs into — the boxes, the cords and the widget schema — and asserts this
-client reads the same, and `examples/patch2.html` is `gui_patch2.py`'s page.
+client reads the same, and `examples/editors/patch2.html` is `patch2.py`'s page.
 
 Two things it turned up, neither a decision:
 
@@ -1237,7 +1237,7 @@ sessions on two engines, an ambient note audible on the default session's
 analyser (0.200) and silent on the other's (0.000), the same call inside
 `b.use(…)` the other way round, a bare `play()` driving the default session's
 clock, and every kind `play` dispatches asserted audible. Example:
-`examples/verbs.html`, the port of the Python client's `verbs.py` — a session
+`examples/basics/verbs.html`, the port of the Python client's `verbs.py` — a session
 opened, then every playable kind visited in turn.
 
 Not in scope, and each now owned: the `plot`/`scope` visual verbs and the
@@ -1278,7 +1278,7 @@ instances share the loop and nothing else.
 - The same rule on the audio side: `engine()` beside `server()`, and `pageConnection(target?)` to carry a client over one. Nothing there was ever page-global except the memo — `bootClausters` already built its own `AudioContext` and worklet per call.
 - `guiHost()` in `page.ts` keeps its memo: its contract is *the page's host with the page's default canvas*, and a second one of those means nothing. Its instance counterpart is `newGuiHost()`, added once it was clear that leaving callers to the raw wasm binding was the gap, not the design — the notebook front end was reaching under the client to call `start()` itself, and so would anyone else. `newPools()` travels with it: page-global pools were right while the page held one client.
 
-**Verified:** `tests/hosts.html` under the headless-Chrome harness — two hosts in one page both draw; widget `1003` holds `0.2` in one and `0.8` in the other at once; a gesture on one leaves the other's outbox empty and its widget unmoved; each bound knob reaches its own engine and not its sibling's (`220 → 984.7` while the other stays `220`); closing one leaves the other drawing, answering and driving its engine. Example: `examples/two-hosts.html`.
+**Verified:** `tests/hosts.html` under the headless-Chrome harness — two hosts in one page both draw; widget `1003` holds `0.2` in one and `0.8` in the other at once; a gesture on one leaves the other's outbox empty and its widget unmoved; each bound knob reaches its own engine and not its sibling's (`220 → 984.7` while the other stays `220`); closing one leaves the other drawing, answering and driving its engine. Example: `examples/panels/two-hosts.html`.
 
 ## Parity gaps carried from the Python client
 
@@ -1526,7 +1526,7 @@ the browser stack and compares the page primitive by primitive, before an edit
 and after one.
 
 Its `transport` half landed the same day, with `gui/transport.ts`: the page
-plays, `examples/score.html` has the bar `gui_score.py` has, and the layer is
+plays, `examples/editors/score.html` has the bar `score.py` has, and the layer is
 whole.
 
 One rule the `gui/transport.py` port must carry, since the reference learned it
@@ -1657,8 +1657,8 @@ group, **asserted audible** while rolling (0.200), silent when the transport
 stops (0.000) with the transport clock held at 30720 samples and the node still
 in the tree, audible again on the resume, and thawed by unbinding — with the
 page's clock frozen and thawed alongside, its beat held and the pause not
-charged to the piece. Example: `examples/transport-freeze.html`, the port of the
-Python client's `transport_freeze.py` — a generative texture frozen mid-gesture
+charged to the piece. Example: `examples/transport/freeze.html`, the port of the
+Python client's `freeze.py` — a generative texture frozen mid-gesture
 and continued, driven end to end in a browser. Book chapter: "The transport: a
 shared grid, and a piece that freezes".
 
@@ -1728,7 +1728,7 @@ GuiDef assembly over a resolved host, sharing `plot`'s own ambient ladder
   handles document their props the way the builders take them (`freqScale`,
   `windowMs`) while `GuiHost.set` sent each key verbatim, so every camelCase
   prop was a `/gui_set` the host ignored — silently, since an unknown prop is
-  not an error. `examples/offline.html` had been calling
+  not an error. `examples/buffers/offline-render.html` had been calling
   `win.set({ freqScale: "log" })` into the void. The conversion now happens at
   the door, which is where the package's standing rule already lives: the
   options are TypeScript's, the props are the wire's. Fixed in its own commit,
@@ -1752,7 +1752,7 @@ the three views on a live stereo tone, each reported back by the host as the
 widget its view means, the two arguments that are refused rather than coerced
 (a third channel on the phase view, an unknown view), `set` retuning the open
 window and `close` freeing it, and the ambient ladder resolving with none
-named and yielding to a registered host. Example: `examples/scoping.html`, the
+named and yielding to a registered host. Example: `examples/views/scoping.html`, the
 port of `scoping.py` — where the Python one is a timed tour that opens each
 window alone, the page puts the three side by side and leaves the knobs under
 the reader's hand. Book: the verbs chapter is `play, plot, scope, render` now.
@@ -1826,7 +1826,7 @@ host's arithmetic and the host goes on consuming them — what goes is the
 - ✅ **W10's record is amended in place** — its acceptance sentence and the
   bullet that says a page draws its own trace, since a plan that still states
   the old rule is how this comes back.
-- ✅ `examples/scope.html` is rebuilt on the host's own views, which is what its
+- ✅ `examples/views/meters.html` is rebuilt on the host's own views, which is what its
   name has been promising: it drew its own oscilloscope while `scope()` and the
   `scope`/`phasescope` widgets sat unused beside it, and its own text claimed
   "this canvas and a host widget on the same bus show the same picture" — a
@@ -1916,7 +1916,7 @@ as some other milestone has a better claim on it.
 
 - ✅ **`defs/patch.ts`** — both patch models and the `PatchWindow` handle are
   in (level 1 with the editor, level 2 on 2026-08-22), so this entry is closed;
-  what is left of it is an *example*, not a surface: `gui_patch1.py` has no page
+  what is left of it is an *example*, not a surface: `patch1.py` has no page
   yet, which is W16's queue.
 - ✅ **The GUI node becomes a `View` (ports the Python client's C39)** *(done 2026-08-23)*. In
   Python a `guidef` builder no longer returns a bare object: it returns a `View`
@@ -2341,7 +2341,7 @@ finished work, where a pending item reads as done.
 
   What is **not** fixed is a page that draws columns itself. This client hands
   out `Peaks.columns()` — measurements, and no renderer — so the rule is on
-  whoever draws them, and it was copied into `examples/scope.html` in the same
+  whoever draws them, and it was copied into `examples/views/meters.html` in the same
   commit while `tests/data.html` still draws the gap. Two questions a fix has to
   settle: whether the rule stays a recipe each page repeats (documented where
   `columns` is) or the client grows the drawing side of it — a small helper over
@@ -2350,7 +2350,7 @@ finished work, where a pending item reads as done.
   `data/` rather than in the core or the wire.
 
   **What is not established is which surface the report is about.** A page of the
-  user's own and `tests/data.html` fit the entry; `examples/scope.html` fits it
+  user's own and `tests/data.html` fit the entry; `examples/views/meters.html` fits it
   only if it was looked at before the rebuild; and the wasm host fits it not at
   all — if the edge is missing in a `waveform` widget on a page, the join is
   reaching the picture and something else is, and this entry is the wrong place
@@ -2372,7 +2372,7 @@ finished work, where a pending item reads as done.
   clients compare and the cache stores — `columns` answers what the pyramid
   measured, `joinColumns` answers what to ink — which is the constraint the
   entry set, met by putting the rule *beside* the measurement rather than inside
-  it. `tests/data.html` and `examples/scope.html` (which loses its hand-copied
+  it. `tests/data.html` and `examples/views/meters.html` (which loses its hand-copied
   recipe) both go through it, the web book's waveform section teaches it, and
   the case is asserted on both sides: `peaks::join_tests` in the core, "a square
   wave's edge is inked once the columns are joined" in `data.test.ts`.
@@ -2386,3 +2386,57 @@ finished work, where a pending item reads as done.
   the only renderer. The core's `peaks::join`/`join_columns` and the assertions
   under them are untouched — this entry's record of the defect stands, and the
   square wave is drawn correctly by the one thing that draws it.
+
+- ⬜ **Two pairs read side by side turn out not to be pairs** *(found
+  2026-08-24, in C45's pass over both example directories)*. The reorganization
+  put every script beside its page for the first time, which is what made these
+  legible; both are recorded rather than patched, because the rule is that a
+  divergence found by reading a pair is a plan entry and not a local edit to
+  whichever file was in front of you.
+
+  - **`panels/standalone` is two different programs.** The script *authors* a
+    bundle — it writes the defs and the GuiDef to a data directory and prints
+    the `clausters-gui --standalone` command that would launch it, talking to
+    nothing. The page *boots* one — it fetches a pre-built bundle and runs it in
+    the tab. They share one verb. Each half is worth showing and neither client
+    shows both, so the fix is not to rename them apart: it is for the page to
+    gain the authoring half (or say why a page cannot write one) and the script
+    to gain the launch.
+  - **`transport/sync`'s page has a half the script does not**, and says so in
+    its own prose: a playhead that obeys the shared grid. That is not a platform
+    difference — a script can follow a playhead — so it is the script that is
+    behind.
+
+  Neither blocks W16. They are named here because a reader who opens the pair
+  expecting one example in two languages currently finds two, and nothing else
+  says so.
+
+- ⬜ **Forty-seven scripts have no page, and twelve pages have no script**
+  *(counted 2026-08-24, once C45's layout made the pairing readable)*. W16's
+  real size, stated as a number rather than as "about forty": 19 pairs, 47
+  scripts alone, 12 pages alone. The 12 are not all gaps — `components/` is a
+  surface the page has and the script cannot, `basics/engine` is the platform
+  itself — but `panels/host`, `basics/synth`, `basics/demand`,
+  `transport/sequencing` and `io/responders` are pages whose subject the Python
+  client covers under other names or across two files, and pairing them is part
+  of W16 rather than a separate job.
+
+- ⬜ **Both web smoke scripts fail before they assert anything about the
+  page** *(found 2026-08-24 during C45, which is also how it was proved not to
+  be C45's doing)*. `scripts/smoke-web-standalone.sh` ends in "meter stream
+  never moved (0 snapshots, values [])" and `scripts/smoke-web-components.sh` in
+  "shared namespace never confirmed (synths 1, values [])". The page boots, the
+  bundle loads and a synth exists — what never arrives is the streamed
+  `/bus_stream.reply` each script watches for its verdict.
+
+  **It predates the reorganization**: the same two scripts fail identically in a
+  worktree checked out at the commit before it, which is worth stating because
+  C45 *did* break them for real on the way (the pages resolved
+  `../bundle-demo`, one level short after the move, and answered 404) and
+  fixing that only uncovered this. So the 404 is gone and this is what is
+  underneath.
+
+  Neither script runs in CI, which is why nothing said so. Unknown whether it is
+  the headless engine producing no audio, the stream subscription, or the
+  verdict's own timeout — that is the first thing to find out, and until then
+  the two scripts assert nothing.

@@ -303,7 +303,7 @@ static cursor where the music stopped. `update` is the one thing a script owes
 it: a pass ends when its last item *starts*, so the transport keeps sweeping
 that last note's tail and parks only at the piece's extent.
 
-The example is `examples/score.html`.
+The example is `examples/editors/score.html`.
 
 ## Bindings, and the page that runs without a script
 

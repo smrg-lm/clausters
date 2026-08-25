@@ -11,7 +11,7 @@ several defs can be built side by side. The four arithmetic operators map to
 the server's dedicated `Add`/`Sub`/`Mul`/`Div` UGens; everything beyond them
 (`%`, `min`/`max`, the comparisons, `.midicps()`, `.distort()` …) composes its
 generic `BinaryOpUGen`/`UnaryOpUGen` — see
-`clients/python/examples/graph_maths.py`.
+`clients/python/examples/basics/graph_maths.py`.
 
 To prove the graph emits exactly what the server expects, this renders a
 `Pbind` twice — once on the server's built-in `default` def, once on a

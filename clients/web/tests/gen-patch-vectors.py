@@ -33,7 +33,7 @@ from clausters.defs.signals import hslider, sin  # noqa: E402
 
 def tremolo_sine() -> SynthDef:
     """Every cord weight in one graph: audio (heavy), control (thin) and the
-    init (dashed) scalar — the def `examples/gui_patch2.py` is written around."""
+    init (dashed) scalar — the def `examples/editors/patch2.py` is written around."""
     freq = control("freq", 220.0)
     amp = control("amp", 0.2)
     detune = control("detune", 1.5, rate="ir")

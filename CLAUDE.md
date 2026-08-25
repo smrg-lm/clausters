@@ -375,7 +375,7 @@ manual test can silently exercise pre-change binaries. Before any manual or
 visual test launched through Python, refresh the bundled copy — one command:
 `scripts/refresh-bin.sh` (wraps `clients/python/build_native.py`: rebuilds
 server + FFI + GUI host in release and stages everything into `_bin`/`_libs`;
-`scripts/refresh-bin.sh gui_shell` also runs that example with the `.venv`
+`scripts/refresh-bin.sh shell` also runs that example with the `.venv`
 Python, `--skip` skips the rebuild) — or point the override env vars
 (`CLAUSTERS_GUI_BIN`, `CLAUSTERS_BIN`, `CLAUSTERS_LIB`, `CLAUSTERS_FFI_LIB`)
 at the workspace build.

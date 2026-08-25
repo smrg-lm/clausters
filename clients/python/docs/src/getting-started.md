@@ -145,20 +145,20 @@ That is the whole loop: a session, a def, nodes or patterns. From here, [Session
 The examples below are the same ideas as *scripts*, so they can run unattended: they wrap the code in functions and drive the clock for a fixed time. Three paths, the same code shape — they differ only in the session factory. **Embedded** runs the whole server inside the Python process (the bundled library); nothing to start:
 
 ```sh
-python clients/python/examples/embedded.py
+python clients/python/examples/io/embedded.py
 ```
 
 **Offline** (no server, no audio device) renders a score to a WAV through the bundled renderer:
 
 ```sh
-python clients/python/examples/offline_render.py out.wav
+python clients/python/examples/buffers/offline_render.py out.wav
 ```
 
 **Live** sends the same pattern over the network (TCP by default; UDP probes for the server first) to a *separate* server. The wheel ships that server too, as the `clausters` command:
 
 ```sh
 clausters                                    # start the standalone server (its own process)
-python clients/python/examples/live_udp.py   # in another shell
+python clients/python/examples/io/live_udp.py   # in another shell
 ```
 
 See [Sessions](sessions.md) for when to pick which, [Examples](examples.md) for what these do, and [The client, layer by layer](guide.md) for the architecture behind them.

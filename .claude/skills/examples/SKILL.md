@@ -73,7 +73,7 @@ naming what to call by hand.
 says so.** The `run(30.0)` above is the shape for something that *finishes* — a
 render, a sequence that plays out. A GUI example is the manual test surface for
 whatever it draws, so a script run holds until the **window** is closed
-(`gui.pump` in a loop over an `on_closed` flag; `gui_patch1.py` and `gui_text.py`
+(`gui.pump` in a loop over an `on_closed` flag; `patch1.py` and `text.py`
 are the shape), and the seconds bound stays only for the cell run, where a
 notebook wants the loop to give the prompt back. A window that times out ends
 the test before the reader has finished reading it, which is the one failure a
@@ -93,8 +93,8 @@ will load anything.
 
 ## An example that exists twice is **one example in two languages**
 
-`clients/python/examples/gui_composer.py` and
-`clients/web/examples/composer.html` are not two examples about the same topic:
+`clients/python/examples/editors/composer.py` and
+`clients/web/examples/editors/composer.html` are not two examples about the same topic:
 they are the same example, and the pair carries the non-divergence rule the way
 the clients do. So the second one is **ported, not re-invented**:
 
@@ -137,7 +137,7 @@ These are what a generated example gets wrong, every time.
    `time.sleep(gap)` is hand-rolled scheduling on the main thread: no logical
    time, no timetags, and a `TempoClock` sitting there doing nothing. Where
    `time.sleep` *is* right: the main thread waiting while the clock thread
-   plays, between actions (`timeline_transport.py`). Inside a routine it is a
+   plays, between actions (`timeline.py`). Inside a routine it is a
    defect — the routine runs *on* the clock thread and would freeze the
    timeline.
 3. **Show both ends of a client/server feature.** If a server-side action has a

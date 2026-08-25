@@ -33,7 +33,7 @@ The engine runs in an AudioWorklet and the GUI host draws with WebGPU, and both 
 python3 -m http.server        # from clients/web/
 ```
 
-Open <http://localhost:8000/examples/synth.html> and press *connect + send the def*, then *play a note*. That page is the shortest end-to-end path through the client, and the rest of this section is the same thing written from scratch.
+Open <http://localhost:8000/examples/basics/synth.html> and press *connect + send the def*, then *play a note*. That page is the shortest end-to-end path through the client, and the rest of this section is the same thing written from scratch.
 
 ## A page that plays a note
 

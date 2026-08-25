@@ -1056,7 +1056,7 @@ two phases, several instruments in one document — is the
 - The arrangement model draws itself through these same `field` containers:
   the [composition chapter](composition.md) is the layer above.
 - The runnable demos live in `clients/python/examples/`, one capability each;
-  `gui_window.py` is the "first pixels" one to start from.
+  `window.py` is the "first pixels" one to start from.
 - Everything above used the shortcuts, which is what a script reaches for.
   [Building from the model alone](gui/model.md) writes the same kind of window
   without any of them — the four containers, the elements and `node` itself —

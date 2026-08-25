@@ -234,8 +234,8 @@ Then verify, in order:
 pytest -q clients/python                          # a) the client suite (~146 green)
 clausters --help | head -1                        # b) server binary on PATH
 clausters-gui --help | head -1                    #    visual server on PATH
-python clients/python/examples/embedded.py        # c) sound with nothing to start
-python clients/python/examples/gui_editor.py      # d) client launches server + GUI
+python clients/python/examples/io/embedded.py        # c) sound with nothing to start
+python clients/python/examples/views/editor.py      # d) client launches server + GUI
 ```
 
 In (d) `Session.live` starts a server if none is running (choosing a

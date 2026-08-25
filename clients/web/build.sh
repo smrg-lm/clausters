@@ -13,7 +13,7 @@
 # cargo install wasm-bindgen-cli at Cargo.lock's wasm-bindgen version.
 #
 # From clients/web/:  ./build.sh   (release; pass `debug` for faster builds).
-# Serve and open the demo:  python3 -m http.server  → /examples/demo.html
+# Serve and open the demo:  python3 -m http.server  → /examples/components/demo.html
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -105,4 +105,4 @@ else
 fi
 
 echo "package staged: dist/ (modules + engine/ gui-host/ core/ wasm bundles + vendor/verovio)"
-echo "demo:  python3 -m http.server  then open http://localhost:8000/examples/demo.html"
+echo "demo:  python3 -m http.server  then open http://localhost:8000/examples/components/demo.html"

@@ -145,7 +145,7 @@ def test_a_duplicate_name_is_refused_when_the_tree_is_registered():
 
 def test_a_redraw_keeps_named_handlers_and_refreshes_the_handle():
     """Found by running the whole-loop example (`gui_daw.py` then,
-    `gui_composer.py` now): pressing *open* left every button in the
+    `composer.py` now): pressing *open* left every button in the
     window dead.
 
     An editor redrawing its window (`Editor.load`) re-defines the same root.

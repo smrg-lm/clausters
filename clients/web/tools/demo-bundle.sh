@@ -5,7 +5,7 @@
 # 0.5 Hz LFO to control bus 0 (OutCtl), and a GuiDef whose meter/scope read
 # that bus and whose boot /synth_new brings the drone up. Shared by the
 # standalone and web-components smokes, and by the manual demo pages
-# (examples/demo.html, examples/standalone.html).
+# (examples/components/demo.html, examples/panels/standalone.html).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

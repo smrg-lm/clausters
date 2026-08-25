@@ -113,7 +113,7 @@ caller; `crates/clausters-web` wraps this type 1:1 as `WebServer`, and the
 web package's `src/engine/worklet.ts` + `src/engine/loader.ts` are the
 browser host: the wasm module is compiled on the main thread, instantiated
 synchronously in the worklet, OSC bytes travel over the MessagePort — see
-`clients/web/examples/engine.html` for a complete page), and it is just as
+`clients/web/examples/basics/engine.html` for a complete page), and it is just as
 usable natively — a plugin process or a test that wants the whole protocol
 in one thread.
 

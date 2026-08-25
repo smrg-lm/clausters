@@ -204,7 +204,7 @@ Two dedicated views open on one element instead of the multitrack:
 `openSignal(host, element)` for the editor-grade waveform of a rendered element
 (its `layers` — `["peak", "rms"]` — is a live prop, not a pile of widgets).
 
-The example is `examples/composer.html`.
+The example is `examples/editors/composer.html`.
 
 ## The document: what the composition *is*
 

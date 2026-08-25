@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Adding and removing instruments — clausters components</title>
+    <link rel="icon" href="data:," />
+    <style>
+      :root { color-scheme: dark; }
+      html, body { margin: 0; background: #0d0d12; color: #d7d7de;
+                   font: 15px/1.6 system-ui, sans-serif; }
+      main { max-width: 44rem; margin: 0 auto; padding: 32px 20px 60px; }
+      h1 { font-size: 1.5rem; margin: 0 0 .3em; }
+      p { color: #a8a8b4; }
+      .controls { display: flex; gap: 10px; flex-wrap: wrap; margin: 18px 0; }
+      button { font: 14px system-ui, sans-serif; background: #22222c;
+               color: #ddd; border: 1px solid #444; padding: 8px 16px;
+               cursor: pointer; }
+      button:hover { background: #2c2c38; }
+      /* The occupancy readout: what the page's id spaces hold right now. */
+      #meter { font: 13px/1.7 ui-monospace, monospace; color: #9c9;
+               background: #14141a; border: 1px solid #2a2a34;
+               padding: 10px 14px; white-space: pre; overflow-x: auto; }
+      fm-trem { display: block; width: 100%; height: 300px; margin: 16px 0; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Adding and removing instruments</h1>
+
+      <p>An instrument is an element, so a page can add one and take it away
+      again. Removing it gives back everything it took — its window, the nodes
+      its boot instantiated, and the widget, node and bus ids it drew from the
+      page's pools — while everything else on the page keeps sounding.</p>
+
+      <p>Press <strong>power</strong> once (the browser wants one gesture for
+      the whole page), then add a few instruments and remove them. Listen: the
+      one you remove goes quiet at once and its siblings do not. Watch the
+      counters: whatever you do, they come back to where they started.</p>
+
+      <div class="controls">
+        <clausters-power></clausters-power>
+        <button id="add">add an instrument</button>
+        <button id="drop">remove the last one</button>
+        <button id="churn">add and remove 20, quickly</button>
+      </div>
+
+      <div id="meter">…</div>
+
+      <div id="rack"></div>
+    </main>
+
+    <!--
+      examples/lifecycle — the other half of the mount: what an element gives
+      back when it leaves the document.
+
+      What it shows: components created and removed from script
+      (`document.createElement` / `element.remove()`), the sound and the
+      drawing stopping with the element, and the page's id pools (`pagePools`)
+      returning to their starting occupancy however many instances come and
+      go. The instrument is the bundle `examples/graph-controls` authors.
+
+      What it needs: a browser with a WebGL2 or WebGPU adapter, and the
+      graph-controls bundle generated first:
+
+          python3 ../graph-controls/make_bundle.py
+
+      How to run it: serve the PACKAGE ROOT (clients/web — never this folder;
+      the generated module imports /dist/runtime.js):
+
+          cd clients/web && ./build.sh && python3 -m http.server
+
+      then open http://localhost:8000/examples/components/lifecycle.html.
+    -->
+    <script type="module">
+      import "/examples/panels/graph-controls/bundle/index.js";   // <fm-trem>
+      import { pagePools } from "/dist/runtime.js";
+
+      const rack = document.getElementById("rack");
+      const meter = document.getElementById("meter");
+
+      /**
+       * Adds one instrument. A tag registered by a bundle's generated module
+       * is an ordinary custom element: created, given its attributes and
+       * appended, it mounts itself — and starts sounding as soon as the page
+       * has had its gesture.
+       */
+      function add() {
+        const el = document.createElement("fm-trem");
+        // Every one an octave apart from the last, so the rack is a chord
+        // rather than a unison and each addition is audible on its own.
+        el.setAttribute("freq", String(110 * (1 + (rack.childElementCount % 4))));
+        el.setAttribute("amp", "0.12");
+        rack.append(el);
+        return el;
+      }
+
+      /** Removes the last one: the element leaves, and so does what it held. */
+      function drop() {
+        rack.lastElementChild?.remove();
+      }
+
+      document.getElementById("add").onclick = add;
+      document.getElementById("drop").onclick = drop;
+      document.getElementById("churn").onclick = async () => {
+        // Twenty instances in and out again. The counters below should end
+        // exactly where they began — that is the whole point of the unmount.
+        for (let i = 0; i < 20; i++) {
+            const el = add();
+            await new Promise((r) => setTimeout(r, 120));
+            el.remove();
+        }
+      };
+
+      // The occupancy readout. The pools are built on the shared core's
+      // registry, which is loaded with the first mount — before that there is
+      // nothing to ask.
+      setInterval(() => {
+        let pools;
+        try {
+            pools = pagePools();
+        } catch {
+            return;   // the core is not up yet: the page has mounted nothing
+        }
+        meter.textContent =
+            `instruments   ${String(rack.childElementCount).padStart(4)}\n` +
+            `widget ids    ${String(pools.widgets.inUse).padStart(4)}\n` +
+            `node ids      ${String(pools.nodes.inUse).padStart(4)}\n` +
+            `control buses ${String(pools.controlBuses.inUse).padStart(4)}\n` +
+            `audio buses   ${String(pools.audioBuses.inUse).padStart(4)}`;
+      }, 250);
+    </script>
+  </body>
+</html>

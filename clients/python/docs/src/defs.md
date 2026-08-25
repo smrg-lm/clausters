@@ -487,7 +487,7 @@ sdef = SynthDef("spec_lp", out(0.0, ifft(chain)))
 
 The FFT frame is **synth-private scratch on the server** (SuperCollider's `LocalBuf` model) — no buffer is allocated and none is required. Only `fft` names the window size, hop and window type (they size the transform); the server propagates them to the rest of the chain. A bare `fft` → `ifft` reconstructs the signal at unity gain, delayed by one window.
 
-A **two-chain combiner** (`pv_add`, `pv_mul`, `pv_min`, `pv_max`, `pv_mag_mul`, `pv_copy_phase`) takes two chains — both from an `fft` of the **same `fft_size`**, and distinct — and writes the result into chain A (its first argument), which the combiner's output carries onward. `pv_mag_mul` is the classic cross-synthesis: a noise carrier in chain A comes out wearing the spectral envelope of the modulator in chain B (see `examples/spectral_cross.py`, which also freezes the ending with `pv_mag_freeze`).
+A **two-chain combiner** (`pv_add`, `pv_mul`, `pv_min`, `pv_max`, `pv_mag_mul`, `pv_copy_phase`) takes two chains — both from an `fft` of the **same `fft_size`**, and distinct — and writes the result into chain A (its first argument), which the combiner's output carries onward. `pv_mag_mul` is the classic cross-synthesis: a noise carrier in chain A comes out wearing the spectral envelope of the modulator in chain B (see `examples/spectral/cross.py`, which also freezes the ending with `pv_mag_freeze`).
 
 The window type is also settable **live** with `Server.u_cmd`, which addresses one UGen instance inside a running synth:
 
@@ -526,7 +526,7 @@ Each expression maps **one bin's values** — its magnitude, its phase (radians)
 - **Fits** — anything that decides each bin from that bin alone: gates and thresholds (fixed, tilted, frequency-dependent via `binfreq`), spectral tilts and shelves, magnitude algebra (compression via `.pow()`, saturation via `.tanh()`), masks over bin ranges (`bin_index`/`nbins` comparisons), phase manipulation (offsets, scrambles deterministic in `bin_index`).
 - **Does not fit** — state across frames (freeze, smear, running averages: use `pv_mag_freeze` / `pv_mag_smear`), moving energy *between* bins (shift, stretch: use `pv_bin_shift` / `pv_mag_shift`), reading another chain (use the two-chain combiners), and whole algorithms with their own structure (convolution is `conv`, with its off-thread kernel preparation — some operations genuinely deserve a dedicated UGen).
 
-Expressions are capped at 256 tokens, and `params` accepts any signal — a control, an LFO, another UGen — so a kernel stays fully modulatable at run time. A commented walk-through is `examples/spectral_kernel.py`.
+Expressions are capped at 256 tokens, and `params` accepts any signal — a control, an LFO, another UGen — so a kernel stays fully modulatable at run time. A commented walk-through is `examples/spectral/kernel.py`.
 
 ### Spec, dump and controls
 

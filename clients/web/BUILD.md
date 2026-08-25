@@ -110,7 +110,7 @@ npm install       # once: typescript + @types/node + esbuild into node_modules/
                   # into dist/, then `npm run build` (tsc emit src/ -> dist/)
 ./test.sh         # the full acceptance: type-check + node suites + the
                   # page-carrier smoke under headless Chrome
-python3 -m http.server    # serve; open /examples/demo.html
+python3 -m http.server    # serve; open /examples/components/demo.html
 ```
 
 The pieces individually:

@@ -32,7 +32,7 @@ cargo build --release
 ```
 
 Then drive it from a client over OSC — see
-`clients/python/examples/gui_window.py` (windowed) and `gui_skeleton.py`
+`clients/python/examples/views/window.py` (windowed) and `skeleton.py`
 (protocol only), or the `clausters.gui` Python submodule, which builds GuiDefs
 and launches the host for you (`Session.gui()`).
 

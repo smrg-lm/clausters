@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: freezing a generative piece</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 46rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+      .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">The web port of the Python client's
+<code>freeze.py</code>: <b>freeze a generative piece and hear that it
+continued rather than restarted</b>.
+
+A def running a stochastic process is the case no DAW transport covers. A DAW's
+audio exists before you press play, so a position is an index into it; here
+the audio is produced as it sounds, so the piece's position <i>is</i> the
+state of the running nodes and no number moves it. The only thing a transport
+can honestly do to such a piece is stop it and let it carry on.
+
+<code>server.transportGroup(group)</code> binds a group to the server's
+transport, and from then on <code>server.transportStop()</code> does three
+things at the same sample: it freezes that subtree with every node's state
+intact, it stops the transport clock, and it freezes the queue of anything
+scheduled against that clock. <code>server.transportPlay()</code> undoes all
+three.
+
+The page has to stop too, and that is the second half. A clock's beats come
+from a timebase that only decides how long to sleep, so a page whose server
+froze would keep advancing beats into a piece that is not moving.
+<code>clock.freeze()</code> holds the beat instead, and <code>clock.thaw()</code>
+shifts the pacing origin so the frozen seconds are not part of the piece.
+
+<b>What to listen for:</b> at the pause the texture stops <i>dead</i>,
+mid-gesture, and on the resume it picks up from exactly there — not from the
+top. Run it twice: the two takes are the same piece interrupted, never two
+different pieces.</div>
+
+      <div class="row">
+        <button id="start">start the cloud</button>
+        <button id="pause" disabled>pause (transport stop)</button>
+        <button id="resume" disabled>resume (transport play)</button>
+        <button id="stop" disabled>stop</button>
+      </div>
+
+      <pre id="log"></pre>
+    </main>
+
+    <script type="module">
+      import {
+        Event, Group, Routine, Session, SynthDef,
+      } from "../../dist/index.js";
+      import {
+        Env, control, envGen, out, pan2, rlpf, whiteNoise,
+      } from "../../dist/defs/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => { $("log").textContent += line + "\n"; };
+
+      // ---- the grain ----
+      //
+      // One percussive grain of band-passed noise. The envelope's done action
+      // frees the node, so the texture is a stream of short-lived synths —
+      // which is what makes the freeze interesting: the state that has to
+      // survive is spread across every grain in flight.
+      function cloud() {
+        const freq = control("freq", 800.0);
+        const amp = control("amp", 0.2);
+        const dur = control("dur", 0.4);
+        const env = envGen(Env.perc(0.01, 1.0), { timeScale: dur, doneAction: 2 });
+        const grain = rlpf(whiteNoise(), freq, 0.2).mul(env).mul(amp);
+        return new SynthDef("web_cloud", out(0.0, pan2(grain, 0.0)));
+      }
+
+      let session = null;
+      let piece = null;
+      let routine = null;
+
+      // ---- the texture, as a routine on the session clock ----
+      //
+      // A routine yields beats; the clock resumes it at that exact logical
+      // time and the server stamps each grain for it. The pitch walk is a
+      // small cycle rather than a random one, so two takes of the piece are
+      // comparable by ear.
+      function* texture() {
+        for (let i = 0; ; i++) {
+          new Event({
+            instrument: "web_cloud",
+            target: piece.id,
+            freq: 400.0 + 90.0 * (i % 7),
+            amp: 0.18,
+            dur: 0.5,
+          }).play(session.server);
+          yield 0.5;
+        }
+      }
+
+      async function start() {
+        // The AudioContext needs the gesture that got us here, which is why
+        // this is a button. Over a socket the one line that changes is this
+        // one: `Session.connect("ws://127.0.0.1:57120")`.
+        session = await Session.page({ tempo: 2.0 });
+        const server = session.server;
+        await cloud().send(server);
+        await server.sync();
+
+        // The grid is what clients phase-align on; the group is what gives the
+        // transport teeth over the tree. Every grain is created **inside** that
+        // group (the event's `target`), so freezing the group freezes the piece.
+        piece = new Group({ server });
+        await server.setTransport(0, 2.0);
+        await server.transportGroup(piece);
+
+        session.start();
+        await server.transportPlay();
+        routine = new Routine(texture);
+        routine.play(session.clock);
+
+        log(`the piece is group ${piece.id}, governed by the transport`);
+        $("start").disabled = true;
+        for (const id of ["pause", "stop"]) $(id).disabled = false;
+      }
+
+      async function pause() {
+        // Both ends of the same pause: the page holds its beat, the server
+        // freezes the subtree and its transport clock.
+        session.clock.freeze();
+        await session.server.transportStop();
+        const held = (await session.server.transportState()).transportSample;
+        log(`FREEZE - transport clock held at ${held} samples, `
+          + `beat ${session.clock.beats().toFixed(3)} held with it`);
+        $("pause").disabled = true;
+        $("resume").disabled = false;
+      }
+
+      async function resume() {
+        // Not *play from a position* - continue. MIDI's continue against its
+        // start.
+        await session.server.transportPlay();
+        session.clock.thaw();
+        log(`RESUME - the same texture carries on mid-gesture, from beat `
+          + `${session.clock.beats().toFixed(3)}`);
+        $("resume").disabled = true;
+        $("pause").disabled = false;
+      }
+
+      async function stop() {
+        routine.stop();
+        // Unbinding thaws whatever the transport governed, so nothing is left
+        // frozen with nobody to resume it.
+        await session.server.transportGroup(null);
+        piece.free();
+        session.close();
+        log("stopped: the group is freed and the transport unbound");
+        for (const id of ["pause", "resume", "stop"]) $(id).disabled = true;
+      }
+
+      const guard = (fn) => () => fn().catch((err) => log(`error: ${err}`));
+      $("start").onclick = guard(start);
+      $("pause").onclick = guard(pause);
+      $("resume").onclick = guard(resume);
+      $("stop").onclick = guard(stop);
+    </script>
+  </body>
+</html>

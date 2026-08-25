@@ -59,7 +59,7 @@ From then on the conductor's `transportPlay()` rolls it, `transportStop()` halts
 
 The subscription is an [`OscFunc`](responders.md) on the server's receiver, as in the Python client — with the receiver a page already has (its connection to the server) rather than a socket opened for the purpose. Anything else that wants to react to a conductor puts its own responder on the same `/transport_query.reply`.
 
-`examples/transport-sync.html` runs two independent clients on one grid and a playhead following it, which is how to *hear* that a late joiner still lands on the bar.
+`examples/transport/sync.html` runs two independent clients on one grid and a playhead following it, which is how to *hear* that a late joiner still lands on the bar.
 
 ## Freezing a piece
 
@@ -92,7 +92,7 @@ clock.thaw();                   // and pick it up there
 
 `freeze()` holds the logical beat without stopping the clock, and `thaw()` shifts the pacing origin by the time spent frozen, so those seconds are not part of the piece. Your reaction does not have to be precise: between the server's stop and the call, a little look-ahead has already gone out, and it lands in the server's frozen queue to fire on the resume in its exact relative place. The exactness is the engine's, not the page's.
 
-`examples/transport-freeze.html` freezes a generative texture and resumes it, which is the way to *hear* the difference between continuing and restarting.
+`examples/transport/freeze.html` freezes a generative texture and resumes it, which is the way to *hear* the difference between continuing and restarting.
 
 ## Scheduling on the transport axis
 

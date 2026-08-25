@@ -5,7 +5,7 @@ binds a port, an `OscFunc` registers, and a datagram (message and bundle) is
 sent in; the callback records what it saw. The MIDI side tests `parse_midi` and
 the `MidiFunc` matching against injected messages (a real ALSA virtual port
 can't be driven without hardware; that path is the manual E2E in
-`clients/python/examples/midi_responder.py`). No Clausters server is needed for either.
+`clients/python/examples/io/midi_responder.py`). No Clausters server is needed for either.
 """
 
 import socket

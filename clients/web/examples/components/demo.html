@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters web components</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; }
+      #note { font-size: 13px; white-space: pre-wrap; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            max-width: 40rem; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">the bundle below is one HTML element; its power button is
+the autoplay gesture. After it is up, the buttons drive the SAME engine
+through the raw singleton — the REPL surface a future TS client builds on.</div>
+      <clausters-bundle src="../../bundle-demo"></clausters-bundle>
+      <div>
+        <button id="status" disabled>/server_status</button>
+        <button id="up" disabled>freq +50</button>
+      </div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web-components demo (and its scripted acceptance): a standalone
+      bundle as a page element over the per-page singletons. ?smoke=1
+      (scripts/smoke-web-components.sh, headless Chrome) auto-boots and
+      asserts: the element came up with the canvas in its shadow DOM, the
+      raw REPL surface sees the element's synth (/server_status counts it, /node_set
+      retunes it), the meter bus streams — one shared namespace. Verdict
+      beaconed as a fetch, read from the HTTP access log.
+    -->
+    <script type="module">
+      import { server, startPage, loadOsc, encodeMessage, decodePacket }
+        from "../../dist/index.js";
+
+      const params = new URLSearchParams(location.search);
+      const smoke = params.has("smoke");
+      const log = (line) => {
+        document.getElementById("log").textContent += line + "\n";
+      };
+      const verdict = (text) => {
+        log(text);
+        document.title = text.split("\n")[0];
+        fetch(`/smoke-verdict-${encodeURIComponent(text.split("\n")[0])}`)
+          .catch(() => {});
+      };
+
+      const element = document.querySelector("clausters-bundle");
+      let freq = 220;
+
+      element.addEventListener("clausters-error", (e) =>
+        verdict(`FAIL: ${e.detail.error}`));
+      element.addEventListener("clausters-ready", async (e) => {
+        log(`bundle up: GuiDef ${e.detail.id}`);
+        await loadOsc(); // the codec runs through the shared core (wasm)
+        const engine = await server();
+        engine.addReply((bytes) => {
+          for (const { addr, args } of decodePacket(bytes)) {
+            if (addr !== "/bus_stream.reply") log(`<- ${addr} ${JSON.stringify(args)}`);
+          }
+        });
+        document.getElementById("status").disabled = false;
+        document.getElementById("up").disabled = false;
+        document.getElementById("status").onclick = () =>
+          engine.send(encodeMessage("/server_status"));
+        document.getElementById("up").onclick = () => {
+          freq += 50;
+          engine.send(encodeMessage("/node_set",
+            [["i", 1000], ["s", "freq"], ["f", freq]]));
+          log(`-> /node_set 1000 freq ${freq}`);
+        };
+        if (smoke) smokeAsserts(engine).catch((err) => verdict(`FAIL: ${err}`));
+      });
+
+      async function smokeAsserts(engine) {
+        // The singleton is a true per-page singleton.
+        if (server() !== server()) throw new Error("server() is not a singleton");
+        // The canvas lives in the element's shadow DOM.
+        if (!element.shadowRoot.querySelector("canvas")) {
+          throw new Error("no canvas inside the element's shadow root");
+        }
+        // The raw REPL surface shares the element's namespace: /server_status counts
+        // the bundle's synth, and the meter bus streams moving values.
+        let synths = -1;
+        const seen = new Set();
+        engine.addReply((bytes) => {
+          for (const { addr, args } of decodePacket(bytes)) {
+            if (addr === "/server_status.reply") synths = args[2];
+            if (addr === "/bus_stream.reply") {
+              for (let i = 0; i + 1 < args.length; i += 2) seen.add(args[i + 1]);
+            }
+          }
+        });
+        // Asked on every turn, not once: the component's engine half — the
+        // defs and the boot list that make the synth — goes out on the page's
+        // gesture, which is a phase later than this handler.
+        const t0 = performance.now();
+        for (;;) {
+          engine.send(encodeMessage("/server_status"));
+          const moving = [...seen].filter((v) => Math.abs(v) > 0.01);
+          if (synths >= 1 && moving.length >= 2) {
+            return verdict(`PASS: element up, canvas adopted; /server_status sees ` +
+              `${synths} synth(s); ${moving.length} live meter values`);
+          }
+          if (performance.now() - t0 > 20000) {
+            throw new Error(`shared namespace never confirmed ` +
+              `(synths ${synths}, values ${JSON.stringify([...seen])})`);
+          }
+          await new Promise((r) => setTimeout(r, 100));
+        }
+      }
+
+      // The page's own gesture, in place of the power button: phase 2 is
+      // page-wide, so this starts the engine half of every component waiting.
+      if (smoke) startPage();
+    </script>
+  </body>
+</html>

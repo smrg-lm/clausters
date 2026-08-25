@@ -123,7 +123,7 @@ checkout:
 ```sh
 pip install clausters             # from PyPI, or:
 pip install ./clients/python      # from this checkout (builds the Rust side)
-python clients/python/examples/live_udp.py
+python clients/python/examples/io/live_udp.py
 ```
 
 ## Building, testing and documentation

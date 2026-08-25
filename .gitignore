@@ -25,6 +25,24 @@ uv.lock
 /.superpowers/
 
 # Artifacts the session example hands to the standalone host and reads back.
-clients/python/examples/gui_session.json
-clients/python/examples/gui_session-edited.json
-clients/python/examples/gui_session-take.wav
+clients/python/examples/editors/session.json
+clients/python/examples/editors/session-edited.json
+clients/python/examples/editors/session-take.wav
+
+# The demo renders the client examples write to the working directory
+# (`python clients/python/examples/basics/envelope.py` leaves envelope.wav
+# where it was run). Named one by one, so a wav meant to be committed still
+# shows up.
+/automation_lane.wav
+/boxes_library.wav
+/chain.wav
+/convolution.wav
+/cross.wav
+/envelope.wav
+/graph_maths.wav
+/kernel.wav
+/multichannel.wav
+/offline_render.wav
+/pause_resume.wav
+/typed_controls.wav
+/wavetables.wav

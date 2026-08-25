@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: typed controls — lag, trigger, scalar</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 46rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      label { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+      input[type=range] { width: 18rem; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+      .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">The web port of the Python client's
+<code>typed_controls.py</code>: <b>a control's type is part of the def</b>.
+
+<code>freq</code> carries a <code>lag</code> of 0.12 s, so a new note
+<b>glides</b> to pitch instead of jumping — a portamento lead.
+<code>gate</code> is a trigger (<code>rate: "tr"</code>): a
+<code>/node_set gate 1</code> holds for one block and the server resets it, so
+every set <b>re-plucks</b> the percussive envelope; a plain control gate would
+stay at 1 and never trigger again. <code>detune</code> is drawn once with
+<code>rand</code> — an <code>ir</code> scalar, frozen for the synth's life, so
+each new lead is a little different.
+
+The lag and the trigger only make sense on a synth that <b>outlives its
+notes</b>, which is what one persistent node driven by a routine gives, rather
+than an <code>/synth_new</code> per note.</div>
+
+      <div class="row">
+        <button id="start">start</button>
+        <button id="play" disabled>play the melody</button>
+        <button id="free" disabled>free the lead</button>
+      </div>
+      <label>tempo <input id="tempo" type="range" min="1" max="4" step="0.5"
+                          value="2" disabled /><span id="tempov">2 beats/s</span></label>
+
+      <pre id="log"></pre>
+    </main>
+
+    <script type="module">
+      import {
+        loadOsc, pageConnection, server as engine, Server, Synth,
+        SynthDef, TempoClock, Routine,
+      } from "../../dist/index.js";
+      import { DoneAction, Env, control, envGen, out, rand, sine } from "../../dist/defs/index.js";
+
+      const el = (id) => document.getElementById(id);
+      const log = (line) => { el("log").textContent += line + "\n"; };
+
+      // ---- the def: three control types in one lead ----
+      const glideLead = () => {
+        const freq = control("freq", 220.0, { lag: 0.12 });   // portamento
+        const gate = control("gate", 0.0, { rate: "tr" });    // re-trigger
+        const amp = control("amp", 0.2);
+        const detune = rand(-4.0, 4.0);                       // ir: drawn once
+        const env = envGen(Env.perc(0.005, 0.2), {
+          gate, doneAction: DoneAction.NONE,                  // never terminal
+        });
+        const sig = sine(freq.add(detune)).mul(env).mul(amp);
+        return new SynthDef("web_glide_lead", out(0.0, sig), out(1.0, sig));
+      };
+
+      let server = null;
+      let clock = null;
+      let lead = null;
+
+      async function start() {
+        await loadOsc();
+        await (await engine({ channels: 2 })).resume();
+        server = await Server.open(await pageConnection());   // or WsConnection
+
+        await glideLead().send(server);
+        clock = new TempoClock(Number(el("tempo").value), {
+          timebase: await server.sampleTimebase(),
+        });
+        clock.start();
+
+        lead = new Synth("web_glide_lead", { amp: 0.2, freq: mtof(48) }, { server });
+        log(`the lead is node ${lead.id}, silent until a gate arrives`);
+
+        el("start").disabled = true;
+        for (const id of ["play", "free", "tempo"]) el(id).disabled = false;
+      }
+
+      const mtof = (midi) => 440.0 * 2.0 ** ((midi - 69.0) / 12.0);
+
+      function play() {
+        new Routine(function* () {
+          for (const midi of [48, 55, 60, 63, 60, 55, 51, 48]) {
+            // freq and gate in one timed bundle: the pitch starts gliding and
+            // the pluck fires on the same instant.
+            server.sendBundle([
+              ["/node_set", ["i", lead.id],
+                "freq", ["f", mtof(midi)], "gate", ["f", 1.0]],
+            ]);
+            yield 0.5;
+          }
+          log("melody done — the lead is still there, waiting for a gate");
+        }).play(clock);
+      }
+
+      el("start").onclick = () => start().catch((err) => log(`error: ${err}`));
+      el("play").onclick = play;
+      el("free").onclick = () => {
+        lead.free();
+        log(`node ${lead.id} freed`);
+        for (const id of ["play", "free"]) el(id).disabled = true;
+      };
+      el("tempo").oninput = () => {
+        const tempo = Number(el("tempo").value);
+        el("tempov").textContent = `${tempo} beats/s`;
+        clock?.setTempo(tempo);
+      };
+    </script>
+  </body>
+</html>

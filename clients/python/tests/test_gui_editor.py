@@ -1008,7 +1008,7 @@ def test_a_logical_aggregate_is_skipped_until_the_directed_driver():
     port directions from their defs — the directed patcher's Python driver (P3).
     Until then the Editor skips it rather than draw the old bus-as-node view; a
     directed patch is built directly with `clausters.defs.GraphPatch` (see
-    `examples/gui_patch1.py`)."""
+    `examples/editors/patch1.py`)."""
     from clausters.form import Generator
     from clausters.form.aggregate import LOGICAL
 

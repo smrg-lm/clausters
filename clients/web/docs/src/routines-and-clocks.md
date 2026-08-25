@@ -141,7 +141,7 @@ win.widget("curve").onEvent((...args) => {
 });
 ```
 
-`examples/automation-lane.html` is exactly that loop: draw the glissando, play it, hear what you drew.
+`examples/transport/automation-lane.html` is exactly that loop: draw the glissando, play it, hear what you drew.
 
 **One difference from the reference client**, and it is the page's single thread again: `play(auto)` there prepares an unprepared curve on the spot, blocking. A synchronous verb in a page cannot, so an unprepared curve is refused by name — `await auto.prepare(server)` first.
 

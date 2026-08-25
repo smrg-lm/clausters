@@ -11,10 +11,10 @@
 #
 # Usage:
 #   scripts/refresh-bin.sh                    # just refresh the bundled bins
-#   scripts/refresh-bin.sh gui_shell          # refresh + run that example
+#   scripts/refresh-bin.sh shell              # refresh + run that example
 #   scripts/refresh-bin.sh path/to/script.py  # refresh + run any script
-#   scripts/refresh-bin.sh --debug gui_shell  # debug-profile build
-#   scripts/refresh-bin.sh --skip gui_shell   # skip the rebuild, just run
+#   scripts/refresh-bin.sh --debug shell      # debug-profile build
+#   scripts/refresh-bin.sh --skip shell       # skip the rebuild, just run
 set -eu
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -56,7 +56,7 @@ done
 # build, and that is the difference between refreshing for a manual test and
 # packaging one. `standalone` links the server crate into the host so a saved
 # session can be opened with no language client behind it -- which is the whole
-# subject of `gui_session.py` and of every H-track example. Off, the host still
+# subject of `session.py` and of every H-track example. Off, the host still
 # runs and still draws, and a take just comes back **empty** with a warning, so
 # the failure is quiet and looks like the example is broken. Since this script
 # is what CLAUDE.md tells everyone to run before any manual test, it must not
@@ -72,19 +72,21 @@ fi
 
 [ $# -gt 0 ] || exit 0
 
-# A bare name resolves as a Python example (gui_shell ->
-# clients/python/examples/gui_shell.py); a path runs as given.
+# A bare name resolves as a Python example, searched through the example
+# folders (shell -> clients/python/examples/panels/shell.py); a path runs as
+# given. The folders are what the `gui_` prefix became, so a name is unique
+# across them and the search needs no order.
 target="$1"
 shift
 if [ ! -e "$target" ]; then
-    candidate="$root/clients/python/examples/${target%.py}.py"
-    [ -e "$candidate" ] && target="$candidate"
+    candidate=$(find "$root/clients/python/examples" -name "${target%.py}.py" -print -quit)
+    [ -n "$candidate" ] && target="$candidate"
 fi
 case "$target" in
     *.py) ;;
     *)
         echo "refresh-bin.sh: '$target' is not a Python script (expected a" >&2
-        echo "  .py path or an example name, e.g. 'gui_shell')" >&2
+        echo "  .py path or an example name, e.g. 'shell')" >&2
         exit 2
         ;;
 esac

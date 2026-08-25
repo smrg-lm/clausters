@@ -114,7 +114,7 @@ clock.start()
 head.follow_transport(server, quant=4)   # roll when the conductor presses play
 ```
 
-Beat-aligned in plain wall-clock mode, sample-exact when the clock is also `lock_to` the server. See [A DAW-style transport](transport.md) for the conductor side (`Server.transport_play` and friends) and `transport_conductor.py` in [Examples](examples.md).
+Beat-aligned in plain wall-clock mode, sample-exact when the clock is also `lock_to` the server. See [A DAW-style transport](transport.md) for the conductor side (`Server.transport_play` and friends) and `conductor.py` in [Examples](examples.md).
 
 ## Seeing a timeline as a score
 
@@ -127,12 +127,12 @@ score = notation.Score.from_timeline(timeline, meter="4/4", key="C")
 dl = score.display_list()          # the engraved page, for the score widget
 ```
 
-`from_notes` is the melodic sibling — a plain list of events (a `rest` for silence), written back to back. A note whose duration is not a single value is written as tied notes (a dotted value when it lands exactly, like `1.5` beats → a dotted quarter), and a note overrunning a barline is split and tied across it. `beat_unit` sets what one beat is worth (`4` = a quarter, matching a `TEMPO` of one beat per second). The result flows into `engrave` (a one-shot view), `Score` (to edit and redraw) or `Score.from_timeline` (both at once); `examples/gui_score_from_data.py` builds a timeline of chords and a melody, engraves it and plays it from the same timeline.
+`from_notes` is the melodic sibling — a plain list of events (a `rest` for silence), written back to back. A note whose duration is not a single value is written as tied notes (a dotted value when it lands exactly, like `1.5` beats → a dotted quarter), and a note overrunning a barline is split and tied across it. `beat_unit` sets what one beat is worth (`4` = a quarter, matching a `TEMPO` of one beat per second). The result flows into `engrave` (a one-shot view), `Score` (to edit and redraw) or `Score.from_timeline` (both at once); `examples/editors/score_from_data.py` builds a timeline of chords and a melody, engraves it and plays it from the same timeline.
 
 ## See also
 
 - [Routines and clocks](routines-and-clocks.md) — the generative counterpart (the open-ended side you can capture *from*).
 - [A DAW-style transport](transport.md) — the shared beat grid clients phase-align on.
 - [Timing models](timing-models.md) — the timing references a playhead inherits (`quant`, `lock_to`, `join_transport`).
-- [Examples](examples.md) — `timeline_transport.py`, the playhead live.
+- [Examples](examples.md) — `timeline.py`, the playhead live.
 - [API reference](api.md) — `Timeline`, `Playhead`, `OscEvent`, `MidiEvent`.

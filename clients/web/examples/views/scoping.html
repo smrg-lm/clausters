@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: watching live buses with scope</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 46rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      label { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+      input[type=range] { width: 14rem; }
+      canvas { display: block; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+      .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">The web port of the Python client's
+<code>scoping.py</code>: <b>watching live buses with the free-standing
+<code>scope</code></b>, and its three views.
+
+<code>scope</code> is the real-time sibling of <code>plot</code>: where
+<code>plot</code> draws a finished render, <code>scope</code> opens a window
+that follows <b>live audio buses</b>, frame by frame. One rule covers every
+view — the verb monitors <code>channels</code> consecutive buses from
+<code>bus</code>, and each view presents them its way: oscilloscope lanes, the
+stereo phase field, one spectrum curve per channel. Naming the bus is all this
+page does; the host asks the server to record it and stops when nothing draws
+it any more.
+
+Watch the oscilloscope's corner read-out: <b>lock</b> means the trigger found a
+rising crossing and the trace stands still (the faint line marks the level);
+<b>free</b> means it is free-running — silence or DC.
+
+Where the Python example is a timed tour that opens each window alone, this one
+puts the three side by side and leaves the knobs under your hand:
+<b>spread</b> crossfades the right channel from a copy of the left (mono — the
+goniometer draws a vertical line) to a detuned sine (decorrelated — the trace
+opens into the lozenge), and the view controls go through
+<code>win.set(...)</code> live. The control is lagged, because a
+<code>/node_set</code> lands as a step and stepping a crossfade clicks; the
+scopes themselves are passive — a tap only copies a bus and can never alter the
+sound.
+
+<b>One difference from the desktop</b>, and it is the browser's: the native
+host reads the taps out of the server's shared-memory segment, and a tab has no
+segment to map, so the host streams them over its own server leg instead. The
+verb is the same either way — that is the point of it.
+
+Everything sounds through the <b>in-page engine</b>: no server process, no
+socket.</div>
+
+      <div class="row">
+        <button id="start">start</button>
+        <button id="signal" disabled>oscilloscope</button>
+        <button id="phase" disabled>goniometer</button>
+        <button id="spectrum" disabled>spectrum</button>
+        <button id="closeAll" disabled>close them</button>
+      </div>
+      <label>spread <input id="spread" type="range" min="0" max="1" step="0.01"
+                           value="0" disabled />
+        <span id="spreadv">0.00 (mono)</span></label>
+      <div class="row">
+        <label>window <input id="windowMs" type="range" min="2" max="40"
+                             step="1" value="20" disabled />
+          <span id="windowv">20 ms</span></label>
+        <label><input id="overlay" type="checkbox" disabled /> overlay the lanes</label>
+      </div>
+      <label>spectrum scale
+        <select id="freqScale" disabled>
+          <option value="log">log</option>
+          <option value="linear">linear</option>
+          <option value="mel">mel</option>
+          <option value="bark">bark</option>
+        </select>
+      </label>
+
+      <pre id="log"></pre>
+    </main>
+
+    <script type="module">
+      import { Session, Synth, SynthDef, scope } from "../../dist/index.js";
+      import { control, lag, out, sine, sub } from "../../dist/defs/index.js";
+
+      const el = (id) => document.getElementById(id);
+      const log = (line) => { el("log").textContent += line + "\n"; };
+
+      // Left is a plain sine; right crossfades from a copy of the left to a
+      // detuned one. Quiet on purpose.
+      const droneDef = () => {
+        const freq = control("freq", 220.0);
+        const spread = lag(control("spread", 0.0), 0.1);
+        const amp = lag(control("amp", 0.1), 0.1);
+        const left = sine(freq);
+        const right = left.mul(sub(1.0, spread))
+          .add(sine(freq.mul(1.02)).mul(spread));
+        return new SynthDef("web_scoping_drone",
+                            out(0.0, left.mul(amp)), out(1.0, right.mul(amp)));
+      };
+
+      let node = null;
+      const windows = new Map();
+
+      async function start() {
+        const session = (await Session.page({ channels: 2 })).adoptDefault();
+        await droneDef().send(session.server);
+        await session.server.sync();
+        node = new Synth("web_scoping_drone");
+        log("drone on outs 0/1 — open a view");
+
+        el("start").disabled = true;
+        for (const id of ["signal", "phase", "spectrum", "spread", "windowMs",
+                          "overlay", "freqScale"]) {
+          el(id).disabled = false;
+        }
+      }
+
+      el("start").onclick = () => start().catch((err) => log(`error: ${err}`));
+
+      // One window per view; opening the same one twice closes the first, so
+      // the tap behind it is given back rather than held twice.
+      const open = async (name, options) => {
+        windows.get(name)?.close();
+        const win = await scope(0, options);
+        windows.set(name, win);
+        el("closeAll").disabled = false;
+        log(`${name}: window ${win.id}, widget ${win.widgetId}, `
+          + `bus ${win.bus} × ${win.channels}`);
+      };
+
+      el("signal").onclick = () => open("signal", {
+        channels: 2,
+        windowMs: Number(el("windowMs").value),
+        overlay: el("overlay").checked,
+      }).catch((err) => log(`error: ${err}`));
+
+      el("phase").onclick = () => open("phase", { view: "phase" })
+        .catch((err) => log(`error: ${err}`));
+
+      el("spectrum").onclick = () => open("spectrum", {
+        view: "spectrum", channels: 2, freqScale: el("freqScale").value,
+      }).catch((err) => log(`error: ${err}`));
+
+      el("closeAll").onclick = () => {
+        for (const win of windows.values()) win.close();
+        windows.clear();
+        el("closeAll").disabled = true;
+        log("closed — the host stops recording what nothing draws");
+      };
+
+      el("spread").oninput = () => {
+        const spread = Number(el("spread").value);
+        el("spreadv").textContent = `${spread.toFixed(2)} `
+          + `(${spread < 0.02 ? "mono" : spread > 0.98 ? "wide" : "opening"})`;
+        if (node) node.set({ spread });
+      };
+
+      // Every view prop is settable while the window is up.
+      el("windowMs").oninput = () => {
+        const windowMs = Number(el("windowMs").value);
+        el("windowv").textContent = `${windowMs} ms`;
+        windows.get("signal")?.set({ windowMs });
+        windows.get("phase")?.set({ windowMs });
+      };
+      el("overlay").onchange = () => {
+        windows.get("signal")?.set({ overlay: el("overlay").checked ? 1 : 0 });
+      };
+      el("freqScale").onchange = () => {
+        windows.get("spectrum")?.set({ freqScale: el("freqScale").value });
+      };
+    </script>
+  </body>
+</html>

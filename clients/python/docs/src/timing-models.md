@@ -80,7 +80,7 @@ With each client also `lock_to` the master, the shared bar is an exact sample, s
 
 ### Trying it
 
-The `transport_sync.py` example (see [Examples](examples.md)) sets a transport, has two independent clients join and lock, and shows them landing on the same bar. The check is that both compute the *same* next-bar sample — using only public state, so any client on the same transport gets the same number:
+The `sync.py` example (see [Examples](examples.md)) sets a transport, has two independent clients join and lock, and shows them landing on the same bar. The check is that both compute the *same* next-bar sample — using only public state, so any client on the same transport gets the same number:
 
 ```python
 import math

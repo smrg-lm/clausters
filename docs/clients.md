@@ -191,10 +191,10 @@ The browser fills the host's data paths over the network instead of shared memor
 
 ```sh
 ./build.sh                # the wasm builds + wasm-bindgen, staged into dist/
-python3 -m http.server    # then open http://localhost:8000/examples/gui-host.html
+python3 -m http.server    # then open http://localhost:8000/examples/panels/host.html
 ```
 
-The page loads the bundle and calls the wasm entry point `start()`, which returns the **binding surface** (`GuiBridge`) the page drives: `def(id, json)` feeds a GuiDef (the same JSON the Python builders emit), `feed(packet)` pushes any raw `/gui_*` OSC packet, `poll()` drains the outbound `/gui_event`/`/gui_info`/`/gui_closed` packets, and the audio-server leg attaches with `connect_server(url)` (a `--ws` server) or `connect_page(send)` (the in-page engine: outbound packets go to the `send` callback, replies come back through `server_reply(packet)`; a `bind`-ed widget forwards straight to it either way, with no script round-trip). That surface is the *binding*, not the client: a page programs against the TypeScript client's `GuiHost` (below), which wraps it — `clients/web/examples/gui-host.html` is that client driving the host, with the bound and the scripted control paths side by side.
+The page loads the bundle and calls the wasm entry point `start()`, which returns the **binding surface** (`GuiBridge`) the page drives: `def(id, json)` feeds a GuiDef (the same JSON the Python builders emit), `feed(packet)` pushes any raw `/gui_*` OSC packet, `poll()` drains the outbound `/gui_event`/`/gui_info`/`/gui_closed` packets, and the audio-server leg attaches with `connect_server(url)` (a `--ws` server) or `connect_page(send)` (the in-page engine: outbound packets go to the `send` callback, replies come back through `server_reply(packet)`; a `bind`-ed widget forwards straight to it either way, with no script round-trip). That surface is the *binding*, not the client: a page programs against the TypeScript client's `GuiHost` (below), which wraps it — `clients/web/examples/panels/host.html` is that client driving the host, with the bound and the scripted control paths side by side.
 
 ### The component bundle: an instrument as an element of the document
 
@@ -214,7 +214,7 @@ window manager places it. In a tab the drawing surface is an element, and **the
 document places it** — CSS, the order of the markup, the flow of the page. So
 canvases interleave with prose and images, and one page can be an interactive
 text with the instrument sounding beside the paragraph that explains it
-(`clients/web/examples/document/`).
+(`clients/web/examples/editors/document/`).
 
 ```
 fm-voice/
@@ -332,8 +332,8 @@ asserts the exclusion). A page that *does* want the TypeScript client imports
 the symbol table so the author names things instead of numbering them, and
 validates through the core before emitting — an unmountable bundle is
 unwritable. The generic `<clausters-bundle src="./fm-voice">` mounts a bundle
-without a generated module. `clients/web/examples/piano/` and
-`examples/graph-controls/` are the worked examples;
+without a generated module. `clients/web/examples/panels/piano/` and
+`examples/panels/graph-controls/` are the worked examples;
 `clients/web/tests/components.html` is the acceptance.
 
 ## The TypeScript client (started)

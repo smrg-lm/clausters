@@ -18,7 +18,7 @@ This is the repo's **one web directory**: every browser artifact (the package mo
 ./build.sh                # cargo-builds the three wasm bundles, stages them
                           # into dist/, then emits src/ -> dist/ (needs
                           # `npm install` once)
-python3 -m http.server    # then open /examples/demo.html
+python3 -m http.server    # then open /examples/components/demo.html
 ./test.sh                 # type-check + node suites + the headless-Chrome smoke
 ./tools/profile-bus-stream.sh [canvases] [seconds]
                           # a profile, not a test: what a frame of /bus_stream
@@ -49,7 +49,7 @@ the def they share is sent once. Declared parameters are attributes, resolved
 attribute → preset → default. The first gesture anywhere on the page starts the
 audio for all of them; a component scrolled out of the viewport stops drawing
 and stops streaming. Write one with `clausters.bundle.Bundle` in the Python
-client — `examples/piano/make_bundle.py` is the worked example — and see the
+client — `examples/panels/piano/make_bundle.py` is the worked example — and see the
 server book's clients chapter for the format.
 
 `<clausters-bundle src="./fm-voice">` mounts a bundle with no generated module.

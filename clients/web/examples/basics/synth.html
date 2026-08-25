@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: a def, built and played from TypeScript</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 46rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      label { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+      input[type=range] { width: 18rem; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+      .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">A SynthDef is built here, in the page, out of the same
+lowercase callables the Python client uses — a saw through a resonant filter,
+under an ADSR — then sent, instanced and retuned live.
+
+The <b>carrier</b> is the choice below, and it is the only line of this page
+that knows about one: <code>pageConnection()</code> runs the audio server in
+this tab's AudioWorklet, with no process anywhere; <code>WsConnection</code>
+talks to a <code>clausters --ws</code> server over a WebSocket. Everything
+after that line is the same code.</div>
+
+      <div class="row">
+        <label><input type="radio" name="carrier" value="page" checked />
+          in-page engine</label>
+        <label><input type="radio" name="carrier" value="ws" />
+          WebSocket</label>
+        <input id="url" value="ws://127.0.0.1:57120" size="24" />
+        <button id="connect">connect + send the def</button>
+      </div>
+
+      <div class="row">
+        <button id="play" disabled>play a note</button>
+        <button id="release" disabled>release</button>
+      </div>
+      <label>freq <input id="freq" type="range" min="55" max="880" value="220"
+                        step="1" disabled /><span id="freqv">220 Hz</span></label>
+      <label>cutoff <input id="cutoff" type="range" min="100" max="6000"
+                           value="1200" step="10" disabled />
+        <span id="cutoffv">1200 Hz</span></label>
+
+      <pre id="log"></pre>
+    </main>
+
+    <script type="module">
+      import {
+        loadOsc, pageConnection, WsConnection, server as engine, Server,
+        Synth, SynthDef,
+      } from "../../dist/index.js";
+      import { DoneAction, Env, control, envGen, out, rlpf, saw } from "../../dist/defs/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => { $("log").textContent += line + "\n"; };
+
+      // ---- the def: pure client-side value, no connection in sight ----
+      //
+      // TypeScript has no operator overloading, so the graph composes by
+      // method — `saw(freq).mul(amp)` where the Python client writes
+      // `saw(freq) * amp`. The JSON both emit is identical.
+      const freq = control("freq", 220.0);
+      const cutoff = control("cutoff", 1200.0, { lag: 0.05 });
+      const amp = control("amp", 0.2);
+      // A plain control, not a trigger: the gate has to *hold* at 1 while the
+      // note sustains. A `tr` control is reset to 0 by the server after one
+      // block, which would release the envelope the instant it opened.
+      const gate = control("gate", 1.0);
+
+      const voice = rlpf(saw(freq), cutoff, { q: 6.0 })
+        .mul(amp)
+        .mul(envGen(Env.adsr(0.01, 0.15, 0.6, 0.3), {
+          gate,
+          doneAction: DoneAction.FREE_SELF,
+        }));
+
+      const beep = new SynthDef("web_voice", out(0.0, voice), out(1.0, voice));
+
+      let server = null;
+      let note = null;
+
+      async function connect() {
+        const kind = document.querySelector("input[name=carrier]:checked").value;
+        await loadOsc();
+
+        let connection;
+        if (kind === "page") {
+          // The engine is this page's; the AudioContext needs the click that
+          // got us here to start, which is why `connect` is a button.
+          const raw = await engine({ channels: 2 });
+          await raw.resume();
+          connection = await pageConnection();
+          log("connected: the in-page engine (no server process)");
+        } else {
+          connection = await WsConnection.open($("url").value);
+          log(`connected: ${$("url").value}`);
+        }
+
+        server = await Server.open(connection);
+        log(`the server reports ${server.sizing.audioBuses} audio buses, `
+          + `${server.sizing.maxBuffers} buffer slots`);
+
+        await beep.send(server);
+        log(`def '${beep.name}' loaded `
+          + `(controls: ${beep.controlNames().join(", ")})`);
+
+        for (const id of ["play", "release", "freq", "cutoff"]) {
+          $(id).disabled = false;
+        }
+      }
+
+      function play() {
+        note?.free();          // one note at a time, for the demo
+        note = new Synth("web_voice", {
+          freq: Number($("freq").value),
+          cutoff: Number($("cutoff").value),
+        }, { server });
+        log(`playing node ${note.id}`);
+      }
+
+      function release() {
+        if (!note) return;
+        // Dropping the gate plays the envelope's release segments, and its
+        // done action frees the node — the note ends itself.
+        note.set({ gate: 0.0 });
+        note = null;
+      }
+
+      const live = (id, name, unit) => {
+        $(id).oninput = () => {
+          $(`${id}v`).textContent = `${$(id).value} ${unit}`;
+          if (note) note.set({ [name]: Number($(id).value) });
+        };
+      };
+      live("freq", "freq", "Hz");
+      live("cutoff", "cutoff", "Hz");
+
+      $("connect").onclick = () =>
+        connect().catch((err) => log(`failed: ${err}`));
+      $("play").onclick = play;
+      $("release").onclick = release;
+    </script>
+  </body>
+</html>

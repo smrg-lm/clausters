@@ -61,6 +61,6 @@ The split is enforced by a test over the module graph, so the builders cannot cr
 
 ## Authoring a bundle
 
-Bundles are written with the Python client's writer, `clausters.bundle.Bundle`: it holds the symbol table so the author names things instead of numbering them, prefixes the def names with the bundle's, declares the parameters and the presets, and validates through the shared core before emitting — an unmountable bundle is unwritable. `examples/piano/make_bundle.py` in the repository is the worked example, and the format itself is documented in the [server book](https://clausters.readthedocs.io/).
+Bundles are written with the Python client's writer, `clausters.bundle.Bundle`: it holds the symbol table so the author names things instead of numbering them, prefixes the def names with the bundle's, declares the parameters and the presets, and validates through the shared core before emitting — an unmountable bundle is unwritable. `examples/panels/piano/make_bundle.py` in the repository is the worked example, and the format itself is documented in the [server book](https://clausters.readthedocs.io/).
 
 One authoring rule follows from the holes living only in the GuiDef record: a bus or a node reaches a def **as a control**, never as a value baked into the def, or the def could not be shared between two instances.

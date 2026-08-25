@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: an automation lane</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 46rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+      .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      canvas { display: block; border: 1px solid #2a2a35; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">The web port of the Python client's
+<code>automation_lane.py</code>: <b>automate a synth control with a break-point
+curve</b>.
+
+An <code>Automation</code> is a control curve that drives one or more
+<code>[node, control]</code> targets. It is rendered as a <b>control
+vector</b>: the curve is discretized on the server into a control buffer
+(<code>/buffer_gen "env"</code>, evaluated through the same envelope-shape math
+the <code>EnvGen</code> UGen plays), and a small control synth reads that buffer
+onto a control bus which the target follows via <code>/node_map</code>.
+
+The curve is the same <code>Env</code> the <code>bpf</code> editor round-trips
+(<code>envToPoints</code> / <code>pointsToEnv</code>), so <b>a drawn envelope and
+a played automation are one object</b> — which is why the editor is right here
+below: draw the glissando, then play it. A single sustained sine has its pitch
+swept by the lane, with no per-note retriggering.
+
+<b>Edit it:</b> drag a point to move it, drag a segment vertically to bend its
+curvature, Ctrl+click to add a point (Ctrl+click a point to remove it). Every
+edit comes back as a <code>points</code> list, which is what the next
+<b>play the lane</b> rebuilds the curve from.
+
+Where the Python example renders offline to a WAV, this one plays live: a page
+has no offline drive.</div>
+
+      <div class="row">
+        <button id="start">boot + the drone</button>
+        <button id="play" disabled>play the lane</button>
+        <button id="stop" disabled>stop the lane</button>
+        <button id="quit" disabled>quit</button>
+      </div>
+
+      <pre id="log"></pre>
+    </main>
+
+    <script type="module">
+      import {
+        GuiHost, Session, Synth, SynthDef, gui, guiHost, seq,
+      } from "../../dist/index.js";
+      import { control, out, sine } from "../../dist/defs/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => { $("log").textContent += line + "\n"; };
+
+      // The curve, in the bpf widget's own flat form: 220 Hz up to 880
+      // (exponentially, shape 2), then down to 330 (linearly, shape 1), over
+      // four beats. Shapes are the wire's numbers, as an edit carries them.
+      const CURVE = [
+        0.0, 220.0, 2, 0.0,
+        3.0, 880.0, 1, 0.0,
+        4.0, 330.0, 1, 0.0,
+      ];
+
+      // A sine whose freq and amp are `kr` controls — `kr` so they can be
+      // /node_map-ed to a control bus and tracked per block.
+      function tone() {
+        const freq = control("freq", 220.0, { rate: "kr" });
+        const amp = control("amp", 0.2, { rate: "kr" });
+        const sig = sine(freq).mul(amp);
+        return new SynthDef("web_tone", out(0.0, sig), out(1.0, sig));
+      }
+
+      let session = null;
+      let drone = null;
+      let win = null;
+      let auto = null;
+      let points = CURVE;
+
+      async function start() {
+        // The AudioContext needs the gesture that got us here, which is why
+        // this is a button.
+        session = await Session.page({ tempo: 1.0 });
+        const server = session.server;
+        await tone().send(server);
+        drone = new Synth("web_tone", { freq: 220.0, amp: 0.2 }, { server });
+        log(`the drone is node ${drone.id}, sounding at 220 Hz`);
+
+        // The editor, seeded with the same curve the lane will play.
+        const host = await GuiHost.page();
+        win = host.open(gui.window(
+          { title: "pitch lane", w: 520, h: 260, layout: "col", margin: 8.0 },
+          gui.bpf({
+            name: "curve", points, min: 100.0, max: 1000.0, duration: 4.0,
+            exp: true, h: 244, label: "freq",
+          }),
+        ));
+        // The edit-back: the host sends the whole break-point list on every
+        // edit, and the next play rebuilds the lane from it.
+        win.widget("curve").onEvent((...args) => {
+          points = args.flat().filter((v) => typeof v === "number");
+          log(`edited: ${points.length / 4} break-points`);
+        });
+
+        $("start").disabled = true;
+        for (const id of ["play", "quit"]) $(id).disabled = false;
+      }
+
+      async function playLane() {
+        $("play").disabled = true;
+        // A fresh lane per take: `prepare` is the half that waits (it
+        // allocates the control buffer and fills it on the server), which is
+        // exactly why it is not `play`'s job — a routine must never await.
+        auto?.free();
+        auto = seq.Automation.fromPoints(points, [drone, "freq"]);
+        await auto.prepare(session.server);
+        // Inside a routine this would emit at the routine's logical beat; here
+        // there is no clock in context, so the lane starts now and the curve's
+        // beats read as seconds.
+        auto.play(session.server);
+        log(`lane playing: ${auto.duration()} beats, buffer ${auto.buf.bufnum} `
+          + `onto control bus ${auto.bus.index}`);
+        $("stop").disabled = false;
+        setTimeout(() => {
+          $("play").disabled = false;
+          $("stop").disabled = true;
+        }, auto.duration() * 1000 + 200);
+      }
+
+      function stopLane() {
+        // Frees the lane synth now, so the mapped control holds its last
+        // value instead of carrying on.
+        auto?.stop();
+        log("lane stopped — the pitch holds where the curve had reached");
+        $("stop").disabled = true;
+        $("play").disabled = false;
+      }
+
+      function quit() {
+        auto?.stop();
+        auto?.free();
+        drone.free();
+        win.close();
+        session.close();
+        log("done: the lane's buffer and bus are back in their pools");
+        for (const id of ["play", "stop", "quit"]) $(id).disabled = true;
+      }
+
+      const guard = (fn) => () => {
+        try {
+          const r = fn();
+          if (r instanceof Promise) r.catch((err) => log(`error: ${err}`));
+        } catch (err) {
+          log(`error: ${err}`);
+        }
+      };
+      $("start").onclick = guard(start);
+      $("play").onclick = guard(playLane);
+      $("stop").onclick = guard(stopLane);
+      $("quit").onclick = guard(quit);
+    </script>
+  </body>
+</html>

@@ -3,7 +3,7 @@
 # (<clausters-bundle>) over the per-page singletons — element up with the
 # canvas adopted into its shadow DOM, and the raw server() surface sharing the
 # element's namespace (/server_status counts the bundle's synth, the meter bus
-# streams moving values). clients/web/examples/demo.html?smoke=1 does the
+# streams moving values). clients/web/examples/components/demo.html?smoke=1 does the
 # asserting; the verdict is beaconed as a fetch and read from the HTTP access
 # log (the same real-time posture as the other web smokes).
 set -euo pipefail
@@ -26,7 +26,7 @@ sleep 0.5
 "$CHROME" --headless=new --disable-gpu --no-sandbox \
     --autoplay-policy=no-user-gesture-required \
     --user-data-dir="$(mktemp -d)" \
-    "http://127.0.0.1:$PORT/examples/demo.html?smoke=1" >/dev/null 2>&1 &
+    "http://127.0.0.1:$PORT/examples/components/demo.html?smoke=1" >/dev/null 2>&1 &
 CHROME_PID=$!
 
 verdict=""

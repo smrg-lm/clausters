@@ -5,8 +5,8 @@
 //! (winit + wgpu): a `window`-rooted GuiDef instantiates an OS window hosting the
 //! renderers. With `--headless` it runs the protocol with no display — for
 //! tests, automation and machines with no GPU. Drive it from a language client
-//! over OSC — see `clients/python/examples/gui_window.py` (windowed) and
-//! `gui_skeleton.py` (protocol only).
+//! over OSC — see `clients/python/examples/views/window.py` (windowed) and
+//! `skeleton.py` (protocol only).
 
 use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
 use std::path::Path;
