@@ -27,12 +27,19 @@ import { initSync, WebServer } from "./clausters_web.js";
 //   worklet -> main: {type:"osc", data, peer}  one reply packet (bytes) and
 //                        which client it is for, so the page routes it
 //                    {type:"clock", clock, frame, epoch}
+//                    {type:"nrt-port", port}   the NRT worker's channel; jobs the
+//                        engine cannot do itself (reading a soundfile: no
+//                        filesystem here) leave through it
+//   worklet -> main: {type:"osc", data, peer}  one reply packet (bytes) and
+//                        which client it is for, so the page routes it
+//                    {type:"clock", clock, frame, epoch}
 //                    {type:"buffer_load", index, ok, message?}  the install's ack
 //                    {type:"quit"}        a /server_quit arrived; processor stops
 //                    {type:"error", message}  fatal; processor stops
 type InMessage =
     | { type: "osc"; data: ArrayBuffer; peer: number }
     | { type: "clock" }
+    | { type: "nrt-port"; port: MessagePort }
     | {
           type: "buffer_load";
           index: number;
@@ -40,6 +47,17 @@ type InMessage =
           sampleRate: number;
           data: ArrayBuffer;
       };
+
+/** What the NRT worker sends back. */
+type NrtResult =
+    | {
+          ticket: number;
+          samples: Float32Array;
+          channels: number;
+          frames: number;
+          sampleRate: number;
+      }
+    | { ticket: number; error: string };
 
 interface ProcessorOptions {
     module: WebAssembly.Module;
@@ -57,6 +75,10 @@ class ClaustersProcessor extends AudioWorkletProcessor {
     // packets awaiting ring space (backpressure), each with its author's tag
     pending: { peer: number; bytes: Uint8Array }[];
     dead: boolean;
+    /** The NRT worker's channel, once the page hands one over. */
+    nrt: MessagePort | null;
+    /** Jobs out with the Worker: ticket -> the buffer the result installs to. */
+    outstanding: Map<number, number>;
 
     constructor(options: { processorOptions: ProcessorOptions }) {
         super();
@@ -73,6 +95,8 @@ class ClaustersProcessor extends AudioWorkletProcessor {
         this.interleaved = new Float32Array(128 * channels);
         this.pending = [];
         this.dead = false;
+        this.nrt = null;
+        this.outstanding = new Map();
         this.port.onmessage = (e) => this.onMessage(e.data as InMessage);
     }
 
@@ -90,6 +114,15 @@ class ClaustersProcessor extends AudioWorkletProcessor {
                 frame: currentFrame,
                 epoch: this.epoch,
             });
+        } else if (msg.type === "nrt-port") {
+            // The page found a Worker to do the work this thread must not: the
+            // engine starts handing those jobs out from here on. The channel
+            // reaches the Worker directly, so a result does not queue behind
+            // the main thread's frames.
+            this.nrt = msg.port;
+            this.nrt.onmessage = (e: MessageEvent) => this.onNrtResult(e.data as NrtResult);
+            this.nrt.start();
+            this.server.delegateJobs();
         } else if (msg.type === "buffer_load") {
             // Runs between quanta on this thread -- the thread that owes the
             // next one. So a take is copied in **runs** rather than in one
@@ -137,6 +170,77 @@ class ClaustersProcessor extends AudioWorkletProcessor {
         }
     }
 
+    /**
+     * Hands the engine's next job to the Worker, if there is one waiting. At
+     * most one is ever out — the buffer queue waits on it, which is what keeps
+     * `/buffer_*` completing in submission order the way a native server's
+     * single NRT thread does.
+     */
+    pumpDelegated(): void {
+        if (this.nrt === null) return;
+        const json = this.server.takeDelegated();
+        if (json === undefined) return;
+        const job = JSON.parse(json) as {
+            ticket: number;
+            index: number;
+            kind: string;
+            path: string;
+            fileStart: number;
+            numFrames: number;
+            channels: number[];
+        };
+        this.outstanding.set(job.ticket, job.index);
+        this.nrt.postMessage({
+            type: "read",
+            ticket: job.ticket,
+            path: job.path,
+            fileStart: job.fileStart,
+            numFrames: job.numFrames,
+            channels: job.channels,
+        });
+    }
+
+    /**
+     * The Worker answered. The samples are installed here — they have to be,
+     * the buffer pool being this module's memory — but in runs, under the same
+     * ceiling every install pays, and only then is the command answered.
+     */
+    onNrtResult(result: NrtResult): void {
+        const index = this.outstanding.get(result.ticket);
+        if (index === undefined) return;
+        this.outstanding.delete(result.ticket);
+        if ("error" in result) {
+            this.server.finishDelegated(result.ticket, result.error);
+            return;
+        }
+        try {
+            const ticket = this.server.bufferLoadBegin(
+                index,
+                result.channels,
+                result.sampleRate,
+                result.frames,
+            );
+            try {
+                const run = this.server.installFrames() * result.channels;
+                const samples = result.samples;
+                for (let at = 0; at < samples.length; at += run) {
+                    this.server.bufferLoadChunk(
+                        ticket,
+                        at,
+                        samples.subarray(at, Math.min(at + run, samples.length)),
+                    );
+                }
+                this.server.bufferLoadEnd(ticket);
+            } catch (e) {
+                this.server.bufferLoadCancel(ticket);
+                throw e;
+            }
+            this.server.finishDelegated(result.ticket, undefined);
+        } catch (e) {
+            this.server.finishDelegated(result.ticket, String(e));
+        }
+    }
+
     process(_inputs: Float32Array[][], outputs: Float32Array[][]): boolean {
         if (this.dead) return false;
         try {
@@ -156,6 +260,10 @@ class ClaustersProcessor extends AudioWorkletProcessor {
                 this.interleaved = new Float32Array(need);
             }
             this.server.process(this.interleaved);
+            // After the block, not before: a job leaving costs a JSON print and
+            // a postMessage, and it is owed to the *next* quantum rather than
+            // to this one.
+            this.pumpDelegated();
             for (let ch = 0; ch < out.length; ch++) {
                 const dst = out[ch]!;
                 if (ch >= this.channels) {

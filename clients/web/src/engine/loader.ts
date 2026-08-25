@@ -22,6 +22,12 @@ export interface ClaustersEngine {
     onError: ((message: string) => void) | null;
     resume(): Promise<void>;
     suspend(): Promise<void>;
+    /**
+     * Ends the auxiliary threads this engine started (the NRT worker). The
+     * `AudioContext` is the caller's to close; this is what the caller cannot
+     * see to close itself.
+     */
+    dispose(): void;
     /** One complete OSC packet; the bytes are transferred, not copied. */
     /**
      * One complete OSC packet to the engine, authored by `peer` — which of the
@@ -67,6 +73,14 @@ export interface BootOptions {
     wasmUrl?: URL | string;
     workletUrl?: URL | string;
     /**
+     * The NRT worker: the thread that reads the page's filesystem and decodes,
+     * so the AudioWorklet does neither. Optional in every sense — a browser
+     * with no `Worker`, a refused port transfer or a Worker that does not
+     * answer all leave the engine doing the work itself, which is what it did
+     * before this existed.
+     */
+    nrtWorkerUrl?: URL | string;
+    /**
      * How many control buses one `/bus_stream` subscription may list, the
      * page's half of the server's `--max-stream-buses` (default 4096). A
      * document whose canvases hold hundreds of live widgets subscribes a bus
@@ -93,6 +107,7 @@ export async function bootClausters({
     channels = 2,
     wasmUrl = new URL("./clausters_web_bg.wasm", import.meta.url),
     workletUrl = new URL("./worklet.js", import.meta.url),
+    nrtWorkerUrl = new URL("./nrt-worker.js", import.meta.url),
     maxStreamBuses,
 }: BootOptions = {}): Promise<ClaustersEngine> {
     const ctx = context ?? new AudioContext();
@@ -116,6 +131,13 @@ export async function bootClausters({
     });
     node.connect(ctx.destination);
 
+    // The thread that is neither audio nor interface. It reads the page's own
+    // filesystem and decodes -- work a native server gives its NRT thread and
+    // this engine had nowhere to put, so it landed on the thread that owes the
+    // next quantum. It is optional: without it every job runs in the worklet,
+    // exactly as before, and only a page that reads a soundfile ever needs it.
+    const worker = await startNrtWorker(nrtWorkerUrl, node);
+
     const handle: ClaustersEngine = {
         context: ctx,
         node,
@@ -124,6 +146,7 @@ export async function bootClausters({
         onError: null,
         resume: () => ctx.resume(),
         suspend: () => ctx.suspend(),
+        dispose: () => worker?.terminate(),
         send(bytes: Uint8Array, peer: number) {
             node.port.postMessage({ type: "osc", data: bytes, peer }, [
                 bytes.buffer as ArrayBuffer,
@@ -180,3 +203,69 @@ export async function bootClausters({
 
     return handle;
 }
+
+/**
+ * Starts the NRT worker and gives the worklet a channel straight to it.
+ *
+ * **Why a handshake.** The channel is a `MessagePort` transferred *into* an
+ * AudioWorklet, which the HTML standard allows (a `MessagePort` is transferable
+ * and is exposed to the AudioWorklet scope) but which no documentation settles
+ * for every engine — WebKit has a history of transferables into worklets, and
+ * nothing here can drive Safari to find out. So the Worker is asked to answer
+ * over the port before anything relies on it: if the answer comes, the engine
+ * starts delegating; if it does not, the page keeps the engine exactly as it
+ * was, doing the work itself. A slower tab is a limit; a tab whose soundfile
+ * reads silently never complete is a defect.
+ *
+ * Returns the Worker so the engine can end it, or `null` when the browser has
+ * no Worker at all.
+ */
+async function startNrtWorker(
+    url: URL | string,
+    node: AudioWorkletNode,
+): Promise<Worker | null> {
+    if (typeof Worker === "undefined") return null;
+    let worker: Worker;
+    try {
+        worker = new Worker(url, { type: "module" });
+    } catch {
+        return null;
+    }
+    const channel = new MessageChannel();
+    const ready = new Promise<boolean>((resolve) => {
+        const done = (ok: boolean) => {
+            clearTimeout(timer);
+            channel.port1.onmessage = null;
+            resolve(ok);
+        };
+        const timer = setTimeout(() => done(false), NRT_HANDSHAKE_MS);
+        channel.port1.onmessage = (e: MessageEvent) => {
+            done((e.data as { type?: string }).type === "ready");
+        };
+    });
+    // port2 to the Worker, port1 stays here for the handshake; once it answers,
+    // port1 goes to the worklet, which is the leg that has to work.
+    worker.postMessage({ type: "port", port: channel.port2 }, [channel.port2]);
+    channel.port1.postMessage({ type: "ping" });
+    channel.port1.start();
+    if (!(await ready)) {
+        worker.terminate();
+        return null;
+    }
+    const toWorklet = new MessageChannel();
+    worker.postMessage({ type: "port", port: toWorklet.port2 }, [toWorklet.port2]);
+    try {
+        node.port.postMessage({ type: "nrt-port", port: toWorklet.port1 }, [
+            toWorklet.port1,
+        ]);
+    } catch {
+        // The transfer into the worklet is the one leg no documentation
+        // settles. Refused: keep the engine as it was.
+        worker.terminate();
+        return null;
+    }
+    return worker;
+}
+
+/** How long the NRT worker has to answer before the page gives up on it. */
+const NRT_HANDSHAKE_MS = 3000;

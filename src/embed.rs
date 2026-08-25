@@ -311,6 +311,32 @@ impl ClaustersHeadless {
         self.server.backlog()
     }
 
+    /// Hands the jobs the host does better over to it — today that is reading
+    /// a soundfile, whose filesystem belongs to the host: a page reaches its
+    /// own storage through APIs the engine has none of.
+    ///
+    /// Off by default. Once on, [`take_delegated`](Self::take_delegated)
+    /// yields the work and [`finish_delegated`](Self::finish_delegated) closes
+    /// it; a delegated job **blocks the buffer queue behind it**, which is what
+    /// keeps `/buffer_*` completing in submission order the way the native NRT
+    /// thread does.
+    pub fn delegate_jobs(&mut self) {
+        self.server.delegate_jobs();
+    }
+
+    /// The next job waiting for the host, if any.
+    pub fn take_delegated(&mut self) -> Option<crate::server::nrt::DelegatedJob> {
+        self.server.take_delegated()
+    }
+
+    /// Answers a delegated job: `Ok(())` once the host has installed the result
+    /// (through a staged load, so the samples never pass through the queue),
+    /// `Err` with the host's own message. Emits the command's `/done` or
+    /// `/fail` and unblocks the queue.
+    pub fn finish_delegated(&mut self, ticket: u64, outcome: Result<(), String>) {
+        self.server.finish_delegated(ticket, outcome);
+    }
+
     /// Whether a `/server_quit` has arrived. The pulled server has no loop to end,
     /// so quitting is the host's decision: it reads this and stops calling
     /// [`Self::process_block`] (dropping the value releases everything).

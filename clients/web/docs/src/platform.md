@@ -33,6 +33,23 @@ that a reader who hits one today knows which.
 | What | Status |
 |---|---|
 | **`/def_send faust` reaches a native server only** | The in-page engine carries no Faust compiler. Closed by `B5` + `W7`. |
-| **`diskIn`/`diskOut` are not built** | They stream the server's own filesystem, which the wasm build has none of, so a def naming them fails cleanly as an unknown UGen. A tab does have a private filesystem (OPFS) — see the B track. |
-| **`/buffer_allocRead` has no file to read** | Samples enter through the host instead: the page decodes and hands the engine the frames. Same B-track work. |
-| **Buffer building runs on the audio thread** | The native server has a thread for it; the in-page engine has not had one, so a large allocation is paid where the audio is. Same B-track work. |
+| **`diskIn`/`diskOut` are not built** | They stream the server's own filesystem, which the wasm build has none of, so a def naming them fails cleanly as an unknown UGen. |
+| **`/buffer_read` is not delegated** | Its sibling `/buffer_allocRead` is: it leaves the AudioWorklet for the NRT worker and comes back decoded. This one overlays a file onto the buffer's *current* contents, which live in the engine's own memory, so the job cannot leave without shipping them out and back. It runs in the worklet, under the serving budget. |
+| **`/buffer_write` has nowhere to write** | Reading is done; writing a file back out is the other half and is not built. |
+
+## What a tab has that it did not
+
+Kept here because the absences above were listed as permanent-looking for a
+while and two of them were not.
+
+**A tab has a filesystem**, its own: the origin private file system. So
+`Buffer.read(path)` — `/buffer_allocRead` — means something in a page, and the
+path is `/`-separated under the origin's root. The file is read and decoded by
+the **NRT worker**, a thread beside the audio one, with the *server's own*
+decoder rather than the browser's, so the samples are bit-for-bit the ones a
+native read of the same file gives. `Buffer.load(url)` is the other door and a
+different thing: a file over the network, decoded by the browser.
+
+**Buffer work is no longer paid in the audio callback.** A long take arrives in
+runs (a tenth of a second of stereo at a time) and becomes visible in one swap,
+and the jobs that can leave the audio thread do.

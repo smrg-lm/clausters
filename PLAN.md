@@ -834,21 +834,53 @@ entries keep their original paths as a record of what shipped where. See
         in-page number replaces this native one. Material that long streams; it
         does not pool.
 
-     b. ⬜ **The Worker, and the NRT runner in it.** A slim wasm shell beside
-        `clausters-web` exporting `server::nrt::run_job` — the third caller of a
-        door that already has two. Jobs and results cross as transferred
-        `ArrayBuffer`s over a `MessagePort` transferred into the worklet,
-        feature-detected at boot with a handshake and falling back to a
-        main-thread relay (Safari's port transfer into a worklet is the one
-        piece no documentation here settles). Results land through the staged
-        load of (a), so the copy is already paced.
+     b. ✅ **The Worker, and the NRT runner in it** *(done 2026-08-25)* — and
+        with it **step 3**, because the two turned out to be one thing: a
+        Worker with no filesystem to read has nothing to do, and OPFS is
+        reachable from nowhere else.
 
-        **Delegation is per job kind, not wholesale**: `Alloc` and `AllocRead`
-        are worth sending out (I/O and decode, nothing to send but parameters),
-        `Write` too (it only reads the buffer and produces a file). The jobs
-        carrying an `Arc<Buffer>` of current contents — `Read`, `Gen`, `Set`,
-        `Edit`, `Fill` — would have to ship megabytes out and back to save
-        arithmetic, so they stay where the samples are, under (a)'s budget.
+        `NrtRunner::Delegating` is the mode: a job the host does better leaves
+        through `take_delegated` and comes back through `finish_delegated`, and
+        **it blocks the queue behind it**, exactly as it would on the single NRT
+        thread — one queue means submission order, and a `/buffer_free` that
+        overtook the read it follows would be a different program.
+        `crates/clausters-nrt-web` binds the decoder alone (no engine, no def
+        families, no ring), `src/engine/nrt-worker.ts` is the thread, and
+        `src/engine/opfs.ts` is the page's filesystem. The channel is a
+        `MessagePort` transferred into the worklet, **feature-detected with a
+        handshake** and falling back to a main-thread relay: a slower tab is a
+        limit, a tab whose reads never complete is a defect. Results land
+        through (a)'s staged load, so the copy is already paced.
+
+        **`Buffer.read(path)` works in a tab**, out of the page's own storage,
+        decoded by *our* decoder — `tests/nrt.html` asserts the samples are
+        bit-for-bit the file's, that a missing file fails the command rather
+        than hanging it, and that `readChannels([1])` comes back mono at the
+        right channel's value. `read_audio_bytes` is the door, the same answer
+        as the path door over WAV float, WAV int16 and a probed container.
+
+        **Three things it broke and one it predicted.** The worklet's shim
+        carried a `TextDecoder` and a note saying no string ever went *into*
+        wasm; the delegation door made that false, and the failure is not a
+        message about an encoder — the glue's top level throws, the module never
+        registers, and the browser says the processor name is undefined. Both
+        shims now stay whether or not today's surface uses them. `i64` crosses
+        to JS as `BigInt`, so the decoder's frame count takes a double. And a
+        guard written for the delegating runner reached the inline one and
+        **stranded every `/buffer_allocRead`** — caught by an existing test, not
+        a new one, so the missing case (a read with no host to take it) is a
+        test now.
+
+        What did not leave, and is written where a reader meets it
+        (`clients/web/docs/src/platform.md`): `/buffer_read` overlays the
+        buffer's current contents, so delegating it would ship megabytes out and
+        back; `/buffer_write` has nowhere to write yet.
+
+     c. ⬜ **What the Worker still owes**: `/buffer_write` (it only reads the
+        buffer and produces a file, so it can leave — one payload out, none
+        back). `Alloc` deliberately stays: the buffer lives in the engine's
+        linear memory, so a Worker allocating in *its* memory would only add a
+        copy back.
   3. **OPFS: the page gets a filesystem.** `createSyncAccessHandle` is dedicated-
      worker-only by standard, so it lives exactly where step 2 put the runner.
      `/buffer_allocRead` stops being a path with nothing behind it, and

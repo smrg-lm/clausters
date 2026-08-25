@@ -86,6 +86,11 @@ mkdir -p src/core src/gui-host
 cp dist/core/clausters_core_web.js dist/core/clausters_core_web.d.ts src/core/
 cp dist/gui-host/clausters_gui.d.ts src/gui-host/
 cp dist/engine/clausters_web.js dist/engine/clausters_web.d.ts src/engine/
+# The NRT worker's decoder: only the .d.ts, since the glue is imported
+# dynamically inside a Worker that only exists in a browser, where it
+# resolves against dist/ -- the same rule the GUI host's glue follows.
+mkdir -p src/nrt
+cp dist/nrt/clausters_nrt_web.d.ts src/nrt/
 
 # The engraver: vendored, not built here. `third_party/build-verovio-wasm.sh`
 # compiles the pinned verovio with the Emscripten SDK -- the same sources and

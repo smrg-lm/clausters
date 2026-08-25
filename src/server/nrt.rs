@@ -370,6 +370,63 @@ pub enum NrtRunner {
         results: std::collections::VecDeque<NrtResult>,
         chain: NrtChain,
     },
+    /// Inline, plus: the jobs the **host** can do better leave through
+    /// [`take_delegated`](NrtRunner::take_delegated) and come back through
+    /// [`finish_delegated`](NrtRunner::finish_delegated). Everything else still
+    /// runs here.
+    ///
+    /// This is the browser's mode. Reading a soundfile means a filesystem and a
+    /// decoder, and in a page the filesystem is a JS API reachable only from a
+    /// Worker — so the job leaves, and its samples come back through the staged
+    /// load rather than through this queue, which is why nothing large ever
+    /// passes through here.
+    ///
+    /// **A delegated job blocks the queue behind it**, exactly as it would on
+    /// the single NRT thread: one queue means buffer commands complete in
+    /// submission order, and a `/buffer_free` that overtook the read it follows
+    /// would be a different program.
+    Delegating {
+        pending: std::collections::VecDeque<NrtRequest>,
+        results: std::collections::VecDeque<NrtResult>,
+        chain: NrtChain,
+        /// Handed out and not yet answered. The queue waits on it.
+        outstanding: Option<(u64, NrtRequest)>,
+        next_ticket: u64,
+    },
+}
+
+/// A job the host is asked to do, with everything it needs and nothing that
+/// lives in the engine — which is why only some kinds can be one.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DelegatedJob {
+    /// Answer with this (see [`NrtRunner::finish_delegated`]).
+    pub ticket: u64,
+    /// The buffer the result is for. The host installs into it directly (a
+    /// staged load), so the samples never travel through the runner.
+    pub index: i32,
+    pub kind: DelegatedKind,
+}
+
+/// The job kinds that leave. Deliberately few: a kind qualifies when what it
+/// needs is **parameters** and what it produces is a whole new buffer.
+///
+/// The rest stay. `Read`, `Gen`, `Set`, `Edit` and `Fill` all carry the
+/// buffer's current contents, so delegating them would ship megabytes out and
+/// back to save arithmetic — they run here, under the serving budget. `Write`
+/// is the one that will follow (it only reads the buffer and produces a file),
+/// and is not here yet.
+#[derive(Debug, Clone, PartialEq)]
+pub enum DelegatedKind {
+    /// `/buffer_allocRead`: read a soundfile and install it whole.
+    AllocRead {
+        path: String,
+        file_start: usize,
+        num_frames: i64,
+        /// `/buffer_allocReadChannel`'s selection, in order; empty is every
+        /// channel. The host applies it with [`select_channels`] rather than
+        /// with a de-interleave of its own.
+        channels: Vec<usize>,
+    },
 }
 
 impl NrtRunner {
@@ -385,6 +442,93 @@ impl NrtRunner {
         }
     }
 
+    /// Inline, plus a host that takes the jobs it can do better. See
+    /// [`NrtRunner::Delegating`].
+    pub fn delegating() -> Self {
+        NrtRunner::Delegating {
+            pending: std::collections::VecDeque::new(),
+            results: std::collections::VecDeque::new(),
+            chain: NrtChain::default(),
+            outstanding: None,
+            next_ticket: 0,
+        }
+    }
+
+    /// The next job for the host, if one is waiting. Returns it once: the
+    /// runner keeps its bookkeeping and expects
+    /// [`finish_delegated`](Self::finish_delegated).
+    pub fn take_delegated(&mut self) -> Option<DelegatedJob> {
+        let NrtRunner::Delegating {
+            outstanding,
+            pending,
+            next_ticket,
+            ..
+        } = self
+        else {
+            return None;
+        };
+        if outstanding.is_some() {
+            return None;
+        }
+        let kind = match pending.front()?.job {
+            NrtJob::AllocRead {
+                ref path,
+                file_start,
+                num_frames,
+                ref channels,
+            } => DelegatedKind::AllocRead {
+                path: path.clone(),
+                file_start,
+                num_frames,
+                channels: channels.clone(),
+            },
+            _ => return None,
+        };
+        let request = pending.pop_front()?;
+        *next_ticket += 1;
+        let ticket = *next_ticket;
+        let job = DelegatedJob {
+            ticket,
+            index: request.index,
+            kind,
+        };
+        *outstanding = Some((ticket, request));
+        Some(job)
+    }
+
+    /// Answers a delegated job and unblocks the queue. `Ok(())` means the host
+    /// already installed the result (a staged load), so all this owes is the
+    /// `/done`; `Err` becomes the `/fail`, carrying the host's own message.
+    ///
+    /// A ticket that is not the outstanding one is ignored — a late answer to a
+    /// job that was already given up on must not report against whatever
+    /// followed it.
+    pub fn finish_delegated(&mut self, ticket: u64, outcome: Result<(), String>) {
+        let NrtRunner::Delegating {
+            outstanding,
+            results,
+            ..
+        } = self
+        else {
+            return;
+        };
+        let Some((held, _)) = outstanding.as_ref() else {
+            return;
+        };
+        if *held != ticket {
+            return;
+        }
+        let (_, request) = outstanding.take().expect("checked just above");
+        results.push_back(NrtResult {
+            cmd: request.cmd,
+            index: request.index,
+            client: request.client,
+            // The host installed it, so there is nothing left to do to the
+            // pool: the reply is the whole outcome.
+            outcome: outcome.map(|()| NrtAction::None),
+        });
+    }
+
     /// Queues a job. In thread mode the thread picks it up; in inline mode it
     /// waits for [`pump`](Self::pump) — **it does not run here**. Fails only if
     /// the NRT thread died.
@@ -398,7 +542,7 @@ impl NrtRunner {
     pub fn submit(&mut self, request: NrtRequest) -> Result<(), NrtRequest> {
         match self {
             NrtRunner::Thread(t) => t.submit(request),
-            NrtRunner::Inline { pending, .. } => {
+            NrtRunner::Inline { pending, .. } | NrtRunner::Delegating { pending, .. } => {
                 pending.push_back(request);
                 Ok(())
             }
@@ -415,16 +559,39 @@ impl NrtRunner {
     /// jobs a turn starts, not how long one of them takes — a single huge
     /// allocation is one job and is indivisible here.
     pub fn pump(&mut self, budget: usize) -> usize {
-        let NrtRunner::Inline {
-            pending,
-            results,
-            chain,
-        } = self
-        else {
-            return 0;
+        let (pending, results, chain, delegating, blocked) = match self {
+            NrtRunner::Thread(_) => return 0,
+            NrtRunner::Inline {
+                pending,
+                results,
+                chain,
+            } => (pending, results, chain, false, false),
+            NrtRunner::Delegating {
+                pending,
+                results,
+                chain,
+                outstanding,
+                ..
+            } => (pending, results, chain, true, outstanding.is_some()),
         };
+        // A job is out with the host: the queue waits on it, or the order it
+        // guarantees is not an order.
+        if blocked {
+            return 0;
+        }
         let mut ran = 0;
         while ran < budget {
+            // A job the host takes stops the pump rather than running here --
+            // but only where there *is* a host. Inline, this same job is ours
+            // to run, and skipping it would strand every `/buffer_allocRead`.
+            if delegating
+                && matches!(
+                    pending.front().map(|r| &r.job),
+                    Some(NrtJob::AllocRead { .. })
+                )
+            {
+                break;
+            }
             let Some(request) = pending.pop_front() else {
                 break;
             };
@@ -445,6 +612,11 @@ impl NrtRunner {
         match self {
             NrtRunner::Thread(_) => 0,
             NrtRunner::Inline { pending, .. } => pending.len(),
+            NrtRunner::Delegating {
+                pending,
+                outstanding,
+                ..
+            } => pending.len() + usize::from(outstanding.is_some()),
         }
     }
 
@@ -452,7 +624,9 @@ impl NrtRunner {
     pub fn try_result(&mut self) -> Option<NrtResult> {
         match self {
             NrtRunner::Thread(t) => t.try_result(),
-            NrtRunner::Inline { results, .. } => results.pop_front(),
+            NrtRunner::Inline { results, .. } | NrtRunner::Delegating { results, .. } => {
+                results.pop_front()
+            }
         }
     }
 }
@@ -630,7 +804,7 @@ fn wrote_frames(first: usize, last: usize, channels: usize) -> NrtAction {
 /// The order is honoured and repeats are allowed, so `[1, 0]` swaps a stereo
 /// pair and `[0, 0]` makes a mono file into a two-channel one — both are what
 /// naming channels explicitly is *for*, and neither costs anything to permit.
-fn select_channels(buffer: &Buffer, channels: &[usize]) -> Result<Buffer, String> {
+pub fn select_channels(buffer: &Buffer, channels: &[usize]) -> Result<Buffer, String> {
     if channels.is_empty() {
         // Nothing to do, but the caller owns the value: rebuild rather than
         // clone the Arc, since this arm is the one that already read a file.

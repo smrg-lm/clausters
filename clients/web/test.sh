@@ -176,6 +176,7 @@ run_page scope.html    # the scope verb: its three views on live buses
 run_page responders.html # OscFunc over the engine's own notifications
 run_page catalogue.html # the filled-out UGen families, measured on the output
 run_page ring-peers.html # a host meter and a script bus stream, both over one ring
+run_page nrt.html      # /buffer_allocRead out of the page's filesystem, in the NRT worker
 
 # The components and lifecycle acceptances mount the example bundles, which are build
 # products (git-ignored, written by the Python client). Generate them here so a

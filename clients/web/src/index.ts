@@ -175,3 +175,14 @@ export type {
     Step,
     Undone,
 } from "./document.ts";
+
+/**
+ * The page's own filesystem (OPFS) — where a soundfile a tab reads actually
+ * lives.
+ *
+ * Not a client verb and not part of the surface the two clients share: it is
+ * the platform's answer to "where is the file", the way a disk is a native
+ * server's. `/buffer_allocRead "take.wav"` names the server's filesystem in a
+ * window and this one in a tab, and the call is the same call either way.
+ */
+export * as opfs from "./engine/opfs.ts";

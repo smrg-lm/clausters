@@ -60,6 +60,19 @@ export class WebServer {
      */
     ctl_set(index: number, value: number): void;
     /**
+     * Hands the jobs the host does better over to it — reading a soundfile,
+     * whose filesystem is the page's (OPFS, reachable only from a Worker) and
+     * not the engine's. Call it once, at boot, if the page has a Worker to do
+     * them; without it every job runs here, as before.
+     */
+    delegateJobs(): void;
+    /**
+     * Answers a delegated job: an empty `error` once the host has installed
+     * the result through a staged load, otherwise the message the command
+     * fails with. Emits the `/done` or `/fail` and unblocks the queue.
+     */
+    finishDelegated(ticket: number, error?: string | null): void;
+    /**
      * How many frames one [`buffer_load_chunk`](Self::buffer_load_chunk)
      * should carry — the serving budget's number, read from the engine rather
      * than repeated in JavaScript.
@@ -115,6 +128,13 @@ export class WebServer {
      * one reply, and `/server_query.reply` reports that number to it.
      */
     set_max_stream_buses(n: number): void;
+    /**
+     * The next job for the host, as JSON, or `undefined` if none is waiting:
+     * `{ticket, index, kind: "allocRead", path, fileStart, numFrames,
+     * channels}`. A delegated job blocks the buffer queue behind it, so this
+     * hands out at most one at a time.
+     */
+    takeDelegated(): string | undefined;
 }
 
 /**
@@ -153,6 +173,8 @@ export interface InitOutput {
     readonly webserver_clock: (a: number) => number;
     readonly webserver_ctl_get: (a: number, b: number) => number;
     readonly webserver_ctl_set: (a: number, b: number, c: number) => void;
+    readonly webserver_delegateJobs: (a: number) => void;
+    readonly webserver_finishDelegated: (a: number, b: number, c: number, d: number) => void;
     readonly webserver_installFrames: (a: number) => number;
     readonly webserver_new: (a: number, b: number, c: number) => [number, number, number];
     readonly webserver_poll: (a: number) => [number, number];
@@ -160,6 +182,7 @@ export interface InitOutput {
     readonly webserver_quit_requested: (a: number) => number;
     readonly webserver_send: (a: number, b: number, c: number, d: number) => number;
     readonly webserver_set_max_stream_buses: (a: number, b: number) => void;
+    readonly webserver_takeDelegated: (a: number) => [number, number];
     readonly last_render_seed: () => bigint;
     readonly abi_version: () => number;
     readonly clausters_free_samples: (a: number, b: bigint) => void;
@@ -169,6 +192,7 @@ export interface InitOutput {
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __externref_table_dealloc: (a: number) => void;
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
+    readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_start: () => void;
 }
 

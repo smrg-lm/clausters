@@ -281,6 +281,78 @@ impl WebServer {
     pub fn install_frames(&self) -> u32 {
         clausters::osc::server::ServeBudget::default().install_frames as u32
     }
+
+    /// Hands the jobs the host does better over to it — reading a soundfile,
+    /// whose filesystem is the page's (OPFS, reachable only from a Worker) and
+    /// not the engine's. Call it once, at boot, if the page has a Worker to do
+    /// them; without it every job runs here, as before.
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = delegateJobs))]
+    pub fn delegate_jobs(&mut self) {
+        self.inner.delegate_jobs();
+    }
+
+    /// The next job for the host, as JSON, or `undefined` if none is waiting:
+    /// `{ticket, index, kind: "allocRead", path, fileStart, numFrames,
+    /// channels}`. A delegated job blocks the buffer queue behind it, so this
+    /// hands out at most one at a time.
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = takeDelegated))]
+    pub fn take_delegated(&mut self) -> Option<String> {
+        use clausters::server::nrt::DelegatedKind;
+        let job = self.inner.take_delegated()?;
+        let DelegatedKind::AllocRead {
+            path,
+            file_start,
+            num_frames,
+            channels,
+        } = job.kind;
+        // Printed by hand rather than through serde: one shape, one place, and
+        // the shell keeps carrying no dependency it does not need.
+        let channels = channels
+            .iter()
+            .map(|c| c.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        Some(format!(
+            r#"{{"ticket":{},"index":{},"kind":"allocRead","path":{},"fileStart":{},"numFrames":{},"channels":[{}]}}"#,
+            job.ticket,
+            job.index,
+            json_string(&path),
+            file_start,
+            num_frames,
+            channels,
+        ))
+    }
+
+    /// Answers a delegated job: an empty `error` once the host has installed
+    /// the result through a staged load, otherwise the message the command
+    /// fails with. Emits the `/done` or `/fail` and unblocks the queue.
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = finishDelegated))]
+    pub fn finish_delegated(&mut self, ticket: f64, error: Option<String>) {
+        let outcome = match error {
+            Some(message) if !message.is_empty() => Err(message),
+            _ => Ok(()),
+        };
+        self.inner.finish_delegated(ticket as u64, outcome);
+    }
+}
+
+/// One JSON string literal, escaped. A path can carry a quote or a backslash.
+fn json_string(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('"');
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
 }
 
 /// The error type of the JS-facing results: a real `JsError` on wasm, the

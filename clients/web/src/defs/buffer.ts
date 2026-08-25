@@ -109,9 +109,14 @@ export class Buffer {
 
     /**
      * Loads a sound file into a freshly allocated buffer (`/buffer_allocRead`).
-     * The path is the **server's**, so this reaches a native server over the
-     * WebSocket carrier; the in-page engine has no filesystem (feed it
-     * decoded samples with `load` instead).
+     *
+     * **The path is whichever filesystem the server has.** Over the WebSocket
+     * carrier that is a native server's disk. In a tab it is the page's own
+     * storage (`opfs`), `/`-separated under the origin's root — the read leaves
+     * the AudioWorklet for the NRT worker, which decodes it with the server's
+     * own decoder, so the samples are the ones a native read of the same file
+     * gives. `load` is the other door and a different thing: a file over the
+     * network, decoded by the browser.
      */
     static async read(
         path: string,
@@ -186,9 +191,17 @@ export class Buffer {
     }
 
     /**
-     * Loads an audio file at `url` into a freshly allocated buffer: the
-     * browser's `/buffer_allocRead`, since a page has no filesystem and the
-     * server's path means nothing to it.
+     * Loads an audio file at `url` into a freshly allocated buffer — a file
+     * reached over the **network**, which is the half `read` cannot do.
+     *
+     * It used to be described as the browser's `/buffer_allocRead`, "since a
+     * page has no filesystem". A page does: `read` works in a tab now, out of
+     * the page's own storage (`opfs`), decoded by the NRT worker with the
+     * server's own decoder. So the two are no longer a browser/native pair —
+     * they are a URL and a path, and the difference that matters is which
+     * decoder ran. This one is the page's (`decodeAudioData`), so its samples
+     * are the browser's answer rather than the server's; `read` is exact
+     * against a native read of the same file.
      *
      * `fetch` + the page's own `decodeAudioData` produce the samples, which
      * the carrier installs directly — it shares memory with the engine. The
@@ -299,9 +312,13 @@ export class Buffer {
      * the in-place counterpart of `Buffer.read`, which allocates one to fit the
      * file.
      *
-     * The path is the **server's**, as in `read`: this reaches a native server
-     * over the WebSocket carrier, and means nothing to the in-page engine,
-     * which has no filesystem.
+     * The path is the server's, as in `read` — a native server's disk over the
+     * WebSocket carrier, the page's own storage (`opfs`) in a tab.
+     *
+     * **Not yet delegated in a tab**, unlike `read`: this one overlays the
+     * file onto the buffer's current contents, which live in the engine's own
+     * memory, so the job cannot leave without shipping them out and back. It
+     * is named in `clients/web/PLAN.md` rather than left to be found by ear.
      */
     async readInto(
         path: string,

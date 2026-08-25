@@ -8,6 +8,7 @@ use clausters::embed::ClaustersHeadless;
 use clausters::osc::server::ServeBudget;
 use clausters::rosc::{OscBundle, OscMessage, OscPacket, OscTime, OscType, encoder};
 use clausters::server::engine::BLOCK_SIZE;
+use clausters::server::nrt::DelegatedKind;
 
 const SR: f64 = 48_000.0;
 const CHANNELS: usize = 2;
@@ -412,4 +413,168 @@ fn a_chunk_past_the_end_is_refused() {
     let ticket = server.buffer_load_begin(0, 1, SR, 8).unwrap();
     assert!(server.buffer_load_chunk(ticket, 4, &[0.0; 8]).is_err());
     assert!(server.buffer_load_chunk(999, 0, &[0.0; 1]).is_err());
+}
+
+// ---- B6 step 2b: the jobs the host does better leave ----
+
+#[test]
+fn a_soundfile_read_leaves_and_comes_back_installed() {
+    // The browser's shape: /buffer_allocRead reaches an engine with no
+    // filesystem, so it leaves, and the host installs the samples itself
+    // through a staged load. The reply is still the command's own /done.
+    let mut server = ClaustersHeadless::new(SR, CHANNELS, 0.0).unwrap();
+    server.delegate_jobs();
+    assert!(server.send(&msg(
+        "/buffer_allocRead",
+        vec![OscType::Int(3), OscType::String("take.wav".into())],
+    )));
+    pull(&mut server, 1);
+
+    // Nothing was answered: the job is out with the host.
+    assert!(replies(&server).is_empty());
+    let job = server.take_delegated().expect("a job for the host");
+    assert_eq!(job.index, 3);
+    assert_eq!(
+        job.kind,
+        DelegatedKind::AllocRead {
+            path: "take.wav".into(),
+            file_start: 0,
+            num_frames: 0,
+            channels: Vec::new(),
+        }
+    );
+    // Asking twice does not hand it out twice.
+    assert!(server.take_delegated().is_none());
+
+    // The host does the work and installs it the way a page would.
+    let ticket = server.buffer_load_begin(3, 1, SR, 4).unwrap();
+    server.buffer_load_chunk(ticket, 0, &[0.25; 4]).unwrap();
+    server.buffer_load_end(ticket).unwrap();
+    server.finish_delegated(job.ticket, Ok(()));
+
+    pull(&mut server, 1);
+    let done = replies(&server)
+        .into_iter()
+        .find(|m| m.addr == "/done")
+        .expect("the command's own /done");
+    assert_eq!(done.args[0], OscType::String("/buffer_allocRead".into()));
+    assert_eq!(buffer_head(&mut server, 3, 4), vec![0.25; 4]);
+}
+
+#[test]
+fn a_delegated_failure_is_the_hosts_message() {
+    let mut server = ClaustersHeadless::new(SR, CHANNELS, 0.0).unwrap();
+    server.delegate_jobs();
+    assert!(server.send(&msg(
+        "/buffer_allocRead",
+        vec![OscType::Int(0), OscType::String("missing.wav".into())],
+    )));
+    pull(&mut server, 1);
+    let job = server.take_delegated().unwrap();
+    server.finish_delegated(job.ticket, Err("missing.wav: no such file".into()));
+    pull(&mut server, 1);
+    let fail = replies(&server)
+        .into_iter()
+        .find(|m| m.addr == "/fail")
+        .expect("a /fail carrying the host's message");
+    assert_eq!(fail.args[0], OscType::String("/buffer_allocRead".into()));
+    assert!(matches!(&fail.args[1], OscType::String(s) if s.contains("no such file")));
+}
+
+#[test]
+fn a_delegated_job_blocks_the_queue_behind_it() {
+    // One queue, submission order: a /buffer_alloc that overtook the read it
+    // follows would be a different program, and it is the read's own buffer.
+    let mut server = ClaustersHeadless::new(SR, CHANNELS, 0.0).unwrap();
+    server.delegate_jobs();
+    assert!(server.send(&msg(
+        "/buffer_allocRead",
+        vec![OscType::Int(1), OscType::String("take.wav".into())],
+    )));
+    assert!(server.send(&msg(
+        "/buffer_alloc",
+        vec![OscType::Int(2), OscType::Int(64), OscType::Int(1)],
+    )));
+    pull(&mut server, 4);
+    let job = server.take_delegated().unwrap();
+    // Four turns and the second job has not run: the first is still out.
+    assert!(replies(&server).is_empty());
+
+    server
+        .buffer_load_begin(1, 1, SR, 2)
+        .and_then(|t| server.buffer_load_end(t))
+        .unwrap();
+    server.finish_delegated(job.ticket, Ok(()));
+    pull(&mut server, 2);
+    let done: Vec<String> = replies(&server)
+        .into_iter()
+        .filter(|m| m.addr == "/done")
+        .map(|m| match &m.args[0] {
+            OscType::String(s) => s.clone(),
+            other => panic!("expected the command name, got {other:?}"),
+        })
+        .collect();
+    assert_eq!(done, vec!["/buffer_allocRead", "/buffer_alloc"]);
+}
+
+#[test]
+fn a_late_answer_to_a_forgotten_job_reports_against_nothing() {
+    let mut server = ClaustersHeadless::new(SR, CHANNELS, 0.0).unwrap();
+    server.delegate_jobs();
+    assert!(server.send(&msg(
+        "/buffer_allocRead",
+        vec![OscType::Int(0), OscType::String("take.wav".into())],
+    )));
+    pull(&mut server, 1);
+    let job = server.take_delegated().unwrap();
+    server.finish_delegated(job.ticket, Ok(()));
+    pull(&mut server, 1);
+    let _ = replies(&server);
+    // The same ticket again, and a ticket that never existed.
+    server.finish_delegated(job.ticket, Err("late".into()));
+    server.finish_delegated(9999, Err("never".into()));
+    pull(&mut server, 1);
+    assert!(replies(&server).is_empty());
+}
+
+#[test]
+fn a_soundfile_read_still_runs_here_when_no_host_takes_it() {
+    // The other half of delegation, and the one a test was missing: without a
+    // host the pulled server does the read itself, as it always did. The gap
+    // was real -- a guard written for the delegating runner reached the inline
+    // one and stranded every /buffer_allocRead, and no test here saw it.
+    let dir = std::env::temp_dir().join(format!("clausters-headless-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("take.wav");
+    let spec = hound::WavSpec {
+        channels: 1,
+        sample_rate: 48_000,
+        bits_per_sample: 32,
+        sample_format: hound::SampleFormat::Float,
+    };
+    {
+        let mut w = hound::WavWriter::create(&path, spec).unwrap();
+        for i in 0..16 {
+            w.write_sample(i as f32 / 100.0).unwrap();
+        }
+        w.finalize().unwrap();
+    }
+
+    let mut server = ClaustersHeadless::new(SR, CHANNELS, 0.0).unwrap();
+    assert!(server.send(&msg(
+        "/buffer_allocRead",
+        vec![
+            OscType::Int(0),
+            OscType::String(path.to_string_lossy().into_owned()),
+        ],
+    )));
+    pull(&mut server, 1);
+    assert!(server.take_delegated().is_none(), "no host was asked for");
+    let done = replies(&server)
+        .into_iter()
+        .find(|m| m.addr == "/done")
+        .expect("the read completed here");
+    assert_eq!(done.args[0], OscType::String("/buffer_allocRead".into()));
+    assert_eq!(buffer_head(&mut server, 0, 4), vec![0.0, 0.01, 0.02, 0.03]);
+    std::fs::remove_file(&path).ok();
 }

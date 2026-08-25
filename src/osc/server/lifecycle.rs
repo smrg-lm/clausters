@@ -416,6 +416,24 @@ impl OscServer {
         self.budget = budget;
     }
 
+    /// Hands the jobs the host does better over to it — reading a soundfile,
+    /// where the filesystem is the host's and not ours. Off by default: a
+    /// server that does not call this runs every job itself, as before.
+    pub fn delegate_jobs(&mut self) {
+        self.nrt = NrtRunner::delegating();
+    }
+
+    /// The next job for the host, if one is waiting. See
+    /// [`NrtRunner::take_delegated`].
+    pub fn take_delegated(&mut self) -> Option<crate::server::nrt::DelegatedJob> {
+        self.nrt.take_delegated()
+    }
+
+    /// Answers a delegated job. See [`NrtRunner::finish_delegated`].
+    pub fn finish_delegated(&mut self, ticket: u64, outcome: Result<(), String>) {
+        self.nrt.finish_delegated(ticket, outcome);
+    }
+
     /// Work this server has accepted and not yet done: ring packets are not
     /// counted (they sit in the ring, which knows its own depth), buffer jobs
     /// are. Non-zero means a following turn has something to do.

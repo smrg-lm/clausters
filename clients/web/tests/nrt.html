@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters NRT worker</title>
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            max-width: 44rem; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div><code>/buffer_allocRead</code> in a tab: the file lives in the page's
+        own filesystem (OPFS), and the read leaves the AudioWorklet for the NRT
+        worker — the thread that is neither audio nor interface — which decodes
+        it with the same decoder a native server runs and hands the samples
+        back to be installed a run at a time.</div>
+      <button id="boot">boot + read a take</button>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The NRT-worker acceptance (clients/web/test.sh, headless Chrome):
+      ?smoke=1 auto-runs. It writes a WAV into OPFS, reads it back through
+      /buffer_allocRead, and asserts the samples the engine ends up with are the
+      ones the file holds -- which is what proves the decode happened in the
+      Worker with our decoder rather than anywhere else. Then it asserts a
+      missing file fails the command rather than hanging it, and that a channel
+      selection is honoured. Verdict beaconed as a fetch, read from the access
+      log.
+    -->
+    <script type="module">
+      import { Session, opfs, loadOsc, Buffer } from "../dist/index.js";
+
+      const smoke = new URLSearchParams(location.search).has("smoke");
+      const log = (line) => {
+        document.getElementById("log").textContent += line + "\n";
+      };
+      const verdict = (text) => {
+        log(text);
+        document.title = text.split("\n")[0];
+        fetch(`/smoke-verdict-${encodeURIComponent(text.split("\n")[0])}`)
+          .catch(() => {});
+      };
+
+      /** A tiny stereo WAV (float32), built by hand so the expected samples
+          are known exactly rather than read back from a decoder. */
+      function wav(frames, channels, sampleRate, sample) {
+        const data = new Float32Array(frames * channels);
+        for (let f = 0; f < frames; f++)
+          for (let c = 0; c < channels; c++) data[f * channels + c] = sample(f, c);
+        const bytes = new Uint8Array(44 + data.byteLength);
+        const view = new DataView(bytes.buffer);
+        const ascii = (at, s) => {
+          for (let i = 0; i < s.length; i++) view.setUint8(at + i, s.charCodeAt(i));
+        };
+        ascii(0, "RIFF");
+        view.setUint32(4, 36 + data.byteLength, true);
+        ascii(8, "WAVEfmt ");
+        view.setUint32(16, 16, true);
+        view.setUint16(20, 3, true);              // IEEE float
+        view.setUint16(22, channels, true);
+        view.setUint32(24, sampleRate, true);
+        view.setUint32(28, sampleRate * channels * 4, true);
+        view.setUint16(32, channels * 4, true);
+        view.setUint16(34, 32, true);
+        ascii(36, "data");
+        view.setUint32(40, data.byteLength, true);
+        bytes.set(new Uint8Array(data.buffer), 44);
+        return { bytes, data };
+      }
+
+      async function run() {
+        await loadOsc();
+        const FRAMES = 400;
+        const take = wav(FRAMES, 2, 48000, (f, c) =>
+          c === 0 ? Math.sin(f * 0.05) * 0.5 : -0.25);
+        await opfs.writeFile("takes/take.wav", take.bytes);
+        log(`wrote takes/take.wav (${take.bytes.length} bytes)`);
+
+        const session = await Session.embed({ own: true });
+
+        // 1) The read itself -- the same call a script makes against a native
+        //    server, `Buffer.read(path)`, which until now had no file to name.
+        const buf = await Buffer.read("takes/take.wav", { server: session.server });
+        const info = await buf.info();
+        log(`buffer ${buf.bufnum}: ${info.frames} frames, ${info.channels} ch, ${info.sampleRate} Hz`);
+
+        // The samples the engine ended up with, against the ones written: this
+        // is what says the decode was ours and the install lost nothing.
+        const got = await buf.getSamples({ start: 0, count: 64 });
+        let worst = 0;
+        for (let i = 0; i < got.length; i++)
+          worst = Math.max(worst, Math.abs(got[i] - take.data[i]));
+        log(`first ${got.length} samples: worst delta ${worst.toExponential(2)}`);
+
+        // 2) A missing file must fail the command, not hang it.
+        let failed = "";
+        try {
+          await Buffer.read("takes/nope.wav", { server: session.server });
+        } catch (e) {
+          failed = String(e && e.message ? e.message : e);
+        }
+        log(`missing file: ${failed.slice(0, 70)}`);
+
+        // 3) The channel selection is the server's own rule, applied in the
+        //    Worker rather than re-derived there.
+        const right = await Buffer.readChannels("takes/take.wav", [1],
+          { server: session.server });
+        const rightInfo = await right.info();
+        const rightSamples = await right.getSamples({ start: 0, count: 4 });
+        log(`readChannels([1]): ${rightInfo.channels} channel(s), ` +
+            `${[...rightSamples].map((s) => s.toFixed(2)).join(" ")}`);
+
+        const ok =
+          info.frames === FRAMES && info.channels === 2 &&
+          info.sampleRate === 48000 && worst < 1e-6 && failed.length > 0 &&
+          rightInfo.channels === 1 &&
+          [...rightSamples].every((s) => Math.abs(s + 0.25) < 1e-6);
+        verdict(ok
+          ? `PASS: Buffer.read pulled ${info.frames} frames of ${info.channels} ` +
+            `channels out of OPFS through the NRT worker (worst sample delta ` +
+            `${worst.toExponential(1)}), a missing file failed the command, and ` +
+            `readChannels([1]) came back mono at the right channel's value`
+          : `FAIL: frames ${info.frames}/${FRAMES}, channels ${info.channels}, ` +
+            `rate ${info.sampleRate}, delta ${worst}, failure "${failed}", ` +
+            `selected ${rightInfo.channels} ${[...rightSamples]}`);
+        await session.close();
+      }
+
+      document.getElementById("boot").onclick = () => run().catch(
+        (e) => verdict(`FAIL: ${e && e.message ? e.message : e}`));
+      if (smoke) {
+        addEventListener("load", () => run().catch(
+          (e) => verdict(`FAIL: ${e && e.message ? e.message : e}`)));
+      }
+    </script>
+  </body>
+</html>

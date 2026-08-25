@@ -21,7 +21,7 @@
 //! The Worker has no filesystem either: OPFS is a JS API, so bytes come in
 //! from the page and a path never crosses. What the page reads, this decodes.
 
-use clausters::server::nrt::read_audio_bytes;
+use clausters::server::nrt::{read_audio_bytes, select_channels};
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
@@ -68,7 +68,12 @@ impl Decoded {
 /// `ext` is the format hint (`"wav"`, `"flac"`, …, no dot; an empty hint still
 /// probes by content). `label` names the source in an error. `file_start` and
 /// `num_frames` slice it exactly as `/buffer_allocRead` does, with
-/// `num_frames <= 0` meaning "to the end".
+/// `num_frames <= 0` meaning "to the end", and `channels` selects and reorders
+/// them exactly as `/buffer_allocReadChannel` does — empty being every channel.
+///
+/// The selection goes through the server's own `select_channels` rather than a
+/// de-interleave written here: one rule, one implementation, or the two clients
+/// come to disagree about what `[1, 0]` means.
 ///
 /// Fails with the decoder's own message, which is the one a native server would
 /// have replied with.
@@ -78,9 +83,20 @@ pub fn decode_audio(
     ext: &str,
     label: &str,
     file_start: usize,
-    num_frames: i64,
+    // A double, not the `i64` the decoder takes: wasm-bindgen maps `i64` to
+    // `BigInt`, and every caller here has a plain JS number (the wire carries
+    // this as an OSC int). The value is a frame count, so a double is exact
+    // far past any file.
+    num_frames: f64,
+    channels: Vec<u32>,
 ) -> Result<Decoded, String> {
-    let buffer = read_audio_bytes(bytes, ext, label, file_start, num_frames)?;
+    let buffer = read_audio_bytes(bytes, ext, label, file_start, num_frames as i64)?;
+    let wanted: Vec<usize> = channels.iter().map(|c| *c as usize).collect();
+    let buffer = if wanted.is_empty() {
+        buffer
+    } else {
+        select_channels(&buffer, &wanted)?
+    };
     Ok(Decoded {
         samples: buffer.to_vec(),
         channels: buffer.channels(),

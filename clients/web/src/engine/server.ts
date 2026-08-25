@@ -166,6 +166,7 @@ async function boot(options: BootOptions): Promise<ClaustersServer> {
         suspend: () => raw.context.suspend(),
         close: async () => {
             listeners.clear();
+            raw.dispose();
             await raw.context.close();
         },
     };
