@@ -734,7 +734,9 @@ mod tests {
     /// vertices each.
     fn quad_heights(mesh: &Mesh) -> Vec<f32> {
         let ys: Vec<f32> = mesh.positions().map(|(_, y)| y).collect();
-        ys.chunks_exact(6)
+        ys.as_chunks::<6>()
+            .0
+            .iter()
             .map(|q| {
                 let hi = q.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
                 let lo = q.iter().cloned().fold(f32::INFINITY, f32::min);
@@ -851,7 +853,9 @@ mod tests {
         let mesh = draw_at(&samples, rect, per_px);
         let ys: Vec<f32> = mesh.positions().map(|(_, y)| y).collect();
         let spans: Vec<(f32, f32)> = ys
-            .chunks_exact(6)
+            .as_chunks::<6>()
+            .0
+            .iter()
             .map(|q| {
                 (
                     q.iter().cloned().fold(f32::INFINITY, f32::min),
@@ -908,7 +912,9 @@ mod tests {
         let mesh = draw_at(&samples, rect, per_px);
         let ys: Vec<f32> = mesh.positions().map(|(_, y)| y).collect();
         let spans: Vec<(f32, f32)> = ys
-            .chunks_exact(6)
+            .as_chunks::<6>()
+            .0
+            .iter()
             .map(|q| {
                 let hi = q.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
                 (q.iter().cloned().fold(f32::INFINITY, f32::min), hi)

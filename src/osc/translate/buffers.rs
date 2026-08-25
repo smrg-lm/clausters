@@ -161,7 +161,7 @@ pub fn parse_buffer_msg(
             }
             let len = current.len();
             let mut fills = Vec::with_capacity(rest.len() / 3);
-            for triple in rest.chunks_exact(3) {
+            for triple in rest.as_chunks::<3>().0 {
                 let start = match triple[0] {
                     OscType::Int(i) if i >= 0 => i as usize,
                     _ => return Err("a fill's start must be a non-negative int".into()),
@@ -406,12 +406,22 @@ pub fn parse_buffer_gen(args: &[OscType], mirror: &BufferPool) -> Result<(i32, N
                 },
                 "sine2" => GenCommand::Sine2 {
                     flags,
-                    partials: values.chunks_exact(2).map(|c| (c[0], c[1])).collect(),
+                    partials: values
+                        .as_chunks::<2>()
+                        .0
+                        .iter()
+                        .map(|c| (c[0], c[1]))
+                        .collect(),
                 },
                 // sine3
                 _ => GenCommand::Sine3 {
                     flags,
-                    partials: values.chunks_exact(3).map(|c| (c[0], c[1], c[2])).collect(),
+                    partials: values
+                        .as_chunks::<3>()
+                        .0
+                        .iter()
+                        .map(|c| (c[0], c[1], c[2]))
+                        .collect(),
                 },
             }
         }
@@ -446,7 +456,9 @@ pub fn parse_buffer_gen(args: &[OscType], mirror: &BufferPool) -> Result<(i32, N
                 return Err("env segments must be (level, time, shape, curve) groups".into());
             }
             let segments = seg_vals
-                .chunks_exact(4)
+                .as_chunks::<4>()
+                .0
+                .iter()
                 .map(|c| EnvSegment {
                     level: c[0],
                     time: c[1],
@@ -476,7 +488,9 @@ fn parse_set_pairs(args: &[OscType]) -> Result<Vec<SampleWrite>, String> {
     if args.is_empty() || !args.len().is_multiple_of(2) {
         return Err("expected: bufnum, then (index, value) pairs".into());
     }
-    args.chunks_exact(2)
+    args.as_chunks::<2>()
+        .0
+        .iter()
         .map(|pair| {
             let (OscType::Int(index), Some(value)) = (&pair[0], float_value(&pair[1])) else {
                 return Err("expected: bufnum, then (index, value) pairs".into());
@@ -532,7 +546,9 @@ fn parse_set_runs(args: &[OscType]) -> Result<Vec<SampleWrite>, String> {
     if args.is_empty() || !args.len().is_multiple_of(2) {
         return Err("expected: bufnum, then (start, blob) runs".into());
     }
-    args.chunks_exact(2)
+    args.as_chunks::<2>()
+        .0
+        .iter()
         .map(|run| {
             let (OscType::Int(start), OscType::Blob(bytes)) = (&run[0], &run[1]) else {
                 return Err("expected: bufnum, then (start, blob) runs".into());
@@ -546,8 +562,10 @@ fn parse_set_runs(args: &[OscType]) -> Result<Vec<SampleWrite>, String> {
                 ));
             }
             let values = bytes
-                .chunks_exact(4)
-                .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|b| f32::from_le_bytes(*b))
                 .collect();
             Ok(SampleWrite::flat(at, values))
         })

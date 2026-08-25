@@ -69,8 +69,10 @@ fn read_back(s: &mut NrtSession, bufnum: i32, count: usize) -> Vec<f32> {
         panic!("expected a blob, got {:?}", m.args)
     };
     bytes
-        .chunks_exact(4)
-        .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|b| f32::from_le_bytes(*b))
         .collect()
 }
 
@@ -300,7 +302,12 @@ fn channels_may_be_reordered_and_repeated() {
             OscType::Int(0),
         ],
     );
-    let swapped: Vec<f32> = data.chunks_exact(2).flat_map(|f| [f[1], f[0]]).collect();
+    let swapped: Vec<f32> = data
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .flat_map(|f| [f[1], f[0]])
+        .collect();
     assert_eq!(read_back(&mut s, 1, frames * 2), swapped);
 
     // A channel the file does not have fails rather than reading silence.

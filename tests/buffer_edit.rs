@@ -78,8 +78,10 @@ fn read_back(s: &mut NrtSession) -> Vec<f32> {
         panic!("expected a blob, got {:?}", m.args)
     };
     bytes
-        .chunks_exact(4)
-        .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|b| f32::from_le_bytes(*b))
         .collect()
 }
 

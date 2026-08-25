@@ -62,8 +62,10 @@ impl<'a> Reader<'a> {
         let bytes = self.take(len.checked_mul(4)?)?;
         Some(
             bytes
-                .chunks_exact(4)
-                .map(|c| f32::from_ne_bytes(c.try_into().unwrap()))
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|c| f32::from_ne_bytes(*c))
                 .collect(),
         )
     }

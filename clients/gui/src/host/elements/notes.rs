@@ -1169,7 +1169,9 @@ fn parse_osc(props: &serde_json::Map<String, Value>) -> Vec<OscMark> {
         return Vec::new();
     };
     items
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .filter_map(|c| {
             let time = c[0].as_f64()?.max(0.0);
             let label = c[1].as_str().filter(|s| !s.is_empty()).map(str::to_string);

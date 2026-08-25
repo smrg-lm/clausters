@@ -853,7 +853,13 @@ mod tests {
 
         /// The horizontal span of a mesh's texture coordinates.
         fn uv_span(m: &Mesh) -> f32 {
-            let us: Vec<f32> = m.glyph_vertices().chunks_exact(8).map(|v| v[2]).collect();
+            let us: Vec<f32> = m
+                .glyph_vertices()
+                .as_chunks::<8>()
+                .0
+                .iter()
+                .map(|v| v[2])
+                .collect();
             us.iter().cloned().fold(f32::MIN, f32::max)
                 - us.iter().cloned().fold(f32::MAX, f32::min)
         }

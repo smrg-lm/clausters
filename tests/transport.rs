@@ -141,7 +141,7 @@ fn position_def() -> Arc<SynthDef> {
 fn block_of_bus_0(engine: &mut clausters::server::engine::Engine) -> Vec<f32> {
     let mut out = vec![0.0f32; BLOCK_SIZE * 2];
     engine.process_block(&mut out);
-    out.chunks_exact(2).map(|f| f[0]).collect()
+    out.as_chunks::<2>().0.iter().map(|f| f[0]).collect()
 }
 
 /// Render `blocks` blocks of silence, to advance both clocks.

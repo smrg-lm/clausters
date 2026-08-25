@@ -297,7 +297,7 @@ pub(super) fn fill_path(
     if ok.is_err() {
         return;
     }
-    for tri in buffers.indices.chunks_exact(3) {
+    for tri in buffers.indices.as_chunks::<3>().0 {
         let a = buffers.vertices[tri[0] as usize];
         let b = buffers.vertices[tri[1] as usize];
         let c = buffers.vertices[tri[2] as usize];

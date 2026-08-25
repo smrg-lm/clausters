@@ -48,7 +48,9 @@ pub(crate) fn voice_args(props: &serde_json::Map<String, Value>) -> Vec<(String,
         return Vec::new();
     };
     items
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .filter_map(|c| Some((c[0].as_str()?.to_string(), c[1].as_f64()? as f32)))
         .collect()
 }
@@ -314,8 +316,10 @@ pub(super) fn inline_samples(
             ));
         }
         let samples: Vec<f32> = blob
-            .chunks_exact(4)
-            .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|c| f32::from_le_bytes(*c))
             .collect();
         return Ok(samples.into());
     }

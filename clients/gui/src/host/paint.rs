@@ -254,7 +254,11 @@ impl Mesh {
     /// the [`Ink`]'s opacity in the batch itself.
     #[cfg(test)]
     pub(crate) fn alphas(&self) -> impl Iterator<Item = f32> + '_ {
-        self.verts.chunks_exact(FLOATS_PER_VERTEX).map(|v| v[5])
+        self.verts
+            .as_chunks::<FLOATS_PER_VERTEX>()
+            .0
+            .iter()
+            .map(|v| v[5])
     }
 
     /// The `(x, y)` of every accumulated vertex, for bounds/layout tests —
@@ -263,12 +267,16 @@ impl Mesh {
     pub(crate) fn positions(&self) -> impl Iterator<Item = (f32, f32)> + '_ {
         let flat = self
             .verts
-            .chunks_exact(FLOATS_PER_VERTEX)
+            .as_chunks::<FLOATS_PER_VERTEX>()
+            .0
+            .iter()
             .map(|v| (v[0], v[1]));
         #[cfg(feature = "font-atlas")]
         let flat = flat.chain(
             self.glyphs
-                .chunks_exact(FLOATS_PER_GLYPH_VERTEX)
+                .as_chunks::<FLOATS_PER_GLYPH_VERTEX>()
+                .0
+                .iter()
                 .map(|v| (v[0], v[1])),
         );
         flat
@@ -892,7 +900,7 @@ impl Painter {
     ) {
         let (fw, fh) = (fb_w.max(1) as f32, fb_h.max(1) as f32);
         let mut clip = Vec::with_capacity(mesh.verts.len());
-        for v in mesh.verts.chunks_exact(FLOATS_PER_VERTEX) {
+        for v in mesh.verts.as_chunks::<FLOATS_PER_VERTEX>().0 {
             clip.push((v[0] / fw) * 2.0 - 1.0);
             clip.push(1.0 - (v[1] / fh) * 2.0);
             clip.extend_from_slice(&v[2..6]);
@@ -938,7 +946,7 @@ impl Painter {
             .text
             .get_or_insert_with(|| TextLayer::new(device, self.target));
         let mut clip = Vec::with_capacity(verts.len());
-        for v in verts.chunks_exact(FLOATS_PER_GLYPH_VERTEX) {
+        for v in verts.as_chunks::<FLOATS_PER_GLYPH_VERTEX>().0 {
             clip.push((v[0] / fw) * 2.0 - 1.0);
             clip.push(1.0 - (v[1] / fh) * 2.0);
             clip.extend_from_slice(&v[2..FLOATS_PER_GLYPH_VERTEX]);
@@ -1018,7 +1026,9 @@ mod tests {
     /// The mesh's triangles as corner triples.
     fn triangles(m: &Mesh) -> Vec<[[f32; 2]; 3]> {
         let p: Vec<(f32, f32)> = m.positions().collect();
-        p.chunks_exact(3)
+        p.as_chunks::<3>()
+            .0
+            .iter()
             .map(|t| [[t[0].0, t[0].1], [t[1].0, t[1].1], [t[2].0, t[2].1]])
             .collect()
     }

@@ -347,7 +347,12 @@ fn points(points: &str) -> Vec<(f64, f64)> {
         .filter(|v| !v.is_empty())
         .filter_map(|v| v.parse().ok())
         .collect();
-    coords.chunks_exact(2).map(|c| (c[0], c[1])).collect()
+    coords
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|c| (c[0], c[1]))
+        .collect()
 }
 
 fn points_to_path(points_str: &str) -> String {

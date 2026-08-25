@@ -150,8 +150,10 @@ fn map_plot_samples(path: &Path, channels: usize) -> Option<Arc<[f32]>> {
         .ok()?;
     let mut floats: Vec<f32> = map
         .bytes()
-        .chunks_exact(4)
-        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| f32::from_le_bytes(*c))
         .collect();
     let channels = channels.max(1);
     floats.truncate(floats.len() / channels * channels);

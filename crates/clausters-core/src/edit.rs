@@ -242,7 +242,7 @@ mod tests {
     fn a_linear_fade_scales_every_channel_of_a_frame_alike() {
         let mut d = vec![1.0; 8]; // 4 frames, stereo
         gain(&mut d, 2, 0, 4, Fade::from_to(0.0, 1.0, SHAPE_LINEAR, 0.0)).unwrap();
-        for frame in d.chunks_exact(2) {
+        for frame in d.as_chunks::<2>().0 {
             assert_eq!(frame[0], frame[1], "a fade must not tilt the image");
         }
         // t = i/4, so 0, 0.25, 0.5, 0.75 — the target is committed at the end.

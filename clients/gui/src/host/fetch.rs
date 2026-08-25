@@ -396,9 +396,8 @@ impl BufferFetches {
                 }
                 matched += 1;
                 let n = (bytes.len() / 4).min(fetch.total.saturating_sub(at));
-                for (i, word) in bytes.chunks_exact(4).take(n).enumerate() {
-                    fetch.samples[at + i] =
-                        f32::from_le_bytes([word[0], word[1], word[2], word[3]]);
+                for (i, word) in bytes.as_chunks::<4>().0.iter().take(n).enumerate() {
+                    fetch.samples[at + i] = f32::from_le_bytes(*word);
                 }
                 fetch.received += n;
                 landed += n;

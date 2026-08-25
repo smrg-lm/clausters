@@ -66,7 +66,9 @@ pub fn parse_points(v: &Value, lo: f32, hi: f32) -> Option<Vec<BpfPoint>> {
         _ => return None,
     };
     let mut points: Vec<BpfPoint> = items
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .filter_map(|q| {
             Some(BpfPoint {
                 time: q[0].as_f64()?.max(0.0),

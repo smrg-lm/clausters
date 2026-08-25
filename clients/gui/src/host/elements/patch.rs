@@ -394,7 +394,9 @@ fn parse_patch(props: &serde_json::Map<String, Value>) -> PatchDraw {
         .and_then(Value::as_array)
         .map(|items| {
             items
-                .chunks_exact(4)
+                .as_chunks::<4>()
+                .0
+                .iter()
                 .filter_map(|c| {
                     Some(Cord {
                         from: c[0].as_u64()? as usize,

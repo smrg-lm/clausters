@@ -19,8 +19,10 @@ use clausters::rosc::{OscMessage, OscPacket, OscType, decoder, encoder};
 fn range_samples(arg: &OscType) -> Vec<f32> {
     match arg {
         OscType::Blob(bytes) => bytes
-            .chunks_exact(4)
-            .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|b| f32::from_le_bytes(*b))
             .collect(),
         other => panic!("expected a sample blob, got {other:?}"),
     }
@@ -694,15 +696,17 @@ fn buffer_peaks_answers_the_overview_of_a_buffer_at_rest() {
         panic!("expected the overview blob, got {:?}", reply.args);
     };
     let values: Vec<f32> = bytes
-        .chunks_exact(4)
-        .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| f32::from_le_bytes(*c))
         .collect();
     assert_eq!(
         values.len(),
         4 * 2 * 3,
         "four buckets, two channels, three each"
     );
-    for frame in values.chunks_exact(6) {
+    for frame in values.as_chunks::<6>().0 {
         assert_eq!((frame[0], frame[1]), (0.5, 0.5), "left is the constant");
         assert!((frame[2] - 0.25).abs() < 1e-6, "its energy");
         assert_eq!(
@@ -851,11 +855,13 @@ fn buffer_stream_reports_a_recording_with_no_segment_behind_it() {
         panic!("expected the overview blob, got {:?}", reply.args);
     };
     let values: Vec<f32> = bytes
-        .chunks_exact(4)
-        .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| f32::from_le_bytes(*c))
         .collect();
     assert!(!values.is_empty(), "a recording that ran reports buckets");
-    for bucket in values.chunks_exact(3) {
+    for bucket in values.as_chunks::<3>().0 {
         assert_eq!((bucket[0], bucket[1]), (0.5, 0.5), "the recorded constant");
         assert!((bucket[2] - 0.25).abs() < 1e-6, "its energy: 0.5 squared");
     }
@@ -939,10 +945,12 @@ fn buffer_stream_reports_the_overview_of_what_was_recorded() {
     // Four buckets, one channel, three statistics each, four bytes apiece.
     assert_eq!(bytes.len(), 4 * 3 * 4);
     let values: Vec<f32> = bytes
-        .chunks_exact(4)
-        .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| f32::from_le_bytes(*c))
         .collect();
-    for bucket in values.chunks_exact(3) {
+    for bucket in values.as_chunks::<3>().0 {
         assert_eq!((bucket[0], bucket[1]), (-0.5, 0.5), "min and max");
         assert!(
             (bucket[2] - 0.25).abs() < 1e-6,
@@ -1019,8 +1027,10 @@ fn tap_and_tap_stream_snapshot_audio() {
     };
     assert_eq!(bytes.len(), 512 * 4, "512 raw little-endian f32 samples");
     let peak = bytes
-        .chunks_exact(4)
-        .map(|c| f32::from_le_bytes(c.try_into().unwrap()).abs())
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| f32::from_le_bytes(*c).abs())
         .fold(0.0f32, f32::max);
     assert!(peak > 0.01, "tapped audio must not be silent (peak {peak})");
 
@@ -1347,8 +1357,10 @@ fn b_export_dumps_raw_samples_to_a_local_file() {
     // The file is exactly the samples as little-endian f32 (what the GUI host maps).
     let bytes = std::fs::read(&out).unwrap();
     let got: Vec<f32> = bytes
-        .chunks_exact(4)
-        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| f32::from_le_bytes(*c))
         .collect();
     assert_eq!(got, samples);
 
