@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: engraving sequencing data as a score</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 60rem; }
+      #note { font-size: 13px; line-height: 1.5; max-width: 46rem; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+      #stage { width: 920px; max-width: 100%; height: 420px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">Engraving <b>sequencing data</b> as a score:
+<code>notation.fromTimeline</code>.
+
+The companion to <code>score.html</code>, which types a phrase by hand. Here the
+score is not typed at all — it is generated from the client's own data. A
+<code>Timeline</code> of events (a chord progression under a melody) is turned
+into MEI, engraved into the <code>score</code> display list, and shown: chords
+stacked on the beat, the melody above them, rests where the data leaves gaps.
+
+This is the inverse of the usual notation flow — the events <i>are</i> the
+source and the score is the view of them (data → score). What is then
+<b>played</b> is the engraved score's own <code>notes</code> layer, not the
+source timeline: engraving carries its own tempo, so anchoring the playback
+cursor to the sound means playing what was engraved.</div>
+
+      <button id="run">engrave and open</button>
+      <div id="stage"></div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/editors/score_from_data.py,
+      call for call: the timeline built in code, `fromTimeline`, the display
+      list, the minimal transport over it, the playhead over the *engraved*
+      notes, and the by-hand cursor anchor (a `/clock_query` plus the server's
+      latency) that the script uses rather than the notation transport.
+
+      The platform's differences are the usual two -- the host is the wasm one
+      in this tab and draws into an element, and nothing is pumped -- plus the
+      engraver's own: it is fetched on demand here, so the first engraving
+      awaits a download that a script's bundled library does not.
+
+      Serve clients/web (the package root) and open
+      /examples/editors/score-from-data.html. Build it first: ./build.sh
+    -->
+    <script type="module">
+      import { Event, Session, gui, loadOsc, seq } from "../../dist/index.js";
+      const { notation } = gui;
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => { $("log").textContent += line + "\n"; };
+
+      const TEMPO = 1.0;
+
+      /**
+       * A four-bar timeline built in code: a triad on each downbeat with a
+       * melody running above it. The melody's rests and the chord onsets are
+       * exactly what the engraving draws — the data is the score.
+       */
+      function buildTimeline() {
+        const tl = new seq.Timeline();
+        // a chord under each bar (I - IV - V - I in C), whole-note durations
+        for (const [beat, triad] of [[0, [60, 64, 67]], [4, [60, 65, 69]],
+          [8, [62, 67, 71]], [12, [60, 64, 67]]]) {
+          for (const pitch of triad) {
+            tl.add(beat, new Event({ midinote: pitch, dur: 4.0, amp: 0.08 }));
+          }
+        }
+        // a melody above them: quarters and eighths, with a rest left in bar 2
+        const melody = [[0, 72, 1.0], [1, 74, 0.5], [1.5, 76, 0.5], [2, 77, 1.0],
+          [3, 76, 1.0], [4, 74, 1.0], [6, 72, 1.0], [7, 74, 1.0],
+          [8, 76, 1.0], [9, 79, 1.0], [10, 77, 2.0],
+          [12, 76, 1.0], [13, 74, 1.0], [14, 72, 2.0]];
+        for (const [beat, pitch, dur] of melody) {
+          tl.add(beat, new Event({ midinote: pitch, dur, amp: 0.14 }));
+        }
+        return tl;
+      }
+
+      /**
+       * Place the **engraved** notes on a timeline to play them (their `t`/`dur`
+       * are the score's own timemap, in ms → beats/1000, so the sound runs on
+       * the same clock the cursor reads). Chords fall on the same beat and
+       * simply stack, as they were engraved.
+       */
+      function playbackTimeline(notes) {
+        const timeline = new seq.Timeline();
+        for (const note of notes) {
+          timeline.add(note.t / 1000.0, new Event({
+            midinote: note.pitch, dur: note.dur / 1000.0, amp: 0.11,
+          }));
+        }
+        return timeline;
+      }
+
+      /** A minimal transport over the engraved page. Every widget is *named*. */
+      const scene = (displayList, sampleRate) => gui.view(
+        {
+          layout: "col", title: "Engraved from a Timeline (data -> score)",
+          w: 920, h: 420,
+        },
+        gui.panel({ layout: "row", h: 34.0 },
+          gui.button({ name: "play", label: "play" }),
+          gui.button({ name: "stop", label: "stop" })),
+        notation.scoreView(displayList, { name: "score", width: 880.0, sampleRate }),
+      );
+
+      async function run() {
+        $("run").disabled = true;
+        // The core's wasm, before anything that computes: a script's client is
+        // native and has nothing to load.
+        await loadOsc();
+
+        const source = buildTimeline();
+        const score = await notation.Score.fromTimeline(source, {
+          meter: "4/4", key: "C", beatUnit: 4, pageWidth: 1600,
+        });
+        const dl = score.displayList();
+        log(`engraved ${dl.notes.length} notes into ${dl.prims.length} primitives`);
+
+        const session = await Session.embed({ tempo: TEMPO });
+        const server = session.server;
+        const sr = (await server.queryInfo()).actualSampleRate;
+        await session.gui();
+        const win = await scene(dl, sr).open($("stage"));
+        session.start();
+
+        const playhead = new seq.Playhead(playbackTimeline(dl.notes), session.clock, server);
+
+        win.widget("play").onClick(async () => {
+          playhead.play({ at: 0.0 });
+          // anchor the cursor: the clock now, plus the play latency, is score 0
+          const reply = await server.request("/clock_query", [],
+            { expect: ["/clock_query.reply"] });
+          const now = Number(reply.args[0]) + server.latency * sr;
+          win.widget("score").set({ playheadAt: now });
+          log("playing — the cursor follows the sound");
+        });
+        win.widget("stop").onClick(() => {
+          playhead.stop();
+          win.widget("score").set({ playheadAt: -1.0, playhead: 0.0 });
+          log("stopped");
+        });
+        log("press play — the cursor follows the sound");
+      }
+
+      $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
+    </script>
+  </body>
+</html>

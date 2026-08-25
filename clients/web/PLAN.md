@@ -2708,7 +2708,15 @@ finished work, where a pending item reads as done.
   counted here at all**: `faust/boxes-library` belongs to **W7**'s acceptance
   and `io/midi-responder`/`editors/pianoroll-midi` to **W9**'s, since neither
   page can be written before those milestones and writing it is how each is
-  shown to work. One is **paired under another name**, which the layout rule allows and the
+  shown to work. One more has **no page and could not**: `editors/session` is *the third
+  writer* — this client writes a session file, `clausters-gui --session` opens
+  it as a **separate process**, edits it with no language attached and saves it
+  back, and the script reads it again. A tab has neither the file nor the
+  process, and what it does have (a document written and read in the page) is
+  `editors/document/index.html`, which is a page of its own subject rather than
+  this one's port.
+
+  One is **paired under another name**, which the layout rule allows and the
   page itself states: `io/osc-responder`'s page is `io/responders.html`, because
   a tab has no socket to bind and what it responds to is the carrier it already
   has — the page's header says so in as many words. Six have **no page by

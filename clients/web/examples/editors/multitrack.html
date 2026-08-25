@@ -1,0 +1,482 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: a desktop-shaped multitrack editor</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 72rem; }
+      #note { font-size: 13px; line-height: 1.5; max-width: 46rem; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; max-height: 12rem;
+            overflow-y: auto; }
+      #stage { width: 1100px; max-width: 100%; height: 640px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">A desktop-shaped multitrack editor: menu bar, toolbar,
+ruler, lanes, transport.
+
+The other GUI examples each open <i>one</i> view. This one composes a whole
+<b>application window</b> out of the model, the shape a DAW has, top to bottom:
+a <b>menu bar</b> whose entries are the view's own options; a <b>toolbar</b>
+repeating the two worth one click plus a slider over how thick a lane is — the
+same thickness <b>Ctrl+wheel</b> over any lane sets, which arrives as a
+<code>"height"</code> edit; the <b>time ruler</b>, the only one in the window,
+since a lane's own ruler is reserved out of that lane's height; the <b>lanes</b>
+in a scrolled stack; and a <b>transport</b> with a counter that reads the
+position in beats, seconds and samples at once.
+
+<b>What sounds is what is drawn, including the edits.</b> The lanes and the
+transport read one description of the piece, and the timeline is built afresh
+for every pass — so dragging or resizing a clip moves what you hear, and a
+lane's mute, solo and fader are the mixer they look like. Each edit
+re-schedules the pass from where it is, so it takes effect on the beat you click
+it rather than on the next play.</div>
+
+      <button id="run">open the editor</button>
+      <div id="stage"></div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/editors/multitrack.py, call for
+      call: the three takes and the sweep, the defs whose shape *is* the files'
+      shape, the clip/lane model, the four strips of the window, the transport
+      over a timeline rebuilt per pass, and every edit-back handler.
+
+      The platform's differences are the ones this pass has met throughout: the
+      takes are `source`s rather than `.f32` files the host maps, the host draws
+      into an element rather than an OS window, and nothing is pumped -- the
+      counter is kept live by an interval where the script's `run()` loop keeps
+      it live between pumps.
+
+      Serve clients/web (the package root) and open
+      /examples/editors/multitrack.html. Build it first: ./build.sh
+    -->
+    <script type="module">
+      import { Event, Session, gui, seq } from "../../dist/index.js";
+      import {
+        DoneAction, Env, SynthDef, control, envGen, out, sine,
+      } from "../../dist/defs/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => {
+        $("log").textContent += line + "\n";
+        $("log").scrollTop = $("log").scrollHeight;
+      };
+
+      const TEMPO = 2.0;      // beats per second (120 bpm)
+      const BAR = 4;          // beats per bar, for the counter's bars.beats form
+      const LINK = 7;         // the navigation group the lanes and the ruler share
+      const LANE_H = 120.0;   // a lane's thickness inside the scrolled stack
+
+      let session = null, server = null, win = null, transport = null;
+      let SR = 48000.0, BEAT = 24000;
+
+      /** A decaying sine of `beats` beats — one take's samples. */
+      function tone(freq, beats, decay = 3.0) {
+        const frames = Math.trunc(beats * BEAT);
+        const out = new Float32Array(frames);
+        for (let i = 0; i < frames; i++) {
+          out[i] = Math.sin(2 * Math.PI * freq * i / SR) * Math.exp(-decay * i / frames);
+        }
+        return out;
+      }
+
+      /**
+       * An exponential glide from `lo` to `hi`, with two fixed partials over it
+       * — a picture the trace cannot show and the STFT can.
+       */
+      function sweep(lo, hi, beats) {
+        const frames = Math.trunc(beats * BEAT);
+        const out = new Float32Array(frames);
+        let phase = 0.0;
+        for (let i = 0; i < frames; i++) {
+          const f = lo * (hi / lo) ** (i / frames);
+          phase += 2 * Math.PI * f / SR;
+          const env = Math.min(1.0, i / (0.05 * frames))
+            * Math.min(1.0, (frames - i) / (0.2 * frames));
+          out[i] = env * (0.6 * Math.sin(phase)
+            + 0.25 * Math.sin(2 * Math.PI * 660.0 * i / SR)
+            + 0.15 * Math.sin(2 * Math.PI * 1320.0 * i / SR));
+        }
+        return out;
+      }
+
+      // name, freq, beats, offset (beats), decay
+      const TAKES = [["hit", 220.0, 2.0, 0.0, 5.0], ["swell", 330.0, 4.0, 2.0, 1.2],
+        ["tail", 440.0, 4.0, 6.0, 2.0]];
+      const LEAD_AT = 2.0;
+      const LEAD = [[0.0, 1.0, 64], [1.0, 1.0, 67], [2.0, 1.0, 71],
+        [3.0, 2.0, 76], [5.0, 1.0, 71]];          // (start, dur, pitch) in beats
+      const SWEEP_AT = 1.0, SWEEP_BEATS = 6.0;
+      const SWEEP_LO = 300.0, SWEEP_HI = 3000.0;
+
+      /**
+       * A decaying sine, self-freeing when its envelope ends.
+       *
+       * Its length is the `secs` control, not `dur`: `dur` is one of the event's
+       * **reserved** keys, so it never reaches the synth. **Its shape is the
+       * file's shape**: the take drawn on the lane is written with
+       * `exp(-decay · t/secs)`, so the synth plays that same curve — a ramp over
+       * the clip's span, exponentiated.
+       */
+      function voice(name = "multi_tone") {
+        const freq = control("freq", 440.0, { rate: "ir" });
+        const amp = control("amp", 0.2, { rate: "ir" });
+        const secs = control("secs", 1.0, { rate: "ir" });
+        const decay = control("decay", 3.0, { rate: "ir" });
+        const ramp = envGen(new Env([0.0, 1.0], [1.0]), {
+          timeScale: secs, doneAction: DoneAction.FREE_SELF,
+        });
+        const sig = sine(freq).mul(ramp.mul(decay).neg().exp()).mul(amp);
+        return new SynthDef(name, out(0.0, sig), out(1.0, sig));
+      }
+
+      /**
+       * The sweep the spectral clip draws. The glide is an **exponential
+       * envelope**, which is why its ends are the ratio and not the
+       * frequencies: an exponential segment cannot start at zero.
+       */
+      function glide(name = "multi_sweep") {
+        const amp = control("amp", 0.2, { rate: "ir" });
+        const secs = control("secs", 1.0, { rate: "ir" });
+        const freq = envGen(new Env([1.0, SWEEP_HI / SWEEP_LO], [1.0], "exp"),
+          { timeScale: secs }).mul(SWEEP_LO);
+        const shape = envGen(new Env([0.0, 1.0, 1.0, 0.0], [0.05, 0.75, 0.2]),
+          { timeScale: secs, doneAction: DoneAction.FREE_SELF });
+        const sig = sine(freq).mul(0.6)
+          .add(sine(660.0).mul(0.25))
+          .add(sine(1320.0).mul(0.15))
+          .mul(shape).mul(amp);
+        return new SynthDef(name, out(0.0, sig), out(1.0, sig));
+      }
+
+      // ---- the piece, as one description everything reads ----
+      const CLIPS = {};
+      const LANES = ["takes", "lead", "spectrum"];
+      const LANE_STATE = Object.fromEntries(
+        LANES.map((n) => [n, { mute: false, solo: false, level: 0.8 }]));
+
+      /** A take: one tone filling the clip, as long as the clip looks. */
+      const toneEvents = (freq, decay, amp = 0.2) => (beats, gain) =>
+        [[0.0, new Event({
+          instrument: "multi_tone", freq, dur: beats,
+          secs: beats / TEMPO, decay, amp: amp * gain,
+        })]];
+
+      /** The lead: its notes, relative to the clip and **cut to it**. */
+      const leadEvents = (notes, amp = 0.14) => (beats, gain) =>
+        notes.filter(([start]) => start < beats).map(([start, dur, pitch]) => [
+          start,
+          new Event({
+            instrument: "multi_tone",
+            freq: 440.0 * 2 ** ((pitch - 69) / 12),
+            dur: Math.min(dur, beats - start),
+            secs: Math.min(dur, beats - start) / TEMPO,
+            amp: amp * gain,
+          }),
+        ]);
+
+      /** The spectral clip: one glide over the whole clip. */
+      const sweepEvents = (amp = 0.18) => (beats, gain) =>
+        [[0.0, new Event({
+          instrument: "multi_sweep", dur: beats, secs: beats / TEMPO, amp: amp * gain,
+        })]];
+
+      /**
+       * What a lane contributes to a pass: nothing when it is muted, nothing
+       * when something else is soloed, its fader otherwise.
+       */
+      function laneGain(lane) {
+        const st = LANE_STATE[lane];
+        const soloing = Object.values(LANE_STATE).some((s) => s.solo);
+        if (st.mute || (soloing && !st.solo)) return 0.0;
+        return st.level;
+      }
+
+      /** The arrangement as a `Timeline`, built fresh for every pass. */
+      function buildTimeline() {
+        const tl = new seq.Timeline();
+        for (const spec of Object.values(CLIPS)) {
+          const gain = laneGain(spec.lane);
+          if (gain <= 0.0) continue;
+          for (const [rel, event] of spec.events(spec.beats, gain)) {
+            tl.add(spec.at + rel, event);
+          }
+        }
+        return tl;
+      }
+
+      /** Where the last clip ends, read on each use. */
+      const extent = () =>
+        Math.max(0.0, ...Object.values(CLIPS).map((c) => c.at + c.beats));
+
+      const UNITS = ["beats", "time", "samples"];
+      const COLORMAPS = ["viridis", "magma", "gray"];
+      const CELL = 12.0, LINE = 14.0, PAD = 4.0;
+
+      /** Wide enough for the longest option and for the label. */
+      const menuW = (label, options) => Math.max(
+        Math.max(...options.map((o) => o.length)) * CELL + 4 * PAD + LINE + PAD,
+        label.length * CELL + 2 * PAD);
+
+      const state = { ruler: true, unit: 0, colors: 0, laneH: LANE_H };
+
+      async function run() {
+        $("run").disabled = true;
+        session = await Session.embed({ tempo: TEMPO, latency: 0.1 });
+        server = session.server;
+        await session.gui();
+        SR = (await server.queryInfo()).actualSampleRate;
+        // Timeline samples per beat: the axis unit is the audio sample, so a
+        // take's frames place 1:1.
+        BEAT = Math.trunc(SR / TEMPO);
+
+        const samples = {};
+        for (const [name, freq, beats, , decay] of TAKES) {
+          samples[name] = gui.source(tone(freq, beats, decay));
+        }
+        const sweepSamples = gui.source(sweep(SWEEP_LO, SWEEP_HI, SWEEP_BEATS));
+        log(`built ${TAKES.length} takes and a ${SWEEP_BEATS.toFixed(0)}-beat sweep`);
+
+        await voice().send(server);
+        await glide().send(server);
+        await server.sync();
+
+        for (const [name, freq, beats, at, decay] of TAKES) {
+          CLIPS[name] = { lane: "takes", at, beats, events: toneEvents(freq, decay) };
+        }
+        CLIPS.theme = { lane: "lead", at: LEAD_AT, beats: 6.0, events: leadEvents(LEAD) };
+        CLIPS.sweep = {
+          lane: "spectrum", at: SWEEP_AT, beats: SWEEP_BEATS, events: sweepEvents(),
+        };
+
+        session.start();
+
+        const axis = { link: LINK, sampleRate: SR, tempo: TEMPO, quant: BAR };
+        const laneChrome = { snap: 0.0, mute: false, solo: false, level: 0.8, ...axis };
+        const RULER_OPTIONS = ["ruler: shown", "ruler: hidden"];
+        const UNIT_OPTIONS = UNITS.map((u) => `unit: ${u}`);
+        const COLOR_OPTIONS = COLORMAPS.map((c) => `colors: ${c}`);
+
+        win = await gui.view(
+          { title: "Clausters multitrack", w: 1100, h: 640, flow: "col" },
+          // A strip is as tall as the tallest control it holds — **plus
+          // nothing**, which is why `margin: 0` is here: a container insets its
+          // children on every side, so a strip sized to the control exactly
+          // would hand it a cell two margins shorter.
+          gui.layout(
+            { flow: "row", h: 48.0, gap: 6.0, margin: 0.0 },
+            gui.menu(RULER_OPTIONS, { label: "View", name: "m_ruler",
+              w: menuW("View", RULER_OPTIONS) }),
+            gui.menu(UNIT_OPTIONS, { label: "Time", name: "m_unit",
+              w: menuW("Time", UNIT_OPTIONS) }),
+            gui.menu(COLOR_OPTIONS, { label: "Spectrum", name: "m_colors",
+              w: menuW("Spectrum", COLOR_OPTIONS) }),
+            gui.label("", { weight: 1.0 }),          // the bar's empty right end
+          ),
+          gui.layout(
+            { flow: "row", h: 62.0, gap: 6.0, margin: 0.0 },
+            gui.toggle({ label: "ruler", value: true, name: "t_ruler", w: 90.0 }),
+            gui.menu(UNITS, { label: "unit", name: "t_unit", w: menuW("unit", UNITS) }),
+            // A `slider`, not a `number`: a number box drags along the
+            // **vertical**, which is the wrong axis for a strip this squat.
+            gui.slider({ label: "lane px", min: 48.0, max: 400.0, value: LANE_H,
+              name: "t_laneh", w: 260.0 }),
+            gui.label("", { weight: 1.0 }),
+          ),
+          gui.timeruler({ name: "ruler", ruler: "beats", h: 22.0, ...axis }),
+          gui.scroll(
+            { name: "editor", axis: "y", zoom: false, flow: "col", gap: 4.0,
+              contentH: 3 * LANE_H + 8.0, weight: 1.0 },
+            gui.track(
+              { name: "takes", label: "takes", h: LANE_H, ...laneChrome },
+              ...TAKES.map(([name, , , at]) => gui.clip({
+                name, offset: at * BEAT, dur: samples[name].length,
+                data: samples[name], label: name,
+              })),
+            ),
+            gui.track(
+              { name: "lead", label: "lead", h: LANE_H, ...laneChrome },
+              gui.clip({
+                name: "theme", offset: LEAD_AT * BEAT, dur: 6 * BEAT,
+                min: 48, max: 84, label: "lead",
+                notes: LEAD.map(([s, d, p]) => [s * BEAT, d * BEAT, p]),
+              }),
+            ),
+            gui.track(
+              { name: "spectrum", label: "spectrum", h: LANE_H, ...laneChrome },
+              gui.clip({
+                name: "sweep", offset: SWEEP_AT * BEAT, dur: sweepSamples.length,
+                data: sweepSamples, view: "spectrogram", sampleRate: SR,
+                windowSize: 1024, freqScale: "log", colormap: 0, label: "sweep",
+              }),
+            ),
+          ),
+          gui.layout(
+            { flow: "row", h: 40.0, gap: 6.0 },
+            gui.button({ label: "play/pause", name: "b_play", w: 110.0 }),
+            gui.button({ label: "stop", name: "b_stop", w: 110.0 }),
+            gui.button({ label: "rewind", name: "b_rew", w: 110.0 }),
+            gui.label("", { name: "counter", textSize: 2.0, weight: 1.0 }),
+          ),
+        ).open($("stage"));
+        log(`opened window ${win.id} — menu bar, toolbar, ruler, 3 lanes, transport`);
+
+        /**
+         * Begin a pass at beat `at`. The transport calls this on **every** play,
+         * so the timeline is rebuilt from the arrangement each time — which is
+         * how a clip dragged a beat later, or a lane muted, is heard now.
+         */
+        const startPass = (at) => {
+          const head = new seq.Playhead(buildTimeline(), session.clock, server);
+          head.play({ at });
+          return head;
+        };
+
+        transport = new gui.Transport(
+          await session.gui(),
+          () => LANES.map((name) => win.widget(name).id),
+          {
+            source: startPass, tempo: TEMPO, sampleRate: SR,
+            extent, clock: session.clock,
+          },
+        );
+        transport.server = server;
+
+        /**
+         * Re-schedule what is playing from where it is. An edit does not
+         * interrupt the sound by itself, so a driver that wants the edit *now*
+         * plays again from the current position.
+         */
+        const follow = () => {
+          if (transport.playing) transport.play(server, { at: transport.position });
+        };
+
+        const showRuler = (shown) => {
+          state.ruler = Boolean(shown);
+          win.widget("ruler").set({ h: shown ? 22.0 : 0.0 });
+          win.widget("m_ruler").set({ index: shown ? 0 : 1 });
+          win.widget("t_ruler").set({ value: shown ? 1 : 0 });
+        };
+        const setUnit = (index) => {
+          state.unit = Math.trunc(index) % UNITS.length;
+          win.widget("ruler").set({ axes: { x: { unit: UNITS[state.unit] } } });
+          win.widget("m_unit").set({ index: state.unit });
+          win.widget("t_unit").set({ index: state.unit });
+        };
+        const setLaneH = (px) => {
+          state.laneH = Math.min(Math.max(48.0, Number(px)), 400.0);
+          for (const name of LANES) win.widget(name).set({ h: state.laneH });
+          win.widget("editor").set({ contentH: LANES.length * state.laneH + 8.0 });
+          win.widget("t_laneh").set({ value: state.laneH });
+        };
+        const setColors = (index) => {
+          state.colors = Math.trunc(index) % COLORMAPS.length;
+          win.widget("sweep").set({ colormap: state.colors });
+          win.widget("m_colors").set({ index: state.colors });
+        };
+
+        win.widget("m_ruler").onEvent((i) => showRuler(Number(i) === 0));
+        win.widget("t_ruler").onEvent((v) => showRuler(Boolean(Number(v))));
+        win.widget("m_unit").onEvent((i) => setUnit(Number(i)));
+        win.widget("t_unit").onEvent((i) => setUnit(Number(i)));
+        win.widget("m_colors").onEvent((i) => setColors(Number(i)));
+        win.widget("t_laneh").onEvent((v) => setLaneH(Number(v)));
+
+        // A clip's move/resize: `"clip" offset dur` in timeline samples.
+        for (const name of Object.keys(CLIPS)) {
+          win.widget(name).onEvent((tag, ...vals) => {
+            if (tag !== "clip" || vals.length < 2) return;
+            CLIPS[name].at = Number(vals[0]) / BEAT;
+            CLIPS[name].beats = Math.max(Number(vals[1]) / BEAT, 0.0);
+            log(`clip ${name}: ${CLIPS[name].at.toFixed(2)} .. `
+              + `${(CLIPS[name].at + CLIPS[name].beats).toFixed(2)} beats`);
+            follow();
+          });
+        }
+
+        // A lane's edit-backs: its header controls and its thickness.
+        for (const name of LANES) {
+          win.widget(name).onEvent((tag, ...vals) => {
+            if (vals.length === 0) return;
+            if (tag === "height") {
+              // The host resized the lane under the cursor; this stack wants
+              // one thickness, so the number goes to all of them. Which lanes
+              // follow is the driver's call — that is why the host says what
+              // happened instead of deciding.
+              setLaneH(Number(vals[0]));
+              return;
+            }
+            if (tag === "mute" || tag === "solo") {
+              LANE_STATE[name][tag] = Boolean(Number(vals[0]));
+              win.widget(name).set({ [tag]: LANE_STATE[name][tag] ? 1 : 0 });
+            } else if (tag === "level") {
+              LANE_STATE[name].level = Number(vals[0]);
+              win.widget(name).set({ level: LANE_STATE[name].level });
+            } else {
+              return;
+            }
+            const st = LANE_STATE[name];
+            log(`lane ${name}: mute ${Number(st.mute)} solo ${Number(st.solo)} `
+              + `level ${st.level.toFixed(2)} -> gain ${laneGain(name).toFixed(2)}`);
+            follow();
+          });
+        }
+
+        win.widget("b_play").onClick(() => {
+          if (transport.playing) transport.pause();
+          else transport.play(server);
+        });
+        win.widget("b_stop").onClick(() => transport.stop());
+        win.widget("b_rew").onClick(() => transport.locate(0.0));
+        win.widget("ruler").onEvent((tag, ...vals) => {
+          if (tag === "locate" && vals.length) transport.locate(Number(vals[0]) / BEAT);
+        });
+
+        /** The transport's position, in all of its forms. */
+        const readout = () => {
+          const beats = transport.position;
+          const bars = Math.floor(beats / BAR), inBar = beats % BAR;
+          const forms = {
+            beats: `${beats.toFixed(3).padStart(8)} beats`,
+            time: `${(beats / TEMPO).toFixed(3).padStart(8)} s`,
+            samples: `${String(Math.trunc(beats * BEAT)).padStart(10)} smp`,
+          };
+          const shown = UNITS[state.unit];
+          return `${String(bars + 1).padStart(3)}.${(inBar + 1).toFixed(3).padStart(6, "0")}   `
+            + Object.entries(forms)
+              .map(([unit, text]) => (unit === shown ? `[${text.trim()}]` : text))
+              .join("   ");
+        };
+
+        // The script keeps the counter live inside its pump loop; a page has an
+        // event loop already, so this is the one thing left to schedule.
+        let last = null;
+        setInterval(() => {
+          transport.update();        // parks the cursor when the piece ends
+          const text = readout();
+          if (text !== last) {       // a stopped transport sends nothing
+            win.widget("counter").set({ text });
+            last = text;
+          }
+        }, 50);
+
+        setUnit(0);
+        showRuler(true);
+        transport.locate(0.0);
+        win.widget("counter").set({ text: readout() });
+      }
+
+      $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
+    </script>
+  </body>
+</html>
