@@ -77,8 +77,7 @@ than an <code>/synth_new</code> per note.</div>
 
       async function start() {
         await loadOsc();
-        await (await engine({ channels: 2 })).resume();
-        server = await Server.open(await pageConnection());   // or WsConnection
+        server = await new Server(await pageConnection()).boot();   // or WsConnection
 
         await glideLead().send(server);
         clock = new TempoClock(Number(el("tempo").value), {

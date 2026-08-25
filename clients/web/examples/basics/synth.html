@@ -105,7 +105,12 @@ after that line is the same code.</div>
           log(`connected: ${$("url").value}`);
         }
 
-        server = await Server.open(connection);
+        // The carrier decides which verb brings the server up: a page can
+        // start the engine behind `pageConnection()` (`boot`), and can start
+        // nothing on the machine a WebSocket points at (`attach`).
+        server = await (kind === "page"
+          ? new Server(connection).boot()
+          : new Server(connection).attach());
         log(`the server reports ${server.sizing.audioBuses} audio buses, `
           + `${server.sizing.maxBuffers} buffer slots`);
 

@@ -110,7 +110,12 @@ clock and the server's, because they are the same clock.</div>
         const connection = kind === "page"
           ? await pageConnection()
           : await WsConnection.open(el("url").value);
-        server = await Server.open(connection);
+        // The carrier decides which verb brings the server up: a page can
+        // start the engine behind `pageConnection()` (`boot`), and can start
+        // nothing on the machine a WebSocket points at (`attach`).
+        server = await (kind === "page"
+          ? new Server(connection).boot()
+          : new Server(connection).attach());
         await voice().send(server);
         log(`connected over the ${kind === "page" ? "in-page engine" : "WebSocket"}`);
 

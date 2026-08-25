@@ -115,6 +115,32 @@ interface Pending {
 /** The mixin surface, merged so `server.queryTree(...)` types as its own. */
 export interface Server extends ServerQueries, ServerStreams, ServerTransport {}
 
+/**
+ * What {@link Server.boot} and {@link Server.attach} take: the same three
+ * questions either way, since what differs between them is where the server
+ * comes from and not what the handle does about it.
+ */
+export interface ServerBootOptions {
+    /**
+     * Resize this handle's allocators from the server's own capacities
+     * ({@link Server.reconcile}). Worth leaving on: a server this page did not
+     * bring up may have been started with other flags, and allocators sized
+     * from the wrong numbers hand out node ids and buses it does not have.
+     */
+    reconcile?: boolean;
+    /** Register for the server's pushes, which is what recycles node ids. */
+    notify?: boolean;
+    /** The wait for the opening round trips; the handle's own by default. */
+    timeout?: number;
+    /**
+     * Make this the **default session's** server when there is none, so the
+     * free-standing verbs (`play`, `render`, a bare `new Synth`) resolve it
+     * with nothing else wired. First-wins: a server already adopted is not
+     * displaced. The reference client's `adopt_default`.
+     */
+    adoptDefault?: boolean;
+}
+
 export class Server {
     readonly connection: Connection;
     /**
@@ -122,12 +148,16 @@ export class Server {
      * the whole of it unless a second client shares the server (`IdShare`).
      */
     readonly share: IdShare;
-    /** The sizes this client's allocators were built against. */
-    readonly sizing: ServerSizing;
-    readonly nodes: NodeIdAllocator;
-    readonly audioBuses: AudioBusAllocator;
-    readonly controlBuses: ControlBusAllocator;
-    readonly buffers: BufferAllocator;
+    /**
+     * The sizes this client's allocators were built against — the constructor's
+     * guess until {@link Server.reconcile} replaces it with the server's own
+     * answer, which is why neither this nor the allocators under it is `readonly`.
+     */
+    sizing: ServerSizing;
+    nodes: NodeIdAllocator;
+    audioBuses: AudioBusAllocator;
+    controlBuses: ControlBusAllocator;
+    buffers: BufferAllocator;
     /**
      * Seconds added to every timed send — the scheduling headroom. Kept here
      * so the sequencing layer (a later milestone) has one place to read it.
@@ -154,6 +184,15 @@ export class Server {
      */
     timeout = DEFAULT_TIMEOUT;
 
+    /**
+     * Whether {@link Server.boot} brought this server up — ownership, the way
+     * the reference client remembers the process it started. `close` leaves a
+     * booted server standing exactly as it leaves an attached one; what reads
+     * this is {@link Server.quit}'s message and anything asking whether this
+     * page owns what it is talking to.
+     */
+    booted = false;
+
     private pending = new Set<Pending>();
     private handlers = new Set<(msg: OscMessage) => void>();
     private syncCounter = 0;
@@ -172,147 +211,184 @@ export class Server {
     readonly receiver: OscReceiver;
     private readonly listener: OscHandler;
 
-    private constructor(
-        connection: Connection,
-        sizing: ServerSizing,
-        timeout: number,
-        share: IdShare = WHOLE_SHARE,
-    ) {
-        this.connection = connection;
-        this.sizing = sizing;
-        this.timeout = timeout;
-        this.share = share;
-        // An offline score has no `/node_end` stream to recycle from and no
-        // real-time bound on how many ids its length needs, so the registry is
-        // unbounded there — the reference client's rule.
-        this.nodes = this.scoring
-            ? NodeIdAllocator.unbounded(sizing.maxNodes)
-            : NodeIdAllocator.forMaxNodes(sizing.maxNodes, share);
-        if (this.scoring) this.latency = 0.0;
-        this.audioBuses = new AudioBusAllocator(sizing.audioBuses, sizing.channels, share);
-        this.controlBuses = new ControlBusAllocator(sizing.controlBuses, share);
-        this.buffers = new BufferAllocator(sizing.maxBuffers, share);
-        this.receiver = new OscReceiver(connection);
-        this.listener = (addr, args) => this.dispatch({ addr, args });
-        this.receiver.add(this.listener);
-    }
-
     /**
-     * Opens a server over `connection`.
+     * A handle over `connection`. **Reaches nothing**: it builds the allocators
+     * and the receiving door and sends no packet, exactly as the reference
+     * client's `Server(...)` does, which is what makes it cheap to name a
+     * server before there is one to talk to.
      *
-     * With no `sizing` it asks the server for its own (`/server_query`), so
-     * the allocators match the server that is actually running; a server
-     * that does not answer within `timeout` leaves the compiled defaults in
-     * place. `notify` (default `true`) registers for the server's pushes,
-     * which is what recycles node ids as their `/node_end` arrives.
+     * The carrier comes in already built — `await pageConnection()`,
+     * `await WsConnection.open(url)`, `new ScoreConnection()` — because opening
+     * one is asynchronous in a browser and a constructor cannot await. That is
+     * the one shape this client's `Server` does not share with the reference,
+     * where the handle takes an address and builds its own interface.
      *
-     * `timeout` becomes the handle's own default (`Server.timeout`), and is
-     * what the opening round trips are given.
+     * Then one of the two verbs: {@link Server.boot} brings up what the carrier
+     * points at, {@link Server.attach} connects to one already running. With
+     * neither, the allocators keep `sizing` (the compiled defaults when it is
+     * absent), which is right only for a server whose configuration you already
+     * know — an offline score, or one you sized yourself.
      *
      * The core wasm must be loaded first (`await loadOsc()`).
      */
-    static async open(
+    constructor(
         connection: Connection,
         {
             sizing,
-            notify = true,
-            verify = false,
             timeout = DEFAULT_TIMEOUT,
             share = WHOLE_SHARE,
-            adoptDefault = true,
         }: {
+            /** The server's capacities, when they are known without asking. */
             sizing?: Partial<ServerSizing>;
-            notify?: boolean;
-            /**
-             * Require a server to actually answer, instead of falling back to
-             * the compiled sizing when it does not. This is the browser's half
-             * of the reference client's `Server.attach`: a carrier can be open
-             * with nothing behind it — a WebSocket endpoint that accepts but
-             * speaks no OSC, a port wired to an engine that never came up — and
-             * without this the handle is built anyway and every later command
-             * leaves without a trace. With it, that is a `ServerError` here.
-             *
-             * It forces the `/server_query` round trip even when `sizing` is
-             * given, since what is being verified is the server, not the
-             * numbers.
-             */
-            verify?: boolean;
+            /** The handle's own default reply wait, in seconds. */
             timeout?: number;
-            /**
-             * The slice of the server's client id space this handle allocates
-             * from, when the server has **more than one client** — a script
-             * authoring beside a page of its own, an embedder holding two.
-             * Each client is given its own index over the same `of`, and the
-             * slices are disjoint by arithmetic (see `IdShare`). The default
-             * takes the whole space, which is right for a server's only
-             * client.
-             */
+            /** This handle's slice of the id space, for a shared server. */
             share?: IdShare;
-            /**
-             * Make this the **default session's** server when there is none, so
-             * the free-standing verbs (`play`, `render`, a bare `new Synth`)
-             * resolve it with nothing else wired. A server already adopted is
-             * not displaced: whichever claimed the slot first keeps it.
-             *
-             * This is the reference client's `adopt_default` on `Server.boot`
-             * and `Server.attach`, under the verb a page has: there is no
-             * process to spawn here, so opening the carrier *is* the boot.
-             */
-            adoptDefault?: boolean;
         } = {},
-    ): Promise<Server> {
-        const defaults: ServerSizing = {
+    ) {
+        this.connection = connection;
+        this.sizing = {
             audioBuses: DEFAULT_AUDIO_BUSES,
             controlBuses: DEFAULT_CONTROL_BUSES,
             maxNodes: DEFAULT_MAX_NODES,
             maxBuffers: DEFAULT_MAX_BUFFERS,
             channels: 2,
             taps: DEFAULT_TAPS,
+            ...sizing,
         };
-        // A provisional server, so the query below goes through the same
-        // reply dispatch every other command uses; the real sizing replaces
-        // it once the answer is in.
-        const probe = new Server(connection, defaults, timeout);
-        let resolved: ServerSizing = { ...defaults, ...sizing };
-        // Whether the carrier is open with nothing answering behind it.
-        let silent = false;
-        if (!sizing || verify) {
-            try {
-                const info = await probe.queryInfo(timeout);
-                // Explicit sizing still wins; the query was for the answer's
-                // existence, not its numbers.
-                if (!sizing) {
-                    resolved = {
-                        audioBuses: info.audioBuses,
-                        controlBuses: info.controlBuses,
-                        maxNodes: info.maxNodes,
-                        maxBuffers: info.maxBuffers,
-                        channels: info.channels,
-                        taps: info.taps,
-                    };
-                }
-            } catch (error) {
-                if (!(error instanceof ReplyTimeout)) throw error;
-                silent = true;
-            }
-        }
-        probe.close();
-        if (silent) {
-            if (verify) {
-                throw new ServerError(
-                    `no server answers on ${connection.url ?? "this carrier"} — ` +
-                        `nothing replied to /server_query within ${timeout}s`,
-                );
-            }
-            console.warn(
-                "clausters: no /server_query reply; sizing the allocators " +
-                    "from the compiled defaults",
+        this.timeout = timeout;
+        this.share = share;
+        // An offline score has no `/node_end` stream to recycle from and no
+        // real-time bound on how many ids its length needs, so the registry is
+        // unbounded there — the reference client's rule.
+        const resolved = this.sizing;
+        this.nodes = this.scoring
+            ? NodeIdAllocator.unbounded(resolved.maxNodes)
+            : NodeIdAllocator.forMaxNodes(resolved.maxNodes, share);
+        if (this.scoring) this.latency = 0.0;
+        this.audioBuses = new AudioBusAllocator(
+            resolved.audioBuses, resolved.channels, share);
+        this.controlBuses = new ControlBusAllocator(resolved.controlBuses, share);
+        this.buffers = new BufferAllocator(resolved.maxBuffers, share);
+        this.receiver = new OscReceiver(connection);
+        this.listener = (addr, args) => this.dispatch({ addr, args });
+        this.receiver.add(this.listener);
+    }
+
+    // ---- coming up, and going down ----
+
+    /**
+     * Bring up the server this handle points at, and return `this`.
+     *
+     * What that means is the **carrier's** to say, exactly as in the reference
+     * client, where a socket has a process behind it and an offline interface
+     * has nothing to start:
+     *
+     * - the page's engine boots by starting its audio — an `AudioContext` is
+     *   created suspended, so this is the resume, and it must be reached from a
+     *   gesture (a click handler) like any other;
+     * - a score has nothing to start and boots as a no-op rather than an error;
+     * - a **socket** points at a machine this page cannot spawn anything on, so
+     *   it refuses and names `attach`, the way the reference client refuses to
+     *   boot a handle pointing at another host.
+     *
+     * Then the allocators are reconciled with the server that came up and the
+     * handle registers for its pushes, which is what recycles node ids as each
+     * `/node_end` arrives.
+     *
+     * Pair it with {@link Server.quit}, which takes down what this booted;
+     * {@link Server.close} only lets go of the carrier.
+     */
+    async boot({
+        reconcile = true,
+        notify = true,
+        timeout = this.timeout,
+        adoptDefault = true,
+    }: ServerBootOptions = {}): Promise<this> {
+        if (!this.connection.boot) {
+            throw new ServerError(
+                `this carrier goes to ${this.connection.url ?? "somewhere"} and a ` +
+                    "page can start nothing there — attach() to the server " +
+                    "running at that address, or open a carrier over something " +
+                    "this page can bring up (pageConnection()).",
             );
         }
-        const server = new Server(connection, resolved, timeout, share);
-        if (notify) await server.notify(true, timeout);
-        if (adoptDefault) main.server ??= server;
-        return server;
+        await this.connection.boot();
+        this.booted = true;
+        if (reconcile) await this.reconcile(timeout);
+        if (notify) await this.notify(true, timeout);
+        if (adoptDefault) main.server ??= this;
+        return this;
+    }
+
+    /**
+     * Connect this handle to a server **already running**, and return `this`.
+     *
+     * The other half of `boot`, for the server nobody here started: one on
+     * another machine, one launched from a terminal, one another tab owns.
+     * Ownership is the difference and it runs through the pair — this handle
+     * did not start that server, so `close` releases the carrier and leaves it
+     * standing, and stopping it is `quit`, which it obeys over the wire.
+     *
+     * Unlike a bare `new Server(...)`, this **verifies**: a carrier open with
+     * nothing behind it (a socket that accepts but speaks no OSC, a port wired
+     * to an engine that never came up) throws here instead of swallowing every
+     * later message. That refusal is the reference client's `attach`, and it is
+     * not optional — it is what the verb is for.
+     */
+    async attach({
+        reconcile = true,
+        notify = true,
+        timeout = this.timeout,
+        adoptDefault = true,
+    }: ServerBootOptions = {}): Promise<this> {
+        try {
+            await this.queryInfo(timeout);
+        } catch (error) {
+            if (!(error instanceof ReplyTimeout)) throw error;
+            throw new ServerError(
+                `no server answers on ${this.connection.url ?? "this carrier"} — ` +
+                    `nothing replied to /server_query within ${timeout}s. ` +
+                    "boot() one, or point this handle where one is running.",
+            );
+        }
+        if (reconcile) await this.reconcile(timeout);
+        if (notify) await this.notify(true, timeout);
+        if (adoptDefault) main.server ??= this;
+        return this;
+    }
+
+    /**
+     * Resize this handle's allocators from what the running server reports
+     * (`/server_query`), and return `this`.
+     *
+     * The constructor sizes them from what it was told, which is the client's
+     * *own* picture of the server — right by construction for one this page
+     * booted, a guess for any other. This replaces the guess with the answer,
+     * and `boot`/`attach` call it for you.
+     *
+     * Reconciling **rebuilds** the allocators, so it belongs before anything
+     * has been allocated: a handle that has already handed out node ids would
+     * hand out the same ones again.
+     */
+    async reconcile(timeout = this.timeout): Promise<this> {
+        const info = await this.queryInfo(timeout);
+        this.sizing = {
+            audioBuses: info.audioBuses,
+            controlBuses: info.controlBuses,
+            maxNodes: info.maxNodes,
+            maxBuffers: info.maxBuffers,
+            channels: info.channels,
+            taps: info.taps,
+        };
+        this.nodes = this.scoring
+            ? NodeIdAllocator.unbounded(this.sizing.maxNodes)
+            : NodeIdAllocator.forMaxNodes(this.sizing.maxNodes, this.share);
+        this.audioBuses = new AudioBusAllocator(
+            this.sizing.audioBuses, this.sizing.channels, this.share);
+        this.controlBuses = new ControlBusAllocator(this.sizing.controlBuses, this.share);
+        this.buffers = new BufferAllocator(this.sizing.maxBuffers, this.share);
+        return this;
     }
 
     // ---- the reply stream ----
@@ -835,11 +911,22 @@ export class Server {
     }
 
     /**
-     * Stops the server (`/server_quit`). Over the in-page carrier this stops the
-     * page's engine, which nothing restarts.
+     * Stop the server — the pair of {@link Server.boot}, and the verb for a
+     * server this page did not start either.
+     *
+     * `/server_quit` goes out first, which is the whole story for a server
+     * listening on a socket: it obeys whoever sends it. Then the carrier is
+     * asked to take its own server down, because the page's engine is not a
+     * process listening for anything — it *is* the server, so stopping it is
+     * closing its `AudioContext`, and nothing restarts it.
+     *
+     * {@link Server.close} is the other end: it lets this handle go and leaves
+     * the server standing.
      */
-    quit(): void {
+    async quit(): Promise<void> {
         this.sendMsg("/server_quit");
+        await this.connection.quit?.();
+        this.booted = false;
     }
 
     /**

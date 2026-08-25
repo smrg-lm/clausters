@@ -173,7 +173,7 @@
         const audio = gui.engine;
         await audio.resume();
 
-        const server = await Server.open(await pageConnection(audio));
+        const server = await new Server(await pageConnection(audio)).boot();
         await new SynthDef(
           "two_hosts_tone",
           out(0.0, sine(control("freq", 220.0)).mul(control("amp", 0.1))),

@@ -502,7 +502,7 @@ test("the whole surface binds in one verb", () => {
         binds.map((m) => m.args.slice(1)),
         [["server", "/node_set", 1000, "freq"], ["server", "/node_set", 1000, "amp"]],
     );
-    assert.deepEqual([...win.controls()], [["freq", "freq"], ["amp", "amp"]]);
+    assert.deepEqual(win.controls, { freq: "freq", amp: "amp" });
 });
 
 test("a widget named apart from its control still binds the control", () => {
@@ -514,7 +514,7 @@ test("a widget named apart from its control still binds the control", () => {
     win.bind(1000);
     const bind = sent().slice(before).find((m) => m.addr === "/gui_bind")!;
     assert.deepEqual(bind.args.slice(1), ["server", "/node_set", 1000, "freq"]);
-    assert.deepEqual([...win.controls()], [["pitch", "freq"]]);
+    assert.deepEqual(win.controls, { pitch: "freq" });
 });
 
 test("a window with no control widget says there is nothing to bind", () => {

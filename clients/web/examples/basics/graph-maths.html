@@ -88,8 +88,7 @@ emit the same spec JSON, which is exactly what the parity vectors assert.</div>
 
       async function start() {
         await loadOsc();
-        await (await engine({ channels: 2 })).resume();
-        server = await Server.open(await pageConnection());   // or WsConnection
+        server = await new Server(await pageConnection()).boot();   // or WsConnection
 
         await mathsLead().send(server);
         clock = new TempoClock(2.0, { timebase: await server.sampleTimebase() });

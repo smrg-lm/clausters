@@ -39,7 +39,7 @@ One engine and one GUI host per page is the **default, not a limit**: it is what
 import { engine, pageConnection, Server } from "clausters";
 
 const audio = await engine({ channels: 2 });      // not the page's
-const server = await Server.open(await pageConnection(audio));
+const server = await new Server(await pageConnection(audio)).boot();
 ```
 
 The GUI host has the same pair. `newGuiHost()` boots an instance — its own engine unless you hand it one — where `guiHost()` returns the page's:
@@ -63,10 +63,15 @@ What each pair differs in is only what a page wants by default. `guiHost()` and 
 `Server` is the only object that knows a connection.
 
 ```js
-const server = await Server.open(connection);
+const server = new Server(connection);   // a handle: it reaches nothing
+await server.boot();                     // ...up comes the engine behind the carrier
+// or, for a server nobody here started:
+await new Server(await WsConnection.open(url)).attach();
 ```
 
-Opening it queries `/server_query` and sizes the allocators from the answer, so the client's ids match the server that is actually running. It registers for the server's pushes, which is what lets a node id be recycled once its `/node_end` arrives, and it carries what is the server's own: the message paths (`sendMsg`, `sendBundle`, `request`, `sync()`), the id pools, `freeDef`, the bus and tap subscriptions, the [shared transport](transport.md) (`setTransport`, `transportGroup`, `transportPlay`/`transportStop`/`transportLocate`, `schedAtTransport`), and the introspection queries about what it holds (`queryInfo`, `queryDefs`, `queryBuffers`, `queryUgens`, `queryTree`, `dumpGraph`). A command addressed to a resource is that resource's method — `def.send()`, `node.set`, `bus.watch`, `buffer.getSamples` — so the receiver is never an argument, and that holds for a question about one resource too: `node.info()` and `buffer.info()` ask about themselves, where `queryTree` and `queryBuffers` ask about all of them.
+**The constructor reaches nothing** — it is a handle over a carrier, as in the Python client — and one of two verbs brings it into contact with a server. `boot()` starts what the carrier points at, and what that means belongs to the carrier: the page's engine starts its audio (an `AudioContext` is created suspended, so this is the resume, and it must be reached from a gesture), a score has nothing to start, and a socket refuses because a tab starts nothing on another machine. `attach()` is the other half, for a server nobody here started, and it **verifies**: a carrier open with nothing behind it throws instead of swallowing every later message. Either way the allocators are reconciled against `/server_query`, so the client's ids match the server that is actually running (`reconcile()` on its own does just that). Each has its pair at the other end: `quit()` takes down what `boot` brought up, and `close()` lets this handle go and leaves the server standing.
+
+It registers for the server's pushes, which is what lets a node id be recycled once its `/node_end` arrives, and it carries what is the server's own: the message paths (`sendMsg`, `sendBundle`, `request`, `sync()`), the id pools, `freeDef`, the bus and tap subscriptions, the [shared transport](transport.md) (`setTransport`, `transportGroup`, `transportPlay`/`transportStop`/`transportLocate`, `schedAtTransport`), and the introspection queries about what it holds (`queryInfo`, `queryDefs`, `queryBuffers`, `queryUgens`, `queryTree`, `dumpGraph`). A command addressed to a resource is that resource's method — `def.send()`, `node.set`, `bus.watch`, `buffer.getSamples` — so the receiver is never an argument, and that holds for a question about one resource too: `node.info()` and `buffer.info()` ask about themselves, where `queryTree` and `queryBuffers` ask about all of them.
 
 Two def families are peers, as everywhere in Clausters:
 

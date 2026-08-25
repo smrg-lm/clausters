@@ -79,13 +79,13 @@ fresh id and hands back a handle that resolves the names.</div>
         // `/gui_query` -> `/gui_info`, through the handle. The float `value`
         // comes back as a float and the int `buffer` as an int -- the wire keeps
         // them apart.
-        // The reply is a named record here where the script unpacks a
-        // `(kind, props)` pair -- the same two fields, spelled the way each
-        // language reads best.
+        // The reply is a `WidgetInfo`, the same record the script's `query`
+        // answers with, and it prints one readable line like every other record.
         const cutoff = win.widget("cutoff");
         const info = await cutoff.query();
         log(`the "cutoff" widget (id ${cutoff.id}) is a ${JSON.stringify(info.type)} `
           + `with ${JSON.stringify(info.props)}`);
+        log(gui.formatWidgetInfo(info));
 
         const root = await host.query(win.id);
         log(`root (def ${win.id}) is a ${JSON.stringify(root.type)}`);

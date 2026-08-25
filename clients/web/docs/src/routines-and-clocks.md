@@ -26,7 +26,7 @@ import { Routine, Server, TempoClock, WsConnection, loadOsc, seq }
 
 await loadOsc();                                   // the core's wasm: the codec
 const connection = await WsConnection.open("ws://127.0.0.1:57120");
-const server = await Server.open(connection);      // a running server, over WebSocket
+const server = await new Server(connection).attach();  // a running server, over WebSocket
 server.latency = 0.1;                              // the emission headroom
 
 const clock = new TempoClock(2.0);                 // 2 beats per second

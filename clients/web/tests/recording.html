@@ -87,8 +87,7 @@
         await loadOsc();
         await loadCore();
         const raw = await engine({ channels: 2 });
-        await raw.resume();
-        const server = await Server.open(await pageConnection());
+        const server = await new Server(await pageConnection()).boot();
 
         // A tone recorded into an empty take, and heard while it records:
         // `recordBuf` passes its input through. `doneAction: 2` frees the node

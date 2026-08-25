@@ -107,7 +107,7 @@ from .guidef import (
     window,
 )
 from .handle import WidgetHandle, WindowHandle
-from .host import DEFAULT_PORT, GuiHost
+from .host import DEFAULT_PORT, GuiHost, WidgetInfo
 from .transport import Transport
 
 #: The host registered by `set_ambient_host`, if any.
@@ -142,6 +142,7 @@ def ambient_host():
 
 __all__ = [
     "GuiHost",
+    "WidgetInfo",
     "DEFAULT_PORT",
     "set_ambient_host",
     "ambient_host",

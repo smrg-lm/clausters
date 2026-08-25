@@ -74,10 +74,9 @@ socket. Swapping to a <code>--ws</code> server is the one line marked below.</di
 
       async function start() {
         await loadOsc();
-        await (await engine({ channels: 2 })).resume();
         // The one line that names a carrier: `WsConnection.open(url)` here
         // sends the very same phrase to a `clausters --ws` server instead.
-        server = await Server.open(await pageConnection());
+        server = await new Server(await pageConnection()).boot();
 
         const def = unison();
         await def.send(server);

@@ -62,7 +62,7 @@ async function withServer(body: (server: Server) => Promise<void>): Promise<void
             if (!connection) await sleep(100);
         }
         assert.ok(connection, "server WS endpoint never came up");
-        server = await Server.open(connection);
+        server = await new Server(connection).attach();
         await body(server);
     } finally {
         server?.close();

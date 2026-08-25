@@ -28,6 +28,7 @@ import { encodeImmediateBundle } from "../base/osc.ts";
 import type { Connection } from "../base/connection.ts";
 import { WsConnection } from "../base/connection.ts";
 import { ReplyTimeout } from "../errors.ts";
+import { formatNumber } from "../defs/info.ts";
 import { toJson, view, View } from "./guidef.ts";
 import type { Source } from "./guidef.ts";
 import type { GuiNode } from "./guidef.ts";
@@ -66,6 +67,23 @@ export const DEFAULT_WS_PORT = 57220;
 export interface WidgetInfo {
     type: string;
     props: Record<string, number | string | boolean | null>;
+}
+
+/**
+ * A widget's readable line: `knob label=cutoff min=20 max=20000 value=800`, and
+ * `(no such widget)` for the empty type the host answers a miss with.
+ *
+ * A free function for the reason the server's record formatters are (`defs/
+ * info.ts`): the record is an interface and carries no method. The reference
+ * client spells the same text in `WidgetInfo.__str__`.
+ */
+export function formatWidgetInfo(info: WidgetInfo): string {
+    if (!info.type) return "(no such widget)";
+    const shown = Object.entries(info.props)
+        .map(([key, value]) =>
+            `${key}=${typeof value === "number" ? formatNumber(value) : String(value)}`)
+        .join(" ");
+    return shown ? `${info.type} ${shown}` : info.type;
 }
 
 interface Pending {

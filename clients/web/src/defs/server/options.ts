@@ -52,7 +52,8 @@ export const DEFAULT_TAP_FRAMES = 16384;
 
 /**
  * The sizes a client's allocators need. They are a property of the *server*,
- * so `Server.open` reads them from `/server_query` rather than guessing;
+ * so `Server.attach`/`Server.boot` read them from `/server_query` rather than
+ * guessing (`reconcile`);
  * pass them explicitly to skip that round trip.
  */
 export interface ServerSizing {

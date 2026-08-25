@@ -161,14 +161,14 @@ export interface NodeInfo {
 
 /** One control of a def's surface: `freq=440 kr`, with a range and its targets. */
 export function formatControlInfo(info: ControlInfo): string {
-    let out = `${info.name}=${format(info.default)} ${info.rate}`;
+    let out = `${info.name}=${formatNumber(info.default)} ${info.rate}`;
     if (info.min !== undefined) {
-        const step = info.step !== undefined ? ` step ${format(info.step)}` : "";
-        out += ` [${format(info.min)}..${format(info.max ?? 0)}${step}]`;
+        const step = info.step !== undefined ? ` step ${formatNumber(info.step)}` : "";
+        out += ` [${formatNumber(info.min)}..${formatNumber(info.max ?? 0)}${step}]`;
     }
     for (const { member, control, mul, add } of info.targets ?? []) {
         out += ` -> ${member}.${control}`;
-        if (mul !== 1.0 || add !== 0.0) out += `*${format(mul)}+${format(add)}`;
+        if (mul !== 1.0 || add !== 0.0) out += `*${formatNumber(mul)}+${formatNumber(add)}`;
     }
     return out;
 }
@@ -185,12 +185,12 @@ export function formatBufferInfo(info: BufferInfo): string {
     if (!info.exists) return `buffer ${info.bufnum} (empty)`;
     const shape = `${info.frames} frames x ${info.channels} ch`;
     return `buffer ${info.bufnum}: ${shape}` +
-        (info.sampleRate ? ` @ ${format(info.sampleRate)} Hz` : "");
+        (info.sampleRate ? ` @ ${formatNumber(info.sampleRate)} Hz` : "");
 }
 
 /** One input slot of a UGen kind: `freq=440`. */
 export function formatUgenInput(input: UgenInput): string {
-    return `${input.name}=${format(input.default)}`;
+    return `${input.name}=${formatNumber(input.default)}`;
 }
 
 /** A UGen kind: `Sine ar/kr (1 input: freq=440)`, with what sets it apart. */
@@ -223,7 +223,7 @@ export function formatNodeInfo(info: NodeInfo): string {
     const mapped = new Map(info.maps.map((m) => [m.control, m]));
     const parts = Object.entries(info.controls).map(([name, value], i) => {
         const m = mapped.get(i);
-        return m ? `${name}<-${m.audio ? "a" : "c"}${m.bus}` : `${name}=${format(value)}`;
+        return m ? `${name}<-${m.audio ? "a" : "c"}${m.bus}` : `${name}=${formatNumber(value)}`;
     });
     return `${info.id} ${info.defname}` + (parts.length ? "  " + parts.join(" ") : "");
 }
@@ -294,8 +294,12 @@ export class Tree {
     }
 }
 
-/** Python's `%g` for the control values a drawn tree shows. */
-function format(value: number): string {
+/**
+ * Python's `%g`, which is what every record line here is written against —
+ * exported because the GUI's own record (`formatWidgetInfo`) prints values off
+ * the same wire and has to round them the same way.
+ */
+export function formatNumber(value: number): string {
     return Number(value.toPrecision(6)).toString();
 }
 

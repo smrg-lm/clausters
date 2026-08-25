@@ -50,14 +50,16 @@ function recorder(): Connection & { packets: Uint8Array[] } {
 // free (the reference client's `adopt_default`), and what this file is about is
 // what a **session** does with that slot — so the fakes stay out of it and each
 // test claims it explicitly.
+// A bare handle: nothing to boot behind a recorder and nothing to attach to,
+// which is exactly the constructor's case — it reaches nothing and sizes the
+// allocators from what it is told. It also keeps these fakes out of the default
+// slot, and what this file is about is what a **session** does with that slot.
 const openServer = (connection: Connection) =>
-    Server.open(connection, {
+    new Server(connection, {
         sizing: {
             maxNodes: 8192, audioBuses: 128, controlBuses: 16384,
             maxBuffers: 4096, channels: 2,
         },
-        notify: false,
-        adoptDefault: false,
     });
 
 /** A session over a recording carrier, with a clock nothing wakes by itself. */

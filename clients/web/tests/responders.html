@@ -59,8 +59,7 @@
 
       async function run() {
         await loadOsc();
-        await (await engine({ channels: 2 })).resume();
-        const server = await Server.open(await pageConnection());
+        const server = await new Server(await pageConnection()).boot();
 
         // ---- the node notifications ----
         const started = [];

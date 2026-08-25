@@ -49,17 +49,17 @@ win = view(
 # %% [markdown]
 # ## Read a widget back
 # `/gui_query` -> `/gui_info`, through the handle. The float `value` comes back as
-# a float and the int `buffer` as an int -- the wire keeps them apart.
+# a float and the int `buffer` as an int -- the wire keeps them apart. The answer
+# is a `WidgetInfo`, the same record the web client's `query` resolves with, and
+# it prints one readable line like every other record.
 
 # %%
 info = win["cutoff"].query()
-if info is None:
-    sys.exit("no /gui_info reply -- did the headless host boot?")
-kind, props = info
-print(f'the "cutoff" widget (id {win["cutoff"].id}) is a {kind!r} with {props}')
+print(f'the "cutoff" widget (id {win["cutoff"].id}) is a {info.type!r} with {info.props}')
+print(info)                       # ...or as the line a record prints
 
 root = gui.query(win)
-print(f"root (def {int(win)}) is a {root[0]!r}")
+print(f"root (def {int(win)}) is a {root.type!r}")
 
 # %%
 if __name__ == "__main__" and not hasattr(sys, "ps1"):

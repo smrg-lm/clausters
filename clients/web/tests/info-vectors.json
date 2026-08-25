@@ -332,6 +332,35 @@
     "line": "4242 (gone)"
   },
   {
+    "kind": "widget",
+    "record": {
+      "type": "knob",
+      "props": {
+        "label": "cutoff",
+        "min": 20.0,
+        "max": 20000.0,
+        "value": 800.0
+      }
+    },
+    "line": "knob label=cutoff min=20 max=20000 value=800"
+  },
+  {
+    "kind": "widget",
+    "record": {
+      "type": "button",
+      "props": {}
+    },
+    "line": "button"
+  },
+  {
+    "kind": "widget",
+    "record": {
+      "type": "",
+      "props": {}
+    },
+    "line": "(no such widget)"
+  },
+  {
     "kind": "server",
     "record": {
       "blockSize": 64,

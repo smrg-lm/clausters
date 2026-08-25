@@ -75,8 +75,7 @@
 
         // The audio side first: something for a bound widget to drive.
         const raw = await engine({ channels: 2 });
-        await raw.resume();
-        const server = await Server.open(await pageConnection());
+        const server = await new Server(await pageConnection()).boot();
         const freq = control("freq", 220.0);
         const amp = control("amp", 0.1);
         await new SynthDef("gui_tone", out(0.0, sine(freq).mul(amp))).send(server);

@@ -31,6 +31,7 @@ from clausters.defs.info import (  # noqa: E402
     BufferInfo, ControlInfo, DefInfo, NodeInfo, NodeMap, UgenInfo, UgenInput,
 )
 from clausters.defs.server.options import ServerInfo  # noqa: E402
+from clausters.gui.host import WidgetInfo  # noqa: E402
 
 #: Each case is `[record kind, the record's fields, the line it prints]`. The
 #: fields are the TypeScript spelling (camelCase), so the test builds the same
@@ -134,6 +135,15 @@ case("node",
       "exists": False, "head": -1, "tail": -1, "name": "", "defname": "",
       "controls": {}, "maps": [], "reads": "-", "writes": "-"},
      NodeInfo(4242, exists=False))
+
+# ---- a widget the GUI host reports --------------------------------------------
+case("widget",
+     {"type": "knob",
+      "props": {"label": "cutoff", "min": 20.0, "max": 20000.0, "value": 800.0}},
+     WidgetInfo("knob", {"label": "cutoff", "min": 20.0, "max": 20000.0,
+                         "value": 800.0}))
+case("widget", {"type": "button", "props": {}}, WidgetInfo("button", {}))
+case("widget", {"type": "", "props": {}}, WidgetInfo("", {}))
 
 # ---- the server itself ---------------------------------------------------------
 SERVER = dict(

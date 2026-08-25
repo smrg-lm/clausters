@@ -68,7 +68,7 @@
           throw new Error(`context did not run: ${raw.context.state}`);
         }
         const connection = await pageConnection();
-        const server = await Server.open(connection);
+        const server = await new Server(connection).boot();
         const info = await server.queryInfo();
         log(`engine: ${info.taps} taps of ${info.tapFrames} frames, `
           + `${info.controlBuses} control buses`);

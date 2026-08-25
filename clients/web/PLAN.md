@@ -1053,11 +1053,18 @@ that matters: three defects came out of five pages, none of them in the pages.
   then a bare `play` — failed with advice about two verbs the reader had not
   asked for. In "Found by use", fixed.
 - **A window handle's `controls` was `controlMap()` here**, a name nothing
-  outside a test used and the reference client spells `controls`. Renamed; it
-  is a method rather than a property because it builds its answer per call.
-- **`query()` answers a record here and a `(kind, props)` pair there** — the
-  same two fields, and this one is left as it is: it is the language reading
-  best, and both pages say so where they unpack it.
+  outside a test used and the reference client spells `controls`. It is
+  `controls` now, and a **property** answering a plain object, which is the
+  reference's shape down to the last detail.
+- **`query()` answered a record here and a `(kind, props)` pair there.** The
+  record won and **the reference client moved**: `clausters.gui.WidgetInfo` is
+  a dataclass beside the server's own records, printing one readable line like
+  every one of them, and the timeout it used to swallow with `None` now raises
+  `ReplyTimeout` — which is what every other query in that client already did,
+  so the odd one out was the GUI's. The parity vectors caught the first thing
+  that drifted: a prop's number printed `20.0` there and `20` here, because a
+  float is a float in one language and a number in the other. Both run the
+  `%g` every other record line already ran.
 
 The lesson is the one the milestone was written for: the pages are not the
 product, the **exercise** is. Nothing had opened a bare server on a page before,
@@ -2281,6 +2288,43 @@ Python counterpart under another spelling or is a page's own (`ANY_PEER`,
 `startPage`, the bundle and component doors).
 
 ## Found by use: the running list of fixes
+
+- ✅ **`Server.open` was three of the reference client's verbs in one, under a
+  fourth name** *(found 2026-08-25 when the user asked what `open` was doing
+  beside `boot` and `attach`; fixed the same day)*. No client had all three:
+  the reference has a cheap constructor plus `boot()` (start the process),
+  `attach()` (reach one already running, verify, reconcile) and `reconcile()`;
+  this one had only `Server.open(connection, …)`, which was the constructor,
+  `attach` and `reconcile` merged and renamed — with `attach`'s **refusal** made
+  opt-in (`verify`), so a page talking to nothing carried on by default where
+  the reference raises.
+
+  It is the four verbs now, and the pairs read as pairs:
+
+  - `new Server(connection)` **reaches nothing**, as there. The carrier comes in
+    already built (`await pageConnection()`, `await WsConnection.open(url)`),
+    which is the one shape that cannot be shared: opening a carrier is
+    asynchronous in a browser and a constructor cannot await. That, and only
+    that, is `idiom` here.
+  - `boot()` brings up what the carrier points at, and **what that means is the
+    carrier's to say** — the same sentence the reference client's `boot` is
+    written with. `pageConnection` boots by starting its audio (an
+    `AudioContext` is created suspended, so this is the resume a gesture pays
+    for), a `ScoreConnection` has nothing to start and boots as a no-op, and a
+    WebSocket refuses and names `attach`, because a tab starts nothing on
+    another machine. `Connection.boot?()`/`quit?()` is where that lives.
+  - `attach()` verifies, always. Not a flag: it is what the verb is for.
+  - `reconcile()` has its own door, and both verbs call it.
+  - `quit()` is `boot`'s pair and now finishes the job on a carrier whose server
+    is not a process listening for `/server_quit`: the page's engine *is* the
+    server, so quitting it closes it. `close()` stays the other end — this
+    handle lets go and the server stands.
+
+  Twenty-three pages and every suite moved with it, and the two-carrier examples
+  (`basics/synth`, `transport/sequencing`) now show the pair being *chosen*,
+  which is the thing they were always about. `SessionOptions.verify` is gone:
+  `Session.page` boots and `Session.connect` attaches, so refusing silence is
+  no longer something a caller has to ask for.
 
 - ✅ **Opening a server did not adopt it, so the ambient verbs had nothing to
   resolve** *(found 2026-08-25, porting `hello_note.py`; fixed the same day)*.

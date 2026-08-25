@@ -101,8 +101,7 @@ band-limited recipe instead of a clipped edge.</div>
 
       async function start() {
         await loadOsc();
-        await (await engine({ channels: 2 })).resume();
-        server = await Server.open(await pageConnection());   // or WsConnection
+        server = await new Server(await pageConnection()).boot();   // or WsConnection
 
         // 2048 frames hold a 1024-point table; the allocator hands out 0, 1, 2
         // in order, and `vosc` needs its two tables adjacent.

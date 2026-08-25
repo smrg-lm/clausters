@@ -273,15 +273,14 @@ export class WindowHandle extends WidgetHandle {
      * `widget name -> def control name` for every widget in this window built
      * from a control — what {@link WindowHandle.bind} wires.
      *
-     * A `Map` where the reference client's `controls` is a dict, and a property
-     * there against a method here for the reason every other one is: a getter
-     * that builds its answer each call reads as free and is not.
+     * The reference client's `WindowHandle.controls`, in the same shape: a
+     * property, and a plain object where that one is a dict.
      */
-    controls(): Map<string, string> {
+    get controls(): Record<string, string> {
         const byId = new Map<number, string>();
         for (const [name, id] of this.names) byId.set(id, name);
-        const out = new Map<string, string>();
-        for (const [id, control] of this.controlMap) out.set(byId.get(id) ?? control, control);
+        const out: Record<string, string> = {};
+        for (const [id, control] of this.controlMap) out[byId.get(id) ?? control] = control;
         return out;
     }
 

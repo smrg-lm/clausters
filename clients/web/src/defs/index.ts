@@ -25,7 +25,8 @@ export type {
 } from "./patch.ts";
 export { formatServerInfo, Server } from "./server/index.ts";
 export type {
-    MsgArg, ServerInfo, ServerSizing, TimedMessage, TransportGrid, TransportState,
+    MsgArg, ServerBootOptions, ServerInfo, ServerSizing, TimedMessage,
+    TransportGrid, TransportState,
 } from "./server/index.ts";
 export {
     formatBufferInfo,

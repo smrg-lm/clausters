@@ -21,8 +21,8 @@
     <main>
       <div id="note">The simplest possible sound: open a server, play a note.
 
-No <b>Session</b>, no clock wiring. <code>Server.open</code> adopts the server
-as the <b>default session</b>, so <code>play</code> finds it on its own. A bare
+No <b>Session</b>, no clock wiring. <code>boot</code> adopts the server as the
+<b>default session</b>, so <code>play</code> finds it on its own. A bare
 event outside any clock plays immediately and frees itself after its sustain,
 and the phrase under it runs on the default session's clock — created and
 started for you.
@@ -73,8 +73,7 @@ instrument, and it carries the gated envelope that makes a note end.</div>
         $("open").disabled = true;
         await loadOsc();
         const raw = await engine({ channels: 2 });
-        await raw.resume();   // the gesture the click carries
-        server = await Server.open(await pageConnection());
+        server = await new Server(await pageConnection()).boot();
         log("server up: the in-page engine, adopted as the default session's");
         $("note-btn").disabled = false;
         $("phrase").disabled = false;

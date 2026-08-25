@@ -98,9 +98,8 @@
       let voice = null;
 
       async function audio() {
-        await raw.resume();
         if (!server) {
-          server = await Server.open(await pageConnection());
+          server = await new Server(await pageConnection()).boot();
           // A tone whose cutoff a knob sweeps and whose pitch a bound one does.
           const freq = control("freq", 220.0);
           const amp = control("amp", 0.2);

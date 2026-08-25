@@ -24,7 +24,7 @@ await server.transportLocate(16.0); // seek the position
 await server.transportStop();       // halt
 ```
 
-Every change is pushed to each client registered for notifications (`server.notify(true)`, which `Server.open` does by default) as a `/transport_query.reply`, so a page that wants to react to a conductor can put a [responder](responders.md) on them rather than polling. Reading the whole state at once:
+Every change is pushed to each client registered for notifications (`server.notify(true)`, which `boot` and `attach` do by default) as a `/transport_query.reply`, so a page that wants to react to a conductor can put a [responder](responders.md) on them rather than polling. Reading the whole state at once:
 
 ```js
 const state = await server.transportState();

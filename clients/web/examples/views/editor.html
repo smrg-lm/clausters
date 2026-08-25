@@ -260,8 +260,7 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
         await loadOsc();
         await loadCore();
         raw = await engine({ channels: 2 });
-        await raw.resume();
-        server = await Server.open(await pageConnection());
+        server = await new Server(await pageConnection()).boot();
         // The page's host, and the ambient one from here on — so a view opens
         // without being told where to draw, exactly as the script does after
         // `session.gui()`. Where the drawing *goes* is the document's say: the

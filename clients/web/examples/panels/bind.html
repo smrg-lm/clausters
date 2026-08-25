@@ -146,7 +146,7 @@ one block.</div>
 
         const win = await v.open($("stage"));
         win.bind(synth);
-        log(`bound to synth ${synth.id}: ${JSON.stringify([...win.controls()])} — `
+        log(`bound to synth ${synth.id}: ${JSON.stringify(win.controls)} — `
           + "turn them, the sound follows directly and nothing appears here "
           + "(no script round trip). Hold `hold` and the note sustains for as "
           + "long as you hold it; hit `fire` and a blip sounds once per press.");

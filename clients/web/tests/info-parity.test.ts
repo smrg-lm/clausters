@@ -25,10 +25,12 @@ import {
     formatUgenInput,
 } from "../src/defs/info.ts";
 import { formatServerInfo } from "../src/defs/server/options.ts";
+import { formatWidgetInfo } from "../src/gui/host.ts";
 import type {
     BufferInfo, ControlInfo, DefInfo, NodeInfo, NodeMap, UgenInfo, UgenInput,
 } from "../src/defs/info.ts";
 import type { ServerInfo } from "../src/defs/server/options.ts";
+import type { WidgetInfo } from "../src/gui/host.ts";
 
 interface Vector {
     kind: string;
@@ -52,6 +54,7 @@ const formatters: Record<string, (record: never) => string> = {
     nodeMap: (r: NodeMap) => formatNodeMap(r),
     node: (r: NodeInfo) => formatNodeInfo(r),
     server: (r: ServerInfo) => formatServerInfo(r),
+    widget: (r: WidgetInfo) => formatWidgetInfo(r),
 } as Record<string, (record: never) => string>;
 
 test("every record prints the line the Python client prints", () => {

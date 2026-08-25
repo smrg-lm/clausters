@@ -44,7 +44,7 @@ const SIZING = {
 };
 
 const openShared = (index: number, of: number) =>
-    Server.open(recorder(), { sizing: SIZING, notify: false, share: { index, of } });
+    new Server(recorder(), { sizing: SIZING, share: { index, of } });
 
 test("the default share is the whole space, which is what one client takes", () => {
     const p = nodeIdPartition(8192);
@@ -103,7 +103,7 @@ test("a shared client keeps the reservations its whole-space peer keeps", async 
     // The output buses are the server's, not a client's, so neither share may
     // hand them out — a split must not open a hole below itself.
     const page = await openShared(1, 2);
-    const whole = await Server.open(recorder(), { sizing: SIZING, notify: false });
+    const whole = new Server(recorder(), { sizing: SIZING });
     assert.ok(page.audioBuses.alloc(2).index >= SIZING.channels);
     assert.ok(whole.audioBuses.alloc(2).index >= SIZING.channels);
     page.close();

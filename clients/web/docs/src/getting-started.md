@@ -75,7 +75,7 @@ Three things in there are the whole client:
 - **Everything that waits is a promise.** `def.send(server)` resolves when the server has acknowledged the def, so the `/synth_new` that follows cannot race it. The page has one thread and must keep running: nothing ever blocks.
 - **The click is not decoration.** A browser starts no audio without a gesture, so the first thing that touches the engine — here `Session.page()` — has to happen inside an event handler.
 
-A `Session` is not required: `Server.open(await pageConnection())` gives the same server, and every call that resolves one ambiently takes `{ server }` instead. What a session adds is that the clock, the random root and the GUI host come with it, and that a page can hold more than one of the set without them meeting.
+A `Session` is not required: `new Server(await pageConnection()).boot()` gives the same server, and every call that resolves one ambiently takes `{ server }` instead. What a session adds is that the clock, the random root and the GUI host come with it, and that a page can hold more than one of the set without them meeting.
 
 ## The other carrier
 

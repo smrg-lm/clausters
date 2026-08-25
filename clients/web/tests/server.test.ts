@@ -73,7 +73,7 @@ async function withServer(body: (server: Server) => Promise<void>): Promise<void
             if (!connection) await sleep(100);
         }
         assert.ok(connection, "server WS endpoint never came up");
-        server = await Server.open(connection);
+        server = await new Server(connection).attach();
         await body(server);
     } finally {
         server?.close();
@@ -84,7 +84,7 @@ async function withServer(body: (server: Server) => Promise<void>): Promise<void
     }
 }
 
-test("Server.open sizes its allocators from the running server", {
+test("attach sizes its allocators from the running server", {
     skip: !hasServer,
 }, async () => {
     await withServer(async (server) => {

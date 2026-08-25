@@ -19,14 +19,43 @@ up as the interactive widgets land.
 """
 
 import json
+from dataclasses import dataclass, field
 
 from ..base import _osclib
 from ..base._oscinterface import OscTcpInterface, OscUdpInterface
 from .guidef import to_json, view as _view
 from .handle import WindowHandle
 from .ids import GuiIdAllocator
+from ..errors import ReplyTimeout
 
-__all__ = ["GuiHost", "DEFAULT_PORT"]
+__all__ = ["GuiHost", "WidgetInfo", "DEFAULT_PORT"]
+
+
+@dataclass
+class WidgetInfo:
+    """What a widget **is now**, as `GuiHost.query` reports it: its ``type`` and
+    the props it carries.
+
+    A record like the server's (`clausters.defs.info`), and for the same reason:
+    two fields addressed by name read better than a pair unpacked by position,
+    and the web client answers with exactly this shape. Printing follows the
+    same rule too -- ``repr`` names every field, ``str`` is the readable line.
+
+    An empty ``type`` means the host has no such widget: it still answers, the
+    way the server replies even on a miss.
+    """
+
+    type: str
+    props: dict = field(default_factory=dict)
+
+    def __str__(self) -> str:
+        if not self.type:
+            return "(no such widget)"
+        shown = " ".join(
+            f"{k}={v:g}" if isinstance(v, (int, float)) and not isinstance(v, bool)
+            else f"{k}={v}"
+            for k, v in self.props.items())
+        return f"{self.type}{' ' + shown if shown else ''}"
 
 #: The GUI host's default port, UDP and TCP alike (the host's
 #: ``transport::DEFAULT_PORT``), clear of the audio server's family
@@ -607,7 +636,7 @@ class GuiHost:
         self._osc.send_msg(self.target, "/gui_bind", id)
 
     def query(self, id: int, timeout: float = 1.0):
-        """``/gui_query <id>`` -> the ``/gui_info`` reply as ``(type, props)``.
+        """``/gui_query <id>`` -> the ``/gui_info`` reply as a `WidgetInfo`.
 
         What the widget **is now**: the props it was defined with, with every
         edit the user has made since laid over them — a dragged control's value,
@@ -620,21 +649,22 @@ class GuiHost:
         JSON **string** its own ``set`` accepts, so what you read is what you
         could write.
 
-        Returns ``None`` on timeout. An empty ``type`` (``""``) means the host
-        has no such widget — it still answers, the way the server replies even on
-        a miss.
+        Raises `clausters.errors.ReplyTimeout` when the host does not answer,
+        as every other query here does — a host that is up answers off its own
+        event loop. An empty ``type`` (``""``) means the host has no such
+        widget: it still answers, the way the server replies even on a miss.
         """
         self._osc.send_msg(self.target, "/gui_query", id)
         data = self._osc.recv(timeout)
         if data is None:
-            return None
+            raise ReplyTimeout(f"no /gui_info for widget {id} within {timeout}s")
         addr, args = _osclib.decode(data)
         if addr != "/gui_info" or not args:
-            return None
+            raise ReplyTimeout(f"no /gui_info for widget {id} within {timeout}s")
         # args = [id, type, k, v, k, v, ...]
         kind = args[1] if len(args) > 1 else ""
         props = {args[i]: args[i + 1] for i in range(2, len(args) - 1, 2)}
-        return kind, props
+        return WidgetInfo(str(kind), props)
 
     # ---- event routing to the handle callbacks ----
 

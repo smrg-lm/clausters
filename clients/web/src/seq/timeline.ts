@@ -355,7 +355,7 @@ export class Playhead {
      * broadcasts the new state and this playhead rolls / halts / seeks to
      * match — so several clients run in lockstep on one grid.
      *
-     * It registers for the server's pushes (`notify`, which `Server.open`
+     * It registers for the server's pushes (`notify`, which `boot`/`attach`
      * already does) and subscribes to the `/transport_query.reply` broadcasts
      * through `server.onReply`, then applies the current state once. `quant`
      * snaps each rolling start to a beat boundary, so every follower lands

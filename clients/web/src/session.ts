@@ -66,13 +66,6 @@ export interface SessionOptions {
     /** How long a reply is waited for when a call does not say. */
     timeout?: number;
     /**
-     * Require the server to answer before the session is built, instead of
-     * carrying on against the compiled sizing when it does not (see
-     * `Server.open`'s `verify`). Worth passing on {@link Session.connect}: a
-     * WebSocket that connects proves a listener, not a server.
-     */
-    verify?: boolean;
-    /**
      * The slice of the server's client id space this session allocates from,
      * when the engine underneath has **more than one client** — one client
      * authoring over a carrier of its own while the page holds a session on
@@ -162,14 +155,11 @@ export class Session extends Environment {
      */
     static async nrt({ tempo = 1.0 }: { tempo?: number } = {}): Promise<Session> {
         await loadOsc();
-        const connection = new ScoreConnection();
-        // `adoptDefault: false`, as in the reference client's `Session.live`:
-        // opening a carrier claims the default slot, but a **session** is asked
-        // for it (`adoptDefault()`) rather than taking it by being built — and
-        // an offline score least of all.
-        const server = await Server.open(connection, {
-            sizing: {}, notify: false, adoptDefault: false,
-        });
+        // Neither booted nor attached: a score has no server to bring up and
+        // none to reach, so the handle is the bare one the reference client
+        // builds (`Server(interface=OscNrtInterface())`) and the allocators keep
+        // the compiled sizing, which is the whole truth about an offline run.
+        const server = new Server(new ScoreConnection());
         return new Session(server, new TempoClock(tempo));
     }
 
@@ -203,10 +193,13 @@ export class Session extends Environment {
         await loadOsc();
         const options = channels === undefined ? {} : { channels };
         const audio = engine ?? (own ? await engineInstance(options) : await pageEngine(options));
-        await audio.resume();
+        // `boot`, because this carrier's server is one this page can bring up:
+        // the engine's `AudioContext` starts suspended, and starting it is what
+        // the gesture this call was made from pays for.
         const session = await Session.over(
             await pageConnection(audio),
             { tempo, timebase, latency, timeout, share },
+            "boot",
         );
         // `own` is what makes the engine this session's to close — whether it
         // opened one or was handed one that belongs to it. The page's shared
@@ -223,25 +216,31 @@ export class Session extends Environment {
      */
     static async connect(
         url = "ws://127.0.0.1:57120",
-        { tempo = 1.0, timebase, latency, timeout, share, verify }: SessionOptions = {},
+        { tempo = 1.0, timebase, latency, timeout, share }: SessionOptions = {},
     ): Promise<Session> {
         await loadOsc();
-        return Session.over(await WsConnection.open(url), {
-            tempo, timebase, latency, timeout, share, verify,
-        });
+        // `attach`: nothing here started that server, and a WebSocket that
+        // connects proves a listener rather than a server — so the session
+        // refuses to be built against silence instead of dropping every later
+        // message into it.
+        return Session.over(
+            await WsConnection.open(url),
+            { tempo, timebase, latency, timeout, share },
+            "attach",
+        );
     }
 
-    /** Opens a server over `connection` and builds the session around it. */
+    /** Builds the session around a server over `connection`. */
     private static async over(
         connection: Connection,
-        { tempo, timebase, latency, timeout, share, verify }: SessionOptions,
+        { tempo, timebase, latency, timeout, share }: SessionOptions,
+        how: "boot" | "attach",
     ): Promise<Session> {
         // Not the default session's by being built: `adoptDefault()` is the
         // verb for that, the way the reference client's `Session.live` passes
         // `adopt_default=False` and leaves the slot to whoever asks.
-        const server = await Server.open(connection, {
-            timeout, share, verify, adoptDefault: false,
-        });
+        const server = new Server(connection, { timeout, share });
+        await server[how]({ adoptDefault: false });
         if (latency !== undefined) server.latency = latency;
         const session = new Session(server, new TempoClock(tempo, { timebase }));
         // With no explicit timebase, anchor to the server's own sample clock:

@@ -81,6 +81,28 @@ export interface Connection {
     /** Releases the carrier (never stops the shared in-page engine). */
     close(): void;
     /**
+     * Bring up the server this carrier goes to, if bringing one up is
+     * something this carrier can do — what `Server.boot` asks of it.
+     *
+     * The carrier is what knows, exactly as in the reference client: there a
+     * socket has a **process** behind it and `boot` spawns one, while an
+     * offline or in-process carrier has nothing to start and boots as a no-op.
+     * Here the page's engine is the one that can be brought up (its
+     * `AudioContext` starts suspended under the autoplay policy, so this is
+     * the resume a gesture pays for), a score has nothing to start, and a
+     * socket points at a machine this page cannot spawn anything on — it says
+     * so by leaving this out, and `Server.boot` refuses with `attach` named.
+     */
+    boot?(): Promise<void>;
+    /**
+     * Take that server down — the pair of `boot`, and what `Server.quit` asks
+     * of a carrier whose server is not a process listening for `/quit`.
+     *
+     * A socket leaves it out: `/quit` on the wire is the whole story there,
+     * and the server obeys it whoever started it.
+     */
+    quit?(): Promise<void>;
+    /**
      * The server's sample clock, where the carrier *shares* one with it —
      * the in-page engine runs in this page's `AudioContext`, so its counter
      * is readable synchronously and exactly. A socket has no such thing and
@@ -203,6 +225,17 @@ export async function pageConnection(
             for (const listener of mine) engine.removeReply(listener, peer);
             mine.clear();
         },
+        // What bringing this carrier's server up means in a tab: the engine is
+        // already instantiated (asking for the carrier is what instantiated
+        // it), and what is *not* running is the audio — an `AudioContext`
+        // starts suspended under the autoplay policy. So this is the resume,
+        // and it belongs to a gesture: `Server.boot()` from a click.
+        boot: () => engine.resume(),
+        // And down: there is no process to signal, the engine *is* the server,
+        // so quitting it is closing it. Only a handle that booted it should
+        // (`Server.quit`), which is the same ownership rule the reference
+        // client's `close` follows.
+        quit: () => engine.close(),
         bulkLoad: async (bufnum, channels, sampleRate, samples) => {
             await engine.bufferLoad(bufnum, channels, sampleRate, samples);
         },
@@ -317,4 +350,14 @@ export class ScoreConnection implements Connection {
     close(): void {
         this.score.clear();
     }
+
+    /**
+     * A score has nothing to start, so booting it is a no-op rather than an
+     * error — the reference client's rule for its own offline and in-process
+     * carriers, kept here so `Server.boot()` reads the same against every
+     * carrier a session can hold.
+     */
+    async boot(): Promise<void> {}
+    /** ...and nothing to stop. */
+    async quit(): Promise<void> {}
 }

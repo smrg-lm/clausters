@@ -186,8 +186,7 @@ socket.</div>
         await loadOsc();
         await loadCore();
         raw = await engine({ channels: 2 });
-        await raw.resume();
-        server = await Server.open(await pageConnection());
+        server = await new Server(await pageConnection()).boot();
         // The page's host, and the ambient one from here on: a view opens
         // without being told which host, exactly as the script does after
         // `session.gui()`.
@@ -249,7 +248,7 @@ socket.</div>
       // where — the announcement carries the span and never the samples.
       async function peerEdit() {
         el("edit").disabled = true;
-        peer ??= await Server.open(await pageConnection(raw));
+        peer ??= await new Server(await pageConnection(raw)).boot();
         const take = takes[0];
         const held = new Buffer(take.bufnum, take.frames, 1, RATE, peer);
         const start = Math.round(take.frames / 3);

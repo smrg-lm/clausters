@@ -147,7 +147,7 @@
         audio.addReply((bytes) => bridge.server_reply(bytes));
         bridge.connect_page((bytes) => audio.send(bytes));
 
-        const server = await Server.open(await pageConnection(audio));
+        const server = await new Server(await pageConnection(audio)).boot();
         await new SynthDef(
           "hosts_tone", out(0.0, sine(control("freq", 220.0)).mul(control("amp", 0.1))),
         ).send(server);

@@ -64,7 +64,7 @@
         raw.node.connect(analyser);
 
         const connection = await pageConnection();
-        const server = await Server.open(connection);
+        const server = await new Server(connection).boot();
         log(`sized from the engine: ${server.sizing.audioBuses} audio buses, `
           + `${server.sizing.controlBuses} control buses`);
 

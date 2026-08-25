@@ -128,14 +128,16 @@ Swapping to a <code>--ws</code> server (or to a native
         await loadOsc();
         await loadCore();
 
-        const raw = await engine({ channels: 2 });
-        await raw.resume();
+        await engine({ channels: 2 });
 
         // ---- the one line that names a carrier ----
         const connection = await pageConnection();
         // const connection = await WsConnection.open("ws://127.0.0.1:57120");
 
-        const server = await Server.open(connection);
+        // `boot` because this page's carrier goes to an engine it can bring
+        // up; over the WebSocket above the verb is `attach`, since nothing here
+        // starts a server on another machine.
+        const server = await new Server(connection).boot();
         const info = await server.queryInfo();
         if (info.taps === 0) {
           log("this server records no audio buses (--taps 0): no oscilloscope");
