@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8" /><title>clausters faust artifact</title></head>
+<body><pre id="log"></pre>
+<!--
+  What the vendored Faust compiler produces, asserted rather than assumed
+  (clients/web/test.sh, headless Chrome). It compiles a small program with
+  external memory and checks the emitted module has the shape the engine is
+  built to link against: it imports `env.memory` (so it can live in the
+  engine's own linear memory) and its transcendentals, and exports `compute`
+  and `setParamValue` (so a Rust node can drive it). A Faust release that
+  changed any of that would otherwise be found by ear, in a page, as silence.
+-->
+<script type="module">
+  const log = (l) => { document.getElementById("log").textContent += l + "\n"; };
+  const say = (t) => { document.title = t; fetch(`/smoke-verdict-${encodeURIComponent(t)}`).catch(()=>{}); };
+  try {
+    const { default: FaustModule } = await import("../dist/vendor/faust/libfaust-wasm.js");
+    // An ES module has no `document.currentScript`, so the glue cannot find
+    // its own .wasm and .data: tell it where they are.
+    const base = new URL("../dist/vendor/faust/", import.meta.url);
+    const mod = await FaustModule({ locateFile: (p) => new URL(p, base).href });
+    const lib = new mod.libFaustWasm();
+    log("version " + lib.version());
+    const dsp = 'import("stdfaust.lib"); process = os.osc(hslider("freq",440,50,2000,1))'
+      + ' * hslider("amp",0.2,0,1,0.01);';
+    const out = lib.createDSPFactory("probe", dsp, "", false);
+    if (!out.cfactory) { say("FAIL: " + lib.getErrorAfterException()); throw new Error("no factory"); }
+    const bytes = Uint8Array.from(out.data);
+    const json = JSON.parse(out.json);
+    log(`module ${bytes.length} B; size ${json.size}, in ${json.inputs}, out ${json.outputs}`);
+    log("ui " + JSON.stringify((json.ui?.[0]?.items ?? []).map(i => [i.label, i.index])));
+    const m = await WebAssembly.compile(bytes);
+    const imp = WebAssembly.Module.imports(m).map(i => `${i.module}.${i.name}:${i.kind}`);
+    const exp = WebAssembly.Module.exports(m).map(e => `${e.name}:${e.kind}`);
+    log("imports " + imp.join(" "));
+    log("exports " + exp.join(" "));
+    // The shape the engine links against. Anything missing here is the
+    // reason a page would go quiet, so it is named rather than counted.
+    const wanted = ["compute", "setParamValue", "getParamValue", "init",
+                    "instanceInit", "getNumInputs", "getNumOutputs"];
+    const missing = wanted.filter((w) => !exp.includes(`${w}:function`));
+    const external = imp.includes("env.memory:memory");
+    if (missing.length || !external || json.size <= 0) {
+      say(`FAIL: missing ${missing.join(",") || "-"}, external memory ${external}, ` +
+          `struct ${json.size}`);
+    } else {
+      say(`PASS: libfaust ${lib.version()} compiled ${bytes.length} B against external ` +
+          `memory — struct ${json.size} B, ${json.inputs} in, ${json.outputs} out, ` +
+          `${exp.length} exports including compute and setParamValue`);
+    }
+  } catch (e) { say("FAIL: " + (e && e.message ? e.message : e)); }
+</script></body></html>

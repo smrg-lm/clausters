@@ -106,6 +106,22 @@ else
          "if you need the engraver (notation)" >&2
 fi
 
+# The Faust compiler: vendored on the same terms and for a sharper reason. A
+# def compiled in a tab and the same def compiled in a window must be the same
+# DSP, and what decides that is the compiler's version -- so this is the same
+# pin the native libfaust is built from, compiled twice
+# (`third_party/build-faust-wasm.sh`). It is **off the slim runtime**: only the
+# NRT worker imports it, and only when a page compiles a FaustDef, so a page
+# that mounts a bundle of SynthDefs downloads none of its 5 MB.
+if [ -d vendor/faust ]; then
+    mkdir -p dist/vendor/faust
+    cp vendor/faust/libfaust-wasm.js vendor/faust/libfaust-wasm.wasm \
+       vendor/faust/libfaust-wasm.data dist/vendor/faust/
+else
+    echo "note: vendor/faust missing -- run third_party/build-faust-wasm.sh" \
+         "if you need a Faust compiler in the page" >&2
+fi
+
 # Type-check + emit the package into dist/ (js + d.ts + maps).
 if [ -d node_modules ]; then
     npm run --silent build

@@ -6684,16 +6684,25 @@ them.
 **The one hazard, named because it is invisible until it corrupts something.**
 The wasm backend writes the DSP's JSON into a data segment at **absolute offset
 0**, unconditionally — external memory included. Instantiating such a module
-against the engine's memory therefore overwrites the first bytes of *our*
-address space, where a `wasm32-unknown-unknown` link puts `.rodata` (the default
-global base is 1024, and a def's JSON is comfortably larger than that). Two
-guards, both cheap: the engine links with `--global-base` moved to the second
-64 KiB page, reserving the first for exactly this; and the def-send path
-**refuses a JSON larger than the reserved region** with a `/fail` rather than
-letting it be found by ear. Nothing ever reads that memory — the JSON we use is
-the one `createDSPFactory` returns out of band — so several defs overwriting
-each other's segments there is harmless, and the reserved page costs address
-space and nothing else.
+against the engine's memory therefore writes over the engine's own first bytes.
+
+*This paragraph first said to move the engine's data out of the way with
+`--global-base`, and that is not available.* Building the thing found out why,
+and the correction is worth keeping because the reasoning that produced it was
+sound and still wrong: rustc links wasm with `--stack-first`, so the low
+megabyte is the **stack**, not `.rodata` — and `--global-base` must be at least
+the stack size when `--stack-first` is used, so it cannot open a gap *below* the
+stack, which is exactly where the segment lands. A reserved page there is not
+something the linker will give.
+
+So the segment goes instead of being worked around. Nothing reads it — the JSON
+we use is the one `createDSPFactory` returns beside the binary — so the copy
+inside the module is dead weight, and `faust::wasm_module::strip_data_section`
+removes it before instantiation. It walks the binary's own top-level framing (an
+id byte and a LEB128 length, stable since the MVP) and **refuses rather than
+guesses**: more than one segment, or one that does not start at zero, means the
+backend grew a use for that memory this has not accounted for, and dropping it
+blind would be the kind of corruption nobody traces back here.
 
 **What was rejected, and why it is not a near miss.**
 
@@ -6719,16 +6728,23 @@ space and nothing else.
   everything stays in Rust and nothing else does: interpreting wasm inside wasm,
   on the audio thread, allocating.
 
-**What would reverse this.** Three assumptions carry it, and each fails loudly
-rather than subtly. That a Rust `fn` pointer on `wasm32` is an
-`__indirect_function_table` index — if that stops being true, a `call_indirect`
-traps on a type mismatch, and the fallback is a JS shim doing `table.get(i)(…)`,
-one frame per block. That the table can be exported and grown (`--export-table`,
-`--growable-table`) and the global base moved — link flags, checked by the wasm
-build gate. And that `-lang wasm-e` keeps allocating nothing; a Faust release
-that changed it would be caught by the def-send path failing to find its
-parameters where the JSON says they are. None of the three is a reason to
-prefer a design that is slower on purpose.
+**Three assumptions carry this, and all three were checked before anything was
+built on them** — a probe that instantiates a hand-emitted second module against
+a Rust one. They hold: `-C link-arg=--export-table -C link-arg=--growable-table`
+makes rustc export `memory` and `__indirect_function_table`; a second module
+instantiates with `env.memory` bound to the first's memory and a Rust export
+bound as its `_sinf`; and Rust calls that module's export **through the shared
+table by index**, transmuting the index to an `extern "C" fn` — which on
+`wasm32` is what a function pointer already is.
+
+Each also fails loudly rather than subtly, which is what makes them safe to
+depend on. A wrong index or a changed pointer representation traps on
+`call_indirect`'s type check, and the fallback is a JS shim doing
+`table.get(i)(…)`, one frame per block. The link flags are checked by the wasm
+build gate. And a Faust release where `-lang wasm-e` stopped meaning "allocates
+nothing" would be caught by the def-send path failing to find its parameters
+where the JSON says they are. None of the three is a reason to prefer a design
+that is slower on purpose.
 
 
 ## The browser engine gets a second scope: a Worker for the work that is neither audio nor UI

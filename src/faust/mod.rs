@@ -25,3 +25,4 @@ pub mod ffi;
 pub mod json_util;
 pub mod signals;
 pub mod synth;
+pub mod wasm_module;
