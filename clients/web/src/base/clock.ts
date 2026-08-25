@@ -388,6 +388,44 @@ export class TempoClock {
         return beatInBar(beats ?? this.beats(), quant);
     }
 
+    // ---- the master clock (drift-free timing) ----
+
+    /**
+     * Lock this clock to a master `server`'s sample clock, so events schedule
+     * on the server's own sample axis (drift-free) instead of a wall-clock
+     * timetag. Resolves with `this`.
+     *
+     * Opt-in: a plain clock paces against wall-clock time, which works
+     * standalone and across a socket. This switches it to the server's counter
+     * — over the in-page engine that counter is read directly, over a socket it
+     * is tracked through `/clock_query` anchors. The switch is **graceful**: a
+     * score server, or a master that does not answer, leaves the clock on
+     * wall-clock time, so a page with no reachable server keeps working.
+     *
+     * **Idempotent**: on a clock already on a sample timebase it is a no-op,
+     * which is what makes it safe to call after a `Session.embed()`/`live()`
+     * that anchored by default. Release it with {@link TempoClock.unlock}.
+     *
+     * The reference client's `TempoClock.lock_to`, and the verb
+     * `Session.lockToServer` is the session-wide spelling of.
+     */
+    async lockTo(server: Server, timeout?: number): Promise<this> {
+        if (this.timebase instanceof SampleTimebase) return this;
+        this.timebase = await server.sampleTimebase(
+            timeout === undefined ? {} : { timeout },
+        );
+        return this;
+    }
+
+    /**
+     * Undo a {@link TempoClock.lockTo}: back to wall-clock time. Returns
+     * `this`.
+     */
+    unlock(): this {
+        this.timebase = new MonotonicTimebase();
+        return this;
+    }
+
     // ---- the shared transport (phase alignment) ----
 
     /**

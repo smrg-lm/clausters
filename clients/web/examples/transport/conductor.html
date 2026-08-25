@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: a conductor driving several playheads</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 46rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; max-height: 16rem;
+            overflow-y: auto; }
+      .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">A conductor's play/stop/locate driving several clients'
+playheads in lockstep.
+
+The server hosts a shared transport with a DAW-style rolling state (play / stop
+/ position). A <i>conductor</i> (any client) calls <code>transportPlay</code> /
+<code>transportStop</code> / <code>transportLocate</code>; the server broadcasts
+the new state to every <code>notify</code> client, and each client's
+<code>followTransport</code> rolls, halts or seeks to match. The server only
+broadcasts transport <i>control</i> — it never schedules audio; each client
+rolls its own playhead on the shared grid.
+
+When the followers also lock to the server's sample clock (as here) the
+alignment is sample-exact. Two independent followers run in this one page, each
+taking its own <b>share</b> of the client id space so two of them never hand out
+the same node id.</div>
+
+      <div class="row">
+        <button id="run">bring the followers up</button>
+        <button id="play" disabled>conductor: play</button>
+        <button id="positions" disabled>read both positions</button>
+        <button id="locate" disabled>locate to 0</button>
+        <button id="stop" disabled>conductor: stop</button>
+      </div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/transport/conductor.py, call
+      for call: the conductor's grid, two followers each with its own server
+      handle, clock, share, timeline and playhead, and the three transport
+      verbs.
+
+      Two differences, both the platform's. The script's conductor **boots a
+      server process** and the followers connect to it over sockets; here the
+      shared server is the engine in this tab and the three clients are three
+      carriers over it -- which is the same arrangement (one server, several
+      independent clients, disjoint id shares) with no process anywhere. And the
+      script's sleeps between verbs are buttons, since a page must not block.
+
+      Serve clients/web (the package root) and open
+      /examples/transport/conductor.html. Build it first: ./build.sh
+    -->
+    <script type="module">
+      import {
+        Server, TempoClock, loadOsc, pageConnection, seq, server as engine,
+      } from "../../dist/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => {
+        $("log").textContent += line + "\n";
+        $("log").scrollTop = $("log").scrollHeight;
+      };
+
+      let conductor = null;
+      const followers = [];
+
+      /**
+       * An independent client: its own server connection and clock, locked and
+       * joined to the shared transport, with a playhead following it.
+       *
+       * `share` is its slice of the client id space: several clients on one
+       * server each take one, so two of them never hand out the same node id.
+       */
+      async function makeFollower(freq, share) {
+        const server = await new Server(await pageConnection(), { share }).attach();
+        const clock = new TempoClock(2.0);
+        await clock.lockTo(server);                       // sample-exact timing
+        await clock.joinTransport(server);                // the shared grid
+        const timeline = seq.Timeline.fromPattern(
+          new seq.Pbind({
+            instrument: "default",
+            freq: new seq.Pseq([freq, freq * 1.5]),
+            dur: 0.5,
+            amp: 0.2,
+          }),
+          { dur: 1.0 },
+        );
+        const head = new seq.Playhead(timeline, clock, server).loop(0.0, 1.0);
+        clock.start();
+        await head.followTransport(server, { quant: 2 });  // roll on the next 2-beat boundary
+        return { server, clock, head };
+      }
+
+      async function run() {
+        $("run").disabled = true;
+        await loadOsc();
+        await (await engine({ channels: 2 })).resume();
+
+        // The shared server: in a tab it is the engine every client is a client
+        // of, where the script boots a process and the followers dial in.
+        conductor = await new Server(await pageConnection()).boot();
+        await conductor.setTransport(0, 2.0);
+
+        followers.push(await makeFollower(440.0, { index: 0, of: 2 }));
+        followers.push(await makeFollower(550.0, { index: 1, of: 2 }));
+        log("two followers up, joined to the conductor's grid");
+        for (const id of ["play", "positions", "locate", "stop"]) $(id).disabled = false;
+      }
+
+      $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
+      $("play").onclick = async () => {
+        await conductor.transportPlay(0.0);
+        log("conductor: play");
+      };
+      $("positions").onclick = () => {
+        const at = followers.map((f) => f.head.position().toFixed(2));
+        log(`  follower positions: ${JSON.stringify(at)}  (advancing together)`);
+      };
+      $("locate").onclick = async () => {
+        await conductor.transportLocate(0.0);
+        log("conductor: locate to 0");
+      };
+      $("stop").onclick = async () => {
+        await conductor.transportStop();
+        log("conductor: stop — both followers halt where the grid says");
+      };
+    </script>
+  </body>
+</html>

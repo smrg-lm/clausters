@@ -2336,6 +2336,18 @@ Python counterpart under another spelling or is a page's own (`ANY_PEER`,
 
 ## Found by use: the running list of fixes
 
+- ✅ **A clock could not be locked to a server without spelling the two steps**
+  *(found 2026-08-25, porting `transport/conductor.py`; fixed the same day)*.
+  The reference client has `TempoClock.lock_to(server)` — one verb, idempotent,
+  graceful when no master answers — and `Session.lock_to_server` is the
+  session-wide spelling of it. Here only the session verb existed, so a page
+  driving a **bare** clock (which is exactly what a conductor's followers do)
+  had to write `clock.timebase = await server.sampleTimebase()` and know that
+  this is what locking means. `TempoClock.lockTo(server, timeout?)` and
+  `unlock()` are here now, with `Session.lockToServer` calling the first, so
+  there is one implementation and the session verb is what it always claimed to
+  be — a spelling.
+
 - ✅ **`Server.open`, and `GuiHost.page`/`connect`, were the reference client's
   verbs merged and renamed** *(found 2026-08-25 when the user asked what `open` was doing
   beside `boot` and `attach`; fixed the same day)*. No client had all three:
@@ -2696,7 +2708,7 @@ finished work, where a pending item reads as done.
   counted here at all**: `faust/boxes-library` belongs to **W7**'s acceptance
   and `io/midi-responder`/`editors/pianoroll-midi` to **W9**'s, since neither
   page can be written before those milestones and writing it is how each is
-  shown to work. Four have **no page by nature**:
+  shown to work. Five have **no page by nature**:
   `io/live-udp` (a UDP peer) and `io/embedded` (the server in this process
   through the cdylib — in a tab that *is* the engine); `views/recording-mapped`,
   already stated in its own docstring — it is `recording.html`'s window drawn
@@ -2707,7 +2719,13 @@ finished work, where a pending item reads as done.
   and no mapping: its bulk path is the blob beside the `/gui_def`, which
   `views/plot`, `views/linked` and `views/rulers` each show in place of a
   mapped file. Porting it would be writing a different example under the same
-  name. The 12 are not all gaps — `components/` is a
+  name. The fifth is `buffers/render-then-load`, and for the same reason: its
+  subject is the **file** the server writes and then reads back
+  (`render(path=…)` → `/buffer_allocRead` → `read_soundfile`, "the file needs no
+  conversion in between, because the same process wrote it and reads it"). A tab
+  has no file at any of those three steps; the *change of state* the example
+  opens with is `buffers/offline-render.html`, which is paired and does exactly
+  that with the samples in hand. The 12 are not all gaps — `components/` is a
   surface the page has and the script cannot, `basics/engine` is the platform
   itself — but `panels/host`, `basics/synth`, `basics/demand`,
   `transport/sequencing` and `io/responders` are pages whose subject the Python

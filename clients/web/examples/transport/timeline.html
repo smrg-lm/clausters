@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: transport over a static timeline</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 46rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+      .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">DAW-style transport over a static timeline: play, locate,
+loop, position.
+
+A <code>Pbind</code> is a forward-only generator — you cannot seek it. A
+<code>Timeline</code> is the opposite: a static, editable list of timed items
+with random access by beat, so a <code>Playhead</code> can offer real transport
+controls — <code>play({ at })</code>, <code>locate(beat)</code>,
+<code>loop(start, end)</code>, <code>stop()</code> — and report a song
+<code>position()</code>.
+
+This captures a pattern into a timeline, edits it, then drives it live with the
+playhead. Random access happens at the boundaries; between them the playhead
+just scans forward.</div>
+
+      <div class="row">
+        <button id="run">capture and play</button>
+        <button id="locate" disabled>locate to beat 1</button>
+        <button id="loop" disabled>loop [0, 2)</button>
+        <button id="stop" disabled>stop</button>
+      </div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/transport/timeline.py, call for
+      call: the captured timeline, the added accent, the playhead over the
+      session's clock and server, and the four transport verbs.
+
+      The one difference is the shape of the run: the script sleeps between the
+      verbs and a page has one thread it must not block, so each verb is a
+      button and the position is read when you press one. The verbs, their
+      arguments and their order are the script's.
+
+      Serve clients/web (the package root) and open
+      /examples/transport/timeline.html. Build it first: ./build.sh
+    -->
+    <script type="module">
+      import { Event, Session, loadOsc, seq } from "../../dist/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => { $("log").textContent += line + "\n"; };
+
+      let session = null, head = null;
+
+      async function run() {
+        $("run").disabled = true;
+        // The core's wasm, before anything that computes: the script's client
+        // is native and has nothing to load, and a page loads it once.
+        await loadOsc();
+
+        const timeline = seq.Timeline.fromPattern(
+          new seq.Pbind({
+            instrument: "default",
+            degree: new seq.Pseq([0, 2, 4, 7]),
+            dur: 0.5,
+            amp: 0.2,
+          }),
+          { dur: 2.0 },
+        );
+        // An accent, added where the pattern never put one: a timeline is
+        // editable, which is the half a generator does not have.
+        timeline.add(0.0, new Event({ instrument: "default", degree: 7, dur: 0.5, amp: 0.3 }));
+        log(`timeline: ${timeline.length} items over ${timeline.duration()} beats`);
+
+        session = await Session.embed({ tempo: 2.0, latency: 0.1 });
+        head = new seq.Playhead(timeline, session.clock, session.server);
+        session.start();
+        head.play({ at: 0.0 });
+        log("playing from beat 0");
+        for (const id of ["locate", "loop", "stop"]) $(id).disabled = false;
+      }
+
+      $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
+      $("locate").onclick = () => {
+        log(`position now: beat ${head.position().toFixed(2)}`);
+        head.locate(1.0);
+        log("located to beat 1.0");
+      };
+      $("loop").onclick = () => {
+        head.loop(0.0, 2.0).play({ at: 0.0 });
+        log("looping [0, 2)");
+      };
+      $("stop").onclick = () => {
+        head.stop();
+        log(`stopped at beat ${head.position().toFixed(2)}`);
+      };
+    </script>
+  </body>
+</html>

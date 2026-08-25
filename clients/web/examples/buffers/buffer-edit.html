@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: editing a buffer from the client</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 46rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; max-height: 16rem;
+            overflow-y: auto; }
+      .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">Editing a buffer from the client: read the samples, change
+them, write them back.
+
+A buffer is the one thing a piece keeps with <b>random access</b> — so unlike a
+stream of events it can be read backwards, sliced and edited in place. The point
+of interest is that whole round trip, done three times on one buffer, each edit
+audible against the one before:
+
+<b>Read</b> a <code>sine1</code> table the server generated. <b>Edit, then
+write</b>: the samples are reversed here and written back — a symmetric waveform
+survives that unchanged, so the second edit is the one that speaks, a fade
+carved into the table which turns a steady tone into one that swells and dies
+inside every period. <b>A single sample</b> by flat index is the touch-up form.
+<b>A write past the end is refused</b> instead of being clamped the way a read
+is: a short read hands back less and says so, a short write would drop samples
+you believe you stored.
+
+<b>The edits the server does for you</b> — <code>gain</code>,
+<code>fade</code>, <code>silence</code>, <code>reverse</code> — say what the
+edit <i>is</i> and no samples cross the wire at all, which is the difference
+between editing a table and editing a five-minute take.</div>
+
+      <div class="row">
+        <button id="run">boot and read the table</button>
+        <button id="edits" disabled>the three client edits</button>
+        <button id="refusal" disabled>what a write refuses</button>
+        <button id="server" disabled>the server's own edits</button>
+      </div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/buffers/buffer_edit.py, call
+      for call: the scanning def, the generated table, the read, the three
+      writes as a routine on the session's clock, the refusal, and the four
+      server-side edits chained without waiting.
+
+      The one difference is the shape of the run: the script sleeps on the main
+      thread while the clock plays and then moves to the next stage, and a page
+      has one thread it must not block -- so each stage is a button. The
+      routines themselves are the same routines, yielding the same beats on the
+      session's clock.
+
+      Serve clients/web (the package root) and open
+      /examples/buffers/buffer-edit.html. Build it first: ./build.sh
+    -->
+    <script type="module">
+      import { Buffer, Routine, Session, Synth } from "../../dist/index.js";
+      import { SynthDef, bufRd, control, out, phasor } from "../../dist/defs/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => {
+        $("log").textContent += line + "\n";
+        $("log").scrollTop = $("log").scrollHeight;
+      };
+
+      const FRAMES = 512;
+      let session = null, server = null, buf = null;
+      let samples = null, reversedTable = null, faded = null;
+
+      async function run() {
+        $("run").disabled = true;
+        session = await Session.embed();
+        server = session.server;
+
+        const scan = new SynthDef(
+          "table_scan",
+          out(0.0, bufRd(
+            control("bufnum", 0.0, { rate: "ir" }),
+            0.0,
+            phasor(0.0, control("freq", 440.0).mul(FRAMES / 48000.0), 0.0, FRAMES),
+            1.0,
+          ).mul(control("amp", 0.2))),
+        );
+        await scan.send(server);
+
+        buf = await Buffer.alloc(FRAMES, 1, { server });
+        // 5 = normalize | clear; no wavetable flag: plain samples, which is
+        // what bufRd reads.
+        await buf.gen("sine1", [["i", 5], 1.0]);
+
+        samples = Array.from(await buf.getSamples());
+        const peak = Math.max(...samples.map(Math.abs));
+        log(`read ${samples.length} samples | peak ${peak.toFixed(3)}`);
+
+        reversedTable = [...samples].reverse();
+        faded = samples.map((s, i) => s * (1.0 - i / samples.length));
+
+        // The clock has to be running for a routine to fire: playing one on a
+        // stopped clock queues it forever, silently.
+        session.start();
+        for (const id of ["edits", "refusal", "server"]) $(id).disabled = false;
+      }
+
+      function* sequence() {
+        const voice = new Synth("table_scan", { bufnum: buf.bufnum, freq: 440.0 }, { server });
+        yield 1.5;                                   // the original table
+        buf.setSamples(reversedTable);               // inaudible, and that is the point
+        log("reversed: a symmetric table sounds the same");
+        yield 1.5;
+        buf.setSamples(faded);                       // buzzier: a fade inside the period
+        log("faded inside the period: buzzier, since a discontinuity is harmonics");
+        yield 1.5;
+        buf.setSample(0, 0.0);                       // one sample, by flat index
+        log("one sample poked to zero");
+        yield 1.0;
+        voice.free();
+        yield 0.5;
+      }
+
+      function* editedByTheServer() {
+        const voice = new Synth("table_scan", { bufnum: buf.bufnum, freq: 440.0 }, { server });
+        yield 1.5;                                   // whatever the table holds now
+        // `wait: false` because a routine must never block the clock on a reply
+        // — and because these chain on the server, each building on the last.
+        log("fade in");
+        buf.fade({ wait: false });
+        yield 1.5;
+        log("reversed, so the fade now dies instead");
+        buf.reverse({ wait: false });
+        yield 1.5;
+        log("first quarter silenced, on exact zeros");
+        buf.silence({ start: 0, frames: FRAMES / 4, wait: false });
+        yield 1.5;
+        log("and halved, all of it");
+        buf.gain(0.5, { wait: false });
+        yield 1.5;
+        voice.free();
+        yield 0.5;
+      }
+
+      async function refusal() {
+        const tail = await buf.getSamples({ start: FRAMES - 4, count: 100 });
+        log(`a read past the end returned ${tail.length} samples, not 100`);
+        try {
+          await buf.setSamples(new Array(100).fill(0.0), { start: FRAMES - 4 });
+          log("!! the write should have been refused");
+        } catch (e) {
+          log(`a write past the end was refused: ${e.message}`);
+        }
+      }
+
+      $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
+      $("edits").onclick = () => Routine.run(sequence, session.clock);
+      $("refusal").onclick = () => refusal().catch((e) => log(`error: ${e}`));
+      $("server").onclick = () => Routine.run(editedByTheServer, session.clock);
+    </script>
+  </body>
+</html>
