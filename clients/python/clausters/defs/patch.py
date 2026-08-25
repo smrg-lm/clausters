@@ -73,7 +73,7 @@ def synthdef_ports(sdef: SynthDef) -> tuple[list, list]:
     outlet)."""
     inlets: dict[str, str] = {}
     outlets: dict[str, str] = {}
-    for ugen in _walk(sdef.outputs):
+    for ugen in _walk(sdef.roots):
         bus = ugen.inputs[0] if ugen.inputs else None
         if not isinstance(bus, Control):
             continue
@@ -412,7 +412,7 @@ class DefPatch:
         the host draws it as an inverted tree — controls pinned to the top row,
         value boxes tucked above the box they feed, sinks at the bottom."""
         patch = cls()
-        ordered = _topo_ugens(sdef.outputs)
+        ordered = _topo_ugens(sdef.roots)
         # Controls first (one box per unique name — the pinned source row), then
         # the UGens in the def's own order (each after the inputs that feed it).
         controls: dict[str, int] = {}
@@ -435,7 +435,7 @@ class DefPatch:
                 else:
                     src = patch._add_const(inp)   # a literal -> its own value box
                 patch._connect(src, _outlet_flat(patch.boxes[src]), bi, pos)
-        patch.roots = [ugen_box[id(o)] for o in sdef.outputs]
+        patch.roots = [ugen_box[id(o)] for o in sdef.roots]
         return patch
 
     def _add_ugen(self, u: Ugen):

@@ -186,6 +186,12 @@ wav = folder / "take.wav"
 bounce_take(str(wav))
 buf = ServerBuffer.read(str(wav), server=server)    # on the server, shape known
 
+# This is the one line the web page cannot write: it has no folder to keep a
+# take in, so it installs the render's samples directly with
+# ``Buffer.from_samples`` -- the same verb this client has, and the one to use
+# here too for a take that never becomes a file. What a page lacks is the file,
+# not the call.
+
 # A **second** take, from a second file: two different takes on one lane, so
 # that joining them is a real join — an element that reads both, back to back,
 # rather than two placements of one buffer.

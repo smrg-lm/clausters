@@ -84,7 +84,9 @@ export {
     DEFAULT_MAX_NODES,
     DEFAULT_MAX_UGEN_INPUTS,
     DEFAULT_SAMPLE_RATE,
+    DEFAULT_TAP_FRAMES,
     DEFAULT_TAPS,
+    formatServerInfo,
 } from "./options.ts";
 export type { ServerInfo, ServerSizing } from "./options.ts";
 export { ServerQueries } from "./queries.ts";

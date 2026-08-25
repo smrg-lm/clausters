@@ -138,6 +138,37 @@ def test_written_samples_read_back():
     buf.free()
 
 
+def test_samples_this_program_holds_become_a_buffer():
+    """`from_samples` is `alloc` + `set_samples` in one call -- the way back
+    from a take that exists here rather than in a file, and the same call the
+    web client makes, where it is the only way back at all."""
+    _embed_or_skip()
+    try:
+        from clausters import Session
+        session = Session.embed()
+    except (OSError, RuntimeError) as e:
+        pytest.skip(f"embedded server unavailable: {e}")
+
+    server = session.server
+    stereo = [0.1, -0.1, 0.2, -0.2, 0.3, -0.3]
+    buf = Buffer.from_samples(stereo, 2, 44100.0, server=server)
+
+    # The shape follows from the layout: the sequence is interleaved, so three
+    # frames of two channels rather than six of one.
+    assert (buf.frames, buf.channels) == (3, 2)
+    assert buf.sample_rate == 44100.0
+    assert list(buf.get_samples(0, 6)) == pytest.approx(stereo, abs=1e-6)
+
+    # With no rate given the buffer keeps the server's own, which is what a
+    # take rendered at the session's rate wants.
+    plain = Buffer.from_samples([1.0, 0.5], server=server)
+    assert (plain.frames, plain.channels) == (2, 1)
+    assert list(plain.get_samples(0, 2)) == pytest.approx([1.0, 0.5], abs=1e-6)
+
+    buf.free()
+    plain.free()
+
+
 def test_a_write_past_the_end_is_refused():
     """Unlike a read, which clamps: a short write would lose samples the
     caller believes it stored."""

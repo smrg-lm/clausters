@@ -16,7 +16,7 @@ import { TempoClock, manualTicker } from "../src/base/clock.ts";
 import type { ManualTicker } from "../src/base/clock.ts";
 import { ManualTimebase, SampleTimebase } from "../src/base/timebase.ts";
 import type { Server } from "../src/defs/server/index.ts";
-import { Routine } from "../src/base/stream.ts";
+import { Routine, YieldAndReset } from "../src/base/stream.ts";
 
 await loadCore(
     await readFile(
@@ -61,6 +61,53 @@ test("a routine is resumed at the beats it yields", () => {
     clock.start().play(routine);
     run(2);
     assert.deepEqual(at, [0, 0.25, 0.5, 0.75]);
+});
+
+test("a routine restarts itself by leaving through YieldAndReset", () => {
+    const { clock, run } = harness(1.0);
+    const seen: number[] = [];
+    let pass = 0;
+    const routine = new Routine(function* () {
+        // A generator cannot restart itself, so the way back to the top is to
+        // throw: the value rides out as the delay and the next resumption
+        // starts the function afresh. The Python client's routines do exactly
+        // this, with the same class name.
+        seen.push(pass);
+        yield 0.5;
+        pass += 1;
+        throw new YieldAndReset(0.5);
+    });
+    clock.start().play(routine);
+    // One full pass is a beat: half to the throw, half to the restart.
+    run(2);
+    assert.deepEqual(seen, [0, 1, 2], "each pass starts the generator again");
+    // And it never ends: `StopStream` is what a finished generator raises, and
+    // this one is never allowed to finish.
+    assert.notEqual(routine.state, "done", "a routine that resets does not end");
+});
+
+test("Routine.run wraps and plays in one call", () => {
+    const { clock, run } = harness(1.0);
+    const at: number[] = [];
+    clock.start();
+    // The name is left bound to the **routine**, not to the function, which is
+    // what lets it still be paused and stopped — the reason the shortcut reads
+    // as a decorator in the Python client. The body reads the clock rather than
+    // the routine: on this side the first resumption happens inside `play`,
+    // before `melody` is bound (see the plan's "a running clock resumes what it
+    // is handed inside `play`").
+    const melody = Routine.run(function* () {
+        for (let i = 0; i < 4; i++) {
+            at.push(clock.beats());
+            yield 0.25;
+        }
+    }, clock);
+    run(1);
+    assert.deepEqual(at, [0, 0.25, 0.5, 0.75]);
+    assert.equal(melody.clock, clock, "the routine it answers with is the played one");
+    melody.stop();
+    run(1);
+    assert.deepEqual(at, [0, 0.25, 0.5, 0.75], "a stopped routine is not resumed");
 });
 
 test("late wake-ups do not shift the music", () => {

@@ -23,11 +23,20 @@ export type {
     PortRate,
     PortSpec,
 } from "./patch.ts";
-export { Server } from "./server/index.ts";
+export { formatServerInfo, Server } from "./server/index.ts";
 export type {
     MsgArg, ServerInfo, ServerSizing, TimedMessage, TransportGrid, TransportState,
 } from "./server/index.ts";
-export { Tree } from "./info.ts";
+export {
+    formatBufferInfo,
+    formatControlInfo,
+    formatDefInfo,
+    formatNodeInfo,
+    formatNodeMap,
+    formatUgenInfo,
+    formatUgenInput,
+    Tree,
+} from "./info.ts";
 export type {
     BufferInfo,
     ControlInfo,
@@ -44,6 +53,7 @@ export {
     DEFAULT_MAX_BUFFERS,
     DEFAULT_MAX_NODES,
     DEFAULT_SAMPLE_RATE,
+    DEFAULT_TAP_FRAMES,
     DEFAULT_TAPS,
 } from "./server/index.ts";
 

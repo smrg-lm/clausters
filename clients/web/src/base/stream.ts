@@ -29,6 +29,26 @@ export class StopStream extends Error {
 }
 
 /**
+ * Thrown from inside a routine to yield `value` and then **reset** the routine,
+ * so its next resumption starts the generator afresh.
+ *
+ * A generator cannot restart itself — `return` ends it for good — so the way
+ * back to the beginning is to leave through here: `next` catches it, resets,
+ * and hands the value on as the delay, exactly as the Python client's
+ * `YieldAndReset` does.
+ */
+export class YieldAndReset extends Error {
+    /** The delay in beats to yield on the way out; `undefined` yields nothing. */
+    readonly value: unknown;
+
+    constructor(value?: unknown) {
+        super("yield and reset");
+        this.name = "YieldAndReset";
+        this.value = value;
+    }
+}
+
+/**
  * A lazy sequence: `next()` produces values until it throws `StopStream`.
  *
  * Concrete streams carry their own random generator (`rng`), derived from the
@@ -151,6 +171,39 @@ export class Routine extends Stream {
     }
 
     /**
+     * Wraps `func` in a `Routine` and `play`s it at once; returns the routine,
+     * already scheduled.
+     *
+     * Sugar for `new Routine(func).play(clock, quant)`, and sclang's
+     * `Routine.run`. Both arguments resolve exactly as in `play`, so with
+     * neither the routine lands on the ambient clock — no `Session` and no
+     * booted server needed.
+     *
+     * ```js
+     * const melody = Routine.run(function* () {
+     *     ...
+     *     yield 0.5;
+     * });
+     * melody.stop();
+     * ```
+     *
+     * The name stays bound to the routine rather than to the function, which
+     * is what lets it still be paused and stopped. In the Python client the
+     * same call reads as a decorator over the definition; that spelling is the
+     * language's, the verb is the same one.
+     *
+     * **One thing it cannot do here**: the generator's *first* resumption
+     * happens inside `play`, before this call has returned and before the name
+     * is bound — so a body that reads `melody` on its first pass throws where
+     * the Python one does not. That is a difference in when a running clock
+     * resumes what it is handed, not in this shortcut; it is written down in
+     * `clients/web/PLAN.md` (Found by use).
+     */
+    static run(func: RoutineFunc, clock?: TempoClock, quant?: number): Routine {
+        return new Routine(func).play(clock, quant);
+    }
+
+    /**
      * Discards the running generator and returns to `init`, so the next
      * `next` or `play` starts the generator function afresh.
      */
@@ -167,16 +220,24 @@ export class Routine extends Stream {
     next(inval?: unknown): unknown {
         if (this.state === "done") throw new StopStream();
         this.state = "running"; // also what resumes a paused routine
-        if (this.gen === null) {
-            this.gen = this.func(inval);
-            const first = this.gen.next();
-            if (first.done) {
-                this.state = "done";
-                throw new StopStream();
+        let step: IteratorResult<number | undefined, unknown>;
+        try {
+            if (this.gen === null) {
+                this.gen = this.func(inval);
+                step = this.gen.next();
+            } else {
+                step = this.gen.next(inval);
             }
-            return first.value;
+        } catch (error) {
+            // The one way back to the beginning: a generator cannot restart
+            // itself, so a routine that wants to leaves through this and the
+            // value it carries becomes the delay.
+            if (error instanceof YieldAndReset) {
+                this.reset();
+                return error.value;
+            }
+            throw error;
         }
-        const step = this.gen.next(inval);
         if (step.done) {
             this.state = "done";
             throw new StopStream();

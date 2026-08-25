@@ -90,6 +90,10 @@ class SynthDef:
 
     Attributes:
         name: the def's name on the server — what `Synth` looks up.
+        roots: the graph's root UGens, one per channel of a multichannel root.
+            Named for what they are and not ``outputs``, which a ``send_trig``
+            root is not — the same attribute, under the same name, in the web
+            client.
     """
 
     def __init__(self, name: str, *roots: Ugen):
@@ -123,7 +127,7 @@ class SynthDef:
             if not isinstance(o, Ugen):
                 raise TypeError(f"SynthDef roots must be UGens, got {o!r}")
         self.name = str(name)
-        self.outputs = flat
+        self.roots = flat
 
     def spec(self) -> dict:
         """The ``SynthDefSpec`` dict the server's ``/def_send synth`` compiles."""
@@ -160,7 +164,7 @@ class SynthDef:
                 raise TypeError(f"not a UGen graph node: {node!r}")
             # a plain number is a constant: nothing to gather here
 
-        for o in self.outputs:
+        for o in self.roots:
             visit(o)
 
         def ser(inp):
@@ -255,7 +259,7 @@ class SynthDef:
         the same walk `spec` does, kept here so the range never has to survive a
         round trip through the wire (which does not carry it)."""
         seen: dict = {}
-        stack = list(self.outputs)
+        stack = list(self.roots)
         while stack:
             node = stack.pop(0)
             if isinstance(node, Control):
@@ -287,4 +291,4 @@ class SynthDef:
                                 w=w, h=h, title=title or self.name, host=host)
 
     def __repr__(self):
-        return f"SynthDef({self.name!r}, {len(self.outputs)} outputs)"
+        return f"SynthDef({self.name!r}, {len(self.roots)} roots)"

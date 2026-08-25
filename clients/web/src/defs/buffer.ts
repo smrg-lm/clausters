@@ -230,19 +230,20 @@ export class Buffer {
     }
 
     /**
-     * Installs interleaved `samples` into a freshly allocated buffer — the
-     * page's way back from a render to something that sounds.
+     * Installs interleaved `samples` into a freshly allocated buffer — a take
+     * that exists **in this program** rather than in a file.
      *
-     * This is what closes the loop the `render` verb opens: the reference
-     * client bounces a piece to a **file** and reads that file back with
-     * `/buffer_allocRead`, and a page has neither a file to write nor a
-     * filesystem the server could read one from. What it has instead is
-     * memory shared with the engine, so the samples go in directly.
+     * `read` is the other direction and is the one to use when there is a file
+     * the server can open itself; this is for samples the client holds — a
+     * render read back, an edit computed here, a table built in the page. It
+     * is what closes the loop the `render` verb opens, and in a tab it is the
+     * *only* way back from a render to something that sounds: a page has
+     * neither a file to write nor a filesystem the server could read one from.
      *
-     * **In-page only**, for the same reason `load` is: a socket carrier would
-     * have to push every sample over the wire in `setSamples` chunks, which
-     * is what to reach for when the samples exist only in the page and the
-     * server is remote.
+     * The same call exists in the Python client (`Buffer.from_samples`) and
+     * means the same thing. What differs is only how fast the samples travel:
+     * over the in-page engine they are one copy into shared memory, and over a
+     * socket they go as `setSamples`' blob runs, which every carrier has.
      */
     static async fromSamples(
         samples: Float32Array,
@@ -251,20 +252,21 @@ export class Buffer {
         { timeout, server: on }: BufferOptions = {},
     ): Promise<Buffer> {
         const server = resolveServer(on);
-        const bulkLoad = server.connection.bulkLoad;
-        if (!bulkLoad) {
-            throw new CommandError(
-                "Buffer.fromSamples needs a carrier that shares memory with the "
-                    + "server (the in-page engine); over a socket, allocate the "
-                    + "buffer and write the samples with setSamples",
-            );
-        }
         const rate = sampleRate > 0
             ? sampleRate
             : (await server.queryInfo(timeout)).nominalSampleRate;
         const frames = Math.floor(samples.length / Math.max(1, channels));
         const buffer = await Buffer.alloc(frames, channels, { timeout, server });
-        await bulkLoad.call(server.connection, buffer.bufnum, channels, rate, samples);
+        const bulkLoad = server.connection.bulkLoad;
+        if (bulkLoad) {
+            await bulkLoad.call(server.connection, buffer.bufnum, channels, rate, samples);
+        } else {
+            // The carrier shares no memory with the server, so the samples go
+            // the way every other bulk write goes: blob runs, chunked and
+            // closed by one barrier. Slower, never unavailable — the reference
+            // client has only this path and the call means the same there.
+            await buffer.setSamples(samples, { timeout });
+        }
         return new Buffer(buffer.bufnum, frames, channels, rate, server);
     }
 

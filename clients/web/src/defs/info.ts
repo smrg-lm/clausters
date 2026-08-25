@@ -150,6 +150,84 @@ export interface NodeInfo {
     writes: string;
 }
 
+
+// ---- the readable lines ----
+//
+// The Python records print two-faced: `repr` is the dataclass form and `str`
+// the readable line. Here the records are **interfaces**, so they carry no
+// method and cannot: the line is a free function per record, which is the same
+// text from the same fields. `Tree` draws a synth by calling `formatNodeInfo`,
+// so a drawn tree and a printed node can no more disagree than they can there.
+
+/** One control of a def's surface: `freq=440 kr`, with a range and its targets. */
+export function formatControlInfo(info: ControlInfo): string {
+    let out = `${info.name}=${format(info.default)} ${info.rate}`;
+    if (info.min !== undefined) {
+        const step = info.step !== undefined ? ` step ${format(info.step)}` : "";
+        out += ` [${format(info.min)}..${format(info.max ?? 0)}${step}]`;
+    }
+    for (const { member, control, mul, add } of info.targets ?? []) {
+        out += ` -> ${member}.${control}`;
+        if (mul !== 1.0 || add !== 0.0) out += `*${format(mul)}+${format(add)}`;
+    }
+    return out;
+}
+
+/** A def and its surface: `beep (synth): freq=440 kr, amp=0.2 kr`. */
+export function formatDefInfo(info: DefInfo): string {
+    if (!info.exists) return `${info.name} (not loaded)`;
+    const surface = info.controls.map(formatControlInfo).join(", ") || "no controls";
+    return `${info.name} (${info.family}): ${surface}`;
+}
+
+/** A buffer's slot and shape: `buffer 0: 1024 frames x 2 ch @ 48000 Hz`. */
+export function formatBufferInfo(info: BufferInfo): string {
+    if (!info.exists) return `buffer ${info.bufnum} (empty)`;
+    const shape = `${info.frames} frames x ${info.channels} ch`;
+    return `buffer ${info.bufnum}: ${shape}` +
+        (info.sampleRate ? ` @ ${format(info.sampleRate)} Hz` : "");
+}
+
+/** One input slot of a UGen kind: `freq=440`. */
+export function formatUgenInput(input: UgenInput): string {
+    return `${input.name}=${format(input.default)}`;
+}
+
+/** A UGen kind: `Sine ar/kr (1 input: freq=440)`, with what sets it apart. */
+export function formatUgenInfo(info: UgenInfo): string {
+    const arity = info.arity < 0
+        ? "variadic"
+        : `${info.arity} input${info.arity === 1 ? "" : "s"}`;
+    const slots = info.inputs.map(formatUgenInput).join(", ");
+    // `normal` is the exec class of most kinds and the other three tags are
+    // empty on most; only what sets a kind apart is worth a line.
+    const tags = [info.exec, info.bus, info.opFamily, info.spectral]
+        .filter((t) => t && t !== "normal").join(" ");
+    const out = `${info.name} ${info.rates.join("/")} (${arity}` +
+        (slots ? `: ${slots}` : "") + ")";
+    return tags ? `${out}  ${tags}` : out;
+}
+
+/** One live mapping: `#0<-c3`. */
+export function formatNodeMap(map: NodeMap): string {
+    return `#${map.control}<-${map.audio ? "a" : "c"}${map.bus}`;
+}
+
+/** A node at one moment: `1001 beep  freq=440 amp<-c3`, or a group's line. */
+export function formatNodeInfo(info: NodeInfo): string {
+    if (!info.exists) return `${info.id} (gone)`;
+    if (info.isGroup) {
+        const named = info.name ? ` "${info.name}"` : "";
+        return `group ${info.id}${named}${info.head < 0 ? " (empty)" : ""}`;
+    }
+    const mapped = new Map(info.maps.map((m) => [m.control, m]));
+    const parts = Object.entries(info.controls).map(([name, value], i) => {
+        const m = mapped.get(i);
+        return m ? `${name}<-${m.audio ? "a" : "c"}${m.bus}` : `${name}=${format(value)}`;
+    });
+    return `${info.id} ${info.defname}` + (parts.length ? "  " + parts.join(" ") : "");
+}
+
 /**
  * The node tree from one group down: a `NodeInfo` plus its children.
  *
@@ -205,16 +283,14 @@ export class Tree {
         const pad = "  ".repeat(depth);
         const info = this.info;
         if (info.isGroup) {
+            // The children are the tree's own knowledge, so emptiness is read
+            // from them rather than from the record's `head` — the one line a
+            // group's own formatter cannot write for it.
             const named = info.name ? ` "${info.name}"` : "";
             const head = `${pad}group ${info.id}${named}${this.children.length ? "" : " (empty)"}`;
             return [head, ...this.children.flatMap((c) => c.lines(depth + 1))];
         }
-        const mapped = new Map(info.maps.map((m) => [m.control, m]));
-        const parts = Object.entries(info.controls).map(([name, value], i) => {
-            const m = mapped.get(i);
-            return m ? `${name}<-${m.audio ? "a" : "c"}${m.bus}` : `${name}=${format(value)}`;
-        });
-        return [`${pad}${info.id} ${info.defname}${parts.length ? "  " + parts.join(" ") : ""}`];
+        return [pad + formatNodeInfo(info)];
     }
 }
 

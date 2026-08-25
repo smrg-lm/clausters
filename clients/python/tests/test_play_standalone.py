@@ -395,12 +395,12 @@ def test_automation_stops_early(clean_default):
 def test_as_def_wraps_a_bare_ugen_in_out():
     sdef = as_def(sine(440.0))
     assert isinstance(sdef, SynthDef)
-    assert sdef.outputs[0].kind == "Out"
+    assert sdef.roots[0].kind == "Out"
 
 
 def test_as_def_keeps_an_output_or_side_effect_root():
-    assert as_def(out(1.0, sine(440.0))).outputs[0].kind == "Out"
-    assert as_def(send_trig(sine(1.0))).outputs[0].kind == "SendTrig"
+    assert as_def(out(1.0, sine(440.0))).roots[0].kind == "Out"
+    assert as_def(send_trig(sine(1.0))).roots[0].kind == "SendTrig"
 
 
 def test_as_def_passes_defs_through_and_autonames_expressions():
@@ -426,8 +426,8 @@ def test_as_def_rejects_non_expressions():
 
 def test_as_def_lays_a_channel_list_on_consecutive_buses():
     sdef = as_def(sine(440.0).dup())
-    buses = [o.inputs[0] for o in sdef.outputs]
-    assert [o.kind for o in sdef.outputs] == ["Out", "Out"]
+    buses = [o.inputs[0] for o in sdef.roots]
+    assert [o.kind for o in sdef.roots] == ["Out", "Out"]
     assert buses == [0.0, 1.0]
     # dup is by reference: one Sine serialized, fanned out to both channels.
     assert [u["kind"] for u in sdef.spec()["ugens"]] == ["Sine", "Out", "Out"]
@@ -435,15 +435,15 @@ def test_as_def_lays_a_channel_list_on_consecutive_buses():
 
 def test_as_def_keeps_a_list_of_sinks_as_roots():
     sdef = as_def(chans(out(4.0, sine(1.0)), out(9.0, sine(2.0))))
-    assert [o.inputs[0] for o in sdef.outputs] == [4.0, 9.0]
+    assert [o.inputs[0] for o in sdef.roots] == [4.0, 9.0]
 
 
 def test_a_sink_in_a_mixed_list_does_not_push_the_audio_off_bus_zero():
     # A sink already knows where its data goes, so it consumes no channel:
     # the members that are not sinks are the channels, from bus 0 up.
     sdef = as_def(chans(send_trig(sine(1.0)), sine(440.0), sine(660.0)))
-    assert [o.kind for o in sdef.outputs] == ["SendTrig", "Out", "Out"]
-    assert [o.inputs[0] for o in sdef.outputs[1:]] == [0.0, 1.0]
+    assert [o.kind for o in sdef.roots] == ["SendTrig", "Out", "Out"]
+    assert [o.inputs[0] for o in sdef.roots[1:]] == [0.0, 1.0]
 
 
 def test_playing_a_channel_list_sends_and_instances_it(clean_default):
@@ -466,10 +466,10 @@ def test_a_control_is_a_graph_leaf_not_something_to_play(clean_default):
 
 def test_disk_out_is_a_sink_so_it_is_not_wrapped():
     sdef = as_def(disk_out("/tmp/rec.wav", sine(440.0)))
-    assert sdef.outputs[0].kind == "DiskOut"
+    assert sdef.roots[0].kind == "DiskOut"
     # Recording *and* hearing stays available, explicitly.
     assert as_def(out(0.0, disk_out("/tmp/rec.wav", sine(440.0)))) \
-        .outputs[0].kind == "Out"
+        .roots[0].kind == "Out"
 
 
 def test_graph_management_ugens_are_not_sinks_and_stay_wrapped():
@@ -479,7 +479,7 @@ def test_graph_management_ugens_are_not_sinks_and_stay_wrapped():
                  pause_self(sine(1.0)),
                  free_self_when_done(line(1.0, 0.0, 1.0)),
                  detect_silence(sine(440.0))):
-        assert as_def(expr).outputs[0].kind == "Out"
+        assert as_def(expr).roots[0].kind == "Out"
 
 
 # ---- how wide an expression is ----

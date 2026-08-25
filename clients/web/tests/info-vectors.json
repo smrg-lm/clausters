@@ -1,0 +1,376 @@
+[
+  {
+    "kind": "control",
+    "record": {
+      "name": "freq",
+      "default": 440.0,
+      "rate": "kr"
+    },
+    "line": "freq=440 kr"
+  },
+  {
+    "kind": "control",
+    "record": {
+      "name": "amp",
+      "default": 0.2,
+      "rate": "kr"
+    },
+    "line": "amp=0.2 kr"
+  },
+  {
+    "kind": "control",
+    "record": {
+      "name": "trig",
+      "default": 0.0,
+      "rate": "tr"
+    },
+    "line": "trig=0 tr"
+  },
+  {
+    "kind": "control",
+    "record": {
+      "name": "cutoff",
+      "default": 800.0,
+      "rate": "kr",
+      "min": 20.0,
+      "max": 20000.0,
+      "step": 0.5
+    },
+    "line": "cutoff=800 kr [20..20000 step 0.5]"
+  },
+  {
+    "kind": "control",
+    "record": {
+      "name": "range",
+      "default": 1.0,
+      "rate": "kr",
+      "min": 0.0,
+      "max": 2.0
+    },
+    "line": "range=1 kr [0..2]"
+  },
+  {
+    "kind": "control",
+    "record": {
+      "name": "mix",
+      "default": 0.5,
+      "rate": "kr",
+      "targets": [
+        {
+          "member": 1,
+          "control": "amp",
+          "mul": 1.0,
+          "add": 0.0
+        },
+        {
+          "member": 2,
+          "control": "pan",
+          "mul": 2.0,
+          "add": -1.0
+        }
+      ]
+    },
+    "line": "mix=0.5 kr -> 1.amp -> 2.pan*2+-1"
+  },
+  {
+    "kind": "def",
+    "record": {
+      "name": "beep",
+      "family": "synth",
+      "exists": true,
+      "controls": [
+        {
+          "name": "freq",
+          "default": 440.0,
+          "rate": "kr"
+        },
+        {
+          "name": "amp",
+          "default": 0.2,
+          "rate": "kr"
+        }
+      ]
+    },
+    "line": "beep (synth): freq=440 kr, amp=0.2 kr"
+  },
+  {
+    "kind": "def",
+    "record": {
+      "name": "empty",
+      "family": "faust",
+      "exists": true,
+      "controls": []
+    },
+    "line": "empty (faust): no controls"
+  },
+  {
+    "kind": "def",
+    "record": {
+      "name": "nope",
+      "family": "",
+      "exists": false,
+      "controls": []
+    },
+    "line": "nope (not loaded)"
+  },
+  {
+    "kind": "buffer",
+    "record": {
+      "bufnum": 0,
+      "frames": 1024,
+      "channels": 2,
+      "sampleRate": 48000.0,
+      "exists": true
+    },
+    "line": "buffer 0: 1024 frames x 2 ch @ 48000 Hz"
+  },
+  {
+    "kind": "buffer",
+    "record": {
+      "bufnum": 3,
+      "frames": 100,
+      "channels": 1,
+      "sampleRate": 0.0,
+      "exists": true
+    },
+    "line": "buffer 3: 100 frames x 1 ch"
+  },
+  {
+    "kind": "buffer",
+    "record": {
+      "bufnum": 7,
+      "frames": 0,
+      "channels": 0,
+      "sampleRate": 0.0,
+      "exists": false
+    },
+    "line": "buffer 7 (empty)"
+  },
+  {
+    "kind": "ugenInput",
+    "record": {
+      "name": "freq",
+      "default": 440.0
+    },
+    "line": "freq=440"
+  },
+  {
+    "kind": "ugen",
+    "record": {
+      "name": "Sine",
+      "arity": 1,
+      "defaultRate": "ar",
+      "rates": [
+        "ar",
+        "kr"
+      ],
+      "exec": "normal",
+      "bus": "",
+      "needsPath": false,
+      "opFamily": "",
+      "spectral": "",
+      "inputs": [
+        {
+          "name": "freq",
+          "default": 440.0
+        }
+      ]
+    },
+    "line": "Sine ar/kr (1 input: freq=440)"
+  },
+  {
+    "kind": "ugen",
+    "record": {
+      "name": "EnvGen",
+      "arity": -1,
+      "defaultRate": "kr",
+      "rates": [
+        "kr",
+        "ar"
+      ],
+      "exec": "normal",
+      "bus": "",
+      "needsPath": false,
+      "opFamily": "",
+      "spectral": "",
+      "inputs": [
+        {
+          "name": "gate",
+          "default": 1.0
+        },
+        {
+          "name": "levelScale",
+          "default": 1.0
+        }
+      ]
+    },
+    "line": "EnvGen kr/ar (variadic: gate=1, levelScale=1)"
+  },
+  {
+    "kind": "ugen",
+    "record": {
+      "name": "Out",
+      "arity": 2,
+      "defaultRate": "ar",
+      "rates": [
+        "ar"
+      ],
+      "exec": "sink",
+      "bus": "audio",
+      "needsPath": false,
+      "opFamily": "",
+      "spectral": "",
+      "inputs": []
+    },
+    "line": "Out ar (2 inputs)  sink audio"
+  },
+  {
+    "kind": "nodeMap",
+    "record": {
+      "control": 0,
+      "bus": 3,
+      "audio": false
+    },
+    "line": "#0<-c3"
+  },
+  {
+    "kind": "nodeMap",
+    "record": {
+      "control": 2,
+      "bus": 8,
+      "audio": true
+    },
+    "line": "#2<-a8"
+  },
+  {
+    "kind": "node",
+    "record": {
+      "id": 1001,
+      "parent": 1000,
+      "prev": -1,
+      "next": -1,
+      "isGroup": false,
+      "exists": true,
+      "head": -1,
+      "tail": -1,
+      "name": "",
+      "defname": "beep",
+      "controls": {
+        "freq": 440.0,
+        "amp": 0.2
+      },
+      "maps": [
+        {
+          "control": 1,
+          "bus": 3,
+          "audio": false
+        }
+      ],
+      "reads": "-",
+      "writes": "0"
+    },
+    "line": "1001 beep  freq=440 amp<-c3"
+  },
+  {
+    "kind": "node",
+    "record": {
+      "id": 1000,
+      "parent": 0,
+      "prev": -1,
+      "next": -1,
+      "isGroup": true,
+      "exists": true,
+      "head": 1001,
+      "tail": 1001,
+      "name": "voices",
+      "defname": "",
+      "controls": {},
+      "maps": [],
+      "reads": "-",
+      "writes": "-"
+    },
+    "line": "group 1000 \"voices\""
+  },
+  {
+    "kind": "node",
+    "record": {
+      "id": 100,
+      "parent": 0,
+      "prev": -1,
+      "next": -1,
+      "isGroup": true,
+      "exists": true,
+      "head": -1,
+      "tail": -1,
+      "name": "",
+      "defname": "",
+      "controls": {},
+      "maps": [],
+      "reads": "-",
+      "writes": "-"
+    },
+    "line": "group 100 (empty)"
+  },
+  {
+    "kind": "node",
+    "record": {
+      "id": 4242,
+      "parent": -1,
+      "prev": -1,
+      "next": -1,
+      "isGroup": false,
+      "exists": false,
+      "head": -1,
+      "tail": -1,
+      "name": "",
+      "defname": "",
+      "controls": {},
+      "maps": [],
+      "reads": "-",
+      "writes": "-"
+    },
+    "line": "4242 (gone)"
+  },
+  {
+    "kind": "server",
+    "record": {
+      "blockSize": 64,
+      "nominalSampleRate": 48000.0,
+      "actualSampleRate": 48000.0,
+      "channels": 2,
+      "inputChannels": 0,
+      "audioBuses": 1024,
+      "controlBuses": 16384,
+      "maxNodes": 1024,
+      "maxBuffers": 1024,
+      "maxGraphChildren": 64,
+      "maxUgenInputs": 64,
+      "taps": 4,
+      "tapFrames": 8192,
+      "maxFrame": 65536,
+      "maxStreamBuses": 128
+    },
+    "line": "server 48000 Hz, 64-sample blocks, 2 out / 0 in\n  buses   1024 audio, 16384 control\n  limits  1024 nodes, 1024 buffers, 64 graph children, 64 ugen inputs\n  taps    4 x 8192 frames\n  frame   65536 bytes max\n  stream  128 buses per /bus_stream"
+  },
+  {
+    "kind": "server",
+    "record": {
+      "blockSize": 64,
+      "nominalSampleRate": 48000.0,
+      "actualSampleRate": 48001.5,
+      "channels": 2,
+      "inputChannels": 0,
+      "audioBuses": 1024,
+      "controlBuses": 16384,
+      "maxNodes": 1024,
+      "maxBuffers": 1024,
+      "maxGraphChildren": 64,
+      "maxUgenInputs": 64,
+      "taps": 0,
+      "tapFrames": 0,
+      "maxFrame": 65536,
+      "maxStreamBuses": 128
+    },
+    "line": "server 48001.5 Hz (nominal 48000), 64-sample blocks, 2 out / 0 in\n  buses   1024 audio, 16384 control\n  limits  1024 nodes, 1024 buffers, 64 graph children, 64 ugen inputs\n  taps    none (no segment)\n  frame   65536 bytes max\n  stream  128 buses per /bus_stream"
+  }
+]

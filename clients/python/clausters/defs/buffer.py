@@ -209,6 +209,40 @@ class Buffer:
         buf.info(timeout)
         return buf
 
+    @classmethod
+    def from_samples(cls, samples, channels: int = 1, sample_rate: float = 0.0, *,
+                     chunk: "int | None" = None, wait: bool = True,
+                     timeout: "float | None" = None, server=None) -> "Buffer":
+        """Install interleaved ``samples`` into a freshly allocated buffer — a
+        take that exists **in this program** rather than in a file.
+
+        `read` is the other direction and is the one to use when there is a file:
+        the server opens it itself, so the samples never cross the wire. This is
+        for samples the client holds — a render read back, an edit computed
+        here, a table built in Python — and it is `alloc` plus `set_samples` in
+        one call, chunked and closed by a single barrier exactly as that one is.
+
+        ``sample_rate`` is what the buffer will report; 0.0 (the default) leaves
+        the server's own rate, which is what a take rendered at the session's
+        rate wants. ``channels`` says how the flat sequence is laid out --
+        interleaved ``L R L R ...``, as everywhere else.
+
+        The same call exists in the web client, where a page has no filesystem
+        and this is the *only* way back from a render to something that sounds.
+        There it can hand the samples to a shared-memory engine in one copy;
+        here the bulk path is `set_samples`' blob runs, which every carrier has.
+        """
+        srv = _resolve(server)
+        frames = len(samples) // max(1, int(channels))
+        buf = cls.alloc(frames, int(channels), wait=wait, timeout=timeout, server=srv)
+        buf.set_samples(samples, chunk=chunk, wait=wait, timeout=timeout)
+        if sample_rate > 0.0:
+            # The record is what `sample_rate` reads; the server keeps its own
+            # rate for a buffer nothing was read into, so saying it here is the
+            # only way a take carries the rate it was rendered at.
+            buf._info.sample_rate = float(sample_rate)
+        return buf
+
     def read_channels_into(self, path, channels, *, file_start: int = 0,
                            num_frames: int = -1, buf_start: int = 0,
                            wait: bool = True, timeout: "float | None" = None):

@@ -125,11 +125,13 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
       // is a real join: an element that reads both, back to back, rather than
       // two placements of one buffer.
       //
-      // *The one line that cannot be the Python example's:* it writes the
-      // bounce to a WAV and loads it with `Buffer.read`, because a composition
-      // on a machine has a folder to keep its takes beside the session file. A
-      // tab has neither, so the samples go straight into the engine's own
-      // memory (`Buffer.fromSamples`, in-page only). Everything above and
+      // *The one line that differs from the Python example's:* it writes the
+      // bounce to a WAV and reads that file back with `Buffer.read`, because a
+      // composition on a machine has a folder to keep its takes beside the
+      // session file. A tab has no folder, so the samples go into the engine
+      // straight from the render — `Buffer.fromSamples`, which exists in both
+      // clients (`Buffer.from_samples` there) and means the same thing. It is
+      // the *file* a page does not have, not the verb. Everything above and
       // below this line is the same call in the same order.
       async function bounce(midinote, beats = 2.0) {
         const offline = await Session.nrt({ tempo: TEMPO });

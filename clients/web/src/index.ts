@@ -101,7 +101,7 @@ export {
     SampleTimebase,
 } from "./base/timebase.ts";
 export type { Timebase } from "./base/timebase.ts";
-export { FunctionStream, Routine, StopStream, Stream } from "./base/stream.ts";
+export { FunctionStream, Routine, StopStream, Stream, YieldAndReset } from "./base/stream.ts";
 export type { RoutineFunc, RoutineState } from "./base/stream.ts";
 export { currentRoutine } from "./base/context.ts";
 export { Moment } from "./base/moment.ts";

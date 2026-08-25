@@ -44,6 +44,13 @@ export const DEFAULT_MAX_UGEN_INPUTS = 32;
 export const DEFAULT_TAPS = 8;
 
 /**
+ * Frames per audio-tap ring on a server started with the default `--tap-frames`
+ * — the other half of `DEFAULT_TAPS`, and what sizes a window over a tap before
+ * `/server_query` answers with the real shape.
+ */
+export const DEFAULT_TAP_FRAMES = 16384;
+
+/**
  * The sizes a client's allocators need. They are a property of the *server*,
  * so `Server.open` reads them from `/server_query` rather than guessing;
  * pass them explicitly to skip that round trip.
@@ -85,4 +92,33 @@ export interface ServerInfo extends ServerSizing {
      * against a server too old to report it.
      */
     maxStreamBuses: number;
+}
+
+/**
+ * The server's configuration as the readable block `print` shows in the Python
+ * client (`ServerInfo.__str__`) — same fields, same order, same wording.
+ *
+ * A free function rather than a method for the reason the record formatters in
+ * `defs/info.ts` are: `ServerInfo` is an interface, so it carries none.
+ */
+export function formatServerInfo(info: ServerInfo): string {
+    const g = (value: number): string => Number(value.toPrecision(6)).toString();
+    const drift = info.actualSampleRate === info.nominalSampleRate
+        ? ""
+        : ` (nominal ${g(info.nominalSampleRate)})`;
+    const taps = info.taps
+        ? `${info.taps} x ${info.tapFrames} frames`
+        : "none (no segment)";
+    return [
+        `server ${g(info.actualSampleRate)} Hz${drift}, ` +
+            `${info.blockSize}-sample blocks, ` +
+            `${info.channels} out / ${info.inputChannels} in`,
+        `  buses   ${info.audioBuses} audio, ${info.controlBuses} control`,
+        `  limits  ${info.maxNodes} nodes, ${info.maxBuffers} buffers, ` +
+            `${info.maxGraphChildren} graph children, ` +
+            `${info.maxUgenInputs} ugen inputs`,
+        `  taps    ${taps}`,
+        `  frame   ${info.maxFrame} bytes max`,
+        `  stream  ${info.maxStreamBuses} buses per /bus_stream`,
+    ].join("\n");
 }

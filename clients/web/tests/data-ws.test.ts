@@ -218,3 +218,25 @@ test("a client writes samples and reads back exactly what it wrote", { skip: !ha
         buffer.free();
     });
 });
+
+test("samples the client holds become a buffer over a socket too", { skip: !hasServer }, async () => {
+    await withServer(async (server) => {
+        // `fromSamples` is one call in both clients and works on every carrier.
+        // Over the in-page engine it is a copy into shared memory; here there
+        // is no shared memory, so it goes the way the Python client's
+        // `from_samples` always goes -- `setSamples`' blob runs. Same call,
+        // same result, which is the whole point of testing it *here*.
+        const stereo = new Float32Array([0.1, -0.1, 0.2, -0.2, 0.3, -0.3]);
+        const buffer = await Buffer.fromSamples(stereo, 2, 44100.0, { server });
+
+        assert.equal(buffer.frames, 3, "interleaved: three frames of two channels");
+        assert.equal(buffer.channels, 2);
+        assert.equal(buffer.sampleRate, 44100.0);
+        const read = await buffer.getSamples();
+        for (let i = 0; i < stereo.length; i++) {
+            assert.ok(Math.abs(read[i]! - stereo[i]!) < 1e-6, `sample ${i}: ${read[i]}`);
+        }
+
+        buffer.free();
+    });
+});

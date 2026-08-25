@@ -1310,6 +1310,14 @@ instances share the loop and nothing else.
   one, keeping the same single-source property. Do it when the def layer is
   next opened; the strings above are the reference output.
 
+  ✅ **Done 2026-08-25**, as eight named formatters rather than one `describe`
+  (an interface has no tag to dispatch on, so a single entry point would have
+  had to guess a record's kind from its fields). `Tree.lines` calls the node
+  one. What holds the *wording* together is not a shared core — there is none
+  under a printed line — so it is frozen the way everything else across the two
+  clients is: `gen-info-vectors.py` writes what the Python records print for 24
+  cases and `info-parity.test.ts` asserts these produce the same text.
+
 - **The four `guidef` helpers that look missing and are not** (checked
   2026-08-02, recorded so the next diff of the two modules does not re-raise
   them). A name-by-name comparison of `gui/guidef.py` against `gui/guidef.ts`
@@ -1907,7 +1915,7 @@ where each audience reads, in one sentence and with its consequence:
 it already, and `docs/architecture.md` states it as a rule rather than as a
 description of what happens to be true.
 
-### W24 - The completeness pass
+### ✅ W24 - The completeness pass *(done 2026-08-25)*
 
 The slot for what the milestone-by-milestone port leaves behind: differences
 that are nobody's feature. It is deliberately last and deliberately open — it
@@ -2040,10 +2048,15 @@ as some other milestone has a better claim on it.
   three pages had been using `guiHost().canvas` for. `scope.html` reports it:
   "3 canvases sized" where it used to say 1.
 
-- **`SynthDef`'s roots are `outputs` in Python and `roots` here**, and both
+- ✅ **`SynthDef`'s roots are `outputs` in Python and `roots` here**, and both
   constructors take `*roots` — a public attribute spelled two ways, found while
   porting the Def view (which reads it). One of the two names is wrong and the
-  reference client picks which.
+  reference client picks which. **Decided 2026-08-25: `roots`**, and the
+  reference client is the one that moved. Its own docstring already said why —
+  *"the arguments are the graph's roots, not its output"* — and its own test
+  asserts `as_def(send_trig(...)).roots[0].kind == "SendTrig"`, which is not an
+  output by any reading. `SynthDef.outputs` is gone rather than aliased (nothing
+  ships that name yet), and `patch.py` reads the new one.
 - ✅ **What `open()` means where there is no window: the page, the canvas and
   the document** *(named 2026-08-23, with the Python client's API reform; closed
   2026-08-25)*. The
@@ -2152,12 +2165,18 @@ as some other milestone has a better claim on it.
   two things: `new Session(server, clock, await GuiHost.connect(url))`, and
   `GuiHost.page`/`connect` adopting the ambient registration first-wins with
   `stop()` giving it up.
-- **Two names the sweep of 2026-08-03 left over**, each too small to own a
+- ✅ **Two names the sweep of 2026-08-03 left over**, each too small to own a
   milestone and neither a difference with a reason: `Routine.run(func, clock,
   quant)`, the classmethod that constructs and starts in one call (the instance
   `play` is here, the shortcut is not), and `ServerError`, which W21 already
   listed as missing and portable and which nothing has since claimed.
-- **`Buffer.fromSamples` exists here and nowhere else** *(found 2026-08-22
+  **Closed 2026-08-25**: `Routine.run` is here, and `ServerError` turned out to
+  have landed already (it is thrown by `Server.open`'s `verify`) — the entry was
+  stale, which is what a slot for loose ends is for. Writing the shortcut turned
+  up something bigger than either name, now in "Found by use": on this side a
+  running clock resumes what it is handed **inside** `play`, so the Python idiom
+  the shortcut exists for cannot be written here.
+- ✅ **`Buffer.fromSamples` exists here and nowhere else** *(found 2026-08-22
   putting the two composer examples side by side)*. It is how a page installs a
   bounce it just rendered — the in-page engine shares memory, so the samples go
   straight in — and the Python client has no counterpart at all. Its own answer
@@ -2170,6 +2189,23 @@ as some other milestone has a better claim on it.
   capability is not the page's alone), and whether `Buffer.read` has a web
   spelling over a **URL** rather than a path. Until then it is the one line the
   composer examples cannot share, and both say so where they diverge.
+
+  **Decided and closed 2026-08-25, and neither half was a platform's.**
+  `from_samples` belongs in **both**: the capability is "samples this program
+  holds become a buffer", and every carrier can do it — a shared-memory one in a
+  single copy, a socket in `set_samples`' blob runs, which is the path the
+  Python client has always had. So `Buffer.from_samples` is in the Python client
+  (`alloc` + `set_samples` in one call), and `Buffer.fromSamples` stopped
+  **refusing** a socket carrier and falls back to exactly that. Same verb, same
+  meaning, same result on any leg; only the speed differs, which is what idiom
+  means.
+
+  `Buffer.read(path)` is in both already and stays: it is the server opening a
+  *file*, which a remote server can do and a page's engine cannot. What a page
+  lacks is the file, not a verb — so `Buffer.load(url)` stays web-only and is
+  recorded here as idiom rather than as a gap. The composer examples turned this
+  up and are what it settles: the page's comment no longer says "in-page only",
+  the script's now names its sibling, and both say the same true thing.
 
 - **The general rule this slot enforces**: a name that exists in one client and
   not the other is either a *feature* some milestone owns, or a *difference*
@@ -2193,7 +2229,57 @@ already did, twice).
 differences that are written down somewhere — a milestone that owns them, a
 row in `docs/gui-props.md`, or a paragraph in this plan's parity section.
 
+✅ **The sweep was run on 2026-08-25**, over the two packages' public surfaces
+(every `__all__` against every barrel, names normalized across the two
+spellings). It reports **36 Python-only names and no unexplained
+TypeScript-only one**, and all but two of the 36 are already written down:
+
+- the **carrier objects** (`OscUdpInterface`, `OscTcpInterface`, `OscWsInterface`,
+  `OscNrtInterface`, `OscEmbedInterface`, `NetAddr`, `OscScore`) — this client's
+  seam is `Connection` and its openers, the shape difference W21 records;
+- the **MIDI family** (`MidiRtInterface`, `MidiNrtInterface`, `MidiServer`,
+  `MidiReceiver`, `MidiEvent`, `MidiScore`, `midifunc`, `parse_midi`) — **W9**;
+- the **Faust expression** (`FaustExpr`) — **W7**;
+- the **process** (`ServerOptions`, `launch`, `ipc`) and the **filesystem**
+  (`read_soundfile`, `samples_to_file`, the four `peaks_cache_*` file doors) —
+  a page has neither, recorded above;
+- the **sample-clock spellings** (`SampleClockModel`, `SampleClockTimebase`,
+  `UdpSampleClock`), which are `SampleClock`/`SampleTimebase`/`WsSampleClock`
+  here — the rename W21 records;
+- the **module namespaces** (`base`, `ugens`, `boxes`), which this package
+  re-exports from other paths.
+
+The two that were neither: **`YieldAndReset`** (a routine's way back to its own
+beginning — a generator cannot restart itself, so the value leaves through an
+exception) and **`DEFAULT_TAP_FRAMES`** (`DEFAULT_TAPS` was here without it).
+Both are ported, both with a test. The TypeScript-only side is 293 names and
+reads as one thing: option-bag interfaces and type aliases the language needs,
+which is the difference already recorded — every value export in it either has a
+Python counterpart under another spelling or is a page's own (`ANY_PEER`,
+`startPage`, the bundle and component doors).
+
 ## Found by use: the running list of fixes
+
+- ⬜ **A running clock resumes what it is handed inside `play`, where the
+  reference client's returns first** *(found 2026-08-25, writing `Routine.run`)*.
+  `TempoClock.sched` ends in `pump()`, and an item due now is resumed there —
+  so `play()` on a started clock runs the routine's first pass **before it
+  returns**. The Python clock pushes and lets its own thread pick the routine
+  up, so `play()` returns first. Reproduced side by side: a routine printing on
+  its first resume, with `print("after play() returned")` under the call, orders
+  the two lines the other way round in each client.
+
+  It is not a page's price for having one thread. The wake could be deferred to
+  the ticker (a 0-delay tick) or to a microtask, and either would restore the
+  reference ordering; both are changes to the driver, and every clock test drives
+  it synchronously through a `ManualTicker`, so the choice is what the manual
+  harness then has to await. That is why this is written down rather than fixed
+  under a milestone about names.
+
+  What it costs today, exactly: `Routine.run(function* () { ... melody ... })`
+  cannot read its own binding on the first pass — the Python idiom the shortcut
+  is *for*, since there the same call reads as a decorator. Its doc comment says
+  so and points here.
 
 - ✅ **The operator vocabulary had no home, so the class trees differed**
   *(found 2026-08-24, adding the range maps to both clients and having to
