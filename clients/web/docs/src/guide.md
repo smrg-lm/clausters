@@ -97,7 +97,7 @@ Every bound may itself be a signal, so a range can be modulated. sclang's bipola
 
 `diskIn`/`diskOut` are the one pair that only means something against a **native** server: they stream the server's own filesystem, which a tab does not have.
 
-Two more things a tab does not have, both of them the platform's and neither of them silent. **Parallel groups do not run in parallel**: DSP threads would need `SharedArrayBuffer`, which a browser only gives a cross-origin isolated document, and a component that embeds on someone else's page cannot ask for those headers. `/group_parallel` is still accepted and the group still reports as parallel — it simply serializes, which is the same `workers = 0` path a native server takes by default and produces the same samples. That is also why `Session.embed` takes no `workers` argument here while the Python client's does. And **`/def_send faust` reaches a native server only**: the in-page engine carries no Faust compiler.
+Two more things a tab does not have, both of them the platform's and neither of them silent: **parallel groups do not run in parallel** (`/group_parallel` is accepted and serializes, which produces the same samples), and **`/def_send faust` reaches a native server only**. The whole list, with the reason for each, is [What a tab cannot do](platform.md).
 
 A `FaustDef` is built from a signal expression (`fromSignals`), a box tree or Faust source (`fromSource`) — the last only against a native server, the in-page engine having no Faust compiler in it. `GraphDef` wires several of either into one named, instantiable configuration with a port surface.
 

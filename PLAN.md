@@ -721,8 +721,10 @@ entries keep their original paths as a record of what shipped where. See
 
   The design is decided and recorded in `docs/decisions.md` ("The page's Faust
   is a second wasm module linked into the engine's own memory"); what is left is
-  to build it. In outline: the def is compiled by `libfaust-wasm` on the **main**
-  thread (the page's compiler thread, the worklet being its audio thread) and
+  to build it. In outline: the def is compiled by `libfaust-wasm` in the **NRT/compiler
+  Worker** B6 adds (the page's compiler thread, the worklet being its audio
+  thread — it was written here as the main thread until B6 priced that at the
+  GUI host's frames) and
   the module bytes plus the JSON come back over the same port the OSC does, so
   `/def_send faust` keeps its existing asynchronous shape and **nothing on the
   wire changes**. The emitted module is `-lang wasm-e`, instantiated against the
@@ -744,6 +746,13 @@ entries keep their original paths as a record of what shipped where. See
     to the second 64 KiB page (the wasm backend writes its JSON at absolute
     offset 0, over our `.rodata`, external memory included). The def-send path
     refuses a JSON larger than the reserved page with `/fail`.
+  - **The engine's memory is reserved, not grown.** `WebAssembly.Memory.grow`
+    **detaches** the `ArrayBuffer` and every JS view over it, so a glue that
+    caches a `Float32Array` breaks the first time the pool grows — and growing
+    at all is work on the audio thread. The engine reserves its linear memory at
+    boot (modestly: iOS Safari crashes a tab near 350 MB), the glue re-derives
+    views rather than caching them across calls, and growth becomes a budgeted
+    event on B6's serving turn instead of a surprise.
   - **The compile leg in the page**, in `clients/web`: `libfaust-wasm` built
     from `third_party/faust` at the existing pin by a script beside
     `build-verovio-wasm.sh`, staged by `build.sh` as a static asset **off**
@@ -760,6 +769,55 @@ entries keep their original paths as a record of what shipped where. See
   a page mounting a SynthDef-only bundle loads no compiler asset; and the
   transcendental imports resolve to the engine's own exports, asserted rather
   than assumed.
+
+- ⬜ **B6 — the second scope: a Worker for the work that is neither audio nor UI.**
+  The browser engine collapsed four kinds of native thread onto one, and the bill
+  is coming due: a buffer install is a memcpy on the thread that owes a block
+  every 2.67 ms. The design is decided and recorded in `docs/decisions.md` ("The
+  browser engine gets a second scope: a Worker for the work that is neither audio
+  nor UI"); this is the build. **B5 depends on it** for where the Faust compiler
+  runs, and `DiskIn` in a page depends on it entirely.
+
+  Four steps, each shippable on its own and in this order — the first is the one
+  that pays immediately and the rest are capability:
+
+  1. **`step()` gets a budget.** The worklet's serving turn stops draining
+     everything and drains what fits, with the remainder resuming next turn. It
+     bounds an OSC burst and an oversized bundle too, which have no ceiling
+     today. Needs a number, measured against the quantum rather than chosen:
+     `tests/headless.rs` can drive it natively, and the budget is the acceptance.
+  2. **The Worker, and the NRT runner in it.** A slim wasm shell beside
+     `clausters-web` exporting `server::nrt::run_job` — the third caller of a
+     door that already has two. Jobs and results cross as transferred
+     `ArrayBuffer`s over a `MessagePort` transferred into the worklet, feature-
+     detected at boot with a handshake and falling back to a main-thread relay
+     (Safari's port transfer into a worklet is the one piece no documentation
+     here settles). The install on the worklet side is chunked under step 1's
+     budget. **`/buffer_alloc` stops being paid in the audio callback**, which
+     is the whole point.
+  3. **OPFS: the page gets a filesystem.** `createSyncAccessHandle` is dedicated-
+     worker-only by standard, so it lives exactly where step 2 put the runner.
+     `/buffer_allocRead` stops being a path with nothing behind it, and
+     `/buffer_write` gains somewhere to write. Decoding is **symphonia in the
+     Worker, never `decodeAudioData`** — a different decoder would make one file
+     two sets of samples across the two clients.
+  4. **`DiskIn`/`DiskOut` in a tab.** The Worker reads OPFS with a sync handle
+     and transfers chunks; the worklet copies into the UGen's ring under the
+     budget. Without SAB this cannot be a sample-accurate SPSC ring, so **the
+     prefetch depth is the design** and a browser `DiskIn` is a
+     deeper-latency instrument than the native one — written on the page, not
+     hidden. Retires "a long take is played out of the pool" for the browser,
+     and lifts the iOS memory ceiling off long material.
+
+  **Acceptance:** a 100 MB buffer allocates and fills with no dropout, measured
+  rather than heard (the quantum's onset jitter through the run); a file in OPFS
+  reaches a buffer through `/buffer_allocRead` and its samples match the native
+  read of the same file bit for bit; `DiskIn` streams a take longer than the pool
+  would hold; and every step keeps the wire unchanged — `/buffer_*` already
+  replies late, which is why none of this is a protocol question.
+
+  **What it does not do**, stated because the shape invites the assumption: it
+  does not bring parallel groups. Those need shared memory, not a second thread.
 
 ## U track — the UGen library
 

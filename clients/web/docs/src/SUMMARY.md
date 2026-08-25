@@ -14,6 +14,7 @@
 - [Composition: the arrangement](composition.md)
 - [The visual elements in a page](gui.md)
 - [Components: an instrument in the page](components.md)
+- [What a tab cannot do](platform.md)
 - [Examples](examples.md)
 
 # Reference

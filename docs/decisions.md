@@ -6729,3 +6729,111 @@ build gate. And that `-lang wasm-e` keeps allocating nothing; a Faust release
 that changed it would be caught by the def-send path failing to find its
 parameters where the JSON says they are. None of the three is a reason to
 prefer a design that is slower on purpose.
+
+
+## The browser engine gets a second scope: a Worker for the work that is neither audio nor UI
+
+*2026-08-25.*
+
+The native server has four kinds of thread and the browser engine has had one.
+Network, audio, and the auxiliaries that may not block either — the NRT runner
+(every `/buffer_*`: allocation, decoding, file I/O, zeroing), the Faust
+compiler, the disk streams — are four roles that the page collapsed onto the
+AudioWorklet, because `OscServer::headless` serves a pulled turn (`step()`)
+before each block and everything else was compiled out or made inline
+(`NrtRunner::Inline`, `workers = 0`, `DiskIn`/`DiskOut` target-gated off).
+
+That was right for B0–B4, whose question was whether the engine runs at all. It
+is wrong now, and the cost is measurable rather than theoretical: **the render
+quantum's budget is about 3 ms** at 44.1 kHz (2.67 at 48), and a buffer install
+is a memcpy into wasm linear memory — a five-minute stereo take is 110 MB, tens
+of milliseconds, on the thread that owes a block every 2.67 ms. Nothing has
+glitched yet only because no example is that big.
+
+**Decision: one dedicated Worker, beside the worklet.** It is the browser's
+version of "the threads that are neither audio nor UI", and it takes exactly the
+roles that are those threads natively:
+
+- **The NRT runner.** `server::nrt::run_job` is already a `pub fn` whose own
+  docstring names two callers — the NRT thread and the offline renderer, which
+  calls it synchronously. The Worker is a third caller of the same door, not a
+  new architecture: a slim wasm shell beside `clausters-web` exporting `run_job`,
+  fed jobs over a port and answering with the built buffer's frames.
+- **The Faust compiler** (revising `B5`, which had put it on the main thread).
+  Compiling a def is tens of milliseconds; on the main thread that is the GUI
+  host's frames. It belongs where the native compiler thread is — off both.
+
+**Why the decoder is ours and not the browser's.** The obvious shortcut is
+`decodeAudioData`. It is the wrong one: it is a different decoder from
+symphonia, so the same file would become different samples in a tab and in a
+window — a divergence in values, which is worse than one in surface because
+nothing names it. The Worker runs our decoder.
+
+**What travels, and what it costs.** No `SharedArrayBuffer`: that question is
+settled and priced elsewhere in this file, and reopening it means a profile
+rather than an argument. Samples cross as **transferred** `ArrayBuffer`s (a
+move, not a copy), and the Worker holds a `MessagePort` transferred into the
+worklet, so a chunk does not queue behind the main thread's event loop at 60 fps.
+What remains on the audio thread is one bump allocation in linear memory and one
+memcpy — which is the next decision.
+
+**`step()` gets a budget, and that is the general form of the fix.** Everything
+the worklet does outside `process_block` is bounded per turn, and work that does
+not fit resumes on the next one. A buffer install is **chunked** across serving
+turns; the swap-in stays one pointer store, which the "every job replaces the
+buffer" rule already gives us, and `/buffer_*` already replies `/done` late, so
+the protocol learns nothing. The same budget bounds an OSC burst or an oversized
+bundle, which today have no ceiling either. This is the one invariant that
+changes: the worklet's serving turn stops being "drain everything" and becomes
+"drain what fits".
+
+**OPFS is what makes the file-shaped commands mean something.** A page has a
+private filesystem, and `createSyncAccessHandle()` — synchronous read and write,
+the same shape `reader_thread`/`writer_thread` have natively — is available in
+**dedicated Workers only**, by standard, precisely so nobody blocks the main
+thread with it. So the Worker is also where files live: `/buffer_allocRead`
+stops being a path with nothing behind it, `DiskIn`/`DiskOut` become possible,
+and a persisted data dir — the browser twin of `--data-dir` — becomes possible
+with them.
+
+**`DiskIn`'s honest price.** Without SAB the stream cannot be a sample-accurate
+SPSC ring; it is a chunk queue the Worker keeps ahead and transfers. Chrome's
+own guidance is worth quoting against ourselves here: a ring buffer "only
+reconciles the buffer size mismatch and does not give more time to run the
+code", and Worker↔worklet synchronization stays loose enough that an
+underrun shows up as a drop. So **the prefetch depth is the design**, not a
+tuning constant, and a browser `DiskIn` is a deeper-latency instrument than the
+native one. That is a difference to write on the page, not to hide.
+
+**Browser compatibility, checked rather than assumed.** Every piece is
+Baseline: AudioWorklet (Chrome 66, Firefox 76, Safari 14.1); OPFS sync access
+handles, widely available since March 2023, dedicated-worker-only in all three;
+`MessagePort` exposed to Window, Worker **and** AudioWorklet and transferable,
+per the HTML standard. Two WebKit findings are worth carrying:
+
+- **Passing a `WebAssembly.Module` to a worklet was broken in Safari** and is
+  the mechanism B2 already relies on (`processorOptions`). Fixed in November
+  2022 (WebKit 220038), so the floor for the engine in Safari is that release,
+  not 14.1 — worth knowing before a bug report blames our code.
+- **iOS Safari crashes a tab somewhere near 350 MB of wasm memory**,
+  undocumented. It is the reason the buffer pool must stay modest on mobile and
+  a long take must stream rather than pool — the same conclusion `DiskIn`
+  reaches from the other side.
+
+The one thing not verified from documentation is transferring a `MessagePort`
+*into* the worklet on Safari specifically; WebKit's serialization fix above
+covers the mechanism, but no test here can drive Safari. So the direct
+Worker↔worklet channel is **feature-detected with a handshake at boot**, falling
+back to relaying through the main thread. Same semantics either way — it is a
+transport detail, like choosing a carrier — and the fallback costs latency, not
+correctness.
+
+**And what this does not fix, ever.** Parallel groups. DSP threads mean wasm
+threads mean `SharedArrayBuffer` mean cross-origin isolation, and a component
+embedding on a page we do not control cannot demand headers of it. The Worker
+does not help: it is a second thread, not shared memory. `/group_parallel` is
+accepted and serializes — bit-identically, so the samples are the ones the flag
+promises — and `Session.embed` takes no `workers` argument in the browser. This
+is now written where a reader meets it, in the web client's book ("What a tab
+cannot do"), beside every other limit that is the platform's rather than the
+port's.
