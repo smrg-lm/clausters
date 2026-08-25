@@ -6828,6 +6828,17 @@ back to relaying through the main thread. Same semantics either way — it is a
 transport detail, like choosing a carrier — and the fallback costs latency, not
 correctness.
 
+**A number that does not hold cuts the feature, not the budget.** Each step of
+this is gated on a measurement rather than on being finished, and the outcome of
+a bad measurement is decided in advance: the browser keeps the **reduced**
+capability — a ceiling on a buffer, a floor under a prefetch, a `DiskIn` that
+only plays forward — and the reduction is written on the page of limits with the
+number that caused it. A tab that does less than a window is a limit, and there
+is now a place for limits; a tab that drops samples is a defect, and there is no
+place for those. The temptation this forecloses is the other order: keeping the
+full capability and widening the budget until the glitch is rare enough to be
+somebody else's bug report.
+
 **And what this does not fix, ever.** Parallel groups. DSP threads mean wasm
 threads mean `SharedArrayBuffer` mean cross-origin isolation, and a component
 embedding on a page we do not control cannot demand headers of it. The Worker

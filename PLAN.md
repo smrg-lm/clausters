@@ -816,6 +816,19 @@ entries keep their original paths as a record of what shipped where. See
   would hold; and every step keeps the wire unchanged — `/buffer_*` already
   replies late, which is why none of this is a protocol question.
 
+  **Every step is gated on a measurement, and the measurement may cut it back.**
+  The budget in step 1 is a number to be *measured against the quantum*, not
+  chosen, and the three steps after it each have one: how much of a chunked
+  install fits in a turn, what an OPFS read costs a Worker, how deep a prefetch
+  has to be before an underrun stops showing. If a number does not hold, **the
+  browser gets the reduced capability, not the full one with a glitch in it** —
+  a ceiling on buffer size, a floor under the prefetch, a `DiskIn` that only
+  plays forward, a `/buffer_write` that does not exist. A tab doing less than a
+  window is a limit, and this project has a place for limits; a tab dropping
+  samples is a defect, and it has none. So a step that measures badly is closed
+  by **writing the reduction into `clients/web/docs/src/platform.md`** with the
+  number that caused it, not by leaving the step open.
+
   **What it does not do**, stated because the shape invites the assumption: it
   does not bring parallel groups. Those need shared memory, not a second thread.
 
