@@ -672,7 +672,7 @@ entries keep their original paths as a record of what shipped where. See
   (`bootClausters`: compile + `addModule`, `AudioWorkletNode`, raw
   `send`/`onReply`/`clock`, `resume()` as the gesture hook), `web/osc.js` (a
   page-side OSC codec), the audible harness `web/index.html`, and the
-  acceptance `web/smoke.html` + `scripts/smoke-web.sh` under headless Chrome:
+  acceptance `web/smoke.html` + `scripts/smoke-web.sh worklet` under headless Chrome:
   `/server_status` round trip over the MessagePort, engine clock advance, and the
   `/synth_new` sine measured at an AnalyserNode (the verdict beaconed through the
   HTTP access log — real-time audio vs. Chrome's virtual time, see
@@ -691,7 +691,7 @@ entries keep their original paths as a record of what shipped where. See
   the persisted formats — HTTP cannot list directories;
   `web/bundle-manifest.py` generates it) and the page
   `web/standalone.html`; samples fetch + `decodeAudioData` → the engine's
-  `bLoad` over the worklet port. Acceptance `scripts/smoke-web-standalone.sh`:
+  `bLoad` over the worklet port. Acceptance `scripts/smoke-web.sh standalone`:
   a native-format bundle (SynthDef spec + GuiDef with `boot`/`bind`) boots
   entirely in a headless-Chrome tab, `/server_sync.reply` confirms, and the meter's
   control bus streams live values over the in-page leg.
@@ -709,7 +709,7 @@ entries keep their original paths as a record of what shipped where. See
   into its shadow DOM, its button the standard autoplay-gesture affordance;
   `clausters-ready`/`-error` events) and `<clausters-power>` (the affordance
   alone). Components share one engine/host by construction — the common
-  node/bus/buffer namespace. Acceptance `scripts/smoke-web-components.sh` +
+  node/bus/buffer namespace. Acceptance `scripts/smoke-web.sh components` +
   `demo.html?smoke=1`: element up with the canvas in its shadow root, raw
   `server()` sees the element's synth (`/server_status`), meter bus streaming.
 

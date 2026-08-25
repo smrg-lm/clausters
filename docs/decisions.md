@@ -1379,7 +1379,8 @@ Two findings worth keeping with this record:
   so the B0 parity trick (dump the DOM after a virtual-time budget) cannot
   drive a smoke that waits on real audio progress. `scripts/smoke-web.sh`
   instead runs Chrome in real time and has the page beacon its verdict as a
-  `fetch` of `/smoke-verdict-…`, read from the HTTP server's access log.
+  `fetch` of `/smoke-verdict-…`, read from the HTTP server's access log. Every
+  web acceptance since is written that way, and one runner walks them all.
 
 ## The browser bundle boot replays the persisted files over the wire; the only new artifact is a manifest
 

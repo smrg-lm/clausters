@@ -143,6 +143,61 @@ jobs:
       - name: wasm build gate (engine + shared core)
         run: ./scripts/check-wasm.sh
 
+  # The web acceptance smokes: the pages that only a browser can judge -- the
+  # engine live in an AudioWorklet, a standalone bundle booting in a tab, a
+  # bundle mounted as a custom element, and the two authored bundles whose
+  # GuiDefs drive the engine with no page script at all. Each beacons a verdict
+  # this reads out of an HTTP access log, and until now nothing ran any of them:
+  # all three scripts that existed were broken at once and stayed that way,
+  # while the two authored pages carried assertions that had never fired.
+  #
+  # Chrome comes preinstalled on the runner image (google-chrome-stable); the
+  # script fails with a clear message if it ever stops being there.
+  web:
+    name: web smokes (headless Chrome)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          # Both workspaces: build.sh compiles the engine and the core codec
+          # from the root one and the GUI host from clients/gui.
+          workspaces: |
+            .
+            clients/gui
+          key: web-wasm
+      # The same pinned CLI the release workflow stages, and for the same
+      # reason: the glue wasm-bindgen exchanges with the crate is a private
+      # format, so the versions must agree exactly.
+      - name: The pinned wasm-bindgen CLI
+        run: |
+          PIN=$(sed -n '/^name = "wasm-bindgen"$/{n;s/^version = "\(.*\)"$/\1/p;}' Cargo.lock)
+          echo "staging wasm-bindgen $PIN"
+          mkdir -p "$HOME/bin"
+          curl -sSL "https://github.com/wasm-bindgen/wasm-bindgen/releases/download/${PIN}/wasm-bindgen-${PIN}-x86_64-unknown-linux-musl.tar.gz" \
+            | tar -xz --strip-components=1 -C "$HOME/bin" \
+              "wasm-bindgen-${PIN}-x86_64-unknown-linux-musl/wasm-bindgen"
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+      - name: npm install (build.sh emits the package with tsc)
+        working-directory: clients/web
+        run: npm ci
+      # The two authored-bundle cases write their bundles with the Python
+      # client, which the script puts on PYTHONPATH itself. Authoring needs
+      # nothing native -- no build_native, no libfaust, no verovio -- because
+      # the client only writes the persisted files here; it talks to nothing.
+      - name: The smokes
+        run: ./scripts/smoke-web.sh
+
   python:
     name: python client (pytest)
     needs: libfaust

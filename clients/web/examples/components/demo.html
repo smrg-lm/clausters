@@ -31,7 +31,7 @@ through the raw singleton — the REPL surface a future TS client builds on.</di
     <!--
       The web-components demo (and its scripted acceptance): a standalone
       bundle as a page element over the per-page singletons. ?smoke=1
-      (scripts/smoke-web-components.sh, headless Chrome) auto-boots and
+      (scripts/smoke-web.sh components, headless Chrome) auto-boots and
       asserts: the element came up with the canvas in its shadow DOM, the
       raw REPL surface sees the element's synth (/server_status counts it, /node_set
       retunes it), the meter bus streams — one shared namespace. Verdict

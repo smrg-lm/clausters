@@ -2465,16 +2465,34 @@ finished work, where a pending item reads as done.
   do the `?smoke=1` verdict modes the two bundle pages carry, which nothing
   invokes at all. That is the next entry.
 
-- ⬜ **Nothing runs the web smokes, and two verdict modes are invoked by
-  nobody** *(named 2026-08-24, once the three scripts passed again)*. CI runs
-  `clients/web/test.sh` and none of `scripts/smoke-web*.sh`, which is how all
-  three came to be broken at once and stayed that way. And the two bundle pages
-  (`examples/panels/piano/`, `examples/panels/graph-controls/`) each carry a
-  full `?smoke=1` mode that beacons a verdict — the voice chain end to end, the
-  allocated bus streaming — with no script to run them: dead assertions, written
-  and never fired.
+- ✅ **Nothing runs the web smokes, and two verdict modes are invoked by
+  nobody** *(named 2026-08-24, once the three scripts passed again; fixed
+  2026-08-25)*. Three scripts existed, none of them ran anywhere, which is how
+  all three came to be broken at once and stayed that way. And the two bundle
+  pages (`examples/panels/piano/`, `examples/panels/graph-controls/`) each
+  carried a full `?smoke=1` mode that beacons a verdict — the voice chain end to
+  end, the allocated bus streaming — with no script to run them: dead
+  assertions, written and never fired.
 
-  The two halves are one job: a runner that takes a page and a verdict is
-  already written three times over, so what is wanted is one script that walks a
-  list, plus the CI step that calls it. Worth doing before W16 leans on any of
-  it.
+  One runner now walks a list of five cases: `scripts/smoke-web.sh` (`--list`
+  names them, an argument runs a subset), with the two other scripts gone. It
+  builds what the selection needs — the package once, the demo bundle, each
+  authored bundle through its own `make_bundle.py` — and reads each verdict out
+  of the HTTP access log, the posture every web acceptance is written in. Two
+  things it does *not* inherit from the scripts it replaces: the browser is
+  reaped by its **process group**, the hardening `test.sh` grew after a killed
+  suite left engines running, and a failing case does not stop the run, since
+  these are precisely the assertions that go unnoticed one at a time. What the
+  three scripts got wrong the same way is also fixed: none passed
+  `--enable-unsafe-swiftshader`, so the pages that mount a GUI host were relying
+  on whatever adapter headless Chrome happened to offer.
+
+  The other half was the claim in this entry itself: it said CI ran
+  `clients/web/test.sh`. **It ran neither** — no workflow mentioned either one.
+  The `web smokes (headless Chrome)` job in `.github/workflows/ci.yml` runs the
+  runner now; authoring the two bundles needs nothing native, so the job is the
+  wasm toolchain, npm and a plain Python.
+
+  Both authored pages passed on their first firing, which is the good outcome
+  and not the expected one — an assertion never run is an assertion never
+  checked.
