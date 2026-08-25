@@ -97,7 +97,7 @@ socket.</div>
     <script type="module">
       import {
         loadOsc, loadCore, pageConnection, server as engine, Server,
-        Buffer, Synth, SynthDef, GuiHost, guiHost, gui,
+        Buffer, Synth, SynthDef, GuiHost, gui,
       } from "../../dist/index.js";
       import { control, line, out, recordBuf, sine } from "../../dist/defs/index.js";
 
@@ -111,8 +111,8 @@ socket.</div>
       const LANES = 1;              // the navigation group the four takes share
       const LONG = 2;               // the finished take's own: a different axis
 
-      let server, host, raw, page, win = null;
-      let unfit = null, takes = [], long = null, peer = null;
+      let server, raw, win = null;
+      let takes = [], long = null, peer = null;
 
       // One def, one node per take: a glissando, heard and recorded at once —
       // `recordBuf` passes its input through, so the same signal reaches the
@@ -138,7 +138,7 @@ socket.</div>
       // Without it the buffer's own zeros are drawn — a flat line across the
       // whole take before anything has been recorded into it — because past
       // the frontier there is no silence, there is no samples yet.
-      const scene = () => gui.window(
+      const scene = () => gui.view(
         { title: "recording", layout: "col", margin: 8.0, gap: 6.0 },
         ...takes.map((take, i) => gui.waveform({
           name: `take${i}`, buffer: take.bufnum, sampleRate: RATE,
@@ -188,9 +188,10 @@ socket.</div>
         raw = await engine({ channels: 2 });
         await raw.resume();
         server = await Server.open(await pageConnection());
-        host = await GuiHost.page();
-        page = await guiHost();
-        el("stage").append(page.canvas);
+        // The page's host, and the ambient one from here on: a view opens
+        // without being told which host, exactly as the script does after
+        // `session.gui()`.
+        await GuiHost.page();
 
         await glissando().send(server);
         await server.sync();
@@ -227,9 +228,10 @@ socket.</div>
           stepFrames * 2,
           (i % 2 === 0 ? 1 : -1) * (0.2 + 0.7 * (i / (steps - 1))),
         ]));
-        win = host.open(scene());
-        unfit?.();
-        unfit = page.fit(win.id, el("stage"));
+        // Where a page draws is the document's say, and it is the one line
+        // the script has no counterpart for: the view opens into `#stage`, its
+        // canvas is made inside that element and follows its box.
+        win = await scene().open(el("stage"));
         log(`${TAKES} empty takes of ${SECONDS} s — the lanes are empty, `
           + "and `fills` is what makes that read as empty rather than as silence");
         log(`the last lane is a finished take of ${LONG_SECONDS} s x 2 `

@@ -49,6 +49,7 @@ import type { Controls } from "./defs/node.ts";
 import { SynthDef } from "./defs/synthdef.ts";
 import { Env, control, envGen, out } from "./defs/ugens/index.ts";
 import { GuiHost } from "./gui/host.ts";
+import type { Stage } from "./gui/host.ts";
 import type { PropValue } from "./gui/host.ts";
 import { ambientHost } from "./gui/ambient.ts";
 import * as guidef from "./gui/guidef.ts";
@@ -165,6 +166,13 @@ export interface PatchViewOptions {
     title?: string;
     /** An explicit host; absent, the ambient one. */
     host?: GuiHost;
+    /**
+     * Where a page draws it: the view takes this element's box and the canvas
+     * inside it is made for you. Web-only — a script has an OS window, so the
+     * Python client's counterpart of this verb takes no such argument (and a
+     * host reached over a socket refuses one).
+     */
+    element?: Stage | null;
 }
 
 /**
@@ -182,13 +190,13 @@ export async function openPatchView(
     model: { toWidget(): { boxes: Record<string, unknown>[]; cords: number[] } },
     options: PatchViewOptions = {},
 ): Promise<PatchWindow> {
-    const { label, w = 1000, h = 700, title, host: explicitHost } = options;
+    const { label, w = 1000, h = 700, title, host: explicitHost, element } = options;
     const host = explicitHost ?? await resolveHost();
     const widgetId = host.allocId();
     const view = guidef.patch({ id: widgetId, ...model.toWidget(), label });
     const workspace = guidef.scroll({ id: host.allocId() }, view);
-    const tree = guidef.window({ title: title ?? label ?? "patch", w, h }, workspace);
-    const handle = host.open(tree);
+    const tree = guidef.view({ title: title ?? label ?? "patch", w, h }, workspace);
+    const handle = host.open(tree, { element });
     return new PatchWindow(host, handle.id, widgetId);
 }
 
@@ -252,6 +260,13 @@ export interface PlotOptions {
     h?: number;
     /** An explicit host; absent, the ambient one. */
     host?: GuiHost;
+    /**
+     * Where a page draws it: the view takes this element's box and the canvas
+     * inside it is made for you. Web-only — a script has an OS window, so the
+     * Python client's counterpart of this verb takes no such argument (and a
+     * host reached over a socket refuses one).
+     */
+    element?: Stage | null;
 }
 
 /**
@@ -265,7 +280,7 @@ export async function plot(
     const {
         dur = 1.0, controls, defs = [], n = 1024, sampleRate = 48_000.0,
         channels, view, overlay, min, max, freqScale, fftSize, dbFloor, dbCeil,
-        ruler, rulerY, label, title, w = 760, h, host: explicitHost,
+        ruler, rulerY, label, title, w = 760, h, host: explicitHost, element,
     } = options;
 
     const drawn = await resolve(obj, {
@@ -308,8 +323,8 @@ export async function plot(
         widget = guidef.plot({ ...props, blob: 0 });
     }
     const height = h ?? (drawn.channels <= 1 ? 260 : 160 + 140 * drawn.channels);
-    const tree = guidef.window({ title: title ?? text ?? "plot", w, h: height }, widget);
-    const handle = host.open(tree, { blobs });
+    const tree = guidef.view({ title: title ?? text ?? "plot", w, h: height }, widget);
+    const handle = host.open(tree, { blobs, element });
     return new PlotWindow(host, handle.id, widgetId);
 }
 

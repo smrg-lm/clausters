@@ -49,7 +49,7 @@ import { main } from "./base/main.ts";
 import { Bus } from "./defs/bus.ts";
 import type { Server } from "./defs/server/index.ts";
 import * as guidef from "./gui/guidef.ts";
-import type { GuiHost, PropValue } from "./gui/host.ts";
+import type { GuiHost, PropValue, Stage } from "./gui/host.ts";
 import { resolveHost } from "./plot.ts";
 
 /** Which of the three views a scope window draws. */
@@ -176,6 +176,13 @@ export interface ScopeOptions {
     server?: Server;
     /** An explicit host; absent, the ambient one. */
     host?: GuiHost;
+    /**
+     * Where a page draws it: the view takes this element's box and the canvas
+     * inside it is made for you. Web-only — a script has an OS window, so the
+     * Python client's counterpart of this verb takes no such argument (and a
+     * host reached over a socket refuses one).
+     */
+    element?: Stage | null;
 }
 
 /**
@@ -193,7 +200,7 @@ export async function scope(
     const {
         view = "signal", overlay, windowMs, trigger, hold, min, max, fftSize,
         dbFloor, dbCeil, freqScale, averaging, peakHold, ruler, rulerY, label,
-        title, w = 480, h, server: explicitServer, host: explicitHost,
+        title, w = 480, h, server: explicitServer, host: explicitHost, element,
     } = options;
 
     if (!VIEWS.includes(view)) {
@@ -253,7 +260,7 @@ export async function scope(
         height = h ?? 280;
     }
 
-    const tree = guidef.window({ title: title ?? text, w, h: height }, widget);
-    const handle = host.open(tree);
+    const tree = guidef.view({ title: title ?? text, w, h: height }, widget);
+    const handle = host.open(tree, { element });
     return new ScopeWindow(host, handle.id, widgetId, server, index, channels);
 }

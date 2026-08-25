@@ -144,11 +144,12 @@ stream and sees them too.
 
 **Nothing is pumped.** The page already has an event loop, so the Python
 client's `pump` has no counterpart: a handler fires when the message arrives.
-Building and opening are synchronous; anything that waits for the host to
-*answer* is a promise:
+Building is synchronous; opening is awaited (the host may still be booting, and
+resolving the ambient one is what awaits), as is anything that waits for the
+host to *answer*:
 
 ```ts
-const win = host.open(tree);                       // a WindowHandle, now
+const win = await tree.open();                     // a WindowHandle
 win.widget("cutoff").set({ value: 2000.0 });
 win.widget("cutoff").onEvent((v) => console.log("cutoff ->", v));
 const info = await win.widget("cutoff").query();   // a round trip, so awaited
@@ -250,8 +251,8 @@ const melody = [67, 69, 71, 72].map((midinote) => new Event({ midinote, dur: 1.0
 const score = await notation.Score.fromNotes(melody, { meter: "4/4", key: "G" });
 
 const page = score.displayList();          // what is drawn, the cursors, the notes
-const win = host.open(gui.window({ title: "score" },
-    notation.scoreView(page, { name: "page", editable: true })));
+const win = await gui.view({ title: "score" },
+    notation.scoreView(page, { name: "page", editable: true })).open();
 ```
 
 Opening a score is the layer's one asynchronous step, and only because the

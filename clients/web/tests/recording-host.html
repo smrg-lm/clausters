@@ -61,7 +61,7 @@
 
       const {
         loadOsc, loadCore, pageConnection, server: engine, Server,
-        Buffer, Synth, SynthDef, GuiHost, guiHost, gui,
+        Buffer, Synth, SynthDef, GuiHost, gui,
       } = await import("../dist/index.js");
       const { control, out, recordBuf, sine } = await import("../dist/defs/index.js");
 
@@ -89,9 +89,7 @@
         const raw = await engine({ channels: 2 });
         await raw.resume();
         const server = await Server.open(await pageConnection());
-        const host = await GuiHost.page();
-        const page = await guiHost();
-        document.getElementById("stage").append(page.canvas);
+        await GuiHost.page();
 
         await new SynthDef("host_recording",
           out(0.0, recordBuf(control("buf", 0.0, "ir"), 0.0,
@@ -99,14 +97,13 @@
         const take = await Buffer.alloc(FRAMES, 1, { server });
         await server.sync();
 
-        const win = host.open(gui.window(
+        const win = await gui.view(
           { title: "recording", layout: "col", margin: 8.0 },
           gui.waveform({
             name: "take", buffer: take.bufnum, sampleRate: RATE,
             fills: true, ruler: "time", rulerY: "off",
           }),
-        ));
-        page.fit(win.id, document.getElementById("stage"));
+        ).open(document.getElementById("stage"));
         await sleep(600);
 
         // **Nothing was downloaded**: this take is longer than the download

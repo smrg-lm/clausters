@@ -262,13 +262,13 @@ test("a note edit rewrites the editable timeline", () => {
     assert.equal((items[0]?.[1] as SeqEvent).get("midinote"), 62);
 });
 
-test("a clip over a generator refuses a note edit, and says why", () => {
+test("a clip over a generator refuses a note edit, and says why", async () => {
     // A pattern's notes are a *rendering* of a forward-only algorithm.
     const piece = new Aggregate([[0.0, new Clang(new SeqEvent({ midinote: 60, dur: 1.0 }))]],
         "concrete", { name: "song" });
     const ed = editor(piece);
     const host = new FakeHost();
-    ed.open(asHost(host));
+    await ed.open(asHost(host));
     const wid = (clipsOf(lanes(ed.draw())[0] as GuiNode)[0] as GuiNode).id as number;
     host.acks.length = 0;
     assert.equal(
@@ -378,7 +378,7 @@ test("editing a curve does not move the axis it is drawn against", () => {
     assert.ok((wide.points_max as number) > 4000.0, "and the ceiling grew");
 });
 
-test("undoing a curve edit tells the host what to draw", () => {
+test("undoing a curve edit tells the host what to draw", async () => {
     // An undo that moves the model and says nothing is a dead button: the host
     // goes on drawing the shape the hand left. The case that needed saying: a
     // **layered** clip draws an aggregate, and the curve an edit configures is a
@@ -399,7 +399,7 @@ test("undoing a curve edit tells the host what to draw", () => {
     );
     const ed = editor(new Aggregate([[0.0, attached]], "concrete", { name: "song" }));
     const host = new FakeHost();
-    ed.open(asHost(host));
+    await ed.open(asHost(host));
     const clip = clipsOf(lanes(ed.draw())[0] as GuiNode)[0] as GuiNode;
 
     assert.equal(
@@ -480,11 +480,11 @@ test("what the grid did is what gets replayed", () => {
     assert.equal(member?.offset, 4.0, "and the redo lands on the same beat");
 });
 
-test("an undo tells the host what to draw instead, and with the restored value", () => {
+test("an undo tells the host what to draw instead, and with the restored value", async () => {
     const piece = song();
     const ed = editor(piece, { quant: 0.25 });
     const host = new FakeHost();
-    ed.open(asHost(host));
+    await ed.open(asHost(host));
     const roll = clipsOf(lanes(ed.draw())[1] as GuiNode)[0] as GuiNode;
     const drawnAt = roll.offset as number;
 
@@ -499,11 +499,11 @@ test("an undo tells the host what to draw instead, and with the restored value",
     assert.equal(corrections.get(roll.id as number)?.offset, drawnAt);
 });
 
-test("the window's undo shortcut reaches the history", () => {
+test("the window's undo shortcut reaches the history", async () => {
     const piece = song();
     const ed = editor(piece, { quant: 0.25 });
     const host = new FakeHost();
-    const win = ed.open(asHost(host));
+    const win = await ed.open(asHost(host));
     const roll = clipsOf(lanes(ed.draw())[1] as GuiNode)[0] as GuiNode;
     const member = (piece.handles[1]?.element as Aggregate).handles[0];
     const start = member?.offset;
@@ -517,17 +517,17 @@ test("the window's undo shortcut reaches the history", () => {
 
 // ---- staleness and the acknowledgement ----
 
-test("every acknowledgement carries the version the next gesture names back", () => {
+test("every acknowledgement carries the version the next gesture names back", async () => {
     const ed = editor(song(), { quant: 0.25 });
     const host = new FakeHost();
-    ed.open(asHost(host));
+    await ed.open(asHost(host));
     assert.equal(host.versions.at(-1), 1, "opening announces the version it drew");
     const roll = clipsOf(lanes(ed.draw())[1] as GuiNode)[0] as GuiNode;
     ed.apply("/gui_event", clipEvent(roll.id as number, 5 * BEAT, 2 * BEAT));
     assert.ok((host.versions.at(-1) as number) > 1, "an edit moves it");
 });
 
-test("a drag reporting as it goes is not stale against its own answers", () => {
+test("a drag reporting as it goes is not stale against its own answers", async () => {
     // A host that reports as it goes stamps every step with the version *it*
     // holds, and it only learns a new one when an acknowledgement reaches it —
     // which a hand outruns. Refusing those is refusing the drag: every step
@@ -535,7 +535,7 @@ test("a drag reporting as it goes is not stale against its own answers", () => {
     const piece = song();
     const ed = editor(piece, { quant: 0.25 });
     const host = new FakeHost();
-    ed.open(asHost(host));
+    await ed.open(asHost(host));
     const clip = clipsOf(lanes(ed.draw())[1] as GuiNode)[0] as GuiNode;
     const member = (piece.handles[1]?.element as Aggregate).handles[0];
     const drawnAt = host.versions.at(-1) as number;
@@ -561,10 +561,10 @@ test("a drag reporting as it goes is not stale against its own answers", () => {
     assert.equal(member?.offset, 5.0, "and it did not move");
 });
 
-test("an edit made against a superseded version is refused and answered", () => {
+test("an edit made against a superseded version is refused and answered", async () => {
     const ed = editor(song(), { quant: 0.25 });
     const host = new FakeHost();
-    ed.open(asHost(host));
+    await ed.open(asHost(host));
     const drawn = ed.draw();
     const take = clipsOf(lanes(drawn)[0] as GuiNode)[0] as GuiNode;
     const roll = clipsOf(lanes(drawn)[1] as GuiNode)[0] as GuiNode;
@@ -585,7 +585,7 @@ test("an edit made against a superseded version is refused and answered", () => 
     assert.ok(host.corrections().has(roll.id as number), "with the state as it stands");
 });
 
-test("two gestures inside one round trip are both applied", () => {
+test("two gestures inside one round trip are both applied", async () => {
     // The acknowledgement is not lost, and nothing is saturated: a host stamps
     // every event with the version it was last *told*, and it is told only when
     // an answer arrives. Two gestures begun inside one round trip name the same
@@ -594,7 +594,7 @@ test("two gestures inside one round trip are both applied", () => {
     const piece = song();
     const ed = editor(piece, { quant: 0.25 });
     const host = new FakeHost();
-    ed.open(asHost(host));
+    await ed.open(asHost(host));
     const drawn = ed.draw();
     const take = clipsOf(lanes(drawn)[0] as GuiNode)[0] as GuiNode;
     const roll = clipsOf(lanes(drawn)[1] as GuiNode)[0] as GuiNode;
@@ -622,10 +622,10 @@ test("a host that cannot name a version is applied unchecked", () => {
     assert.equal(ed.apply("/gui_event", clipEvent(roll.id as number, 6 * BEAT, 2 * BEAT)), true);
 });
 
-test("a snapped clip is answered with where it actually landed", () => {
+test("a snapped clip is answered with where it actually landed", async () => {
     const ed = editor(song(), { quant: 1.0 });
     const host = new FakeHost();
-    ed.open(asHost(host));
+    await ed.open(asHost(host));
     const roll = clipsOf(lanes(ed.draw())[1] as GuiNode)[0] as GuiNode;
     host.acks.length = 0;
     ed.apply("/gui_event", clipEvent(roll.id as number, 4.3 * BEAT, 2 * BEAT));
@@ -634,10 +634,10 @@ test("a snapped clip is answered with where it actually landed", () => {
     assert.equal(props?.offset, 4 * BEAT);
 });
 
-test("an event from another editor's window is not answered", () => {
+test("an event from another editor's window is not answered", async () => {
     const ed = editor();
     const host = new FakeHost();
-    ed.open(asHost(host));
+    await ed.open(asHost(host));
     host.acks.length = 0;
     // A widget this editor never drew.
     assert.equal(ed.apply("/gui_event", [98_765, SEQ, UNSTATED, "clip", 0, BEAT]), false);
@@ -673,7 +673,7 @@ test("a trim moves the window and is undone as one", () => {
     assert.equal(take.start, 0.0);
 });
 
-test("an undone first resize gives the element its own length back", () => {
+test("an undone first resize gives the element its own length back", async () => {
     // The inverse of the first resize of a clip carries **no** duration at all,
     // because before it the placement stated none — and absence is a value: the
     // member takes the element's own length again. Read as "leave the length
@@ -683,7 +683,7 @@ test("an undone first resize gives the element its own length back", () => {
     const piece = song();
     const ed = editor(piece, { quant: 0.25 });
     const host = new FakeHost();
-    ed.open(asHost(host));
+    await ed.open(asHost(host));
     const clip = clipsOf(lanes(ed.draw())[1] as GuiNode)[0] as GuiNode;
     const member = (piece.handles[1]?.element as Aggregate).handles[0];
     assert.equal(member?.dur, null, "nothing has stated a length for it");
@@ -703,7 +703,7 @@ test("an undone first resize gives the element its own length back", () => {
     assert.equal(props.dur, was);
 });
 
-test("an undone trim puts the window back on a take that configures nothing", () => {
+test("an undone trim puts the window back on a take that configures nothing", async () => {
     // The same rule one level down. A trim states the placement *and* the
     // window over the samples in one `setmembers`, so its inverse states the
     // member as it was — and a take nobody has configured has no configuration
@@ -715,7 +715,7 @@ test("an undone trim puts the window back on a take that configures nothing", ()
     const piece = new Aggregate([[0.0, audio]], "concrete", { name: "song" });
     const ed = editor(piece);
     const host = new FakeHost();
-    ed.open(asHost(host));
+    await ed.open(asHost(host));
     const clip = clipsOf(lanes(ed.draw())[0] as GuiNode)[0] as GuiNode;
     const was = clip.dur as number;
 
@@ -734,7 +734,7 @@ test("an undone trim puts the window back on a take that configures nothing", ()
     assert.equal(props.dur, was);
 });
 
-test("a redefine leaves the editor able to edit", () => {
+test("a redefine leaves the editor able to edit", async () => {
     // A redefine moves the version so a gesture in flight comes back stale —
     // and the **document** has to move with it. The crate refuses an edit whose
     // `against` version is not the document's, ahead of it as loudly as behind
@@ -744,7 +744,7 @@ test("a redefine leaves the editor able to edit", () => {
     const piece = song();
     const ed = editor(piece, { quant: 0.25 });
     const host = new FakeHost();
-    ed.open(asHost(host));
+    await ed.open(asHost(host));
     let clip = clipsOf(lanes(ed.draw())[1] as GuiNode)[0] as GuiNode;
     const member = (piece.handles[1]?.element as Aggregate).handles[0];
     // One edit first, so the document exists: the versions can only diverge
@@ -759,7 +759,7 @@ test("a redefine leaves the editor able to edit", () => {
     assert.equal(member?.offset, 5.0, "and the edit landed");
 });
 
-test("a structural edit redefines the window and so does its undo", () => {
+test("a structural edit redefines the window and so does its undo", async () => {
     // A placement is a prop the host can be told about; a widget that was not
     // there is not. The second half of a split — and the clip an undone split
     // takes away again — can only arrive as a whole tree, so the editor that
@@ -767,7 +767,7 @@ test("a structural edit redefines the window and so does its undo", () => {
     const [piece] = takeSong();
     const ed = editor(piece);
     const host = new FakeHost();
-    ed.open(asHost(host));
+    await ed.open(asHost(host));
     const clip = clipsOf(lanes(ed.draw())[0] as GuiNode)[0] as GuiNode;
     host.defines.length = 0;
 
@@ -791,13 +791,13 @@ test("a structural edit redefines the window and so does its undo", () => {
     assert.equal(drawnNow(), 2, "and the redo brings it back");
 });
 
-test("a placement edit does not redefine the window", () => {
+test("a placement edit does not redefine the window", async () => {
     // The other half of the rule, and the reason it is not "redraw after every
     // edit": a redefine rebuilds every widget and drops what the host had in
     // flight, which is exactly wrong for a drag.
     const ed = editor(song(), { quant: 0.25 });
     const host = new FakeHost();
-    ed.open(asHost(host));
+    await ed.open(asHost(host));
     const clip = clipsOf(lanes(ed.draw())[1] as GuiNode)[0] as GuiNode;
     host.defines.length = 0;
     assert.equal(ed.apply("/gui_event", clipEvent(clip.id as number, 5 * BEAT, 2 * BEAT)), true);
@@ -847,10 +847,10 @@ test("a join puts a split clip back together", () => {
 
 // ---- the transport, delegated ----
 
-test("a locate moves the transport and the lanes' cursor", () => {
+test("a locate moves the transport and the lanes' cursor", async () => {
     const ed = editor();
     const host = new FakeHost();
-    ed.open(asHost(host));
+    await ed.open(asHost(host));
     ed.locate(2.0);
     assert.equal(ed.position, 2.0);
 });
@@ -895,10 +895,10 @@ test("a sweep becomes the crate's typed selection, in beats", () => {
     assert.ok(selection.nodes && selection.nodes.length === 1, "swept on a clip: of that element");
 });
 
-test("a sample paste is refused because the audio has an owner", () => {
+test("a sample paste is refused because the audio has an owner", async () => {
     const ed = editor();
     const host = new FakeHost();
-    ed.open(asHost(host));
+    await ed.open(asHost(host));
     const c = clipsOf(lanes(ed.draw())[0] as GuiNode)[0] as GuiNode;
     assert.equal(
         ed.apply("/gui_event", [c.id, SEQ, UNSTATED, "paste", 0, "samples"]),

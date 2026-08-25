@@ -64,7 +64,7 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
     <script type="module">
       import {
         loadOsc, loadCore, pageConnection, server as engine, Server,
-        Event, GuiHost, guiHost, gui, seq, TempoClock,
+        Event, GuiHost, gui, seq, TempoClock,
       } from "../../dist/index.js";
 
       const { notation } = gui;
@@ -73,7 +73,7 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
 
       const TEMPO = 2.0;     // beats per second (120 bpm), so a beat is 500 ms
 
-      let server, host, page, win = null, unfit = null;
+      let server, win = null;
       let score = null;      // the open document: engraved, editable, undoable
       let byId = new Map();  // MEI id -> the note it draws, rebuilt per page
       let dl = null;         // the page as it stands, what a pass is built from
@@ -100,7 +100,7 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
       // reaches this definition *and* every window drawing it. Handed the raw
       // object the view would draw the same page and the definition would go
       // stale the first time a note moved.
-      const scene = (engraved) => gui.window(
+      const scene = (engraved) => gui.view(
         { title: "score", layout: "col", margin: 8.0, gap: 8.0 },
         gui.panel(
           { layout: "row", h: 34, gap: 8.0 },
@@ -193,9 +193,8 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
         const raw = await engine({ channels: 2 });
         await raw.resume();
         server = await Server.open(await pageConnection());
-        host = await GuiHost.page();
-        page = await guiHost();
-        el("stage").append(page.canvas);
+        // The page's host, and the ambient one from here on.
+        await GuiHost.page();
 
         // Opening the score is the one asynchronous step of the layer, and
         // only because the engraver module is fetched the first time a page
@@ -207,9 +206,8 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
         dl = score.displayList();
         byId = new Map(dl.notes.map((note) => [note.id, note]));
         engraved = gui.source(undefined, { displayList: dl });
-        win = host.open(scene(engraved));
-        unfit?.();
-        unfit = page.fit(win.id, el("stage"));
+        // Where this page draws — the one argument the script has none of.
+        win = await scene(engraved).open(el("stage"));
 
         // The clock the pass runs on, and the transport over the page's widget.
         clock = new TempoClock(TEMPO).start();

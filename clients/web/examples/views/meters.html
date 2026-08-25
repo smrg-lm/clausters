@@ -80,7 +80,7 @@ Swapping to a <code>--ws</code> server (or to a native
     <script type="module">
       import {
         loadOsc, loadCore, pageConnection, server as engine, Server,
-        Bus, Buffer, Synth, SynthDef, GuiHost, guiHost, gui,
+        Bus, Buffer, Synth, SynthDef, GuiHost, gui,
       } from "../../dist/index.js";
       import { control, out, outCtl, sine } from "../../dist/defs/index.js";
 
@@ -105,7 +105,7 @@ Swapping to a <code>--ws</code> server (or to a native
       // ---- the window: four views over three paths ----
       // Each widget names its source and nothing else. `link` is not used
       // here: the views watch different things, so they navigate apart.
-      const scene = (ctlBus, audioBus, buffer) => gui.window(
+      const scene = (ctlBus, audioBus, buffer) => gui.view(
         // No w/h: the layout takes the canvas the document supplies.
         { title: "the data paths", layout: "col", margin: 8.0, gap: 8.0 },
         gui.panel(
@@ -160,16 +160,16 @@ Swapping to a <code>--ws</code> server (or to a native
         await server.sync();
 
         // ---- the host ----
-        // `GuiHost.page()` drives the wasm host on this page's canvas;
+        // `GuiHost.page()` drives the wasm host on this page; opening it makes
+        // it the ambient one, so the view below needs no host named.
         // `GuiHost.connect("ws://127.0.0.1:57220")` would drive a native one,
         // and nothing below this line would change.
-        const host = await GuiHost.page();
-        const page = await guiHost();
-        el("stage").append(page.canvas);
-        const win = host.open(scene(ctlBus.index, audioBus.index, buffer.bufnum));
-        // The canvas follows its element, so the layout decides how wide the
-        // views are — full width here, and just as full on a phone.
-        page.fit(win.id, el("stage"));
+        await GuiHost.page();
+        // The view opens itself, into the element that decides how wide it is
+        // — the canvas is made inside `#stage` and follows its box, so the
+        // layout has the say: full width here, and just as full on a phone.
+        const win = await scene(ctlBus.index, audioBus.index, buffer.bufnum)
+          .open(el("stage"));
 
         // The bound control: the knob's value never passes through here.
         win.widget("freq").bind("/node_set", voice.id, "freq");

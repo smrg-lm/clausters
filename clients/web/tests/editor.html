@@ -36,7 +36,7 @@
     <script type="module">
       import {
         loadOsc, loadCore, pageConnection, server as engine, Server,
-        Buffer, Synth, SynthDef, GuiHost, guiHost, gui,
+        Buffer, Synth, SynthDef, GuiHost, gui,
       } from "../dist/index.js";
       import { bufRateScale, bufRd, control, out, phasor, playBuf } from "../dist/defs/index.js";
 
@@ -107,7 +107,6 @@
 
         const server = await Server.open(await pageConnection());
         const host = await GuiHost.page();
-        await guiHost();
 
         // ---- the file, into a server buffer ----
         const url = wavUrl();
@@ -133,7 +132,7 @@
           out(1.0, playBuf(buf, 0.0, rate, 0.0).mul(0.8))).send(server);
         await server.sync();
 
-        const win = host.open(gui.window(
+        const win = host.open(gui.view(
           { title: "editor", w: 800, h: 560, layout: "col", gap: 8.0 },
           gui.waveform({ name: "wave", buffer: buffer.bufnum,
                          channels: buffer.channels, sampleRate: buffer.sampleRate,

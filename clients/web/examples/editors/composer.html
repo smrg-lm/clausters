@@ -75,7 +75,7 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
 
     <script type="module">
       import {
-        Session, Buffer, Event, guiHost, gui, seq, form, defs,
+        Session, Buffer, Event, gui, seq, form, defs,
       } from "../../dist/index.js";
 
       const el = (id) => document.getElementById(id);
@@ -85,7 +85,7 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
       const QUANT = 0.5;   // the drag grid: half a beat
       const SWEEP = 4.0;   // the sweep's length in beats (the curve's, and its voice's)
 
-      let session, server, SR, editor = null, win = null, unfit = null;
+      let session, server, SR, editor = null, win = null;
 
       // ---- the instrument that plays a buffer ----
       // The notes use the server's stock `default` def; the **take** needs an
@@ -256,14 +256,10 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
           extra: [bar()],
           title: "Composer",
         });
-        win = editor.open(host);
-
-        // The one step a window does not need: a tab draws into a canvas of its
-        // own, and `fit` keeps the host's window the size of the element.
-        const surface = await guiHost();
-        el("stage").append(surface.canvas);
-        unfit?.();
-        unfit = surface.fit(win.id, el("stage"));
+        // The one argument a script has no counterpart for: `stage` is where
+        // this page draws — the editor's canvas is made inside that element and
+        // follows its box. Everything else is the call the script makes.
+        win = await editor.open(host, { stage: el("stage") });
 
         session.start();                    // the clock runs the routines
         // Each button acts on its click -- the press completed on the button,

@@ -2044,8 +2044,9 @@ as some other milestone has a better claim on it.
   constructors take `*roots` — a public attribute spelled two ways, found while
   porting the Def view (which reads it). One of the two names is wrong and the
   reference client picks which.
-- ⬜ **What `open()` means where there is no window: the page, the canvas and
-  the document** *(named 2026-08-23, with the Python client's API reform)*. The
+- ✅ **What `open()` means where there is no window: the page, the canvas and
+  the document** *(named 2026-08-23, with the Python client's API reform; closed
+  2026-08-25)*. The
   reform settled the native half — *a view with no parent is a window*, and a
   root that is not a `view` is framed in one client-side, because the wire opens
   an OS window for a `window`-rooted def and nothing else. A page has no OS
@@ -2104,6 +2105,43 @@ as some other milestone has a better claim on it.
     both halves separately — the constructor takes a host (`new Session(server,
     clock, gui)`) the way it takes a server, and `attach()` is the connect. A
     session installing a host it did not open is the constructor, not a verb.
+
+  **What was actually left, found by opening every page against it.** The
+  *surface* had landed with the `View` port: `newCanvas` was already written,
+  with the sentence in its doc comment, and `GuiHost.open(tree, {element})`
+  already made a canvas per view and fitted it. What had not moved was
+  everything that calls it — so the decision existed and nothing used it.
+
+  - **Every page still opened through four doors**: `GuiHost.page()`, then
+    `guiHost()` for the surface, then `el("stage").append(page.canvas)`, then
+    `page.fit(win.id, el("stage"))` — with the disposer held in a page-level
+    `let unfit`. That is one call in the reference client (`view(...).open()`),
+    and it is now one call here: `view(...).open(el("stage"))`, the element
+    being the browser's own argument. Nine pages and two acceptance pages
+    moved; `panels/two-hosts.html` deliberately keeps the raw bridge, since
+    two host instances *is* its subject.
+  - **The verbs that open something had no element at all.** `plot`, `scope`,
+    `plotDef` and `Editor.open` reached `host.open(tree)` with nothing, which
+    is why a page that wanted one of them in its layout had to go around them
+    to `guiHost().fit`. They take `element` now (`stage` in the editor's option
+    bag, where `element` already means the arrangement's), forwarded and
+    nothing more — **no DOM logic left `gui/page.ts`**, which is where the
+    canvas is made, measured and followed.
+  - **`Editor.open` demanded a host where the reference resolves the ambient
+    one**, and so did `openSignal` and `openPianoroll` — a divergence, not a
+    platform difference: Python's `_resolve_host` has been there since the
+    editor landed. All three take an optional host now and are `async` for it,
+    the same reason `View.open` is (resolving the ambient host may have to boot
+    it, and a page boots asynchronously).
+  - **The element's type is named in the module that owns the DOM**:
+    `Stage`, exported from `gui/page.ts`, so the one browser-only argument
+    reads as browser-only at every door instead of being spelled `Element` —
+    which in the editor is the arrangement's `Element` and collided outright.
+  - **The pages said `window(` where every Python example says `view(`.** The
+    alias is kept in both clients, so this was not a rename: it was 12 pages
+    and three bundle authors written before the root rule, which is exactly the
+    drift the "same calls in the same order" rule exists to catch. The books'
+    examples moved with them.
 
 - ✅ **`Session.connectGui(url)` is a verb this client invented** — *connect*
   and *adopt* in one call — **dropped 2026-08-23** with the `View` port. The

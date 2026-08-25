@@ -118,7 +118,7 @@
       // below this line would change.
       let host = await GuiHost.page();
 
-      const panel = () => gui.window(
+      const panel = () => gui.view(
         { title: "a tone", w: 520, h: 300, layout: "col", margin: 8.0, gap: 8.0 },
         gui.label("freq is bound to the engine; amp and cutoff come back here",
                   { h: 24, textSize: 1.5 }),
@@ -141,7 +141,7 @@
         ),
       );
 
-      const meters = (bus) => gui.window(
+      const meters = (bus) => gui.view(
         { title: "a bus, metered", w: 560, h: 320, layout: "col", gap: 8.0 },
         gui.label(`control bus ${bus}: the knob writes it, the views read it`,
                   { h: 24, textSize: 1.5 }),
@@ -163,7 +163,7 @@
         return Math.sin(i * 0.02 * (1 + 3 * t)) * (1 - t) ** 2;
       });
 
-      const views = () => gui.window(
+      const views = () => gui.view(
         { title: "the editor views", w: 720, h: 560, layout: "col", gap: 8.0 },
         gui.waveform({ name: "wave", blob: 0, sampleRate: 48000.0,
                        baseBucket: 256, ruler: "time", rulerY: "db", link: 1 }),

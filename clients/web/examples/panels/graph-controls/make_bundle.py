@@ -79,7 +79,7 @@ import os
 
 from clausters.bundle import Bundle
 from clausters.defs import GraphDef, SynthDef, control, in_, out, out_ctl, sine
-from clausters.gui import knob, label, meter, panel, scope, toggle, window
+from clausters.gui import knob, label, meter, panel, scope, toggle, view
 
 #: The bundle's name — the tag ``index.js`` registers, and the prefix its def
 #: names carry (``fm-trem.voice``, ``fm-trem.graph``).
@@ -153,7 +153,7 @@ def build() -> Bundle:
         return knob(label=port, min=lo, max=hi, value=value,
                     bind=["/node_set", node, port], id=widget_id)
 
-    b.gui(window(
+    b.gui(view(
         # The header row: the note, and this instance's own play/stop. A page
         # holding several instruments has them all sounding at once otherwise,
         # and each needs to be silenced on its own — which is what the toggle

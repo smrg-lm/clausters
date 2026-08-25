@@ -87,7 +87,7 @@
         // The GUI side: the same panel a script would write, over the in-page
         // host — nothing here names a carrier.
         const host = await GuiHost.page();
-        const tree = gui.window(
+        const tree = gui.view(
           { title: "driven from TypeScript", w: 480, h: 300, layout: "col",
             margin: 8.0, gap: 8.0 },
           gui.label("knob: bound to the engine — slider: back to this script",

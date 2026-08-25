@@ -65,7 +65,6 @@ and no audio server is involved either way.</div>
     </main>
 
     <script type="module">
-      import { guiHost } from "../../dist/index.js";
       import { SynthDef, FaustDef, DefPatch } from "../../dist/defs/index.js";
       import { control, out, sine } from "../../dist/defs/ugens/index.js";
       import { hslider, sin } from "../../dist/defs/signals.js";
@@ -140,28 +139,23 @@ and no audio server is involved either way.</div>
       // a drag on the empty canvas, zoom with the wheel — the patch sits in a
       // scroll workspace, so a graph bigger than the canvas stays reachable.
       //
-      // The one step a window does not need: a tab draws into a canvas of its
-      // own, so the page places the host's surface in the stage and `fit` keeps
-      // the view the size of that element. A script gets an OS window instead,
-      // and asks for its size in the same call.
+      // The one argument a window does not need: a tab has no window manager,
+      // so the page says which element the view draws into and the canvas is
+      // made inside it. A script gets an OS window instead, and asks for its
+      // size in the same call.
       let open = null;
-      let unfit = null;
 
       async function show(aDef, kind) {
         if (open !== null) return;
         log(`\nthe ${kind} (level 2) — close the view to open the other`);
-        open = await aDef.plotDef({ title: `${kind} — level 2` });
-        const surface = await guiHost();
-        $("stage").append(surface.canvas);
-        unfit?.();
-        unfit = surface.fit(open.id, $("stage"));
+        // `element` is the one argument the script has no counterpart for: it
+        // is where this page draws, and the canvas inside it is made for you.
+        open = await aDef.plotDef({ title: `${kind} — level 2`, element: $("stage") });
         open.onClosed(release);
         $("close").disabled = false;
       }
 
       function release() {
-        unfit?.();
-        unfit = null;
         open = null;
         $("close").disabled = true;
       }

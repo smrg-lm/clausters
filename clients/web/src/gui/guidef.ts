@@ -30,7 +30,7 @@
 import { Env, envToPoints, pointsToEnv, resolveCurve } from "../defs/ugens/index.ts";
 import type { Curve } from "../defs/ugens/index.ts";
 import { samplesToBlob } from "../base/bulk.ts";
-import type { GuiHost, PropValue } from "./host.ts";
+import type { GuiHost, PropValue, Stage } from "./host.ts";
 import type { WindowHandle } from "./handle.ts";
 
 export { Env, envToPoints, pointsToEnv };
@@ -574,16 +574,19 @@ export class View implements GuiNode {
      * up, else a host the ambient layer opens on this page and owns.
      *
      * `element` is where a page draws it: the view takes that element's box,
-     * and the canvas inside it is made for you. A host reached over a socket
-     * has windows of its own and refuses an element; a page that names none
-     * draws on the page's canvas.
+     * and the canvas inside it is made for you. It is the browser's own
+     * argument — the Python client's `View.open` has no counterpart for it,
+     * because a script gets an OS window — and a host reached over a socket
+     * refuses one for the same reason. A page that names none gets a canvas of
+     * its own, appended to the document: *a view with no element is a canvas*,
+     * which is how a page finishes *a view with no parent is a window*.
      *
      * It is `async` because the page's host boots asynchronously (the core
      * wasm, the GPU device) — the one difference from the Python client's
      * `View.open`, which has a process to talk to and nothing to await.
      */
     async open(
-        element?: Element | null,
+        element?: Stage | null,
         {
             id,
             blobs = [],

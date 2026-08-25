@@ -82,7 +82,7 @@ import {
     window as guiWindow,
 } from "./guidef.ts";
 import type { GuiNode } from "./guidef.ts";
-import type { GuiHost, PropValue } from "./host.ts";
+import type { GuiHost, PropValue, Stage } from "./host.ts";
 import type { WindowHandle } from "./handle.ts";
 import { Transport } from "./transport.ts";
 
@@ -165,6 +165,20 @@ export interface EditorOptions {
  * editor.render(server, clock);      // play the edited composition
  * ```
  */
+/**
+ * The host an `open` acts on: the one named, else the ambient one — the same
+ * resolution {@link guidef.View.open}, `plot` and `scope` share, so an editor is
+ * not the one resource that has to be handed a host.
+ *
+ * Async where the Python client's `_resolve_host` is not, for the reason
+ * `View.open` is async here: resolving the ambient host may have to boot it,
+ * and a page boots asynchronously.
+ */
+async function resolveEditorHost(host?: GuiHost): Promise<GuiHost> {
+    if (host !== undefined) return host;
+    return (await import("../plot.ts")).resolveHost();
+}
+
 export class Editor {
     element: Element;
     sampleRate: number;
@@ -457,11 +471,15 @@ export class Editor {
      * resolves the tree's named widgets, so a transport button is reachable by
      * name (`win.widget("play").onEvent(…)`).
      */
-    open(host: GuiHost, id?: number): WindowHandle {
+    async open(
+        host?: GuiHost,
+        { id, stage }: { id?: number; stage?: Stage | null } = {},
+    ): Promise<WindowHandle> {
+        host = await resolveEditorHost(host);
         this.host = host;
         this.transport.host = host;
         this.mode = "multitrack";
-        const handle = host.open(this.draw(), id === undefined ? {} : { id });
+        const handle = host.open(this.draw(), { id, element: stage });
         this.windowId = handle.id;
         this.listen(host);
         this.announce();
@@ -674,11 +692,16 @@ export class Editor {
      * on `host` — the editor-grade view of one element's samples, as opposed to
      * `open`, where the same samples are only a clip's body.
      */
-    openSignal(
-        host: GuiHost,
+    async openSignal(
+        host?: GuiHost,
         element?: Element,
-        { layers = ["peak", "rms"], id }: { layers?: readonly string[]; id?: number } = {},
-    ): WindowHandle {
+        { layers = ["peak", "rms"], id, stage }: {
+            layers?: readonly string[];
+            id?: number;
+            stage?: Stage | null;
+        } = {},
+    ): Promise<WindowHandle> {
+        host = await resolveEditorHost(host);
         const target = element ?? this.element;
         // Refused **before** a window exists: an unknown measure and an element
         // with no samples are both answers to the call that was made, and
@@ -690,7 +713,7 @@ export class Editor {
         this.mode = "signal";
         this.signalElement = target;
         this.measures = stack;
-        const handle = host.open(this.draw(), id === undefined ? {} : { id });
+        const handle = host.open(this.draw(), { id, element: stage });
         this.windowId = handle.id;
         this.listen(host);
         this.announce();
@@ -705,12 +728,17 @@ export class Editor {
      * editable** — a `Track` (a `Timeline`). A **generator** is forward-only, so
      * its bounced notes are shown *read-only*.
      */
-    openPianoroll(host: GuiHost, element?: Element, id?: number): WindowHandle {
+    async openPianoroll(
+        host?: GuiHost,
+        element?: Element,
+        { id, stage }: { id?: number; stage?: Stage | null } = {},
+    ): Promise<WindowHandle> {
+        host = await resolveEditorHost(host);
         this.host = host;
         this.transport.host = host;
         this.mode = "pianoroll";
         this.rollElement = element ?? this.element;
-        const handle = host.open(this.draw(), id === undefined ? {} : { id });
+        const handle = host.open(this.draw(), { id, element: stage });
         this.windowId = handle.id;
         this.listen(host);
         this.announce();

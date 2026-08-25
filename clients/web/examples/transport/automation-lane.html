@@ -57,7 +57,7 @@ has no offline drive.</div>
 
     <script type="module">
       import {
-        GuiHost, Session, Synth, SynthDef, gui, guiHost, seq,
+        GuiHost, Session, Synth, SynthDef, gui, seq,
       } from "../../dist/index.js";
       import { control, out, sine } from "../../dist/defs/index.js";
 
@@ -98,14 +98,19 @@ has no offline drive.</div>
         log(`the drone is node ${drone.id}, sounding at 220 Hz`);
 
         // The editor, seeded with the same curve the lane will play.
-        const host = await GuiHost.page();
-        win = host.open(gui.window(
+        // The page's host, and the ambient one from here on: the view below
+        // opens itself, exactly as the script's does. This page names no
+        // element, so the view gets a canvas of its own — *a view with no
+        // element is a canvas*, which is how the page finishes the reference
+        // client's *a view with no parent is a window*.
+        await GuiHost.page();
+        win = await gui.view(
           { title: "pitch lane", w: 520, h: 260, layout: "col", margin: 8.0 },
           gui.bpf({
             name: "curve", points, min: 100.0, max: 1000.0, duration: 4.0,
             exp: true, h: 244, label: "freq",
           }),
-        ));
+        ).open();
         // The edit-back: the host sends the whole break-point list on every
         // edit, and the next play rebuilds the lane from it.
         win.widget("curve").onEvent((...args) => {

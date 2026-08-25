@@ -167,14 +167,14 @@ const host = await GuiHost.page();            // the wasm host on this page
 const host = await GuiHost.connect(url);      // a native `clausters-gui --ws`
 ```
 
-The widget catalogue is a set of builders in the `gui` namespace, and a whole tree goes out in one `/gui_def`:
+The widget catalogue is a set of builders in the `gui` namespace, and a whole tree goes out in one `/gui_def`. **The view is the subject**: it opens itself, on the host it was told or the ambient one — `GuiHost.page()` above became the ambient host by opening — exactly as it reads in the Python client:
 
 ```js
-const win = host.open(gui.window(
+const win = await gui.view(
   { title: "a tone", w: 480, h: 240, layout: "col" },
   gui.knob({ name: "freq", label: "freq", min: 50.0, max: 2000.0, value: 220.0 }),
   gui.meter(level.index, { rate: "control", name: "level", label: "level" }),
-));
+).open();
 win.widget("freq").bind("/node_set", note.id, "freq");
 win.widget("freq").onEvent((value) => console.log(value));
 ```
@@ -183,16 +183,17 @@ Widgets are addressed by **name**, not by integer id. A **bound** widget's value
 
 On this page, the host draws **one canvas per `window`-rooted def**, and the page supplies the canvas: `attach(defId, canvas)`, with the size and the visibility told to the host rather than read from the DOM. A canvas out of the viewport stops drawing and drops its buses from the streams it was subscribed to.
 
-The size is the **document's**, not the host's. A canvas starts at the host's default, so bind it to the element that should govern it:
+The size is the **document's**, not the host's — and saying so is one argument, on the same `open` the Python client calls with nothing:
 
 ```js
-const win = host.open(tree);
-const stop = (await guiHost()).fit(win.id, container);   // and follows it
+const win = await tree.open(container);   // draws in `container`, and follows it
 ```
 
-`fit` sets the canvas' backing store from the element's box in device pixels and tells the host — the pixels **and** the `devicePixelRatio` they were measured at, since the sizes a GuiDef declares are logical and the host resolves them against that ratio — then keeps doing it as the box changes. So the drawing is as wide as the layout allows on a desktop and as wide as the screen on a phone, with no fixed size anywhere, and a 28-pixel strip looks the same on a retina display as on an ordinary one. A `<clausters-bundle>` component does exactly this for its own element; a script that opens a window calls it once.
+`element` is the browser's own argument, and the only one the two clients do not share: a script gets an OS window, so `View.open()` there takes no such thing, and a host reached over a socket refuses one. A view opened with **no** element gets a canvas of its own, appended to the document — *a view with no element is a canvas*, the page's end of the reference client's *a view with no parent is a window* — which is why several views in one document need no arranging.
 
-A page that sizes a canvas itself does the same two things: `canvasBox(element)` measures both halves, and `bridge.resize(defId, width, height, scale)` reports them together (the product alone cannot be un-multiplied, which is why the ratio travels beside it). It also watches **two** triggers, because the box and the density move independently: a `ResizeObserver` for the layout, and `onScaleChange` for the scale — browser zoom or a drag onto a monitor of another density changes `devicePixelRatio` with the CSS box untouched, which no resize observer reports. `fit` and the component do both already.
+Under it, `fit` sets the canvas' backing store from the element's box in device pixels and tells the host — the pixels **and** the `devicePixelRatio` they were measured at, since the sizes a GuiDef declares are logical and the host resolves them against that ratio — then keeps doing it as the box changes. So the drawing is as wide as the layout allows on a desktop and as wide as the screen on a phone, with no fixed size anywhere, and a 28-pixel strip looks the same on a retina display as on an ordinary one. A `<clausters-bundle>` component does exactly this for its own element; a script that opens a window calls it once.
+
+A page that sizes a canvas itself does the same two things: `canvasBox(element)` measures both halves, and `bridge.resize(defId, width, height, scale)` reports them together (the product alone cannot be un-multiplied, which is why the ratio travels beside it). It also watches **two** triggers, because the box and the density move independently: a `ResizeObserver` for the layout, and `onScaleChange` for the scale — browser zoom or a drag onto a monitor of another density changes `devicePixelRatio` with the CSS box untouched, which no resize observer reports. `fit` and the component do both already, and `open` calls `fit` for a view given an element, so a page normally never names either.
 
 ## The clock and the patterns
 

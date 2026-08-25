@@ -31,7 +31,7 @@ from clausters.bundle import Bundle  # noqa: E402
 from clausters.defs import (  # noqa: E402
     DoneAction, Env, SynthDef, control, env_gen, out, out_ctl, sine,
 )
-from clausters.gui import knob, meter, window  # noqa: E402
+from clausters.gui import knob, meter, view  # noqa: E402
 
 
 def voice() -> SynthDef:
@@ -52,7 +52,7 @@ def reference() -> Bundle:
     lfo = b.bus("lfo")
     node = b.node("voice")
     b.synthdef(voice())
-    b.gui(window(
+    b.gui(view(
         knob(label="freq", value=freq, min=60.0, max=700.0,
              bind=["/node_set", node, "freq"], id=2),
         meter(lfo, rate="control", label="env", id=3),

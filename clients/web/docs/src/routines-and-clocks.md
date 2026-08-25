@@ -131,9 +131,9 @@ sweep.play(server);            // schedule the lane; nothing here waits
 The stored curve is an `Env`, the same object the `bpf` editor round-trips (`envToPoints` / `pointsToEnv`), so a drawn envelope and a played automation are one object rather than two representations that have to agree:
 
 ```js
-const win = host.open(gui.window({ title: "lane", w: 520, h: 260 },
+const win = await gui.view({ title: "lane", w: 520, h: 260 },
   gui.bpf({ name: "curve", points: sweep.toPoints(), min: 100, max: 5000,
-            duration: 4.0, exp: true })));
+            duration: 4.0, exp: true })).open();
 
 win.widget("curve").onEvent((...args) => {
   // The edit comes back as the same flat break-point list `fromPoints` takes.

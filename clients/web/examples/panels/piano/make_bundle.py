@@ -76,7 +76,7 @@ import os
 
 from clausters.bundle import Bundle
 from clausters.defs import DoneAction, Env, SynthDef, control, env_gen, out, out_ctl, sine
-from clausters.gui import label, meter, piano, window
+from clausters.gui import label, meter, piano, view
 
 #: The bundle's name — the tag ``index.js`` registers, and the prefix its def
 #: names carry (``piano.voice``), since a def name is a global namespace on the
@@ -123,7 +123,7 @@ def build() -> Bundle:
     env = b.bus("env")
     voice_name = b.synthdef(voice())
 
-    b.gui(window(
+    b.gui(view(
         label("click/drag plays; drag the strip to pan, wheel to zoom", id=2),
         # `voice` names the def the host spawns per held key; `voice_args`
         # rides along with every /synth_new, which is how this instance's own bus

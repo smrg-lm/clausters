@@ -26,6 +26,17 @@ import { canvasBox, onScaleChange } from "./canvasbox.ts";
 export { canvasBox, onScaleChange };
 export type { CanvasBox } from "./canvasbox.ts";
 
+/**
+ * Where a page draws: the document element a view is opened into.
+ *
+ * The one browser-only argument the API takes, and it is named here — in the
+ * module that owns everything the DOM is — rather than spelled `Element` at
+ * each door, so a reader can see at a glance which arguments are the page's.
+ * The Python client's counterpart verbs take no such thing: a script gets an
+ * OS window, and so does a host reached over a socket, which refuses one.
+ */
+export type Stage = Element;
+
 export type EventListener = (packet: Uint8Array) => void;
 
 /**

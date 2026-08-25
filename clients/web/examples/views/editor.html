@@ -69,15 +69,14 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
     <script type="module">
       import {
         loadOsc, loadCore, pageConnection, server as engine, Server,
-        Buffer, Synth, SynthDef, GuiHost, guiHost, gui,
+        Buffer, Synth, SynthDef, GuiHost, gui,
       } from "../../dist/index.js";
       import { bufRateScale, bufRd, control, out, phasor, playBuf } from "../../dist/defs/index.js";
 
       const el = (id) => document.getElementById(id);
       const log = (line) => { el("log").textContent += line + "\n"; };
 
-      let server, host, raw, page, win = null;
-      let unfit = null;           // stops the canvas following its element
+      let server, raw, win = null;
       let buffer = null;          // the loaded Buffer handle
       let voice = null;           // the sounding node, if any
       let paused = 0;             // engine samples spent paused, this pass
@@ -121,7 +120,7 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
       };
 
       // ---- the window ----
-      const scene = (buf) => gui.window(
+      const scene = (buf) => gui.view(
         // No w/h: the layout uses the canvas the document supplies, whatever
         // size that is.
         { title: "editor", layout: "col", margin: 8.0, gap: 8.0 },
@@ -232,11 +231,11 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
 
         win?.close();
         selection = null;
-        win = host.open(scene(buf));
-        // The canvas follows the element from here on (and keeps following it
-        // when the window is resized or a phone is turned).
-        unfit?.();
-        unfit = page.fit(win.id, el("stage"));
+        // The view opens itself into the element the markup put it in, and the
+        // canvas follows that element from here on (and keeps following it when
+        // the window is resized or a phone is turned). Closing the window stops
+        // the following, so there is nothing else to undo.
+        win = await scene(buf).open(el("stage"));
         // Each button acts on its click -- the press completed on the button,
         // so sliding off before letting go cancels it.
         win.widget("play").onClick(play);
@@ -263,14 +262,12 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
         raw = await engine({ channels: 2 });
         await raw.resume();
         server = await Server.open(await pageConnection());
-        host = await GuiHost.page();
-        // The host makes the canvas and the **document places it**: it is an
-        // element like any other, so it goes where this page's markup says —
-        // here above the log. Its *size* is the page's too: `fit` below binds
-        // it to the container's box, so the drawing follows the layout at the
-        // display's true resolution instead of the host's fixed default.
-        page = await guiHost();
-        el("stage").append(page.canvas);
+        // The page's host, and the ambient one from here on — so a view opens
+        // without being told where to draw, exactly as the script does after
+        // `session.gui()`. Where the drawing *goes* is the document's say: the
+        // view is opened into `#stage` below, and its canvas is made inside
+        // that element and follows its box, at the display's true resolution.
+        await GuiHost.page();
 
 
         el("file").disabled = false;

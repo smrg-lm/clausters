@@ -37,14 +37,14 @@ import { WidgetHandle, WindowHandle } from "./handle.ts";
 import type { EventArgs } from "./handle.ts";
 import { canvasIn, guiHost, newCanvas, pageGuiConnection } from "./page.ts";
 import { ambientHost, setAmbientHost } from "./ambient.ts";
-import type { ClaustersGui } from "./page.ts";
+import type { ClaustersGui, Stage } from "./page.ts";
 
 // The page's own host — the singleton, its canvases and the carrier over it —
 // lives in `./page.ts` so the component run time can load it without this
 // module and the GuiDef builders behind it. Re-exported here, where callers
 // have always found it.
 export { guiHost, newGuiHost, pageGuiConnection } from "./page.ts";
-export type { ClaustersGui, EventListener } from "./page.ts";
+export type { ClaustersGui, EventListener, Stage } from "./page.ts";
 
 /**
  * The GUI host's default OSC port, UDP and TCP alike — clear of the audio
@@ -247,7 +247,7 @@ export class GuiHost {
             id,
             blobs = [],
             element,
-        }: { id?: number; blobs?: readonly Uint8Array[]; element?: Element | null } = {},
+        }: { id?: number; blobs?: readonly Uint8Array[]; element?: Stage | null } = {},
     ): WindowHandle {
         const wid = id ?? this.allocId();
         // The wire opens an OS window for a `window`-rooted def and nothing

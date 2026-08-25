@@ -108,7 +108,7 @@
         // Phase 2: the GUI host opens a window with a meter on the other bus,
         // which makes it subscribe its own set through the same page.
         const host = await GuiHost.page();
-        host.open(gui.window({ title: "probe", w: 320, h: 160 },
+        host.open(gui.view({ title: "probe", w: 320, h: 160 },
           // Control-rate: an audio meter reads a bus *level* out of the data
           // plane and demands no `/bus_stream`, so it would subscribe nothing.
           gui.meter(hostBus.index, { rate: "control", h: 40 })));
