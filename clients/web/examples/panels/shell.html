@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: the application shell</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 48rem; }
+      #note { font-size: 13px; line-height: 1.5; max-width: 46rem; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+      #stage { width: 760px; max-width: 100%; height: 420px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">The application shell: menu bar, working area, status bar —
+layout props.
+
+Every widget takes the <b>generic place props</b> and every container the flow
+props, so a GuiDef composes a real application face from the same light elements
+a control panel uses:
+
+<code>w</code>/<code>h</code> fix a child's main-axis size in a
+<code>row</code>/<code>col</code> — the menu bar and the status bar here are
+<code>h</code>-fixed rows; <code>weight</code> shares the leftover among the
+flexible children (default 1), so the working area takes everything between the
+two bars and inside it the sidebar is <code>w</code>-fixed while the scope
+stretches; <code>margin</code>/<code>gap</code> tune a container's inset and
+spacing (the shell sets both to 0 so the bars run edge to edge, and reintroduces
+them inside).
+
+Those numbers are <b>logical pixels</b>: the host multiplies every declared
+length by the display's scale, so the same shell is the same size on any
+screen.</div>
+
+      <button id="run">open the shell</button>
+      <div id="stage"></div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/panels/shell.py, call for call:
+      the def built from three controls, the three bars, the four handlers, and
+      the status label the script writes into.
+
+      The platform's differences are the usual two: the host is the wasm one in
+      this tab and draws into an element rather than an OS window, and nothing
+      is pumped -- the page has an event loop, so the script's `run()` has no
+      counterpart.
+
+      Serve clients/web (the package root) and open /examples/panels/shell.html.
+      Build it first: ./build.sh
+    -->
+    <script type="module">
+      import { Session, Synth, gui } from "../../dist/index.js";
+      import {
+        DoneAction, Env, SynthDef, control, envGen, out, sine,
+      } from "../../dist/defs/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => { $("log").textContent += line + "\n"; };
+
+      // The controls the sidebar drives, declared once. A widget built from one
+      // of these takes its **name** -- what `/node_set` addresses -- and its
+      // **default** off it, so the graph, the knob and the value this script
+      // remembers cannot drift apart. The range stays the widget's: a control is
+      // a signal and says nothing about how a knob is drawn.
+      const FREQ = control("freq", 220.0);
+      const AMP = control("amp", 0.08);
+      const GATE = control("gate", 1.0);
+
+      function voice(name = "shell_voice") {
+        const env = envGen(Env.asr(0.05, 1.0, 0.3), {
+          gate: GATE, doneAction: DoneAction.FREE_SELF,
+        });
+        const sig = sine(FREQ).mul(env).mul(AMP);
+        return new SynthDef(name, out(0.0, sig), out(1.0, sig));
+      }
+
+      let synth = null;
+      let freq = FREQ.default, amp = AMP.default;
+
+      async function run() {
+        $("run").disabled = true;
+        const session = await Session.embed();
+        const server = session.server;
+        await session.gui();
+
+        await voice().send(server);
+
+        const menuBar = gui.panel(
+          { layout: "row", h: 40, gap: 4 },
+          gui.menu(["sine"], { w: 120 }),
+          gui.button({ name: "play", label: "play", w: 80 }),
+          gui.button({ name: "stop", label: "stop", w: 80 }),
+          gui.label("shell — the application shell", { weight: 1.0 }),
+        );
+        const sidebar = gui.panel(
+          { layout: "col", w: 190 },
+          gui.knob(FREQ, { min: 55.0, max: 880.0 }),
+          gui.slider(AMP, { min: 0.0, max: 0.15 }),
+        );
+        const outScope = gui.scope(0, { channels: 2, windowMs: 25.0, label: "output" });
+        const workArea = gui.panel({ layout: "row", weight: 1.0, gap: 4 }, sidebar, outScope);
+
+        const win = await gui.view(
+          { title: "shell", w: 760, h: 420, layout: "col", margin: 0, gap: 0 },
+          menuBar, workArea, gui.label("ready", { name: "status", h: 24 }),
+        ).open($("stage"));
+        log(`opened window ${win.id}`);
+
+        const setStatus = (text) => win.widget("status").set({ text });
+
+        win.widget("play").onClick(() => {
+          if (synth === null) {
+            synth = new Synth("shell_voice", { freq, amp }, { server });
+            setStatus("playing");
+          }
+        });
+        win.widget("stop").onClick(() => {
+          if (synth !== null) {
+            synth.set({ gate: 0.0 });
+            synth = null;
+            setStatus("stopped");
+          }
+        });
+        win.widget("freq").onEvent((value) => {
+          freq = Number(value);
+          synth?.set({ freq });
+          setStatus(`freq ${freq.toFixed(1)} Hz`);
+        });
+        win.widget("amp").onEvent((value) => {
+          amp = Number(value);
+          synth?.set({ amp });
+          setStatus(`amp ${amp.toFixed(3)}`);
+        });
+      }
+
+      $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
+    </script>
+  </body>
+</html>

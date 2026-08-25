@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: a shader driven from a script and from a bus</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 46rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+      #stage { width: 560px; max-width: 100%; height: 560px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">A <code>canvas</code> widget runs a script-supplied WGSL
+shader over its area, ShaderToy-style. The host gives the shader three uniforms
+— <code>u.time</code>, <code>u.resolution</code> and a <code>u.params</code>
+vec4 — and the params are driven <b>two ways</b>, which is the whole point of
+the widget:
+
+<code>u.params.x</code> from the <b>script</b>: <code>set({ param0: … })</code>
+sends an OSC value the host writes into the uniform. <code>u.params.y</code>
+from a <b>control bus</b>, read straight out of the audio server's memory every
+frame (zero OSC), exactly the path the meters use. The <code>buses</code>
+argument maps a control bus onto a param slot.
+
+So the same shader animates from an OSC parameter and from live server audio at
+once — which needs the host's client leg pointed at the server, wired by
+<code>session.gui()</code>.</div>
+
+      <div class="row">
+        <button id="run">open the shader</button>
+        <button id="stop" disabled>stop sweeping</button>
+      </div>
+      <div id="stage"></div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/panels/canvas.py, call for
+      call: a session, its GUI, a control bus, the canvas over both param
+      paths, and the loop that sweeps them.
+
+      Two differences, both the platform's. The script's session boots a server
+      process and a windowed host that **maps the server's shared-memory
+      segment**; in a tab the engine and the host are in the document and the
+      bus is read from the memory they already share -- the same zero-OSC path,
+      with nothing to map. And the sweep runs on `setInterval` where the script
+      pumps in a loop, because the page's event loop is already running.
+
+      Serve clients/web (the package root) and open /examples/panels/canvas.html.
+      Build it first: ./build.sh
+    -->
+    <script type="module">
+      import { Bus, Session, gui } from "../../dist/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => { $("log").textContent += line + "\n"; };
+
+      const SHADER = `
+fn shade(uv: vec2<f32>, frag: vec4<f32>) -> vec4<f32> {
+    let p = uv * 2.0 - vec2<f32>(1.0, 1.0);
+    let d = length(p);
+    // params.x is an OSC value from the script; params.y is a control bus read
+    // out of the memory the engine and the host share, each frame.
+    let ring = sin(d * 14.0 - u.time * 3.0 + u.params.x * 6.2831);
+    let r = 0.5 + 0.5 * ring;
+    let g = 0.5 + 0.5 * u.params.y;
+    let b = 0.5 + 0.5 * sin(u.time + uv.x * 3.0);
+    let vignette = 1.0 - 0.5 * d;
+    return vec4<f32>(r * vignette, g * vignette, b * vignette, 1.0);
+}
+`;
+
+      let sweeping = null;
+
+      async function run() {
+        $("run").disabled = true;
+        const session = await Session.embed();
+        const server = session.server;
+        await session.gui();
+
+        const bus = Bus.control(1, { server });   // the shader's green channel
+        const win = await gui.view(
+          { title: "Canvas (shader)", w: 560, h: 560 },
+          gui.canvas(SHADER, { name: "shader", buses: [-1, bus.index], label: "shader" }),
+        ).open($("stage"));
+        log("an animated shader: its ring follows the OSC param, its green "
+          + "channel the control bus");
+
+        // The sweep: one value goes as OSC and the other into the bus, and the
+        // shader reads them by two different routes at the same time.
+        const shader = win.widget("shader");
+        const started = performance.now();
+        sweeping = setInterval(() => {
+          const t = (performance.now() - started) / 1000;
+          shader.set({ param0: 0.5 + 0.5 * Math.sin(t * 0.7) });
+          bus.set(0.5 + 0.5 * Math.cos(t * 1.3));
+        }, 30);
+        $("stop").disabled = false;
+      }
+
+      $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
+      $("stop").onclick = () => {
+        clearInterval(sweeping);
+        $("stop").disabled = true;
+        log("the sweep stopped: the ring holds and the green channel holds, "
+          + "but `u.time` keeps running — the host draws either way");
+      };
+    </script>
+  </body>
+</html>

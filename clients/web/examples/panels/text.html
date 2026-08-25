@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: text on the light widgets</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 62rem; }
+      #note { font-size: 13px; line-height: 1.5; max-width: 46rem; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+      #stage { width: 980px; max-width: 100%; height: 820px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">Text on the light widgets: <code>textSize</code>,
+<code>wrap</code> and <code>align</code>.
+
+Every text-bearing light widget — <code>label</code>, <code>button</code>,
+<code>toggle</code>, <code>text</code>, <code>number</code>, <code>menu</code>
+and the control labels on <code>slider</code>/<code>knob</code> — takes a
+<code>textSize</code>: a glyph scale over the host's font, whose default 2.0 is
+exactly the size everything drew at before the prop existed.
+
+The face writes <b>both cases</b> and the <b>Latin-1</b> letters, so a label, a
+track name or a file path in Spanish, French or German reads as written. Its
+cell is 5 columns by a 7-row body — the height a line reserves — and a diacritic
+draws above that body while a descender draws below it, which is why an accented
+line needs no more room than an unaccented one.
+
+<code>label</code> additionally takes <code>wrap</code> (word wrap on the
+measured width of the words; lines past the label's bottom edge are dropped) and
+<code>align</code> — <code>"start"</code>, <code>"center"</code> or
+<code>"end"</code>, applied per line. Single-line text that overflows its rect
+clips with an ellipsis instead of bleeding into its neighbor.</div>
+
+      <div class="row">
+        <button id="run">open the window</button>
+        <button id="live" disabled>push the live changes</button>
+      </div>
+      <div id="stage"></div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/panels/text.py, call for call:
+      the four panels (sizes, the face's own alphabet, wrapped alignments,
+      clipped controls), then the same props pushed live by name.
+
+      The platform's differences are the usual two -- the host is the wasm one
+      in this tab and draws into an element, and nothing is pumped -- plus one
+      the script has no counterpart for: its timed replay is a button here,
+      because a page has an event loop and no reason to sleep through a list.
+
+      Serve clients/web (the package root) and open /examples/panels/text.html.
+      Build it first: ./build.sh
+    -->
+    <script type="module">
+      import { GuiHost, gui, loadOsc, pageGuiConnection } from "../../dist/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => { $("log").textContent += line + "\n"; };
+
+      const LOREM = "a wrapped label lays its words out on their own measured width, "
+        + "drops the lines that overflow its rect, and aligns each line "
+        + "start, center or end";
+
+      // The face, spelled out: both cases, then the accented letters a Latin-1
+      // label actually reaches for. Read the descenders (g j p q y) hanging
+      // under the body box and the marks sitting over it.
+      const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ / abcdefghijklmnopqrstuvwxyz / 0123456789";
+      const ACCENTED = "canción, año, ¿qué? ¡olé! Ñandú Ángel  ---  crème brûlée, Grüße, mañana";
+
+      // ---- the four panels ----
+      // All widgets are id-less: the host fills the ids in. Only the ones the
+      // script later drives are *named* (the `title` label, the `center`
+      // paragraph and the `field`).
+
+      /** The same label at growing `textSize` — 1.0 up to 4.0. */
+      const sizes = () => gui.panel(
+        { layout: "col" },
+        ...[1.0, 1.5, 2.0, 3.0, 4.0].map((s) => gui.label(`text size ${s}`, { textSize: s })),
+      );
+
+      /** One wrapped paragraph per alignment, side by side. */
+      const alignments = () => gui.panel(
+        { layout: "row" },
+        gui.label(LOREM, { wrap: true, align: "start" }),
+        gui.label(LOREM, { name: "center", wrap: true, align: "center" }),
+        gui.label(LOREM, { wrap: true, align: "end" }),
+      );
+
+      /** What the face carries, at the size the chrome is drawn at. */
+      const alphabet = () => gui.panel(
+        { layout: "col", h: 140.0 },
+        gui.label(ALPHABET),
+        gui.label(ACCENTED),
+        // The same string in a field you can type into: the caret and the
+        // selection measure by the cell, so an accent costs no width and a
+        // descender no height.
+        gui.text({ name: "field", value: "una canción, un año, ¡qué más!", label: "editable" }),
+      );
+
+      /** The controls at two text sizes, with labels long enough to clip. */
+      const controls = () => gui.panel(
+        { layout: "row" },
+        gui.slider({ label: "a deliberately long slider label", value: 0.4 }),
+        gui.knob({ label: "cutoff", min: 20.0, max: 20000.0, value: 800.0, textSize: 3.0 }),
+        gui.button({ label: "a very wordy button face" }),
+        gui.toggle({ label: "toggle at 3x", value: false, textSize: 3.0 }),
+        gui.menu(["sine", "sawtooth", "square"], { label: "wave", textSize: 3.0 }),
+      );
+
+      let win = null;
+
+      async function run() {
+        $("run").disabled = true;
+        await loadOsc();
+        await new GuiHost(await pageGuiConnection()).boot();
+
+        win = await gui.view(
+          { title: "Text", w: 980, h: 820, layout: "col" },
+          gui.label("title", { name: "title", textSize: 3.0, align: "center", h: 40.0 }),
+          sizes(), alphabet(), alignments(), controls(),
+        ).open($("stage"));
+        log("one window: sizes, the face's own alphabet, wrapped alignments, "
+          + "and clipped controls");
+        $("live").disabled = false;
+      }
+
+      // ---- the props are live ----
+      // Retitle bigger and re-align the centered paragraph — the same keys the
+      // GuiDef carried, pushed by name through the widget handles.
+      function live() {
+        win.widget("title").set({ text: "TEXT_SIZE IS LIVE", textSize: 4.0 });
+        win.widget("center").set({ align: "end" });
+        win.widget("field").set({ value: "el título cambió: ¿seguís ahí?" });
+        log("retitled at 4x, the centered paragraph aligned end, the field rewritten");
+      }
+
+      $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
+      $("live").onclick = live;
+    </script>
+  </body>
+</html>

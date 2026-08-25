@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: boot a host, attach a second handle</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 62rem; }
+      #note { font-size: 13px; line-height: 1.5; max-width: 46rem; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+      .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      .panes { display: flex; gap: 12px; flex-wrap: wrap; align-self: stretch; }
+      .panes > div { width: 420px; max-width: 100%; height: 260px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">A <code>GuiHost</code> is a handle on a host, and there are
+two verbs that reach one:
+
+<b><code>boot</code></b>, for a host that is <b>not there yet</b> — in a tab
+that is the wasm host in this document, and the handle that booted it owns it.
+<b><code>attach</code></b>, for a host <b>already running</b> — one another
+handle brought up. It verifies that someone answers there and takes no
+ownership: <code>stop</code> lets the client go and leaves the host standing,
+windows and all.
+
+This page plays both parts at once, so the difference is visible in one run: it
+boots a host, attaches a <b>second handle</b> to it, and each handle opens a
+window of its own on the same host. Stopping the attached handle leaves both
+windows on screen; the host goes down with the one that booted it.
+
+Two handles naming widgets on one host want a <b>share</b> of the id space (the
+same arithmetic as two clients on one audio server), or both would allocate the
+same ids and the second would silently take the first's widgets.</div>
+
+      <div class="row">
+        <button id="run">boot, then attach</button>
+        <button id="stop-attached" disabled>stop the attached handle</button>
+        <button id="stop-owner" disabled>stop the owner</button>
+      </div>
+      <div class="panes"><div id="a"></div><div id="b"></div></div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/panels/attach.py, call for
+      call: boot a handle, attach a second one, share the id space between
+      them, open a window from each, and stop them in turn.
+
+      Two differences, both the platform's. The script's host is a
+      `clausters-gui` **process** and the two handles reach it over a socket;
+      here the host is the wasm one in this tab and the two handles reach it
+      over two page carriers -- so "the host stays up when the attached handle
+      stops" is about this document rather than about a process. And each window
+      draws into an element the page places, rather than being an OS window.
+
+      Serve clients/web (the package root) and open /examples/panels/attach.html.
+      Build it first: ./build.sh
+    -->
+    <script type="module">
+      import { GuiHost, gui, loadOsc, pageGuiConnection } from "../../dist/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => { $("log").textContent += line + "\n"; };
+
+      /** One small window, so each handle has something of its own on screen. */
+      const panelFor = (tag) => gui.view(
+        { title: `${tag} handle`, w: 420, h: 260, layout: "col" },
+        gui.label(`opened by the ${tag} handle`),
+        gui.knob({ name: "amount", label: "amount", min: 0.0, max: 1.0, value: 0.5 }),
+        gui.toggle({ name: "on", label: "on", value: true }),
+      );
+
+      let owner = null, attached = null;
+
+      async function run() {
+        $("run").disabled = true;
+        await loadOsc();
+
+        // ---- the owner: boot ----
+        // Each handle takes one slice of the widget-id space, so the two never
+        // name the same widget. The slices are equal and in a fixed order, so
+        // they are disjoint by arithmetic and the handles need no channel to
+        // agree.
+        owner = await new GuiHost(await pageGuiConnection(), { share: { index: 0, of: 2 } })
+          .boot();
+        const winA = await panelFor("booted").open($("a"));
+        log(`booted: a host of this page's own, window ${winA.id}`);
+
+        // ---- the second handle: attach ----
+        // It verifies that a host answers before sending anything, and it owns
+        // nothing: stopping it leaves the host and both windows exactly where
+        // they are.
+        attached = await new GuiHost(await pageGuiConnection(), { share: { index: 1, of: 2 } })
+          .attach({ adoptAmbient: false });
+        const winB = await panelFor("attached").open($("b"));
+        log(`attached: a second handle on the same host, window ${winB.id}`);
+        log(`the ids do not collide: ${winA.widget("amount").id} and `
+          + `${winB.widget("amount").id}`);
+
+        $("stop-attached").disabled = false;
+        $("stop-owner").disabled = false;
+      }
+
+      $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
+      $("stop-attached").onclick = () => {
+        attached.stop();
+        $("stop-attached").disabled = true;
+        log("the attached handle let go — both windows are still drawing, "
+          + "because it never owned the host");
+      };
+      $("stop-owner").onclick = () => {
+        owner.stop();
+        $("stop-owner").disabled = true;
+        log("the owner let go too — in a tab that is where the parallel ends: "
+          + "the script's `stop` would end the host process, and a page's host "
+          + "lives as long as the document");
+      };
+    </script>
+  </body>
+</html>

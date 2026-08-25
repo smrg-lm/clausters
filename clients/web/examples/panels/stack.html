@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: tabs with no script in the loop</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 60rem; }
+      #note { font-size: 13px; line-height: 1.5; max-width: 46rem; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+      #stage { width: 900px; max-width: 100%; height: 560px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">Tabs with no script in the loop: a <code>stack</code> and a
+control bound to its index.
+
+Two things meet here. A <code>stack</code> shows <b>one child at a time</b> —
+the one its <code>index</code> names — and everything else it holds is neither
+laid out nor drawn while it is away. And a widget can be <b>bound to another
+widget</b>, which applies its value to that widget's property with no round trip
+through this script. Put together, a menu bound to a stack's <code>index</code>
+<i>is</i> a tab bar: the pages flip inside the host, and nothing appears in the
+log while you click.
+
+The two pages are the same take seen twice — its waveform and its spectrogram,
+the pair the <code>stack</code> exists for. Both are <b>heavy</b> views, which
+is what makes the switch worth watching: a hidden one keeps its GPU slot, so
+coming back to it is instant rather than a re-upload.
+
+The bottom half is the same binding aimed at an ordinary prop: a slider bound to
+<code>view_start</code> scrolls the time window. It moves <b>both</b> pages,
+because the two name the same <code>link</code> — a navigation group, where the
+window, the selection and the playhead are the <i>axis'</i> and not any one
+view's.</div>
+
+      <button id="run">open the window</button>
+      <div id="stage"></div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/panels/stack.py, call for call:
+      one take, a picker over a stack of two heavy views, a scroll slider, and
+      the two `bindWidget` calls that put both out of this script's reach.
+
+      The platform's differences are the usual two: the host is the wasm one in
+      this tab and draws into an element rather than an OS window, and nothing
+      is pumped -- the page has an event loop, so the script's `run()` has no
+      counterpart.
+
+      Serve clients/web (the package root) and open /examples/panels/stack.html.
+      Build it first: ./build.sh
+    -->
+    <script type="module">
+      import { GuiHost, gui, loadOsc, pageGuiConnection } from "../../dist/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => { $("log").textContent += line + "\n"; };
+
+      const SR = 48000;
+
+      // ---- the take both pages show ----
+      // One sweep, in memory: the pages are two views of the *same* samples,
+      // which is what makes the switch worth having.
+      function sweep(seconds = 2.0) {
+        const n = Math.floor(seconds * SR);
+        const out = new Float32Array(n);
+        let phase = 0.0;
+        for (let i = 0; i < n; i++) {
+          const f = 40.0 * (8000.0 / 40.0) ** (i / n);
+          phase += 2.0 * Math.PI * f / SR;
+          out[i] = Math.sin(phase) * 0.8;
+        }
+        return out;
+      }
+
+      const TAKE = sweep();
+
+      // The window the two pages start zoomed to, and how far the slider can
+      // scroll it: a quarter of the take on screen, the rest to the right.
+      const WINDOW = Math.floor(TAKE.length / 4);
+      const SCROLL = TAKE.length - WINDOW;
+
+      async function run() {
+        $("run").disabled = true;
+        await loadOsc();
+        await new GuiHost(await pageGuiConnection()).boot();
+
+        // ---- the window: a picker over a stack, a scroll slider under it ----
+        // The menu's options are the page names and its index *is* the stack's
+        // index, which is exactly why the binding is one line and no event
+        // handler. Both views name `link: 1`: one navigation group, so the time
+        // window belongs to the axis rather than to either page. The stack has
+        // no arrangement to make -- a page fills it -- so it takes only a
+        // margin, and its `weight` gives it the leftover.
+        const win = await gui.view(
+          { title: "stack: tabs with no script in the loop", w: 900, h: 560, layout: "col" },
+          gui.panel(
+            { layout: "row", h: 32.0 },
+            gui.label("view:", { w: 48.0 }),
+            gui.menu(["waveform", "spectrogram"], { name: "picker", index: 0 }),
+          ),
+          gui.stack(
+            { name: "pages", index: 0, weight: 1.0 },
+            gui.waveform({ name: "wave", data: TAKE, sampleRate: SR, ruler: "time", link: 1 }),
+            gui.spectrogram({ data: TAKE, sampleRate: SR, ruler: "time", link: 1 }),
+          ),
+          gui.panel(
+            { layout: "row", h: 32.0 },
+            gui.label("scroll:", { w: 64.0 }),
+            gui.slider({ name: "scroll", min: 0.0, max: SCROLL, value: 0.0 }),
+          ),
+        ).open($("stage"));
+
+        // ---- the two bindings ----
+        // `bindWidget` names the target widget and the property its value lands
+        // on. From here on the picker flips the page and the slider scrolls the
+        // axis **inside the host** -- drive either and nothing appears in the
+        // log. The slider names the waveform, but what it moves is the *group*,
+        // so the spectrogram follows it whether or not it is on screen.
+        win.widget("wave").set({ viewLen: WINDOW });   // zoom in, so there is room to scroll
+        win.widget("picker").bindWidget(win.widget("pages"), "index");
+        win.widget("scroll").bindWidget(win.widget("wave"), "view_start");
+        log("bound: picker -> pages.index, scroll -> wave.view_start; "
+          + "flip the pages and drag the slider — nothing appears here "
+          + "(no script round trip)");
+
+        // Panning or zooming a page with the pointer does report, though: an
+        // unbound view sends its new window as an event, which is the path the
+        // slider replaced.
+        win.widget("wave").onEvent((tag, ...rest) => {
+          if (tag === "view") log(`the axis moved by hand: ${tag} ${rest}`);
+        });
+      }
+
+      $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
+    </script>
+  </body>
+</html>

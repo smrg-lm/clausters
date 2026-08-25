@@ -262,6 +262,11 @@ export class GuiHost {
                     "(`clausters-gui --ws`), or point this handle where one is running.",
             );
         }
+        // A second handle on the page's host is still drawing in this
+        // document, so it needs the surface as much as the first: what `boot`
+        // marks and this does not is *ownership*, never what the host is.
+        const page = (this.connection as Partial<PageGuiConnection>).gui;
+        if (page !== undefined) this.page = page;
         if (adoptAmbient) this.adoptAmbient();
         return this;
     }

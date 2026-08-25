@@ -1043,11 +1043,13 @@ reproducible in a browser, and it is where G32b was found.
 
 **The porting is under way, and the count is the milestone's own measure.**
 On 2026-08-25 the pairing stood at **19 pairs, 47 scripts with no page, 12 pages
-with no script**; the first batch of ports took it to **25 pairs, 41 scripts
-alone, 11 pages alone** — `basics/hello-note`, `basics/envelope`,
-`panels/skeleton`, `panels/panel`, `panels/bind`. Each was written against the
-script line by line and then **run** under headless Chrome, which is the half
-that matters: three defects came out of five pages, none of them in the pages.
+with no script**. Two batches the same day took it to **33 pairs, 33 scripts
+alone, 11 pages alone**: `basics/hello-note`, `basics/envelope`, and the whole
+of `panels/` but one — `skeleton`, `panel`, `bind`, `stack`, `text`,
+`workspace`, `attach`, `canvas`, `oscsend`, `shell`, `gestures`. Each was
+written against the script line by line and then **run** under headless Chrome,
+which is the half that matters: four defects came out of them, none in the
+pages.
 
 - **Opening a server adopted nothing**, so the very first example — `Server`
   then a bare `play` — failed with advice about two verbs the reader had not
@@ -1066,9 +1068,27 @@ that matters: three defects came out of five pages, none of them in the pages.
   float is a float in one language and a number in the other. Both run the
   `%g` every other record line already ran.
 
+- **An attached `GuiHost` did not know its surface.** `panels/attach` is *about*
+  the two verbs, and a second handle over the page carrier could not open a
+  window into an element: only `boot` set `page`. What `boot` marks is
+  ownership, never what the host is, so `attach` reads the carrier's surface
+  too.
+
 The lesson is the one the milestone was written for: the pages are not the
 product, the **exercise** is. Nothing had opened a bare server on a page before,
-so nothing had noticed that a page could not.
+so nothing had noticed that a page could not — and nothing had attached a second
+GUI handle in a tab, so nothing had noticed that one could not draw.
+
+**`panels/style` is the one that stopped, and it is reporting a missing
+feature** rather than a porting gap. Its subject is the three levels a theme
+overlays at — the host's own look, a `theme` group on a container, a widget's
+`color` — and the page has the last two and no door to the first. The host-wide
+theme is a **launch flag** (`--theme file.toml`) and a **wasm export**
+(`GuiBridge.theme(json)`) with **no protocol verb**, which is exactly the shape
+the typeface had before `/gui_font`: a property of the host that every client
+should be able to hand over at run time. The fix is that verb, in both clients,
+and it is written into `ROADMAP.md` as the next thing rather than worked around
+here — an example is never what decides a surface.
 
 **The track is in.** `src/form/` (the arrangement), `gui/transport.ts` (the
 playhead and its four buttons) and `gui/editor.ts` (the multitrack editor) are
@@ -2647,11 +2667,25 @@ finished work, where a pending item reads as done.
   expecting one example in two languages currently finds two, and nothing else
   says so.
 
-- ⬜ **Forty-one scripts have no page, and eleven pages have no script**
-  *(counted 2026-08-24 as 47/12, recounted 2026-08-25 after the first batch of
+- ⬜ **Thirty-three scripts have no page, and eleven pages have no script**
+  *(counted 2026-08-24 as 47/12, recounted 2026-08-25 after two batches of
   ports)*. W16's real size, stated as a number rather than as "about forty":
-  **25 pairs, 41 scripts alone, 11 pages alone**, counting a directory with an
-  `index.html` as its own name. The 12 are not all gaps — `components/` is a
+  **33 pairs, 33 scripts alone, 11 pages alone**, counting a directory with an
+  `index.html` as its own name.
+
+  **What the 33 are, so "a destination rather than a queue" is a statement with
+  a list under it.** 27 are portable with the surface this client has today —
+  `views/` (12), `editors/` (6), `spectral/` (3), `transport/` (2),
+  `buffers/` (2), `io/osc-destination` and `io/osc-responder` (the web has
+  `OscDestination`, over a WebSocket bridge where the script has UDP). Four wait
+  on something named: `panels/style` on the host-theme verb below,
+  `faust/boxes-library` on **W7**, `io/midi-responder` and
+  `editors/pianoroll-midi` on **W9**. Two have **no page by nature** and say so:
+  `io/live-udp` (a UDP peer) and `io/embedded` (the server in this process
+  through the cdylib — in a tab that *is* the engine). And
+  `views/recording-mapped` is the third, already stated in its own docstring:
+  it is `recording.html`'s window drawn from a **mapped** segment, and "a page
+  can map nothing". The 12 are not all gaps — `components/` is a
   surface the page has and the script cannot, `basics/engine` is the platform
   itself — but `panels/host`, `basics/synth`, `basics/demand`,
   `transport/sequencing` and `io/responders` are pages whose subject the Python

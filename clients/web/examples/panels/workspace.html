@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: one scroll widget, three views</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 62rem; }
+      #note { font-size: 13px; line-height: 1.5; max-width: 46rem; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; max-height: 14rem;
+            overflow-y: auto; }
+      #stage { width: 900px; max-width: 100%; height: 760px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note"><code>scroll</code> shows its children through a window
+onto a <b>virtual content area</b> larger than the widget. It is deliberately
+<i>general first</i>: the default is the full 2D plane — drag the empty
+background to pan both axes, wheel to zoom anchored at the cursor — and the
+familiar constrained scroll views are that same widget configured down, not
+separate widgets:
+
+<code>axis: "y", zoom: false</code> is a plain vertical scroll view (the wheel
+scrolls), <code>axis: "x", zoom: false</code> a horizontal strip, and the
+default the free plane.
+
+All three are in one window so the degeneration is visible side by side, and the
+<code>"view" x y zoom</code> events the gestures emit appear in the log. Every
+pane and the reset button are <i>named</i>, so nothing here matches a widget id.
+The view state is settable back with <code>set</code>, which the <b>reset
+button</b> shows: its press comes in as a <code>/gui_event</code> and the handle
+answers by putting the view back at the origin and <b>clearing</b> the zoom
+(<code>view_zoom: 0</code>), which returns the plane to its default scale rather
+than pinning it to 1.</div>
+
+      <button id="run">open the workspace</button>
+      <div id="stage"></div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/panels/workspace.py, call for
+      call: the three panes, the three `onEvent` handlers wired by name, and the
+      reset button that sets the view back.
+
+      The platform's differences are the usual two: the host is the wasm one in
+      this tab and draws into an element rather than an OS window, and nothing
+      is pumped -- the page has an event loop, so the script's `run()` has no
+      counterpart.
+
+      Serve clients/web (the package root) and open
+      /examples/panels/workspace.html. Build it first: ./build.sh
+    -->
+    <script type="module">
+      import { GuiHost, gui, loadOsc, pageGuiConnection } from "../../dist/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => {
+        $("log").textContent += line + "\n";
+        $("log").scrollTop = $("log").scrollHeight;
+      };
+
+      const PLANE_W = 1600.0, PLANE_H = 1200.0;
+
+      /**
+       * The general case: a free 2D plane holding a scattered set of widgets.
+       *
+       * The children carry `x`/`y`/`w`/`h` in *content* units. With no
+       * `contentW`/`contentH` the content area would size itself from those
+       * placement extents; naming it explicitly gives the plane room to roam
+       * past its contents, which is what a patch canvas wants.
+       */
+      function plane() {
+        const boxes = [];
+        for (let i = 0; i < 9; i++) {
+          const col = i % 3, row = Math.floor(i / 3);
+          boxes.push(gui.panel(
+            { layout: "col", x: 60.0 + col * 480.0, y: 60.0 + row * 380.0, w: 300.0, h: 220.0 },
+            gui.label(`node ${i}`),
+            gui.knob({ label: "amount", min: 0.0, max: 1.0, value: i / 8 }),
+          ));
+        }
+        return gui.scroll({ name: "plane", contentW: PLANE_W, contentH: PLANE_H }, ...boxes);
+      }
+
+      /**
+       * The constrained case: a plain vertical scroll view.
+       *
+       * Same widget, two props. A `col` layout stacks the children down the
+       * content area; `contentH` makes that area taller than the pane, so the
+       * wheel has somewhere to scroll to.
+       */
+      function verticalList() {
+        const rows = Array.from({ length: 20 }, (_, i) =>
+          gui.toggle({ label: `track ${i + 1}`, value: false }));
+        return gui.scroll(
+          { name: "vlist", layout: "col", axis: "y", zoom: false, contentH: 900.0 },
+          ...rows,
+        );
+      }
+
+      /** The other constrained case: a horizontal strip (a timeline-ish ribbon). */
+      function horizontalStrip() {
+        const cells = Array.from({ length: 24 }, (_, i) =>
+          gui.label(`bar ${i + 1}`, { x: i * 90.0, y: 0.0, w: 80.0, h: 60.0 }));
+        return gui.scroll(
+          { name: "hstrip", axis: "x", zoom: false, contentH: 70.0 },
+          ...cells,
+        );
+      }
+
+      const workspace = () => gui.view(
+        { title: "Workspace (scroll)", w: 900, h: 760, layout: "col" },
+        gui.panel(
+          { layout: "col", weight: 3 },
+          gui.panel(
+            { layout: "row", h: 26.0, margin: 0 },
+            gui.label("free plane — drag to pan, wheel to zoom"),
+            gui.button({ name: "reset", label: "reset view", w: 120.0 }),
+          ),
+          plane(),
+        ),
+        gui.panel(
+          { layout: "col", weight: 2 },
+          gui.label("vertical scroll view (axis=y, zoom off)", { h: 20.0 }),
+          verticalList(),
+        ),
+        gui.panel(
+          { layout: "col", weight: 1 },
+          gui.label("horizontal strip (axis=x, zoom off)", { h: 20.0 }),
+          horizontalStrip(),
+        ),
+      );
+
+      /**
+       * A pane's `"view"` edit-back, wired by name — the same three keys the
+       * reset button sets back.
+       */
+      const onView = (name) => (tag, ...vals) => {
+        if (tag === "view" && vals.length >= 3) {
+          log(`${name}: view x=${vals[0].toFixed(1)} y=${vals[1].toFixed(1)} `
+            + `zoom=${vals[2].toFixed(2)}`);
+        }
+      };
+
+      async function run() {
+        $("run").disabled = true;
+        await loadOsc();
+        await new GuiHost(await pageGuiConnection()).boot();
+
+        const win = await workspace().open($("stage"));
+        log("drag and wheel over each pane; navigation events appear here");
+        log("('reset view' puts the plane back at the origin, at its default zoom)");
+
+        win.widget("plane").onEvent(onView("plane"));
+        win.widget("vlist").onEvent(onView("vlist"));
+        win.widget("hstrip").onEvent(onView("hstrip"));
+        win.widget("reset").onClick(() => {
+          win.widget("plane").set({ viewX: 0.0, viewY: 0.0, viewZoom: 0 });
+          log("view reset to the origin, zoom 1");
+        });
+      }
+
+      $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
+    </script>
+  </body>
+</html>

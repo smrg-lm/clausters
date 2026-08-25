@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: the gesture table</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 72rem; }
+      #note { font-size: 13px; line-height: 1.5; max-width: 46rem; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; max-height: 14rem;
+            overflow-y: auto; }
+      #stage { width: 1100px; max-width: 100%; height: 760px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">What a drag does is the <b>container's</b>, not the
+widget's.
+
+Panning, sweeping a selection and locating the transport belong to the
+<b>coordinate system</b> a container gives its contents, not to whatever is
+drawn inside it. That is why one Shift+drag pans a <code>waveform</code>, a
+<code>track</code> lane, a <code>pianoroll</code> and a free-standing
+<code>timeruler</code> alike, and why a press a container does not want falls
+<i>outward</i> to the container around it.
+
+Each container declares that mapping in a <code>gestures</code> table, keyed by
+modifier chord (<code>drag</code> for the plain drag, plus <code>shift</code>,
+<code>ctrl</code>, <code>alt</code>), whose value is an ordered plan of steps —
+<code>element</code> (hand the press to whatever is under the cursor; it may
+decline and the plan goes on), <code>pan</code>, <code>select</code>,
+<code>locate</code>.
+
+Two columns, the same contents, two tables: the left one takes the defaults, the
+right one is switched live by the menu under it.</div>
+
+      <button id="run">open the window</button>
+      <div id="stage"></div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/panels/gestures.py, call for
+      call: the offline take, the two columns (ruler over lane over roll, and a
+      standalone waveform under them), the preset menu that rewrites the right
+      column's tables, and the report handler on every widget of both.
+
+      One difference is the platform's and is the same one the plan already
+      records for the heavy views: the script writes the take to a `.f32` file
+      for the host to **map** (`samples_to_file`) and the widgets name a `path`.
+      A page has no filesystem and no mapping, so the samples travel as the
+      bulk payload a `source` carries -- the browser's half of the same door.
+      The other two are the usual: the host draws into an element rather than an
+      OS window, and nothing is pumped.
+
+      Serve clients/web (the package root) and open
+      /examples/panels/gestures.html. Build it first: ./build.sh
+    -->
+    <script type="module">
+      import { Session, gui, render, seq } from "../../dist/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => {
+        $("log").textContent += line + "\n";
+        $("log").scrollTop = $("log").scrollHeight;
+      };
+
+      const SR = 48000.0;
+      const TEMPO = 2.0;   // beats per second (120 BPM)
+
+      // The gesture tables the right column switches between.
+      const REVERSED = { drag: "pan", shift: "select" };
+      const LANE_PANS = { drag: "element pan", shift: "locate" };
+      const PRESETS = ["default", "drag pans", "lane: drag pans, shift locates"];
+
+      async function run() {
+        $("run").disabled = true;
+
+        // ---- the take, bounced offline ----
+        const take = await render(
+          new seq.Pbind({
+            degree: new seq.Pseq([0, 2, 4, 7, 5, 4, 2, 0], 4),
+            dur: 0.25,
+            amp: new seq.Pwhite(0.3, 0.7),
+          }),
+          { sampleRate: SR, channels: 1, tempo: TEMPO },
+        );
+        const frames = take.frames;
+        log(`rendered ${frames} frames (${(frames / SR).toFixed(2)} s)`);
+
+        // The samples as a **source**: what a page has instead of a file the
+        // host maps. One object, fed to every view that draws this take.
+        const samples = gui.source(take.samples);
+
+        const beat = SR / TEMPO;
+        const NOTES = Array.from({ length: 16 }, (_, i) =>
+          [i * beat / 2, beat / 3, 60 + (i % 5) * 2, 100, 0]);
+
+        /**
+         * One column: the open axis (ruler over lane over roll) and, under it,
+         * the same take as a standalone `waveform` navigating alone.
+         */
+        const column = (tag, gestures) => {
+          const extra = gestures ? { gestures } : {};
+          return gui.panel(
+            { layout: "col" },
+            gui.label(tag),
+            gui.timeruler({ name: `${tag}-ruler`, link: 1, h: 18.0, sampleRate: SR, ...extra }),
+            gui.track(
+              { name: `${tag}-lane`, label: "audio", link: 1, snap: beat, height: 90.0, ...extra },
+              gui.clip({
+                name: `${tag}-clip`, data: samples, channels: 1,
+                offset: 0.0, dur: frames, label: "take",
+              }),
+            ),
+            gui.pianoroll({
+              name: `${tag}-roll`, notes: NOTES, min: 48, max: 84, snap: beat / 2,
+              link: 1, sampleRate: SR, ...extra,
+            }),
+            // No `link`: a waveform's axis is its own content, so it navigates
+            // by itself instead of sharing the open axis above.
+            gui.waveform({ name: `${tag}-wave`, data: samples, channels: 1, sampleRate: SR, ...extra }),
+          );
+        };
+
+        const scene = gui.view(
+          { title: "Gestures: the container decides", w: 1100, h: 760, layout: "col" },
+          gui.panel({ layout: "row" }, column("default", null), column("reversed", REVERSED)),
+          gui.panel(
+            { layout: "row", h: 44.0 },
+            gui.label("right column:"),
+            gui.menu(PRESETS, { name: "preset", label: "gestures" }),
+          ),
+        );
+
+        const session = await Session.embed();
+        await session.gui();
+        const win = await scene.open($("stage"));
+        log(`opened window ${win.id}`);
+        log("left column:  drag a lane locates, drag its clip moves it, "
+          + "drag the waveform selects, Shift+drag pans anywhere");
+        log("right column: drag pans everywhere, Shift+drag selects");
+
+        win.widget("preset").onEvent((index) => {
+          const table = [{}, REVERSED, LANE_PANS][Number(index)];
+          for (const tag of ["ruler", "lane", "roll", "wave"]) {
+            win.widget(`reversed-${tag}`).set({ gestures: JSON.stringify(table) });
+          }
+          log(`right column -> ${PRESETS[Number(index)]}: `
+            + `${Object.keys(table).length ? JSON.stringify(table) : "the defaults"}`);
+        });
+
+        /** Every navigation and edit-back the two columns emit, named. */
+        const report = (tag) => (...vals) => log(`  ${tag} ${vals.join(" ")}`);
+        for (const side of ["default", "reversed"]) {
+          for (const tag of ["ruler", "lane", "roll", "wave", "clip"]) {
+            win.widget(`${side}-${tag}`).onEvent(report(`${side}-${tag}`));
+          }
+        }
+      }
+
+      $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
+    </script>
+  </body>
+</html>

@@ -1,8 +1,10 @@
 # Roadmap — the order the open work is taken in
 
-*Rewritten 2026-08-25, twice: the second when W24 closed — its four loose ends
-and the sweep that says there are no more — and W16's porting began, which is
-what leads the phase now. Before that, the same day, when the web smokes got a runner and a CI step — and,
+*Rewritten 2026-08-25, three times: the third when `panels/` finished and W16's
+remaining order was written down — including the one verb a page of it is
+waiting on. Before that, the second, when W24 closed — its four loose ends and
+the sweep that says there are no more — and W16's porting began, which is what
+leads the phase now. Before that, the same day, when the web smokes got a runner and a CI step — and,
 with them, a clippy sweep the toolchain forced: rustc 1.98 turned a green tree
 red on a commit that touched none of it. Before that: 2026-08-24, six times: the sixth when the examples pass closed — one
 folder per subject in both clients, the `gui_` prefix gone, and the pairing
@@ -170,15 +172,38 @@ files with one pair checked, is written in one place and spread by one script.
 What leads the phase now is the question about the widgets the GUI reform did
 not ask.*
 
-- ⬜ **W16 — Example parity with the Python client**, under way. The first
-  batch landed on 2026-08-25 and moved the count from **19 pairs / 47 scripts
-  alone / 12 pages alone** to **25 / 41 / 11**. It is a destination and not a
-  queue for the reason the plan gives — most of what is left waits on a surface
-  (MIDI is W9, the Faust boxes W7) or is Python-process shaped and has no page —
-  but the batch also showed what the pass is *for*: five pages run under
-  headless Chrome turned up three surface defects, one of them in the simplest
-  path there is (a bare `Server` that adopted nothing, so `play` had no server).
-  Each page lands with the surface it needs.
+- ⬜ **W16 — Example parity with the Python client**, under way, and this is
+  the order the rest of it goes in. Two batches on 2026-08-25 took the count
+  from **19 pairs / 47 scripts alone / 12 pages alone** to **33 / 33 / 11**:
+  `basics/` is done and `panels/` is done but for one. What the pass is *for*
+  showed up again in the second batch — an attached `GuiHost` could not draw,
+  which no test had asked — and that is why the pages are worth writing beyond
+  the pages.
+
+  Next, in this order:
+
+  1. **`/gui_theme`, the host's own theme as a verb** *(`clients/gui/PLAN.md`,
+     Found by use, "The host's own theme is a wasm export the protocol has no
+     verb for")*. It is the typeface's case again — a launch flag on one front,
+     a wasm export on the other, no `/gui_*` verb — and it is what
+     `panels/style` needs, the one page of that folder not written. Three ends,
+     as `/gui_font` had: the host, then the same `GuiHost.theme(table)` in both
+     clients.
+  2. **`views/` (12 pages)** — the biggest remaining folder and all of it
+     portable today: plot, scope, nodetree, rulers, take, window, bulk, linked,
+     analyzer, plotting, scoping's siblings.
+  3. **`editors/` (6)**, then **`spectral/` (3)**, **`transport/` (2)**,
+     **`buffers/` (2)** and the two `io/` ones the web can carry
+     (`osc-destination`, `osc-responder`, over the WebSocket bridge where the
+     script has UDP).
+  4. **The five pages with no script** that are gaps rather than surface —
+     `panels/host`, `basics/synth`, `basics/demand`, `transport/sequencing`,
+     `io/responders`.
+
+  Not on this list, and named so the absence reads as a decision: `io/live-udp`
+  and `io/embedded` have **no page by nature**, `views/recording-mapped` says so
+  in its own docstring ("a page can map nothing"), and `faust/boxes-library`,
+  `io/midi-responder` and `editors/pianoroll-midi` wait on **W7** and **W9**.
 
 - ⬜ **W7** (the Faust surfaces), **W9** (MIDI), **W15** (the bundle writer) —
   unported features, each owned, none on the path to the complete example.

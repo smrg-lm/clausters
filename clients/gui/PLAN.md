@@ -2223,6 +2223,32 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 
 ## Found by use: the running list of fixes
 
+- ⬜ **The host's own theme is a wasm export the protocol has no verb for**
+  *(found 2026-08-25, porting `panels/style.py`)*. Exactly the typeface's case,
+  one entry below, and found the same way — by an example that could not be
+  written. The colors a host draws its chrome from overlay at three levels: the
+  host's own table, a `theme` group on a container, a widget's `color`. The last
+  two are props and both clients have them; the **first** is a launch flag
+  (`--theme file.toml`, `[gui.theme]`) on the native front and
+  `GuiBridge.theme(json)` on the browser one, with **no `/gui_*` verb** — so a
+  page can reach under its client to the bridge and a script cannot do it at all
+  after launch.
+
+  Three ends, as the font's had:
+
+  - **The host**: `/gui_theme <json>` — the same partial table the prop takes,
+    scoped to the host rather than to a subtree, on either front. The machinery
+    is there on both sides already (the browser export *is* this, and the native
+    launch path parses the same table).
+  - **The reference client**: `GuiHost.theme(table)` over that verb, beside
+    `GuiHost.font(face)`.
+  - **The web client**: the same `GuiHost.theme(table)`, so the bridge stops
+    being where a capability is reached.
+
+  Until then `clients/web/examples/panels/style.html` cannot be written, and
+  **it is not written**: an example never decides a surface, and a page that
+  reached for `bridge.theme` would be the scaffold becoming the norm.
+
 - ✅ **A typeface is a wasm binding, so only the browser can change one**
   *(found 2026-08-23, reading the web book's "What the browser changes" against
   the reference client)*. The browser front takes a face at **runtime** —

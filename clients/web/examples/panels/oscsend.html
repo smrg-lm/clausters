@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: a text field types an OSC message</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 46rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; max-height: 14rem;
+            overflow-y: auto; }
+      #stage { width: 560px; max-width: 100%; height: 360px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">An editable <code>text</code> field types an OSC message
+straight to the server.
+
+You click into it, type, move the caret (word-wise with Ctrl), select, delete —
+a character, or a whole word with <b>Ctrl+Backspace</b> / <b>Ctrl+Delete</b> —
+and cut/copy/paste. What it emits is a <b>string</b>, delivered exactly the way
+a slider delivers its float: as a <code>/gui_event</code> on <b>every</b> edit,
+never gated on Enter.
+
+This page consumes that stream, parses each line into an OSC address plus typed
+arguments, and sends it to the audio server. Because the send is ungated,
+editing the message is <i>live</i>: it seeds a running synth's
+<code>/node_set &lt;id&gt; freq 220</code> and, as you edit the number, the pitch
+follows what you type digit by digit. A half-typed or unknown message is simply
+ignored by the server, so type freely.</div>
+
+      <button id="run">open the field</button>
+      <div id="stage"></div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/panels/oscsend.py, call for
+      call: a session, a def, a synth, the two text fields, the same two event
+      handlers (with the focus payload swallowed the same way), and `focus()`.
+
+      The platform's differences are the usual two: the host is the wasm one in
+      this tab and draws into an element, and nothing is pumped -- the page has
+      an event loop, so the script's `run()` has no counterpart.
+
+      Serve clients/web (the package root) and open
+      /examples/panels/oscsend.html. Build it first: ./build.sh
+    -->
+    <script type="module">
+      import { Session, Synth, gui } from "../../dist/index.js";
+      import { SynthDef, control, out, sine } from "../../dist/defs/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => {
+        $("log").textContent += line + "\n";
+        $("log").scrollTop = $("log").scrollHeight;
+      };
+
+      /**
+       * Parse `"/addr a b c"` into `[address, args]` with each argument coerced
+       * to a number or left a string by how it reads, or `null` when the line
+       * has no `/`-address yet. Minimal on purpose (no quoting).
+       */
+      function parseOsc(line) {
+        const tokens = line.split(/\s+/).filter(Boolean);
+        if (tokens.length === 0 || !tokens[0].startsWith("/")) return null;
+        const args = tokens.slice(1).map((tok) => {
+          const n = Number(tok);
+          return Number.isNaN(n) ? tok : n;
+        });
+        return [tokens[0], args];
+      }
+
+      function beep() {
+        const sig = sine(control("freq", 220.0)).mul(0.2);
+        return new SynthDef("oscsend_beep", out(0.0, sig), out(1.0, sig));
+      }
+
+      let lastSent = null;
+
+      async function run() {
+        $("run").disabled = true;
+        const session = await Session.embed();
+        const server = session.server;
+        await session.gui();
+
+        await beep().send(server);          // waits for /done
+        const synth = new Synth("oscsend_beep", { freq: 220.0 }, { server });
+
+        const win = await gui.view(
+          { title: "OSC message field", w: 560, h: 360, layout: "col" },
+          gui.label("type an OSC message; it is sent to the server as you type", { h: 28.0 }),
+          gui.text({ name: "field", value: `/node_set ${synth.id} freq 220`, h: 40.0 }),
+          gui.label("a multiline scratch pad (Enter = newline); not sent", { h: 28.0 }),
+          gui.text({ name: "scratch", multiline: true, value: "line one\nline two" }),
+        ).open($("stage"));
+        log(`synth ${synth.id} playing at 220 Hz — edit the freq in the field `
+          + "and the pitch follows as you type");
+
+        /**
+         * Report and swallow a `("focus", 1|0)` payload, so the handlers see
+         * only the field's own value.
+         */
+        const reportFocus = (who, payload) => {
+          if (payload.length === 2 && payload[0] === "focus") {
+            log(`${who} ${payload[1] ? "has" : "lost"} the keyboard`);
+            return true;
+          }
+          return false;
+        };
+
+        win.widget("field").onEvent((...payload) => {
+          if (reportFocus("field", payload)) return;
+          const [value] = payload;
+          const parsed = parseOsc(value);
+          if (parsed === null) return;
+          const [addr, args] = parsed;
+          const key = `${addr} ${args.join(" ")}`;
+          if (key === lastSent) return;
+          lastSent = key;
+          try {
+            server.sendMsg(addr, ...args);
+            log(`sent ${addr} ${JSON.stringify(args)}`);
+          } catch (e) {
+            log(`(not sent: ${e})`);
+          }
+        });
+
+        win.widget("scratch").onEvent((...payload) => {
+          if (!reportFocus("scratch", payload)) log(`scratch: ${JSON.stringify(payload[0])}`);
+        });
+
+        win.widget("field").focus();
+      }
+
+      $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
+    </script>
+  </body>
+</html>
