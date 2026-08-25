@@ -44,13 +44,14 @@ fresh id and hands back a handle that resolves the names.</div>
       story: the script boots a `clausters-gui` **process**, headless, to
       exercise the protocol with no display. A tab has no process to boot and no
       headless mode -- the host is the wasm one in this page, and it draws into
-      the element below. Everything after `GuiHost.page()` is the script's code.
+      the element below. Everything after the host comes up is the script's code.
 
       Serve clients/web (the package root) and open
       /examples/panels/skeleton.html. Build it first: ./build.sh
     -->
     <script type="module">
-      import { GuiHost, gui, loadOsc } from "../../dist/index.js";
+      import { GuiHost, gui, loadOsc, pageGuiConnection,
+      } from "../../dist/index.js";
 
       const $ = (id) => document.getElementById(id);
       const log = (line) => { $("log").textContent += line + "\n"; };
@@ -62,7 +63,7 @@ fresh id and hands back a handle that resolves the names.</div>
         // ---- the host ----
         // The page's, and the ambient one from here on, so the view below opens
         // without being told which host.
-        const host = await GuiHost.page();
+        const host = await new GuiHost(await pageGuiConnection()).boot();
 
         // ---- build a small panel and open it ----
         // Two controls and a waveform view. The root view carries no id (the id

@@ -17,13 +17,16 @@
 // so its value flows straight to the audio server, bypassing this script.
 //
 // In the browser the host is the wasm one on this page's canvas
-// (`GuiHost.page()`, over the `guiHost()` singleton) or a native
-// `clausters-gui --ws` over a WebSocket (`GuiHost.connect(url)`) — the same
+// (a handle over `pageGuiConnection()`, `boot`ed) or a native
+// `clausters-gui --ws` over a WebSocket (a handle over a `WsConnection`,
+// `attach`ed) — the same
 // object either way.
 
 export { formatWidgetInfo, GuiHost, guiHost, newGuiHost, pageGuiConnection, DEFAULT_PORT, DEFAULT_WS_PORT } from "./host.ts";
 export { ambientHost, setAmbientHost } from "./ambient.ts";
-export type { ClaustersGui, EventListener, PropValue, WidgetInfo } from "./host.ts";
+export type {
+    ClaustersGui, EventListener, PageGuiConnection, PropValue, WidgetInfo,
+} from "./host.ts";
 
 export { WidgetHandle, WindowHandle } from "./handle.ts";
 export type { EventArgs } from "./handle.ts";

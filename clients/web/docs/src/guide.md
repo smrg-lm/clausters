@@ -159,7 +159,7 @@ b.use(() => new Synth("beep"));   // reaches b, whatever the page's default is
 
 ### The GUI leg
 
-`s.gui()` opens the session's host once and wires it to **this session's** engine, so a bound widget reaches this server and not the page's — the browser parallel of the Python client's `session.gui()`, which boots a `clausters-gui` process pointed at its session's server. A session drives a native `--ws` host instead by being **given** one — `new Session(server, clock, await GuiHost.connect(url))` — the way it is given a `Server` it did not open.
+`s.gui()` opens the session's host once and wires it to **this session's** engine, so a bound widget reaches this server and not the page's — the browser parallel of the Python client's `session.gui()`, which boots a `clausters-gui` process pointed at its session's server. A session drives a native `--ws` host instead by being **given** one — `new Session(server, clock, await new GuiHost(await WsConnection.open(url)).attach())` — the way it is given a `Server` it did not open.
 
 `s.guiHost` reads back what the session has without opening anything.
 
@@ -168,11 +168,11 @@ b.use(() => new Synth("beep"));   // reaches b, whatever the page's default is
 `GuiHost` is the same seam again — a connection and a name:
 
 ```js
-const host = await GuiHost.page();            // the wasm host on this page
-const host = await GuiHost.connect(url);      // a native `clausters-gui --ws`
+const host = await new GuiHost(await pageGuiConnection()).boot();   // this page's wasm host
+const host = await new GuiHost(await WsConnection.open(url)).attach();  // a native `clausters-gui --ws`
 ```
 
-The widget catalogue is a set of builders in the `gui` namespace, and a whole tree goes out in one `/gui_def`. **The view is the subject**: it opens itself, on the host it was told or the ambient one — `GuiHost.page()` above became the ambient host by opening — exactly as it reads in the Python client:
+The widget catalogue is a set of builders in the `gui` namespace, and a whole tree goes out in one `/gui_def`. **The view is the subject**: it opens itself, on the host it was told or the ambient one — the handle above became the ambient host by booting — exactly as it reads in the Python client:
 
 ```js
 const win = await gui.view(

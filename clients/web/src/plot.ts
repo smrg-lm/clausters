@@ -48,7 +48,7 @@ import { Synth } from "./defs/node.ts";
 import type { Controls } from "./defs/node.ts";
 import { SynthDef } from "./defs/synthdef.ts";
 import { Env, control, envGen, out } from "./defs/ugens/index.ts";
-import { GuiHost } from "./gui/host.ts";
+import { GuiHost, pageGuiConnection } from "./gui/host.ts";
 import type { Stage } from "./gui/host.ts";
 import type { PropValue } from "./gui/host.ts";
 import { ambientHost } from "./gui/ambient.ts";
@@ -523,6 +523,7 @@ export async function resolveHost(): Promise<GuiHost> {
     // and registering it would make the fallback outrank a session opened
     // afterwards. The reference client draws the same line
     // (`plot._ambient_host` boots with `adopt_ambient=False`).
-    ownHost ??= await GuiHost.page(undefined, { adoptAmbient: false });
+    ownHost ??= await new GuiHost(await pageGuiConnection())
+        .boot({ adoptAmbient: false });
     return ownHost;
 }

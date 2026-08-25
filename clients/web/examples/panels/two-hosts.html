@@ -111,7 +111,7 @@
         open http://localhost:8000/examples/panels/two-hosts.html
 
       Why the hosts are driven as raw OSC here rather than through `GuiHost`:
-      the TS client's `GuiHost.page()` resolves *the page's* host, which is the
+      the TS client's `guiHost()` resolves *the page's* host, which is the
       right default and the wrong thing to demonstrate. A caller wanting two
       goes one layer down, to the binding surface the wasm exports.
     -->

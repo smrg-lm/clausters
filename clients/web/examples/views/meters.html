@@ -80,7 +80,7 @@ Swapping to a <code>--ws</code> server (or to a native
     <script type="module">
       import {
         loadOsc, loadCore, pageConnection, server as engine, Server,
-        Bus, Buffer, Synth, SynthDef, GuiHost, gui,
+        Bus, Buffer, Synth, SynthDef, GuiHost, gui, pageGuiConnection,
       } from "../../dist/index.js";
       import { control, out, outCtl, sine } from "../../dist/defs/index.js";
 
@@ -162,11 +162,11 @@ Swapping to a <code>--ws</code> server (or to a native
         await server.sync();
 
         // ---- the host ----
-        // `GuiHost.page()` drives the wasm host on this page; opening it makes
-        // it the ambient one, so the view below needs no host named.
-        // `GuiHost.connect("ws://127.0.0.1:57220")` would drive a native one,
-        // and nothing below this line would change.
-        await GuiHost.page();
+        // A handle over this page's GUI carrier, `boot`ed: the wasm host in
+        // this tab comes up and becomes the ambient one, so the view below
+        // needs no host named. Over `WsConnection.open("ws://127.0.0.1:57220")`
+        // the verb would be `attach` and nothing below this line would change.
+        await new GuiHost(await pageGuiConnection()).boot();
         // The view opens itself, into the element that decides how wide it is
         // — the canvas is made inside `#stage` and follows its box, so the
         // layout has the say: full width here, and just as full on a phone.

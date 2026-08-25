@@ -62,8 +62,9 @@
       …) compose the tree, `GuiHost` sends it and reads the widgets back, and
       the panel drives the audio engine running in this tab's AudioWorklet —
       no server process anywhere. The same code drives a *native*
-      `clausters-gui --ws` host: `GuiHost.connect(url)` instead of
-      `GuiHost.page()` is the one line that names a carrier.
+      `clausters-gui --ws` host: the carrier is the one line that names one, and
+      the verb follows it — `boot()` over this page's own host, `attach()` over
+      a socket, since a tab starts no process on another machine.
 
       - panel:  a tone's controls. `freq` is **bound** — its value goes
         straight from the host to the engine, with no round trip through this
@@ -78,8 +79,8 @@
     -->
     <script type="module">
       import {
-        loadOsc, pageConnection, server as engine, Server, Bus, Synth,
-        SynthDef, GuiHost, gui,
+        loadOsc, pageConnection, pageGuiConnection, WsConnection,
+        server as engine, Server, Bus, Synth, SynthDef, GuiHost, gui,
       } from "../../dist/index.js";
       import { control, lpf, out, saw } from "../../dist/defs/index.js";
 
@@ -112,10 +113,10 @@
 
       const playing = () => (voice ??= new Synth("gui_tone", { freq: 220.0, amp: 0.2 }, { server }));
 
-      // The GUI side. `GuiHost.page()` drives the wasm host on this page's
-      // canvas; `GuiHost.connect(url)` would drive a native one, and nothing
+      // The GUI side. Over `pageGuiConnection()` the handle `boot`s this page's
+      // wasm host; over a `WsConnection` it `attach`es to a native one, and nothing
       // below this line would change.
-      let host = await GuiHost.page();
+      let host = await new GuiHost(await pageGuiConnection()).boot();
 
       const panel = () => gui.view(
         { title: "a tone", w: 520, h: 300, layout: "col", margin: 8.0, gap: 8.0 },
@@ -238,7 +239,7 @@
         const url = document.getElementById("ws").value;
         try {
             host.stop();
-            host = await GuiHost.connect(url);
+            host = await new GuiHost(await WsConnection.open(url)).attach();
             win = null;
             say(`driving the native host at ${url} — open a demo`);
         } catch (error) {

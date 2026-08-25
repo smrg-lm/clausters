@@ -44,7 +44,7 @@ import { Server } from "./defs/server/index.ts";
 import type { ClaustersServer } from "./engine/server.ts";
 import { engine as engineInstance, server as pageEngine } from "./engine/server.ts";
 import { GuiHost } from "./gui/host.ts";
-import { newGuiHost } from "./gui/page.ts";
+import { newGuiHost, pageGuiConnection } from "./gui/page.ts";
 import type { ClaustersGui } from "./gui/page.ts";
 import type { EventDestination } from "./seq/event.ts";
 import type { EventStreamPlayer } from "./seq/eventstream.ts";
@@ -264,7 +264,7 @@ export class Session extends Environment {
      * opens nothing — the same way a `Server` is taken rather than opened when
      * the constructor is used. That is how a session drives a native
      * `clausters-gui --ws` host: `new Session(server, clock, await
-     * GuiHost.connect(url))`.
+     * new GuiHost(await WsConnection.open(url)).attach())`.
      *
      * A session on the page's shared engine gets the page's host (canvas in
      * `<body>` included); one holding its own engine gets a host of its own,
@@ -288,9 +288,10 @@ export class Session extends Environment {
             // A host of this session's own, wired to this session's engine —
             // and this session's to close, unlike the page's shared one.
             this.ownedGui = await newGuiHost({ engine: this.ownedEngine });
-            this.gui_ = await GuiHost.page(this.ownedGui, { share });
+            this.gui_ = await new GuiHost(
+                await pageGuiConnection(this.ownedGui), { share }).boot();
         } else {
-            this.gui_ = await GuiHost.page(undefined, { share });
+            this.gui_ = await new GuiHost(await pageGuiConnection(), { share }).boot();
         }
         return this.gui_;
     }

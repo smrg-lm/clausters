@@ -2289,8 +2289,8 @@ Python counterpart under another spelling or is a page's own (`ANY_PEER`,
 
 ## Found by use: the running list of fixes
 
-- ✅ **`Server.open` was three of the reference client's verbs in one, under a
-  fourth name** *(found 2026-08-25 when the user asked what `open` was doing
+- ✅ **`Server.open`, and `GuiHost.page`/`connect`, were the reference client's
+  verbs merged and renamed** *(found 2026-08-25 when the user asked what `open` was doing
   beside `boot` and `attach`; fixed the same day)*. No client had all three:
   the reference has a cheap constructor plus `boot()` (start the process),
   `attach()` (reach one already running, verify, reconcile) and `reconcile()`;
@@ -2325,6 +2325,18 @@ Python counterpart under another spelling or is a page's own (`ANY_PEER`,
   which is the thing they were always about. `SessionOptions.verify` is gone:
   `Session.page` boots and `Session.connect` attaches, so refusing silence is
   no longer something a caller has to ask for.
+
+  **The same defect sat one layer up**, and went with it: `GuiHost.page()` and
+  `GuiHost.connect(url)` were static factories where the reference client has
+  `boot()` and `attach()` on a handle. They are those verbs now, over a carrier
+  the constructor already took — `new GuiHost(await pageGuiConnection()).boot()`
+  for this page's wasm host, `new GuiHost(await WsConnection.open(url)).attach()`
+  for a `clausters-gui --ws`. `boot` refuses a socket and names `attach`;
+  `attach` verifies with a `/gui_query` for an id nobody defined, since a host
+  that is up answers it and one that is not answers nothing. The page carrier
+  carries the surface it goes to (`PageGuiConnection.gui`, declared in
+  `gui/page.ts` where everything the DOM is lives), which is how `boot` knows it
+  is driving a host in this document and where its canvases come from.
 
 - ✅ **Opening a server did not adopt it, so the ambient verbs had nothing to
   resolve** *(found 2026-08-25, porting `hello_note.py`; fixed the same day)*.

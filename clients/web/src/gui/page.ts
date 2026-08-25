@@ -40,6 +40,20 @@ export type Stage = Element;
 export type EventListener = (packet: Uint8Array) => void;
 
 /**
+ * The page's GUI carrier, and the surface behind it.
+ *
+ * A `Connection` says how packets travel; this one also *is* a page's host, so
+ * it carries the `ClaustersGui` it goes to — which is what lets `GuiHost.boot`
+ * know it is driving a host in this document (and where its canvases come
+ * from) rather than one over a socket. The field lives here, in the module
+ * that owns everything the page is, and not on the carrier interface every
+ * other transport implements.
+ */
+export interface PageGuiConnection extends Connection {
+    readonly gui: ClaustersGui;
+}
+
+/**
  * The page canvas' default size in device pixels, matching the host's own
  * default. A component sizes its canvas from its element box instead.
  */
@@ -350,10 +364,11 @@ async function boot(audio?: ClaustersServer): Promise<ClaustersGui> {
  */
 export async function pageGuiConnection(
     target?: Promise<ClaustersGui> | ClaustersGui,
-): Promise<Connection> {
+): Promise<PageGuiConnection> {
     const gui = await (target ?? guiHost());
     const mine = new Set<EventListener>();
     return {
+        gui,
         send: (packet) => {
             const freed: number[] = [];
             for (const { addr, args } of decodePacket(packet)) {

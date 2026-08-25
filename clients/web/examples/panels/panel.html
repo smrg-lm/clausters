@@ -62,7 +62,8 @@ names, two independent panels.</div>
       Build it first: ./build.sh
     -->
     <script type="module">
-      import { GuiHost, gui, loadOsc } from "../../dist/index.js";
+      import { GuiHost, gui, loadOsc, pageGuiConnection,
+      } from "../../dist/index.js";
 
       const $ = (id) => document.getElementById(id);
       const log = (line) => {
@@ -113,7 +114,7 @@ names, two independent panels.</div>
       async function run() {
         $("run").disabled = true;
         await loadOsc();
-        await GuiHost.page();
+        await new GuiHost(await pageGuiConnection()).boot();
 
         // ---- two panels from one view ----
         // `open` is what makes an *instance*: it allocates the widget ids and

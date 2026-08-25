@@ -38,14 +38,14 @@ import { WidgetHandle, WindowHandle } from "./handle.ts";
 import type { EventArgs } from "./handle.ts";
 import { canvasIn, guiHost, newCanvas, pageGuiConnection } from "./page.ts";
 import { ambientHost, setAmbientHost } from "./ambient.ts";
-import type { ClaustersGui, Stage } from "./page.ts";
+import type { ClaustersGui, PageGuiConnection, Stage } from "./page.ts";
 
 // The page's own host — the singleton, its canvases and the carrier over it —
 // lives in `./page.ts` so the component run time can load it without this
 // module and the GuiDef builders behind it. Re-exported here, where callers
 // have always found it.
 export { guiHost, newGuiHost, pageGuiConnection } from "./page.ts";
-export type { ClaustersGui, EventListener, Stage } from "./page.ts";
+export type { ClaustersGui, EventListener, PageGuiConnection, Stage } from "./page.ts";
 
 /**
  * The GUI host's default OSC port, UDP and TCP alike — clear of the audio
@@ -121,6 +121,13 @@ const wireProp = (name: string): string =>
  */
 export const INTERFACE_EVENTS: readonly string[] = ["press", "release", "click"];
 
+/**
+ * The id `attach` probes with: no tree ever defines it (ids start at 1000), so
+ * a host that is up answers with an empty type and one that is not answers
+ * nothing at all.
+ */
+const PROBE_ID = 0;
+
 export class GuiHost {
     readonly connection: Connection;
     /**
@@ -195,25 +202,68 @@ export class GuiHost {
         connection.addReply(this.listener);
     }
 
+    // ---- coming up, and going down ----
+
     /**
-     * A `GuiHost` driving **this page's** host (the `guiHost()` singleton) —
-     * the carrier that needs no process and no socket. Pass an instance built
-     * by `newGuiHost` to drive one of its own instead, which is how a
-     * `Session` with its own engine gets a GUI leg wired to that engine.
+     * Bring up the host this handle points at, and return `this`.
      *
-     * `share` splits the widget-id space with another client of the same
-     * host; a `Session` passes its own share, so both of its legs are sliced
-     * the same way.
+     * The page's own host, in other words: this carrier goes to the wasm host
+     * in this document, so booting is having it — and what the verb *adds* is
+     * the surface it draws on, the canvases a view opened here gets. Over a
+     * socket there is nothing to bring up (a tab starts no process on another
+     * machine), and this refuses with `attach` named, exactly as the audio
+     * `Server` does.
+     *
+     * The reference client's `GuiHost.boot`, which starts a `clausters-gui`
+     * process and connects to it. Pair it with {@link GuiHost.stop}, which lets
+     * this client go — and, there, stops a process it started.
      */
-    static async page(
-        target?: Promise<ClaustersGui> | ClaustersGui,
-        { share, adoptAmbient = true }: { share?: IdShare; adoptAmbient?: boolean } = {},
-    ): Promise<GuiHost> {
-        const gui = await (target ?? guiHost());
-        const host = new GuiHost(await pageGuiConnection(gui), { share });
-        host.page = gui;
-        if (adoptAmbient) host.adoptAmbient();
-        return host;
+    async boot({ adoptAmbient = true }: { adoptAmbient?: boolean } = {}): Promise<this> {
+        const page = (this.connection as Partial<PageGuiConnection>).gui;
+        if (page === undefined) {
+            throw new Error(
+                "this carrier goes to a host over a socket and a page can start " +
+                    "nothing there — attach() to the host running at that " +
+                    "address, or build the handle over pageGuiConnection().",
+            );
+        }
+        this.page = page;
+        if (adoptAmbient) this.adoptAmbient();
+        return this;
+    }
+
+    /**
+     * Connect this handle to a host **already running**, and return `this`.
+     *
+     * The other half of `boot`, for the host nobody here started: a
+     * `clausters-gui --ws` on this machine or another. Ownership is the
+     * difference and it runs through the pair — this handle did not start that
+     * host, so `stop` lets the client go and leaves the host standing, windows
+     * and all.
+     *
+     * Unlike a bare `new GuiHost(...)`, this **verifies**: a socket that
+     * connects proves a listener, not a host, so a carrier with nothing behind
+     * it throws here rather than sending every later `/gui_def` into a void
+     * that reports nothing back. The probe is a `/gui_query` for an id nobody
+     * defined — a host that is up answers it (with an empty type), and one
+     * that is not answers nothing.
+     */
+    async attach({
+        timeout = 1.0,
+        adoptAmbient = true,
+    }: { timeout?: number; adoptAmbient?: boolean } = {}): Promise<this> {
+        try {
+            await this.query(PROBE_ID, timeout);
+        } catch (error) {
+            if (!(error instanceof ReplyTimeout)) throw error;
+            throw new Error(
+                `no GUI host answers on ${this.connection.url ?? "this carrier"} — ` +
+                    `nothing replied to /gui_query within ${timeout}s. Start one ` +
+                    "(`clausters-gui --ws`), or point this handle where one is running.",
+            );
+        }
+        if (adoptAmbient) this.adoptAmbient();
+        return this;
     }
 
     /**
@@ -225,19 +275,6 @@ export class GuiHost {
     adoptAmbient(): this {
         if (ambientHost() === null) setAmbientHost(this);
         return this;
-    }
-
-    /**
-     * A `GuiHost` driving a **native** `clausters-gui --ws` host over a
-     * WebSocket (default `ws://127.0.0.1:57220`).
-     */
-    static async connect(
-        url = `ws://127.0.0.1:${DEFAULT_WS_PORT}`,
-        { share, adoptAmbient = true }: { share?: IdShare; adoptAmbient?: boolean } = {},
-    ): Promise<GuiHost> {
-        const host = new GuiHost(await WsConnection.open(url), { share });
-        if (adoptAmbient) host.adoptAmbient();
-        return host;
     }
 
     // ---- windows: open / close (the tree is a `window`-rooted GuiDef) ----

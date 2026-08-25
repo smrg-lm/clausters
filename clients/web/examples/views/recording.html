@@ -97,7 +97,7 @@ socket.</div>
     <script type="module">
       import {
         loadOsc, loadCore, pageConnection, server as engine, Server,
-        Buffer, Synth, SynthDef, GuiHost, gui,
+        Buffer, Synth, SynthDef, GuiHost, gui, pageGuiConnection,
       } from "../../dist/index.js";
       import { control, line, out, recordBuf, sine } from "../../dist/defs/index.js";
 
@@ -190,7 +190,7 @@ socket.</div>
         // The page's host, and the ambient one from here on: a view opens
         // without being told which host, exactly as the script does after
         // `session.gui()`.
-        await GuiHost.page();
+        await new GuiHost(await pageGuiConnection()).boot();
 
         await glissando().send(server);
         await server.sync();

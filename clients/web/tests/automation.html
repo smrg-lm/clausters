@@ -39,7 +39,7 @@
     <script type="module">
       import {
         Bus, GuiHost, Server, Synth, SynthDef, gui, loadOsc,
-        pageConnection, seq, server as engine,
+        pageConnection, seq, server as engine, pageGuiConnection,
       } from "../dist/index.js";
       import { control, outCtl } from "../dist/defs/index.js";
 
@@ -123,7 +123,7 @@
         log(`stopped: held at ${held.toFixed(0)}`);
 
         // ---- the editor half: the curve drawn, edited, and played back ----
-        const host = await GuiHost.page();
+        const host = await new GuiHost(await pageGuiConnection()).boot();
         const win = host.open(gui.view(
           { title: "automation", w: 480, h: 300, layout: "col", margin: 8.0 },
           gui.bpf({

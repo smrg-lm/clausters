@@ -61,7 +61,7 @@
 
       const {
         loadOsc, loadCore, pageConnection, server: engine, Server,
-        Buffer, Synth, SynthDef, GuiHost, gui,
+        Buffer, Synth, SynthDef, GuiHost, gui, pageGuiConnection,
       } = await import("../dist/index.js");
       const { control, out, recordBuf, sine } = await import("../dist/defs/index.js");
 
@@ -88,7 +88,7 @@
         await loadCore();
         const raw = await engine({ channels: 2 });
         const server = await new Server(await pageConnection()).boot();
-        await GuiHost.page();
+        await new GuiHost(await pageGuiConnection()).boot();
 
         await new SynthDef("host_recording",
           out(0.0, recordBuf(control("buf", 0.0, "ir"), 0.0,

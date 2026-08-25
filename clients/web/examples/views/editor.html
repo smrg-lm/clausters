@@ -69,7 +69,7 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
     <script type="module">
       import {
         loadOsc, loadCore, pageConnection, server as engine, Server,
-        Buffer, Synth, SynthDef, GuiHost, gui,
+        Buffer, Synth, SynthDef, GuiHost, gui, pageGuiConnection,
       } from "../../dist/index.js";
       import { bufRateScale, bufRd, control, out, phasor, playBuf } from "../../dist/defs/index.js";
 
@@ -266,7 +266,7 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
         // `session.gui()`. Where the drawing *goes* is the document's say: the
         // view is opened into `#stage` below, and its canvas is made inside
         // that element and follows its box, at the display's true resolution.
-        await GuiHost.page();
+        await new GuiHost(await pageGuiConnection()).boot();
 
 
         el("file").disabled = false;
