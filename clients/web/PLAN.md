@@ -2490,8 +2490,10 @@ finished work, where a pending item reads as done.
   The other half was the claim in this entry itself: it said CI ran
   `clients/web/test.sh`. **It ran neither** — no workflow mentioned either one.
   The `web smokes (headless Chrome)` job in `.github/workflows/ci.yml` runs the
-  runner now; authoring the two bundles needs nothing native, so the job is the
-  wasm toolchain, npm and a plain Python.
+  runner now: the wasm toolchain, npm, a plain Python and one `cargo build -p
+  clausters-ffi`, since writing a bundle validates it through the core's C ABI
+  — which the first CI run said and no local run could, the workspace `target/`
+  having had the library all along.
 
   Both authored pages passed on their first firing, which is the good outcome
   and not the expected one — an assertion never run is an assertion never

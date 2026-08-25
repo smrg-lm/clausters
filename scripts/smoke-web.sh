@@ -18,7 +18,8 @@
 # (rustup's wasm32-unknown-unknown and the pinned wasm-bindgen CLI -- see
 # BUILD.md), and, for the two authored-bundle cases, the Python client
 # importable (the repo's .venv, or PYTHON=... pointing at an interpreter that
-# can import `clausters.bundle`).
+# can import `clausters.bundle`) -- the core's C ABI it validates through is
+# built here if the checkout has none.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT=$(pwd)
@@ -102,6 +103,17 @@ if [ "${#authored[@]}" -gt 0 ]; then
         echo "$PY cannot import the Python client, so the authored bundles" \
              "cannot be written (set PYTHON=... or run the cases that need none)" >&2
         exit 1
+    fi
+    # Authoring is not pure Python: `Bundle.write` validates the manifest and
+    # the defs through the core's C ABI, so the client needs libclausters_ffi.
+    # In a source checkout that is the workspace build (the wheel bundles its
+    # own copy, and an env override beats both), and cargo no-ops when it is
+    # already there. The crate's default feature set is empty -- no libfaust, no
+    # libverovio -- so this costs a build of the core and nothing else.
+    if ! PYTHONPATH="$ROOT/clients/python" "$PY" -c \
+        "from clausters import _native; _native.lib()" 2>/dev/null; then
+        echo "staging libclausters_ffi (the bundle writer validates through it)"
+        cargo build -p clausters-ffi --release
     fi
     for dir in "${authored[@]}"; do
         (cd "clients/web/$dir" && PYTHONPATH="$ROOT/clients/python" "$PY" make_bundle.py >/dev/null)

@@ -192,9 +192,11 @@ jobs:
         working-directory: clients/web
         run: npm ci
       # The two authored-bundle cases write their bundles with the Python
-      # client, which the script puts on PYTHONPATH itself. Authoring needs
-      # nothing native -- no build_native, no libfaust, no verovio -- because
-      # the client only writes the persisted files here; it talks to nothing.
+      # client, which the script puts on PYTHONPATH itself -- and builds
+      # `clausters-ffi` for, since writing a bundle validates it through the
+      # core's C ABI. That crate's default feature set is empty, so this needs
+      # no libfaust and no libverovio: nothing here talks to a server, and the
+      # full staged package (build_native) would be a job of its own.
       - name: The smokes
         run: ./scripts/smoke-web.sh
 
