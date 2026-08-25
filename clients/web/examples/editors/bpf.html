@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: draw an envelope, hear the server play it</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 46rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+      #stage { width: 640px; max-width: 100%; height: 460px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">Draw an envelope in the <code>bpf</code> editor and hear
+the server play it.
+
+The first widget that <b>writes data back</b>: a drawable break-point function
+whose segments use the server's own envelope shape numbers, evaluated in the
+host through the same shared math the server's <code>envGen</code> plays — what
+the editor draws is exactly what you hear.
+
+Editing gestures, all live: <b>drag a point</b> to move it (times stay monotonic
+between its neighbours); <b>drag a segment</b> vertically to bend its curvature;
+<b>Ctrl+click</b> on empty curve area adds a point, on a point removes it; and
+the <b>curve menu</b> applies a standard transition shape to every segment
+through the <code>Env</code> round trip.
+
+Every edit flows back as <code>"points" &lt;t v shape curve …&gt;</code> — the
+break-point list as flat OSC primitives. This page maps that list to an
+<code>Env</code> and, on <b>play</b>, sends a fresh def built from it and spawns
+a note: the drawn envelope shapes the tone you hear.</div>
+
+      <button id="run">open the editor</button>
+      <div id="stage"></div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/editors/bpf.py, call for call:
+      the seeded ADSR, the editor, the curve menu, the play button, the
+      edit-back handler, and the two calls at the end (one note, then the
+      envelope replaced with a percussive one).
+
+      The platform's differences are the usual two: the host is the wasm one in
+      this tab and draws into an element, and nothing is pumped.
+
+      Serve clients/web (the package root) and open /examples/editors/bpf.html.
+      Build it first: ./build.sh
+    -->
+    <script type="module">
+      import { Session, Synth, gui } from "../../dist/index.js";
+      import {
+        DoneAction, Env, SynthDef, envGen, out, sine,
+      } from "../../dist/defs/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => { $("log").textContent += line + "\n"; };
+
+      const START_ENV = new Env([0.0, 1.0, 0.4, 0.0], [0.05, 0.3, 1.2], ["exp", -4.0, "sin"]);
+      const CURVES = ["lin", "exp", "sin", "welch", "sqr", "cub", "hold", -4.0, 4.0];
+
+      let server = null, win = null;
+      let points = gui.envToPoints(START_ENV);
+
+      /** One note shaped by the envelope as currently drawn. */
+      async function play() {
+        const env = gui.pointsToEnv(points);
+        const sig = sine(330.0)
+          .mul(envGen(env, { doneAction: DoneAction.FREE_SELF }))
+          .mul(0.4);
+        await new SynthDef("bpf_env", out(0.0, sig), out(1.0, sig)).send(server);
+        new Synth("bpf_env", {}, { server });
+        log(`played ${points.length / 4} breakpoints over ${JSON.stringify(env.times)} s segments`);
+      }
+
+      /**
+       * Applies one `Env`-style curve spec to every segment (through the public
+       * `pointsToEnv` / `envToPoints` round trip) and pushes it back, so the
+       * same points redraw under the new shapes.
+       */
+      function setCurve(spec) {
+        const env = gui.pointsToEnv(points);
+        points = gui.envToPoints(new Env(env.levels, env.times, spec));
+        win.widget("env").set({ points: JSON.stringify(points) });
+        log(`curve -> ${spec}`);
+      }
+
+      async function run() {
+        $("run").disabled = true;
+        const session = await Session.embed();
+        server = session.server;
+        await session.gui();
+
+        win = await gui.view(
+          { title: "BPF envelope -> EnvGen", w: 640, h: 460, layout: "col" },
+          gui.label("drag points/segments; Ctrl+click adds/removes; play sends it",
+            { name: "hint" }),
+          gui.bpf({
+            name: "env", points, min: 0.0, max: 1.0, duration: 2.0, label: "amp env",
+          }),
+          gui.menu(CURVES.map(String), { name: "curve", label: "curve (all segments)" }),
+          gui.button({ name: "play", label: "play" }),
+        ).open($("stage"));
+        log(`opened window ${win.id} — draw the envelope, then press play`);
+
+        // The edit-back payload (`"points"` then t v shape curve quads): keep
+        // the latest breakpoints so `play` hears what is drawn.
+        win.widget("env").onEvent((_tag, ...values) => { points = values; });
+        win.widget("curve").onEvent((index) => setCurve(CURVES[Number(index)]));
+        win.widget("play").onClick(() => play());   // the completed press
+
+        await play();
+        win.widget("env").set({ points: JSON.stringify(gui.envToPoints(Env.perc(0.01, 1.2))) });
+        log("...and the editor now holds a percussive envelope instead");
+      }
+
+      $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
+    </script>
+  </body>
+</html>

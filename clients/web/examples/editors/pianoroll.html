@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: draw notes in the piano roll and hear them</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 54rem; }
+      #note { font-size: 13px; line-height: 1.5; max-width: 46rem; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; max-height: 12rem;
+            overflow-y: auto; }
+      #stage { width: 800px; max-width: 100%; height: 520px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">Draw MIDI notes (and OSC events) in the editor-grade
+<code>pianoroll</code> and hear them play.
+
+The dedicated piano-roll view, the editor-grade sibling of the multitrack's
+compact clip roll — they share the host's note primitives, so a note is drawn
+and edited the same way in both. It contemplates the two message families a
+sequence carries: <b>MIDI notes</b> in the grid (pitch × time, with velocity and
+channel) and <b>OSC events</b> as flags in a lane below it.
+
+Editing gestures, all live: drag a note to move it (snapped to the grid), wheel
+over the grid to zoom the shared time axis, Shift+drag to pan, drag empty grid
+to marquee-select, Alt+click to toggle one in or out, Delete to remove,
+<b>q</b> to quantize, Ctrl+C/X/V to copy, cut and paste.
+
+The roll opens on one ascending scale, and the rest is the loop that sounds it.
+Every edit flows back as a <code>"notes"</code> event, so the <b>play</b> toggle
+loops what is drawn — the scale you edit is the scale you hear. Nothing sounds
+until you press play.</div>
+
+      <button id="run">open the roll</button>
+      <div id="stage"></div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/editors/pianoroll.py, call for
+      call: the scale, the roll with its OSC lane, the play toggle, the
+      edit-back handler that keeps the note list current, and the routine that
+      replays it every LOOP beats.
+
+      The platform's differences are the usual two: the host is the wasm one in
+      this tab and draws into an element, and nothing is pumped -- the page has
+      an event loop, so the script's `run()` loop has no counterpart and the
+      toggle is the whole transport.
+
+      Serve clients/web (the package root) and open
+      /examples/editors/pianoroll.html. Build it first: ./build.sh
+    -->
+    <script type="module">
+      import { Routine, Session, gui, seq } from "../../dist/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => {
+        $("log").textContent += line + "\n";
+        $("log").scrollTop = $("log").scrollHeight;
+      };
+
+      const BPM = 120.0;
+      const SR = 48000.0;
+      const SAMPLES_PER_BEAT = SR * 60.0 / BPM;   // the timeline units the widget uses
+      const LOOP = 8.0;                           // beats between repeats
+      const AMP = 0.2;                            // what a full-velocity note reaches
+
+      const beats = (b) => b * SAMPLES_PER_BEAT;
+
+      const SCALE = [
+        [0.0, 0.5, 60, 90], [0.5, 0.5, 62, 95], [1.0, 0.5, 64, 100],
+        [1.5, 0.5, 65, 105], [2.0, 0.5, 67, 110], [2.5, 0.5, 69, 115],
+        [3.0, 0.5, 71, 120], [3.5, 0.5, 72, 125],
+      ];
+      const NOTES = SCALE.map(([s, d, p, v]) => [beats(s), beats(d), p, v]);
+      const OSC = [[beats(0.0), "/bar"], [beats(2.0), "/bar"]];
+
+      let session = null, win = null;
+      let notes = NOTES.map((n) => [...n]);   // kept current from the "notes" edit-back
+      let player = null;                      // the sequence playing, if any
+      let loop = null;                        // the repeat routine, while the transport is on
+
+      /** Play the drawn notes once, replacing whatever is playing. */
+      function play() {
+        if (player !== null) player.stop();   // the roll is one voice
+        const ordered = [...notes].sort((x, y) => x[0] - y[0]);
+        const pitches = [], durs = [], amps = [];
+        ordered.forEach(([start, dur, pitch, vel], i) => {
+          const next = i + 1 < ordered.length ? ordered[i + 1][0] : start + dur;
+          pitches.push(pitch);
+          durs.push(Math.max((next - start) / SAMPLES_PER_BEAT, 0.05));
+          amps.push(vel / 127.0 * AMP);
+        });
+        player = session.play(new seq.Pbind({
+          instrument: "default",
+          midinote: new seq.Pseq(pitches, 1),
+          dur: new seq.Pseq(durs, 1),
+          amp: new seq.Pseq(amps, 1),
+          legato: 0.9,
+        }));
+      }
+
+      /** Play the roll every `LOOP` beats, until stopped. */
+      function* repeat() {
+        for (;;) {
+          play();
+          yield LOOP;
+        }
+      }
+
+      function start() {
+        stop();
+        loop = Routine.run(repeat, session.clock);
+        win.widget("play").set({ label: "stop" });
+      }
+
+      function stop() {
+        if (loop !== null) {
+          session.clock.unsched(loop);
+          loop = null;
+        }
+        if (player !== null) {
+          player.stop();
+          player = null;
+        }
+        win?.widget("play").set({ label: "play" });
+      }
+
+      async function run() {
+        $("run").disabled = true;
+        session = await Session.embed({ tempo: BPM / 60.0 });
+        await session.gui();
+
+        win = await gui.view(
+          { title: "Piano-roll -> Pbind", w: 800, h: 520, layout: "col" },
+          gui.label("drag notes; Ctrl+click adds/removes; velocity lane; play loops it",
+            { name: "hint", textSize: 1.4, h: 20 }),
+          gui.pianoroll({
+            name: "roll", notes: NOTES, osc: OSC, min: 48, max: 84,
+            snap: beats(0.25), ruler: "beats", tempo: BPM / 60.0,
+            sampleRate: SR, label: "lead",
+          }),
+          gui.toggle({ name: "play", label: "play", textSize: 1.6, h: 30 }),
+        ).open($("stage"));
+        log(`opened window ${win.id} — edit the scale, then press play`);
+        session.start();
+
+        // The roll's edit-backs: flat `"notes"` quintuples (kept, so the loop
+        // plays what is drawn) or `"osc"` pairs.
+        win.widget("roll").onEvent((tag, ...vals) => {
+          if (tag === "notes") {
+            notes = [];
+            for (let i = 0; i < vals.length; i += 5) notes.push(vals.slice(i, i + 4));
+            log(`notes edited: ${notes.length}`);
+          } else if (tag === "osc") {
+            log(`osc edited: ${vals.length / 2}`);
+          }
+        });
+        win.widget("play").onEvent((value) => (Number(value) === 1 ? start() : stop()));
+      }
+
+      $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
+    </script>
+  </body>
+</html>

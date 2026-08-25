@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: the patcher, level 1</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 52rem; }
+      #note { font-size: 13px; line-height: 1.5; max-width: 46rem; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; max-height: 12rem;
+            overflow-y: auto; }
+      #stage { width: 720px; max-width: 100%; height: 680px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">The patcher, <b>level 1</b>: whole defs wired by buses —
+built, viewed, heard.
+
+<code>editors/patch2.html</code> is level 2 (a single def's internal UGen
+graph). The two are one directed, typed grammar apart by what a box <i>is</i>:
+here a box is a <b>whole def</b> and a cord <i>is</i> a <b>server bus</b>;
+there a box is a <b>UGen</b> and a cord is an internal wire.
+
+A <code>GraphPatch</code> is the programmatic level-1 patcher: boxes with typed
+inlets and outlets, and a cord per <code>outlet → inlet</code>. A cord is a bus,
+but you never number one: <code>compile</code> runs the shared cord→bus pass and
+names one.
+
+<b>Auto-layout</b> — the host lays every box out itself, sources on top and
+sinks at the bottom. <b>Dragging</b> a box flows back as <code>"move"</code>;
+<b>cording</b> (drag an outlet pin onto an inlet, either grab order) flows back
+as <code>"wire"</code>, which is just <code>connect</code> by name — so the
+picture and the object stay one thing. The patch sits in a
+<code>scroll</code> workspace: Shift+drag pans, the wheel zooms.
+
+The buses are never on screen: an unwired outlet keeps its def's default, so
+these defs default their bus controls to a spare bus nobody reads, and the
+hardware output is reached through a <b>terminal def</b> (<code>dac</code>: an
+inlet, no outlet, its <code>out(0, …)</code> baked in) — a box like any other,
+not an <code>OUT</code>.</div>
+
+      <button id="run">open the patcher</button>
+      <div id="stage"></div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/editors/patch1.py, call for
+      call: the four defs, the patch built and compiled, the widget in its
+      scroll workspace, the two transport buttons, and the handlers that put
+      the canvas' edits back onto the model.
+
+      The platform's differences are the usual two: the host is the wasm one in
+      this tab and draws into an element, and nothing is pumped.
+
+      Serve clients/web (the package root) and open
+      /examples/editors/patch1.html. Build it first: ./build.sh
+    -->
+    <script type="module">
+      import { Group, Session, gui } from "../../dist/index.js";
+      import {
+        GraphPatch, SynthDef, control, in_, lag, out, sine,
+      } from "../../dist/defs/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => {
+        $("log").textContent += line + "\n";
+        $("log").scrollTop = $("log").scrollHeight;
+      };
+
+      const TEMPO = 2.0;
+      const SILENT = 64;   // a spare audio bus nothing reads: the "unconnected" default
+
+      /** A sine source: writes `sine(freq) * amp` to its `out` bus. */
+      const osc = (name = "osc") => new SynthDef(name,
+        out(control("out", SILENT), sine(control("freq", 110.0)).mul(control("amp", 0.2))));
+
+      /** A crude tone control: lags its input and scales it by `gain`. */
+      const filt = (name = "filt") => new SynthDef(name,
+        out(control("out", SILENT),
+          lag(in_(control("in", SILENT)), 0.002).mul(control("gain", 1.0))));
+
+      /** A tremolo: reads `in`, rings it with a slow LFO, writes `out`. */
+      function trem(name = "trem") {
+        const lfo = sine(control("rate", 5.0)).mul(0.5).add(0.5);
+        return new SynthDef(name,
+          out(control("out", SILENT), in_(control("in", SILENT)).mul(lfo)));
+      }
+
+      /**
+       * The terminal stage: reads `in`, scales it, and writes **hardware bus 0**
+       * itself. It has an inlet and no outlet — a cord into it is the only path
+       * to the speakers.
+       */
+      const dac = (name = "dac") => new SynthDef(name,
+        out(0, in_(control("in", SILENT)).mul(control("amp", 0.4))));
+
+      let session = null, server = null, p = null, win = null, instance = null;
+      const placed = {};
+
+      /**
+       * Compile the patch you drew and (re)instance it — freeing the one in
+       * flight, so a re-render replaces rather than stacks. A bad cord is
+       * reported, not fatal.
+       */
+      async function render() {
+        let gdef;
+        try {
+          gdef = p.toGraphdef("patch");
+        } catch (exc) {                     // a malformed cord from the pass
+          log(`  cannot compile: ${exc.message}`);
+          return;
+        }
+        await gdef.send(server);
+        if (instance !== null) instance.free();
+        instance = Group.graph("patch", {}, { server });
+        log("  rendered — the patch is sounding");
+      }
+
+      function stop() {
+        if (instance !== null) {
+          instance.free();
+          instance = null;
+          log("  stopped");
+        }
+      }
+
+      async function run() {
+        $("run").disabled = true;
+        session = await Session.embed({ tempo: TEMPO, latency: 0.1 });
+        server = session.server;
+
+        const built = { osc: osc(), filt: filt(), trem: trem(), dac: dac() };
+        for (const sdef of Object.values(built)) await sdef.send(server);
+
+        p = new GraphPatch();
+        const b = {};
+        for (const [name, sdef] of Object.entries(built)) b[name] = p.add(sdef);
+        p.connect(b.osc, "out", b.filt, "in");
+        p.connect(b.filt, "out", b.trem, "in");
+        p.connect(b.trem, "out", b.dac, "in");
+        log(`compiled: ${JSON.stringify(p.compile())}`);
+
+        await session.gui();
+        win = await gui.view(
+          { title: "Patch — level 1", w: 720, h: 680, layout: "col" },
+          gui.scroll({ name: "workspace" },
+            gui.patch({ name: "patch", ...p.toWidget(), label: "patch" })),
+          gui.panel({ layout: "row", h: 48 },
+            gui.button({ name: "render", label: "render" }),
+            gui.button({ name: "stop", label: "stop" })),
+        ).open($("stage"));
+        session.start();
+
+        log(`opened window ${win.id}`);
+        log("drag a box to move it; drag empty canvas to marquee-select.");
+        log("Shift+drag pans, the wheel zooms; drag an outlet pin onto an inlet.");
+        log("press render to hear the chain, stop to free it.");
+
+        // The canvas edits, onto the patch model.
+        win.widget("patch").onEvent((tag, ...rest) => {
+          if (tag === "wire" && rest.length >= 4) {
+            const [src, outlet, dst, inlet] = rest;
+            p.connect(Number(src), outlet, Number(dst), inlet);
+            log(`  wired ${src}.${outlet} -> ${dst}.${inlet} — press render to hear it`);
+          } else if (tag === "move" && rest.length >= 3) {
+            const [index, x, y] = rest;
+            placed[Number(index)] = [Number(x), Number(y)];
+            log(`  moved box ${index} to (${Number(x).toFixed(0)}, ${Number(y).toFixed(0)})`);
+          }
+        });
+        win.widget("workspace").onEvent((tag, ...rest) => {
+          if (tag === "view" && rest.length >= 3) {
+            log(`  view x=${rest[0].toFixed(0)} y=${rest[1].toFixed(0)} `
+              + `zoom=${rest[2].toFixed(2)}`);
+          }
+        });
+        win.widget("render").onClick(() => render());
+        win.widget("stop").onClick(stop);
+      }
+
+      $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
+    </script>
+  </body>
+</html>
