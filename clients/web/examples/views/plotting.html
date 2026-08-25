@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: quick looks with plot</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 46rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; max-height: 16rem;
+            overflow-y: auto; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">Quick looks with the free-standing <code>plot</code> —
+defs, envelopes, sequences.
+
+<code>plot</code> is the visual sibling of <code>play</code>: one verb that
+opens <b>its own window</b> for whatever you hand it, resolving a GUI host
+lazily on first use (no audio server involved — a def is rendered
+<i>offline</i>). The returned handle retunes the display live and closes the
+window.
+
+This is a <b>sequential visual tour</b>: each window appears alone, says so in
+the log, makes one live change <i>and comes back</i> (view, pinned axis side,
+frequency scale — all through <code>win.set</code>, no re-render), and closes
+before the next one opens. While a window is up, hover the trace: a hairline
+names the exact sample under the cursor.</div>
+
+      <button id="run">run the tour</button>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/views/plotting.py, call for
+      call: the same five plots in the same order, each with the same live
+      `set` and the same round trip back.
+
+      Two differences, both the platform's. Each window is a canvas this page
+      appends rather than an OS window -- *a view with no element is a canvas* --
+      so the tour is watched in the document, in place. And the script's
+      `time.sleep` between steps is an awaited timeout here, because a page has
+      an event loop it must not block; the pacing is the same 3 seconds.
+
+      Serve clients/web (the package root) and open
+      /examples/views/plotting.html. Build it first: ./build.sh
+    -->
+    <script type="module">
+      import { plot, seq } from "../../dist/index.js";
+      import {
+        DoneAction, Env, GraphDef, SynthDef, control, envGen, out, sine,
+      } from "../../dist/defs/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => {
+        $("log").textContent += line + "\n";
+        $("log").scrollTop = $("log").scrollHeight;
+      };
+      const wait = (secs) => new Promise((r) => setTimeout(r, secs * 1000));
+
+      const PAUSE = 3.0;
+
+      /** A sine ping shaped by a percussive envelope, self-freeing. */
+      function ping(name = "ping") {
+        const freq = control("freq", 660.0);
+        const env = envGen(Env.perc(0.01, 0.4), { doneAction: DoneAction.FREE_SELF });
+        const sig = sine(freq).mul(env).mul(0.4);
+        return new SynthDef(name, out(0.0, sig), out(1.0, sig));
+      }
+
+      async function run() {
+        $("run").disabled = true;
+
+        log("1/5 ping (SynthDef, rendered offline): two channel lanes, time ruler");
+        const winDef = await plot(ping(), { dur: 0.6, channels: 2 });
+        await wait(PAUSE);
+        log("    view -> spectrum (the same render, analyzed)");
+        winDef.set({ view: "spectrum" });
+        await wait(PAUSE);
+        log("    view -> signal (round trip), and the window closes");
+        winDef.set({ view: "signal" });
+        await wait(PAUSE);
+        winDef.close();
+
+        log("2/5 env (adsr through the engine's EnvGen): the whole curve");
+        const winEnv = await plot(Env.adsr(0.05, 0.2, 0.6, 0.4));
+        await wait(PAUSE);
+        log("    min -> -1.0 (pin the floor: the curve squashes into the top half)");
+        winEnv.set({ min: -1.0 });
+        await wait(PAUSE);
+        log("    min -> auto (the fit gets the side back), and the window closes");
+        winEnv.set({ min: "auto" });
+        await wait(PAUSE);
+        winEnv.close();
+
+        log("3/5 sequence (Pseq): stepped values over an index axis");
+        const winSeq = await plot(new seq.Pseq([0, 2, 4, 7, 4, 2], 4));
+        await wait(PAUSE);
+        winSeq.close();
+
+        log("4/5 sequence (Pwhite 40..4700): the value axis auto-fits the range");
+        const winRand = await plot(new seq.Pwhite(40.0, 4700.0), { n: 200 });
+        await wait(PAUSE);
+        log("    min -> -4700 (pin far below the data: traces squash up)");
+        winRand.set({ min: -4700.0 });
+        await wait(PAUSE);
+        log("    min -> auto (round trip), and the window closes");
+        winRand.set({ min: "auto" });
+        await wait(PAUSE);
+        winRand.close();
+
+        log("5/5 ping_chain (GraphDef spectrum): the 880 Hz peak on a log axis");
+        const g = new GraphDef("ping_chain");
+        g.add("ping", { freq: 880.0 });
+        const winSpec = await plot(g, {
+          defs: [ping()], dur: 0.6, channels: 2,
+          view: "spectrum", freqScale: "log",
+        });
+        await wait(PAUSE);
+        log("    freqScale -> mel (watch the peak and the ruler move)");
+        winSpec.set({ freqScale: "mel" });
+        await wait(PAUSE);
+        winSpec.close();
+        log("the tour is done");
+        $("run").disabled = false;
+      }
+
+      $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
+    </script>
+  </body>
+</html>

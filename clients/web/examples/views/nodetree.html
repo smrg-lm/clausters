@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: a live node tree</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 46rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+      #stage { width: 420px; max-width: 100%; height: 520px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">A live node-tree view: the GUI mirroring the audio
+server's node graph.
+
+A <code>nodetree</code> widget shows the server's tree — its groups, synths, def
+names and control values — and keeps it current: the GUI host mirrors the tree
+over its <b>client leg</b> (<code>/group_queryTree</code>), refreshing the
+moment a node is created or freed
+(<code>/node_start</code>/<code>/node_end</code>) and on a low-rate poll that
+catches <code>/node_set</code> changes.
+
+Nothing in this page pushes the tree to the GUI; the host reads it from the
+server itself, which is what <code>session.gui()</code> wires up.</div>
+
+      <div class="row">
+        <button id="run">open the tree</button>
+        <button id="stop" disabled>stop driving it</button>
+      </div>
+      <div id="stage"></div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/views/nodetree.py, call for
+      call: a group with two synths in it, the `nodetree` view over the root,
+      and the loop that sweeps one control and cycles a third synth in and out.
+
+      The platform's differences are the usual two: the host is the wasm one in
+      this tab and draws into an element, and the driving loop is an interval
+      because the page's event loop is already running.
+
+      Serve clients/web (the package root) and open
+      /examples/views/nodetree.html. Build it first: ./build.sh
+    -->
+    <script type="module">
+      import { AddAction, Group, Session, Synth, gui } from "../../dist/index.js";
+      import { SynthDef, control, out, sine } from "../../dist/defs/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => { $("log").textContent += line + "\n"; };
+
+      let driving = null;
+
+      async function run() {
+        $("run").disabled = true;
+        const session = await Session.embed();
+        const server = session.server;
+        await session.gui();
+
+        await new SynthDef(
+          "beep",
+          out(0.0, sine(control("freq", 220.0)).mul(control("amp", 0.1))),
+        ).send(server);
+
+        const group = new Group({ server });
+        const sweeper = new Synth("beep", { freq: 220.0 },
+          { target: group.id, action: AddAction.TAIL, server });
+        new Synth("beep", { freq: 330.0 },
+          { target: group.id, action: AddAction.TAIL, server });
+
+        await gui.view(
+          { title: "Live node tree", w: 420, h: 520 },
+          gui.nodetree({ name: "tree", group: 0, controls: true, label: "node tree" }),
+        ).open($("stage"));
+        log("the view mirrors the server's node tree; watch freq sweep and "
+          + "a synth come and go");
+
+        // Sweep a control and cycle a synth in and out, so both refresh paths
+        // show: the notification (a node appears and disappears) and the poll
+        // (a control value moves under an unchanged tree).
+        let extra = null;
+        const started = performance.now();
+        driving = setInterval(() => {
+          const t = (performance.now() - started) / 1000;
+          sweeper.set({ freq: 330.0 + 220.0 * Math.sin(t) });
+          const phase = Math.floor(t) % 4;
+          if (extra === null && phase === 2) {
+            extra = new Synth("beep", { freq: 550.0, amp: 0.08 },
+              { target: group.id, action: AddAction.TAIL, server });
+          } else if (extra !== null && phase === 0) {
+            extra.free();
+            extra = null;
+          }
+        }, 50);
+        $("stop").disabled = false;
+      }
+
+      $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
+      $("stop").onclick = () => {
+        clearInterval(driving);
+        $("stop").disabled = true;
+        log("the tree holds what the server holds — nothing here draws it");
+      };
+    </script>
+  </body>
+</html>
