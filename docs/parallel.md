@@ -44,3 +44,23 @@ Parallel rendering is **bit-identical** to sequential rendering. Stage members t
 `--workers N` spawns N DSP threads at startup. The audio thread (the conductor) publishes each stage with a few atomic stores, the workers and the conductor race through it with an atomic work-stealing cursor, and the conductor spin-waits (bounded, no locks) for completion. Idle workers spin briefly, then yield, then park; waking a parked worker costs one `unpark` syscall when audio resumes — while audio runs hot they never park. The conductor path allocates nothing (`tests/rt_safety.rs` covers it, parallel dispatch included).
 
 Measure before reaching for it: `cargo run --release --example bench` ends with a `/group_parallel` section (8 chains × 125 sines on disjoint buses) comparing worker counts — on the development machine it peaks around 3× with 3 workers and degrades past the physical core count. A graph that already fits in one core gains nothing; a stage with fewer units than workers caps the speedup at the unit count.
+
+## Not in the browser, and it cannot be
+
+The in-page engine (the wasm build behind the AudioWorklet) has **no worker
+pool and cannot have one**: DSP threads mean wasm threads, wasm threads mean
+`SharedArrayBuffer`, and `SharedArrayBuffer` is only exposed to a document that
+is **cross-origin isolated** (`Cross-Origin-Opener-Policy: same-origin` plus
+`Cross-Origin-Embedder-Policy: require-corp`). A clausters component embeds on
+pages we do not control the headers of — a documentation site, a notebook — so
+it cannot ask its host for them. This is the same requirement that keeps the
+browser transport on the MessagePort (`docs/decisions.md`, "The browser engine
+is one wasm instance inside the AudioWorklet").
+
+So in a tab `--workers` has no counterpart, `Session.embed` takes no `workers`
+argument, and **`/group_parallel groupID 1` is accepted and serializes** — the
+group is marked, remembered and reported by `/group_queryTree` exactly as it is
+natively, and its children run in child order. That is the `workers = 0` path
+the native server also takes by default, and because stages are bit-identical
+to sequential execution by construction, the samples are the ones the flag
+promises either way. What a tab does not get is the wall-clock time.
