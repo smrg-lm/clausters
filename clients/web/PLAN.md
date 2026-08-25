@@ -2708,7 +2708,11 @@ finished work, where a pending item reads as done.
   counted here at all**: `faust/boxes-library` belongs to **W7**'s acceptance
   and `io/midi-responder`/`editors/pianoroll-midi` to **W9**'s, since neither
   page can be written before those milestones and writing it is how each is
-  shown to work. Five have **no page by nature**:
+  shown to work. One is **paired under another name**, which the layout rule allows and the
+  page itself states: `io/osc-responder`'s page is `io/responders.html`, because
+  a tab has no socket to bind and what it responds to is the carrier it already
+  has — the page's header says so in as many words. Six have **no page by
+  nature**:
   `io/live-udp` (a UDP peer) and `io/embedded` (the server in this process
   through the cdylib — in a tab that *is* the engine); `views/recording-mapped`,
   already stated in its own docstring — it is `recording.html`'s window drawn
@@ -2719,7 +2723,12 @@ finished work, where a pending item reads as done.
   and no mapping: its bulk path is the blob beside the `/gui_def`, which
   `views/plot`, `views/linked` and `views/rulers` each show in place of a
   mapped file. Porting it would be writing a different example under the same
-  name. The fifth is `buffers/render-then-load`, and for the same reason: its
+  name. The sixth is `io/osc-destination`: the surface exists here
+  (`OscDestination` rides a `Connection`, and the plan records the carrier
+  difference — UDP there, a WebSocket bridge here), but a browser has no
+  out-of-the-box peer to send to, and an example that needs a bridge nobody is
+  running is not one that runs. The fifth is `buffers/render-then-load`, and for
+  the same reason: its
   subject is the **file** the server writes and then reads back
   (`render(path=…)` → `/buffer_allocRead` → `read_soundfile`, "the file needs no
   conversion in between, because the same process wrote it and reads it"). A tab

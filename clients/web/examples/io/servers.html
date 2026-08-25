@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: two servers, and the verbs that reach one</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 46rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; max-height: 16rem;
+            overflow-y: auto; }
+      .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">Two servers side by side, and the pair of verbs that reach
+one.
+
+A <code>Server</code> is a handle over a carrier, and the carrier says what
+bringing it up means. <b><code>boot</code></b> is for a server that is
+<b>not there yet</b>: it starts what the carrier points at and owns it, so
+<code>quit</code> stops it. <b><code>attach</code></b> is for one
+<b>already running</b> — it verifies that someone answers, reconciles this
+handle's allocators with the real server's capacities, and takes no ownership:
+<code>close</code> lets go and leaves it standing.
+
+Two engines run here, each its own <code>AudioContext</code> and its own node,
+bus and buffer space, and you will <b>hear</b> both — a fifth, one note from
+each.</div>
+
+      <div class="row">
+        <button id="run">boot both</button>
+        <button id="attach" disabled>attach a second handle to b</button>
+        <button id="freeall" disabled>b: free every node</button>
+        <button id="quit" disabled>quit both</button>
+      </div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/io/servers.py, call for call:
+      two servers, a note on each, a second handle attached to the second one,
+      the reconciled allocators, `freeAll` heard as the fifth dropping to a
+      single note, and the attached handle closing without taking the server
+      with it.
+
+      The platform's difference is what "a second server" *is*. The script gives
+      each handle an address and boots a process there, and a second boot on a
+      busy port is refused; a tab has no ports and no processes, so a second
+      server is a second **engine** -- `engine()` beside the page's `server()`,
+      each its own AudioContext and its own id space. The refusal that follows
+      from an address is therefore not shown, and the two that are -- attach
+      verifying, and close leaving the server standing -- are.
+
+      Serve clients/web (the package root) and open /examples/io/servers.html.
+      Build it first: ./build.sh
+    -->
+    <script type="module">
+      import {
+        Server, engine, loadOsc, pageConnection, play, server as pageEngine,
+      } from "../../dist/index.js";
+      import { sine } from "../../dist/defs/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => {
+        $("log").textContent += line + "\n";
+        $("log").scrollTop = $("log").scrollHeight;
+      };
+
+      let a = null, b = null, other = null, low = null, bEngine = null;
+
+      async function run() {
+        $("run").disabled = true;
+        await loadOsc();
+
+        // The page's engine, and a second one beside it.
+        bEngine = await engine();       // a second engine, not the page's
+        a = await new Server(await pageConnection(await pageEngine())).boot();
+        b = await new Server(await pageConnection(bEngine)).boot();
+        log("a -> the page's engine; b -> an engine of its own");
+
+        low = await play(sine(220.0).mul(0.12), { server: a });
+        await play(sine(330.0).mul(0.12), { server: b });
+        log("both servers sounding — a fifth, one note from each");
+        for (const id of ["attach", "freeall", "quit"]) $(id).disabled = false;
+      }
+
+      $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
+
+      $("attach").onclick = async () => {
+        // A second handle on b's carrier: it verifies, reconciles, and owns
+        // nothing.
+        other = await new Server(await pageConnection(bEngine))
+          .attach({ adoptDefault: false });
+        const info = await other.queryInfo();
+        log(`attached to b: ${info.actualSampleRate.toFixed(0)} Hz, `
+          + `${info.channels} ch, ${info.audioBuses} audio buses`);
+        log(`allocators reconciled to the real server: maxNodes=${other.sizing.maxNodes}`);
+        $("attach").disabled = true;
+      };
+
+      $("freeall").onclick = () => {
+        (other ?? b).freeAll();
+        log("b freed every node: the fifth drops to a single note");
+        if (other) {
+          other.close();
+          log("the attached handle closed, and b is still up (its note was "
+            + "freed by the command, not by the handle going away)");
+        }
+        $("freeall").disabled = true;
+      };
+
+      $("quit").onclick = async () => {
+        low.free();
+        // Each handle booted its engine, so quitting stops it.
+        await a.quit();
+        await b.quit();
+        log("both servers stopped");
+        $("quit").disabled = true;
+      };
+    </script>
+  </body>
+</html>
