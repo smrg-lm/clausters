@@ -170,12 +170,6 @@ enum WebEvent {
         widget_id: i32,
         data: Loaded,
     },
-    /// A theme overlay from the page: role -> "#rrggbb\[aa\]" pairs (the same
-    /// table `[gui.theme]` and a `--theme` file carry natively).
-    Theme(Vec<(String, String)>),
-    /// A metrics overlay from the page: role -> number pairs (the same table
-    /// `[gui.metrics]` carries natively, `scale` included).
-    Metrics(Vec<(String, f64)>),
     /// The MSAA sample count canvases attached from here on are drawn with
     /// (the browser form of the native `[gui] msaa`).
     Msaa(u32),
@@ -701,47 +695,11 @@ impl WebApp {
                 widget_id,
                 data,
             } => self.on_bulk_ready(def_id, widget_id, data),
-            WebEvent::Theme(entries) => {
-                for w in self
-                    .host
-                    .theme
-                    .overlay(entries.iter().map(|(k, v)| (k.as_str(), v.as_str())))
-                {
-                    log(&w);
-                }
-                // The base changed under the resolved references: re-resolve
-                // every window's theme groups over the new host theme.
-                let base = std::sync::Arc::new(self.host.theme.clone());
-                for id in self.host.window_def_ids() {
-                    if let Some(tree) = self.host.window_def_mut(id) {
-                        super::widget::resolve_style(tree, &base);
-                    }
-                }
-                for def in self.canvases.keys().copied().collect::<Vec<_>>() {
-                    self.draw(def);
-                }
-            }
             WebEvent::Msaa(samples) => {
                 // A canvas already showing keeps the pass its pipelines were
                 // built against, exactly as a native window does: the count is
                 // read when a device comes up, and re-attaching applies it.
                 self.host.msaa = samples.max(1);
-            }
-            WebEvent::Metrics(entries) => {
-                for w in self
-                    .host
-                    .metrics
-                    .overlay(entries.iter().map(|(k, v)| (k.as_str(), *v)))
-                {
-                    log(&w);
-                }
-                // Every canvas re-resolves the new roles at its own scale, and
-                // sizes are then read per frame from that one table, so a
-                // redraw is the rest of the update.
-                self.host.refresh_metrics();
-                for def in self.canvases.keys().copied().collect::<Vec<_>>() {
-                    self.draw(def);
-                }
             }
         }
     }

@@ -5,9 +5,11 @@ The host draws every chrome color from one **theme** -- a table of named roles
 (``background``, ``panel``, ``text``, ``accent``, ...) -- and the customization
 is the same partial table at every level, each overlaying the previous:
 
-1. **The host style file** (``--theme file.toml``, or ``[gui.theme]`` in the
-   shared config): one look for the whole host. This example writes a small
-   file that warms the accent and boots the host with it.
+1. **The host's own table** — `clausters.gui.GuiHost.theme`, the ``/gui_theme``
+   verb: one look for the whole host, handed over after launch. This example
+   warms the accent with it. (The launch-time spelling of the same table is
+   ``--theme file.toml`` or ``[gui.theme]`` in the shared config, for a look
+   that should be in place before the first window opens.)
 2. **A theme group** (the ``theme`` prop on a container -- ``window``, ``panel``,
    ``scroll``, ``track``): a partial ``{"role": "#rrggbb[aa]"}`` table scoped
    to that subtree, recursive by construction -- a nested group overlays the
@@ -40,7 +42,7 @@ under ``[gui]``) costing one attachment per window and nothing per widget. The
 rounded corners are what shows it -- drop the flag from the boot line below and
 they come back stepped.
 
-The window shows five rows: the host look (from the file theme), a cool theme
+The window shows five rows: the host look (from `GuiHost.theme`), a cool theme
 group, a nested darker group inside it, a row of per-widget accents, and a row
 of rounded, faded panels. After a few seconds the script restyles the group and
 one accent live via ``set``, addressed by name (the ``cool`` group, the
@@ -61,18 +63,12 @@ adapter.
 
 # %%
 import sys
-import tempfile
 import time
-from pathlib import Path
 
 from clausters.gui import GuiHost, knob, label, panel, slider, toggle, view
 
-# Level 1: the host style file -- the whole host warms up.
-HOST_THEME = """\
-accent = "#e08840"
-accent_dim = "#8a5428"
-hilite = "#f0a060"
-"""
+# Level 1: the host's own table -- the whole host warms up.
+HOST_THEME = {"accent": "#e08840", "accent_dim": "#8a5428", "hilite": "#f0a060"}
 
 # Level 2: a theme group -- a cool pane inside the warm host.
 COOL = {"accent": "#4090e0", "accent_dim": "#285a8a", "hilite": "#60b0f0",
@@ -101,11 +97,12 @@ def controls(tag: str) -> dict:
 # ## Launch the host with the file theme and open the window
 
 # %%
-theme_file = Path(tempfile.mkdtemp(prefix="clausters-style-")) / "warm.toml"
-theme_file.write_text(HOST_THEME)
 # `--msaa 4` antialiases the whole pass: the rounded corners below are its
-# by-eye test. Drop it and the same window draws its arcs stepped.
-gui = GuiHost().boot(extra_args=("--theme", str(theme_file), "--msaa", "4"))
+# by-eye test. Drop it and the same window draws its arcs stepped. (It is a
+# launch flag and not a verb, because every pipeline in a pass agrees on the
+# count -- a running window cannot change it.)
+gui = GuiHost().boot(extra_args=("--msaa", "4"))
+gui.theme(HOST_THEME)          # level 1, over the wire rather than at launch
 
 win = view(
 controls("host theme (file)"),

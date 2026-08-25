@@ -137,33 +137,6 @@ impl GuiBridge {
         self.send(WebEvent::ConnectPage(send));
     }
 
-    /// Overlays the host's color theme from a JSON object of
-    /// `{"role": "#rrggbb[aa]"}` entries — the browser form of the native
-    /// `[gui.theme]` config table. A partial object is fine; unknown roles or
-    /// bad colors are logged and skipped.
-    pub fn theme(&self, json: &str) {
-        match serde_json::from_str::<std::collections::BTreeMap<String, String>>(json) {
-            Ok(table) => {
-                self.send(WebEvent::Theme(table.into_iter().collect()));
-            }
-            Err(e) => log(&format!("cannot parse theme JSON: {e}")),
-        }
-    }
-
-    /// Overlays the host's size metrics from a JSON object of
-    /// `{"role": number}` entries — the browser form of the native
-    /// `[gui.metrics]` config table, the reserved `scale` density key included.
-    /// A partial object is fine; unknown roles or unusable numbers are logged
-    /// and skipped.
-    pub fn metrics(&self, json: &str) {
-        match serde_json::from_str::<std::collections::BTreeMap<String, f64>>(json) {
-            Ok(table) => {
-                self.send(WebEvent::Metrics(table.into_iter().collect()));
-            }
-            Err(e) => log(&format!("cannot parse metrics JSON: {e}")),
-        }
-    }
-
     /// Draws the host's windows with `samples`x multisampling — the browser
     /// form of the native `[gui] msaa` / `--msaa`, and the same bounded
     /// capability: `1` (the default) draws the flat picture, a higher count

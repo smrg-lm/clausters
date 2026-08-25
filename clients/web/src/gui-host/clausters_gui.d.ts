@@ -72,14 +72,6 @@ export class GuiBridge {
      */
     feed(packet: Uint8Array): void;
     /**
-     * Overlays the host's size metrics from a JSON object of
-     * `{"role": number}` entries — the browser form of the native
-     * `[gui.metrics]` config table, the reserved `scale` density key included.
-     * A partial object is fine; unknown roles or unusable numbers are logged
-     * and skipped.
-     */
-    metrics(json: string): void;
-    /**
      * Draws the host's windows with `samples`x multisampling — the browser
      * form of the native `[gui] msaa` / `--msaa`, and the same bounded
      * capability: `1` (the default) draws the flat picture, a higher count
@@ -127,13 +119,6 @@ export class GuiBridge {
      * for the other forty-seven.
      */
     set_visible(def_id: number, visible: boolean): void;
-    /**
-     * Overlays the host's color theme from a JSON object of
-     * `{"role": "#rrggbb[aa]"}` entries — the browser form of the native
-     * `[gui.theme]` config table. A partial object is fine; unknown roles or
-     * bad colors are logged and skipped.
-     */
-    theme(json: string): void;
 }
 
 /**
@@ -184,13 +169,11 @@ export interface InitOutput {
     readonly guibridge_def: (a: number, b: number, c: number, d: number) => void;
     readonly guibridge_detach: (a: number, b: number) => void;
     readonly guibridge_feed: (a: number, b: number, c: number) => void;
-    readonly guibridge_metrics: (a: number, b: number, c: number) => void;
     readonly guibridge_msaa: (a: number, b: number) => void;
     readonly guibridge_poll: (a: number) => [number, number];
     readonly guibridge_resize: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly guibridge_server_reply: (a: number, b: number, c: number) => void;
     readonly guibridge_set_visible: (a: number, b: number, c: number) => void;
-    readonly guibridge_theme: (a: number, b: number, c: number) => void;
     readonly start: () => number;
     readonly wasm_bindgen_590c35605e59bfca___convert__closures_____invoke___wasm_bindgen_590c35605e59bfca___JsValue__core_f0fd674eaa06beef___result__Result_____wasm_bindgen_590c35605e59bfca___JsError___true_: (a: number, b: number, c: any) => [number, number];
     readonly wasm_bindgen_590c35605e59bfca___convert__closures_____invoke___js_sys_b41afed3307fbfdc___Array__web_sys_9638aa9df1e13d36___features__gen_ResizeObserver__ResizeObserver______true_: (a: number, b: number, c: any, d: any) => void;

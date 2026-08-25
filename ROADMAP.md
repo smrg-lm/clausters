@@ -182,13 +182,10 @@ not ask.*
 
   Next, in this order:
 
-  1. **`/gui_theme`, the host's own theme as a verb** *(`clients/gui/PLAN.md`,
-     Found by use, "The host's own theme is a wasm export the protocol has no
-     verb for")*. It is the typeface's case again — a launch flag on one front,
-     a wasm export on the other, no `/gui_*` verb — and it is what
-     `panels/style` needs, the one page of that folder not written. Three ends,
-     as `/gui_font` had: the host, then the same `GuiHost.theme(table)` in both
-     clients.
+  1. ~~**`/gui_theme`**~~ — done 2026-08-25, and it was two verbs: `/gui_theme`
+     and `/gui_metrics`, the wasm exports gone, `GuiHost.theme(table)` /
+     `.metrics(table)` in both clients. `panels/style` is written and the folder
+     is complete.
   2. **`views/` (12 pages)** — the biggest remaining folder and all of it
      portable today: plot, scope, nodetree, rulers, take, window, bulk, linked,
      analyzer, plotting, scoping's siblings.

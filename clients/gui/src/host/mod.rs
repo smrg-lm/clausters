@@ -511,6 +511,27 @@ pub const GUI_LOAD: &str = "/gui_load";
 /// size table never followed the typeface), which is also what makes a late
 /// hand-over safe — nothing relayouts, every open window simply redraws.
 pub const GUI_FONT: &str = "/gui_font";
+/// `/gui_theme <json>` — the colors this **host** draws its chrome from, handed
+/// over after launch.
+///
+/// The same partial `{"role": "#rrggbb[aa]"}` table a container's `theme` prop
+/// takes, scoped to the host instead of to a subtree: the base every theme
+/// group is resolved over. It carries no id for that reason — a look is a
+/// property of the host, exactly as a typeface is.
+///
+/// Without it the browser front could re-theme at runtime through the raw
+/// binding while a native one could only take a table at launch (`--theme
+/// file.toml`, `[gui.theme]`), which is a wasm export growing surface the
+/// protocol never had — the case `/gui_font` already answered once.
+pub const GUI_THEME: &str = "/gui_theme";
+/// `/gui_metrics <json>` — the sizes this **host** lays out with, handed over
+/// after launch.
+///
+/// The theme's counterpart for lengths: a partial `{"role": number}` table over
+/// the metrics every widget reads its paddings, strips and hit slop from, with
+/// the reserved `scale` key regenerating the whole set at a density. Same
+/// reasoning, same shape, same absence before this verb.
+pub const GUI_METRICS: &str = "/gui_metrics";
 pub const GUI_INFO: &str = "/gui_info";
 pub const GUI_EVENT: &str = "/gui_event";
 pub const GUI_CLOSED: &str = "/gui_closed";
@@ -1041,6 +1062,8 @@ impl Host {
             GUI_BIND => self.on_bind(&msg.args, from),
             GUI_LOAD => self.on_load(&msg.args, from, effects),
             GUI_FONT => self.on_font(&msg.args, from, effects),
+            GUI_THEME => self.on_theme(&msg.args, from, effects),
+            GUI_METRICS => self.on_metrics(&msg.args, from, effects),
             other => debug!("{from}: ignoring unhandled address {other}"),
         }
     }
@@ -1251,6 +1274,58 @@ impl Host {
                  feature); drawing with the embedded bitmap face"
             );
         }
+    }
+
+    /// `/gui_theme <json>` — draw the chrome from these colors from now on.
+    ///
+    /// The table is partial and overlays the host's own; unknown roles and
+    /// unreadable colors are reported and skipped, exactly as the launch-time
+    /// table's are. Every window then re-resolves its theme **groups** over the
+    /// new base — a group overlays what it inherits, so changing the base
+    /// changes what a group means — and redraws.
+    fn on_theme(&mut self, args: &[OscType], from: ClientId, effects: &mut Vec<HostEffect>) {
+        let Some(table) = json_table(args, 0) else {
+            return warn!("{from}: {GUI_THEME} needs a JSON object of role -> color");
+        };
+        for w in self.theme.overlay_json(&table) {
+            warn!("{from}: {GUI_THEME}: {w}");
+        }
+        // The base moved under the resolved references: a group's colors are
+        // its own table over the inherited one, so they are re-resolved rather
+        // than kept.
+        let base = std::sync::Arc::new(self.theme.clone());
+        for id in self.window_def_ids() {
+            if let Some(tree) = self.window_def_mut(id) {
+                widget::resolve_style(tree, &base);
+            }
+            effects.push(HostEffect::Redraw(id));
+        }
+        info!("{from}: {GUI_THEME}: {} role(s) overlaid", table.len());
+    }
+
+    /// `/gui_metrics <json>` — lay out with these sizes from now on.
+    ///
+    /// The theme's counterpart, and the same rules: partial, warned about role
+    /// by role, applied to the host's table. `scale` is the reserved key that
+    /// regenerates the whole set at a density. Every canvas re-resolves the new
+    /// roles at its own scale, and sizes are read per frame from that one
+    /// table, so a redraw is the rest of the update.
+    fn on_metrics(&mut self, args: &[OscType], from: ClientId, effects: &mut Vec<HostEffect>) {
+        let Some(table) = json_table(args, 0) else {
+            return warn!("{from}: {GUI_METRICS} needs a JSON object of role -> number");
+        };
+        let entries: Vec<(&str, f64)> = table
+            .iter()
+            .filter_map(|(k, v)| v.as_f64().map(|n| (k.as_str(), n)))
+            .collect();
+        for w in self.metrics.overlay(entries) {
+            warn!("{from}: {GUI_METRICS}: {w}");
+        }
+        self.refresh_metrics();
+        for id in self.window_def_ids() {
+            effects.push(HostEffect::Redraw(id));
+        }
+        info!("{from}: {GUI_METRICS}: {} role(s) overlaid", table.len());
     }
 
     /// `/gui_set <id> <k> <v> ...` — update one live widget's properties, in the
@@ -2423,6 +2498,16 @@ fn string_arg(args: &[OscType], i: usize) -> Option<&str> {
 
 /// The i-th argument as JSON bytes: a string or a blob (both accepted, as
 /// `/def_send synth` accepts a SynthDef either way).
+/// One argument read as a JSON **object** — what the two host-wide tables
+/// cross as, the way every other structured value on this wire does.
+fn json_table(args: &[OscType], i: usize) -> Option<serde_json::Map<String, serde_json::Value>> {
+    let bytes = json_arg(args, i)?;
+    match serde_json::from_slice::<serde_json::Value>(bytes) {
+        Ok(serde_json::Value::Object(table)) => Some(table),
+        _ => None,
+    }
+}
+
 fn json_arg(args: &[OscType], i: usize) -> Option<&[u8]> {
     match args.get(i) {
         Some(OscType::String(s)) => Some(s.as_bytes()),
@@ -2766,6 +2851,72 @@ mod tests {
             host.window_def(1).is_some(),
             "and the window is where it was"
         );
+    }
+
+    /// The two host-wide tables are verbs, not launch flags: a client hands one
+    /// over after the windows are up, and every window redraws — which is the
+    /// half `--theme` could never do and the browser could only do by reaching
+    /// under its client to the binding.
+    #[test]
+    fn a_theme_the_host_is_handed_redraws_every_window() {
+        let mut host = Host::new();
+        host.handle_packet(def_msg(1, TREE), from());
+        let before = host.theme.accent;
+        let theme = OscPacket::Message(OscMessage {
+            addr: GUI_THEME.into(),
+            args: vec![OscType::String(r##"{"accent": "#ff0000"}"##.into())],
+        });
+        let effects = host.handle_packet(theme, from());
+        assert_ne!(host.theme.accent, before, "the host's own base moved");
+        assert_eq!(
+            effects
+                .iter()
+                .filter(|e| matches!(e, HostEffect::Redraw(1)))
+                .count(),
+            1,
+            "the open window redraws with it"
+        );
+    }
+
+    /// A role the host does not know is reported and skipped, exactly as the
+    /// launch-time table's is — the verb refuses nothing and never leaves a
+    /// window unpainted over a typo.
+    #[test]
+    fn an_unknown_role_is_skipped_rather_than_refused() {
+        let mut host = Host::new();
+        host.handle_packet(def_msg(1, TREE), from());
+        let theme = OscPacket::Message(OscMessage {
+            addr: GUI_THEME.into(),
+            args: vec![OscType::String(r##"{"nonsense": "#ff0000"}"##.into())],
+        });
+        assert!(
+            !host.handle_packet(theme, from()).is_empty(),
+            "the window still redraws: the table was applied, one role short"
+        );
+
+        // And a payload that is not an object at all is the client's mistake,
+        // so nothing happens rather than something partial.
+        let bad = OscPacket::Message(OscMessage {
+            addr: GUI_THEME.into(),
+            args: vec![OscType::String("not json".into())],
+        });
+        assert!(host.handle_packet(bad, from()).is_empty());
+    }
+
+    /// The metrics table is the same verb for lengths, `scale` included — the
+    /// reserved key that regenerates the whole set at a density.
+    #[test]
+    fn metrics_arrive_the_same_way_and_scale_regenerates_the_set() {
+        let mut host = Host::new();
+        host.handle_packet(def_msg(1, TREE), from());
+        let before = host.metrics.pad;
+        let metrics = OscPacket::Message(OscMessage {
+            addr: GUI_METRICS.into(),
+            args: vec![OscType::String(r#"{"scale": 2.0}"#.into())],
+        });
+        let effects = host.handle_packet(metrics, from());
+        assert_ne!(host.metrics.pad, before, "every length regenerated");
+        assert!(effects.iter().any(|e| matches!(e, HostEffect::Redraw(1))));
     }
 
     #[test]

@@ -1045,8 +1045,8 @@ reproducible in a browser, and it is where G32b was found.
 On 2026-08-25 the pairing stood at **19 pairs, 47 scripts with no page, 12 pages
 with no script**. Two batches the same day took it to **33 pairs, 33 scripts
 alone, 11 pages alone**: `basics/hello-note`, `basics/envelope`, and the whole
-of `panels/` but one — `skeleton`, `panel`, `bind`, `stack`, `text`,
-`workspace`, `attach`, `canvas`, `oscsend`, `shell`, `gestures`. Each was
+of `panels/` — `skeleton`, `panel`, `bind`, `stack`, `text`, `workspace`,
+`attach`, `canvas`, `oscsend`, `shell`, `gestures`, `style`. Each was
 written against the script line by line and then **run** under headless Chrome,
 which is the half that matters: four defects came out of them, none in the
 pages.
@@ -1079,16 +1079,18 @@ product, the **exercise** is. Nothing had opened a bare server on a page before,
 so nothing had noticed that a page could not — and nothing had attached a second
 GUI handle in a tab, so nothing had noticed that one could not draw.
 
-**`panels/style` is the one that stopped, and it is reporting a missing
-feature** rather than a porting gap. Its subject is the three levels a theme
+**`panels/style` stopped the batch, and reported a missing feature** rather
+than a porting gap — which is what an example that cannot be written is for. Its subject is the three levels a theme
 overlays at — the host's own look, a `theme` group on a container, a widget's
 `color` — and the page has the last two and no door to the first. The host-wide
 theme is a **launch flag** (`--theme file.toml`) and a **wasm export**
 (`GuiBridge.theme(json)`) with **no protocol verb**, which is exactly the shape
 the typeface had before `/gui_font`: a property of the host that every client
-should be able to hand over at run time. The fix is that verb, in both clients,
-and it is written into `ROADMAP.md` as the next thing rather than worked around
-here — an example is never what decides a surface.
+should be able to hand over at run time. The fix was that verb, and it landed the same day
+(`clients/gui/PLAN.md`, Found by use): `/gui_theme <json>` and — since `metrics`
+sat beside it in exactly the same shape — `/gui_metrics <json>`, with both wasm
+exports removed and `GuiHost.theme(table)`/`.metrics(table)` in both clients.
+`panels/style` is written now, on both sides, and the folder is complete.
 
 **The track is in.** `src/form/` (the arrangement), `gui/transport.ts` (the
 playhead and its four buttons) and `gui/editor.ts` (the multitrack editor) are

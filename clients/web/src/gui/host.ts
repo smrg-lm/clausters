@@ -447,6 +447,40 @@ export class GuiHost {
     }
 
     /**
+     * `/gui_theme <json>` — draw the chrome from these colors from now on.
+     *
+     * A partial `{"role": "#rrggbb[aa]"}` table: the same one a container's
+     * `theme` prop takes, scoped to the **host** rather than to a subtree. It
+     * carries no id for that reason — a look is a property of the host, exactly
+     * as a typeface is — and it is the base every theme group is resolved over,
+     * so handing one over re-resolves the groups in every open window and
+     * redraws them. A group overlays what it *inherits*, so moving the base
+     * moves what a group means.
+     *
+     * Unknown roles and unreadable colors are logged by the host and skipped;
+     * nothing here is refused. The native launch-time spelling is `--theme
+     * <file.toml>`, which a page has no counterpart for — this verb is how a
+     * tab does it, and how a script does it after launch.
+     */
+    theme(table: Record<string, string>): void {
+        this.send("/gui_theme", JSON.stringify(table));
+    }
+
+    /**
+     * `/gui_metrics <json>` — lay out with these sizes from now on.
+     *
+     * {@link GuiHost.theme}'s counterpart for lengths: a partial
+     * `{"role": number}` table over the metrics every widget reads its
+     * paddings, strips and hit slop from. The reserved `scale` key regenerates
+     * the whole set at a density instead of setting one role.
+     *
+     * Every canvas re-resolves the roles at its own scale and redraws.
+     */
+    metrics(table: Record<string, number>): void {
+        this.send("/gui_metrics", JSON.stringify(table));
+    }
+
+    /**
      * Walks `node` (whose id is `nodeId`) and returns **a copy** carrying the
      * ids: every id-less descendant gets a fresh one, each id's children are
      * recorded (the subtree `free` recycles), and name → id is collected. The

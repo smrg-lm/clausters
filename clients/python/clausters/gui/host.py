@@ -422,6 +422,38 @@ class GuiHost:
         """
         self._osc.send_msg(self.target, "/gui_font", bytes(face))
 
+    def theme(self, table: dict):
+        """``/gui_theme <json>`` — draw the chrome from these colors from now on.
+
+        ``table`` is a partial ``{"role": "#rrggbb[aa]"}`` mapping: the same one
+        a container's ``theme`` prop takes, scoped to the **host** rather than to
+        a subtree. It carries no id for that reason — a look is a property of the
+        host, exactly as a typeface is — and it is the base every theme group is
+        resolved over, so handing one over re-resolves the groups in every open
+        window and redraws them. A group overlays what it *inherits*, so moving
+        the base moves what a group means.
+
+        Unknown roles and unreadable colors are logged by the host and skipped;
+        nothing here is refused. The launch-time spelling is the host's own
+        ``--theme <file.toml>`` (``[gui.theme]`` in the shared config), for a
+        look that should be in place before the first window opens.
+        """
+        self._osc.send_msg(self.target, "/gui_theme", json.dumps(dict(table)))
+
+    def metrics(self, table: dict):
+        """``/gui_metrics <json>`` — lay out with these sizes from now on.
+
+        `theme`'s counterpart for lengths: a partial ``{"role": number}`` mapping
+        over the metrics every widget reads its paddings, strips and hit slop
+        from. The reserved ``"scale"`` key regenerates the whole set at a density
+        instead of setting one role.
+
+        Every window re-resolves the roles at its own scale and redraws. Same
+        rules for what the host does not understand, and the launch-time spelling
+        is the ``[gui.metrics]`` config table.
+        """
+        self._osc.send_msg(self.target, "/gui_metrics", json.dumps(dict(table)))
+
     def _stamp(self, node: dict, node_id: int, names: dict, controls: dict) -> dict:
         """A **copy** of ``node`` with a fresh id on every id-less descendant:
         the document ``/gui_def`` is sent, plus ``name -> id`` collected into

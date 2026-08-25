@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: theme groups, accents and the two paint props</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 66rem; }
+      #note { font-size: 13px; line-height: 1.5; max-width: 46rem; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+      .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      #stage { width: 980px; max-width: 100%; height: 620px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">Style: theme groups, per-widget accents, and the two paint
+props.
+
+The host draws every chrome color from one <b>theme</b> — a table of named roles
+(<code>background</code>, <code>panel</code>, <code>text</code>,
+<code>accent</code>, …) — and the customization is the same partial table at
+every level, each overlaying the previous:
+
+<b>1. The host's own table</b> (<code>host.theme({…})</code>, the
+<code>/gui_theme</code> verb): one look for the whole host. This page warms the
+accent with it. <b>2. A theme group</b> (the <code>theme</code> prop on a
+container): a partial table scoped to that subtree, recursive by construction —
+a nested group overlays the <i>inherited</i> table, not the default. <b>3. The
+<code>color</code> prop</b> (any widget): the single-color shorthand, re-seeding
+just the roles that carry the widget's function.
+
+Overlays resolve when a def arrives or a <code>set</code> changes them — never
+per frame — so a styled window costs exactly what a plain one costs.
+
+<b>Two more props shape the drawing rather than its color</b>:
+<code>opacity</code> (0–1) fades a widget and, like a theme group, multiplies
+down its whole subtree; <code>radius</code> rounds the corners of the boxes a
+widget draws, clamped to half the shorter side of each.</div>
+
+      <div class="row">
+        <button id="run">open the window</button>
+        <button id="restyle" disabled>restyle live</button>
+      </div>
+      <div id="stage"></div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/panels/style.py, call for call:
+      the host's table, one cool theme group with a darker one nested in it,
+      three per-widget accents, a rounded panel and a faded one, then the same
+      live restyles by name.
+
+      What differs is one line and it is the platform's, not a surface: the
+      script boots its host with `--msaa 4`, which antialiases the whole render
+      pass and is what makes the rounded corners smooth. It is a launch flag on
+      both fronts rather than a verb, because every pipeline in a pass agrees on
+      the sample count -- so a page's canvases take the host's default, and the
+      arcs below are drawn stepped where the script's are smooth. Everything
+      else, the host-wide theme included, is the same call in the same order.
+
+      Serve clients/web (the package root) and open /examples/panels/style.html.
+      Build it first: ./build.sh
+    -->
+    <script type="module">
+      import { GuiHost, gui, loadOsc, pageGuiConnection } from "../../dist/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => { $("log").textContent += line + "\n"; };
+
+      // Level 1: the host's own table — the whole host warms up.
+      const HOST_THEME = { accent: "#e08840", accent_dim: "#8a5428", hilite: "#f0a060" };
+      // Level 2: a theme group — a cool pane inside the warm host.
+      const COOL = {
+        accent: "#4090e0", accent_dim: "#285a8a", hilite: "#60b0f0",
+        panel: "#10141cbf",
+      };
+      // Level 3: nested — the inherited cool table, darkened further.
+      const NESTED = { panel: "#0a0d12", text: "#8098b0" };
+
+      /** One row of ordinary controls; the theme in force colors all of them. */
+      const controls = (tag) => gui.panel(
+        { layout: "row" },
+        gui.label(tag, { w: 220.0 }),
+        gui.slider({ label: "amp", value: 0.6 }),
+        gui.knob({ label: "freq", min: 20.0, max: 2000.0, value: 440.0 }),
+        gui.toggle({ label: "on", value: true }),
+      );
+
+      let win = null;
+
+      async function run() {
+        $("run").disabled = true;
+        await loadOsc();
+        const host = await new GuiHost(await pageGuiConnection()).boot();
+
+        // The host's own look, over the wire. A page has no launch flags at
+        // all, so this verb is the only way it reaches level 1 — and it is the
+        // way a script reaches it after launch.
+        host.theme(HOST_THEME);
+
+        win = await gui.view(
+          { title: "Style", w: 980, h: 620, layout: "col" },
+          controls("host theme (the /gui_theme table)"),
+          gui.panel(
+            { name: "cool", layout: "col", theme: COOL },
+            controls("theme group (cool)"),
+            gui.panel({ layout: "col", theme: NESTED }, controls("nested group (darker)")),
+          ),
+          gui.panel(
+            { layout: "row" },
+            gui.label("per-widget accents", { w: 220.0 }),
+            gui.slider({ name: "accent_a", label: "a", value: 0.3, color: "#e04060" }),
+            gui.slider({ label: "b", value: 0.5, color: "#40c080" }),
+            gui.slider({ label: "c", value: 0.7, color: "#c0b040" }),
+          ),
+          // The paint props: a rounded panel whose controls stay square (the
+          // radius is the widget's own), and one that starts half faded — the
+          // fade reaches every control in it, since opacity is a group's
+          // property.
+          gui.panel(
+            { layout: "row" },
+            gui.panel(
+              { layout: "row", radius: 10.0 },
+              gui.label("rounded", { w: 110.0 }),
+              gui.toggle({ label: "on", value: true }),
+            ),
+            gui.panel(
+              { name: "ghost", layout: "row", radius: 10.0, opacity: 0.35 },
+              gui.label("faded", { w: 110.0 }),
+              gui.slider({ label: "amp", value: 0.4 }),
+            ),
+          ),
+        ).open($("stage"));
+
+        log("host warm (its own table); one cool theme group, nested darker; "
+          + "three per-widget accents; a rounded panel and a faded one");
+        $("restyle").disabled = false;
+      }
+
+      // ---- live restyles, by name ----
+      // Turn the cool group violet, then one accent cyan, then bring the faded
+      // panel back and square its corners — each a `set` on a named widget.
+      function restyle() {
+        $("restyle").disabled = true;
+        win.widget("cool").set({
+          theme: '{"accent": "#b060e0", "accent_dim": "#6a3a8a", '
+            + '"hilite": "#d090f0", "panel": "#161020bf"}',
+        });
+        win.widget("accent_a").set({ color: "#40d0d0" });
+        win.widget("ghost").set({ opacity: 1.0, radius: -1.0 });
+        log("the cool group turned violet, accent 'a' cyan, and the faded panel "
+          + "came back at full opacity with square corners (a negative clears)");
+      }
+
+      $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
+      $("restyle").onclick = restyle;
+    </script>
+  </body>
+</html>

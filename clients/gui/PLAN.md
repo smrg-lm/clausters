@@ -2223,8 +2223,8 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 
 ## Found by use: the running list of fixes
 
-- ⬜ **The host's own theme is a wasm export the protocol has no verb for**
-  *(found 2026-08-25, porting `panels/style.py`)*. Exactly the typeface's case,
+- ✅ **The host's own theme is a wasm export the protocol has no verb for**
+  *(found 2026-08-25, porting `panels/style.py`; fixed the same day)*. Exactly the typeface's case,
   one entry below, and found the same way — by an example that could not be
   written. The colors a host draws its chrome from overlay at three levels: the
   host's own table, a `theme` group on a container, a widget's `color`. The last
@@ -2245,9 +2245,26 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   - **The web client**: the same `GuiHost.theme(table)`, so the bridge stops
     being where a capability is reached.
 
-  Until then `clients/web/examples/panels/style.html` cannot be written, and
-  **it is not written**: an example never decides a surface, and a page that
-  reached for `bridge.theme` would be the scaffold becoming the norm.
+  **Done, and it was two verbs rather than one.** `metrics` sat right beside
+  `theme` in exactly the same shape — a `[gui.metrics]` config table, a
+  `GuiBridge.metrics(json)` export, no verb — so `/gui_theme <json>` and
+  `/gui_metrics <json>` landed together, in `host/mod.rs` where every other
+  command lives. Both overlay the host's table, re-resolve what depends on it
+  (a theme group is its own table over the *inherited* one, so the groups in
+  every open window are resolved again) and return a `Redraw` per window; both
+  report an unknown role and skip it rather than refusing, as the launch-time
+  tables do. The two wasm exports are **gone**, which is what happened to
+  `font` when `/gui_font` landed: one door, both fronts, both clients
+  (`GuiHost.theme(table)` / `.metrics(table)`).
+
+  `msaa` is the one left in that shape and is not the same case: every pipeline
+  in a render pass agrees on the sample count, so it is read when a device comes
+  up rather than being a live property of the host. It stays a launch flag on
+  both fronts, and `panels/style`'s two examples say so where their pictures
+  differ — the script's rounded corners are smooth and the page's are stepped.
+
+  `clients/web/examples/panels/style.html` is written now, and `style.py` hands
+  its host table over with the verb instead of writing a TOML file to boot with.
 
 - ✅ **A typeface is a wasm binding, so only the browser can change one**
   *(found 2026-08-23, reading the web book's "What the browser changes" against
