@@ -217,9 +217,6 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
         win?.widget("status").set({ text: message });
       };
 
-      /** Each button acts on its press (1) and ignores the release. */
-      const press = (fn) => (value) => { if (value === 1) fn(); };
-
       /**
        * Play from the top when the last pass ran out.
        *
@@ -269,16 +266,18 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
         unfit = surface.fit(win.id, el("stage"));
 
         session.start();                    // the clock runs the routines
-        win.widget("play").onEvent(press(play));
-        win.widget("pause").onEvent(press(() => editor.pause()));
-        win.widget("stop").onEvent(press(() => editor.stop()));
-        win.widget("rewind").onEvent(press(() => editor.locate(0.0)));
+        // Each button acts on its click -- the press completed on the button,
+        // so sliding off before letting go cancels it.
+        win.widget("play").onClick(play);
+        win.widget("pause").onClick(() => editor.pause());
+        win.widget("stop").onClick(() => editor.stop());
+        win.widget("rewind").onClick(() => editor.locate(0.0));
         // Undo and redo are **not** the editor's own history: the log lives in
         // the shared crate, beside the document it inverts, so a script editing
         // the arrangement or a second view on the same composition steps back
         // through the same one.
-        win.widget("undo").onEvent(press(() => report("undo", editor.undo())));
-        win.widget("redo").onEvent(press(() => report("redo", editor.redo())));
+        win.widget("undo").onClick(() => report("undo", editor.undo()));
+        win.widget("redo").onClick(() => report("redo", editor.redo()));
         editor.locate(0.0);                 // the cursor waits at the top
 
         // A pass ends by itself; this is the one loop that has to notice. Where

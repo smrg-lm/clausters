@@ -272,17 +272,17 @@ def on_score(tag, *rest):
             play(Event(midinote=note["pitch"], dur=note["dur"] / 1000.0,
                        amp=0.15), server=server)
 
-# Wire every widget by name: each button acts on its press (1) — `locate`
-# doubles as rewind, so playing it starts a fresh pass from the top — and
-# the score page answers its own edit-backs.
-press = lambda fn: (lambda value: fn() if value == 1 else None)  # noqa: E731
-win["play"].on_event(press(lambda: transport.play(server)))
-win["pause"].on_event(press(transport.pause))
-win["stop"].on_event(press(transport.stop))
-win["rewind"].on_event(press(lambda: transport.locate(0.0)))
-win["from_note"].on_event(press(from_note))
-win["undo"].on_event(press(undo))
-win["redo"].on_event(press(redo))
+# Wire every widget by name: each button acts on its **click** -- the press
+# completed on the button, so sliding off before letting go cancels it -- and
+# `locate` doubles as rewind, so playing it starts a fresh pass from the top.
+# The score page answers its own edit-backs.
+win["play"].on_click(lambda: transport.play(server))
+win["pause"].on_click(transport.pause)
+win["stop"].on_click(transport.stop)
+win["rewind"].on_click(lambda: transport.locate(0.0))
+win["from_note"].on_click(from_note)
+win["undo"].on_click(undo)
+win["redo"].on_click(redo)
 win["score"].on_event(on_score)
 closed = [False]
 win.on_closed(lambda: (closed.__setitem__(0, True), print("window closed")))

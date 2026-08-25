@@ -146,9 +146,8 @@ def show_body(on):
     editor.layers = WITH_BODY if on else BARE
 
 
-press = lambda fn: (lambda value: fn() if value == 1 else None)  # noqa: E731
-win["play"].on_event(press(lambda: editor.play(server, session.clock)))
-win["stop"].on_event(press(editor.stop))
+win["play"].on_click(lambda: editor.play(server, session.clock))
+win["stop"].on_click(editor.stop)
 win["body"].on_event(lambda value: show_body(bool(value)))
 editor.locate(0.0)
 

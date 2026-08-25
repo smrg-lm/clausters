@@ -137,16 +137,16 @@ def set_status(text: str) -> None:
     win["status"].set(text=text)
 
 
-def start(value):
+def start():
     global _voice
-    if value == 1 and _voice is None:   # 1 = press
+    if _voice is None:
         _voice = Synth("gui_shell_voice", {"freq": _freq, "amp": _amp}, server=server)
         set_status("playing")
 
 
-def stop(value):
+def stop():
     global _voice
-    if value == 1 and _voice is not None:
+    if _voice is not None:
         _voice.set({"gate": 0.0})
         _voice = None
         set_status("stopped")
@@ -168,8 +168,10 @@ def on_amp(value):
     set_status(f"amp {_amp:.3f}")
 
 
-win["play"].on_event(start)
-win["stop"].on_event(stop)
+# Each button acts on its **click**, so the handler is the action and nothing
+# else: no release to filter out, and a press slid off the button cancels.
+win["play"].on_click(start)
+win["stop"].on_click(stop)
 win["freq"].on_event(on_freq)
 win["amp"].on_event(on_amp)
 win.on_closed(lambda: globals().__setitem__("_closed", True))

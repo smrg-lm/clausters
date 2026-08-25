@@ -182,6 +182,94 @@ test("GuiHost: a redraw keeps a named widget's handler", () => {
     assert.deepEqual(fired, [], "the recycled id answers for nobody");
 });
 
+// ---- what the hand did, as against what the widget is worth ----------------
+
+/** A client with no live host, and the door an event arrives through. */
+function stubbed(): { gui: GuiHost; tag: (id: number, tag: string) => void;
+    value: (id: number, v: number) => void } {
+    let deliver: ((packet: Uint8Array) => void) | undefined;
+    const gui = new GuiHost({
+        send: () => {},
+        addReply: (fn: (packet: Uint8Array) => void) => {
+            deliver = fn;
+        },
+        removeReply: () => {},
+    } as unknown as Connection);
+    return {
+        gui,
+        tag: (id, t) =>
+            deliver!(encodeMessage("/gui_event", [["i", id], ["i", 1], ["i", 0], ["s", t]])),
+        value: (id, v) =>
+            deliver!(encodeMessage("/gui_event", [["i", id], ["i", 1], ["i", 0], ["i", v]])),
+    };
+}
+
+test("GuiHost: the three interface verbs route by tag", () => {
+    const { gui, tag } = stubbed();
+    const win = gui.open(window({}, button({ name: "go", label: "go" })));
+    const seen: string[] = [];
+    win.widget("go").onPress(() => seen.push("press"));
+    win.widget("go").onRelease(() => seen.push("release"));
+    win.widget("go").onClick(() => seen.push("click"));
+    const id = win.widget("go").id;
+    for (const t of ["press", "release", "click"]) tag(id, t);
+    assert.deepEqual(seen, ["press", "release", "click"]);
+});
+
+test("GuiHost: a press the hand slid off never reaches onClick", () => {
+    // The cancellation: the host reports the release and not the click, so the
+    // command simply does not run.
+    const { gui, tag } = stubbed();
+    const win = gui.open(window({}, button({ name: "go", label: "go" })));
+    const ran: string[] = [];
+    win.widget("go").onClick(() => ran.push("clicked"));
+    win.widget("go").onRelease(() => ran.push("released"));
+    const id = win.widget("go").id;
+    tag(id, "press");
+    tag(id, "release");
+    assert.deepEqual(ran, ["released"], "the press was abandoned, so nothing was commanded");
+});
+
+test("GuiHost: onEvent is the raw stream and still sees everything", () => {
+    // The two vocabularies are additive: a script may read the value, the
+    // hand's events, or both on one widget.
+    const { gui, tag, value } = stubbed();
+    const win = gui.open(window({}, button({ name: "go", label: "go" })));
+    const raw: unknown[] = [];
+    const clicks: number[] = [];
+    win.widget("go").onEvent((...args) => raw.push(args[0]));
+    win.widget("go").onClick(() => clicks.push(1));
+    const id = win.widget("go").id;
+    value(id, 1);
+    tag(id, "click");
+    assert.deepEqual(raw, [1, "click"]);
+    assert.deepEqual(clicks, [1]);
+});
+
+test("GuiHost: a redraw keeps the interface handlers", () => {
+    // A callback belongs to the widget the *name* points at, so a redrawn
+    // window is not a button that stopped working.
+    const { gui, tag } = stubbed();
+    const win = gui.open(window({}, button({ name: "go", label: "go" })));
+    const ran: number[] = [];
+    win.widget("go").onClick(() => ran.push(1));
+    const before = win.widget("go").id;
+    gui.define(win.id, window({}, button({ name: "go", label: "go again" })));
+    assert.notEqual(win.widget("go").id, before, "a redraw takes fresh ids, which is the point");
+    tag(win.widget("go").id, "click");
+    assert.deepEqual(ran, [1]);
+});
+
+test("GuiHost: the three verbs clear with null", () => {
+    const { gui, tag } = stubbed();
+    const win = gui.open(window({}, button({ name: "go", label: "go" })));
+    const ran: number[] = [];
+    win.widget("go").onClick(() => ran.push(1));
+    win.widget("go").onClick(null);
+    tag(win.widget("go").id, "click");
+    assert.deepEqual(ran, []);
+});
+
 test("GuiHost: a hand-picked id is kept, and an unknown widget answers empty", {
     skip: !hasHost,
 }, async () => {

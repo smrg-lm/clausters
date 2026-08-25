@@ -582,9 +582,7 @@ for _name in LANES:
 # seek a DAW does when you click its ruler.
 
 # %%
-def play_pause(pressed):
-    if not int(pressed):
-        return
+def play_pause():
     if transport.playing:
         transport.pause()
     else:
@@ -596,9 +594,11 @@ def on_ruler(tag, *vals):
         transport.locate(float(vals[0]) / BEAT)
 
 
-win["b_play"].on_event(play_pause)
-win["b_stop"].on_event(lambda v, *_: int(v) and transport.stop())
-win["b_rew"].on_event(lambda v, *_: int(v) and transport.locate(0.0))
+# The transport buttons act on their **click**: the press completed on the
+# button, so sliding off before letting go cancels it.
+win["b_play"].on_click(play_pause)
+win["b_stop"].on_click(transport.stop)
+win["b_rew"].on_click(lambda: transport.locate(0.0))
 win["ruler"].on_event(on_ruler)
 
 _closed = False

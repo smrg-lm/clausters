@@ -775,26 +775,68 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   buttons over two envelopes (checked by ear: `hold` sustains while held, `fire`
   blips once per press, neither through Python).
 
-- ⬜ **A button's event is read by hand, thirteen times: the callbacks are
-  `on_press`/`on_release`, and `click` is the gesture over them** *(found
-  2026-08-24, taking the entry above; scoped by the user to leave the server
-  half separate)*. `on_event(value)` delivers a control's value, which is right
-  for a knob and is not what a button has: thirteen examples filter the release
-  out by hand, three of them defining the identical
-  `press = lambda fn: (lambda value: fn() if value == 1 else None)`. The
-  primitives deserve their own verbs — `on_press`, `on_release` — and the
-  composed **click** (a press and a release that landed inside, cancellable by
-  sliding off, which is every desktop convention for a command button) is a
-  gesture the host would report rather than a mode the element carries. That
-  half is `clients/gui/PLAN.md` (Future directions, "The gesture machine knows
-  no click"); this one is the client surface over it, in both clients.
+- ✅ **A button's event is read by hand, thirteen times: the callbacks are
+  `on_press`/`on_release`, and `click` is the gesture over them** *(found and
+  fixed 2026-08-24, taking the entry above; scoped by the user to leave the
+  server half separate)*. `on_event(value)` delivers a control's value, which is
+  right for a knob and is not what a button has: thirteen examples filtered the
+  release out by hand, three of them defining the identical
+  `press = lambda fn: (lambda value: fn() if value == 1 else None)`.
 
-  Deliberately **not** taken with the mode above: that one is the interaction
-  with the *server* (what value stream reaches `/node_set`) and this one is the
-  interface, where a button is a command and not a control signal. Every
-  `button` in the repository's thirty-three uses is the second kind, so this is
-  the half that actually improves the examples — which is also why it wants to
-  land before C45 rewrites them.
+  **A button says two things at once, to two audiences**, and that is the whole
+  design. Its **value** is a control signal, which `/gui_bind` forwards to the
+  audio server without the script ever seeing it. Its **interface events** are
+  what the hand did, and they take a road of their own: `"press"`, `"release"`
+  — wherever the pointer came up — and `"click"` in addition when the release
+  landed on the button. Three verbs in both clients: `on_press`/`onPress`,
+  `on_release`/`onRelease`, `on_click`/`onClick`.
+
+  **A binding swallows the value and never the command.** That is the load-
+  bearing consequence and it is pinned by a test: an interface event is emitted
+  straight to the script bound or not, because a command is not a value and has
+  nowhere else to go. So one button drives a synth's gate *and* runs a script's
+  action — which is what makes "one element serves both roles" true rather than
+  merely asserted. `on_event` stays the raw stream and sees everything, so the
+  two vocabularies are additive rather than a mode.
+
+  **Where the click is decided**: in the gesture machine, not in the element.
+  `Element::release` grew an `inside` argument that the machine answers with the
+  same declared shape and hit slop `press` is filtered through
+  (`gestures::element::inside`, beside `press` for exactly that reason). An
+  element that re-implemented "landed inside" would be a second answer to a
+  question the machine owns, and the ten other implementors ignore it.
+
+  Lands in: `Events::and_interface` + `Element::release`'s third argument
+  (`clients/gui/src/host/widget/element.rs`), `gestures::element::inside` and
+  the interface road in `report`, `elements/button.rs`, both clients' host and
+  handle, `docs/gui-protocol.md`, the GUI page of both books. Tests: the
+  element's six cases and the machine's three (the click, the press slid off,
+  and the bound button whose value goes to the server while the click reaches
+  the script); in both clients, the tag routing, the cancellation, the raw
+  stream still seeing everything, a redraw keeping the handlers, and clearing
+  them.
+
+  **Fifteen examples lost their filter** and two turned out to be wrong. Every
+  command button in both clients now reads `on_click`/`onClick`
+  (`gui_bpf`, `gui_patch1`, `gui_score`, `gui_score_from_data`, `gui_composer`,
+  `gui_take`, `gui_shell`, `gui_workspace`, `gui_recording_mapped`,
+  `gui_multitrack`, `gui_bulk`, `gui_panel`; `composer.html`, `score.html`,
+  `editor.html`, `gui-host.html`). `gui_pianoroll`'s `value == 1` stays: it
+  reads a **toggle**, where 1 is the state and not the press. Checked by eye
+  through `gui_panel`, which is wired both ways on purpose: a completed click
+  prints the value, the three events and the handler; a press slid off the
+  button prints the release and no click.
+
+- ⬜ **`gui_bulk`'s mode button flipped twice per press and came back to where
+  it started** *(found 2026-08-24 while removing the hand-written filters;
+  fixed with them)*. `toggle_mode(*_)` was wired to `on_event`, which fires for
+  the press **and** the release, so the drag mode flipped to `draw` and back to
+  `sample` before the hand let go — the button did nothing at all. It is filed
+  here rather than folded into the entry above because of what it says about
+  the surface: the missing verb did not merely cost boilerplate, it produced a
+  defect that reads as correct in the source and that nothing runs. It is the
+  second such find in this file's examples, after the curve drawn with a shape
+  it did not have.
 
 - ✅ **A control's range shadowed the operators of the same name, and the range
   did not belong there at all** *(found and fixed 2026-08-23, porting C42 to

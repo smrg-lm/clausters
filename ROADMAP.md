@@ -1,9 +1,11 @@
 # Roadmap — the order the open work is taken in
 
-*Rewritten 2026-08-24, four times: the fourth when the button question was
-answered on its server side — a mode saying which pointer primitive reaches
-`/node_set`, and the two switches carrying a pair of values instead of a range —
-which left its interface half leading the phase. Before that, the same day, when
+*Rewritten 2026-08-24, five times: the fifth when the button question closed
+whole — its interface half, three verbs over events no binding touches, which
+emptied the phase down to the examples pass. Before that, the same day, when the
+same question was answered on its server side: a mode saying which pointer
+primitive reaches `/node_set`, and the two switches carrying a pair of values
+instead of a range. Before that, the same day, when
 every carrier took an
 address and all six legs went loopback, which was the last entry ahead of the
 consistency pass that led before this one. Before that, the same day, when the heavy
@@ -131,8 +133,8 @@ faking closed on 2026-08-24 — the control's curve and step, and the source for
 the heavy props that are not samples — so what is left of it is the question
 about the widgets it did not ask.*
 
-***The button question is answered**, on 2026-08-24, and it was answered by
-splitting a layer rather than an element. Press and release are the primitives;
+***The button question is answered whole**, on 2026-08-24, both halves, and it
+was answered by splitting a layer rather than an element. Press and release are the primitives;
 a click and a double click are *compositions* over them and belong to the
 gesture machine, so a command button never was a second kind of element. What a
 button's `mode` says is only which primitive reaches the server — `gate` (both
@@ -153,20 +155,6 @@ stored had to be rewritten; and the release's version number, which lived in ten
 files with one pair checked, is written in one place and spread by one script.
 What leads the phase now is the question about the widgets the GUI reform did
 not ask.*
-
-- ⬜ **A button's event is read by hand, thirteen times: the callbacks are
-  `on_press`/`on_release`, and `click` is the gesture over them**
-  *(`clients/python/PLAN.md`, Found by use, with its host half in
-  `clients/gui/PLAN.md`, Future directions, "The gesture machine knows no
-  click")*. What is left of the button question after its **server** half
-  closed on 2026-08-24: `mode` says which pointer primitive reaches `/node_set`,
-  and this is the other side — a button as a *command* rather than a control
-  signal, which is what all thirty-three of the repository's buttons actually
-  are. `on_event(value)` is a knob's shape, so thirteen examples filter the
-  release out by hand and three define the same lambda for it. Still here,
-  ahead of the examples, and for the same reason as before: a pass that
-  rewrites thirty of them writes buttons throughout, and it should write the
-  verbs rather than the filter.
 
 - ⬜ **C45 — The examples pass** *(`clients/python/PLAN.md`, the API reform
   track)*. The reform changed how an example is *written* and 30 of the 70

@@ -13,6 +13,15 @@
 //! *gestures*, they belong to the gesture machine, and none of them is a mode
 //! here — what a mode says is only which of the two primitives reaches the
 //! server.
+//!
+//! **A button says two things at once, to two audiences.** Its **value** is a
+//! control signal — `on`/`off`, which `/gui_bind` forwards to the audio server
+//! without the script ever seeing it. Its **interface events** are what the
+//! hand did — `"press"`, `"release"`, and `"click"` when the release landed on
+//! the button rather than off it — which go to the script whether the widget is
+//! bound or not ([`Events::and_interface`]). That is why one element serves
+//! both an instrument's gate and a panel's command: the two readings are two
+//! vocabularies, not two widgets.
 
 use serde_json::{Map, Value};
 
@@ -46,6 +55,12 @@ pub enum Mode {
     /// to build that pair.
     Press,
 }
+
+/// The interface events a button reports, named once so the host and the two
+/// clients cannot spell them apart (`docs/gui-protocol.md` is the reference).
+pub const PRESS: &str = "press";
+pub const RELEASE: &str = "release";
+pub const CLICK: &str = "click";
 
 fn mode_from(v: &Value) -> Option<Mode> {
     match v.as_str()? {
@@ -132,16 +147,26 @@ impl Element for Button {
 
     fn press(&mut self, _at: (f64, f64), _input: &Input) -> Claim {
         self.held = true;
-        Claim::value(switch_value(self.on))
+        Claim::events(
+            Events::value(switch_value(self.on)).and_interface(vec![OscType::String(PRESS.into())]),
+        )
     }
 
-    /// The one line the mode changes. A gate closes; a press already said
-    /// everything it had to say, and the button only stops being drawn held.
-    fn release(&mut self, _at: (f64, f64), _input: &Input) -> Events {
+    /// The mode changes one line of this — a gate closes, a press already said
+    /// everything it had to say — and the rest is the interface half, which no
+    /// mode touches: the release happened either way, and it was a **click** if
+    /// the pointer was still on the button when it came up.
+    fn release(&mut self, _at: (f64, f64), inside: bool, _input: &Input) -> Events {
         self.held = false;
-        match self.mode {
+        let value = match self.mode {
             Mode::Gate => Events::value(switch_value(self.off)),
             Mode::Press => Events::none(),
+        };
+        let out = value.and_interface(vec![OscType::String(RELEASE.into())]);
+        if inside {
+            out.and_interface(vec![OscType::String(CLICK.into())])
+        } else {
+            out
         }
     }
 
@@ -154,7 +179,7 @@ impl Element for Button {
 mod tests {
     use super::*;
     use crate::host::layout::Rect;
-    use crate::host::widget::element::Mods;
+    use crate::host::widget::element::{Mods, Take};
 
     fn props(json: &str) -> Map<String, Value> {
         serde_json::from_str(json).unwrap()
@@ -172,38 +197,54 @@ mod tests {
         }
     }
 
-    /// One press, two events, and in between the button knows it is held —
+    /// The two vocabularies of one press, read apart: what the widget is worth
+    /// and what the hand did.
+    fn parts(mut events: Events) -> (Vec<Vec<OscType>>, Vec<String>) {
+        let hand = events
+            .take_interface()
+            .into_iter()
+            .map(|mut args| match args.remove(0) {
+                OscType::String(s) => s,
+                other => panic!("an interface event is a tag, not {other:?}"),
+            })
+            .collect();
+        (events.into_messages(), hand)
+    }
+
+    fn on_press(b: &mut Button, m: &Metrics) -> (Vec<Vec<OscType>>, Vec<String>) {
+        match b.press((10.0, 10.0), &input(m)) {
+            Claim::Take(Take { events, .. }) => parts(events),
+            Claim::Decline => panic!("a button takes its press"),
+        }
+    }
+
+    /// One press, two values, and in between the button knows it is held —
     /// which is the whole of what used to be a drag variant and a frame input.
     #[test]
     fn it_holds_itself_down_between_the_one_and_the_zero() {
         let m = Metrics::default();
         let mut b = from_props(&props(r#"{"label":"go"}"#));
         assert!(!b.held);
-        assert_eq!(
-            b.press((10.0, 10.0), &input(&m)),
-            Claim::value(OscType::Int(1))
-        );
+        let (values, _) = on_press(&mut b, &m);
+        assert_eq!(values, vec![vec![OscType::Int(1)]]);
         assert!(b.held, "drawn pressed while it is");
-        assert_eq!(
-            b.release((10.0, 10.0), &input(&m)),
-            Events::value(OscType::Int(0))
-        );
+        let (values, _) = parts(b.release((10.0, 10.0), true, &input(&m)));
+        assert_eq!(values, vec![vec![OscType::Int(0)]]);
         assert!(!b.held);
     }
 
-    /// The bang: one message at the press, and a release that reports nothing
+    /// The bang: one value at the press, and a release that is worth nothing
     /// while still letting the box back up.
     #[test]
     fn a_press_button_reports_the_press_and_nothing_after_it() {
         let m = Metrics::default();
         let mut b = from_props(&props(r#"{"label":"go","mode":"press"}"#));
-        assert_eq!(
-            b.press((10.0, 10.0), &input(&m)),
-            Claim::value(OscType::Int(1))
-        );
+        let (values, _) = on_press(&mut b, &m);
+        assert_eq!(values, vec![vec![OscType::Int(1)]]);
         assert!(b.held);
-        assert_eq!(b.release((10.0, 10.0), &input(&m)), Events::none());
-        assert!(!b.held, "drawn up again even though it said nothing");
+        let (values, _) = parts(b.release((10.0, 10.0), true, &input(&m)));
+        assert!(values.is_empty(), "the mode said everything at the press");
+        assert!(!b.held, "drawn up again even though it was worth nothing");
     }
 
     /// The two values are the def's to name: a button that drives an amplitude
@@ -212,13 +253,12 @@ mod tests {
     fn it_sends_the_pair_it_was_given() {
         let m = Metrics::default();
         let mut b = from_props(&props(r#"{"on":0.7,"off":0.0}"#));
+        let (values, _) = on_press(&mut b, &m);
+        assert_eq!(values, vec![vec![OscType::Float(0.7)]]);
+        let (values, _) = parts(b.release((10.0, 10.0), true, &input(&m)));
         assert_eq!(
-            b.press((10.0, 10.0), &input(&m)),
-            Claim::value(OscType::Float(0.7))
-        );
-        assert_eq!(
-            b.release((10.0, 10.0), &input(&m)),
-            Events::value(OscType::Int(0)),
+            values,
+            vec![vec![OscType::Int(0)]],
             "a whole number stays the int every reader already parses"
         );
     }
@@ -232,5 +272,47 @@ mod tests {
         assert!(!b.set("mode", &Value::from("click")), "not a mode here");
         assert!(b.set("on", &Value::from(2.0)));
         assert_eq!(b.on, 2.0);
+    }
+
+    /// The interface half: what the hand did, reported whatever the value was
+    /// worth — a click is the release that landed on the button.
+    #[test]
+    fn a_release_on_the_button_is_a_click() {
+        let m = Metrics::default();
+        let mut b = from_props(&props(r#"{"label":"go"}"#));
+        let (_, hand) = on_press(&mut b, &m);
+        assert_eq!(hand, vec!["press"]);
+        let (_, hand) = parts(b.release((10.0, 10.0), true, &input(&m)));
+        assert_eq!(hand, vec!["release", "click"]);
+    }
+
+    /// ...and a release the hand slid off the button first is the cancellation
+    /// every desktop convention gives a command button: it happened, and it was
+    /// not a click.
+    #[test]
+    fn a_release_off_the_button_is_a_release_and_not_a_click() {
+        let m = Metrics::default();
+        let mut b = from_props(&props(r#"{"label":"go"}"#));
+        on_press(&mut b, &m);
+        let (values, hand) = parts(b.release((500.0, 500.0), false, &input(&m)));
+        assert_eq!(hand, vec!["release"]);
+        assert_eq!(
+            values,
+            vec![vec![OscType::Int(0)]],
+            "a gate still closes: an abandoned press must not leave a note sounding"
+        );
+        assert!(!b.held);
+    }
+
+    /// The mode is the server's half and the click is the interface's, so
+    /// neither reads the other: a bang reports the same three things.
+    #[test]
+    fn the_mode_does_not_change_what_the_hand_did() {
+        let m = Metrics::default();
+        let mut b = from_props(&props(r#"{"mode":"press"}"#));
+        let (_, hand) = on_press(&mut b, &m);
+        assert_eq!(hand, vec!["press"]);
+        let (_, hand) = parts(b.release((10.0, 10.0), true, &input(&m)));
+        assert_eq!(hand, vec!["release", "click"]);
     }
 }

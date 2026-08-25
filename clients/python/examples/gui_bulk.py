@@ -172,7 +172,7 @@ edits: list[str] = []
 _mode = "sample"
 
 
-def toggle_mode(*_) -> None:
+def toggle_mode() -> None:
     """Swap the lane's drag between grabbing one sample and drawing a run."""
     global _mode
     _mode = "draw" if _mode == "sample" else "sample"
@@ -216,7 +216,10 @@ def on_edit(tag: str, *values) -> None:
 
 
 win["edit"].on_event(on_edit)
-win["mode"].on_event(toggle_mode)
+# On its **click**, not on every event a button emits: `on_event` fires for the
+# press *and* the release, so this flipped twice per press and came back to
+# where it started.
+win["mode"].on_click(toggle_mode)
 
 # %% [markdown]
 # ## Wait, then clean up

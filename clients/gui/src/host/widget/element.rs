@@ -928,6 +928,9 @@ pub struct KeyInput<'a> {
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Events {
     msgs: Vec<Vec<OscType>>,
+    /// **Interface events**: what the *hand* did, as against what the widget is
+    /// worth. See [`Events::and_interface`].
+    interface: Vec<Vec<OscType>>,
     voices: Vec<Voice>,
     select: Option<SelectRequest>,
 }
@@ -1037,22 +1040,51 @@ impl Events {
         self
     }
 
+    /// **What the hand did**, reported beside — or instead of — what the widget
+    /// is worth: `"press"`, `"release"`, `"click"`.
+    ///
+    /// A widget's value is a *control signal*, and `/gui_bind` exists to send it
+    /// somewhere that is not the script — the audio server, another widget — so
+    /// a bound widget's value never reaches the script at all. An interface
+    /// event is the other thing entirely: a command button firing, which the
+    /// script must hear whether or not the same widget is also driving a synth.
+    ///
+    /// So these take a road of their own. They are **never** forwarded by a
+    /// binding, never scaled, never turned into a `/node_set`: they go to the
+    /// script as a tagged `/gui_event` and nowhere else, bound or not. The two
+    /// vocabularies are the two halves of what a button is, and keeping them
+    /// apart is what lets one element be a synth's gate and a panel's command
+    /// at the same time.
+    pub fn and_interface(mut self, args: Vec<OscType>) -> Self {
+        self.interface.push(args);
+        self
+    }
+
     /// Everything of `other`, after this — a gesture that both ends one thing
     /// and starts another (a glissando: a note off, then a note on).
     pub fn chain(mut self, other: Events) -> Self {
         self.msgs.extend(other.msgs);
+        self.interface.extend(other.interface);
         self.voices.extend(other.voices);
         self.select = other.select.or(self.select);
         self
     }
 
     pub fn is_empty(&self) -> bool {
-        self.msgs.is_empty() && self.voices.is_empty() && self.select.is_none()
+        self.msgs.is_empty()
+            && self.interface.is_empty()
+            && self.voices.is_empty()
+            && self.select.is_none()
     }
 
     /// The messages, for the gesture machine that delivers them.
     pub(crate) fn into_messages(self) -> Vec<Vec<OscType>> {
         self.msgs
+    }
+
+    /// The interface events, which the machine emits straight to the script.
+    pub(crate) fn take_interface(&mut self) -> Vec<Vec<OscType>> {
+        std::mem::take(&mut self.interface)
     }
 
     /// The voices asked for, for the machine that performs them.
@@ -1883,7 +1915,16 @@ pub trait Element: fmt::Debug {
     /// The button came up. What the drag *delivers* — the edit-back an owner
     /// applies, a momentary control's zero — as against what it showed along
     /// the way.
-    fn release(&mut self, _at: (f64, f64), _input: &Input) -> Events {
+    ///
+    /// `inside` is whether the pointer was still **on this element** when it
+    /// came up, by the same declared shape and slop the press was filtered
+    /// through ([`hit_area`](Element::hit_area)). It is the machine's answer
+    /// rather than the element's because it is the machine that owns the hit
+    /// test, and it is the whole of what separates a **click** from a press the
+    /// hand slid off and abandoned — the cancellation every desktop convention
+    /// gives a command button. An element with nothing composed over its
+    /// release ignores it, which is most of them.
+    fn release(&mut self, _at: (f64, f64), _inside: bool, _input: &Input) -> Events {
         Events::none()
     }
 

@@ -13,7 +13,7 @@ use super::super::layers::Layer;
 use super::super::layout::Rect;
 use super::super::widget::WidgetKind;
 use super::super::widget::element::{Claim, Element, Events, Input, Mods, TimeSpace};
-use super::effects::{deliver, deliver_args};
+use super::effects::{deliver, deliver_args, emit};
 use super::{GestureCtx, GestureEffect};
 
 /// **Where an element is**, for the machine: which widget — or which *body* of
@@ -197,6 +197,20 @@ pub(super) fn press(host: &mut Host, ctx: &GestureCtx, at: At, cx: f64, cy: f64)
     })
 }
 
+/// **Whether the pointer is on the element `at` addresses**, by the declared
+/// shape and the slop [`press`] filters with.
+///
+/// The same question the press asks, asked again at the release: it is what
+/// separates a **click** from a press the hand slid off and abandoned. It lives
+/// here, beside `press`, because there is one hit-test rule and an element that
+/// re-implemented it would be a second answer to a question the machine owns.
+pub(super) fn inside(host: &mut Host, ctx: &GestureCtx, at: At, cx: f64, cy: f64) -> bool {
+    with(host, ctx, at, |el, input| {
+        el.hit_area(input).hit(cx, cy, input.metrics.hit_slop)
+    })
+    .unwrap_or(false)
+}
+
 /// Sends what an element reported, and repaints when it reported anything.
 ///
 /// The rule per message is the one the host already had, stated once here: a
@@ -209,8 +223,18 @@ pub(super) fn report(
     out: &mut Vec<GestureEffect>,
     ctx: &GestureCtx,
     id: i32,
-    events: Events,
+    mut events: Events,
 ) {
+    // **The interface events first, and on a road of their own.** What the hand
+    // did is not what the widget is worth, so it never takes the value road: a
+    // binding does not forward it, does not scale it and does not swallow it,
+    // and a bound command button still reaches the script that owns the command
+    // (`Events::and_interface`).
+    let interface = events.take_interface();
+    let reported = !interface.is_empty();
+    for args in interface {
+        emit(host, out, ctx.def_id, id, args);
+    }
     // The voices first: a note that both sounds and reports must sound in the
     // order the element asked, and the host is the only one with a leg to the
     // server.
@@ -230,7 +254,7 @@ pub(super) fn report(
     let voiced = !events.voices().is_empty() || selected.is_some();
     let messages = events.into_messages();
     if messages.is_empty() {
-        if voiced {
+        if voiced || reported {
             out.push(GestureEffect::Redraw(ctx.def_id));
         }
         return;

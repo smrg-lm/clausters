@@ -203,7 +203,7 @@ impl Element for Score {
         Events::none()
     }
 
-    fn release(&mut self, _at: (f64, f64), _input: &Input) -> Events {
+    fn release(&mut self, _at: (f64, f64), _inside: bool, _input: &Input) -> Events {
         self.origin_y = None;
         let Some(drag) = self.data.drag.as_ref() else {
             return Events::none();
@@ -346,7 +346,7 @@ mod tests {
         let (x, y) = at(&score, input.rect, 150.0, 250.0);
         score.drag((x, y - 100.0), &input);
         assert!(score.data.drag.is_none());
-        assert_eq!(score.release((x, y - 100.0), &input), Events::none());
+        assert_eq!(score.release((x, y - 100.0), true, &input), Events::none());
     }
 
     /// An editable page displaces the element as the drag crosses whole
@@ -372,7 +372,7 @@ mod tests {
         // purpose — with the note engraved on the line they would coincide and
         // a relative payload would pass this test.
         assert_eq!(score.data.staff_position("n1"), Some(-2));
-        let events = score.release((press.0, press.1 - 2.0 * step_px), &input);
+        let events = score.release((press.0, press.1 - 2.0 * step_px), true, &input);
         assert_eq!(
             events,
             Events::message(vec![
@@ -396,7 +396,7 @@ mod tests {
         let mut score = page(true);
         let press = at(&score, input.rect, 150.0, 250.0);
         score.press(press, &input);
-        assert_eq!(score.release(press, &input), Events::none());
+        assert_eq!(score.release(press, true, &input), Events::none());
         assert!(score.data.drag.is_none());
     }
 

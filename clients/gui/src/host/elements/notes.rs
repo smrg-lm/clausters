@@ -733,7 +733,7 @@ impl Element for Notes {
         }
     }
 
-    fn release(&mut self, _at: (f64, f64), _input: &Input) -> Events {
+    fn release(&mut self, _at: (f64, f64), _inside: bool, _input: &Input) -> Events {
         // What the drag amounts to, once — see `drag`. A marquee edited
         // nothing: it swept a selection, which is screen state and was reported
         // as it went.
@@ -1382,7 +1382,7 @@ mod tests {
 
         // The release is the edit, and it carries the whole list.
         let msgs = r
-            .release(to, &input(&m, rect(), axis(1000.0)))
+            .release(to, true, &input(&m, rect(), axis(1000.0)))
             .into_messages();
         assert_eq!(msgs[0][0], OscType::String("notes".into()));
         assert_eq!(msgs[0].len(), 1 + 5, "the tag plus a quintuple per note");

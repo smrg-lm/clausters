@@ -96,6 +96,13 @@ const wireProp = (name: string): string =>
  * A connection to a running GUI host — the object that sends the GuiDefs and
  * reads the widgets back.
  */
+/**
+ * The interface events a widget reports — what the **hand** did, as against
+ * what the widget is worth. They arrive as a one-string payload and are the
+ * only such payload, which is what tells them from a value.
+ */
+export const INTERFACE_EVENTS: readonly string[] = ["press", "release", "click"];
+
 export class GuiHost {
     readonly connection: Connection;
     /**
@@ -129,6 +136,13 @@ export class GuiHost {
      */
     lastVersion = 0;
     private readonly onEventHandlers = new Map<number, (...args: EventArgs) => void>();
+    /**
+     * Per widget, the interface-event callbacks by tag (`onPress`, `onRelease`,
+     * `onClick`). Kept apart from {@link onEventHandlers} because they are a
+     * different vocabulary, not a filter over the same one, and because both
+     * may be registered on one widget at once.
+     */
+    private readonly onInterfaceHandlers = new Map<number, Map<string, () => void>>();
     private readonly onClosedHandlers = new Map<number, () => void>();
     private readonly handlers = new Set<(msg: OscMessage) => void>();
     private readonly pending = new Set<Pending>();
@@ -291,13 +305,21 @@ export class GuiHost {
     define(id: number, tree: GuiNode, blobs: readonly Uint8Array[] = []): WindowHandle {
         const previous = this.handles.get(id);
         const inherited = new Map<string, (...args: EventArgs) => void>();
+        const inheritedHand = new Map<string, Map<string, () => void>>();
         const rootHandler = this.onEventHandlers.get(id);
+        const rootHand = this.onInterfaceHandlers.get(id);
         if (this.children.has(id)) {
             if (previous !== undefined) {
                 for (const name of previous.widgetNames()) {
                     const wid = previous.widget(name).id;
                     const func = this.onEventHandlers.get(wid);
                     if (func !== undefined) inherited.set(name, func);
+                    // The interface handlers travel by name for the same
+                    // reason: `onClick` is a callback of the widget the name
+                    // points at, and a redrawn window that dropped them would
+                    // look like a button that stopped working.
+                    const hand = this.onInterfaceHandlers.get(wid);
+                    if (hand !== undefined) inheritedHand.set(name, hand);
                 }
             }
             this.recycleSubtree(id, true);
@@ -310,9 +332,14 @@ export class GuiHost {
         // old id would be orphaned -- or fire for whatever widget inherited
         // that number. A callback belongs to the widget the *name* points at.
         if (rootHandler !== undefined) this.onEventHandlers.set(id, rootHandler);
+        if (rootHand !== undefined) this.onInterfaceHandlers.set(id, rootHand);
         for (const [name, func] of inherited) {
             const wid = names.get(name);
             if (wid !== undefined) this.onEventHandlers.set(wid, func);
+        }
+        for (const [name, hand] of inheritedHand) {
+            const wid = names.get(name);
+            if (wid !== undefined) this.onInterfaceHandlers.set(wid, hand);
         }
         this.send("/gui_def", ["i", id], toJson(document), ...blobs, ...extra);
         if (previous !== undefined) {
@@ -447,6 +474,7 @@ export class GuiHost {
         this.sources.delete(id);
         this.children.delete(id);
         this.onEventHandlers.delete(id);
+        this.onInterfaceHandlers.delete(id);
         if (keepRoot) return;
         this.onClosedHandlers.delete(id);
         this.handles.delete(id);
@@ -656,6 +684,21 @@ export class GuiHost {
         else this.onEventHandlers.set(id, handler);
     }
 
+    /**
+     * Registers (or, with `null`, clears) an interface-event callback
+     * (`WidgetHandle.onPress` / `onRelease` / `onClick`) for a widget id.
+     */
+    setInterfaceHandler(id: number, tag: string, handler: (() => void) | null): void {
+        const table = this.onInterfaceHandlers.get(id);
+        if (handler === null) {
+            table?.delete(tag);
+            if (table !== undefined && table.size === 0) this.onInterfaceHandlers.delete(id);
+            return;
+        }
+        if (table === undefined) this.onInterfaceHandlers.set(id, new Map([[tag, handler]]));
+        else table.set(tag, handler);
+    }
+
     /** Registers (or clears) the `WindowHandle.onClosed` callback for a window. */
     setClosedHandler(id: number, handler: (() => void) | null): void {
         if (handler === null) this.onClosedHandlers.delete(id);
@@ -732,8 +775,17 @@ export class GuiHost {
             // `ack` is what answers them.
             this.lastSeq = msg.args.length > 1 ? Number(msg.args[1]) : 0;
             this.lastVersion = msg.args.length > 2 ? Number(msg.args[2]) : 0;
-            const handler = this.onEventHandlers.get(Number(msg.args[0]));
-            if (handler) handler(...(msg.args.slice(3) as EventArgs));
+            const wid = Number(msg.args[0]);
+            const payload = msg.args.slice(3);
+            // The interface events first, and they are *also* handed to
+            // `onEvent`: that verb is the raw stream, so a script that reads
+            // everything keeps reading everything.
+            if (payload.length === 1 && typeof payload[0] === "string"
+                && INTERFACE_EVENTS.includes(payload[0])) {
+                this.onInterfaceHandlers.get(wid)?.get(payload[0])?.();
+            }
+            const handler = this.onEventHandlers.get(wid);
+            if (handler) handler(...(payload as EventArgs));
         } else if (msg.addr === "/gui_closed" && msg.args.length > 0) {
             const id = Number(msg.args[0]);
             this.opened.delete(id);

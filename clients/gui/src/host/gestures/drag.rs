@@ -368,7 +368,8 @@ impl Gestures {
         out
     }
 
-    /// Release: a held button emits 0; a knob/number drag releases its pointer
+    /// Release: a held button emits 0 and reports its release (a **click** when
+    /// the pointer was still on it); a knob/number drag releases its pointer
     /// grab; a pulled wire lands (rewire over a bus, unwire elsewhere); any
     /// drag ends.
     pub fn release(
@@ -486,8 +487,15 @@ impl Gestures {
             return out;
         }
         if let Some(Drag::Element { at, .. }) = self.drag.take() {
+            // **Was the pointer still on it?** The machine's own hit test, the
+            // one the press was filtered through, asked again where the button
+            // came up: it is what separates a click from a press the hand slid
+            // off and abandoned, and no element should answer it twice.
+            let inside = element::inside(host, ctx, at, cx, cy);
             // What the drag *delivers*, as against what it showed along the way.
-            let events = element::with(host, ctx, at, |el, input| el.release((cx, cy), input));
+            let events = element::with(host, ctx, at, |el, input| {
+                el.release((cx, cy), inside, input)
+            });
             if let Some(events) = events {
                 element::report(host, &mut out, ctx, at.id, events);
             }

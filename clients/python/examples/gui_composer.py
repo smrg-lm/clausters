@@ -456,10 +456,10 @@ print(f"opened window {win} — drag a clip to move it, an edge to resize it")
 session.start()                       # the clock runs the routines
 
 # `play` is where the destination and the clock come from — rendering is *playing*,
-# so nothing is rendered until the button is pressed (a window that sounds before
-# you press play is a window that plays itself). Each button acts on its press
-# (1), ignoring the release, and is wired by name onto the editor's transport.
-press = lambda fn: (lambda value: fn() if value == 1 else None)  # noqa: E731
+# so nothing is rendered until the button is clicked (a window that sounds before
+# you press play is a window that plays itself). Each button acts on its
+# **click** — the press completed on the button, so sliding off before letting go
+# cancels it — and is wired by name onto the editor's transport.
 
 
 def play():
@@ -477,19 +477,19 @@ def play():
     editor.play(server, session.clock)
 
 
-win["play"].on_event(press(play))
-win["pause"].on_event(press(editor.pause))
-win["stop"].on_event(press(editor.stop))
-win["rewind"].on_event(press(lambda: editor.locate(0.0)))
+win["play"].on_click(play)
+win["pause"].on_click(editor.pause)
+win["stop"].on_click(editor.stop)
+win["rewind"].on_click(lambda: editor.locate(0.0))
 # Undo and redo are the same shape as the transport buttons and are **not** the
 # editor's own history: the log lives in the shared crate, beside the document
 # it inverts, so a script editing the arrangement or a second view on the same
 # composition steps back through the same one. The clip springs back to where
 # it was and the window is told so without being redefined.
-win["undo"].on_event(press(editor.undo))
-win["redo"].on_event(press(editor.redo))
-win["save"].on_event(press(save))
-win["open"].on_event(press(reopen))
+win["undo"].on_click(editor.undo)
+win["redo"].on_click(editor.redo)
+win["save"].on_click(save)
+win["open"].on_click(reopen)
 # The keyboard reaches the same history without either button: the host sends
 # Ctrl+Z as an ``"undo"`` addressed to the *window* -- undo is aimed at no
 # place under the cursor -- and `Editor.apply` answers it in the loop below.

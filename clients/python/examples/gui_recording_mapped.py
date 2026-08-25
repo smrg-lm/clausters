@@ -178,11 +178,8 @@ def say(text: str) -> None:
     print(text)
 
 
-def record(value: float = 1.0, *_) -> None:
-    """Four takes at once, heard and recorded. A button emits on press *and*
-    on release, so the release is ignored rather than starting a second pass."""
-    if not value:
-        return
+def record() -> None:
+    """Four takes at once, heard and recorded."""
     for take in takes:
         octaves = random.uniform(-2.0, 2.0)
         while abs(octaves) < 0.25:      # nothing that just sits on the start
@@ -193,10 +190,8 @@ def record(value: float = 1.0, *_) -> None:
     say("recording: the traces grow with the sound, and nothing is sent")
 
 
-def peer_edit(value: float = 1.0, *_) -> None:
+def peer_edit() -> None:
     """Silence the middle third of the first take, and say where."""
-    if not value:
-        return
     start = takes[0].frames // 3
     frames = takes[0].frames // 3
     takes[0].silence(start, frames)
@@ -205,8 +200,10 @@ def peer_edit(value: float = 1.0, *_) -> None:
         "the lane re-summarizes that span and nothing else")
 
 
-win["record"].on_event(record)
-win["edit"].on_event(peer_edit)
+# Each button acts on its **click**: the press completed on the button, so a
+# press slid off before letting go cancels rather than recording a second pass.
+win["record"].on_click(record)
+win["edit"].on_click(peer_edit)
 print("press the buttons in the window; zoom with the wheel over any lane or ruler")
 
 # %% [markdown]

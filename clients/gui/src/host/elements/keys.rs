@@ -307,7 +307,7 @@ impl Element for Keys {
         }
     }
 
-    fn release(&mut self, _at: (f64, f64), _input: &Input) -> Events {
+    fn release(&mut self, _at: (f64, f64), _inside: bool, _input: &Input) -> Events {
         match self.drag.take() {
             Some(Drag::Key { pitch, .. }) => self.note_off(pitch),
             _ => Events::none(),
@@ -452,7 +452,7 @@ mod tests {
         );
         assert_eq!(take.events.voices(), [Voice::on(62, 100)]);
 
-        let events = k.release(at, &input(rect, &m));
+        let events = k.release(at, true, &input(rect, &m));
         assert!(k.pressed.is_empty());
         assert_eq!(events.clone().into_messages(), vec![note_args(62, 0, 0, 2)]);
         assert_eq!(events.voices(), [Voice::off(62)]);

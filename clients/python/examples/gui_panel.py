@@ -8,6 +8,12 @@ live with ``set`` and *listens* for the events your interactions emit (turn a
 knob, click the button) and the close the host sends when you close a window.
 No audio server is involved, so this boots only the GUI host.
 
+The reset button is wired **twice**, which is the point of the two vocabularies:
+``on_event`` is the raw stream and prints its value on the press and on the
+release plus the three interface events beside them, while ``on_click`` is the
+completed press -- press the button, slide the pointer off it and let go, and
+the click never comes.
+
 The two windows are the point of the second half: a view is a definition, so
 opening it again gives a second instance with widget ids of its own. The
 script holds one handle per window and addresses every control by name through
@@ -105,6 +111,12 @@ for tag, win in (("1", a), ("2", b)):
     for name in CONTROLS:
         win[name].on_event(
             lambda *value, tag=tag, name=name: print(f"{tag} {name}: {value}"))
+    # `on_event` above is the **raw** stream, so the reset button prints its
+    # value (`1` on the press, `0` on the release) *and* the three interface
+    # events beside it: `press`, `release`, and `click` when the release landed
+    # on the button. This is the verb a command would actually be wired to --
+    # press the button, slide off it and let go, and the click never comes.
+    win["reset"].on_click(lambda tag=tag: print(f"{tag} reset: clicked"))
 
 _open = {int(a), int(b)}
 

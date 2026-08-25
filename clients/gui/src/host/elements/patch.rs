@@ -275,7 +275,7 @@ impl Element for Patch {
         Events::none()
     }
 
-    fn release(&mut self, at: (f64, f64), input: &Input) -> Events {
+    fn release(&mut self, at: (f64, f64), _inside: bool, input: &Input) -> Events {
         let (rect, scale) = (input.rect, input.scale);
         match self.drag.take() {
             // Released over a compatible port: the cord is added (deduped) and
@@ -504,7 +504,11 @@ mod tests {
         );
         assert!(p.patch.cords.is_empty());
 
-        let ev = p.release((inl.0 as f64, inl.1 as f64), &input(&m, r, Mods::default()));
+        let ev = p.release(
+            (inl.0 as f64, inl.1 as f64),
+            true,
+            &input(&m, r, Mods::default()),
+        );
         assert_eq!(p.patch.cords.len(), 1);
         let msgs = ev.into_messages();
         assert_eq!(
@@ -522,7 +526,7 @@ mod tests {
         let mut p = graph();
         p.press((out.0 as f64, out.1 as f64), &input(&m, r, Mods::default()));
         assert!(
-            p.release((380.0, 290.0), &input(&m, r, Mods::default()))
+            p.release((380.0, 290.0), true, &input(&m, r, Mods::default()))
                 .is_empty()
         );
         assert!(p.patch.cords.is_empty());
@@ -548,7 +552,7 @@ mod tests {
         assert_eq!(p.patch.boxes[1].y, Some(130.0), "the whole set moves");
 
         let msgs = p
-            .release(moved, &input(&m, r, Mods::default()))
+            .release(moved, true, &input(&m, r, Mods::default()))
             .into_messages();
         assert_eq!(msgs.len(), 2);
         assert_eq!(msgs[0][0], OscType::String("move".into()));
@@ -559,7 +563,7 @@ mod tests {
         p.press(centre(&p, 1), &input(&m, r, Mods::default()));
         assert_eq!(p.selected, vec![1], "an unselected box takes the set");
         assert!(
-            p.release(centre(&p, 1), &input(&m, r, Mods::default()))
+            p.release(centre(&p, 1), true, &input(&m, r, Mods::default()))
                 .is_empty()
         );
     }
@@ -582,7 +586,7 @@ mod tests {
         p.drag((0.0, 0.0), &input(&m, r, Mods::default()));
         assert_eq!(p.selected, vec![0, 1], "the rectangle spans both boxes");
         assert!(
-            p.release((0.0, 0.0), &input(&m, r, Mods::default()))
+            p.release((0.0, 0.0), true, &input(&m, r, Mods::default()))
                 .is_empty()
         );
         assert!(p.drag.is_none());

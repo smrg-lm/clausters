@@ -378,7 +378,7 @@ impl Element for Curve {
         Events::none()
     }
 
-    fn release(&mut self, _at: (f64, f64), _input: &Input) -> Events {
+    fn release(&mut self, _at: (f64, f64), _inside: bool, _input: &Input) -> Events {
         // What the drag amounts to, once — see `drag`.
         let held = self.grab.take().is_some();
         if held {
@@ -514,7 +514,7 @@ mod tests {
 
         // The release is the edit, and it carries the whole list.
         let msgs = c
-            .release((0.0, 0.0), &input(&m, rect, None))
+            .release((0.0, 0.0), true, &input(&m, rect, None))
             .into_messages();
         assert_eq!(msgs.len(), 1);
         assert_eq!(msgs[0][0], OscType::String("points".into()));

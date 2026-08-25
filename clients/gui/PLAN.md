@@ -3388,25 +3388,41 @@ finished work, where a pending item reads as done.
   picture showed the other end. Reading both directions out of one primitive
   is what fixes it, and `Range::axis` — which had no other caller — is gone.
 
-- ⬜ **The gesture machine knows no click.** *(found 2026-08-24, answering
-  "what kind of thing is a button?")* Press and release are the primitives the
-  machine reports, and every composition over them is absent: a **click** (a
-  press and a release that landed inside the widget — cancellable by sliding off
-  before letting go, which is every desktop convention for a command button), a
-  **double click**, a **long press**. Nothing under `host/gestures/` mentions
-  any of them, so the absence is a gap rather than a placement.
+- ✅ **The gesture machine knows no click.** *(found 2026-08-24, answering
+  "what kind of thing is a button?"; the click closed the same day, the other
+  two are named below)*. Press and release were the only primitives the machine
+  reported, and every composition over them was absent: a **click** (a press and
+  a release that landed inside the widget — cancellable by sliding off before
+  letting go, which is every desktop convention for a command button), a
+  **double click**, a **long press**. Nothing under `host/gestures/` mentioned
+  any of them.
 
-  The button's `mode` deliberately did **not** grow them: it says which
-  primitive reaches the *server*, and these are interface gestures, composed
-  from both primitives and belonging to whoever composes gestures. The one that
-  is actually wanted today is the click, because a command button that fires at
-  the down-stroke gives the hand no way to change its mind — and thirty-three of
-  the repository's thirty-three buttons are command buttons.
+  **The click landed, and it landed in the machine.** `Element::release` grew an
+  `inside` argument, answered by `gestures::element::inside` — the same declared
+  shape and hit slop `press` is filtered through, asked a second time where the
+  button came up, and written beside `press` for exactly that reason. An element
+  that re-implemented "landed inside" would be a second answer to a question the
+  machine owns; the ten implementors that have nothing composed over their
+  release ignore the argument.
 
-  What it costs: the machine holds a press already (a `Claim::Take` reaches
-  `release`), so a click is that plus the hit test at the release, and a double
-  click is a press-time window the machine would have to keep. What it needs
-  deciding is what an element *sees* — a second callback beside `press`/`release`,
-  or a composed event the machine reports on its own — and the client half of it
-  (`on_press`/`on_release`, and a click over them) is written in
-  `clients/python/PLAN.md`, Found by use.
+  What an element *sees* was the open question, and the answer is: the fact, not
+  a composed event. The machine says whether the pointer was still there and the
+  element says what that means, which is what keeps a click from being sprayed
+  by every knob whose drag happened to end inside its groove. `button` reports
+  it as an interface event (`Events::and_interface`), on a road no binding
+  touches — the client half is `clients/python/PLAN.md`, Found by use.
+
+  The button's `mode` deliberately did **not** grow a click: it says which
+  primitive reaches the *server*, and a click is an interface gesture composed
+  from both. That separation is what let the two halves ship a day apart without
+  either one reaching into the other.
+
+- ⬜ **The double click and the long press, and whichever gestures a pass over
+  the usual ones turns up** *(named 2026-08-24, when the click closed; the user
+  asked for the review rather than for the two)*. Neither exists, and unlike the
+  click neither is a hit test: a double click is a press-time **window** the
+  machine would have to keep, and a long press a **timer** it would have to run,
+  so both grow state the machine does not have today and a threshold somebody
+  has to choose. Nothing is waiting on them — no widget wants one — which is why
+  this is a review of what a GUI's gesture vocabulary should be rather than two
+  items to implement. Worth doing before a widget invents one for itself.

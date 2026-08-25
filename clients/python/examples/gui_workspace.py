@@ -150,16 +150,15 @@ win.on_closed(lambda: closed.__setitem__(0, True))
 # unit, which on a 2x screen is half the size the plane opened at.
 
 # %%
-def reset(value):
-    if value == 1:
-        win["plane"].set(view_x=0.0, view_y=0.0, view_zoom=0)
-        print("view reset to the origin, zoom 1")
+def reset():
+    win["plane"].set(view_x=0.0, view_y=0.0, view_zoom=0)
+    print("view reset to the origin, zoom 1")
 
 
 win["plane"].on_event(on_view("plane"))
 win["vlist"].on_event(on_view("vlist"))
 win["hstrip"].on_event(on_view("hstrip"))
-win["reset"].on_event(reset)
+win["reset"].on_click(reset)
 
 
 # %%

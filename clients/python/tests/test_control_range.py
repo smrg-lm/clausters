@@ -17,7 +17,7 @@ import pytest
 
 from clausters.defs import FaustDef, GraphDef, SynthDef, control, out, sine
 from clausters.defs.signals import checkbox, hslider
-from clausters.gui import button, knob, number, slider, toggle
+from clausters.gui import button, knob, number, slider, toggle, view
 
 
 def _voice():
@@ -189,6 +189,76 @@ class _Recorder:
 
     def send_msg(self, target, *args):
         self.sent.append(args)
+
+
+# ---- what the hand did, as against what the widget is worth ----
+
+def test_the_three_interface_verbs_route_by_tag():
+    """`press`, `release` and `click` are the hand's three events, and each
+    reaches its own verb."""
+    host = _bound_host(57991)
+    win = view(button(label="go", name="go")).open(host=host)
+    seen = []
+    win["go"].on_press(lambda: seen.append("press"))
+    win["go"].on_release(lambda: seen.append("release"))
+    win["go"].on_click(lambda: seen.append("click"))
+    wid = win._names["go"]
+    for tag in ("press", "release", "click"):
+        host.dispatch("/gui_event", [wid, 1, 0, tag])
+    assert seen == ["press", "release", "click"]
+
+
+def test_a_press_the_hand_slid_off_never_reaches_on_click():
+    """The cancellation: the host reports the release and not the click, so the
+    command simply does not run."""
+    host = _bound_host(57992)
+    win = view(button(label="go", name="go")).open(host=host)
+    ran = []
+    win["go"].on_click(lambda: ran.append("clicked"))
+    win["go"].on_release(lambda: ran.append("released"))
+    wid = win._names["go"]
+    host.dispatch("/gui_event", [wid, 1, 0, "press"])
+    host.dispatch("/gui_event", [wid, 2, 0, "release"])
+    assert ran == ["released"], "the press was abandoned, so nothing was commanded"
+
+
+def test_on_event_is_the_raw_stream_and_still_sees_everything():
+    """The two vocabularies are additive: a script may read the value, the
+    hand's events, or both on one widget."""
+    host = _bound_host(57993)
+    win = view(button(label="go", name="go")).open(host=host)
+    raw, clicks = [], []
+    win["go"].on_event(lambda *payload: raw.append(payload))
+    win["go"].on_click(lambda: clicks.append(1))
+    wid = win._names["go"]
+    host.dispatch("/gui_event", [wid, 1, 0, 1])          # the value
+    host.dispatch("/gui_event", [wid, 2, 0, "click"])    # the command
+    assert raw == [(1,), ("click",)]
+    assert clicks == [1]
+
+
+def test_a_redraw_keeps_the_interface_handlers():
+    """A callback belongs to the widget the *name* points at, so a redrawn
+    window is not a button that stopped working."""
+    host = _bound_host(57994)
+    win = view(button(label="go", name="go")).open(host=host)
+    ran = []
+    win["go"].on_click(lambda: ran.append(1))
+    before = win._names["go"]
+    host.define(int(win), view(button(label="go again", name="go")))
+    assert win._names["go"] != before, "a redraw takes fresh ids, which is the point"
+    host.dispatch("/gui_event", [win._names["go"], 1, 0, "click"])
+    assert ran == [1]
+
+
+def test_the_three_verbs_clear_with_none():
+    host = _bound_host(57995)
+    win = view(button(label="go", name="go")).open(host=host)
+    ran = []
+    win["go"].on_click(lambda: ran.append(1))
+    win["go"].on_click(None)
+    host.dispatch("/gui_event", [win._names["go"], 1, 0, "click"])
+    assert ran == []
 
 
 def test_the_whole_surface_binds_in_one_verb():

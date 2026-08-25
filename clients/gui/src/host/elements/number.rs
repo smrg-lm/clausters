@@ -87,7 +87,7 @@ impl Element for Number {
         self.drag.drag(&mut self.range, at)
     }
 
-    fn release(&mut self, _at: (f64, f64), _input: &Input) -> Events {
+    fn release(&mut self, _at: (f64, f64), _inside: bool, _input: &Input) -> Events {
         self.drag.release();
         Events::none()
     }

@@ -663,6 +663,84 @@ fn button_press_emits_one_and_release_emits_zero() {
     assert!(!g.dragging());
 }
 
+/// **The interface half of a press**, which no binding touches: the hand's
+/// three events go to the script beside the value, and a click is the release
+/// that landed on the button.
+#[test]
+fn a_button_reports_what_the_hand_did_beside_what_it_is_worth() {
+    let mut host = host_from(r#"{"type":"window","children":[{"id":21,"type":"button"}]}"#);
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 200, 100);
+    assert_eq!(tags(&g.press(&mut host, &ctx, 100.0, 16.0), 21), ["press"]);
+    assert_eq!(
+        tags(&g.release(&mut host, &ctx, 100.0, 16.0), 21),
+        ["release", "click"]
+    );
+}
+
+/// The cancellation a command button has and a piano key does not: the hand
+/// slid off before letting go, so the release happened and the click did not.
+#[test]
+fn a_press_the_hand_slid_off_is_no_click() {
+    let mut host = host_from(r#"{"type":"window","children":[{"id":22,"type":"button"}]}"#);
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 200, 100);
+    g.press(&mut host, &ctx, 100.0, 16.0);
+    g.drag_to(&mut host, &ctx, 100.0, 90.0);
+    let effects = g.release(&mut host, &ctx, 100.0, 90.0);
+    assert_eq!(tags(&effects, 22), ["release"]);
+    // The gate still closed. An abandoned press must not leave a note sounding:
+    // the value is the server's half and knows nothing about the hand's regret.
+    assert!(effects.iter().any(|e| matches!(
+        e,
+        GestureEffect::Emit { widget_id: 22, args, .. } if args == &[OscType::Int(0)]
+    )));
+}
+
+/// **A binding swallows the value and never the command.** A bound button
+/// drives the audio server with no script in the path — that is what
+/// `/gui_bind` is for — and the script still hears the click, because a command
+/// is not a value and has nowhere else to go.
+#[test]
+fn a_binding_swallows_the_value_and_never_the_interface_events() {
+    let mut host = host_from(
+        r#"{"type":"window","children":[
+             {"id":23,"type":"button","bind":["server","/node_set",1000,"gate"]}]}"#,
+    );
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 200, 100);
+    let effects = g.press(&mut host, &ctx, 100.0, 16.0);
+    assert!(
+        !effects.iter().any(|e| matches!(
+            e,
+            GestureEffect::Emit { widget_id: 23, args, .. } if args == &[OscType::Int(1)]
+        )),
+        "the value went to the server, not to the script"
+    );
+    assert_eq!(tags(&effects, 23), ["press"]);
+    assert_eq!(
+        tags(&g.release(&mut host, &ctx, 100.0, 16.0), 23),
+        ["release", "click"]
+    );
+}
+
+/// The tags a widget reported, in order — an interface event is one string and
+/// nothing else, which is what tells it from a value here.
+fn tags(effects: &[GestureEffect], widget: i32) -> Vec<String> {
+    effects
+        .iter()
+        .filter_map(|e| match e {
+            GestureEffect::Emit {
+                widget_id, args, ..
+            } if *widget_id == widget => match args.as_slice() {
+                [OscType::String(tag)] => Some(tag.clone()),
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect()
+}
+
 #[test]
 fn toggle_press_flips_the_state() {
     let mut host =
@@ -3537,6 +3615,7 @@ impl crate::Element for TestPad {
     fn release(
         &mut self,
         _at: (f64, f64),
+        _inside: bool,
         _input: &crate::host::widget::element::Input,
     ) -> crate::host::widget::element::Events {
         crate::host::widget::element::Events::message(vec![

@@ -134,6 +134,14 @@ than a boolean. Building a `"press"` button over a control that is not a trigger
 throws here too, for the same reason: the press would leave `on` standing
 forever.
 
+**What the hand did** has three verbs of its own, camelCase being the whole
+difference: `onPress`, `onRelease` and `onClick`, where Python writes
+`on_press`/`on_release`/`on_click`. `onClick` is the completed press — the
+pointer came up while still on the button, so sliding off first cancels it —
+and all three reach the script whether or not the widget is bound, because a
+binding forwards a *value* and a command is not one. `onEvent` stays the raw
+stream and sees them too.
+
 **Nothing is pumped.** The page already has an event loop, so the Python
 client's `pump` has no counterpart: a handler fires when the message arrives.
 Building and opening are synchronous; anything that waits for the host to

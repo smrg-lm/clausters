@@ -196,6 +196,41 @@ a release that landed inside, a double click is two of those inside a window.
 Those are gestures, and what a `mode` says is only which primitive reaches the
 server.
 
+### What the hand did, as against what the widget is worth
+
+A button says two things at once, to two audiences. Its **value** is a control
+signal — `on`/`off`, which a binding forwards to the audio server without this
+script ever seeing it. Its **interface events** are what the hand did, and they
+have three verbs of their own:
+
+```python
+win["play"].on_click(start)      # the press was completed on the button
+win["key"].on_press(sound)       # the pointer went down
+win["key"].on_release(silence)   # ...and came up, wherever it came up
+```
+
+`on_click` is what a command button wants: press, slide off the button,
+release, and **nothing happens** — the cancellation every desktop convention
+gives an "Accept", and the one a piano key must not have. `on_press` is the
+other side of that: the note is at the down-stroke, no second thoughts.
+`on_release` fires for an abandoned press too, which is exactly what makes it
+the release and not the click.
+
+They reach the script **whether or not the widget is bound**. A binding forwards
+a widget's *value*, and a command is not a value, so one button can drive a
+synth's gate and run a script's action at once:
+
+```python
+win.bind(synth)                            # the gate goes straight to the server
+win["hold"].on_click(lambda: print("!"))   # and the click still arrives here
+```
+
+`on_event` is the raw stream and sees everything, these three included (they
+arrive as the one-string payload they are), so reading the value and the
+command on one widget is two registrations and no filtering. All four survive a
+redraw: a callback belongs to the widget the *name* points at, not to the id it
+happened to have.
+
 ### Driving it, and listening
 
 Setting a prop is one call, and it is live:

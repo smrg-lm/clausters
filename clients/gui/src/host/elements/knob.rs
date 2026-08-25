@@ -124,7 +124,7 @@ impl Element for Knob {
         self.drag.drag(&mut self.range, at)
     }
 
-    fn release(&mut self, _at: (f64, f64), _input: &Input) -> Events {
+    fn release(&mut self, _at: (f64, f64), _inside: bool, _input: &Input) -> Events {
         self.drag.release();
         Events::none()
     }
@@ -226,7 +226,7 @@ mod tests {
         assert!(k.drag((30.0, 20.0), &input(&m)).is_empty());
         assert_eq!(k.range.value, 0.5);
         k.press((30.0, 40.0), &input(&m));
-        k.release((30.0, 40.0), &input(&m));
+        k.release((30.0, 40.0), true, &input(&m));
         assert!(k.drag((30.0, 20.0), &input(&m)).is_empty());
     }
 }

@@ -90,9 +90,57 @@ export class WidgetHandle {
      * the host pushes them, so there is nothing to pump. The payload is the
      * event's arguments after the id (a control's value, or a view's tag
      * followed by its flat values). `null` clears the handler.
+     *
+     * This is the **raw** stream and sees everything, the interface events of
+     * {@link onPress}/{@link onRelease}/{@link onClick} included — those arrive
+     * here as the one-string payload they are. Registering both is legal and
+     * useful: a button's value is what it drives, its click is what it
+     * commands.
      */
     onEvent(handler: ((...args: EventArgs) => void) | null): this {
         this.host.setEventHandler(this.id, handler);
+        return this;
+    }
+
+    /**
+     * Call `handler()` when the pointer goes **down** on this widget.
+     *
+     * The first of the two primitives, and the one an instrument wants: the
+     * note is at the down-stroke. `null` clears the handler.
+     */
+    onPress(handler: (() => void) | null): this {
+        this.host.setInterfaceHandler(this.id, "press", handler);
+        return this;
+    }
+
+    /**
+     * Call `handler()` when the pointer comes **up** after a press on this
+     * widget — wherever it came up, on the widget or off it.
+     *
+     * The other primitive. It fires for an abandoned press too, which is what
+     * makes it the release rather than the click. `null` clears the handler.
+     */
+    onRelease(handler: (() => void) | null): this {
+        this.host.setInterfaceHandler(this.id, "release", handler);
+        return this;
+    }
+
+    /**
+     * Call `handler()` when a press on this widget is **completed**: the
+     * pointer came up while still on it.
+     *
+     * The composed gesture, and what a command button wants — press, slide off,
+     * release, and nothing happens, which is the cancellation every desktop
+     * convention gives an "Accept" and a piano key must not have. `null` clears
+     * the handler.
+     *
+     * It reaches the script whether or not the widget is **bound**: a binding
+     * forwards a widget's *value* to the audio server, and a command is not a
+     * value. So one button can drive a synth's gate and run a script's action
+     * at once.
+     */
+    onClick(handler: (() => void) | null): this {
+        this.host.setInterfaceHandler(this.id, "click", handler);
         return this;
     }
 }

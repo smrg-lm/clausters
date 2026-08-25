@@ -1374,7 +1374,7 @@ mod tests {
         // The drag maps pixels back through the same axis: dropping the peak on
         // the clip's left edge takes it to t=0, where it is grabbed next time.
         el.drag((cr.x as f64, py), &input);
-        el.release((cr.x as f64, py), &input);
+        el.release((cr.x as f64, py), true, &input);
         assert!(matches!(
             el.press((cr.x as f64, py), &input),
             Claim::Take(_)

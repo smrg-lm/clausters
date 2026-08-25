@@ -237,10 +237,12 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
         // when the window is resized or a phone is turned).
         unfit?.();
         unfit = page.fit(win.id, el("stage"));
-        win.widget("play").onEvent((down) => { if (down) play(); });
-        win.widget("pause").onEvent((down) => { if (down) pause(); });
-        win.widget("stop").onEvent((down) => { if (down) { stop(); log("stop"); } });
-        win.widget("region").onEvent((down) => { if (down) playSelection(); });
+        // Each button acts on its click -- the press completed on the button,
+        // so sliding off before letting go cancels it.
+        win.widget("play").onClick(play);
+        win.widget("pause").onClick(pause);
+        win.widget("stop").onClick(() => { stop(); log("stop"); });
+        win.widget("region").onClick(playSelection);
         // The views' edit-back: dragging on either one reports the same
         // selection, in frames, because they share a `link` group.
         for (const name of ["wave", "stft"]) {

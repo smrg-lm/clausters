@@ -217,8 +217,8 @@ def on_view(tag, *rest):
 
 win["patch"].on_event(on_patch)
 win["workspace"].on_event(on_view)
-win["render"].on_event(lambda value: render() if value == 1 else None)
-win["stop"].on_event(lambda value: stop() if value == 1 else None)
+win["render"].on_click(render)
+win["stop"].on_click(stop)
 win.on_closed(lambda: globals().__setitem__("_closed", True))
 
 

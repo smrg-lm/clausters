@@ -158,8 +158,8 @@ def stop():
 
 
 # Wire the two buttons by name: act on the press (1), ignore the release.
-win["play"].on_event(lambda value: play() if value == 1 else None)
-win["stop"].on_event(lambda value: stop() if value == 1 else None)
+win["play"].on_click(play)
+win["stop"].on_click(stop)
 closed = [False]
 win.on_closed(lambda: (closed.__setitem__(0, True), print("window closed")))
 print("press play -- the cursor follows the sound; close the window to stop")

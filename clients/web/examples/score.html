@@ -181,8 +181,7 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
         }
       };
 
-      const step = (name, act) => (down) => {
-        if (!down) return;
+      const step = (name, act) => () => {
         if (act()) { refresh(); log(`  ${name}`); }
         else log(`  nothing to ${name}`);
       };
@@ -225,18 +224,19 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
         setInterval(() => transport.update(), 100);
 
         win.widget("page").onEvent(onScore);
-        win.widget("play").onEvent((down) => { if (down) transport.play(server); });
-        win.widget("pause").onEvent((down) => { if (down) transport.pause(); });
-        win.widget("stop").onEvent((down) => { if (down) transport.stop(); });
-        win.widget("rewind").onEvent((down) => { if (down) transport.locate(0.0); });
-        win.widget("fromNote").onEvent((down) => {
-          if (!down) return;
+        // Each button acts on its click -- the press completed on the button,
+        // so sliding off before letting go cancels it.
+        win.widget("play").onClick(() => transport.play(server));
+        win.widget("pause").onClick(() => transport.pause());
+        win.widget("stop").onClick(() => transport.stop());
+        win.widget("rewind").onClick(() => transport.locate(0.0));
+        win.widget("fromNote").onClick(() => {
           const note = byId.get(selected);
           if (!note) return log("  no note selected: click one first");
           transport.play(server, { at: note.t / 1000.0 });
         });
-        win.widget("undo").onEvent(step("undo", () => score.undo()));
-        win.widget("redo").onEvent(step("redo", () => score.redo()));
+        win.widget("undo").onClick(step("undo", () => score.undo()));
+        win.widget("redo").onClick(step("redo", () => score.redo()));
         log(`${dl.notes.length} notes engraved — press play, click a note to `
           + "hear it and select it, drag one up or down to transpose");
       }

@@ -121,7 +121,7 @@ def on_points(_tag, *values):
 
 win["env"].on_event(on_points)
 win["curve"].on_event(lambda index: set_curve(CURVES[int(index)]))
-win["play"].on_event(lambda value: play() if value == 1 else None)  # 1 = press
+win["play"].on_click(play)   # the completed press: slide off to cancel
 win.on_closed(lambda: globals().__setitem__("_closed", True))
 
 # %% [markdown]

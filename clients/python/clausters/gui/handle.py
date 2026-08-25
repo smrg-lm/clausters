@@ -84,8 +84,47 @@ class WidgetHandle:
         when the host's inbound messages are drained through `GuiHost.pump`. The
         payload is the event's arguments after the id (a control's value, or a
         view's ``tag`` followed by its flat values). Passing ``None`` clears the
-        handler."""
+        handler.
+
+        This is the **raw** stream and sees everything, the interface events of
+        `on_press`/`on_release`/`on_click` included -- those arrive here as the
+        one-string payload they are. Registering both is legal and useful: a
+        button's value is what it drives, its click is what it commands."""
         self._host._set_event_handler(self.id, func)
+        return self
+
+    def on_press(self, func) -> "WidgetHandle":
+        """Call ``func()`` when the pointer goes **down** on this widget.
+
+        The first of the two primitives, and the one an instrument wants: the
+        note is at the down-stroke. ``None`` clears the handler."""
+        self._host._set_interface_handler(self.id, "press", func)
+        return self
+
+    def on_release(self, func) -> "WidgetHandle":
+        """Call ``func()`` when the pointer comes **up** after a press on this
+        widget -- wherever it came up, on the widget or off it.
+
+        The other primitive. It fires for an abandoned press too, which is what
+        makes it the release rather than the click. ``None`` clears the
+        handler."""
+        self._host._set_interface_handler(self.id, "release", func)
+        return self
+
+    def on_click(self, func) -> "WidgetHandle":
+        """Call ``func()`` when a press on this widget is **completed**: the
+        pointer came up while still on it.
+
+        The composed gesture, and what a command button wants -- press, slide
+        off, release, and nothing happens, which is the cancellation every
+        desktop convention gives an "Accept" and a piano key must not have.
+        ``None`` clears the handler.
+
+        It reaches the script whether or not the widget is **bound**: a binding
+        forwards a widget's *value* to the audio server, and a command is not a
+        value. So one button can drive a synth's gate and run a script's action
+        at once."""
+        self._host._set_interface_handler(self.id, "click", func)
         return self
 
     def __int__(self) -> int:

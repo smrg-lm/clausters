@@ -100,6 +100,11 @@ class GuiHost:
         #: leaves it with, and which an owner reads as *apply unchecked*.
         self.last_version = 0
         self._on_event: dict = {}
+        #: widget id -> {tag: callback} for the interface events (`on_press`,
+        #: `on_release`, `on_click`). Kept apart from `_on_event` because they
+        #: are a different vocabulary, not a filter over the same one, and
+        #: because both may be registered on one widget at once.
+        self._on_interface: dict = {}
         self._on_closed: dict = {}
         #: the ``clausters-gui`` process this host started and owns (`boot`), if
         #: any; stopped by `stop`. ``None`` when connected to a host it did not
@@ -309,22 +314,37 @@ class GuiHost:
         id = int(id)
         previous = self._handles.get(id)
         inherited: dict = {}
+        inherited_hand: dict = {}
         root_handler = self._on_event.get(id)
+        root_hand = self._on_interface.get(id)
         if id in self._children:
             if previous is not None:
                 inherited = {name: self._on_event[wid]
                              for name, wid in previous._names.items()
                              if wid in self._on_event}
+                # The interface handlers travel by name for the same reason:
+                # `on_click` is a callback of the widget the name points at, and
+                # a redrawn window that dropped them would look like a button
+                # that stopped working.
+                inherited_hand = {name: self._on_interface[wid]
+                                  for name, wid in previous._names.items()
+                                  if wid in self._on_interface}
             self._recycle_subtree(id, keep_root=True)
         names: dict = {}
         controls: dict = {}
         doc = self._stamp(tree, id, names, controls)
         if root_handler is not None:
             self._on_event[id] = root_handler
+        if root_hand is not None:
+            self._on_interface[id] = root_hand
         for name, func in inherited.items():
             wid = names.get(name)
             if wid is not None:
                 self._on_event[wid] = func
+        for name, table in inherited_hand.items():
+            wid = names.get(name)
+            if wid is not None:
+                self._on_interface[wid] = table
         self._osc.send_msg(self.target, "/gui_def", id, to_json(doc), *blobs)
         if previous is not None:
             # Refreshed **in place**: one window is one handle, so every
@@ -434,6 +454,7 @@ class GuiHost:
         for held in self._sources.pop(id, ()):
             held._live[:] = [end for end in held._live if end != (self, id)]
         self._on_event.pop(id, None)
+        self._on_interface.pop(id, None)
         if keep_root:
             return
         self._on_closed.pop(id, None)
@@ -625,6 +646,22 @@ class GuiHost:
         else:
             self._on_event[id] = func
 
+    #: The interface events a widget reports -- what the **hand** did, as
+    #: against what the widget is worth. They arrive as a one-string payload and
+    #: are the only such payload, which is what tells them from a value.
+    INTERFACE_EVENTS = ("press", "release", "click")
+
+    def _set_interface_handler(self, id: int, tag: str, func):
+        """Register (or clear) a `clausters.gui.handle.WidgetHandle.on_press` /
+        ``on_release`` / ``on_click`` callback for widget ``id``."""
+        table = self._on_interface.setdefault(id, {})
+        if func is None:
+            table.pop(tag, None)
+            if not table:
+                self._on_interface.pop(id, None)
+        else:
+            table[tag] = func
+
     def _set_closed_handler(self, id: int, func):
         """Register (or clear) a `clausters.gui.handle.WindowHandle.on_closed`
         callback for window ``id``."""
@@ -646,9 +683,22 @@ class GuiHost:
             # `ack` is what answers them.
             self.last_seq = int(args[1]) if len(args) > 1 else 0
             self.last_version = int(args[2]) if len(args) > 2 else 0
-            func = self._on_event.get(int(args[0]))
+            wid = int(args[0])
+            payload = args[3:]
+            ran = False
+            # The interface events first, and they are *also* handed to
+            # `on_event`: that verb is the raw stream, so a script that reads
+            # everything keeps reading everything.
+            if len(payload) == 1 and payload[0] in self.INTERFACE_EVENTS:
+                hand = self._on_interface.get(wid, {}).get(payload[0])
+                if hand is not None:
+                    hand()
+                    ran = True
+            func = self._on_event.get(wid)
             if func is not None:
-                func(*args[3:])
+                func(*payload)
+                ran = True
+            if ran:
                 return True
         elif addr == "/gui_closed" and args:
             wid = int(args[0])

@@ -209,9 +209,11 @@
         w.widget("amp").onEvent((value) => {
           if (voice) voice.set({ amp: value });
         });
-        w.widget("play").onEvent((down) => { if (down) playing(); });
-        w.widget("stop").onEvent((down) => {
-          if (down && voice) { voice.free(); voice = null; }
+        // The two commands act on their click -- the press completed on the
+        // button, so sliding off before letting go cancels it.
+        w.widget("play").onClick(playing);
+        w.widget("stop").onClick(() => {
+          if (voice) { voice.free(); voice = null; }
         });
         say("panel: turn `freq` (bound, no script) and `cutoff` (scripted)");
       };
