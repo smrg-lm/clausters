@@ -38,8 +38,8 @@ through the raw singleton — the REPL surface a future TS client builds on.</di
       beaconed as a fetch, read from the HTTP access log.
     -->
     <script type="module">
-      import { server, startPage, loadOsc, encodeMessage, decodePacket }
-        from "../../dist/index.js";
+      import { server, startPage, loadOsc, encodeMessage, decodePacket, ANY_PEER,
+               DEFAULT_PEER } from "../../dist/index.js";
 
       const params = new URLSearchParams(location.search);
       const smoke = params.has("smoke");
@@ -62,11 +62,16 @@ through the raw singleton — the REPL surface a future TS client builds on.</di
         log(`bundle up: GuiDef ${e.detail.id}`);
         await loadOsc(); // the codec runs through the shared core (wasm)
         const engine = await server();
+        // Everything that comes back **except** the stream, which is the
+        // element's host's and would drown the log. `DEFAULT_PEER` because
+        // these are this page's own replies -- stated rather than left to the
+        // default, since the line below names the stream and a reader should
+        // not have to work out which client is meant.
         engine.addReply((bytes) => {
           for (const { addr, args } of decodePacket(bytes)) {
             if (addr !== "/bus_stream.reply") log(`<- ${addr} ${JSON.stringify(args)}`);
           }
-        });
+        }, DEFAULT_PEER);
         document.getElementById("status").disabled = false;
         document.getElementById("up").disabled = false;
         document.getElementById("status").onclick = () =>
@@ -91,6 +96,12 @@ through the raw singleton — the REPL surface a future TS client builds on.</di
         // the bundle's synth, and the meter bus streams moving values.
         let synths = -1;
         const seen = new Set();
+        // `ANY_PEER`: the meter's `/bus_stream` subscription is the **element's**
+        // GUI host, on its own leg, and the engine queues replies per client —
+        // so a listener with no peer hears the default client and never the
+        // host. Watching somebody else's subscription is what the observer door
+        // is for. `/server_status.reply` answers this page's own question and
+        // would arrive either way; one listener covers both.
         engine.addReply((bytes) => {
           for (const { addr, args } of decodePacket(bytes)) {
             if (addr === "/server_status.reply") synths = args[2];
@@ -98,7 +109,7 @@ through the raw singleton — the REPL surface a future TS client builds on.</di
               for (let i = 0; i + 1 < args.length; i += 2) seen.add(args[i + 1]);
             }
           }
-        });
+        }, ANY_PEER);
         // Asked on every turn, not once: the component's engine half — the
         // defs and the boot list that make the synth — goes out on the page's
         // gesture, which is a phase later than this handler.

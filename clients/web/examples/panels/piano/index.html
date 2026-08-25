@@ -38,7 +38,7 @@ power button is the autoplay gesture.</div>
       generated module imports.
 
       Serve from clients/web — the PACKAGE ROOT, never this folder: the
-      imports below reach ../../dist/, which must stay inside the served
+      imports below reach ../../../dist/, which must stay inside the served
       root (serving piano/ itself turns them into 404s/MIME errors). From
       clients/web:  python3 -m http.server  and open /examples/panels/piano/.
 
@@ -51,7 +51,7 @@ power button is the autoplay gesture.</div>
     -->
     <script type="module">
       import "./bundle/index.js";   // registers <piano-keys>
-      import { startPage, server } from "../../../dist/runtime.js";
+      import { startPage, server, ANY_PEER } from "../../../dist/runtime.js";
       import { loadOsc, encodeMessage, decodePacket } from "../../../dist/base/osc.js";
 
       const smoke = new URLSearchParams(location.search).has("smoke");
@@ -81,6 +81,10 @@ power button is the autoplay gesture.</div>
         const envBus = element.symbols.env;
         let latest = 0;
         let failed = null;
+        // ANY_PEER: these snapshots belong to the **element's** GUI host
+        // subscription, not to this page script's client, and the engine
+        // queues replies per client. Without it the readout sits at 0 forever
+        // and nothing says why.
         engine.addReply((bytes) => {
           for (const { addr, args } of decodePacket(bytes)) {
             if (addr === "/fail") failed = JSON.stringify(args);
@@ -89,7 +93,7 @@ power button is the autoplay gesture.</div>
               if (args[i] === envBus) latest = args[i + 1];
             }
           }
-        });
+        }, ANY_PEER);
         // The very message the host's voice mode sends on a key press (an
         // explicit node id, so the release below can gate it), carrying the
         // env_bus this instance publishes on.

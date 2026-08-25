@@ -35,7 +35,7 @@ process anywhere. Press Power (the autoplay gesture) to boot.</div>
       fetch the runner reads from the HTTP access log.
     -->
     <script type="module">
-      import { server, bootBundle, loadOsc, decodePacket }
+      import { server, bootBundle, loadOsc, decodePacket, ANY_PEER }
         from "../../dist/index.js";
 
       const params = new URLSearchParams(location.search);
@@ -57,6 +57,13 @@ process anywhere. Press Power (the autoplay gesture) to boot.</div>
 
         // Observe the bus stream for the harness/smoke readout: every
         // /bus_stream.reply the meter subscription brings in.
+        //
+        // `ANY_PEER` is what makes this an observation at all. The engine keeps
+        // a reply queue **per client**, and the subscriber here is the GUI
+        // host, on its own leg; a listener registered without a peer hears the
+        // default client's replies, which are not these. That is the observer
+        // door, and this page needs it precisely because it is watching
+        // somebody else's subscription.
         let snapshots = 0;
         const seen = new Set();
         let dead = null;
@@ -67,7 +74,7 @@ process anywhere. Press Power (the autoplay gesture) to boot.</div>
             snapshots += 1;
             for (let i = 0; i + 1 < args.length; i += 2) seen.add(args[i + 1]);
           }
-        });
+        }, ANY_PEER);
 
         const { id } = await bootBundle({
           base: params.get("bundle") ?? "../../bundle-demo",

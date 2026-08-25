@@ -61,12 +61,23 @@ try {
     server.send(encodeMessage("/server_status"));
     const status = await awaitReply("/server_status.reply", 10000);
 
-    // 2. Clock advance: two round trips through the audio thread; retry
-    //    until the second reads later (paced by real messages, capped).
+    // 2. Clock advance: two round trips through the audio thread, retried
+    //    until the second reads later.
+    //
+    //    **Bounded by the clock and not by a count.** A count is a race against
+    //    a quantum: 512 frames is under 11 ms at 48 kHz, and a few thousand
+    //    MessagePort round trips can finish inside that on a context that has
+    //    only just started rendering — which is what "clock stuck at 512"
+    //    meant, and why this failed under the runner and passed whenever a
+    //    debugger's own warm-up had already paid the wait.
     const c0 = await server.clock();
     let c1 = c0;
-    for (let i = 0; i < 4000 && c1 <= c0; i++) c1 = await server.clock();
-    if (c1 <= c0) throw new Error(`clock stuck at ${c0}`);
+    const until = performance.now() + 5000;
+    while (c1 <= c0 && performance.now() < until) {
+        await sleep(5);           // let the audio thread have a quantum
+        c1 = await server.clock();
+    }
+    if (c1 <= c0) throw new Error(`clock stuck at ${c0} for 5 s`);
 
     // 3. The sine is present at the analyser.
     server.send(encodeMessage("/synth_new", [

@@ -159,12 +159,13 @@ files with one pair checked, is written in one place and spread by one script.
 What leads the phase now is the question about the widgets the GUI reform did
 not ask.*
 
-- ⬜ **Both web smoke scripts fail before they assert anything**
-  *(`clients/web/PLAN.md`, Found by use)*. Found while C45 moved the pages, and
-  proved by an A/B worktree to predate it: the standalone and components smokes
-  boot the page and then never see the stream they judge by. Neither runs in
-  CI, so between them they currently assert nothing — which is why this sits
-  ahead of the porting work that would lean on them.
+- ⬜ **Nothing runs the web smokes, and two verdict modes are invoked by
+  nobody** *(`clients/web/PLAN.md`, Found by use)*. The three scripts assert
+  again — all three were broken at once, two watching a reply queue addressed to
+  another client and one racing a quantum — but CI still runs none of them, and
+  the two bundle pages carry `?smoke=1` modes no script invokes. One runner over
+  a list, plus the CI step. Here because it is what let three acceptances rot
+  unnoticed, and W16 would lean on them.
 
 - ⬜ **W16 — Example parity with the Python client**. What it was waiting for is
   in: C45 decided the layout and the names on 2026-08-24, and both directories

@@ -2421,22 +2421,60 @@ finished work, where a pending item reads as done.
   client covers under other names or across two files, and pairing them is part
   of W16 rather than a separate job.
 
-- ⬜ **Both web smoke scripts fail before they assert anything about the
-  page** *(found 2026-08-24 during C45, which is also how it was proved not to
-  be C45's doing)*. `scripts/smoke-web-standalone.sh` ends in "meter stream
-  never moved (0 snapshots, values [])" and `scripts/smoke-web-components.sh` in
-  "shared namespace never confirmed (synths 1, values [])". The page boots, the
-  bundle loads and a synth exists — what never arrives is the streamed
-  `/bus_stream.reply` each script watches for its verdict.
+- ✅ **All three web smoke scripts failed before they asserted anything**
+  *(found 2026-08-24 during C45, fixed the same day; the third one turned up
+  while fixing the two)*. `smoke-web-standalone.sh` ended in "meter stream never
+  moved (0 snapshots)", `smoke-web-components.sh` in "shared namespace never
+  confirmed", and `smoke-web.sh` in "clock stuck at 512". Two different causes,
+  both invisible to every build and to CI, which runs none of the three.
 
-  **It predates the reorganization**: the same two scripts fail identically in a
-  worktree checked out at the commit before it, which is worth stating because
-  C45 *did* break them for real on the way (the pages resolved
-  `../bundle-demo`, one level short after the move, and answered 404) and
-  fixing that only uncovered this. So the 404 is gone and this is what is
-  underneath.
+  **The stream two of them watched was addressed to somebody else.** The engine
+  keeps a reply queue **per client**, and `addReply(fn)` with no peer hears only
+  the default client's replies. The subscription those pages were watching is
+  the **GUI host's**, on its own leg — so the listener was installed, nothing
+  raised, and the callback simply never fired. `ANY_PEER` is the observer door
+  and `tests/components.html` already used it, with a comment saying exactly
+  why: when replies became per-client the test was updated and the four pages
+  around it were not. Fixed in `examples/panels/standalone.html`,
+  `examples/components/demo.html`, and the two bundle pages
+  (`examples/panels/piano/`, `examples/panels/graph-controls/`) whose live
+  readout had been sitting at 0 with nobody to notice.
 
-  Neither script runs in CI, which is why nothing said so. Unknown whether it is
-  the headless engine producing no audio, the stream subscription, or the
-  verdict's own timeout — that is the first thing to find out, and until then
-  the two scripts assert nothing.
+  **The failure mode is the reason this needs a guard**: it fails silently and
+  in the *worst* direction. An assertion waiting for movement times out with an
+  empty list and blames the audio; an assertion waiting for **silence** passes
+  for entirely the wrong reason. So `tests/peer-observers.test.ts` now reads
+  every page under `examples/` and `tests/` and requires any `addReply` that
+  mentions `/bus_stream.reply` to name the client it means — `ANY_PEER` to watch
+  somebody else's subscription, `DEFAULT_PEER` for its own. Declared rather than
+  forbidden, the way `docs/gui-props.md` treats a prop divergence: watching your
+  own stream is legitimate, and saying so is what a reader needs. A textual
+  check on purpose — a page is a plain module no type-checker reads, and the
+  mistake is an omitted optional argument, which is precisely what a type cannot
+  catch.
+
+  **The third was a race, not a wire.** `tests/smoke.html` bounded its clock
+  wait by an *iteration count* — 4000 MessagePort round trips — and 512 frames
+  is under 11 ms at 48 kHz, so on a context that had only just begun rendering
+  the loop finished before the next quantum. It passed whenever a debugger's own
+  warm-up had already paid that wait, which is why it looked like a real engine
+  failure: driving the same page over CDP reported `clock 1024 -> 1536`. Bounded
+  by the clock now, with a yield between polls.
+
+  What is still true and unfixed: **none of the three runs in CI**, and neither
+  do the `?smoke=1` verdict modes the two bundle pages carry, which nothing
+  invokes at all. That is the next entry.
+
+- ⬜ **Nothing runs the web smokes, and two verdict modes are invoked by
+  nobody** *(named 2026-08-24, once the three scripts passed again)*. CI runs
+  `clients/web/test.sh` and none of `scripts/smoke-web*.sh`, which is how all
+  three came to be broken at once and stayed that way. And the two bundle pages
+  (`examples/panels/piano/`, `examples/panels/graph-controls/`) each carry a
+  full `?smoke=1` mode that beacons a verdict — the voice chain end to end, the
+  allocated bus streaming — with no script to run them: dead assertions, written
+  and never fired.
+
+  The two halves are one job: a runner that takes a page and a verdict is
+  already written three times over, so what is wanted is one script that walks a
+  list, plus the CI step that calls it. Worth doing before W16 leans on any of
+  it.
