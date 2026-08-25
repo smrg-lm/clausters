@@ -1,0 +1,22 @@
+[package]
+name = "clausters-nrt-web"
+version.workspace = true
+edition = "2024"
+license = "GPL-3.0-or-later"
+description = "The NRT worker's JS door: a thin wasm-bindgen shell over the server crate's soundfile decoder, so a page decodes with the same decoder a window does."
+
+[lib]
+# cdylib is what wasm-bindgen consumes; rlib lets native cargo tests exercise
+# the same shell functions (the clausters-web pattern).
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# The decoder and nothing else: no engine features, because this shell runs in
+# a Worker that owes no audio and holds no node tree. `default-features = false`
+# keeps the def families, cpal, libfaust and midir out of it.
+clausters = { path = "../..", default-features = false }
+
+# The JS binding surface only exists on the wasm target, so the native
+# workspace build stays free of wasm machinery.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"

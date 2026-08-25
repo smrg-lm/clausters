@@ -91,15 +91,36 @@ class ClaustersProcessor extends AudioWorkletProcessor {
                 epoch: this.epoch,
             });
         } else if (msg.type === "buffer_load") {
-            // Runs between quanta on this thread — the same inline install
-            // the native headless embed mode performs (see ClaustersHeadless).
+            // Runs between quanta on this thread -- the thread that owes the
+            // next one. So a take is copied in **runs** rather than in one
+            // call: measured natively, a whole five-minute stereo take is some
+            // fourteen times a quantum's budget, and no count of jobs divides
+            // one call. `begin` allocates, each `chunk` costs what it copies,
+            // `end` is a pointer swap; nothing is readable under this index
+            // until then, so the engine never sees a half-written take.
             try {
-                this.server.buffer_load(
+                const samples = new Float32Array(msg.data);
+                const frames = samples.length / msg.channels;
+                const ticket = this.server.bufferLoadBegin(
                     msg.index,
                     msg.channels,
                     msg.sampleRate,
-                    new Float32Array(msg.data),
+                    frames,
                 );
+                try {
+                    const run = this.server.installFrames() * msg.channels;
+                    for (let at = 0; at < samples.length; at += run) {
+                        this.server.bufferLoadChunk(
+                            ticket,
+                            at,
+                            samples.subarray(at, Math.min(at + run, samples.length)),
+                        );
+                    }
+                    this.server.bufferLoadEnd(ticket);
+                } catch (e) {
+                    this.server.bufferLoadCancel(ticket);
+                    throw e;
+                }
                 this.port.postMessage({
                     type: "buffer_load",
                     index: msg.index,

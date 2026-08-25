@@ -2116,3 +2116,72 @@ fn an_edit_touches_its_span_and_nothing_else() {
         "frames 2..4 halved, everything else as it was"
     );
 }
+
+#[test]
+fn reading_from_bytes_matches_reading_from_the_path() {
+    // The door a caller with no filesystem uses (a page reading through its
+    // own APIs). It must be the *same* answer as the path door, sample for
+    // sample: two decoders would make one file two takes across the two
+    // clients, which is a divergence nothing on either side would name.
+    for (label, ext, fmt) in [
+        ("bytes-wav", "wav", "float"),
+        ("bytes-wav16", "wav", "int16"),
+        // No `wav` extension: probed by content, through symphonia.
+        ("bytes-dat", "dat", "float"),
+    ] {
+        let path = tmp_path(label, ext);
+        let frames = 300;
+        let data: Vec<f32> = (0..frames * 2)
+            .map(|i| (i as f32 * 0.017).sin() * 0.5)
+            .collect();
+        run_nrt(NrtJob::Write {
+            path: path.clone(),
+            sample_format: fmt.into(),
+            buf_start: 0,
+            num_frames: -1,
+            buffer: Arc::new(Buffer::new(data, 2, frames, 44_100.0)),
+        })
+        .unwrap();
+
+        let from_path = clausters::server::nrt::read_audio(&path, 0, 0).unwrap();
+        let bytes = std::fs::read(&path).unwrap();
+        let from_bytes = clausters::server::nrt::read_audio_bytes(bytes, ext, &path, 0, 0).unwrap();
+
+        assert_eq!(
+            (from_bytes.frames(), from_bytes.channels()),
+            (from_path.frames(), from_path.channels()),
+            "{label}: shape"
+        );
+        assert_eq!(
+            from_bytes.sample_rate(),
+            from_path.sample_rate(),
+            "{label}: sample rate"
+        );
+        assert_eq!(from_bytes.to_vec(), from_path.to_vec(), "{label}: samples");
+        std::fs::remove_file(&path).ok();
+    }
+}
+
+#[test]
+fn reading_a_span_from_bytes_matches_the_path_door() {
+    // The slice arguments travel too: same start, same count, same samples.
+    let path = tmp_path("bytes-span", "wav");
+    let frames = 500;
+    let data: Vec<f32> = (0..frames).map(|i| i as f32 / 1000.0).collect();
+    run_nrt(NrtJob::Write {
+        path: path.clone(),
+        sample_format: "float".into(),
+        buf_start: 0,
+        num_frames: -1,
+        buffer: Arc::new(Buffer::new(data, 1, frames, 48_000.0)),
+    })
+    .unwrap();
+
+    let from_path = clausters::server::nrt::read_audio(&path, 100, 64).unwrap();
+    let bytes = std::fs::read(&path).unwrap();
+    let from_bytes =
+        clausters::server::nrt::read_audio_bytes(bytes, "wav", &path, 100, 64).unwrap();
+    assert_eq!(from_bytes.frames(), 64);
+    assert_eq!(from_bytes.to_vec(), from_path.to_vec());
+    std::fs::remove_file(&path).ok();
+}

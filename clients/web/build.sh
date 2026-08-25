@@ -52,10 +52,12 @@ if [ "$have" != "$pin" ]; then
     exit 1
 fi
 
-# The engine and the shared core's JS door (workspace crates).
+# The engine, the shared core's JS door and the NRT worker's (workspace
+# crates). The last is the decoder alone, for the Worker that reads soundfiles:
+# it carries no engine, and a page that never loads one never fetches it.
 # shellcheck disable=SC2086
-(cd ../.. && cargo build -p clausters-web -p clausters-core-web --lib $flag \
-    --target wasm32-unknown-unknown)
+(cd ../.. && cargo build -p clausters-web -p clausters-core-web -p clausters-nrt-web \
+    --lib $flag --target wasm32-unknown-unknown)
 # The GUI host (its own workspace under clients/gui). `font-atlas` compiles in
 # its glyph rasterizer, so a page may draw text with a real typeface — it ships
 # none, so the page fetches one and hands it over (`gui.bridge.font(bytes)`), and
@@ -71,6 +73,8 @@ wasm-bindgen --target web --out-dir dist/gui-host \
     "../gui/target/wasm32-unknown-unknown/$profile/clausters_gui.wasm"
 wasm-bindgen --target web --out-dir dist/core \
     "../../target/wasm32-unknown-unknown/$profile/clausters_core_web.wasm"
+wasm-bindgen --target web --out-dir dist/nrt \
+    "../../target/wasm32-unknown-unknown/$profile/clausters_nrt_web.wasm"
 
 # The src/ stubs: .d.ts for type-checking everywhere; the core and the engine
 # also get the glue .js, because node runs those sources directly (the codec in

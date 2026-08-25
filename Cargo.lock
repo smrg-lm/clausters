@@ -299,6 +299,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "clausters-nrt-web"
+version = "0.10.0"
+dependencies = [
+ "clausters",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "clausters-web"
 version = "0.10.0"
 dependencies = [

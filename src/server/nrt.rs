@@ -685,27 +685,74 @@ pub fn read_audio(path: &str, file_start: usize, num_frames: i64) -> Result<Buff
     }
 }
 
+/// [`read_audio`]'s answer over **bytes already in memory** rather than a path.
+///
+/// Same decoders, same rules, same result — only the source differs, which is
+/// what a caller with no filesystem needs: a page reads a file through its own
+/// APIs and hands the bytes here, so a tab and a window decode one file into
+/// one set of samples. Decoding through the browser's own decoder instead would
+/// turn the same file into two different takes across the two clients, which is
+/// the kind of divergence nothing would ever name.
+///
+/// `ext` is the format hint (`"wav"`, `"flac"`, ..., without the dot); an empty
+/// hint still probes, it just has less to go on. `label` names the source in
+/// error messages.
+pub fn read_audio_bytes(
+    bytes: Vec<u8>,
+    ext: &str,
+    label: &str,
+    file_start: usize,
+    num_frames: i64,
+) -> Result<Buffer, String> {
+    if ext.eq_ignore_ascii_case("wav") || ext.eq_ignore_ascii_case("wave") {
+        let reader = hound::WavReader::new(std::io::Cursor::new(bytes))
+            .map_err(|e| format!("{label}: {e}"))?;
+        return read_wav_reader(reader, label, file_start, num_frames);
+    }
+    let stream = symphonia::core::io::MediaSourceStream::new(
+        Box::new(std::io::Cursor::new(bytes)),
+        Default::default(),
+    );
+    read_symphonia_stream(stream, ext, label, file_start, num_frames)
+}
+
 /// Decodes a compressed/other-format file fully into an interleaved f32 buffer,
 /// then slices `[file_start, file_start + frames)`. Compressed formats have no
 /// cheap exact frame seek, so we decode the whole file and slice afterwards;
 /// this runs on the NRT thread, where allocation is fine.
 fn read_symphonia(path: &str, file_start: usize, num_frames: i64) -> Result<Buffer, String> {
+    use symphonia::core::io::MediaSourceStream;
+    let file = std::fs::File::open(path).map_err(|e| format!("{path}: {e}"))?;
+    let stream = MediaSourceStream::new(Box::new(file), Default::default());
+    let ext = std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("");
+    read_symphonia_stream(stream, ext, path, file_start, num_frames)
+}
+
+/// The symphonia decode itself, over whatever media source was opened — a file
+/// natively, a cursor over bytes where there is no filesystem (see
+/// [`read_audio_bytes`]). `ext` is the probe hint and `label` only names the
+/// source in error messages.
+fn read_symphonia_stream(
+    stream: symphonia::core::io::MediaSourceStream,
+    ext: &str,
+    label: &str,
+    file_start: usize,
+    num_frames: i64,
+) -> Result<Buffer, String> {
     use symphonia::core::codecs::CodecParameters;
     use symphonia::core::codecs::audio::AudioDecoderOptions;
     use symphonia::core::errors::Error as SymError;
     use symphonia::core::formats::probe::Hint;
     use symphonia::core::formats::{FormatOptions, TrackType};
-    use symphonia::core::io::MediaSourceStream;
     use symphonia::core::meta::MetadataOptions;
 
+    let path = label;
     let err = |e: String| format!("{path}: {e}");
-    let file = std::fs::File::open(path).map_err(|e| err(e.to_string()))?;
-    let stream = MediaSourceStream::new(Box::new(file), Default::default());
     let mut hint = Hint::new();
-    if let Some(ext) = std::path::Path::new(path)
-        .extension()
-        .and_then(|e| e.to_str())
-    {
+    if !ext.is_empty() {
         hint.with_extension(ext);
     }
     let mut format = symphonia::default::get_probe()
@@ -786,8 +833,21 @@ fn read_symphonia(path: &str, file_start: usize, num_frames: i64) -> Result<Buff
 /// to ±1 by their bit depth; the buffer keeps the file's sample rate (the
 /// engine does not resample — clients compensate via `PlayBuf`'s rate).
 fn read_wav(path: &str, file_start: usize, num_frames: i64) -> Result<Buffer, String> {
+    let reader = hound::WavReader::open(path).map_err(|e| format!("{path}: {e}"))?;
+    read_wav_reader(reader, path, file_start, num_frames)
+}
+
+/// The WAV decode itself, over whatever hound opened — a file natively, a
+/// cursor over bytes where there is no filesystem to open (see
+/// [`read_audio_bytes`]). `label` only names the source in error messages.
+fn read_wav_reader<R: std::io::Read + std::io::Seek>(
+    mut reader: hound::WavReader<R>,
+    label: &str,
+    file_start: usize,
+    num_frames: i64,
+) -> Result<Buffer, String> {
+    let path = label;
     let err = |e: hound::Error| format!("{path}: {e}");
-    let mut reader = hound::WavReader::open(path).map_err(err)?;
     let spec = reader.spec();
     let channels = spec.channels as usize;
     let total = reader.duration() as usize;

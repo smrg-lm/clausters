@@ -216,6 +216,71 @@ impl WebServer {
             .buffer_load(index as usize, channels as usize, sample_rate, data)
             .map_err(err)
     }
+
+    /// Begins a **staged** load and returns its ticket: the destination is
+    /// allocated, no samples are copied.
+    ///
+    /// [`buffer_load`](Self::buffer_load) copies the whole take in one call,
+    /// on this thread — which is the AudioWorklet's, the one that owes the next
+    /// quantum. Measured natively, a five-minute stereo take is some fourteen
+    /// times the quantum's budget (`examples/measure_turn.rs`), so a long take
+    /// is loaded in runs instead: `begin`, `chunk` as often as the caller
+    /// likes, `end`. Nothing is visible under `index` until `end`.
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = bufferLoadBegin))]
+    pub fn buffer_load_begin(
+        &mut self,
+        index: u32,
+        channels: u32,
+        sample_rate: f64,
+        frames: u32,
+    ) -> Result<f64, JsErrorish> {
+        self.inner
+            .buffer_load_begin(
+                index as usize,
+                channels as usize,
+                sample_rate,
+                frames as usize,
+            )
+            // JavaScript has no u64; a ticket is a small counter and a double
+            // carries it exactly, which is the same trade the clock doors make.
+            .map(|ticket| ticket as f64)
+            .map_err(err)
+    }
+
+    /// Copies one run of interleaved samples into a staged load, at flat
+    /// sample offset `at`. Costs what it copies: the caller picks the run, and
+    /// therefore the deadline it fits in.
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = bufferLoadChunk))]
+    pub fn buffer_load_chunk(
+        &mut self,
+        ticket: f64,
+        at: u32,
+        data: &[f32],
+    ) -> Result<(), JsErrorish> {
+        self.inner
+            .buffer_load_chunk(ticket as u64, at as usize, data)
+            .map_err(err)
+    }
+
+    /// Installs a staged load: one pointer swap, the samples being already in.
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = bufferLoadEnd))]
+    pub fn buffer_load_end(&mut self, ticket: f64) -> Result<(), JsErrorish> {
+        self.inner.buffer_load_end(ticket as u64).map_err(err)
+    }
+
+    /// Discards a staged load without installing it.
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = bufferLoadCancel))]
+    pub fn buffer_load_cancel(&mut self, ticket: f64) {
+        self.inner.buffer_load_cancel(ticket as u64);
+    }
+
+    /// How many frames one [`buffer_load_chunk`](Self::buffer_load_chunk)
+    /// should carry — the serving budget's number, read from the engine rather
+    /// than repeated in JavaScript.
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = installFrames))]
+    pub fn install_frames(&self) -> u32 {
+        clausters::osc::server::ServeBudget::default().install_frames as u32
+    }
 }
 
 /// The error type of the JS-facing results: a real `JsError` on wasm, the

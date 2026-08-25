@@ -8,6 +8,7 @@ members = [
     "crates/clausters-ffi",
     "crates/clausters-midi",
     "crates/clausters-notation",
+    "crates/clausters-nrt-web",
     "crates/clausters-web",
 ]
 resolver = "3"

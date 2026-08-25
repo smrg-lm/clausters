@@ -16,6 +16,32 @@ export class WebServer {
      */
     block_frames(): number;
     /**
+     * Begins a **staged** load and returns its ticket: the destination is
+     * allocated, no samples are copied.
+     *
+     * [`buffer_load`](Self::buffer_load) copies the whole take in one call,
+     * on this thread — which is the AudioWorklet's, the one that owes the next
+     * quantum. Measured natively, a five-minute stereo take is some fourteen
+     * times the quantum's budget (`examples/measure_turn.rs`), so a long take
+     * is loaded in runs instead: `begin`, `chunk` as often as the caller
+     * likes, `end`. Nothing is visible under `index` until `end`.
+     */
+    bufferLoadBegin(index: number, channels: number, sample_rate: number, frames: number): number;
+    /**
+     * Discards a staged load without installing it.
+     */
+    bufferLoadCancel(ticket: number): void;
+    /**
+     * Copies one run of interleaved samples into a staged load, at flat
+     * sample offset `at`. Costs what it copies: the caller picks the run, and
+     * therefore the deadline it fits in.
+     */
+    bufferLoadChunk(ticket: number, at: number, data: Float32Array): void;
+    /**
+     * Installs a staged load: one pointer swap, the samples being already in.
+     */
+    bufferLoadEnd(ticket: number): void;
+    /**
      * Installs host-decoded samples as buffer `index` (the browser's
      * `/buffer_allocRead` replacement: fetch + `decodeAudioData`, then this).
      */
@@ -33,6 +59,12 @@ export class WebServer {
      * Data-plane control-bus write (no command round trip).
      */
     ctl_set(index: number, value: number): void;
+    /**
+     * How many frames one [`buffer_load_chunk`](Self::buffer_load_chunk)
+     * should carry — the serving budget's number, read from the engine rather
+     * than repeated in JavaScript.
+     */
+    installFrames(): number;
     /**
      * `unix_epoch`: Unix seconds at sample 0 (JS: `Date.now() / 1000`), the
      * anchor that lets wall-clocked clients' bundle timetags land on this
@@ -113,10 +145,15 @@ export interface InitOutput {
     readonly __wbg_webserver_free: (a: number, b: number) => void;
     readonly render: (a: number, b: number, c: number, d: number, e: number, f: bigint) => [number, number, number, number];
     readonly webserver_block_frames: (a: number) => number;
+    readonly webserver_bufferLoadBegin: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
+    readonly webserver_bufferLoadCancel: (a: number, b: number) => void;
+    readonly webserver_bufferLoadChunk: (a: number, b: number, c: number, d: number, e: number) => [number, number];
+    readonly webserver_bufferLoadEnd: (a: number, b: number) => [number, number];
     readonly webserver_buffer_load: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
     readonly webserver_clock: (a: number) => number;
     readonly webserver_ctl_get: (a: number, b: number) => number;
     readonly webserver_ctl_set: (a: number, b: number, c: number) => void;
+    readonly webserver_installFrames: (a: number) => number;
     readonly webserver_new: (a: number, b: number, c: number) => [number, number, number];
     readonly webserver_poll: (a: number) => [number, number];
     readonly webserver_process: (a: number, b: number, c: number, d: any) => [number, number];
