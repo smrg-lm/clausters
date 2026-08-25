@@ -202,15 +202,14 @@ not ask.*
   node a node in a tab (`docs/decisions.md`). The two ship together and
   `faust/boxes-library` waits on **B5**, not on the compiler artifact.
 
-  **And B5 waits on `B6`**, added the same day: the browser engine collapsed
-  four kinds of native thread onto one, so the Faust compiler had nowhere to
-  run that was not the audio thread or the GUI's frames. B6 gives it one — a
-  dedicated Worker for the work that is neither audio nor UI — and with it the
-  three things that were waiting on the same absence: a serving turn with a
-  budget (so a large buffer stops being paid in the audio callback), a
-  filesystem (OPFS, which only a Worker can reach synchronously), and
-  `DiskIn`/`DiskOut` in a tab. Its first step pays for itself alone and the
-  rest is capability, so it is takeable in pieces.
+  **And B5 waits on `B6`**, which **closed the same day**: the browser engine
+  had collapsed four kinds of native thread onto one, so the Faust compiler had
+  nowhere to run that was not the audio thread or the GUI's frames. B6 gave it
+  one — a dedicated Worker for the work that is neither audio nor UI — and with
+  it the three things that were waiting on the same absence: a serving turn with
+  a budget, the page's own filesystem behind `/buffer_allocRead`, and
+  `diskIn`/`diskOut` in a tab. What B5 still owes is its own: the compiler
+  artifact and the linked module.
 
 - ⬜ **C44 — the inverse direction: a widget inside a def** *(`clients/python/
   PLAN.md`, the API reform track)*, deliberately last and possibly never: it is

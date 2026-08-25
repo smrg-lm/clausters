@@ -33,7 +33,8 @@ that a reader who hits one today knows which.
 | What | Status |
 |---|---|
 | **`/def_send faust` reaches a native server only** | The in-page engine carries no Faust compiler. Closed by `B5` + `W7`. |
-| **`diskIn`/`diskOut` are not built** | They stream the server's own filesystem, which the wasm build has none of, so a def naming them fails cleanly as an unknown UGen. |
+| **`diskIn` streams WAV only** | A span of a compressed file is not a file, so it cannot be decoded on its own; a WAV span can be, and is. Reading a compressed file whole is what a buffer is for (`Buffer.read`). Natively `diskIn` reads whatever the decoder does. |
+| **A stream starts after a longer lead** | Natively a thread shares a ring with the audio thread. In a tab there is no shared memory, so a Worker reads a span and *moves* it across a port — how far ahead it reads is the design, not a tuning constant, and an underrun is silence exactly as a slow disk gives. |
 | **`/buffer_read` is not delegated** | Its sibling `/buffer_allocRead` is: it leaves the AudioWorklet for the NRT worker and comes back decoded. This one overlays a file onto the buffer's *current* contents, which live in the engine's own memory, so the job cannot leave without shipping them out and back. It runs in the worklet, under the serving budget. |
 | **`/buffer_write` has nowhere to write** | Reading is done; writing a file back out is the other half and is not built. |
 
@@ -49,6 +50,11 @@ the **NRT worker**, a thread beside the audio one, with the *server's own*
 decoder rather than the browser's, so the samples are bit-for-bit the ones a
 native read of the same file gives. `Buffer.load(url)` is the other door and a
 different thing: a file over the network, decoded by the browser.
+
+**A tab streams to and from that filesystem.** `diskOut` records into it while
+the take plays and `diskIn` streams back out of it, neither holding the whole
+thing — the two reductions above are the price, and they are in the table rather
+than left to be heard.
 
 **Buffer work is no longer paid in the audio callback.** A long take arrives in
 runs (a tenth of a second of stereo at a time) and becomes visible in one swap,

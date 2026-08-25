@@ -111,6 +111,12 @@ required-features = ["synth"]
 name = "bench_transport"
 required-features = ["synth"]
 
+# The serving-turn measurement drives the pulled server, which is the embed
+# seam: without the feature there is nothing to measure.
+[[example]]
+name = "measure_turn"
+required-features = ["synth", "embed"]
+
 [dependencies]
 # Shared native core: the single source of truth for the numeric builtins,
 # the seeded RNG and the timing/OSC math that both the server and every

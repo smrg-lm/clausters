@@ -87,6 +87,47 @@ export async function writeFile(
     );
 }
 
+/**
+ * A byte range of a file, for reading it a piece at a time. `length` past the
+ * end simply returns what is there — a short read is the end of the file, not
+ * an error.
+ *
+ * The synchronous access handle reads at an offset, which is what makes a
+ * stream possible at all: a whole-file read would put the file in memory,
+ * which is the thing streaming exists not to do.
+ */
+export async function readRange(
+    path: string,
+    at: number,
+    length: number,
+): Promise<Uint8Array<ArrayBuffer>> {
+    const [dir, name] = await parentOf(path, false);
+    const handle = await dir.getFileHandle(name);
+    if (typeof handle.createSyncAccessHandle === "function") {
+        const access = await handle.createSyncAccessHandle();
+        try {
+            const size = access.getSize();
+            const want = Math.max(0, Math.min(length, size - at));
+            const out = new Uint8Array(want);
+            if (want > 0) access.read(out, { at });
+            return out;
+        } finally {
+            access.close();
+        }
+    }
+    // No sync handle (the main thread): a `File` slices without reading the
+    // whole of it either.
+    const file = await handle.getFile();
+    return new Uint8Array(await file.slice(at, at + length).arrayBuffer());
+}
+
+/** How many bytes `path` holds. */
+export async function sizeOf(path: string): Promise<number> {
+    const [dir, name] = await parentOf(path, false);
+    const handle = await dir.getFileHandle(name);
+    return (await handle.getFile()).size;
+}
+
 /** Whether `path` names a file that exists. */
 export async function exists(path: string): Promise<boolean> {
     try {

@@ -6,8 +6,7 @@
 use super::*;
 
 pub(super) static UGENS: &[UGenDescriptor] = &[
-    // --- streaming disk I/O (need a path; native only — see dsp::disk) ---
-    #[cfg(not(target_arch = "wasm32"))]
+    // --- streaming disk I/O (need a path; see dsp::disk) ---
     desc(
         "DiskIn",
         Fixed(1),
@@ -19,7 +18,6 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         true,
         |c, _| Box::new(DiskIn::open(c)),
     ),
-    #[cfg(not(target_arch = "wasm32"))]
     desc(
         "DiskOut",
         Fixed(1),

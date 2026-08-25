@@ -48,16 +48,51 @@ type InMessage =
           data: ArrayBuffer;
       };
 
-/** What the NRT worker sends back. */
-type NrtResult =
+/** A finished soundfile read (`/buffer_allocRead`). */
+type ReadResult =
     | {
+          type: "read";
           ticket: number;
           samples: Float32Array;
           channels: number;
           frames: number;
           sampleRate: number;
       }
-    | { ticket: number; error: string };
+    | { type: "read"; ticket: number; error: string };
+
+/** A streamed file's shape, learned once. */
+type ShapeResult =
+    | { type: "shape"; ticket: number; channels: number; sampleRate: number; frames: number }
+    | { type: "shape"; ticket: number; error: string };
+
+/** One span of a file being streamed by a `DiskIn`. */
+type SpanResult =
+    | { type: "span"; ticket: number; samples: Float32Array; frames: number }
+    | { type: "span"; ticket: number; error: string };
+
+/** The acknowledgement of a `DiskOut` flush. */
+type RecordResult = { type: "record"; ticket: number; error?: string };
+
+/** What the NRT worker sends back. */
+type NrtResult =
+    | {
+          type: "read";
+          ticket: number;
+          samples: Float32Array;
+          channels: number;
+          frames: number;
+          sampleRate: number;
+      }
+    | { type: "read"; ticket: number; error: string }
+    | { type: "span"; ticket: number; samples: Float32Array; frames: number }
+    | { type: "span"; ticket: number; error: string }
+    | { type: "record"; ticket: number; error?: string }
+    | { type: string; ticket: number; [k: string]: unknown };
+
+/** The unit a disk stream moves in: a tenth of a second at 48 kHz. Smaller
+ *  means more messages for the same audio; larger means a longer wait before a
+ *  stream that just opened has anything to play. */
+const DISK_SPAN_FRAMES = 4800;
 
 interface ProcessorOptions {
     module: WebAssembly.Module;
@@ -79,6 +114,14 @@ class ClaustersProcessor extends AudioWorkletProcessor {
     nrt: MessagePort | null;
     /** Jobs out with the Worker: ticket -> the buffer the result installs to. */
     outstanding: Map<number, number>;
+    /** `DiskIn` streams: where each one has read to, and what it could not
+     *  hand over yet. */
+    spans: Map<
+        number,
+        { frame: number; held: Float32Array | null; waiting: boolean; ended: boolean }
+    >;
+    /** `DiskOut` streams: where each one is being written. */
+    recording: Map<number, { path: string; format: string; waiting: boolean }>;
 
     constructor(options: { processorOptions: ProcessorOptions }) {
         super();
@@ -97,6 +140,8 @@ class ClaustersProcessor extends AudioWorkletProcessor {
         this.dead = false;
         this.nrt = null;
         this.outstanding = new Map();
+        this.spans = new Map();
+        this.recording = new Map();
         this.port.onmessage = (e) => this.onMessage(e.data as InMessage);
     }
 
@@ -120,7 +165,13 @@ class ClaustersProcessor extends AudioWorkletProcessor {
             // reaches the Worker directly, so a result does not queue behind
             // the main thread's frames.
             this.nrt = msg.port;
-            this.nrt.onmessage = (e: MessageEvent) => this.onNrtResult(e.data as NrtResult);
+            this.nrt.onmessage = (e: MessageEvent) => {
+                const result = e.data as NrtResult;
+                if (result.type === "shape") this.onShape(result as ShapeResult);
+                else if (result.type === "span") this.onSpan(result as SpanResult);
+                else if (result.type === "record") this.onRecorded(result as RecordResult);
+                else this.onNrtResult(result as ReadResult);
+            };
             this.nrt.start();
             this.server.delegateJobs();
         } else if (msg.type === "buffer_load") {
@@ -205,7 +256,7 @@ class ClaustersProcessor extends AudioWorkletProcessor {
      * the buffer pool being this module's memory — but in runs, under the same
      * ceiling every install pays, and only then is the command answered.
      */
-    onNrtResult(result: NrtResult): void {
+    onNrtResult(result: ReadResult): void {
         const index = this.outstanding.get(result.ticket);
         if (index === undefined) return;
         this.outstanding.delete(result.ticket);
@@ -241,6 +292,155 @@ class ClaustersProcessor extends AudioWorkletProcessor {
         }
     }
 
+    /**
+     * Keeps every open disk stream fed or drained.
+     *
+     * Natively each `DiskIn` has a thread of its own racing the audio thread
+     * through a ring. Here the ring is the same and the reader is the Worker,
+     * so this is the leg between them: ask what is hungry, ask the Worker for
+     * the next span, and hand back what the last answer brought. **How far
+     * ahead it reads is the design** -- without shared memory a span has to
+     * travel, and an underrun is silence exactly as a slow disk would give.
+     *
+     * At most one span per stream is in flight, so a slow answer costs latency
+     * and never order.
+     */
+    pumpDisk(): void {
+        if (this.nrt === null) return;
+        const streams = JSON.parse(this.server.diskPoll()) as {
+            id: number;
+            direction: "in" | "out";
+            path: string;
+            channels: number;
+            looping: boolean;
+            format: string;
+            samples: number;
+        }[];
+        const live = new Set<number>();
+        for (const s of streams) {
+            live.add(s.id);
+            if (s.direction === "in") this.feed(s);
+            else this.drain(s);
+        }
+        // A synth that was freed took its stream with it; close its recording.
+        for (const [id, take] of this.recording) {
+            if (live.has(id)) continue;
+            this.recording.delete(id);
+            this.nrt.postMessage({
+                type: "record",
+                ticket: id,
+                path: take.path,
+                samples: new Float32Array(0),
+                channels: 1,
+                sampleRate,
+                format: take.format,
+                final: true,
+            });
+        }
+        for (const id of [...this.spans.keys()]) if (!live.has(id)) this.spans.delete(id);
+    }
+
+    /** One `DiskIn`: hand it what arrived, then ask for more if there is room. */
+    private feed(s: {
+        id: number;
+        path: string;
+        channels: number;
+        looping: boolean;
+        samples: number;
+    }): void {
+        const state = this.spans.get(s.id) ?? { frame: 0, held: null, waiting: false, ended: false };
+        this.spans.set(s.id, state);
+        // A stream is born not knowing its file's shape, and plays silence
+        // until it does. Asking is the first thing owed it.
+        if (s.channels === 0) {
+            if (!state.waiting) {
+                state.waiting = true;
+                this.nrt!.postMessage({ type: "shape", ticket: s.id, path: s.path });
+            }
+            return;
+        }
+        if (state.held !== null) {
+            const took = this.server.diskPush(s.id, state.held);
+            state.held = took >= state.held.length ? null : state.held.subarray(took);
+        }
+        if (state.held !== null || state.waiting) return;
+        if (state.ended && !s.looping) return;
+        // Read ahead by whatever the ring can hold: the ring's own size is the
+        // lookahead, and it is sized for about a second.
+        const frames = Math.floor(s.samples / s.channels);
+        if (frames < DISK_SPAN_FRAMES) return;
+        state.waiting = true;
+        this.nrt!.postMessage({
+            type: "span",
+            ticket: s.id,
+            path: s.path,
+            frame: state.frame,
+            frames: Math.min(frames, DISK_SPAN_FRAMES * 4),
+        });
+    }
+
+    /** One `DiskOut`: take what it has recorded and hand it to the Worker. */
+    private drain(s: {
+        id: number;
+        path: string;
+        format: string;
+        samples: number;
+    }): void {
+        if (!this.recording.has(s.id)) {
+            this.recording.set(s.id, { path: s.path, format: s.format, waiting: false });
+        }
+        const take = this.recording.get(s.id)!;
+        if (take.waiting || s.samples < DISK_SPAN_FRAMES) return;
+        const samples = this.server.diskPull(s.id, s.samples);
+        if (samples.length === 0) return;
+        take.waiting = true;
+        this.nrt!.postMessage(
+            {
+                type: "record",
+                ticket: s.id,
+                path: s.path,
+                samples,
+                channels: 1,
+                sampleRate,
+                format: s.format,
+                final: false,
+            },
+            [samples.buffer],
+        );
+    }
+
+    onShape(result: { ticket: number; channels?: number; error?: string }): void {
+        const state = this.spans.get(result.ticket);
+        if (state !== undefined) state.waiting = false;
+        if (result.error !== undefined || !result.channels) {
+            // Unreadable: the stream stays shapeless and silent, which is what
+            // a file a native server could not open already does.
+            return;
+        }
+        this.server.diskShape(result.ticket, result.channels);
+    }
+
+    onSpan(result: { ticket: number; samples?: Float32Array; frames?: number; error?: string }): void {
+        const state = this.spans.get(result.ticket);
+        if (state === undefined) return;
+        state.waiting = false;
+        if (result.error !== undefined || result.samples === undefined) return;
+        if (result.samples.length === 0) {
+            // End of file: loop back to the top, or stop asking.
+            state.ended = true;
+            state.frame = 0;
+            return;
+        }
+        state.frame += result.frames ?? 0;
+        const took = this.server.diskPush(result.ticket, result.samples);
+        state.held = took >= result.samples.length ? null : result.samples.subarray(took);
+    }
+
+    onRecorded(result: { ticket: number; error?: string }): void {
+        const take = this.recording.get(result.ticket);
+        if (take !== undefined) take.waiting = false;
+    }
+
     process(_inputs: Float32Array[][], outputs: Float32Array[][]): boolean {
         if (this.dead) return false;
         try {
@@ -264,6 +464,7 @@ class ClaustersProcessor extends AudioWorkletProcessor {
             // a postMessage, and it is owed to the *next* quantum rather than
             // to this one.
             this.pumpDelegated();
+            this.pumpDisk();
             for (let ch = 0; ch < out.length; ch++) {
                 const dst = out[ch]!;
                 if (ch >= this.channels) {

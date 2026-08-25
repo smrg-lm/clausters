@@ -1055,6 +1055,75 @@ fn read_wav_reader<R: std::io::Read + std::io::Seek>(
     Ok(Buffer::new(data, channels, frames, spec.sample_rate as f64))
 }
 
+/// A canonical 44-byte WAV header for `data_bytes` of sample data.
+///
+/// Paired with [`encode_wav_frames`] this is a WAV file in two pieces, which is
+/// what a *streaming* writer needs: the header cannot be written correctly
+/// until the length is known, so it is written twice — once as a placeholder,
+/// once at the end. `sample_format` is the scsynth name (`int16` | `int24` |
+/// `float`).
+pub fn wav_header(
+    channels: u16,
+    sample_rate: u32,
+    sample_format: &str,
+    data_bytes: u32,
+) -> Result<Vec<u8>, String> {
+    let (bits, format) = wav_format(sample_format)?;
+    let block_align = channels * bits.div_ceil(8);
+    let byte_rate = sample_rate * u32::from(block_align);
+    let tag: u16 = match format {
+        hound::SampleFormat::Float => 3,
+        hound::SampleFormat::Int => 1,
+    };
+    let mut out = Vec::with_capacity(44);
+    out.extend_from_slice(b"RIFF");
+    out.extend_from_slice(&(36 + data_bytes).to_le_bytes());
+    out.extend_from_slice(b"WAVEfmt ");
+    out.extend_from_slice(&16u32.to_le_bytes());
+    out.extend_from_slice(&tag.to_le_bytes());
+    out.extend_from_slice(&channels.to_le_bytes());
+    out.extend_from_slice(&sample_rate.to_le_bytes());
+    out.extend_from_slice(&byte_rate.to_le_bytes());
+    out.extend_from_slice(&block_align.to_le_bytes());
+    out.extend_from_slice(&bits.to_le_bytes());
+    out.extend_from_slice(b"data");
+    out.extend_from_slice(&data_bytes.to_le_bytes());
+    Ok(out)
+}
+
+/// Encodes interleaved `f32` samples into WAV sample bytes — the body a
+/// [`wav_header`] describes, and nothing else.
+///
+/// It exists so the **scaling and the clamp live in one place**: a caller
+/// streaming a recording out in pieces (a page writing to its own storage) gets
+/// the same int16 a native `DiskOut` writes, rather than a second conversion
+/// that rounds a hair differently.
+pub fn encode_wav_frames(samples: &[f32], sample_format: &str) -> Result<Vec<u8>, String> {
+    let (bits, format) = wav_format(sample_format)?;
+    let mut out = Vec::with_capacity(samples.len() * usize::from(bits.div_ceil(8)));
+    match (format, bits) {
+        (hound::SampleFormat::Float, 32) => {
+            for s in samples {
+                out.extend_from_slice(&s.to_le_bytes());
+            }
+        }
+        (hound::SampleFormat::Int, 16) => {
+            for s in samples {
+                let v = (s.clamp(-1.0, 1.0) * i16::MAX as f32) as i16;
+                out.extend_from_slice(&v.to_le_bytes());
+            }
+        }
+        (hound::SampleFormat::Int, 24) => {
+            for s in samples {
+                let v = (s.clamp(-1.0, 1.0) * 8_388_607.0) as i32;
+                out.extend_from_slice(&v.to_le_bytes()[..3]);
+            }
+        }
+        (f, b) => return Err(format!("unsupported format {f:?}/{b}-bit")),
+    }
+    Ok(out)
+}
+
 /// Maps a scsynth-style sample-format name to a hound WAV spec fragment.
 /// Shared with the offline renderer (`server::render`).
 pub fn wav_format(sample_format: &str) -> Result<(u16, hound::SampleFormat), String> {

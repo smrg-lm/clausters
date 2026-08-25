@@ -30,10 +30,15 @@ pub mod conv;
 pub mod delay;
 #[cfg(feature = "synth")]
 pub mod demand;
-// Streaming disk I/O owns a background file thread — meaningless on wasm32
-// (no fs, no threads), so the module and its two registry entries are gated
-// off and a def naming `DiskIn`/`DiskOut` fails cleanly as an unknown UGen.
+// Streaming disk I/O, in two implementations of one surface. Natively each
+// UGen owns a background file thread and races the audio thread through a
+// lock-free ring. In a page there is neither a thread nor a filesystem the
+// engine can reach, so the ring stays and the **host** fills it — same UGens,
+// same underrun behaviour, a different reader.
 #[cfg(all(feature = "synth", not(target_arch = "wasm32")))]
+pub mod disk;
+#[cfg(all(feature = "synth", target_arch = "wasm32"))]
+#[path = "disk_web.rs"]
 pub mod disk;
 #[cfg(feature = "synth")]
 pub mod envgen;

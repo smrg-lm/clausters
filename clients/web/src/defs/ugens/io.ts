@@ -124,18 +124,25 @@ export const poll = (
 
 // --- streaming disk I/O ---
 //
-// These two read and write the **server's** filesystem, so they only mean
-// something against a native server: the in-page engine runs in a tab, which
-// has no path to stream from or to. Over the page carrier the def is rejected
-// on the server side rather than silently doing nothing — the builders are
-// here for parity with the reference client, and for the socket carrier.
+// These two read and write **the server's filesystem**, whichever that is: a
+// native server's disk over a socket, and the page's own storage (`opfs`) in a
+// tab. The paths there are `/`-separated under the origin's root.
+//
+// It used to say a tab had no path to stream from or to, and that a def naming
+// one was rejected. Both are false now — but the browser's streaming is not the
+// native one either, and the difference is written down rather than left to be
+// heard: the reader is a Worker handing spans across a message port instead of
+// a thread sharing a ring, so a stream starts after a longer lead and an
+// underrun is silence. **A tab streams WAV only**: a span of a compressed file
+// is not a file, and decoding one whole is what a buffer is for.
+// `clients/web/docs/src/platform.md` carries both.
 
 /**
  * Streams a file from disk, one file frame per server sample (no resampling —
  * pitch follows the sample-rate ratio). Mono per UGen: `chan` picks the
  * channel, a stereo file is two `diskIn`s. `loop` restarts at the end of the
  * stream. For a handful of streams, not per-voice (each spawns its own I/O
- * thread).
+ * thread natively, and its own reader in a page).
  */
 export const diskIn = (path: string, chan: Channel = 0.0, loop = false): Ugen =>
     new Ugen("DiskIn", [chan], { static: { path: String(path), loop: Boolean(loop) } });

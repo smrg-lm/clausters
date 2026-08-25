@@ -67,6 +67,37 @@ export class WebServer {
      */
     delegateJobs(): void;
     /**
+     * Every open disk stream and what it wants right now, as JSON: an array of
+     * `{id, direction: "in"|"out", path, channels, looping, format, samples}`.
+     * `samples` is room to fill for an `in`, and samples waiting for an `out`.
+     *
+     * This is the whole interface between the graph and whatever is reading
+     * files: the host walks it each turn, fills what is hungry with
+     * [`disk_push`](Self::disk_push) and empties what is full with
+     * [`disk_pull`](Self::disk_pull).
+     */
+    diskPoll(): string;
+    /**
+     * Pulls what a `DiskOut` stream has recorded, up to `max` samples.
+     */
+    diskPull(id: number, max: number): Float32Array;
+    /**
+     * Pushes interleaved frames into a `DiskIn` stream; returns how many
+     * samples were taken. Fewer than offered means the ring filled and the
+     * rest is the caller's to offer again.
+     */
+    diskPush(id: number, samples: Float32Array): number;
+    /**
+     * Tells a `DiskIn` stream how many channels its file turned out to have.
+     *
+     * Natively the UGen opens the file and knows on the spot; here reading is
+     * asynchronous and belongs to another thread, so a stream is born
+     * shapeless, reports `channels: 0` in [`disk_poll`](Self::disk_poll), and
+     * plays silence until this arrives. Nothing is declared up front — a
+     * declaration would be a call the other client has no counterpart for.
+     */
+    diskShape(id: number, channels: number): void;
+    /**
      * Answers a delegated job: an empty `error` once the host has installed
      * the result through a staged load, otherwise the message the command
      * fails with. Emits the `/done` or `/fail` and unblocks the queue.
@@ -174,6 +205,10 @@ export interface InitOutput {
     readonly webserver_ctl_get: (a: number, b: number) => number;
     readonly webserver_ctl_set: (a: number, b: number, c: number) => void;
     readonly webserver_delegateJobs: (a: number) => void;
+    readonly webserver_diskPoll: (a: number) => [number, number];
+    readonly webserver_diskPull: (a: number, b: number, c: number) => [number, number];
+    readonly webserver_diskPush: (a: number, b: number, c: number, d: number) => number;
+    readonly webserver_diskShape: (a: number, b: number, c: number) => void;
     readonly webserver_finishDelegated: (a: number, b: number, c: number, d: number) => void;
     readonly webserver_installFrames: (a: number) => number;
     readonly webserver_new: (a: number, b: number, c: number) => [number, number, number];

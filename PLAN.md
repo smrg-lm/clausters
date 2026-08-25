@@ -770,7 +770,7 @@ entries keep their original paths as a record of what shipped where. See
   transcendental imports resolve to the engine's own exports, asserted rather
   than assumed.
 
-- ⬜ **B6 — the second scope: a Worker for the work that is neither audio nor UI.**
+- ✅ **B6 — the second scope: a Worker for the work that is neither audio nor UI** *(done 2026-08-25)*.
   The browser engine collapsed four kinds of native thread onto one, and the bill
   is coming due: a buffer install is a memcpy on the thread that owes a block
   every 2.67 ms. The design is decided and recorded in `docs/decisions.md` ("The
@@ -887,20 +887,46 @@ entries keep their original paths as a record of what shipped where. See
      `/buffer_write` gains somewhere to write. Decoding is **symphonia in the
      Worker, never `decodeAudioData`** — a different decoder would make one file
      two sets of samples across the two clients.
-  4. **`DiskIn`/`DiskOut` in a tab.** The Worker reads OPFS with a sync handle
-     and transfers chunks; the worklet copies into the UGen's ring under the
-     budget. Without SAB this cannot be a sample-accurate SPSC ring, so **the
-     prefetch depth is the design** and a browser `DiskIn` is a
-     deeper-latency instrument than the native one — written on the page, not
-     hidden. Retires "a long take is played out of the pool" for the browser,
-     and lifts the iOS memory ceiling off long material.
+  4. ✅ **`DiskIn`/`DiskOut` in a tab** *(done 2026-08-25)* — `src/dsp/disk_web.rs`
+     is the same two UGens with the thread taken out and the **host** put in its
+     place: the ring stays, `process` is unchanged, and an underrun is silence
+     exactly as a slow disk gives. `disk_poll`/`disk_push`/`disk_pull` are the
+     whole interface between the graph and whatever reads files, and the worklet
+     walks it after each block.
 
-  **Acceptance:** a 100 MB buffer allocates and fills with no dropout, measured
-  rather than heard (the quantum's onset jitter through the run); a file in OPFS
-  reaches a buffer through `/buffer_allocRead` and its samples match the native
-  read of the same file bit for bit; `DiskIn` streams a take longer than the pool
-  would hold; and every step keeps the wire unchanged — `/buffer_*` already
-  replies late, which is why none of this is a protocol question.
+     **A stream is born shapeless.** Natively `DiskIn::open` opens the file and
+     learns its channel count on the spot; here reading is asynchronous and
+     belongs to another thread, so the stream reports `channels: 0`, plays
+     silence, and is told once the Worker has looked. That shape was chosen over
+     a "declare this file first" call **because the other client has no
+     counterpart for one** — the surface a script writes against stays the same
+     in both.
+
+     The WAV framing (`wav_header`, `encode_wav_frames`) is in the server crate
+     and bound to the Worker rather than written in TypeScript, for the reason
+     the decoder was: a second conversion is a second answer, and int16 rounded
+     a hair differently in a tab is exactly the kind of divergence nothing
+     names. `src/engine/wav.ts` parses chunk offsets and re-emits a canonical
+     header — pure framing, no sample math.
+
+     Acceptance is `tests/disk.html`: a tone recorded into the page's own
+     filesystem while it plays (1.42 s, 272428 bytes of RIFF) and streamed back
+     out of it at **peak 0.500**, the recorded amplitude exactly.
+
+     **Two reductions, both on `clients/web/docs/src/platform.md`.** A tab
+     streams **WAV only** — a span of a compressed file is not a file, and
+     decoding one whole is what a buffer is for. And **a stream starts after a
+     longer lead**: without shared memory a span is *moved* across a port, so
+     how far ahead the Worker reads is the design rather than a tuning
+     constant.
+
+  **Acceptance, and what it came to.** A long take fills without a dropout
+  (worst chunk 0.127 ms against a 2.67 ms quantum, from 34.4 ms); a file in the
+  page's storage reaches a buffer through `/buffer_allocRead` with its samples
+  bit-for-bit the native read's (`tests/nrt.html`, worst delta 0); `DiskIn`
+  streams a take out of that same storage (`tests/disk.html`). **The wire never
+  changed** — `/buffer_*` and `/def_send` already reply late, which is why none
+  of this was a protocol question.
 
   **Every step is gated on a measurement, and the measurement may cut it back.**
   The budget in step 1 is a number to be *measured against the quantum*, not

@@ -39,6 +39,23 @@ export class Decoded {
  */
 export function decodeAudio(bytes: Uint8Array, ext: string, label: string, file_start: number, num_frames: number, channels: Uint32Array): Decoded;
 
+/**
+ * Encodes interleaved samples into WAV sample bytes, at the same scale and
+ * with the same clamp a native `DiskOut` writes — which is the whole reason it
+ * is here rather than in the page: a second conversion is a second answer.
+ */
+export function encodeWavFrames(samples: Float32Array, sample_format: string): Uint8Array;
+
+/**
+ * A canonical 44-byte WAV header for `dataBytes` of sample data — the first
+ * half of a file a page writes in pieces.
+ *
+ * The recording door is two calls rather than one because the header carries a
+ * length nobody knows until the take ends: a writer lays down a placeholder,
+ * appends bytes as they come, and rewrites these 44 at the close.
+ */
+export function wavHeader(channels: number, sample_rate: number, sample_format: string, data_bytes: number): Uint8Array;
+
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
@@ -49,6 +66,8 @@ export interface InitOutput {
     readonly decoded_frames: (a: number) => number;
     readonly decoded_sampleRate: (a: number) => number;
     readonly decoded_samples: (a: number) => [number, number];
+    readonly encodeWavFrames: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly wavHeader: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
     readonly clausters_abi_version: () => number;
     readonly clausters_free_samples: (a: number, b: bigint) => void;
     readonly clausters_read_soundfile: (a: number, b: bigint, c: bigint, d: number, e: number, f: number, g: number, h: number) => number;

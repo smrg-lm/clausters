@@ -21,7 +21,7 @@
 //! The Worker has no filesystem either: OPFS is a JS API, so bytes come in
 //! from the page and a path never crosses. What the page reads, this decodes.
 
-use clausters::server::nrt::{read_audio_bytes, select_channels};
+use clausters::server::nrt::{encode_wav_frames, read_audio_bytes, select_channels, wav_header};
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
@@ -103,4 +103,28 @@ pub fn decode_audio(
         frames: buffer.frames(),
         sample_rate: buffer.sample_rate(),
     })
+}
+
+/// A canonical 44-byte WAV header for `dataBytes` of sample data — the first
+/// half of a file a page writes in pieces.
+///
+/// The recording door is two calls rather than one because the header carries a
+/// length nobody knows until the take ends: a writer lays down a placeholder,
+/// appends bytes as they come, and rewrites these 44 at the close.
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = wavHeader))]
+pub fn wav_header_bytes(
+    channels: u32,
+    sample_rate: u32,
+    sample_format: &str,
+    data_bytes: u32,
+) -> Result<Vec<u8>, String> {
+    wav_header(channels as u16, sample_rate, sample_format, data_bytes)
+}
+
+/// Encodes interleaved samples into WAV sample bytes, at the same scale and
+/// with the same clamp a native `DiskOut` writes — which is the whole reason it
+/// is here rather than in the page: a second conversion is a second answer.
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = encodeWavFrames))]
+pub fn encode_wav_frames_bytes(samples: &[f32], sample_format: &str) -> Result<Vec<u8>, String> {
+    encode_wav_frames(samples, sample_format)
 }

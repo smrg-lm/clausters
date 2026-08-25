@@ -23,7 +23,6 @@ use crate::dsp::demand::{
     Dbufrd, Demand, Dlist, Dramp, Drandom, Dstutter, Dswitch1, Duty, DutyKind, ListOrder, RampKind,
     RandKind,
 };
-#[cfg(not(target_arch = "wasm32"))]
 use crate::dsp::disk::{DiskIn, DiskOut};
 use crate::dsp::envgen::EnvGen;
 use crate::dsp::filter::{OneFilter, OneKind, Svf, SvfMode};

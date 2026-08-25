@@ -323,6 +323,90 @@ impl WebServer {
         ))
     }
 
+    /// Tells a `DiskIn` stream how many channels its file turned out to have.
+    ///
+    /// Natively the UGen opens the file and knows on the spot; here reading is
+    /// asynchronous and belongs to another thread, so a stream is born
+    /// shapeless, reports `channels: 0` in [`disk_poll`](Self::disk_poll), and
+    /// plays silence until this arrives. Nothing is declared up front — a
+    /// declaration would be a call the other client has no counterpart for.
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = diskShape))]
+    pub fn disk_shape(&mut self, id: u32, channels: u32) {
+        #[cfg(target_arch = "wasm32")]
+        clausters::dsp::disk::set_shape(id, channels as usize);
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let _ = (id, channels);
+        }
+    }
+
+    /// Every open disk stream and what it wants right now, as JSON: an array of
+    /// `{id, direction: "in"|"out", path, channels, looping, format, samples}`.
+    /// `samples` is room to fill for an `in`, and samples waiting for an `out`.
+    ///
+    /// This is the whole interface between the graph and whatever is reading
+    /// files: the host walks it each turn, fills what is hungry with
+    /// [`disk_push`](Self::disk_push) and empties what is full with
+    /// [`disk_pull`](Self::disk_pull).
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = diskPoll))]
+    pub fn disk_poll(&mut self) -> String {
+        #[cfg(target_arch = "wasm32")]
+        {
+            use clausters::dsp::disk::Direction;
+            let rows: Vec<String> = clausters::dsp::disk::poll()
+                .into_iter()
+                .map(|r| {
+                    format!(
+                        r#"{{"id":{},"direction":"{}","path":{},"channels":{},"looping":{},"format":{},"samples":{}}}"#,
+                        r.id,
+                        if r.direction == Direction::In { "in" } else { "out" },
+                        json_string(&r.path),
+                        r.channels,
+                        r.looping,
+                        json_string(&r.format),
+                        r.samples,
+                    )
+                })
+                .collect();
+            format!("[{}]", rows.join(","))
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        "[]".to_string()
+    }
+
+    /// Pushes interleaved frames into a `DiskIn` stream; returns how many
+    /// samples were taken. Fewer than offered means the ring filled and the
+    /// rest is the caller's to offer again.
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = diskPush))]
+    pub fn disk_push(&mut self, id: u32, samples: &[f32]) -> u32 {
+        #[cfg(target_arch = "wasm32")]
+        {
+            clausters::dsp::disk::push(id, samples) as u32
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let _ = (id, samples);
+            0
+        }
+    }
+
+    /// Pulls what a `DiskOut` stream has recorded, up to `max` samples.
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = diskPull))]
+    pub fn disk_pull(&mut self, id: u32, max: u32) -> Vec<f32> {
+        #[cfg(target_arch = "wasm32")]
+        {
+            let mut out = vec![0.0f32; max as usize];
+            let got = clausters::dsp::disk::pull(id, &mut out);
+            out.truncate(got);
+            out
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let _ = (id, max);
+            Vec::new()
+        }
+    }
+
     /// Answers a delegated job: an empty `error` once the host has installed
     /// the result through a staged load, otherwise the message the command
     /// fails with. Emits the `/done` or `/fail` and unblocks the queue.
