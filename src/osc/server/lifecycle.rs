@@ -47,6 +47,7 @@ impl OscServer {
             info,
             handle,
             translator,
+            budget: ServeBudget::UNLIMITED,
             nrt: NrtRunner::spawn(waker.clone()),
             clients: Vec::new(),
             streams: Vec::new(),
@@ -117,6 +118,7 @@ impl OscServer {
             handle,
             translator,
             nrt: NrtRunner::inline(),
+            budget: ServeBudget::default(),
             clients: Vec::new(),
             streams: Vec::new(),
             tap_streams: Vec::new(),
@@ -376,15 +378,27 @@ impl OscServer {
         }
     }
 
-    /// One pulled iteration of the serving loop: drain the ring, send due
-    /// stream snapshots, collect garbage and async results. The headless
-    /// counterpart of one [`Self::run`] turn — call it before each
-    /// `process_block` (or at any convenient cadence). Returns `true` once a
-    /// `/server_quit` has arrived.
+    /// One pulled iteration of the serving loop: drain the ring, run queued
+    /// buffer jobs, send due stream snapshots, collect garbage and async
+    /// results. The headless counterpart of one [`Self::run`] turn — call it
+    /// before each `process_block` (or at any convenient cadence). Returns
+    /// `true` once a `/server_quit` has arrived.
+    ///
+    /// **A turn drains what fits, not everything.** The ceiling is
+    /// [`ServeBudget`] ([`Self::set_budget`]), because this turn is spent on
+    /// the thread that owes the next block of audio: what does not fit stays
+    /// queued — in the ring, or in the runner — and is taken on the following
+    /// turns, in arrival order. Nothing is dropped and no reply is lost; a
+    /// burst becomes latency instead of a missed deadline.
     pub fn step(&mut self) -> bool {
-        if let Flow::Quit = self.drain_ring() {
+        if let Flow::Quit = self.drain_ring_limited(self.budget.ring_packets) {
             return true;
         }
+        // Between arriving and being done: a `/buffer_*` command was queued by
+        // the drain above and runs here, at most `nrt_jobs` of them, so a burst
+        // becomes several turns instead of one long one. In thread mode this is
+        // a no-op -- the thread is the pump.
+        self.nrt.pump(self.budget.nrt_jobs);
         self.pump_streams();
         self.pump_tap_streams();
         self.pump_buffer_streams();
@@ -392,6 +406,21 @@ impl OscServer {
         self.overviews.flush(now);
         self.collect_async();
         false
+    }
+
+    /// Sets what one [`step`](Self::step) may do. Defaults to
+    /// [`ServeBudget::default`] on the headless server and to
+    /// [`ServeBudget::UNLIMITED`] on the bound one, where a turn is not
+    /// borrowed from the audio callback.
+    pub fn set_budget(&mut self, budget: ServeBudget) {
+        self.budget = budget;
+    }
+
+    /// Work this server has accepted and not yet done: ring packets are not
+    /// counted (they sit in the ring, which knows its own depth), buffer jobs
+    /// are. Non-zero means a following turn has something to do.
+    pub fn backlog(&self) -> usize {
+        self.nrt.pending()
     }
 
     /// One housekeeping pass: the garbage the audio thread handed back, and

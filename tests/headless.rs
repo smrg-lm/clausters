@@ -5,6 +5,7 @@
 #![cfg(all(feature = "synth", feature = "embed"))]
 
 use clausters::embed::ClaustersHeadless;
+use clausters::osc::server::ServeBudget;
 use clausters::rosc::{OscBundle, OscMessage, OscPacket, OscTime, OscType, encoder};
 use clausters::server::engine::BLOCK_SIZE;
 
@@ -221,4 +222,107 @@ fn quit_is_reported_not_enacted() {
     assert!(server.send(&msg("/server_quit", vec![])));
     pull(&mut server, 1);
     assert!(server.quit_requested());
+}
+
+// ---- B6 step 1: a serving turn drains what fits ----
+
+#[test]
+fn a_burst_of_buffer_jobs_is_spread_over_turns() {
+    // Sixteen allocations arrive at once and the budget starts four per turn:
+    // before the budget existed all sixteen ran inside the packet that
+    // submitted them, on the thread that owes the next block.
+    let mut server = ClaustersHeadless::new(SR, CHANNELS, 0.0).unwrap();
+    server.set_budget(ServeBudget {
+        ring_packets: usize::MAX,
+        nrt_jobs: 4,
+    });
+    for i in 0..16 {
+        assert!(server.send(&msg(
+            "/buffer_alloc",
+            vec![OscType::Int(i), OscType::Int(1024), OscType::Int(1)],
+        )));
+    }
+    // The first block's turn takes four and leaves twelve queued.
+    pull(&mut server, 1);
+    assert_eq!(server.backlog(), 12);
+    assert_eq!(
+        replies(&server)
+            .iter()
+            .filter(|m| m.addr == "/done")
+            .count(),
+        4
+    );
+    // Three more turns finish them, in order, with nothing dropped.
+    pull(&mut server, 3);
+    assert_eq!(server.backlog(), 0);
+    let done: Vec<i32> = replies(&server)
+        .into_iter()
+        .filter(|m| m.addr == "/done")
+        .map(|m| match m.args[1] {
+            OscType::Int(i) => i,
+            ref other => panic!("expected the buffer index, got {other:?}"),
+        })
+        .collect();
+    assert_eq!(done, (4..16).collect::<Vec<i32>>());
+}
+
+#[test]
+fn a_burst_of_packets_is_spread_over_turns() {
+    // The ring is the queue: what a turn does not take stays there, in order.
+    let mut server = ClaustersHeadless::new(SR, CHANNELS, 0.0).unwrap();
+    server.set_budget(ServeBudget {
+        ring_packets: 3,
+        nrt_jobs: usize::MAX,
+    });
+    for i in 0..9 {
+        assert!(server.send(&msg(
+            "/buffer_alloc",
+            vec![OscType::Int(i), OscType::Int(256), OscType::Int(1)],
+        )));
+    }
+    pull(&mut server, 1);
+    assert_eq!(
+        replies(&server)
+            .iter()
+            .filter(|m| m.addr == "/done")
+            .count(),
+        3
+    );
+    pull(&mut server, 2);
+    assert_eq!(
+        replies(&server)
+            .iter()
+            .filter(|m| m.addr == "/done")
+            .count(),
+        6
+    );
+}
+
+#[test]
+fn the_default_budget_does_not_bind_on_ordinary_traffic() {
+    // A ceiling that binds in normal use would turn every session into
+    // latency, so the default is deliberately generous: one command, one turn.
+    let mut server = ClaustersHeadless::new(SR, CHANNELS, 0.0).unwrap();
+    assert!(server.send(&msg(
+        "/buffer_alloc",
+        vec![OscType::Int(0), OscType::Int(1024), OscType::Int(1)],
+    )));
+    pull(&mut server, 1);
+    assert_eq!(server.backlog(), 0);
+    assert!(replies(&server).iter().any(|m| m.addr == "/done"));
+}
+
+#[test]
+fn nothing_runs_before_its_turn() {
+    // Submitting queues; the work happens in the turn. Sending without ever
+    // pulling a block must leave the job untouched -- that separation is what
+    // makes the budget possible at all.
+    let mut server = ClaustersHeadless::new(SR, CHANNELS, 0.0).unwrap();
+    assert!(server.send(&msg(
+        "/buffer_alloc",
+        vec![OscType::Int(0), OscType::Int(1024), OscType::Int(1)],
+    )));
+    assert!(replies(&server).is_empty());
+    pull(&mut server, 1);
+    assert!(replies(&server).iter().any(|m| m.addr == "/done"));
 }

@@ -781,11 +781,31 @@ entries keep their original paths as a record of what shipped where. See
   Four steps, each shippable on its own and in this order — the first is the one
   that pays immediately and the rest are capability:
 
-  1. **`step()` gets a budget.** The worklet's serving turn stops draining
-     everything and drains what fits, with the remainder resuming next turn. It
-     bounds an OSC burst and an oversized bundle too, which have no ceiling
-     today. Needs a number, measured against the quantum rather than chosen:
-     `tests/headless.rs` can drive it natively, and the budget is the acceptance.
+  1. ✅ **`step()` gets a budget** *(done 2026-08-25)* — `ServeBudget`
+     (`ring_packets`, `nrt_jobs`), **counted rather than timed** because
+     `Instant` panics on `wasm32-unknown-unknown`, which also makes it
+     assertable. `NrtRunner::Inline` stopped running a job inside `submit` and
+     now queues it for a budgeted `pump`, which is both what makes a ceiling
+     possible and the seam step 2 replaces. The bound server keeps
+     `ServeBudget::UNLIMITED` — it has a thread of its own. Four tests in
+     `tests/headless.rs`, and `examples/measure_turn.rs` is the measurement.
+
+     **What it measured** (native release, 2.67 ms quantum at 48 kHz):
+     a burst of 64 allocations unbudgeted is **2.2 ms — 83% of the quantum, in
+     one turn**; at four jobs a turn it is 0.20 ms over sixteen turns. That is
+     the step paying for itself. But the same run says the budget is **not
+     enough on its own**: one `buffer_load` of a one-minute stereo take is
+     7.1 ms (2.7x the quantum) and a five-minute take is **36.7 ms, 13.8x** —
+     one job, indivisible, and no count bounds it. So step 2 does not merely
+     move that copy off the thread, it **must chunk it**, and the reduction to
+     record if chunking still misses is a ceiling on how much one install
+     copies per turn.
+
+     The example also documents the trap it fell into: `/buffer_alloc` alone
+     measures as free (microseconds for 110 MB) because Linux hands out lazily
+     zeroed pages and the price resurfaces as page faults on the audio thread.
+     A native number bounds the browser's from below — it can say an operation
+     cannot fit, never that one does.
   2. **The Worker, and the NRT runner in it.** A slim wasm shell beside
      `clausters-web` exporting `server::nrt::run_job` — the third caller of a
      door that already has two. Jobs and results cross as transferred

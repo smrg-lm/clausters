@@ -362,8 +362,14 @@ impl Drop for NrtThread {
 /// work happens on whichever thread drives the server.
 pub enum NrtRunner {
     Thread(NrtThread),
-    /// Results of inline-executed jobs, drained like the thread's queue.
-    Inline(std::collections::VecDeque<NrtResult>, NrtChain),
+    /// Submitted-but-not-yet-run jobs and the results of the ones that ran,
+    /// drained like the thread's queue. **Submitting does not run**: see
+    /// [`NrtRunner::pump`].
+    Inline {
+        pending: std::collections::VecDeque<NrtRequest>,
+        results: std::collections::VecDeque<NrtResult>,
+        chain: NrtChain,
+    },
 }
 
 impl NrtRunner {
@@ -372,24 +378,73 @@ impl NrtRunner {
     }
 
     pub fn inline() -> Self {
-        NrtRunner::Inline(std::collections::VecDeque::new(), NrtChain::default())
+        NrtRunner::Inline {
+            pending: std::collections::VecDeque::new(),
+            results: std::collections::VecDeque::new(),
+            chain: NrtChain::default(),
+        }
     }
 
-    /// Queues a job (thread mode) or runs it right now (inline mode). Fails
-    /// only if the NRT thread died.
+    /// Queues a job. In thread mode the thread picks it up; in inline mode it
+    /// waits for [`pump`](Self::pump) — **it does not run here**. Fails only if
+    /// the NRT thread died.
+    ///
+    /// Inline submission used to run the job on the spot, which put a buffer
+    /// allocation, a file read and a decode on whatever thread drove the
+    /// server — the audio thread, in the browser. Queueing splits "the command
+    /// arrived" from "the work happened" so a caller can bound the second, and
+    /// it is the same seam a job runner in another thread plugs into.
     #[allow(clippy::result_large_err)]
     pub fn submit(&mut self, request: NrtRequest) -> Result<(), NrtRequest> {
         match self {
             NrtRunner::Thread(t) => t.submit(request),
-            NrtRunner::Inline(results, chain) => {
-                results.push_back(NrtResult {
-                    cmd: request.cmd,
-                    index: request.index,
-                    client: request.client,
-                    outcome: chain.run(request.index, request.chained, request.job),
-                });
+            NrtRunner::Inline { pending, .. } => {
+                pending.push_back(request);
                 Ok(())
             }
+        }
+    }
+
+    /// Runs at most `budget` queued jobs, in submission order, and returns how
+    /// many ran. No-op in thread mode (the thread is the pump), where it
+    /// returns 0.
+    ///
+    /// The budget is a **count, not a duration**: `Instant` panics on
+    /// `wasm32-unknown-unknown`, which is the target this exists for, and a
+    /// counted budget is deterministic enough to assert on. It bounds how many
+    /// jobs a turn starts, not how long one of them takes — a single huge
+    /// allocation is one job and is indivisible here.
+    pub fn pump(&mut self, budget: usize) -> usize {
+        let NrtRunner::Inline {
+            pending,
+            results,
+            chain,
+        } = self
+        else {
+            return 0;
+        };
+        let mut ran = 0;
+        while ran < budget {
+            let Some(request) = pending.pop_front() else {
+                break;
+            };
+            results.push_back(NrtResult {
+                cmd: request.cmd,
+                index: request.index,
+                client: request.client,
+                outcome: chain.run(request.index, request.chained, request.job),
+            });
+            ran += 1;
+        }
+        ran
+    }
+
+    /// Jobs submitted and not yet run (always 0 in thread mode, where the
+    /// queue belongs to the thread).
+    pub fn pending(&self) -> usize {
+        match self {
+            NrtRunner::Thread(_) => 0,
+            NrtRunner::Inline { pending, .. } => pending.len(),
         }
     }
 
@@ -397,7 +452,7 @@ impl NrtRunner {
     pub fn try_result(&mut self) -> Option<NrtResult> {
         match self {
             NrtRunner::Thread(t) => t.try_result(),
-            NrtRunner::Inline(results, _) => results.pop_front(),
+            NrtRunner::Inline { results, .. } => results.pop_front(),
         }
     }
 }

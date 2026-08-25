@@ -187,6 +187,10 @@ pub struct OscServer {
     /// instance its `soundfile` data.
     translator: CmdTranslator,
     nrt: NrtRunner,
+    /// How much work one pulled serving turn may do ([`OscServer::step`]).
+    /// Only the headless/pulled server reads it; the native run loop has a
+    /// thread of its own and drains without a ceiling.
+    budget: ServeBudget,
     /// Clients registered via `/server_notify 1`; the client ID is index + 1.
     clients: Vec<ClientId>,
     /// Active `/bus_stream` subscriptions, at most one per client: the network
@@ -747,5 +751,46 @@ impl OscServer {
         }
         let target = t.seconds as f64 - NTP_UNIX_OFFSET + t.fractional as f64 / 2f64.powi(32);
         Some(target - self.unix_secs())
+    }
+}
+
+/// How much work one pulled serving turn may do — the ceiling
+/// [`OscServer::step`] applies before handing the thread back to the audio
+/// callback.
+///
+/// **Counted, not timed.** `Instant` panics on `wasm32-unknown-unknown`, the
+/// target this exists for, so a turn is bounded in units of work rather than in
+/// milliseconds; that is also what makes it assertable in a test rather than
+/// dependent on the machine. What it bounds is how much a turn *starts*: one
+/// oversized job is still one job, and making that cheap is a different piece
+/// of work (a runner in another thread).
+#[derive(Clone, Copy, Debug)]
+pub struct ServeBudget {
+    /// Ring packets decoded and handled per turn. A burst larger than this
+    /// stays in the ring and is taken on the following turns, in order.
+    pub ring_packets: usize,
+    /// Buffer jobs (`/buffer_*`) started per turn when the runner is inline.
+    pub nrt_jobs: usize,
+}
+
+impl ServeBudget {
+    /// No ceiling: what a turn did before there was a budget. The native
+    /// [`OscServer::run`] loop always behaves this way.
+    pub const UNLIMITED: Self = Self {
+        ring_packets: usize::MAX,
+        nrt_jobs: usize::MAX,
+    };
+}
+
+impl Default for ServeBudget {
+    /// The pulled server's default. Both numbers are provisional and meant to
+    /// be replaced by measurement — they are deliberately generous, since a
+    /// ceiling that never binds costs nothing and one set too low turns a
+    /// burst into latency.
+    fn default() -> Self {
+        Self {
+            ring_packets: 256,
+            nrt_jobs: 4,
+        }
     }
 }

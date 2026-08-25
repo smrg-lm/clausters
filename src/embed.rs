@@ -289,6 +289,21 @@ impl ClaustersHeadless {
         Ok(())
     }
 
+    /// Sets what one serving turn may do — one turn runs before each engine
+    /// block, on this same thread, so its ceiling is the audio callback's.
+    /// See [`ServeBudget`](crate::osc::server::ServeBudget); the default is
+    /// [`ServeBudget::default`](crate::osc::server::ServeBudget::default).
+    pub fn set_budget(&mut self, budget: crate::osc::server::ServeBudget) {
+        self.server.set_budget(budget);
+    }
+
+    /// Work accepted and not yet done (queued buffer jobs). Non-zero after a
+    /// block means the budget bound and the next turns will catch up; it is
+    /// what a host watches to know a burst is still landing.
+    pub fn backlog(&self) -> usize {
+        self.server.backlog()
+    }
+
     /// Whether a `/server_quit` has arrived. The pulled server has no loop to end,
     /// so quitting is the host's decision: it reads this and stops calling
     /// [`Self::process_block`] (dropping the value releases everything).

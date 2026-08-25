@@ -172,10 +172,22 @@ impl OscServer {
     /// handles every packet waiting in the attached ring. Same
     /// validation path as UDP (`decode_packet`); ring bytes are untrusted.
     pub(in crate::osc::server) fn drain_ring(&mut self) -> Flow {
+        self.drain_ring_limited(usize::MAX)
+    }
+
+    /// [`drain_ring`](Self::drain_ring) with a ceiling on how many packets one
+    /// call handles. What is left stays in the ring — it is the queue — and the
+    /// next call takes it, in order. Used by the pulled [`OscServer::step`],
+    /// where the turn is borrowed from the audio callback.
+    pub(in crate::osc::server) fn drain_ring_limited(&mut self, limit: usize) -> Flow {
         if self.ipc.is_none() {
             return Flow::Continue;
         }
+        let mut handled = 0;
         loop {
+            if handled >= limit {
+                return Flow::Continue;
+            }
             let Some(ipc) = &self.ipc else { unreachable!() };
             let mut buf = std::mem::take(&mut self.recv_buf);
             let popped = ipc.try_pop(&mut buf);
@@ -190,6 +202,7 @@ impl OscServer {
                     continue;
                 }
             };
+            handled += 1;
             if let Flow::Quit = self.handle_packet(packet, ClientId::Ring(peer)) {
                 return Flow::Quit;
             }
