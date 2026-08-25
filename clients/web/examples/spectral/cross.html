@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: cross-synthesis and a magnitude freeze</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 46rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+      .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">Two-chain spectral processing: cross-synthesis and a
+magnitude freeze.
+
+Where <code>chain.html</code> filters one chain, this def runs <b>two</b> FFT
+chains and combines them. <code>pvMagMul</code> scales one chain's bins by the
+other's magnitudes — white noise wearing the spectral envelope of a harmonic
+stack, which is cross-synthesis. <code>pvMagFreeze</code> then holds the last
+spectral envelope while <code>freeze &gt; 0</code>: the melody stops driving the
+noise but the phases keep running, so the ending is the last note held as a
+texture.
+
+Left channel: the dry modulator, quiet, for reference. Right channel: the
+cross-synthesized noise. The combined chain is one def — no buffers, no buses
+between the stages; the spectral frames are synth-private scratch.</div>
+
+      <div class="row">
+        <button id="render">render the score</button>
+        <button id="hear" disabled>hear it</button>
+        <button id="save" disabled>save the wav</button>
+      </div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/spectral/cross.py, call for
+      call: the combined def, the melody the routine plays into it, the freeze
+      at the end, and the offline render of the score.
+
+      The one difference is the last line: the script writes a WAV and tells the
+      reader to play it with `pw-play`, and a tab has no file -- so the take
+      goes back into the engine with `Buffer.fromSamples` and sounds there,
+      with the wav still offered as a blob a click downloads.
+
+      Serve clients/web (the package root) and open
+      /examples/spectral/cross.html. Build it first: ./build.sh
+    -->
+    <script type="module">
+      import {
+        Buffer, Routine, Server, Session, Synth, loadOsc, pageConnection, play,
+        server as engine, wavBytes,
+      } from "../../dist/index.js";
+      import {
+        SynthDef, control, fft, ifft, out, pvMagFreeze, pvMagMul, sine, whiteNoise,
+      } from "../../dist/defs/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => { $("log").textContent += line + "\n"; };
+
+      const SR = 48000.0;
+      let take = null;
+
+      /** White noise wearing the spectral envelope of a harmonic stack. */
+      function cross(name = "cross") {
+        const freq = control("freq", 220.0);
+        const freeze = control("freeze", 0.0);
+        // The modulator: a 3-partial stack — enough spectral shape to hear the
+        // melody inside the noise.
+        const mod = sine(freq)
+          .add(sine(freq.mul(2.0)).mul(0.5))
+          .add(sine(freq.mul(3.0)).mul(0.25));
+        // Two chains, same window size (mandatory for a combiner).
+        const chainA = fft(whiteNoise(), 1.0, { fftSize: 1024 });
+        const chainB = fft(mod, 1.0, { fftSize: 1024 });
+        // A's bins (noise) scaled by B's magnitudes (the stack): cross-synthesis.
+        const combined = pvMagMul(chainA, chainB);
+        // Freezable spectral envelope: transparent while freeze <= 0.
+        const frozen = pvMagFreeze(combined, freeze);
+        const sig = ifft(frozen);
+        // Bin magnitudes are raw transform sums, so scaling A by B's magnitudes
+        // multiplies the level by that factor — the cross-synthesis needs a
+        // small make-up gain.
+        return new SynthDef(name, out(0.0, mod.mul(0.05)), out(1.0, sig.mul(0.01)));
+      }
+
+      async function render() {
+        $("render").disabled = true;
+        await loadOsc();
+
+        const session = await Session.nrt({ tempo: 2.0 });
+        await cross().send(session.server);
+
+        function* sequence() {
+          const voice = new Synth("cross", {}, { server: session.server });
+          // A little melody in the modulator: the noise follows it.
+          for (const [midi, dur] of [[57, 2.0], [60, 2.0], [64, 2.0], [62, 2.0]]) {
+            const freq = 440.0 * 2.0 ** ((midi - 69.0) / 12.0);
+            session.server.sendBundle([["/node_set", voice.id, "freq", freq]]);
+            yield dur;
+          }
+          // Freeze the last envelope: the melody stops, the texture holds.
+          session.server.sendBundle([["/node_set", voice.id, "freeze", 1.0]]);
+          yield 4.0;
+          session.server.sendBundle([["/node_free", voice.id]]);
+        }
+        Routine.run(sequence, session.clock);
+
+        take = await session.render({ sampleRate: SR, channels: 2 });
+        const peak = Math.max(...take.peak, 0.0);
+        log(`rendered ${take.frames} frames (${take.duration.toFixed(2)} s) `
+          + `| peak ${peak.toFixed(3)}`);
+        log("left = the dry modulator, right = the cross-synthesized noise");
+        $("hear").disabled = false;
+        $("save").disabled = false;
+        $("render").disabled = false;
+      }
+
+      async function hear() {
+        await (await engine({ channels: 2 })).resume();
+        const server = await new Server(await pageConnection()).boot();
+        const buffer = await Buffer.fromSamples(take.samples, take.channels,
+          take.sampleRate, { server });
+        play(buffer);
+        log(`playing buffer ${buffer.bufnum}`);
+      }
+
+      function save() {
+        const blob = new Blob([wavBytes(take)], { type: "audio/wav" });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = "cross.wav";
+        link.click();
+        URL.revokeObjectURL(link.href);
+        log("wrote cross.wav");
+      }
+
+      $("render").onclick = () => render().catch((e) => log(`error: ${e}`));
+      $("hear").onclick = () => hear().catch((e) => log(`error: ${e}`));
+      $("save").onclick = save;
+    </script>
+  </body>
+</html>

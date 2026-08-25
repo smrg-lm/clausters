@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: a user-written spectral operation</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 46rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+      .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">User-written spectral operations with
+<code>pvKernel</code> (bin expressions).
+
+The curated <code>pv*</code> set covers the common spectral operations;
+everything else is an <b>expression over a bin</b>, written in the same maths
+vocabulary the rest of the client uses and serialized to a tiny postfix program
+the server validates at <code>/def_send synth</code> and runs allocation-free.
+
+This renders a <b>tilted spectral gate</b>, an operation in no catalog: the gate
+threshold rises with frequency, so the noise floor is swept away progressively
+harder toward the highs, leaving a dark, sparse residue. The left channel is the
+raw source; the right is the gated one. The threshold is an ordinary control, so
+a running server can sweep it live with <code>/node_set</code> — a kernel stays
+fully modulatable.
+
+What an expression can <b>not</b> do — state across frames, moving energy
+between bins, reading another chain — stays with the dedicated
+<code>pv*</code> filters.</div>
+
+      <div class="row">
+        <button id="render">render the score</button>
+        <button id="hear" disabled>hear it</button>
+        <button id="save" disabled>save the wav</button>
+      </div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/spectral/kernel.py, call for
+      call: the two defs, the two synths, the routine that frees them, and the
+      offline render of the score.
+
+      The one difference is the last line: the script writes a WAV and tells the
+      reader to play it with `pw-play`, and a tab has no file -- so the take
+      goes back into the engine with `Buffer.fromSamples` and sounds there,
+      with the wav still offered as a blob a click downloads.
+
+      Serve clients/web (the package root) and open
+      /examples/spectral/kernel.html. Build it first: ./build.sh
+    -->
+    <script type="module">
+      import {
+        Buffer, Routine, Server, Session, Synth, loadOsc, pageConnection, play,
+        server as engine, wavBytes,
+      } from "../../dist/index.js";
+      import {
+        SynthDef, control, fft, ifft, out, pvKernel, whiteNoise,
+      } from "../../dist/defs/index.js";
+      import { binIndex, mag, nbins, param } from "../../dist/defs/pv_expr.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => { $("log").textContent += line + "\n"; };
+
+      const SR = 48000.0;
+      let take = null;
+
+      /** The unprocessed reference: plain noise on the left channel. */
+      const raw = (name = "raw") => new SynthDef(name, out(0.0, whiteNoise().mul(0.25)));
+
+      /**
+       * Noise -> FFT -> a user-written tilted gate -> IFFT, on the right.
+       *
+       * The expression reads like the rule it implements: keep a bin only when
+       * its magnitude clears a threshold that grows with the bin index —
+       * `thresh` at DC, `5 * thresh` at Nyquist. `mag >= t` evaluates to 1 or 0
+       * per bin, so multiplying by it *is* the gate; the phase is untouched,
+       * which keeps the kernel on the exact, cheap magnitude-scaling path.
+       *
+       * **Calibrating the threshold**: bin magnitudes are on the FFT's scale,
+       * not 0..1 — for this source they spread over roughly 0.5..5 with a
+       * median near 2.3, so the default 2.0 puts the gate at that median at DC
+       * and far above the loudest bins up high.
+       */
+      function tiltedGate(name = "tiltgate") {
+        let chain = fft(whiteNoise().mul(0.25), 1.0, { fftSize: 1024 });
+        const tilt = param(0).mul(binIndex.div(nbins).mul(4).add(1));   // rising threshold
+        chain = pvKernel(chain, {
+          mag: mag.mul(mag.ge(tilt)),
+          params: [control("thresh", 2.0)],
+        });
+        return new SynthDef(name, out(1.0, ifft(chain)));
+      }
+
+      async function render() {
+        $("render").disabled = true;
+        await loadOsc();
+
+        const session = await Session.nrt({ tempo: 1.0 });
+        await raw().send(session.server);
+        await tiltedGate().send(session.server);
+        const reference = new Synth("raw", {}, { server: session.server });
+        const gated = new Synth("tiltgate", {}, { server: session.server });
+
+        function* stop() {
+          yield 2.0;
+          session.server.sendBundle([["/node_free", reference.id]]);
+          session.server.sendBundle([["/node_free", gated.id]]);
+        }
+        Routine.run(stop, session.clock);
+
+        take = await session.render({ sampleRate: SR, channels: 2 });
+        const peak = Math.max(...take.peak, 0.0);
+        log(`rendered ${take.frames} frames (${take.duration.toFixed(2)} s) `
+          + `| peak ${peak.toFixed(3)}`);
+        log("left = raw noise, right = tilted spectral gate");
+        $("hear").disabled = false;
+        $("save").disabled = false;
+        $("render").disabled = false;
+      }
+
+      async function hear() {
+        await (await engine({ channels: 2 })).resume();
+        const server = await new Server(await pageConnection()).boot();
+        const buffer = await Buffer.fromSamples(take.samples, take.channels,
+          take.sampleRate, { server });
+        play(buffer);
+        log(`playing buffer ${buffer.bufnum}`);
+      }
+
+      function save() {
+        const blob = new Blob([wavBytes(take)], { type: "audio/wav" });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = "kernel.wav";
+        link.click();
+        URL.revokeObjectURL(link.href);
+        log("wrote kernel.wav");
+      }
+
+      $("render").onclick = () => render().catch((e) => log(`error: ${e}`));
+      $("hear").onclick = () => hear().catch((e) => log(`error: ${e}`));
+      $("save").onclick = save;
+    </script>
+  </body>
+</html>

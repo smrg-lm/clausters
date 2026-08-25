@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: convolution reverb</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 46rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+      .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">Convolution reverb: a prepared kernel through the
+partitioned <code>conv</code> UGen.
+
+The pipeline is the whole point. An impulse response goes into a buffer;
+<code>buffer.gen("prepare_partconv", …)</code> turns it into the
+<b>partitioned spectra</b> the convolver reads, sized with
+<code>partconvFrames</code>; and <code>conv(sig, kernel, …)</code> convolves
+against those ready spectra with a <b>flat</b> per-block cost — the partition
+products are spread across the hop, so a long tail does not spike the block
+where the FFT lands.
+
+The convolver has an intrinsic latency of <code>fftSize / 2</code> samples — at
+1024 that is ~10.7 ms, inaudible as the reverb's predelay here. Left channel:
+the dry pluck. Right channel: the convolved tail, 100% wet, so the reverb is
+obvious.</div>
+
+      <div class="row">
+        <button id="render">render the score</button>
+        <button id="hear" disabled>hear it</button>
+        <button id="save" disabled>save the wav</button>
+      </div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/spectral/convolution.py, call
+      for call: the impulse response, the prepared kernel, the pluck def with
+      its dry and wet sides, the melody, and the offline render of the score.
+
+      The one difference is where the IR comes from: the script writes it as a
+      WAV and reads that file into a buffer, and a tab has no file -- so the
+      same samples are generated here and installed with `Buffer.fromSamples`,
+      which is the verb both clients have for a take that never becomes one.
+
+      The one difference is the last line: the script writes a WAV and tells the
+      reader to play it with `pw-play`, and a tab has no file -- so the take
+      goes back into the engine with `Buffer.fromSamples` and sounds there,
+      with the wav still offered as a blob a click downloads.
+
+      Serve clients/web (the package root) and open
+      /examples/spectral/convolution.html. Build it first: ./build.sh
+    -->
+    <script type="module">
+      import {
+        Buffer, Routine, Server, Session, Synth, loadOsc, pageConnection, play,
+        server as engine, wavBytes,
+      } from "../../dist/index.js";
+      import {
+        DoneAction, Env, SynthDef, control, conv, envGen, out, partconvFrames, sine,
+      } from "../../dist/defs/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => { $("log").textContent += line + "\n"; };
+
+      const SR = 48000.0;
+      const FFT_SIZE = 1024;
+      const IR_SECONDS = 0.7;
+      let take = null;
+
+      /**
+       * A synthetic reverb impulse response: exponentially decaying noise,
+       * seeded for reproducibility. The script writes these samples to a WAV
+       * for the server to read; here they go straight into a buffer.
+       */
+      function impulseResponse() {
+        // A small LCG, so the IR is the same every run as the script's seeded
+        // one is.
+        let state = 2026;
+        const rand = () => {
+          state = (state * 1103515245 + 12345) & 0x7fffffff;
+          return state / 0x3fffffff - 1.0;
+        };
+        const frames = Math.trunc(SR * IR_SECONDS);
+        const samples = new Float32Array(frames);
+        for (let k = 0; k < frames; k++) {
+          samples[k] = rand() * Math.exp(-3.0 * k / frames) * 0.4;
+        }
+        return samples;
+      }
+
+      /** A plucked tone, dry on bus 0 and fully wet (convolved) on bus 1. */
+      function pluck(kernelBufnum, partitions, name = "pluck") {
+        const freq = control("freq", 440.0);
+        const env = envGen(Env.perc(0.002, 0.25), { doneAction: DoneAction.NONE });
+        const sig = sine(freq).mul(env).mul(0.5);
+        const wet = conv(sig, kernelBufnum, { fftSize: FFT_SIZE, partitions });
+        // A convolution's gain is the IR's energy, so the wet side takes a
+        // small make-up gain; scale the IR itself instead when its level
+        // matters.
+        return new SynthDef(name, out(0.0, sig.mul(0.6)), out(1.0, wet.mul(0.04)));
+      }
+
+      async function render() {
+        $("render").disabled = true;
+        await loadOsc();
+
+        const session = await Session.nrt({ tempo: 2.0 });
+        const server = session.server;
+
+        const irSamples = impulseResponse();
+        const ir = await Buffer.fromSamples(irSamples, 1, SR, { server });
+        const partitions = Math.ceil(irSamples.length / (FFT_SIZE / 2));
+        const kernel = await Buffer.alloc(
+          partconvFrames(irSamples.length, FFT_SIZE), 1, { server });
+        await kernel.gen("prepare_partconv", [["i", FFT_SIZE], ["i", ir.bufnum]]);
+        await pluck(kernel.bufnum, partitions).send(server);
+
+        function* sequence() {
+          for (const [midi, dur] of [[69, 1.5], [64, 1.5], [71, 1.5], [69, 3.0]]) {
+            const freq = 440.0 * 2.0 ** ((midi - 69.0) / 12.0);
+            const voice = new Synth("pluck", { freq }, { server });
+            yield dur;
+            server.sendBundle([["/node_free", voice.id]]);
+          }
+        }
+        Routine.run(sequence, session.clock);
+
+        take = await session.render({ sampleRate: SR, channels: 2 });
+        const peak = Math.max(...take.peak, 0.0);
+        log(`rendered ${take.frames} frames (${take.duration.toFixed(2)} s) `
+          + `| peak ${peak.toFixed(3)} | IR ${IR_SECONDS.toFixed(1)} s = `
+          + `${partitions} partitions`);
+        log("left = the dry pluck, right = the convolved tail");
+        $("hear").disabled = false;
+        $("save").disabled = false;
+        $("render").disabled = false;
+      }
+
+      async function hear() {
+        await (await engine({ channels: 2 })).resume();
+        const server = await new Server(await pageConnection()).boot();
+        const buffer = await Buffer.fromSamples(take.samples, take.channels,
+          take.sampleRate, { server });
+        play(buffer);
+        log(`playing buffer ${buffer.bufnum}`);
+      }
+
+      function save() {
+        const blob = new Blob([wavBytes(take)], { type: "audio/wav" });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = "convolution.wav";
+        link.click();
+        URL.revokeObjectURL(link.href);
+        log("wrote convolution.wav");
+      }
+
+      $("render").onclick = () => render().catch((e) => log(`error: ${e}`));
+      $("hear").onclick = () => hear().catch((e) => log(`error: ${e}`));
+      $("save").onclick = save;
+    </script>
+  </body>
+</html>
