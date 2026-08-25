@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: the smallest GuiDef round trip</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 46rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+      #stage { width: 480px; max-width: 100%; height: 240px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">Build a GuiDef, read a widget back — the smallest round
+trip over the widget protocol.
+
+A GuiDef is built exactly the way a <code>SynthDef</code>/<code>GraphDef</code>
+is: a tree of <code>{id, type, ...props, children}</code> nodes serialized to
+JSON and sent in one <code>/gui_def</code> message. The host registers the tree
+and answers <code>/gui_query</code> with <code>/gui_info</code>.
+
+The children are <b>named</b>, not numbered: <code>open</code> assigns each a
+fresh id and hands back a handle that resolves the names.</div>
+
+      <button id="run">build the panel</button>
+      <div id="stage"></div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/panels/skeleton.py, call for
+      call: build a two-control panel with a waveform, open it, query a widget
+      and then the root.
+
+      The one difference is what "host" means and it is the platform's whole
+      story: the script boots a `clausters-gui` **process**, headless, to
+      exercise the protocol with no display. A tab has no process to boot and no
+      headless mode -- the host is the wasm one in this page, and it draws into
+      the element below. Everything after `GuiHost.page()` is the script's code.
+
+      Serve clients/web (the package root) and open
+      /examples/panels/skeleton.html. Build it first: ./build.sh
+    -->
+    <script type="module">
+      import { GuiHost, gui, loadOsc } from "../../dist/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => { $("log").textContent += line + "\n"; };
+
+      async function run() {
+        $("run").disabled = true;
+        await loadOsc();
+
+        // ---- the host ----
+        // The page's, and the ambient one from here on, so the view below opens
+        // without being told which host.
+        const host = await GuiHost.page();
+
+        // ---- build a small panel and open it ----
+        // Two controls and a waveform view. The root view carries no id (the id
+        // comes from the `/gui_def` argument), and `open` returns the handle
+        // that resolves the names.
+        const win = await gui.view(
+          { title: "Filter", w: 480, h: 240, layout: "col" },
+          gui.knob({ name: "cutoff", label: "cutoff", min: 20.0, max: 20000.0, value: 800.0 }),
+          gui.slider({ name: "res", label: "res", min: 0.0, max: 1.0, value: 0.2 }),
+          gui.waveform({ name: "wave", buffer: 0 }),
+        ).open($("stage"));
+
+        // ---- read a widget back ----
+        // `/gui_query` -> `/gui_info`, through the handle. The float `value`
+        // comes back as a float and the int `buffer` as an int -- the wire keeps
+        // them apart.
+        // The reply is a named record here where the script unpacks a
+        // `(kind, props)` pair -- the same two fields, spelled the way each
+        // language reads best.
+        const cutoff = win.widget("cutoff");
+        const info = await cutoff.query();
+        log(`the "cutoff" widget (id ${cutoff.id}) is a ${JSON.stringify(info.type)} `
+          + `with ${JSON.stringify(info.props)}`);
+
+        const root = await host.query(win.id);
+        log(`root (def ${win.id}) is a ${JSON.stringify(root.type)}`);
+      }
+
+      $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
+    </script>
+  </body>
+</html>

@@ -1,6 +1,8 @@
 # Roadmap — the order the open work is taken in
 
-*Rewritten 2026-08-25, when the web smokes got a runner and a CI step — and,
+*Rewritten 2026-08-25, twice: the second when W24 closed — its four loose ends
+and the sweep that says there are no more — and W16's porting began, which is
+what leads the phase now. Before that, the same day, when the web smokes got a runner and a CI step — and,
 with them, a clippy sweep the toolchain forced: rustc 1.98 turned a green tree
 red on a commit that touched none of it. Before that: 2026-08-24, six times: the sixth when the examples pass closed — one
 folder per subject in both clients, the `gui_` prefix gone, and the pairing
@@ -168,17 +170,15 @@ files with one pair checked, is written in one place and spread by one script.
 What leads the phase now is the question about the widgets the GUI reform did
 not ask.*
 
-- ⬜ **W16 — Example parity with the Python client**. What it was waiting for is
-  in: C45 decided the layout and the names on 2026-08-24, and both directories
-  now carry the same folders, so a script and its page sit in the same place
-  under the same name. That pass also counted the work exactly — **19 pairs, 47
-  scripts with no page, 12 pages with no script** — and wrote the two pairs that
-  turned out not to be pairs into `clients/web/PLAN.md`. Each page lands with
-  the surface it needs rather than as a queue.
-
-- ⬜ **W24 — The completeness pass**, and what is left of the parity gaps that
-  plan already carries with reasons (the record formatters, the two leftover
-  names, `Buffer.fromSamples` against `Buffer.read`).
+- ⬜ **W16 — Example parity with the Python client**, under way. The first
+  batch landed on 2026-08-25 and moved the count from **19 pairs / 47 scripts
+  alone / 12 pages alone** to **25 / 41 / 11**. It is a destination and not a
+  queue for the reason the plan gives — most of what is left waits on a surface
+  (MIDI is W9, the Faust boxes W7) or is Python-process shaped and has no page —
+  but the batch also showed what the pass is *for*: five pages run under
+  headless Chrome turned up three surface defects, one of them in the simplest
+  path there is (a bare `Server` that adopted nothing, so `play` had no server).
+  Each page lands with the surface it needs.
 
 - ⬜ **W7** (the Faust surfaces), **W9** (MIDI), **W15** (the bundle writer) —
   unported features, each owned, none on the path to the complete example.

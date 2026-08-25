@@ -155,7 +155,7 @@ export class WindowHandle extends WidgetHandle {
      * widget id → the def control it was built from, collected by the id walk
      * — what {@link WindowHandle.bind} wires in one verb.
      */
-    private readonly controls: Map<number, string>;
+    private readonly controlMap: Map<number, string>;
     /**
      * The canvas this window draws on in a page — the one `open` made for it,
      * from the element it was given or of its own. `null` for a window on a
@@ -176,7 +176,7 @@ export class WindowHandle extends WidgetHandle {
     ) {
         super(host, id);
         this.names = names;
-        this.controls = controls;
+        this.controlMap = controls;
     }
 
     /** The `WidgetHandle` for the widget built with `name: …`. */
@@ -203,8 +203,8 @@ export class WindowHandle extends WidgetHandle {
         this.names.clear();
         for (const [name, id] of names) this.names.set(name, id);
         if (controls === undefined) return;
-        this.controls.clear();
-        for (const [id, control] of controls) this.controls.set(id, control);
+        this.controlMap.clear();
+        for (const [id, control] of controls) this.controlMap.set(id, control);
     }
 
     /**
@@ -245,7 +245,7 @@ export class WindowHandle extends WidgetHandle {
         }
         const options = typeof rest[0] === "object" ? rest[0] : {};
         const address = options.address ?? "/node_set";
-        if (this.controls.size === 0) {
+        if (this.controlMap.size === 0) {
             throw new Error(
                 "no widget in this window was built from a def control, so " +
                     "there is nothing to bind — build them from controls " +
@@ -254,7 +254,7 @@ export class WindowHandle extends WidgetHandle {
             );
         }
         const target = typeof node === "number" ? node : node.id;
-        for (const [id, control] of this.controls) {
+        for (const [id, control] of this.controlMap) {
             this.host.bind(id, address, target, control);
         }
         return this;
@@ -265,19 +265,23 @@ export class WindowHandle extends WidgetHandle {
      * come back as `/gui_event`s to this script.
      */
     unbind(): this {
-        for (const id of this.controls.keys()) this.host.unbind(id);
+        for (const id of this.controlMap.keys()) this.host.unbind(id);
         return this;
     }
 
     /**
      * `widget name -> def control name` for every widget in this window built
      * from a control — what {@link WindowHandle.bind} wires.
+     *
+     * A `Map` where the reference client's `controls` is a dict, and a property
+     * there against a method here for the reason every other one is: a getter
+     * that builds its answer each call reads as free and is not.
      */
-    controlMap(): Map<string, string> {
+    controls(): Map<string, string> {
         const byId = new Map<number, string>();
         for (const [name, id] of this.names) byId.set(id, name);
         const out = new Map<string, string>();
-        for (const [id, control] of this.controls) out.set(byId.get(id) ?? control, control);
+        for (const [id, control] of this.controlMap) out.set(byId.get(id) ?? control, control);
         return out;
     }
 

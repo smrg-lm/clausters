@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: an instrument panel, twice</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 46rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; max-height: 18rem;
+            overflow-y: auto; }
+      .panels { display: flex; gap: 12px; flex-wrap: wrap; align-self: stretch; }
+      .panels > div { width: 560px; max-width: 100%; height: 300px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">A scripted instrument panel: controls that round-trip
+values and events.
+
+It builds a view of standard controls — knobs, sliders, a number, a toggle, a
+button and a menu, two of them non-linear (a curved knob and a stepped number)
+— opens it <b>twice</b>, then both <i>drives</i> a widget live with
+<code>set</code> and <i>listens</i> for the events your interactions emit. No
+audio server is involved.
+
+The reset button is wired <b>twice</b>, which is the point of the two
+vocabularies: <code>onEvent</code> is the raw stream and reports its value on
+the press and on the release plus the three interface events beside them, while
+<code>onClick</code> is the completed press — press the button, slide the
+pointer off it and let go, and the click never comes.
+
+The two panels are the point of the second half: a view is a definition, so
+opening it again gives a second instance with widget ids of its own. The same
+names, two independent panels.</div>
+
+      <button id="run">open the panels</button>
+      <div class="panels"><div id="a"></div><div id="b"></div></div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/panels/panel.py, call for call:
+      one view, opened twice, `set` on the first, `onEvent` on every control of
+      both, `onClick` on the button, `onClosed` on each window.
+
+      Two differences, both the platform's. The script boots a windowed
+      `clausters-gui` process and its two windows are OS windows; here the host
+      is the wasm one in this tab and each view draws into an element the
+      document places -- which is why the two panels are side by side rather
+      than stacked by a window manager. And nothing is pumped: the page already
+      has an event loop, so the script's `run()` loop has no counterpart, and
+      the handlers simply fire.
+
+      Serve clients/web (the package root) and open /examples/panels/panel.html.
+      Build it first: ./build.sh
+    -->
+    <script type="module">
+      import { GuiHost, gui, loadOsc } from "../../dist/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => {
+        $("log").textContent += line + "\n";
+        $("log").scrollTop = $("log").scrollHeight;
+      };
+
+      // The named controls, so the page drives and listens to them by name.
+      const CONTROLS = ["cutoff", "res", "gain", "mix", "bypass", "reset", "wave"];
+
+      // ---- the panel, as a view ----
+      // A row of knobs over a row of mixed controls. Every widget is *named*,
+      // not numbered -- nothing here picks an id. The builders return a `View`:
+      // a tree you compose and then open, the way a `SynthDef` is a graph you
+      // compose and then send.
+      const v = gui.view(
+        { title: "Filter", w: 560, h: 300, layout: "col" },
+        gui.panel(
+          { layout: "row" },
+          gui.knob({ name: "cutoff", label: "cutoff", min: 20.0, max: 20000.0,
+                     value: 800.0, curve: 4.0 }),
+          gui.knob({ name: "res", label: "res", min: 0.0, max: 1.0, value: 0.3 }),
+          gui.number({ name: "gain", label: "gain", min: -24.0, max: 24.0,
+                       value: 0.0, step: 1.0 }),
+        ),
+        gui.panel(
+          { layout: "row" },
+          gui.slider({ name: "mix", label: "mix", min: 0.0, max: 1.0, value: 0.5 }),
+          gui.toggle({ name: "bypass", label: "bypass", value: false }),
+          gui.button({ name: "reset", label: "reset" }),
+          gui.menu(["sine", "saw", "square"],
+                   { name: "wave", index: 1, label: "wave" }),
+        ),
+      );
+
+      // ---- how the travel becomes the value ----
+      // Two of those are not linear. The cutoff knob carries `curve: 4.0`, so
+      // half its travel is spent below 2.5 kHz instead of leaving 20..2000 Hz in
+      // a hairline -- the bend `lincurve` runs, read by the host out of the
+      // shared core. The gain number carries `step: 1.0`, so a drag lands on
+      // whole decibels and reports -3, never -3.0417. Turn `res` beside them to
+      // feel the difference: it is linear and continuous, which is the default.
+      //
+      // The step is a rule about the hand: the `set` below sends 2000 to a
+      // curved knob and it is drawn at 2000, because a control shows what it
+      // was told.
+
+      async function run() {
+        $("run").disabled = true;
+        await loadOsc();
+        await GuiHost.page();
+
+        // ---- two panels from one view ----
+        // `open` is what makes an *instance*: it allocates the widget ids and
+        // sends the document, leaving `v` as it was written. So the same view
+        // opens twice and the two panels share nothing but their names.
+        const a = await v.open($("a"));
+        const b = await v.open($("b"));
+        b.set({ title: "Filter (2)" });
+        log(`two panels from one view: cutoff is ${a.widget("cutoff").id} in one `
+          + `and ${b.widget("cutoff").id} in the other`);
+
+        // ---- drive and listen ----
+        // Nudge the first panel's cutoff live (the `set` path), then register a
+        // per-widget `onEvent` on both: each handle fires with the new value(s).
+        // No ids, no manual matching -- and turning the knob in one panel leaves
+        // the other where it was.
+        a.widget("cutoff").set({ value: 2000.0 });
+        log("set the first panel's cutoff to 2000; now interact with the panels...");
+
+        for (const [tag, win] of [["1", a], ["2", b]]) {
+          for (const name of CONTROLS) {
+            win.widget(name).onEvent((...value) => log(`${tag} ${name}: ${value}`));
+          }
+          // `onEvent` above is the **raw** stream, so the reset button reports
+          // its value (1 on the press, 0 on the release) *and* the three
+          // interface events beside it: `press`, `release`, and `click` when the
+          // release landed on the button. This is the verb a command would
+          // actually be wired to -- press the button, slide off it and let go,
+          // and the click never comes.
+          win.widget("reset").onClick(() => log(`${tag} reset: clicked`));
+        }
+
+        const open = new Set([a.id, b.id]);
+        for (const [tag, win] of [["1", a], ["2", b]]) {
+          win.onClosed(() => {
+            open.delete(win.id);
+            log(`window ${tag} closed (${open.size} left)`);
+          });
+        }
+      }
+
+      $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
+    </script>
+  </body>
+</html>

@@ -1041,6 +1041,28 @@ not a detail of it. Until then `clients/web/examples/editors/composer.html` cove
 widgets with no model behind them — which is what the host's own bugs need to be
 reproducible in a browser, and it is where G32b was found.
 
+**The porting is under way, and the count is the milestone's own measure.**
+On 2026-08-25 the pairing stood at **19 pairs, 47 scripts with no page, 12 pages
+with no script**; the first batch of ports took it to **25 pairs, 41 scripts
+alone, 11 pages alone** — `basics/hello-note`, `basics/envelope`,
+`panels/skeleton`, `panels/panel`, `panels/bind`. Each was written against the
+script line by line and then **run** under headless Chrome, which is the half
+that matters: three defects came out of five pages, none of them in the pages.
+
+- **Opening a server adopted nothing**, so the very first example — `Server`
+  then a bare `play` — failed with advice about two verbs the reader had not
+  asked for. In "Found by use", fixed.
+- **A window handle's `controls` was `controlMap()` here**, a name nothing
+  outside a test used and the reference client spells `controls`. Renamed; it
+  is a method rather than a property because it builds its answer per call.
+- **`query()` answers a record here and a `(kind, props)` pair there** — the
+  same two fields, and this one is left as it is: it is the language reading
+  best, and both pages say so where they unpack it.
+
+The lesson is the one the milestone was written for: the pages are not the
+product, the **exercise** is. Nothing had opened a bare server on a page before,
+so nothing had noticed that a page could not.
+
 **The track is in.** `src/form/` (the arrangement), `gui/transport.ts` (the
 playhead and its four buttons) and `gui/editor.ts` (the multitrack editor) are
 all ported, with `defs/patch.ts` under the last of them — level 1 of the
@@ -2557,10 +2579,11 @@ finished work, where a pending item reads as done.
   expecting one example in two languages currently finds two, and nothing else
   says so.
 
-- ⬜ **Forty-seven scripts have no page, and twelve pages have no script**
-  *(counted 2026-08-24, once C45's layout made the pairing readable)*. W16's
-  real size, stated as a number rather than as "about forty": 19 pairs, 47
-  scripts alone, 12 pages alone. The 12 are not all gaps — `components/` is a
+- ⬜ **Forty-one scripts have no page, and eleven pages have no script**
+  *(counted 2026-08-24 as 47/12, recounted 2026-08-25 after the first batch of
+  ports)*. W16's real size, stated as a number rather than as "about forty":
+  **25 pairs, 41 scripts alone, 11 pages alone**, counting a directory with an
+  `index.html` as its own name. The 12 are not all gaps — `components/` is a
   surface the page has and the script cannot, `basics/engine` is the platform
   itself — but `panels/host`, `basics/synth`, `basics/demand`,
   `transport/sequencing` and `io/responders` are pages whose subject the Python

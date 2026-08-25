@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: a bound panel drives a synth directly</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 46rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+      #stage { width: 360px; max-width: 100%; height: 420px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">A bound panel drives a synth directly: the values bypass
+this script.
+
+The low-latency interactive path: a control <b>bound</b> to a running synth
+sends its value <b>straight to the audio server</b> on every turn, with no round
+trip through this page's script. An unbound control would instead emit a
+<code>/gui_event</code> back here; binding swaps that for a direct
+<code>/node_set</code> to the server.
+
+The controls are built from the def's own <code>control</code> objects, so each
+widget already knows which control it drives and the window binds in one verb —
+<code>win.bind(synth)</code> — instead of one hand-typed name per widget.
+
+<b>The two shapes a control signal comes in</b> are the two buttons. A button's
+press <i>is</i> the event, and its <code>mode</code> says which of the two
+pointer primitives reaches the server: the default <code>"gate"</code> sends its
+<code>on</code> at the press and its <code>off</code> at the release, so the
+value lasts exactly as long as the button is held; <code>"press"</code> sends
+one message and nothing after it — the bang. A widget cannot make a value
+instantaneous, so the bang is only a bang against a control that returns to zero
+on its own: a trigger (<code>rate: "tr"</code>), which the server resets after
+one block.</div>
+
+      <button id="run">boot and bind</button>
+      <div id="stage"></div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/panels/bind.py, call for call:
+      a session, a def built from four controls, a synth, a panel of widgets
+      built from those same controls, and `win.bind(synth)`.
+
+      The platform's two differences: the script boots an audio server process
+      and a windowed `clausters-gui` beside it, where a tab has the engine and
+      the host in itself (`Session.page()` + `session.gui()`), and the drawing
+      goes into an element instead of an OS window. And nothing is pumped -- the
+      page has an event loop, so the script's `run()` has no counterpart.
+
+      What the example is *about* is untouched: while the host runs, the knob
+      drives the pitch with nothing going through this script -- turn it and
+      nothing appears in the log.
+
+      Serve clients/web (the package root) and open /examples/panels/bind.html.
+      Build it first: ./build.sh
+    -->
+    <script type="module">
+      import { Session, Synth, gui } from "../../dist/index.js";
+      import { Env, SynthDef, control, envGen, out, sine } from "../../dist/defs/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => { $("log").textContent += line + "\n"; };
+
+      // The controls the panel drives. A control is a **name and a default** --
+      // what `/node_set` addresses and what the synth starts at -- and a widget
+      // built from one reads both, so the two cannot disagree about what "freq"
+      // is. The *range* is not here: a control is a signal in the graph and says
+      // nothing about how a knob should be drawn, so each widget spells its own.
+      const FREQ = control("freq", 220.0);
+      const AMP = control("amp", 0.2);
+
+      // The two shapes a control signal comes in, and the reason a button has a
+      // mode. `GATE` is an ordinary control the graph reads as a gate: the
+      // envelope sustains while it is held and releases when it falls, so a
+      // button must send both edges. `FIRE` is a **trigger** (`rate: "tr"`),
+      // which the server resets to zero after one block -- so a button that
+      // sends only the press is a bang against it, and could not be one against
+      // `GATE`, where the value would stand forever.
+      const GATE = control("gate", 0.0);
+      const FIRE = control("fire", 0.0, { rate: "tr" });
+
+      // A quiet stereo sine whose frequency and level are the `freq` and `amp`
+      // controls -- what the bindings `/node_set <node> <control> <value>`
+      // drive. Two envelopes over the same tone say what the two buttons do: a
+      // sustaining one the `gate` holds open, and a percussive one the `fire`
+      // trigger restarts from the top each time it arrives.
+      function beep(name = "bind_beep") {
+        const held = envGen(Env.asr(0.02, 1.0, 0.4), { gate: GATE });
+        const blip = envGen(Env.perc(0.005, 0.35), { gate: FIRE });
+        const sig = sine(FREQ).mul(held.add(blip)).mul(AMP);
+        return new SynthDef(name, out(0.0, sig), out(1.0, sig));
+      }
+
+      async function run() {
+        $("run").disabled = true;
+
+        // ---- the session, the GUI and a synth to drive ----
+        // `Session.page()` opens the engine in this tab; `session.gui()` gives
+        // it the host with its client leg pointed at that server, which is what
+        // lets `/gui_bind` forward straight to it.
+        const session = await Session.page();
+        const server = session.server;
+        await session.gui();
+
+        await beep().send(server);
+        const synth = new Synth("bind_beep", {}, { server });   // the def's own defaults
+
+        // ---- a panel of the def's controls, bound to the synth ----
+        // Each widget is built from the def's own control: its name and its
+        // default come from `FREQ`/`AMP`, and the range it is turned over is the
+        // widget's own. The name each takes is the control's, which is what this
+        // script addresses it by -- it never picks an id.
+        //
+        // So the window knows what it drives, and `win.bind(synth)` wires the
+        // whole surface at once: one `/gui_bind` per control widget, each
+        // forwarding `/node_set <node> <control> <value>`. Binding one at a time
+        // is still there (`win.widget("freq").bind("/node_set", synth.id,
+        // "freq")`) and is what you reach for when the target is not a def
+        // control -- a bus, another widget, an arbitrary address.
+        //
+        // The view is the subject either way: `v.open()` rather than
+        // `host.open(v)`, on the host `session.gui()` already made ambient.
+        const v = gui.layout(
+          { flow: "col" },
+          gui.knob(FREQ, { min: 110.0, max: 880.0 }),
+          gui.slider(AMP, { min: 0.0, max: 0.5 }),
+          // A gate needs no range: the button sends its two values, 1/0 unless
+          // another pair is named. Held, so both edges reach the server.
+          gui.button(GATE, { label: "hold" }),
+          // And the bang: `on` at the press and nothing after it. Written
+          // against `GATE` instead, this would throw -- the press would leave
+          // the gate standing open forever.
+          gui.button(FIRE, { mode: "press", label: "fire" }),
+        );
+
+        const win = await v.open($("stage"));
+        win.bind(synth);
+        log(`bound to synth ${synth.id}: ${JSON.stringify([...win.controls()])} — `
+          + "turn them, the sound follows directly and nothing appears here "
+          + "(no script round trip). Hold `hold` and the note sustains for as "
+          + "long as you hold it; hit `fire` and a blip sounds once per press.");
+      }
+
+      $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
+    </script>
+  </body>
+</html>
