@@ -584,6 +584,14 @@ one that decides whether the milestone lands**:
 
 **Acceptance:** the Python box-API and signal-API examples rebuilt in TS emit byte-identical spec JSON (new frozen vectors), and one of each compiles and plays **over either carrier** — against a `clausters --ws` server, and in the page with no server process, the source compiled by the staged `libfaust-wasm` and sounding through the in-page engine; a page that mounts a prebuilt bundle loads none of the compiler's assets.
 
+**W16's `faust/boxes-library` page rides here**, and is part of this milestone's
+acceptance rather than of the example pass': the page cannot be written before
+this lands (the in-page engine is the `synth,embed` build, so a Faust def has
+nowhere to compile), and once it does it is the natural proof that it did.
+The script is `clients/python/examples/faust/boxes_library.py`; the page is
+`clients/web/examples/faust/boxes-library.html`, same material, same names, the
+same calls in the same order.
+
 ### ✅ W8 - Responders: `OscFunc` over the reply stream *(done 2026-08-03)*
 
 *Deferred out of W1*, which grew its reply handling ad hoc inside `Server`. The
@@ -594,6 +602,11 @@ mirroring the half of `responders.py` that does not involve MIDI.
 - The reply handling W1 grew ad hoc inside `Server` (the dispatch table and the `/server_sync` barrier) folds onto this one door, so everything arriving comes in the same way.
 
 **Acceptance:** a TS app registers and unregisters `OscFunc` handlers that fire on server notifications (`/node_start`/`/node_end`, `/done`, `/node_trigger`) over either carrier, and the W1/W3 end-to-end suites stay green through the new door.
+
+**W16's two MIDI pages ride here**, for the same reason and on the same terms:
+`io/midi-responder` and `editors/pianoroll-midi` cannot be written until this
+milestone gives a page MIDI at all, and writing them is how it is shown to
+work.
 
 **What shipped.** `src/responders.ts` at its sibling's path and with its
 sibling's surface — `OscFunc(func, path, { src, argTemplate, recv })`, the
@@ -2679,10 +2692,11 @@ finished work, where a pending item reads as done.
   a list under it.** 27 are portable with the surface this client has today —
   `views/` (12), `editors/` (6), `spectral/` (3), `transport/` (2),
   `buffers/` (2), `io/osc-destination` and `io/osc-responder` (the web has
-  `OscDestination`, over a WebSocket bridge where the script has UDP). Four wait
-  on something named: `panels/style` on the host-theme verb below,
-  `faust/boxes-library` on **W7**, `io/midi-responder` and
-  `editors/pianoroll-midi` on **W9**. Two have **no page by nature** and say so:
+  `OscDestination`, over a WebSocket bridge where the script has UDP). Three are **no longer
+  counted here at all**: `faust/boxes-library` belongs to **W7**'s acceptance
+  and `io/midi-responder`/`editors/pianoroll-midi` to **W9**'s, since neither
+  page can be written before those milestones and writing it is how each is
+  shown to work. Two have **no page by nature** and say so:
   `io/live-udp` (a UDP peer) and `io/embedded` (the server in this process
   through the cdylib — in a tab that *is* the engine). And
   `views/recording-mapped` is the third, already stated in its own docstring:

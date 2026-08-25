@@ -198,9 +198,11 @@ not ask.*
      `io/responders`.
 
   Not on this list, and named so the absence reads as a decision: `io/live-udp`
-  and `io/embedded` have **no page by nature**, `views/recording-mapped` says so
-  in its own docstring ("a page can map nothing"), and `faust/boxes-library`,
-  `io/midi-responder` and `editors/pianoroll-midi` wait on **W7** and **W9**.
+  and `io/embedded` have **no page by nature**, and `views/recording-mapped`
+  says so in its own docstring ("a page can map nothing"). The three that wait
+  on a milestone now **belong** to it — `faust/boxes-library` is part of
+  **W7**'s acceptance, `io/midi-responder` and `editors/pianoroll-midi` of
+  **W9**'s — so no page is left orphaned in a list that cannot take it.
 
 - ⬜ **W7** (the Faust surfaces), **W9** (MIDI), **W15** (the bundle writer) —
   unported features, each owned, none on the path to the complete example.

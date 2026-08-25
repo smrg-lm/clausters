@@ -2532,7 +2532,31 @@ fn key_value_pairs(tail: &[OscType]) -> Vec<(String, Value)> {
     pairs
 }
 
-/// One OSC primitive as a JSON value, keeping integers and floats apart.
+/// A **blob** in a value slot is bulk samples — the same raw little-endian
+/// `f32` a `/gui_def`'s trailing blobs carry, and the one payload a scalar wire
+/// cannot spell out.
+///
+/// It expands to the array the inline `data` prop would have held, so nothing
+/// downstream learns a second shape: a live view's samples are replaced by the
+/// path that already replaces them. This is what lets a client past the inline
+/// ceiling change what a widget draws without redefining the window — a native
+/// one rewrites the file it spilled to, and a page has no file.
+fn blob_to_samples(bytes: &[u8]) -> Option<Value> {
+    if !bytes.len().is_multiple_of(4) {
+        return None;
+    }
+    Some(Value::Array(
+        bytes
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|c| Value::from(f32::from_le_bytes(*c)))
+            .collect(),
+    ))
+}
+
+/// One OSC primitive as a JSON value, keeping integers and floats apart — and
+/// a blob as the sample array it carries (see [`blob_to_samples`]).
 fn osc_to_value(arg: &OscType) -> Option<Value> {
     match arg {
         OscType::Int(n) => Some(Value::from(*n)),
@@ -2540,6 +2564,7 @@ fn osc_to_value(arg: &OscType) -> Option<Value> {
         OscType::Float(x) => Some(Value::from(*x)),
         OscType::Double(x) => Some(Value::from(*x)),
         OscType::String(s) => Some(Value::from(s.clone())),
+        OscType::Blob(b) => blob_to_samples(b),
         _ => None,
     }
 }
@@ -2917,6 +2942,61 @@ mod tests {
         let effects = host.handle_packet(metrics, from());
         assert_ne!(host.metrics.pad, before, "every length regenerated");
         assert!(effects.iter().any(|e| matches!(e, HostEffect::Redraw(1))));
+    }
+
+    /// A `/gui_set` may carry its samples as a **blob**, which is the door a
+    /// client past the inline ceiling needs: a native one rewrites the file it
+    /// spilled to, and a page has no file. The bytes expand to exactly the
+    /// array the inline `data` prop would have held, so nothing downstream
+    /// learns a second shape — what a live view then does with them is the
+    /// `data` path that already existed.
+    #[test]
+    fn a_set_carries_bulk_samples_as_a_blob() {
+        const WAVE: &str = r#"{"type":"window","children":[
+            {"id":20,"type":"waveform","data":[0.0,0.0]}
+        ]}"#;
+        let mut host = Host::new();
+        host.handle_packet(def_msg(1, WAVE), from());
+
+        let mut bytes = Vec::new();
+        for s in [0.25f32, -0.5, 0.75] {
+            bytes.extend_from_slice(&s.to_le_bytes());
+        }
+        let set = OscPacket::Message(OscMessage {
+            addr: GUI_SET.into(),
+            args: vec![
+                OscType::Int(20),
+                OscType::String("data".into()),
+                OscType::Blob(bytes),
+            ],
+        });
+        host.handle_packet(set, from());
+
+        let widget = host.registry().get(20).expect("the widget is there");
+        let Some(serde_json::Value::Array(data)) = widget.props.get("data") else {
+            panic!("the blob did not become the samples: {:?}", widget.props);
+        };
+        let read: Vec<f64> = data.iter().filter_map(serde_json::Value::as_f64).collect();
+        assert_eq!(read.len(), 3);
+        assert!((read[1] + 0.5).abs() < 1e-6, "little-endian f32, in order");
+
+        // A length that is not whole f32s is a client's mistake, and is dropped
+        // rather than read as a shorter run: the pair never becomes a prop, so
+        // the widget keeps the samples it had.
+        let bad = OscPacket::Message(OscMessage {
+            addr: GUI_SET.into(),
+            args: vec![
+                OscType::Int(20),
+                OscType::String("data".into()),
+                OscType::Blob(vec![1, 2, 3]),
+            ],
+        });
+        host.handle_packet(bad, from());
+        let after = host.registry().get(20).expect("still there");
+        let Some(serde_json::Value::Array(kept)) = after.props.get("data") else {
+            panic!("the samples went away");
+        };
+        assert_eq!(kept.len(), 3, "the ragged blob changed nothing");
     }
 
     #[test]

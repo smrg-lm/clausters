@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: the first pixels — a navigable waveform</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 46rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+      #stage { width: 720px; max-width: 100%; height: 360px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">The first pixels: a navigable <code>waveform</code>, fed by
+a <code>source</code>.
+
+It builds a view holding a <code>label</code> and the heavy
+<code>waveform</code>, feeds it a generated signal through a
+<code>source</code>, and opens it on the GUI host. The host draws the waveform;
+the wheel zooms toward the pointer, left-drag pans, <b>R</b> resets. Then the
+source is pointed at other samples and the same view redraws — a
+<code>source</code> is addressable, so what it holds can change without the tree
+being rebuilt.
+
+No audio server is involved — the signal is generated here — so this brings up
+only the GUI host.</div>
+
+      <div class="row">
+        <button id="run">open the waveform</button>
+        <button id="slower" disabled>point the source at a slower sine</button>
+      </div>
+      <div id="stage"></div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/views/window.py, call for call:
+      the source, the view, the open, then `sig.set(...)` with other samples.
+
+      Two differences, both the platform's: the host draws into the element this
+      page places rather than opening an OS window (so `Esc` and the close
+      button are the document's business), and the script's `time.sleep(2)`
+      before the second signal is a button here.
+
+      Serve clients/web (the package root) and open /examples/views/window.html.
+      Build it first: ./build.sh
+    -->
+    <script type="module">
+      import { GuiHost, gui, loadOsc, pageGuiConnection } from "../../dist/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => { $("log").textContent += line + "\n"; };
+
+      /**
+       * A sine that decays across the buffer, so the waveform shows both the
+       * cycles and the envelope.
+       */
+      const decayingSine = (n, cycles) =>
+        Float32Array.from({ length: n }, (_, i) =>
+          Math.sin(2 * Math.PI * cycles * i / n) * Math.exp(-3.0 * i / n));
+
+      let sig = null;
+
+      async function run() {
+        $("run").disabled = true;
+        await loadOsc();
+        await new GuiHost(await pageGuiConnection()).boot();
+
+        sig = gui.source(decayingSine(8000, 120.0));
+        await gui.view(
+          { title: "clausters-gui — waveform", w: 720, h: 360, layout: "col" },
+          gui.label("Decaying sine (wheel: zoom, drag: pan, R: reset)", { name: "caption" }),
+          gui.waveform({ name: "wave", data: sig }),
+        ).open($("stage"));
+        log("the host drew the waveform; zoom and pan it with the pointer");
+        $("slower").disabled = false;
+      }
+
+      $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
+      $("slower").onclick = () => {
+        sig.set(decayingSine(8000, 40.0));
+        $("slower").disabled = true;
+        log("the same view now draws a slower sine — the source was pointed at "
+          + "other samples, and every live widget it feeds was pushed to");
+      };
+    </script>
+  </body>
+</html>

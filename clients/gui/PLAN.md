@@ -2317,8 +2317,9 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   host maps a file — and the web book's "What the browser changes" is one entry
   shorter for it. Watched by hand: a windowed host given DejaVu Sans Mono over
   the wire redrew with it, and fourteen junk bytes warned and left it drawing.
-- ⬜ **A blob has no live door, so a page cannot change the samples it drew**
-  *(found 2026-08-23, porting the `Source` to TypeScript)*. `/gui_set` takes
+- ✅ **A blob has no live door, so a page cannot change the samples it drew**
+  *(found 2026-08-23, porting the `Source` to TypeScript; fixed 2026-08-25,
+  porting `views/window.py`, which is the example that could not be written)*. `/gui_set` takes
   `data` (inline samples) or `reload` (re-read the `path` a widget was built
   with), and that pair covers a native client exactly: short samples ride
   inline and change inline, long ones spill to a file the client rewrites in
@@ -2327,10 +2328,18 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   live widget draws, and the client refuses rather than pretending. The fix is
   the host's: either a `/gui_set` that carries a blob argument, or a browser
   `path` the wasm front can re-fetch (`host/fetch.rs` already fetches one at
-  define time; `reload` is what it does not do). Until then, a page redraws by
-  re-defining the window, and the two clients differ in what `Source.set` can
-  do — which is the reason this is written down rather than left to be
-  rediscovered.
+  define time; `reload` is what it does not do). **Done, and it was the first of the two**: `/gui_set` takes a
+  **blob** in a value slot now, expanded to exactly the array the inline `data`
+  prop would have held, so nothing downstream learns a second shape — a live
+  view's samples are replaced by the path that already replaced them. A ragged
+  length (not whole `f32`s) is dropped rather than read short.
+
+  With it, the two clients say the same thing about a source: the carriers that
+  **hold** samples take a `set` and the ones that **name** them do not, which is
+  `data`/`path` there and `data`/`blob` here — the platform pair the reform
+  already recorded. The carrier stays **fixed** for a source's life on both
+  sides: an inline source handed more than it can hold refuses rather than
+  promoting itself, because a widget on screen was built around it.
 - ✅ **The host's binds follow the server's rule: every carrier takes an
   address, loopback by default** *(named 2026-08-23, done 2026-08-24 with the
   server's half)*. The rule and the table live in the root `PLAN.md`'s "Found by

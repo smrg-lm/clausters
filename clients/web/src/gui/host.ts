@@ -97,7 +97,13 @@ interface Pending {
  * A GuiDef property value: a scalar, or an array/table that rides as its JSON
  * string (an OSC key/value is a scalar, so that is how the wire carries one).
  */
-export type PropValue = number | string | boolean | readonly unknown[] | Record<string, unknown>;
+export type PropValue =
+    | number
+    | string
+    | boolean
+    | Uint8Array
+    | readonly unknown[]
+    | Record<string, unknown>;
 
 /**
  * A prop name as the wire wants it. The builders spell each one out
@@ -937,6 +943,10 @@ function setArgs(props: Record<string, PropValue>): MsgArg[] {
  */
 function wireValue(value: PropValue): MsgArg {
     if (typeof value === "boolean") return ["i", value ? 1 : 0];
+    // Bulk samples ride as the blob they are: the one payload a scalar wire
+    // cannot spell out, and the reason a source past the inline ceiling can
+    // still change what a live widget draws.
+    if (value instanceof Uint8Array) return value;
     if (typeof value === "object" && value !== null) return JSON.stringify(value);
     return value;
 }

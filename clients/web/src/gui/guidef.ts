@@ -281,11 +281,13 @@ export class Source {
      * would have normalized it, and rides out through the `/gui_set` door its
      * prop already has (a flat list as the JSON string a scalar-only wire
      * needs, an engraved page as the whole `display_list`). Of the sample
-     * carriers only the inline one takes it: a source that names a server
-     * buffer or a cache is a reference to samples somebody else owns — change
-     * them where they live and call {@link Source.reload} — and a source past
-     * the inline ceiling rides a blob, which the host has no live door for in a
-     * page: that gap is `clients/gui/PLAN.md`'s, not this call's to fake.
+     * carriers only the two that **hold** the samples take it — the inline
+     * `data` and the `blob` a long payload spills to, which are this platform's
+     * pair for the reference client's `data` and `path`. The carrier is fixed
+     * when the source is made, there and here: a widget on screen was built
+     * around it. A source that *names* samples somebody else owns (a server
+     * buffer, a cache) is a reference: change them where they live and call
+     * {@link Source.reload}.
      */
     set(payload: ArrayLike<number> | Iterable<number> | unknown): this {
         if (this.#structure) {
@@ -297,26 +299,31 @@ export class Source {
             return this;
         }
         const samples = payload as ArrayLike<number> | Iterable<number>;
-        if (this.#carrier !== "data") {
+        if (this.#carrier !== "data" && this.#carrier !== "blob") {
             throw new TypeError(
-                `this source is carried as a ${this.#carrier}, which it cannot ` +
-                    "rewrite from here — change the samples where they live and " +
-                    "call reload(), or make the source from a short array so it " +
-                    "stays inline",
+                `this source names a ${this.#carrier}, which it does not own — ` +
+                    "change the samples where they live and call reload()",
             );
         }
         const values = [...(samples as Iterable<number>)].map(Number);
-        if (values.length > INLINE_MAX) {
+        if (this.#carrier === "data" && values.length > INLINE_MAX) {
             throw new RangeError(
                 `${values.length} samples do not fit the inline carrier this ` +
                     `source was made with (at most ${INLINE_MAX}). A source's ` +
                     "carrier is fixed when it is made, because a widget on screen " +
-                    "was built around it",
+                    "was built around it — make this one from a long array, so it " +
+                    "spills from the start",
             );
         }
-        this.#value = values;
+        // A blob is rewritten **as itself**, which is what the reference client
+        // does with the file it spilled to: same carrier, new bytes, and every
+        // widget drawing it is pushed the samples that now hold.
+        this.#value = this.#carrier === "blob" ? samplesToBlob(values) : values;
         for (const { node } of this.#bound) rewriteSource(node, this.props(), this.slots());
-        for (const { host, id } of [...this.#live]) host.set(id, { data: values });
+        const live: Record<string, PropValue> = this.#carrier === "blob"
+            ? { data: this.#value as Uint8Array }
+            : { data: values };
+        for (const { host, id } of [...this.#live]) host.set(id, live);
         return this;
     }
 

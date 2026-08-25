@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: a static plot of an offline render</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 46rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+      #stage { width: 720px; max-width: 100%; height: 300px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">Plotting an offline render's output: the static
+<code>plot</code> view.
+
+A <code>plot</code> is the lightweight counterpart of the heavy
+<code>waveform</code>: it draws a signal once (a line, or a min/max envelope
+when there are more samples than pixels) with no zoom or pan. Here the signal is
+produced <b>offline</b>, by the renderer, with no server and no audio device,
+then handed to the GUI host as a <b>bulk payload</b> — the samples never ride
+OSC argument by argument.
+
+So no audio server is involved — the audio was already rendered offline — and
+this brings up only the GUI host.</div>
+
+      <button id="run">render and plot</button>
+      <div id="stage"></div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/views/plot.py, call for call:
+      render the phrase offline, hand channel 0 to a `plot`, open it.
+
+      The one difference is the platform's and the plan already records it for
+      every heavy view: the script writes the samples to a `.f32` file and the
+      host **maps** it, and a page has no filesystem — so the same samples go as
+      the bulk payload a `source` carries, which is the browser's half of that
+      same door.
+
+      Serve clients/web (the package root) and open /examples/views/plot.html.
+      Build it first: ./build.sh
+    -->
+    <script type="module">
+      import { GuiHost, Session, gui, loadOsc, pageGuiConnection, seq } from "../../dist/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => { $("log").textContent += line + "\n"; };
+
+      const SR = 48000.0;
+
+      const phrase = () => new seq.Pbind({
+        degree: new seq.Pseq([0, 2, 4, 7, 4, 2], 2),
+        dur: 0.25,
+        amp: new seq.Pwhite(0.1, 0.2),
+      });
+
+      async function run() {
+        $("run").disabled = true;
+        await loadOsc();
+
+        // ---- the take, rendered offline ----
+        const nrt = await Session.nrt({ tempo: 2.0 });
+        nrt.play(phrase());
+        const take = await nrt.render({ sampleRate: SR, channels: 2 });
+        log(`rendered ${take.frames} frames (${(take.frames / SR).toFixed(2)} s) `
+          + "offline, no server");
+
+        // De-interleave channel 0, and hand it over as a source: the bulk path,
+        // so the samples cross beside the JSON rather than inside it.
+        const mono = new Float32Array(take.frames);
+        for (let i = 0; i < take.frames; i++) mono[i] = take.samples[i * 2];
+        log(`${mono.length * 4} B of raw f32 travel as one blob (no per-sample OSC)`);
+
+        await new GuiHost(await pageGuiConnection()).boot();
+        await gui.view(
+          { title: "Plot of an offline render", w: 720, h: 300 },
+          gui.plot({
+            name: "render", data: mono, min: -1.0, max: 1.0,
+            label: "offline render (mono)",
+          }),
+        ).open($("stage"));
+        log("the window plots the rendered signal — it is static, so there is "
+          + "nothing to drive");
+      }
+
+      $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
+    </script>
+  </body>
+</html>

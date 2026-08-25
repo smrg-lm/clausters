@@ -257,6 +257,29 @@ test("a long source rides a blob, and the index is assigned at open", () => {
     assert.equal((def.args[2] as Uint8Array).byteLength, (INLINE_MAX + 1) * 4);
 });
 
+test("a spilled source rewrites its blob, and pushes the bytes to what draws it", () => {
+    const { host, sent } = fakeHost();
+    const sig = source(new Array(INLINE_MAX + 1).fill(0.0));
+    const win = host.open(view({}, waveform({ name: "wave", data: sig })));
+    const before = sent().length;
+
+    // The reference client rewrites the **file** it spilled to and tells the
+    // widget to reload; a page has no file, so the bytes ride the blob
+    // `/gui_set` carries — same carrier, new samples, and the widget on screen
+    // was built around neither shape but around the source.
+    sig.set(new Array(INLINE_MAX + 1).fill(0.5));
+    const set = sent().slice(before).find((m) => m.addr === "/gui_set")!;
+    assert.equal(Number(set.args[0]), win.widget("wave").id);
+    assert.equal(String(set.args[1]), "data");
+    assert.ok(set.args[2] instanceof Uint8Array, "the samples ride as bytes");
+    assert.equal((set.args[2] as Uint8Array).byteLength, (INLINE_MAX + 1) * 4);
+
+    // And the carrier is still fixed, as it is there: an inline source handed
+    // more than it can hold says so rather than promoting itself.
+    const short = source([0.5]);
+    assert.throws(() => short.set(new Array(INLINE_MAX + 1).fill(0.0)), RangeError);
+});
+
 test("one source in two views is one payload and two references", () => {
     const sig = source([0.5]);
     const a = waveform({ name: "a", data: sig });
