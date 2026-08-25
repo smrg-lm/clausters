@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: goniometer, live spectrum and waterfall</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 52rem; }
+      #note { font-size: 13px; line-height: 1.5; max-width: 46rem; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; max-height: 14rem;
+            overflow-y: auto; }
+      #stage { width: 760px; max-width: 100%; height: 640px; }
+      .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">A phasescope, a live spectrum and a retained waterfall over
+server audio buses.
+
+A <code>phasescope</code> reads a <b>stereo pair</b> and draws the 45°-rotated
+Lissajous figure — mono reads as a vertical line, anti-phase as horizontal, a
+wide field fills the lozenge — with a running correlation read-out beneath. A
+<code>spectrum</code> reads one bus and draws one forward FFT per frame on a log
+frequency axis; it is <b>navigable</b>, which over a spectrum means its
+<i>frequency</i> axis. And a <b>waterfall</b> is the spectrogram presentation
+over the same live bus with a <code>retention</code> span: a forward-only source
+has no addressable past, so retention supplies one and the time axis becomes
+navigable exactly like a spectrogram computed from a file.
+
+The source is a sine whose <b>stereo image</b> is swept from this page: at
+θ&nbsp;=&nbsp;0 the two channels are identical (mono, r&nbsp;=&nbsp;+1), at 90°
+the right is a decorrelated detuned tone (wide, r&nbsp;≈&nbsp;0), at 180° it is
+the left inverted (anti-phase, r&nbsp;=&nbsp;−1).</div>
+
+      <div class="row">
+        <button id="run">open the analysis</button>
+        <button id="focus" disabled>focus the spectrum on its low end</button>
+        <button id="retain" disabled>retain 2 s instead of 8</button>
+      </div>
+      <div id="stage"></div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/views/analyzer.py, call for
+      call: the stereo def with its lagged controls, the three views, the
+      `view_x` read-out in hertz, and the two live policy changes (the
+      spectrum's window, the waterfall's retention).
+
+      Two differences, both the platform's. The script's host **maps the audio
+      server's shared-memory segment** and reads the buses out of it; a browser
+      host cannot map anything and subscribes `/bus_tapStream` instead -- the
+      same three pictures, one door further out, and neither page nor script
+      names that door. And the sweep runs on an interval where the script sweeps
+      inside its pump loop.
+
+      Serve clients/web (the package root) and open
+      /examples/views/analyzer.html. Build it first: ./build.sh
+    -->
+    <script type="module">
+      import { Session, Synth, gui } from "../../dist/index.js";
+      import { SynthDef, control, out, sine } from "../../dist/defs/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => {
+        $("log").textContent += line + "\n";
+        $("log").scrollTop = $("log").scrollHeight;
+      };
+
+      const RETAIN = 8.0;
+
+      function stereoDef(name = "stereo_image") {
+        // The sweep below writes these ~30 times a second, and a control is
+        // applied in steps at block boundaries: unlagged, the image jumps
+        // rather than sweeps, and a stepped `freq` breaks the sine's phase,
+        // which the goniometer shows as the figure snapping. `lag` is the
+        // server's own smoother, so what the views analyze is the continuous
+        // signal this page means and not the staircase the messages arrive as.
+        const freq = control("freq", 220.0, { lag: 0.05 });
+        const amp = control("amp", 0.2);
+        const left = sine(freq);
+        const side = sine(freq.mul(1.5));   // a fifth up: decorrelated from `left`
+        const right = left.mul(control("wm", 1.0, { lag: 0.05 }))
+          .add(side.mul(control("ws", 0.0, { lag: 0.05 })));
+        return new SynthDef(name, out(0.0, left.mul(amp)), out(1.0, right.mul(amp)));
+      }
+
+      let win = null, sweeping = null, nyquist = 24000.0;
+
+      async function run() {
+        $("run").disabled = true;
+        const session = await Session.embed();
+        const server = session.server;
+        await session.gui();
+        nyquist = (await server.queryInfo()).actualSampleRate / 2.0;
+
+        await stereoDef().send(server);
+        const synth = new Synth("stereo_image", { freq: 220.0 }, { server });
+
+        win = await gui.view(
+          { title: "Phasescope + live spectrum + waterfall", w: 760, h: 640, layout: "col" },
+          gui.panel(
+            { layout: "row", h: 200 },
+            gui.phasescope(0, { name: "gonio", windowMs: 30.0, label: "goniometer (L/R)" }),
+            gui.spectrum(0, {
+              name: "spectrum", fftSize: 2048, logFreq: true,
+              peakHold: true, navigable: true, label: "spectrum (left, log Hz)",
+            }),
+          ),
+          gui.signal({
+            view: "spectrogram", bus: 0, retention: RETAIN, navigable: true,
+            name: "waterfall", windowSize: 1024, freqScale: "log",
+            label: `waterfall (left tap, ${RETAIN.toFixed(0)} s retained)`,
+            axes: { x: { ruler: "time" }, y: { ruler: "hz" } },
+          }),
+        ).open($("stage"));
+
+        // The frequency window, reported as it is navigated — named in hertz,
+        // since the normalized pair is a display coordinate and the reader is
+        // looking at a frequency axis.
+        win.widget("spectrum").onEvent((tag, ...vals) => {
+          if (tag === "view_x" && vals.length >= 2) {
+            const lo = 20.0 * (nyquist / 20.0) ** vals[0];
+            const hi = 20.0 * (nyquist / 20.0) ** Math.min(vals[0] + vals[1], 1.0);
+            log(`  spectrum: ${lo.toFixed(0)} Hz .. ${hi.toFixed(0)} Hz`);
+          }
+        });
+
+        log("goniometer: vertical=mono (r=+1), lozenge=wide (r~0), "
+          + "horizontal=anti-phase (r=-1)");
+        log("spectrum: drag the curve to pan its frequency axis, wheel to zoom "
+          + "under the cursor, R to see the whole axis again");
+        log(`waterfall: the last ${RETAIN.toFixed(0)} s of the same bus, and `
+          + "because the host retains them the axis is navigable");
+
+        // The sweep, narrating the three landmarks.
+        let regime = null;
+        const started = performance.now();
+        sweeping = setInterval(() => {
+          const t = (performance.now() - started) / 1000;
+          const theta = Math.PI * (0.5 - 0.5 * Math.cos(2 * Math.PI * t / 6.0));
+          const freq = 220.0 * 2.0 ** (0.5 * Math.sin(2 * Math.PI * t / 11.0));
+          synth.set({ wm: Math.cos(theta), ws: Math.sin(theta), freq });
+          const deg = theta * 180 / Math.PI;
+          const now = deg < 30 ? "mono"
+            : deg > 150 ? "anti-phase"
+              : (deg > 60 && deg < 120) ? "wide" : regime;
+          if (now !== regime) {
+            regime = now;
+            log(`  ${regime}`);
+          }
+        }, 30);
+
+        $("focus").disabled = false;
+        $("retain").disabled = false;
+      }
+
+      $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
+
+      // Points the spectrum's frequency window at a slice of its axis, in
+      // normalized display units (0, 1 = all of it) — the same window the
+      // pointer moves, set the way any other prop is set.
+      $("focus").onclick = () => {
+        win.widget("spectrum").set({ viewStart: 0.0, viewLen: 0.35 });
+        log("  spectrum window -> 0.00 +0.35");
+      };
+
+      // Resizes the retained span live — the axis's own policy. Narrowing it
+      // drops the oldest history at once, so the waterfall's time axis visibly
+      // shortens under the picture.
+      $("retain").onclick = () => {
+        win.widget("waterfall").set({
+          retention: 2.0, label: "waterfall (left tap, 2 s retained)",
+        });
+        log("  retention -> 2 s");
+      };
+    </script>
+  </body>
+</html>

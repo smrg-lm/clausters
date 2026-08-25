@@ -2696,12 +2696,18 @@ finished work, where a pending item reads as done.
   counted here at all**: `faust/boxes-library` belongs to **W7**'s acceptance
   and `io/midi-responder`/`editors/pianoroll-midi` to **W9**'s, since neither
   page can be written before those milestones and writing it is how each is
-  shown to work. Two have **no page by nature** and say so:
+  shown to work. Four have **no page by nature**:
   `io/live-udp` (a UDP peer) and `io/embedded` (the server in this process
-  through the cdylib — in a tab that *is* the engine). And
-  `views/recording-mapped` is the third, already stated in its own docstring:
-  it is `recording.html`'s window drawn from a **mapped** segment, and "a page
-  can map nothing". The 12 are not all gaps — `components/` is a
+  through the cdylib — in a tab that *is* the engine); `views/recording-mapped`,
+  already stated in its own docstring — it is `recording.html`'s window drawn
+  from a **mapped** segment, and "a page can map nothing"; and `views/bulk`,
+  whose subject is precisely the three *shared-resource* forms a `waveform`
+  accepts (a peak-cache file, a raw `f32` file, a server buffer exported to
+  one). All three are files the host memory-maps, and a tab has no filesystem
+  and no mapping: its bulk path is the blob beside the `/gui_def`, which
+  `views/plot`, `views/linked` and `views/rulers` each show in place of a
+  mapped file. Porting it would be writing a different example under the same
+  name. The 12 are not all gaps — `components/` is a
   surface the page has and the script cannot, `basics/engine` is the platform
   itself — but `panels/host`, `basics/synth`, `basics/demand`,
   `transport/sequencing` and `io/responders` are pages whose subject the Python
