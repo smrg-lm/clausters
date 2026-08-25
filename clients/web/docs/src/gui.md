@@ -165,7 +165,7 @@ different carrier and is this client's `attach`: it connects to a host it did
 not open. Either becomes the **ambient** host if none is registered (first-wins,
 the mirror of the audio server's default-session adoption), which is why
 `view(...).open()` needs no argument, and `stop()` gives the registration up. A
-`Session` opened with `Session.page()` carries one either way; a session drives
+`Session` opened with `Session.embed()` carries one either way; a session drives
 a host it did not open by being **given** one — `new Session(server, clock,
 await new GuiHost(await WsConnection.open(url)).attach())` — the way it is given a `Server`.
 `newGuiHost()` boots an instance that is **not** the page's — its own engine

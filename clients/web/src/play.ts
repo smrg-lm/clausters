@@ -32,7 +32,7 @@
 // created and started on first use.
 //
 // ```ts
-// const s = (await Session.page()).adoptDefault();
+// const s = (await Session.embed()).adoptDefault();
 // play(new Event({ degree: 0 }));                          // one note, now
 // play(new Pbind({ degree: new Pseq([0, 2, 4]), dur: 0.5 })); // a phrase
 // ```

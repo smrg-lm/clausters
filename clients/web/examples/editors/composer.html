@@ -240,7 +240,7 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
         // One session, as the Python example opens one: it owns the server, the
         // clock and the GUI host. `page` is this client's `live` — the engine is
         // the tab's own rather than a process this line started.
-        session = await Session.page({ tempo: TEMPO, latency: 0.1, channels: 2 });
+        session = await Session.embed({ tempo: TEMPO, latency: 0.1, channels: 2 });
         server = session.server;
         SR = (await server.queryInfo()).nominalSampleRate;
 

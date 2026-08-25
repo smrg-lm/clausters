@@ -54,7 +54,7 @@ one block.</div>
 
       The platform's two differences: the script boots an audio server process
       and a windowed `clausters-gui` beside it, where a tab has the engine and
-      the host in itself (`Session.page()` + `session.gui()`), and the drawing
+      the host in itself (`Session.embed()` + `session.gui()`), and the drawing
       goes into an element instead of an OS window. And nothing is pumped -- the
       page has an event loop, so the script's `run()` has no counterpart.
 
@@ -106,10 +106,10 @@ one block.</div>
         $("run").disabled = true;
 
         // ---- the session, the GUI and a synth to drive ----
-        // `Session.page()` opens the engine in this tab; `session.gui()` gives
+        // `Session.embed()` opens the engine in this tab; `session.gui()` gives
         // it the host with its client leg pointed at that server, which is what
         // lets `/gui_bind` forward straight to it.
-        const session = await Session.page();
+        const session = await Session.embed();
         const server = session.server;
         await session.gui();
 

@@ -107,7 +107,7 @@ async function withCleanDefault(body: () => Promise<void> | void): Promise<void>
 
 test("with nothing opened, resolution fails by naming the two ways to open one", () =>
     withCleanDefault(() => {
-        assert.throws(() => main.resolveServer(), /Session\.page\(\)|Session\.connect/);
+        assert.throws(() => main.resolveServer(), /Session\.embed\(\)|Session\.live/);
         // And the failure reaches the surface a script actually types.
         assert.throws(() => new Synth("beep"), /no server to play on/);
     }));

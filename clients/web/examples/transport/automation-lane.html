@@ -91,7 +91,7 @@ has no offline drive.</div>
       async function start() {
         // The AudioContext needs the gesture that got us here, which is why
         // this is a button.
-        session = await Session.page({ tempo: 1.0 });
+        session = await Session.embed({ tempo: 1.0 });
         const server = session.server;
         await tone().send(server);
         drone = new Synth("web_tone", { freq: 220.0, amp: 0.2 }, { server });

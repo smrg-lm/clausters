@@ -6,7 +6,7 @@ Four free-standing functions cover the interactive loop: **`play`** sounds a thi
 import { Session, play, plot, render } from "clausters";
 import { sine } from "clausters/defs";
 
-const session = (await Session.page()).adoptDefault();
+const session = (await Session.embed()).adoptDefault();
 const node = play(sine(440.0).mul(0.2));   // a bare expression, sounding now
 node.free();                                // ...and gone
 await plot(sine(440.0).mul(0.2), { dur: 0.02 });   // the same signal, on screen

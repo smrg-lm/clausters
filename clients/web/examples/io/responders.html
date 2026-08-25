@@ -35,7 +35,7 @@ example's second half does.
 Where the reference client binds a UDP port any application can target, a page
 has no socket to bind: its receiver is the carrier it already has — this
 engine's connection — so <code>src</code> reads <code>page</code> rather than a
-host and a port. Over <code>Session.connect(url)</code> the same code listens to
+host and a port. Over <code>Session.live(url)</code> the same code listens to
 a native server and <code>src</code> is that socket's URL.
 
 Everything below runs on the <b>in-page engine</b>: no server process.
@@ -79,7 +79,7 @@ Everything below runs on the <b>in-page engine</b>: no server process.
 
         // The page's own engine, adopted as the ambient session — which is
         // also what a responder naming no receiver will resolve.
-        session = await Session.page({ tempo: 1.0 });
+        session = await Session.embed({ tempo: 1.0 });
         session.adoptDefault();
         const server = session.server;
 

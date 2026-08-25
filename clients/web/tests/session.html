@@ -79,8 +79,8 @@
         // measured on its own — they mix in the browser, not in one engine.
         const audioA = await engine({ channels: 2 });
         const audioB = await engine({ channels: 2 });
-        const a = await Session.page({ engine: audioA, tempo: 2.0 });
-        const b = await Session.page({ engine: audioB, tempo: 2.0 });
+        const a = await Session.embed({ engine: audioA, tempo: 2.0 });
+        const b = await Session.embed({ engine: audioB, tempo: 2.0 });
         a.adoptDefault();   // the page's default: what an ambient verb reaches
         log(`two sessions open, each on its own engine`);
 

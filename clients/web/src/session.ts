@@ -19,7 +19,7 @@
 // that never touches the default one.
 //
 // ```ts
-// const s = await Session.page({ tempo: 2.0 });
+// const s = await Session.embed({ tempo: 2.0 });
 // s.play(new Pbind({ instrument: "default", freq: Pseq([440, 550]), dur: 0.5 }));
 // ```
 //
@@ -85,9 +85,9 @@ export interface SessionOptions {
  * that owns them and drives them as a unit — `play` a pattern on it, `run` it
  * for some seconds, `gui()` a host wired to its own engine.
  *
- * Prefer the factories to the constructor: `page` opens a session on an
- * in-page engine and `connect` one on a `--ws` server, each with sensible
- * defaults. The constructor is for the uncommon case of supplying your own
+ * Prefer the factories to the constructor: `embed` opens a session on the
+ * server inside this tab and `live` one on a `--ws` server, each with sensible
+ * defaults — the reference client's two names, for the same two situations. The constructor is for the uncommon case of supplying your own
  * `Server` and clock.
  *
  * Which factory you call is the *only* thing that differs between the two
@@ -164,8 +164,15 @@ export class Session extends Environment {
     }
 
     /**
-     * A session on an **in-page engine** — the audio server compiled to wasm
-     * in this tab's AudioWorklet, with no process and no socket anywhere.
+     * A session on an **embedded** server — the audio server compiled to wasm
+     * and running in this tab's AudioWorklet, with no process and no socket
+     * anywhere.
+     *
+     * The reference client's `Session.embed`, and the same thing it names: the
+     * server inside this program rather than one it talks to. There it is the
+     * bundled native library in this process; here it is wasm in this tab, and
+     * either way the client shares memory with it — which is what lets a whole
+     * take go into a buffer in one copy.
      *
      * Defaults to the page's shared engine, which is what a page wants: its
      * components play into one mix. Pass `own: true` for an engine of this
@@ -176,7 +183,7 @@ export class Session extends Environment {
      * The `AudioContext` needs a user gesture to start, so call this from a
      * click rather than at load.
      */
-    static async page({
+    static async embed({
         own = false,
         engine,
         channels,
@@ -209,12 +216,20 @@ export class Session extends Environment {
     }
 
     /**
-     * A session on a **native server** over a WebSocket (`clausters --ws`) —
-     * the browser's only network carrier, and the one that reaches a server
-     * with the whole def catalogue (the in-page engine is the `synth,embed`
+     * A session on a **live server** — one running as its own process,
+     * reached over a WebSocket (`clausters --ws`).
+     *
+     * The reference client's `Session.live`, minus the half a tab cannot do:
+     * there, `live` **boots** a server when none answers; here it can only
+     * `attach`, since a page starts no process. The address defaults the same
+     * way, but nobody answering it is an error rather than something this call
+     * fixes by starting one.
+     *
+     * The browser's only network carrier, and the one that reaches a server
+     * with the whole def catalogue (the embedded engine is the `synth,embed`
      * build, with no Faust JIT).
      */
-    static async connect(
+    static async live(
         url = "ws://127.0.0.1:57120",
         { tempo = 1.0, timebase, latency, timeout, share }: SessionOptions = {},
     ): Promise<Session> {

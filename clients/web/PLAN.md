@@ -1230,12 +1230,24 @@ forward:
   port of `with session:` and is **synchronous by design** — an `await` inside
   would let another task run while this session is ambient, and there is no
   way to scope that on one thread.
-- **The factories are named for the carriers, not for Python's.**
-  `Session.page()` and `Session.connect(url)`, matching `GuiHost.page()`/
-  `GuiHost.connect()` and the `Server` carriers this package already has,
-  rather than `embed`/`live(host, port)` — whose parameters (a host, a port, a
-  process to boot) a page has none of. `nrt`/`render` and `join_transport`
-  wait on **W13** and **W12**.
+- **The factories were named for the carriers, and are not any more.**
+  They were `Session.page()` and `Session.connect(url)`, matching
+  `GuiHost.page()`/`GuiHost.connect()` and the `Server` carriers this package
+  had, rather than `embed`/`live(host, port)` — "whose parameters (a host, a
+  port, a process to boot) a page has none of". `nrt`/`render` and
+  `join_transport` waited on **W13** and **W12**, and are in.
+
+  **Reversed on 2026-08-25**: they are `Session.embed()` and `Session.live(url)`.
+  Half the reasoning was the match with `GuiHost.page()`/`connect()`, and those
+  are gone — the same divergence one layer up, made `boot`/`attach` the same
+  day. The other half confused the constructor with the verb: `live` takes an
+  address, which a page has, and only the *boot* inside it is impossible here.
+  What the two names mean is what a tab has both of — a server **inside this
+  program** (the wasm engine in the worklet, sharing memory, which is what
+  `embed` names there too) and one **running as its own process**, reached over
+  a socket. So `embed` boots and `live` attaches, and the one missing half —
+  `live` starting a server when none answers — is named in its doc comment
+  rather than left to be found.
 - **`adoptDefault()` lends the server and not the clock.** In Python the
   default server is adopted by a free-standing `Server.boot()`; a page has no
   process to boot, so the verb is the session's. It stops at the server on

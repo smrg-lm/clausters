@@ -103,8 +103,8 @@ export class Main extends Environment {
         if (session?.server) return session.server;
         if (this.server) return this.server;
         throw new Error(
-            "no server to play on: open one with Session.page() or " +
-                "Session.connect(url), or pass { server }",
+            "no server to play on: open one with Session.embed() or " +
+                "Session.live(url), or pass { server }",
         );
     }
 

@@ -27,7 +27,7 @@ event keys, a generator, a pattern, a def, a timeline, a buffer — and a bare
 <code>new Synth(…)</code> reaches the session's server without naming it.
 
 The carrier is the one line that knows about one. This page opens the session
-on the in-page engine; <code>Session.connect(url)</code> would open the same
+on the in-page engine; <code>Session.live(url)</code> would open the same
 session on a <code>clausters --ws</code> server, and nothing below would
 change.</div>
 
@@ -87,7 +87,7 @@ change.</div>
       async function open() {
         // The AudioContext needs the gesture that got us here, which is why
         // this is a button.
-        session = (await Session.page({ tempo: 2.0 })).adoptDefault();
+        session = (await Session.embed({ tempo: 2.0 })).adoptDefault();
         await defaultInstrument().send(session.server);
         log(`session open: tempo ${session.clock.tempo}, `
           + `${session.server.sizing.audioBuses} audio buses`);

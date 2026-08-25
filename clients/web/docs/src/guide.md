@@ -54,7 +54,7 @@ gui.attach(windowId, myCanvas);                   // and it appends no canvas
 
 Instances share the browser tab and nothing else, so two of them may use the very same window, widget and node ids without colliding — which is the point, since clients that allocate ids independently have no way to agree on a range. Take `newPools()` along with the host: the page's pools are shared by everything that shares the page's engine, and an independent client wants an id space of its own. A second host costs neither a download nor a GPU device; a second engine is a second `AudioContext`, and browsers cap those (Chrome at six). `gui.close()` releases one — its wasm instance, its GPU device and its event drain, leaving every other host on the page drawing.
 
-Two clients on the **same** engine are the other arrangement, and there the ids do collide: both allocators start at the same base. They split the space instead, each taking one slice of it — `Session.page({ share: { index: 1, of: 2 } })`, with the other client given index 0. The slices are equal and in a fixed order, so they are disjoint by arithmetic and the two clients need no channel to agree; a session's share governs both of its legs, the server's node, bus and buffer ids and its host's widget ids alike.
+Two clients on the **same** engine are the other arrangement, and there the ids do collide: both allocators start at the same base. They split the space instead, each taking one slice of it — `Session.embed({ share: { index: 1, of: 2 } })`, with the other client given index 0. The slices are equal and in a fixed order, so they are disjoint by arithmetic and the two clients need no channel to agree; a session's share governs both of its legs, the server's node, bus and buffer ids and its host's widget ids alike.
 
 What each pair differs in is only what a page wants by default. `guiHost()` and `server()` are memoized and come with the page's default canvas; `newGuiHost()` and `engine()` are neither, since a host that is not the page's has no business appending a canvas to `<body>`. `examples/panels/two-hosts.html` shows the whole arrangement end to end.
 
@@ -112,21 +112,17 @@ A `Group` is **born named** — `new Group({ name: "mixer" })`, and `group.renam
 A **`Session`** is a server, a clock and (if you ask for one) a GUI host, bundled into the handle a piece is written against:
 
 ```js
-const s = await Session.page({ tempo: 2.0 });       // this tab's engine
-const s = await Session.connect(url);               // a `clausters --ws` server
+const s = await Session.embed({ tempo: 2.0 });       // this tab's engine
+const s = await Session.live(url);               // a `clausters --ws` server
 ```
 
-That one call opens the connection, opens the `Server`, builds a clock at that tempo and anchors it to the server's own sample counter — the four lines a page used to write by hand. It is also the unit of **isolation**: its own random root (`s.seed(1)` reproduces this session's samples and no other's), and, with `Session.page({ own: true })`, its own engine, so its nodes, buses and buffers share nothing with the rest of the document. Several coexist, which is why this exists at all: since the engines and hosts became instances, an environment is a thing a page has more than one of.
+That one call opens the connection, opens the `Server`, builds a clock at that tempo and anchors it to the server's own sample counter — the four lines a page used to write by hand. It is also the unit of **isolation**: its own random root (`s.seed(1)` reproduces this session's samples and no other's), and, with `Session.embed({ own: true })`, its own engine, so its nodes, buses and buffers share nothing with the rest of the document. Several coexist, which is why this exists at all: since the engines and hosts became instances, an environment is a thing a page has more than one of.
 
 `s.close()` releases what the session owns — its GUI host, its server client, its clock, and an engine it opened for itself. The page's shared engine is not a session's to stop.
 
-A carrier can be open with nothing behind it: a WebSocket that connects proves a listener, not a server, and a port wired to an engine that never came up looks the same from here. By default the session is built anyway, on the compiled sizing, so a page is not stopped by a server that may yet answer — and if it never does, every command leaves without a trace. Pass **`verify`** for the opposite reading, which is worth having on `connect`:
+A carrier can be open with nothing behind it: a WebSocket that connects proves a listener, not a server, and a port wired to an engine that never came up looks the same from here. `Session.live` **refuses** that, because it attaches, and attaching verifies — a `ServerError` naming the address rather than every later command leaving without a trace. Reconciling comes with it: the handle's allocators match the server that is actually running rather than the page's defaults, which matters most when you did not launch it.
 
-```js
-const s = await Session.connect(url, { verify: true });   // ServerError if nothing answers
-```
-
-It also makes the handle's allocators match the server that is actually running rather than the page's defaults, which matters when you did not launch it. This is the browser's half of the Python client's `Server.attach`; the other half, `boot`, has no counterpart here — a page has no process to start.
+`Session.embed` boots instead, which is the pair's other half, and what a tab can bring up is its own engine. Booting a server on the machine a socket points at is the one thing neither half does here — a page starts no process — which is why `live` takes an address and not a launch.
 
 ### The default session
 
@@ -135,7 +131,7 @@ Beside the named ones there is the **default session**, `defaultSession`: the am
 ```js
 import { Session, Synth, play, Event, seq } from "clausters";
 
-const s = (await Session.page()).adoptDefault();
+const s = (await Session.embed()).adoptDefault();
 
 play(new Event({ degree: 0, dur: 0.5 }));   // a note, now
 play(new seq.Pbind({ degree: new seq.Pseq([0, 2, 4]), dur: 0.5 }));
