@@ -48,6 +48,7 @@ import { OscReceiver } from "../../base/receiver.ts";
 import type { OscHandler } from "../../base/receiver.ts";
 import { OscFunc } from "../../responders.ts";
 import type { RenderOptions, RenderStats } from "../../render.ts";
+import { main } from "../../base/main.ts";
 import { Moment } from "../../base/moment.ts";
 import { MonotonicTimebase, SampleTimebase } from "../../base/timebase.ts";
 import type { Timebase } from "../../base/timebase.ts";
@@ -218,6 +219,7 @@ export class Server {
             verify = false,
             timeout = DEFAULT_TIMEOUT,
             share = WHOLE_SHARE,
+            adoptDefault = true,
         }: {
             sizing?: Partial<ServerSizing>;
             notify?: boolean;
@@ -246,6 +248,17 @@ export class Server {
              * client.
              */
             share?: IdShare;
+            /**
+             * Make this the **default session's** server when there is none, so
+             * the free-standing verbs (`play`, `render`, a bare `new Synth`)
+             * resolve it with nothing else wired. A server already adopted is
+             * not displaced: whichever claimed the slot first keeps it.
+             *
+             * This is the reference client's `adopt_default` on `Server.boot`
+             * and `Server.attach`, under the verb a page has: there is no
+             * process to spawn here, so opening the carrier *is* the boot.
+             */
+            adoptDefault?: boolean;
         } = {},
     ): Promise<Server> {
         const defaults: ServerSizing = {
@@ -298,6 +311,7 @@ export class Server {
         }
         const server = new Server(connection, resolved, timeout, share);
         if (notify) await server.notify(true, timeout);
+        if (adoptDefault) main.server ??= server;
         return server;
     }
 

@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: the simplest possible sound</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 46rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+      .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">The simplest possible sound: open a server, play a note.
+
+No <b>Session</b>, no clock wiring. <code>Server.open</code> adopts the server
+as the <b>default session</b>, so <code>play</code> finds it on its own. A bare
+event outside any clock plays immediately and frees itself after its sustain,
+and the phrase under it runs on the default session's clock — created and
+started for you.
+
+Nothing is sent first: <code>default</code> is the server's own built-in
+instrument, and it carries the gated envelope that makes a note end.</div>
+
+      <div class="row">
+        <button id="open">open a server</button>
+        <button id="note-btn" disabled>one note</button>
+        <button id="phrase" disabled>a short phrase</button>
+      </div>
+
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/basics/hello_note.py, call for
+      call: open a server, `play` one event, `play` a pattern.
+
+      Two differences, both the page's and neither a surface: the script's cells
+      are buttons here, because a browser starts no audio without a gesture —
+      the first click is what an AudioContext needs, and it is why opening the
+      server is a button rather than the first line to run; and where the script
+      sleeps between cells to let the sound happen, the page simply leaves the
+      buttons there. Both are the same three calls in the same order.
+
+      Serve clients/web (the package root) and open
+      /examples/basics/hello-note.html — the page imports ../../dist, so the
+      served root has to contain it. Build it first: ./build.sh
+    -->
+    <script type="module">
+      import {
+        Event, Server, loadOsc, pageConnection, play, seq, server as engine,
+      } from "../../dist/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => { $("log").textContent += line + "\n"; };
+
+      let server = null;
+
+      // ---- open ----
+      // The script's `Server().boot()` launches a process; a tab has none, so
+      // the server is the engine in this page's AudioWorklet. Either way the
+      // handle that comes back is the default session's server, which is what
+      // makes `play` below need nothing.
+      async function open() {
+        $("open").disabled = true;
+        await loadOsc();
+        const raw = await engine({ channels: 2 });
+        await raw.resume();   // the gesture the click carries
+        server = await Server.open(await pageConnection());
+        log("server up: the in-page engine, adopted as the default session's");
+        $("note-btn").disabled = false;
+        $("phrase").disabled = false;
+      }
+
+      // ---- one note, right now ----
+      // Resolved against the default session, with no clock in sight.
+      function one() {
+        play(new Event({ degree: 0 }));    // or: new Event({ degree: 0 }).play()
+        log("play(new Event({ degree: 0 }))");
+      }
+
+      // ---- a short phrase ----
+      // With no clock in context, `play` uses the default session's clock,
+      // created and started for you.
+      function phrase() {
+        play(new seq.Pbind({
+          instrument: "default",
+          degree: new seq.Pseq([0, 2, 4, 7]),
+          dur: 0.4,
+        }));
+        log("played; synths free themselves after their sustain");
+      }
+
+      $("open").onclick = () => open().catch((e) => log(`error: ${e}`));
+      $("note-btn").onclick = one;
+      $("phrase").onclick = phrase;
+    </script>
+  </body>
+</html>

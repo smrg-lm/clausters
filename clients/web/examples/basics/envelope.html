@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: an amplitude envelope that frees its synth</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 46rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+      .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">Amplitude envelopes with <code>envGen</code> — a gated
+ADSR that frees itself.
+
+The point of interest is the def: a sine shaped by an <code>envGen</code>
+playing an <code>Env.adsr</code>. The envelope's <code>gate</code> is a control
+and its <code>doneAction</code> is <code>FREE_SELF</code>, so the synth stays
+alive exactly as long as its sound and then frees itself — no
+<code>/node_free</code> bookkeeping from this side.
+
+<code>hasGate</code> is what closes the gate: for each note the player sends
+<code>gate 0</code> after the note's <code>sustain</code> instead of freeing the
+node outright, which starts the release segment. The built-in
+<code>default</code> instrument carries a gated envelope of exactly this shape
+and is gate-released for you; this page builds its <b>own</b> — a full ADSR with
+a chosen attack, decay, sustain and release.</div>
+
+      <div class="row">
+        <button id="render">render the phrase</button>
+        <button id="hear" disabled>hear it</button>
+        <button id="save" disabled>save the wav</button>
+      </div>
+
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/basics/envelope.py, call for
+      call: build the def, write the phrase, render it offline, report what the
+      take was.
+
+      The one line that differs is the last: the script writes the render to a
+      WAV and tells the reader to play it with `pw-play`, because it has a
+      filesystem. A tab has none, so the take goes back into the engine with
+      `Buffer.fromSamples` and sounds there (`Buffer.from_samples` is the same
+      call in the script's client, and it is what that one would use for a take
+      that never becomes a file). The wav is still offered, as a blob a click
+      downloads — the browser's answer to a path.
+
+      Offline does not mean run-once here either: change a segment of the
+      envelope, reload, render again.
+
+      Serve clients/web (the package root) and open
+      /examples/basics/envelope.html. Build it first: ./build.sh
+    -->
+    <script type="module">
+      import {
+        Buffer, Server, Session, loadOsc, pageConnection, play, seq,
+        server as engine, wavBytes,
+      } from "../../dist/index.js";
+      import {
+        DoneAction, Env, SynthDef, control, envGen, out, sine,
+      } from "../../dist/defs/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => { $("log").textContent += line + "\n"; };
+
+      const SR = 48000.0;
+
+      // ---- the def ----
+      // A sine whose amplitude follows an ADSR. `gate` sustains at half level
+      // while held; on release it fades out and frees the synth.
+      function adsrPad(name = "adsr_pad") {
+        const freq = control("freq", 440.0);
+        const amp = control("amp", 0.2);
+        const gate = control("gate", 1.0);
+        const env = envGen(Env.adsr(0.02, 0.15, 0.5, 0.5), {
+          gate,
+          doneAction: DoneAction.FREE_SELF,
+        });
+        const sig = sine(freq).mul(env).mul(amp);
+        return new SynthDef(name, out(0.0, sig), out(1.0, sig));
+      }
+
+      // ---- the phrase ----
+      // `hasGate` makes each note release its envelope (`gate 0`) after
+      // `sustain` rather than being freed outright; `sustain` < `dur` leaves a
+      // gap so the release tail is audible before the next note.
+      const phrase = () => new seq.Pbind({
+        instrument: "adsr_pad",
+        hasGate: true,
+        degree: new seq.Pseq([0, 2, 4, 7], 2),
+        dur: 0.5,
+        sustain: 0.35,
+        amp: 0.2,
+      });
+
+      let take = null;
+
+      // ---- the render ----
+      // An offline session: its server writes a timestamped score instead of
+      // sending anything, so the def is `send`-ed into the score at time 0 and
+      // the phrase plays into it. `render` then turns the score into samples.
+      async function renderPhrase() {
+        const session = await Session.nrt({ tempo: 2.0 });
+        await adsrPad().send(session.server);   // /def_send synth at time 0
+        session.play(phrase());
+        const stats = await session.render({ sampleRate: SR, channels: 2 });
+        session.close();
+        const peak = Math.max(...stats.peak, 0.0);
+        log(`rendered ${stats.frames} frames (${stats.duration.toFixed(2)} s) `
+          + `| peak ${peak.toFixed(3)}`);
+        return stats;
+      }
+
+      async function renderIt() {
+        $("render").disabled = true;
+        log("rendering...");
+        take = await renderPhrase();
+        $("hear").disabled = false;
+        $("save").disabled = false;
+        $("render").disabled = false;
+      }
+
+      // The take, heard: the samples go straight into the engine's buffer pool
+      // and a `playBuf` reads them. This is the page's `pw-play`.
+      async function hear() {
+        await loadOsc();
+        const raw = await engine({ channels: 2 });
+        await raw.resume();
+        const server = await Server.open(await pageConnection());
+        const buffer = await Buffer.fromSamples(
+          take.samples, take.channels, take.sampleRate, { server },
+        );
+        log(`buffer ${buffer.bufnum}: ${buffer.frames} frames x ${buffer.channels} ch`);
+        // `Server.open` adopted this server as the default session's, so the
+        // ambient verb finds it: a buffer is one of the kinds `play` sounds.
+        play(buffer);
+      }
+
+      // The blob a click downloads — a path is the one thing a tab has no
+      // counterpart for.
+      function save() {
+        const blob = new Blob([wavBytes(take)], { type: "audio/wav" });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = "envelope.wav";
+        link.click();
+        URL.revokeObjectURL(link.href);
+        log("wrote envelope.wav");
+      }
+
+      $("render").onclick = () => renderIt().catch((e) => log(`error: ${e}`));
+      $("hear").onclick = () => hear().catch((e) => log(`error: ${e}`));
+      $("save").onclick = save;
+    </script>
+  </body>
+</html>

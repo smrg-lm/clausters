@@ -163,7 +163,13 @@ export class Session extends Environment {
     static async nrt({ tempo = 1.0 }: { tempo?: number } = {}): Promise<Session> {
         await loadOsc();
         const connection = new ScoreConnection();
-        const server = await Server.open(connection, { sizing: {}, notify: false });
+        // `adoptDefault: false`, as in the reference client's `Session.live`:
+        // opening a carrier claims the default slot, but a **session** is asked
+        // for it (`adoptDefault()`) rather than taking it by being built — and
+        // an offline score least of all.
+        const server = await Server.open(connection, {
+            sizing: {}, notify: false, adoptDefault: false,
+        });
         return new Session(server, new TempoClock(tempo));
     }
 
@@ -230,7 +236,12 @@ export class Session extends Environment {
         connection: Connection,
         { tempo, timebase, latency, timeout, share, verify }: SessionOptions,
     ): Promise<Session> {
-        const server = await Server.open(connection, { timeout, share, verify });
+        // Not the default session's by being built: `adoptDefault()` is the
+        // verb for that, the way the reference client's `Session.live` passes
+        // `adopt_default=False` and leaves the slot to whoever asks.
+        const server = await Server.open(connection, {
+            timeout, share, verify, adoptDefault: false,
+        });
         if (latency !== undefined) server.latency = latency;
         const session = new Session(server, new TempoClock(tempo, { timebase }));
         // With no explicit timebase, anchor to the server's own sample clock:

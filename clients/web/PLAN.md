@@ -2260,6 +2260,28 @@ Python counterpart under another spelling or is a page's own (`ANY_PEER`,
 
 ## Found by use: the running list of fixes
 
+- ✅ **Opening a server did not adopt it, so the ambient verbs had nothing to
+  resolve** *(found 2026-08-25, porting `hello_note.py`; fixed the same day)*.
+  The reference client's `Server.boot()` and `Server.attach()` both take
+  `adopt_default=True` and claim the default session's slot when it is free —
+  which is what makes `Server().boot()` followed by a bare `play(Event(...))`
+  the first example a reader ever runs. Here `Server.open` claimed nothing, so
+  the same two lines ended in *"no server to play on: open one with
+  Session.page() or Session.connect(url)"* — advice that names two verbs the
+  reader did not want, for a server they had just opened.
+
+  `Server.open` adopts first-wins now, with the same opt-out under the name the
+  language gives it (`adoptDefault`). Both places that open a carrier *without*
+  it being the reader's act of opening a server pass `false`, exactly as
+  `Session.live` does there: `Session.nrt` (an offline score has no business
+  being the page's default) and `Session.over`, since a session is **asked** for
+  the slot with `adoptDefault()` rather than taking it by being constructed.
+
+  It went unnoticed because no page did it: every example opened a `Session`
+  first, which resolves through its own field. That is precisely what a port of
+  the *simplest* example turns up, and the reason W16 is worth the effort beyond
+  the pages themselves.
+
 - ⬜ **A running clock resumes what it is handed inside `play`, where the
   reference client's returns first** *(found 2026-08-25, writing `Routine.run`)*.
   `TempoClock.sched` ends in `pump()`, and an item due now is resumed there —

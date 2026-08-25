@@ -46,6 +46,10 @@ function recorder(): Connection & { packets: Uint8Array[] } {
     };
 }
 
+// `adoptDefault: false`: opening a carrier claims the default slot when it is
+// free (the reference client's `adopt_default`), and what this file is about is
+// what a **session** does with that slot — so the fakes stay out of it and each
+// test claims it explicitly.
 const openServer = (connection: Connection) =>
     Server.open(connection, {
         sizing: {
@@ -53,6 +57,7 @@ const openServer = (connection: Connection) =>
             maxBuffers: 4096, channels: 2,
         },
         notify: false,
+        adoptDefault: false,
     });
 
 /** A session over a recording carrier, with a clock nothing wakes by itself. */
