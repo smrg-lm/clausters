@@ -101,7 +101,7 @@ Where the work lives:
 | `Dx`, `Hx`, `Ax`, `Kx`, `Ex`, `Gx` | `clients/gui/PLAN.md` | the GUI host: gestures, undo from the hand, measured layers, the widget API |
 | `Cx` | `clients/python/PLAN.md` | the Python client |
 | `Wx` | `clients/web/PLAN.md` | the web client |
-| `Mx`, `Sx`, `Tx`, `Rx` | `PLAN.md` (root) | the server |
+| `Mx`, `Sx`, `Tx`, `Rx`, `Bx` | `PLAN.md` (root) | the server, and its engine in the browser (`Bx`) |
 
 Entries below that carry no label are **plan entries, not milestones** — they
 are named by their own title and by the plan that holds them, and a phase that
@@ -191,6 +191,16 @@ not ask.*
   W16 closed: `faust/boxes-library` rides with **W7** (it cannot be written
   until a page has a Faust compiler) and `io/midi-responder` and
   `editors/pianoroll-midi` with **W9**.
+
+  **W7 splits in two on 2026-08-25**, and only one half is open work. Its
+  signal API turned out to be done already — `defs/signals.ts` landed with W1
+  and has been at parity since — so the TypeScript left is `defs/boxes.ts`
+  alone, which is not blocked on anything. The other half is the engine's, and
+  it is now **`B5`** (root `PLAN.md`, B track), with its design decided rather
+  than deferred: the page's Faust is compiled on the main thread and linked
+  into the engine's own memory and function table, which is what keeps a Faust
+  node a node in a tab (`docs/decisions.md`). The two ship together and
+  `faust/boxes-library` waits on **B5**, not on the compiler artifact.
 
 - ⬜ **C44 — the inverse direction: a widget inside a def** *(`clients/python/
   PLAN.md`, the API reform track)*, deliberately last and possibly never: it is

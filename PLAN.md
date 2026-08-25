@@ -713,6 +713,54 @@ entries keep their original paths as a record of what shipped where. See
   `demo.html?smoke=1`: element up with the canvas in its shadow root, raw
   `server()` sees the element's synth (`/server_status`), meter bus streaming.
 
+- ⬜ **B5 — Faust in the page: the compiler on the main thread, the DSP in the engine's memory.**
+  The one capability the browser engine lacks and the window's has: `/def_send
+  faust` answers `/fail` in a tab. It is the engine half of the web client's
+  **W7** and the two ship together — W7's in-page acceptance is this milestone's
+  too, the way G25 pairs with M25.
+
+  The design is decided and recorded in `docs/decisions.md` ("The page's Faust
+  is a second wasm module linked into the engine's own memory"); what is left is
+  to build it. In outline: the def is compiled by `libfaust-wasm` on the **main**
+  thread (the page's compiler thread, the worklet being its audio thread) and
+  the module bytes plus the JSON come back over the same port the OSC does, so
+  `/def_send faust` keeps its existing asynchronous shape and **nothing on the
+  wire changes**. The emitted module is `-lang wasm-e`, instantiated against the
+  engine's own `WebAssembly.Memory` with its `compute` in the engine's
+  `__indirect_function_table` and its math imports bound to the engine's
+  exports; the DSP struct is allocated by us and the parameter zones are plain
+  stores, so `FaustSynth` keeps its shape and `/node_set`, `/node_map`, the bus
+  summing and the done actions are the same code in both builds.
+
+  The pieces, in the order they can be checked:
+
+  - **The backend seam in `src/faust`.** What varies by target is how a factory
+    is created and an instance computed, not what a `FaustDef` *is*. The `faust`
+    feature keeps meaning "the FaustDef family exists" — it stops implying
+    libfaust — so the browser build becomes `synth,faust,embed` and the two
+    families stay peers on both targets. `scripts/check-wasm.sh` grows the set.
+  - **The link constraints**, all three checked by the build gate rather than
+    by reading: `--export-table`, `--growable-table`, and `--global-base` moved
+    to the second 64 KiB page (the wasm backend writes its JSON at absolute
+    offset 0, over our `.rodata`, external memory included). The def-send path
+    refuses a JSON larger than the reserved page with `/fail`.
+  - **The compile leg in the page**, in `clients/web`: `libfaust-wasm` built
+    from `third_party/faust` at the existing pin by a script beside
+    `build-verovio-wasm.sh`, staged by `build.sh` as a static asset **off**
+    `dist/runtime.js` and fetched by the engine's glue on the first `/def_send
+    faust`, so a page that mounts a bundle of SynthDefs downloads none of it.
+    CI grows the emsdk leg or fetches the artifact — the same question the
+    engraver answered, and answered the same way unless the build time says
+    otherwise.
+
+  **Acceptance:** a FaustDef built from signals, from boxes and from source
+  compiles and sounds in a tab with no server process, addressed by `/node_set`
+  through the node tree like any other synth; the wasm render of a Faust score
+  matches the native NRT render on `scripts/parity-web.sh`'s existing tolerance;
+  a page mounting a SynthDef-only bundle loads no compiler asset; and the
+  transcendental imports resolve to the engine's own exports, asserted rather
+  than assumed.
+
 ## U track — the UGen library
 
 Section added 2026-07-25. The S track finished the substrate *for* this and

@@ -6616,3 +6616,116 @@ are found by ear. A GUI source's `path` carrier writes a temp file the host
 maps, so client and host are assumed to share a filesystem; over a distance only
 the inline ceiling is left. And `--data-dir` names the *host's* GuiDef store,
 not the script's.
+
+
+## The page's Faust is a second wasm module linked into the engine's own memory
+
+*2026-08-25.*
+
+The in-page engine is the `synth,embed` build: no libfaust, no LLVM JIT, so
+`/def_send faust` answers `/fail` in a tab and `/done` in a window. That is a
+capability one client has and the other does not, which this project treats as a
+defect rather than as a platform's quirk, and closing it is the half of W7 that
+a compiler artifact does not solve on its own. `libfaust-wasm` gives us a
+*compiler* in the page; what it does not give us is a way to **instantiate** what
+it compiled inside a node of our tree.
+
+**The shape of the answer is fixed by what a Faust node already is here.**
+`FaustSynth` (`src/faust/synth.rs`) holds an opaque instance pointer, a `Vec` of
+`f32` parameter zones reaching into it, and private non-interleaved block
+buffers it stages I/O through; per block it does one FFI call,
+`computeCDSPInstance(dsp, frames, in**, out**)`, and `/node_set` is a plain
+aligned store into a zone. Faust's **wasm backend emits exactly that ABI**:
+`compute(dsp: i32, count: i32, inputs: i32, outputs: i32)`, pointers being byte
+offsets into linear memory, with each parameter's offset inside the DSP struct
+published in the JSON the compiler returns beside the binary (`"size"` for the
+struct, `"index"` per parameter). On `wasm32` a `*mut f32` *is* a `u32` offset,
+so `in_ptrs`/`out_ptrs` and `zones` are already the right types. The node's
+`process` needs no restructuring at all — three `ffi::` calls change hands.
+
+**So the Faust module is linked into the engine, not run beside it.** Compiled
+with `-lang wasm-e` (external memory: the compiler documents it for polyphony,
+and what it means is that the module allocates nothing), the emitted module is
+instantiated with `env.memory` bound to **the engine's own
+`WebAssembly.Memory`** and its `compute` export appended to the engine's
+`__indirect_function_table`; Rust calls it through that table by transmuting the
+slot index to an `extern "C" fn`, which on `wasm32` is what a function pointer
+already is. The DSP struct is allocated by our allocator, at an offset we choose,
+and the I/O buffers are the `Block`s the synth already owns. **No copies, no
+JavaScript frame on the audio path, and the node stays a node** — `/node_set`,
+`/node_map`, the bus summing and the done actions are the same code in both
+builds.
+
+**The transcendentals are ours too.** A Faust wasm module imports what the
+instruction set lacks — `env._sinf`, `env._powf`, `env._fmodf` and their
+neighbours. A wasm function exported by one instance is a legal import of
+another, so these are bound to the engine's own exports rather than to
+`Math.sin` closures: no JS on the audio path, and Faust and our UGens go through
+one libm, which is what keeps a parity vector meaningful.
+
+**The compiler stays on the main thread, and the protocol does not learn about
+it.** Natively, `/def_send faust` compiles on the compiler thread and replies
+`/done` later; the audio thread never sees a compiler. In a page the compiler
+thread is the **main** thread — that is where the Emscripten module can live —
+and the worklet is the audio thread. So the worklet, on `/def_send faust`, posts
+the payload out, the main thread compiles with `libfaust-wasm`, posts back the
+module bytes and the JSON, and the worklet instantiates and replies `/done`.
+This is the same asynchronous shape the command already has, which is why
+**nothing on the wire changes**: no precompiled-payload form, no second command,
+no client-side special case. `docs/schemas.md` is untouched, and the one
+observable difference is that the reply stops being `/fail`.
+
+It also settles the packaging rule W7 states without needing a rule: the
+compiler's assets are fetched by the engine's glue **on the first `/def_send
+faust`**, so a page that mounts a prebuilt bundle of SynthDefs downloads none of
+them, and one whose bundle carries a FaustDef downloads them because it needs
+them.
+
+**The one hazard, named because it is invisible until it corrupts something.**
+The wasm backend writes the DSP's JSON into a data segment at **absolute offset
+0**, unconditionally — external memory included. Instantiating such a module
+against the engine's memory therefore overwrites the first bytes of *our*
+address space, where a `wasm32-unknown-unknown` link puts `.rodata` (the default
+global base is 1024, and a def's JSON is comfortably larger than that). Two
+guards, both cheap: the engine links with `--global-base` moved to the second
+64 KiB page, reserving the first for exactly this; and the def-send path
+**refuses a JSON larger than the reserved region** with a `/fail` rather than
+letting it be found by ear. Nothing ever reads that memory — the JSON we use is
+the one `createDSPFactory` returns out of band — so several defs overwriting
+each other's segments there is harmless, and the reserved page costs address
+space and nothing else.
+
+**What was rejected, and why it is not a near miss.**
+
+- **A Faust wasm module as a WebAudio node beside the engine** — the shape the
+  phrase "run behind our AudioWorklet" first suggested. It puts the Faust DSP
+  *outside* the node tree: no `/node_set` by control index, no group ordering, no
+  bus summing, no done action. The browser would gain a Faust that is not the
+  same thing the window's Faust is, which is the divergence this milestone
+  exists to remove, not a cheaper way to remove it.
+- **A separate memory per instance, with JS copying blocks across** — the
+  conservative version of the choice above, and the fallback if the linker
+  constraints below ever stop holding. It keeps the node in the tree, but it puts
+  a JavaScript frame and two copies in the audio callback, per Faust node, per
+  block. The B track's own topology note already draws the line in exactly this
+  place: OSC translation may allocate on the worklet thread, **the DSP may not**.
+- **Faust's interpreter backend, executed inside `libfaust-wasm`** — the other
+  path the plan named. It moves the audio compute into the Emscripten module
+  entirely, which means the whole compiler resident in the worklet, an
+  interpreted inner loop, and the same cross-module boundary as the option above
+  with worse numbers on the other side of it. Its only advantage is one artifact
+  instead of two.
+- **A wasm interpreter in Rust inside the engine** (`wasmi` and its family) —
+  everything stays in Rust and nothing else does: interpreting wasm inside wasm,
+  on the audio thread, allocating.
+
+**What would reverse this.** Three assumptions carry it, and each fails loudly
+rather than subtly. That a Rust `fn` pointer on `wasm32` is an
+`__indirect_function_table` index — if that stops being true, a `call_indirect`
+traps on a type mismatch, and the fallback is a JS shim doing `table.get(i)(…)`,
+one frame per block. That the table can be exported and grown (`--export-table`,
+`--growable-table`) and the global base moved — link flags, checked by the wasm
+build gate. And that `-lang wasm-e` keeps allocating nothing; a Faust release
+that changed it would be caught by the def-send path failing to find its
+parameters where the JSON says they are. None of the three is a reason to
+prefer a design that is slower on purpose.

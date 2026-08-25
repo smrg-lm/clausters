@@ -568,7 +568,7 @@ source folds into). And with them the piece the rest of the track never needed:
 a browser can author but not run.
 
 - `defs/boxes.ts`: the point-free algebra (`seq`/`par`/`split`/`merge`/`rec`, `wire`/`cut`, controls, tables) emitting the same box-tree JSON the Python builders emit, plus `faust(src, ...)` to fold a Faust source expression — its libraries (`fi.`/`os.`/`re.`/`pm.`) included — into a composable `Box`.
-- `defs/signals.ts`: the sample-level signal API filled out to the whole surface `clausters.defs.signals` exposes, the same emitted-spec parity rule W6 states.
+- ~~`defs/signals.ts`: the sample-level signal API filled out to the whole surface `clausters.defs.signals` exposes, the same emitted-spec parity rule W6 states.~~ **Already done** — it landed with W1 and has been at parity since: the same ops, the same `select2`/`select3`, `delay`, `fconst`/`fvar`/`sr`, the fifteen unary and six binary functions, `PI`/`TAU`, the five controls and the three tables, with frozen vectors in `tests/def-vectors.json` (`gen-def-vectors.py`, `faust_cases`). What is left of the TypeScript half is `boxes.ts` alone.
 - **The browser Faust toolchain** — the new build and packaging leg, below. Against a `--ws` server the two builders work without it (they emit JSON and the native server compiles it, the `faust(src, …)` escape hatch included — it ships its generated program as a `{"op": "faust", "src": …}` node rather than parsing Faust on the client); the in-page carrier is what needs it, and having *one* def family that only runs over WS is the asymmetry this milestone closes.
 
 **The build and packaging step (new to this plan, and the reason W7 is not just
@@ -579,8 +579,8 @@ toolchain, in two halves — **only the first is packaging, and the second is th
 one that decides whether the milestone lands**:
 
 - **The compiler.** `libfaust-wasm` — the whole Faust compiler as a wasm library, what faustwasm and the Faust IDE use — built with the **Emscripten SDK** (`emcc` user-space via `emsdk`, then `make wasmlib` in `third_party/faust`), producing `libfaust-wasm.{js,wasm,data}`, the `.data` carrying the stdlib for Emscripten's virtual FS. The repo already documents the recipe and has **never built it** (`third_party/BUILD-FAUST.md`, "WebAssembly parts": excluded from `make most`, `emcc` not installed here), so this milestone is where it gets built, pinned the way `faust.pin`/`verovio.pin` pin the native ones, and staged by `build.sh` as static assets beside the core/host bundles — **off the slim `dist/runtime.js`**, since a page that mounts a *prebuilt* bundle must not download a compiler it never calls. CI grows the emsdk leg or the artifact is fetched, a decision to record.
-- **The engine's side, which a compiler alone does not solve.** The in-page engine is the `synth,embed` build: no libfaust, **no LLVM JIT**, so it cannot instantiate the factory a native FaustDef becomes. A compiled-in-the-page def therefore needs a second instantiation path — Faust emitting a **wasm DSP module** run behind our AudioWorklet (the `faust -lang wasm` output plus glue), or the **Faust interpreter backend** the server's B track already names as future work. That half lives where the engine lives, so W7 **pairs with a B-track milestone** the way G25 pairs with M25 and P2 shipped as M30; the pairing is what makes this schedulable, and until it is numbered W7's in-page half is blocked on it while the WS half is not.
-- **The decision to record** (`docs/decisions.md`): adopting a second compiler toolchain, its size and its licensing, in a repo whose stated posture is minimal, user-space and reproducible — plus which of the two instantiation paths the engine takes, and why the compiler stays out of the slim runtime.
+- **The engine's side, which a compiler alone does not solve, is now `B5`** (root `PLAN.md`, B track). The in-page engine is the `synth,embed` build: no libfaust, **no LLVM JIT**, so it cannot instantiate what a compiler in the page produced. The design is decided — the Faust module is compiled on the main thread and **linked into the engine's own memory and function table**, so the node stays a node and nothing on the wire changes (`docs/decisions.md`, "The page's Faust is a second wasm module linked into the engine's own memory"). W7 and B5 ship together, the way G25 pairs with M25; **W7's WS half is not blocked on it** and can land first.
+- **The decision is recorded** (`docs/decisions.md`, "The page's Faust is a second wasm module linked into the engine's own memory"): which instantiation path the engine takes and why the two it rejects are not near misses, why the protocol learns nothing, and the one hazard the wasm backend carries (its JSON data segment at absolute offset 0). What it leaves open is the packaging half alone — whether CI builds `libfaust-wasm` or fetches it — which is B5's, and is the same question the engraver already answered once.
 
 **Acceptance:** the Python box-API and signal-API examples rebuilt in TS emit byte-identical spec JSON (new frozen vectors), and one of each compiles and plays **over either carrier** — against a `clausters --ws` server, and in the page with no server process, the source compiled by the staged `libfaust-wasm` and sounding through the in-page engine; a page that mounts a prebuilt bundle loads none of the compiler's assets.
 
@@ -588,6 +588,11 @@ one that decides whether the milestone lands**:
 acceptance rather than of the example pass': the page cannot be written before
 this lands (the in-page engine is the `synth,embed` build, so a Faust def has
 nowhere to compile), and once it does it is the natural proof that it did.
+**And it is B5 it waits on, not the compiler** — the script is an offline NRT
+render (`Session.nrt` + `session.render`), and a page's `Session.nrt` renders
+through the in-page engine, so writing it against `--ws` instead would make it
+the same picture by different calls, which is the one thing a pair of examples
+may not be.
 The script is `clients/python/examples/faust/boxes_library.py`; the page is
 `clients/web/examples/faust/boxes-library.html`, same material, same names, the
 same calls in the same order.
