@@ -257,6 +257,14 @@ export class Buffer {
      * means the same thing. What differs is only how fast the samples travel:
      * over the in-page engine they are one copy into shared memory, and over a
      * socket they go as `setSamples`' blob runs, which every carrier has.
+     *
+     * **The array you pass is yours afterwards**, on either carrier. The
+     * in-page path posts the samples to the worklet with their buffer in the
+     * transfer list, which would leave your `Float32Array` detached — reading
+     * it again throws, and a view taken of it earlier silently goes empty —
+     * so what travels is a copy this call makes. That is one copy of the take
+     * on this thread, and the alternative was a call that empties its argument
+     * on one carrier and not the other.
      */
     static async fromSamples(
         samples: Float32Array,
@@ -272,7 +280,16 @@ export class Buffer {
         const buffer = await Buffer.alloc(frames, channels, { timeout, server });
         const bulkLoad = server.connection.bulkLoad;
         if (bulkLoad) {
-            await bulkLoad.call(server.connection, buffer.bufnum, channels, rate, samples);
+            // `.slice()` and not `samples`: the carrier consumes what it is
+            // given (see `Connection.bulkLoad`), and what it is given here
+            // belongs to the caller.
+            await bulkLoad.call(
+                server.connection,
+                buffer.bufnum,
+                channels,
+                rate,
+                samples.slice(),
+            );
         } else {
             // The carrier shares no memory with the server, so the samples go
             // the way every other bulk write goes: blob runs, chunked and

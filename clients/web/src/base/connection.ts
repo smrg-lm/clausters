@@ -116,6 +116,13 @@ export interface Connection {
      * whole file in one call, no `/buffer_getRange.reply` chunking and no OSC envelope per
      * sample. A socket has no such thing and leaves this out; `Buffer.load`
      * then writes the chunks instead. `samples` are interleaved.
+     *
+     * **It consumes `samples`.** The in-page carrier posts them to the worklet
+     * with their buffer in the transfer list — that is what makes it one copy
+     * instead of two — so the array is detached when this returns and belongs
+     * to nobody. Pass something built for the call, or a copy: a caller's own
+     * array must never come straight in here (`Buffer.fromSamples` slices for
+     * exactly this reason).
      */
     bulkLoad?(
         bufnum: number,

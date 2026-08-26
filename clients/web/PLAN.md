@@ -2343,8 +2343,8 @@ Python counterpart under another spelling or is a page's own (`ANY_PEER`,
 
 ## Found by use: the running list of fixes
 
-- ⬜ **`Buffer.fromSamples` empties the array it is given** *(found 2026-08-26,
-  writing a `/buffer_write` round trip)*. The in-page carrier's `bufferLoad`
+- ✅ **`Buffer.fromSamples` empties the array it is given** *(found and fixed
+  2026-08-26, writing a `/buffer_write` round trip)*. The in-page carrier's `bufferLoad`
   posts the samples to the worklet with `samples.buffer` in the **transfer
   list** (`src/engine/loader.ts`), so the caller's `Float32Array` comes back
   detached: reading it afterwards throws `Cannot perform Construct on a detached
@@ -2357,15 +2357,23 @@ Python counterpart under another spelling or is a page's own (`ANY_PEER`,
   not a browser limit, which is why it is here rather than on
   `docs/src/platform.md`.
 
-  Two ways out, and the choice is a real trade-off rather than an oversight.
-  **Copy** at the boundary (`samples.slice()`), which restores the reference
-  behaviour and costs one copy of the whole take on the main thread — the exact
-  cost the transfer exists to avoid. Or **document it on the surface** and keep
-  the transfer, which makes the two clients differ in a way a script has to know
-  about. A third shape is available and may be the right one: keep the transfer
-  but take it only when the caller says so (`{consume: true}`), copying
-  otherwise, so the fast path stays reachable and the default is the one that
-  cannot surprise anyone.
+  **It is a copy at the boundary**, and the `{consume: true}` option this entry
+  floated was the wrong idea: it would be a knob the Python client has no
+  counterpart for, which is a surface one client has and the other does not —
+  the thing the non-divergence rule exists to stop — bought to save a copy the
+  socket carrier pays anyway. `fromSamples` slices, `Connection.bulkLoad` says
+  in as many words that it consumes what it is handed, and `Buffer.load` still
+  passes it an array built for the call, so the fast path is exactly where it
+  always was.
+
+  Worth naming: this was **also an inconsistency inside one client**. The socket
+  path goes through `setSamples`' blob runs, which copy, so the same call left
+  the array alone over a socket and emptied it in a page.
+
+  `tests/nrt.html` asserts the array survives, and it is asserted rather than
+  commented because a detached array **does not throw when it is read** — its
+  length is 0 and every element is `undefined`, so nothing downstream reports
+  it. Checked the way a regression test has to be: it fails without the fix.
 
 - ✅ **A clock could not be locked to a server without spelling the two steps**
   *(found 2026-08-25, porting `transport/conductor.py`; fixed the same day)*.

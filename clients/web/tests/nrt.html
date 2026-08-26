@@ -147,11 +147,16 @@
           ramp[f * 2] = (f % 100) / 100 - 0.5;
           ramp[f * 2 + 1] = 0.5 - (f % 64) / 64;
         }
-        // `.slice()`: the in-page carrier *transfers* the samples it is given,
-        // so the array handed over is detached afterwards and the comparison
-        // below would read nothing (`clients/web/PLAN.md`, "Found by use").
-        const long = await Buffer.fromSamples(ramp.slice(), 2, 48000,
-                                              { server: session.server });
+        const long = await Buffer.fromSamples(ramp, 2, 48000, { server: session.server });
+        // The array handed over is still the caller's. The in-page carrier
+        // transfers what it is given, so `fromSamples` hands it a copy; without
+        // that, `ramp` comes back **detached**, and a detached array does not
+        // throw when it is read -- its length is 0 and every element is
+        // undefined -- so nothing downstream would report it. Hence the
+        // assertion rather than a comment.
+        const kept = ramp.length === LONG * 2 && Math.abs(ramp[2] - (1 / 100 - 0.5)) < 1e-6;
+        log(`the array passed to fromSamples survived: ${kept} ` +
+            `(${ramp.length} samples, [2] = ${ramp[2]})`);
         await long.write("takes/long.wav", { sampleFormat: "float" });
         const longBack = await Buffer.read("takes/long.wav", { server: session.server });
         const longInfo = await longBack.info();
@@ -183,7 +188,7 @@
         const ok =
           backInfo.frames === FRAMES && backInfo.channels === 2 &&
           backInfo.sampleRate === 48000 && backWorst < 1e-6 &&
-          longInfo.frames === LONG && longWorst < 1e-6 &&
+          longInfo.frames === LONG && longWorst < 1e-6 && kept &&
           writeFailed.length > 0 &&
           info.frames === FRAMES && info.channels === 2 &&
           info.sampleRate === 48000 && worst < 1e-6 && failed.length > 0 &&
@@ -196,7 +201,7 @@
             `readChannels([1]) came back mono at the right channel's value, and ` +
             `buffer.write went back out and read back at ${backWorst.toExponential(1)}, ` +
             `a ${LONG}-frame take crossing ${Math.ceil(LONG / 4800)} runs at ` +
-            `${longWorst.toExponential(1)}`
+            `${longWorst.toExponential(1)} with the caller's array left intact`
           : `FAIL: frames ${info.frames}/${FRAMES}, channels ${info.channels}, ` +
             `rate ${info.sampleRate}, delta ${worst}, failure "${failed}", ` +
             `selected ${rightInfo.channels} ${[...rightSamples]}, ` +
