@@ -89,23 +89,14 @@ that was always meant to be last.*
   rides with **W7**, and `io/midi-responder` and `editors/pianoroll-midi` with
   **W9**.
 
-  **W7 is down to `defs/boxes.ts` plus one gap it did not know it had.** Its
-  signal API turned out to be done already — `defs/signals.ts` landed with W1
-  and has been at parity since — and its engine half was split off as **`B5`**
-  (root `PLAN.md`, B track), which closed the part that mattered on 2026-08-25:
-  a def sent as source, as a box tree or as a signal tree compiles and sounds in
-  a tab, read by the server's own interpreters. But `faust/boxes-library` is an
-  **NRT script**, and a page's offline render still cannot compile a Faust def —
-  the compiler answers later, and that render path answers on the spot. So the
-  page waits on `defs/boxes.ts` *and* on the first item of B5's remaining list.
-
-- ⬜ **What `B5` still owes** *(root `PLAN.md`, B track)* — five items behind
-  its own acceptance. One of them is on W7's path: **a page's offline render
-  cannot compile a Faust def**, which is what `faust/boxes-library` needs. The
-  other four are not: the native↔wasm parity vector for a Faust score, the
-  assertion that a SynthDef-only bundle fetches no compiler asset, `soundfile`
-  in a page, and the lib context a page opens and never destroys (a leak nobody
-  has measured).
+  **W7 is down to `defs/boxes.ts`.** Its signal API turned out to be done
+  already — `defs/signals.ts` landed with W1 and has been at parity since — and
+  its engine half was split off as **`B5`** (root `PLAN.md`, B track), which is
+  now closed: a def sent as source, as a box tree or as a signal tree compiles
+  and sounds in a tab, read by the server's own interpreters, and since
+  2026-08-26 a page's **offline** render carries one too. So
+  `faust/boxes-library`, which is an NRT script, waits on `defs/boxes.ts` and on
+  nothing else.
 
 - ⬜ **C44 — the inverse direction: a widget inside a def** *(`clients/python/
   PLAN.md`, the API reform track)*, deliberately last and possibly never: it is
