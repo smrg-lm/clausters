@@ -714,53 +714,63 @@ entries keep their original paths as a record of what shipped where. See
   `server()` sees the element's synth (`/server_status`), meter bus streaming.
 
 - ⬜ **B5 — Faust in the page: the compiler in the Worker, the DSP in the engine's memory.**
-  The one capability the browser engine lacks and the window's has: `/def_send
-  faust` answers `/fail` in a tab. It is the engine half of the web client's
-  **W7** and the two ship together — W7's in-page acceptance is this milestone's
-  too, the way G25 pairs with M25.
+  The one capability the browser engine lacked and the window's had: `/def_send
+  faust` used to answer `/fail` in a tab. It is the engine half of the web
+  client's **W7** and the two ship together — W7's in-page acceptance is this
+  milestone's too, the way G25 pairs with M25.
 
-  The design is decided and recorded in `docs/decisions.md` ("The page's Faust
-  is a second wasm module linked into the engine's own memory"); what is left is
-  to build it. In outline: the def is compiled by `libfaust-wasm` in the **NRT/compiler
-  Worker** B6 adds (the page's compiler thread, the worklet being its audio
-  thread — it was written here as the main thread until B6 priced that at the
-  GUI host's frames) and
-  the module bytes plus the JSON come back over the same port the OSC does, so
-  `/def_send faust` keeps its existing asynchronous shape and **nothing on the
-  wire changes**. The emitted module is `-lang wasm-e`, instantiated against the
+  The design is recorded in `docs/decisions.md` ("The page's Faust is a second
+  wasm module linked into the engine's own memory"). In outline: the def is
+  compiled by `libfaust-wasm` in the **NRT/compiler Worker** B6 adds (the page's
+  compiler thread, the worklet being its audio thread — it was written here as
+  the main thread until B6 priced that at the GUI host's frames) and the module
+  bytes plus the JSON come back over the same port the OSC does, so `/def_send
+  faust` keeps its existing asynchronous shape and **nothing on the wire
+  changes**. The emitted module is `-lang wasm-e`, instantiated against the
   engine's own `WebAssembly.Memory` with its `compute` in the engine's
   `__indirect_function_table` and its math imports bound to the engine's
   exports; the DSP struct is allocated by us and the parameter zones are plain
   stores, so `FaustSynth` keeps its shape and `/node_set`, `/node_map`, the bus
   summing and the done actions are the same code in both builds.
 
-  The pieces, in the order they can be checked:
+  The pieces, in the order they were checked:
 
-  - **The backend seam in `src/faust`.** What varies by target is how a factory
-    is created and an instance computed, not what a `FaustDef` *is*. The `faust`
-    feature keeps meaning "the FaustDef family exists" — it stops implying
-    libfaust — so the browser build becomes `synth,faust,embed` and the two
-    families stay peers on both targets. `scripts/check-wasm.sh` grows the set.
-  - **The link constraints**, all three checked by the build gate rather than
-    by reading: `--export-table`, `--growable-table`, and `--global-base` moved
-    to the second 64 KiB page (the wasm backend writes its JSON at absolute
-    offset 0, over our `.rodata`, external memory included). The def-send path
-    refuses a JSON larger than the reserved page with `/fail`.
-  - **The engine's memory is reserved, not grown.** `WebAssembly.Memory.grow`
+  - ✅ **The backend seam in `src/faust`** *(2026-08-25)*. What varies by target
+    is how a factory is created and an instance computed, not what a `FaustDef`
+    *is*. The `faust` feature keeps meaning "the FaustDef family exists" — it
+    stopped implying libfaust — so the browser build is `synth,faust,embed` and
+    the two families stay peers on both targets; `scripts/check-wasm.sh` grew
+    the set. `compiler_web` is a queue the host drains, `synth_web` the node.
+  - ✅ **The link constraints**, checked by the build rather than by reading
+    *(2026-08-25)*: `--export-table` and `--growable-table`, plus
+    `--keep-lld-exports` on the engine's bundle, since wasm-bindgen drops the
+    exports the linker synthesized and the table is one of them. **The third
+    constraint this entry named was wrong**: `--global-base` cannot be moved,
+    because rustc links with `--stack-first` and the flag must then be at least
+    the stack size — so the wasm backend's data segment at absolute offset 0 is
+    **stripped** instead (`faust::wasm_module::strip_data_section`, which
+    refuses rather than guesses). The correction is in `docs/decisions.md`.
+  - ✅ **The compile leg in the page** *(2026-08-25)*: `libfaust-wasm` built
+    from `third_party/faust` at the existing pin by
+    `third_party/build-faust-wasm.sh`, staged by `build.sh` as a static asset
+    **off** `dist/runtime.js` and imported on the first `/def_send faust`. That
+    build carries a patch of its own — upstream binds the Box and Signal APIs
+    for the native library and not for the wasm one, so a page could otherwise
+    compile Faust source alone.
+  - ✅ **One interpreter, not two** *(2026-08-25)*, which was not in this list
+    and should have been. A box or signal tree is read by `faust::boxes` and
+    `faust::signals` compiled to wasm, driving the page's compiler through its C
+    API; the two modules do not share an address space, so a small shim copies
+    the strings and handle arrays across. Reading the schema again in TypeScript
+    would have been a second implementation of one thing, which is the failure
+    the whole milestone exists to avoid.
+  - ⬜ **The engine's memory is reserved, not grown.** `WebAssembly.Memory.grow`
     **detaches** the `ArrayBuffer` and every JS view over it, so a glue that
     caches a `Float32Array` breaks the first time the pool grows — and growing
-    at all is work on the audio thread. The engine reserves its linear memory at
-    boot (modestly: iOS Safari crashes a tab near 350 MB), the glue re-derives
-    views rather than caching them across calls, and growth becomes a budgeted
-    event on B6's serving turn instead of a surprise.
-  - **The compile leg in the page**, in `clients/web`: `libfaust-wasm` built
-    from `third_party/faust` at the existing pin by a script beside
-    `build-verovio-wasm.sh`, staged by `build.sh` as a static asset **off**
-    `dist/runtime.js` and fetched by the engine's glue on the first `/def_send
-    faust`, so a page that mounts a bundle of SynthDefs downloads none of it.
-    CI grows the emsdk leg or fetches the artifact — the same question the
-    engraver answered, and answered the same way unless the build time says
-    otherwise.
+    at all is work on the audio thread. The engine should reserve its linear
+    memory at boot (modestly: iOS Safari crashes a tab near 350 MB), the glue
+    re-derive views rather than cache them across calls, and growth become a
+    budgeted event on B6's serving turn instead of a surprise.
 
   **Acceptance:** a FaustDef built from signals, from boxes and from source
   compiles and sounds in a tab with no server process, addressed by `/node_set`
@@ -770,23 +780,28 @@ entries keep their original paths as a record of what shipped where. See
   transcendental imports resolve to the engine's own exports, asserted rather
   than assumed.
 
-  **Where it stands.** The acceptance is green in all three forms
+  **Where it stands.** The first clause is green in all three forms
   (`clients/web/tests/faust.html`): a def sent as **source**, as a **box tree**
   and as a **signal tree** compiles in the Worker, links into the engine's
   memory and sounds at the pitch it declares, and `/node_set "freq"` moves it —
   which is the parameter offset the page read out of the compiler's JSON
-  reaching the zone the module reads. The box and signal trees are read by
-  `faust::boxes` and `faust::signals`, the server's own interpreters compiled to
-  wasm, so there is one reading of the schema and not two. The transcendentals
-  are asserted by construction: every import the module declares is resolved
-  from the engine's own exports and an unknown one is named rather than left to
-  fail. What is left:
+  reaching the zone the module reads. The last clause holds by construction:
+  every import the module declares is resolved from the engine's own exports and
+  an unknown one is named rather than left to fail. What is left:
 
+  - ⬜ **A page's offline render cannot compile a Faust def.** `Session.nrt`
+    and `render()` go through `server::render`, which compiles a def where it
+    stands and answers on the spot — and in a page the compiler is a different
+    scope that answers later, so that path returns a message saying to send the
+    def to the engine first. Two things wait on this and neither is small: the
+    **parity vector** below, and **W16's `faust/boxes-library` page**, which is
+    an NRT script (`clients/web/PLAN.md`, W7) and therefore still blocked after
+    this milestone's compiler landed. The shape of the fix is a render that can
+    wait for an asynchronous def — an `await` in the page's render path, which
+    the native one has never needed.
   - ⬜ **The parity vector.** `scripts/parity-web.sh` renders a Faust score
-    natively and in wasm and compares. Blocked by nothing but the offline
-    render's own gap: a page's offline render cannot compile a def (the
-    compiler answers late), so the comparison needs the live engine on the wasm
-    side.
+    natively and in wasm and compares. Waits on the item above, or on running
+    the wasm side through the live engine instead of the offline one.
   - ⬜ **A page mounting a SynthDef-only bundle loads no compiler asset** —
     true by construction (the glue is imported on the first `/def_send faust`)
     and not yet asserted by a page.

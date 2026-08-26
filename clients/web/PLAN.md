@@ -578,21 +578,23 @@ host bundles `build.sh` stages. Faust in the page adds a second compiler
 toolchain, in two halves — **only the first is packaging, and the second is the
 one that decides whether the milestone lands**:
 
-- **The compiler.** `libfaust-wasm` — the whole Faust compiler as a wasm library, what faustwasm and the Faust IDE use — built with the **Emscripten SDK** (`emcc` user-space via `emsdk`, then `make wasmlib` in `third_party/faust`), producing `libfaust-wasm.{js,wasm,data}`, the `.data` carrying the stdlib for Emscripten's virtual FS. The repo already documents the recipe and has **never built it** (`third_party/BUILD-FAUST.md`, "WebAssembly parts": excluded from `make most`, `emcc` not installed here), so this milestone is where it gets built, pinned the way `faust.pin`/`verovio.pin` pin the native ones, and staged by `build.sh` as static assets beside the core/host bundles — **off the slim `dist/runtime.js`**, since a page that mounts a *prebuilt* bundle must not download a compiler it never calls. CI grows the emsdk leg or the artifact is fetched, a decision to record.
-- **The engine's side, which a compiler alone does not solve, is now `B5`** (root `PLAN.md`, B track). The in-page engine is the `synth,embed` build: no libfaust, **no LLVM JIT**, so it cannot instantiate what a compiler in the page produced. The design is decided — the Faust module is compiled on the main thread and **linked into the engine's own memory and function table**, so the node stays a node and nothing on the wire changes (`docs/decisions.md`, "The page's Faust is a second wasm module linked into the engine's own memory"). W7 and B5 ship together, the way G25 pairs with M25; **W7's WS half is not blocked on it** and can land first.
+- ✅ **The compiler**, built on 2026-08-25. `libfaust-wasm` — the whole Faust compiler as a wasm library — built from `third_party/faust` at the same pin the native library uses, by `third_party/build-faust-wasm.sh`, producing `libfaust-wasm.{js,wasm,data}`, the `.data` carrying the stdlib for Emscripten's virtual FS, and staged by `build.sh` as static assets **off the slim `dist/runtime.js`**, since a page that mounts a *prebuilt* bundle must not download a compiler it never calls. The script documents five departures from `make wasmlib`, the largest being a patch that binds the Box and Signal APIs: upstream binds them for the native library and not for the wasm one, so without it a page could compile Faust source alone. **What is still open is the packaging half**: CI grows the emsdk leg or the artifact is fetched, a decision to record — the same question the engraver already answered once.
+- ✅ **The engine's side, which a compiler alone does not solve, is `B5`** (root `PLAN.md`, B track), and it landed on 2026-08-25. The in-page engine had no libfaust and **no LLVM JIT**, so it could not instantiate what a compiler in the page produced; now the Faust module is compiled in the **NRT worker** (not the main thread, as this bullet first said — B6 priced that at the GUI host's frames) and **linked into the engine's own memory and function table**, so the node stays a node and nothing on the wire changes (`docs/decisions.md`). All three def forms work: the box and signal trees are read by `faust::boxes` and `faust::signals` compiled to wasm, so there is one reading of the schema and not two. W7 and B5 ship together, the way G25 pairs with M25; **W7's WS half was never blocked on it**.
 - **The decision is recorded** (`docs/decisions.md`, "The page's Faust is a second wasm module linked into the engine's own memory"): which instantiation path the engine takes and why the two it rejects are not near misses, why the protocol learns nothing, and the one hazard the wasm backend carries (its JSON data segment at absolute offset 0). What it leaves open is the packaging half alone — whether CI builds `libfaust-wasm` or fetches it — which is B5's, and is the same question the engraver already answered once.
 
 **Acceptance:** the Python box-API and signal-API examples rebuilt in TS emit byte-identical spec JSON (new frozen vectors), and one of each compiles and plays **over either carrier** — against a `clausters --ws` server, and in the page with no server process, the source compiled by the staged `libfaust-wasm` and sounding through the in-page engine; a page that mounts a prebuilt bundle loads none of the compiler's assets.
 
 **W16's `faust/boxes-library` page rides here**, and is part of this milestone's
-acceptance rather than of the example pass': the page cannot be written before
-this lands (the in-page engine is the `synth,embed` build, so a Faust def has
-nowhere to compile), and once it does it is the natural proof that it did.
+acceptance rather than of the example pass': it is the natural proof that a
+Faust def compiles in a page.
 **And it is B5 it waits on, not the compiler** — the script is an offline NRT
 render (`Session.nrt` + `session.render`), and a page's `Session.nrt` renders
 through the in-page engine, so writing it against `--ws` instead would make it
 the same picture by different calls, which is the one thing a pair of examples
-may not be.
+may not be. **B5's compiler landing did not unblock it**: an offline render
+compiles a def where it stands and answers on the spot, and in a page the
+compiler answers later, so that path refuses with a message saying to send the
+def to the engine first. It is the first open item of B5.
 The script is `clients/python/examples/faust/boxes_library.py`; the page is
 `clients/web/examples/faust/boxes-library.html`, same material, same names, the
 same calls in the same order.
