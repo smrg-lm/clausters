@@ -1032,17 +1032,19 @@ entries keep their original paths as a record of what shipped where. See
         buffer's current contents, so delegating it would ship megabytes out and
         back; `/buffer_write` has nowhere to write yet.
 
-     c. ⬜ **What the Worker still owes**: `/buffer_write` (it only reads the
-        buffer and produces a file, so it can leave — one payload out, none
-        back). `Alloc` deliberately stays: the buffer lives in the engine's
-        linear memory, so a Worker allocating in *its* memory would only add a
-        copy back.
-  3. **OPFS: the page gets a filesystem.** `createSyncAccessHandle` is dedicated-
-     worker-only by standard, so it lives exactly where step 2 put the runner.
-     `/buffer_allocRead` stops being a path with nothing behind it, and
-     `/buffer_write` gains somewhere to write. Decoding is **symphonia in the
-     Worker, never `decodeAudioData`** — a different decoder would make one file
-     two sets of samples across the two clients.
+     c. **What did not leave with it.** `Alloc` deliberately stays: the buffer
+        lives in the engine's linear memory, so a Worker allocating in *its*
+        memory would only add a copy back. `/buffer_write` should leave and does
+        not — that is open work and it is filed where open work goes, under
+        "Found by use" ("`/buffer_write` fails in a page, and not for the reason
+        the plan gives").
+  3. ✅ **OPFS: the page gets a filesystem** *(done 2026-08-25, with step 2b —
+     the two turned out to be one thing)*. `createSyncAccessHandle` is
+     dedicated-worker-only by standard, so it lives exactly where step 2 put the
+     runner (`src/engine/opfs.ts`). `/buffer_allocRead` stopped being a path
+     with nothing behind it. Decoding is **symphonia in the Worker, never
+     `decodeAudioData`** — a different decoder would make one file two sets of
+     samples across the two clients.
   4. ✅ **`DiskIn`/`DiskOut` in a tab** *(done 2026-08-25)* — `src/dsp/disk_web.rs`
      is the same two UGens with the thread taken out and the **host** put in its
      place: the ring stays, `process` is unchanged, and an underrun is silence
@@ -2086,6 +2088,29 @@ reading rather than a queue that empties.
 Anything unresolved lives here or under "Future directions", both **after** the
 tracks: never inside the milestone that happened to be open, and never among
 finished work, where a pending item reads as done.
+
+- ⬜ **`/buffer_write` fails in a page, and not for the reason the plan gives**
+  *(named 2026-08-26, while closing B5; the work is B6's step 2c)*. Both clients
+  expose `Buffer.write()` and against the in-page engine it answers `/fail`.
+  Two separate things are wrong.
+
+  **The behaviour**: `NrtRunner::take_delegated` matches only
+  `NrtJob::AllocRead`, so a `Write` never leaves the worklet, and there
+  `write_wav` creates its file through `hound` → `std::fs`, which on
+  `wasm32-unknown-unknown` is the unsupported backend. It fails cleanly rather
+  than hanging, and it fails on the thread that owes the next block, which is
+  the second reason it should leave: a write is one payload out and none back,
+  the easiest job in the set to delegate.
+
+  **The reason on record**: B6 said `/buffer_write` "has nowhere to write", and
+  since step 3 that is false — the page has OPFS, and `diskOut` records into it
+  (`tests/disk.html`, 272428 bytes of RIFF). What is missing is the delegation,
+  not the destination. `clients/web/docs/src/platform.md` carried the same stale
+  reason and now carries the real one.
+
+  **Why it was invisible**: it sat as a `⬜` inside B6, which is `✅`. That is
+  the exact case this section exists for, and it is worth noting that the rule
+  caught a real item rather than a hypothetical one.
 
 - ✅ **Three wire selectors carry a spelling the table meant to leave behind**
   *(named 2026-08-23, once the clients' own names were settled; done

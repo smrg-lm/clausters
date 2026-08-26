@@ -36,7 +36,7 @@ that a reader who hits one today knows which.
 | **`diskIn` streams WAV only** | A span of a compressed file is not a file, so it cannot be decoded on its own; a WAV span can be, and is. Reading a compressed file whole is what a buffer is for (`Buffer.read`). Natively `diskIn` reads whatever the decoder does. |
 | **A stream starts after a longer lead** | Natively a thread shares a ring with the audio thread. In a tab there is no shared memory, so a Worker reads a span and *moves* it across a port — how far ahead it reads is the design, not a tuning constant, and an underrun is silence exactly as a slow disk gives. |
 | **`/buffer_read` is not delegated** | Its sibling `/buffer_allocRead` is: it leaves the AudioWorklet for the NRT worker and comes back decoded. This one overlays a file onto the buffer's *current* contents, which live in the engine's own memory, so the job cannot leave without shipping them out and back. It runs in the worklet, under the serving budget. |
-| **`/buffer_write` has nowhere to write** | Reading is done; writing a file back out is the other half and is not built. |
+| **`Buffer.write()` fails in a page** | Not for want of a destination — the page has its own filesystem and `diskOut` records into it. The job simply does not leave the audio thread yet: only `/buffer_allocRead` is delegated to the NRT worker, and where the write runs there is no filesystem to reach. The command answers `/fail` rather than writing, and a take that has to leave the tab goes out as the samples themselves until it is delegated (`render()` resolves with them; `wavBytes` frames them). Owned by the B track in `PLAN.md`, under "Found by use". |
 
 ## What a tab has that it did not
 
