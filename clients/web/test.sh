@@ -90,6 +90,7 @@ fi
 run_page() {   # $1 = page under tests/, $2 = optional WxH viewport
     local page="$1" size="${2:-1280,1600}" mark verdict decoded profile
     mark=$(wc -c <"$LOG")
+    PAGE="$page"
     profile=$(mktemp -d)
     # --enable-unsafe-swiftshader: the GUI host needs a WebGL2 adapter, and
     # headless has no GPU — SwiftShader is the software one. Harmless for the
@@ -139,6 +140,9 @@ run_page() {   # $1 = page under tests/, $2 = optional WxH viewport
     # — a directory per page, left behind, was the other half of the mess.
     reap_chrome
     rm -rf "$profile"
+    # What this page asked the server for, for the assertions below: a page is
+    # judged by its verdict *and*, where it matters, by what it fetched.
+    PAGE_LOG=$(tail -c "+$((mark + 1))" "$LOG")
 
     if [ -z "$verdict" ]; then
         if [ -n "$gone" ]; then
@@ -152,6 +156,35 @@ run_page() {   # $1 = page under tests/, $2 = optional WxH viewport
         'import sys,urllib.parse; print(urllib.parse.unquote(sys.stdin.read()))')
     echo "$page: $decoded"
     case "$decoded" in PASS*) ;; *) echo "$page FAILED" >&2; exit 1;; esac
+}
+
+# What the last page fetched, and what it did not.
+#
+# The Faust compiler is megabytes of Emscripten and is imported on the *first*
+# `/def_send faust`, so a page that mounts a prebuilt SynthDef-only bundle must
+# never ask for it. That is a property of the request stream, not of anything a
+# page can see about itself — the import happens in the NRT worker, whose
+# fetches are in no window's resource timeline — so it is read where the server
+# logs it.
+#
+# The two go together on purpose: a negative on its own would pass just as well
+# if the asset moved or its name changed, so the page that *does* compile
+# asserts the same string positively. One of them failing says which of the two
+# things broke.
+fetched() {   # $1 = path fragment, $2 = what it is
+    if ! printf '%s' "$PAGE_LOG" | grep -q "$1"; then
+        echo "$PAGE FAILED: it fetched no $2 ($1)" >&2
+        exit 1
+    fi
+    echo "$PAGE: fetched $2"
+}
+
+not_fetched() {   # $1 = path fragment, $2 = what it is
+    if printf '%s' "$PAGE_LOG" | grep -q "$1"; then
+        echo "$PAGE FAILED: it fetched $2 ($1), which it has no def to compile with" >&2
+        exit 1
+    fi
+    echo "$PAGE: fetched no $2"
 }
 
 # `tests/wheel.html` is deliberately absent from this list and is not a gap: it
@@ -180,6 +213,7 @@ run_page nrt.html      # /buffer_allocRead out of the page's filesystem, in the 
 run_page disk.html     # diskOut into the page's filesystem, diskIn streaming it back
 run_page faust-artifact.html # what the vendored Faust compiler emits, asserted
 run_page faust.html    # a FaustDef compiled in the page, sounding, and set by name
+fetched 'vendor/faust/libfaust-wasm' "Faust compiler"   # the positive half of not_fetched
 
 # The components and lifecycle acceptances mount the example bundles, which are build
 # products (git-ignored, written by the Python client). Generate them here so a
@@ -199,6 +233,9 @@ if PYTHONPATH=../python "$PY" -c "import clausters.bundle" 2>/dev/null; then
         (cd "examples/$example" && PYTHONPATH=../../../../python "$PY" make_bundle.py >/dev/null)
     done
     run_page components.html  # bundles as components: N canvases in one document
+    # The bundles it mounts are SynthDef-only, so nothing in this page ever
+    # reaches `/def_send faust` and the compiler stays on the shelf.
+    not_fetched 'vendor/faust/libfaust' "Faust compiler"
     run_page lifecycle.html   # and the unmount: a hundred of them come and go
 else
     echo "components.html/lifecycle.html: SKIPPED ($PY cannot import the Python" \

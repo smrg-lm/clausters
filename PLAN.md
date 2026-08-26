@@ -822,9 +822,15 @@ entries keep their original paths as a record of what shipped where. See
   - ⬜ **The parity vector.** `scripts/parity-web.sh` renders a Faust score
     natively and in wasm and compares. Waits on the item above, or on running
     the wasm side through the live engine instead of the offline one.
-  - ⬜ **A page mounting a SynthDef-only bundle loads no compiler asset** —
-    true by construction (the glue is imported on the first `/def_send faust`)
-    and not yet asserted by a page.
+  - ✅ **A page mounting a SynthDef-only bundle loads no compiler asset**
+    *(2026-08-26)*. It was true by construction (the glue is imported on the
+    first `/def_send faust`) and is now asserted where the fetch actually
+    happens: the import is in the NRT worker, whose requests are in no window's
+    resource timeline, so `clients/web/test.sh` reads them out of the HTTP
+    access log instead — `components.html` mounts the two SynthDef-only bundles
+    and must **not** fetch `vendor/faust/libfaust`, and `faust.html` must fetch
+    it. The pair is the point: a negative alone would pass just as well if the
+    asset were renamed.
   - ⬜ **`soundfile`** in a Faust def: the wasm backend has no soundfile
     support, so `FaustSynth::new` ignores the buffer pool there. A def that
     declares one is silent rather than failing.
