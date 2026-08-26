@@ -829,9 +829,28 @@ entries keep their original paths as a record of what shipped where. See
 
     `tests/faust.html` renders the same three defs it just played: peak 1.20 —
     three sines of 0.4 summed in phase — at 299 Hz.
-  - ⬜ **The parity vector.** `scripts/parity-web.sh` renders a Faust score
-    natively and in wasm and compares. Waits on the item above, or on running
-    the wasm side through the live engine instead of the offline one.
+  - ✅ **The parity vector** *(2026-08-26)*. `gen_parity` emits a second scene
+    — `score-faust.bin` + `native-faust.f32` — and `tests/parity.html` renders
+    it through the client's own `renderScoreBytes`, so the pre-pass the item
+    above added is itself under test. The def is Faust **source** on purpose:
+    a box or signal tree is read by our own interpreters, which are the same
+    program on both targets, so a tree would compare the interpreter against
+    itself; source is where the two Faust backends are all that differ.
+
+    **And they differ by more than a libm does**, which is the reduction this
+    step found: the UGen scene lands at 1.5e-8, and the Faust scene at
+    **7.2e-5**, growing through the take (fifths 2.3e-6, 5.6e-6, 2.4e-5,
+    4.8e-5, 7.2e-5). LLVM and `-lang wasm-e` round a resonant filter's
+    coefficients differently and the recursion turns that into phase drift. So
+    the Faust bar is 1e-4, measured rather than chosen, and the page prints the
+    per-fifth profile beside the maximum — smooth growth is drift, a step is a
+    wrong constant or a mis-read control, and a bar alone could not tell them
+    apart. Written on `clients/web/docs/src/platform.md`.
+
+    The harness moved with it: the verdict is **beaconed and read out of the
+    access log** rather than dumped from the DOM, because the Faust scene
+    compiles in a Worker and Chrome's virtual time does not wait for one. That
+    is the posture every other page in the web suite already reports with.
   - ✅ **A page mounting a SynthDef-only bundle loads no compiler asset**
     *(2026-08-26)*. It was true by construction (the glue is imported on the
     first `/def_send faust`) and is now asserted where the fetch actually

@@ -30,6 +30,8 @@ node_modules/
 # Fixtures the parity/bulk harnesses generate next to the test pages.
 /tests/score.bin
 /tests/native.f32
+/tests/score-faust.bin
+/tests/native-faust.f32
 /tests/sine.f32
 /tests/sine.peaks
 
