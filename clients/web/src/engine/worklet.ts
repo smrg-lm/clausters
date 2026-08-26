@@ -80,6 +80,9 @@ type FaustResult =
 /** The acknowledgement of a `DiskOut` flush. */
 type RecordResult = { type: "record"; ticket: number; error?: string };
 
+/** The acknowledgement of one run of a `/buffer_write`, or its failure. */
+type WriteResult = { type: "write"; ticket: number; error?: string };
+
 /** What the NRT worker sends back. */
 type NrtResult =
     | {
@@ -121,6 +124,10 @@ class ClaustersProcessor extends AudioWorkletProcessor {
     nrt: MessagePort | null;
     /** Jobs out with the Worker: ticket -> the buffer the result installs to. */
     outstanding: Map<number, number>;
+    /** The `/buffer_write` being handed over, a run per turn. */
+    writing: { ticket: number; frames: number; at: number } | null;
+    /** Where that write goes and in what format — constant for its whole run. */
+    write: { path: string; channels: number; sampleRate: number; format: string } | null;
     /** `DiskIn` streams: where each one has read to, and what it could not
      *  hand over yet. */
     spans: Map<
@@ -159,6 +166,8 @@ class ClaustersProcessor extends AudioWorkletProcessor {
         this.dead = false;
         this.nrt = null;
         this.outstanding = new Map();
+        this.writing = null;
+        this.write = null;
         this.spans = new Map();
         this.recording = new Map();
         this.compiling = new Map();
@@ -191,6 +200,7 @@ class ClaustersProcessor extends AudioWorkletProcessor {
                 if (result.type === "shape") this.onShape(result as ShapeResult);
                 else if (result.type === "span") this.onSpan(result as SpanResult);
                 else if (result.type === "record") this.onRecorded(result as RecordResult);
+                else if (result.type === "write") this.onWritten(result as WriteResult);
                 else if (result.type === "faust") this.onFaustResult(result as FaustResult);
                 else this.onNrtResult(result as ReadResult);
             };
@@ -268,17 +278,80 @@ class ClaustersProcessor extends AudioWorkletProcessor {
             path: string;
             fileStart: number;
             numFrames: number;
-            channels: number[];
+            channels: number[] | number;
+            sampleFormat: string;
+            sampleRate: number;
+            frames: number;
         };
         this.outstanding.set(job.ticket, job.index);
+        if (job.kind === "write") {
+            // A write leaves in runs and takes several turns: the samples are
+            // in this module's memory, and copying a minute of them in one go
+            // is 7 ms on the thread that owes the next block. The state is
+            // kept here and walked by `pumpWrite`.
+            this.writing = { ticket: job.ticket, frames: job.frames, at: 0 };
+            this.write = {
+                path: job.path,
+                channels: job.channels as number,
+                sampleRate: job.sampleRate,
+                format: job.sampleFormat,
+            };
+            // The first run goes out on this same turn: `pumpWrite` is the next
+            // call in the serving turn that reached here.
+            return;
+        }
         this.nrt.postMessage({
             type: "read",
             ticket: job.ticket,
             path: job.path,
             fileStart: job.fileStart,
             numFrames: job.numFrames,
-            channels: job.channels,
+            channels: job.channels as number[],
         });
+    }
+
+    /**
+     * Hands the Worker one run of the outstanding `/buffer_write`.
+     *
+     * The run is `installFrames` — the same ceiling a staged *load* copies
+     * under, and for the same measurement — so a long take leaves over as many
+     * turns as it needs instead of stalling one. Only the last run carries
+     * `final`, and only that one is answered: the runs are ordered by the port,
+     * and an early ack arriving after the last run was posted would answer the
+     * command before the file exists.
+     */
+    pumpWrite(): void {
+        if (this.nrt === null || this.writing === null || this.write === null) return;
+        const run = this.server.installFrames();
+        const samples = this.server.writeChunk(this.writing.at, run);
+        this.writing.at += run;
+        const last = this.writing.at >= this.writing.frames;
+        this.nrt.postMessage(
+            {
+                type: "write",
+                ticket: this.writing.ticket,
+                path: this.write.path,
+                samples,
+                channels: this.write.channels,
+                sampleRate: this.write.sampleRate,
+                format: this.write.format,
+                final: last,
+            },
+            [samples.buffer],
+        );
+        if (last) this.writing = null;
+    }
+
+    /**
+     * The write landed — the whole of it, since only the last run is answered
+     * (or the first one that failed).
+     */
+    onWritten(result: WriteResult): void {
+        if (this.outstanding.get(result.ticket) === undefined) return;
+        this.outstanding.delete(result.ticket);
+        this.writing = null;
+        this.write = null;
+        this.server.finishDelegated(result.ticket, result.error);
     }
 
     /**
@@ -546,6 +619,7 @@ class ClaustersProcessor extends AudioWorkletProcessor {
             // a postMessage, and it is owed to the *next* quantum rather than
             // to this one.
             this.pumpDelegated();
+            this.pumpWrite();
             this.pumpDisk();
             this.pumpFaust();
             for (let ch = 0; ch < out.length; ch++) {

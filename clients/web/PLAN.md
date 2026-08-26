@@ -2343,6 +2343,30 @@ Python counterpart under another spelling or is a page's own (`ANY_PEER`,
 
 ## Found by use: the running list of fixes
 
+- ⬜ **`Buffer.fromSamples` empties the array it is given** *(found 2026-08-26,
+  writing a `/buffer_write` round trip)*. The in-page carrier's `bufferLoad`
+  posts the samples to the worklet with `samples.buffer` in the **transfer
+  list** (`src/engine/loader.ts`), so the caller's `Float32Array` comes back
+  detached: reading it afterwards throws `Cannot perform Construct on a detached
+  ArrayBuffer`, and a view taken of it earlier silently reads zero length. The
+  failure lands wherever the array is next touched, never at the call that took
+  it.
+
+  **The reference client does not do this** — a numpy array handed to
+  `Buffer.from_samples` is still there afterwards — so it is a divergence and
+  not a browser limit, which is why it is here rather than on
+  `docs/src/platform.md`.
+
+  Two ways out, and the choice is a real trade-off rather than an oversight.
+  **Copy** at the boundary (`samples.slice()`), which restores the reference
+  behaviour and costs one copy of the whole take on the main thread — the exact
+  cost the transfer exists to avoid. Or **document it on the surface** and keep
+  the transfer, which makes the two clients differ in a way a script has to know
+  about. A third shape is available and may be the right one: keep the transfer
+  but take it only when the caller says so (`{consume: true}`), copying
+  otherwise, so the fast path stays reachable and the default is the one that
+  cannot surprise anyone.
+
 - ✅ **A clock could not be locked to a server without spelling the two steps**
   *(found 2026-08-25, porting `transport/conductor.py`; fixed the same day)*.
   The reference client has `TempoClock.lock_to(server)` — one verb, idempotent,

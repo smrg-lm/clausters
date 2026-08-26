@@ -68,6 +68,27 @@ interface FaustRequest {
     def: string;
 }
 
+/**
+ * `/buffer_write`: put a span of a buffer in the page's filesystem.
+ *
+ * The runs arrive one per serving turn — the samples leave the engine's memory
+ * paced, the way a long load arrives paced — and the file is written **once**,
+ * at `final`. Nothing is visible until then, which is the same rule a staged
+ * load follows: a half-written file is not a shorter take, it is a wrong one.
+ * That is what separates this from `record`, which rewrites its file at every
+ * flush because a recording has to survive the tab closing mid-take.
+ */
+interface WriteRequest {
+    type: "write";
+    ticket: number;
+    path: string;
+    samples: Float32Array;
+    channels: number;
+    sampleRate: number;
+    format: string;
+    final: boolean;
+}
+
 /** `DiskOut`: append a recorded run, and close the file when `final`. */
 interface RecordRequest {
     type: "record";
@@ -100,6 +121,7 @@ type Request =
     | ReadRequest
     | ShapeRequest
     | SpanRequest
+    | WriteRequest
     | RecordRequest
     | FaustRequest
     | FaustHeapRequest
@@ -127,6 +149,7 @@ type Response =
     | { type: "span"; ticket: number; samples: Float32Array; frames: number }
     | { type: "span"; ticket: number; error: string }
     | { type: "record"; ticket: number; error?: string }
+    | { type: "write"; ticket: number; error?: string }
     | {
           type: "faust";
           ticket: number;
@@ -308,6 +331,10 @@ function compiler(): Promise<{ lib: FaustLib; mod: FaustModule }> {
 /** A file being streamed: its shape, remembered so a span costs one read. */
 const shapes = new Map<string, WavShape>();
 
+/** A `/buffer_write` in progress: the runs handed over so far, held until the
+ *  last one says the span is complete. */
+const writes = new Map<string, Uint8Array<ArrayBuffer>>();
+
 /** A recording in progress: what has been written, so the header can be fixed
  *  at the close. Kept in memory only as a byte count -- the samples go to
  *  storage as they arrive, which is the whole point of streaming them. */
@@ -387,6 +414,46 @@ async function handle(request: Request, post: (r: Response, t?: Transferable[]) 
         // first def, and asking must not be what brings it in.
         const held = faust === null ? 0 : (await faust).mod.HEAP32.buffer.byteLength;
         post({ type: "faust-heap", ticket: request.ticket, bytes: held, reloads });
+        return;
+    }
+    if (request.type === "write") {
+        try {
+            const { encodeWavFrames, wavHeader } = await load();
+            const held = writes.get(request.path) ?? new Uint8Array(0);
+            const body = request.samples.length > 0
+                ? encodeWavFrames(request.samples, request.format)
+                : new Uint8Array(0);
+            const grown = new Uint8Array(held.byteLength + body.byteLength);
+            grown.set(held);
+            grown.set(body, held.byteLength);
+            if (!request.final) {
+                // No acknowledgement per run, only at the end: the runs are
+                // ordered by the port itself, and an ack for an early run
+                // arriving after the last one was posted would answer the
+                // command before the file exists.
+                writes.set(request.path, grown);
+                return;
+            }
+            writes.delete(request.path);
+            // The framing is the server crate's, bound here rather than written
+            // in TypeScript: a second int16 rounding is a second answer, and a
+            // file that differs by a bit between a tab and a window is exactly
+            // the divergence nothing names.
+            const header = wavHeader(
+                request.channels,
+                request.sampleRate,
+                request.format,
+                grown.byteLength,
+            );
+            const file = new Uint8Array(header.byteLength + grown.byteLength);
+            file.set(header);
+            file.set(grown, header.byteLength);
+            await writeFile(request.path, file);
+            post({ type: "write", ticket: request.ticket });
+        } catch (e) {
+            writes.delete(request.path);
+            post({ type: "write", ticket: request.ticket, error: message(e) });
+        }
         return;
     }
     if (request.type === "record") {

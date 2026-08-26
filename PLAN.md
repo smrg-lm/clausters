@@ -1032,12 +1032,13 @@ entries keep their original paths as a record of what shipped where. See
         buffer's current contents, so delegating it would ship megabytes out and
         back; `/buffer_write` has nowhere to write yet.
 
-     c. **What did not leave with it.** `Alloc` deliberately stays: the buffer
-        lives in the engine's linear memory, so a Worker allocating in *its*
-        memory would only add a copy back. `/buffer_write` should leave and does
-        not — that is open work and it is filed where open work goes, under
-        "Found by use" ("`/buffer_write` fails in a page, and not for the reason
-        the plan gives").
+     c. ✅ **`/buffer_write` leaves too** *(done 2026-08-26)* — one payload out
+        and none back, handed over a run per serving turn and written whole at
+        the last one. What it took, and the two-lists bug it turned up, are with
+        the entry under "Found by use" ("`/buffer_write` fails in a page, and
+        not for the reason the plan gives"). `Alloc` deliberately stays: the
+        buffer lives in the engine's linear memory, so a Worker allocating in
+        *its* memory would only add a copy back.
   3. ✅ **OPFS: the page gets a filesystem** *(done 2026-08-25, with step 2b —
      the two turned out to be one thing)*. `createSyncAccessHandle` is
      dedicated-worker-only by standard, so it lives exactly where step 2 put the
@@ -2089,8 +2090,8 @@ Anything unresolved lives here or under "Future directions", both **after** the
 tracks: never inside the milestone that happened to be open, and never among
 finished work, where a pending item reads as done.
 
-- ⬜ **`/buffer_write` fails in a page, and not for the reason the plan gives**
-  *(named 2026-08-26, while closing B5; the work is B6's step 2c)*. Both clients
+- ✅ **`/buffer_write` fails in a page, and not for the reason the plan gives**
+  *(named and fixed 2026-08-26, closing B6's step 2c)*. Both clients
   expose `Buffer.write()` and against the in-page engine it answers `/fail`.
   Two separate things are wrong.
 
@@ -2111,6 +2112,29 @@ finished work, where a pending item reads as done.
   **Why it was invisible**: it sat as a `⬜` inside B6, which is `✅`. That is
   the exact case this section exists for, and it is worth noting that the rule
   caught a real item rather than a hypothetical one.
+
+  **The fix, and the third thing it found.** `Write` now leaves, and its payload
+  leaves **in runs** — `ServeBudget::install_frames` a serving turn, the same
+  ceiling a staged load copies under and for the same measurement, since a
+  one-minute take is 7 ms of copying on the thread that owes the next block. The
+  Worker holds the runs and writes the file **once**, at the last one, so a
+  half-written file never exists; that is what separates it from `diskOut`'s
+  `record`, which rewrites at every flush because a recording has to survive the
+  tab closing mid-take. Only the last run is answered, because an early
+  acknowledgement arriving after the last run was posted would answer the
+  command before the file existed.
+
+  And the reason it did not work on the first try: **there were two lists of
+  what is delegable**, `take_delegated`'s match and the pump's guard. A kind
+  added to one and not the other does not fail — it runs in the wrong place,
+  quietly, which is precisely how this command spent a release writing through a
+  filesystem a page does not have. They are one function now
+  (`server::nrt::delegated_kind`), read by both.
+
+  `tests/nrt.html` is the round trip: a buffer written to the page's storage and
+  read back through the same decoder at worst delta 0, and a 12000-frame take
+  crossing three runs — the seam between runs being where an interleave offset
+  goes wrong — also at 0.
 
 - ✅ **Three wire selectors carry a spelling the table meant to leave behind**
   *(named 2026-08-23, once the clients' own names were settled; done

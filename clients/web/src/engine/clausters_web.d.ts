@@ -177,8 +177,13 @@ export class WebServer {
     /**
      * The next job for the host, as JSON, or `undefined` if none is waiting:
      * `{ticket, index, kind: "allocRead", path, fileStart, numFrames,
-     * channels}`. A delegated job blocks the buffer queue behind it, so this
-     * hands out at most one at a time.
+     * channels}` for a read, and
+     * `{ticket, index, kind: "write", path, sampleFormat, channels,
+     * sampleRate, frames}` for a write. A delegated job blocks the buffer
+     * queue behind it, so this hands out at most one at a time.
+     *
+     * A write's samples are **not** in here: the host pulls them a run at a
+     * time with [`write_chunk`](Self::write_chunk).
      */
     takeDelegated(): string | undefined;
     /**
@@ -198,6 +203,16 @@ export class WebServer {
      * only where the compiler is the host (see `clausters::faust`).
      */
     takeFaustJobs(): string;
+    /**
+     * One run of the outstanding write's samples, interleaved: frames
+     * `at..at + frames` of the span the job declared, and an empty array once
+     * the host has walked past its end.
+     *
+     * The payload leaves in runs because the thread handing it over owes the
+     * next block — the same reason a long *load* arrives in runs. Size the run
+     * from [`install_frames`](Self::install_frames).
+     */
+    writeChunk(at: number, frames: number): Float32Array;
 }
 
 /**
@@ -283,6 +298,7 @@ export interface InitOutput {
     readonly webserver_set_max_stream_buses: (a: number, b: number) => void;
     readonly webserver_takeDelegated: (a: number) => [number, number];
     readonly webserver_takeFaustJobs: (a: number) => [number, number];
+    readonly webserver_writeChunk: (a: number, b: number, c: number) => [number, number];
     readonly last_render_seed: () => bigint;
     readonly abi_version: () => number;
     readonly _abs: (a: number) => number;

@@ -429,6 +429,12 @@ impl OscServer {
         self.nrt.take_delegated()
     }
 
+    /// One run of the outstanding write's payload. See
+    /// [`NrtRunner::delegated_write_chunk`].
+    pub fn write_chunk(&self, at: usize, frames: usize) -> Vec<f32> {
+        self.nrt.delegated_write_chunk(at, frames)
+    }
+
     /// Answers a delegated job. See [`NrtRunner::finish_delegated`].
     pub fn finish_delegated(&mut self, ticket: u64, outcome: Result<(), String>) {
         self.nrt.finish_delegated(ticket, outcome);

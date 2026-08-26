@@ -411,10 +411,11 @@ pub struct DelegatedJob {
 /// needs is **parameters** and what it produces is a whole new buffer.
 ///
 /// The rest stay. `Read`, `Gen`, `Set`, `Edit` and `Fill` all carry the
-/// buffer's current contents, so delegating them would ship megabytes out and
-/// back to save arithmetic — they run here, under the serving budget. `Write`
-/// is the one that will follow (it only reads the buffer and produces a file),
-/// and is not here yet.
+/// buffer's current contents *and* produce new contents for the same buffer, so
+/// delegating them would ship megabytes out and back to save arithmetic — they
+/// run here, under the serving budget. `Alloc` stays for the other reason: the
+/// buffer is built in this module's own memory, so a host allocating in its
+/// memory would only add a copy back.
 #[derive(Debug, Clone, PartialEq)]
 pub enum DelegatedKind {
     /// `/buffer_allocRead`: read a soundfile and install it whole.
@@ -427,6 +428,62 @@ pub enum DelegatedKind {
         /// with a de-interleave of its own.
         channels: Vec<usize>,
     },
+    /// `/buffer_write`: encode a span of the buffer and put it in the host's
+    /// filesystem. One payload out and none back, which is what makes it the
+    /// easiest job in the set to delegate — and the payload leaves in runs
+    /// ([`NrtRunner::delegated_write_chunk`]) rather than in one copy, for the
+    /// reason a staged load exists: the thread handing it over owes a block.
+    Write {
+        path: String,
+        /// `int16`, `int24` or `float`, as the command spelled it.
+        sample_format: String,
+        channels: usize,
+        sample_rate: f64,
+        /// The span, already clamped to the buffer: the host writes exactly
+        /// this many frames and asks for them a run at a time.
+        frames: usize,
+    },
+}
+
+/// What a job becomes when it leaves, or `None` when it stays here.
+///
+/// **The one reading of "what the host does better".** Both callers go through
+/// it: the pump, to know which job to stop at, and `take_delegated`, to hand it
+/// over. A job kind is added here and nowhere else.
+fn delegated_kind(job: &NrtJob) -> Option<DelegatedKind> {
+    match job {
+        NrtJob::AllocRead {
+            path,
+            file_start,
+            num_frames,
+            channels,
+        } => Some(DelegatedKind::AllocRead {
+            path: path.clone(),
+            file_start: *file_start,
+            num_frames: *num_frames,
+            channels: channels.clone(),
+        }),
+        NrtJob::Write {
+            path,
+            sample_format,
+            buf_start,
+            num_frames,
+            buffer,
+        } => {
+            // The span is settled here, once, so the host and this side cannot
+            // disagree about how much there is — the same clamping `write_wav`
+            // does before it writes.
+            let (_, frames) = write_span(buffer, *buf_start, *num_frames);
+            Some(DelegatedKind::Write {
+                path: path.clone(),
+                sample_format: sample_format.clone(),
+                channels: buffer.channels(),
+                sample_rate: buffer.sample_rate(),
+                frames,
+            })
+        }
+        _ => None,
+    }
 }
 
 impl NrtRunner {
@@ -470,20 +527,7 @@ impl NrtRunner {
         if outstanding.is_some() {
             return None;
         }
-        let kind = match pending.front()?.job {
-            NrtJob::AllocRead {
-                ref path,
-                file_start,
-                num_frames,
-                ref channels,
-            } => DelegatedKind::AllocRead {
-                path: path.clone(),
-                file_start,
-                num_frames,
-                channels: channels.clone(),
-            },
-            _ => return None,
-        };
+        let kind = delegated_kind(&pending.front()?.job)?;
         let request = pending.pop_front()?;
         *next_ticket += 1;
         let ticket = *next_ticket;
@@ -494,6 +538,44 @@ impl NrtRunner {
         };
         *outstanding = Some((ticket, request));
         Some(job)
+    }
+
+    /// One run of the outstanding [`DelegatedKind::Write`]'s payload,
+    /// interleaved: frames `at..at + frames` of the span, clamped to it.
+    ///
+    /// The host walks the span with this rather than being handed it whole. A
+    /// one-minute stereo take is 7 ms of copying, and the thread asking is the
+    /// one that owes the next block — the same measurement that made a long
+    /// *load* arrive in runs (`ServeBudget::install_frames` is the run to size
+    /// from, there and here).
+    ///
+    /// Empty when the outstanding job is not a write, or when `at` is past the
+    /// span; a host reading past the end gets nothing rather than an error,
+    /// which is what ends its loop.
+    pub fn delegated_write_chunk(&self, at: usize, frames: usize) -> Vec<f32> {
+        let NrtRunner::Delegating { outstanding, .. } = self else {
+            return Vec::new();
+        };
+        let Some((_, request)) = outstanding.as_ref() else {
+            return Vec::new();
+        };
+        let NrtJob::Write {
+            buf_start,
+            num_frames,
+            ref buffer,
+            ..
+        } = request.job
+        else {
+            return Vec::new();
+        };
+        let (start, span) = write_span(buffer, buf_start, num_frames);
+        if at >= span {
+            return Vec::new();
+        }
+        let take = frames.min(span - at);
+        let channels = buffer.channels();
+        let from = (start + at) * channels;
+        (0..take * channels).map(|i| buffer.at(from + i)).collect()
     }
 
     /// Answers a delegated job and unblocks the queue. `Ok(())` means the host
@@ -584,11 +666,16 @@ impl NrtRunner {
             // A job the host takes stops the pump rather than running here --
             // but only where there *is* a host. Inline, this same job is ours
             // to run, and skipping it would strand every `/buffer_allocRead`.
+            //
+            // What counts as such a job is read from `delegated_kind` and not
+            // listed again here. The two used to be separate lists, and a kind
+            // added to one and not the other does not fail: it runs in the
+            // wrong place, quietly, which is how `/buffer_write` spent a
+            // release writing through a filesystem a page does not have.
             if delegating
-                && matches!(
-                    pending.front().map(|r| &r.job),
-                    Some(NrtJob::AllocRead { .. })
-                )
+                && pending
+                    .front()
+                    .is_some_and(|r| delegated_kind(&r.job).is_some())
             {
                 break;
             }
@@ -1135,6 +1222,19 @@ pub fn wav_format(sample_format: &str) -> Result<(u16, hound::SampleFormat), Str
     }
 }
 
+/// The span a `/buffer_write` covers: `buf_start` clamped into the buffer and
+/// `num_frames` clamped to what is left, `<= 0` meaning "to the end". One
+/// reading of it, so the host's runs and a local write cover the same samples.
+fn write_span(buffer: &Buffer, buf_start: usize, num_frames: i64) -> (usize, usize) {
+    let start = buf_start.min(buffer.frames());
+    let frames = if num_frames <= 0 {
+        buffer.frames() - start
+    } else {
+        (num_frames as usize).min(buffer.frames() - start)
+    };
+    (start, frames)
+}
+
 fn write_wav(
     path: &str,
     sample_format: &str,
@@ -1150,12 +1250,7 @@ fn write_wav(
         bits_per_sample: bits,
         sample_format: format,
     };
-    let start = buf_start.min(buffer.frames());
-    let frames = if num_frames <= 0 {
-        buffer.frames() - start
-    } else {
-        (num_frames as usize).min(buffer.frames() - start)
-    };
+    let (start, frames) = write_span(buffer, buf_start, num_frames);
     let held = buffer.to_vec();
     let samples = &held[start * buffer.channels()..(start + frames) * buffer.channels()];
 

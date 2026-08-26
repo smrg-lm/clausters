@@ -348,34 +348,70 @@ impl WebServer {
 
     /// The next job for the host, as JSON, or `undefined` if none is waiting:
     /// `{ticket, index, kind: "allocRead", path, fileStart, numFrames,
-    /// channels}`. A delegated job blocks the buffer queue behind it, so this
-    /// hands out at most one at a time.
+    /// channels}` for a read, and
+    /// `{ticket, index, kind: "write", path, sampleFormat, channels,
+    /// sampleRate, frames}` for a write. A delegated job blocks the buffer
+    /// queue behind it, so this hands out at most one at a time.
+    ///
+    /// A write's samples are **not** in here: the host pulls them a run at a
+    /// time with [`write_chunk`](Self::write_chunk).
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = takeDelegated))]
     pub fn take_delegated(&mut self) -> Option<String> {
         use clausters::server::nrt::DelegatedKind;
         let job = self.inner.take_delegated()?;
-        let DelegatedKind::AllocRead {
-            path,
-            file_start,
-            num_frames,
-            channels,
-        } = job.kind;
         // Printed by hand rather than through serde: one shape, one place, and
         // the shell keeps carrying no dependency it does not need.
-        let channels = channels
-            .iter()
-            .map(|c| c.to_string())
-            .collect::<Vec<_>>()
-            .join(",");
-        Some(format!(
-            r#"{{"ticket":{},"index":{},"kind":"allocRead","path":{},"fileStart":{},"numFrames":{},"channels":[{}]}}"#,
-            job.ticket,
-            job.index,
-            json_string(&path),
-            file_start,
-            num_frames,
-            channels,
-        ))
+        Some(match job.kind {
+            DelegatedKind::AllocRead {
+                path,
+                file_start,
+                num_frames,
+                channels,
+            } => {
+                let channels = channels
+                    .iter()
+                    .map(|c| c.to_string())
+                    .collect::<Vec<_>>()
+                    .join(",");
+                format!(
+                    r#"{{"ticket":{},"index":{},"kind":"allocRead","path":{},"fileStart":{},"numFrames":{},"channels":[{}]}}"#,
+                    job.ticket,
+                    job.index,
+                    json_string(&path),
+                    file_start,
+                    num_frames,
+                    channels,
+                )
+            }
+            DelegatedKind::Write {
+                path,
+                sample_format,
+                channels,
+                sample_rate,
+                frames,
+            } => format!(
+                r#"{{"ticket":{},"index":{},"kind":"write","path":{},"sampleFormat":{},"channels":{},"sampleRate":{},"frames":{}}}"#,
+                job.ticket,
+                job.index,
+                json_string(&path),
+                json_string(&sample_format),
+                channels,
+                sample_rate,
+                frames,
+            ),
+        })
+    }
+
+    /// One run of the outstanding write's samples, interleaved: frames
+    /// `at..at + frames` of the span the job declared, and an empty array once
+    /// the host has walked past its end.
+    ///
+    /// The payload leaves in runs because the thread handing it over owes the
+    /// next block — the same reason a long *load* arrives in runs. Size the run
+    /// from [`install_frames`](Self::install_frames).
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = writeChunk))]
+    pub fn write_chunk(&self, at: usize, frames: usize) -> Vec<f32> {
+        self.inner.write_chunk(at, frames)
     }
 
     /// Tells a `DiskIn` stream how many channels its file turned out to have.

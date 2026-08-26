@@ -329,6 +329,13 @@ impl ClaustersHeadless {
         self.server.take_delegated()
     }
 
+    /// One run of the outstanding write's samples, interleaved (empty past the
+    /// end of its span): how a `/buffer_write`'s payload leaves without a
+    /// megabyte-sized copy on the thread that owes the next block.
+    pub fn write_chunk(&self, at: usize, frames: usize) -> Vec<f32> {
+        self.server.write_chunk(at, frames)
+    }
+
     /// Answers a delegated job: `Ok(())` once the host has installed the result
     /// (through a staged load, so the samples never pass through the queue),
     /// `Err` with the host's own message. Emits the command's `/done` or

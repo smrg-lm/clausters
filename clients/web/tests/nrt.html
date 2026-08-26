@@ -116,7 +116,75 @@
         log(`readChannels([1]): ${rightInfo.channels} channel(s), ` +
             `${[...rightSamples].map((s) => s.toFixed(2)).join(" ")}`);
 
+        // 4) The other direction: `buffer.write(path)` puts a span of the
+        //    engine's buffer in the page's own filesystem. The job leaves the
+        //    audio thread like a read does — but with the payload going *out*,
+        //    a run per serving turn, since the samples live in the engine's
+        //    memory and copying a long take in one go is milliseconds on the
+        //    thread that owes the next block.
+        //
+        //    The proof is a round trip: written, read back through the same
+        //    decoder, and compared. `float` so the comparison is the samples
+        //    themselves and not a quantization.
+        await buf.write("takes/out.wav", { sampleFormat: "float" });
+        const back = await Buffer.read("takes/out.wav", { server: session.server });
+        const backInfo = await back.info();
+        const backSamples = await back.getSamples({ start: 0, count: 64 });
+        let backWorst = 0;
+        for (let i = 0; i < backSamples.length; i++)
+          backWorst = Math.max(backWorst, Math.abs(backSamples[i] - take.data[i]));
+        log(`round trip: ${backInfo.frames} frames, ${backInfo.channels} ch, ` +
+            `${backInfo.sampleRate} Hz, worst delta ${backWorst.toExponential(2)}`);
+
+        // 5) A take longer than one run, which is what the pacing is *for*:
+        //    the payload leaves at `installFrames` a turn (4800 frames), so
+        //    this one crosses three of those seams. A run boundary is where an
+        //    interleave offset goes wrong, so the spans compared are the start,
+        //    a window straddling the first seam, and the end.
+        const LONG = 12000;
+        const ramp = new Float32Array(LONG * 2);
+        for (let f = 0; f < LONG; f++) {
+          ramp[f * 2] = (f % 100) / 100 - 0.5;
+          ramp[f * 2 + 1] = 0.5 - (f % 64) / 64;
+        }
+        // `.slice()`: the in-page carrier *transfers* the samples it is given,
+        // so the array handed over is detached afterwards and the comparison
+        // below would read nothing (`clients/web/PLAN.md`, "Found by use").
+        const long = await Buffer.fromSamples(ramp.slice(), 2, 48000,
+                                              { server: session.server });
+        await long.write("takes/long.wav", { sampleFormat: "float" });
+        const longBack = await Buffer.read("takes/long.wav", { server: session.server });
+        const longInfo = await longBack.info();
+        let longWorst = 0;
+        // `getSamples` counts in **samples**, flat across channels, so a seam
+        // at frame 4800 is sample 9600.
+        for (const at of [0, 9580, (LONG - 16) * 2]) {
+          const span = await longBack.getSamples({ start: at, count: 32 });
+          log(`  at ${at}: ${span.length} samples, ` +
+              `${[...span.subarray(0, 3)].map((v) => v.toFixed(3)).join(" ")} vs ` +
+              `${[...ramp.subarray(at, at + 3)].map((v) => v.toFixed(3)).join(" ")}`);
+          for (let i = 0; i < span.length; i++)
+            longWorst = Math.max(longWorst, Math.abs(span[i] - ramp[at + i]));
+        }
+        log(`long take: ${longInfo.frames} frames over ` +
+            `${Math.ceil(LONG / 4800)} runs, worst delta at the seams ` +
+            `${longWorst.toExponential(2)}`);
+
+        // A path nothing can be written to must fail the command rather than
+        // hang it -- the same posture the missing read has.
+        let writeFailed = "";
+        try {
+          await buf.write("", { sampleFormat: "float" });
+        } catch (e) {
+          writeFailed = String(e && e.message ? e.message : e);
+        }
+        log(`unwritable path: ${writeFailed.slice(0, 70)}`);
+
         const ok =
+          backInfo.frames === FRAMES && backInfo.channels === 2 &&
+          backInfo.sampleRate === 48000 && backWorst < 1e-6 &&
+          longInfo.frames === LONG && longWorst < 1e-6 &&
+          writeFailed.length > 0 &&
           info.frames === FRAMES && info.channels === 2 &&
           info.sampleRate === 48000 && worst < 1e-6 && failed.length > 0 &&
           rightInfo.channels === 1 &&
@@ -124,11 +192,17 @@
         verdict(ok
           ? `PASS: Buffer.read pulled ${info.frames} frames of ${info.channels} ` +
             `channels out of OPFS through the NRT worker (worst sample delta ` +
-            `${worst.toExponential(1)}), a missing file failed the command, and ` +
-            `readChannels([1]) came back mono at the right channel's value`
+            `${worst.toExponential(1)}), a missing file failed the command, ` +
+            `readChannels([1]) came back mono at the right channel's value, and ` +
+            `buffer.write went back out and read back at ${backWorst.toExponential(1)}, ` +
+            `a ${LONG}-frame take crossing ${Math.ceil(LONG / 4800)} runs at ` +
+            `${longWorst.toExponential(1)}`
           : `FAIL: frames ${info.frames}/${FRAMES}, channels ${info.channels}, ` +
             `rate ${info.sampleRate}, delta ${worst}, failure "${failed}", ` +
-            `selected ${rightInfo.channels} ${[...rightSamples]}`);
+            `selected ${rightInfo.channels} ${[...rightSamples]}, ` +
+            `round trip ${backInfo.frames}f/${backInfo.channels}ch delta ` +
+            `${backWorst}, long ${longInfo.frames}f delta ${longWorst}, ` +
+            `write failure "${writeFailed}"`);
         await session.close();
       }
 
