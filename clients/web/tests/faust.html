@@ -41,9 +41,16 @@
       building this was an *order* failure -- a def that compiled alone and
       broke after another one -- so a page per form would have found none of
       them.
+
+      Then it renders the same three **offline**, which is the other half of an
+      engine that has a compiler: `render()` drives the same wasm engine with no
+      audio device, and that path loads a def where it stands, while the page's
+      compiler answers later. What the last measurement proves is that the
+      render compiled and linked them before starting, and that the samples it
+      produced carry the same pitch the live engine just played.
     -->
     <script type="module">
-      import { Session, loadOsc, FaustDef, Synth, Bus, data }
+      import { Session, loadOsc, FaustDef, Synth, Bus, Routine, data }
         from "../dist/index.js";
       import { signals } from "../dist/defs/index.js";
 
@@ -169,20 +176,58 @@
           taps.close?.();
         }
 
+        await session.close();
+
+        // And the same three defs **offline**, which is the other half of the
+        // engine having a compiler: `render()` goes through the same wasm
+        // engine with no audio device, and it loads a def where it stands --
+        // time does not advance until it has -- while the compiler answers
+        // later. So the render compiles the score's defs before it starts, and
+        // what this asserts is that the samples it produces are the ones the
+        // live engine just played.
+        const offline = await Session.nrt();
+        const nrtServer = offline.server;
+        const voices = [];
+        for (const [, def] of forms) {
+          await def.send(nrtServer);
+          voices.push(new Synth(def.name, { out: 0.0 }, { server: nrtServer }));
+        }
+        // A score ends at its last bundle, so the piece has to say when it is
+        // over: one closing event a beat in, which at the default tempo is a
+        // second of sound. The frees go out as a *bundle* -- `free()` means
+        // "now", and in a score now is time 0 -- which is the same call the
+        // Python client's offline examples make.
+        Routine.run(function* () {
+          yield 1.0;
+          nrtServer.sendBundle(voices.map((v) => ["/node_free", v.id]));
+        }, offline.clock);
+        const stats = await offline.render({ sampleRate: rate });
+        const mono = stats.samples.filter((_, i) => i % stats.channels === 0);
+        // Three sines of 0.4 on one bus: what matters is that each one is in
+        // there, and a silent def would take the pitch with it.
+        const nrtPeak = Math.max(...mono.map(Math.abs));
+        const nrtHz = hzOf(mono.subarray(mono.length >> 1), stats.sampleRate);
+        log(`offline: ${stats.frames} frames, peak ${nrtPeak.toFixed(3)}, ~${Math.round(nrtHz)} Hz`);
+        await offline.close();
+
         // Every form must sound, at the pitch it declares. A form that
         // compiles and is silent is the failure this page exists to catch.
         const allSound = heard.every(([, p, hz]) =>
           p > 0.2 && Math.abs(hz - 300) < 25);
-        const ok = allSound && Math.abs(high - 900) < 40;
+        // Offline: the three summed sines are in phase at the same pitch, so
+        // the crossing count still reads 300 Hz and the peak is their sum.
+        const offlineOk = nrtPeak > 0.6 && Math.abs(nrtHz - 300) < 25;
+        const ok = allSound && Math.abs(high - 900) < 40 && offlineOk;
         const shape = heard
           .map(([l, p, hz]) => `${l} ${p.toFixed(2)}/${Math.round(hz)}Hz`)
           .join(", ");
         verdict(ok
           ? `PASS: source, boxes and signals all compiled in the page and ` +
-            `sounded (${shape}), and /node_set moved freq to ~${Math.round(high)} Hz`
+            `sounded (${shape}), /node_set moved freq to ~${Math.round(high)} Hz, ` +
+            `and an offline render of the three peaked ${nrtPeak.toFixed(2)} at ` +
+            `~${Math.round(nrtHz)} Hz`
           : `FAIL: ${shape}; after /node_set ${Math.round(high)} Hz | ` +
             document.getElementById("log").textContent.replace(/\n/g, " / "));
-        await session.close();
       }
 
       document.getElementById("boot").onclick = () => run().catch(

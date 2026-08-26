@@ -809,16 +809,26 @@ entries keep their original paths as a record of what shipped where. See
   every import the module declares is resolved from the engine's own exports and
   an unknown one is named rather than left to fail. What is left:
 
-  - ⬜ **A page's offline render cannot compile a Faust def.** `Session.nrt`
-    and `render()` go through `server::render`, which compiles a def where it
-    stands and answers on the spot — and in a page the compiler is a different
-    scope that answers later, so that path returns a message saying to send the
-    def to the engine first. Two things wait on this and neither is small: the
-    **parity vector** below, and **W16's `faust/boxes-library` page**, which is
-    an NRT script (`clients/web/PLAN.md`, W7) and therefore still blocked after
-    this milestone's compiler landed. The shape of the fix is a render that can
-    wait for an asynchronous def — an `await` in the page's render path, which
-    the native one has never needed.
+  - ✅ **A page's offline render compiles a Faust def** *(2026-08-26)*.
+    `server::render` loads a def **where it stands** — time does not advance
+    until it has — and a page's compiler is another scope that answers later, so
+    there was no turn in which a compiled def could arrive and the path refused
+    with a message. The fix is not an `await` inside the render, as this entry
+    guessed, but the same work in **the other order**: the host reads the
+    score's Faust defs before the render starts (`Score::faust_jobs`, exposed as
+    `faustJobs` — the engine's *own* reader, so a score the render understands
+    and the pre-pass does not cannot happen), compiles each in the Worker that
+    already compiles for the live engine, links the module into the renderer's
+    own memory and table (`faust-link.ts`, now shared with the worklet rather
+    than copied), and deposits it through `linkFaust`. The renderer's
+    `/def_send faust` is then a lookup in `faust::compiler_web`'s prelinked
+    store, and everything after it is the code a native render runs. The
+    compiler Worker is the renderer's own and is started on the first Faust def
+    a score sends: a page can render with nothing booted, and a def linked into
+    the worklet's instance could not be used by the renderer anyway.
+
+    `tests/faust.html` renders the same three defs it just played: peak 1.20 —
+    three sines of 0.4 summed in phase — at 299 Hz.
   - ⬜ **The parity vector.** `scripts/parity-web.sh` renders a Faust score
     natively and in wasm and compares. Waits on the item above, or on running
     the wasm side through the live engine instead of the offline one.

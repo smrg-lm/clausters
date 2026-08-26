@@ -15,6 +15,8 @@
 
 import "./worklet-shim.ts";
 import { initSync, WebServer } from "./clausters_web.js";
+import { linkFaustModule } from "./faust-link.ts";
+import type { EngineExports } from "./faust-link.ts";
 
 // Port protocol, both directions tagged by `type`:
 //   main -> worklet: {type:"osc", data, peer}  one complete OSC packet (bytes),
@@ -98,20 +100,6 @@ type NrtResult =
  *  means more messages for the same audio; larger means a longer wait before a
  *  stream that just opened has anything to play. */
 const DISK_SPAN_FRAMES = 4800;
-
-/**
- * The engine instance's own wasm exports, past the binding's surface.
- *
- * A Faust def is a second wasm module: it is instantiated against this
- * `memory` and its `compute` is appended to this `table`, so the engine calls
- * it as a plain indirect call with no JavaScript frame in the way. The math
- * functions are the rest of what such a module imports (`env._sinf` and its
- * neighbours) — bound to these, so Faust and our own UGens go through one libm.
- */
-type EngineExports = {
-    memory: WebAssembly.Memory;
-    __indirect_function_table: WebAssembly.Table;
-} & Record<string, unknown>;
 
 interface ProcessorOptions {
     module: WebAssembly.Module;
@@ -363,19 +351,9 @@ class ClaustersProcessor extends AudioWorkletProcessor {
     }
 
     /**
-     * Links a compiled def into the engine: the whole of the Faust design in a
-     * dozen lines (docs/decisions.md, "The page's Faust is a second wasm module
-     * linked into the engine's own memory").
-     *
-     * The module is instantiated against the engine's **own** linear memory,
-     * with every import it declares resolved from the engine's exports — the
-     * memory itself and the transcendentals — so nothing is copied and no
-     * JavaScript runs on the audio path. Its `compute` and `init` are appended
-     * to the engine's indirect function table, and the two slot numbers are
-     * what the engine calls through.
-     *
-     * An import the engine does not export is named rather than left to fail as
-     * a link error nobody can read.
+     * Links a compiled def into the engine and answers the command that asked
+     * for it. The linking itself is `faust-link.ts`, shared with the offline
+     * renderer, which links into an engine instance of its own.
      */
     onFaustResult(result: FaustResult): void {
         const name = this.compiling.get(result.ticket);
@@ -386,43 +364,14 @@ class ClaustersProcessor extends AudioWorkletProcessor {
             return;
         }
         try {
-            // Compiled here, not in the Worker: a `WebAssembly.Module` posted
-            // into an AudioWorklet is dropped on arrival without an error
-            // (a worklet is its own agent cluster), so the bytes are what
-            // travels. A Faust module is a couple of kilobytes.
-            const module = new WebAssembly.Module(result.bytes);
-            const env: WebAssembly.ModuleImports = {};
-            for (const wanted of WebAssembly.Module.imports(module)) {
-                if (wanted.module !== "env") {
-                    throw new Error(`the module imports ${wanted.module}.${wanted.name}`);
-                }
-                const ours = (
-                    wanted.name === "memory" ? this.engine.memory : this.engine[wanted.name]
-                ) as WebAssembly.ImportValue | undefined;
-                if (ours === undefined) {
-                    throw new Error(`the engine exports no ${wanted.name}`);
-                }
-                env[wanted.name] = ours;
-            }
-            const instance = new WebAssembly.Instance(module, { env });
+            const { instance, compute, init } = linkFaustModule(this.engine, result.bytes);
             // Kept for the page's life: the table holds the functions, and the
             // instance is what owns them.
             this.linked.push(instance);
-            const compute = this.slot(instance.exports.compute as WebAssembly.ExportValue);
-            const init = this.slot(instance.exports.init as WebAssembly.ExportValue);
             this.server.finishFaust(result.ticket, compute, init, result.json, undefined);
         } catch (e) {
             this.server.finishFaust(result.ticket, 0, 0, undefined, `${name}: ${String(e)}`);
         }
-    }
-
-    /** Appends one function to the engine's table and returns its slot. */
-    slot(fn: WebAssembly.ExportValue): number {
-        if (typeof fn !== "function") throw new Error("the module exports no such function");
-        const table = this.engine.__indirect_function_table;
-        const at = table.grow(1);
-        table.set(at, fn);
-        return at;
     }
 
     /**

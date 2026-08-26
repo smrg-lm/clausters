@@ -20,7 +20,8 @@
 //! What the host is expected to do between the two calls is written in
 //! [`crate::faust::synth::FaustDef::link`].
 
-use std::sync::Mutex;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use crate::faust::synth::FaustDef;
 use crate::osc::ClientId;
@@ -162,6 +163,50 @@ impl CompilerThread {
     fn lock(&self) -> std::sync::MutexGuard<'_, Inner> {
         self.inner.lock().unwrap_or_else(|e| e.into_inner())
     }
+}
+
+/// The defs the host has compiled and linked **for an offline render**, by
+/// name.
+///
+/// A live `/def_send faust` parks a request and is answered late, which is what
+/// the queue above is for. An offline render cannot be answered late: it
+/// compiles a def where it stands and time does not advance until it has, so
+/// there is no turn in which a result could arrive.
+///
+/// So the page does the same work in the other order — read the score's Faust
+/// defs *before* the render starts ([`crate::server::render::Score::faust_jobs`]),
+/// compile and link them in the Worker, deposit them here, and then render —
+/// and the renderer's `/def_send faust` becomes a lookup. The store is global
+/// because the render entry point is a free function with no host object to
+/// carry it, and a page has one engine instance per scope.
+static PRELINKED: Mutex<Option<HashMap<String, Arc<FaustDef>>>> = Mutex::new(None);
+
+/// Adopts a def the host compiled and linked for a render still to come. See
+/// [`link`] for what the host must have done; the def is kept under `name`
+/// until another link replaces it or the page goes away.
+///
+/// # Safety
+/// As [`link`].
+pub unsafe fn link_prelinked(
+    name: &str,
+    compute: u32,
+    init: u32,
+    json: &str,
+) -> Result<(), String> {
+    let def = unsafe { link(compute, init, json) }?;
+    let mut store = PRELINKED.lock().unwrap_or_else(|e| e.into_inner());
+    store
+        .get_or_insert_with(HashMap::new)
+        .insert(name.to_string(), Arc::new(def));
+    Ok(())
+}
+
+/// One prelinked def, for the offline renderer's `/def_send faust`. Left in
+/// place: a score that sends the same def twice, and a second render of the
+/// same score, both find it.
+pub fn prelinked(name: &str) -> Option<Arc<FaustDef>> {
+    let store = PRELINKED.lock().unwrap_or_else(|e| e.into_inner());
+    store.as_ref()?.get(name).cloned()
 }
 
 /// Turns the host's report into a def: where the module's two entry points

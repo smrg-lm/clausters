@@ -591,10 +591,10 @@ Faust def compiles in a page.
 render (`Session.nrt` + `session.render`), and a page's `Session.nrt` renders
 through the in-page engine, so writing it against `--ws` instead would make it
 the same picture by different calls, which is the one thing a pair of examples
-may not be. **B5's compiler landing did not unblock it**: an offline render
-compiles a def where it stands and answers on the spot, and in a page the
-compiler answers later, so that path refuses with a message saying to send the
-def to the engine first. It is the first open item of B5.
+may not be. B5's compiler landing did not unblock it and B5's **offline render**
+did, on 2026-08-26: a page's render now compiles the score's Faust defs before
+it starts and links them into the renderer's own instance, so `Session.nrt` +
+`render()` carry a FaustDef in a tab. The page is writable.
 The script is `clients/python/examples/faust/boxes_library.py`; the page is
 `clients/web/examples/faust/boxes-library.html`, same material, same names, the
 same calls in the same order.

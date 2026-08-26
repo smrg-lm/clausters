@@ -13,6 +13,11 @@
 // share an instance). The module is memoized, so the second render pays
 // nothing.
 
+import { compileFaustDefs } from "./faust-compiler.ts";
+import type { FaustJob } from "./faust-compiler.ts";
+import { linkFaustModule } from "./faust-link.ts";
+import type { EngineExports } from "./faust-link.ts";
+
 /** What one offline render produced. */
 export interface RenderResult {
     /** Interleaved samples. */
@@ -37,9 +42,17 @@ export type EngineModule = {
         seed?: bigint | null,
     ) => Float32Array;
     last_render_seed: () => bigint;
+    /** The Faust defs a score sends, as JSON — see `prepareFaust`. */
+    faustJobs: (score: Uint8Array) => string;
+    /** Adopts a def this side has compiled and linked, under its score name. */
+    linkFaust: (name: string, compute: number, init: number, json: string) => void;
 };
 
 let loaded: Promise<EngineModule> | null = null;
+/** The renderer instance's exports, for linking a Faust module into it. */
+let exports: EngineExports | null = null;
+/** Linked Faust modules, kept alive: the table holds their functions. */
+const linked: WebAssembly.Instance[] = [];
 
 /**
  * Loads the engine wasm once. `source` overrides the URL-relative lookup with
@@ -49,19 +62,54 @@ let loaded: Promise<EngineModule> | null = null;
 export function loadRenderer(source?: BufferSource): Promise<EngineModule> {
     loaded ??= (async () => {
         const glue = (await import("./clausters_web.js")) as unknown as EngineModule;
-        if (source) glue.initSync({ module: source });
-        else await glue.default();
+        // What init returns is the instance's own wasm exports -- the memory
+        // and the table a Faust module is linked against.
+        exports = (source ? glue.initSync({ module: source }) : await glue.default()) as
+            EngineExports;
         return glue;
     })();
     return loaded;
 }
 
 /**
+ * Compiles and links every Faust def the score sends, before it is rendered.
+ *
+ * This is the one thing an offline render in a page has to do that a native one
+ * never does. `server::render` loads a def **where it stands** — time does not
+ * advance until it has — and a page's Faust compiler is another scope that
+ * answers later, so there is no turn in which a compiled def could arrive
+ * mid-render. Doing the work in the other order is what makes the two renders
+ * the same render: the score is read by the engine's own reader (`faustJobs`,
+ * not a second one written here), each def is compiled by the same Worker the
+ * live engine compiles with, linked into **this** instance's memory and table,
+ * and handed back through `linkFaust`. The renderer's `/def_send faust` is then
+ * a lookup, and everything after it — `/node_set` by name, bus summing, done
+ * actions — is the code a native render runs.
+ *
+ * A score with no Faust def in it does none of this and loads no compiler.
+ */
+async function prepareFaust(engine: EngineModule, score: Uint8Array): Promise<void> {
+    const jobs = JSON.parse(engine.faustJobs(score)) as FaustJob[];
+    if (jobs.length === 0) return;
+    const compiled = await compileFaustDefs(jobs);
+    for (const def of compiled) {
+        const { instance, compute, init } = linkFaustModule(
+            exports as EngineExports,
+            def.bytes,
+        );
+        linked.push(instance);
+        engine.linkFaust(def.name, compute, init, def.json);
+    }
+}
+
+/**
  * Renders a binary score and reports the seed the take used.
  *
- * Synchronous once the module is in: the render occupies this thread until it
- * finishes, which is what "faster than real time" costs. A page rendering
- * minutes of audio should say so in its UI — nothing else runs meanwhile.
+ * Synchronous once the module is in **and the score's Faust defs are compiled**
+ * (see `prepareFaust`; a score without one waits for nothing): the render then
+ * occupies this thread until it finishes, which is what "faster than real time"
+ * costs. A page rendering minutes of audio should say so in its UI — nothing
+ * else runs meanwhile.
  */
 export async function renderScoreBytes(
     score: Uint8Array,
@@ -70,6 +118,7 @@ export async function renderScoreBytes(
     seed?: number | bigint,
 ): Promise<RenderResult> {
     const engine = await loadRenderer();
+    await prepareFaust(engine, score);
     const samples = engine.render(
         score,
         sampleRate,

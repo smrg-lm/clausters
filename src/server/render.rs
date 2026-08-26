@@ -21,7 +21,7 @@ use std::sync::Arc;
 use rosc::{OscMessage, OscPacket, OscTime, OscType};
 
 use crate::dsp::{Limits, NUM_AUDIO_BUSES};
-#[cfg(all(feature = "faust", not(target_arch = "wasm32")))]
+#[cfg(feature = "faust")]
 use crate::osc::translate::parse_def_send_faust;
 use crate::osc::translate::{CmdTranslator, parse_buffer_gen, parse_buffer_msg};
 use crate::server::engine::{
@@ -55,6 +55,35 @@ impl Score {
             }
         }
         Ok(Self::sorted(events))
+    }
+
+    /// Every `/def_send faust` in the score, as `(name, format, text)` — the
+    /// same three fields a live compile job carries (`"source"`, `"boxes"` or
+    /// `"signals"`).
+    ///
+    /// What it is for: a host whose Faust compiler answers *later* than the
+    /// renderer can wait. A native server has none — it compiles a def where it
+    /// stands — but a page's compiler is another scope, so the page reads the
+    /// score here, compiles and links each def, and the render then finds them
+    /// (see `faust::compiler_web`). Reading the score twice is the price of not
+    /// writing a second reader of it in another language.
+    #[cfg(feature = "faust")]
+    pub fn faust_jobs(&self) -> Result<Vec<(String, &'static str, String)>, String> {
+        let mut jobs = Vec::new();
+        for ev in &self.events {
+            for msg in &ev.messages {
+                if msg.addr != "/def_send" {
+                    continue;
+                }
+                if !matches!(msg.args.first(), Some(OscType::String(f)) if f == "faust") {
+                    continue;
+                }
+                let (name, def) = parse_def_send_faust(&msg.args[1..])?;
+                let payload = crate::faust::CompilePayload::classify(def);
+                jobs.push((name, payload.kind(), payload.text().to_string()));
+            }
+        }
+        Ok(jobs)
     }
 
     /// Parses the scsynth binary score format: length-prefixed OSC packets.
@@ -505,14 +534,28 @@ impl Renderer {
 
     /// Offline rendering compiles a def where it stands, and in a page the
     /// Faust compiler is a different scope answering later (see
-    /// `faust::compiler_web`), so there is nothing to call here. A tab renders
-    /// a Faust def by sending it to the live engine first.
+    /// `faust::compiler_web`) — there is no turn in which a result could
+    /// arrive, because time does not advance until the def is loaded.
+    ///
+    /// So a page does the same work in the other order: the host reads the
+    /// score's Faust defs with [`Score::faust_jobs`] *before* the render
+    /// starts, compiles and links each one, and this becomes the lookup. A def
+    /// that is not there was not offered to the host, which is a host bug and
+    /// says so rather than failing as a Faust error.
     #[cfg(all(feature = "faust", target_arch = "wasm32"))]
-    fn d_faust(&mut self, _args: &[rosc::OscType]) -> Result<(), String> {
-        Err(
-            "an offline render in a page cannot compile a Faust def: send it to the engine first"
-                .into(),
-        )
+    fn d_faust(&mut self, args: &[rosc::OscType]) -> Result<(), String> {
+        let (name, _) = parse_def_send_faust(args)?;
+        match crate::faust::compiler::prelinked(&name) {
+            Some(def) => {
+                self.translator.faust_defs.insert(name, def);
+                Ok(())
+            }
+            None => Err(format!(
+                "the Faust def \"{name}\" was not compiled before this render: a page compiles \
+                 the score's defs first (see the score's faust jobs) and links them into the \
+                 renderer"
+            )),
+        }
     }
 
     #[cfg(not(feature = "faust"))]

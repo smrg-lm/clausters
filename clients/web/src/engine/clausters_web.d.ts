@@ -206,12 +206,40 @@ export class WebServer {
 export function abi_version(): number;
 
 /**
+ * The Faust defs a score sends, as a JSON array of
+ * `{"name", "kind", "def"}` — the same three fields a live compile job
+ * carries, so the host compiles them with the code it already has.
+ *
+ * The offline renderer cannot wait: it loads a def where it stands and time
+ * does not advance until it has. A page's compiler is another scope and
+ * answers later, so the page asks *this* before it renders, compiles and
+ * links each def with [`link_faust`], and only then calls [`render`].
+ *
+ * The score is read here rather than in TypeScript on purpose: it is the same
+ * reader the render itself uses, so a score the render understands and the
+ * pre-pass does not cannot happen.
+ */
+export function faustJobs(score: Uint8Array): string;
+
+/**
  * The seed the last [`render`] on this thread used — how a caller gets back
  * to a take it liked. Separate from `render`'s return because the JS face
  * returns a bare `Float32Array`; a stats object is the shape to grow into if
  * the web client ever needs the frame, event and level counts too.
  */
 export function last_render_seed(): bigint;
+
+/**
+ * Adopts a def the host compiled and linked for a render still to come, under
+ * the name the score sends it with. The next [`render`] whose score sends
+ * that name finds it here.
+ *
+ * **The slots are trusted**, exactly as
+ * [`WebServer::finish_faust`](WebServer::finish_faust)'s are: they must belong
+ * to a module instantiated against *this* module's memory and table, with the
+ * shape its own JSON declared.
+ */
+export function linkFaust(name: string, compute: number, init: number, json: string): void;
 
 /**
  * JS face: `render(scoreBytes, sampleRate, channels, seed?) -> Float32Array`,
@@ -227,6 +255,8 @@ export interface InitOutput {
     readonly clausters_abi_version: () => number;
     readonly __wbg_webserver_free: (a: number, b: number) => void;
     readonly __indirect_function_table: WebAssembly.Table;
+    readonly faustJobs: (a: number, b: number) => [number, number, number, number];
+    readonly linkFaust: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
     readonly render: (a: number, b: number, c: number, d: number, e: number, f: bigint) => [number, number, number, number];
     readonly webserver_block_frames: (a: number) => number;
     readonly webserver_bufferLoadBegin: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];

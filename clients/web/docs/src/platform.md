@@ -65,6 +65,13 @@ expose neither API, so the vendored compiler is built with them added
 (`third_party/build-faust-wasm.sh`); what a page carries is the same compiler a
 window links, at the same pin.
 
+**A tab renders Faust offline too.** `Session.nrt` + `render()` drive the same
+wasm engine with no audio device, and that path loads a def where it stands
+while the page's compiler answers later — so the render compiles and links the
+score's Faust defs *before* it starts, reading them out of the score with the
+engine's own reader. Nothing about it is visible from the outside: the same
+call, the same score, the same samples a native render gives.
+
 **A tab compiles as many defs as it likes**, and what that costs is measured
 rather than assumed (`tests/faust-arena.html`). The arena is not the cost:
 compiling 24 distinct defs leaves it where the first def left it, at 26 MiB,
