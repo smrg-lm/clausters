@@ -3,7 +3,7 @@ name = "clausters-web"
 version.workspace = true
 edition = "2024"
 license = "GPL-3.0-or-later"
-description = "The engine's JS door: a thin wasm-bindgen shell over the clausters server crate (SynthDef family, no Faust/cpal) for running the engine in the browser."
+description = "The engine's JS door: a thin wasm-bindgen shell over the clausters server crate (both def families, no cpal) for running the engine in the browser."
 
 [lib]
 # cdylib is what wasm-bindgen consumes to emit the .wasm + JS bindings; rlib
@@ -11,11 +11,15 @@ description = "The engine's JS door: a thin wasm-bindgen shell over the clauster
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-# The engine itself, lean: the SynthDef family plus the embed seam (the
-# in-memory ring segment and the render entry). No cpal, no libfaust, no
-# midir — the browser has none of them; the AudioWorklet is the backend.
+# The engine itself, lean: both def families plus the embed seam (the
+# in-memory ring segment and the render entry). No cpal and no midir — the
+# browser has neither; the AudioWorklet is the backend. `faust` here means the
+# FaustDef *family*, not libfaust: on wasm32 the compiler is `libfaust-wasm` in
+# the page's Worker and the def arrives as a second module linked into this
+# engine's memory (see `clausters::faust`).
 clausters = { path = "../..", default-features = false, features = [
     "synth",
+    "faust",
     "embed",
 ] }
 

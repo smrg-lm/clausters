@@ -203,7 +203,7 @@ impl DefStore {
         if keep != DefKind::Graph {
             self.remove_graphdef(name);
         }
-        #[cfg(feature = "faust")]
+        #[cfg(all(feature = "faust", not(target_arch = "wasm32")))]
         if keep != DefKind::Faust {
             crate::faust::cache::remove(&self.faustdefs_dir, name);
         }

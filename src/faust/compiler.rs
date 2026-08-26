@@ -22,41 +22,7 @@ use crate::faust::ffi;
 use crate::faust::signals;
 use crate::faust::synth::FaustDef;
 
-/// What `/def_send faust` carries: one of the three def formats.
-pub enum CompilePayload {
-    /// Raw Faust source code, compiled with
-    /// `createCDSPFactoryFromString`.
-    Source(String),
-    /// JSON box graph, mapped to Box API calls (see [`boxes`]) and
-    /// compiled with `createCDSPFactoryFromBoxes`.
-    Json(String),
-    /// JSON signal tree, mapped to Signal API calls (see
-    /// [`crate::faust::signals`]) and compiled with
-    /// `createCDSPFactoryFromSignals`.
-    Signal(String),
-}
-
-impl CompilePayload {
-    /// Classifies a `/def_send faust` def string: raw Faust source unless it starts
-    /// with `{`, then a signal tree if the JSON object has a top-level
-    /// `"signals"` key, otherwise a box tree. The sniff is unambiguous —
-    /// Faust source never starts with `{`, and a box def's root is a single
-    /// box node (`{"op": …}`), never an object keyed by `"signals"`.
-    pub fn classify(def: String) -> Self {
-        if !def.trim_start().starts_with('{') {
-            return Self::Source(def);
-        }
-        let is_signal = serde_json::from_str::<serde_json::Value>(&def)
-            .ok()
-            .and_then(|v| v.as_object().map(|o| o.contains_key("signals")))
-            .unwrap_or(false);
-        if is_signal {
-            Self::Signal(def)
-        } else {
-            Self::Json(def)
-        }
-    }
-}
+pub use crate::faust::CompilePayload;
 
 /// Disk-cache work attached to a compile request (see
 /// [`crate::server::defstore`]). Present only when persistence is enabled.

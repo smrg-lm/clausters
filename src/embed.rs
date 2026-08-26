@@ -337,6 +337,45 @@ impl ClaustersHeadless {
         self.server.finish_delegated(ticket, outcome);
     }
 
+    /// The Faust compilations waiting for the host. In a page the compiler is
+    /// not a thread but a queue the host drains: it compiles with
+    /// `libfaust-wasm` in its Worker, instantiates the emitted module against
+    /// this engine's own memory and table, and answers with
+    /// [`finish_faust_linked`](Self::finish_faust_linked) or
+    /// [`finish_faust_error`](Self::finish_faust_error). Until it does,
+    /// `/def_send faust` is simply still in flight, which is the shape that
+    /// command has always had.
+    #[cfg(all(feature = "faust", target_arch = "wasm32"))]
+    pub fn take_faust_jobs(&mut self) -> Vec<crate::faust::compiler::CompileJob> {
+        self.server.take_faust_jobs()
+    }
+
+    /// Answers one compilation with the module the host linked: a JSON report
+    /// (`crate::faust::compiler::LinkedModule`) naming the table slots of the
+    /// module's `compute` and `init` and the struct shape its own JSON
+    /// declared. Emits the command's `/done`.
+    ///
+    /// # Safety
+    /// The described module must have been instantiated against **this**
+    /// engine's `WebAssembly.Memory` and `__indirect_function_table`, with its
+    /// data section stripped
+    /// ([`crate::faust::wasm_module::strip_data_section`]). See
+    /// [`crate::faust::synth::FaustDef::link`].
+    #[cfg(all(feature = "faust", target_arch = "wasm32"))]
+    pub unsafe fn finish_faust_linked(&mut self, ticket: u64, report: &str) {
+        let outcome = serde_json::from_str::<crate::faust::compiler::LinkedModule>(report)
+            .map_err(|e| format!("malformed link report: {e}"))
+            .and_then(|m| unsafe { m.into_def() });
+        self.server.finish_faust(ticket, outcome);
+    }
+
+    /// Answers one compilation with the compiler's own error text, which
+    /// reaches the client verbatim in `/fail`.
+    #[cfg(all(feature = "faust", target_arch = "wasm32"))]
+    pub fn finish_faust_error(&mut self, ticket: u64, error: String) {
+        self.server.finish_faust(ticket, Err(error));
+    }
+
     /// Whether a `/server_quit` has arrived. The pulled server has no loop to end,
     /// so quitting is the host's decision: it reads this and stops calling
     /// [`Self::process_block`] (dropping the value releases everything).

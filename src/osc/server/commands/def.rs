@@ -122,7 +122,7 @@ impl OscServer {
                 if let OscType::String(name) = arg {
                     store.remove_synthdef(name);
                     store.remove_graphdef(name);
-                    #[cfg(feature = "faust")]
+                    #[cfg(all(feature = "faust", not(target_arch = "wasm32")))]
                     crate::faust::cache::remove(store.faustdefs_dir(), name);
                 }
             }

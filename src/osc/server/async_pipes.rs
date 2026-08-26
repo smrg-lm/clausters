@@ -44,7 +44,13 @@ impl OscServer {
                     None => {
                         warn!("persisted Faust def '{}' failed: {error}", result.name);
                         match (self.prune_dead_defs, &self.store) {
+                            // `store` is unused in a page: there is no def
+                            // store there, so this arm cannot be reached.
+                            #[cfg_attr(target_arch = "wasm32", allow(unused_variables))]
                             (true, Some(store)) => {
+                                // A page has no def store, so nothing lands
+                                // in this arm there and there is no cache.
+                                #[cfg(not(target_arch = "wasm32"))]
                                 crate::faust::cache::remove(store.faustdefs_dir(), &result.name);
                                 warn!("pruned the persisted def '{}'", result.name);
                             }

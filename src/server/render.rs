@@ -21,7 +21,7 @@ use std::sync::Arc;
 use rosc::{OscMessage, OscPacket, OscTime, OscType};
 
 use crate::dsp::{Limits, NUM_AUDIO_BUSES};
-#[cfg(feature = "faust")]
+#[cfg(all(feature = "faust", not(target_arch = "wasm32")))]
 use crate::osc::translate::parse_def_send_faust;
 use crate::osc::translate::{CmdTranslator, parse_buffer_gen, parse_buffer_msg};
 use crate::server::engine::{
@@ -493,7 +493,7 @@ impl Renderer {
         }
     }
 
-    #[cfg(feature = "faust")]
+    #[cfg(all(feature = "faust", not(target_arch = "wasm32")))]
     fn d_faust(&mut self, args: &[rosc::OscType]) -> Result<(), String> {
         use crate::faust::compiler::{CompilePayload, compile};
         let (name, def) = parse_def_send_faust(args)?;
@@ -501,6 +501,18 @@ impl Renderer {
         let def = compile(&name, &payload)?;
         self.translator.faust_defs.insert(name, Arc::new(def));
         Ok(())
+    }
+
+    /// Offline rendering compiles a def where it stands, and in a page the
+    /// Faust compiler is a different scope answering later (see
+    /// `faust::compiler_web`), so there is nothing to call here. A tab renders
+    /// a Faust def by sending it to the live engine first.
+    #[cfg(all(feature = "faust", target_arch = "wasm32"))]
+    fn d_faust(&mut self, _args: &[rosc::OscType]) -> Result<(), String> {
+        Err(
+            "an offline render in a page cannot compile a Faust def: send it to the engine first"
+                .into(),
+        )
     }
 
     #[cfg(not(feature = "faust"))]

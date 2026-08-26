@@ -1,5 +1,7 @@
-//! Linker configuration for the `faust` feature (on by default). Without it
-//! this script does nothing and the core builds with no libfaust on the system
+//! Linker configuration for the `faust` feature (on by default) on native
+//! targets. Without the feature — or on wasm32, where the family's backend is
+//! a module the page links itself — this script does nothing and the core
+//! builds with no libfaust on the system
 //! (`--no-default-features`, plus the other features you want).
 //!
 //! libfaust must be built with the LLVM backend; it is located through the
@@ -19,6 +21,14 @@
 fn main() {
     println!("cargo:rerun-if-env-changed=FAUST_PREFIX");
     if std::env::var_os("CARGO_FEATURE_FAUST").is_none() {
+        return;
+    }
+    // The `faust` feature means the FaustDef *family* exists, not that
+    // libfaust is linked in: on wasm32 the family's backend is a module the
+    // page compiles and links itself (see `faust::compiler_web`), so there is
+    // no native library to find and the rpath below is not even a valid
+    // argument for the wasm linker.
+    if std::env::var("CARGO_CFG_TARGET_ARCH").as_deref() == Ok("wasm32") {
         return;
     }
 

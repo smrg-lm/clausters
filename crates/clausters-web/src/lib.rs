@@ -21,6 +21,11 @@ use clausters::server::render::{RenderConfig, Score, render_to_vec};
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
+/// The libm a linked Faust module imports from us. Declared for its exports
+/// alone — nothing in this crate calls it.
+#[cfg(target_arch = "wasm32")]
+mod faust_math;
+
 /// The embed / IPC ABI version this build speaks (`clausters_abi_version`).
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
 pub fn abi_version() -> u32 {
@@ -417,6 +422,77 @@ impl WebServer {
             _ => Ok(()),
         };
         self.inner.finish_delegated(ticket as u64, outcome);
+    }
+
+    /// The Faust compilations waiting for this page's compiler, as a JSON
+    /// array (empty when there are none): `[{ticket, name, kind, def}]`, where
+    /// `kind` is `"source"`, `"boxes"` or `"signals"` — which of the three def
+    /// formats `def` is in.
+    ///
+    /// A page's Faust compiler is not a thread but the host: it compiles with
+    /// `libfaust-wasm` in its Worker, strips the emitted module's data section,
+    /// instantiates it against this engine's own memory and
+    /// `__indirect_function_table` with its math imports bound to this
+    /// engine's exports, and answers with [`finish_faust`](Self::finish_faust).
+    /// Until it does, the `/def_send faust` is simply still in flight.
+    ///
+    /// wasm32 only, unlike the rest of this shell: the compiler queue exists
+    /// only where the compiler is the host (see `clausters::faust`).
+    #[cfg(target_arch = "wasm32")]
+    #[wasm_bindgen(js_name = takeFaustJobs)]
+    pub fn take_faust_jobs(&mut self) -> String {
+        let jobs = self.inner.take_faust_jobs();
+        let mut out = String::from("[");
+        for (i, job) in jobs.iter().enumerate() {
+            if i > 0 {
+                out.push(',');
+            }
+            // Printed by hand rather than through serde: one shape, one place,
+            // and the shell keeps carrying no dependency it does not need.
+            out.push_str(&format!(
+                r#"{{"ticket":{},"name":{},"kind":{},"def":{}}}"#,
+                job.ticket,
+                json_string(&job.name),
+                json_string(job.kind),
+                json_string(&job.def),
+            ));
+        }
+        out.push(']');
+        out
+    }
+
+    /// Answers one compilation. `report` is the link report — a JSON object
+    /// `{compute, init, size, inputs, outputs, params: [{name, index, init,
+    /// min, max, step}]}` where `compute` and `init` are the table slots the
+    /// module's exports were appended at and the rest is the compiler's own
+    /// JSON — and emits `/done`. Pass `error` instead (and no report) to emit
+    /// `/fail` with the compiler's message verbatim.
+    ///
+    /// **The report is trusted.** The slots must belong to a module
+    /// instantiated against *this* engine's memory and table, with the shape
+    /// its own JSON declared; a wrong one writes into the engine's memory
+    /// rather than failing. Only the host that linked the module may call this.
+    ///
+    /// wasm32 only, for the same reason as
+    /// [`take_faust_jobs`](Self::take_faust_jobs).
+    #[cfg(target_arch = "wasm32")]
+    #[wasm_bindgen(js_name = finishFaust)]
+    pub fn finish_faust(&mut self, ticket: f64, report: Option<String>, error: Option<String>) {
+        match (report, error) {
+            (_, Some(message)) if !message.is_empty() => {
+                self.inner.finish_faust_error(ticket as u64, message);
+            }
+            (Some(report), _) => {
+                // SAFETY: delegated to the host by construction — this method
+                // is the door it answers through, and its contract is the
+                // paragraph above.
+                unsafe { self.inner.finish_faust_linked(ticket as u64, &report) };
+            }
+            _ => self.inner.finish_faust_error(
+                ticket as u64,
+                "the host answered with neither a linked module nor an error".into(),
+            ),
+        }
     }
 }
 

@@ -1,4 +1,7 @@
-//! Rpath for the *native* test binary of this crate.
+//! What the two builds of this crate need from the linker.
+//!
+//! On wasm32: the engine's function table, exported and growable, so the page
+//! can link a Faust module into it. On native: an rpath for the test binary.
 //!
 //! This crate asks for `clausters` with `synth` + `embed` and no Faust — the
 //! browser has no libfaust. But in a workspace build (`cargo test --workspace`)
@@ -17,7 +20,16 @@
 fn main() {
     println!("cargo:rerun-if-env-changed=FAUST_PREFIX");
     // wasm32 is the real target of this crate and links no native libfaust.
+    // What it does need is a table the *page* can write into: a Faust def is a
+    // second wasm module instantiated against this engine's memory, and its
+    // `compute` is reached by appending it to this module's
+    // `__indirect_function_table` and calling through the slot. The table is
+    // internal by default and fixed-size, so both flags are load-bearing —
+    // without the first the host cannot see it, without the second it cannot
+    // grow it. See `clausters::faust::synth` (the wasm backend).
     if std::env::var("CARGO_CFG_TARGET_ARCH").as_deref() == Ok("wasm32") {
+        println!("cargo:rustc-cdylib-link-arg=--export-table");
+        println!("cargo:rustc-cdylib-link-arg=--growable-table");
         return;
     }
 

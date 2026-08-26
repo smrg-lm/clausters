@@ -194,7 +194,7 @@ impl OscServer {
                 "persisted SynthDefs found but this build lacks the `synth` feature; skipping them"
             );
         }
-        #[cfg(feature = "faust")]
+        #[cfg(all(feature = "faust", not(target_arch = "wasm32")))]
         for record in crate::faust::cache::load_records(store.faustdefs_dir()) {
             let request = CompileRequest {
                 name: record.name.clone(),
@@ -434,11 +434,36 @@ impl OscServer {
         self.nrt.finish_delegated(ticket, outcome);
     }
 
+    /// The Faust compilations waiting for the host, if this build's compiler is
+    /// the page's queue rather than a thread. See `faust::compiler_web`.
+    #[cfg(all(feature = "faust", target_arch = "wasm32"))]
+    pub fn take_faust_jobs(&mut self) -> Vec<crate::faust::compiler::CompileJob> {
+        self.faust_compiler.take_jobs()
+    }
+
+    /// Answers one of them: the linked def, or the compiler's own error text
+    /// for the `/fail` reply. See `faust::compiler_web`.
+    #[cfg(all(feature = "faust", target_arch = "wasm32"))]
+    pub fn finish_faust(
+        &mut self,
+        ticket: u64,
+        outcome: Result<crate::faust::synth::FaustDef, String>,
+    ) {
+        self.faust_compiler.finish(ticket, outcome);
+    }
+
     /// Work this server has accepted and not yet done: ring packets are not
     /// counted (they sit in the ring, which knows its own depth), buffer jobs
-    /// are. Non-zero means a following turn has something to do.
+    /// are, and so are Faust compilations the page's host still owes. Non-zero
+    /// means a following turn has something to do.
     pub fn backlog(&self) -> usize {
-        self.nrt.pending()
+        // The page's Faust compiler is a queue this server owns; a native one
+        // is a thread that answers on its own and is nobody's backlog.
+        #[cfg(all(feature = "faust", target_arch = "wasm32"))]
+        let waiting = self.faust_compiler.backlog();
+        #[cfg(not(all(feature = "faust", target_arch = "wasm32")))]
+        let waiting = 0;
+        self.nrt.pending() + waiting
     }
 
     /// One housekeeping pass: the garbage the audio thread handed back, and
