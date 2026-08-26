@@ -350,10 +350,10 @@ impl ClaustersHeadless {
         self.server.take_faust_jobs()
     }
 
-    /// Answers one compilation with the module the host linked: a JSON report
-    /// (`crate::faust::compiler::LinkedModule`) naming the table slots of the
-    /// module's `compute` and `init` and the struct shape its own JSON
-    /// declared. Emits the command's `/done`.
+    /// Answers one compilation with the module the host linked: the table
+    /// slots its `compute` and `init` exports were appended at, and the
+    /// compiler's own JSON verbatim (the struct size, the I/O arity and the UI
+    /// tree). Emits the command's `/done`.
     ///
     /// # Safety
     /// The described module must have been instantiated against **this**
@@ -362,10 +362,8 @@ impl ClaustersHeadless {
     /// ([`crate::faust::wasm_module::strip_data_section`]). See
     /// [`crate::faust::synth::FaustDef::link`].
     #[cfg(all(feature = "faust", target_arch = "wasm32"))]
-    pub unsafe fn finish_faust_linked(&mut self, ticket: u64, report: &str) {
-        let outcome = serde_json::from_str::<crate::faust::compiler::LinkedModule>(report)
-            .map_err(|e| format!("malformed link report: {e}"))
-            .and_then(|m| unsafe { m.into_def() });
+    pub unsafe fn finish_faust_linked(&mut self, ticket: u64, compute: u32, init: u32, json: &str) {
+        let outcome = unsafe { crate::faust::compiler::link(compute, init, json) };
         self.server.finish_faust(ticket, outcome);
     }
 

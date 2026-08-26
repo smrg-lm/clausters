@@ -70,6 +70,11 @@ type SpanResult =
     | { type: "span"; ticket: number; samples: Float32Array; frames: number }
     | { type: "span"; ticket: number; error: string };
 
+/** A compiled Faust def, ready to link into the engine. */
+type FaustResult =
+    | { type: "faust"; ticket: number; bytes: ArrayBuffer; json: string }
+    | { type: "faust"; ticket: number; error: string };
+
 /** The acknowledgement of a `DiskOut` flush. */
 type RecordResult = { type: "record"; ticket: number; error?: string };
 
@@ -93,6 +98,20 @@ type NrtResult =
  *  means more messages for the same audio; larger means a longer wait before a
  *  stream that just opened has anything to play. */
 const DISK_SPAN_FRAMES = 4800;
+
+/**
+ * The engine instance's own wasm exports, past the binding's surface.
+ *
+ * A Faust def is a second wasm module: it is instantiated against this
+ * `memory` and its `compute` is appended to this `table`, so the engine calls
+ * it as a plain indirect call with no JavaScript frame in the way. The math
+ * functions are the rest of what such a module imports (`env._sinf` and its
+ * neighbours) — bound to these, so Faust and our own UGens go through one libm.
+ */
+type EngineExports = {
+    memory: WebAssembly.Memory;
+    __indirect_function_table: WebAssembly.Table;
+} & Record<string, unknown>;
 
 interface ProcessorOptions {
     module: WebAssembly.Module;
@@ -122,11 +141,23 @@ class ClaustersProcessor extends AudioWorkletProcessor {
     >;
     /** `DiskOut` streams: where each one is being written. */
     recording: Map<number, { path: string; format: string; waiting: boolean }>;
+    /** The engine instance's own wasm exports: its memory and its table. */
+    engine: EngineExports;
+    /** Faust compilations out with the Worker. The value is the def's name,
+     *  kept for the message a failure reports. */
+    compiling: Map<number, string>;
+    /** Linked Faust modules, kept alive for the page's life: a def's `compute`
+     *  is a slot of the engine's table and the instance owns the function. */
+    linked: WebAssembly.Instance[];
 
     constructor(options: { processorOptions: ProcessorOptions }) {
         super();
         const { module, channels, unixEpoch, maxStreamBuses } = options.processorOptions;
-        initSync({ module });
+        // `initSync` hands back the instance's own exports. Two of them are
+        // not the binding's business and are kept anyway: the linear memory
+        // and the indirect function table, which is where a Faust module's
+        // `compute` has to land for the engine to call it.
+        this.engine = initSync({ module }) as unknown as EngineExports;
         this.channels = channels;
         this.epoch = unixEpoch;
         // sampleRate is the AudioWorkletGlobalScope global: the context rate.
@@ -142,6 +173,8 @@ class ClaustersProcessor extends AudioWorkletProcessor {
         this.outstanding = new Map();
         this.spans = new Map();
         this.recording = new Map();
+        this.compiling = new Map();
+        this.linked = [];
         this.port.onmessage = (e) => this.onMessage(e.data as InMessage);
     }
 
@@ -170,8 +203,17 @@ class ClaustersProcessor extends AudioWorkletProcessor {
                 if (result.type === "shape") this.onShape(result as ShapeResult);
                 else if (result.type === "span") this.onSpan(result as SpanResult);
                 else if (result.type === "record") this.onRecorded(result as RecordResult);
+                else if (result.type === "faust") this.onFaustResult(result as FaustResult);
                 else this.onNrtResult(result as ReadResult);
             };
+            // A message that cannot be deserialized here arrives as
+            // `messageerror`, not as an error anywhere: without this a dropped
+            // result is an engine that simply never answers.
+            this.nrt.onmessageerror = () =>
+                this.port.postMessage({
+                    type: "error",
+                    message: "a message from the NRT worker could not be deserialized",
+                });
             this.nrt.start();
             this.server.delegateJobs();
         } else if (msg.type === "buffer_load") {
@@ -290,6 +332,97 @@ class ClaustersProcessor extends AudioWorkletProcessor {
         } catch (e) {
             this.server.finishDelegated(result.ticket, String(e));
         }
+    }
+
+    /**
+     * Hands the Worker every Faust def waiting to be compiled.
+     *
+     * Natively `/def_send faust` goes to a compiler thread and answers late.
+     * The page's compiler thread is the Worker, so this is the same hand-off:
+     * unlike a soundfile read there is no ordering to keep, so all of them go
+     * at once and each answers on its own.
+     */
+    pumpFaust(): void {
+        if (this.nrt === null) return;
+        const jobs = JSON.parse(this.server.takeFaustJobs()) as {
+            ticket: number;
+            name: string;
+            kind: string;
+            def: string;
+        }[];
+        for (const job of jobs) {
+            this.compiling.set(job.ticket, job.name);
+            this.nrt.postMessage({
+                type: "faust",
+                ticket: job.ticket,
+                name: job.name,
+                kind: job.kind,
+                def: job.def,
+            });
+        }
+    }
+
+    /**
+     * Links a compiled def into the engine: the whole of the Faust design in a
+     * dozen lines (docs/decisions.md, "The page's Faust is a second wasm module
+     * linked into the engine's own memory").
+     *
+     * The module is instantiated against the engine's **own** linear memory,
+     * with every import it declares resolved from the engine's exports — the
+     * memory itself and the transcendentals — so nothing is copied and no
+     * JavaScript runs on the audio path. Its `compute` and `init` are appended
+     * to the engine's indirect function table, and the two slot numbers are
+     * what the engine calls through.
+     *
+     * An import the engine does not export is named rather than left to fail as
+     * a link error nobody can read.
+     */
+    onFaustResult(result: FaustResult): void {
+        const name = this.compiling.get(result.ticket);
+        if (name === undefined) return;
+        this.compiling.delete(result.ticket);
+        if ("error" in result) {
+            this.server.finishFaust(result.ticket, 0, 0, undefined, result.error);
+            return;
+        }
+        try {
+            // Compiled here, not in the Worker: a `WebAssembly.Module` posted
+            // into an AudioWorklet is dropped on arrival without an error
+            // (a worklet is its own agent cluster), so the bytes are what
+            // travels. A Faust module is a couple of kilobytes.
+            const module = new WebAssembly.Module(result.bytes);
+            const env: WebAssembly.ModuleImports = {};
+            for (const wanted of WebAssembly.Module.imports(module)) {
+                if (wanted.module !== "env") {
+                    throw new Error(`the module imports ${wanted.module}.${wanted.name}`);
+                }
+                const ours = (
+                    wanted.name === "memory" ? this.engine.memory : this.engine[wanted.name]
+                ) as WebAssembly.ImportValue | undefined;
+                if (ours === undefined) {
+                    throw new Error(`the engine exports no ${wanted.name}`);
+                }
+                env[wanted.name] = ours;
+            }
+            const instance = new WebAssembly.Instance(module, { env });
+            // Kept for the page's life: the table holds the functions, and the
+            // instance is what owns them.
+            this.linked.push(instance);
+            const compute = this.slot(instance.exports.compute as WebAssembly.ExportValue);
+            const init = this.slot(instance.exports.init as WebAssembly.ExportValue);
+            this.server.finishFaust(result.ticket, compute, init, result.json, undefined);
+        } catch (e) {
+            this.server.finishFaust(result.ticket, 0, 0, undefined, `${name}: ${String(e)}`);
+        }
+    }
+
+    /** Appends one function to the engine's table and returns its slot. */
+    slot(fn: WebAssembly.ExportValue): number {
+        if (typeof fn !== "function") throw new Error("the module exports no such function");
+        const table = this.engine.__indirect_function_table;
+        const at = table.grow(1);
+        table.set(at, fn);
+        return at;
     }
 
     /**
@@ -465,6 +598,7 @@ class ClaustersProcessor extends AudioWorkletProcessor {
             // to this one.
             this.pumpDelegated();
             this.pumpDisk();
+            this.pumpFaust();
             for (let ch = 0; ch < out.length; ch++) {
                 const dst = out[ch]!;
                 if (ch >= this.channels) {

@@ -67,7 +67,12 @@ fi
 (cd ../gui && cargo build --lib $flag --target wasm32-unknown-unknown \
     --features font-atlas)
 
-wasm-bindgen --target web --out-dir dist/engine \
+# `--keep-lld-exports` on the engine alone: wasm-bindgen drops the exports the
+# linker synthesized, and one of them is `__indirect_function_table` -- the
+# table a Faust module's `compute` is appended to, without which a def compiles
+# in the page and then has nowhere to be called from. The other bundles have no
+# such second module, so they keep the smaller surface.
+wasm-bindgen --target web --keep-lld-exports --out-dir dist/engine \
     "../../target/wasm32-unknown-unknown/$profile/clausters_web.wasm"
 wasm-bindgen --target web --out-dir dist/gui-host \
     "../gui/target/wasm32-unknown-unknown/$profile/clausters_gui.wasm"

@@ -104,6 +104,21 @@ export class WebServer {
      */
     finishDelegated(ticket: number, error?: string | null): void;
     /**
+     * Answers one compilation. On success `compute` and `init` are the table
+     * slots the module's exports were appended at and `json` is the
+     * compiler's own JSON verbatim; that emits `/done`. Pass `error` instead
+     * to emit `/fail` with the compiler's message.
+     *
+     * **The slots are trusted.** They must belong to a module instantiated
+     * against *this* engine's memory and table, with the shape its own JSON
+     * declared; a wrong one writes into the engine's memory rather than
+     * failing. Only the host that linked the module may call this.
+     *
+     * wasm32 only, for the same reason as
+     * [`take_faust_jobs`](Self::take_faust_jobs).
+     */
+    finishFaust(ticket: number, compute: number, init: number, json?: string | null, error?: string | null): void;
+    /**
      * How many frames one [`buffer_load_chunk`](Self::buffer_load_chunk)
      * should carry — the serving budget's number, read from the engine rather
      * than repeated in JavaScript.
@@ -166,6 +181,23 @@ export class WebServer {
      * hands out at most one at a time.
      */
     takeDelegated(): string | undefined;
+    /**
+     * The Faust compilations waiting for this page's compiler, as a JSON
+     * array (empty when there are none): `[{ticket, name, kind, def}]`, where
+     * `kind` is `"source"`, `"boxes"` or `"signals"` — which of the three def
+     * formats `def` is in.
+     *
+     * A page's Faust compiler is not a thread but the host: it compiles with
+     * `libfaust-wasm` in its Worker, strips the emitted module's data section,
+     * instantiates it against this engine's own memory and
+     * `__indirect_function_table` with its math imports bound to this
+     * engine's exports, and answers with [`finish_faust`](Self::finish_faust).
+     * Until it does, the `/def_send faust` is simply still in flight.
+     *
+     * wasm32 only, unlike the rest of this shell: the compiler queue exists
+     * only where the compiler is the host (see `clausters::faust`).
+     */
+    takeFaustJobs(): string;
 }
 
 /**
@@ -194,6 +226,7 @@ export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly clausters_abi_version: () => number;
     readonly __wbg_webserver_free: (a: number, b: number) => void;
+    readonly __indirect_function_table: WebAssembly.Table;
     readonly render: (a: number, b: number, c: number, d: number, e: number, f: bigint) => [number, number, number, number];
     readonly webserver_block_frames: (a: number) => number;
     readonly webserver_bufferLoadBegin: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
@@ -210,6 +243,7 @@ export interface InitOutput {
     readonly webserver_diskPush: (a: number, b: number, c: number, d: number) => number;
     readonly webserver_diskShape: (a: number, b: number, c: number) => void;
     readonly webserver_finishDelegated: (a: number, b: number, c: number, d: number) => void;
+    readonly webserver_finishFaust: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => void;
     readonly webserver_installFrames: (a: number) => number;
     readonly webserver_new: (a: number, b: number, c: number) => [number, number, number];
     readonly webserver_poll: (a: number) => [number, number];
@@ -218,8 +252,50 @@ export interface InitOutput {
     readonly webserver_send: (a: number, b: number, c: number, d: number) => number;
     readonly webserver_set_max_stream_buses: (a: number, b: number) => void;
     readonly webserver_takeDelegated: (a: number) => [number, number];
+    readonly webserver_takeFaustJobs: (a: number) => [number, number];
     readonly last_render_seed: () => bigint;
     readonly abi_version: () => number;
+    readonly _abs: (a: number) => number;
+    readonly _acos: (a: number) => number;
+    readonly _acosf: (a: number) => number;
+    readonly _acosh: (a: number) => number;
+    readonly _acoshf: (a: number) => number;
+    readonly _asin: (a: number) => number;
+    readonly _asinf: (a: number) => number;
+    readonly _asinh: (a: number) => number;
+    readonly _asinhf: (a: number) => number;
+    readonly _atan: (a: number) => number;
+    readonly _atan2: (a: number, b: number) => number;
+    readonly _atan2f: (a: number, b: number) => number;
+    readonly _atanf: (a: number) => number;
+    readonly _atanh: (a: number) => number;
+    readonly _atanhf: (a: number) => number;
+    readonly _cos: (a: number) => number;
+    readonly _cosf: (a: number) => number;
+    readonly _cosh: (a: number) => number;
+    readonly _coshf: (a: number) => number;
+    readonly _exp: (a: number) => number;
+    readonly _expf: (a: number) => number;
+    readonly _fmod: (a: number, b: number) => number;
+    readonly _fmodf: (a: number, b: number) => number;
+    readonly _log: (a: number) => number;
+    readonly _log10: (a: number) => number;
+    readonly _log10f: (a: number) => number;
+    readonly _logf: (a: number) => number;
+    readonly _pow: (a: number, b: number) => number;
+    readonly _powf: (a: number, b: number) => number;
+    readonly _remainder: (a: number, b: number) => number;
+    readonly _remainderf: (a: number, b: number) => number;
+    readonly _round: (a: number) => number;
+    readonly _roundf: (a: number) => number;
+    readonly _sin: (a: number) => number;
+    readonly _sinf: (a: number) => number;
+    readonly _sinh: (a: number) => number;
+    readonly _sinhf: (a: number) => number;
+    readonly _tan: (a: number) => number;
+    readonly _tanf: (a: number) => number;
+    readonly _tanh: (a: number) => number;
+    readonly _tanhf: (a: number) => number;
     readonly clausters_free_samples: (a: number, b: bigint) => void;
     readonly clausters_read_soundfile: (a: number, b: bigint, c: bigint, d: number, e: number, f: number, g: number, h: number) => number;
     readonly clausters_render: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => number;

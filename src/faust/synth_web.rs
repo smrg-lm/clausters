@@ -30,14 +30,7 @@ use crate::dsp::buffer::BufferPool;
 use crate::dsp::{Block, NUM_AUDIO_BUSES, ProcessCtx};
 use crate::node::{ControlMap, SynthNode};
 
-/// One named parameter of a Faust def, as declared by its UI elements.
-pub struct ParamSpec {
-    pub name: String,
-    pub init: f32,
-    pub min: f32,
-    pub max: f32,
-    pub step: f32,
-}
+pub use crate::faust::ParamSpec;
 
 /// `void compute(dsp*, int count, float** inputs, float** outputs)` — the ABI
 /// the Faust wasm backend emits, and the one `computeCDSPInstance` has.

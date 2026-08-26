@@ -12,9 +12,12 @@
 // payload and exposes the declared control names (UI labels), plus the
 // reserved `in`/`out` bus controls the server adds.
 //
-// The in-page engine is the `synth,embed` build with no LLVM JIT, so a
-// FaustDef reaches a **native** server only (over the WebSocket carrier);
-// against the in-page engine `/def_send faust` fails. That is a property of the
+// Against the in-page engine the **source** form compiles and sounds: the page
+// has a Faust compiler of its own (`libfaust-wasm`, in the NRT worker) and the
+// module it emits is linked into the engine's memory, so a Faust node is a node
+// like any other. The signal and box forms reach a **native** server only — the
+// compiler the page carries exposes no Box or Signal API, so `/def_send faust`
+// fails for them there, with a message saying so. That is a property of the
 // build, not of this class — nothing here names a carrier.
 
 import type { MsgArg } from "../base/osc.ts";

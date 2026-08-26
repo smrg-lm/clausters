@@ -47,6 +47,24 @@ export function decodeAudio(bytes: Uint8Array, ext: string, label: string, file_
 export function encodeWavFrames(samples: Float32Array, sample_format: string): Uint8Array;
 
 /**
+ * Removes the data segment a Faust wasm module carries, so the module can be
+ * instantiated against the engine's own linear memory.
+ *
+ * The Faust wasm backend writes the DSP's JSON into a data segment at
+ * **absolute offset 0**, unconditionally — external memory included — and
+ * rustc links the engine with `--stack-first`, so offset 0 is the engine's
+ * stack. Instantiating the module as emitted would write over it. Nothing
+ * reads that copy (the JSON the page uses is the one the compiler returns
+ * beside the binary), so it is dropped rather than worked around.
+ *
+ * This **refuses rather than guesses**: a module with more than one segment,
+ * or one that does not start at zero, means the backend grew a use for that
+ * memory this has not accounted for. See `docs/decisions.md`, "The page's
+ * Faust is a second wasm module linked into the engine's own memory".
+ */
+export function stripFaustData(module: Uint8Array): Uint8Array;
+
+/**
  * A canonical 44-byte WAV header for `dataBytes` of sample data — the first
  * half of a file a page writes in pieces.
  *
@@ -67,6 +85,7 @@ export interface InitOutput {
     readonly decoded_sampleRate: (a: number) => number;
     readonly decoded_samples: (a: number) => [number, number];
     readonly encodeWavFrames: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly stripFaustData: (a: number, b: number) => [number, number, number, number];
     readonly wavHeader: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
     readonly clausters_abi_version: () => number;
     readonly clausters_free_samples: (a: number, b: bigint) => void;

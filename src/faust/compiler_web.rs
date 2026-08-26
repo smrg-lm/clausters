@@ -22,7 +22,7 @@
 
 use std::sync::Mutex;
 
-use crate::faust::synth::{FaustDef, ParamSpec};
+use crate::faust::synth::FaustDef;
 use crate::osc::ClientId;
 use crate::osc::wake::Waker;
 
@@ -164,69 +164,24 @@ impl CompilerThread {
     }
 }
 
-/// What the host reports back for a successful compilation: where the module's
-/// entry points landed in the engine's table, and the shape the compiler's own
-/// JSON declared.
-#[derive(serde::Deserialize)]
-pub struct LinkedModule {
-    /// Table slot of the module's `compute` export.
-    pub compute: u32,
-    /// Table slot of its `init` export.
-    pub init: u32,
-    /// Byte size of one DSP struct (`"size"` in the Faust JSON).
-    pub size: usize,
-    pub inputs: usize,
-    pub outputs: usize,
-    #[serde(default)]
-    pub params: Vec<LinkedParam>,
-}
-
-/// One UI parameter, as the Faust JSON declares it.
-#[derive(serde::Deserialize)]
-pub struct LinkedParam {
-    pub name: String,
-    /// Byte offset of the zone inside the DSP struct (`"index"`).
-    pub index: usize,
-    #[serde(default)]
-    pub init: f32,
-    #[serde(default)]
-    pub min: f32,
-    #[serde(default)]
-    pub max: f32,
-    #[serde(default)]
-    pub step: f32,
-}
-
-impl LinkedModule {
-    /// Turns the host's report into a def. Sound checking lives in
-    /// [`FaustDef::link`]; this only unpacks.
-    ///
-    /// # Safety
-    /// The caller must have instantiated the module described here against the
-    /// engine's own memory and table — see [`FaustDef::link`].
-    pub unsafe fn into_def(self) -> Result<FaustDef, String> {
-        let offsets = self.params.iter().map(|p| p.index).collect();
-        let params = self
-            .params
-            .into_iter()
-            .map(|p| ParamSpec {
-                name: p.name,
-                init: p.init,
-                min: p.min,
-                max: p.max,
-                step: p.step,
-            })
-            .collect();
-        unsafe {
-            FaustDef::link(
-                self.compute,
-                self.init,
-                self.size,
-                offsets,
-                params,
-                self.inputs,
-                self.outputs,
-            )
-        }
+/// Turns the host's report into a def: where the module's two entry points
+/// landed in the engine's table, plus the compiler's own JSON verbatim.
+///
+/// # Safety
+/// The caller must have instantiated the module described here against the
+/// engine's own memory and table — see [`FaustDef::link`].
+pub unsafe fn link(compute: u32, init: u32, json: &str) -> Result<FaustDef, String> {
+    let parsed = crate::faust::json_ui::FaustJson::parse(json)?;
+    let (params, offsets) = parsed.params();
+    unsafe {
+        FaustDef::link(
+            compute,
+            init,
+            parsed.size,
+            offsets,
+            params,
+            parsed.inputs,
+            parsed.outputs,
+        )
     }
 }

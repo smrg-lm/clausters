@@ -461,32 +461,40 @@ impl WebServer {
         out
     }
 
-    /// Answers one compilation. `report` is the link report — a JSON object
-    /// `{compute, init, size, inputs, outputs, params: [{name, index, init,
-    /// min, max, step}]}` where `compute` and `init` are the table slots the
-    /// module's exports were appended at and the rest is the compiler's own
-    /// JSON — and emits `/done`. Pass `error` instead (and no report) to emit
-    /// `/fail` with the compiler's message verbatim.
+    /// Answers one compilation. On success `compute` and `init` are the table
+    /// slots the module's exports were appended at and `json` is the
+    /// compiler's own JSON verbatim; that emits `/done`. Pass `error` instead
+    /// to emit `/fail` with the compiler's message.
     ///
-    /// **The report is trusted.** The slots must belong to a module
-    /// instantiated against *this* engine's memory and table, with the shape
-    /// its own JSON declared; a wrong one writes into the engine's memory
-    /// rather than failing. Only the host that linked the module may call this.
+    /// **The slots are trusted.** They must belong to a module instantiated
+    /// against *this* engine's memory and table, with the shape its own JSON
+    /// declared; a wrong one writes into the engine's memory rather than
+    /// failing. Only the host that linked the module may call this.
     ///
     /// wasm32 only, for the same reason as
     /// [`take_faust_jobs`](Self::take_faust_jobs).
     #[cfg(target_arch = "wasm32")]
     #[wasm_bindgen(js_name = finishFaust)]
-    pub fn finish_faust(&mut self, ticket: f64, report: Option<String>, error: Option<String>) {
-        match (report, error) {
+    pub fn finish_faust(
+        &mut self,
+        ticket: f64,
+        compute: u32,
+        init: u32,
+        json: Option<String>,
+        error: Option<String>,
+    ) {
+        match (json, error) {
             (_, Some(message)) if !message.is_empty() => {
                 self.inner.finish_faust_error(ticket as u64, message);
             }
-            (Some(report), _) => {
-                // SAFETY: delegated to the host by construction — this method
+            (Some(json), _) => {
+                // SAFETY: delegated to the host by construction -- this method
                 // is the door it answers through, and its contract is the
                 // paragraph above.
-                unsafe { self.inner.finish_faust_linked(ticket as u64, &report) };
+                unsafe {
+                    self.inner
+                        .finish_faust_linked(ticket as u64, compute, init, &json)
+                };
             }
             _ => self.inner.finish_faust_error(
                 ticket as u64,

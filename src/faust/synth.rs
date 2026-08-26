@@ -35,14 +35,7 @@ use crate::faust::factory::FaustFactory;
 use crate::faust::ffi;
 use crate::node::{ControlMap, SynthNode};
 
-/// One named parameter of a Faust def, as declared by its UI elements.
-pub struct ParamSpec {
-    pub name: String,
-    pub init: f32,
-    pub min: f32,
-    pub max: f32,
-    pub step: f32,
-}
+pub use crate::faust::ParamSpec;
 
 /// A compiled Faust def ready to instantiate: the factory plus the metadata
 /// shared by every instance. The def table holds it as `Arc<FaustDef>` and

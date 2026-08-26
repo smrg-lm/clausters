@@ -713,7 +713,7 @@ entries keep their original paths as a record of what shipped where. See
   `demo.html?smoke=1`: element up with the canvas in its shadow root, raw
   `server()` sees the element's synth (`/server_status`), meter bus streaming.
 
-- ⬜ **B5 — Faust in the page: the compiler on the main thread, the DSP in the engine's memory.**
+- ⬜ **B5 — Faust in the page: the compiler in the Worker, the DSP in the engine's memory.**
   The one capability the browser engine lacks and the window's has: `/def_send
   faust` answers `/fail` in a tab. It is the engine half of the web client's
   **W7** and the two ship together — W7's in-page acceptance is this milestone's
@@ -769,6 +769,38 @@ entries keep their original paths as a record of what shipped where. See
   a page mounting a SynthDef-only bundle loads no compiler asset; and the
   transcendental imports resolve to the engine's own exports, asserted rather
   than assumed.
+
+  **Where it stands.** Three of the four pieces are built and the acceptance
+  half of the fourth is green (`clients/web/tests/faust.html`): a def sent as
+  **source** compiles in the Worker, links into the engine's memory and sounds,
+  and `/node_set "freq"` moves it — which is the parameter offset the page read
+  out of the compiler's JSON reaching the zone the module reads. The
+  transcendentals are asserted by construction: every import the module declares
+  is resolved from the engine's own exports and an unknown one is named rather
+  than left to fail. What is left:
+
+  - ⬜ **The signal and box forms.** The vendored `libfaust-wasm` exposes
+    `createDSPFactory` and nothing else — Faust's Emscripten bindings carry no
+    Box or Signal API — so those two payloads fail in a page today, with a
+    message saying so, and are written into
+    `clients/web/docs/src/platform.md`. Three ways to close it, none costed
+    yet: patch the vendored build to embind the box/signal C API (a fifth
+    departure in `third_party/build-faust-wasm.sh`, plus a Rust import shim so
+    `faust::boxes` stays the one interpreter); or print the JSON to Faust
+    source, which is a second implementation of one schema and is exactly what
+    this project does not do; or leave it and say so. **The first is the only
+    one that keeps one interpreter**, and that is the point of the rule.
+  - ⬜ **The parity vector.** `scripts/parity-web.sh` renders a Faust score
+    natively and in wasm and compares. Blocked by nothing but the offline
+    render's own gap: a page's offline render cannot compile a def (the
+    compiler answers late), so the comparison needs the live engine on the wasm
+    side.
+  - ⬜ **A page mounting a SynthDef-only bundle loads no compiler asset** —
+    true by construction (the glue is imported on the first `/def_send faust`)
+    and not yet asserted by a page.
+  - ⬜ **`soundfile`** in a Faust def: the wasm backend has no soundfile
+    support, so `FaustSynth::new` ignores the buffer pool there. A def that
+    declares one is silent rather than failing.
 
 - ✅ **B6 — the second scope: a Worker for the work that is neither audio nor UI** *(done 2026-08-25)*.
   The browser engine collapsed four kinds of native thread onto one, and the bill

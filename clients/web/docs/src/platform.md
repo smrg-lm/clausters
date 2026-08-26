@@ -32,7 +32,7 @@ that a reader who hits one today knows which.
 
 | What | Status |
 |---|---|
-| **`/def_send faust` reaches a native server only** | The in-page engine carries no Faust compiler. Closed by `B5` + `W7`. |
+| **A Faust def built from signals or from boxes does not compile in a page** | The compiler the page carries exposes `createDSPFactory` and nothing else: no Box API, no Signal API, neither of which is in Faust's Emscripten bindings. `/def_send faust` fails with a message saying so, and the same def sent as **source** compiles and sounds. Owned by `B5` in the root `PLAN.md`. |
 | **`diskIn` streams WAV only** | A span of a compressed file is not a file, so it cannot be decoded on its own; a WAV span can be, and is. Reading a compressed file whole is what a buffer is for (`Buffer.read`). Natively `diskIn` reads whatever the decoder does. |
 | **A stream starts after a longer lead** | Natively a thread shares a ring with the audio thread. In a tab there is no shared memory, so a Worker reads a span and *moves* it across a port — how far ahead it reads is the design, not a tuning constant, and an underrun is silence exactly as a slow disk gives. |
 | **`/buffer_read` is not delegated** | Its sibling `/buffer_allocRead` is: it leaves the AudioWorklet for the NRT worker and comes back decoded. This one overlays a file onto the buffer's *current* contents, which live in the engine's own memory, so the job cannot leave without shipping them out and back. It runs in the worklet, under the serving budget. |
@@ -50,6 +50,14 @@ the **NRT worker**, a thread beside the audio one, with the *server's own*
 decoder rather than the browser's, so the samples are bit-for-bit the ones a
 native read of the same file gives. `Buffer.load(url)` is the other door and a
 different thing: a file over the network, decoded by the browser.
+
+**A tab compiles Faust.** `libfaust-wasm` runs in the NRT worker — the page's
+compiler thread, the way a native server has one — and the module it emits is
+instantiated inside the engine's *own* linear memory, with its `compute` in the
+engine's function table and its transcendentals bound to the engine's own libm.
+So a Faust node is a node: `/node_set` by name, group order, bus summing, done
+actions, all the same code as in a window. A page whose bundle carries no
+FaustDef never fetches any of it.
 
 **A tab streams to and from that filesystem.** `diskOut` records into it while
 the take plays and `diskIn` streams back out of it, neither holding the whole

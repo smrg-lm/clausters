@@ -6663,13 +6663,14 @@ another, so these are bound to the engine's own exports rather than to
 `Math.sin` closures: no JS on the audio path, and Faust and our UGens go through
 one libm, which is what keeps a parity vector meaningful.
 
-**The compiler stays on the main thread, and the protocol does not learn about
+**The compiler gets a scope of its own, and the protocol does not learn about
 it.** Natively, `/def_send faust` compiles on the compiler thread and replies
-`/done` later; the audio thread never sees a compiler. In a page the compiler
-thread is the **main** thread — that is where the Emscripten module can live —
-and the worklet is the audio thread. So the worklet, on `/def_send faust`, posts
-the payload out, the main thread compiles with `libfaust-wasm`, posts back the
-module bytes and the JSON, and the worklet instantiates and replies `/done`.
+`/done` later; the audio thread never sees a compiler. In a page that thread is
+the **NRT worker** — this first said the main thread, and the second decision
+below moved it, for the reason that decision gives: the main thread owes the GUI
+host its frames. So the worklet, on `/def_send faust`, posts the payload out, the
+Worker compiles with `libfaust-wasm`, posts back the module bytes and the JSON,
+and the worklet instantiates and replies `/done`.
 This is the same asynchronous shape the command already has, which is why
 **nothing on the wire changes**: no precompiled-payload form, no second command,
 no client-side special case. `docs/schemas.md` is untouched, and the one
@@ -6727,6 +6728,25 @@ blind would be the kind of corruption nobody traces back here.
 - **A wasm interpreter in Rust inside the engine** (`wasmi` and its family) —
   everything stays in Rust and nothing else does: interpreting wasm inside wasm,
   on the audio thread, allocating.
+
+**Two things the build found, both invisible until something is silent.**
+
+*A `WebAssembly.Module` posted into an AudioWorklet is dropped on arrival.*
+Compiling in the Worker and cloning the finished module across is the obvious
+shape — a Module is serializable, and it keeps the last piece of compilation off
+the thread that owes a block. It appears to work: the `postMessage` succeeds,
+nothing throws on either side, and the message simply never arrives, because a
+Module can only be cloned inside one agent cluster and a worklet is not in the
+Worker's. So the **bytes** travel and the worklet compiles them itself, which is
+microseconds once per def against a silence with no error anywhere. The port now
+carries an `onmessageerror` for the same reason: that is where a dropped message
+does show up, and without it the engine just never answers.
+
+*wasm-bindgen drops the exports the linker synthesized*, `__indirect_function_table`
+among them, so `--export-table` on the Rust side is not enough — the whole design
+rests on that table and it was gone from the staged bundle. `--keep-lld-exports`
+on the engine's bundle alone keeps it; the other three bundles link no second
+module and keep the smaller surface.
 
 **Three assumptions carry this, and all three were checked before anything was
 built on them** — a probe that instantiates a hand-emitted second module against

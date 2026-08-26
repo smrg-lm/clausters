@@ -6,14 +6,19 @@
 // one. The engine in a page had no such thread, so the work landed on the
 // AudioWorklet, which owes a block of audio every 2.67 ms. This is that thread.
 //
-// It does two things and holds nothing:
+// It does three things and holds nothing:
 //
 //  - reads a file out of the page's own filesystem (OPFS, reachable only from
-//    a dedicated Worker — see `./opfs.ts`), and
+//    a dedicated Worker — see `./opfs.ts`),
 //  - decodes it with **our** decoder, the same one a native server runs.
 //    `decodeAudioData` is right there and is the wrong answer: it is a
 //    different decoder, so the same file would become different samples in a
-//    tab and in a window, and a divergence in values is the kind nothing names.
+//    tab and in a window, and a divergence in values is the kind nothing names,
+//    and
+//  - compiles a Faust def. This is the page's compiler thread: natively a
+//    `/def_send faust` compiles on a thread of its own and answers late, and
+//    that is exactly what happens here — the module comes back to the worklet,
+//    which links it into the engine's own memory.
 //
 // The samples go back as a **transferred** buffer, so crossing the thread
 // boundary moves them rather than copying them. Installing them is the
@@ -52,6 +57,17 @@ interface SpanRequest {
     frames: number;
 }
 
+/** `/def_send faust`: compile a def. The page is the engine's compiler. */
+interface FaustRequest {
+    type: "faust";
+    ticket: number;
+    /** The def's name, for the compiler's own error messages. */
+    name: string;
+    /** `"source"`, `"boxes"` or `"signals"` — which format `def` is in. */
+    kind: string;
+    def: string;
+}
+
 /** `DiskOut`: append a recorded run, and close the file when `final`. */
 interface RecordRequest {
     type: "record";
@@ -69,6 +85,7 @@ type Request =
     | ShapeRequest
     | SpanRequest
     | RecordRequest
+    | FaustRequest
     | { type: "ping" };
 
 /** What comes back: the samples, or the message the command fails with. */
@@ -93,6 +110,16 @@ type Response =
     | { type: "span"; ticket: number; samples: Float32Array; frames: number }
     | { type: "span"; ticket: number; error: string }
     | { type: "record"; ticket: number; error?: string }
+    | {
+          type: "faust";
+          ticket: number;
+          /** The module's bytes, stripped and ready to instantiate. */
+          bytes: ArrayBuffer;
+          /** The compiler's own JSON: the struct size and every parameter's
+           *  byte offset inside it. */
+          json: string;
+      }
+    | { type: "faust"; ticket: number; error: string }
     | { type: "ready" };
 
 // The decoder's glue is imported dynamically: this file is type-checked
@@ -120,6 +147,7 @@ type Decoder = {
         dataBytes: number,
     ) => Uint8Array;
     encodeWavFrames: (samples: Float32Array, format: string) => Uint8Array;
+    stripFaustData: (module: Uint8Array) => Uint8Array;
 };
 
 let decoder: Promise<Decoder> | null = null;
@@ -137,6 +165,48 @@ function load(): Promise<Decoder> {
         })();
     }
     return decoder;
+}
+
+// The Faust compiler's own glue, imported the same way and for the same
+// reason: a page whose bundle carries no FaustDef never fetches the several
+// megabytes of it. `libfaust-wasm` is an Emscripten module with a filesystem
+// of its own — the `.data` beside it is the Faust standard library, which is
+// what lets a def `import("stdfaust.lib")`.
+type FaustLib = {
+    version: () => string;
+    createDSPFactory: (
+        name: string,
+        code: string,
+        args: string,
+        internalMemory: boolean,
+    ) => { cfactory: number; data: Uint8Array | number[]; json: string };
+    deleteDSPFactory: (factory: number) => void;
+    getErrorAfterException: () => string;
+    cleanupAfterException: () => void;
+};
+
+let faust: Promise<FaustLib> | null = null;
+
+/** Loads the compiler once, on the first `/def_send faust`. */
+function compiler(): Promise<FaustLib> {
+    if (faust === null) {
+        faust = (async () => {
+            const base = new URL("../vendor/faust/", import.meta.url);
+            type Emscripten = { libFaustWasm: new () => FaustLib };
+            const glue = (await import(
+                /* @vite-ignore */ new URL("libfaust-wasm.js", base).href
+            )) as {
+                default: (opts: { locateFile: (p: string) => string }) => Promise<Emscripten>;
+            };
+            // An ES module has no `document.currentScript`, so the glue cannot
+            // find its own .wasm and .data on its own.
+            const mod = await glue.default({
+                locateFile: (p: string) => new URL(p, base).href,
+            });
+            return new mod.libFaustWasm();
+        })();
+    }
+    return faust;
 }
 
 /** A file being streamed: its shape, remembered so a span costs one read. */
@@ -207,6 +277,15 @@ async function handle(request: Request, post: (r: Response, t?: Transferable[]) 
         }
         return;
     }
+    if (request.type === "faust") {
+        try {
+            const result = await compile(request);
+            post(result, "bytes" in result ? [result.bytes] : []);
+        } catch (e) {
+            post({ type: "faust", ticket: request.ticket, error: message(e) });
+        }
+        return;
+    }
     if (request.type === "record") {
         try {
             const { encodeWavFrames, wavHeader } = await load();
@@ -270,6 +349,61 @@ async function handle(request: Request, post: (r: Response, t?: Transferable[]) 
     } catch (e) {
         post({ type: "read", ticket, error: message(e) });
     }
+}
+
+/**
+ * Compiles one def and hands back a module the engine can link.
+ *
+ * `internalMemory` is false: the module must import `env.memory` so it can be
+ * instantiated against the engine's own. `-ftz 2` is the same flag a native
+ * factory is compiled with, so a decaying tail cannot strand either thread in
+ * subnormal math — the architecture-independent half of the denormal rule, and
+ * one of the places the two builds have to agree exactly.
+ */
+async function compile(request: FaustRequest): Promise<Response> {
+    const { ticket, name } = request;
+    if (request.kind !== "source") {
+        // The vendored compiler exposes `createDSPFactory` and nothing else:
+        // no Box API, no Signal API. Both are Faust's own C API and neither is
+        // in its Emscripten bindings, so a def built from the signal or box
+        // surface cannot be compiled in a page yet. Named rather than
+        // swallowed — see clients/web/docs/src/platform.md.
+        return {
+            type: "faust",
+            ticket,
+            error: `a Faust def built from ${request.kind} cannot be compiled in a page yet; \
+send it as source`,
+        };
+    }
+    const lib = await compiler();
+    let out: { cfactory: number; data: Uint8Array | number[]; json: string };
+    try {
+        out = lib.createDSPFactory(name, request.def, "-ftz 2", false);
+    } catch (e) {
+        lib.cleanupAfterException();
+        return { type: "faust", ticket, error: lib.getErrorAfterException() || message(e) };
+    }
+    if (!out.cfactory) {
+        const error = lib.getErrorAfterException() || "the Faust compiler produced no factory";
+        lib.cleanupAfterException();
+        return { type: "faust", ticket, error };
+    }
+    // The factory has given up its binary; the compiler need not keep it.
+    lib.deleteDSPFactory(out.cfactory);
+    const { stripFaustData } = await load();
+    const stripped = stripFaustData(Uint8Array.from(out.data));
+    // The bytes travel, not a `WebAssembly.Module`. A Module is
+    // structured-cloneable and posting one into an AudioWorklet *appears* to
+    // work — the send succeeds and the message is then dropped on arrival, with
+    // no error raised on either side — because a worklet is not in this
+    // Worker's agent cluster. So the worklet compiles them itself: a Faust
+    // module is a couple of kilobytes, which is microseconds once per def,
+    // against a silence nothing reports.
+    const bytes = stripped.buffer.slice(
+        stripped.byteOffset,
+        stripped.byteOffset + stripped.byteLength,
+    ) as ArrayBuffer;
+    return { type: "faust", ticket, bytes, json: out.json };
 }
 
 const message = (e: unknown) => String(e instanceof Error ? e.message : e);

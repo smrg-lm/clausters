@@ -32,6 +32,7 @@
 //! separation is the Worker's, and the audio thread only ever calls the
 //! module's `compute`.
 
+pub mod json_ui;
 pub mod wasm_module;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -59,6 +60,18 @@ pub mod synth;
 #[cfg(target_arch = "wasm32")]
 #[path = "synth_web.rs"]
 pub mod synth;
+
+/// One named parameter of a Faust def, as declared by its UI elements. The
+/// same shape whichever backend compiled the def: `/node_set` writes the value
+/// into the instance's zone, and the control index is this parameter's
+/// position in declaration order.
+pub struct ParamSpec {
+    pub name: String,
+    pub init: f32,
+    pub min: f32,
+    pub max: f32,
+    pub step: f32,
+}
 
 /// What `/def_send faust` carries: one of the three def formats. Shared by
 /// both backends — the wire is the same in a window and in a tab.

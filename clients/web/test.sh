@@ -179,6 +179,7 @@ run_page ring-peers.html # a host meter and a script bus stream, both over one r
 run_page nrt.html      # /buffer_allocRead out of the page's filesystem, in the NRT worker
 run_page disk.html     # diskOut into the page's filesystem, diskIn streaming it back
 run_page faust-artifact.html # what the vendored Faust compiler emits, asserted
+run_page faust.html    # a FaustDef compiled in the page, sounding, and set by name
 
 # The components and lifecycle acceptances mount the example bundles, which are build
 # products (git-ignored, written by the Python client). Generate them here so a

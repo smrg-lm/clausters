@@ -128,3 +128,22 @@ pub fn wav_header_bytes(
 pub fn encode_wav_frames_bytes(samples: &[f32], sample_format: &str) -> Result<Vec<u8>, String> {
     encode_wav_frames(samples, sample_format)
 }
+
+/// Removes the data segment a Faust wasm module carries, so the module can be
+/// instantiated against the engine's own linear memory.
+///
+/// The Faust wasm backend writes the DSP's JSON into a data segment at
+/// **absolute offset 0**, unconditionally — external memory included — and
+/// rustc links the engine with `--stack-first`, so offset 0 is the engine's
+/// stack. Instantiating the module as emitted would write over it. Nothing
+/// reads that copy (the JSON the page uses is the one the compiler returns
+/// beside the binary), so it is dropped rather than worked around.
+///
+/// This **refuses rather than guesses**: a module with more than one segment,
+/// or one that does not start at zero, means the backend grew a use for that
+/// memory this has not accounted for. See `docs/decisions.md`, "The page's
+/// Faust is a second wasm module linked into the engine's own memory".
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = stripFaustData))]
+pub fn strip_faust_data(module: &[u8]) -> Result<Vec<u8>, String> {
+    clausters::faust::wasm_module::strip_data_section(module)
+}
