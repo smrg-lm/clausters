@@ -82,9 +82,11 @@ export class FaustDef {
     /**
      * Sends this def to the server via `/def_send faust` and returns its name.
      *
-     * `/def_send faust` JIT-compiles on the server's network thread, and reaches a
-     * **native** server only: the in-page engine is the `synth,embed` build
-     * with no LLVM, and answers `/fail`.
+     * `/def_send faust` compiles asynchronously and answers when it is done —
+     * on a native server's compiler thread, and in a page in the NRT worker,
+     * which carries `libfaust-wasm` and links the module it emits into the
+     * engine's own memory. Either carrier, the same command and the same
+     * reply.
      *
      * `wait: true` (the default) resolves on `/done` and rejects with
      * `CommandError` on `/fail`; `wait: false` only sends, to be sequenced
