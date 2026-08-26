@@ -6806,6 +6806,33 @@ for no reason anyone would connect to it.
   the compiler by one path, which is a better shape than the one this started
   from.
 
+**A third silence, found by measuring the first two.** Keeping one arena for the
+tab's life has a bill nobody had asked for: the *call stack*. A wasm frame sits
+on the JavaScript engine's stack — about a megabyte, against the eight a native
+thread gets, and unrelated to the `STACK_SIZE=8MB` the compiler is linked with,
+which is only its shadow stack — and libfaust recurses over the term graph of
+everything compiled so far. So a page compiling **distinct recursive signal**
+defs runs the stack out at roughly every other def, reported as
+`stack overflow (Maximum call stack size exceeded)` on a def that is perfectly
+well formed. It is browser-only: eight of the same defs compile in one context
+natively, which is what says the interpreter is not at fault.
+
+The way out is not a smaller def and not a destroyed context. It is a **fresh
+compiler**: a def that exhausts the stack is compiled again in a new Emscripten
+instance — new memory, new arena, new context — and succeeds. This does not
+contradict the entry above, and the distinction is the whole point: what poisons
+a page is a context that was *destroyed*, not a second one that exists. The cost
+is one instantiation, and the fetch is in cache and the module already compiled,
+so twelve such defs in a row (six replacements between them) average 18 ms each
+against the 9 ms a def that never overflows costs. `tests/faust-arena.html` is
+the measurement and the numbers move with the compiler's pin, so it is a page to
+re-run when `third_party/faust.pin` does.
+
+Defs written as **box** trees or as **source** never hit it, which is worth
+knowing but is not a reason to steer anyone: the retry makes the signal API work
+without a caveat, and a client surface that is fine in one language and
+conditional in another is the divergence this project does not keep.
+
 **Three assumptions carry this, and all three were checked before anything was
 built on them** — a probe that instantiates a hand-emitted second module against
 a Rust one. They hold: `-C link-arg=--export-table -C link-arg=--growable-table`

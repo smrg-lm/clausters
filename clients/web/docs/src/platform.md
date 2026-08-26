@@ -65,6 +65,21 @@ expose neither API, so the vendored compiler is built with them added
 (`third_party/build-faust-wasm.sh`); what a page carries is the same compiler a
 window links, at the same pin.
 
+**A tab compiles as many defs as it likes**, and what that costs is measured
+rather than assumed (`tests/faust-arena.html`). The arena is not the cost:
+compiling 24 distinct defs leaves it where the first def left it, at 26 MiB,
+because a compiler keeps one lib context for as long as it lives — destroying
+one poisons the next (`docs/decisions.md`), so it is never destroyed. The
+**call stack** is the cost. A wasm frame sits on the JavaScript engine's stack,
+about a megabyte against the eight a native thread gets, and libfaust recurses
+over the term graph of everything compiled so far; distinct recursive defs
+built through the **signal** API run it out about every other def. A def that
+exhausts it is compiled again in a **fresh compiler** — a new instance, a new
+arena, poisoning nothing, since what poisons is a destroyed context and not a
+second one — so the def succeeds and only the time shows: twelve such defs in a
+row average 18 ms each against the 9 ms a def that never overflows costs. Defs
+written as **box** trees or as **source** do not hit it at all.
+
 **A tab streams to and from that filesystem.** `diskOut` records into it while
 the take plays and `diskIn` streams back out of it, neither holding the whole
 thing — the two reductions above are the price, and they are in the table rather

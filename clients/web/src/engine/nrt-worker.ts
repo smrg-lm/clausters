@@ -80,12 +80,29 @@ interface RecordRequest {
     final: boolean;
 }
 
+/**
+ * How much linear memory the compiler currently holds.
+ *
+ * A diagnostic, not a capability: a compiler keeps **one** lib context for as
+ * long as it lives (see `contextLive`), so the terms of every def compiled
+ * through it accumulate in that one arena, and how many compilers a tab has
+ * been through is the other half of the same question. Both are answered from
+ * here because the compiler is loaded here and reachable from nowhere else;
+ * `tests/faust-arena.html` is what asks, and what it measures is written on
+ * `docs/src/platform.md`.
+ */
+interface FaustHeapRequest {
+    type: "faust-heap";
+    ticket: number;
+}
+
 type Request =
     | ReadRequest
     | ShapeRequest
     | SpanRequest
     | RecordRequest
     | FaustRequest
+    | FaustHeapRequest
     | { type: "ping" };
 
 /** What comes back: the samples, or the message the command fails with. */
@@ -120,6 +137,7 @@ type Response =
           json: string;
       }
     | { type: "faust"; ticket: number; error: string }
+    | { type: "faust-heap"; ticket: number; bytes: number; reloads: number }
     | { type: "ready" };
 
 // The decoder's glue is imported dynamically: this file is type-checked
@@ -364,6 +382,13 @@ async function handle(request: Request, post: (r: Response, t?: Transferable[]) 
         }
         return;
     }
+    if (request.type === "faust-heap") {
+        // Zero until something has compiled: the compiler is imported on the
+        // first def, and asking must not be what brings it in.
+        const held = faust === null ? 0 : (await faust).mod.HEAP32.buffer.byteLength;
+        post({ type: "faust-heap", ticket: request.ticket, bytes: held, reloads });
+        return;
+    }
     if (request.type === "record") {
         try {
             const { encodeWavFrames, wavHeader } = await load();
@@ -430,6 +455,43 @@ async function handle(request: Request, post: (r: Response, t?: Transferable[]) 
 }
 
 /**
+ * What a compilation that ran out of **call stack** says.
+ *
+ * Not the arena and not Emscripten's shadow stack (the compiler is linked with
+ * `STACK_SIZE=8MB`, the same order as a native thread's): wasm frames sit on
+ * the JavaScript engine's own stack, which is about a megabyte, and libfaust
+ * recurses over the term graph of everything compiled so far. A native server
+ * never meets this — it gets a whole thread's stack, and a fresh lib context
+ * per def besides.
+ */
+const OUT_OF_STACK = /stack overflow|call stack size exceeded/i;
+
+/**
+ * Throws the compiler away, so the next def is compiled by a fresh instance.
+ *
+ * This is the one way out of an exhausted stack that the page actually has.
+ * The context cannot be destroyed and reopened — that poisons the next def
+ * (see `contextLive`) — but a whole new Emscripten instance has a new memory,
+ * a new arena and a new context, and poisons nothing, because the poisoning
+ * was always a *destroyed* context and not a second one. It costs an
+ * instantiation, and that is cheaper than it looks: the fetch is in cache and
+ * the module is already compiled, so twelve distinct recursive signal defs in a
+ * row — six of these between them — average 18 ms each, against the 9 ms a def
+ * that never overflows costs (`tests/faust-arena.html`). `/def_send faust` has
+ * always answered late besides.
+ */
+function discardCompiler(): void {
+    faust = null;
+    faustShim = null;
+    contextLive = false;
+    reloads++;
+}
+
+/** How many compilers this Worker has been through — reported by
+ *  `faust-heap`, and how `tests/faust-arena.html` says what a tab pays. */
+let reloads = 0;
+
+/**
  * Compiles one def and hands back a module the engine can link.
  *
  * `internalMemory` is false: the module must import `env.memory` so it can be
@@ -437,8 +499,22 @@ async function handle(request: Request, post: (r: Response, t?: Transferable[]) 
  * factory is compiled with, so a decaying tail cannot strand either thread in
  * subnormal math — the architecture-independent half of the denormal rule, and
  * one of the places the two builds have to agree exactly.
+ *
+ * A def that exhausts the call stack is compiled again in a **fresh compiler**
+ * and only then reported as failed: the accumulated term graph is what ran the
+ * stack out, and nothing about the def itself was wrong. Retried once, never
+ * twice — a def that overflows a compiler that has compiled nothing is a def
+ * too deep for a tab, and saying so is the honest answer.
  */
 async function compile(request: FaustRequest): Promise<Response> {
+    const first = await compileOnce(request);
+    const failure = first.type === "faust" && "error" in first ? first.error : "";
+    if (!OUT_OF_STACK.test(failure)) return first;
+    discardCompiler();
+    return compileOnce(request);
+}
+
+async function compileOnce(request: FaustRequest): Promise<Response> {
     const { ticket, name } = request;
     const { lib, mod } = await compiler();
     let out: FaustArtifact;

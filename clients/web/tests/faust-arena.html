@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters faust arena</title>
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            max-width: 52rem; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div>What one Faust def costs the compiler's arena, for as long as the
+        tab lives. The page keeps <b>one</b> lib context and never destroys it —
+        destroying one poisons the next (<code>docs/decisions.md</code>) — so
+        every def's terms stay in that arena and this is what says by how much.
+        The number it prints is the one written on
+        <code>docs/src/platform.md</code>, together with how many defs a tab
+        survives.</div>
+      <button id="run">measure</button>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      A measurement, not an acceptance: it is deliberately absent from
+      test.sh's page list, the way tests/wheel.html is. There is no threshold
+      here to assert — the answer is a number, it moves with the compiler's own
+      version, and a ceiling written into a suite would only say that today's
+      libfaust is today's libfaust. Run it by hand (or with ?smoke=1, which
+      auto-starts it) when the vendored compiler moves, and carry the new
+      number to the platform page.
+
+      It drives the NRT worker **directly**, with no engine and no worklet:
+      the arena belongs to the compiler and to nothing else, so measuring it
+      through a booted engine would only add the engine's own memory to the
+      reading. (The one AudioContext it opens is the platform's sample rate,
+      the same question tests/faust.html asks, and it is closed at once.) The worker's `faust-heap` request is what reports
+      the compiler module's linear memory; it is a diagnostic door and this is
+      its one caller.
+    -->
+    <script type="module">
+      import { FaustDef } from "../dist/index.js";
+      import { signals } from "../dist/defs/index.js";
+
+      const smoke = new URLSearchParams(location.search).has("smoke");
+      // Every line is beaconed too, not only the verdict: this page's answer is
+      // the whole table, and a runner that reads the access log would otherwise
+      // see one summary. (A dump of the DOM cannot replace it -- the page is
+      // still working when the browser dumps.)
+      const log = (line) => {
+        document.getElementById("log").textContent += line + "\n";
+        if (smoke) fetch(`/smoke-log-${encodeURIComponent(line)}`).catch(() => {});
+      };
+
+      const worker = new Worker(new URL("../dist/engine/nrt-worker.js", import.meta.url),
+                                { type: "module" });
+      let ticket = 0;
+      const waiting = new Map();
+      worker.onmessage = (e) => {
+        const done = waiting.get(e.data.ticket);
+        if (done !== undefined) {
+          waiting.delete(e.data.ticket);
+          done(e.data);
+        }
+      };
+      const ask = (request) =>
+        new Promise((resolve) => {
+          const t = ++ticket;
+          waiting.set(t, resolve);
+          worker.postMessage({ ...request, ticket: t });
+        });
+
+      const stat = () => ask({ type: "faust-heap" });
+      const heap = async () => (await stat()).bytes;
+      const mib = (bytes) => (bytes / (1024 * 1024)).toFixed(2);
+
+      // The same DSP tests/faust.html sends, in the three forms -- and every
+      // def has to be *distinct*, because Faust hash-conses its terms and
+      // compiling one def sixteen times would measure the sharing rather than
+      // the cost. What varies is the frequency, and it varies in the term
+      // itself (a constant) rather than in a control, so no two defs share a
+      // whole tree.
+      const TAU = 2 * Math.PI;
+      const probe = new AudioContext();
+      const rate = probe.sampleRate;
+      await probe.close();
+
+      const source = (i) => `
+        import("stdfaust.lib");
+        process = os.osc(${300 + i * 7}) * 0.4;
+      `;
+
+      const boxTree = (i) => JSON.stringify({
+        op: "mul", in: [
+          { op: "sin", in: [{ op: "mul", in: [
+            TAU,
+            { op: "rec", in: [
+              { op: "seq", in: [
+                { op: "add", in: ["_", (300 + i * 7) / rate] },
+                { op: "split", in: ["_", { op: "sub", in: ["_", { op: "floor", in: ["_"] }] }] },
+              ] },
+              "_"] },
+          ] }] },
+          0.4],
+      });
+
+      const signalTree = (i) => {
+        const { rec: srec, sin: ssin, signal: sig } = signals;
+        const phasor = srec((p) => {
+          const acc = p.add((300 + i * 7) / rate);
+          return acc.sub(acc.floor());
+        });
+        return FaustDef.fromSignals(
+          `arena_signals_${i}`, ssin(sig(TAU).mul(phasor)).mul(0.4)).dumpDef();
+      };
+
+      // The same signal def every time, name apart: whether the limit is
+      // "another def" or "another *distinct* def" is the difference between a
+      // count and a term collision.
+      const signalTreeSame = () => signalTree(0);
+
+      // A signal def with no feedback in it. `rec` is what the poisoned-context
+      // failure was always about (docs/decisions.md), so a pass with the
+      // recursion taken out and everything else kept says whether the limit
+      // belongs to the signal API or to the recursion inside it.
+      const signalTreeFlat = (i) => {
+        const { sin: ssin, signal: sig, input } = signals;
+        return FaustDef.fromSignals(
+          `arena_flat_${i}`, ssin(sig(TAU).mul(input(0)).mul(300 + i * 7)).mul(0.4)).dumpDef();
+      };
+
+      /** Each probe: which of the three wire formats, and what it sends. */
+      const forms = {
+        source: { kind: "source", text: source },
+        boxes: { kind: "boxes", text: boxTree },
+        signals: { kind: "signals", text: signalTree },
+        "signals-same": { kind: "signals", text: signalTreeSame },
+        "signals-flat": { kind: "signals", text: signalTreeFlat },
+      };
+
+      /**
+       * Compiles `count` distinct defs of one kind, reporting the arena.
+       *
+       * A def that fails **ends the pass and is reported**, rather than taking
+       * the page down: which def broke is as much of the measurement as how
+       * much the arena grew, and a throw would lose both.
+       */
+      async function pass(label, count) {
+        const form = forms[label];
+        const before = await heap();
+        const marks = [];
+        const started = performance.now();
+        let broke = null;
+        for (let i = 0; i < count && broke === null; i++) {
+          const answer = await ask({
+            type: "faust",
+            name: `arena_${label}_${i}`,
+            kind: form.kind,
+            def: form.text(i),
+          });
+          if ("error" in answer) broke = { at: i, error: answer.error };
+          else marks.push(await heap());
+        }
+        const after = marks.length > 0 ? marks[marks.length - 1] : before;
+        const grew = after - before;
+        const per = marks.length > 1 ? (after - marks[0]) / (marks.length - 1) : grew;
+        const { reloads } = await stat();
+        const each = (performance.now() - started) / Math.max(1, marks.length);
+        log(`${label}: ${marks.length} defs compiled, arena ${mib(before)} -> ${mib(after)} MiB`);
+        log(`  ${(per / 1024).toFixed(1)} KiB per def after the first,`
+            + ` ${each.toFixed(0)} ms per def,`
+            + ` ${reloads} compiler${reloads === 1 ? "" : "s"} discarded so far`);
+        if (broke !== null) log(`  BROKE at def ${broke.at}: ${broke.error}`);
+        return { kind: label, compiled: marks.length, after, per, broke, reloads, each };
+      }
+
+      async function measure() {
+        document.getElementById("run").disabled = true;
+        const params = new URLSearchParams(location.search);
+        const kinds = (params.get("kinds") ?? "source,boxes,signals").split(",");
+        const count = Number(params.get("count") ?? 16);
+        try {
+          log(`arena before the compiler is loaded: ${mib(await heap())} MiB`);
+          const runs = [];
+          for (const kind of kinds) runs.push(await pass(kind, count));
+          const broke = runs.filter((r) => r.broke !== null);
+          const line = broke.length > 0
+            ? `BROKE: ${broke.map((r) => `${r.kind} at def ${r.broke.at} of ${count}`).join(", ")}`
+              + ` (${runs.map((r) => `${r.kind} ${(r.per / 1024).toFixed(1)} KiB/def`).join(", ")})`
+            : `RESULT: ${runs.map((r) => `${r.kind} ${r.each.toFixed(0)} ms/def`).join(", ")}`
+              + `, arena at ${mib(runs[runs.length - 1].after)} MiB`
+              + `, ${runs[runs.length - 1].reloads} compiler reloads`;
+          log(line);
+          document.title = line;
+          if (smoke) fetch(`/smoke-verdict-${encodeURIComponent(line)}`).catch(() => {});
+        } catch (e) {
+          log(`FAILED: ${e}`);
+          document.title = `FAILED: ${e}`;
+          if (smoke) fetch(`/smoke-verdict-FAILED-${encodeURIComponent(String(e))}`)
+            .catch(() => {});
+        }
+      }
+
+      document.getElementById("run").addEventListener("click", () => void measure());
+      if (smoke) void measure();
+    </script>
+  </body>
+</html>

@@ -834,11 +834,32 @@ entries keep their original paths as a record of what shipped where. See
   - ⬜ **`soundfile`** in a Faust def: the wasm backend has no soundfile
     support, so `FaustSynth::new` ignores the buffer pool there. A def that
     declares one is silent rather than failing.
-  - ⬜ **The page keeps one lib context for its life and never destroys it**,
-    because destroying one poisons the next (recorded in `docs/decisions.md`
-    with the reproduction). Terms accumulate in that arena for as long as the
-    tab lives. Not measured: a page that compiles defs in a loop would grow,
-    and nothing says by how much per def.
+  - ✅ **The page keeps one lib context for its life and never destroys it**
+    *(2026-08-26)* — measured, and the measurement found a defect and closed
+    it. `clients/web/tests/faust-arena.html` compiles distinct defs in a loop
+    and reports the compiler's own linear memory; it is a **diagnostic, not an
+    acceptance** (absent from the page list the way `tests/wheel.html` is), and
+    the Worker's `faust-heap` request is its one caller.
+
+    **The arena was never the cost**: 24 distinct defs leave it exactly where
+    the first one left it, at 26 MiB. **The call stack was.** A wasm frame sits
+    on the JavaScript engine's stack — about a megabyte, against a native
+    thread's eight, and nothing to do with the `STACK_SIZE=8MB` the compiler is
+    linked with — and libfaust recurses over the term graph of everything
+    compiled so far, so a page compiling distinct **recursive signal** defs ran
+    out at roughly every other def and answered `stack overflow` on a def that
+    was perfectly well formed. Eight of the same defs compile in one context
+    natively, which is what said the interpreter was not at fault.
+
+    The fix is a **fresh compiler**: a def that exhausts the stack is compiled
+    again in a new Emscripten instance and succeeds. It does not contradict the
+    rule above — what poisons a page is a context that was *destroyed*, not a
+    second one that exists — and it costs one instantiation, with the fetch in
+    cache and the module already compiled: twelve such defs in a row, six
+    replacements between them, average 18 ms each against the 9 ms a def that
+    never overflows costs. Written up in `docs/decisions.md` ("A third
+    silence") and on `clients/web/docs/src/platform.md`, which no longer
+    carries a reduction here because there is none left to carry.
 
 - ✅ **B6 — the second scope: a Worker for the work that is neither audio nor UI** *(done 2026-08-25)*.
   The browser engine collapsed four kinds of native thread onto one, and the bill
