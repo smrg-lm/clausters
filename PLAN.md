@@ -783,13 +783,27 @@ entries keep their original paths as a record of what shipped where. See
     `createDSPFactory` and nothing else — Faust's Emscripten bindings carry no
     Box or Signal API — so those two payloads fail in a page today, with a
     message saying so, and are written into
-    `clients/web/docs/src/platform.md`. Three ways to close it, none costed
-    yet: patch the vendored build to embind the box/signal C API (a fifth
-    departure in `third_party/build-faust-wasm.sh`, plus a Rust import shim so
-    `faust::boxes` stays the one interpreter); or print the JSON to Faust
-    source, which is a second implementation of one schema and is exactly what
-    this project does not do; or leave it and say so. **The first is the only
-    one that keeps one interpreter**, and that is the point of the rule.
+    `clients/web/docs/src/platform.md`. Two ways out, and only one of them is
+    allowed here: **print the JSON to Faust source** is a second implementation
+    of one schema, which is the thing this project does not do — the same def
+    would compile to two different programs and nothing would report it. So the
+    other: **export the box/signal C API from the vendored build** (a fifth
+    departure in `third_party/build-faust-wasm.sh`: `EXPORTED_FUNCTIONS` for
+    `_Cbox*`/`_createCDSPFactoryFromBoxes` and the runtime's `stringToUTF8`
+    /`_malloc`, all of which are already compiled into the archive —
+    `box_signal_api.cpp` is in it — and only dropped at link) and give
+    `clausters-nrt-web` an `ffi_web` declaring them as imports, so
+    `faust::boxes` and `faust::signals` stay the one interpreter and compile
+    for wasm32 unchanged.
+
+    The one thing that is not mechanical, and the reason this is its own item:
+    **the two modules do not share an address space**. A box handle is an
+    integer and crosses freely, but every `const char*` — a slider's label, an
+    `fconst` name, the factory's name and argv, the error buffer — is a pointer
+    into *libfaust's* memory, and Rust would be passing its own. So those
+    imports are not a 1:1 binding of the C API but a small marshalling shim
+    (about ten of them take a string), taking `(ptr, len)` in the Worker's
+    memory and copying into libfaust's. Everything else is a straight import.
   - ⬜ **The parity vector.** `scripts/parity-web.sh` renders a Faust score
     natively and in wasm and compares. Blocked by nothing but the offline
     render's own gap: a page's offline render cannot compile a def (the

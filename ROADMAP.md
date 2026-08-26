@@ -197,19 +197,25 @@ not ask.*
   and has been at parity since — so the TypeScript left is `defs/boxes.ts`
   alone, which is not blocked on anything. The other half is the engine's, and
   it is now **`B5`** (root `PLAN.md`, B track), with its design decided rather
-  than deferred: the page's Faust is compiled on the main thread and linked
-  into the engine's own memory and function table, which is what keeps a Faust
-  node a node in a tab (`docs/decisions.md`). The two ship together and
+  than deferred: the page's Faust is compiled in the NRT worker and linked into
+  the engine's own memory and function table, which is what keeps a Faust node a
+  node in a tab (`docs/decisions.md`). The two ship together and
   `faust/boxes-library` waits on **B5**, not on the compiler artifact.
 
-  **And B5 waits on `B6`**, which **closed the same day**: the browser engine
-  had collapsed four kinds of native thread onto one, so the Faust compiler had
+  **And B5 waited on `B6`**, which closed the same day: the browser engine had
+  collapsed four kinds of native thread onto one, so the Faust compiler had
   nowhere to run that was not the audio thread or the GUI's frames. B6 gave it
   one — a dedicated Worker for the work that is neither audio nor UI — and with
   it the three things that were waiting on the same absence: a serving turn with
   a budget, the page's own filesystem behind `/buffer_allocRead`, and
-  `diskIn`/`diskOut` in a tab. What B5 still owes is its own: the compiler
-  artifact and the linked module.
+  `diskIn`/`diskOut` in a tab.
+
+  **B5's source form closed on 2026-08-25** and a def now compiles and sounds in
+  a tab. What it still owes is listed under its own entry, and the one that
+  matters for the non-divergence rule is first: the **signal and box forms**,
+  which the vendored `libfaust-wasm` cannot compile because Faust's Emscripten
+  bindings expose no Box or Signal API. Since `faust/boxes-library` is exactly a
+  box-form example, **it waits on that item**, not on B5 as a whole.
 
 - ⬜ **C44 — the inverse direction: a widget inside a def** *(`clients/python/
   PLAN.md`, the API reform track)*, deliberately last and possibly never: it is
