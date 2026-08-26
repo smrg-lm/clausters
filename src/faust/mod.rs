@@ -32,22 +32,22 @@
 //! separation is the Worker's, and the audio thread only ever calls the
 //! module's `compute`.
 
+// The def formats and the binding they drive: one interpreter on both
+// targets. On wasm32 the `ffi` symbols are not linked but **imported** — the
+// page binds them to the compiler it carries (see `compiler_web`).
+pub mod args;
+pub mod boxes;
+pub mod ffi;
 pub mod json_ui;
+pub mod json_util;
+pub mod signals;
 pub mod wasm_module;
 
-#[cfg(not(target_arch = "wasm32"))]
-pub mod json_util;
-
-#[cfg(not(target_arch = "wasm32"))]
-pub mod boxes;
+// The LLVM JIT's own: a factory to own, and a bitcode cache to persist it in.
 #[cfg(not(target_arch = "wasm32"))]
 pub mod cache;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod factory;
-#[cfg(not(target_arch = "wasm32"))]
-pub mod ffi;
-#[cfg(not(target_arch = "wasm32"))]
-pub mod signals;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub mod compiler;

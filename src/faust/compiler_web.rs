@@ -185,3 +185,40 @@ pub unsafe fn link(compute: u32, init: u32, json: &str) -> Result<FaustDef, Stri
         )
     }
 }
+
+/// Builds a Faust **box** from a JSON box tree, inside the compiler's arena.
+///
+/// The interpreter is [`crate::faust::boxes`] — the same one a native server
+/// runs, and the reason this milestone exists at all: a def built with the box
+/// API must mean the same thing in a tab and in a window, which only holds if
+/// one program reads it. Here its `Cbox*` calls are imports the page binds to
+/// the compiler it carries.
+///
+/// The handle is that compiler's own, and it is what
+/// `libFaustWasm.createDSPFactoryFromBoxes` takes.
+///
+/// # Safety
+/// Must run between `createLibContext` and `destroyLibContext`; the handle is
+/// an arena pointer valid only inside that bracket.
+pub unsafe fn box_from_json(json: &str) -> Result<u32, String> {
+    let root: serde_json::Value =
+        serde_json::from_str(json).map_err(|e| format!("invalid JSON: {e}"))?;
+    // Labels: libfaust copies each as it is handed over, so these only have to
+    // outlive the calls themselves.
+    let mut cstrings = Vec::new();
+    let boxed = unsafe { crate::faust::boxes::build_process(&root, &mut cstrings) }?;
+    Ok(boxed as u32)
+}
+
+/// The twin of [`box_from_json`] over a JSON signal tree
+/// ([`crate::faust::signals`]): one handle per output, in declaration order.
+///
+/// # Safety
+/// As [`box_from_json`].
+pub unsafe fn signals_from_json(json: &str) -> Result<Vec<u32>, String> {
+    let root: serde_json::Value =
+        serde_json::from_str(json).map_err(|e| format!("invalid JSON: {e}"))?;
+    let mut cstrings = Vec::new();
+    let outputs = unsafe { crate::faust::signals::build_signals(&root, &mut cstrings) }?;
+    Ok(outputs.into_iter().map(|s| s as u32).collect())
+}

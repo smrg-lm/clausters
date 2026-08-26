@@ -6748,6 +6748,55 @@ rests on that table and it was gone from the staged bundle. `--keep-lld-exports`
 on the engine's bundle alone keeps it; the other three bundles link no second
 module and keep the smaller surface.
 
+**The interpreters are the server's, and they run in the page.** A def sent as a
+box or a signal tree is read by `faust::boxes` and `faust::signals` — the same
+Rust a native server runs, compiled to wasm and living in the NRT worker — and
+what they issue is Faust's own C API. The alternative was to read the schema
+again in TypeScript, or to print it back to Faust source; both are a second
+implementation of one schema, and the failure they produce is a def that means
+something slightly different in a tab than in a window, with nothing to report
+it. Two things had to be built for the interpreters to reach the compiler:
+
+- **Faust's Emscripten bindings expose only `createDSPFactory`.** The wasm
+  backend has `createWasmDSPFactoryFromBoxes` and `...FromSignals` already; what
+  was missing was the JS-facing surface over them and the C API being exported at
+  all. `third_party/faust-wasm-bindings.patch` adds four embind methods, and the
+  link exports the C API — the list read out of `src/faust/ffi.rs`, so a call the
+  interpreter grows and the artifact does not export fails at load, by name,
+  rather than later.
+- **The two modules do not share an address space.** A box handle is an integer
+  and crosses as it is; a `const char*` is a pointer into whichever module made
+  it. `faust-shim.js` is that boundary and nothing else: it reads a C string out
+  of the interpreter's memory and writes it into the compiler's, copies a
+  NULL-terminated handle array the same way, and gives `CDSPToBoxes` its `argv`
+  and its three out-pointers. Which arguments are strings is a table of
+  nineteen entries; everything else passes through.
+
+**Two more silences, both found by building it and both worth the words.** They
+have the same shape as the two above — the thing works, then a *later* def fails
+for no reason anyone would connect to it.
+
+- **A label freed when its call returns breaks a def compiled afterwards.**
+  Faust keeps what it was handed, so the native path holds every `CString` until
+  the factory exists and says so. Freeing per call passes every small test and
+  then, once the heap has churned enough to hand the block out again, breaks the
+  term merging hash-consing does: a graph that shares a subterm stops sharing it,
+  and a recursion over it never terminates. It is reported as a stack overflow
+  inside the compiler. So the shim holds one arena per def and frees it when the
+  factory exists.
+- **A destroyed lib context poisons the next one**, the same way and with the
+  same report. The native path brackets every def with
+  `createLibContext`..`destroyLibContext`; here that bracket is what breaks the
+  *following* def — reproduced down to two, a box with a `rec` and then anything
+  recursive. So a page opens one arena and keeps it, which also costs less than
+  one per def. That in turn decides how **source** is compiled: through the box
+  schema's own escape hatch (`{"op": "faust", "src": …}`, which is
+  `CDSPToBoxes`) rather than through `createDSPFactory`, because that entry
+  point allocates and destroys a context of its own and would take the page's
+  arena down with it. One consequence worth naming: all three formats now reach
+  the compiler by one path, which is a better shape than the one this started
+  from.
+
 **Three assumptions carry this, and all three were checked before anything was
 built on them** — a probe that instantiates a hand-emitted second module against
 a Rust one. They hold: `-C link-arg=--export-table -C link-arg=--growable-table`

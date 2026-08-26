@@ -1,0 +1,116 @@
+diff --git a/compiler/generator/wasm/bindings/adapter.cpp b/compiler/generator/wasm/bindings/adapter.cpp
+index 3147614e4..708466d92 100644
+--- a/compiler/generator/wasm/bindings/adapter.cpp
++++ b/compiler/generator/wasm/bindings/adapter.cpp
+@@ -87,6 +87,58 @@ FaustWasm libFaustWasm::createDSPFactory(const string name, const string dsp_con
+     return out;
+ }
+ 
++// -- clausters: the same shape as createDSPFactory above, over the Box and
++// Signal entry points. Everything after the factory call is identical, so it
++// is one helper.
++static FaustWasm wrapFactory(wasm_dsp_factory* factory)
++{
++    FaustWasm out;
++    if (factory) {
++        out.cfactory = int(factory);
++        string code = factory->getBinaryCode();
++        for (size_t i = 0; i < code.size(); i++) {
++            out.data.push_back(code[i]);
++        }
++        stringstream json;
++        factory->writeHelper(&json, false, false);
++        out.json = json.str();
++    }
++    return out;
++}
++
++FaustWasm libFaustWasm::createDSPFactoryFromBoxes(const string name, int box,
++                                                  const string args_aux, bool internal_memory)
++{
++    vector<string> argsv;
++    string2StringsVector(args_aux, argsv);
++    size_t       n = argsv.size();
++    string       error_msg;
++    const char** args = stringVector2argv(argsv);
++    wasm_dsp_factory* factory = ::createWasmDSPFactoryFromBoxes(
++        name, (Tree)(void*)box, n, args, error_msg, internal_memory);
++    delete[] args;
++    return wrapFactory(factory);
++}
++
++FaustWasm libFaustWasm::createDSPFactoryFromSignals(const string name, int signals, int count,
++                                                    const string args_aux, bool internal_memory)
++{
++    vector<string> argsv;
++    string2StringsVector(args_aux, argsv);
++    size_t       n = argsv.size();
++    string       error_msg;
++    const char** args = stringVector2argv(argsv);
++    tvec         outputs;
++    int*         handles = (int*)(void*)signals;
++    for (int i = 0; i < count; i++) {
++        outputs.push_back((Tree)(void*)handles[i]);
++    }
++    wasm_dsp_factory* factory =
++        ::createWasmDSPFactoryFromSignals(name, outputs, n, args, error_msg, internal_memory);
++    delete[] args;
++    return wrapFactory(factory);
++}
++
+ void libFaustWasm::deleteDSPFactory(int cfactory)
+ {
+     deleteWasmDSPFactory(static_cast<wasm_dsp_factory*>((void*)cfactory));
+diff --git a/compiler/generator/wasm/bindings/adapter.h b/compiler/generator/wasm/bindings/adapter.h
+index 12d407914..63200d4d2 100644
+--- a/compiler/generator/wasm/bindings/adapter.h
++++ b/compiler/generator/wasm/bindings/adapter.h
+@@ -29,6 +29,10 @@
+ #include "wasm_dynamic_dsp_aux.hh"
+ 
+ extern "C" LIBFAUST_API const char* getCLibFaustVersion();
++// clausters: declared here rather than pulling in libfaust-box.h, which would
++// drag the whole Box API into a header that needs two symbols from it.
++extern "C" LIBFAUST_API void createLibContext();
++extern "C" LIBFAUST_API void destroyLibContext();
+ 
+ struct FaustWasm {
+     int              cfactory;
+@@ -47,6 +51,19 @@ class libFaustWasm {
+ 
+     FaustWasm createDSPFactory(const std::string name, const std::string dsp_content,
+                                const std::string args_aux, bool internal_memory);
++
++    // -- clausters: the Box and Signal APIs, which upstream binds for the
++    // native library and not for the wasm one. The backend entry points
++    // (createWasmDSPFactoryFromBoxes / ...FromSignals) already exist; only the
++    // JS-facing surface was missing. Handles cross as ints, the way `cfactory`
++    // already does; `signals` is a pointer into this module's own heap holding
++    // `count` of them, since the caller builds them here.
++    void      createLibContext() { ::createLibContext(); }
++    void      destroyLibContext() { ::destroyLibContext(); }
++    FaustWasm createDSPFactoryFromBoxes(const std::string name, int box,
++                                        const std::string args_aux, bool internal_memory);
++    FaustWasm createDSPFactoryFromSignals(const std::string name, int signals, int count,
++                                          const std::string args_aux, bool internal_memory);
+     void      deleteAllDSPFactories() { ::deleteAllWasmDSPFactories(); }
+     void      deleteDSPFactory(int cfactory);
+ 
+diff --git a/compiler/generator/wasm/bindings/binding.cpp b/compiler/generator/wasm/bindings/binding.cpp
+index b25c23518..22f09f5bd 100644
+--- a/compiler/generator/wasm/bindings/binding.cpp
++++ b/compiler/generator/wasm/bindings/binding.cpp
+@@ -41,6 +41,13 @@ EMSCRIPTEN_BINDINGS(FaustModule)
+         .function("version", &libFaustWasm::version, allow_raw_pointers())
+ 
+         .function("createDSPFactory", &libFaustWasm::createDSPFactory, allow_raw_pointers())
++        // clausters: the Box and Signal APIs (see adapter.h).
++        .function("createLibContext", &libFaustWasm::createLibContext)
++        .function("destroyLibContext", &libFaustWasm::destroyLibContext)
++        .function("createDSPFactoryFromBoxes", &libFaustWasm::createDSPFactoryFromBoxes,
++                  allow_raw_pointers())
++        .function("createDSPFactoryFromSignals", &libFaustWasm::createDSPFactoryFromSignals,
++                  allow_raw_pointers())
+         .function("deleteDSPFactory", &libFaustWasm::deleteDSPFactory, allow_raw_pointers())
+         .function("deleteAllDSPFactories", &libFaustWasm::deleteAllDSPFactories)
+ 

@@ -9,12 +9,13 @@
 
 use crate::osc::ClientId;
 use crate::osc::wake::Waker;
-use std::ffi::{CStr, CString, c_char, c_int};
+use std::ffi::{CStr, CString, c_char};
 use std::path::PathBuf;
 use std::sync::{Mutex, mpsc};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
+use crate::faust::args::FaustArgs;
 use crate::faust::boxes;
 use crate::faust::cache::{self, FaustRecord};
 use crate::faust::factory::FaustFactory;
@@ -138,51 +139,6 @@ pub fn ffi_lock() -> std::sync::MutexGuard<'static, ()> {
     COMPILE_LOCK.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-/// Compiler arguments handed to libfaust as C `argc`/`argv`.
-pub(crate) struct FaustArgs {
-    storage: Vec<CString>,
-    ptrs: Vec<*const c_char>,
-}
-
-impl FaustArgs {
-    /// The arguments every factory is created with:
-    ///
-    /// - `-I <dir>` for the Faust stdlib (`stdfaust.lib` and friends), so
-    ///   both raw-source defs and `faust` fragments inside JSON can
-    ///   `import()` it. The directory comes from `$FAUST_PREFIX/share/faust`,
-    ///   falling back to `~/.local`, then `/usr/local` — same search order
-    ///   as build.rs.
-    /// - `-ftz 2`: the generated code flushes recursive variables below the
-    ///   normal float range, so decaying tails cannot strand the audio
-    ///   thread in slow subnormal math regardless of the host FPU mode (the
-    ///   architecture-independent half of [`crate::dsp::denormals`]).
-    pub(crate) fn defaults() -> Self {
-        let mut storage = vec![CString::new("-ftz").unwrap(), CString::new("2").unwrap()];
-        if let Some(dir) = stdlib_dir()
-            && let Ok(dir_c) = CString::new(dir)
-        {
-            storage.push(CString::new("-I").unwrap());
-            storage.push(dir_c);
-        }
-        // CStrings own their bytes on the heap: moving them (or the Vec)
-        // does not invalidate these pointers.
-        let ptrs = storage.iter().map(|s| s.as_ptr()).collect();
-        Self { storage, ptrs }
-    }
-
-    pub(crate) fn argc(&self) -> c_int {
-        self.storage.len() as c_int
-    }
-
-    pub(crate) fn argv(&self) -> *const *const c_char {
-        if self.ptrs.is_empty() {
-            std::ptr::null()
-        } else {
-            self.ptrs.as_ptr()
-        }
-    }
-}
-
 /// The LLVM target the factory JITs for, as a Faust `triple:mcpu` string.
 ///
 /// Empty — the default, and what a production server wants — means the host
@@ -193,21 +149,6 @@ impl FaustArgs {
 pub(crate) fn host_target() -> CString {
     let spec = std::env::var("CLAUSTERS_FAUST_TARGET").unwrap_or_default();
     CString::new(spec).unwrap_or_default()
-}
-
-fn stdlib_dir() -> Option<String> {
-    let mut prefixes = Vec::new();
-    if let Ok(prefix) = std::env::var("FAUST_PREFIX") {
-        prefixes.push(prefix);
-    }
-    if let Ok(home) = std::env::var("HOME") {
-        prefixes.push(format!("{home}/.local"));
-    }
-    prefixes.push("/usr/local".into());
-    prefixes
-        .into_iter()
-        .map(|prefix| format!("{prefix}/share/faust"))
-        .find(|dir| std::path::Path::new(dir).exists())
 }
 
 /// Holds the global FFI lock with the libfaust context open; dropping it

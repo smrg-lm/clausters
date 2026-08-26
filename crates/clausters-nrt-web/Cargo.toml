@@ -14,9 +14,11 @@ crate-type = ["cdylib", "rlib"]
 # The decoder and the Faust module surgery, and nothing else: no engine
 # features, because this shell runs in a Worker that owes no audio and holds no
 # node tree. `default-features = false` keeps cpal and midir out, and on wasm32
-# `faust` is the def *family*, not libfaust -- here it is wanted only for
-# `faust::wasm_module`, which the Worker needs before it can compile a def the
-# engine will link (see `clausters::faust`).
+# `faust` is the def *family*, not libfaust -- here it brings the two JSON
+# interpreters (`faust::boxes`, `faust::signals`) and `faust::wasm_module`,
+# which is everything the Worker needs to turn a def into a module the engine
+# can link. The C API those interpreters call is not linked but **imported**:
+# see this crate's build.rs and `clients/web/src/engine/faust-imports.js`.
 clausters = { path = "../..", default-features = false, features = ["faust"] }
 
 # The JS binding surface only exists on the wasm target, so the native

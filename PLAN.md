@@ -770,40 +770,18 @@ entries keep their original paths as a record of what shipped where. See
   transcendental imports resolve to the engine's own exports, asserted rather
   than assumed.
 
-  **Where it stands.** Three of the four pieces are built and the acceptance
-  half of the fourth is green (`clients/web/tests/faust.html`): a def sent as
-  **source** compiles in the Worker, links into the engine's memory and sounds,
-  and `/node_set "freq"` moves it — which is the parameter offset the page read
-  out of the compiler's JSON reaching the zone the module reads. The
-  transcendentals are asserted by construction: every import the module declares
-  is resolved from the engine's own exports and an unknown one is named rather
-  than left to fail. What is left:
+  **Where it stands.** The acceptance is green in all three forms
+  (`clients/web/tests/faust.html`): a def sent as **source**, as a **box tree**
+  and as a **signal tree** compiles in the Worker, links into the engine's
+  memory and sounds at the pitch it declares, and `/node_set "freq"` moves it —
+  which is the parameter offset the page read out of the compiler's JSON
+  reaching the zone the module reads. The box and signal trees are read by
+  `faust::boxes` and `faust::signals`, the server's own interpreters compiled to
+  wasm, so there is one reading of the schema and not two. The transcendentals
+  are asserted by construction: every import the module declares is resolved
+  from the engine's own exports and an unknown one is named rather than left to
+  fail. What is left:
 
-  - ⬜ **The signal and box forms.** The vendored `libfaust-wasm` exposes
-    `createDSPFactory` and nothing else — Faust's Emscripten bindings carry no
-    Box or Signal API — so those two payloads fail in a page today, with a
-    message saying so, and are written into
-    `clients/web/docs/src/platform.md`. Two ways out, and only one of them is
-    allowed here: **print the JSON to Faust source** is a second implementation
-    of one schema, which is the thing this project does not do — the same def
-    would compile to two different programs and nothing would report it. So the
-    other: **export the box/signal C API from the vendored build** (a fifth
-    departure in `third_party/build-faust-wasm.sh`: `EXPORTED_FUNCTIONS` for
-    `_Cbox*`/`_createCDSPFactoryFromBoxes` and the runtime's `stringToUTF8`
-    /`_malloc`, all of which are already compiled into the archive —
-    `box_signal_api.cpp` is in it — and only dropped at link) and give
-    `clausters-nrt-web` an `ffi_web` declaring them as imports, so
-    `faust::boxes` and `faust::signals` stay the one interpreter and compile
-    for wasm32 unchanged.
-
-    The one thing that is not mechanical, and the reason this is its own item:
-    **the two modules do not share an address space**. A box handle is an
-    integer and crosses freely, but every `const char*` — a slider's label, an
-    `fconst` name, the factory's name and argv, the error buffer — is a pointer
-    into *libfaust's* memory, and Rust would be passing its own. So those
-    imports are not a 1:1 binding of the C API but a small marshalling shim
-    (about ten of them take a string), taking `(ptr, len)` in the Worker's
-    memory and copying into libfaust's. Everything else is a straight import.
   - ⬜ **The parity vector.** `scripts/parity-web.sh` renders a Faust score
     natively and in wasm and compares. Blocked by nothing but the offline
     render's own gap: a page's offline render cannot compile a def (the
@@ -815,6 +793,11 @@ entries keep their original paths as a record of what shipped where. See
   - ⬜ **`soundfile`** in a Faust def: the wasm backend has no soundfile
     support, so `FaustSynth::new` ignores the buffer pool there. A def that
     declares one is silent rather than failing.
+  - ⬜ **The page keeps one lib context for its life and never destroys it**,
+    because destroying one poisons the next (recorded in `docs/decisions.md`
+    with the reproduction). Terms accumulate in that arena for as long as the
+    tab lives. Not measured: a page that compiles defs in a loop would grow,
+    and nothing says by how much per def.
 
 - ✅ **B6 — the second scope: a Worker for the work that is neither audio nor UI** *(done 2026-08-25)*.
   The browser engine collapsed four kinds of native thread onto one, and the bill

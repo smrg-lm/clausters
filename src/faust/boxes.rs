@@ -64,7 +64,7 @@ use std::ffi::{CStr, CString, c_char, c_int};
 
 use serde_json::{Map, Value};
 
-use crate::faust::compiler::FaustArgs;
+use crate::faust::args::FaustArgs;
 use crate::faust::ffi::{self, FaustBox};
 use crate::faust::json_util::{err, foreign_args, inputs, label_field, num_field};
 

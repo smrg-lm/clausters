@@ -26,16 +26,26 @@
 
     <!--
       The Faust acceptance (clients/web/test.sh, headless Chrome): ?smoke=1
-      auto-runs. It sends a FaustDef from source, waits for the /done the
-      compiler answers with, plays it on a bus of its own and measures what
-      lands there — then moves its `freq` control through /node_set and
-      measures again. The second measurement is the one that matters: it says
-      the parameter zone the page computed from the compiler's JSON is the zone
-      the module actually reads, which a peak alone would not catch.
+      auto-runs. It sends the same DSP three times -- as source, as a box tree
+      and as a signal tree -- waits for the /done the compiler answers with,
+      plays each on a bus of its own and measures the pitch that lands there.
+      Then it moves `freq` through /node_set and measures again.
+
+      Three things it is here to catch, none of which a "did it compile" would:
+      a form that compiles and is silent; a form that sounds at the wrong pitch,
+      which is how a box or signal tree read differently from the native
+      interpreter would show; and a control index that does not reach the zone
+      the module reads, which is what the second measurement proves.
+
+      It also runs the three in one page on purpose. Every failure found while
+      building this was an *order* failure -- a def that compiled alone and
+      broke after another one -- so a page per form would have found none of
+      them.
     -->
     <script type="module">
       import { Session, loadOsc, FaustDef, Synth, Bus, data }
         from "../dist/index.js";
+      import { signals } from "../dist/defs/index.js";
 
       const smoke = new URLSearchParams(location.search).has("smoke");
       const log = (line) => {
@@ -70,49 +80,108 @@
         const rate = probe.sampleRate;
         await probe.close();
 
-        // A def with one control, so the JSON's parameter offset is exercised
-        // and not merely present.
-        const def = FaustDef.fromSource("web_faust", `
+        // The same DSP three times, in the three forms `/def_send faust`
+        // accepts: Faust source, a box tree and a signal tree. They are not
+        // three ways of saying something similar — the box and signal trees are
+        // read by the server's own interpreters (`faust::boxes`,
+        // `faust::signals`), the same programs a native server runs, so the
+        // three must give the same sound and the same control name.
+        const TAU = 2 * Math.PI;
+        const source = `
           import("stdfaust.lib");
           freq = hslider("freq", 300, 50, 2000, 0.01);
           process = os.osc(freq) * 0.4;
-        `);
-        const t0 = performance.now();
-        await def.send(server);
-        log(`compiled in ${Math.round(performance.now() - t0)} ms`);
+        `;
+        // sin(2*pi*phasor(freq)) * 0.4, the phasor written as the box schema's
+        // `rec`. This is the doc example of the schema itself.
+        const freqBox = {
+          op: "hslider", label: "freq",
+          init: 300, min: 50, max: 2000, step: 0.01,
+        };
+        const box = {
+          op: "mul", in: [
+            { op: "sin", in: [{ op: "mul", in: [
+              TAU,
+              { op: "rec", in: [
+                { op: "seq", in: [
+                  { op: "add", in: ["_", { op: "div", in: [freqBox, rate] }] },
+                  { op: "split", in: ["_", { op: "sub", in: ["_", { op: "floor", in: ["_"] }] }] },
+                ] },
+                "_"] },
+            ] }] },
+            0.4],
+        };
+        // The same phasor in the signal API, where the feedback is explicit
+        // (`self` inside `recursion`) and the accumulator is written twice --
+        // Faust's CSE merges the identical subtrees.
+        const { hslider, rec: srec, sin: ssin, signal: sig } = signals;
+        const sfreq = hslider("freq", 300, 50, 2000, 0.01);
+        const phasor = srec((p) => {
+          const acc = p.add(sfreq.div(rate));
+          return acc.sub(acc.floor());
+        });
+        const signalDef = FaustDef.fromSignals(
+          "web_faust_signals", ssin(sig(TAU).mul(phasor)).mul(0.4));
 
-        const node = new Synth("web_faust", { out: bus.index }, { server });
-        await wait(300);
-        const taps = await data.TapStream.open(server, [bus.index],
-          { frames: 2048, periodMs: 20 });
-        await wait(400);
-        const first = taps.window(bus.index);
-        const peak = first ? Math.max(...first.samples.map(Math.abs)) : 0;
-        const low = first ? hzOf(first.samples, rate) : 0;
-        log(`default: peak ${peak.toFixed(3)}, ~${Math.round(low)} Hz`);
+        const forms = [
+          ["source", FaustDef.fromSource("web_faust_source", source)],
+          ["boxes", FaustDef.fromBox("web_faust_boxes", box)],
+          ["signals", signalDef],
+        ];
 
-        // The control by name, through the node tree, exactly as a SynthDef's
-        // would be. Nothing here knows the def is Faust.
-        node.set({ freq: 900 });
-        await wait(400);
-        const second = taps.window(bus.index);
-        const high = second ? hzOf(second.samples, rate) : 0;
-        log(`after /node_set freq 900: ~${Math.round(high)} Hz`);
+        const heard = [];
+        let peak = 0;
+        let low = 0;
+        let high = 0;
+        for (const [label, def] of forms) {
+          const t0 = performance.now();
+          try {
+            await def.send(server);
+          } catch (e) {
+            log(`${label}: FAILED to compile -- ${e && e.message ? e.message : e}`);
+            heard.push([label, 0, 0]);
+            continue;
+          }
+          const ms = Math.round(performance.now() - t0);
+          const node = new Synth(def.name, { out: bus.index }, { server });
+          await wait(300);
+          const taps = await data.TapStream.open(server, [bus.index],
+            { frames: 2048, periodMs: 20 });
+          await wait(400);
+          const window = taps.window(bus.index);
+          const p = window ? Math.max(...window.samples.map(Math.abs)) : 0;
+          const hz = window ? hzOf(window.samples, rate) : 0;
+          log(`${label}: compiled in ${ms} ms, peak ${p.toFixed(3)}, ~${Math.round(hz)} Hz`);
+          heard.push([label, p, hz]);
+          if (label === "source") {
+            peak = p;
+            low = hz;
+            // The control by name, through the node tree, exactly as a
+            // SynthDef's would be. Nothing here knows the def is Faust.
+            node.set({ freq: 900 });
+            await wait(400);
+            const moved = taps.window(bus.index);
+            high = moved ? hzOf(moved.samples, rate) : 0;
+            log(`  after /node_set freq 900: ~${Math.round(high)} Hz`);
+          }
+          node.free();
+          await wait(250);
+          taps.close?.();
+        }
 
-        node.free();
-        await wait(200);
-        const gone = taps.window(bus.index);
-        const silent = gone ? Math.max(...gone.samples.map(Math.abs)) : 1;
-        log(`after free: peak ${silent.toFixed(4)}`);
-
-        const ok = peak > 0.2 && Math.abs(low - 300) < 20
-          && Math.abs(high - 900) < 40 && silent < 0.01;
+        // Every form must sound, at the pitch it declares. A form that
+        // compiles and is silent is the failure this page exists to catch.
+        const allSound = heard.every(([, p, hz]) =>
+          p > 0.2 && Math.abs(hz - 300) < 25);
+        const ok = allSound && Math.abs(high - 900) < 40;
+        const shape = heard
+          .map(([l, p, hz]) => `${l} ${p.toFixed(2)}/${Math.round(hz)}Hz`)
+          .join(", ");
         verdict(ok
-          ? `PASS: a FaustDef compiled in the page and sounded at peak ` +
-            `${peak.toFixed(2)}, ~${Math.round(low)} Hz, and /node_set moved it ` +
-            `to ~${Math.round(high)} Hz`
-          : `FAIL: peak ${peak.toFixed(3)}, ${Math.round(low)} Hz -> ` +
-            `${Math.round(high)} Hz, after free ${silent.toFixed(4)}`);
+          ? `PASS: source, boxes and signals all compiled in the page and ` +
+            `sounded (${shape}), and /node_set moved freq to ~${Math.round(high)} Hz`
+          : `FAIL: ${shape}; after /node_set ${Math.round(high)} Hz | ` +
+            document.getElementById("log").textContent.replace(/\n/g, " / "));
         await session.close();
       }
 

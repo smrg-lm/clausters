@@ -81,6 +81,16 @@ wasm-bindgen --target web --out-dir dist/core \
 wasm-bindgen --target web --out-dir dist/nrt \
     "../../target/wasm32-unknown-unknown/$profile/clausters_nrt_web.wasm"
 
+# The NRT bundle carries the one Faust JSON interpreter, and its calls into the
+# Faust C API land in a wasm import module literally named `env`. A bare
+# specifier needs an import map and a Worker gets none, so the specifier is
+# rewritten and the module it now names is generated from the bundle's own
+# declared imports (see tools/gen-faust-env.mjs), bound by faust-shim.js to the
+# compiler the page carries.
+sed -i 's|from "env"|from "./faust-env.js"|' dist/nrt/clausters_nrt_web.js
+cp src/engine/faust-shim.js dist/nrt/faust-shim.js
+node tools/gen-faust-env.mjs
+
 # The src/ stubs: .d.ts for type-checking everywhere; the core and the engine
 # also get the glue .js, because node runs those sources directly (the codec in
 # src/base/osc.ts, the offline renderer in src/engine/render.ts) and the tests

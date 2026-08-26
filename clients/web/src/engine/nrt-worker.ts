@@ -148,9 +148,14 @@ type Decoder = {
     ) => Uint8Array;
     encodeWavFrames: (samples: Float32Array, format: string) => Uint8Array;
     stripFaustData: (module: Uint8Array) => Uint8Array;
+    faustBoxFromJson: (json: string) => number;
+    faustSignalsFromJson: (json: string) => Uint32Array;
 };
 
 let decoder: Promise<Decoder> | null = null;
+/** The NRT bundle's own linear memory: where the JSON interpreter's C strings
+ *  live, and what the Faust shim reads them out of. */
+let decoderMemory: WebAssembly.Memory | null = null;
 
 /** Loads the decoder once, on the first read — a page that never reads a
  *  soundfile never fetches it. */
@@ -160,7 +165,8 @@ function load(): Promise<Decoder> {
             const mod = (await import(
                 /* @vite-ignore */ new URL("../nrt/clausters_nrt_web.js", import.meta.url).href
             )) as Decoder;
-            await mod.default();
+            const out = (await mod.default()) as { memory: WebAssembly.Memory };
+            decoderMemory = out.memory;
             return mod;
         })();
     }
@@ -172,6 +178,18 @@ function load(): Promise<Decoder> {
 // megabytes of it. `libfaust-wasm` is an Emscripten module with a filesystem
 // of its own — the `.data` beside it is the Faust standard library, which is
 // what lets a def `import("stdfaust.lib")`.
+/** What a compilation produces: the module's bytes and the JSON beside it. */
+type FaustArtifact = { cfactory: number; data: Uint8Array | number[]; json: string };
+
+/** The Emscripten module the compiler lives in. Its heap is where the one
+ *  interpreter's strings and handle arrays have to be copied to. */
+type FaustModule = {
+    libFaustWasm: new () => FaustLib;
+    _malloc: (bytes: number) => number;
+    _free: (at: number) => void;
+    HEAP32: Int32Array;
+};
+
 type FaustLib = {
     version: () => string;
     createDSPFactory: (
@@ -179,31 +197,91 @@ type FaustLib = {
         code: string,
         args: string,
         internalMemory: boolean,
-    ) => { cfactory: number; data: Uint8Array | number[]; json: string };
+    ) => FaustArtifact;
+    createDSPFactoryFromBoxes: (
+        name: string,
+        box: number,
+        args: string,
+        internalMemory: boolean,
+    ) => FaustArtifact;
+    createDSPFactoryFromSignals: (
+        name: string,
+        signals: number,
+        count: number,
+        args: string,
+        internalMemory: boolean,
+    ) => FaustArtifact;
+    createLibContext: () => void;
+    destroyLibContext: () => void;
     deleteDSPFactory: (factory: number) => void;
     getErrorAfterException: () => string;
     cleanupAfterException: () => void;
 };
 
-let faust: Promise<FaustLib> | null = null;
+/** The marshalling between the interpreter's memory and the compiler's. */
+type FaustShim = {
+    attach: (m: FaustModule, memory: WebAssembly.Memory) => void;
+    beginScope: () => void;
+    endScope: () => void;
+};
 
-/** Loads the compiler once, on the first `/def_send faust`. */
-function compiler(): Promise<FaustLib> {
+let faust: Promise<{ lib: FaustLib; mod: FaustModule }> | null = null;
+let faustShim: FaustShim | null = null;
+/**
+ * Whether the compiler currently has a lib context — the arena a box or signal
+ * tree is built in.
+ *
+ * **It is opened and never closed, and that is deliberate.** The native path
+ * brackets every def with `createLibContext`..`destroyLibContext`
+ * (`faust::compiler`). Here, destroying it *poisons the next one*: a def built
+ * afterwards loses the term merging Faust's hash-consing does, so a graph that
+ * shares a subterm stops sharing it and a recursion over it never terminates —
+ * reported as a stack overflow inside the compiler, with nothing pointing back
+ * at the def that closed the previous context. Reproduced down to two defs (a
+ * box with a `rec`, then anything recursive) and gone the moment the destroy
+ * goes. So the page keeps one arena for its whole life instead, which also
+ * costs less than one per def.
+ *
+ * Two things take it away underneath us, and both are tracked here rather than
+ * discovered: compiling **source** allocates and destroys a context of its own
+ * (Faust's `createFactory` does it), and so does the compiler's own cleanup
+ * after an exception.
+ */
+let contextLive = false;
+
+/**
+ * Loads the compiler once, on the first `/def_send faust`, and points the
+ * marshalling shim at it.
+ *
+ * The shim is what lets the *server's* JSON interpreters -- `faust::boxes` and
+ * `faust::signals`, running in this Worker's own wasm -- drive this compiler:
+ * their `Cbox*`/`Csig*` calls are imports of the NRT bundle, bound in
+ * `faust-env.js` and marshalled in `faust-shim.js`. The two modules do not
+ * share an address space, which is the whole reason the shim exists.
+ */
+function compiler(): Promise<{ lib: FaustLib; mod: FaustModule }> {
     if (faust === null) {
         faust = (async () => {
             const base = new URL("../vendor/faust/", import.meta.url);
-            type Emscripten = { libFaustWasm: new () => FaustLib };
             const glue = (await import(
                 /* @vite-ignore */ new URL("libfaust-wasm.js", base).href
             )) as {
-                default: (opts: { locateFile: (p: string) => string }) => Promise<Emscripten>;
+                default: (opts: { locateFile: (p: string) => string }) => Promise<FaustModule>;
             };
             // An ES module has no `document.currentScript`, so the glue cannot
             // find its own .wasm and .data on its own.
             const mod = await glue.default({
                 locateFile: (p: string) => new URL(p, base).href,
             });
-            return new mod.libFaustWasm();
+            // The interpreter's memory has to exist before the shim can read a
+            // label out of it, and it is the decoder bundle's.
+            await load();
+            const shim = (await import(
+                /* @vite-ignore */ new URL("../nrt/faust-shim.js", import.meta.url).href
+            )) as FaustShim;
+            shim.attach(mod, decoderMemory as WebAssembly.Memory);
+            faustShim = shim;
+            return { lib: new mod.libFaustWasm(), mod };
         })();
     }
     return faust;
@@ -362,26 +440,23 @@ async function handle(request: Request, post: (r: Response, t?: Transferable[]) 
  */
 async function compile(request: FaustRequest): Promise<Response> {
     const { ticket, name } = request;
-    if (request.kind !== "source") {
-        // The vendored compiler exposes `createDSPFactory` and nothing else:
-        // no Box API, no Signal API. Both are Faust's own C API and neither is
-        // in its Emscripten bindings, so a def built from the signal or box
-        // surface cannot be compiled in a page yet. Named rather than
-        // swallowed — see clients/web/docs/src/platform.md.
-        return {
-            type: "faust",
-            ticket,
-            error: `a Faust def built from ${request.kind} cannot be compiled in a page yet; \
-send it as source`,
-        };
-    }
-    const lib = await compiler();
-    let out: { cfactory: number; data: Uint8Array | number[]; json: string };
+    const { lib, mod } = await compiler();
+    let out: FaustArtifact;
     try {
-        out = lib.createDSPFactory(name, request.def, "-ftz 2", false);
+        out = await factory(lib, mod, request);
     } catch (e) {
+        // Two reports, and neither is enough alone. The compiler keeps its own
+        // message and hands it over here; but when the throw is *ours* -- the
+        // marshalling refusing something -- that message says "stack overflow",
+        // which is what `getErrorAfterException` answers for any exception it
+        // did not raise itself. So both travel, and the def's name with them.
+        const inside = lib.getErrorAfterException().trim();
+        const outside = message(e).trim();
+        // `cleanupAfterException` is `global::destroy()` under another name.
         lib.cleanupAfterException();
-        return { type: "faust", ticket, error: lib.getErrorAfterException() || message(e) };
+        contextLive = false;
+        const error = inside && inside !== outside ? `${inside} (${outside})` : outside || inside;
+        return { type: "faust", ticket, error };
     }
     if (!out.cfactory) {
         const error = lib.getErrorAfterException() || "the Faust compiler produced no factory";
@@ -404,6 +479,69 @@ send it as source`,
         stripped.byteOffset + stripped.byteLength,
     ) as ArrayBuffer;
     return { type: "faust", ticket, bytes, json: out.json };
+}
+
+/** The compiler arguments both builds use. `-ftz 2` is the one that matters. */
+const FAUST_ARGS = "-ftz 2";
+
+/**
+ * The three def formats, each to its own entry point — the same three a native
+ * server has, and the reason the whole shim exists.
+ *
+ * Source goes straight in. A box tree and a signal tree are read by
+ * `faust::boxes` and `faust::signals`, in this Worker's wasm: the *server's*
+ * interpreters, not a second reading of the schema written in TypeScript. What
+ * they build lives in the compiler's arena, so it is only valid between
+ * `createLibContext` and `destroyLibContext` — the factory is made inside that
+ * bracket too, exactly as the native path does it.
+ */
+async function factory(
+    lib: FaustLib,
+    mod: FaustModule,
+    request: FaustRequest,
+): Promise<FaustArtifact> {
+    const { name, def } = request;
+    const { faustBoxFromJson, faustSignalsFromJson } = await load();
+    // Everything the interpreter hands the compiler -- a label, an `fconst`
+    // name, a waveform's values -- has to outlive the whole construction, not
+    // the call that took it. The scope is what holds it; see faust-shim.js,
+    // which says what happens when it does not.
+    faustShim?.beginScope();
+    if (!contextLive) {
+        lib.createLibContext();
+        contextLive = true;
+    }
+    try {
+        if (request.kind === "signals") {
+            const handles = faustSignalsFromJson(def);
+            // The outputs are the compiler's own handles; it wants them in its
+            // own heap, one word each.
+            const at = mod._malloc(handles.length * 4);
+            try {
+                for (let i = 0; i < handles.length; i++) mod.HEAP32[at / 4 + i] = handles[i]!;
+                return lib.createDSPFactoryFromSignals(
+                    name,
+                    at,
+                    handles.length,
+                    FAUST_ARGS,
+                    false,
+                );
+            } finally {
+                mod._free(at);
+            }
+        }
+        // Source included: a program becomes a box through the schema's own
+        // escape hatch (`{"op": "faust", "src": …}`, which is `CDSPToBoxes`),
+        // so all three formats reach the compiler the same way and the page
+        // keeps one arena. Compiling source through `createDSPFactory` instead
+        // works, but it allocates and destroys a context of its own, and a
+        // destroyed context is what poisons the next one -- see `contextLive`.
+        const tree = request.kind === "source" ? JSON.stringify({ op: "faust", src: def }) : def;
+        return lib.createDSPFactoryFromBoxes(name, faustBoxFromJson(tree), FAUST_ARGS, false);
+    } finally {
+        // No `destroyLibContext` here: see `contextLive`.
+        faustShim?.endScope();
+    }
 }
 
 const message = (e: unknown) => String(e instanceof Error ? e.message : e);

@@ -43,6 +43,22 @@
 #      link time -- so the link fails with a few hundred undefined
 #      `std::__2::` symbols, which reads like a broken toolchain and is not one.
 #
+# **And it patches the bindings**, which is the fifth departure and the largest:
+# upstream binds the Box and Signal APIs for the *native* library and not for
+# the wasm one, so a page could only ever compile Faust *source*. The backend
+# entry points already exist (`createWasmDSPFactoryFromBoxes` and
+# `...FromSignals`, in `wasm_dynamic_dsp_aux.cpp`); what was missing was the
+# JS-facing surface over them and the C box/signal API being exported at all.
+# `faust-wasm-bindings.patch` adds four embind methods, and the link exports the
+# C API itself -- the list read out of `src/faust/ffi.rs`, so the two cannot
+# drift: whatever the one interpreter calls, the artifact exports.
+#
+# This matters more than it looks. Without it a def built with the signal or box
+# API compiles in a window and fails in a tab, and the same client program means
+# two different things depending on where it runs. With it, `faust::boxes` and
+# `faust::signals` -- the *one* JSON interpreter, in Rust -- run in the page's
+# Worker and drive this compiler through those exports.
+#
 # And two things it does to the artifact, both so it can be *imported* rather
 # than script-tagged:
 #
@@ -98,6 +114,11 @@ if [ "${FAUST_SKIP_FETCH:-0}" != "1" ]; then
     git -C "$src" checkout -- build
 fi
 
+echo "== patching the wasm bindings (the Box and Signal APIs)"
+git -C "$src" apply --check "$here/faust-wasm-bindings.patch" 2>/dev/null \
+    && git -C "$src" apply "$here/faust-wasm-bindings.patch" \
+    || echo "   (already applied)"
+
 echo "== configuring (pin $FAUST_SHA)"
 build="$src/build"
 faustdir="$build/faustdir"
@@ -116,9 +137,19 @@ echo "== building the compiler (this takes a while)"
 make -C "$build" wasmlib || true
 
 echo "== linking with em++, for the browser"
+# The C box/signal API the one interpreter calls, read out of its own binding so
+# the artifact and `faust::ffi` cannot disagree. `_malloc`/`_free` come along
+# because the caller writes a signal vector into this module's heap, and the
+# runtime methods because every label crosses as bytes.
+exports=$(grep -oE '\bpub fn (Cbox[A-Za-z0-9_]*|Csig[A-Za-z0-9_]*|CDSPToBoxes)\b' \
+              "$root/src/faust/ffi.rs" \
+          | awk '{print "\"_"$3"\""}' | sort -u | paste -sd,)
+exports="$exports,\"_malloc\",\"_free\""
+runtime='"stringToUTF8","lengthBytesUTF8","UTF8ToString","HEAPU8","HEAP32","getValue","setValue"'
+
 ( cd "$faustdir/emcc" \
   && sed -e '1s/^emcc /em++ /' \
-         -e '1s/ -o libfaust-wasm.js/ -s ENVIRONMENT=web,worker -o libfaust-wasm.js/' \
+         -e "1s| -o libfaust-wasm.js| -s ENVIRONMENT=web,worker -s EXPORTED_FUNCTIONS=[$exports] -s EXPORTED_RUNTIME_METHODS=[$runtime] -o libfaust-wasm.js|" \
          CMakeFiles/wasmlib.dir/link.txt > .relink.sh \
   && bash .relink.sh \
   && rm -f .relink.sh )

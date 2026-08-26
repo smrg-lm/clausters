@@ -47,6 +47,31 @@ export function decodeAudio(bytes: Uint8Array, ext: string, label: string, file_
 export function encodeWavFrames(samples: Float32Array, sample_format: string): Uint8Array;
 
 /**
+ * Builds a Faust **box** from a JSON box tree — `faust::boxes`, the same
+ * interpreter a native server runs, driven here against the compiler the page
+ * carries.
+ *
+ * Returns the box's handle inside that compiler's own arena, which is what
+ * `libFaustWasm.createDSPFactoryFromBoxes` takes. Nothing is valid outside the
+ * caller's `createLibContext`..`destroyLibContext` bracket, and opening that
+ * bracket is the caller's job: the factory is created inside it too.
+ *
+ * # Safety
+ * Must be called between `createLibContext` and `destroyLibContext`.
+ */
+export function faustBoxFromJson(json: string): number;
+
+/**
+ * Builds a Faust **signal vector** from a JSON signal tree —
+ * `faust::signals`, the twin of the above. The handles come back in
+ * declaration order, one per output.
+ *
+ * # Safety
+ * Must be called between `createLibContext` and `destroyLibContext`.
+ */
+export function faustSignalsFromJson(json: string): Uint32Array;
+
+/**
  * Removes the data segment a Faust wasm module carries, so the module can be
  * instantiated against the engine's own linear memory.
  *
@@ -85,6 +110,8 @@ export interface InitOutput {
     readonly decoded_sampleRate: (a: number) => number;
     readonly decoded_samples: (a: number) => [number, number];
     readonly encodeWavFrames: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly faustBoxFromJson: (a: number, b: number) => [number, number, number];
+    readonly faustSignalsFromJson: (a: number, b: number) => [number, number, number, number];
     readonly stripFaustData: (a: number, b: number) => [number, number, number, number];
     readonly wavHeader: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
     readonly clausters_abi_version: () => number;

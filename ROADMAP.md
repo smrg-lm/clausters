@@ -210,12 +210,13 @@ not ask.*
   a budget, the page's own filesystem behind `/buffer_allocRead`, and
   `diskIn`/`diskOut` in a tab.
 
-  **B5's source form closed on 2026-08-25** and a def now compiles and sounds in
-  a tab. What it still owes is listed under its own entry, and the one that
-  matters for the non-divergence rule is first: the **signal and box forms**,
-  which the vendored `libfaust-wasm` cannot compile because Faust's Emscripten
-  bindings expose no Box or Signal API. Since `faust/boxes-library` is exactly a
-  box-form example, **it waits on that item**, not on B5 as a whole.
+  **B5's three def forms closed on 2026-08-25**: source, boxes and signals all
+  compile and sound in a tab, read by the server's own interpreters rather than
+  by a second reading of the schema. So **`faust/boxes-library` is unblocked**,
+  and W7's remaining TypeScript (`defs/boxes.ts`) is the only thing between it
+  and being written. What B5 still owes is smaller and listed under its own
+  entry: the parity vector, the "no compiler asset for a SynthDef-only bundle"
+  assertion, `soundfile`, and the lib context the page never destroys.
 
 - ⬜ **C44 — the inverse direction: a widget inside a def** *(`clients/python/
   PLAN.md`, the API reform track)*, deliberately last and possibly never: it is

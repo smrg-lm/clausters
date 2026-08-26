@@ -147,3 +147,32 @@ pub fn encode_wav_frames_bytes(samples: &[f32], sample_format: &str) -> Result<V
 pub fn strip_faust_data(module: &[u8]) -> Result<Vec<u8>, String> {
     clausters::faust::wasm_module::strip_data_section(module)
 }
+
+/// Builds a Faust **box** from a JSON box tree — `faust::boxes`, the same
+/// interpreter a native server runs, driven here against the compiler the page
+/// carries.
+///
+/// Returns the box's handle inside that compiler's own arena, which is what
+/// `libFaustWasm.createDSPFactoryFromBoxes` takes. Nothing is valid outside the
+/// caller's `createLibContext`..`destroyLibContext` bracket, and opening that
+/// bracket is the caller's job: the factory is created inside it too.
+///
+/// # Safety
+/// Must be called between `createLibContext` and `destroyLibContext`.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = faustBoxFromJson)]
+pub fn faust_box_from_json(json: &str) -> Result<u32, String> {
+    unsafe { clausters::faust::compiler::box_from_json(json) }
+}
+
+/// Builds a Faust **signal vector** from a JSON signal tree —
+/// `faust::signals`, the twin of the above. The handles come back in
+/// declaration order, one per output.
+///
+/// # Safety
+/// Must be called between `createLibContext` and `destroyLibContext`.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = faustSignalsFromJson)]
+pub fn faust_signals_from_json(json: &str) -> Result<Vec<u32>, String> {
+    unsafe { clausters::faust::compiler::signals_from_json(json) }
+}

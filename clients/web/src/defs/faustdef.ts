@@ -12,13 +12,11 @@
 // payload and exposes the declared control names (UI labels), plus the
 // reserved `in`/`out` bus controls the server adds.
 //
-// Against the in-page engine the **source** form compiles and sounds: the page
-// has a Faust compiler of its own (`libfaust-wasm`, in the NRT worker) and the
-// module it emits is linked into the engine's memory, so a Faust node is a node
-// like any other. The signal and box forms reach a **native** server only — the
-// compiler the page carries exposes no Box or Signal API, so `/def_send faust`
-// fails for them there, with a message saying so. That is a property of the
-// build, not of this class — nothing here names a carrier.
+// All three forms compile and sound against the in-page engine too: the page
+// has a Faust compiler of its own (`libfaust-wasm`, in the NRT worker), the
+// signal and box trees are read there by the *server's* own interpreters, and
+// the module the compiler emits is linked into the engine's memory — so a Faust
+// node is a node like any other. Nothing here names a carrier.
 
 import type { MsgArg } from "../base/osc.ts";
 import type { Server } from "./server/index.ts";
