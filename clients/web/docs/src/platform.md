@@ -23,7 +23,7 @@ to run an audio server in.
 | **A buffer cannot be a mapped file** | A page cannot map a file into memory. | The engine's own memory holds it, and `/buffer_get`/`/buffer_getRange` carry it out — the same split every bulk path already has. |
 | **A page cannot bind a port** | Nothing can address a tab. | A responder registers against a **carrier** the client already opened (`src` is a socket URL or `page`), not a `(host, port)` pair. |
 | **Audio needs a user gesture** | Autoplay policy. | `Session.embed` is called from a click, and the components carry the affordance (`<clausters-power>`). |
-| **iOS Safari caps wasm memory near 350 MB** | Undocumented, but reproducible: the tab crashes above it. | Keep the buffer pool modest on mobile; a long take is streamed rather than pooled. |
+| **iOS Safari caps wasm memory near 350 MB** | Undocumented, but reproducible: the tab crashes above it. | The engine reserves 16 MB at boot and is linked with a 256 MB ceiling, so it grows into a budget rather than into that crash. Keep the buffer pool modest on mobile; a long take is streamed rather than pooled. |
 
 ## Not yet — each one owned
 

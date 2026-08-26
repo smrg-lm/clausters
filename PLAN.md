@@ -764,13 +764,33 @@ entries keep their original paths as a record of what shipped where. See
     the strings and handle arrays across. Reading the schema again in TypeScript
     would have been a second implementation of one thing, which is the failure
     the whole milestone exists to avoid.
-  - ⬜ **The engine's memory is reserved, not grown.** `WebAssembly.Memory.grow`
-    **detaches** the `ArrayBuffer` and every JS view over it, so a glue that
-    caches a `Float32Array` breaks the first time the pool grows — and growing
-    at all is work on the audio thread. The engine should reserve its linear
-    memory at boot (modestly: iOS Safari crashes a tab near 350 MB), the glue
-    re-derive views rather than cache them across calls, and growth become a
-    budgeted event on B6's serving turn instead of a surprise.
+  - ✅ **The engine's memory is reserved, not grown** *(2026-08-26)*.
+    `WebAssembly.Memory.grow` **detaches** the `ArrayBuffer` and every JS view
+    over it, and in a page it runs on the audio thread: the OSC pump is inside
+    the worklet's `process`, so the allocation a command asks for happens where
+    nothing may allocate. The engine was taking rustc's default — 24 pages,
+    1.5 MB, whatever the data segments and the stack needed — and booting the
+    server alone landed at 4.31 MB, so it grew dozens of times before playing a
+    sample. It now reserves 16 MB and declares a 256 MB ceiling
+    (`--initial-memory` / `--max-memory` in `crates/clausters-web/build.rs`,
+    beside the table flags), which puts the boot inside the reservation and
+    makes a page that outgrows it fail at a named limit rather than take iOS
+    Safari's tab down near 350 MB.
+
+    Two things this entry expected turned out not to be work. The **glue
+    already re-derives** its views — wasm-bindgen guards every cached array
+    with `byteLength === 0`, which is exactly how a detached buffer reads — and
+    nothing hand-written caches a view over the engine's memory across calls
+    (`worklet.ts` holds its own `interleaved`, not a view; `faust-shim.js`
+    derives inside the call that uses it). So what was left was the
+    reservation, and only that.
+
+    `clients/web/tests/memory.test.ts` asserts both numbers off the binary's
+    own memory section — the flags pass through wasm-bindgen, which rewrites
+    the module, and an instance can only report the size it currently has, so a
+    ceiling that stopped being emitted would be invisible from JS — and that a
+    booted engine processing a thousand blocks does not move off the
+    reservation.
 
   **Acceptance:** a FaustDef built from signals, from boxes and from source
   compiles and sounds in a tab with no server process, addressed by `/node_set`

@@ -1362,6 +1362,15 @@ render quantum runs one serving turn before its two 64-frame engine blocks
   memory — no page faults, no locks, no priority inversion — and the DSP
   itself stays allocation-free, so the native no-alloc discipline keeps its
   value without being extended to a heap that cannot misbehave the same way.
+  That holds only while the bump stays inside the memory the module already
+  has: a bump past the end is a `memory.grow`, which is a host call that may
+  copy the whole heap and **detaches** the `ArrayBuffer` and every JS view over
+  it. So the engine reserves its linear memory at link time — 16 MB, against a
+  boot that lands at 4.3 MB and a rustc default of 1.5 MB, with a 256 MB
+  ceiling well under the ~350 MB where iOS Safari kills a tab
+  (`--initial-memory` / `--max-memory` in `crates/clausters-web/build.rs`,
+  asserted by `clients/web/tests/memory.test.ts`). The claim above is about a
+  heap that does not grow; the reservation is what makes it one.
 - **Synchronous instantiation, async compilation.** The main thread
   `WebAssembly.compileStreaming`s the module and passes it through
   `processorOptions` (a `WebAssembly.Module` is structured-cloneable); the
