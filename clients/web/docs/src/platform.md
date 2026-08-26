@@ -66,6 +66,11 @@ expose neither API, so the vendored compiler is built with them added
 (`third_party/build-faust-wasm.sh`); what a page carries is the same compiler a
 window links, at the same pin.
 
+**A `soundfile` in a Faust def reads a server buffer in a tab**, the same one
+`soundfile("<bufnum>", n)` names in a window, and by the same code: what the
+struct holds is built once and shared, and only how its pointer reaches the DSP
+differs between the two backends.
+
 **A tab renders Faust offline too.** `Session.nrt` + `render()` drive the same
 wasm engine with no audio device, and that path loads a def where it stands
 while the page's compiler answers later — so the render compiles and links the

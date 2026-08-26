@@ -41,6 +41,7 @@ pub mod ffi;
 pub mod json_ui;
 pub mod json_util;
 pub mod signals;
+pub mod soundfile;
 pub mod wasm_module;
 
 // The LLVM JIT's own: a factory to own, and a bitcode cache to persist it in.

@@ -217,18 +217,7 @@ pub fn prelinked(name: &str) -> Option<Arc<FaustDef>> {
 /// engine's own memory and table — see [`FaustDef::link`].
 pub unsafe fn link(compute: u32, init: u32, json: &str) -> Result<FaustDef, String> {
     let parsed = crate::faust::json_ui::FaustJson::parse(json)?;
-    let (params, offsets) = parsed.params();
-    unsafe {
-        FaustDef::link(
-            compute,
-            init,
-            parsed.size,
-            offsets,
-            params,
-            parsed.inputs,
-            parsed.outputs,
-        )
-    }
+    unsafe { FaustDef::link(compute, init, parsed.layout()) }
 }
 
 /// Builds a Faust **box** from a JSON box tree, inside the compiler's arena.

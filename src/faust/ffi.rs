@@ -117,8 +117,13 @@ pub struct Soundfile {
     pub fChannels: c_int,
     /// Number of loaded parts.
     pub fParts: c_int,
-    /// Sample format: always `false` (we compile `-single`, f32).
-    pub fIsDouble: bool,
+    /// Sample format: always 0 (we compile `-single`, f32).
+    ///
+    /// An `i32` and not a `bool`, because that is what Faust declares it as —
+    /// `genInt32Typed()` in the compiler's own `Soundfile` type, on every
+    /// backend. The header spells it `bool`, so a one-byte field read as a word
+    /// left three bytes of the read past the end of the struct we allocate.
+    pub fIsDouble: c_int,
 }
 pub type DeclareFun =
     unsafe extern "C" fn(ui: *mut c_void, zone: *mut f32, key: *const c_char, value: *const c_char);

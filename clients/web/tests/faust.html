@@ -50,7 +50,7 @@
       produced carry the same pitch the live engine just played.
     -->
     <script type="module">
-      import { Session, loadOsc, FaustDef, Synth, Bus, Routine, data }
+      import { Session, loadOsc, FaustDef, Synth, Bus, Buffer, Routine, data }
         from "../dist/index.js";
       import { signals } from "../dist/defs/index.js";
 
@@ -176,6 +176,48 @@
           taps.close?.();
         }
 
+        // A `soundfile` in a def, which is a different wire from a control:
+        // the wasm backend moves each `Soundfile*` to the front of the DSP
+        // struct and leaves it for whoever instantiates the def to fill, so
+        // what this measures is that the engine filled it from the *server
+        // buffer* the def names. The def is the one tests/golden.rs uses
+        // natively: its first output is the soundfile's length -- the buffer's
+        // frame count when it is wired, and 1024 (the empty placeholder) when
+        // it is not -- and its second reads the samples themselves.
+        const SF_FRAMES = 300, SF_VALUE = 0.5;
+        const held = await Buffer.fromSamples(
+          new Float32Array(SF_FRAMES).fill(SF_VALUE), 1, rate, { server });
+        const sfDef = FaustDef.fromSource("web_faust_soundfile", `
+          sf = soundfile("${held.bufnum}", 1);
+          index = +(1) ~ _ : -(1);
+          process = ((0, 0) : sf : (_, !, !)) / 1000.0,
+                    ((0, index) : sf : (!, !, _));
+        `);
+        await sfDef.send(server);
+        const sfBus = Bus.audio(2, { server });
+        const sfNode = new Synth(sfDef.name, { out: sfBus.index }, { server });
+        await wait(300);
+        const sfTaps = await data.TapStream.open(
+          server, [sfBus.index, sfBus.index + 1], { frames: 2048, periodMs: 20 });
+        await wait(400);
+        const mid = (bus) => {
+          const w = sfTaps.window(bus);
+          if (!w) return NaN;
+          const half = w.samples.subarray(w.samples.length >> 1);
+          return half.reduce((a, b) => a + b, 0) / half.length;
+        };
+        // The length comes back scaled by 1000: a bus carries audio, and 300
+        // is not a sample value anything else in this page would survive.
+        const sfLength = Math.round(mid(sfBus.index) * 1000);
+        const sfSample = mid(sfBus.index + 1);
+        log(`soundfile: length ${sfLength} (buffer has ${SF_FRAMES}), `
+            + `samples read back at ${sfSample.toFixed(3)}`);
+        sfNode.free();
+        await wait(250);
+        sfTaps.close?.();
+        const soundfileOk = sfLength === SF_FRAMES
+          && Math.abs(sfSample - SF_VALUE) < 0.01;
+
         await session.close();
 
         // And the same three defs **offline**, which is the other half of the
@@ -217,16 +259,18 @@
         // Offline: the three summed sines are in phase at the same pitch, so
         // the crossing count still reads 300 Hz and the peak is their sum.
         const offlineOk = nrtPeak > 0.6 && Math.abs(nrtHz - 300) < 25;
-        const ok = allSound && Math.abs(high - 900) < 40 && offlineOk;
+        const ok = allSound && Math.abs(high - 900) < 40 && offlineOk && soundfileOk;
         const shape = heard
           .map(([l, p, hz]) => `${l} ${p.toFixed(2)}/${Math.round(hz)}Hz`)
           .join(", ");
         verdict(ok
           ? `PASS: source, boxes and signals all compiled in the page and ` +
             `sounded (${shape}), /node_set moved freq to ~${Math.round(high)} Hz, ` +
-            `and an offline render of the three peaked ${nrtPeak.toFixed(2)} at ` +
-            `~${Math.round(nrtHz)} Hz`
-          : `FAIL: ${shape}; after /node_set ${Math.round(high)} Hz | ` +
+            `an offline render of the three peaked ${nrtPeak.toFixed(2)} at ` +
+            `~${Math.round(nrtHz)} Hz, and a soundfile read a ${sfLength}-frame ` +
+            `buffer at ${sfSample.toFixed(2)}`
+          : `FAIL: ${shape}; after /node_set ${Math.round(high)} Hz; ` +
+            `soundfile ${sfLength}/${sfSample.toFixed(2)} | ` +
             document.getElementById("log").textContent.replace(/\n/g, " / "));
       }
 

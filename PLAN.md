@@ -860,9 +860,33 @@ entries keep their original paths as a record of what shipped where. See
     and must **not** fetch `vendor/faust/libfaust`, and `faust.html` must fetch
     it. The pair is the point: a negative alone would pass just as well if the
     asset were renamed.
-  - ⬜ **`soundfile`** in a Faust def: the wasm backend has no soundfile
-    support, so `FaustSynth::new` ignores the buffer pool there. A def that
-    declares one is silent rather than failing.
+  - ✅ **`soundfile`** in a Faust def *(2026-08-26)*. The wasm backend does
+    support soundfiles — it moves each `Soundfile*` to the front of the DSP
+    struct and forces external memory, which is the `wasm-e` the page already
+    compiles with — and what was missing was our half: `FaustSynth::new`
+    ignored the buffer pool there, so the field stayed null and a def that
+    declared one was silent.
+
+    The struct is now filled the same way on both backends, from one piece of
+    code: `SoundfileData` moved out of `faust::synth` into `faust::soundfile`,
+    since a soundfile that read a buffer differently in a tab would be the same
+    file sounding two ways. What differs is only how the pointer is delivered —
+    libfaust asks for it through the UI glue's `addSoundfile` natively, and in a
+    page the module's JSON declares the field's byte offset and the host stores
+    the address itself (`json_ui`'s `DefLayout`, which also keeps a soundfile
+    *out* of the control order, so `/node_set` by name is unaffected).
+
+    Two things it corrected along the way. `ffi::Soundfile`'s `fIsDouble` was a
+    `bool`, and Faust declares it `genInt32Typed()` on **every** backend: a
+    one-byte field read as a word left three bytes of the read past the end of
+    the struct we allocate, natively included. And the soundfile fields are
+    filled **before** `init`, because `instanceInit` reads a file's sample rate
+    out of them.
+
+    `tests/faust.html` runs the def `tests/golden.rs` uses natively — its first
+    output is the soundfile's length — and reads back a 300-frame buffer at
+    0.50: 1024 would be the empty placeholder, and 0 would be an unfilled
+    field.
   - ✅ **The page keeps one lib context for its life and never destroys it**
     *(2026-08-26)* — measured, and the measurement found a defect and closed
     it. `clients/web/tests/faust-arena.html` compiles distinct defs in a loop
