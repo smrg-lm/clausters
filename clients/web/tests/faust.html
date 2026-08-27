@@ -52,7 +52,7 @@
     <script type="module">
       import { Session, loadOsc, FaustDef, Synth, Bus, Buffer, Routine, data }
         from "../dist/index.js";
-      import { signals } from "../dist/defs/index.js";
+      import { boxes, signals } from "../dist/defs/index.js";
 
       const smoke = new URLSearchParams(location.search).has("smoke");
       const log = (line) => {
@@ -99,25 +99,21 @@
           freq = hslider("freq", 300, 50, 2000, 0.01);
           process = os.osc(freq) * 0.4;
         `;
-        // sin(2*pi*phasor(freq)) * 0.4, the phasor written as the box schema's
-        // `rec`. This is the doc example of the schema itself.
-        const freqBox = {
-          op: "hslider", label: "freq",
-          init: 300, min: 50, max: 2000, step: 0.01,
-        };
-        const box = {
-          op: "mul", in: [
-            { op: "sin", in: [{ op: "mul", in: [
-              TAU,
-              { op: "rec", in: [
-                { op: "seq", in: [
-                  { op: "add", in: ["_", { op: "div", in: [freqBox, rate] }] },
-                  { op: "split", in: ["_", { op: "sub", in: ["_", { op: "floor", in: ["_"] }] }] },
-                ] },
-                "_"] },
-            ] }] },
-            0.4],
-        };
+        // sin(2*pi*phasor(freq)) * 0.4, the phasor written point-free with
+        // the box algebra (`defs/boxes`) — the doc example of the schema
+        // itself, built by the client rather than spelled as JSON. Each
+        // `wire()` is its own input: the five here are the five `_` the same
+        // program has in Faust, which is the rule `FaustDef.fromBox` checks.
+        const freqBox = boxes.hslider("freq", 300, 50, 2000, 0.01);
+        const phasorBox = boxes.rec(
+          boxes.seq(
+            boxes.wire().add(freqBox.div(rate)),
+            boxes.split(boxes.wire(),
+              boxes.wire().sub(boxes.floor(boxes.wire()))),
+          ),
+          boxes.wire(),
+        );
+        const boxTree = boxes.box(TAU).mul(phasorBox).sin().mul(0.4);
         // The same phasor in the signal API, where the feedback is explicit
         // (`self` inside `recursion`) and the accumulator is written twice --
         // Faust's CSE merges the identical subtrees.
@@ -132,7 +128,7 @@
 
         const forms = [
           ["source", FaustDef.fromSource("web_faust_source", source)],
-          ["boxes", FaustDef.fromBox("web_faust_boxes", box)],
+          ["boxes", FaustDef.fromBox("web_faust_boxes", boxTree)],
           ["signals", signalDef],
         ];
 

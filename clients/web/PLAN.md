@@ -557,7 +557,7 @@ the hand instead of rendered offline, and `examples/basics/demand.html`, the
 sequence that lives in the def. Book: the def chapter now names the three
 families that are not read like the rest.
 
-### W7 - The Faust surfaces: the box algebra, then the signal API
+### ✅ W7 - The Faust surfaces: the box algebra, then the signal API *(done 2026-08-27)*
 
 *Deferred out of W1.* The two Faust def-authoring surfaces, together because
 they are one family — `clausters.defs.boxes` (C22) and `clausters.defs.signals`
@@ -567,7 +567,7 @@ source folds into). And with them the piece the rest of the track never needed:
 **a Faust compiler in the page**, so the Faust family stops being the one thing
 a browser can author but not run.
 
-- `defs/boxes.ts`: the point-free algebra (`seq`/`par`/`split`/`merge`/`rec`, `wire`/`cut`, controls, tables) emitting the same box-tree JSON the Python builders emit, plus `faust(src, ...)` to fold a Faust source expression — its libraries (`fi.`/`os.`/`re.`/`pm.`) included — into a composable `Box`.
+- ✅ `defs/boxes.ts`: the point-free algebra (`seq`/`par`/`split`/`merge`/`rec`, `wire`/`cut`, controls, tables) emitting the same box-tree JSON the Python builders emit, plus `faust(src, ...)` to fold a Faust source expression — its libraries (`fi.`/`os.`/`re.`/`pm.`) included — into a composable `Box`. **Done 2026-08-27**, with `defs/expr.ts` (`FaustExpr`) under it and the `asDef`/`fromBox` coercions closed; see "What shipped" below.
 - ~~`defs/signals.ts`: the sample-level signal API filled out to the whole surface `clausters.defs.signals` exposes, the same emitted-spec parity rule W6 states.~~ **Already done** — it landed with W1 and has been at parity since: the same ops, the same `select2`/`select3`, `delay`, `fconst`/`fvar`/`sr`, the fifteen unary and six binary functions, `PI`/`TAU`, the five controls and the three tables, with frozen vectors in `tests/def-vectors.json` (`gen-def-vectors.py`, `faust_cases`). What is left of the TypeScript half is `boxes.ts` alone.
 - **The browser Faust toolchain** — the new build and packaging leg, below. Against a `--ws` server the two builders work without it (they emit JSON and the native server compiles it, the `faust(src, …)` escape hatch included — it ships its generated program as a `{"op": "faust", "src": …}` node rather than parsing Faust on the client); the in-page carrier is what needs it, and having *one* def family that only runs over WS is the asymmetry this milestone closes.
 
@@ -578,7 +578,7 @@ host bundles `build.sh` stages. Faust in the page adds a second compiler
 toolchain, in two halves — **only the first is packaging, and the second is the
 one that decides whether the milestone lands**:
 
-- ✅ **The compiler**, built on 2026-08-25. `libfaust-wasm` — the whole Faust compiler as a wasm library — built from `third_party/faust` at the same pin the native library uses, by `third_party/build-faust-wasm.sh`, producing `libfaust-wasm.{js,wasm,data}`, the `.data` carrying the stdlib for Emscripten's virtual FS, and staged by `build.sh` as static assets **off the slim `dist/runtime.js`**, since a page that mounts a *prebuilt* bundle must not download a compiler it never calls. The script documents five departures from `make wasmlib`, the largest being a patch that binds the Box and Signal APIs: upstream binds them for the native library and not for the wasm one, so without it a page could compile Faust source alone. **What is still open is the packaging half**: CI grows the emsdk leg or the artifact is fetched, a decision to record — the same question the engraver already answered once.
+- ✅ **The compiler**, built on 2026-08-25. `libfaust-wasm` — the whole Faust compiler as a wasm library — built from `third_party/faust` at the same pin the native library uses, by `third_party/build-faust-wasm.sh`, producing `libfaust-wasm.{js,wasm,data}`, the `.data` carrying the stdlib for Emscripten's virtual FS, and staged by `build.sh` as static assets **off the slim `dist/runtime.js`**, since a page that mounts a *prebuilt* bundle must not download a compiler it never calls. The script documents five departures from `make wasmlib`, the largest being a patch that binds the Box and Signal APIs: upstream binds them for the native library and not for the wasm one, so without it a page could compile Faust source alone. **What is still open is the packaging half**: CI grows the emsdk leg or the artifact is fetched, a decision to record — the same question the engraver already answered once. It outlived this milestone and is carried, with its checkbox, in "Future directions" below ("Who builds `libfaust-wasm`").
 - ✅ **The engine's side, which a compiler alone does not solve, is `B5`** (root `PLAN.md`, B track), and it landed on 2026-08-25. The in-page engine had no libfaust and **no LLVM JIT**, so it could not instantiate what a compiler in the page produced; now the Faust module is compiled in the **NRT worker** (not the main thread, as this bullet first said — B6 priced that at the GUI host's frames) and **linked into the engine's own memory and function table**, so the node stays a node and nothing on the wire changes (`docs/decisions.md`). All three def forms work: the box and signal trees are read by `faust::boxes` and `faust::signals` compiled to wasm, so there is one reading of the schema and not two. W7 and B5 ship together, the way G25 pairs with M25; **W7's WS half was never blocked on it**.
 - **The decision is recorded** (`docs/decisions.md`, "The page's Faust is a second wasm module linked into the engine's own memory"): which instantiation path the engine takes and why the two it rejects are not near misses, why the protocol learns nothing, and the one hazard the wasm backend carries (its JSON data segment at absolute offset 0). What it leaves open is the packaging half alone — whether CI builds `libfaust-wasm` or fetches it — which is B5's, and is the same question the engraver already answered once.
 
@@ -598,6 +598,58 @@ it starts and links them into the renderer's own instance, so `Session.nrt` +
 The script is `clients/python/examples/faust/boxes_library.py`; the page is
 `clients/web/examples/faust/boxes-library.html`, same material, same names, the
 same calls in the same order.
+
+**What shipped.** `src/defs/boxes.ts` at its sibling's path and with its
+sibling's surface — the algebra (`seq`/`par`/`split`/`merge`/`rec`,
+`wire`/`cut`), `faust(src, …)` with its evaluation-stage arguments, the
+controls and the groups, the three tables, the structure primitives, the
+seventeen unary and five binary functions, `PI`/`TAU` and `sr()` — plus the two
+pieces around it the milestone turned out to need.
+
+- **`src/defs/expr.ts`, the roof the two Faust surfaces share.** `FaustExpr` is
+  the last name the 2026-08-25 parity sweep listed as this milestone's
+  (`clausters/defs/expr.py`), and porting it is what makes `Box`'s operators
+  *the same operators*: it sits under `AbstractObject`, so both `Signal` and
+  `Box` answer the whole vocabulary and each maps a selector through its own
+  table (the box schema has no `lsh`/`rsh`, and `mod` is `rem` for a signal and
+  `fmod` for a box) — an op a family has no node for throws where it is
+  written, exactly as it does in Python. `Signal` moved onto it in the same
+  pass, which *added* methods rather than removing any. What the branch adds
+  over `AbstractObject` is `rsub`/`rdiv`: Python writes `1 - sig` and gets
+  `__rsub__`, and a language with no operator overloading needs the case
+  spelled out.
+- **The coercion, which was the milestone's own loose end.** `asDef` now takes
+  a `Box` (W13 left the leg empty saying so), `exprChannels` answers the box's
+  own arity, and `FaustDef.fromBox` accepts a `Box` and runs `checkWires` on
+  it — the one silent mistake the algebra allows, a `wire()`/`cut()` *object*
+  reused in two positions. The raw-JSON form stays for a generated tree.
+
+**Two spellings differ from the reference client, and nothing else does.**
+Applying a box is `f.call(a, b)` where Python calls the box itself
+(`__call__`), and selecting one output is `st.get(0)` where Python writes
+`st[0]`: a class instance in TypeScript is neither callable nor indexable. Two
+more are the options bag this package already uses everywhere — `faust`'s
+keyword arguments (`{ ins, outs, defs }`) travel as a trailing object, and
+`outs()` answers an array rather than a tuple. The emitted tree is the same
+tree.
+
+**Verified:** `./build.sh && ./test.sh` — 469 `node --test` cases (5 new in
+`def-parity.test.ts`: three frozen box vectors regenerated from the Python
+builders by `gen-def-vectors.py`'s new `box_cases` — the library instrument
+with its channel selection, the algebra over bare wires, and the
+table/control/`sr` corner with a reversed operand — plus the wire-reuse
+rejection and the arity rules) and the headless-Chrome acceptances, where
+`tests/faust.html` now **builds its box tree with the box API** instead of
+spelling the JSON: source, boxes and signals all compiled in the page and
+sounded (boxes 0.40 at ~305 Hz), and an offline render carried all three.
+Example: `examples/faust/boxes-library.html`, the port of
+`clients/python/examples/faust/boxes_library.py` — read side by side, verb by
+verb, and run: both render 144000 frames (3.00 s) at peak 0.686. Book: the def
+section of "The client, layer by layer" now carries the box algebra, the
+`api/` reference gained the `boxes` namespace (and its `signals` entry stopped
+pointing at a page mdBook was inventing), and the two claims that B5 had
+already made false — Faust needing a native server — are gone from the guide
+and the introduction.
 
 ### ✅ W8 - Responders: `OscFunc` over the reply stream *(done 2026-08-03)*
 
@@ -930,7 +982,8 @@ deferred *from* had not landed either — the whole of `plot` with it.
   the engine, which is the browser's render-then-load.
 - **`defs/asdef.ts`** — `asDef`/`exprChannels`/`isExpr`, so `play`, `plot` and
   `render` all take a bare expression. `play` dispatches it now; the Faust
-  `Box` leg has nothing to coerce until the box algebra lands (**W7**).
+  `Box` leg had nothing to coerce until the box algebra landed (**W7**, which
+  filled it on 2026-08-27).
 - **`plot.ts`, all six legs** (*brought forward from* **W23**, which never
   shipped): the three rendered ones this milestone unblocked (a def, a bare
   expression, an `Env`/`Automation`) and the three live ones W23 had scoped (a
@@ -1462,6 +1515,18 @@ this list rather than being ticked here.
   2026-08-26 — the TS bundle writer is a node milestone, and a node script has
   to be runnable before it can be an example)*. Already true in the harness, not
   yet a supported target: the `node --test` suites drive a real `clausters --ws` server and a real `clausters-gui --ws` host, so `WsConnection` runs under node's global `WebSocket` (`src/base/connection.ts` says so) and the wasm core loads there (`loadCore(bytes)`, node's `fetch` not reading `file://`). What remains is making it a *product*: a load path that finds the core's `.wasm` without the test's manual read, a documented entry point for headless scripting/CI the way `clients/python` runs without a display, and the boundary written down — the def, sequencing and GUI-driver layers port, the in-page engine (AudioWorklet) and the page host (canvas) do not.
+- ⬜ **Who builds `libfaust-wasm`** *(left over from **W7**/**B5**, 2026-08-27)*.
+  The compiler a page loads is built from `third_party/faust` at the native
+  library's pin by `third_party/build-faust-wasm.sh`, and today that build
+  happens on a maintainer's machine and its output is staged by `build.sh`.
+  What is undecided is the packaging half: CI grows an **emsdk** leg and builds
+  it, or the artifact is **fetched** from somewhere and pinned by digest. It is
+  the same question the engraver answered once, in the other direction (a
+  build, because a build is what decides which score formats a client reads) —
+  and it is exactly as answerable here, since a build is also what decides
+  whether the Box and Signal APIs are bound at all. Nothing is blocked on it:
+  the compiler works, the acceptances run against it, and what a wrong answer
+  costs is a release built from an artifact nobody can reproduce.
 - ⬜ **Type-safe GuiDef/def schemas.** Generate TS types for the widget/def vocabularies from a single source shared with the server, so an invalid GuiDef is a compile error, not a runtime warning. Two things have since appeared that change the shape of the answer rather than the want: the frozen parity vectors (`tests/gen-*-vectors.py`) already catch a drifted *builder* at test time, and M30's `/def_query`/`/ugen_query` make the server's own catalogue readable at run time — so the open question is narrower, which source generates the types and when, not whether one exists.
 - ⬜ **A remote-server standalone page.** The in-tab standalone (a bundle booting against the embedded wasm engine) **shipped with the B track** and grew up in W4 (the bundle contract, the resolver, the pools, the components); what remains is the same mount against a **remote `--ws` server** — a one-file instrument front for a server running elsewhere. The old note called this cheap "once W1/W2 exist"; they exist, and W4 is what actually decides the work: `openBundle`/`startBundle` reach the page's `guiHost()` and `engine` singletons directly, so the step is giving the mount a **destination seam** (a `Server` + `GuiHost` pair, both already carrier-agnostic since W1/W2) in place of those singletons. The boot replay itself stays carrier-agnostic above the W0 seam, as it always was.
 
@@ -1536,8 +1601,8 @@ tree finds the other.
 The two families the split left empty are both written now: `ugens/spectral.ts`
 was **W6**'s and `server/transport.ts` **W22**'s. The
 Python modules with no counterpart at all are unported *features*, not
-misplaced code, and each is already owned: `defs/boxes.py` (**W7**;
-`defs/pv_expr.py` came with **W6**, which is what `pvKernel` takes),
+misplaced code, and each is already owned: `defs/boxes.py` came with **W7**
+(`defs/pv_expr.py` with **W6**, which is what `pvKernel` takes),
 the MIDI half of `responders.py` (**W9** — its OSC half is ported),
 `session.py`/`play.py`/`base/main.py`/`base/environment.py`/`defs/_wire.py`
 (**W18**), `render.py`/`defs/asdef.py` (**W13**), `gui/editor.py`/
@@ -2335,7 +2400,8 @@ TypeScript-only one**, and all but two of the 36 are already written down:
   seam is `Connection` and its openers, the shape difference W21 records;
 - the **MIDI family** (`MidiRtInterface`, `MidiNrtInterface`, `MidiServer`,
   `MidiReceiver`, `MidiEvent`, `MidiScore`, `midifunc`, `parse_midi`) — **W9**;
-- the **Faust expression** (`FaustExpr`) — **W7**;
+- the **Faust expression** (`FaustExpr`) — ported by **W7**, 2026-08-27,
+  together with the `Box` under it;
 - the **process** (`ServerOptions`, `launch`, `ipc`) and the **filesystem**
   (`read_soundfile`, `samples_to_file`, the four `peaks_cache_*` file doors) —
   a page has neither, recorded above;
@@ -2355,6 +2421,34 @@ Python counterpart under another spelling or is a page's own (`ANY_PEER`,
 `startPage`, the bundle and component doors).
 
 ## Found by use: the running list of fixes
+
+- ⬜ **A page cannot write a Faust constant that is *real* and integral**
+  *(found 2026-08-27, porting the box API)*. A def builder's numeric constant
+  travels as a bare JSON number, and the server reads it back with
+  `serde_json`: an integral one becomes a Faust **int**, anything else a
+  **real** (`src/faust/boxes.rs`, `number_box`; the signal schema does the
+  same). Python distinguishes them by the literal's type — `box(2)` is `int 2`
+  and `box(2.0)` is `real 2.0` — and JavaScript has one number type, so `2.0`
+  *is* `2` by the time `boxes.box`/`signals.signal` sees it and a page can only
+  say the int.
+
+  **It is older than the box API**: `signals.ts` has had it since W1, unwritten
+  down, and porting `boxes.ts` is only where it was noticed. The parity vectors
+  cannot catch it either — they are compared as parsed JSON, where `2.0` and
+  `2` are the same value — which is worth knowing about what those vectors
+  prove.
+
+  **How much it costs is not yet measured**, and that is the first thing to do
+  before designing anything: Faust promotes int to real in arithmetic, so the
+  cases where the distinction is audible rather than merely typed are narrow
+  (integer division, `%`, a table index, a fragment's argument). The escape a
+  page has today is written down in `docs/src/platform.md`: put that constant
+  inside a `boxes.faust(…)` fragment, whose text is spliced verbatim. If the
+  measurement says the escape is not enough, the fix is a spelling — the box
+  and signal schemas both already accept the explicit `{"op": "real", "value":
+  x}` node the server reads — and it is a **surface**, so it is decided for
+  both clients at once (the reference client has no `real()` either, it has
+  Python's float) rather than grown here first.
 
 - ✅ **`Buffer.fromSamples` empties the array it is given** *(found and fixed
   2026-08-26, writing a `/buffer_write` round trip)*. The in-page carrier's `bufferLoad`
@@ -2836,9 +2930,9 @@ finished work, where a pending item reads as done.
   pages alone**, counting a directory with an `index.html` as its own name.
 
   **The eleven scripts left are each accounted for**, which is what the
-  milestone's acceptance asks: three belong to another milestone's acceptance
-  (`faust/boxes-library` to **W7**, `io/midi-responder` and
-  `editors/pianoroll-midi` to **W9**); seven have **no page by nature**, each
+  milestone's acceptance asks: three belonged to another milestone's acceptance
+  (`faust/boxes-library` to **W7**, paired 2026-08-27 when that milestone
+  landed; `io/midi-responder` and `editors/pianoroll-midi` to **W9**); seven have **no page by nature**, each
   with its reason below; and `io/osc-responder` is **paired under another
   name**, `io/responders.html`, which says so in its own header.
 
@@ -2861,10 +2955,10 @@ finished work, where a pending item reads as done.
   `views/` (12), `editors/` (6), `spectral/` (3), `transport/` (2),
   `buffers/` (2), `io/osc-destination` and `io/osc-responder` (the web has
   `OscDestination`, over a WebSocket bridge where the script has UDP). Three are **no longer
-  counted here at all**: `faust/boxes-library` belongs to **W7**'s acceptance
-  and `io/midi-responder`/`editors/pianoroll-midi` to **W9**'s, since neither
-  page can be written before those milestones and writing it is how each is
-  shown to work. One more has **no page and could not**: `editors/session` is *the third
+  counted here at all**: `faust/boxes-library` belonged to **W7**'s acceptance
+  (written with it, 2026-08-27) and `io/midi-responder`/`editors/pianoroll-midi`
+  belong to **W9**'s, since neither page can be written before those milestones
+  and writing it is how each is shown to work. One more has **no page and could not**: `editors/session` is *the third
   writer* — this client writes a session file, `clausters-gui --session` opens
   it as a **separate process**, edits it with no language attached and saves it
   back, and the script reads it again. A tab has neither the file nor the

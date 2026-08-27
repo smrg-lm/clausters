@@ -83,9 +83,22 @@ already carry it.
 Same size of work, except the shape depends on an answer. The decision is named
 on each one; none of them is being taken by this file.
 
-**Nothing open.** An entry lands here when a fix turns out to need an answer
-first, and leaves when the answer is given — the answer goes in the plan that
-owns the work, never here.
+- ⬜ **"A page cannot write a Faust constant that is *real* and integral"**
+  *(`clients/web/PLAN.md`, Found by use)*. Older than the box API that found it
+  (`signals.ts` has had it since W1) and invisible to the parity vectors, which
+  compare parsed JSON. A page has one number type, so it can only say the int.
+  **The decision:** first a measurement — how narrow the audible cases actually
+  are, given that Faust promotes int to real — and then, only if the escape
+  already documented is not enough, a spelling for the explicit `real` node the
+  two schemas already accept. It is a *surface*, so it is decided for both
+  clients at once.
+
+- ⬜ **"Who builds `libfaust-wasm`"** *(`clients/web/PLAN.md`, Future
+  directions)*. The last thing `W7`/`B5` left behind: the compiler a page loads
+  is built by hand today and staged by `build.sh`. **The decision:** CI grows an
+  emsdk leg, or the artifact is fetched and pinned by digest. Nothing is blocked
+  on it — what a wrong answer costs is a release built from an artifact nobody
+  can reproduce.
 
 ## 3. Tests and reviews pending
 
@@ -138,14 +151,6 @@ Numbered milestones whose track is otherwise closed. Each is owned and written i
 its plan; the plan is where its acceptance is read.
 
 ### Ready — no decision in front of them
-
-- ⬜ **`W7` — the Faust surfaces** *(`clients/web/PLAN.md`)*. **Down to
-  `defs/boxes.ts`.** The signal API turned out to be done already
-  (`defs/signals.ts` landed with W1 and has been at parity since), and the engine
-  half was split off as `B5`, which is closed — a def sent as source, as a box
-  tree or as a signal tree compiles and sounds in a tab, and since 2026-08-26 a
-  page's offline render carries one too. The example `faust/boxes-library` rides
-  with it and waits on nothing else.
 
 - ⬜ **`W9` — MIDI: `MidiFunc` in, `MidiEvent` and MIDI destinations out**
   *(`clients/web/PLAN.md`)*. Carries two pages as part of its acceptance:

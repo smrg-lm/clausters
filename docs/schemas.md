@@ -766,7 +766,7 @@ The JSON mirrors Faust's Box API one-to-one: every node denotes a box expression
 | `rwtable` | `in`: size, init, widx, wsig, ridx — or 4 boxes starting with a `waveform` | `rwtable` |
 | `faust` | `src` | escape hatch: a complete Faust program compiled to a composable box, with stdlib access |
 
-Two consumers build this format today: the Python client's `clausters.defs.boxes` module (the box algebra as composable Python values; see the [client book's defs chapter](https://clausters-python.readthedocs.io/en/latest/defs.html)) and machine-generated graphs (the GUI host). `faust` fragments are **memoized by `src` within one compilation**: the same source text yields the same box, so a client that reuses one fragment value many times (duplicating the subtree in the JSON) gets one computation and one compile — every `CDSPToBoxes` evaluation would otherwise mint fresh recursion symbols and defeat the sharing (the CSE suite in `tests/faust_box.rs` pins this).
+Three consumers build this format today: the Python client's `clausters.defs.boxes` module (the box algebra as composable Python values; see the [client book's defs chapter](https://clausters-python.readthedocs.io/en/latest/defs.html)), the web client's `defs/boxes.ts` (the same algebra, the same emitted tree) and machine-generated graphs (the GUI host). `faust` fragments are **memoized by `src` within one compilation**: the same source text yields the same box, so a client that reuses one fragment value many times (duplicating the subtree in the JSON) gets one computation and one compile — every `CDSPToBoxes` evaluation would otherwise mint fresh recursion symbols and defeat the sharing (the CSE suite in `tests/faust_box.rs` pins this).
 
 Example — `sin(2π·phasor(freq)) * 0.2` with `freq` as a named control (`wrap(x) = x - floor(x)`, `phasor = (+(freq/SR) : wrap) ~ _`):
 
@@ -847,7 +847,7 @@ Where boxes compose point-free, signals are explicit: there is no implicit wire 
 
 Differences from the box schema: no `seq`/`par`/`split`/`merge`, `hgroup`/`vgroup`, the `"_"`/`"!"` shorthands or the `faust` source escape hatch (those are box/UI-tree concepts); `round` is absent upstream (`rint` rounds); N-ary mutual recursion (`selfN`/`recursionN`) is not exposed — like the box `~`, single recursion is the surface. Errors carry the node path the same way (`at $.signals[0].in[1]: …`).
 
-The **sample rate** enters the graph through `fconst`, not as a baked number: `{"op": "fconst", "ctype": "int", "name": "fSamplingFreq", "file": "<math.h>"}` is the runtime constant behind Faust's `ma.SR`, resolved when the def is instantiated, so a def stays in tune at whatever rate the engine (or NRT renderer) runs. `ma.SR` itself is that value clamped to `[1, 192000]`; the Python client wraps the whole thing as `signals.sr()`. (`ma.PI`, by contrast, is a plain numeric literal — no `fconst` needed.)
+The **sample rate** enters the graph through `fconst`, not as a baked number: `{"op": "fconst", "ctype": "int", "name": "fSamplingFreq", "file": "<math.h>"}` is the runtime constant behind Faust's `ma.SR`, resolved when the def is instantiated, so a def stays in tune at whatever rate the engine (or NRT renderer) runs. `ma.SR` itself is that value clamped to `[1, 192000]`; both clients wrap the whole thing as `signals.sr()` (and `boxes.sr()` in the box algebra). (`ma.PI`, by contrast, is a plain numeric literal — no `fconst` needed.)
 
 Example — a one-pole lowpass `y = (1-a)·x + a·y'` reading audio input 0, the explicit-feedback idiom:
 

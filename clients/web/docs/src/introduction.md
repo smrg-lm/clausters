@@ -55,7 +55,7 @@ finds the stale one has no way to tell.
 
 ## What is not here yet
 
-The client is usable and complete through the layers above; some of the Python client's surface has not been ported. Today the package has no MIDI, the Faust box algebra is absent, and Faust source needs a native server to compile. The roadmap lives in `clients/web/PLAN.md` in the repository.
+The client is usable and complete through the layers above; some of the Python client's surface has not been ported. Today the package has no MIDI. The roadmap lives in `clients/web/PLAN.md` in the repository.
 
 ## License
 

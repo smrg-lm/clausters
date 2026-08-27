@@ -84,7 +84,7 @@ export type BoxKind = "ugen" | "control" | "const" | "faust" | "faust-opaque";
  * and carries nothing else; a level-2 box also says what it is (`kind`) and
  * keeps what it was decoded from, which is what makes the decode reversible.
  */
-export interface Box {
+export interface PatchBox {
     def: string;
     ports: Port[];
     /** The host's layout role; absent means `"object"`. */
@@ -195,7 +195,7 @@ function port(spec: PortSpec, dir: "in" | "out"): Port {
  */
 export class GraphPatch {
     /** Each box, in the schema the cord→bus pass reads. */
-    boxes: Box[] = [];
+    boxes: PatchBox[] = [];
     /** Each cord, its ports flat indices into the box's `ports`. */
     cords: Cord[] = [];
 
@@ -316,7 +316,7 @@ export class GraphPatch {
     // ---- compiling ----
 
     /** The patch as the cord→bus pass reads it. */
-    toJson(): { boxes: Box[]; cords: Cord[] } {
+    toJson(): { boxes: PatchBox[]; cords: Cord[] } {
         return { boxes: this.boxes, cords: this.cords };
     }
 
@@ -401,7 +401,7 @@ const widgetPort = (p: Port): string | { name: string; rate: string } =>
  * and outlets as separate lists, so a cord endpoint (a flat index into the box's
  * combined `ports`) is remapped to its position among the ports on its own side.
  */
-function splitIndex(boxes: Box[], box: number, flat: number, dir: "in" | "out"): number {
+function splitIndex(boxes: PatchBox[], box: number, flat: number, dir: "in" | "out"): number {
     const ports = boxes[Math.trunc(box)]?.ports ?? [];
     const same = ports.map((p, i) => [p, i] as const).filter(([p]) => p.dir === dir);
     return same.findIndex(([, i]) => i === flat);
@@ -413,7 +413,7 @@ function splitIndex(boxes: Box[], box: number, flat: number, dir: "in" | "out"):
  * inlet]` quadruples.
  */
 export function patchToWidget(
-    boxes: Box[],
+    boxes: PatchBox[],
     cords: Cord[],
     geometry: Record<number, readonly [number, number]> = {},
 ): PatchWidget {
@@ -512,7 +512,7 @@ function formatConst(value: unknown): string {
  * The flat index of a box's single outlet in its `ports` — the inlets come
  * first, so it is the inlet count.
  */
-function outletFlat(box: Box): number {
+function outletFlat(box: PatchBox): number {
     return box.ports.filter((p) => p.dir === "in").length;
 }
 
@@ -554,7 +554,7 @@ export class DefPatch {
      * A **const** value box: `{def, kind:"const", role:"const", const, ports:
      * [outlet]}`. A **faust** box mirrors ugen without the rebuild fields.
      */
-    boxes: Box[] = [];
+    boxes: PatchBox[] = [];
     /**
      * Each cord — flat port indices into each box's `ports` (an outlet → an
      * inlet).

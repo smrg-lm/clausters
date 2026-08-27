@@ -17,6 +17,7 @@ import { loadOsc } from "../src/base/osc.ts";
 import { FaustDef } from "../src/defs/faustdef.ts";
 import { GraphDef } from "../src/defs/graphdef.ts";
 import { SynthDef } from "../src/defs/synthdef.ts";
+import * as box from "../src/defs/boxes.ts";
 import * as sig from "../src/defs/signals.ts";
 import {
     DoneAction,
@@ -345,6 +346,79 @@ test("FaustDef parity: two outputs", () => {
     const tone = faustTone();
     const def = FaustDef.fromSignals("stereo", tone, tone.mul(0.5));
     assert.deepEqual(JSON.parse(def.dumpDef()), expected);
+});
+
+// The box algebra's three vectors. Written against the TS surface only — the
+// application is `.call(…)` where Python calls the box itself and `.outs()` is
+// the same enumeration — so what is compared is the emitted tree, never the
+// spelling that built it.
+
+test("FaustDef parity: a box tree of library fragments", () => {
+    const expected = find(vectors.faustdefs, "box_voice").payload;
+    const freq = box.hslider("freq", 220.0, 20.0, 2000.0, 0.1);
+    const cutoff = box.hslider("cutoff", 900.0, 50.0, 8000.0, 1.0);
+    const amp = box.hslider("amp", 0.2, 0.0, 1.0, 0.001);
+    const tone = box.faust("os.osc", { ins: 1, outs: 1 }).call(freq).mul(amp);
+    const dry = box.faust("fi.lowpass", 3, { ins: 2, outs: 1 }).call(cutoff, tone);
+    const wet = box.faust("re.stereo_freeverb", 0.80, 0.70, 0.55, 23, { ins: 2, outs: 2 })
+        .call(dry, dry);
+    const [left, right] = wet.outs();
+    const voice = box.par(
+        dry.mul(0.5).add(left.mul(0.15)),
+        dry.mul(0.5).add(right.mul(0.15)),
+    );
+    const def = FaustDef.fromBox("voice", voice);
+    assert.deepEqual(JSON.parse(def.dumpDef()), expected);
+    assert.deepEqual(def.controlNames(), ["cutoff", "freq", "amp"]);
+});
+
+test("FaustDef parity: the algebra over wires", () => {
+    const expected = find(vectors.faustdefs, "box_algebra").payload;
+    const algebra = box.hgroup("bits", box.seq(
+        box.par(box.wire(), box.cut()),
+        box.split(box.wire(), box.par(box.wire(), box.wire())),
+        box.par(box.delay1(box.wire()), box.wire()),
+        box.merge(box.par(box.wire(), box.wire()), box.wire()),
+    ));
+    assert.deepEqual(JSON.parse(FaustDef.fromBox("algebra", algebra).dumpDef()), expected);
+    assert.equal(algebra.numInputs, 2);
+    assert.equal(algebra.numOutputs, 1);
+});
+
+test("FaustDef parity: a table read, gated and scaled", () => {
+    const expected = find(vectors.faustdefs, "box_table").payload;
+    const tbl = box.rdtable(box.waveform([0.0, 0.5, 1.0, 0.5]), box.rint(box.wire()));
+    const gated = box.select2(box.checkbox("mute"), tbl, 0.0);
+    const fade = box.hslider("gain", 0.5, 0.0, 1.0, 0.001).rsub(1.0);
+    const table = box.vgroup("read", gated.mul(fade.div(box.sr())));
+    assert.deepEqual(JSON.parse(FaustDef.fromBox("table", table).dumpDef()), expected);
+});
+
+test("a box tree that reuses one wire object is rejected", () => {
+    const w = box.wire();
+    assert.throws(() => FaustDef.fromBox("reused", box.par(w, w)), /each wire/);
+    // Any other value may be shared: the server computes the subtree once.
+    const shared = box.hslider("freq", 220.0, 20.0, 2000.0, 0.1);
+    assert.ok(FaustDef.fromBox("shared", box.par(shared, shared)));
+});
+
+test("a box's arity is what the composition rules make it", () => {
+    assert.equal(box.wire().numInputs, 1);
+    assert.equal(box.cut().numOutputs, 0);
+    // An unapplied fragment declares nothing, and says so rather than guessing.
+    const opaque = box.faust("os.osc");
+    assert.equal(opaque.numOutputs, null);
+    assert.throws(() => opaque.outs(), /arity is unknown/);
+    // `a ~ b` eats b's outputs off a's inputs.
+    const loop = box.rec(
+        box.faust("+", { ins: 2, outs: 1 }),
+        box.faust("*(0.99)", { ins: 1, outs: 1 }),
+    );
+    assert.equal(loop.numInputs, 1);
+    assert.equal(loop.numOutputs, 1);
+    // Selecting the only channel of a one-output box is the box itself.
+    const one = box.faust("os.osc", { ins: 1, outs: 1 });
+    assert.equal(one.get(0), one);
 });
 
 test("GraphDef parity: a wired chain with a scaled port", () => {

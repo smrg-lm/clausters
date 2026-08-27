@@ -2519,6 +2519,583 @@
           }
         ]
       }
+    },
+    {
+      "name": "box_voice",
+      "payload": {
+        "op": "par",
+        "in": [
+          {
+            "op": "add",
+            "in": [
+              {
+                "op": "mul",
+                "in": [
+                  {
+                    "op": "seq",
+                    "in": [
+                      {
+                        "op": "par",
+                        "in": [
+                          {
+                            "op": "hslider",
+                            "label": "cutoff",
+                            "init": 900.0,
+                            "min": 50.0,
+                            "max": 8000.0,
+                            "step": 1.0
+                          },
+                          {
+                            "op": "mul",
+                            "in": [
+                              {
+                                "op": "seq",
+                                "in": [
+                                  {
+                                    "op": "hslider",
+                                    "label": "freq",
+                                    "init": 220.0,
+                                    "min": 20.0,
+                                    "max": 2000.0,
+                                    "step": 0.1
+                                  },
+                                  {
+                                    "op": "faust",
+                                    "src": "import(\"stdfaust.lib\"); process = os.osc;"
+                                  }
+                                ]
+                              },
+                              {
+                                "op": "hslider",
+                                "label": "amp",
+                                "init": 0.2,
+                                "min": 0.0,
+                                "max": 1.0,
+                                "step": 0.001
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "op": "faust",
+                        "src": "import(\"stdfaust.lib\"); process = fi.lowpass(3);"
+                      }
+                    ]
+                  },
+                  0.5
+                ]
+              },
+              {
+                "op": "mul",
+                "in": [
+                  {
+                    "op": "seq",
+                    "in": [
+                      {
+                        "op": "seq",
+                        "in": [
+                          {
+                            "op": "par",
+                            "in": [
+                              {
+                                "op": "seq",
+                                "in": [
+                                  {
+                                    "op": "par",
+                                    "in": [
+                                      {
+                                        "op": "hslider",
+                                        "label": "cutoff",
+                                        "init": 900.0,
+                                        "min": 50.0,
+                                        "max": 8000.0,
+                                        "step": 1.0
+                                      },
+                                      {
+                                        "op": "mul",
+                                        "in": [
+                                          {
+                                            "op": "seq",
+                                            "in": [
+                                              {
+                                                "op": "hslider",
+                                                "label": "freq",
+                                                "init": 220.0,
+                                                "min": 20.0,
+                                                "max": 2000.0,
+                                                "step": 0.1
+                                              },
+                                              {
+                                                "op": "faust",
+                                                "src": "import(\"stdfaust.lib\"); process = os.osc;"
+                                              }
+                                            ]
+                                          },
+                                          {
+                                            "op": "hslider",
+                                            "label": "amp",
+                                            "init": 0.2,
+                                            "min": 0.0,
+                                            "max": 1.0,
+                                            "step": 0.001
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "op": "faust",
+                                    "src": "import(\"stdfaust.lib\"); process = fi.lowpass(3);"
+                                  }
+                                ]
+                              },
+                              {
+                                "op": "seq",
+                                "in": [
+                                  {
+                                    "op": "par",
+                                    "in": [
+                                      {
+                                        "op": "hslider",
+                                        "label": "cutoff",
+                                        "init": 900.0,
+                                        "min": 50.0,
+                                        "max": 8000.0,
+                                        "step": 1.0
+                                      },
+                                      {
+                                        "op": "mul",
+                                        "in": [
+                                          {
+                                            "op": "seq",
+                                            "in": [
+                                              {
+                                                "op": "hslider",
+                                                "label": "freq",
+                                                "init": 220.0,
+                                                "min": 20.0,
+                                                "max": 2000.0,
+                                                "step": 0.1
+                                              },
+                                              {
+                                                "op": "faust",
+                                                "src": "import(\"stdfaust.lib\"); process = os.osc;"
+                                              }
+                                            ]
+                                          },
+                                          {
+                                            "op": "hslider",
+                                            "label": "amp",
+                                            "init": 0.2,
+                                            "min": 0.0,
+                                            "max": 1.0,
+                                            "step": 0.001
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "op": "faust",
+                                    "src": "import(\"stdfaust.lib\"); process = fi.lowpass(3);"
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "op": "faust",
+                            "src": "import(\"stdfaust.lib\"); process = re.stereo_freeverb(0.8, 0.7, 0.55, 23);"
+                          }
+                        ]
+                      },
+                      {
+                        "op": "par",
+                        "in": [
+                          {
+                            "op": "wire"
+                          },
+                          {
+                            "op": "cut"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  0.15
+                ]
+              }
+            ]
+          },
+          {
+            "op": "add",
+            "in": [
+              {
+                "op": "mul",
+                "in": [
+                  {
+                    "op": "seq",
+                    "in": [
+                      {
+                        "op": "par",
+                        "in": [
+                          {
+                            "op": "hslider",
+                            "label": "cutoff",
+                            "init": 900.0,
+                            "min": 50.0,
+                            "max": 8000.0,
+                            "step": 1.0
+                          },
+                          {
+                            "op": "mul",
+                            "in": [
+                              {
+                                "op": "seq",
+                                "in": [
+                                  {
+                                    "op": "hslider",
+                                    "label": "freq",
+                                    "init": 220.0,
+                                    "min": 20.0,
+                                    "max": 2000.0,
+                                    "step": 0.1
+                                  },
+                                  {
+                                    "op": "faust",
+                                    "src": "import(\"stdfaust.lib\"); process = os.osc;"
+                                  }
+                                ]
+                              },
+                              {
+                                "op": "hslider",
+                                "label": "amp",
+                                "init": 0.2,
+                                "min": 0.0,
+                                "max": 1.0,
+                                "step": 0.001
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "op": "faust",
+                        "src": "import(\"stdfaust.lib\"); process = fi.lowpass(3);"
+                      }
+                    ]
+                  },
+                  0.5
+                ]
+              },
+              {
+                "op": "mul",
+                "in": [
+                  {
+                    "op": "seq",
+                    "in": [
+                      {
+                        "op": "seq",
+                        "in": [
+                          {
+                            "op": "par",
+                            "in": [
+                              {
+                                "op": "seq",
+                                "in": [
+                                  {
+                                    "op": "par",
+                                    "in": [
+                                      {
+                                        "op": "hslider",
+                                        "label": "cutoff",
+                                        "init": 900.0,
+                                        "min": 50.0,
+                                        "max": 8000.0,
+                                        "step": 1.0
+                                      },
+                                      {
+                                        "op": "mul",
+                                        "in": [
+                                          {
+                                            "op": "seq",
+                                            "in": [
+                                              {
+                                                "op": "hslider",
+                                                "label": "freq",
+                                                "init": 220.0,
+                                                "min": 20.0,
+                                                "max": 2000.0,
+                                                "step": 0.1
+                                              },
+                                              {
+                                                "op": "faust",
+                                                "src": "import(\"stdfaust.lib\"); process = os.osc;"
+                                              }
+                                            ]
+                                          },
+                                          {
+                                            "op": "hslider",
+                                            "label": "amp",
+                                            "init": 0.2,
+                                            "min": 0.0,
+                                            "max": 1.0,
+                                            "step": 0.001
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "op": "faust",
+                                    "src": "import(\"stdfaust.lib\"); process = fi.lowpass(3);"
+                                  }
+                                ]
+                              },
+                              {
+                                "op": "seq",
+                                "in": [
+                                  {
+                                    "op": "par",
+                                    "in": [
+                                      {
+                                        "op": "hslider",
+                                        "label": "cutoff",
+                                        "init": 900.0,
+                                        "min": 50.0,
+                                        "max": 8000.0,
+                                        "step": 1.0
+                                      },
+                                      {
+                                        "op": "mul",
+                                        "in": [
+                                          {
+                                            "op": "seq",
+                                            "in": [
+                                              {
+                                                "op": "hslider",
+                                                "label": "freq",
+                                                "init": 220.0,
+                                                "min": 20.0,
+                                                "max": 2000.0,
+                                                "step": 0.1
+                                              },
+                                              {
+                                                "op": "faust",
+                                                "src": "import(\"stdfaust.lib\"); process = os.osc;"
+                                              }
+                                            ]
+                                          },
+                                          {
+                                            "op": "hslider",
+                                            "label": "amp",
+                                            "init": 0.2,
+                                            "min": 0.0,
+                                            "max": 1.0,
+                                            "step": 0.001
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "op": "faust",
+                                    "src": "import(\"stdfaust.lib\"); process = fi.lowpass(3);"
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "op": "faust",
+                            "src": "import(\"stdfaust.lib\"); process = re.stereo_freeverb(0.8, 0.7, 0.55, 23);"
+                          }
+                        ]
+                      },
+                      {
+                        "op": "par",
+                        "in": [
+                          {
+                            "op": "cut"
+                          },
+                          {
+                            "op": "wire"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  0.15
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "box_algebra",
+      "payload": {
+        "op": "hgroup",
+        "label": "bits",
+        "in": [
+          {
+            "op": "seq",
+            "in": [
+              {
+                "op": "par",
+                "in": [
+                  {
+                    "op": "wire"
+                  },
+                  {
+                    "op": "cut"
+                  }
+                ]
+              },
+              {
+                "op": "split",
+                "in": [
+                  {
+                    "op": "wire"
+                  },
+                  {
+                    "op": "par",
+                    "in": [
+                      {
+                        "op": "wire"
+                      },
+                      {
+                        "op": "wire"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "par",
+                "in": [
+                  {
+                    "op": "delay",
+                    "in": [
+                      {
+                        "op": "wire"
+                      },
+                      1
+                    ]
+                  },
+                  {
+                    "op": "wire"
+                  }
+                ]
+              },
+              {
+                "op": "merge",
+                "in": [
+                  {
+                    "op": "par",
+                    "in": [
+                      {
+                        "op": "wire"
+                      },
+                      {
+                        "op": "wire"
+                      }
+                    ]
+                  },
+                  {
+                    "op": "wire"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "box_table",
+      "payload": {
+        "op": "vgroup",
+        "label": "read",
+        "in": [
+          {
+            "op": "mul",
+            "in": [
+              {
+                "op": "select2",
+                "in": [
+                  {
+                    "op": "checkbox",
+                    "label": "mute"
+                  },
+                  {
+                    "op": "rdtable",
+                    "in": [
+                      {
+                        "op": "waveform",
+                        "values": [
+                          0.0,
+                          0.5,
+                          1.0,
+                          0.5
+                        ]
+                      },
+                      {
+                        "op": "rint",
+                        "in": [
+                          {
+                            "op": "wire"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  0.0
+                ]
+              },
+              {
+                "op": "div",
+                "in": [
+                  {
+                    "op": "sub",
+                    "in": [
+                      1.0,
+                      {
+                        "op": "hslider",
+                        "label": "gain",
+                        "init": 0.5,
+                        "min": 0.0,
+                        "max": 1.0,
+                        "step": 0.001
+                      }
+                    ]
+                  },
+                  {
+                    "op": "min",
+                    "in": [
+                      192000.0,
+                      {
+                        "op": "max",
+                        "in": [
+                          1.0,
+                          {
+                            "op": "fconst",
+                            "ctype": "int",
+                            "name": "fSamplingFreq",
+                            "file": "<math.h>"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
     }
   ],
   "graphdefs": [

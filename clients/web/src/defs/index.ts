@@ -13,7 +13,7 @@
 
 export { DefPatch, GraphPatch, patchToWidget, synthdefPorts } from "./patch.ts";
 export type {
-    Box,
+    PatchBox,
     BoxKind,
     Compiled,
     CordRate,
@@ -75,6 +75,10 @@ export type { ControlSpec, SpecInput, SynthDefSpec, UgenSpec } from "./synthdef.
 
 export { FaustDef } from "./faustdef.ts";
 export type { FaustDefKind } from "./faustdef.ts";
+export { Box } from "./boxes.ts";
+export type { BoxInput, BoxNode, EvalArg, FaustOptions } from "./boxes.ts";
+
+export { FaustExpr } from "./expr.ts";
 
 export { asDef, exprChannels, isExpr } from "./asdef.ts";
 export type { Expr } from "./asdef.ts";
@@ -84,4 +88,5 @@ export type { GraphDefSpec, MemberControlValue, MemberSpec } from "./graphdef.ts
 
 export * from "./ugens/index.ts";
 export * as signals from "./signals.ts";
+export * as boxes from "./boxes.ts";
 export * as pvExpr from "./pv_expr.ts";

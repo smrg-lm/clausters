@@ -97,9 +97,23 @@ Every bound may itself be a signal, so a range can be modulated. sclang's bipola
 
 `diskIn`/`diskOut` are the one pair that only means something against a **native** server: they stream the server's own filesystem, which a tab does not have.
 
-Two more things a tab does not have, both of them the platform's and neither of them silent: **parallel groups do not run in parallel** (`/group_parallel` is accepted and serializes, which produces the same samples), and **`/def_send faust` reaches a native server only**. The whole list, with the reason for each, is [What a tab cannot do](platform.md).
+One more thing a tab does not have, the platform's and not silent: **parallel groups do not run in parallel** (`/group_parallel` is accepted and serializes, which produces the same samples). The whole list, with the reason for each, is [What a tab cannot do](platform.md).
 
-A `FaustDef` is built from a signal expression (`fromSignals`), a box tree or Faust source (`fromSource`) — the last only against a native server, the in-page engine having no Faust compiler in it. `GraphDef` wires several of either into one named, instantiable configuration with a port surface.
+A `FaustDef` is built three ways, all equal citizens and all of them compiling in a tab (`libfaust-wasm` runs in the NRT worker, and the module it emits is linked into the engine's own memory): a **signal expression** (`fromSignals`, built with `defs.signals`), a **box tree** (`fromBox`, built with `defs.boxes`) or **Faust source** (`fromSource`). `GraphDef` wires several defs of either family into one named, instantiable configuration with a port surface.
+
+The **box algebra** (`defs.boxes`) is Faust's point-free composition: whole *processors* joined by their input/output arities — `seq` / `par` / `split` / `merge` / `rec` over `wire()` and `cut()` — where `signals` describes one output at a time. Its door to the Faust library ecosystem is `box.faust(...)`, which compiles any Faust expression into a `Box` that composes like a primitive, so `os.osc`, `fi.lowpass` or a `pm.` model is a box among boxes. The two stages of application are kept apart in the syntax: arguments **to** `box.faust` are evaluation-stage, spliced into the generated source (`box.faust("fi.lowpass", 3)` compiles `fi.lowpass(3)`), where a structural parameter like a filter order has to live; arguments to `.call(...)` on the resulting box are composition-stage, boxes wired to its signal inputs.
+
+```ts
+import { FaustDef } from "clausters";
+import { boxes as box } from "clausters/defs";
+
+const freq = box.hslider("freq", 220.0, 20.0, 2000.0, 0.1);
+const tone = box.faust("os.osc", { ins: 1, outs: 1 }).call(freq).mul(0.2);
+const def = FaustDef.fromBox("soft", box.faust("fi.lowpass", 3, { ins: 2, outs: 1 })
+  .call(box.hslider("cutoff", 900.0, 50.0, 8000.0, 1.0), tone));
+```
+
+Two spellings differ from the reference client and nothing else does: applying a box is `.call(a, b)` where Python calls the box itself, and selecting one output channel is `st.get(0)` where Python writes `st[0]` — a class instance is neither callable nor indexable in TypeScript. The emitted tree is the same tree, which is what the parity vectors compare. One rule is worth knowing before the first surprise: **each `wire()` is a distinct input**, so reusing one wire *object* in two positions is an error `fromBox` rejects; reusing any other box value is free (the server computes a shared subtree once). `examples/faust/boxes-library.html` builds an instrument out of three library fragments and renders it offline.
 
 A def is a plain value until it is sent, and the definitions themselves mean exactly what the [server book](https://clausters.readthedocs.io/) says they mean: this client only builds the JSON.
 

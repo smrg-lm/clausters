@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: the box API, Faust library DSP glued together</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 46rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      a { color: #8fd0ff; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+      .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">The box API: Faust library DSP glued together from the
+page. The web port of the Python client's
+<code>examples/faust/boxes_library.py</code> — same instrument, same phrase,
+the same calls in the same order.
+
+<code>defs.boxes</code> reuses the Faust libraries <b>without transcribing
+them</b>: <code>box.faust(…)</code> compiles any Faust expression into a
+<code>Box</code> that composes like a primitive. This example builds an
+instrument out of three library pieces — an oscillator (<code>os.osc</code>), a
+lowpass (<code>fi.lowpass</code>) and a stereo reverb
+(<code>re.stereo_freeverb</code>) — wired to sliders and arithmetic built here,
+then renders a short phrase offline.
+
+The two application stages at work, kept apart in the syntax:
+
+<ul>
+<li>arguments to <code>box.faust</code> are <b>evaluation-stage</b>, spliced
+into the Faust source text (the filter order <code>3</code>, the reverb's
+structural parameters);</li>
+<li>arguments to <code>.call(…)</code> on the resulting box are
+<b>composition-stage</b>, boxes wired to its signal inputs (the sliders, the
+previous stage).</li>
+</ul>
+
+<b>The one difference from the script</b>, and it is the platform's: a page has
+no filesystem, so where the script writes <code>out.wav</code> this offers the
+take as a download. Everything else is the same call. And the compiler is in
+the tab — the render compiles the score's Faust defs with
+<code>libfaust-wasm</code> in the NRT worker before it starts, so no server
+process is involved anywhere.
+
+Needs <code>./build.sh</code> in <code>clients/web</code> first
+(<code>dist/</code> is git-ignored); serve it over HTTP
+(<code>python3 -m http.server</code>) and open
+<code>/examples/faust/boxes-library.html</code>.</div>
+
+      <div class="row">
+        <button id="render">render the phrase</button>
+        <span id="download"></span>
+      </div>
+
+      <pre id="log"></pre>
+    </main>
+
+    <script type="module">
+      import {
+        FaustDef, Routine, Session, Synth, wavBytes,
+      } from "../../dist/index.js";
+      import * as box from "../../dist/defs/boxes.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => { $("log").textContent += line + "\n"; };
+
+      const SR = 48000.0;
+
+      // ---- the def ----
+      //
+      // osc -> lowpass -> stereo reverb, all from the Faust libraries.
+      function softVoice(name = "soft_voice") {
+        const freq = box.hslider("freq", 220.0, 20.0, 2000.0, 0.1);
+        const cutoff = box.hslider("cutoff", 900.0, 50.0, 8000.0, 1.0);
+        const amp = box.hslider("amp", 0.2, 0.0, 1.0, 0.001);
+
+        // box.faust("os.osc") is the unapplied oscillator: one input (the
+        // frequency), one output. Calling it wires the slider in; the result
+        // is an ordinary Box, so `.mul(amp)` composes arithmetic around it.
+        const tone = box.faust("os.osc", { ins: 1, outs: 1 }).call(freq).mul(amp);
+
+        // fi.lowpass(3): the order is structural, so it is an eval-arg
+        // (spliced into the source); the cutoff and the signal are its two
+        // inputs.
+        const dry = box.faust("fi.lowpass", 3, { ins: 2, outs: 1 })
+          .call(cutoff, tone);
+
+        // The reverb's feedback/damp/spread bake into the source too. It takes
+        // a stereo pair: reusing the `dry` VALUE twice is fine (and
+        // deliberate) -- a repeated subexpression is computed once, this is
+        // not two filters.
+        const wet = box
+          .faust("re.stereo_freeverb", 0.80, 0.70, 0.55, 23, { ins: 2, outs: 2 })
+          .call(dry, dry);
+
+        // Channel selection needs the arity, which only the Faust compiler
+        // knows for fragments -- hence outs: 2 above. A gentle dry/wet per
+        // side (the reverb has gain; keep the sum comfortably below full
+        // scale).
+        const [left, right] = wet.outs();
+        return FaustDef.fromBox(name, box.par(
+          dry.mul(0.5).add(left.mul(0.15)),
+          dry.mul(0.5).add(right.mul(0.15)),
+        ));
+      }
+
+      // ---- the score ----
+      //
+      // The fragment sliders are ordinary controls: /node_set by label.
+      async function run() {
+        $("render").disabled = true;
+        const session = await Session.nrt({ tempo: 2.0 });
+        await softVoice().send(session.server);   // NRT: scored at time 0
+        const voice = new Synth("soft_voice", { freq: 220.0, amp: 0.25 },
+          { server: session.server });
+
+        new Routine(function* () {
+          const melody = [57, 60, 64, 67, 64, 60, 57, 52];
+          for (const [step, midi] of melody.entries()) {
+            const hz = 440.0 * 2.0 ** ((midi - 69) / 12.0);
+            // Timed, not immediate: the bundle is stamped with the routine's
+            // logical beat. Every argument is tagged, a JS number being a
+            // double with no int/float distinction of its own.
+            session.server.sendBundle([
+              ["/node_set", ["i", voice.id], "freq", ["f", hz],
+                "cutoff", ["f", 600.0 + 400.0 * step]],
+            ]);
+            yield 0.5;
+          }
+          yield 2.0;                              // let the reverb tail ring
+          session.server.sendBundle([["/node_free", ["i", voice.id]]]);
+        }).play(session.clock);
+
+        // ---- the render ----
+        log("rendering...");
+        const stats = await session.render({ sampleRate: SR, channels: 2 });
+        const peak = Math.max(0.0, ...stats.peak);
+        log(`rendered ${stats.frames} frames (${stats.duration.toFixed(2)} s) `
+          + `| peak ${peak.toFixed(3)}`);
+
+        const blob = new Blob([wavBytes(stats)], { type: "audio/wav" });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = "boxes_library.wav";
+        link.textContent = "download boxes_library.wav";
+        $("download").replaceChildren(link);
+        log("listen with: pw-play boxes_library.wav");
+      }
+
+      $("render").onclick = () => run().catch((err) => {
+        log(`error: ${err}`);
+        $("render").disabled = false;
+      });
+    </script>
+  </body>
+</html>

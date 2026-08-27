@@ -24,5 +24,6 @@
   - [seq](api/Namespace.seq.md)
   - [form](api/Namespace.form.md)
   - [data](api/Namespace.data.md)
-  - [signals](api/Namespace.signals.md)
+  - [signals](api/defs.Namespace.signals.md)
+  - [boxes](api/defs.Namespace.boxes.md)
   - [builtins](api/Namespace.builtins.md)

@@ -1,12 +1,11 @@
 // FaustDef: a named Faust definition ready for `/def_send faust` (mirrors
 // `clausters/defs/faustdef.py`).
 //
-// Wraps a graph built with `./signals.ts` (the **signal tree** form), a raw
-// **box tree** (the form the Python client's box API emits — machine-built
-// here, so it is accepted as JSON rather than rebuilt), or a Faust **source**
-// string: the three payloads the server's `/def_send faust` accepts, on equal
-// footing (it sniffs which by the first byte). They are three ways of writing
-// Faust, not a main road and two detours.
+// Wraps a graph built with `./signals.ts` (the **signal tree** form), one
+// built with `./boxes.ts` (the **box tree**, Faust's point-free algebra), or a
+// Faust **source** string: the three payloads the server's `/def_send faust`
+// accepts, on equal footing (it sniffs which by the first byte). They are
+// three ways of writing Faust, not a main road and two detours.
 //
 // Sending and instantiating is the `Server`'s job; this only builds the
 // payload and exposes the declared control names (UI labels), plus the
@@ -21,6 +20,7 @@
 import type { MsgArg } from "../base/osc.ts";
 import type { Server } from "./server/index.ts";
 import { resolveServer } from "./wire.ts";
+import { Box, checkWires } from "./boxes.ts";
 import { Signal } from "./signals.ts";
 import type { SignalNode } from "./signals.ts";
 import type { PatchViewOptions, PatchWindow } from "../plot.ts";
@@ -70,10 +70,16 @@ export class FaustDef {
     }
 
     /**
-     * From a raw box-tree object — the JSON the Python client's box API
-     * emits, and what a machine-generated graph produces.
+     * From a `./boxes.ts` `Box` (or a raw box-tree object, kept for
+     * machine-generated graphs). A `Box` is checked for the one silent mistake
+     * the box algebra allows: reusing the same `wire()`/`cut()` object in two
+     * positions (each wire is a distinct input).
      */
-    static fromBox(name: string, box: unknown): FaustDef {
+    static fromBox(name: string, box: Box | unknown): FaustDef {
+        if (box instanceof Box) {
+            checkWires(box.node);
+            return new FaustDef(name, box.toJSON(), "box");
+        }
         return new FaustDef(name, box, "box");
     }
 

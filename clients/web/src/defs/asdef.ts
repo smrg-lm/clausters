@@ -2,7 +2,8 @@
 // `clausters/defs/asdef.py`).
 //
 // The ambient verbs (`play`, `plot`, `render`) accept a bare expression — a
-// UGen graph, a `ChannelList`, a Faust `Signal` — where a def is needed;
+// UGen graph, a `ChannelList`, a Faust `Signal` or a `Box` — where a def is
+// needed;
 // `asDef` is the one coercion they share, so what is coercible is decided here
 // and nowhere else. A `Ugen` expression is wrapped in `out(0.0, expr)` unless
 // it already is a **sink**; a `ChannelList` lays its non-sink members on
@@ -12,12 +13,8 @@
 //
 // `exprChannels` answers the other half: how many buses the coercion would
 // lay. The verbs read it differently on purpose — see its doc comment.
-//
-// **One kind the reference client coerces and this one cannot**: a Faust
-// `Box`. The box algebra has no TypeScript surface yet (it is its own
-// milestone), so there is nothing here to accept; `FaustDef.fromBox` takes the
-// raw box JSON a generator emits, which is a def already.
 
+import { Box } from "./boxes.ts";
 import { FaustDef } from "./faustdef.ts";
 import { GraphDef } from "./graphdef.ts";
 import { Signal } from "./signals.ts";
@@ -25,7 +22,7 @@ import { SynthDef } from "./synthdef.ts";
 import { ChannelList, Ugen, out } from "./ugens/index.ts";
 
 /** Anything the ambient verbs accept where a def is expected. */
-export type Expr = Ugen | ChannelList | Signal;
+export type Expr = Ugen | ChannelList | Signal | Box;
 
 /**
  * UGen kinds that **deliver data out of the graph**: audio or control to a
@@ -74,7 +71,7 @@ function isSink(value: unknown): value is Ugen {
 /** Whether `value` is a bare expression the verbs can coerce into a def. */
 export function isExpr(value: unknown): value is Expr {
     return value instanceof Ugen || value instanceof ChannelList
-        || value instanceof Signal;
+        || value instanceof Signal || value instanceof Box;
 }
 
 /**
@@ -87,7 +84,7 @@ export function isExpr(value: unknown): value is Expr {
  * as a root, and the members that are not are the channels, laid on
  * consecutive buses from 0 — so `play(dup(expr))` is stereo, and a reporter in
  * the list does not push the audio off bus 0. A `Signal` becomes a one-output
- * `FaustDef`.
+ * `FaustDef`, a `Box` a `FaustDef` with the box's own arity.
  */
 export function asDef(
     expr: Expr | SynthDef | FaustDef | GraphDef,
@@ -111,10 +108,13 @@ export function asDef(
     if (expr instanceof Signal) {
         return FaustDef.fromSignals(name ?? tmpName("faustdef"), expr);
     }
+    if (expr instanceof Box) {
+        return FaustDef.fromBox(name ?? tmpName("faustdef"), expr);
+    }
     throw new TypeError(
         "cannot make a def out of this; expected a Ugen, a ChannelList, a Signal, "
-            + "or a def (SynthDef/FaustDef/GraphDef). A Control is a graph leaf, not "
-            + "an expression to play on its own: use it inside one.",
+            + "a Box, or a def (SynthDef/FaustDef/GraphDef). A Control is a graph "
+            + "leaf, not an expression to play on its own: use it inside one.",
     );
 }
 
@@ -138,6 +138,7 @@ export function exprChannels(expr: unknown): number | null {
         return [...expr].filter((member) => !isSink(member)).length;
     }
     if (expr instanceof Ugen) return isSink(expr) ? 0 : 1;
+    if (expr instanceof Box) return expr.numOutputs;
     if (expr instanceof Signal) return 1;
     return null;
 }

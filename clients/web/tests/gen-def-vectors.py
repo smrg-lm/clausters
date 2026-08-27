@@ -23,6 +23,7 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "python"))
 
 from clausters.defs import FaustDef, GraphDef, SynthDef  # noqa: E402
+from clausters.defs import boxes as box  # noqa: E402
 from clausters.defs import signals as sig  # noqa: E402
 from clausters.defs.ugens import (  # noqa: E402
     DoneAction, Env, chans, control, conv, dbrown, dbufrd, demand, dgeom,
@@ -273,6 +274,49 @@ def faust_cases():
     ]
 
 
+def box_cases():
+    """(name, payload) for each reference FaustDef box tree.
+
+    Three of them, between them covering the whole box surface: the library
+    instrument the `faust/boxes-library` example builds (eval-stage arguments,
+    application, channel selection), the algebra proper over wires (the four
+    compositions, a group, a one-sample delay), and the table/control corner
+    (a waveform read, `select2`, the sample rate, a reversed operand).
+    """
+    # 1. The instrument: os.osc -> fi.lowpass -> re.stereo_freeverb, wired to
+    # sliders and arithmetic, with the reverb's two outputs selected.
+    freq = box.hslider("freq", 220.0, 20.0, 2000.0, 0.1)
+    cutoff = box.hslider("cutoff", 900.0, 50.0, 8000.0, 1.0)
+    amp = box.hslider("amp", 0.2, 0.0, 1.0, 0.001)
+    tone = box.faust("os.osc", ins=1, outs=1)(freq) * amp
+    dry = box.faust("fi.lowpass", 3, ins=2, outs=1)(cutoff, tone)
+    wet = box.faust("re.stereo_freeverb", 0.80, 0.70, 0.55, 23,
+                    ins=2, outs=2)(dry, dry)
+    left, right = wet.outs()
+    voice = box.par(dry * 0.5 + left * 0.15, dry * 0.5 + right * 0.15)
+
+    # 2. The algebra over bare wires: 2 in -> 1 out, legal Faust throughout.
+    algebra = box.hgroup("bits", box.seq(
+        box.par(box.wire(), box.cut()),
+        box.split(box.wire(), box.par(box.wire(), box.wire())),
+        box.par(box.delay1(box.wire()), box.wire()),
+        box.merge(box.par(box.wire(), box.wire()), box.wire()),
+    ))
+
+    # 3. A table read, gated by a checkbox and scaled by a control -- with the
+    # one operand order an operator writes and a method cannot (1.0 - x).
+    tbl = box.rdtable(box.waveform([0.0, 0.5, 1.0, 0.5]), box.rint(box.wire()))
+    gated = box.select2(box.checkbox("mute"), tbl, 0.0)
+    fade = 1.0 - box.hslider("gain", 0.5, 0.0, 1.0, 0.001)
+    table = box.vgroup("read", gated * (fade / box.sr()))
+
+    return [
+        ("box_voice", json.loads(FaustDef.from_box("voice", voice).dump_def())),
+        ("box_algebra", json.loads(FaustDef.from_box("algebra", algebra).dump_def())),
+        ("box_table", json.loads(FaustDef.from_box("table", table).dump_def())),
+    ]
+
+
 def graph_case():
     g = GraphDef("chain")
     bus = g.bus("mix")
@@ -296,7 +340,8 @@ def scalar_cases():
 def main():
     vectors = {
         "synthdefs": [{"name": n, "spec": s} for n, s in synth_cases()],
-        "faustdefs": [{"name": n, "payload": p} for n, p in faust_cases()],
+        "faustdefs": [{"name": n, "payload": p}
+                      for n, p in faust_cases() + box_cases()],
         "graphdefs": [{"name": n, "spec": s} for n, s in graph_case()],
         "scalars": scalar_cases(),
     }

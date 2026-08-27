@@ -12,9 +12,18 @@
 // (Faust `int`/`real`); explicit feedback uses `recursion`/`self_` (one
 // sample of delay), and `input(n)` reads audio input `n`.
 //
+// The methods come from `./expr.ts`'s `FaustExpr`, the roof this shares with
+// the box algebra, so the vocabulary is the whole operator surface every
+// expression in this package answers to — and the ones the Faust signal API
+// has no op for (`.hypot()`, `.midicps()`, the shifts a *box* lacks) throw
+// where they are written, as they do in the reference client. `.rsub(1)` is
+// `1 - sig`, the operand order a method cannot otherwise say.
+//
 // Reserved controls `in` and `out` (set with `/synth_new … "in" b "out" b`)
 // choose the input/output buses; they are added by the server, not declared
 // here.
+
+import { FaustExpr } from "./expr.ts";
 
 /** A JSON-able signal-tree node, or a bare number (a constant). */
 export type SignalNode = number | { [field: string]: unknown };
@@ -43,10 +52,11 @@ const nodeOf = (x: SignalInput): SignalNode => (x instanceof Signal ? x.node : x
  * One node of a Faust signal graph (one output). Wrap a number to make a
  * constant; compose with the methods below or the module functions.
  */
-export class Signal {
+export class Signal extends FaustExpr<Signal, SignalInput> {
     readonly node: SignalNode;
 
     constructor(node: SignalNode) {
+        super();
         this.node = node;
     }
 
@@ -54,7 +64,7 @@ export class Signal {
         return this.node;
     }
 
-    private compose(selector: string, other: SignalInput, swap = false): Signal {
+    protected composeBinop(selector: string, other: SignalInput, swap: boolean): Signal {
         const op = BINARY[selector];
         if (op === undefined) {
             throw new TypeError(`no Faust signal op for binary '${selector}'`);
@@ -65,7 +75,7 @@ export class Signal {
         return new Signal({ op, in: operands });
     }
 
-    private composeUnary(selector: string): Signal {
+    protected unop(selector: string): Signal {
         // Faust has no unary neg; 0 - x.
         if (selector === "neg") return new Signal({ op: "sub", in: [0.0, this.node] });
         const op = UNARY[selector];
@@ -74,57 +84,6 @@ export class Signal {
         }
         return new Signal({ op, in: [this.node] });
     }
-
-    // --- binary ---
-    add(x: SignalInput): Signal { return this.compose("add", x); }
-    sub(x: SignalInput): Signal { return this.compose("sub", x); }
-    mul(x: SignalInput): Signal { return this.compose("mul", x); }
-    div(x: SignalInput): Signal { return this.compose("div", x); }
-    /** The remainder (Faust's `rem`). */
-    mod(x: SignalInput): Signal { return this.compose("mod", x); }
-    pow(x: SignalInput): Signal { return this.compose("pow", x); }
-    min(x: SignalInput): Signal { return this.compose("min", x); }
-    max(x: SignalInput): Signal { return this.compose("max", x); }
-    atan2(x: SignalInput): Signal { return this.compose("atan2", x); }
-    gt(x: SignalInput): Signal { return this.compose("gt", x); }
-    lt(x: SignalInput): Signal { return this.compose("lt", x); }
-    ge(x: SignalInput): Signal { return this.compose("ge", x); }
-    le(x: SignalInput): Signal { return this.compose("le", x); }
-    eq(x: SignalInput): Signal { return this.compose("eq", x); }
-    ne(x: SignalInput): Signal { return this.compose("ne", x); }
-    bitand(x: SignalInput): Signal { return this.compose("bitand", x); }
-    bitor(x: SignalInput): Signal { return this.compose("bitor", x); }
-    bitxor(x: SignalInput): Signal { return this.compose("bitxor", x); }
-    leftshift(x: SignalInput): Signal { return this.compose("lshift", x); }
-    rightshift(x: SignalInput): Signal { return this.compose("rshift", x); }
-
-    /**
-     * This signal on the **right** of `x op this` — the number-on-the-left
-     * case a method cannot otherwise express (`sig.rsub(1)` is `1 - sig`).
-     */
-    rsub(x: SignalInput): Signal { return this.compose("sub", x, true); }
-    /** `x / this`; see `rsub`. */
-    rdiv(x: SignalInput): Signal { return this.compose("div", x, true); }
-
-    // --- unary ---
-    neg(): Signal { return this.composeUnary("neg"); }
-    abs(): Signal { return this.composeUnary("abs"); }
-    floor(): Signal { return this.composeUnary("floor"); }
-    ceil(): Signal { return this.composeUnary("ceil"); }
-    sin(): Signal { return this.composeUnary("sin"); }
-    cos(): Signal { return this.composeUnary("cos"); }
-    tan(): Signal { return this.composeUnary("tan"); }
-    asin(): Signal { return this.composeUnary("asin"); }
-    acos(): Signal { return this.composeUnary("acos"); }
-    atan(): Signal { return this.composeUnary("atan"); }
-    exp(): Signal { return this.composeUnary("exp"); }
-    log(): Signal { return this.composeUnary("log"); }
-    log10(): Signal { return this.composeUnary("log10"); }
-    sqrt(): Signal { return this.composeUnary("sqrt"); }
-    /** Faust's `intcast`. */
-    asinteger(): Signal { return this.composeUnary("asint"); }
-    /** Faust's `floatcast`. */
-    asfloat(): Signal { return this.composeUnary("asfloat"); }
 }
 
 /** Coerces a number or `Signal` into a `Signal`. */
