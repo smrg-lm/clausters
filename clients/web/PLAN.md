@@ -3019,15 +3019,20 @@ finished work, where a pending item reads as done.
   *(counted 2026-08-24; closed 2026-08-25, when every script that can have a
   page had one)*. W16's real size, stated as a number rather than as "about
   forty", and then paid: it went 19/47/12 → **55 pairs, 11 scripts alone, 11
-  pages alone**, counting a directory with an `index.html` as its own name.
+  pages alone**, counting a directory with an `index.html` as its own name. It
+  has moved once since, and only by a milestone paying its own acceptance:
+  **W7** and **W9** wrote the three pages named below on 2026-08-27, so the
+  count today is **58 pairs, 8 scripts alone, 11 pages alone** and every one of
+  the eight has its reason in this entry.
 
   **The eleven scripts left are each accounted for**, which is what the
   milestone's acceptance asks: three belonged to another milestone's acceptance
   (`faust/boxes-library` to **W7**, `io/midi-responder` and
   `editors/pianoroll-midi` to **W9**, all three paired on 2026-08-27 when those
-  milestones landed); seven have **no page by nature**, each
-  with its reason below; and `io/osc-responder` is **paired under another
-  name**, `io/responders.html`, which says so in its own header.
+  milestones landed); six have **no page by nature** and a seventh,
+  `editors/session`, has none and could not, each with its reason below; and
+  `io/osc-responder` is **paired under another name**, `io/responders.html`,
+  which says so in its own header.
 
   **And the eleven pages left are too.** Six are a page's own subject with no
   script behind it — `components/demo`, `components/lifecycle`,
