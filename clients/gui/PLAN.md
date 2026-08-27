@@ -2223,7 +2223,7 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 
 ## Found by use: the running list of fixes
 
-- ⬜ **Nothing resizes a window, so nothing tests a squeeze** *(named 2026-08-26,
+- ✅ **Nothing resizes a window, so nothing tests a squeeze** *(named 2026-08-26,
   after a drag on a corner panicked the host in `ruler::draw_ticks_v` — see the
   commit; what is left here is the class, not that bug)*. Every suite draws into
   a mesh at a size it chose, and the examples open at the size their GuiDef
@@ -2242,6 +2242,29 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   over the element registry (every registered element, a shrinking rect) or a
   case per widget, and whether the browser front needs its own, since the
   compositor there gives sizes the native one does not.
+
+  **Closed 2026-08-26 as one table**, `frame::tests::every_widget_survives_being_squeezed_to_nothing`.
+  Both open questions answered, and neither the way the entry guessed:
+
+  - **One table, not a case per widget.** A case per widget could assert more
+    — *what* a squeezed widget drops, and in what order — but nothing would
+    oblige anyone to write one, and a widget added next year would not have it.
+    A row is one line, which is the property that keeps the coverage from
+    rotting; what it asserts is only the floor.
+  - **The browser front needs nothing of its own**, and that is not a
+    concession: the frame's mesh pass *is* the same Rust compiled twice, so a
+    squeeze is the same arithmetic on both fronts. A separate browser test
+    would be testing wgpu.
+  - **Not the element registry either.** The walk goes through the **frame**,
+    because that is where the crash was: a heavy view's chrome is drawn by the
+    frame's own pass, and an `Element::draw` test would have missed the very
+    panic that prompted this.
+
+  **Two things keep it from being vacuously green**, which is the failure mode
+  of a table: a row that does not build as the type it names is a failure (a
+  typo would otherwise build as `Unknown`, draw nothing and pass), and every row
+  must draw *something* at a comfortable size before the walk begins. And the
+  test was verified by reverting the ruler fix and watching it fail.
 
 - ✅ **The host's own theme is a wasm export the protocol has no verb for**
   *(found 2026-08-25, porting `panels/style.py`; fixed the same day)*. Exactly the typeface's case,

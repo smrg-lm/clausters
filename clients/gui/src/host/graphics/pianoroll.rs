@@ -299,7 +299,12 @@ pub fn draw_notes(
         return;
     }
     let rh = row_height(lo, hi, grid);
-    let h = rh.clamp(NOTE_MIN_H, grid.h).max(NOTE_MIN_H);
+    // The floor wins over the ceiling, which is what the trailing `max`
+    // always said: a note never collapses below `NOTE_MIN_H`, and a grid
+    // shorter than one bar cuts it (`visible_band`) rather than shrinking it.
+    // Written as a `clamp` this inverted its own range on such a grid and
+    // panicked — reachable by dragging a window's corner in.
+    let h = rh.min(grid.h).max(NOTE_MIN_H);
     let (x_lo, x_hi) = (grid.x, grid.x + grid.w);
     for (i, n) in notes.iter().enumerate() {
         // x maps through `field` — the pixel domain the shared `nav` spans (the
@@ -497,7 +502,12 @@ pub fn note_hit(
     y: f32,
 ) -> Option<NoteHit> {
     let rh = row_height(lo, hi, grid);
-    let h = rh.clamp(NOTE_MIN_H, grid.h).max(NOTE_MIN_H);
+    // The floor wins over the ceiling, which is what the trailing `max`
+    // always said: a note never collapses below `NOTE_MIN_H`, and a grid
+    // shorter than one bar cuts it (`visible_band`) rather than shrinking it.
+    // Written as a `clamp` this inverted its own range on such a grid and
+    // panicked — reachable by dragging a window's corner in.
+    let h = rh.min(grid.h).max(NOTE_MIN_H);
     let mut found: Option<NoteHit> = None;
     for (i, n) in notes.iter().enumerate() {
         if !pitch_visible(n.pitch, lo, hi) {

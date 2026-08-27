@@ -1012,6 +1012,238 @@ pub(crate) fn framing_of(r: Rect, fb_w: u32, fb_h: u32) -> Framing {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::host::guidef::GuiNode;
+
+    /// **Every widget survives being squeezed to nothing.**
+    ///
+    /// This is the one class of state a hand on a window's corner reaches and
+    /// no other test does: nothing in this project resizes a window, every
+    /// suite draws into a mesh at a size it chose, and every example opens at
+    /// the size its GuiDef declares. So a widget *smaller than its own
+    /// contents* — a lane under a line of text, a body under its rulers, a
+    /// strip under its widest label — is arithmetic nobody exercises, and each
+    /// piece of it has a lower bound nobody wrote down. One of them was a
+    /// panic (`ruler::draw_ticks_v`, between four pixels and a caption's
+    /// height, found 2026-08-26 by dragging a corner in).
+    ///
+    /// It is deliberately **one table rather than a case per widget**. A case
+    /// per widget could assert more — *what* a squeezed widget drops, and in
+    /// what order — but nothing would oblige anyone to write one, and a widget
+    /// added next year would not have it. Here a new widget is one row, which
+    /// is the property that keeps the coverage from rotting. What it asserts is
+    /// only the floor: it draws, and it does not panic.
+    ///
+    /// The walk goes through the **frame**, not through `Element::draw`,
+    /// because that is where the crash was: a heavy view's chrome is drawn by
+    /// the frame's own pass, and an element-level test would have missed it.
+    #[test]
+    fn every_widget_survives_being_squeezed_to_nothing() {
+        // One row per widget: the wire `type` and the props that give it
+        // something to draw. Rulers and labels are on wherever they exist,
+        // since a strip and a caption are what a squeeze runs out of room for
+        // first.
+        const TABLE: &[(&str, &str)] = &[
+            ("label", r#"{"id":1,"type":"label","text":"a caption"}"#),
+            (
+                "button",
+                r#"{"id":1,"type":"button","text":"go","label":"run"}"#,
+            ),
+            (
+                "toggle",
+                r#"{"id":1,"type":"toggle","value":1,"label":"on"}"#,
+            ),
+            (
+                "knob",
+                r#"{"id":1,"type":"knob","min":0,"max":1,"value":0.5,"label":"cutoff"}"#,
+            ),
+            (
+                "slider",
+                r#"{"id":1,"type":"slider","min":0,"max":1,"value":0.5,"label":"mix"}"#,
+            ),
+            (
+                "number",
+                r#"{"id":1,"type":"number","min":0,"max":9,"value":4,"label":"n"}"#,
+            ),
+            (
+                "text",
+                r#"{"id":1,"type":"text","value":"typed","label":"name"}"#,
+            ),
+            (
+                "menu",
+                r#"{"id":1,"type":"menu","options":["a","b"],"value":0,"label":"pick"}"#,
+            ),
+            (
+                "meter",
+                r#"{"id":1,"type":"meter","value":0.5,"label":"out"}"#,
+            ),
+            (
+                "keys",
+                r#"{"id":1,"type":"keys","min":48,"max":72,"label":"piano"}"#,
+            ),
+            (
+                "curve",
+                r#"{"id":1,"type":"curve","points":[0,0,0.5,1,1,0],"label":"env"}"#,
+            ),
+            (
+                "notes",
+                r#"{"id":1,"type":"notes","notes":[[0,0.5,60,100],[1,0.5,64,100]],
+                    "min":48,"max":72,"ruler":"time","label":"roll"}"#,
+            ),
+            (
+                "nodes",
+                r#"{"id":1,"type":"nodes","nodes":[[1,"g",0],[2,"beep",1]],"label":"tree"}"#,
+            ),
+            // The signal family is one type and six pictures, and the crash was
+            // in a navigable one with both rulers and a label: every axis it
+            // has is a strip that can run out of room.
+            (
+                "signal/trace",
+                r#"{"id":1,"type":"signal","view":"trace","min":-1,"max":1,
+                    "data":[0,0.5,-0.5,1,-1,0.25,0,-0.75],
+                    "ruler":"time","ruler_y":"norm","label":"a plot"}"#,
+            ),
+            (
+                "signal/trace navigable",
+                r#"{"id":1,"type":"signal","view":"trace","navigable":1,"min":-1,"max":1,
+                    "data":[0,0.5,-0.5,1,-1,0.25,0,-0.75],
+                    "ruler":"time","ruler_y":"db","label":"a take"}"#,
+            ),
+            (
+                "signal/spectrogram navigable",
+                r#"{"id":1,"type":"signal","view":"spectrogram","navigable":1,"bus":0,
+                    "retention":4.0,"ruler":"time","ruler_y":"hz","label":"waterfall"}"#,
+            ),
+            (
+                "signal/spectrum",
+                r#"{"id":1,"type":"signal","view":"spectrum","bus":0,
+                    "ruler":"time","ruler_y":"db","label":"spectrum"}"#,
+            ),
+            (
+                "signal/phase",
+                r#"{"id":1,"type":"signal","view":"phase","bus":0,"label":"goniometer"}"#,
+            ),
+            // Containers: a lane with a clip on it, a plane with boxes (the
+            // patcher), a free-standing ruler, a scrolling workspace.
+            (
+                "field/track",
+                r#"{"id":1,"type":"field","label":"lane","ruler":"time","header_w":80,
+                    "children":[{"id":2,"type":"field","at":0,"dur":2,"label":"clip"}]}"#,
+            ),
+            (
+                "field/timeruler",
+                r#"{"id":1,"type":"field","ruler":"time"}"#,
+            ),
+            (
+                "plane/patcher",
+                r#"{"id":1,"type":"plane",
+                    "boxes":[[0,0,"beep",1,1],[80,60,"out",1,0]],"cords":[[0,0,1,0]]}"#,
+            ),
+            (
+                "plane/scroll",
+                r#"{"id":1,"type":"plane","children":[
+                {"id":2,"type":"label","text":"inside"}]}"#,
+            ),
+            (
+                "layout",
+                r#"{"id":1,"type":"layout","children":[
+                {"id":2,"type":"knob","min":0,"max":1,"value":0.5,"label":"k"},
+                {"id":3,"type":"label","text":"beside it"}]}"#,
+            ),
+            (
+                "layout/stack",
+                r#"{"id":1,"type":"layout","flow":"stack","children":[
+                {"id":2,"type":"label","text":"one"},
+                {"id":3,"type":"label","text":"two"}]}"#,
+            ),
+            // A clip with all three bodies is the deepest stack of chrome the
+            // catalog has: a take, the events over it and an envelope over
+            // both, each with its own axis inside somebody else's rectangle.
+            (
+                "field/clip with three bodies",
+                r#"{"id":1,"type":"field","label":"lane","ruler":"time","children":[
+                    {"id":2,"type":"field","at":0,"dur":4,"label":"take",
+                     "data":[0,0.5,-0.5,1,-1,0.25,0,-0.75],
+                     "notes":[[0,0.5,60,100],[1,0.5,64,100]],
+                     "points":[0,0,0.5,1,1,0]}]}"#,
+            ),
+        ];
+
+        // Engraving is a Cargo feature, so its row is too.
+        #[cfg(feature = "notation")]
+        const NOTATION: &[(&str, &str)] = &[(
+            "score",
+            r#"{"id":1,"type":"score","display_list":[],"label":"page"}"#,
+        )];
+        #[cfg(not(feature = "notation"))]
+        const NOTATION: &[(&str, &str)] = &[];
+
+        let theme = Theme::default();
+        let inputs = FrameInputs::default();
+        let waveforms = HashMap::new();
+        let spectrograms = HashMap::new();
+
+        for (name, json) in TABLE.iter().chain(NOTATION) {
+            let node = GuiNode::parse(json.as_bytes())
+                .unwrap_or_else(|e| panic!("{name}: the row does not parse: {e}"));
+            let tree = Widget::from_node(1, &node, &[])
+                .unwrap_or_else(|e| panic!("{name}: the row does not build: {e}"));
+            // A typo in a row would parse, build as `Unknown`, draw nothing and
+            // leave this test green over a widget it never touched. So each row
+            // has to be the widget it names, and has to draw at a size that is
+            // not a squeeze at all — the walk below only proves it *survives*,
+            // never that it was there.
+            assert!(
+                !matches!(tree.kind, WidgetKind::Unknown(_)),
+                "{name}: the row built as an unknown type"
+            );
+
+            // Every size on the way down, on each axis alone and on both at
+            // once — the diagonal is how the crash was actually reached, and
+            // the single axes are where a strip runs out before a body does.
+            // Half-pixel steps because a text scale lands on them.
+            let mut steps = 0;
+            let at = |w: f32, h: f32| {
+                let area = Rect::new(0.0, 0.0, w, h);
+                let placed = layout::layout_on(area, &tree, inputs.metrics, &|_, _| None);
+                let mut mesh = Mesh::new();
+                let mut over = Mesh::new();
+                let collected = collect_widgets(&placed, &mut mesh, &inputs, &theme);
+                draw_timeline_meshes(
+                    &mut mesh,
+                    &mut over,
+                    &collected,
+                    &waveforms,
+                    &spectrograms,
+                    &inputs,
+                    &theme,
+                );
+                draw_static_meshes(&mut mesh, &mut over, &collected, &inputs, &theme, &tree);
+                draw_element_overlays(&mut over, &placed, &inputs, &theme);
+            };
+            {
+                let area = Rect::new(0.0, 0.0, 400.0, 300.0);
+                let placed = layout::layout_on(area, &tree, inputs.metrics, &|_, _| None);
+                let mut mesh = Mesh::new();
+                let mut over = Mesh::new();
+                let collected = collect_widgets(&placed, &mut mesh, &inputs, &theme);
+                draw_static_meshes(&mut mesh, &mut over, &collected, &inputs, &theme, &tree);
+                assert!(
+                    !mesh.is_empty() || !over.is_empty(),
+                    "{name}: draws nothing even with room, so the walk proves nothing"
+                );
+            }
+
+            let mut v = 240.0f32;
+            while v >= 0.0 {
+                at(v, 200.0);
+                at(300.0, v);
+                at(v, v);
+                steps += 3;
+                v -= 0.5;
+            }
+            assert!(steps > 1000, "{name}: the walk did not run");
+        }
+    }
 
     /// The viewport is the rect **intersected** with the framebuffer, not its
     /// origin clamped into it: a lane starting above the window keeps its far
