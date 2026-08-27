@@ -837,7 +837,7 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   prints the value, the three events and the handler; a press slid off the
   button prints the release and no click.
 
-- ⬜ **`gui_bulk`'s mode button flipped twice per press and came back to where
+- ✅ **`gui_bulk`'s mode button flipped twice per press and came back to where
   it started** *(found 2026-08-24 while removing the hand-written filters;
   fixed with them)*. `toggle_mode(*_)` was wired to `on_event`, which fires for
   the press **and** the release, so the drag mode flipped to `draw` and back to
@@ -1082,7 +1082,7 @@ work, where a pending item reads as done.)*
 
 - ⬜ **Four UGen builders take their statics positionally, interleaved with real inputs** *(noted 2026-07-19 with M30's introspection work, not scheduled; moved here 2026-08-20 from the middle of the milestone list, where a pending item reads as done)*. Four `clausters.defs.ugens` callables take their **static** (non-signal) fields as ordinary positional parameters, interleaved with real inputs: `poll(trig, signal, label, trig_id)` — the worst, its `label` sits *between* two inputs — plus `disk_in`, `disk_out` and `pv_kernel`. `fft` and `conv` show the intended convention: statics behind a `*`, keyword-only, which makes their positional parameters line up with the wire exactly. Aligning the four would shrink the anti-drift exception list in `tests/test_session.py` to the three cases the wire genuinely forces (`EnvGen`, `SendReply`, `Dseq` — a variadic run last on the wire cannot be followed by a positional parameter in Python). It is deliberately **not** done as a side effect of the introspection work: it breaks the client's source API, so it belongs to a release that bumps the breaking tier.
 
-- ⬜ **A `Source` for the other heavy props** *(noted 2026-08-23, with C46)*.
+- ✅ **A `Source` for the other heavy props** *(noted 2026-08-23, with C46)*.
   The source object covers the signal family's samples, and the same shape is
   right for every other prop that carries a payload rather than a scalar: a
   roll's `notes`, a curve's `points`, a patcher's `boxes`/`cords`, a score's

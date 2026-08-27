@@ -1,22 +1,24 @@
-# Roadmap — the order the open work is taken in
+# Roadmap — what is open, sorted by what kind of work it is
 
-*Rewritten 2026-08-25, when the browser engine stopped being a smaller engine:
-`B6` gave a page the thread that is neither audio nor interface, and with it a
-budgeted serving turn, its own filesystem behind `/buffer_allocRead`, and
-`diskIn`/`diskOut` in a tab; `B5` then gave it Faust in all three def forms,
-read by the server's own interpreters rather than by a second reading of the
-schema. A rewrite **drops what is done** and reorganizes what is left: this file
-is not a record of anything, and the record of what shipped is the git history
-and each plan's own checkbox.*
+*Rewritten 2026-08-26. The previous sequence was two numbered phases and a list
+of what they deliberately left out; what it stopped describing is the tree as it
+stands, where almost nothing pending is a phase and most of it is either a small
+gap found by use or a milestone left hanging at the edge of a closed track. So
+the order is no longer by date but **by kind**: what is a fix, what is a review
+somebody has to sit through, what is an unfinished milestone, and what is a
+track nobody has opened. A rewrite **drops what is done** and reorganizes what
+is left: this file is not a record of anything, and the record of what shipped
+is the git history and each plan's own checkbox.*
 
-**This file is temporary, and it defines nothing.** It is a working sequence
-over pending work that lives, already written, across several `PLAN.md` files —
-milestones with their own labels, and entries in a plan's "Found by use" or
-"Future directions" lists. A roadmap line says only *when* and *because of
-what*; the content, the decisions and the acceptance are read in the plan that
-owns it, and if the two disagree the plan wins and this file is stale, which is
-the normal way for it to be wrong. When the sequence it holds is exhausted the
-file goes away; nothing is ever written here first.
+**This file is temporary, and it defines nothing.** It is a working index over
+pending work that lives, already written, across several `PLAN.md` files —
+milestones with their own labels, and entries in a plan's "Found by use",
+"Future directions" or "Open decisions" lists. A line here says only *what kind
+of thing* an entry is and *what it is related to*; the content, the decisions
+and the acceptance are read in the plan that owns it, and if the two disagree
+the plan wins and this file is stale, which is the normal way for it to be
+wrong. When what it holds is exhausted the file goes away; nothing is ever
+written here first.
 
 **The destination this order serves**, stated so an entry can be judged against
 it rather than against taste: **a functionally complete example of the
@@ -30,46 +32,121 @@ Where the work lives:
 | Track | File | What it is |
 |---|---|---|
 | `Ox` | `crates/clausters-document/PLAN.md` | the document: tree, intents, log, session, bindings |
-| `Dx`, `Hx`, `Ax`, `Kx`, `Ex`, `Gx` | `clients/gui/PLAN.md` | the GUI host: gestures, undo from the hand, measured layers, the widget API |
+| `Dx`, `Hx`, `Ax`, `Kx`, `Ex`, `Gx`, `Lx`, `Px` | `clients/gui/PLAN.md` | the GUI host: gestures, undo from the hand, measured layers, the widget API, the patcher |
 | `Cx` | `clients/python/PLAN.md` | the Python client |
 | `Wx` | `clients/web/PLAN.md` | the web client |
-| `Mx`, `Sx`, `Tx`, `Rx`, `Bx` | `PLAN.md` (root) | the server, and its engine in the browser (`Bx`) |
+| `Mx`, `Sx`, `Tx`, `Rx`, `Bx`, `Ux` | `PLAN.md` (root) | the server, and its engine in the browser (`Bx`) |
 
-Entries below that carry no label are **plan entries, not milestones** — they
-are named by their own title and by the plan that holds them, and a phase that
-takes one may well turn it into a milestone there first. **A pointer names the
-plan and the section, and quotes the entry's title verbatim**, so it is found by
-searching for the title rather than by reading the plan through; the sections
-are "Found by use", "Future directions" and, in the document crate, "Open
-decisions". If a search comes up empty, this file is stale and the plan is
-right — that is the normal failure, not a sign the work vanished.
+Entries that carry no label are **plan entries, not milestones** — they are named
+by their own title and by the plan that holds them. **A pointer names the plan
+and the section, and quotes the entry's title verbatim**, so it is found by
+searching for the title rather than by reading the plan through. If a search
+comes up empty, this file is stale and the plan is right — that is the normal
+failure, not a sign the work vanished.
 
-**One larger question is deliberately not in this order**, because it is not
-work to schedule: what the *second* document is — the application's, as against
-the arrangement's — in `crates/clausters-document/PLAN.md`, Open decisions.
-Nothing below waits on it, and it is named here only so its absence reads as a
-decision too.
+The five sections, and the line between them:
+
+1. **Fixes** — something is wrong, missing or duplicated, and what to do about
+   it is already known. No decision stands in front of the work.
+2. **Fixes that need a decision first** — the same kind of small work, except
+   that the shape it takes depends on an answer nobody has given. Each one names
+   *which* decision.
+3. **Tests and reviews pending** — work that is not a change to the tree at all:
+   somebody has to run something and watch it. It is separate because it is the
+   one kind of work nothing in CI does and nothing in a plan's checkbox implies.
+4. **Milestones left hanging** — numbered milestones in a plan whose track is
+   otherwise closed, again split by whether a decision comes first.
+5. **Tracks not started, or incomplete** — whole tracks, named and referred to
+   their plan, not enumerated here.
 
 ---
 
-## Phase 1 — the packages move together: the arrangement reaches the web client
+## 1. Fixes
 
-*The named track is in, and so is the reform's port. What is left of the phase
-is one pass that only a person can do, three unported features and the decision
-that was always meant to be last.*
+Each is small, owned by its plan, and blocked by nothing.
+
+- ⬜ **`Editor._snap` is dead code** *(`clients/python/PLAN.md`, Found by use)*.
+  It predates the document: the crate snaps a placement now, and nothing calls
+  this; the TypeScript port left it out rather than porting a method that runs
+  nowhere. Delete it, or write down why it stays.
+
+- ⬜ **`guidef.waveform`'s `measure` is documented narrower than it is**
+  *(`clients/python/PLAN.md`, Found by use)*. The docstring offers `"peak"` or
+  `"rms"`; the host parses a space-separated set and the editor's own signal
+  view sends `"peak rms"` to one `waveform`. The TypeScript type was already
+  widened; this docstring is the other half. **Related:** the A track's `A6`/`A7`
+  are what will make the set explicit on the wire — this fix is the prose
+  catching up with what already ships, not a preview of them.
+
+- ⬜ **A widget's label strip is written four times** *(`clients/gui/PLAN.md`,
+  Found by use)*. `graphics::meters::label_strip` exists and three signal views
+  open with the same four lines byte for byte. Nothing is wrong on screen, and
+  they agree because they were copied. Make the helper `pub(crate)` and call it.
+
+- ⬜ **`transport/sync`'s page has a half the script does not** *(`clients/web/
+  PLAN.md`, Found by use, "Two pairs read side by side turn out not to be
+  pairs")*. A playhead that obeys the shared grid. This is not a platform
+  difference — a script can follow a playhead — so it is the script that is
+  behind, and the non-divergence rule makes it a defect. *(The other half of that
+  same entry, `panels/standalone`, is in section 2: it needs a decision and a
+  milestone.)*
+
+## 2. Fixes that need a decision first
+
+Same size of work, except the shape depends on an answer. The decision is named
+on each one; none of them is being taken by this file.
+
+- ⬜ **A running clock resumes what it is handed inside `play`, where the
+  reference client's returns first** *(`clients/web/PLAN.md`, Found by use)*.
+  `TempoClock.sched` ends in `pump()`, so `play()` on a started clock runs the
+  routine's first pass before it returns; the Python clock lets its own thread
+  pick it up. Reproduced side by side, so it is a real divergence and not a
+  page's price for one thread.
+  **The decision:** whether the wake is deferred to the ticker (a 0-delay tick)
+  or to a microtask. Both are changes to the driver, and every clock test drives
+  it synchronously through a `ManualTicker` — so the answer also decides what
+  the manual harness has to await.
+
+- ⬜ **`panels/standalone` is two different programs** *(`clients/web/PLAN.md`,
+  Found by use, "Two pairs read side by side turn out not to be pairs")*. The
+  script *authors* a bundle; the page *boots* one. They share one verb, each
+  half is worth showing, and neither client shows both.
+  **The decision:** whether a page can write a bundle at all. If it can, this is
+  **`W15`** (section 4) and the fix rides with it; if it cannot, the example says
+  so in its own prose and the script gains the launch half instead.
+
+- ⬜ **Four UGen builders take their statics positionally, interleaved with real
+  inputs** *(`clients/python/PLAN.md`, Found by use)*. `poll`, `disk_in`,
+  `disk_out` and `pv_kernel`; `fft` and `conv` show the intended convention
+  (statics keyword-only, behind a `*`). Aligning them shrinks the anti-drift
+  exception list to the three cases the wire genuinely forces.
+  **The decision:** it breaks the client's source API, so it is not *what* but
+  *when* — it belongs to a release that bumps the breaking tier, and nothing has
+  said which one. **Related:** the exception lists it would shrink are also the
+  specification the "builders generated from the catalog" direction would need
+  (root `PLAN.md`, Future directions), so doing this first makes that one
+  cheaper rather than the other way round.
+
+## 3. Tests and reviews pending
+
+Nothing here is a change to the tree. Each is somebody running something and
+watching it, which is the one kind of verification this project has no automation
+for — CI runs no example, and a plan's checkbox says a thing shipped, never that
+a person saw it work.
 
 - ⬜ **A manual and visual review of the whole thing, by the user, done
-  together.** *First, and ahead of every feature below.*
+  together.** *This is the one that comes first in time, whatever order the rest
+  of this file is read in.*
 
   **Why it leads.** Nothing in this project runs an example. CI does not, the
   test suites do not, and a signature change breaks them at a call site no build
   ever reaches — which is why `CLAUDE.md` calls the examples the manual test
   surface and not a decoration. Everything the last phases shipped was accepted
-  by a page, a suite or a measurement, and all three of those check what
-  somebody thought to check. What they cannot report is a picture that is
-  *correct and wrong*: a widget that lands where nobody would put it, a take
-  that sounds right and looks off by a frame, an editor whose gesture is legal
-  and unpleasant, prose in a book that no longer describes what the reader sees.
+  by a page, a suite or a measurement, and all three of those check what somebody
+  thought to check. What they cannot report is a picture that is *correct and
+  wrong*: a widget that lands where nobody would put it, a take that sounds right
+  and looks off by a frame, an editor whose gesture is legal and unpleasant,
+  prose in a book that no longer describes what the reader sees.
 
   **What it is.** The user runs the examples and the pages and says what is
   wrong; I sit alongside, reproduce, and either fix on the spot or write the
@@ -80,124 +157,207 @@ that was always meant to be last.*
   **What comes out of it.** Not a checkbox. Each finding goes, the day it is
   found, into the "Found by use" list of the plan that owns it, with its own
   checkbox; the ones that turn out to be designs go to "Future directions". This
-  entry closes when the pass is done, and the work it turns up is ordered after
-  it — which is the only honest reason the features below are not first.
+  entry closes when the pass is done, and section 1 is expected to grow from it.
 
-- ⬜ **W7** (the Faust surfaces), **W9** (MIDI), **W15** (the bundle writer) —
-  unported features, each owned, none on the path to the complete example. Two
-  of them carry a page apiece as part of their acceptance: `faust/boxes-library`
-  rides with **W7**, and `io/midi-responder` and `editors/pianoroll-midi` with
-  **W9**.
+- ⬜ **Nobody has watched the release gate stop anything** *(root `PLAN.md`,
+  `R12`, the `⚠` clause)*. `R12` shipped: `verify` runs the full feature matrix
+  and the tests, `build` and both `publish-*` jobs `needs:` it, and a
+  `workflow_dispatch` rehearsal has been watched go green with the publish jobs
+  skipped. What is unverified is the behaviour that is the gate's whole purpose —
+  that a *failing* `verify` stops the run — and the obvious test is unsafe,
+  because if the gate is misconfigured the run continues into PyPI and npm, which
+  cannot be taken back. The plan carries the safe procedure (a fork or scratch
+  repository, a deliberately broken tree, a `v*` tag) and says what does not
+  count as proof. **Related:** it is filed here rather than in section 4 because
+  the milestone's *code* is done; what is left is somebody watching it fail.
 
-  **W7 is down to `defs/boxes.ts`.** Its signal API turned out to be done
-  already — `defs/signals.ts` landed with W1 and has been at parity since — and
-  its engine half was split off as **`B5`** (root `PLAN.md`, B track), which is
-  now closed: a def sent as source, as a box tree or as a signal tree compiles
-  and sounds in a tab, read by the server's own interpreters, and since
-  2026-08-26 a page's **offline** render carries one too. So
-  `faust/boxes-library`, which is an NRT script, waits on `defs/boxes.ts` and on
-  nothing else.
+- ⬜ **The browser's lost release is guarded and the guard is unverified**
+  *(`clients/gui/PLAN.md`, Found by use)*. A page can lose a button-up where a
+  desktop window cannot, so `web::input` ends the drag itself when the DOM says
+  no button is down. The reasoning is sound and nothing has exercised it: the
+  case did not reproduce under Chrome DevTools. Worth either a way to drive it or
+  a decision that it stays on trust, rather than sitting as code nobody has seen
+  work.
 
-- ⬜ **C44 — the inverse direction: a widget inside a def** *(`clients/python/
-  PLAN.md`, the API reform track)*, deliberately last and possibly never: it is
-  recorded as an analysis with a reservation, since it inverts the dependency
-  (`defs` would import `gui`) and autogenerates the one thing `/node_set`
-  addresses by.
+## 4. Milestones left hanging
 
-## Phase 2 — the spectral editor
+Numbered milestones whose track is otherwise closed. Each is owned and written in
+its plan; the plan is where its acceptance is read.
 
-*Everything here is genuinely later: it needs the A track's descriptors, it is
-partly experimental, and none of it is on the path to the complete example.*
+### Ready — no decision in front of them
 
-- ⬜ **A3 — Band-limited reconstruction and true peak.**
-- ⬜ **A4 — K-weighting and the loudness family.**
-- ⬜ **A5 — The loudness layer and its read-out.**
-- ⬜ **A6 — The layer stack becomes explicit.** It now has a mechanism to be
-  explicit *with*: the edit-layer rule shipped general (`host::layers`), and what
-  A6 grows is the contents — a view whose automation is a body rather than a
-  widget beside it (`clients/gui/PLAN.md`, Future directions, "The layer stack is
-  one container's, and an audio editor's view has one too").
-- ⬜ **A7 — The layer stack's rules from the clients, and the books.** What is
-  left of it once D8 took the client half: it rides with A6, whose rules it
-  publishes.
-- ⬜ **D5 — Spectral selection.**
-- ⬜ **D6 — The lasso.**
-- ⬜ **D7 — Spectral drawing and resynthesis** *(experimental: promoted or
-  dropped on what it sounds like)*.
+- ⬜ **`W7` — the Faust surfaces** *(`clients/web/PLAN.md`)*. **Down to
+  `defs/boxes.ts`.** The signal API turned out to be done already
+  (`defs/signals.ts` landed with W1 and has been at parity since), and the engine
+  half was split off as `B5`, which is closed — a def sent as source, as a box
+  tree or as a signal tree compiles and sounds in a tab, and since 2026-08-26 a
+  page's offline render carries one too. The example `faust/boxes-library` rides
+  with it and waits on nothing else.
+
+- ⬜ **`W9` — MIDI: `MidiFunc` in, `MidiEvent` and MIDI destinations out**
+  *(`clients/web/PLAN.md`)*. Carries two pages as part of its acceptance:
+  `io/midi-responder` and `editors/pianoroll-midi`. **Related:** the Python side
+  of precise MIDI timing is `C18`, which is deferred by a decision already taken
+  (below) — W9 is the port of what the Python client *has*, not of what C18 would
+  add.
+
+- ⬜ **`W15` — the TypeScript bundle writer** *(`clients/web/PLAN.md`)*.
+  **Related:** it is the surface the `panels/standalone` divergence (section 2)
+  is asking for — if a page can author a bundle, this is where it does.
+
+- ⬜ **`T4` — `bundle_is_governed` re-resolves the group per message** *(root
+  `PLAN.md`, T track)*. A linear `find` per targeted message, bounded and
+  allocation-free but `O(messages × nodes)` worst case inside a block budget.
+  Hoist the group's index. The only one of the three T items that is a fix rather
+  than a question.
+
+- ⬜ **`G31g` — engraving refinements** *(`clients/gui/PLAN.md`)*. Tuplets, full
+  polyphony, written duration beyond `dur`, tonal spelling, grace notes,
+  articulations. Not permanent limits: a refinement pass on the same encoder,
+  behind the seams that were left for it, so it extends rather than rewrites. It
+  is the largest thing in this section and nothing waits on it.
+
+### Waiting on a decision
+
+- ⬜ **`T2` — `/transport_set`'s grid origin on the transport axis** *(root
+  `PLAN.md`, T track)*. With a group bound, `originSample` is still read on the
+  device axis, so the grid slides by the frozen total across a pause. No test
+  pins it today.
+  **The decision:** the grid semantics have to be re-derived, and `T5` moved the
+  ground under them — it put a position in samples on the engine, which crosses
+  the beats↔samples conversion `T2` says is anchored on the wrong axis. `T2` did
+  not stop being optional when `T5` landed, and the question it was flagged with
+  still stands.
+
+- ⬜ **`T3` — classification is once, at drain** *(root `PLAN.md`, T track)*. A
+  bundle scheduled before `/transport_group` binds stays on the device queue even
+  if its target becomes governed. It is documented behaviour today.
+  **The decision:** whether to accept it as the contract or pay for re-classifying,
+  which means rewriting a queue on the audio thread — an RT-safety cost against a
+  case nothing currently hits.
+
+- ⬜ **`K16` — the host's own documentation**, and its parts `K16a`/`K16b`/`K16c`
+  *(`clients/gui/PLAN.md`, K track, Part C)*. With Part A done, the extension
+  recipe is a public API and has no book to live in: the wire is a page of the
+  server's book, driving a host is a chapter of the Python book, the component is
+  a chapter of the web book, and how the host is built is a development doc. A
+  reader who wants to *write an element* has nowhere to start.
+  **The decision is `K16a` and the rest follows from it:** whether the GUI host
+  earns a **fourth mdBook**, which the project's three-books-one-per-platform rule
+  does not currently allow — is the host a platform; what moves and what must not;
+  what a fourth `book.toml`, ReadTheDocs project and generated reference cost; and
+  what it is called, since it would be the first book named by role rather than by
+  platform. `K16b` (the widget author's guide) and `K16c` (`examples/
+  custom_element.rs`, the smallest proof a third party can do it) are clear
+  whichever way it goes; only their home is not.
+
+- ⬜ **`C44` — the inverse direction: a widget inside a def**
+  *(`clients/python/PLAN.md`, the API reform track)*. Recorded as an analysis with
+  a reservation rather than as work.
+  **The decision:** whether to do it at all. It inverts the dependency (`defs`
+  would import `gui`, where the arrangement's `gui → form` rule is the precedent
+  running the other way) and it autogenerates the control's name, which is the one
+  thing `/node_set` addresses by. If it is ever done, the coercion runs in one
+  direction only and `name=` is mandatory.
+
+- ⬜ **`C18` — cross-platform precise MIDI timing via in-band MIDI 2.0**
+  *(`clients/python/PLAN.md`)*. **The decision is already taken, with the user,
+  and it is to defer:** live OS MIDI output stays best-effort, and the
+  UMP-over-our-own-transport direction has no date. It is listed so that
+  "unscheduled" reads as a decision rather than an oversight.
+
+## 5. Tracks not started, or incomplete
+
+Whole tracks, and one design the user has asked for that is a track's worth.
+**They are named and referred to their plan, not enumerated here** — a track's
+milestones, their order and their acceptance are the plan's, and copying them
+into this file is exactly the migration the rules forbid.
+
+- ⬜ **The A track — what a signal measures, and the layers that show it**
+  *(`clients/gui/PLAN.md`, "A track")*. `A1`/`A2` shipped (mean square in the
+  pyramid, the RMS layer and the `measure` prop); everything after them is open —
+  band-limited reconstruction and true peak, the loudness family, the loudness
+  layer and its read-out, and the two milestones that make the layer stack
+  explicit and publish its rules from the clients. **Related:** the `measure`
+  docstring fix (section 1) is what ships today, not a piece of this; and the
+  audio editor's layers below land on this track's stack rules.
+
+- ⬜ **The D track's spectral half — the hand that edits data**
+  *(`clients/gui/PLAN.md`, "D track")*. `D1`–`D4` and `D8` shipped (the grabbable
+  sample, the draw mode, the two-axis marquee, copy/cut/paste, the editor opening
+  an element as a signal view). What is left is spectral: the selection the
+  `select_box` step already declines to answer, the lasso, and spectral drawing
+  and resynthesis — the last of which is **experimental** in the `G20f` sense,
+  promoted or dropped on what it sounds like. It needs the A track's descriptors,
+  which is why the two are read together.
+
+- ⬜ **The P track's phase B — the patcher becomes an editing surface**
+  *(`clients/gui/PLAN.md`, "P track")*. Phase A is complete at both levels: a
+  `GraphDef` and a `SynthDef`/`FaustDef` each have an autonomous read-only view,
+  decoded headlessly, laid out by the host. Phase B is two milestones that are
+  **deliberately not designed yet** — the editing and authoring surface, and where
+  a patch lives when the window closes — and the plan records what the E track
+  changed under them (there is no `patch` type any more; the gestures ride the
+  shared machine; the eye pass is part of closing it) plus the third persistence
+  option the host grew while the track was paused.
+
+- ⬜ **The audio editor's layers: the view is the next container, and it is the
+  richer one** *(`clients/gui/PLAN.md`, Future directions)*. Not a milestone —
+  **a track's worth**, and the one the user asked to have thought through and
+  built next. The layer mechanism is done and general (`host::layers`, proved by
+  the `clip`); what this needs is the *contents*, and they are of two kinds the
+  design must keep separate: **visualization layers** (the same material drawn
+  several ways, alternating or superimposed) and **edit layers** (what a hand is
+  doing, one at a time — non-destructive processing as curves over the waveform,
+  seen, heard, then rendered in). The two combine and are not the same axis. It
+  lands on `A6`, which is why the A track is above it here. Two neighbouring
+  entries in the same list are part of the same design and are read with it: "The
+  layer stack is one container's, and an audio editor's view has one too", and
+  "Many channels are drawn and not yet readable, and a take cannot be created
+  empty".
+
+- ⬜ **The free arrangement plane (the blueprint view)** *(`clients/gui/PLAN.md`,
+  Future directions)*. A **second kind of multitrack**, explicitly not a milestone
+  of the one that shipped: it shares characteristics with the lane stack and its
+  model differs structurally, so it is still to be defined and planned.
+
+- ⬜ **More than one owner of the same document**
+  *(`crates/clausters-document/PLAN.md`, Future directions)*. A track of its own
+  if it is ever opened, and recorded so that the single-owner assumption reads as
+  a deliberate floor rather than an oversight — it is what keeps operational
+  transformation and CRDTs out of a design that does not have the problem they
+  solve. **Related:** "Staleness per node rather than per document" in the same
+  list is its seam, and buys nothing until this exists.
+
+### The larger questions, and the plans' own Future directions
+
+Named, not enumerated: each is written where it belongs and is read there.
+
+- **What the *second* document is — the application's, as against the
+  arrangement's** *(`crates/clausters-document/PLAN.md`, Open decisions)*. It is
+  **open and undefined** by intent, it decides what the crate is for as much as
+  what it stores, and it is not work to schedule. Nothing above waits on it; it is
+  named so its absence reads as a decision. The `Session`/`Document` naming pass
+  waits on it, and so does where a widget's left-behind value is saved.
+- **The remaining "Future directions"** of each plan — the server's (a long take
+  played out of the pool and `DiskIn`'s missing start frame; generating the
+  builders from the catalog instead of contrasting against them), the GUI's (the
+  double click and the long press, and a pass over the gesture vocabulary; a
+  steady goniometer; the heavy families as features; composed text (IME); a Tauri
+  wrapper; the three heavy-view rendering questions), the web client's (a node
+  target, type-safe GuiDef/def schemas, a remote-server standalone page), the
+  Python client's three open questions, and the document crate's interpreter
+  inside a standalone host. Every one of them carries its own checkbox in its own
+  plan.
 
 ---
 
-## Open, and deliberately not in the order above
-
-Named so "not scheduled" reads as a decision rather than an oversight. Each is
-in its own plan with its own reasoning; none is on the path to the complete
-example, and none blocks anything that is.
-
-- **The GUI host's own documentation** — `K16`/`K16a`/`K16b`/`K16c`. Waits on
-  nothing; costs a decision about a fourth mdBook that the project's three-book
-  rule does not currently allow.
-- **The double click and the long press, and whichever gestures a pass over the
-  usual ones turns up** *(`clients/gui/PLAN.md`, Future directions)*. Unlike the
-  click, which was the machine's own hit test asked a second time, these need a
-  **clock** — a press-time window and a timer — so both grow state the gesture
-  machine does not have and a threshold somebody has to choose. No widget wants
-  one, which is why it is a review of what a GUI's gesture vocabulary should be
-  rather than two items to build.
-- **`G31g`** — engraving refinements (tuplets, full polyphony, spelling).
-- **Server transport items** `T2`–`T4`, and `R12` (a release verifies
-  something). `T2` did not stop being optional when `T5` landed, and the
-  question it was flagged with still stands: `T5` put a position in samples on
-  the engine, which crosses the beats↔samples conversion `T2` says is anchored
-  on the wrong axis.
-- **A long take is played out of the pool, and `DiskIn` cannot be positioned**
-  *(root `PLAN.md`, Future directions)* — a five-minute stereo take is 110 MB of
-  pool and a thirty-minute one 660 MB, per take, and the streaming pair that
-  exists for exactly this cannot start anywhere but the beginning. The smallest
-  step (a start frame on `DiskIn`) is probably a U-track item; the seek under a
-  moving playhead is a design, and the mapped read stays named and unchosen.
-  Nothing on the path to the complete example is long enough to force it, which
-  is the only reason it is here.
-- **The three open questions of the Python plan** *(`clients/python/PLAN.md`,
-  Found by use)* — "Acceptable equivalence level for higher math vs Faust",
-  "Whether a separate `cdylib` for `clausters-ffi` is preferable" and "The
-  FFI-overhead threshold at which the scalar builtin uses a pure-language
-  fallback". Each is a number or a decision that nothing currently waits on;
-  they are named so that "unanswered" reads as a decision rather than an
-  oversight. **`C18`** sits with them, deferred by a decision taken with the
-  user: live OS MIDI output stays best-effort, and the UMP-over-our-own-transport
-  direction has no date.
-- **The builders could be generated from the catalog instead of contrasted
-  against it** *(root `PLAN.md`, Future directions)* — the contrast tests caught
-  eleven drifted builders, which is strictly weaker than not hand-writing the mirrors.
-- **The heavy views' three rendering questions** *(`clients/gui/PLAN.md`, Future
-  directions)* — "Cache lifecycle", "Spectrogram scaling" and "Migrating the rest
-  of the `Stft` machinery behind `clausters-ffi`/`libclausters`". The last of
-  them is the one with a dependency (the inverse FFT waits on the server's
-  `FFT`/`IFFT`).
-- **The web client's three directions** *(`clients/web/PLAN.md`, Future
-  directions)* — "Node target" (true in the harness, not a product), "Type-safe
-  GuiDef/def schemas" (narrower than it was: the question is which source
-  generates them, not whether one exists) and "A remote-server standalone page"
-  (what W4 left is a destination seam in place of the page's singletons).
-- **Many channels are drawn and not yet readable, and a take cannot be created
-  empty**, **time-stretch: an edge that changes the material rather than the
-  window** and **the audio editor's layers: the view is the next container, and
-  it is the richer one** — `clients/gui/PLAN.md`, Future directions, being
-  designs rather than fixes. The last of those is the one the user asked to have
-  thought through and built next, and it is a track's worth: the same layer
-  mechanism with richer contents, visualization layers kept separate from edit
-  layers.
-- **The larger "Future directions"** in each plan — the free arrangement plane,
-  an interpreter inside a standalone host, per-node staleness, more than one
-  owner of one document, IME text, a Tauri wrapper, the heavy families as
-  features, a steady goniometer.
-
 ## Revising this file
 
-Reordering is expected and is the point: an entry moves when a dependency turns
-out to run the other way, or when something found by use has to go first. What
-must not happen is content migrating here — a milestone that grows a decision
-grows it **in its plan**, and this file keeps naming it. **A rewrite erases what
-has been done**: a closed phase leaves no line here, because the plan's checkbox
-and the git history already say it shipped, and the only thing this file is for
-is what is still ahead.
+Reordering and re-sorting is expected and is the point: an entry moves between
+sections when a decision is taken, when a review turns a design into a fix, or
+when a track is opened. What must not happen is content migrating here — a
+milestone that grows a decision grows it **in its plan**, and this file keeps
+naming it. **A rewrite erases what has been done**: closed work leaves no line
+here, because the plan's checkbox and the git history already say it shipped, and
+the only thing this file is for is what is still ahead.
