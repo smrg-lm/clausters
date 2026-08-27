@@ -35,6 +35,7 @@ import {
 import type { EventDestination, PlayDestination } from "../src/seq/index.ts";
 import type { OscHandler } from "../src/base/receiver.ts";
 import type { Server } from "../src/defs/server/index.ts";
+import { flush } from "./flush.ts";
 
 await loadCore(
     await readFile(
@@ -71,7 +72,8 @@ function harness(tempo = 1.0) {
     const timebase = new ManualTimebase(0);
     const ticker = manualTicker();
     const clock = new TempoClock(tempo, { timebase, ticker });
-    const run = (seconds: number) => {
+    const run = async (seconds: number) => {
+        await flush();
         const target = timebase.now() + seconds;
         for (;;) {
             const pending = (ticker as ManualTicker).pending;
@@ -149,7 +151,7 @@ test("the control tail carries the derived pitch and the custom keys", () => {
 
 // ---- playing patterns on a clock ----
 
-test("a pattern plays its events at the beats its deltas add up to", () => {
+test("a pattern plays its events at the beats its deltas add up to", async () => {
     const destination = recorder();
     const { clock, run } = harness(1.0);
     clock.start();
@@ -157,7 +159,7 @@ test("a pattern plays its events at the beats its deltas add up to", () => {
         degree: new Pseq([0, 2, 4]),
         dur: new Pseq([0.5, 0.25, 1]),
     }).play(destination, { clock });
-    run(4);
+    await run(4);
 
     assert.deepEqual(
         destination.played.map((p) => p.beat),
@@ -169,7 +171,7 @@ test("a pattern plays its events at the beats its deltas add up to", () => {
     );
 });
 
-test("a Pbind stops when any of its keys runs out", () => {
+test("a Pbind stops when any of its keys runs out", async () => {
     const destination = recorder();
     const { clock, run } = harness();
     clock.start();
@@ -177,26 +179,26 @@ test("a Pbind stops when any of its keys runs out", () => {
         destination,
         { clock },
     );
-    run(8);
+    await run(8);
     assert.equal(destination.played.length, 2);
 });
 
-test("stopping a player leaves the clock alone", () => {
+test("stopping a player leaves the clock alone", async () => {
     const destination = recorder();
     const { clock, run } = harness();
     clock.start();
     const player = new Pbind({ degree: new Pseq([0], INF), dur: 1 }).play(destination, {
         clock,
     });
-    run(2.5);
+    await run(2.5);
     assert.equal(destination.played.length, 3);
     player.stop();
-    run(5);
+    await run(5);
     assert.equal(destination.played.length, 3);
     assert.equal(clock.queued, 0);
 });
 
-test("a rest advances time without sounding", () => {
+test("a rest advances time without sounding", async () => {
     const destination = recorder();
     const { clock, run } = harness();
     clock.start();
@@ -208,7 +210,7 @@ test("a rest advances time without sounding", () => {
             yield 1;
         }),
     );
-    run(4);
+    await run(4);
     assert.equal(destination.played.length, 1, "the rest sounded nothing");
     assert.equal(destination.played[0]!.beat, 2, "...but it did take its time");
 });
@@ -285,7 +287,7 @@ test("bouncing an endless pattern needs a bound, and honours it", () => {
 
 // ---- the playhead ----
 
-test("a playhead renders a timeline forward as the clock advances", () => {
+test("a playhead renders a timeline forward as the clock advances", async () => {
     const destination = recorder();
     const { clock, run } = harness();
     const timeline = new Timeline([
@@ -296,13 +298,13 @@ test("a playhead renders a timeline forward as the clock advances", () => {
     const playhead = new Playhead(timeline, clock, destination);
     clock.start();
     playhead.play();
-    run(4);
+    await run(4);
     assert.deepEqual(destination.played.map((p) => p.beat), [0, 1, 2.5]);
     assert.equal(playhead.playing, false);
     assert.equal(playhead.finished, true, "the scan ran off the end");
 });
 
-test("play({ at }) seeks: the scan starts from there", () => {
+test("play({ at }) seeks: the scan starts from there", async () => {
     const destination = recorder();
     const { clock, run } = harness();
     const timeline = new Timeline([
@@ -312,14 +314,14 @@ test("play({ at }) seeks: the scan starts from there", () => {
     ]);
     new Playhead(timeline, clock, destination).play({ at: 1 });
     clock.start();
-    run(4);
+    await run(4);
     assert.deepEqual(
         destination.played.map((p) => p.event.get("degree")),
         [1, 2],
     );
 });
 
-test("stop halts the scan and holds the position; locate moves it", () => {
+test("stop halts the scan and holds the position; locate moves it", async () => {
     const destination = recorder();
     const { clock, run } = harness();
     const timeline = new Timeline([
@@ -330,25 +332,25 @@ test("stop halts the scan and holds the position; locate moves it", () => {
     const playhead = new Playhead(timeline, clock, destination);
     clock.start();
     playhead.play();
-    run(1.5);
+    await run(1.5);
     assert.equal(destination.played.length, 2);
     playhead.stop();
     assert.equal(playhead.playing, false);
     assert.equal(playhead.finished, false, "halted by hand, not ended");
-    run(5);
+    await run(5);
     assert.equal(destination.played.length, 2, "a stopped playhead renders nothing");
 
     playhead.locate(2);
     assert.equal(playhead.position(), 2);
     playhead.play({ at: 2 });
-    run(1);
+    await run(1);
     assert.deepEqual(
         destination.played.map((p) => p.event.get("degree")),
         [0, 1, 2],
     );
 });
 
-test("a loop wraps the scan back to the window's start", () => {
+test("a loop wraps the scan back to the window's start", async () => {
     const destination = recorder();
     const { clock, run } = harness();
     const timeline = new Timeline([
@@ -360,7 +362,7 @@ test("a loop wraps the scan back to the window's start", () => {
     playhead.loop(0, 2);
     clock.start();
     playhead.play();
-    run(5.5);
+    await run(5.5);
     // Two items per two-beat pass, and the item outside the window is never
     // reached however long it runs.
     assert.deepEqual(
@@ -370,7 +372,7 @@ test("a loop wraps the scan back to the window's start", () => {
     assert.equal(playhead.playing, true, "a loop never ends");
 });
 
-test("a raw OSC item on a timeline is sent at its beat", () => {
+test("a raw OSC item on a timeline is sent at its beat", async () => {
     const destination = recorder();
     const { clock, run } = harness();
     const timeline = new Timeline([
@@ -378,7 +380,7 @@ test("a raw OSC item on a timeline is sent at its beat", () => {
     ]);
     new Playhead(timeline, clock, destination).play();
     clock.start();
-    run(2);
+    await run(2);
     assert.deepEqual(destination.messages, [{ beat: 0.5, addr: "/node_set" }]);
 });
 
@@ -428,7 +430,7 @@ test("a playhead follows the server's transport broadcasts", async () => {
 
     broadcast(1, 1); // the conductor rolls, from song position 1
     assert.equal(playhead.playing, true);
-    run(1.5);
+    await run(1.5);
     assert.deepEqual(
         destination.played.map((p) => p.event.get("degree")),
         [1, 2],
@@ -438,7 +440,7 @@ test("a playhead follows the server's transport broadcasts", async () => {
     broadcast(0, 0); // stop, and locate back to the top
     assert.equal(playhead.playing, false);
     assert.equal(playhead.position(), 0);
-    run(4);
+    await run(4);
     assert.equal(destination.played.length, 2, "a halted follower renders nothing");
 
     playhead.unfollowTransport();

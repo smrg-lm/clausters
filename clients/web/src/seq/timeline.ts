@@ -20,7 +20,7 @@
 // transport (`followTransport`), which is one conductor's play/stop/locate
 // driving every client — the same local transport, driven from outside.
 
-import { TempoClock, manualTicker } from "../base/clock.ts";
+import { TempoClock } from "../base/clock.ts";
 import { ManualTimebase } from "../base/timebase.ts";
 import { currentRoutine } from "../base/context.ts";
 import { Routine } from "../base/stream.ts";
@@ -219,23 +219,16 @@ export class Timeline {
             },
             sendMsg() {},
         };
-        const timebase = new ManualTimebase(0);
-        const ticker = manualTicker();
-        const clock = new TempoClock(tempo, { timebase, ticker });
-        clock.start();
+        // The offline drive, which is what a bounce is: no wall clock, no
+        // ticker, no sleeping. The clock is deliberately **not started** —
+        // `render` walks the queue in beat order itself, so the pattern is
+        // queued and then drained, which is the same pair of calls the Python
+        // client makes (`pattern.play(clock, recorder)`; `clock.render(dur)`).
+        // Driving a `manualTicker` by hand here was a second driver for a job
+        // this one already does.
+        const clock = new TempoClock(tempo, { timebase: new ManualTimebase(0) });
         pattern.play(recorder, { clock });
-        for (let steps = 0; ticker.pending !== null; steps++) {
-            const at = timebase.now() + ticker.pending;
-            if (dur !== undefined && clock.secs2beats(at) > dur) break;
-            if (steps > 1_000_000) {
-                throw new Error(
-                    "Timeline.fromPattern: the pattern did not end — pass { dur } " +
-                        "to bound an endless one",
-                );
-            }
-            timebase.set(at);
-            ticker.fire();
-        }
+        clock.render(dur);
         clock.close();
         return timeline;
     }

@@ -192,12 +192,12 @@ export class Routine extends Stream {
      * same call reads as a decorator over the definition; that spelling is the
      * language's, the verb is the same one.
      *
-     * **One thing it cannot do here**: the generator's *first* resumption
-     * happens inside `play`, before this call has returned and before the name
-     * is bound — so a body that reads `melody` on its first pass throws where
-     * the Python one does not. That is a difference in when a running clock
-     * resumes what it is handed, not in this shortcut; it is written down in
-     * `clients/web/PLAN.md` (Found by use).
+     * The body may read that name on its **first** pass, which is the whole
+     * point of the shortcut: a running clock resumes what it is handed after
+     * the scheduling call has returned, so the assignment has happened by the
+     * time the generator runs. It did not always — the first pass used to run
+     * inside `play`, on its own stack, and threw here where the Python one did
+     * not.
      */
     static run(func: RoutineFunc, clock?: TempoClock, quant?: number): Routine {
         return new Routine(func).play(clock, quant);

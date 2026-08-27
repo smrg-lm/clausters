@@ -17,6 +17,7 @@ import type { ManualTicker } from "../src/base/clock.ts";
 import { ManualTimebase, SampleTimebase } from "../src/base/timebase.ts";
 import type { Server } from "../src/defs/server/index.ts";
 import { Routine, YieldAndReset } from "../src/base/stream.ts";
+import { flush } from "./flush.ts";
 
 await loadCore(
     await readFile(
@@ -32,7 +33,10 @@ function harness(tempo = 1.0) {
     const timebase = new ManualTimebase(1000);
     const ticker = manualTicker();
     const clock = new TempoClock(tempo, { timebase, ticker });
-    const run = (seconds: number, { late = 0 } = {}) => {
+    const run = async (seconds: number, { late = 0 } = {}) => {
+        // Whatever `play` deferred runs first, so the clock has armed its
+        // wake before the loop below looks for one.
+        await flush();
         const target = timebase.now() + seconds;
         // Fire every wake the clock arms until the target time, optionally
         // arriving `late` seconds after it asked to be woken.
@@ -49,7 +53,7 @@ function harness(tempo = 1.0) {
     return { clock, timebase, ticker, run };
 }
 
-test("a routine is resumed at the beats it yields", () => {
+test("a routine is resumed at the beats it yields", async () => {
     const { clock, run } = harness(1.0);
     const at: number[] = [];
     const routine = new Routine(function* () {
@@ -59,11 +63,11 @@ test("a routine is resumed at the beats it yields", () => {
         }
     });
     clock.start().play(routine);
-    run(2);
+    await run(2);
     assert.deepEqual(at, [0, 0.25, 0.5, 0.75]);
 });
 
-test("a routine restarts itself by leaving through YieldAndReset", () => {
+test("a routine restarts itself by leaving through YieldAndReset", async () => {
     const { clock, run } = harness(1.0);
     const seen: number[] = [];
     let pass = 0;
@@ -79,14 +83,14 @@ test("a routine restarts itself by leaving through YieldAndReset", () => {
     });
     clock.start().play(routine);
     // One full pass is a beat: half to the throw, half to the restart.
-    run(2);
+    await run(2);
     assert.deepEqual(seen, [0, 1, 2], "each pass starts the generator again");
     // And it never ends: `StopStream` is what a finished generator raises, and
     // this one is never allowed to finish.
     assert.notEqual(routine.state, "done", "a routine that resets does not end");
 });
 
-test("Routine.run wraps and plays in one call", () => {
+test("Routine.run wraps and plays in one call", async () => {
     const { clock, run } = harness(1.0);
     const at: number[] = [];
     clock.start();
@@ -102,15 +106,15 @@ test("Routine.run wraps and plays in one call", () => {
             yield 0.25;
         }
     }, clock);
-    run(1);
+    await run(1);
     assert.deepEqual(at, [0, 0.25, 0.5, 0.75]);
     assert.equal(melody.clock, clock, "the routine it answers with is the played one");
     melody.stop();
-    run(1);
+    await run(1);
     assert.deepEqual(at, [0, 0.25, 0.5, 0.75], "a stopped routine is not resumed");
 });
 
-test("late wake-ups do not shift the music", () => {
+test("late wake-ups do not shift the music", async () => {
     const { clock, run } = harness(2.0);
     const at: number[] = [];
     const routine = new Routine(function* () {
@@ -122,11 +126,11 @@ test("late wake-ups do not shift the music", () => {
     clock.start().play(routine);
     // Every wake arrives 40 ms after it was due — jitter the emission headroom
     // absorbs. The logical beats must be untouched by it.
-    run(3, { late: 0.04 });
+    await run(3, { late: 0.04 });
     assert.deepEqual(at, [0, 0.5, 1, 1.5, 2, 2.5]);
 });
 
-test("a one-shot callable runs once; returning a number reschedules it", () => {
+test("a one-shot callable runs once; returning a number reschedules it", async () => {
     const { clock, run } = harness();
     let once = 0;
     let repeating = 0;
@@ -138,12 +142,12 @@ test("a one-shot callable runs once; returning a number reschedules it", () => {
         repeating += 1;
         return repeating < 3 ? 1 : undefined;
     });
-    run(5);
+    await run(5);
     assert.equal(once, 1);
     assert.equal(repeating, 3);
 });
 
-test("quant snaps a start to the next boundary of the grid", () => {
+test("quant snaps a start to the next boundary of the grid", async () => {
     const { clock, timebase, run } = harness(1.0);
     clock.start();
     timebase.advance(2.3); // now at beat 2.3
@@ -153,11 +157,11 @@ test("quant snaps a start to the next boundary of the grid", () => {
         yield 1;
     });
     clock.play(routine, 4);
-    run(4);
+    await run(4);
     assert.equal(started, 4);
 });
 
-test("unsched removes one routine and leaves the rest queued", () => {
+test("unsched removes one routine and leaves the rest queued", async () => {
     const { clock, run } = harness();
     const beats: string[] = [];
     const keep = new Routine(function* () {
@@ -175,14 +179,14 @@ test("unsched removes one routine and leaves the rest queued", () => {
     clock.start();
     clock.play(keep);
     clock.play(drop);
-    run(1.5);
+    await run(1.5);
     clock.unsched(drop);
-    run(2);
+    await run(2);
     assert.deepEqual(beats, ["keep@0", "drop@0", "keep@1", "drop@1", "keep@2", "keep@3"]);
     assert.equal(clock.queued, 1);
 });
 
-test("clear drops everything queued", () => {
+test("clear drops everything queued", async () => {
     const { clock, run } = harness();
     let woke = 0;
     clock.start().play(
@@ -193,9 +197,9 @@ test("clear drops everything queued", () => {
             }
         }),
     );
-    run(1.5);
+    await run(1.5);
     clock.clear();
-    run(5);
+    await run(5);
     assert.equal(woke, 2);
     assert.equal(clock.queued, 0);
 });
@@ -223,7 +227,7 @@ test("the bar grid reads the clock's own position", () => {
     assert.equal(clock.bar(4, 9), 2);
 });
 
-test("a routine started from inside another runs on the same clock", () => {
+test("a routine started from inside another runs on the same clock", async () => {
     const { clock, run } = harness();
     let innerBeat: number | null = null;
     const inner = new Routine(function* () {
@@ -236,11 +240,11 @@ test("a routine started from inside another runs on the same clock", () => {
         yield 1;
     });
     clock.start().play(outer);
-    run(4);
+    await run(4);
     assert.equal(innerBeat, 1);
 });
 
-test("stop holds the beat and start resumes from it", () => {
+test("stop holds the beat and start resumes from it", async () => {
     const { clock, ticker, run } = harness();
     let woke = 0;
     clock.start();
@@ -252,26 +256,26 @@ test("stop holds the beat and start resumes from it", () => {
             }
         }),
     );
-    run(0.5);
+    await run(0.5);
     assert.equal(woke, 1);
 
     clock.stop();
     assert.equal((ticker as ManualTicker).pending, null);
     assert.equal(clock.beats(), 0.5, "the beat it reached is held");
-    run(5);
+    await run(5);
     assert.equal(woke, 1, "a stopped clock resumes nothing");
 
     // Restarting picks the music up where it stopped: the routine's next wake
     // is half a beat away, not a whole one.
     clock.start();
     assert.equal(clock.beats(), 0.5);
-    run(0.75);
+    await run(0.75);
     assert.equal(woke, 2);
-    run(1);
+    await run(1);
     assert.equal(woke, 3);
 });
 
-test("pause keeps a routine's place; stop rewinds it", () => {
+test("pause keeps a routine's place; stop rewinds it", async () => {
     const { clock, run } = harness();
     const seen: number[] = [];
     const routine = new Routine(function* () {
@@ -281,27 +285,27 @@ test("pause keeps a routine's place; stop rewinds it", () => {
         }
     });
     clock.start().play(routine);
-    run(1.5);
+    await run(1.5);
     assert.deepEqual(seen, [0, 1]);
 
     routine.pause();
-    run(5);
+    await run(5);
     assert.deepEqual(seen, [0, 1], "a paused routine is resumed by nobody");
     assert.equal(routine.state, "paused");
 
     routine.play(clock); // resumes at the yield it was paused on
-    run(2.5);
+    await run(2.5);
     assert.deepEqual(seen, [0, 1, 2, 3]);
 
     seen.length = 0;
     routine.stop();
     assert.equal(routine.state, "init", "stop rewinds: the next play starts over");
     routine.play(clock);
-    run(4);
+    await run(4);
     assert.deepEqual(seen, [0, 1, 2, 3]);
 });
 
-test("a routine that throws is dropped, and the clock keeps driving the rest", () => {
+test("a routine that throws is dropped, and the clock keeps driving the rest", async () => {
     const { clock, run } = harness();
     const survivor: number[] = [];
     const bad = new Routine(function* () {
@@ -320,7 +324,7 @@ test("a routine that throws is dropped, and the clock keeps driving the rest", (
     const errors = console.error;
     console.error = () => {};
     try {
-        run(3.5);
+        await run(3.5);
     } finally {
         console.error = errors;
     }
@@ -328,17 +332,17 @@ test("a routine that throws is dropped, and the clock keeps driving the rest", (
     assert.equal(bad.state, "done", "...and the raising one lost its place");
 });
 
-test("freeze holds the beat, and thaw does not charge the piece for the pause", () => {
+test("freeze holds the beat, and thaw does not charge the piece for the pause", async () => {
     const { clock, run } = harness();
     clock.start();
-    run(0.5);
+    await run(0.5);
     assert.equal(clock.beats(), 0.5);
 
     // A governed transport stopped on the server: the page holds its beat
     // rather than running away from a piece that is not moving.
     clock.freeze();
     assert.equal(clock.frozen, true);
-    run(2);
+    await run(2);
     assert.equal(clock.beats(), 0.5, "the beat is held where the freeze left it");
 
     // Freezing twice keeps the first freeze's position.
@@ -348,7 +352,7 @@ test("freeze holds the beat, and thaw does not charge the piece for the pause", 
     clock.thaw();
     assert.equal(clock.frozen, false);
     assert.equal(clock.beats(), 0.5, "the frozen seconds are not part of the piece");
-    run(0.25);
+    await run(0.25);
     assert.ok(Math.abs(clock.beats() - 0.75) < 1e-9);
 });
 
@@ -424,7 +428,10 @@ function sampleGrid(rate = 48000) {
     // Advances the counter to `seconds`, firing each armed wake at its own
     // instant and in order — the one property the ordering of two clients
     // depends on.
-    const runTo = (seconds: number) => {
+    const runTo = async (seconds: number) => {
+        // Whatever the `play`s deferred runs first, so every clock has armed
+        // its wake before the loop below picks the earliest.
+        await flush();
         for (;;) {
             const next = clocks
                 .map((c) => c.due())
@@ -487,7 +494,7 @@ test("two clocks joined to one grid land on the same bar", async () => {
     play(first, "first");
     play(second, "second");
 
-    runTo(10);
+    await runTo(10);
     // The next bar of the *shared* grid, for both — and they reach it from
     // different beats of their own, which is exactly what a grid is for.
     assert.equal(started.first?.grid, 4);

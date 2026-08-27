@@ -27,6 +27,7 @@ import { Server } from "../src/defs/server/index.ts";
 import { Session } from "../src/session.ts";
 import { play } from "../src/play.ts";
 import { Event } from "../src/seq/event.ts";
+import { flush } from "./flush.ts";
 
 await loadCore(
     await readFile(
@@ -191,7 +192,7 @@ test("fromId adopts an id and sends nothing", () =>
     }));
 
 test("a bare Routine.play() creates and starts the default session's clock", () =>
-    withCleanDefault(() => {
+    withCleanDefault(async () => {
         assert.equal(defaultClock(), null, "never at import");
         let woke = 0;
         const routine = new Routine(function* () {
@@ -206,6 +207,14 @@ test("a bare Routine.play() creates and starts the default session's clock", () 
         assert.ok(clock, "the ladder's last rung is created on first use");
         assert.equal(clock.session, main, "and belongs to the default session");
         assert.equal(routine.clock, clock);
+
+        // What `play` returns having done is *arrange* the first wake, not run
+        // it: a running clock resumes what it is handed after the scheduling
+        // call has returned, which is the ordering the Python client has and
+        // what lets `Routine.run` read its own binding. So the clock is what
+        // this asserts on the spot, and the wake one turn later.
+        assert.equal(woke, 0, "the first pass is not on this call's stack");
+        await flush();
         assert.ok(woke >= 1, "started, so the routine has run its first wake");
     }));
 

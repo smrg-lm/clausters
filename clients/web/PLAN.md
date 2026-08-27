@@ -2458,8 +2458,9 @@ Python counterpart under another spelling or is a page's own (`ANY_PEER`,
   the *simplest* example turns up, and the reason W16 is worth the effort beyond
   the pages themselves.
 
-- ⬜ **A running clock resumes what it is handed inside `play`, where the
-  reference client's returns first** *(found 2026-08-25, writing `Routine.run`)*.
+- ✅ **A running clock resumes what it is handed inside `play`, where the
+  reference client's returns first** *(found 2026-08-25, writing `Routine.run`;
+  fixed 2026-08-26)*.
   `TempoClock.sched` ends in `pump()`, and an item due now is resumed there —
   so `play()` on a started clock runs the routine's first pass **before it
   returns**. The Python clock pushes and lets its own thread pick the routine
@@ -2478,6 +2479,50 @@ Python counterpart under another spelling or is a page's own (`ANY_PEER`,
   cannot read its own binding on the first pass — the Python idiom the shortcut
   is *for*, since there the same call reads as a decorator. Its doc comment says
   so and points here.
+
+  **Fixed with the microtask**, on the user's rule that the choice is whatever
+  is cheapest *without adding anything to the user's API*: `play(routine)` is
+  unchanged, and when a scheduling call defers its own pump is an implementation
+  detail of this language. `sched`/`schedAbs` end in `wakeSoon`, which queues
+  the pump and returns; inside a wake it does nothing, since `pump`'s loop
+  re-reads the queue before it sleeps. Deliberately **not** the ticker: an item
+  with no wait left is due, and making it wait for a tick would be saying it is
+  not. And not a worker either — the pacing already lives in one
+  (`workerTicker`); what cannot move off the page thread is the *resume*, since
+  a routine closes over page objects a worker cannot be handed.
+
+  **The cost was the harness, as predicted, and it landed in one place per
+  file**: `tests/flush.ts` is the one thing a hand-driven test now awaits, and
+  each file's `run(seconds)` awaits it once at the top, so about sixty tests
+  changed by a keyword and an `await` rather than in their substance. Two tests
+  changed in substance, and both were asserting the old order: the default
+  session's bare `Routine.play()` now asserts that the first pass is *not* on
+  that call's stack and then awaits it.
+
+  **And it turned up a divergence underneath**: `Timeline.fromPattern` bounced a
+  pattern by building a `manualTicker` and driving it by hand, where the Python
+  one queues the pattern on an unstarted clock and calls `clock.render(dur)` —
+  the offline drive that exists for exactly this and that walks the queue
+  itself. Two programs producing a similar result by different calls, which is
+  what the non-divergence rule names. It calls `render` now, in Python's order,
+  and the deferral cannot reach it. What that dropped is a TS-only guard (a
+  step cap that threw "the pattern did not end — pass { dur }"); an unbounded
+  bounce of an endless pattern now hangs in both clients, identically, and the
+  entry below carries the question of whether either should refuse it.
+
+- ⬜ **An unbounded bounce of an endless pattern hangs, in both clients**
+  *(named 2026-08-26, when the entry above removed the one client's guard for
+  being one client's)*. `Timeline.fromPattern(p)` with no `dur` over an endless
+  pattern never returns, here and in Python: `render` has no bound to stop at
+  and nothing is watching a wall clock. The TS side used to throw after a
+  million steps, which was better and was also a surface Python did not have —
+  so it went with the hand-rolled driver rather than being made the rule.
+  Making it the rule is the open part: a step cap inside `render` is arbitrary
+  but honest (a bounce is not a live drive, so a limit is not a musical
+  decision), and it would have to land in both clients in the same commit. The
+  alternative is that `fromPattern` requires `dur` unless the pattern declares
+  itself finite, which is a stronger statement about patterns than either
+  client makes today.
 
 - ✅ **The operator vocabulary had no home, so the class trees differed**
   *(found 2026-08-24, adding the range maps to both clients and having to

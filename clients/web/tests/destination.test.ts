@@ -22,6 +22,7 @@ import { ManualTimebase } from "../src/base/timebase.ts";
 import { Routine } from "../src/base/stream.ts";
 import { Moment } from "../src/base/moment.ts";
 import { OscDestination } from "../src/base/destination.ts";
+import { flush } from "./flush.ts";
 
 await loadCore(
     await readFile(
@@ -51,7 +52,8 @@ function harness(tempo = 1.0) {
     const timebase = new ManualTimebase();
     const ticker = manualTicker();
     const clock = new TempoClock(tempo, { timebase, ticker });
-    const run = (seconds: number) => {
+    const run = async (seconds: number) => {
+        await flush();
         const target = timebase.now() + seconds;
         for (;;) {
             const pending = (ticker as ManualTicker).pending;
@@ -75,7 +77,7 @@ test("outside a routine the moment is the wall clock", () => {
     assert.ok(Math.abs(m.at(2).instant() - (Date.now() / 1000 + 2)) < 0.5);
 });
 
-test("inside a routine the moment is the exact logical beat", () => {
+test("inside a routine the moment is the exact logical beat", async () => {
     const seen: Moment[] = [];
     const { clock, run } = harness(2.0);
     clock.start();
@@ -86,7 +88,7 @@ test("inside a routine the moment is the exact logical beat", () => {
             seen.push(Moment.current());
         }),
     );
-    run(10);
+    await run(10);
     clock.stop();
 
     assert.deepEqual(seen.map((m) => m.beat), [0, 1.5]);
@@ -95,7 +97,7 @@ test("inside a routine the moment is the exact logical beat", () => {
     assert.ok(Math.abs(seen[1]!.secs() - 0.75) < 1e-9);
 });
 
-test("a foreign clock is asked for its own now", () => {
+test("a foreign clock is asked for its own now", async () => {
     // A routine's exact beat belongs to *its* clock; another one is asked for
     // its own, which is what keeps a cross-clock send on the right axis.
     const seen: Array<[Moment, Moment]> = [];
@@ -111,7 +113,7 @@ test("a foreign clock is asked for its own now", () => {
             yield undefined;
         }),
     );
-    ours.run(1);
+    await ours.run(1);
     ours.clock.stop();
     theirs.clock.stop();
 
@@ -143,7 +145,7 @@ test("a destination sends a plain message", () => {
     assert.equal(msg!.args[2], "there");
 });
 
-test("a destination bundles at the routine's logical beat", () => {
+test("a destination bundles at the routine's logical beat", async () => {
     // The payload of the design: another application gets the same logical
     // timing the server does, with no clock knowledge of its own.
     const connection = recorder();
@@ -159,7 +161,7 @@ test("a destination bundles at the routine's logical beat", () => {
             yield undefined;
         }),
     );
-    run(1);
+    await run(1);
     clock.stop();
 
     assert.equal(connection.packets.length, 2);

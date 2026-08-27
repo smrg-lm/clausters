@@ -20,6 +20,7 @@ import type { Timebase } from "../src/base/timebase.ts";
 import { Routine } from "../src/base/stream.ts";
 import { Server } from "../src/defs/server/index.ts";
 import { Event } from "../src/seq/event.ts";
+import { flush } from "./flush.ts";
 
 await loadCore(
     await readFile(
@@ -70,7 +71,8 @@ const ntpToUnix = (ntp: bigint): number =>
 function harness(timebase: Timebase & { advance(secs: number): void }, tempo = 1.0) {
     const ticker = manualTicker();
     const clock = new TempoClock(tempo, { timebase, ticker });
-    const run = (seconds: number) => {
+    const run = async (seconds: number) => {
+        await flush();
         const target = timebase.now() + seconds;
         for (;;) {
             const pending = (ticker as ManualTicker).pending;
@@ -120,7 +122,7 @@ test("a bundle is stamped at the routine's logical beat, plus the latency", asyn
         }
     });
     clock.start().play(routine);
-    run(2);
+    await run(2);
 
     assert.equal(connection.packets.length, 3);
     const start = clock.startTime!;
@@ -148,7 +150,7 @@ test("under a sample timebase the emission is /sched_at at an absolute sample", 
         }
     });
     clock.start().play(routine);
-    run(2);
+    await run(2);
 
     assert.equal(connection.packets.length, 3);
     const origin = clock.pacingOrigin!;
@@ -183,7 +185,7 @@ test("a note played in a routine emits its /synth_new and its release, both time
         yield 1;
     });
     clock.start().play(routine);
-    run(2);
+    await run(2);
 
     assert.equal(connection.packets.length, 2);
     const [start, release] = connection.packets;
@@ -223,7 +225,7 @@ test("the built-in default instrument is released by its gate", async () => {
             yield 1;
         }),
     );
-    run(2);
+    await run(2);
     const [gate] = decodePacket(connection.packets[1]!);
     assert.equal(gate!.addr, "/node_set");
     assert.equal(gate!.args[1], "gate");
@@ -305,7 +307,7 @@ test("a clock resumed after a stop stamps for now, not for the old axis", async 
             yield 1;
         }),
     );
-    run(0.1); // the first wake lands on the spot, at the resumed beat
+    await run(0.1); // the first wake lands on the spot, at the resumed beat
     const [sched] = decodePacket(connection.packets[0]!);
     assert.equal(sched!.addr, "/sched_at");
     assert.equal(sched!.args[0], secsToSamples(10 + server.latency, 48000));

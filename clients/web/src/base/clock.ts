@@ -552,15 +552,44 @@ export class TempoClock {
      */
     sched(delayBeats: number, item: Schedulable): this {
         this.push(this.beats() + delayBeats, item);
-        this.pump();
+        this.wakeSoon();
         return this;
     }
 
     /** Schedules `item` at an absolute `beat`. */
     schedAbs(beat: number, item: Schedulable): this {
         this.push(beat, item);
-        this.pump();
+        this.wakeSoon();
         return this;
+    }
+
+    /**
+     * Pumps **after** the call that scheduled has returned, never inside it.
+     *
+     * An item due now used to be resumed on the scheduling call's own stack,
+     * so `play()` on a running clock ran the routine's first pass *before it
+     * returned* — where the Python client pushes and lets its own thread pick
+     * the routine up, so `play()` returns first. That is what
+     * `Routine.run(function* () { … })` needs: the name is bound by the
+     * assignment this call is on the right-hand side of, and a first pass that
+     * runs before it exists cannot read it.
+     *
+     * A microtask is the whole of the fix, and it is deliberately *not* the
+     * ticker: an item with no wait left is due, and making it wait for a tick
+     * would be saying it is not. Nothing about the timing moves — a beat is
+     * computed from the timebase, not counted in wakes — so the item still
+     * runs at the beat it was scheduled for. The clock's own pacing already
+     * lives off the page thread (`workerTicker`); this is about which *stack*
+     * resumes a generator, which is always the page's, since a routine closes
+     * over page objects a worker cannot be handed.
+     *
+     * Inside a wake there is nothing to defer: `pump`'s loop re-reads the queue
+     * before it sleeps, so a routine scheduling from its own body is already
+     * picked up by the turn it is running in.
+     */
+    private wakeSoon(): void {
+        if (this.pumping) return;
+        queueMicrotask(() => this.pump());
     }
 
     /**
