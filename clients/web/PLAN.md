@@ -2724,10 +2724,19 @@ finished work, where a pending item reads as done.
     shows both, so the fix is not to rename them apart: it is for the page to
     gain the authoring half (or say why a page cannot write one) and the script
     to gain the launch.
-  - **`transport/sync`'s page has a half the script does not**, and says so in
+  - ✅ **`transport/sync`'s page has a half the script does not**, and says so in
     its own prose: a playhead that obeys the shared grid. That is not a platform
     difference — a script can follow a playhead — so it is the script that is
-    behind.
+    behind. **Closed 2026-08-26 by moving the script forward**, which is the
+    direction the rule names: `sync.py` gained the same `Timeline` of four
+    quarter notes, the same `Playhead(...).loop(0, 4)`, the same
+    `follow_transport(sa, quant=4)`, and the conductor's three broadcasts —
+    `transport_play`, `transport_locate(4.0)`, `transport_stop` — in the page's
+    order. Where the page makes each step a button, the script runs the sequence
+    through, which is the one difference and is the platform's: the page's extra
+    is a *hand*, not a call. Its prose no longer claims a half the script lacks.
+    Verified by running it: the playhead advances 0 → 3.44, wraps on the locate,
+    and halts.
 
   Neither blocks W16. They are named here because a reader who opens the pair
   expecting one example in two languages currently finds two, and nothing else

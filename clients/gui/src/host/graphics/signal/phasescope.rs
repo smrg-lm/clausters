@@ -18,6 +18,7 @@ use clausters_core::measure::{correlation, lissajous_point};
 
 use crate::host::font;
 use crate::host::graphics::controls::body_rect;
+use crate::host::graphics::meters;
 use crate::host::layout::Rect;
 use crate::host::paint::Draw;
 
@@ -34,17 +35,8 @@ const MAX_SEGMENTS: usize = 2000;
 /// bright), a faint mid/side center cross, and a correlation bar beneath. An
 /// empty or odd-length window draws just the field and an empty readout.
 pub fn draw_phasescope(d: &mut Draw, rect: Rect, interleaved: &[f32], label: Option<&str>) {
+    meters::label_strip(d, label, rect);
     let (mesh, m, theme) = d.parts();
-    if let Some(text) = label {
-        font::text(
-            mesh,
-            text,
-            rect.x + m.pad,
-            rect.y + m.pad,
-            m.text_scale,
-            theme.text,
-        );
-    }
     let outer = body_rect(rect, label.is_some(), m);
     if outer.w <= 0.0 || outer.h <= 0.0 {
         return;

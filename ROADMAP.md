@@ -65,31 +65,18 @@ The five sections, and the line between them:
 
 Each is small, owned by its plan, and blocked by nothing.
 
-- ⬜ **`Editor._snap` is dead code** *(`clients/python/PLAN.md`, Found by use)*.
-  It predates the document: the crate snaps a placement now, and nothing calls
-  this; the TypeScript port left it out rather than porting a method that runs
-  nowhere. Delete it, or write down why it stays.
+**All four are done** *(2026-08-26)*, and each stays in its plan's "Found by
+use" with the record of what was wrong: `Editor._snap` deleted (the crate snaps
+a placement, and the TypeScript port was right to leave the method out);
+`guidef.waveform`'s `measure` docstring rewritten to the TSDoc's own sentences,
+which fixes more than a missing spelling — it had told the reader a stack is two
+views layered, the one picture that cannot work; `meters::label_strip` made
+`pub(crate)` and called by the three signal views that carried a copy of it; and
+`transport/sync.py` given the playhead half its page has had all along, call for
+call in the page's order.
 
-- ⬜ **`guidef.waveform`'s `measure` is documented narrower than it is**
-  *(`clients/python/PLAN.md`, Found by use)*. The docstring offers `"peak"` or
-  `"rms"`; the host parses a space-separated set and the editor's own signal
-  view sends `"peak rms"` to one `waveform`. The TypeScript type was already
-  widened; this docstring is the other half. **Related:** the A track's `A6`/`A7`
-  are what will make the set explicit on the wire — this fix is the prose
-  catching up with what already ships, not a preview of them.
-
-- ⬜ **A widget's label strip is written four times** *(`clients/gui/PLAN.md`,
-  Found by use)*. `graphics::meters::label_strip` exists and three signal views
-  open with the same four lines byte for byte. Nothing is wrong on screen, and
-  they agree because they were copied. Make the helper `pub(crate)` and call it.
-
-- ⬜ **`transport/sync`'s page has a half the script does not** *(`clients/web/
-  PLAN.md`, Found by use, "Two pairs read side by side turn out not to be
-  pairs")*. A playhead that obeys the shared grid. This is not a platform
-  difference — a script can follow a playhead — so it is the script that is
-  behind, and the non-divergence rule makes it a defect. *(The other half of that
-  same entry, `panels/standalone`, is in section 2: it needs a decision and a
-  milestone.)*
+So this section is empty until section 3's review fills it, which is what it is
+for.
 
 ## 2. Fixes that need a decision first
 

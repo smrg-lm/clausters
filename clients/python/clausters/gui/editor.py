@@ -2081,14 +2081,6 @@ class Editor:
             timeout = 0.0  # only the first wait blocks
         return changed
 
-    def _snap(self, beats: float) -> float:
-        """Snap a beat value to the musical `quant` grid (the same grid the lane
-        snapped the drag to, now in the arrangement's units — so the round trip
-        draw → drag → apply → draw is exact, free of the wire's float noise)."""
-        if self.quant <= 0.0:
-            return beats
-        return round(beats / self.quant) * self.quant
-
     # ---- rendering: the edited arrangement back to sound ----
 
     def render(self, destination, clock=None, *, at: float = 0.0, quant=None):

@@ -875,17 +875,29 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   compare the two clients' drawn trees; fixed by sending the flat form (kept
   verbatim), in `_body_for` and `_resync` both, and pinned by
   `test_a_curve_is_drawn_with_the_shape_it_has`.
-- ⬜ **`Editor._snap` is dead code.** It predates the document: the crate snaps a
-  placement now ("the intent states where the hand put it and the crate snaps"),
-  and nothing calls this. The TypeScript port left it out rather than porting a
-  method that runs nowhere; delete it here, or say why it stays.
-- ⬜ **`guidef.waveform`'s `measure` is documented narrower than it is.** The
-  docstring offers `"peak"` or `"rms"` and describes a stack as *two* waveform
-  views; the host parses a space-separated set on any signal-family widget, and
-  the editor's own signal view sends `"peak rms"` to one `waveform` — which is
-  what its `layers` property is. The TypeScript builder's type was widened to
-  the four spellings when the editor was ported; this docstring is the other
-  half.
+- ✅ **`Editor._snap` is dead code** *(deleted 2026-08-26)*. It predates the
+  document: the crate snaps a placement now ("the intent states where the hand
+  put it and the crate snaps"), and nothing called this. The TypeScript port
+  left it out rather than porting a method that runs nowhere, and that was the
+  right reading — the two clients agree by the method being gone rather than by
+  one of them carrying a copy nothing reaches. `quant` stays: it is what the
+  editor tells the crate to snap *to*.
+- ✅ **`guidef.waveform`'s `measure` is documented narrower than it is** *(fixed
+  2026-08-26)*. The docstring offered `"peak"` or `"rms"` and described a stack
+  as *two* waveform views; the host parses a space-separated set on any
+  signal-family widget, and the editor's own signal view sends `"peak rms"` to
+  one `waveform` — which is what its `layers` property is. The TypeScript
+  builder's type was widened to the four spellings when the editor was ported;
+  this docstring was the other half.
+
+  **What it was actually saying wrong** is the reason it is worth a record: not
+  that it listed two values instead of four, but that it told the reader a stack
+  is *two views layered*, which is the one thing it cannot be — every view of a
+  signal paints its own field before it draws, so the second hides the first.
+  A reader following the docstring would have written the picture that does not
+  work. The prose is now the TSDoc's, sentence for sentence, and
+  `docs/gui-protocol.md`'s summary row (which pointed at a fuller section that
+  was already right) names the space-separated form too.
 
 *(This plan's version of the section the other roadmaps call "Found by use": what
 using the client turns up, recorded the day it is found. Every entry is a

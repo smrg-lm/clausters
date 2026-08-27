@@ -22,9 +22,8 @@ use clausters_core::window::Window;
 
 use crate::spectrogram::FreqScale;
 
-use crate::host::font;
 use crate::host::graphics::controls::body_rect;
-use crate::host::graphics::meters::fraction;
+use crate::host::graphics::meters::{self, fraction};
 use crate::host::layout::Rect;
 use crate::host::paint::{Color, Draw, Mesh};
 use crate::host::ruler;
@@ -277,17 +276,8 @@ pub(crate) fn draw_spectrum(
     states: &[SpectrumState],
     p: &SpectrumParams,
 ) {
+    meters::label_strip(d, p.label, rect);
     let (mesh, m, theme) = d.parts();
-    if let Some(text) = p.label {
-        font::text(
-            mesh,
-            text,
-            rect.x + m.pad,
-            rect.y + m.pad,
-            m.text_scale,
-            theme.text,
-        );
-    }
     let SpectrumRegions {
         body,
         strip_y_x: strip_x,

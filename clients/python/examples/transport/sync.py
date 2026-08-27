@@ -12,6 +12,13 @@ pairs are completely independent — exactly the state two separate programs wou
 hold. It prints the next-bar sample each client computes (they match: that *is*
 the alignment) and plays one note on each at that bar, so the two sound together.
 
+The transport's **second half is its rolling state**, and this shows that too:
+`clausters.defs.Server.transport_play`, `transport_stop` and `transport_locate`
+are broadcast to every client registered for notifications, and
+`clausters.seq.Playhead.follow_transport` turns those broadcasts into a client's
+own playhead — the conductor rolls, halts and seeks every follower at once. The
+server broadcasts *control*, never audio.
+
 It **runs out of the box**: the conductor `boot`s the shared server (by hand
 that would be ``clausters``, so stop any server already on the port first) and
 `close` stops it again; the two clients only connect to it, each taking its own
@@ -30,10 +37,11 @@ Run it cell by cell (Shift+Enter), or as a plain script --
 import math
 # %%
 import sys
+import time
 
 from clausters.base import IdShare, Routine, TempoClock
 from clausters.defs import Server
-from clausters.seq import Event
+from clausters.seq import Event, Playhead, Timeline
 
 
 # %% [markdown]
@@ -116,13 +124,55 @@ def run():
     print("played; the two notes landed on the same bar")
 
 
+# %% [markdown]
+# ## A playhead that obeys the conductor
+# The transport's other half: its rolling state. Client A's playhead follows
+# the shared transport, so it is the *conductor* that starts, seeks and halts
+# it — a follower has no buttons of its own. The timeline is one bar of quarter
+# notes, so a locate is audible as a different place in the same figure.
+
+# %%
+figure = Timeline([
+    (0, Event(freq=220.0, amp=0.15, dur=0.4)),
+    (1, Event(freq=277.2, amp=0.15, dur=0.4)),
+    (2, Event(freq=330.0, amp=0.15, dur=0.4)),
+    (3, Event(freq=440.0, amp=0.15, dur=0.4)),
+])
+playhead = Playhead(figure, ca, sa).loop(0, 4)
+
+
+# %%
+def conduct():
+    """The conductor drives every follower: roll, seek, halt. Each call is one
+    broadcast, and the playhead never hears a button of its own."""
+    ca.start()
+    playhead.follow_transport(sa, quant=4)
+    print("client A: its playhead now follows the conductor's transport")
+
+    conductor.transport_play()
+    print("conductor: transport play - every follower rolls")
+    time.sleep(2.5)
+
+    conductor.transport_locate(4.0)
+    print("conductor: locate to beat 4 - every follower seeks")
+    time.sleep(2.5)
+
+    conductor.transport_stop()
+    print("conductor: transport stop - every follower halts")
+    time.sleep(0.3)
+    playhead.unfollow_transport()
+    ca.stop()
+
+
 # %%
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
         run()
+        conduct()
     finally:
         for s in (sa, sb, conductor):
             s.close()
 else:
-    print("two clients up - run() to play, sa.close(); sb.close(); "
+    print("two clients up - run() to play the aligned notes, conduct() to hand "
+          "client A's playhead to the conductor; sa.close(); sb.close(); "
           "conductor.close() to end")

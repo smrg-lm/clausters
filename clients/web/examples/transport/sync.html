@@ -20,9 +20,10 @@
   <body>
     <main>
       <div id="note">The web port of the Python client's
-<code>sync.py</code>, with the following half it does not have:
-<b>two independent clients phase-aligned on one server's shared transport, and a
-playhead that obeys the conductor</b>.
+<code>sync.py</code>, call for call: <b>two independent clients phase-aligned on
+one server's shared transport, and a playhead that obeys the conductor</b>. What
+the page adds is the <i>hand</i> — the script runs the same sequence start to
+finish, and here each step is a button, so a late join can be pressed late.
 
 The server keeps one <b>transport</b>: a beat grid <code>(originSample,
 tempo)</code> a conductor writes with <code>server.setTransport(...)</code>, plus

@@ -1415,10 +1415,13 @@ def waveform(*, data=None, blob: int | None = None, buffer: int | None = None,
     (default 1): **every** channel is kept and drawn — stacked lanes sharing the
     time axis by default, or per-color overlaid traces with ``overlay=True``.
 
-    ``measure`` chooses what the columns measure — ``"peak"`` (the default
-    envelope) or ``"rms"`` (the level body). Two `waveform` views of one source
-    on the same axes, one of each, are the classic editor picture as a **stack**
-    (see `signal`).
+    ``measure`` chooses what the picture measures — ``"peak"`` (the default
+    envelope), ``"rms"`` (the level body), or **both as one space-separated
+    string**: ``"peak rms"``, the classic editor picture, the level drawn
+    inside the envelope. A stack is a prop of *one* view and not two views
+    layered — a view paints its own field before it draws, so the second would
+    hide the first (see `signal`, and the multitrack editor's signal view,
+    whose ``layers`` is this prop).
     ``base_bucket`` sets the peak-pyramid bucket size (default 256); for ``path``
     it also keys the sibling cache the host writes beside the file.
 

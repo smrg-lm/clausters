@@ -239,7 +239,12 @@ fn trace_lane(
 }
 
 /// Draws the label strip above a view body, if it has a label.
-fn label_strip(d: &mut Draw, label: Option<&str>, rect: Rect) {
+///
+/// Every view that reserves a strip with [`super::controls::body_rect`] draws it
+/// with this: the height and the drawing are the same fact, and they were once
+/// two — three signal views carried a copy of these four lines, agreeing because
+/// they had been copied rather than because anything held them together.
+pub(crate) fn label_strip(d: &mut Draw, label: Option<&str>, rect: Rect) {
     let (mesh, m, theme) = d.parts();
     if let Some(text) = label {
         font::text(

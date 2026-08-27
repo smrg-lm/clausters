@@ -35,7 +35,7 @@ use super::trace::{self, Measures, Trace, TraceStyle};
 use crate::host::font;
 use crate::host::frame::{lane_at, lane_rect};
 use crate::host::graphics::controls::body_rect;
-use crate::host::graphics::meters::fraction;
+use crate::host::graphics::meters::{self, fraction};
 use crate::host::layout::Rect;
 use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
@@ -259,17 +259,8 @@ fn x_unit(p: &PlotParams) -> TimeUnit {
 /// Draws a plot into `mesh`: the label strip, the framed field, the rulers and
 /// the view's traces (stacked per-channel lanes, or overlaid when asked).
 pub fn draw(d: &mut Draw, rect: Rect, p: &PlotParams) {
+    meters::label_strip(d, p.label, rect);
     let (mesh, m, theme) = d.parts();
-    if let Some(text) = p.label {
-        font::text(
-            mesh,
-            text,
-            rect.x + m.pad,
-            rect.y + m.pad,
-            m.text_scale,
-            theme.text,
-        );
-    }
     let g = geometry(rect, p, m);
     if g.body.w <= 0.0 || g.body.h <= 0.0 {
         return;

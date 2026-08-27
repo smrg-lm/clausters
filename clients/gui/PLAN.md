@@ -3393,6 +3393,15 @@ finished work, where a pending item reads as done.
   pass because a cleanup riding in a legibility fix is how a diff stops being
   readable.
 
+  **Done as written** *(2026-08-26)*, and it shrank rather than moved:
+  `meters::label_strip` is `pub(crate)`, the three views call it as their first
+  line, and each lost the four lines — `spectrum` its `font` import with them.
+  The call goes *before* `d.parts()`, which is what the two views that already
+  called it do, so the three now read like the fourth. The helper's doc comment
+  carries the reason it exists at all: the strip's height is
+  `controls::body_rect`'s and its drawing is this, and the two are one fact
+  stated in two places.
+
 - ✅ **A control has a range and no curve, and no step** *(noted 2026-08-23,
   with the Python client's control-widget work)*. `props::Range` is
   `{value, min, max, label, text_size}`: a knob, a slider and a number are
