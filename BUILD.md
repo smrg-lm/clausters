@@ -147,8 +147,8 @@ against a different LLVM than the pinned one, which is the supported way to work
 on a machine whose distro moved on — only the *shipped* artifact is pinned.
 
 **LLVM is linked statically, and only the components the JIT reaches.** That is
-what makes the result one self-contained ~43 MB library rather than a 146 MB
-pair — a small `libfaust.so` plus the distro's monolithic `libLLVM.so`, which a
+what makes the result one self-contained library — ~43 MB against LLVM 21,
+~46 MB against the pinned 18 — rather than a 146 MB pair — a small `libfaust.so` plus the distro's monolithic `libLLVM.so`, which a
 `NEEDED` link takes whole, all twenty target backends and the rest of the
 toolchain with it. The script's own header explains each trim and what it gives
 up; `docs/decisions.md` carries the measurements. A full build from source takes
@@ -296,7 +296,7 @@ artifacts, each with the features its mode needs:
 
 The crate defaults (`synth, faust, realtime, midi, pipewire, rtprio`) carry
 **both def families**, live audio, ALSA-seq MIDI and RT scheduling into every
-artifact, and `libfaust` is bundled alongside (the ~35 MB noted above) so a
+artifact, and `libfaust` is bundled alongside (most of the wheel's weight) so a
 FaustDef JIT-compiles on a clean install. `libverovio` and its SMuFL
 resource data ride along for the same reason — the `score` widget engraves and
 edits notation on that clean install, and the client keeps `dependencies = []`. `--features embed,realtime`

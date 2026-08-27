@@ -84,8 +84,9 @@ CMAKE_BUILD_PARALLEL_LEVEL=$(nproc) make most \
 - `-DLINK_LLVM_STATIC=on` + `-ULLVM_BUILD_UNIVERSAL` + one Faust backend in the
   `.so` + the section flags: the four trims that turn a 146 MB pair
   (`libfaust.so` plus the distro's monolithic `libLLVM.so`) into a single
-  ~43 MB `libfaust.so`. Each one is explained where it is applied, in
-  `build-faust.sh`; the measurements are in `docs/decisions.md`.
+  `libfaust.so` — ~43 MB against LLVM 21, ~46 MB against the pinned 18. Each
+  one is explained where it is applied, in `build-faust.sh`; the measurements
+  are in `docs/decisions.md`.
 - `FAUSTDIR=faustdir-native`: not the default `faustdir`, which belongs to
   `build-faust-wasm.sh`. That script reconfigures its directory without a
   backend file, so it inherits whatever was last cached there — two recipes
@@ -122,6 +123,12 @@ Sanity check:
 ~/.local/bin/faust --version    # Faust 2.86.0, with every backend listed
 ldd ~/.local/lib/libfaust.so    # => libz, libzstd and the glibc baseline; no libLLVM
 ```
+
+On the pinned LLVM 18 that `ldd` also shows `libtinfo.so.6`: 18's Support
+library still links terminfo, and LLVM 19 is where that went away. It is one
+small library, `build_native.py` stages whatever `ldd` names, and there is
+nothing to do about it — but it is why the wheel built in CI carries a
+dependency the one built here against 21 does not.
 
 The CLI keeps all twenty backends — that is where `faust -lang c` reads them.
 Only the shared library is narrowed to the LLVM one, because the server only
@@ -225,8 +232,14 @@ Notes (see also `BUILD.md` and the `faust` sections of `CLAUDE.md`):
   `~/.local`. `faust --version` lists every backend; `libfaust.so` = 53 MB as
   installed, 43 MB once `build_native.py` strips it into the wheel, and `ldd`
   shows no libLLVM. Against the shared link it replaces, that is 146 MB of
-  libfaust + libLLVM down to 43, and six vendored dependencies (libxml2,
-  libedit, libtinfo, libffi, libbsd, libmd) out of the wheel entirely.
+  libfaust + libLLVM down to 43, and five vendored dependencies (libxml2,
+  libedit, libffi, libbsd, libmd) out of the wheel entirely.
+- And on the **pinned** LLVM 18, which is what CI and the release build
+  against: the same recipe, run cold in the `libfaust` job, produces 46 MB
+  rather than 43 and keeps one of the six — `libtinfo.so.6`, because LLVM 18's
+  Support library still links terminfo and 19 is where that stopped. The
+  component list resolves unchanged on 18; the job builds from source in
+  ~5 min.
 - The 97 tests that touch Faust (the seven `faust_*` suites, `golden`,
   `rt_safety`, `denormals`) pass against it, and `examples/faust_soundfile.py`
   plays through the bundled binaries.

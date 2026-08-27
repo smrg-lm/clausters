@@ -257,7 +257,7 @@ monolithic `libLLVM.so`, 137 MB of it, dragging libxml2, libedit, libtinfo,
 libffi, libbsd and libmd along as vendored dependencies. Three quarters of the
 package was one file. It is now a single `libfaust.so` with LLVM linked into it,
 and the measurements are the argument (stripped, on this machine, against
-LLVM 21 — the pinned 18 is no larger):
+LLVM 21):
 
 | | raw | gzip |
 |---|---|---|
@@ -267,6 +267,17 @@ LLVM 21 — the pinned 18 is no larger):
 | + `--gc-sections` with the archives' symbols hidden | **43** | **18** |
 
 The wheel went from 194 MiB installed / 64 MiB packed to **93 / 36**.
+
+**The pin is LLVM 18, and it is a little larger than the table.** These numbers
+are this machine's LLVM 21; what CI and the release build against is 18, where
+the same recipe produces a 46 MiB library instead of 43 — so the published wheel
+sits a few MB above the figures here, which are a floor rather than the shipped
+size. One vendored dependency comes back with it: LLVM 18's Support library
+still links terminfo, so `libtinfo.so.6` is staged beside libfaust in the wheel
+(`build_native.py` reads `ldd`, so this needs no decision — it is simply what
+the pinned LLVM needs). LLVM 19 dropped that dependency, which is why 21 shows
+none; the other five — libxml2, libedit, libffi, libbsd, libmd — are gone on
+both.
 
 Four trims, and each one answers a different question about what a *shipped*
 JIT actually needs. `third_party/build-faust.sh` explains them where they are

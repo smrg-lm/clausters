@@ -60,10 +60,11 @@ jobs:
   # other automation does for the commit being published:
   #
   #  - `check.sh` -- the fmt + clippy + rustdoc matrix. CI covers five of its
-  #    fourteen configurations (the two fmts, and the workspace/gui/default
-  #    clippy runs); the other nine -- clippy under neither def family, `synth`
-  #    alone, `faust` alone, clausters-ffi with `verovio`, and all five rustdoc
-  #    builds -- were, until this job, run only by a maintainer who remembered
+  #    fifteen configurations (the two fmts, and the workspace/gui/default
+  #    clippy runs); the other ten -- clippy under neither def family, `synth`
+  #    alone, `faust` alone, clausters-ffi with `verovio`, the featureless build
+  #    with no libfaust to link, and all five rustdoc builds -- were, until this
+  #    job, run only by a maintainer who remembered
   #    to; they are what `check.sh --fast` runs. Once per release is
   #    the right frequency for them: they are slow, they rarely break, and the
   #    moment being wrong is unrecoverable is this one. It only ever reads --
