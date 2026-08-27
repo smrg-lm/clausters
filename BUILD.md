@@ -112,55 +112,49 @@ If you would rather not have the dependency, build the SynthDef-only server:
 **Relocatable artifacts.** With the feature on, `build.rs` writes a `DT_RPATH`
 of `$ORIGIN`, `$ORIGIN/../_libs` and the build-time prefix, in that order. The
 `$ORIGIN` entries are what let a distribution (the Python wheel) ship
-`libfaust.so` and the `libLLVM.so` it JITs with *beside* the binary and the
-cdylibs, so Faust works on a machine with neither installed. It must be
-`DT_RPATH`, not `DT_RUNPATH`: only the former is inherited by transitive
-dependencies, and libfaust — which carries no rpath of its own — is the one that
-needs to find libLLVM. This is also why the Python wheel weighs ~50 MB: libLLVM
-*is* the Faust JIT, and it is ~130 MB unpacked (see
-`clients/python/build_native.py`).
+`libfaust.so` *beside* the binary and the cdylibs, so Faust works on a machine
+without it installed. It must be `DT_RPATH`, not `DT_RUNPATH`: only the former
+is inherited by transitive dependencies, and libfaust — which carries no rpath
+of its own — is the one that has to find libz and libzstd.
 
-libLLVM does not stop at itself, though: it links libxml2, libzstd, libedit,
-libz, libffi and libtinfo (and *their* deps), none of which are ours and none
-guaranteed on the target — and their sonames drift between distro generations
-(a wheel built where LLVM linked `libxml2.so.2` won't load on a host that only
-ships `libxml2.so.16`). So `build_native.py` vendors the **whole transitive
-closure** of libfaust/libLLVM into `_libs/` (minus the glibc/`libgcc_s`/`libstdc++`
-baseline) and rewrites each vendored library's run path to `$ORIGIN` with
-**patchelf** — a build-time requirement on Linux. The rewrite is essential
-because libLLVM uses `DT_RUNPATH`, which is *not* inherited down the chain, so
-the binary's `$ORIGIN/../_libs` never reaches libLLVM's own dependencies; giving
-each vendored lib its own `$ORIGIN` (they all sit together in `_libs/`) makes the
-graph resolve locally. The release wheel is a plain `python -m build`, with no
-auditwheel/repair step, so this staging *is* the relocation.
+libfaust does not stop at itself, though: the LLVM linked into it still reaches
+libz and libzstd, neither of which is ours nor guaranteed on the target — and
+sonames drift between distro generations. So `build_native.py` vendors the
+**whole transitive closure** of libfaust into `_libs/` (minus the
+glibc/`libgcc_s`/`libstdc++` baseline) and rewrites each vendored library's run
+path to `$ORIGIN` with **patchelf** — a build-time requirement on Linux. The
+rewrite matters because a `DT_RUNPATH` is *not* inherited down the chain, so the
+binary's `$ORIGIN/../_libs` would never reach a vendored library's own
+dependencies; giving each one its own `$ORIGIN` (they all sit together in
+`_libs/`) makes the graph resolve locally. The release wheel is a plain
+`python -m build`, with no auditwheel/repair step, so this staging *is* the
+relocation.
 
 #### Building libfaust from source (reproducible, no sudo)
 
-Pin the same version the tree is tested against and build the dynamic library
-with the LLVM backend:
+There is one recipe, and local development, CI and the release wheel all run it:
 
 ```sh
-# system deps: cmake, an LLVM dev package, libzstd-dev, zlib1g-dev
-sudo apt install cmake llvm-20-dev libzstd-dev zlib1g-dev
+# system deps: cmake, make, g++, an LLVM dev package, zlib1g-dev
+sudo apt install cmake make g++ llvm-18-dev zlib1g-dev
 
-git clone --depth 1 -b 2.81.10 https://github.com/grame-cncm/faust
-cd faust
-make most                       # builds the compiler; note: NOT the .so yet
-
-# two cmake cache tweaks in the build dir, then rebuild + install to ~/.local:
-#   -DINCLUDE_DYNAMIC=ON        the `most` target skips the shared lib
-#   -DLINK_LLVM_STATIC=off      link the monolithic libLLVM.so (no libpolly-*-dev)
-#   -DLLVM_CONFIG=llvm-config-20
-cmake -DINCLUDE_DYNAMIC=ON -DLINK_LLVM_STATIC=off -DLLVM_CONFIG=llvm-config-20 \
-      -S build -B build/faustdir
-cmake --build build/faustdir
-make -C build/faustdir install PREFIX=$HOME/.local
+third_party/build-faust.sh            # into ~/.local; the pin decides the version
 ```
 
-Notes: static LLVM linking (`LINK_LLVM_STATIC=on`) additionally needs
-`libpolly-20-dev` and is not used here. The dynamic `libfaust.so` is ~11 MB
-against the system `libLLVM.so`; a full build from source takes ~10 min on 8
-cores. See [the design record](docs/decisions.md#faust-embedding-decisions-and-upstream-bugs)
+It fetches the commit pinned in `third_party/faust.pin`, builds the dynamic
+`libfaust.so` and installs it. `LLVM_CONFIG=llvm-config-21` (or any other) builds
+against a different LLVM than the pinned one, which is the supported way to work
+on a machine whose distro moved on — only the *shipped* artifact is pinned.
+
+**LLVM is linked statically, and only the components the JIT reaches.** That is
+what makes the result one self-contained ~43 MB library rather than a 146 MB
+pair — a small `libfaust.so` plus the distro's monolithic `libLLVM.so`, which a
+`NEEDED` link takes whole, all twenty target backends and the rest of the
+toolchain with it. The script's own header explains each trim and what it gives
+up; `docs/decisions.md` carries the measurements. A full build from source takes
+~10 min on 8 cores.
+
+See [the design record](docs/decisions.md#faust-embedding-decisions-and-upstream-bugs)
 for why the distro package cannot be used.
 
 ### libverovio (the notation engraver, behind the `verovio` feature)
@@ -230,7 +224,7 @@ Docs. Steps:
 5. **Tag and push**: `git tag vX.Y.Z && git push origin vX.Y.Z`. The tag triggers
    `release.yml`, whose four jobs:
    - **build** — the self-contained wheel (client + embedded server + standalone
-     binary + bundled libfaust/libLLVM + libverovio) and a server-binary tarball
+     binary + bundled libfaust + libverovio) and a server-binary tarball
      (Linux x86_64); the tarball version comes from the tag, the wheel version
      from `pyproject.toml` (hence step 2). Both third-party libraries are
      restored or built by their composite actions
@@ -302,8 +296,8 @@ artifacts, each with the features its mode needs:
 
 The crate defaults (`synth, faust, realtime, midi, pipewire, rtprio`) carry
 **both def families**, live audio, ALSA-seq MIDI and RT scheduling into every
-artifact, and `libfaust` + `libLLVM` are bundled alongside (the ~50 MB noted
-above) so a FaustDef JIT-compiles on a clean install. `libverovio` and its SMuFL
+artifact, and `libfaust` is bundled alongside (the ~35 MB noted above) so a
+FaustDef JIT-compiles on a clean install. `libverovio` and its SMuFL
 resource data ride along for the same reason — the `score` widget engraves and
 edits notation on that clean install, and the client keeps `dependencies = []`. `--features embed,realtime`
 *adds* to the defaults (only `--no-default-features` replaces them), so the embed

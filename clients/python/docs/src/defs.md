@@ -569,7 +569,7 @@ The common pattern is to combine them: a FaustDef for the voice, a SynthDef to r
 
 ## What the server must support
 
-Both def families are **on by default** on the server (`synth` and `faust` are Cargo features, and both are in the default set), and everything the wheel ships is built that way: the standalone `clausters` binary, the in-process embedded server and the offline renderer all take a `SynthDef` *and* a `FaustDef`. The package even bundles libfaust and the libLLVM it JITs with, so Faust works on a machine with neither installed — nothing to enable, nothing to build.
+Both def families are **on by default** on the server (`synth` and `faust` are Cargo features, and both are in the default set), and everything the wheel ships is built that way: the standalone `clausters` binary, the in-process embedded server and the offline renderer all take a `SynthDef` *and* a `FaustDef`. The package even bundles libfaust, with its LLVM JIT linked in, so Faust works on a machine without it installed — nothing to enable, nothing to build.
 
 The one case where a `FaustDef` can fail is a server **someone built without the feature** (`--no-default-features`, e.g. a minimal SynthDef-only build). It answers `/def_send faust` with a `/fail` — "server built without faust support" — which the client raises as a `CommandError`. If that happens against a server you did not build, that is what to check.
 

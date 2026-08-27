@@ -46,7 +46,7 @@ cargo test --no-default-features --features synth,realtime   # no libfaust neede
 
 Every compilation FFI call goes through `faust::compiler::ffi_lock()`, which serializes libfaust within the process (instantiating from an already-compiled factory is concurrency-safe). That lock is what lets the Faust suites run in the ordinary parallel test harness; a SIGSEGV in a `faust_*` suite is the signature of an FFI path that skipped it.
 
-`build.rs` also writes a `DT_RPATH` of `$ORIGIN`, `$ORIGIN/../_libs` and the build prefix, so the artifacts are relocatable and a distribution can bundle libfaust and its libLLVM beside them (which is exactly what the Python wheel does — see `clients/python/build_native.py`). `DT_RPATH` rather than `DT_RUNPATH`: only the former is inherited by transitive dependencies, and it is libfaust, not our binary, that needs to find libLLVM.
+`build.rs` also writes a `DT_RPATH` of `$ORIGIN`, `$ORIGIN/../_libs` and the build prefix, so the artifacts are relocatable and a distribution can bundle libfaust beside them (which is exactly what the Python wheel does — see `clients/python/build_native.py`). `DT_RPATH` rather than `DT_RUNPATH`: only the former is inherited by transitive dependencies, and it is libfaust, not our binary, that has to find the libz and libzstd its LLVM reaches.
 
 ## Real-time safety (non-negotiable)
 

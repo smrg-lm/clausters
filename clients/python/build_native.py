@@ -19,12 +19,13 @@ core through artifacts built by cargo, not pip:
   workspace) -> the **visual server** the launcher runs (`clausters.launch` /
   `clausters.Session.gui`). Bundled here too, stripped, so the one package is
   self-contained — server *and* GUI, no separate install.
-- ``libfaust`` and the ``libLLVM`` it JIT-compiles with, copied out of the build
-  machine's prefix (they are not ours to build) -> a `FaustDef` compiles on a
-  machine with neither installed. The `faust` feature is on by default, so this
-  is what keeps the two def families *equally* usable from an installed wheel.
-  It is also what makes the wheel heavy (~55 MB packed): the Faust compiler is
-  LLVM.
+- ``libfaust``, copied out of the build machine's prefix (it is not ours to
+  build) -> a `FaustDef` compiles on a machine without it installed. The `faust`
+  feature is on by default, so this is what keeps the two def families *equally*
+  usable from an installed wheel. It is also the single heaviest thing in the
+  wheel, because the Faust compiler is an LLVM JIT and links it in
+  (``third_party/build-faust.sh`` explains what that link does and does not
+  take).
 - ``libverovio`` and its SMuFL resource data, copied out of the prefix
   ``third_party/build-verovio.sh`` installed into (they are ours to build, but
   not ours to link) -> the `score` widget's notation engraves and edits from an
@@ -299,8 +300,8 @@ def _needed_libs(path: str) -> dict[str, str]:
 # never vendored: bundling the C/C++ runtime or the loader would pin a copy older
 # than (or ABI-incompatible with) the host's and break everything that links them
 # system-wide. Matches the spirit of auditwheel's policy whitelist, scoped to what
-# libfaust/libLLVM can pull in. Everything else in their transitive closure *is*
-# vendored (see ``stage_faust_libs``).
+# libfaust can pull in. Everything else in its transitive closure *is* vendored
+# (see ``stage_faust_libs``).
 _SYSTEM_SONAME_PREFIXES = (
     "libc.so", "libm.so", "libdl.so", "librt.so", "libpthread.so",
     "libutil.so", "libresolv.so", "libnsl.so", "libgcc_s.so", "libstdc++.so",
@@ -309,40 +310,38 @@ _SYSTEM_SONAME_PREFIXES = (
 
 
 def stage_faust_libs(profile: str) -> list[str]:
-    """Copy libfaust — and the libLLVM it needs, and *their* transitive deps —
-    beside the cdylibs in ``_libs/``.
+    """Copy libfaust — and its transitive deps — beside the cdylibs in ``_libs/``.
 
     The `faust` feature is on by default, so the built artifacts link libfaust
-    dynamically, and libfaust in turn links the LLVM shared library that *is* its
-    JIT. Bundling both is what makes an installed wheel able to compile a
-    FaustDef on a machine with neither installed — the same self-contained
+    dynamically. Bundling it is what makes an installed wheel able to compile a
+    FaustDef on a machine without it installed — the same self-contained
     packaging the ``clausters-gui`` binary gets. ``build.rs`` writes a `DT_RPATH`
     of ``$ORIGIN``/``$ORIGIN/../_libs``, inherited by transitive dependencies, so
     the loader finds these copies before (or without) any system ones.
 
-    libLLVM does not stop at itself: it links libxml2, libzstd, libedit, libz,
-    libffi, libtinfo… none of which are ours and none of which are guaranteed on
-    the target. Worse, their sonames drift between distro generations — a wheel
-    built where LLVM linked ``libxml2.so.2`` fails to load on a host that only
-    ships ``libxml2.so.16`` (exactly the "cannot open shared object file" the
+    libfaust does not stop at itself: the LLVM it links statically still reaches
+    libz and libzstd, neither of which is ours nor guaranteed on the target.
+    Worse, their sonames drift between distro generations — a wheel built where
+    LLVM linked ``libxml2.so.2`` fails to load on a host that only ships
+    ``libxml2.so.16`` (exactly the "cannot open shared object file" the
     standalone server dies with). So we vendor the **whole transitive closure**
-    of libfaust/libLLVM, minus the baseline system libraries in
+    of libfaust, minus the baseline system libraries in
     ``_SYSTEM_SONAME_PREFIXES``. ``ldd`` already flattens the tree, so one pass
-    over each root's resolved path captures deps-of-deps (libbsd -> libmd, …).
+    over the root's resolved path captures deps-of-deps.
 
     The libraries are read off the *staged* artifacts, keyed by the exact soname
     the loader asks for. A server built without the feature needs no libfaust, so
     nothing is found and nothing is staged.
     """
     artifacts = [p for p in (staged_bin(), *staged_libs()) if p]
-    # The two libraries we deliberately vendor (the Faust JIT compiler), each
-    # keyed by the exact soname the loader asks for and its resolved build-host
-    # path. We scope the closure to *these* roots, not to the whole binary, so we
-    # never drag in the GUI's graphics/audio system stack.
+    # The one library we deliberately vendor (the Faust JIT compiler), keyed by
+    # the exact soname the loader asks for and its resolved build-host path. We
+    # scope the closure to *this* root, not to the whole binary, so we never drag
+    # in the GUI's graphics/audio system stack.
     roots: dict[str, str] = {}
     for art in artifacts:
         for soname, resolved in _needed_libs(art).items():
-            if soname.startswith(("libfaust.", "libLLVM.")):
+            if soname.startswith("libfaust."):
                 roots.setdefault(soname, resolved)
     wanted: dict[str, str] = dict(roots)
     for resolved in list(roots.values()):
@@ -352,7 +351,7 @@ def stage_faust_libs(profile: str) -> list[str]:
             wanted.setdefault(soname, dep)
     if wanted and platform.system() == "Linux" and shutil.which("patchelf") is None:
         raise SystemExit(
-            "clausters: patchelf is required to bundle libfaust/libLLVM into a "
+            "clausters: patchelf is required to bundle libfaust into a "
             "relocatable wheel (it rewrites their run path to $ORIGIN). Install it "
             "with `pip install patchelf` (a self-contained wheel) or your package "
             "manager, then rebuild."

@@ -14,15 +14,14 @@ The Faust source is **not committed** (it is heavy and git-ignored under
 `third_party/faust`); reproducibility comes instead from two committed files:
 
 - **`third_party/faust.pin`** — the single source of truth: the exact commit
-  (`FAUST_SHA`, the unpatched `master-dev` base) and the LLVM version the shipped
-  libLLVM is built against (`FAUST_LLVM_VERSION`, pinned to **18** — Ubuntu
-  24.04's default, a baseline-x86-64 build that keeps the bundled libLLVM
-  portable). A developer on a different LLVM (this machine has 21) builds locally
+  (`FAUST_SHA`, the unpatched `master-dev` base) and the LLVM version linked
+  into the shipped libfaust (`FAUST_LLVM_VERSION`, pinned to **18** — Ubuntu
+  24.04's default, a baseline-x86-64 build that keeps the artifact portable). A developer on a different LLVM (this machine has 21) builds locally
   with `LLVM_CONFIG=llvm-config-21 third_party/build-faust.sh`; only the *shipped*
   artifact is pinned, and the hand-written FFI surface is version-independent.
 - **`third_party/build-faust.sh`** — one recipe, run identically by local dev,
   CI and the release wheel: fetch the pinned commit (+ submodules), build the
-  dynamic `libfaust.so`, install into a prefix, and stage the libLLVM beside it.
+  dynamic `libfaust.so` with LLVM linked into it, and install into a prefix.
 
 ```sh
 third_party/build-faust.sh              # installs into ~/.local
@@ -48,20 +47,27 @@ everything else is user-space):
   also known-good) — the JIT backend. The build is driven by
   `llvm-config-XX`.
 - `zlib1g-dev`.
-- `libzstd-dev` — **only** if you link LLVM statically
-  (`LINK_LLVM_STATIC=on`); with the dynamic `libLLVM.so` (recommended, and
-  what the commands below use) it is not needed.
-- **Not** needed: `libpolly-XX-dev` (only required by static LLVM linking),
-  `libmicrohttpd` (HTTPD support is optional and skipped automatically if
-  absent).
+- **Not** needed: `libpolly-XX-dev`, `libzstd-dev`, `libxml2-dev`. The static
+  link asks llvm-config for a *component list*, not for `--libs`, which is what
+  keeps Polly out of it; and where a system library LLVM wants has only its
+  runtime package installed, the recipe links the versioned file directly (the
+  SONAME recorded is the same). `libmicrohttpd` is optional too — HTTPD support
+  is skipped automatically if absent.
 
 ## Native build: compiler + libfaust (dynamic) + stdlib
 
-This is the command `build-faust.sh` runs — from `third_party/faust`:
+This is what `build-faust.sh` runs — the script's own header carries the full
+reasoning, and this is the shape of it:
 
 ```sh
 CMAKE_BUILD_PARALLEL_LEVEL=$(nproc) make most \
-  CMAKEOPT="-DINCLUDE_DYNAMIC=ON -DINCLUDE_STATIC=off -DLINK_LLVM_STATIC=off -DLLVM_CONFIG=llvm-config-21"
+  FAUSTDIR=faustdir-native \
+  USE_LLVM_CONFIG=off LLVM_LIBS="<component list>" \
+  LLVM_DEFINITIONS="-ULLVM_BUILD_UNIVERSAL" \
+  CMAKEOPT="-DINCLUDE_DYNAMIC=ON -DINCLUDE_STATIC=off -DLINK_LLVM_STATIC=on \
+            -D<every other backend>_BACKEND=COMPILER \
+            -DCMAKE_CXX_FLAGS=-ffunction-sections\ -fdata-sections \
+            -DCMAKE_SHARED_LINKER_FLAGS=-Wl,--gc-sections\ -Wl,--exclude-libs,ALL"
 ```
 
 - `make most` selects the `most.cmake` backends/targets: the `faust` CLI
@@ -69,23 +75,24 @@ CMAKE_BUILD_PARALLEL_LEVEL=$(nproc) make most \
   lib, hence `-DINCLUDE_DYNAMIC=ON` to add `libfaust.so`. Clausters'
   `build.rs` links `-lfaust` against the shared lib.
 - `-DINCLUDE_STATIC=off`: skips the static `libfaustwithllvm.a`, which Clausters
-  never links; it embeds LLVM's static component libs (needs Polly on some
-  LLVM builds). Only the dynamic `libfaust.so` is built and installed.
-- `-DLLVM_CONFIG=llvm-config-21`: Ubuntu installs only the versioned
-  `llvm-config-21` binary (no plain `llvm-config`), so it must be named
-  explicitly — the pinned version (`faust.pin`'s `FAUST_LLVM_VERSION`). The
-  script derives it as `llvm-config-$FAUST_LLVM_VERSION`; override with
-  `LLVM_CONFIG=…`.
-- `-DLINK_LLVM_STATIC=off`: links the monolithic system `libLLVM.so`
-  (`-lLLVM-21`). Result: `libfaust.so` ≈ 11 MB instead of a ≈ 35 MB
-  `libfaustwithllvm.a`, and no Polly/zstd dev packages needed.
+  never links.
+- `USE_LLVM_CONFIG=off` + `LLVM_LIBS=…`: the cmake bypasses `llvm-config` when
+  the `LLVM_*` variables are supplied, which is how the recipe hands it a
+  hand-picked component list (`--link-static --libs mcjit executionengine x86
+  ipo passes …`) instead of the `--libs` catch-all. `llvm-config` still computes
+  the list; it is just asked a narrower question.
+- `-DLINK_LLVM_STATIC=on` + `-ULLVM_BUILD_UNIVERSAL` + one Faust backend in the
+  `.so` + the section flags: the four trims that turn a 146 MB pair
+  (`libfaust.so` plus the distro's monolithic `libLLVM.so`) into a single
+  ~43 MB `libfaust.so`. Each one is explained where it is applied, in
+  `build-faust.sh`; the measurements are in `docs/decisions.md`.
+- `FAUSTDIR=faustdir-native`: not the default `faustdir`, which belongs to
+  `build-faust-wasm.sh`. That script reconfigures its directory without a
+  backend file, so it inherits whatever was last cached there — two recipes
+  sharing one cmake cache is how a wasm artifact quietly loses its backend.
 - `CMAKEOPT` extras are appended *after* the `-C` target cache files on the
   cmake command line, so they override the `FORCE`d cache defaults — no need
-  to edit the cache in `build/faustdir` afterwards (an earlier recipe did it
-  in two steps).
-- The cmake configuration is cached in `build/faustdir`; on a re-run with
-  different options, `make -C build distclean` first (it wipes only
-  `faustdir`, keeping `build/bin` and `build/lib`).
+  to edit the cache afterwards (an earlier recipe did it in two steps).
 - Wall time: ~10 min on 8 cores. Watch for the configure line
   `-- Found LLVM 21.1.8` to confirm the JIT backend is in.
 
@@ -102,24 +109,23 @@ No `ldconfig` or `LD_LIBRARY_PATH` needed for clausters: its `build.rs` finds
 the prefix (`FAUST_PREFIX` env var, falling back to `~/.local`, then
 `/usr/local`) and embeds an rpath.
 
-After installing, `build-faust.sh` also **stages the libLLVM** that
-`libfaust.so` is NEEDED-linked against into `<prefix>/lib` (found via `ldd`,
-copied with `cp -L`). That is what makes the prefix self-contained: Clausters'
-`DT_RPATH` (`<prefix>/lib`, inherited by transitive deps) then resolves both
-libfaust and its libLLVM with no LLVM runtime installed — the same layout the
-wheel bundles and CI restores. Doing it by hand:
-
-```sh
-cp -L "$(ldd ~/.local/lib/libfaust.so | awk 'tolower($0) ~ /llvm/ {print $3}')" \
-  ~/.local/lib/
-```
+Nothing else is staged beside it: LLVM is *inside* `libfaust.so`, so the prefix
+is self-contained on its own. Clausters' `DT_RPATH` (`<prefix>/lib`, inherited
+by transitive deps) resolves libfaust with no LLVM runtime installed — the same
+layout the wheel bundles and CI restores. The recipe checks this rather than
+assuming it: if a shared libLLVM ever reappears in `ldd`, it stops with an
+error instead of producing an artifact that only works on the build machine.
 
 Sanity check:
 
 ```sh
-~/.local/bin/faust --version         # Faust 2.86.0, with LLVM backend listed
-ldd ~/.local/lib/libfaust.so | grep LLVM   # => libLLVM.so.21.x (JIT present)
+~/.local/bin/faust --version    # Faust 2.86.0, with every backend listed
+ldd ~/.local/lib/libfaust.so    # => libz, libzstd and the glibc baseline; no libLLVM
 ```
+
+The CLI keeps all twenty backends — that is where `faust -lang c` reads them.
+Only the shared library is narrowed to the LLVM one, because the server only
+ever JITs.
 
 Uninstall: `make uninstall PREFIX=$HOME/.local` (uses the manifest in
 `build/faustdir/install_manifest.txt`).
@@ -212,12 +218,18 @@ Notes (see also `BUILD.md` and the `faust` sections of `CLAUDE.md`):
   `faust_*` suite means an FFI path skipped the lock — that is the signal to
   look there, not a reason to serialize the whole run.)
 
-### Verified 2026-07-05 (this build)
+### Verified 2026-08-27 (the static link)
 
 - Faust 2.86.0 (`third_party/faust`) + LLVM 21.1.8 (`llvm-21-dev`), Ubuntu
-  (Resolute), shared-LLVM link. Built with the exact commands above and
-  installed to `~/.local`. `faust --version` lists the LLVM backend;
-  `libfaust.so` = 11 MB, linked against the system `libLLVM.so.21.1`.
+  (Resolute), **static** LLVM link. Built by `build-faust.sh` and installed to
+  `~/.local`. `faust --version` lists every backend; `libfaust.so` = 53 MB as
+  installed, 43 MB once `build_native.py` strips it into the wheel, and `ldd`
+  shows no libLLVM. Against the shared link it replaces, that is 146 MB of
+  libfaust + libLLVM down to 43, and six vendored dependencies (libxml2,
+  libedit, libtinfo, libffi, libbsd, libmd) out of the wheel entirely.
+- The 97 tests that touch Faust (the seven `faust_*` suites, `golden`,
+  `rt_safety`, `denormals`) pass against it, and `examples/faust_soundfile.py`
+  plays through the bundled binaries.
 - Full Faust compile: ~9 min wall on this machine (parallel via
   `CMAKE_BUILD_PARALLEL_LEVEL`; the faust makefiles pass no `-j` of their
   own, so without that env var the build is serial and much slower).

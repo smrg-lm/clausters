@@ -6,8 +6,9 @@
 # (clippy, the default+embed tests, the Python client, and the standalone
 # server) needs libfaust with the LLVM backend. A single `libfaust` job builds
 # it from source through the vendored recipe (third_party/build-faust.sh, pinned
-# by third_party/faust.pin) and caches the ~/.local install with its libLLVM
-# staged beside it; every downstream job `needs: libfaust` and restores that
+# by third_party/faust.pin) and caches the ~/.local install (LLVM is linked
+# into libfaust, so that is one library); every downstream job `needs: libfaust`
+# and restores that
 # cache through the `.github/actions/libfaust` composite (a cache hit makes it
 # free, and no LLVM runtime has to be installed to consume it). Edit faust.pin
 # to upgrade the commit or LLVM version (either changes the cache key).
@@ -220,9 +221,9 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      # build_native builds the default (faust) cdylibs and stages libfaust +
-      # its libLLVM into the package, and the FaustDef tests JIT-compile at
-      # runtime; all of that needs libfaust restored here.
+      # build_native builds the default (faust) cdylibs and stages libfaust
+      # into the package, and the FaustDef tests JIT-compile at runtime; all of
+      # that needs libfaust restored here.
       - uses: ./.github/actions/libfaust
         with:
           prefix: ${{ env.FAUST_PREFIX }}

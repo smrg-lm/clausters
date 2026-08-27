@@ -9,11 +9,13 @@
 # libLLVM are deterministic instead of "whatever the build host had".
 #
 # What it does: fetch the pinned commit (+ submodules) into the source tree,
-# build the dynamic libfaust.so against the pinned system libLLVM, install into
-# a prefix, and stage that libLLVM beside libfaust.so in <prefix>/lib -- so a
-# consumer resolves both through the DT_RPATH build.rs writes (<prefix>/lib),
-# with no LLVM runtime installed. This is the same self-contained layout the
-# wheel ships and the CI jobs restore.
+# build the dynamic libfaust.so against the pinned LLVM -- statically, and only
+# the components the JIT reaches, which is what keeps it one self-contained
+# library instead of a pair with a 137 MiB libLLVM (see "What the shipped
+# libfaust.so carries" below) -- and install it into a prefix. A consumer
+# resolves it through the DT_RPATH build.rs writes (<prefix>/lib), with no LLVM
+# runtime installed. This is the same layout the wheel ships and the CI jobs
+# restore.
 #
 # Usage:
 #   third_party/build-faust.sh [--prefix DIR]
@@ -32,7 +34,9 @@
 #                         different HEAD (otherwise a working clone is protected)
 #
 # Requirements (system packages; the only ones that may need sudo -- see
-# BUILD-FAUST.md): cmake, make, g++, llvm-<version>-dev, zlib1g-dev.
+# BUILD-FAUST.md): cmake, make, g++, llvm-<version>-dev, zlib1g-dev. The static
+# link also reaches LLVM's own system libraries; where only a runtime package is
+# installed the recipe links the versioned file, so no extra -dev is required.
 
 set -euo pipefail
 
@@ -89,31 +93,118 @@ if [ "${FAUST_SKIP_FETCH:-0}" != 1 ]; then
   git -C "$src" submodule update --init --recursive --depth 1
 fi
 
+# --- What the shipped libfaust.so carries -------------------------------------
+# libfaust links LLVM *statically*, and only the components the JIT reaches.
+# That is the difference between a 146 MiB pair -- a 9 MiB libfaust.so plus the
+# distro's 137 MiB monolithic libLLVM.so, which the wheel had to bundle whole --
+# and a single 43 MiB libfaust.so with nothing beside it. Three independent
+# trims, each measured; the numbers and the reasoning are in docs/decisions.md.
+#
+#   1. LINK_LLVM_STATIC=on. The distro libLLVM is one shared object for the
+#      entire toolchain (every backend, BOLT, the DWARF linkers, Exegesis), and
+#      a NEEDED link takes all of it whether or not anything calls it. Against
+#      the static components the linker takes only the archive members it
+#      references. It also empties most of the NEEDED closure: libxml2, libedit,
+#      libtinfo, libffi, libbsd and libmd drop out, so the wheel stops vendoring
+#      those too. Asking llvm-config for a component list rather than for
+#      `--libs` is also what keeps Polly out of the link, which is the reason
+#      this was off before.
+#   2. One target backend instead of twenty. The JIT compiles for the machine it
+#      runs on, so a per-platform artifact wants its own architecture and no
+#      other. -ULLVM_BUILD_UNIVERSAL is what makes that possible: upstream's
+#      build/CMakeLists.txt defines LLVM_BUILD_UNIVERSAL on *every* platform
+#      (line 141, outside the `if (UNIVERSAL)` that line 169 guards, which is
+#      therefore dead), and that is what compiles the InitializeAllTargets()
+#      call in llvm_dynamic_dsp_aux.cpp and pins a reference to all twenty.
+#      Undefined, initJIT is left with InitializeNativeTarget() alone. What it
+#      gives up is emitting machine code for a *different* triple
+#      (writeDSPFactoryToMachineFile), which Clausters never asks for.
+#      There is no silent failure mode here: if the flag ever stopped taking,
+#      the link fails on an undefined LLVMInitialize<other-arch>TargetInfo.
+#   3. One Faust backend in the shared library. The server only ever JITs, so
+#      the .so carries the LLVM backend and the other seventeen stay in the CLI
+#      compiler (COMPILER, below) -- which is where `faust -lang c` reads them,
+#      so the developer-facing instrument is unchanged.
+#
+# Plus the section flags: a shared object exports everything by default, which
+# left ~26k LLVM symbols as roots that no collector could touch. Hiding the
+# archives' symbols (--exclude-libs,ALL) brings the exported set to ~1.4k and
+# lets --gc-sections do its work; the Faust API is compiled into the target
+# rather than pulled from an archive, so it stays exported.
+case "$(uname -m)" in
+  x86_64|amd64)  llvm_target=x86 ;;
+  aarch64|arm64) llvm_target=aarch64 ;;
+  *) echo "error: unknown machine '$(uname -m)'; add its LLVM target here." >&2; exit 1 ;;
+esac
+
+llvm_components="mcjit executionengine $llvm_target ipo passes irreader linker bitwriter bitreader analysis target core support"
+llvm_libs="$("$llvm_config" --link-static --libs $llvm_components | tr ' ' ';')"
+
+# LLVM's own system dependencies. `-lfoo` needs the development symlink; where
+# only the runtime package is installed, link the versioned file directly --
+# the SONAME recorded in DT_NEEDED is the same either way, so this costs
+# nothing and saves asking for a -dev package per LLVM release.
+llvm_syslibs=""
+for l in $("$llvm_config" --link-static --system-libs); do
+  name="${l#-l}"
+  if [ "$name" = "$l" ]; then llvm_syslibs="$llvm_syslibs;$l"; continue; fi
+  path="$(${CC:-cc} -print-file-name="lib$name.so")"
+  if [ "$path" = "lib$name.so" ]; then
+    path="$(ls -1 /usr/lib/*/"lib$name.so".* 2>/dev/null | head -n1)"
+    if [ -z "$path" ]; then
+      echo "error: LLVM needs lib$name and neither lib$name.so nor a versioned" >&2
+      echo "       lib$name.so.N is installed. Install lib$name-dev." >&2
+      exit 1
+    fi
+  fi
+  llvm_syslibs="$llvm_syslibs;$path"
+done
+
+# Every Faust backend but LLVM's, kept in the CLI compiler and out of the .so.
+backends=""
+for b in AS C CODEBOX CPP CMAJOR CSHARP DLANG FIR INTERP INTERP_COMP JAVA JAX \
+         JULIA JSFX OLDCPP RUST SDF3 TEMPLATE WASM; do
+  backends="$backends -D${b}_BACKEND=COMPILER"
+done
+
 # --- Build + install ---------------------------------------------------------
-# `make most` builds the CLI compiler and libfaust.a; INCLUDE_DYNAMIC=ON adds
-# the shared libfaust.so that build.rs links. INCLUDE_STATIC=off skips the
-# static libfaustwithllvm.a (it embeds LLVM's component libs and needs Polly).
-# LINK_LLVM_STATIC=off links the monolithic system libLLVM.so (small .so, no
-# Polly/zstd). See BUILD-FAUST.md for the rationale.
+# `make most` builds the CLI compiler; INCLUDE_DYNAMIC=ON adds the shared
+# libfaust.so that build.rs links. INCLUDE_STATIC=off skips libfaustwithllvm.a
+# (it embeds LLVM's component libs and needs Polly).
+#
+# FAUSTDIR is *not* the default `faustdir`: that one belongs to
+# build-faust-wasm.sh, which reconfigures it without a backend file and so
+# inherits whatever this build last cached there. Two recipes, two directories.
 echo ">> building libfaust from $src against $($llvm_config --version) ($llvm_config)"
 CMAKE_BUILD_PARALLEL_LEVEL="$(nproc)" make -C "$src" most \
-  CMAKEOPT="-DINCLUDE_DYNAMIC=ON -DINCLUDE_STATIC=off -DLINK_LLVM_STATIC=off -DLLVM_CONFIG=$llvm_config"
+  FAUSTDIR=faustdir-native \
+  USE_LLVM_CONFIG=off \
+  LLVM_PACKAGE_VERSION="$("$llvm_config" --version)" \
+  LLVM_INCLUDE_DIRS="$("$llvm_config" --includedir)" \
+  LLVM_LIB_DIR="$("$llvm_config" --libdir)" \
+  LLVM_LD_FLAGS="$("$llvm_config" --ldflags)" \
+  LLVM_LIBS="$llvm_libs$llvm_syslibs" \
+  LLVM_DEFINITIONS="-ULLVM_BUILD_UNIVERSAL" \
+  CMAKEOPT="-DINCLUDE_DYNAMIC=ON -DINCLUDE_STATIC=off -DLINK_LLVM_STATIC=on $backends \
+            -DCMAKE_CXX_FLAGS=-ffunction-sections\ -fdata-sections \
+            -DCMAKE_SHARED_LINKER_FLAGS=-Wl,--gc-sections\ -Wl,--exclude-libs,ALL"
 echo ">> installing into $prefix"
-make -C "$src" install PREFIX="$prefix"
+make -C "$src" install PREFIX="$prefix" FAUSTDIR=faustdir-native
 
-# --- Stage the libLLVM libfaust.so is NEEDED-linked against ------------------
-# Copy it into <prefix>/lib so a consumer that only has the prefix (no llvm-dev)
-# resolves it through Clausters' DT_RPATH. cp -L follows the ldd-resolved
-# symlink to the real file and keeps its SONAME basename.
+# --- Check that nothing LLVM-shaped is left to bundle ------------------------
+# The whole point of the link above: the prefix is libfaust.so and its handful
+# of system libraries, with no libLLVM to stage beside it. A libLLVM in NEEDED
+# means one of the trims silently stopped applying.
 libfaust_so="$prefix/lib/libfaust.so"
-libllvm="$(ldd "$libfaust_so" | awk 'tolower($0) ~ /llvm/ {print $3}')"
-if [ -z "$libllvm" ] || [ ! -f "$libllvm" ]; then
-  echo "error: could not locate libLLVM via ldd of $libfaust_so:" >&2
-  ldd "$libfaust_so" >&2
+if ldd "$libfaust_so" | grep -qi llvm; then
+  echo "error: $libfaust_so is still NEEDED-linked against a shared libLLVM:" >&2
+  ldd "$libfaust_so" | grep -i llvm >&2
+  echo "       the static link did not take -- see the comment above." >&2
   exit 1
 fi
-cp -Lv "$libllvm" "$prefix/lib/$(basename "$libllvm")"
+rm -f "$prefix"/lib/libLLVM.so.* 2>/dev/null || true
 
 echo ">> done. Sanity check:"
 "$prefix/bin/faust" --version
-ldd "$libfaust_so" | grep -i llvm || true
+ls -l "$(readlink -f "$libfaust_so")"
+ldd "$libfaust_so"

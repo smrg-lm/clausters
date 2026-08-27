@@ -2,12 +2,13 @@
 #
 # Restores it from the Actions cache; on a miss it builds it from source with
 # the vendored, reproducible recipe (third_party/build-faust.sh, pinned by
-# third_party/faust.pin) and stages the libLLVM that libfaust JITs with *beside*
-# libfaust.so in `<prefix>/lib`. build.rs writes a DT_RPATH of `<prefix>/lib`
-# (and `--disable-new-dtags` keeps it an RPATH, inherited by transitive deps),
-# so a job that only restores this cache resolves both libfaust and its libLLVM
-# through that rpath — no LLVM runtime has to be installed on the consuming
-# machine. This is the same self-contained arrangement the Python wheel ships.
+# third_party/faust.pin). LLVM is linked into libfaust.so statically, so what
+# lands in `<prefix>/lib` is one library and nothing beside it. build.rs writes
+# a DT_RPATH of `<prefix>/lib` (and `--disable-new-dtags` keeps it an RPATH,
+# inherited by transitive deps), so a job that only restores this cache resolves
+# libfaust through that rpath — no LLVM runtime has to be installed on the
+# consuming machine. This is the same self-contained arrangement the Python
+# wheel ships.
 #
 # The cache key covers every real input: the pinned commit and LLVM version
 # (third_party/faust.pin, the single source of truth, read here) and a hash of
@@ -22,7 +23,7 @@
 # Used by ci.yml (a `libfaust` job populates the cache; every faust-linking job
 # restores it) and release.yml.
 name: Set up libfaust
-description: Restore, or build and cache, libfaust with the LLVM backend and its libLLVM staged beside it.
+description: Restore, or build and cache, libfaust with the LLVM backend statically linked in.
 
 inputs:
   prefix:
@@ -46,12 +47,11 @@ runs:
       with:
         path: |
           ${{ inputs.prefix }}/lib/libfaust*
-          ${{ inputs.prefix }}/lib/libLLVM*
           ${{ inputs.prefix }}/include/faust
           ${{ inputs.prefix }}/share/faust
-        key: libfaust-${{ env.FAUST_SHA }}-llvm${{ env.FAUST_LLVM_VERSION }}-${{ hashFiles('third_party/build-faust.sh') }}-${{ runner.os }}-v3
+        key: libfaust-${{ env.FAUST_SHA }}-llvm${{ env.FAUST_LLVM_VERSION }}-${{ hashFiles('third_party/build-faust.sh') }}-${{ runner.os }}-v4
 
-    - name: Build libfaust from source (vendored recipe) and stage its libLLVM
+    - name: Build libfaust from source (vendored recipe)
       if: steps.cache.outputs.cache-hit != 'true'
       shell: bash
       run: |
@@ -61,8 +61,8 @@ runs:
         # would need the apt.llvm.org repo added here first.)
         sudo apt-get update
         sudo apt-get install -y cmake make g++ zlib1g-dev pkg-config "llvm-${FAUST_LLVM_VERSION}-dev"
-        # One recipe, shared with local dev and release: fetch the pin, build the
-        # dynamic libfaust.so, install into the prefix, stage libLLVM beside it.
-        # A throwaway source tree keeps the repo checkout clean.
+        # One recipe, shared with local dev and release: fetch the pin, build
+        # the dynamic libfaust.so and install it into the prefix. A throwaway
+        # source tree keeps the repo checkout clean.
         FAUST_PREFIX="${{ inputs.prefix }}" FAUST_SRC="$RUNNER_TEMP/faust-src" \
           "$GITHUB_WORKSPACE/third_party/build-faust.sh"

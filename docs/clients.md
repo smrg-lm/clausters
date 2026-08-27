@@ -435,8 +435,8 @@ package over the same OSC, against a native server.
   produces the wheel. See the [Python client
   book](https://clausters-python.readthedocs.io/) for the install recipes and
   the env knobs (`CLAUSTERS_WORKSPACE`, `CLAUSTERS_CARGO_FEATURES`, …). The
-  wheel is **Faust-enabled**: it bundles libfaust and the libLLVM it JITs with
-  beside the cdylibs, so a `FaustDef` compiles on a machine with neither
+  wheel is **Faust-enabled**: it bundles libfaust — with its LLVM JIT linked
+  in — beside the cdylibs, so a `FaustDef` compiles on a machine without it
   installed. Cross-platform CI wheels (cibuildwheel / manylinux) are still
   future work.
 - **TypeScript / web (published on npm)**: `npm install clausters`. The package
@@ -450,7 +450,7 @@ package over the same OSC, against a native server.
 - **Reproducible Faust build (done for native/CI/release)**: the `faust` feature
   needs libfaust built with the LLVM backend. It is now vendored under
   `third_party/` — `faust.pin` (the exact commit + LLVM version) and
-  `build-faust.sh` (one recipe: fetch, build, install, stage libLLVM) — so local
+  `build-faust.sh` (one recipe: fetch, build, install) — so local
   dev, CI and the release wheel produce a *deterministic* bundle instead of
   whatever the build host had. The npm package needs no such build: its wasm
   engine carries no LLVM JIT, so Faust is not part of it — a `FaustDef` is

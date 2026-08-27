@@ -143,7 +143,7 @@ it, and `clausters.gui.notation` loads it by path.
 
 `clients/python/build_native.py` copies `libverovio.so` and
 `share/verovio` out of the prefix into `clausters/_libs/`, exactly as it already
-does for libfaust and its libLLVM, so an installed wheel engraves and edits with
+does for libfaust, so an installed wheel engraves and edits with
 nothing else on the machine and the client keeps `dependencies = []`.
 
 The resource data has to travel with the library: verovio bakes its resource

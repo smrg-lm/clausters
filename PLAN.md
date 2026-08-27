@@ -2113,6 +2113,34 @@ Anything unresolved lives here or under "Future directions", both **after** the
 tracks: never inside the milestone that happened to be open, and never among
 finished work, where a pending item reads as done.
 
+- ✅ **Three quarters of the wheel was an LLVM nobody called**
+  *(found and fixed 2026-08-27, from a question about artifact weight)*. The
+  wheel bundled libfaust plus the distro's monolithic `libLLVM.so` — 137 MB of
+  it, every target backend and the whole toolchain support surface, where the
+  JIT compiles for the machine it runs on and calls one. Linking LLVM into
+  libfaust statically, from a component list rather than `--libs`, took the pair
+  from 146 MiB to 43 and the wheel from 194 MiB installed to 93 (36 packed); six
+  vendored dependencies (libxml2, libedit, libtinfo, libffi, libbsd, libmd) left
+  the package with it.
+
+  **Why it had not been done**: the recipe carried `LINK_LLVM_STATIC=off` with a
+  comment saying the static path needs Polly, and `docs/decisions.md` argued
+  static LLVM "is no lighter" because the binary and the cdylib would each embed
+  a copy. Both were wrong in the same way — they were about a *different* link.
+  Polly comes from Faust's `libfaustwithllvm.a` target and from asking
+  llvm-config for `--libs` (everything); a component list needs neither. And
+  linking LLVM into `libfaust.so` duplicates nothing: it is still one shared
+  library, loaded once by both consumers. Neither claim had a measurement behind
+  it, which is how a wrong one survives three years.
+
+  **The one that was actually hidden**: upstream defines `LLVM_BUILD_UNIVERSAL`
+  on every platform (`build/CMakeLists.txt:141`, outside the `if (UNIVERSAL)`
+  meant to gate it), so `initJIT` called `InitializeAllTargets()` and *required*
+  all twenty backends. The monolithic libLLVM was not a packaging habit, it was
+  a consequence. `docs/decisions.md` ("The LLVM in the wheel is the one the JIT
+  reaches") carries the four trims and their measurements;
+  `third_party/build-faust.sh` explains each where it is applied.
+
 - ✅ **`/buffer_write` fails in a page, and not for the reason the plan gives**
   *(named and fixed 2026-08-26, closing B6's step 2c)*. Both clients
   expose `Buffer.write()` and against the in-page engine it answers `/fail`.

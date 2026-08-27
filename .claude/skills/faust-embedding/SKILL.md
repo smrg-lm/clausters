@@ -109,8 +109,10 @@ per-bus layout, no conversion needed.
 
 - Compile-time: `FAUSTFLOAT` must be `float` (f32) — it is the default, but
   assert `sizeof` via a static check in the binding.
-- Link: `-lfaust` plus LLVM (`llvm-config --libs` or the distro's monolithic
-  `libLLVM.so`). Debian/Ubuntu: `libfaust-dev` (check version ≥ 2.50 for a
+- Link: `-lfaust`, with LLVM linked into it. Ask llvm-config for the
+  components the JIT reaches (`--link-static --libs mcjit executionengine
+  <host-target> ipo passes …`), not for `--libs`: the catch-all pulls Polly and
+  every backend. Debian/Ubuntu: `libfaust-dev` (check version ≥ 2.50 for a
   stable box C API) or build from source with `-DINCLUDE_LLVM=ON`.
 - Keep everything behind the `faust` cargo feature: optional dependency, the
   core server must build and test without libfaust installed.

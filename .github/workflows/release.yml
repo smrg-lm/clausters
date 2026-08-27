@@ -41,7 +41,7 @@ on:
 env:
   CARGO_TERM_COLOR: always
   # `faust` is a default feature, so the wheel and the standalone server both
-  # link libfaust and the wheel bundles it (+ its libLLVM). The pinned commit
+  # link libfaust and the wheel bundles it. The pinned commit
   # and LLVM version live in third_party/faust.pin, read by the libfaust composite.
   FAUST_PREFIX: /home/runner/.local
   # The engraver behind the `score` widget, bundled for the same reason: an
@@ -139,8 +139,8 @@ jobs:
           python-version: "3.12"
       # libfaust for the default build; the composite restores the same cache
       # CI populates (caches are shared repo-wide from the default branch), and
-      # builds it from source on a miss. build_native stages libfaust + libLLVM
-      # out of <prefix>/lib into the wheel.
+      # builds it from source on a miss. build_native stages libfaust out of
+      # <prefix>/lib into the wheel.
       - uses: ./.github/actions/libfaust
         with:
           prefix: ${{ env.FAUST_PREFIX }}

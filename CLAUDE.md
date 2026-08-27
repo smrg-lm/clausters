@@ -420,10 +420,12 @@ without libfaust installed** (`--no-default-features`); keep that path green.
 
 `build.rs` writes a `DT_RPATH` of `$ORIGIN`, `$ORIGIN/../_libs` and the build
 prefix, which keeps the artifacts relocatable: the Python wheel bundles
-`libfaust.so` and the `libLLVM.so` it JITs with in `clausters/_libs/` (staged by
-`clients/python/build_native.py`), so an installed package compiles FaustDefs
-with nothing else on the machine. It must stay `DT_RPATH` (not `RUNPATH`): only
-that one is inherited by transitive deps, and it is libfaust that needs libLLVM.
+`libfaust.so` in `clausters/_libs/` (staged by `clients/python/build_native.py`),
+so an installed package compiles FaustDefs with nothing else on the machine.
+LLVM is linked *into* libfaust rather than bundled beside it — one library, not
+a 146 MB pair; `third_party/build-faust.sh` explains what that link takes. It
+must stay `DT_RPATH` (not `RUNPATH`): only that one is inherited by transitive
+deps, and it is libfaust that needs to find libz and libzstd.
 
 The faust suites run in the **ordinary parallel harness** — every compilation
 FFI call goes through `faust::ffi_lock()`, which serializes libfaust in-process.

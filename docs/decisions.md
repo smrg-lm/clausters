@@ -145,20 +145,19 @@ So `faust` joins the default set, and the packaging bundles it:
   tested — `--no-default-features --features synth,realtime,…` is a SynthDef-only
   server with no libfaust on the machine — but it is now the explicit choice,
   not the default one.
-- **The wheel carries libfaust *and* libLLVM** in `clausters/_libs/`, staged by
+- **The wheel carries libfaust** in `clausters/_libs/`, staged by
   `clients/python/build_native.py` off the built artifacts (keyed by the exact
-  soname the loader asks for). libLLVM is ~130 MB, which takes the wheel from a
-  few MB to ~50 MB packed. That is not accidental weight: the Faust JIT *is*
-  LLVM, and the alternative (static LLVM inside libfaust) is no lighter — the
-  server binary and the embed cdylib would each embed their own copy, where the
-  bundled shared library is loaded once by both.
+  soname the loader asks for). It is the heaviest thing in the wheel because the
+  Faust JIT *is* LLVM. It carried a separate ~130 MB libLLVM beside it until
+  LLVM was linked *into* libfaust; see "The LLVM in the wheel is the one the JIT
+  reaches" below for what that changed and why the reasoning here was wrong.
 - **`DT_RPATH`, not `DT_RUNPATH`.** `build.rs` emits `-Wl,--disable-new-dtags`
   with an rpath of `$ORIGIN`, `$ORIGIN/../_libs` and the build prefix. The
   `$ORIGIN` entries make the artifacts relocatable (the wheel's `_bin/clausters`
   finds `../_libs/libfaust.so.2`), and `DT_RPATH` is required because only it is
   inherited by *transitive* dependencies: libfaust itself carries no rpath, so
-  its libLLVM is resolved through ours. With `RUNPATH` the loader would fall back
-  to the system libLLVM — or find none.
+  the libraries it needs are resolved through ours. With `RUNPATH` the loader
+  would fall back to the system copies — or find none.
 
 ## CI with a default `faust`: one shared libfaust, and a baseline JIT CPU
 
@@ -168,12 +167,12 @@ libfaust consumer, where before only one dedicated job needed it. Two choices
 keep that cheap and green:
 
 - **One `libfaust` job builds it; everyone else restores a cache.** A single
-  job runs the from-source build and, crucially, stages the libLLVM it JITs with
-  *into `<prefix>/lib` beside libfaust.so*. Downstream jobs `needs:` it and
-  restore the cache through the `.github/actions/libfaust` composite; the same
-  `DT_RPATH` that makes the wheel self-contained (`<prefix>/lib`, inherited
-  transitively) then resolves both libfaust and its libLLVM, so a consumer needs
-  **no LLVM runtime installed** — only the restore. A warm cache makes every
+  job runs the from-source build, and what it caches is self-contained because
+  LLVM is linked into `libfaust.so`. Downstream jobs `needs:` it and restore the
+  cache through the `.github/actions/libfaust` composite; the same `DT_RPATH`
+  that makes the wheel self-contained (`<prefix>/lib`, inherited transitively)
+  then resolves libfaust, so a consumer needs **no LLVM runtime installed** —
+  only the restore. A warm cache makes every
   downstream job free. `release.yml` uses the same composite, so the wheel build
   no longer sets up libfaust by hand.
 - **The build is vendored and pinned, so the bundle is reproducible.** The Faust
@@ -182,11 +181,11 @@ keep that cheap and green:
   exact commit — the unpatched base, keeping the boxcos/boxfmod canaries valid —
   and the LLVM version) and `third_party/build-faust.sh` (the one recipe). The
   composite, `release.yml` and a developer all run *that* script and read *that*
-  pin — the CI cache key included — so the bundled libfaust/libLLVM are the same
+  pin — the CI cache key included — so the bundled libfaust is the same
   everywhere, not whatever the build host defaulted to. **LLVM is pinned to 18**:
   it is Ubuntu 24.04's default (CI installs it from the distro repos, no
   apt.llvm.org), and the distro build targets a baseline x86-64, which keeps the
-  wheel's ~130 MB libLLVM portable — it runs on any x86-64 CPU. A newer upstream
+  LLVM linked into the wheel's libfaust portable — it runs on any x86-64 CPU. A newer upstream
   build (e.g. apt.llvm.org's 21) is built for a higher baseline and can itself
   hit an illegal instruction on older machines, so it is the wrong thing to
   ship; a developer who happens to have another LLVM builds locally with
@@ -250,6 +249,72 @@ keep that cheap and green:
     - **Not a bug, do not "fix" it:** `FaustArgs` passes `-ftz` as `argv[0]` and
       does not NULL-terminate. libfaust prepends its own `"faust"` `argv[0]` and
       NULL-terminates its copy (`libcode.cpp`), so the arguments arrive correctly.
+
+## The LLVM in the wheel is the one the JIT reaches
+
+The wheel used to ship a pair: a ~9 MB `libfaust.so` plus the distro's
+monolithic `libLLVM.so`, 137 MB of it, dragging libxml2, libedit, libtinfo,
+libffi, libbsd and libmd along as vendored dependencies. Three quarters of the
+package was one file. It is now a single `libfaust.so` with LLVM linked into it,
+and the measurements are the argument (stripped, on this machine, against
+LLVM 21 — the pinned 18 is no larger):
+
+| | raw | gzip |
+|---|---|---|
+| `libfaust.so` + `libLLVM.so` (what it was) | 146 MiB | 45 MiB |
+| static LLVM, all Faust backends | 60 | 23 |
+| + only the LLVM backend in the `.so` | 56 | 22 |
+| + `--gc-sections` with the archives' symbols hidden | **43** | **18** |
+
+The wheel went from 194 MiB installed / 64 MiB packed to **93 / 36**.
+
+Four trims, and each one answers a different question about what a *shipped*
+JIT actually needs. `third_party/build-faust.sh` explains them where they are
+applied; what belongs here is why they were available at all:
+
+- **The distro libLLVM is one library for a whole toolchain.** Every target
+  backend (AArch64, AMDGPU, Hexagon, RISCV, SPIRV, Xtensa…), BOLT, the DWARF
+  linkers, Exegesis, ObjectYAML. Measured over its static components, the
+  backends that are not the host account for 41% and the non-JIT tooling for a
+  further 11% — more than half of it is material libfaust never calls. A
+  `NEEDED` link takes all of it anyway; a static link takes the archive members
+  it references and nothing else.
+- **`-ULLVM_BUILD_UNIVERSAL`, which is upstream's oversight, not ours.** Faust's
+  `build/CMakeLists.txt:141` defines `LLVM_BUILD_UNIVERSAL` on every platform,
+  outside the `if (UNIVERSAL)` at line 169 that was clearly meant to gate it
+  (and which is therefore dead). That define is what compiles the
+  `InitializeAllTargets()` call in `llvm_dynamic_dsp_aux.cpp` and pins a
+  reference to all twenty backends — so the monolithic libLLVM was not merely
+  convenient, it was *required*. Undefined, `initJIT` is left with
+  `InitializeNativeTarget()`, which is all a JIT compiling for its own machine
+  ever needed. What it gives up is emitting machine code for a different triple
+  (`writeDSPFactoryToMachineFile`), which Clausters does not use. There is no
+  silent failure mode: if the flag stops taking, the link fails on an undefined
+  `LLVMInitialize<other-arch>TargetInfo`.
+- **A shared object exports everything, so nothing could be collected.** 26k of
+  the 37k exported symbols were LLVM's, every one of them a root that
+  `--gc-sections` had to keep. `--exclude-libs,ALL` hides what came from the
+  archives — the Faust API is compiled into the target, not pulled from one, so
+  it stays exported — and the exported set drops to 1.4k. This trim alone is
+  13 MiB, and it only exists once the link is static.
+- **One Faust backend in the shared library.** The server only ever JITs, so the
+  other seventeen (C, C++, Rust, Julia, WASM…) stay in the CLI compiler, where
+  `faust -lang c` reads them. Worth 4 MiB, the smallest of the four, and the
+  only one a reader would have guessed at first.
+
+**What this supersedes.** The earlier record claimed static LLVM "is no lighter
+— the server binary and the embed cdylib would each embed their own copy". That
+confused two different things: linking LLVM into *our* binaries, which would
+indeed duplicate it, and linking it into `libfaust.so`, which is still one
+shared library loaded once by both. The claim was never measured, and it was
+wrong by a factor of three.
+
+**What is not settled.** Building LLVM from source with
+`LLVM_TARGETS_TO_BUILD=<host>` would trim further, and is deliberately not done:
+the pin buys the property that CI installs LLVM from the distro repos with no
+`apt.llvm.org` and no LLVM build, and that is worth more than the remaining
+megabytes. The static link needs no such thing — the same `llvm-N-dev` package
+ships the archives.
 
 ## Def persistence: transparent JSON + a non-authoritative bitcode cache
 

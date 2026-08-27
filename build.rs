@@ -12,11 +12,11 @@
 //!
 //! The rpath keeps the artifacts **relocatable**: `$ORIGIN` and
 //! `$ORIGIN/../_libs` come before the build-time prefix, which is what lets the
-//! Python wheel ship libfaust (and the libLLVM it needs) beside the binary and
-//! the cdylibs, the way the GUI host binary is already bundled. It is emitted as
-//! `DT_RPATH` (`--disable-new-dtags`) rather than `DT_RUNPATH` because only
-//! `DT_RPATH` is inherited by *transitive* dependencies: libfaust carries no
-//! rpath of its own, so its libLLVM is found through ours.
+//! Python wheel ship libfaust beside the binary and the cdylibs, the way the
+//! GUI host binary is already bundled. It is emitted as `DT_RPATH`
+//! (`--disable-new-dtags`) rather than `DT_RUNPATH` because only `DT_RPATH` is
+//! inherited by *transitive* dependencies: libfaust carries no rpath of its
+//! own, so the libz and libzstd its LLVM reaches are found through ours.
 
 fn main() {
     println!("cargo:rerun-if-env-changed=FAUST_PREFIX");
