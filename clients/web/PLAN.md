@@ -1014,6 +1014,16 @@ the pools' occupancy on screen.
 client leads and the port is mechanical, the repo's standing rule. This is that
 port, so a bundle can be authored in the same language the page is written in.
 
+**It is a node milestone, and that was decided rather than assumed** *(with the
+user, 2026-08-26, closing the `panels/standalone` entry below)*: a bundle is an
+input a static page boots with no interpreter, so **writing** one is not
+something a page does. The file writer below is the milestone's centre and it
+runs in node; the page's half is the in-memory mount, which writes nothing.
+**That makes "Node target" (Future directions) this milestone's dependency
+rather than a someday** — a load path that finds the core's `.wasm` without a
+test's manual read, and a documented entry point, are what a node script needs
+before it can be an example anyone runs.
+
 - `src/bundle-writer.ts` (authoring, **not** part of the slim `dist/runtime.js`): the TS counterpart of `clausters.bundle.Bundle` — the symbol table, the bundle-prefixed def names, the declared `params` and presets, validation through the core wasm door (`check_def_payload` and the `requirements`/`resolve` pair) before emitting, and the generated five-line ES module that registers the tag. An unmountable bundle stays unwritable, on this leg too.
 - Runs in Node (a file writer) and in the page (an in-memory bundle mounted without a round trip through disk), the two being the same code over a small output seam.
 
@@ -1448,7 +1458,10 @@ Every entry carries a checkbox, like the plan's "Found by use" below: an
 open direction has to read as open, and one that converges into a milestone leaves
 this list rather than being ticked here.
 
-- ⬜ **Node target.** Already true in the harness, not yet a supported target: the `node --test` suites drive a real `clausters --ws` server and a real `clausters-gui --ws` host, so `WsConnection` runs under node's global `WebSocket` (`src/base/connection.ts` says so) and the wasm core loads there (`loadCore(bytes)`, node's `fetch` not reading `file://`). What remains is making it a *product*: a load path that finds the core's `.wasm` without the test's manual read, a documented entry point for headless scripting/CI the way `clients/python` runs without a display, and the boundary written down — the def, sequencing and GUI-driver layers port, the in-page engine (AudioWorklet) and the page host (canvas) do not.
+- ⬜ **Node target** *(no longer a someday: **W15** depends on it, decided
+  2026-08-26 — the TS bundle writer is a node milestone, and a node script has
+  to be runnable before it can be an example)*. Already true in the harness, not
+  yet a supported target: the `node --test` suites drive a real `clausters --ws` server and a real `clausters-gui --ws` host, so `WsConnection` runs under node's global `WebSocket` (`src/base/connection.ts` says so) and the wasm core loads there (`loadCore(bytes)`, node's `fetch` not reading `file://`). What remains is making it a *product*: a load path that finds the core's `.wasm` without the test's manual read, a documented entry point for headless scripting/CI the way `clients/python` runs without a display, and the boundary written down — the def, sequencing and GUI-driver layers port, the in-page engine (AudioWorklet) and the page host (canvas) do not.
 - ⬜ **Type-safe GuiDef/def schemas.** Generate TS types for the widget/def vocabularies from a single source shared with the server, so an invalid GuiDef is a compile error, not a runtime warning. Two things have since appeared that change the shape of the answer rather than the want: the frozen parity vectors (`tests/gen-*-vectors.py`) already catch a drifted *builder* at test time, and M30's `/def_query`/`/ugen_query` make the server's own catalogue readable at run time — so the open question is narrower, which source generates the types and when, not whether one exists.
 - ⬜ **A remote-server standalone page.** The in-tab standalone (a bundle booting against the embedded wasm engine) **shipped with the B track** and grew up in W4 (the bundle contract, the resolver, the pools, the components); what remains is the same mount against a **remote `--ws` server** — a one-file instrument front for a server running elsewhere. The old note called this cheap "once W1/W2 exist"; they exist, and W4 is what actually decides the work: `openBundle`/`startBundle` reach the page's `guiHost()` and `engine` singletons directly, so the step is giving the mount a **destination seam** (a `Server` + `GuiHost` pair, both already carrier-agnostic since W1/W2) in place of those singletons. The boot replay itself stays carrier-agnostic above the W0 seam, as it always was.
 
@@ -2766,9 +2779,28 @@ finished work, where a pending item reads as done.
     the `clausters-gui --standalone` command that would launch it, talking to
     nothing. The page *boots* one — it fetches a pre-built bundle and runs it in
     the tab. They share one verb. Each half is worth showing and neither client
-    shows both, so the fix is not to rename them apart: it is for the page to
-    gain the authoring half (or say why a page cannot write one) and the script
-    to gain the launch.
+    shows both.
+
+    **Decided with the user, 2026-08-26: a page does not write bundles, and
+    that is the design rather than a platform limit.** A bundle is an *input*:
+    it is produced ahead of time and saved, so a **static** page can boot it
+    against the gui client and a standalone server **with no interpreter at
+    all** — which is the whole point of the standalone shape. Authoring it in
+    TS is a convenience (not changing language for one step), and W15 already
+    says so: *"Runs in Node (a file writer) and in the page (an in-memory
+    bundle mounted without a round trip through disk)"*. The page's half of
+    W15 is the in-memory mount, which is a different thing from writing one.
+
+    **So the two halves were paired wrong, not missing.** The counterpart of
+    `standalone.py` is a **node script**, and the page is the counterpart of
+    *running* `clausters-gui --standalone` — the half the Python example ends
+    by printing a command for. Nothing is added to the page.
+
+    **What it leaves open** is where a node example lives:
+    `clients/web/examples/` holds pages, and this would be the first script
+    there. Its own subdirectory, or beside the suites — a question for the
+    `examples` skill, since that is where the three directories and their forms
+    are written down.
   - ✅ **`transport/sync`'s page has a half the script does not**, and says so in
     its own prose: a playhead that obeys the shared grid. That is not a platform
     difference — a script can follow a playhead — so it is the script that is

@@ -96,24 +96,45 @@ below in section 2.
 Same size of work, except the shape depends on an answer. The decision is named
 on each one; none of them is being taken by this file.
 
-- ⬜ **A running clock resumes what it is handed inside `play`, where the
-  reference client's returns first** *(`clients/web/PLAN.md`, Found by use)*.
-  `TempoClock.sched` ends in `pump()`, so `play()` on a started clock runs the
-  routine's first pass before it returns; the Python clock lets its own thread
-  pick it up. Reproduced side by side, so it is a real divergence and not a
-  page's price for one thread.
-  **The decision:** whether the wake is deferred to the ticker (a 0-delay tick)
-  or to a microtask. Both are changes to the driver, and every clock test drives
-  it synchronously through a `ManualTicker` — so the answer also decides what
-  the manual harness has to await.
+- ✅ **A running clock resumes what it is handed inside `play`, where the
+  reference client's returns first** *(fixed 2026-08-26)*. **The decision was
+  the microtask**, on the rule that the cheapest fix wins as long as it adds
+  nothing to the user's API — `play(routine)` is unchanged, and when a
+  scheduling call defers its own pump is this language's business. Not the
+  ticker (an item with no wait left is due) and not a worker (the pacing is
+  already in one; what cannot leave the page thread is the resume). The story
+  is in the commit; what it left open is one entry below.
+
+- ⬜ **An unbounded bounce of an endless pattern hangs, in both clients**
+  *(`clients/web/PLAN.md`, Found by use)*. Fell out of the fix above:
+  `Timeline.fromPattern` was hand-driving a ticker where the Python one calls
+  `clock.render(dur)`, and aligning it dropped a TS-only step cap that used to
+  throw. Both clients now hang identically on `fromPattern(p)` with no `dur`
+  over an endless pattern.
+  **The decision:** a step cap inside `render` — arbitrary but honest, since a
+  bounce is not a live drive — or `fromPattern` requiring `dur` unless the
+  pattern declares itself finite, which says more about patterns than either
+  client says today. Either way it lands in **both** clients in one commit.
 
 - ⬜ **`panels/standalone` is two different programs** *(`clients/web/PLAN.md`,
   Found by use, "Two pairs read side by side turn out not to be pairs")*. The
-  script *authors* a bundle; the page *boots* one. They share one verb, each
-  half is worth showing, and neither client shows both.
-  **The decision:** whether a page can write a bundle at all. If it can, this is
-  **`W15`** (section 4) and the fix rides with it; if it cannot, the example says
-  so in its own prose and the script gains the launch half instead.
+  script *authors* a bundle; the page *boots* one.
+  **The decision is taken** *(2026-08-26, with the user)*: **a page does not
+  write bundles, and that is the design rather than a limit.** A bundle is an
+  *input*, produced ahead of time and saved, so that a static page can boot it
+  against the gui client and a standalone server **with no interpreter**. That
+  it can be authored in TS at all is a convenience — not having to change
+  language — which is why `W15` already says the writer runs **in Node**.
+  So the two halves were paired wrong rather than one of them missing: the
+  counterpart of `standalone.py` is a **node script**, and the page is the
+  counterpart of *running* `clausters-gui --standalone`, which is the half the
+  Python example prints a command for.
+  **What that leaves:** `W15` is taken as a **node** milestone, which promotes
+  "Node target" from a future direction to its dependency (a load path that
+  finds the core's `.wasm` without the test's manual read, and a documented
+  entry point). And one small open question of **placement**: `clients/web/
+  examples/` holds pages, and a node script there would be the first — its own
+  subdirectory, or beside the suites.
 
 - ⬜ **Nothing resizes a window, so nothing tests a squeeze**
   *(`clients/gui/PLAN.md`, Found by use)*. Every suite draws into a mesh at a
