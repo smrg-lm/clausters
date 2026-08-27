@@ -2223,6 +2223,26 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 
 ## Found by use: the running list of fixes
 
+- ⬜ **Nothing resizes a window, so nothing tests a squeeze** *(named 2026-08-26,
+  after a drag on a corner panicked the host in `ruler::draw_ticks_v` — see the
+  commit; what is left here is the class, not that bug)*. Every suite draws into
+  a mesh at a size it chose, and the examples open at the size their GuiDef
+  declares. So the whole family of states where a widget is **smaller than its
+  own contents** — a lane under a line of text, a body under its rulers, a strip
+  under its widest label — is reachable only by a hand on a corner, and only on
+  the native front. Each of those is arithmetic that has a lower bound nobody
+  states, which is how one of them became a panic between four pixels and ten
+  and a half.
+
+  What would cover it is not a window: the drawing entry points are pure
+  functions over a `Mesh`, so a test can walk a view's rect down through the
+  sizes that matter and assert only that it draws and does not panic — the
+  shape the regression test for that crash already has, generalized to the
+  widgets that have a floor. Worth deciding whether that is one shared test
+  over the element registry (every registered element, a shrinking rect) or a
+  case per widget, and whether the browser front needs its own, since the
+  compositor there gives sizes the native one does not.
+
 - ✅ **The host's own theme is a wasm export the protocol has no verb for**
   *(found 2026-08-25, porting `panels/style.py`; fixed the same day)*. Exactly the typeface's case,
   one entry below, and found the same way — by an example that could not be

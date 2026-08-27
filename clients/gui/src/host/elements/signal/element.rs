@@ -56,8 +56,13 @@ impl Element for SignalElement {
     fn draw(&self, d: &mut Draw, ctx: &Ctx) {
         let rect = ctx.rect;
         match (self.presentation, &self.source) {
-            // The navigable heavy views: the slot draws them.
-            (Presentation::Signal | Presentation::TimeFrequency, _) if self.caps.navigable => {}
+            // The navigable heavy views: the slot draws the *picture*, on the
+            // GPU, and the label strip is not part of it -- so it is drawn
+            // here, out of the same helper and into the same mesh as every
+            // other view's, over the rect the slot's body was taken out of.
+            (Presentation::Signal | Presentation::TimeFrequency, _) if self.caps.navigable => {
+                meters::label_strip(d, self.display.label.as_deref(), rect);
+            }
             // A forward-only trace: the audio-rate window the tick aligned, or
             // the control bus's rolling history.
             (Presentation::Signal, Source::Bus(bus)) => {
@@ -245,8 +250,13 @@ impl Element for SignalElement {
         if !self.caps.navigable {
             return None;
         }
-        let body =
-            crate::host::frame::timeline_body(ctx.rect, &self.editor, ctx.indent, ctx.metrics);
+        let body = crate::host::frame::timeline_body(
+            ctx.rect,
+            &self.editor,
+            self.display.label.is_some(),
+            ctx.indent,
+            ctx.metrics,
+        );
         match self.presentation {
             Presentation::Signal => Some(SlotFrame::Waveform {
                 body,
@@ -262,6 +272,25 @@ impl Element for SignalElement {
             }),
             _ => None,
         }
+    }
+
+    /// Where the axis lies inside the rect, and whether a vertical surface sits
+    /// beside it. A signal view answers for itself rather than taking the
+    /// generic body, because the **label strip is the element's**: nothing
+    /// outside it knows whether this widget carries one, so a hit test that
+    /// took the generic answer would map a pointer onto a body the picture is
+    /// not drawn in.
+    fn axis_body(&self, rect: Rect, indent: f32, m: &Metrics) -> Option<(Rect, bool)> {
+        Some((
+            crate::host::frame::timeline_body(
+                rect,
+                &self.editor,
+                self.display.label.is_some(),
+                indent,
+                m,
+            ),
+            self.editor.ruler_y != crate::host::widget::RulerY::Off,
+        ))
     }
 
     fn body_role(&self) -> Option<BodyRole> {

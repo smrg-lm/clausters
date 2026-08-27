@@ -26,7 +26,10 @@ use crate::host::widget::{Align, Range};
 /// terser. Every geometry here goes through this, so the strip that is not
 /// reserved is also not drawn.
 pub fn label_height(rect_h: f32, has_label: bool, text_size: f32, m: &Metrics) -> f32 {
-    let strip = font::height(text_size) + m.pad;
+    // The pad is above the line and the descent below it: a caption clears what
+    // it sits over by the same distance whether or not it happens to contain a
+    // `p` ([`font::descent`]).
+    let strip = font::height(text_size) + font::descent(text_size) + m.pad;
     if has_label && rect_h - strip - 2.0 * m.pad >= font::height(text_size) {
         strip
     } else {

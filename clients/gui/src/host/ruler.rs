@@ -1064,6 +1064,14 @@ pub(crate) fn draw_ticks_v(d: &mut Draw, body_x: f32, strip_x: f32, lane: Rect, 
     }
     let (mesh, metrics, theme) = d.parts();
     let scale = metrics.caption_scale;
+    // **A lane shorter than one caption keeps its ticks and drops their
+    // labels** — the rule a squeezed control already follows
+    // ([`crate::host::graphics::controls::label_height`]): a line that does not
+    // fit is a drawing that lies, while a tick with no number is merely terser.
+    // It is also what keeps the placement below well-formed: the label's band
+    // is `lane.y ..= lane.y + lane.h - line`, which inverts exactly here.
+    let line = font::height(scale);
+    let labelled = lane.h >= line;
     for tick in ticks {
         let y = lane.y + lane.h * (1.0 - tick.frac as f32);
         let w = if tick.label.is_some() { 8.0 } else { 4.0 };
@@ -1071,10 +1079,10 @@ pub(crate) fn draw_ticks_v(d: &mut Draw, body_x: f32, strip_x: f32, lane: Rect, 
             Rect::new(body_x - w, y, w, metrics.divider_w),
             theme.ruler_line,
         );
-        if let Some(label) = &tick.label {
+        if let Some(label) = tick.label.as_ref().filter(|_| labelled) {
             let lw = font::width(label, scale);
             let lx = (body_x - LABEL_GAP - lw).max(strip_x);
-            let ty = (y - 3.0).clamp(lane.y, lane.y + lane.h - font::height(scale));
+            let ty = (y - 3.0).clamp(lane.y, lane.y + lane.h - line);
             font::text(mesh, label, lx, ty, scale, theme.ruler_text);
         }
     }
@@ -1083,9 +1091,76 @@ pub(crate) fn draw_ticks_v(d: &mut Draw, body_x: f32, strip_x: f32, lane: Rect, 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::host::paint::Mesh;
+    use crate::host::theme::Theme;
 
     fn labels(ticks: &[Tick]) -> Vec<&str> {
         ticks.iter().filter_map(|t| t.label.as_deref()).collect()
+    }
+
+    /// **A lane too short for a line of text still draws its ticks, and drops
+    /// their labels** — and above all does not panic.
+    ///
+    /// It used to. The label's y was `clamp`ed into the band from `lane.y` to
+    /// `lane.y + lane.h` less one line of text, whose upper bound falls *below*
+    /// the lower one as soon as the lane is shorter than one caption, and
+    /// `f32::clamp` panics on an inverted range. The guard above it tested `lane.h` against a literal
+    /// four, a number that predates the text and is not the height the
+    /// arithmetic needs, so every lane between it and a caption's height was a
+    /// crash — reached by dragging a window's corner in, which is how it was
+    /// found.
+    #[test]
+    fn a_lane_shorter_than_its_own_caption_drops_the_label_and_does_not_panic() {
+        let m = Metrics::default();
+        let ticks = value_ticks(-1.0, 1.0, 200.0, &m);
+        assert!(!labels(&ticks).is_empty(), "the case needs labelled ticks");
+        let line = font::height(m.caption_scale);
+
+        // The band that used to panic: taller than the old guard, shorter than
+        // a line. Every height in it draws, and none of it draws a caption.
+        let mut h = 4.5;
+        while h < line {
+            let mut mesh = Mesh::new();
+            let lane = Rect::new(10.0, 356.0, 300.0, h);
+            draw_ticks_v(
+                &mut Draw::new(&mut mesh, &m, &Theme::default()),
+                lane.x + 40.0,
+                lane.x,
+                lane,
+                &ticks,
+            );
+            assert!(!mesh.is_empty(), "the tick marks are drawn at h = {h}");
+            h += 0.5;
+        }
+
+        // One line of room is where the captions come back.
+        let mut mesh = Mesh::new();
+        let lane = Rect::new(10.0, 356.0, 300.0, line + 1.0);
+        let mut bare = Mesh::new();
+        draw_ticks_v(
+            &mut Draw::new(&mut bare, &m, &Theme::default()),
+            lane.x + 40.0,
+            lane.x,
+            lane,
+            &ticks
+                .iter()
+                .map(|t| Tick {
+                    label: None,
+                    ..t.clone()
+                })
+                .collect::<Vec<_>>(),
+        );
+        draw_ticks_v(
+            &mut Draw::new(&mut mesh, &m, &Theme::default()),
+            lane.x + 40.0,
+            lane.x,
+            lane,
+            &ticks,
+        );
+        assert!(
+            mesh.vertex_count() > bare.vertex_count(),
+            "a lane with room for a line draws its labels"
+        );
     }
 
     /// A strip asks for what its own ticks need, floored by the role: an axis

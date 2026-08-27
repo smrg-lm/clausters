@@ -430,6 +430,24 @@ pub fn height(scale: f32) -> f32 {
     GLYPH_H as f32 * scale
 }
 
+/// How far a glyph's ink may hang **below** the body box at `scale` — a
+/// descender's tail, a cedilla ([`DESCENT`]).
+///
+/// [`height`] deliberately does not include it: the body box is the line, and
+/// overshoot is overshoot, which is what keeps two lines of text on the same
+/// rhythm whatever letters they happen to contain. But a caption that has to
+/// **clear something under it** — a picture, a field, a control's body — is
+/// measuring against ink and not against a line, so it adds this. Without it a
+/// gap looks right over `Time` and wrong over `tap`, which is a gap that
+/// depends on the text and therefore is not a gap.
+///
+/// It stays the **bitmap's** constant with a face loaded, like everything else
+/// a layout reserves: the sizing table never follows the typeface, so the same
+/// document lays out identically in either build.
+pub fn descent(scale: f32) -> f32 {
+    DESCENT as f32 * scale
+}
+
 /// Appends `s` to `mesh` with the **top of its body box** at `(x, y)`, each
 /// font-pixel a `scale` x `scale` rectangle of `color`.
 ///

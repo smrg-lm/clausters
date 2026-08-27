@@ -3052,9 +3052,15 @@ mod tests {
             .window_def(2)
             .unwrap()
             .hug_size(host.metrics_for(2), 1.25);
+        // Through the same rounding the accessor does: a window is asked for in
+        // whole pixels and the measurement is not (a scaled text size need not
+        // land on one), so comparing the raw float only ever passed by luck.
         assert_eq!(
             (pw as f32, ph as f32),
-            (at_scale.0.unwrap(), at_scale.1.unwrap())
+            (
+                at_scale.0.unwrap().ceil().max(1.0),
+                at_scale.1.unwrap().ceil().max(1.0)
+            )
         );
         assert!(
             pw as f32 >= kw as f32 * 1.25 - 1.0 && ph as f32 >= kh as f32 * 1.25 - 1.0,

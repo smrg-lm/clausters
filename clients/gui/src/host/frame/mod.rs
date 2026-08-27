@@ -405,17 +405,37 @@ pub(crate) fn fill_slots(
 pub(crate) fn timeline_body(
     rect: Rect,
     editor: &EditorProps,
+    has_label: bool,
     indent: f32,
     metrics: &Metrics,
 ) -> Rect {
-    let (mut x, mut w, mut h) = (rect.x, rect.w, rect.h);
+    let (mut x, mut y, mut w, mut h) = (rect.x, rect.y, rect.w, rect.h);
+    // The label strip comes off the top, the same one every other view
+    // reserves ([`crate::host::widget::size::label_strip`]) -- a heavy view is
+    // not a different kind of widget just because its picture is a texture.
+    //
+    // **Plus the gap under the caption**, which is the one part of the strip a
+    // heavy view has to reserve for itself: everywhere else it arrives with
+    // [`crate::host::graphics::controls::body_rect`]'s inset, and a timeline
+    // body has none on purpose -- the picture runs edge to edge, so a take's
+    // samples fill the box it is given. Without it the caption sits on the
+    // samples. The formula is `body_rect`'s vertical half, spelled out.
+    let strip = crate::host::widget::size::label_strip(has_label, metrics.text_scale, metrics);
+    let strip = if has_label {
+        strip + metrics.pad
+    } else {
+        strip
+    };
+    let strip = strip.min(h);
+    y += strip;
+    h -= strip;
     if editor.ruler != Ruler::Off {
         h = (h - metrics.ruler_h).max(0.0);
     }
     let indent = indent.min(w);
     x += indent;
     w = (w - indent).max(0.0);
-    Rect::new(x, rect.y, w, h)
+    Rect::new(x, y, w, h)
 }
 
 /// What a drag is holding while this frame is drawn — the frame's answer to
@@ -1478,24 +1498,57 @@ mod tests {
         let m = Metrics::default();
         // The x ruler takes the bottom strip; the gutter is the group's, so a
         // view alone with its value ruler indents by that ruler's width.
-        let body = timeline_body(rect, &editor(Ruler::Time, RulerY::Norm), m.ruler_w, &m);
+        let body = timeline_body(
+            rect,
+            &editor(Ruler::Time, RulerY::Norm),
+            false,
+            m.ruler_w,
+            &m,
+        );
         assert_eq!(body.h, 200.0 - m.ruler_h);
         assert_eq!(body.x, 10.0 + m.ruler_w);
         assert_eq!(body.w, 400.0 - m.ruler_w);
         // Each is independently optional.
-        let x_only = timeline_body(rect, &editor(Ruler::Time, RulerY::Off), 0.0, &m);
+        let x_only = timeline_body(rect, &editor(Ruler::Time, RulerY::Off), false, 0.0, &m);
         assert_eq!((x_only.x, x_only.w), (10.0, 400.0));
         assert_eq!(x_only.h, 200.0 - m.ruler_h);
-        let y_only = timeline_body(rect, &editor(Ruler::Off, RulerY::Hz), m.ruler_w, &m);
+        let y_only = timeline_body(rect, &editor(Ruler::Off, RulerY::Hz), false, m.ruler_w, &m);
         assert_eq!(y_only.h, 200.0);
         assert_eq!(y_only.x, 10.0 + m.ruler_w);
         assert_eq!(
-            timeline_body(rect, &editor(Ruler::Off, RulerY::Off), 0.0, &m),
+            timeline_body(rect, &editor(Ruler::Off, RulerY::Off), false, 0.0, &m),
             rect
         );
+        // A **labelled** view gives up the same strip a labelled control does:
+        // the picture starts below the caption instead of under it. It stacks
+        // with the ruler, since the two take opposite ends of the rect.
+        let strip = crate::host::widget::size::label_strip(true, m.text_scale, &m) + m.pad;
+        assert!(strip > 0.0, "a labelled widget reserves a strip");
+        let titled = timeline_body(rect, &editor(Ruler::Off, RulerY::Off), true, 0.0, &m);
+        assert_eq!(titled.y, 10.0 + strip);
+        assert_eq!(titled.h, 200.0 - strip);
+        let titled_ruled = timeline_body(rect, &editor(Ruler::Time, RulerY::Off), true, 0.0, &m);
+        assert_eq!(titled_ruled.y, 10.0 + strip);
+        assert_eq!(titled_ruled.h, 200.0 - strip - m.ruler_h);
+        // The caption's own gap is the reason the strip is not just the text's
+        // height: the picture starts a pad below the line, exactly as a
+        // control's body does, and never against it.
+        assert_eq!(
+            titled.y,
+            10.0 + crate::host::graphics::controls::label_height(rect.h, true, m.text_scale, &m)
+                + m.pad,
+            "the same formula controls::body_rect uses vertically"
+        );
+
         // Sharing an axis with a lane, the same view starts its trace where the
         // lane starts its clips — the indent is the axis', not the widget's.
-        let shared = timeline_body(rect, &editor(Ruler::Off, RulerY::Norm), m.header_w, &m);
+        let shared = timeline_body(
+            rect,
+            &editor(Ruler::Off, RulerY::Norm),
+            false,
+            m.header_w,
+            &m,
+        );
         assert_eq!(shared.x, 10.0 + m.header_w);
     }
 

@@ -48,7 +48,8 @@ impl SignalElement {
         // The gutter is what we are solving for, so it is left out of the body:
         // it moves the body's x, never its height, which is all the measure
         // reads.
-        let body = crate::host::frame::timeline_body(rect, &self.editor, 0.0, m);
+        let body =
+            crate::host::frame::timeline_body(rect, &self.editor, self.label().is_some(), 0.0, m);
         if body.h <= 0.0 {
             return None;
         }

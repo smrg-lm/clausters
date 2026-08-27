@@ -85,7 +85,7 @@ pub(crate) fn control_box(size: f32, m: &Metrics) -> f32 {
 /// — [`crate::host::graphics::controls::body_rect_at`]'s own reservation.
 pub(crate) fn label_strip(has_label: bool, size: f32, m: &Metrics) -> f32 {
     if has_label {
-        font::height(size) + m.pad
+        font::height(size) + font::descent(size) + m.pad
     } else {
         0.0
     }
@@ -860,7 +860,12 @@ mod tests {
             titled > bare,
             "the label strip is reserved: {titled} > {bare}"
         );
-        assert_eq!(titled - bare, font::height(font::DEFAULT_SIZE) + m.pad);
+        // The pad rides above the line and the descent below it, so the strip
+        // clears a `y` by the same distance it clears a `T`.
+        assert_eq!(
+            titled - bare,
+            font::height(font::DEFAULT_SIZE) + font::descent(font::DEFAULT_SIZE) + m.pad
+        );
     }
 
     #[test]

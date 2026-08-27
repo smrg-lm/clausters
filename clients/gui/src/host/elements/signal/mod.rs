@@ -484,7 +484,13 @@ impl SignalElement {
         if !self.caps.navigable || self.presentation != Presentation::Signal || self.is_live() {
             return None;
         }
-        let body = crate::host::frame::timeline_body(rect, &self.editor, indent, m);
+        let body = crate::host::frame::timeline_body(
+            rect,
+            &self.editor,
+            self.label().is_some(),
+            indent,
+            m,
+        );
         if body.w <= 0.0 || body.h <= 0.0 {
             return None;
         }

@@ -196,7 +196,7 @@ fn time_axis(
         // leaf whose picture is not "the rect minus its chrome" overrides the
         // generic body — a roll's grid, with its strips stacked under it.
         kind => kind.axis_body(p.rect, indent, metrics).unwrap_or((
-            super::super::frame::timeline_body(p.rect, kind.editor()?, indent, metrics),
+            super::super::frame::timeline_body(p.rect, kind.editor()?, false, indent, metrics),
             kind.editor()?.ruler_y != super::super::widget::RulerY::Off,
         )),
     };
