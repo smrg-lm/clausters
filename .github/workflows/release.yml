@@ -28,11 +28,20 @@
 
 name: Release
 
-# The manual trigger is a dry run of the gate, and only of the gate: `verify`
-# runs exactly as it would for a release, and every job that builds or
-# publishes an artifact is skipped, so the workflow can be proved on Actions
-# without a tag and without anything reaching a registry. A tag is one-way; the
-# job that guards it should not be first exercised by the run it guards.
+# The manual trigger is a dry run of everything except publishing: `verify` and
+# `build` run exactly as they would for a release, and the three jobs that put
+# something in a registry or a GitHub release are skipped -- so the workflow can
+# be proved on Actions without a tag and without anything reaching PyPI or npm.
+# A tag is one-way; neither the gate nor the packaging should be first exercised
+# by the run that depends on them.
+#
+# `build` is in the dry run because a wheel that fails to assemble, or quietly
+# assembles wrong, fails at exactly the moment nothing can be taken back --
+# nothing else in the repository builds one, and the artifact it uploads is the
+# only place the packaged size and the bundled library list can be read between
+# tags. The one thing a dry run's build gets wrong is cosmetic: the server
+# tarball takes its version from the ref, so on a dispatch it is named after the
+# branch rather than a version.
 on:
   push:
     tags: ["v*"]
@@ -133,10 +142,10 @@ jobs:
   build:
     name: wheel + server binary (linux x86_64)
     needs: verify
-    # Tag pushes only -- see the workflow_dispatch note above. The three jobs
-    # below carry the same guard rather than relying on a skipped `needs:`
-    # propagating: what must not run on a dry run is stated where it would run.
-    if: github.event_name == 'push'
+    # No event guard, deliberately: this job publishes nothing, and a dry run
+    # that never packages proves only half of a release. The three jobs below
+    # carry the guard themselves rather than relying on a skipped `needs:`
+    # propagating -- what must not run on a dry run is stated where it would run.
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -174,6 +183,31 @@ jobs:
           cargo build --release
           VERSION="${GITHUB_REF_NAME#v}"
           tar -C target/release -czf "clausters-server-${VERSION}-linux-x86_64.tar.gz" clausters
+      # What the package actually weighs and what it actually carries, in the
+      # log, every time one is built. Both numbers move with the pinned LLVM
+      # (its Support library is most of libfaust), and the bundled list is how a
+      # dependency that should not be travelling -- or one that stopped -- gets
+      # noticed here rather than in an issue. `docs/decisions.md` carries the
+      # standing figures; this is what they are checked against.
+      - name: What the wheel weighs
+        working-directory: clients/python
+        run: |
+          python - <<'EOF'
+          import glob, os, zipfile
+          w = glob.glob("dist/*.whl")[0]
+          z = zipfile.ZipFile(w)
+          mib = lambda n: f"{n / 2**20:.1f} MiB"
+          print(f"{os.path.basename(w)}")
+          print(f"  packed    {mib(os.path.getsize(w))}")
+          print(f"  installed {mib(sum(i.file_size for i in z.infolist()))}")
+          print("  bundled:")
+          for i in sorted(z.infolist(), key=lambda i: -i.file_size):
+              n = i.filename
+              if ("_libs/" in n and "_libs/verovio/" not in n) or "_bin/" in n:
+                  print(f"    {mib(i.file_size):>10}  {n.split('/')[-1]}")
+          n = sum(1 for i in z.infolist() if "_libs/verovio/" in i.filename)
+          print(f"    {n} verovio resource files")
+          EOF
       - uses: actions/upload-artifact@v6
         with:
           name: wheel
