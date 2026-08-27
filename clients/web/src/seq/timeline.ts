@@ -75,6 +75,17 @@ export class OscEvent {
 }
 
 /**
+ * How many events a bounce records before it decides the pattern is endless
+ * (`Timeline.fromPattern`'s `maxEvents` default).
+ *
+ * A bounce holds every event in memory, so a million is already past any real
+ * piece and nowhere near a legitimate one — which is what makes the cap honest
+ * *here* and wrong inside `TempoClock.render`, where a long offline render of a
+ * real score is exactly the thing that runs for a very long time on purpose.
+ */
+export const MAX_BOUNCED_EVENTS = 1_000_000;
+
+/**
  * A static, editable sequence of `(beat, item)` kept sorted by beat, with
  * random access by time.
  *
@@ -203,13 +214,23 @@ export class Timeline {
      * pacing and recording each event at its logical beat. `dur` bounds an
      * open-ended pattern (in beats); leave it out to drain a finite one.
      *
-     * The run uses the clock's own seams — a hand-driven timebase and ticker —
-     * so it is the same driver live playback uses, only advanced as fast as
-     * the loop can go.
+     * The run is the clock's own **offline drive** (`TempoClock.render`), so it
+     * is the same driver live playback uses with the waiting taken out.
+     *
+     * `dur` bounds an endless pattern, in beats. Without one, an endless
+     * pattern is **caught rather than run forever**: the bounce throws once it
+     * has recorded `maxEvents` (`MAX_BOUNCED_EVENTS` by default). That guard is
+     * this call's and not the clock's — a long offline `render` of a real score
+     * is meant to run for a long time, where a bounce with no bound is a
+     * mistake.
      */
     static fromPattern(
         pattern: Pattern<unknown>,
-        { dur, tempo = 1.0 }: { dur?: number; tempo?: number } = {},
+        {
+            dur,
+            tempo = 1.0,
+            maxEvents = MAX_BOUNCED_EVENTS,
+        }: { dur?: number; tempo?: number; maxEvents?: number } = {},
     ): Timeline {
         const timeline = new Timeline();
         const recorder: EventDestination = {
@@ -228,7 +249,15 @@ export class Timeline {
         // this one already does.
         const clock = new TempoClock(tempo, { timebase: new ManualTimebase(0) });
         pattern.play(recorder, { clock });
-        clock.render(dur);
+        try {
+            clock.render(dur, { maxSteps: dur === undefined ? maxEvents : undefined });
+        } catch (cause) {
+            throw new Error(
+                `Timeline.fromPattern: the pattern did not end after ${maxEvents} ` +
+                    "events — pass { dur } to bound an endless one",
+                { cause },
+            );
+        }
         clock.close();
         return timeline;
     }

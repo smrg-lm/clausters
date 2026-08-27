@@ -672,18 +672,33 @@ export class TempoClock {
      * never drains on its own, and nothing here is watching a clock to stop
      * it.
      *
+     * `maxSteps` bounds the number of **resumes**, throwing once it is passed.
+     * It defaults to no bound, which is the right default: a long offline
+     * render of a real score is meant to run for a long time. It is for the
+     * caller who knows its source might never end — a bounce of an endless
+     * pattern (`Timeline.fromPattern`) — because a routine cannot report that
+     * itself: a routine that throws loses its own place and nothing else, so a
+     * guard inside one is swallowed by design.
+     *
      * Synchronous on purpose, where everything else in this client that waits
      * is a promise: nothing is being waited *for*. A render occupies the page
      * for as long as it takes and then returns, the way a long loop does.
      */
-    render(untilBeat?: number): this {
+    render(untilBeat?: number, { maxSteps }: { maxSteps?: number } = {}): this {
         this.mode = "nrt";
         this.logicalBeat = 0;
+        let steps = 0;
         try {
             for (;;) {
                 const beat = this.queue.peekTime();
                 if (beat === undefined) break;
                 if (untilBeat !== undefined && beat > untilBeat) break;
+                if (maxSteps !== undefined && ++steps > maxSteps) {
+                    throw new Error(
+                        `render: still going after ${maxSteps} resumes — ` +
+                            "the source does not end on its own",
+                    );
+                }
                 const due = this.queue.popDue(beat);
                 if (due === undefined) break;
                 const item = this.take(due[1]!);

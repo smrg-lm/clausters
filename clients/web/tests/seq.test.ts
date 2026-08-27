@@ -285,6 +285,21 @@ test("bouncing an endless pattern needs a bound, and honours it", () => {
     assert.deepEqual([...timeline].map(([beat]) => beat), [0, 0.25, 0.5, 0.75, 1]);
 });
 
+test("an endless pattern with no bound is refused, not run forever", () => {
+    // The cap is the caller's (`maxEvents`), so this does not have to record a
+    // million events to prove it. It is deliberately not inside `render`'s
+    // default either: a long offline render of a real score is meant to take a
+    // long time, and a routine cannot raise this itself — a routine that throws
+    // loses its own place and nothing else.
+    assert.throws(
+        () =>
+            Timeline.fromPattern(new Pbind({ degree: new Pseq([0, 1], INF), dur: 0.25 }), {
+                maxEvents: 32,
+            }),
+        /did not end after 32 events.*\{ dur \}/s,
+    );
+});
+
 // ---- the playhead ----
 
 test("a playhead renders a timeline forward as the clock advances", async () => {

@@ -64,6 +64,17 @@ class MidiEvent:
         destination.send_message(self.message)
 
 
+#: How many events a bounce records before it decides the pattern is endless
+#: (`Timeline.from_pattern`'s ``max_events`` default).
+#:
+#: A bounce holds every event in memory, so a million is already past any real
+#: piece and nowhere near a legitimate one — which is what makes the cap honest
+#: *here* and wrong inside `clausters.base.TempoClock.render`, where a long
+#: offline render of a real score is exactly the thing that runs for a very
+#: long time on purpose.
+MAX_BOUNCED_EVENTS = 1_000_000
+
+
 class Timeline:
     """A static, editable sequence of ``(beat, item)`` kept sorted by beat, with
     random access by time.
@@ -161,17 +172,36 @@ class Timeline:
     # ---- capture a pattern into a timeline ----
 
     @classmethod
-    def from_pattern(cls, pattern, dur=None, tempo: float = 1.0) -> "Timeline":
+    def from_pattern(
+        cls,
+        pattern,
+        dur=None,
+        tempo: float = 1.0,
+        max_events: int = MAX_BOUNCED_EVENTS,
+    ) -> "Timeline":
         """Bounce an event pattern (a `Pbind`) into a static timeline by running
         it offline and recording each event at its logical beat. ``dur`` bounds
-        an open-ended pattern (beats); ``None`` drains a finite one fully."""
+        an open-ended pattern (beats); ``None`` drains a finite one fully.
+
+        Without a ``dur``, an endless pattern is **caught rather than run
+        forever**: the bounce raises once it has recorded ``max_events``
+        (`MAX_BOUNCED_EVENTS` by default). That guard is this call's and not the
+        clock's — a long offline `clausters.base.TempoClock.render` of a real
+        score is meant to run for a long time, where a bounce with no bound is a
+        mistake."""
         from ..base.clock import TempoClock
 
         timeline = cls()
         recorder = _Recorder(timeline)
         clock = TempoClock(tempo)
         pattern.play(clock, recorder)
-        clock.render(until_beat=dur)
+        try:
+            clock.render(until_beat=dur, max_steps=None if dur is not None else max_events)
+        except RuntimeError as e:
+            raise RuntimeError(
+                f"Timeline.from_pattern: the pattern did not end after "
+                f"{max_events} events — pass dur= to bound an endless one"
+            ) from e
         return timeline
 
 

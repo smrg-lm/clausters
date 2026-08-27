@@ -17,6 +17,7 @@ from clausters.base import NetAddr, OscReceiver, TempoClock
 from clausters.base import _osclib as osc
 from clausters.base.main import main
 from clausters.seq import (
+    INF,
     Event,
     MidiEvent,
     OscEvent,
@@ -205,6 +206,29 @@ def test_timeline_from_pattern_records_beats():
     assert len(tl) == 3
     assert [b for b, _ in tl] == [0.0, 0.5, 1.0]
     assert [e["freq"] for _, e in tl] == [440, 550, 660]
+
+
+def test_timeline_from_pattern_bounds_an_endless_pattern_by_beats():
+    """``dur`` is the ordinary way to bounce something that never ends."""
+    endless = Pbind(freq=Pseq([440, 550], INF), dur=0.25)
+    tl = Timeline.from_pattern(endless, dur=1.0)
+    assert [b for b, _ in tl] == [0.0, 0.25, 0.5, 0.75, 1.0]
+
+
+def test_timeline_from_pattern_refuses_an_endless_pattern_with_no_bound():
+    """With no ``dur`` an endless pattern would run forever, so the bounce
+    counts what it has recorded and gives up. The cap is the caller's
+    (``max_events``) so this does not have to record a million events to prove
+    it — and it is deliberately **not** in `TempoClock.render`, where a long
+    offline render of a real score is meant to take a long time."""
+    endless = Pbind(freq=Pseq([440, 550], INF), dur=0.25)
+    try:
+        Timeline.from_pattern(endless, max_events=32)
+    except RuntimeError as e:
+        assert "did not end after 32 events" in str(e)
+        assert "dur=" in str(e), "the message says how to bound it"
+    else:
+        raise AssertionError("an endless bounce with no bound must not return")
 
 
 # ---- following a server transport (simulated broadcast, no live server) ----

@@ -2523,19 +2523,29 @@ Python counterpart under another spelling or is a page's own (`ANY_PEER`,
   bounce of an endless pattern now hangs in both clients, identically, and the
   entry below carries the question of whether either should refuse it.
 
-- ⬜ **An unbounded bounce of an endless pattern hangs, in both clients**
-  *(named 2026-08-26, when the entry above removed the one client's guard for
-  being one client's)*. `Timeline.fromPattern(p)` with no `dur` over an endless
-  pattern never returns, here and in Python: `render` has no bound to stop at
-  and nothing is watching a wall clock. The TS side used to throw after a
-  million steps, which was better and was also a surface Python did not have —
-  so it went with the hand-rolled driver rather than being made the rule.
-  Making it the rule is the open part: a step cap inside `render` is arbitrary
-  but honest (a bounce is not a live drive, so a limit is not a musical
-  decision), and it would have to land in both clients in the same commit. The
-  alternative is that `fromPattern` requires `dur` unless the pattern declares
-  itself finite, which is a stronger statement about patterns than either
-  client makes today.
+- ✅ **An unbounded bounce of an endless pattern hangs, in both clients**
+  *(named and fixed 2026-08-26, the entry above having removed the one client's
+  guard for being one client's)*. `Timeline.fromPattern(p)` with no `dur` over
+  an endless pattern never returned, here or in Python.
+
+  **Where the guard went, and the two places it could not go.** Not inside the
+  recorder, which is where it looks like it belongs: a routine that raises
+  **loses its own place and nothing else** — the clock catches it by design, so
+  it can go on driving every other routine — so a guard there is swallowed and
+  the bounce returns a short timeline instead of refusing. (Found by writing
+  it that way first; the Python test failed with the traceback printed and the
+  call returning normally.) And not in `render`'s default, because a long
+  offline render of a real score is exactly the thing that is meant to run for
+  a very long time.
+
+  So `render` gained an **optional** bound on resumes — `max_steps` /
+  `{ maxSteps }`, defaulting to none — for the caller who knows its source
+  might never end, and `fromPattern` passes it whenever no `dur` was given,
+  re-raising in its own terms ("the pattern did not end after N events — pass
+  `dur=` to bound an endless one"). The number is the caller's too
+  (`max_events` / `maxEvents`, `MAX_BOUNCED_EVENTS` = 1,000,000 by default),
+  which is what makes it **testable**: the test proves the refusal at 32 events
+  rather than recording a million. Both clients, same commit, same message.
 
 - ✅ **The operator vocabulary had no home, so the class trees differed**
   *(found 2026-08-24, adding the range maps to both clients and having to

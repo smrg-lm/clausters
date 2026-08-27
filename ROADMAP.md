@@ -105,16 +105,13 @@ on each one; none of them is being taken by this file.
   already in one; what cannot leave the page thread is the resume). The story
   is in the commit; what it left open is one entry below.
 
-- ⬜ **An unbounded bounce of an endless pattern hangs, in both clients**
-  *(`clients/web/PLAN.md`, Found by use)*. Fell out of the fix above:
-  `Timeline.fromPattern` was hand-driving a ticker where the Python one calls
-  `clock.render(dur)`, and aligning it dropped a TS-only step cap that used to
-  throw. Both clients now hang identically on `fromPattern(p)` with no `dur`
-  over an endless pattern.
-  **The decision:** a step cap inside `render` — arbitrary but honest, since a
-  bounce is not a live drive — or `fromPattern` requiring `dur` unless the
-  pattern declares itself finite, which says more about patterns than either
-  client says today. Either way it lands in **both** clients in one commit.
+- ✅ **An unbounded bounce of an endless pattern hangs, in both clients**
+  *(fixed 2026-08-26)*. Neither of the two shapes this entry offered: the guard
+  is an **optional** bound on resumes in `render` (`max_steps` / `maxSteps`,
+  defaulting to none, so a real score's long render is untouched), passed by
+  `fromPattern` whenever no `dur` was given. Writing it in the recorder first is
+  what showed why it cannot live there — a routine that raises loses its own
+  place and nothing else, by the clock's design. In the commit.
 
 - ⬜ **`panels/standalone` is two different programs** *(`clients/web/PLAN.md`,
   Found by use, "Two pairs read side by side turn out not to be pairs")*. The

@@ -506,20 +506,36 @@ class TempoClock:
                 self._push(beat + float(delta), item)
                 self._cond.notify()
 
-    def render(self, until_beat: float | None = None):
+    def render(self, until_beat: float | None = None, max_steps: int | None = None):
         """NRT drive: process the queue in beat order without sleeping.
 
         Returns when the queue is empty (or the next event is past
         ``until_beat``). Whatever the routines emit (through a Server) lands in
-        that Server's interface — here we only advance time and resume them."""
+        that Server's interface — here we only advance time and resume them.
+
+        ``max_steps`` bounds the number of **resumes**, raising once it is
+        passed. It defaults to no bound, which is the right default: a long
+        offline render of a real score is meant to run for a long time. It is
+        for the caller who knows its source might never end — a bounce of an
+        endless pattern (`clausters.seq.Timeline.from_pattern`) — because a
+        routine cannot report that itself: a routine that raises loses its own
+        place and nothing else (see `_wake`), so a guard inside one is
+        swallowed by design."""
         self._mode = "nrt"
         self._driven = True
         self._logical_beat = 0.0
+        steps = 0
         try:
             while True:
                 beat = self._queue.peek_time()
                 if beat is None or (until_beat is not None and beat > until_beat):
                     break
+                steps += 1
+                if max_steps is not None and steps > max_steps:
+                    raise RuntimeError(
+                        f"render: still going after {max_steps} resumes — "
+                        f"the source does not end on its own"
+                    )
                 _, key = self._queue.pop_due(beat)
                 self._logical_beat = beat
                 self._wake(self._take(key), beat)
