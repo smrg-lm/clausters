@@ -168,7 +168,7 @@ no `target/` directory, no separate build step at import time.
 Self-contained includes **Faust**: both def families are on by default in the
 server, so the wheel also carries `libfaust` (in `clausters/_libs/`, found
 through the artifacts' `$ORIGIN` rpath). A `FaustDef` therefore compiles on a
-machine without it installed. That is what makes the wheel heavy — under 40 MB
+machine without it installed. That is what makes the wheel heavy — ~33 MB
 packed, most of it LLVM, which is linked into libfaust because the Faust
 compiler *is* an LLVM JIT. Building the client from this repo needs libfaust present (see
 [`BUILD.md`](../../BUILD.md)); a `pip install` of a built wheel needs nothing.

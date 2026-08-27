@@ -147,8 +147,9 @@ against a different LLVM than the pinned one, which is the supported way to work
 on a machine whose distro moved on — only the *shipped* artifact is pinned.
 
 **LLVM is linked statically, and only the components the JIT reaches.** That is
-what makes the result one self-contained library — ~43 MB against LLVM 21,
-~46 MB against the pinned 18 — rather than a 146 MB pair — a small `libfaust.so` plus the distro's monolithic `libLLVM.so`, which a
+what makes the result one self-contained library — 39 MiB as the wheel bundles
+it, against the pinned LLVM 18 — rather than a 146 MB pair: a small
+`libfaust.so` plus the distro's monolithic `libLLVM.so`, which a
 `NEEDED` link takes whole, all twenty target backends and the rest of the
 toolchain with it. The script's own header explains each trim and what it gives
 up; `docs/decisions.md` carries the measurements. A full build from source takes

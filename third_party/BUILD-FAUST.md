@@ -84,9 +84,8 @@ CMAKE_BUILD_PARALLEL_LEVEL=$(nproc) make most \
 - `-DLINK_LLVM_STATIC=on` + `-ULLVM_BUILD_UNIVERSAL` + one Faust backend in the
   `.so` + the section flags: the four trims that turn a 146 MB pair
   (`libfaust.so` plus the distro's monolithic `libLLVM.so`) into a single
-  `libfaust.so` — ~43 MB against LLVM 21, ~46 MB against the pinned 18. Each
-  one is explained where it is applied, in `build-faust.sh`; the measurements
-  are in `docs/decisions.md`.
+  `libfaust.so` — 39 MiB as the wheel bundles it. Each one is explained where it
+  is applied, in `build-faust.sh`; the measurements are in `docs/decisions.md`.
 - `FAUSTDIR=faustdir-native`: not the default `faustdir`, which belongs to
   `build-faust-wasm.sh`. That script reconfigures its directory without a
   backend file, so it inherits whatever was last cached there — two recipes
@@ -235,11 +234,13 @@ Notes (see also `BUILD.md` and the `faust` sections of `CLAUDE.md`):
   libfaust + libLLVM down to 43, and five vendored dependencies (libxml2,
   libedit, libffi, libbsd, libmd) out of the wheel entirely.
 - And on the **pinned** LLVM 18, which is what CI and the release build
-  against: the same recipe, run cold in the `libfaust` job, produces 46 MB
-  rather than 43 and keeps one of the six — `libtinfo.so.6`, because LLVM 18's
-  Support library still links terminfo and 19 is where that stopped. The
-  component list resolves unchanged on 18; the job builds from source in
-  ~5 min.
+  against: the component list resolves unchanged, the `libfaust` job builds it
+  cold in ~5 min, and the result is *smaller* than 21's — 46 MB in the prefix
+  against 50, and 39 MiB stripped into the wheel against 43. Compare like with
+  like: the prefix copy and the staged one are four MiB apart, which is how 18
+  briefly got recorded as the larger of the two. It does keep one of the six
+  dependencies — `libtinfo.so.6`, 0.2 MiB, because LLVM 18's Support library
+  still links terminfo and 19 is where that stopped.
 - The 97 tests that touch Faust (the seven `faust_*` suites, `golden`,
   `rt_safety`, `denormals`) pass against it, and `examples/faust_soundfile.py`
   plays through the bundled binaries.

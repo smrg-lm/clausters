@@ -2119,11 +2119,12 @@ finished work, where a pending item reads as done.
   it, every target backend and the whole toolchain support surface, where the
   JIT compiles for the machine it runs on and calls one. Linking LLVM into
   libfaust statically, from a component list rather than `--libs`, took the pair
-  from 146 MiB to 43 and the wheel from 194 MiB installed to 93 (36 packed); five
+  from 146 MiB to 43 and the wheel from 194 MiB installed to 90 (35 packed); five
   vendored dependencies (libxml2, libedit, libffi, libbsd, libmd) left the
-  package with it. Those are LLVM 21's numbers, measured here; on the pinned 18,
-  which is what CI and the release build against, the library is 46 MiB and
-  `libtinfo.so.6` stays (LLVM 19 is where the terminfo dependency went away).
+  package with it. Those are LLVM 21's numbers, measured here; the pinned 18 --
+  what ships -- is smaller still, 39 MiB of library and a wheel of 87 installed
+  / 33 packed, and it keeps `libtinfo.so.6` (0.2 MiB; LLVM 19 is where the
+  terminfo dependency went away).
 
   **Why it had not been done**: the recipe carried `LINK_LLVM_STATIC=off` with a
   comment saying the static path needs Polly, and `docs/decisions.md` argued
