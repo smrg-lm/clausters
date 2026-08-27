@@ -106,6 +106,28 @@ clippy "clippy: faust alone" --all-targets --no-default-features --features faus
 # `third_party/build-verovio.sh` answers.
 clippy "clippy: ffi with verovio" -p clausters-ffi --features verovio --all-targets
 
+# --- The third gap: the featureless build with no libfaust to link ------------
+#
+# Every row above type-checks; none of them *link*, and on a development machine
+# libfaust is installed anyway, so "builds without libfaust" is the one claim
+# this script could not make. It is also the claim that broke: the two wasm
+# crates depend on `clausters` with `features = ["faust"]` -- the def family,
+# whose compiler on wasm32 is libfaust-wasm -- and cargo unifies features across
+# the workspace, so `--workspace --no-default-features` built them for the host
+# and turned the family back into `-lfaust`. Green here, red on a runner that
+# has no libfaust, for three days.
+#
+# So this row builds what CLAUDE.md and BUILD.md actually promise -- the root
+# crate, no features -- with FAUST_PREFIX aimed at nothing, which is the runner.
+# It is a build rather than a check because only the link can fail this way --
+# and it links into a target directory of its own, so the script keeps its
+# promise not to touch the working tree: a featureless `cargo build` would
+# otherwise leave a `target/debug/clausters` with no audio backend behind, which
+# is the trap the skill's last section is about.
+run "build: no features, no libfaust" \
+    env FAUST_PREFIX=/nonexistent-prefix \
+    cargo build --no-default-features --target-dir target/matrix-nofaust
+
 # --- The other gap: rustdoc --------------------------------------------------
 #
 # CI never builds the docs, so a broken intra-doc link -- a link to an item that

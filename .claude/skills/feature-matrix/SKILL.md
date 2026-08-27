@@ -90,6 +90,7 @@ under one set of `cfg`s is not always right under another.
 | 5 | `cargo clippy --all-targets --no-default-features --features synth` | **no** |
 | 6 | `cargo clippy --all-targets --no-default-features --features faust` | **no** |
 | 7 | `cargo clippy -p clausters-ffi --features verovio --all-targets` | **no** |
+| 7b | `cargo build --no-default-features` with `FAUST_PREFIX` aimed at nothing | **no** |
 | 8 | `cargo doc --no-deps --workspace` | **no** |
 | 9 | `cargo doc --no-deps --workspace --no-default-features` | **no** |
 | 10 | `cargo doc --no-deps --workspace --no-default-features --features synth` | **no** |
@@ -103,14 +104,30 @@ Every clippy line runs with `-- -D warnings` and every doc line with
 than something to scroll past.
 
 **The `In CI?` column is about `ci.yml`** — the per-push run, which is what
-decides whether a warning can land on `main`. Five rows say yes; the nine that
+decides whether a warning can land on `main`. Five rows say yes; the ten that
 say no are exactly what `--fast` runs, and what a release's `verify` job now
 runs on the tagged commit. So a `no` no longer means "watched by nobody", but it
 still means "not watched until it is too late to be cheap".
 
 Configuration 4 is also the build that must stay green **without libfaust
 installed at all** — the core has to compile and test with no LLVM-backed
-libfaust on the machine.
+libfaust on the machine — and **configuration 7b is what actually proves it**.
+Every other row type-checks; 7b is the only one that *links*, and a development
+machine has libfaust installed anyway, so that promise (BUILD.md's, and
+CLAUDE.md's) was the one claim this script could not make.
+
+It is also the claim that broke. `crates/clausters-web` and
+`crates/clausters-nrt-web` depend on `clausters` with `features = ["faust"]`,
+meaning the def *family* — their compiler is libfaust-wasm, no native library
+involved — and cargo unifies features across the workspace, so CI's
+`cargo test --workspace --no-default-features` built them for the host, the
+family turned back into `-lfaust`, and two jobs went red for three days while
+everything here stayed green. CI now excludes those two crates from that run,
+since wasm32 is where they are proved (`scripts/check-wasm.sh`), and 7b checks
+what the promise actually says: the root crate, no features, `FAUST_PREFIX`
+aimed at nothing. It links into a target directory of its own, so the script
+still leaves no crippled `target/debug/clausters` behind — the trap the last
+section is about.
 
 Configuration 7 is the same kind of gap one crate over: `verovio` is off by
 default, so CI's `--workspace` run never enables it and the notation layer it

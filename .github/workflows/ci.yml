@@ -92,11 +92,23 @@ jobs:
         # family. These need no libfaust, so they carry no `needs: libfaust`
         # and stay fast. The faust-linking combos (the full default set, and
         # `+embed` on top of it) live in the `test-default` job below.
+        #
+        # The two wasm crates sit out both rows, and that is the point of the
+        # `--exclude`s rather than an oversight. Each depends on `clausters`
+        # with `features = ["faust"]` -- for them `faust` is the def *family*
+        # and the compiler is libfaust-wasm, no native library involved -- but
+        # cargo unifies features across the workspace, so building them for the
+        # *host* turns the family back into `-lfaust` and the libfaust-free run
+        # fails to link on a runner that deliberately has no libfaust. What
+        # CLAUDE.md and BUILD.md promise is the root crate's featureless build,
+        # and that is what these rows check. The wasm crates are proved where
+        # they are meant to run: `scripts/check-wasm.sh` checks all three
+        # against wasm32 in the `gui` job.
         include:
           - name: no-features
-            flags: --no-default-features
+            flags: --no-default-features --exclude clausters-web --exclude clausters-nrt-web
           - name: synth-only
-            flags: --no-default-features --features synth
+            flags: --no-default-features --features synth --exclude clausters-web --exclude clausters-nrt-web
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
