@@ -255,6 +255,7 @@ version = "0.10.0"
 dependencies = [
  "clausters-core",
  "clausters-document",
+ "clausters-midi",
  "js-sys",
  "serde",
  "serde_json",

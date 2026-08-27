@@ -274,6 +274,28 @@ is not this file but the pin: one commit, one set of build options, and
 `clients/web/tests/notation-parity.test.ts`, which engraves the Python client's
 fixtures in the browser stack and compares the drawing primitive by primitive.
 
+## MIDI files
+
+The one section whose C counterpart is **not in `clausters-ffi`**: the MIDI file
+writers live in `clausters-midi`, a cdylib of its own with its own ABI counter,
+because the Python client loads them separately and because half that crate
+(`live`, a virtual OS port over midir) has no business inside the core's door.
+The left column is therefore empty on both rows and the C symbols are named here
+instead: `clausters_midi_write_smf` and `clausters_midi_write_clip`, argument for
+argument the same call.
+
+What a page needs is exactly the half that is pure Rust. It has no virtual port
+to open — Web MIDI hands out the ports that already exist and lets a page create
+none — but it does have a score to write, so `MidiServer` over an NRT interface
+accumulates `(beat, message)` and writes the file in the tab. The alternative was
+a TypeScript SMF writer, which is a second implementation of a byte format, and
+the whole point of a shared core is not having one.
+
+| C ABI (`clausters-ffi`) | wasm (`clausters-core-web`) | Note |
+|---|---|---|
+| — | `midi_write_smf` | `idiom` — `clausters-midi`'s `clausters_midi_write_smf`, not `clausters-ffi`'s, so this table's left column cannot name it. Same flat arguments (n ticks, 3n bytes, ppq); C returns a malloc'd buffer freed by `clausters_midi_free`, wasm returns the bytes and JS sees it as `midiWriteSmf` |
+| — | `midi_write_clip` | `idiom` — `clausters_midi_write_clip` on the same terms, `midiWriteClip` in JS |
+
 ## The shared-memory segment
 
 A peer maps the segment in its own language — that part is the language's — and

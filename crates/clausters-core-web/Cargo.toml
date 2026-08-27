@@ -19,6 +19,12 @@ clausters-core = { path = "../clausters-core", features = ["notation"] }
 # The document: one implementation of what an edit means, bound here as it is
 # bound over the C ABI, so the web client re-derives none of it.
 clausters-document = { path = "../clausters-document" }
+# The MIDI file writers. Default features only -- `live` pulls midir in for a
+# virtual OS port, which is precisely what a page cannot have; what a page does
+# need is `write_smf`/`write_clip`, which are pure Rust over midly and compile
+# to wasm unchanged. Same reasoning as the native side's: one writer, so a `.mid`
+# saved from a tab and one saved from a script are the same bytes.
+clausters-midi = { path = "../clausters-midi" }
 
 # The JS binding surface only exists on the wasm target.
 [target.'cfg(target_arch = "wasm32")'.dependencies]

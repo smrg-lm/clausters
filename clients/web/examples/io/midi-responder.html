@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: a MIDI keyboard drives the server</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 46rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button, select { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; min-height: 12rem; }
+      .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">Drive the server from a MIDI keyboard — a
+<code>MidiFunc</code> turning notes into synths.
+
+The web port of the Python client's <code>examples/io/midi_responder.py</code>,
+and the MIDI counterpart of <code>responders.html</code>: a
+<code>MidiFunc</code> listens on a MIDI <b>input</b> port and dispatches each
+message to a callback. Here a note-on starts a synth and the matching note-off
+frees it — the client-side mirror of the server's own direct MIDI path (a server
+can be played by MIDI it receives itself, or by a client that listens to MIDI
+and forwards <code>/synth_new</code>).
+
+<b>The one difference from the script</b>, and it is the platform's: the Python
+client <i>opens</i> a virtual input port named <code>clausters-in</code> that
+you then wire a keyboard into. Web MIDI creates no ports — it hands a page the
+ones that already exist, after asking your permission — so this picks one from
+that list instead. Plug the keyboard in first, press <b>connect</b>, allow MIDI,
+choose the port, and play.
+
+Everything below runs on the <b>in-page engine</b>: no server process.
+</div>
+      <div class="row">
+        <button id="connect">connect + listen</button>
+        <select id="ports" disabled></select>
+        <button id="stop" disabled>stop</button>
+      </div>
+      <pre id="log"></pre>
+    </main>
+
+    <script type="module">
+      // Run it: ./build.sh from clients/web, then serve this directory
+      //   python3 -m http.server
+      // and open http://localhost:8000/examples/io/midi-responder.html
+      //
+      // Needs a MIDI input device and a browser with Web MIDI (Chrome, Edge;
+      // Safari and Firefox behind a flag or not at all). The audio server is
+      // the wasm engine in this page's AudioWorklet, so nothing else is needed.
+      import {
+        MidiFunc, MidiReceiver, Session, Synth, loadOsc, requestMidiPorts,
+      } from "../../dist/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => {
+        $("log").textContent += line + "\n";
+        $("log").scrollTop = $("log").scrollHeight;
+      };
+
+      let session = null;
+      let recv = null;
+      const responders = [];
+      const voices = new Map();          // note number -> its Synth
+
+      // ---- the session and the MIDI port ----
+      //
+      // `requestMidiPorts` is the page's half of what the script does with a
+      // port name: it asks the browser (and the user) once, and hands back the
+      // ports that exist. The receiver then takes one of them.
+      async function connect() {
+        $("connect").disabled = true;
+        await loadOsc();
+        session = await Session.embed();
+
+        const ports = await requestMidiPorts();
+        const inputs = [...ports.inputs.values()];
+        if (inputs.length === 0) {
+          log("no MIDI input port: plug a keyboard in and reload");
+          return;
+        }
+        $("ports").replaceChildren(...inputs.map((p) => {
+          const option = document.createElement("option");
+          option.value = p.id;
+          option.textContent = p.name ?? p.id;
+          return option;
+        }));
+        $("ports").disabled = false;
+        $("ports").onchange = () => listen(ports, $("ports").value);
+        await listen(ports, inputs[0].id);
+        $("stop").disabled = false;
+      }
+
+      async function listen(ports, id) {
+        recv?.stop();
+        recv = await new MidiReceiver({ port: id, access: ports }).start();
+        log(`listening on "${recv.port}" — play your keyboard...`);
+      }
+
+      // ---- the responders ----
+      //
+      // One voice per held note, freed when the note-off arrives (or a note-on
+      // with velocity 0, which is running-status for the same thing).
+      function noteOn(msg, src) {
+        if (msg.velocity === 0) return noteOff(msg, src);   // running-status off
+        const freq = 440.0 * 2 ** ((msg.note - 69) / 12);
+        const amp = msg.velocity / 127 * 0.3;
+        voices.set(msg.note, new Synth("default", { freq, amp },
+          { server: session.server }));
+        log(`  note on  ${msg.note} (${freq.toFixed(1)} Hz)`);
+      }
+
+      function noteOff(msg) {
+        const synth = voices.get(msg.note);
+        if (synth !== undefined) {
+          synth.free();
+          voices.delete(msg.note);
+          log(`  note off ${msg.note}`);
+        }
+      }
+
+      function stop() {
+        for (const responder of responders.splice(0)) responder.free();
+        for (const synth of voices.values()) synth.free();
+        voices.clear();
+        recv?.stop();
+        log("stopped");
+        $("stop").disabled = true;
+        $("ports").disabled = true;
+      }
+
+      $("connect").onclick = () => connect().then(() => {
+        // Registered after the receiver exists, and named explicitly: the page
+        // has no module default until one is pinned, for the same reason it
+        // cannot open a port by itself.
+        if (recv === null) return;
+        responders.push(new MidiFunc(noteOn, "note_on", { recv }));
+        responders.push(new MidiFunc(noteOff, "note_off", { recv }));
+      }).catch((err) => log(`error: ${err}`));
+      $("stop").onclick = stop;
+    </script>
+  </body>
+</html>

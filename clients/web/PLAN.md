@@ -57,7 +57,7 @@ clients/web/
     data/                 #   the data paths: what a view reads off the server
       buses.ts  taps.ts   #     the streamed sources (/bus_stream, /bus_tapStream)
       samples.ts  peaks.ts analysis.ts
-    responders.ts         #   OscFunc dispatch (mirrors responders.py; MidiFunc — W9)
+    responders.ts         #   OscFunc and MidiFunc dispatch (mirrors responders.py)
     session.ts            #   the Session facade + the default session
     play.ts               #   the free `play` verb
     engine/               #   browser-only: the in-page engine runtime
@@ -316,7 +316,7 @@ half and the seekable half side by side.
 
 Not in scope, by the plan's own division, each now its own milestone:
 `automation` (**W11** — a break-point control curve; it pulls in buffers, `Env`
-and a control def), `MidiEvent` and MIDI destinations (**W9**), the shared
+and a control def), `MidiEvent` and MIDI destinations (**W9**, done), the shared
 `/transport_set` grid (**W12**), and an NRT/score drive (**W13** — the client has
 no score interface, and `Timeline.fromPattern` bounces by driving the ordinary
 clock through its manual seams).
@@ -714,7 +714,7 @@ so what arrives is what plays. Book: "Receiving: responders".
 Not in scope, by the plan's own division: `MidiFunc` and the MIDI destinations
 (**W9**), both directions being one browser API.
 
-### W9 - MIDI: `MidiFunc` in, `MidiEvent` and MIDI destinations out
+### ✅ W9 - MIDI: `MidiFunc` in, `MidiEvent` and MIDI destinations out *(done 2026-08-27)*
 
 *Deferred out of W3*, which left `MidiEvent` and MIDI destinations out of the
 sequencing layer. Both directions of MIDI in one milestone, since in the
@@ -725,6 +725,74 @@ browser they are one API: Web MIDI is the only MIDI I/O a page has.
 - Timing stays **best-effort by design**, as C18 settled for the Python client — but the browser gives it back cheaply: `MIDIOutput.send(data, timestamp)` takes a `performance.now()` deadline, so the driver hands over the deadline it has already computed instead of sleeping to it.
 
 **Acceptance:** a pattern plays to a browser MIDI output on the same beat grid it plays to the audio server, and a `MidiFunc` on an input port drives defs on the server, over either carrier.
+
+**What shipped.** The reference client's MIDI layer, name for name: `parseMidi`,
+`MidiScore`, `MidiNrtInterface`, `MidiRtInterface`, `MidiServer` and
+`MidiReceiver` in `src/base/midi.ts`; `MidiFunc`, `midifunc`,
+`defaultMidiReceiver` and `setDefaultMidiReceiver` beside `OscFunc` in
+`responders.ts`; `MidiEvent` beside `OscEvent` on the timeline. A `MidiServer`
+is an `EventDestination` and a `PlayDestination`, so the *same* `Pbind` plays to
+a MIDI port or to the engine by which object it is handed — which is the
+milestone, the rest being spelling.
+
+**The file writers are the core's, not a second implementation.**
+`clausters-core-web` grew `midi_write_smf`/`midi_write_clip` over
+`clausters-midi` (default features: `live` is midir, which is exactly what a page
+cannot have; the writers are pure Rust over midly and compile to wasm unchanged).
+So `MidiScore.toSmf` and Python's `to_smf` are one writer reached two ways, and
+`tests/midi-vectors.json` freezes the bytes to prove the wasm door is wired to
+*that* writer — the failure the shared core exists to prevent. The rows are in
+`docs/bindings.md`, in a section of its own: it is the one place whose C
+counterpart lives in `clausters-midi` rather than `clausters-ffi`, so the table's
+left column is empty and the note names the symbols.
+
+**Web MIDI's one shape difference, and where it is written.** A page cannot
+*create* a port — `navigator.requestMIDIAccess()` asks the user once and hands
+back what exists — so `port` **selects** here where the reference client's
+**opens** a virtual one. Three consequences, each recorded in
+`docs/src/platform.md` and in the book's responder page rather than left to be
+rediscovered:
+
+- **`requestMidiPorts()` is TS-only**: the grant itself, which the Python client
+  has nothing to ask for. Passing its result as `access` reuses one prompt across
+  every receiver and output.
+- **`MidiRtInterface.open()` is a static async constructor**, because resolving a
+  port awaits; the reference client's `__init__` opens on the spot.
+- **`MidiServer.write(path)` is Python-only** — a page has no filesystem. Both
+  clients have `MidiScore.to_smf`/`toSmf`, which is the byte-level verb the file
+  is written from, and a page offers the bytes as a download exactly as
+  `wavBytes` does for a take.
+
+Nothing else differs: the ports are named as *shapes* (`MidiOutputPort`,
+`MidiInputPort`), which a real `MIDIOutput` satisfies and a test satisfies in
+three lines — the same move `Connection` makes, and what lets the acceptance run
+with no device.
+
+**Timing.** Best-effort by design, as `C18` settled — but the browser gives some
+of it back: `MIDIOutput.send(data, timestamp)` takes a `performance.now()`
+deadline, so a note-off two beats out is handed the deadline the driver already
+computed instead of being slept to. `performance.timeOrigin` makes the conversion
+from the moment's Unix seconds exact rather than sampled.
+
+**Verified:** `./build.sh && ./test.sh` — 17 new `node --test` cases (the parse
+against the reference client's answers, the score's stable sort, the SMF and clip
+bytes against the frozen vectors, the `Event`→note mapping, the deadline vs the
+immediate send, the panic on close, the receiver's port selection and decode, the
+responder's three filters, `disable`/`enable`/`free`/`oneShot`, the pinned
+default, the `MidiEvent`, and the milestone's own acceptance: one `Pbind` on two
+destinations lands its note-ons on one grid and releases each note at its own
+sustain) and a new headless acceptance, `tests/midi.html`, which is that
+acceptance in a page over the in-page engine — onsets 1/1.5/2/3 on both legs,
+four note-offs handed a deadline, a `MidiFunc` playing and freeing two synths on
+the engine, and 63 bytes of Standard MIDI File written in the tab.
+
+Examples: `examples/io/midi-responder.html` (the port of `midi_responder.py` —
+a keyboard playing the engine) and `examples/editors/pianoroll-midi.html` (the
+port of `pianoroll_midi.py` — the keys painted into a roll). Both need a real
+device, so they are hand tests; what a machine without one can check was checked,
+and both run to the port and report the browser's refusal cleanly. Book:
+"Receiving: responders" grew its MIDI half and its playing-to-MIDI half, and
+`platform.md` the row above.
 
 ### ✅ W10 - The browser data paths: buses, bulk, and the analysis exports
 
@@ -1615,7 +1683,7 @@ was **W6**'s and `server/transport.ts` **W22**'s. The
 Python modules with no counterpart at all are unported *features*, not
 misplaced code, and each is already owned: `defs/boxes.py` came with **W7**
 (`defs/pv_expr.py` with **W6**, which is what `pvKernel` takes),
-the MIDI half of `responders.py` (**W9** — its OSC half is ported),
+the MIDI half of `responders.py` (**W9**, ported 2026-08-27),
 `session.py`/`play.py`/`base/main.py`/`base/environment.py`/`defs/_wire.py`
 (**W18**), `render.py`/`defs/asdef.py` (**W13**), `gui/editor.py`/
 `gui/transport.py`/`gui/notation.py` (**W16**'s named track, whose first leg —
@@ -2411,7 +2479,10 @@ TypeScript-only one**, and all but two of the 36 are already written down:
   `OscNrtInterface`, `OscEmbedInterface`, `NetAddr`, `OscScore`) — this client's
   seam is `Connection` and its openers, the shape difference W21 records;
 - the **MIDI family** (`MidiRtInterface`, `MidiNrtInterface`, `MidiServer`,
-  `MidiReceiver`, `MidiEvent`, `MidiScore`, `midifunc`, `parse_midi`) — **W9**;
+  `MidiReceiver`, `MidiEvent`, `MidiScore`, `midifunc`, `parse_midi`) — ported by
+  **W9**, 2026-08-27, name for name; what the port does *not* carry over is
+  `MidiServer.write`, and what it adds is `requestMidiPorts` and
+  `MidiRtInterface.open`, all three recorded in W9's own entry;
 - the **Faust expression** (`FaustExpr`) — ported by **W7**, 2026-08-27,
   together with the `Box` under it;
 - the **process** (`ServerOptions`, `launch`, `ipc`) and the **filesystem**
@@ -2952,8 +3023,9 @@ finished work, where a pending item reads as done.
 
   **The eleven scripts left are each accounted for**, which is what the
   milestone's acceptance asks: three belonged to another milestone's acceptance
-  (`faust/boxes-library` to **W7**, paired 2026-08-27 when that milestone
-  landed; `io/midi-responder` and `editors/pianoroll-midi` to **W9**); seven have **no page by nature**, each
+  (`faust/boxes-library` to **W7**, `io/midi-responder` and
+  `editors/pianoroll-midi` to **W9**, all three paired on 2026-08-27 when those
+  milestones landed); seven have **no page by nature**, each
   with its reason below; and `io/osc-responder` is **paired under another
   name**, `io/responders.html`, which says so in its own header.
 
@@ -2976,10 +3048,10 @@ finished work, where a pending item reads as done.
   `views/` (12), `editors/` (6), `spectral/` (3), `transport/` (2),
   `buffers/` (2), `io/osc-destination` and `io/osc-responder` (the web has
   `OscDestination`, over a WebSocket bridge where the script has UDP). Three are **no longer
-  counted here at all**: `faust/boxes-library` belonged to **W7**'s acceptance
-  (written with it, 2026-08-27) and `io/midi-responder`/`editors/pianoroll-midi`
-  belong to **W9**'s, since neither page can be written before those milestones
-  and writing it is how each is shown to work. One more has **no page and could not**: `editors/session` is *the third
+  counted here at all**: `faust/boxes-library` belonged to **W7**'s acceptance and
+  `io/midi-responder`/`editors/pianoroll-midi` to **W9**'s — all three written with
+  their milestone on 2026-08-27, since no page could be written before it and
+  writing it is how each was shown to work. One more has **no page and could not**: `editors/session` is *the third
   writer* — this client writes a session file, `clausters-gui --session` opens
   it as a **separate process**, edits it with no language attached and saves it
   back, and the script reads it again. A tab has neither the file nor the

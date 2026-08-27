@@ -42,6 +42,13 @@ export interface PlayDestination extends EventDestination {
         messages: readonly TimedMessage[],
         options?: { delayBeats?: number; clock?: TempoClock },
     ): void;
+    /**
+     * Raw MIDI at the playhead's beat, on a destination that carries MIDI
+     * (`MidiServer`). Optional because most destinations do not: an
+     * `OscEvent` on a MIDI port and a `MidiEvent` on an OSC server are both
+     * mistakes, and each is reported by the destination that cannot answer.
+     */
+    sendMessage?(message: ArrayLike<number>): unknown;
 }
 
 /**
@@ -71,6 +78,28 @@ export class OscEvent {
 
     play(destination: PlayDestination): void {
         destination.sendBundle([this.message]);
+    }
+}
+
+/**
+ * Raw MIDI bytes as a timeline item: rendering it emits the message at the
+ * playhead's current logical beat through a `MidiServer`.
+ */
+export class MidiEvent {
+    readonly message: Uint8Array;
+
+    constructor(message: ArrayLike<number>) {
+        this.message = Uint8Array.from(message);
+    }
+
+    play(destination: PlayDestination): void {
+        if (typeof destination.sendMessage !== "function") {
+            throw new TypeError(
+                "a MidiEvent needs a MIDI destination (a MidiServer), " +
+                    "not one that carries OSC",
+            );
+        }
+        destination.sendMessage(this.message);
     }
 }
 

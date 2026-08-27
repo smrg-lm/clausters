@@ -14,10 +14,18 @@
 import initCore, {
     Registry,
     graph_bus_reserved,
+    midiWriteClip,
+    midiWriteSmf,
     node_id_partition,
 } from "../core/clausters_core_web.js";
 
 export { Registry };
+
+// The MIDI file writers (`clausters-midi`, through the core's door). Straight
+// re-exports: they take and return flat bytes, so there is nothing to convert
+// at the boundary -- and a page writing a `.mid` writes the same bytes the
+// Python client does, which is the whole reason they are not a TS function.
+export { midiWriteClip, midiWriteSmf };
 
 let loaded: Promise<void> | null = null;
 

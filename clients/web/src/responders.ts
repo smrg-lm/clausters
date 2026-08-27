@@ -1,6 +1,5 @@
-// Responders: `OscFunc` over the reply stream — the port of the OSC half of
-// the reference client's `responders.py` (its MIDI half is a later milestone,
-// Web MIDI being the browser's only MIDI I/O).
+// Responders: `OscFunc` over the reply stream and `MidiFunc` over an incoming
+// MIDI port — the port of the reference client's `responders.py`.
 //
 // The **input** side of the client. Everything else here builds OSC and sends
 // it; a responder registers a self-filtering callback that fires when a
@@ -46,6 +45,8 @@
 import { OscReceiver } from "./base/receiver.ts";
 import type { OscHandler } from "./base/receiver.ts";
 import type { OscMessage } from "./base/osc.ts";
+import { MidiReceiver } from "./base/midi.ts";
+import type { MidiMessage } from "./base/midi.ts";
 import { main } from "./base/main.ts";
 
 /** One decoded argument, as a callback sees it. */
@@ -236,4 +237,176 @@ export function oscfunc(
     return (func: OscCallback) => new OscFunc(func, path, options);
 }
 
-export { OscReceiver };
+// ---- MIDI ----
+
+/** A `MidiFunc`'s callback: the decoded message and the port it arrived on. */
+export type MidiCallback = (message: MidiMessage, src: string) => void;
+
+/** One `argTemplate` slot for a MIDI field: a literal, a predicate, or `null`. */
+export type MidiMatcher =
+    | ((value: number | string | undefined) => boolean)
+    | number
+    | string
+    | null
+    | undefined;
+
+let defaultMidiRecv: MidiReceiver | null = null;
+
+/**
+ * The module-default `MidiReceiver`, as installed by
+ * `setDefaultMidiReceiver`.
+ *
+ * **This is the one default a page cannot create for you**, and the reason is
+ * the platform rather than the design: the reference client's default opens a
+ * virtual input port on the spot, while Web MIDI hands out only the ports that
+ * already exist and asks the user's permission to do it — a grant, and an
+ * `await`. So a page starts one receiver explicitly and pins it:
+ *
+ * ```js
+ * setDefaultMidiReceiver(await new MidiReceiver({ port: "Keystation" }).start());
+ * ```
+ *
+ * after which `new MidiFunc(fn, "note_on")` needs no arguments, exactly as
+ * there. Naming the receiver per responder (`{ recv }`) skips the default
+ * entirely.
+ */
+export function defaultMidiReceiver(): MidiReceiver {
+    if (defaultMidiRecv === null) {
+        throw new Error(
+            "no default MidiReceiver: a page cannot open a MIDI port without a " +
+                "user grant, so start one and pin it -- " +
+                "setDefaultMidiReceiver(await new MidiReceiver().start())",
+        );
+    }
+    return defaultMidiRecv;
+}
+
+/** Installs `receiver` as the module default `defaultMidiReceiver` returns. */
+export function setDefaultMidiReceiver(receiver: MidiReceiver): MidiReceiver {
+    defaultMidiRecv = receiver;
+    return receiver;
+}
+
+/**
+ * Responder for incoming MIDI messages.
+ *
+ * Registers `func` to fire on channel-voice messages of a given type. The
+ * callback is called `func(message, src)` — `message` an object
+ * (`{type, channel, …}`, see `parseMidi`) and `src` the port's name.
+ *
+ * - `chan` — respond only on that channel (0..15).
+ * - `argTemplate` — a `{field: matcher}` object matched against the message's
+ *   fields; a matcher is a literal, a predicate, or `null` (matches anything).
+ * - `recv` — the `MidiReceiver` to register with; the module default
+ *   otherwise.
+ *
+ * Enabled on creation. Call `free` (or `disable`) when done.
+ */
+export class MidiFunc {
+    /** The callback this responder fires. */
+    func: MidiCallback;
+    /** The message types it answers. */
+    readonly types: string[];
+    readonly chan: number | null;
+    readonly argTemplate: Record<string, MidiMatcher> | null;
+    readonly recv: MidiReceiver;
+    enabled = false;
+
+    private readonly handler = (message: MidiMessage, src: string): void => {
+        if (!this.types.includes(message.type)) return;
+        if (this.chan !== null && message.channel !== this.chan) return;
+        if (this.argTemplate !== null) {
+            for (const [field, template] of Object.entries(this.argTemplate)) {
+                const value = message[field];
+                if (typeof template === "function") {
+                    if (!template(value)) return;
+                } else if (
+                    template !== null &&
+                    template !== undefined &&
+                    template !== value
+                ) {
+                    return;
+                }
+            }
+        }
+        this.func(message, src);
+    };
+
+    constructor(
+        func: MidiCallback,
+        midiMsg: string | string[],
+        options: {
+            chan?: number | null;
+            argTemplate?: Record<string, MidiMatcher> | null;
+            recv?: MidiReceiver;
+        } = {},
+    ) {
+        this.func = func;
+        this.types = typeof midiMsg === "string" ? [midiMsg] : [...midiMsg];
+        this.chan = options.chan ?? null;
+        this.argTemplate = options.argTemplate ?? null;
+        this.recv = options.recv ?? defaultMidiReceiver();
+        this.enable();
+    }
+
+    /** Starts responding (registers the handler with the receiver). */
+    enable(): this {
+        if (!this.enabled) {
+            this.recv.add(this.handler);
+            this.enabled = true;
+        }
+        return this;
+    }
+
+    /** Stops responding without discarding the object (re-`enable`-able). */
+    disable(): this {
+        if (this.enabled) {
+            this.recv.remove(this.handler);
+            this.enabled = false;
+        }
+        return this;
+    }
+
+    /** Disables permanently; call when finished with this responder. */
+    free(): void {
+        this.disable();
+    }
+
+    /** Frees the responder after its first match — a one-time action. */
+    oneShot(): this {
+        const inner = this.func;
+        this.func = (message, src) => {
+            this.free();
+            inner(message, src);
+        };
+        return this;
+    }
+
+    toString(): string {
+        return `MidiFunc(${JSON.stringify(this.types)}, chan=${this.chan})`;
+    }
+}
+
+/**
+ * Builds a `MidiFunc` over a callback — the decorator-shaped door, spelled as
+ * a call in a language without decorators.
+ *
+ * ```js
+ * midifunc(["note_on", "note_off"])((message, src) => console.log(message, src));
+ * ```
+ */
+export function midifunc(
+    midiMsg: string | string[],
+    options: {
+        chan?: number | null;
+        argTemplate?: Record<string, MidiMatcher> | null;
+        recv?: MidiReceiver;
+    } = {},
+): (func: MidiCallback) => MidiFunc {
+    if (typeof midiMsg !== "string" && !Array.isArray(midiMsg)) {
+        throw new TypeError("midifunc needs a MIDI type string or list of them");
+    }
+    return (func: MidiCallback) => new MidiFunc(func, midiMsg, options);
+}
+
+export { MidiReceiver, OscReceiver };

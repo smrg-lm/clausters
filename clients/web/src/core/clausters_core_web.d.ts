@@ -509,6 +509,22 @@ export function lissajous(left: Float32Array, right: Float32Array): Float32Array
 export function map(op: string, clip: string, x: number, in_lo: number, in_hi: number, out_lo: number, out_hi: number, curve: number): number;
 
 /**
+ * MIDI 2.0 Clip File (SMF2CLIP) bytes from the same arguments, carrying note
+ * velocities at 16-bit resolution.
+ *
+ * JS face: `midiWriteClip(Uint32Array, Uint8Array, ppq) -> Uint8Array`.
+ */
+export function midiWriteClip(ticks: Uint32Array, msgs: Uint8Array, ppq: number): Uint8Array;
+
+/**
+ * Type-0 Standard MIDI File bytes from `n` events at `ppq` ticks per quarter
+ * note.
+ *
+ * JS face: `midiWriteSmf(Uint32Array, Uint8Array, ppq) -> Uint8Array`.
+ */
+export function midiWriteSmf(ticks: Uint32Array, msgs: Uint8Array, ppq: number): Uint8Array;
+
+/**
  * JS face: the boot-derived node-id partition for a node table of
  * `max_nodes` slots — `{clientBase, clientCapacity, autoBase, autoCapacity,
  * midiBase, midiCapacity}`, the same formula the server applies.
@@ -674,6 +690,8 @@ export interface InitOutput {
     readonly log_undo: (a: number, b: number) => [number, number, number, number];
     readonly log_undoLabel: (a: number) => [number, number];
     readonly map: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => [number, number, number];
+    readonly midiWriteClip: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
+    readonly midiWriteSmf: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
     readonly node_id_partition: (a: number) => [number, number, number];
     readonly osc_decode_packet: (a: number, b: number) => [number, number, number];
     readonly osc_decode_packet_timed: (a: number, b: number) => [number, number, number];
@@ -743,6 +761,10 @@ export interface InitOutput {
     readonly unix_to_ntp: (a: number) => bigint;
     readonly unix_to_sample: (a: number, b: number, c: number, d: number) => number;
     readonly voiceToMei: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];
+    readonly clausters_midi_abi_version: () => number;
+    readonly clausters_midi_free: (a: number, b: number) => void;
+    readonly clausters_midi_write_clip: (a: number, b: number, c: number, d: number, e: number) => number;
+    readonly clausters_midi_write_smf: (a: number, b: number, c: number, d: number, e: number) => number;
     readonly __wbindgen_exn_store: (a: number) => void;
     readonly __externref_table_alloc: () => number;
     readonly __wbindgen_externrefs: WebAssembly.Table;

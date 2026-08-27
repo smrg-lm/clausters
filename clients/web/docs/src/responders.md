@@ -37,8 +37,62 @@ A callback runs on the page's one thread as the packet arrives, so a slow one de
 
 A receiver can also be given a clock (`new OscReceiver(connection, { clock })`), which dispatches its handlers through it: they then run as clock items, with the clock's logical time, instead of at the instant the bytes landed.
 
-## What is not here
+## MIDI: message objects
 
-MIDI. `MidiFunc` and MIDI destinations are a separate milestone, since in a browser both directions are one API (Web MIDI) and neither exists in this package yet.
+A `MidiReceiver` decodes raw channel-voice bytes into an object with a `type` and the type's fields — `{type: "note_on", channel: 0, note: 60, velocity: 100}`, `{type: "control_change", channel: 0, control: 7, value: 127}`, and so on (`pitchwheel` carries a single 14-bit `pitch`). A `MidiFunc` callback is called `func(message, src)` with that object and the port's name, and you match on the type, an optional `chan`, and an `argTemplate` over the fields:
 
-The repository's `examples/io/responders.html` is the worked example: a def reports its own onsets with `SendReply`, a responder answers each one with a synth, and two more keep the count of what is alive.
+```js
+import { MidiFunc, MidiReceiver, Synth, requestMidiPorts } from "clausters";
+
+const ports = await requestMidiPorts();
+const recv = await new MidiReceiver({ port: "Keystation", access: ports }).start();
+const voices = new Map();
+
+function noteOn(m, src) {
+    if (m.velocity === 0) return noteOff(m, src);
+    const freq = 440.0 * 2 ** ((m.note - 69) / 12);
+    const amp = m.velocity / 127 * 0.3;
+    voices.set(m.note, new Synth("default", { freq, amp }, { server }));
+}
+
+function noteOff(m) {
+    voices.get(m.note)?.free();
+    voices.delete(m.note);
+}
+
+new MidiFunc(noteOn, "note_on", { recv });
+new MidiFunc(noteOff, "note_off", { recv });
+```
+
+This is the client-side mirror of the server's own direct MIDI input: a Clausters server can be played by MIDI it receives itself, *or* by a client that listens to MIDI and forwards `/synth_new`. Both coexist.
+
+### The page picks a port; it does not make one
+
+The one place this differs from the reference client, and it is Web MIDI's shape rather than a choice. There, `MidiReceiver(port="clausters-in")` **opens a virtual port** other applications are then wired into. A page can create nothing: `navigator.requestMIDIAccess()` asks the user once and hands back the ports that already exist, so `port` here **selects** one — by a case-insensitive fragment of its name, by its exact id, or omitted for the first. `requestMidiPorts()` is that grant, and passing its result as `access` to several receivers and outputs reuses one permission prompt.
+
+Two things follow from the grant being asynchronous and user-facing:
+
+- **`start()` is awaited**, where the reference client's returns immediately.
+- **There is no lazily-created module default.** `defaultMidiReceiver()` returns what `setDefaultMidiReceiver(...)` pinned and otherwise throws saying so, because opening a port behind the page's back is exactly what the browser forbids. Pin one after starting it and `new MidiFunc(fn, "note_on")` needs no arguments, as there.
+
+## Playing *to* MIDI
+
+The other direction is the same object the reference client has: a `MidiServer` is a destination an event pattern plays to, so the same `Pbind` sounds through the audio engine or out a MIDI port depending only on what it is handed.
+
+```js
+import { MidiRtInterface, MidiServer, requestMidiPorts, seq } from "clausters";
+
+const midi = new MidiServer({
+    interface: await MidiRtInterface.open({ access: await requestMidiPorts() }),
+    channel: 0,
+});
+new seq.Pbind({ midinote: new seq.Pseq([60, 64, 67]), dur: 0.5 }).play(midi);
+```
+
+Each `Event` becomes a note on/off pair — the note from `midinote()`, the velocity from `amp`, the release at `sustain()` — and `MidiEvent` puts raw bytes on a `Timeline` the way `OscEvent` puts a raw message. **Timing is best-effort by design**, as it is there, but the browser gives some of it back: `MIDIOutput.send` takes a `performance.now()` deadline, so a note-off two beats out is handed its deadline rather than slept to.
+
+Constructed with no interface, a `MidiServer` accumulates a **score** instead: `server.score.toSmf(480)` and `.toClip(480)` return the bytes of a Standard MIDI File or a MIDI 2.0 clip, written by the same `clausters-midi` the reference client writes with — so a `.mid` saved from a tab is the file a script would have saved. A page has no filesystem, so the bytes come back and the page decides (a download, a `fetch`, a buffer), exactly as `wavBytes` does for a take.
+
+## Examples
+
+The repository's `examples/io/responders.html` is the OSC worked example: a def reports its own onsets with `SendReply`, a responder answers each one with a synth, and two more keep the count of what is alive. `examples/io/midi-responder.html` is the MIDI one — a keyboard playing the in-page engine — and `examples/editors/pianoroll-midi.html` paints what you play into a piano roll.

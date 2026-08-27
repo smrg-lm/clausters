@@ -1579,3 +1579,57 @@ pub fn voice_to_mei(voice: &str, meter: &str, clef: &str, key: &str) -> Result<S
         &voice, meter, clef, key,
     ))
 }
+
+// ---- MIDI files (W9) --------------------------------------------------------
+//
+// A page has no filesystem and no virtual OS port, but it does have a score to
+// write: `MidiServer` over an NRT interface accumulates `(beat, message)` and
+// hands the ticked events here. The writers are `clausters-midi`'s -- the same
+// ones `clausters_midi_write_smf`/`_write_clip` open to the Python client -- so
+// a `.mid` saved from a tab and one saved from a script are the same bytes, and
+// a client that offers the take as a download re-implements nothing.
+//
+// The JS face takes the events flat, in the shape the C ABI already takes them:
+// `ticks` is n absolute ticks and `msgs` is 3n bytes (status, data1, data2).
+// Passing an array of objects would be the only other option and it would cost a
+// JS-side allocation per event on a path a bounce runs over every note.
+
+/// Reads the flat `(ticks, msgs)` pair into events, checking the lengths agree.
+#[cfg(target_arch = "wasm32")]
+fn midi_events(ticks: &[u32], msgs: &[u8]) -> Result<Vec<clausters_midi::TimedMessage>, JsError> {
+    if msgs.len() != 3 * ticks.len() {
+        return Err(JsError::new(&format!(
+            "msgs is {} bytes, not 3 per tick ({} ticks)",
+            msgs.len(),
+            ticks.len()
+        )));
+    }
+    Ok(ticks
+        .iter()
+        .enumerate()
+        .map(|(i, &tick)| clausters_midi::TimedMessage {
+            tick,
+            bytes: [msgs[3 * i], msgs[3 * i + 1], msgs[3 * i + 2]],
+        })
+        .collect())
+}
+
+/// Type-0 Standard MIDI File bytes from `n` events at `ppq` ticks per quarter
+/// note.
+///
+/// JS face: `midiWriteSmf(Uint32Array, Uint8Array, ppq) -> Uint8Array`.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = midiWriteSmf)]
+pub fn midi_write_smf(ticks: &[u32], msgs: &[u8], ppq: u16) -> Result<Vec<u8>, JsError> {
+    Ok(clausters_midi::write_smf(&midi_events(ticks, msgs)?, ppq))
+}
+
+/// MIDI 2.0 Clip File (SMF2CLIP) bytes from the same arguments, carrying note
+/// velocities at 16-bit resolution.
+///
+/// JS face: `midiWriteClip(Uint32Array, Uint8Array, ppq) -> Uint8Array`.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = midiWriteClip)]
+pub fn midi_write_clip(ticks: &[u32], msgs: &[u8], ppq: u16) -> Result<Vec<u8>, JsError> {
+    Ok(clausters_midi::write_clip(&midi_events(ticks, msgs)?, ppq))
+}

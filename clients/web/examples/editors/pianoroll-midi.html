@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: paint a MIDI keyboard into the piano roll</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 54rem; }
+      #note { font-size: 13px; line-height: 1.5; max-width: 46rem; }
+      button, select { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; max-height: 12rem;
+            overflow-y: auto; }
+      #stage { width: 800px; max-width: 100%; height: 520px; }
+      .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">Paint a MIDI keyboard into the <code>pianoroll</code>, from
+the client.
+
+The web port of the Python client's
+<code>examples/editors/pianoroll_midi.py</code>, and the recording leg of
+<code>pianoroll.html</code> (that one draws and plays a scale; this one writes
+the roll from what you play). A <code>MidiFunc</code> pair listens on a MIDI
+<b>input</b> port and paints each key into a named roll with
+<code>/gui_set</code>: a note-on appends a note at the beat the session clock is
+on (counted from the first key down), and the matching note-off writes its real
+duration.
+
+The host has the same feature natively — open the roll with
+<code>midiIn</code> and route a device into the host's own port — and both legs
+exist on purpose: the native one records with no client in the loop, this one
+puts the notes under the script's control (they are a plain array here, so the
+take can be quantized, transposed or played before it goes back to the roll). To
+<i>sound</i> a keyboard instead of drawing it, see
+<code>../io/midi-responder.html</code>.
+
+<b>The one difference from the script</b>, and it is the platform's: the Python
+client opens a virtual input port named <code>clausters-in</code> that you wire
+a keyboard into. Web MIDI creates no ports — it hands a page the ones that
+already exist, after asking your permission — so this picks one from that list.
+Plug the keyboard in, press <b>open</b>, allow MIDI, and play.</div>
+
+      <div class="row">
+        <button id="run">open the roll</button>
+        <select id="ports" disabled></select>
+      </div>
+      <div id="stage"></div>
+      <pre id="log"></pre>
+    </main>
+
+    <script type="module">
+      // Run it: ./build.sh from clients/web, then serve this directory
+      //   python3 -m http.server
+      // and open http://localhost:8000/examples/editors/pianoroll-midi.html
+      //
+      // Needs a MIDI input device, a browser with Web MIDI (Chrome, Edge) and
+      // a WebGPU-or-WebGL2 adapter for the host's canvas.
+      import {
+        MidiFunc, MidiReceiver, Session, gui, loadOsc, requestMidiPorts,
+      } from "../../dist/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => {
+        $("log").textContent += line + "\n";
+        $("log").scrollTop = $("log").scrollHeight;
+      };
+
+      const BPM = 120.0;
+      const SR = 48000.0;
+      const SAMPLES_PER_BEAT = SR * 60.0 / BPM;   // the timeline units the widget uses
+
+      const beats = (b) => b * SAMPLES_PER_BEAT;
+
+      let session = null, win = null, recv = null;
+
+      // ---- the take ----
+      //
+      // `notes` is the take, in the roll's own units: (start, duration, pitch,
+      // velocity). A note-on appends one and a note-off closes it; `paint`
+      // sends the whole list back as the flat quintuple carrier. The roll's
+      // "notes" edit-back keeps the list current when *you* edit it, so both
+      // hands write to the same take.
+      let notes = [];
+      const held = new Map();     // `${channel}:${note}` -> its index in `notes`
+      let t0 = null;              // the beat the take started on
+
+      function paint() {
+        // A `/gui_set` value is a scalar, so the array rides as its JSON
+        // string -- the same carrier the script uses.
+        win.widget("roll").set({
+          notes: JSON.stringify(notes.flatMap(([start, dur, pitch, vel]) =>
+            [start, dur, pitch, vel, 0])),
+        });
+      }
+
+      function noteOn(msg, src) {
+        if (msg.velocity === 0) return noteOff(msg, src);   // running-status off
+        if (t0 === null) t0 = session.clock.beats();  // the take starts at the first key
+        held.set(`${msg.channel}:${msg.note}`, notes.length);
+        notes.push([beats(session.clock.beats() - t0), beats(0.25),
+          msg.note, msg.velocity]);
+        paint();
+      }
+
+      function noteOff(msg) {
+        const key = `${msg.channel}:${msg.note}`;
+        const i = held.get(key);
+        if (i === undefined) return;
+        held.delete(key);
+        const [start, , pitch, velocity] = notes[i];
+        const dur = Math.max(beats(session.clock.beats() - t0) - start, beats(0.05));
+        notes[i] = [start, dur, pitch, velocity];
+        paint();
+      }
+
+      async function run() {
+        $("run").disabled = true;
+        await loadOsc();
+        session = await Session.embed({ tempo: BPM / 60.0 });
+        await session.gui();
+
+        // The clock times the take, so a beat counted off it lands where it
+        // looks on the grid.
+        win = await gui.view(
+          { title: "MIDI -> piano-roll", w: 800, h: 520, layout: "col" },
+          gui.label("play into the chosen port — the keys land in the roll",
+            { name: "hint", textSize: 1.4, h: 20 }),
+          gui.pianoroll({
+            name: "roll", notes: [], min: 48, max: 84, snap: beats(0.25),
+            ruler: "beats", tempo: BPM / 60.0, sampleRate: SR, label: "take",
+          }),
+        ).open($("stage"));
+        log(`opened window ${win.id} — choose a port and play`);
+        session.start();
+
+        // The roll's edit-back: the flat "notes" quintuples become the take.
+        win.widget("roll").onEvent((tag, ...vals) => {
+          if (tag !== "notes") return;
+          notes = [];
+          for (let i = 0; i < vals.length; i += 5) notes.push(vals.slice(i, i + 4));
+          held.clear();                  // the indexes moved with the edit
+          log(`take: ${notes.length} notes`);
+        });
+
+        const ports = await requestMidiPorts();
+        const inputs = [...ports.inputs.values()];
+        if (inputs.length === 0) {
+          log("no MIDI input port: plug a keyboard in and reload");
+          return;
+        }
+        $("ports").replaceChildren(...inputs.map((p) => {
+          const option = document.createElement("option");
+          option.value = p.id;
+          option.textContent = p.name ?? p.id;
+          return option;
+        }));
+        $("ports").disabled = false;
+        $("ports").onchange = () => listen(ports, $("ports").value);
+        await listen(ports, inputs[0].id);
+      }
+
+      async function listen(ports, id) {
+        recv?.stop();
+        recv = await new MidiReceiver({ port: id, access: ports }).start();
+        new MidiFunc(noteOn, "note_on", { recv });
+        new MidiFunc(noteOff, "note_off", { recv });
+        log(`recording from "${recv.port}"`);
+      }
+
+      $("run").onclick = () => run().catch((err) => log(`error: ${err}`));
+    </script>
+  </body>
+</html>

@@ -107,22 +107,56 @@ export { currentRoutine } from "./base/context.ts";
 export { Moment } from "./base/moment.ts";
 export { OscDestination } from "./base/destination.ts";
 export type { Destination } from "./base/destination.ts";
-export { OscFunc, defaultOscReceiver, oscfunc, setDefaultOscReceiver } from "./responders.ts";
+export {
+    MidiFunc,
+    OscFunc,
+    defaultMidiReceiver,
+    defaultOscReceiver,
+    midifunc,
+    oscfunc,
+    setDefaultMidiReceiver,
+    setDefaultOscReceiver,
+} from "./responders.ts";
 export type {
     ArgMatcher,
+    MidiCallback,
+    MidiMatcher,
     OscCallback,
     OscValue,
     ResponderMessage,
 } from "./responders.ts";
 export { OscReceiver } from "./base/receiver.ts";
 export type { OscHandler } from "./base/receiver.ts";
+// MIDI: the ports, the score, the destination and the receiving door. The
+// reference client keeps these in `clausters.base`; the flat facade is this
+// client's spelling of the same names.
+export {
+    MidiNrtInterface,
+    MidiReceiver,
+    MidiRtInterface,
+    MidiScore,
+    MidiServer,
+    parseMidi,
+    requestMidiPorts,
+} from "./base/midi.ts";
+export type {
+    MidiHandler,
+    MidiInputPort,
+    MidiInterface,
+    MidiMessage,
+    MidiOutputPort,
+    MidiPortOptions,
+    MidiPorts,
+    MidiReceiverOptions,
+    MidiServerOptions,
+} from "./base/midi.ts";
 export { Rng, choice, currentRng, seed, spawnRng, uniform } from "./base/rand.ts";
 export * as builtins from "./base/builtins.ts";
 export * as seq from "./seq/index.ts";
 // The names a piece types without a namespace, as the Python facade exports
 // them; the enumerative half (the value patterns) stays behind `seq`.
 export { Event, rest } from "./seq/event.ts";
-export { Playhead, Timeline } from "./seq/timeline.ts";
+export { MidiEvent, Playhead, Timeline } from "./seq/timeline.ts";
 export * as data from "./data/index.ts";
 export { loadCore } from "./base/core.ts";
 // The id share every constructor that allocates ids accepts, for the same

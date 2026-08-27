@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters MIDI</title>
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            max-width: 44rem; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div>MIDI in a page: a pattern played to a MIDI output on the same beat
+        grid it plays to the engine, and a <code>MidiFunc</code> on an input
+        port driving defs on the server — with no server process anywhere.</div>
+      <button id="boot">boot + play</button>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The page half of the MIDI milestone (clients/web/test.sh, headless
+      Chrome). The ports are stand-ins and that is not a shortcut: headless
+      Chrome has no MIDI device and Web MIDI needs a user's grant, so the one
+      thing a page cannot prove automatically is the grant. Everything above
+      it is exactly what a real port would drive, because `MidiOutputPort` and
+      `MidiInputPort` are named as shapes and a real `MIDIOutput` is one.
+
+      ?smoke=1 auto-runs and asserts that
+        - a `Pbind` played to a `MidiServer` puts its note-ons on the same
+          beats the same pattern hands an OSC destination, and releases each
+          note at its own sustain;
+        - a live output is sent the note now and the note-off with a
+          `performance.now()` deadline, which is the browser giving back the
+          timing the reference client's `sched_abs` has to sleep for;
+        - a `MidiFunc` on an input port starts and frees synths on the in-page
+          engine -- the acceptance's other half, a keyboard driving the server;
+        - the score writes a Standard MIDI File through the shared writer, in
+          the tab, with no server and no filesystem.
+      Verdict beaconed as a fetch, read from the HTTP access log.
+    -->
+    <script type="module">
+      import {
+        MidiFunc, MidiReceiver, MidiRtInterface, MidiServer, Server, Session,
+        Synth, SynthDef, loadOsc, pageConnection,
+      } from "../dist/index.js";
+      import { out, sine } from "../dist/defs/index.js";
+      import { Pbind, Pseq } from "../dist/seq/index.js";
+
+      const smoke = new URLSearchParams(location.search).has("smoke");
+      const log = (line) => {
+        document.getElementById("log").textContent += line + "\n";
+        // Traced as well as printed: this page's failures are all "it stopped
+        // somewhere", and headless Chrome shows a console to nobody. The
+        // runner reads only the verdict; the trace is here for the hand.
+        if (smoke) fetch(`/smoke-trace-${encodeURIComponent(line)}`).catch(() => {});
+      };
+      const verdict = (text) => {
+        log(text);
+        document.title = text.split("\n")[0];
+        fetch(`/smoke-verdict-${encodeURIComponent(text.split("\n")[0])}`)
+          .catch(() => {});
+      };
+      const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
+
+      // The stand-in ports. A real MIDIOutput has `send(data, timestamp)` and a
+      // real MIDIInput fires `onmidimessage`; these are those, and nothing else
+      // in the client knows the difference.
+      class FakeOutput {
+        constructor() { this.name = "smoke out"; this.id = "out-1"; this.sent = []; }
+        send(data, timestamp) { this.sent.push({ data: [...data], timestamp }); }
+      }
+      class FakeInput {
+        constructor() { this.name = "smoke in"; this.id = "in-1"; this.onmidimessage = null; }
+        deliver(...bytes) { this.onmidimessage?.({ data: Uint8Array.from(bytes) }); }
+      }
+
+      async function run() {
+        await loadOsc();
+        const server = await new Server(await pageConnection()).boot();
+        const session = new Session(server);
+        session.adoptDefault();
+        const clock = session.clock.start();
+
+        // ---- one pattern, two destinations, one grid ----
+        const bind = () => new Pbind({
+          midinote: new Pseq([60, 62, 64, 67]),
+          dur: new Pseq([0.5, 0.5, 1, 1]),
+          amp: 0.4,
+        });
+
+        const output = new FakeOutput();
+        const live = new MidiServer({ interface: new MidiRtInterface(output) });
+        const score = new MidiServer();          // an NRT interface by default
+        const oscBeats = [];
+        const oscLeg = {
+          playEvent: () => { oscBeats.push(clock.beats()); return null; },
+          sendMsg: () => {},
+        };
+
+        // All three on the same quant, so they start on one beat boundary and
+        // the grid is read relative to it -- what has to hold is the spacing,
+        // not which absolute beat a freshly started clock happened to be on.
+        bind().play(oscLeg, { clock, quant: 1 });
+        bind().play(score, { clock, quant: 1 });
+        bind().play(live, { clock, quant: 1 });
+        await sleep(5200);
+
+        const onsets = score.score.sorted()
+          .filter(([, bytes]) => (bytes[0] & 0xf0) === 0x90)
+          .map(([beat]) => beat);
+        const offs = score.score.sorted()
+          .filter(([, bytes]) => (bytes[0] & 0xf0) === 0x80)
+          .map(([beat]) => beat);
+        if (onsets.length !== 4) {
+          throw new Error(`the MIDI leg rendered ${onsets.length} notes, not 4`);
+        }
+        // The OSC leg reads the clock rather than the routine's logical beat,
+        // so it lands within a wake of each onset rather than exactly on it.
+        for (let i = 0; i < 4; i++) {
+          if (Math.abs(oscBeats[i] - onsets[i]) > 0.05) {
+            throw new Error(`note ${i}: MIDI at ${onsets[i]}, OSC at ${oscBeats[i]}`);
+          }
+        }
+        const start = onsets[0];
+        const spacing = [0, 0.5, 1, 2];
+        const releases = [0.4, 0.9, 1.8, 2.8];
+        for (let i = 0; i < 4; i++) {
+          if (Math.abs(onsets[i] - start - spacing[i]) > 1e-9) {
+            throw new Error(`note ${i} at ${onsets[i]}, not ${start + spacing[i]}`);
+          }
+          if (Math.abs(offs[i] - start - releases[i]) > 1e-9) {
+            throw new Error(`note ${i} released at ${offs[i]}, `
+              + `not ${start + releases[i]}`);
+          }
+        }
+        log(`grid: onsets ${onsets.join(", ")} on both legs; `
+          + `releases ${offs.join(", ")}`);
+
+        // ---- the live output took deadlines, not sleeps ----
+        const immediate = output.sent.filter((s) => s.timestamp === undefined);
+        const deadlined = output.sent.filter((s) => s.timestamp !== undefined);
+        if (deadlined.length !== 4) {
+          throw new Error(`${deadlined.length} deadlined sends, expected the `
+            + `four note-offs`);
+        }
+        if (immediate.length !== 4) {
+          throw new Error(`${immediate.length} immediate sends, expected the `
+            + `four note-ons`);
+        }
+        log(`live: ${immediate.length} sent now, ${deadlined.length} with a `
+          + `performance.now() deadline`);
+
+        // ---- a keyboard driving the server ----
+        const input = new FakeInput();
+        const recv = await new MidiReceiver({
+          port: input,
+          access: { inputs: new Map([[input.id, input]]), outputs: new Map() },
+        }).start();
+
+        await new SynthDef("page_midi_tone", out(0, sine(440).mul(0.1))).send(server);
+        await server.sync();
+
+        const voices = new Map();
+        const on = new MidiFunc((msg) => {
+          const freq = 440 * 2 ** ((msg.note - 69) / 12);
+          voices.set(msg.note, new Synth("page_midi_tone", { freq }, { server }));
+        }, "note_on", { recv });
+        const off = new MidiFunc((msg) => {
+          voices.get(msg.note)?.free();
+          voices.delete(msg.note);
+        }, "note_off", { recv });
+
+        const before = server.nodes.inUse;
+        input.deliver(0x90, 60, 100);
+        input.deliver(0x90, 64, 100);
+        await sleep(250);
+        if (server.nodes.inUse !== before + 2) {
+          throw new Error(`two note-ons made ${server.nodes.inUse - before} nodes`);
+        }
+        input.deliver(0x80, 60, 0);
+        input.deliver(0x80, 64, 0);
+        for (let i = 0; i < 40 && server.nodes.inUse > before; i++) await sleep(25);
+        if (server.nodes.inUse !== before) {
+          throw new Error(`the note-offs left ${server.nodes.inUse - before} nodes`);
+        }
+        on.free();
+        off.free();
+        input.deliver(0x90, 67, 100);
+        await sleep(200);
+        if (server.nodes.inUse !== before) {
+          throw new Error("a freed MidiFunc kept matching");
+        }
+        recv.stop();
+        log(`keyboard: two notes played and freed on the in-page engine, and a `
+          + `freed responder stopped matching`);
+
+        // ---- the file, written in the tab ----
+        const smf = score.score.toSmf(480);
+        const header = String.fromCharCode(...smf.slice(0, 4));
+        if (header !== "MThd") {
+          throw new Error(`the SMF starts with ${JSON.stringify(header)}`);
+        }
+        log(`file: ${smf.length} bytes of Standard MIDI File, written by the `
+          + `shared core in the page`);
+
+        verdict(`PASS: one pattern on one grid across an OSC and a MIDI `
+          + `destination (onsets ${onsets.join("/")}), ${deadlined.length} `
+          + `note-offs handed a deadline, a MidiFunc played and freed two `
+          + `synths on the in-page engine, and ${smf.length} SMF bytes written `
+          + `in the tab`);
+      }
+
+      document.getElementById("boot").onclick = () =>
+        run().catch((err) => verdict(`FAIL: ${err}`));
+      if (smoke) run().catch((err) => verdict(`FAIL: ${err}`));
+    </script>
+  </body>
+</html>

@@ -142,13 +142,6 @@ its plan; the plan is where its acceptance is read.
 
 ### Ready — no decision in front of them
 
-- ⬜ **`W9` — MIDI: `MidiFunc` in, `MidiEvent` and MIDI destinations out**
-  *(`clients/web/PLAN.md`)*. Carries two pages as part of its acceptance:
-  `io/midi-responder` and `editors/pianoroll-midi`. **Related:** the Python side
-  of precise MIDI timing is `C18`, which is deferred by a decision already taken
-  (below) — W9 is the port of what the Python client *has*, not of what C18 would
-  add.
-
 - ⬜ **`W15` — the TypeScript bundle writer** *(`clients/web/PLAN.md`)*. **A
   node milestone**, decided 2026-08-26: a bundle is an input a static page boots
   with no interpreter, so writing one is not something a page does; the page's
