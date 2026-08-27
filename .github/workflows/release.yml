@@ -93,6 +93,13 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+          # The GUI host's half of the matrix ends in three wasm gates -- the
+          # browser build of the same host, which is not a separate program --
+          # and they check against wasm32. Without the target the script gets
+          # `the wasm32 target is missing` and three rows fail, which is what a
+          # dry run of this gate found: it had never been exercised since those
+          # rows were added, so no tag could have passed it.
+          targets: wasm32-unknown-unknown
       # The matrix builds `faust` alone and the default set, both of which link
       # libfaust; the composite restores the same cache CI populates.
       - uses: ./.github/actions/libfaust
