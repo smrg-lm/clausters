@@ -200,6 +200,17 @@ pub enum FreedNode {
     },
 }
 
+/// An ancestor whose **presence in the tree has already been established** —
+/// see [`NodeTree::is_under`].
+///
+/// It carries the id and not a slot index, which is the whole finding behind
+/// it: the walk up the parent links compares *ids*, so an index would be
+/// carried and never read. What the repeated lookup actually bought was one
+/// bit — that the ancestor is in the tree at all — for a full scan of the
+/// slots, once per question.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Anchor(i32);
+
 struct NodeSlot {
     id: i32,
     parent: usize,
@@ -699,12 +710,36 @@ impl NodeTree {
     /// a parent cycle, but a bound here is cheap and turns any future bug
     /// that did into a wrong answer instead of a hang on the audio thread.
     pub fn is_descendant_of(&self, id: i32, ancestor: i32) -> bool {
+        match self.anchor(ancestor) {
+            Some(anchor) => self.is_under(id, anchor),
+            None => false,
+        }
+    }
+
+    /// Establishes that `ancestor` is in the tree, once — see
+    /// [`NodeTree::is_under`]. `None` when no node carries that id, which is
+    /// the caller's cue to answer `false` without walking anything.
+    pub fn anchor(&self, ancestor: i32) -> Option<Anchor> {
+        self.find(ancestor).is_some().then_some(Anchor(ancestor))
+    }
+
+    /// [`NodeTree::is_descendant_of`] with the ancestor **already established**.
+    ///
+    /// The lookup behind an id is a linear scan of the slots, and
+    /// `is_descendant_of` does two of them: one to find `id`, and one whose
+    /// only purpose is to answer *is the ancestor there at all* — repeated for
+    /// every message of a bundle, about a node that had not moved. The caller
+    /// asks that once ([`NodeTree::anchor`]) and this walks up from `id` alone,
+    /// which halves what a bundle's classification costs.
+    ///
+    /// The walk itself is unchanged, and compares **ids**: that is why an
+    /// anchor is an id and not an index, and why nothing here can be fooled by
+    /// a slot being freed and reused under it.
+    pub fn is_under(&self, id: i32, anchor: Anchor) -> bool {
+        let Anchor(ancestor) = anchor;
         let Some(mut idx) = self.find(id) else {
             return false;
         };
-        if self.find(ancestor).is_none() {
-            return false;
-        }
         for _ in 0..=self.slots.len() {
             let Some(slot) = self.slot(idx) else {
                 return false;
@@ -1279,6 +1314,56 @@ mod tests {
         assert!(t.is_descendant_of(2, 2), "a node is its own ancestor here");
         assert!(!t.is_descendant_of(2, 3), "and not the other way round");
         assert!(!t.is_descendant_of(1, 2), "the root is not under the group");
+    }
+
+    /// **The hoisted ancestor answers the same question as the plain one.**
+    ///
+    /// Resolving the group once and walking up from each target is what keeps
+    /// a bundle's classification from scanning the tree twice per message
+    /// (`Engine::bundle_is_governed`). It is the same walk, so it has to give
+    /// the same answers — including the two `false`s an unknown id earns.
+    #[test]
+    fn an_anchored_ancestor_answers_as_the_plain_one_does() {
+        let t = tree_with_group_2_holding_synth_3();
+        let group = t.anchor(2).expect("the group is in the tree");
+        for id in [1, 2, 3, 999] {
+            assert_eq!(
+                t.is_under(id, group),
+                t.is_descendant_of(id, 2),
+                "the hoisted walk disagreed about node {id}"
+            );
+        }
+        assert_eq!(
+            t.anchor(999),
+            None,
+            "an unknown ancestor anchors to nothing"
+        );
+    }
+
+    /// **An anchor holds an id, so a reused slot cannot be mistaken for it.**
+    ///
+    /// This is the property that let the anchor stay this simple. Freeing the
+    /// group and letting another node take its slot is the case an *index*
+    /// would have got wrong — it would have answered for whoever moved in, and
+    /// routed a bundle to the wrong queue in silence. The walk compares ids, so
+    /// there is nothing to invalidate and no snapshot to keep in step.
+    #[test]
+    fn an_anchor_holds_an_id_so_a_reused_slot_is_not_it() {
+        let mut t = tree_with_group_2_holding_synth_3();
+        let group = t.anchor(2).expect("the group is in the tree");
+        assert!(t.is_under(3, group));
+
+        t.free(2, &mut |_| {});
+        assert!(!t.is_under(3, group), "the group and its child are gone");
+
+        // Another group lands where that one was.
+        add_group(&mut t, 7, ROOT_NODE_ID);
+        add_synth(&mut t, 8, 7);
+        assert!(
+            !t.is_under(8, group),
+            "the node that took the slot is not the anchored group"
+        );
+        assert!(t.is_under(8, t.anchor(7).unwrap()), "its own group is");
     }
 
     #[test]

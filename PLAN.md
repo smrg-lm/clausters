@@ -309,9 +309,32 @@ Open, not blocking:
   `/transport_group` binds stays on the device queue even if its target becomes
   governed. Documented; re-classifying would mean rewriting a queue on the audio
   thread.
-- ⬜ **T4 — `bundle_is_governed` re-resolves the group per message.** A linear
+- ✅ **T4 — `bundle_is_governed` re-resolves the group per message.** A linear
   `find` per targeted message, bounded and allocation-free but `O(messages x
   nodes)` worst case inside a block budget. Hoist the group's index.
+
+  **Done 2026-08-26, and the fix is smaller than the entry expected.** Writing
+  it turned up what the second scan was actually for: `is_descendant_of` walks
+  up the parent links comparing **ids**, so the ancestor's *index* is never
+  read — the second `find` established one bit, *is the ancestor in the tree at
+  all*, at the cost of a full scan of the slots, once per targeted message.
+  So there is no index to hoist. `NodeTree::anchor` asks that question once and
+  `is_under` walks from the target alone, which halves what a bundle costs
+  (`2M` scans become `M + 1`); `is_descendant_of` is now the pair, so there is
+  one walk and not two.
+
+  **What is left un-hoisted, deliberately:** the target's own `find`. That is
+  the `O(messages x nodes)` term the entry names, and removing it is an
+  id → slot index, which is a data structure rather than a fix. Nothing on the
+  path to the complete example sends bundles wide enough to want it.
+
+  **The network-side twin needed nothing**: `packet_targets_group` walks the
+  mirror, which is keyed by id, so it never had the scan.
+
+  Tests: the anchored walk agrees with the plain one for every id including an
+  unknown one, and an anchor is not fooled by its group being freed and the slot
+  taken by another — the case an index would have got wrong, which is why the
+  anchor holds an id.
 
 ## S track — Synthesis-engine infrastructure completion (the substrate for future UGens)
 

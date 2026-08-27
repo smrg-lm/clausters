@@ -163,12 +163,6 @@ its plan; the plan is where its acceptance is read.
   divergence: the counterpart of `standalone.py` is a node script, and where a
   node script lives in `clients/web/examples/` — pages today — is open.
 
-- ⬜ **`T4` — `bundle_is_governed` re-resolves the group per message** *(root
-  `PLAN.md`, T track)*. A linear `find` per targeted message, bounded and
-  allocation-free but `O(messages × nodes)` worst case inside a block budget.
-  Hoist the group's index. The only one of the three T items that is a fix rather
-  than a question.
-
 - ⬜ **`G31g` — engraving refinements** *(`clients/gui/PLAN.md`)*. Tuplets, full
   polyphony, written duration beyond `dur`, tonal spelling, grace notes,
   articulations. Not permanent limits: a refinement pass on the same encoder,

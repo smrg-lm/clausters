@@ -707,17 +707,29 @@ impl Engine {
     /// opinion and rides the bundle's verdict; a bundle of nothing but those
     /// goes to the device queue.
     ///
-    /// RT-safe: `is_descendant_of` is a bounded walk up the `parent` links and
-    /// allocates nothing, so this is a plain scan of the bundle.
+    /// RT-safe: the walk up the `parent` links is bounded and allocates
+    /// nothing, so this is a plain scan of the bundle.
+    ///
+    /// **The group is resolved once, not once per message.** Behind an id is a
+    /// linear scan of the tree's slots, and asking `is_descendant_of` per
+    /// target scanned for the *ancestor* every time as well — a second scan for
+    /// a node that had not moved since the first. The anchor is that lookup,
+    /// hoisted ([`NodeTree::anchor`]), which halves the scans a bundle costs.
+    /// It is safe to hold across the scan for the reason it is unsafe to hold
+    /// any longer: nothing adds or frees a node between here and the end of
+    /// this bundle's classification.
     fn bundle_is_governed(&self, cmds: &[Cmd]) -> bool {
         let Some(group) = self.transport_group else {
+            return false;
+        };
+        let Some(anchor) = self.tree.anchor(group) else {
             return false;
         };
         cmds.iter().any(|cmd| {
             cmd_target_nodes(cmd)
                 .iter()
                 .flatten()
-                .any(|id| self.tree.is_descendant_of(*id, group))
+                .any(|id| self.tree.is_under(*id, anchor))
         })
     }
 
