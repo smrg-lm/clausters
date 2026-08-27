@@ -131,13 +131,6 @@ a person saw it work.
   count as proof. **Related:** it is filed here rather than in section 4 because
   the milestone's *code* is done; what is left is somebody watching it fail.
 
-- ⬜ **The browser's lost release is guarded and the guard is unverified**
-  *(`clients/gui/PLAN.md`, Found by use)*. A page can lose a button-up where a
-  desktop window cannot, so `web::input` ends the drag itself when the DOM says
-  no button is down. The reasoning is sound and nothing has exercised it: the
-  case did not reproduce under Chrome DevTools. Worth either a way to drive it or
-  a decision that it stays on trust, rather than sitting as code nobody has seen
-  work.
 
 ## 4. Milestones left hanging
 

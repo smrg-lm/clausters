@@ -164,6 +164,45 @@
         }
         log(`bound knob drove the engine: freq ${before} -> ${after}`);
 
+        // **The release this page never saw.** A browser can lose a button-up
+        // -- it comes up outside the window, over another application, after an
+        // alt-tab -- where a desktop window cannot, and winit synthesizes a
+        // button event only from a move that *reports* a change, which the move
+        // back in does not. So the shell reads the browser's own button mask
+        // and ends the drag itself, at the place the pointer was last seen.
+        // Nothing had ever exercised that guard: the case does not reproduce
+        // under DevTools, and a page is the one place it can be staged exactly.
+        const beforeLost = (await synth.info()).controls.freq;
+        pointer(canvas, "pointerdown", 240, 100, 1);
+        await sleep(50);
+        pointer(canvas, "pointermove", 240, 70, 1);
+        let held = beforeLost;
+        for (let i = 0; i < 40 && held === beforeLost; i++) {
+          await sleep(50);
+          held = (await synth.info()).controls.freq;
+        }
+        if (held === beforeLost) {
+          throw new Error("the drag before the lost release never started");
+        }
+        // The pointer comes back over the canvas with the button already up.
+        // Without the guard this reads as a drag step and the knob teleports to
+        // wherever it re-entered.
+        pointer(canvas, "pointermove", 240, 150, 0);
+        await sleep(300);
+        let afterLost = (await synth.info()).controls.freq;
+        if (afterLost !== held) {
+          throw new Error(`a lost release dragged the knob: ${held} -> ${afterLost}`);
+        }
+        // ...and the gesture is *over*, not merely skipped once: a second move
+        // with no button down moves nothing either.
+        pointer(canvas, "pointermove", 240, 45, 0);
+        await sleep(300);
+        afterLost = (await synth.info()).controls.freq;
+        if (afterLost !== held) {
+          throw new Error(`the drag outlived the lost release: ${held} -> ${afterLost}`);
+        }
+        log(`lost release ended the drag at freq ${held}, not under the pointer`);
+
         // The same drag with a **finger**, which reaches the host as touch
         // events rather than as a pointer: a phone drives every widget or it
         // drives none, and the canvas is the one surface a page's own DOM

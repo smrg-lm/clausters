@@ -2685,7 +2685,7 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   `a_placement_edit_does_not_redefine_the_window`, which is the half that keeps
   a drag cheap.
 
-- ⬜ **The browser's lost release is guarded and the guard is unverified.** A
+- ✅ **The browser's lost release is guarded and the guard is unverified.** A
   page can lose a button-up — it comes up outside the window, over another
   application, after an alt-tab — where a desktop window cannot, and winit
   synthesizes a button event only from a move that *reports* a change. So
@@ -2695,6 +2695,23 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   reproduce under Chrome DevTools, and the two hypotheses tried alongside it
   were measured and dropped. Worth either a way to drive it or a decision that
   it stays on trust, rather than sitting as code nobody has seen work.
+
+  **Driven, and seen to work, 2026-08-26.** Not under DevTools, where it never
+  reproduced, but as a case in `tests/gui.html` — the acceptance page already
+  synthesizes gestures, and a synthesized `PointerEvent` carries its own
+  `buttons`, which the capture-phase listener on `window` reads exactly as a
+  real one's. So the case is staged rather than provoked: press on the bound
+  knob, one real drag step, then a `pointermove` at a **far** position with
+  `buttons: 0` — the pointer coming back in with the button already up — and
+  then a second such move, since the drag has to be *over* rather than skipped
+  once.
+
+  **What proves it is the run with the guard removed**, which is the half the
+  entry was actually asking for: the knob teleports from 1558 Hz to 50 — the
+  bottom of its range, which is where the pointer re-entered — and the page
+  fails with `a lost release dragged the knob`. With the guard the value stands
+  where the hand left it. That is the described failure, observed, rather than
+  reasoning about it.
 
 - ✅ **The other drags that accumulate per frame** *(named 2026-08-22 by the
   user while the curve's bend was fixed: "esto ya paso con otros elementos
