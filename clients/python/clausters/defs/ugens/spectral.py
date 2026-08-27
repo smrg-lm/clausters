@@ -123,9 +123,12 @@ def pv_mag_shift(chain, stretch=1.0, shift=0.0) -> Ugen:
     return Ugen("PV_MagShift", [chain, stretch, shift])
 
 
-def pv_kernel(chain, mag=None, phase=None, params=()) -> Ugen:
+def pv_kernel(chain, *, mag=None, phase=None, params=()) -> Ugen:
     """The general per-frame mechanism: applies user-written **bin
-    expressions** to every bin of each fresh frame. ``mag`` and ``phase`` are
+    expressions** to every bin of each fresh frame. ``mag``, ``phase`` and
+    ``params`` are keyword-only — the expressions are **static** fields and
+    ``params`` is the variadic run the wire puts after the chain — so the one
+    positional parameter is the one input the wire names. ``mag`` and ``phase`` are
     symbolic per-bin expressions built from `clausters.defs.pv_expr`'s terms
     (its ``mag``/``phase``/``bin_index``/``nbins``/``binfreq``/``param``)
     with ordinary Python operators; each maps one bin's values to that bin's

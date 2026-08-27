@@ -153,6 +153,35 @@ on each one; none of them is being taken by this file.
   and it is the second thing that pass found that no suite could have — which is
   the argument that entry makes.
 
+- ✅ **Four UGen builders take their statics positionally, interleaved with real
+  inputs** *(fixed 2026-08-26)*. **The decision was the timing, and it dissolved:**
+  nothing has been released, so everything that breaks rides the next one and
+  there was no tier to wait for. `poll`, `disk_in`, `disk_out` and `pv_kernel`
+  put their statics behind a `*` (an options object in TypeScript), so their
+  positional parameters are the wire's inputs in the wire's order; the anti-drift
+  exception list is empty and kept empty. The parity vectors regenerated
+  byte-identical, which is the proof that only the spelling moved.
+
+- ⬜ **Nothing resizes a window, so nothing tests a squeeze**
+  *(`clients/gui/PLAN.md`, Found by use)*. Every suite draws into a mesh at a
+  size it chose and every example opens at the size its GuiDef declares, so the
+  whole family of states where a widget is **smaller than its own contents** — a
+  lane under a line of text, a body under its rulers, a strip under its widest
+  label — is reachable only by a hand on a corner. Each is arithmetic with a
+  lower bound nobody states, and one of them was a panic between four pixels and
+  ten and a half until 2026-08-26.
+
+  **What it would take is not a window**: the drawing entry points are pure
+  functions over a `Mesh`, so a test can walk a view's rect down through the
+  sizes that matter and assert only that it draws and does not panic — which is
+  the shape the regression test for that panic already has.
+  **The decision:** whether that is *one* shared test over the element registry
+  (every registered element, a shrinking rect) or a case per widget, and whether
+  the browser front needs its own, since the compositor there hands out sizes
+  the native one does not. **Related:** it came out of section 3's manual review,
+  and it is the second thing that pass found that no suite could have — which is
+  the argument that entry makes.
+
 - ⬜ **Four UGen builders take their statics positionally, interleaved with real
   inputs** *(`clients/python/PLAN.md`, Found by use)*. `poll`, `disk_in`,
   `disk_out` and `pv_kernel`; `fft` and `conv` show the intended convention

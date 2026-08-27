@@ -34,9 +34,9 @@ from .ugens import ChannelList, Ugen, out
 #: writes 0/1 for the rest of the graph and takes a done action; both are
 #: inward, so it is not a sink either. `DiskOut` *is* one: it delivers audio to
 #: a file. It also passes its input through, but the criterion is applied
-#: without an exception, so ``play(disk_out(p, sig))`` records without
+#: without an exception, so ``play(disk_out(sig, path=p))`` records without
 #: sounding and recording *and* hearing is the explicit
-#: ``out(0, disk_out(p, sig))``.
+#: ``out(0, disk_out(sig, path=p))``.
 _SINK_KINDS = {
     "Out", "ReplaceOut", "OutCtl", "LocalOut", "DiskOut",
     "SendTrig", "SendReply", "Poll",

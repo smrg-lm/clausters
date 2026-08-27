@@ -307,9 +307,8 @@ const synthdefs: Record<string, () => SynthDef> = {
         new SynthDef(
             "disk",
             out(0.0, diskOut(
-                "/tmp/take.wav",
-                diskIn("/tmp/loop.wav", 0.0, true).mul(0.5),
-                "float",
+                diskIn(0.0, { path: "/tmp/loop.wav", loop: true }).mul(0.5),
+                { path: "/tmp/take.wav", format: "float" },
             )),
         ),
 };

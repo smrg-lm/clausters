@@ -465,10 +465,10 @@ def test_a_control_is_a_graph_leaf_not_something_to_play(clean_default):
 # ---- a sink is what delivers data out of the graph ----
 
 def test_disk_out_is_a_sink_so_it_is_not_wrapped():
-    sdef = as_def(disk_out("/tmp/rec.wav", sine(440.0)))
+    sdef = as_def(disk_out(sine(440.0), path="/tmp/rec.wav"))
     assert sdef.roots[0].kind == "DiskOut"
     # Recording *and* hearing stays available, explicitly.
-    assert as_def(out(0.0, disk_out("/tmp/rec.wav", sine(440.0)))) \
+    assert as_def(out(0.0, disk_out(sine(440.0), path="/tmp/rec.wav"))) \
         .roots[0].kind == "Out"
 
 

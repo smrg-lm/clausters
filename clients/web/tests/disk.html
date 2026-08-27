@@ -58,7 +58,7 @@
         //    plays, on a bus of its own so a headless run makes no noise.
         const recBus = Bus.audio(1, { server });
         await new SynthDef("rec",
-          out(recBus.index, diskOut(PATH, sine(440).mul(0.5), "float"))).send(server);
+          out(recBus.index, diskOut(sine(440).mul(0.5), { path: PATH, format: "float" }))).send(server);
         const recording = new Synth("rec", {}, { server });
         await wait(1500);
         recording.free();
@@ -77,7 +77,7 @@
         //    the port and reached the ring before the audio thread wanted them.
         const playBus = Bus.audio(1, { server });
         await new SynthDef("play",
-          out(playBus.index, diskIn(PATH, 0, true))).send(server);
+          out(playBus.index, diskIn(0, { path: PATH, loop: true }))).send(server);
         const playing = new Synth("play", {}, { server });
         // A stream starts after a longer lead here than natively: the first
         // span has to be asked for, read, decoded and moved across a port.

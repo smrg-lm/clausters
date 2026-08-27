@@ -166,6 +166,7 @@ export {
     sendReply,
     sendTrig,
 } from "./io.ts";
+export type { DiskInOptions, DiskOutOptions, PollOptions } from "./io.ts";
 
 export {
     bufChannels,

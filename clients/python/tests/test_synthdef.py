@@ -378,8 +378,8 @@ def test_disk_io_serializes_with_static_fields():
 
     spec = SynthDef(
         "disk",
-        out(0.0, disk_in("/tmp/in.wav", chan=1.0, loop=True)),
-        disk_out("/tmp/rec.wav", sine(440.0) * 0.2, format="float"),
+        out(0.0, disk_in(1.0, path="/tmp/in.wav", loop=True)),
+        disk_out(sine(440.0) * 0.2, path="/tmp/rec.wav", format="float"),
     ).spec()
     by_kind = {u["kind"]: u for u in spec["ugens"]}
     din, dout = by_kind["DiskIn"], by_kind["DiskOut"]

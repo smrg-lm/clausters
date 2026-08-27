@@ -335,8 +335,8 @@ gd["mix"]                   # a surface port, plus the targets it drives inside
 | | `oscn(bufnum, freq=440.0, phase=0.0)` | non-interpolating oscillator over a **plain** buffer; rawer/cheaper |
 | | `vosc(bufpos, freq=440.0, phase=0.0)` | `osc` with the buffer number as a signal: crossfades tables `bufpos`/`bufpos+1`, so sweeping it morphs a contiguous bank |
 | | `shaper(bufnum, signal)` | waveshaper: maps `signal` (±1) through a `cheby` transfer table |
-| Disk | `disk_in(path, chan=0.0, loop=False)` | streams a file from disk, one channel per UGen, no resampling |
-| | `disk_out(path, signal, format="int16")` | streams `signal` to a mono WAV on disk; passes `signal` through |
+| Disk | `disk_in(chan=0.0, *, path, loop=False)` | streams a file from disk, one channel per UGen, no resampling |
+| | `disk_out(signal, *, path, format="int16")` | streams `signal` to a mono WAV on disk; passes `signal` through |
 | Feedback | `local_in(channel=0.0)` | reads a synth-private feedback channel |
 | | `local_out(channel, signal)` | writes a feedback channel, and passes `signal` through |
 | Smoothers | `lag(signal, time=0.1)` | one-pole smoother (symmetric); the same UGen a lagged control inserts, usable on any signal |
@@ -360,7 +360,7 @@ gd["mix"]                   # a surface port, plus the targets it drives inside
 | | `sum3(a, b, c)` / `sum4(a, b, c, d)` | three / four-operand sums in one UGen |
 | Side-effect | `send_trig(trig, id, value)` | on each trigger, sends `/node_trigger nodeID id value`; output is silence |
 | | `send_reply(trig, *values, cmd="/reply", reply_id=-1)` | sends a custom OSC message with an arbitrary value list |
-| | `poll(trig, signal, label="poll", trig_id=-1)` | posts `signal` to the server console (and a `/node_trigger` when `trig_id >= 0`); passes `signal` through |
+| | `poll(trig, signal, trig_id=-1, *, label="poll")` | posts `signal` to the server console (and a `/node_trigger` when `trig_id >= 0`); passes `signal` through |
 | Spectral | `fft(source, active=1.0, *, fft_size=1024, hop=0.5, wintype=0)` | opens a spectral chain (windows and transforms `source` per hop) |
 | | `pv_mag_above(chain, threshold)` / `pv_mag_below(chain, threshold)` | pass bins above / below a magnitude threshold |
 | | `pv_mag_clip(chain, threshold)` | limit each bin's magnitude to the threshold (phases kept) |
@@ -370,13 +370,13 @@ gd["mix"]                   # a surface port, plus the targets it drives inside
 | | `pv_mag_freeze(chain, freeze=0)` | hold the stored magnitude envelope while `freeze > 0` (phases keep running) |
 | | `pv_mag_smear(chain, bins=0)` | average each bin's magnitude over `bins` neighbors per side (spectral blur) |
 | | `pv_bin_shift(chain, stretch=1, shift=0)` / `pv_mag_shift(...)` | remap bin positions (complex bins / magnitude envelope only) |
-| | `pv_kernel(chain, mag=None, phase=None, params=())` | apply **user-written bin expressions** to every bin of each fresh frame — see [Writing your own spectral operation](#writing-your-own-spectral-operation) |
+| | `pv_kernel(chain, *, mag=None, phase=None, params=())` | apply **user-written bin expressions** to every bin of each fresh frame — see [Writing your own spectral operation](#writing-your-own-spectral-operation) |
 | | `ifft(chain)` | closes a spectral chain (resynthesises audio by overlap-add) |
 | Convolution | `conv(source, kernel, *, fft_size=1024, partitions=16)` | partitioned convolution against a kernel prepared with `dest.gen("prepare_partconv", fft_size, ir_bufnum)` (size `dest` with `partconv_frames`); latency `fft_size / 2` samples |
 
 Like Faust synths, a SynthDef also accepts the reserved `in` / `out` bus-selecting controls the server adds at `/synth_new` time.
 
-The **side-effect** UGens exist for a reply or a console post rather than audio, so a def may consist of them alone with **no `out`** — pass them as `SynthDef` roots (see [Building one](#building-one)). What makes one a root is that it **delivers data out of the graph** — audio or control to a bus, audio to a file (`disk_out`), OSC or a console line to a client — not that it has a side effect. `free_self`, `pause_self`, `free_self_when_done` and `done` act on the enclosing synth and pass their input *through*, so they still want an `out` around them (`out(0, free_self_when_done(env * sig))` is the idiom); `detect_silence` writes 0/1 for the rest of the graph and takes its done action, which is inward too. `disk_out` is the one that surprises: it delivers audio to a file, so `play(disk_out(path, sig))` records **without sounding** — route it yourself to do both. The **spectral** UGens form a frequency-domain chain — see [The frequency-domain chain](#the-frequency-domain-chain) below.
+The **side-effect** UGens exist for a reply or a console post rather than audio, so a def may consist of them alone with **no `out`** — pass them as `SynthDef` roots (see [Building one](#building-one)). What makes one a root is that it **delivers data out of the graph** — audio or control to a bus, audio to a file (`disk_out`), OSC or a console line to a client — not that it has a side effect. `free_self`, `pause_self`, `free_self_when_done` and `done` act on the enclosing synth and pass their input *through*, so they still want an `out` around them (`out(0, free_self_when_done(env * sig))` is the idiom); `detect_silence` writes 0/1 for the rest of the graph and takes its done action, which is inward too. `disk_out` is the one that surprises: it delivers audio to a file, so `play(disk_out(sig, path=path))` records **without sounding** — route it yourself to do both. The **spectral** UGens form a frequency-domain chain — see [The frequency-domain chain](#the-frequency-domain-chain) below.
 
 The **panning** callables return a `ChannelList`, so they compose with everything the container already does — `out(0, pan2(sig, pos))` lays the pair on consecutive buses, and `pan2(...) * 0.5` scales both channels. (A UGen has one output, so each is really one row per channel with a trailing channel index; the builder fills it and you never pass it.) Two things about the family are worth knowing before picking one. **Equal power** — `pan2`, `balance2`, `xfade2`, `select_x` — holds one *loudness* across the move, which is what you want for a source crossing the field, but it puts 0.707 in each channel at the centre and adds 3 dB when the two sides are the same signal; **constant amplitude** — `lin_pan2`, `lin_xfade2` — holds the *sum* instead, which is what correlated samples and mono fold-downs want. And `balance2` is not a pass-through when centred: it applies the pan law to a pair that is already stereo, so it costs 3 dB there (scsynth's behaviour, kept).
 

@@ -345,19 +345,14 @@ _WIRE_ORDER_FORCED = {
     "Dshuf": "repeats leads on the wire; the value list is the leading argument here",
 }
 
-# Not forced: these take their **static** (non-signal) fields as ordinary
-# positional parameters, interleaved with real inputs — where `fft` and `conv`
-# put theirs behind a `*` and line up with the wire exactly. Moving them behind
-# a `*` would fix the divergence and shrink this list, but it breaks the client
-# API (`poll(t, s, "label")` and friends stop working), so it is deliberately
-# deferred rather than done as a side effect of M30. `Poll` is the worst: its
-# static `label` sits *between* two genuine inputs.
-_WIRE_ORDER_STATIC_FIELDS_POSITIONAL = {
-    "Poll": "label is a static field sitting between the wire inputs",
-    "DiskIn": "path/loop are static fields, only chan is an input",
-    "DiskOut": "path/format are static fields, only signal is an input",
-    "PV_Kernel": "mag/phase are static fields, the wire takes chain + params",
-}
+# Once four kinds took their **static** (non-signal) fields as ordinary
+# positional parameters, interleaved with real inputs: `Poll` (its `label` sat
+# *between* two genuine inputs), `DiskIn`, `DiskOut` and `PV_Kernel`. They are
+# behind a `*` now, the way `fft` and `conv` always were, so they line up with
+# the wire and are contrasted like everything else. The list is kept, empty,
+# because its emptiness is the claim: nothing is excused for this reason any
+# more, and a new entry here would be a deliberate step back.
+_WIRE_ORDER_STATIC_FIELDS_POSITIONAL: dict[str, str] = {}
 
 # Not a divergence in the same sense: these rows end in a `chan` index the
 # *builder* fills, once per channel, because a UGen has one output and a panner

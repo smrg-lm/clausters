@@ -84,34 +84,44 @@ def send_reply(trig, *values, cmd="/reply", reply_id=-1) -> Ugen:
     return Ugen("SendReply", [trig, reply_id, *values], label=cmd)
 
 
-def poll(trig, signal, label="poll", trig_id=-1) -> Ugen:
+def poll(trig, signal, trig_id=-1, *, label="poll") -> Ugen:
     """On each trigger of ``trig``, posts ``label: value`` (the ``signal``
     value) to the server console and, when ``trig_id >= 0``, also sends ``/node_trigger
     nodeID trig_id value``. ``signal`` passes through the output, so ``poll``
-    can sit mid-chain."""
+    can sit mid-chain.
+
+    ``label`` is a **static** field and is keyword-only, so the positional
+    parameters are the wire's three inputs in the wire's order."""
     return Ugen("Poll", [trig, signal, trig_id], label=label)
 
 # ---- streaming disk I/O (self-contained: one I/O thread + ring each) ----
 
 
-def disk_in(path, chan=0.0, loop=False) -> Ugen:
+def disk_in(chan=0.0, *, path, loop=False) -> Ugen:
     """Streams a file from disk, one file frame per server sample (no
     resampling — pitch follows the sample-rate ratio). Mono per UGen: ``chan``
     picks the channel, a stereo file is two `disk_in`\\ s. ``loop`` restarts at
     the end of the stream. For a handful of streams, not per-voice (each spawns
-    its own I/O thread)."""
+    its own I/O thread).
+
+    ``path`` and ``loop`` are **static** fields and are keyword-only —
+    ``disk_in(path="take.wav")`` — so the one positional parameter is the one
+    input the wire has."""
     return Ugen("DiskIn", [chan], static={"path": str(path), "loop": bool(loop)})
 
 
-def disk_out(path, signal, format="int16") -> Ugen:
+def disk_out(signal, *, path, format="int16") -> Ugen:
     """Streams ``signal`` to a mono WAV at ``path`` (``format`` is ``"int16"``,
     ``"int24"`` or ``"float"``) and passes ``signal`` through as its output.
     Record stereo with two `disk_out`\\ s.
 
+    ``path`` and ``format`` are **static** fields and are keyword-only, so the
+    one positional parameter is the one input the wire has.
+
     It delivers audio out of the graph, so it is a valid def root on its own:
-    ``play(disk_out(path, sig))`` records **without sounding**. To record and
-    hear the same take, route it yourself — ``out(0, disk_out(path, sig))``,
-    which is what the pass-through output is for."""
+    ``play(disk_out(sig, path=path))`` records **without sounding**. To record
+    and hear the same take, route it yourself — ``out(0, disk_out(sig,
+    path=path))``, which is what the pass-through output is for."""
     return Ugen("DiskOut", [signal], static={"path": str(path), "format": str(format)})
 
 
