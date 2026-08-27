@@ -16,9 +16,9 @@
 //   chunking, driven over a fake carrier so they run with no server at all.
 
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import test from "node:test";
+import { readFile } from "node:fs/promises";
 
 import { loadCore } from "../src/base/core.ts";
 import { decodePacket, encodeMessage, loadOsc } from "../src/base/osc.ts";
@@ -36,11 +36,8 @@ import {
     lissajous,
 } from "../src/data/index.ts";
 
-const wasm = await readFile(
-    new URL("../dist/core/clausters_core_web_bg.wasm", new URL(".", import.meta.url)),
-);
-await loadCore(wasm);
-await loadOsc(wasm);
+await loadCore();
+await loadOsc();
 
 interface Vectors {
     peaks: {

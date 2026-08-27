@@ -93,9 +93,7 @@ import {
 
 const here = new URL(".", import.meta.url);
 
-await loadOsc(
-    await readFile(new URL("../dist/core/clausters_core_web_bg.wasm", here)),
-);
+await loadOsc();
 
 interface Vectors {
     synthdefs: { name: string; spec: unknown }[];

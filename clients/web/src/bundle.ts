@@ -149,12 +149,64 @@ async function fetchJson<T>(url: string): Promise<T> {
 }
 
 /**
+ * Where one mount reads its files from: a served directory, or the bundle a
+ * page has just authored and holds as text (`Bundle.files`).
+ *
+ * The two are the same bundle — the in-memory one is what the writer would
+ * have put on disk — so this is a **source**, not a second format: everything
+ * below asks it for a path and never for a URL. Only the samples still need
+ * the network, since they are data the writer never emitted.
+ */
+class Source {
+    readonly base: string | null;
+    readonly files: Record<string, string> | null;
+
+    constructor(base: string | null, files: Record<string, string> | null) {
+        this.base = base;
+        this.files = files;
+    }
+
+    /** One file's JSON, from memory when it is there and from the network otherwise. */
+    async json<T>(path: string): Promise<T> {
+        const text = this.files?.[path];
+        if (text !== undefined) return JSON.parse(text) as T;
+        return fetchJson<T>(this.url(path));
+    }
+
+    /** One file's bytes, on the same terms. */
+    async bytes(path: string): Promise<Uint8Array> {
+        const text = this.files?.[path];
+        if (text !== undefined) return new TextEncoder().encode(text);
+        return fetchBytes(this.url(path));
+    }
+
+    /**
+     * What names this file for the page's own caches — the URL when there is
+     * one, and the path under an in-memory bundle's name when there is not.
+     * A def payload and a sample are shared page-wide by this key.
+     */
+    key(path: string): string {
+        return this.base === null ? `memory:${path}` : this.url(path);
+    }
+
+    url(path: string): string {
+        if (this.base === null) {
+            throw new Error(
+                `bundle mount: "${path}" is not in the bundle held in memory, and no base ` +
+                    "URL was given to fetch it from",
+            );
+        }
+        return `${this.base}/${path}`;
+    }
+}
+
+/**
  * What `openBundle` keeps for `startBundle` and `freeBundle` — the engine
  * half, held until a gesture makes an AudioContext legal, and the allocation
  * to give back when the instance goes.
  */
 interface Pending {
-    base: string;
+    source: Source;
     manifest: BundleManifest;
     resolved: Resolved;
     buffers: Record<string, number>;
@@ -175,8 +227,19 @@ interface Pending {
 const pending = new WeakMap<Mounted, Pending>();
 
 export interface MountOptions {
-    /** The bundle's URL prefix. */
-    base: string;
+    /**
+     * The bundle's URL prefix. Optional only when `files` carries the whole
+     * bundle — a sample still comes off the network, so a bundle with buffers
+     * needs one either way.
+     */
+    base?: string;
+    /**
+     * A bundle held as text, by path relative to its directory — exactly what
+     * `Bundle.files()` returns. A page that authored a bundle mounts it with
+     * no round trip through disk; anything not held here is fetched under
+     * `base`.
+     */
+    files?: Record<string, string>;
     /**
      * The canvas this instance draws into. Omitted, the page's default one is
      * used — which is right for a page showing a single bundle and wrong for
@@ -202,7 +265,11 @@ export interface MountOptions {
  * host — no audio, no gesture. The component draws immediately.
  */
 export async function openBundle(options: MountOptions): Promise<Mounted> {
-    const { base, canvas, name = null, attributes = {}, preset = null } = options;
+    const { base = null, files = null, canvas, name = null, attributes = {}, preset = null } = options;
+    if (base === null && files === null) {
+        throw new Error("openBundle: a bundle is mounted from a `base` URL or from `files`");
+    }
+    const source = new Source(base, files);
     // The core first: the pools are built on its `Registry`, and the resolver
     // is one of its exports.
     await loadCore();
@@ -210,9 +277,9 @@ export async function openBundle(options: MountOptions): Promise<Mounted> {
     const pools = options.pools ?? pagePools();
     const gui = await guiHost();
 
-    const manifest = await fetchJson<BundleManifest>(`${base}/bundle.json`);
+    const manifest = await source.json<BundleManifest>("bundle.json");
     const guiName = name ?? manifest.gui;
-    const template = await fetchJson<Template>(`${base}/defs/guidefs/${guiName}.json`);
+    const template = await source.json<Template>(`defs/guidefs/${guiName}.json`);
     // A preset is a named bundle of values under the attributes; an unlisted
     // one is a mistake worth reporting, not a silent fall-through.
     let presetValues: Record<string, unknown> = {};
@@ -220,7 +287,7 @@ export async function openBundle(options: MountOptions): Promise<Mounted> {
         if (!(manifest.presets ?? []).includes(preset)) {
             throw new Error(`${base}: no preset "${preset}" (declared: ${manifest.presets ?? []})`);
         }
-        presetValues = await fetchJson(`${base}/presets/${preset}.json`);
+        presetValues = await source.json(`presets/${preset}.json`);
     }
 
     // What this instance needs, then what the page gave it. The resolver never
@@ -257,7 +324,7 @@ export async function openBundle(options: MountOptions): Promise<Mounted> {
     for (const symbol of requirements.buffers) {
         // Shared by URL: the same sample is the same buffer, so a second
         // instance points at the one already loaded rather than a second copy.
-        const url = `${base}/${(manifest.buffers ?? {})[symbol] ?? symbol}`;
+        const url = source.url((manifest.buffers ?? {})[symbol] ?? symbol);
         let bufnum = bufferIds.get(url);
         if (bufnum === undefined) {
             bufnum = pools.buffers.alloc();
@@ -290,7 +357,7 @@ export async function openBundle(options: MountOptions): Promise<Mounted> {
         started: false,
     };
     pending.set(mounted, {
-        base,
+        source,
         manifest,
         resolved,
         buffers: allocation.buffers,
@@ -312,7 +379,7 @@ export async function startBundle(mounted: Mounted): Promise<void> {
     // Claimed before the first await: a component's own start and the page's
     // gesture can both reach here, and the defs must go out once.
     mounted.started = true;
-    const { base, manifest, resolved, buffers } = held;
+    const { source, manifest, resolved, buffers } = held;
     const engine = await server();
 
     // The defs, once per payload for the whole page: a def payload holds no
@@ -321,21 +388,22 @@ export async function startBundle(mounted: Mounted): Promise<void> {
     // engine serves in order, so an issued send is enough.
     const wanted: [string, string][] = [
         ...(manifest.synthdefs ?? []).map(
-            (n) => ["synth", `${base}/defs/synthdefs/${n}.json`] as [string, string],
+            (n) => ["synth", `defs/synthdefs/${n}.json`] as [string, string],
         ),
         ...(manifest.graphdefs ?? []).map(
-            (n) => ["graph", `${base}/defs/graphdefs/${n}.json`] as [string, string],
+            (n) => ["graph", `defs/graphdefs/${n}.json`] as [string, string],
         ),
     ];
     await Promise.all(
-        wanted.map(([family, url]) => {
-            let send = sentDefs.get(url);
+        wanted.map(([family, path]) => {
+            const key = source.key(path);
+            let send = sentDefs.get(key);
             if (!send) {
                 send = (async () => {
-                    const spec = await fetchBytes(url);
+                    const spec = await source.bytes(path);
                     engine.send(encodeMessage("/def_send", [["s", family], ["b", spec]]));
                 })();
-                sentDefs.set(url, send);
+                sentDefs.set(key, send);
             }
             return send;
         }),
@@ -343,9 +411,9 @@ export async function startBundle(mounted: Mounted): Promise<void> {
 
     // The samples, loaded before any boot message can play one — once per URL,
     // since phase 1 already pointed every instance at the same buffer.
-    for (const [symbol, url] of Object.entries(manifest.buffers ?? {})) {
+    for (const [symbol, path] of Object.entries(manifest.buffers ?? {})) {
         const bufnum = buffers[symbol];
-        const full = `${base}/${url}`;
+        const full = source.url(path);
         if (bufnum === undefined || loadedBuffers.has(full)) continue;
         loadedBuffers.add(full);
         const bytes = await fetchBytes(full);

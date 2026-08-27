@@ -15,7 +15,6 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readFile } from "node:fs/promises";
 
 import { encodeBundle, encodeMessage, loadOsc } from "../src/base/osc.ts";
 import type { Connection } from "../src/base/connection.ts";
@@ -26,7 +25,7 @@ import { TempoClock, manualTicker } from "../src/base/clock.ts";
 import { ManualTimebase } from "../src/base/timebase.ts";
 
 const here = new URL(".", import.meta.url);
-await loadOsc(await readFile(new URL("../dist/core/clausters_core_web_bg.wasm", here)));
+await loadOsc();
 
 /** A carrier that sends nowhere and lets a test push packets in. */
 class FakeConnection implements Connection {

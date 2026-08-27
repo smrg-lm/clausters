@@ -210,6 +210,7 @@ run_page responders.html # OscFunc over the engine's own notifications
 run_page midi.html     # a pattern to a MIDI port on the engine's grid, and a MidiFunc back
 run_page catalogue.html # the filled-out UGen families, measured on the output
 run_page ring-peers.html # a host meter and a script bus stream, both over one ring
+run_page authored.html # a bundle written in the page and mounted with no disk
 run_page nrt.html      # /buffer_allocRead out of the page's filesystem, in the NRT worker
 run_page disk.html     # diskOut into the page's filesystem, diskIn streaming it back
 run_page faust-artifact.html # what the vendored Faust compiler emits, asserted

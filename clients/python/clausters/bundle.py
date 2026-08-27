@@ -58,6 +58,24 @@ and the page gets a tag from one import (`write` generates ``index.js``)::
     <fm-voice freq="440"></fm-voice>
 
 The format itself is documented in ``docs/clients.md``.
+
+The bytes are canonical
+=======================
+
+There are two writers of this format — this one and the web client's
+``Bundle`` — and the same bundle authored in either language must be the *same
+directory*, not merely an equivalent one. That is only checkable if the bytes
+are, so both emit **canonical JSON**: keys sorted, no space between tokens
+(two spaces of indent for the two files a person reads, ``bundle.json`` and a
+preset), and numbers written the shortest way that reads back — which means an
+integral float is ``220``, not ``220.0``.
+
+The number rule is the one that costs something, and it is not a preference:
+JavaScript has a single number type, so a writer there cannot tell ``220.0``
+from ``220`` and could never emit Python's spelling. Dropping the trailing
+zero is what both languages *can* agree on. Nothing downstream reads a type
+out of the spelling — a declared ``"type": "float"`` says what a value is, and
+every leg parses these files with a schema in hand.
 """
 
 from __future__ import annotations
@@ -73,6 +91,31 @@ from . import _native
 DEFAULT_RUNTIME = "/dist/runtime.js"
 
 _TYPE_NAMES = {float: "float", int: "int", str: "string", bool: "bool"}
+
+
+def _minimal(value):
+    """`value` with every integral float written as an integer.
+
+    The half of the canonical form Python has to do work for (see the module
+    docstring): JavaScript spells ``220.0`` as ``220`` and has no way not to,
+    so this side meets it there.
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, float) and value.is_integer() and abs(value) < 2 ** 53:
+        return int(value)
+    if isinstance(value, dict):
+        return {k: _minimal(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_minimal(v) for v in value]
+    return value
+
+
+def _json(value, *, indent: int | None = None) -> str:
+    """`value` as canonical JSON — what both writers of this format emit."""
+    separators = (",", ": ") if indent is not None else (",", ":")
+    return json.dumps(_minimal(value), sort_keys=True, ensure_ascii=False,
+                      indent=indent, separators=separators)
 
 
 class Bundle:
@@ -259,20 +302,19 @@ class Bundle:
         defs = [json.loads(d.dump_def()) for d in (*self._synthdefs, *self._graphdefs)]
         _native.bundle_validate(self.manifest(), self.record(), defs)
 
-    def write(self, directory: str, *, runtime: str = DEFAULT_RUNTIME,
-              tag: str | None = None) -> str:
-        """Writes the bundle to ``directory`` and returns the path.
+    def files(self, *, runtime: str = DEFAULT_RUNTIME,
+              tag: str | None = None) -> dict[str, str]:
+        """The whole bundle as text, by path relative to its directory.
 
-        Validates first. Emits the def payloads verbatim (each its own
-        ``/def_send`` spec), the GuiDef record, the presets, the
-        manifest, and the five-line ES module that registers the tag.
+        Validates first, then builds every file `write` would write: the def
+        payloads (each its own ``/def_send`` spec), the GuiDef record, the
+        presets, the manifest, and the five-line ES module that registers the
+        tag. Samples are not here — the audio files are the author's to place
+        in the directory, and the manifest only names them.
 
-        ``tag`` is the custom element's name, defaulting to the bundle's.
-        HTML requires a hyphen in it (that is how a custom element is told from
-        a built-in one), so a one-word bundle name — perfectly good on the
-        desktop, where the name is a GuiDef's — needs an explicit ``tag``.
-        ``runtime`` is where the page serves the component run time from: the
-        page's business, not the bundle's.
+        This is the writer without the disk, which is what a caller mounting
+        a bundle it has just authored wants (a page, a test, a build step that
+        serves it from memory). `write` is this plus the directory.
         """
         # The substance first: what the bundle *is* matters more than what it
         # will be called, and its error is the more useful one to see.
@@ -283,32 +325,36 @@ class Bundle:
                 f"{tag!r} is not a valid custom element name (lowercase, with a "
                 f"hyphen, not starting with a digit) — pass write(tag=...)"
             )
-        synthdefs = os.path.join(directory, "defs", "synthdefs")
-        graphdefs = os.path.join(directory, "defs", "graphdefs")
-        guidefs = os.path.join(directory, "defs", "guidefs")
-        for d in (synthdefs, graphdefs, guidefs):
-            os.makedirs(d, exist_ok=True)
-
+        out = {"bundle.json": _json(self.manifest(), indent=2) + "\n",
+               f"defs/guidefs/{self.gui_name}.json": _json(self.record()),
+               "index.js": _module(tag, runtime)}
         for d in self._synthdefs:
-            with open(os.path.join(synthdefs, f"{d.name}.json"), "w") as f:
-                f.write(d.dump_def())
+            out[f"defs/synthdefs/{d.name}.json"] = _json(json.loads(d.dump_def()))
         for d in self._graphdefs:
-            with open(os.path.join(graphdefs, f"{d.name}.json"), "w") as f:
-                f.write(d.dump_def())
-        with open(os.path.join(guidefs, f"{self.gui_name}.json"), "w") as f:
-            json.dump(self.record(), f)
-        if self._presets:
-            presets = os.path.join(directory, "presets")
-            os.makedirs(presets, exist_ok=True)
-            for name, values in self._presets.items():
-                with open(os.path.join(presets, f"{name}.json"), "w") as f:
-                    json.dump(values, f, indent=2)
-                    f.write("\n")
-        with open(os.path.join(directory, "bundle.json"), "w") as f:
-            json.dump(self.manifest(), f, indent=2)
-            f.write("\n")
-        with open(os.path.join(directory, "index.js"), "w") as f:
-            f.write(_module(tag, runtime))
+            out[f"defs/graphdefs/{d.name}.json"] = _json(json.loads(d.dump_def()))
+        for name, values in self._presets.items():
+            out[f"presets/{name}.json"] = _json(values, indent=2) + "\n"
+        return out
+
+    def write(self, directory: str, *, runtime: str = DEFAULT_RUNTIME,
+              tag: str | None = None) -> str:
+        """Writes the bundle to ``directory`` and returns the path.
+
+        `files` is what it writes, and carries what each file is; this adds
+        the directories and the disk.
+
+        ``tag`` is the custom element's name, defaulting to the bundle's.
+        HTML requires a hyphen in it (that is how a custom element is told from
+        a built-in one), so a one-word bundle name — perfectly good on the
+        desktop, where the name is a GuiDef's — needs an explicit ``tag``.
+        ``runtime`` is where the page serves the component run time from: the
+        page's business, not the bundle's.
+        """
+        for path, text in self.files(runtime=runtime, tag=tag).items():
+            full = os.path.join(directory, *path.split("/"))
+            os.makedirs(os.path.dirname(full), exist_ok=True)
+            with open(full, "w") as f:
+                f.write(text)
         return directory
 
     def __repr__(self) -> str:

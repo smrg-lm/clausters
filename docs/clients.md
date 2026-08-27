@@ -328,13 +328,24 @@ GuiDef builders or the sequencing layer (`clients/web/tests/runtime-graph.test.t
 asserts the exclusion). A page that *does* want the TypeScript client imports
 `dist/index.js` on top; both postures target the same element.
 
-**Writing one** is `clausters.bundle.Bundle` in the Python client, which holds
-the symbol table so the author names things instead of numbering them, and
-validates through the core before emitting — an unmountable bundle is
-unwritable. The generic `<clausters-bundle src="./fm-voice">` mounts a bundle
+**Writing one** is `Bundle` — `clausters.bundle.Bundle` in the Python client,
+`clausters/bundle-writer` in the web client, one writer in two languages. It
+holds the symbol table so the author names things instead of numbering them,
+and validates through the core before emitting — an unmountable bundle is
+unwritable. Both emit **canonical JSON** (keys sorted, no space between tokens,
+an integral float spelled `220` because JavaScript has no other spelling for
+it), so the same authoring calls in either language produce the same directory
+byte for byte, which is what `clients/web/tests/bundle-parity.test.ts` checks.
+
+`write` takes a directory and runs where there is one — a Python script, a node
+script; `files` hands back the same bundle as text, which is how a page authors
+one and mounts it (`openBundle({ files })`) with no round trip through disk.
+The generic `<clausters-bundle src="./fm-voice">` mounts a served bundle
 without a generated module. `clients/web/examples/panels/piano/` and
-`examples/panels/graph-controls/` are the worked examples;
-`clients/web/tests/components.html` is the acceptance.
+`examples/panels/graph-controls/` are the worked examples,
+`clients/web/examples/components/authored.html` the in-page one;
+`clients/web/tests/components.html` and `tests/authored.html` are the
+acceptances.
 
 ## The TypeScript client (started)
 

@@ -83,12 +83,16 @@ already carry it.
 Same size of work, except the shape depends on an answer. The decision is named
 on each one; none of them is being taken by this file.
 
-**Nothing open.** Both entries this section held were taken on 2026-08-27 and
-shipped with their answers: the page's missing *real* constant, measured to cost
-nothing and answered by a verb both clients already have; and who builds
-`libfaust-wasm`, answered by the release, since there was never a fetchable build
-that binds the APIs our interpreter drives. Their plans' checkboxes and
-`docs/decisions.md` carry the record.
+- ⬜ **Where a node example lives** *(`clients/web/PLAN.md`, "Found by use",
+  "Two pairs read side by side turn out not to be pairs")*. `W15` shipped the
+  TypeScript bundle writer, so three scripts are now writable and homeless: the
+  counterpart of `examples/panels/standalone.py`, and the two
+  `examples/panels/*/make_bundle.py` that author the bundles this package's own
+  pages mount in Python.
+  **The decision:** `clients/web/examples/` holds pages, and the `examples`
+  skill says a web example *is* a page — so whether that directory grows a
+  script form, and where (its own subdirectory, beside the suites), is a rule
+  about the three example directories rather than a choice about one file.
 
 ## 3. Tests and reviews pending
 
@@ -141,15 +145,6 @@ Numbered milestones whose track is otherwise closed. Each is owned and written i
 its plan; the plan is where its acceptance is read.
 
 ### Ready — no decision in front of them
-
-- ⬜ **`W15` — the TypeScript bundle writer** *(`clients/web/PLAN.md`)*. **A
-  node milestone**, decided 2026-08-26: a bundle is an input a static page boots
-  with no interpreter, so writing one is not something a page does; the page's
-  half of W15 is the in-memory mount, which writes nothing. That makes **"Node
-  target"** (`clients/web/PLAN.md`, Future directions) its dependency rather
-  than a someday. It also carries what is left of the `panels/standalone`
-  divergence: the counterpart of `standalone.py` is a node script, and where a
-  node script lives in `clients/web/examples/` — pages today — is open.
 
 - ⬜ **`G31g` — engraving refinements** *(`clients/gui/PLAN.md`)*. Tuplets, full
   polyphony, written duration beyond `dur`, tonal spelling, grace notes,

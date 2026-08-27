@@ -150,6 +150,28 @@ def test_write_emits_the_directory_and_its_module(tmp_path):
     assert 'defineComponent("fm-voice", new URL(".", import.meta.url));' in module
 
 
+def test_files_is_what_write_writes(tmp_path):
+    """The disk is the only difference between the two: `files` is the whole
+    bundle as text, which is what a caller mounting one from memory takes."""
+    out = tmp_path / "fm-voice"
+    written = a_bundle().files()
+    a_bundle().write(str(out))
+    on_disk = {str(p.relative_to(out)): p.read_text()
+               for p in sorted(out.rglob("*")) if p.is_file()}
+    assert written == on_disk
+
+
+def test_the_emitted_bytes_are_canonical():
+    """What makes the two writers comparable at all (see the module docstring):
+    sorted keys, no space between tokens, and an integral float spelled the one
+    way JavaScript can also spell it."""
+    files = a_bundle().files()
+    record = files["defs/guidefs/fm-voice.json"]
+    assert record.startswith('{"gui":{'), record[:40]
+    manifest = files["bundle.json"]
+    assert '"default": 220,' in manifest and "220.0" not in manifest
+
+
 def test_the_baked_form_is_what_the_rule_prevents(tmp_path):
     """`baked()` compiles bus 0 into the def, so both instances would write it.
     The writer cannot see that (0 is a number, not a hole) — the rule is an

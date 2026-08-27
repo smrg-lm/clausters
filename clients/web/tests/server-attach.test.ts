@@ -11,7 +11,6 @@
 // No wasm audio and no socket: a recording carrier stands in for both engines.
 
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { loadOsc } from "../src/base/osc.ts";
@@ -19,11 +18,7 @@ import type { Connection } from "../src/base/connection.ts";
 import { Server } from "../src/defs/server/index.ts";
 import { ServerError } from "../src/errors.ts";
 
-await loadOsc(
-    await readFile(
-        new URL("../dist/core/clausters_core_web_bg.wasm", new URL(".", import.meta.url)),
-    ),
-);
+await loadOsc();
 
 /** A carrier that records what it is given and never replies. */
 function silent(url?: string): Connection & { packets: Uint8Array[] } {

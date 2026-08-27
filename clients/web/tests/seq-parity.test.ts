@@ -18,9 +18,7 @@ import { Automation, autoLaneDef, envGenArgs, LANE_DEF } from "../src/seq/automa
 
 const here = new URL(".", import.meta.url);
 
-await loadOsc(
-    await readFile(new URL("../dist/core/clausters_core_web_bg.wasm", here)),
-);
+await loadOsc();
 
 interface AutomationVector {
     name: string;

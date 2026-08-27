@@ -9,7 +9,7 @@
 // runnable from a source tree without that build.
 
 import assert from "node:assert/strict";
-import { access, readFile } from "node:fs/promises";
+import { access } from "node:fs/promises";
 import test from "node:test";
 import { setTimeout as sleep } from "node:timers/promises";
 import { spawnChild } from "./child.ts";
@@ -28,9 +28,7 @@ const udpPort = 57989; // the host front's UDP port, moved off 57210 likewise
 
 const hasHost = await access(hostBin).then(() => true, () => false);
 
-await loadOsc(
-    await readFile(new URL("../dist/core/clausters_core_web_bg.wasm", here)),
-);
+await loadOsc();
 
 /**
  * Starts a headless host and drives it through a connected `GuiHost`,

@@ -65,9 +65,7 @@ const v: Vectors = JSON.parse(
     await readFile(new URL("clock-vectors.json", here), "utf8"),
 );
 
-await loadCore(
-    await readFile(new URL("../dist/core/clausters_core_web_bg.wasm", here)),
-);
+await loadCore();
 
 test("beat arithmetic matches the Python client", () => {
     for (const c of v.beatsToSecs) {

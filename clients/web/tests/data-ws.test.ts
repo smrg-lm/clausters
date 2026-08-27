@@ -11,7 +11,7 @@
 // missing, so `npm test` stays runnable from a source tree without a build.
 
 import assert from "node:assert/strict";
-import { access, readFile } from "node:fs/promises";
+import { access } from "node:fs/promises";
 import test from "node:test";
 import { setTimeout as sleep } from "node:timers/promises";
 import { spawnChild } from "./child.ts";
@@ -37,9 +37,8 @@ const udpPort = 57891;
 
 const hasServer = await access(serverBin).then(() => true, () => false);
 
-const wasm = await readFile(new URL("../dist/core/clausters_core_web_bg.wasm", here));
-await loadOsc(wasm);
-await loadCore(wasm);
+await loadOsc();
+await loadCore();
 
 async function withServer(body: (server: Server) => Promise<void>): Promise<void> {
     const child = spawnChild(serverBin, ["--port", String(udpPort), "--ws", String(wsPort),

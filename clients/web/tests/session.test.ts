@@ -11,7 +11,6 @@
 // audio, no socket, no clock actually ticking (the manual ticker drives it).
 
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
@@ -29,11 +28,7 @@ import { play } from "../src/play.ts";
 import { Event } from "../src/seq/event.ts";
 import { flush } from "./flush.ts";
 
-await loadCore(
-    await readFile(
-        new URL("../dist/core/clausters_core_web_bg.wasm", new URL(".", import.meta.url)),
-    ),
-);
+await loadCore();
 
 /** A carrier that only records; nothing replies. */
 function recorder(): Connection & { packets: Uint8Array[] } {

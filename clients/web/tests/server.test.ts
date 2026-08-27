@@ -19,7 +19,7 @@
 // several at once — not a port. Lifting it is a measurement, not a fix.
 
 import assert from "node:assert/strict";
-import { access, mkdtemp, readFile, rm } from "node:fs/promises";
+import { access, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -51,9 +51,7 @@ const udpPort = 57888;
 
 const hasServer = await access(serverBin).then(() => true, () => false);
 
-await loadOsc(
-    await readFile(new URL("../dist/core/clausters_core_web_bg.wasm", here)),
-);
+await loadOsc();
 
 /**
  * Boots a server, runs `body` against a `Server` over its WS front, and

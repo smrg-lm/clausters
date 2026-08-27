@@ -14,7 +14,6 @@
 // Needs the core wasm staged (`./build.sh`); run with `npm test`.
 
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
@@ -27,7 +26,7 @@ import type { GuiHost } from "../src/gui/host.ts";
 import type { Server } from "../src/defs/server/index.ts";
 
 const here = new URL(".", import.meta.url);
-await loadCore(await readFile(new URL("../dist/core/clausters_core_web_bg.wasm", here)));
+await loadCore();
 
 const SR = 48_000.0;
 const TEMPO = 2.0; // beats per second (120 bpm)

@@ -1129,26 +1129,87 @@ component mounts into the in-page host and nothing there closes a canvas.
 Example: `examples/components/lifecycle.html` — instruments added and removed by hand, with
 the pools' occupancy on screen.
 
-### W15 - The TypeScript bundle writer
+### ✅ W15 - The TypeScript bundle writer *(done 2026-08-27)*
 
 *Deferred out of W4*, which shipped the writer in Python only — the reference
 client leads and the port is mechanical, the repo's standing rule. This is that
 port, so a bundle can be authored in the same language the page is written in.
 
 **It is a node milestone, and that was decided rather than assumed** *(with the
-user, 2026-08-26, closing the `panels/standalone` entry below)*: a bundle is an
-input a static page boots with no interpreter, so **writing** one is not
-something a page does. The file writer below is the milestone's centre and it
-runs in node; the page's half is the in-memory mount, which writes nothing.
-**That makes "Node target" (Future directions) this milestone's dependency
-rather than a someday** — a load path that finds the core's `.wasm` without a
-test's manual read, and a documented entry point, are what a node script needs
-before it can be an example anyone runs.
+user, 2026-08-26, closing the `panels/standalone` entry in the root plan)*: a
+bundle is an input a static page boots with no interpreter, so **writing** one
+is not something a page does. The file writer below is the milestone's centre
+and it runs in node; the page's half is the in-memory mount, which writes
+nothing. **That made "Node target" (then a Future direction) this milestone's
+dependency rather than a someday**, and it shipped here rather than separately
+— the entry left that list, as an entry that converges into a milestone does.
 
 - `src/bundle-writer.ts` (authoring, **not** part of the slim `dist/runtime.js`): the TS counterpart of `clausters.bundle.Bundle` — the symbol table, the bundle-prefixed def names, the declared `params` and presets, validation through the core wasm door (`check_def_payload` and the `requirements`/`resolve` pair) before emitting, and the generated five-line ES module that registers the tag. An unmountable bundle stays unwritable, on this leg too.
 - Runs in Node (a file writer) and in the page (an in-memory bundle mounted without a round trip through disk), the two being the same code over a small output seam.
 
 **Acceptance:** the W4 bundle parity vector runs both ways — what the TS writer emits and what the Python writer emits are byte-identical for the same input, and each resolves through the browser's wasm door to the same mount; `examples/editors/document/` rebuilt from the TS writer draws the same page.
+
+The first half is met and is the suite's own assertion. **The second is the
+half that waits on the open decision below**: the bundles that page mounts are
+written by `examples/panels/*/make_bundle.py`, so rebuilding them from the TS
+writer means adding a node script to a directory that holds pages — which is
+exactly the question this milestone did not answer. What stands in for it until
+then is stronger than a redrawn page and weaker than a ported script: the two
+writers are compared on bytes, so a bundle written by either is the same
+directory by construction.
+
+**The output seam turned out to be `files()`, and it went into both clients.**
+`write(directory)` is `files()` plus the disk, and `files()` — the whole bundle
+as `path -> text` — is what a page mounts (`openBundle({ files })`, a `Source`
+inside the mount that reads a path from memory or fetches it under `base`, the
+one place that had to learn the difference). A verb only one client had would
+have been the divergence this rule exists to stop, so `Bundle.files()` is in
+the Python client too, and `write` there is now the same two lines.
+
+**Byte-identity is what forced the format to become canonical.** Two writers
+emit one directory only if they agree on the bytes, and JavaScript has a single
+number type: `220.0` is unsayable there. So both writers emit **canonical
+JSON** — keys sorted (which also keeps the two GuiDef builders' key order out
+of the comparison), no space between tokens, two spaces of indent for the two
+files a person reads, and an integral float spelled `220`. Python's writer
+moved to meet it; nothing downstream reads a type out of the spelling, and the
+core already coerces an integer where a `"type": "float"` is declared. The
+sorted keys also mean the *files* are sorted where the builders' output was
+not, which is why this had to be decided rather than discovered.
+
+**The node target, which was the dependency.** `loadCore()` with no argument
+now finds the core's `.wasm` in either environment — the glue's URL-relative
+fetch in a browser, a read off disk under node (the emitted `dist/base/` layout
+and the source `src/base/` one, in that order) — so the 31 suites that each
+carried their own `readFile` of the same file simply call `loadCore()`, which
+is the load path being *exercised* rather than described. The boundary is
+written down in the book (`docs/src/platform.md`, "Without a tab: the client
+under node"): the def, sequencing, arrangement, data and writer layers port and
+the WS carriers work; the in-page engine and the page host do not; and the
+facade `import "clausters"` does not either, because importing it registers
+custom elements a document has to exist for — so a node script imports the
+subpaths, and `clausters/bundle-writer` re-exports `loadCore` to be
+self-sufficient.
+
+**Verified:** `./test.sh`. The parity suite is the acceptance and it holds both
+halves — the TypeScript writer's `files()` compared **byte for byte** with the
+frozen output of the Python writer for the same authoring calls, `write()`
+compared the same way against what lands on disk, and what the TS writer emits
+resolved through the wasm door into the frozen mounts. The new page is
+`tests/authored.html`: a bundle authored in the tab, mounted from memory,
+drawing and sounding, with the assertion that the page's own resource timeline
+holds **no** bundle request. Example:
+`examples/components/authored.html` — the same thing by hand, with the
+emitted directory listed on screen.
+
+**What it leaves open, and it is the decision this milestone did not take:**
+where a **node script** lives in `clients/web/examples/`. The directory holds
+pages, the `examples` skill says a web example *is* a page, and the counterpart
+of `standalone.py` is a script — so the entry in the root plan ("Two pairs read
+side by side turn out not to be pairs") stays open with exactly that question,
+and the writer shipped without its node-side example. What it did not lack is a
+manual test: `write()` is covered by the suite, and the page half has both a
+smoke and an example.
 
 ### ✅ W16 - Example parity with the Python client *(done 2026-08-25)*
 
@@ -1579,10 +1640,6 @@ Every entry carries a checkbox, like the plan's "Found by use" below: an
 open direction has to read as open, and one that converges into a milestone leaves
 this list rather than being ticked here.
 
-- ⬜ **Node target** *(no longer a someday: **W15** depends on it, decided
-  2026-08-26 — the TS bundle writer is a node milestone, and a node script has
-  to be runnable before it can be an example)*. Already true in the harness, not
-  yet a supported target: the `node --test` suites drive a real `clausters --ws` server and a real `clausters-gui --ws` host, so `WsConnection` runs under node's global `WebSocket` (`src/base/connection.ts` says so) and the wasm core loads there (`loadCore(bytes)`, node's `fetch` not reading `file://`). What remains is making it a *product*: a load path that finds the core's `.wasm` without the test's manual read, a documented entry point for headless scripting/CI the way `clients/python` runs without a display, and the boundary written down — the def, sequencing and GUI-driver layers port, the in-page engine (AudioWorklet) and the page host (canvas) do not.
 - ✅ **Who builds `libfaust-wasm`** *(left over from **W7**/**B5**, decided and
   done 2026-08-27)*. The question was whether CI grows an **emsdk** leg or the
   artifact is **fetched** and pinned by digest, and fetching turned out never to
@@ -2997,6 +3054,16 @@ finished work, where a pending item reads as done.
     there. Its own subdirectory, or beside the suites — a question for the
     `examples` skill, since that is where the three directories and their forms
     are written down.
+
+    **W15 shipped without answering it** *(2026-08-27)*, so this is now the one
+    thing between the writer and its examples rather than a note beside a
+    milestone. Three scripts wait on the answer, not one: the counterpart of
+    `standalone.py`, and the two `examples/panels/*/make_bundle.py` that write
+    the bundles this package's own pages mount — a Python script authoring the
+    web client's examples is itself the divergence, and it is only still there
+    because there was no TypeScript writer. The page half needed no decision
+    and shipped: `examples/components/authored.html` authors a bundle in the
+    tab and mounts it from memory.
   - ✅ **`transport/sync`'s page has a half the script does not**, and says so in
     its own prose: a playhead that obeys the shared grid. That is not a platform
     difference — a script can follow a playhead — so it is the script that is

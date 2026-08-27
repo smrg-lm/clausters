@@ -49,6 +49,12 @@ export type { ClaustersGui } from "./gui/host.ts";
 export * as gui from "./gui/index.ts";
 export { bootBundle, freeBundle, openBundle, startBundle } from "./bundle.ts";
 export type { BundleManifest, MountOptions, Mounted, ParamSpec } from "./bundle.ts";
+// Authoring one, the other direction: `write` is a node verb, `files` is the
+// same bundle in memory for a page to mount. Its own subpath as well
+// (`clausters/bundle-writer`), because node cannot import this module — the
+// custom elements it registers need a document.
+export { Bundle, DEFAULT_RUNTIME } from "./bundle-writer.ts";
+export type { Hole, ParamOptions, ParamType, WritableDef, WriteOptions } from "./bundle-writer.ts";
 export { ClaustersBundle, ClaustersPower, defineComponent, startPage } from "./elements.ts";
 export { Session } from "./session.ts";
 export type { SessionOptions } from "./session.ts";

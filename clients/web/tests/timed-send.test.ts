@@ -7,7 +7,6 @@
 // property the whole layer exists for.
 
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
@@ -22,11 +21,7 @@ import { Server } from "../src/defs/server/index.ts";
 import { Event } from "../src/seq/event.ts";
 import { flush } from "./flush.ts";
 
-await loadCore(
-    await readFile(
-        new URL("../dist/core/clausters_core_web_bg.wasm", new URL(".", import.meta.url)),
-    ),
-);
+await loadCore();
 
 /**
  * A carrier that only records. Nothing replies, so the Server is opened with

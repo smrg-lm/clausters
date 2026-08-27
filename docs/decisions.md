@@ -7142,3 +7142,40 @@ two builds are ~20 minutes cold, `ci.yml`'s smokes reach neither, and a page tha
 wants the compiler is a manual test either way. The cache key is the three pins
 plus the recipes' hashes, so a repin or a flag change moves it with nothing to
 keep in sync in the callers.
+
+## The bundle format's bytes are canonical, so two writers make one directory
+
+*2026-08-27.*
+
+W15 ported the bundle writer to TypeScript, and a second writer of one format
+raises a question the first one never had to answer: what does it mean for the
+two to agree? The milestone's acceptance said **byte-identical**, which is the
+only version of the claim a test can check — compare shapes and two writers can
+drift apart in everything JSON parsing throws away, which is exactly where a
+port drifts.
+
+Bytes cannot be agreed on by imitation, and the reason is the one already
+recorded above about a page's single number type. Python spells an integral
+float `220.0`; JavaScript has no way to say that at all, since `220.0` *is*
+`220` by the time a writer sees it. So the shared spelling is the one both
+languages can produce: **an integral float is written without its decimal**.
+The rest follows the same rule of picking what neither side has to work to
+reproduce — **keys sorted**, no space between tokens, two spaces of indent for
+the two files a person reads (`bundle.json` and a preset). Sorting is not
+cosmetic: the two GuiDef builders assemble their props in their own order, and
+sorting is what keeps that out of the comparison instead of coupling one
+client's builder to the other's.
+
+Nothing downstream reads a type out of the spelling. A parameter declares
+`"type": "float"` and the core's resolver coerces an integer to it (`clausters_core::bundle`); a
+def payload's `{"const": 1}` deserializes into an `f32` field; the native leg's
+`boot_messages` is the one place a JSON integer means something — it becomes an
+OSC `Int` rather than a `Float` — and the server's own reader accepts an int
+wherever it wants a float (`osc::translate`), which is what the page leg has
+always relied on, since `JSON.parse` erased the distinction there long before
+this.
+
+The Python writer moved to meet the format rather than the format bending to
+the reference client. That is the usual direction reversed, and it is right
+here: what is being defined is a **file**, not an API, and a file that only one
+language can write is not a format.

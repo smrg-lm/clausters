@@ -8,15 +8,12 @@
 // facts in the same order.
 
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
 import * as B from "../src/base/builtins.ts";
 
-await loadCore(
-    await readFile(new URL("../dist/core/clausters_core_web_bg.wasm", import.meta.url)),
-);
+await loadCore();
 
 const close = (got: number, want: number, tol = 1e-4): void =>
     assert.ok(Math.abs(got - want) <= Math.abs(want) * tol + 1e-6, `${got} != ${want}`);

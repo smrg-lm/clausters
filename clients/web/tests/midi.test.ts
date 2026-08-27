@@ -15,8 +15,8 @@
 // wired to the shared writer and not to a second one.
 
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { readFile } from "node:fs/promises";
 
 import { loadCore } from "../src/base/core.ts";
 import {
@@ -62,11 +62,7 @@ function runner(clock: TempoClock, timebase: ManualTimebase, ticker: ManualTicke
     };
 }
 
-await loadCore(
-    await readFile(
-        new URL("../dist/core/clausters_core_web_bg.wasm", new URL(".", import.meta.url)),
-    ),
-);
+await loadCore();
 
 const vectors = JSON.parse(
     await readFile(new URL("./midi-vectors.json", import.meta.url), "utf8"),

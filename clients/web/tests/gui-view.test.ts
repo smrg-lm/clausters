@@ -11,7 +11,6 @@
 // Needs the core wasm staged (`./build.sh`); run with `npm test`.
 
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import type { Connection } from "../src/base/connection.ts";
@@ -41,7 +40,7 @@ import {
 import type { GuiNode } from "../src/gui/guidef.ts";
 
 const here = new URL(".", import.meta.url);
-await loadOsc(await readFile(new URL("../dist/core/clausters_core_web_bg.wasm", here)));
+await loadOsc();
 
 /** A carrier that only records; nothing replies. */
 function recorder(): Connection & { packets: Uint8Array[] } {

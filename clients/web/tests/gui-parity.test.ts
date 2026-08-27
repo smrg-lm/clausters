@@ -70,9 +70,7 @@ const here = new URL(".", import.meta.url);
 
 // The id allocator is core-backed (the same occupancy map the server and the
 // Python client use), so the wasm has to be in before it is exercised.
-await loadOsc(
-    await readFile(new URL("../dist/core/clausters_core_web_bg.wasm", here)),
-);
+await loadOsc();
 
 interface Vector {
     name: string;

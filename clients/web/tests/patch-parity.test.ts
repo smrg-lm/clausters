@@ -15,8 +15,8 @@
 // Run with `npm test`; this suite needs nothing staged.
 
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { readFile } from "node:fs/promises";
 
 import {
     DefPatch,

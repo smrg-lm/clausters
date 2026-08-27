@@ -80,7 +80,7 @@ const vectors = JSON.parse(
 
 // Node has no URL-relative wasm fetch, so the module arrives as bytes -- the
 // same path every other parity test here takes.
-await loadCore(await readFile(new URL("../dist/core/clausters_core_web_bg.wasm", here)));
+await loadCore();
 
 test("the same edits produce the same document", async () => {
     let document = vectors.start;

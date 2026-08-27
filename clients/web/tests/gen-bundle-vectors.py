@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
 """Generate bundle-vectors.json from the Python bundle writer and the core pass.
 
-The Python client is the reference authoring client: it *writes* bundles. The
-browser only *mounts* them. So what has to agree across the two languages is
-not two writers (TypeScript gets one later) but this: **the file the writer
-emits, resolved**. This script freezes a written bundle — its manifest and its
-GuiDef template — together with what the shared resolver makes of it for a
-given allocation, and `tests/bundle-parity.test.ts` asserts the browser's wasm
-door produces exactly the same from exactly those inputs.
+The Python client is the reference authoring client, and the web client now
+writes bundles too, so this vector holds both halves of the agreement:
 
-Both sides call one pass (`clausters_core::bundle`), so a mismatch means a
-binding drifted, which is the only thing that can drift.
+- **the files** the Python writer emits, byte for byte, which the TypeScript
+  writer must emit from the same authoring calls. The format is canonical JSON
+  precisely so that this comparison can be made on bytes rather than on shape;
+- **the resolution** of what was written, for a given allocation, which the
+  browser's wasm door must reproduce exactly.
+
+Both sides call one pass (`clausters_core::bundle`), so a mismatch in the
+second means a binding drifted, which is the only thing that can drift there;
+a mismatch in the first means the two writers have grown apart, which is what
+the standing non-divergence rule forbids.
 
 The JSON is committed; regenerate with:
 
@@ -102,6 +105,10 @@ def main():
     out = {
         "manifest": manifest,
         "template": template,
+        # Every file the writer emits, by path relative to the bundle
+        # directory -- the TypeScript writer's own output is compared with
+        # this text, not with a re-parsed shape.
+        "files": bundle.files(),
         "requirements": requirements,
         "cases": cases,
     }

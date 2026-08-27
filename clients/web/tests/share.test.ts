@@ -15,7 +15,6 @@
 // buffers is no better off.
 
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { loadCore, nodeIdPartition, shareOf, WHOLE_SHARE } from "../src/base/core.ts";
@@ -24,11 +23,7 @@ import { Server } from "../src/defs/server/index.ts";
 import { GuiHost } from "../src/gui/host.ts";
 import { GuiIdAllocator, BASE_ID, CAPACITY } from "../src/gui/ids.ts";
 
-await loadCore(
-    await readFile(
-        new URL("../dist/core/clausters_core_web_bg.wasm", new URL(".", import.meta.url)),
-    ),
-);
+await loadCore();
 
 /** A carrier that records and never replies. */
 const recorder = (): Connection => ({

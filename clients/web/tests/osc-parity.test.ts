@@ -51,9 +51,7 @@ const toArgs = (raw: Vector["args"]): OscArg[] =>
             : ([tag, value] as OscArg),
     );
 
-await loadOsc(
-    await readFile(new URL("../dist/core/clausters_core_web_bg.wasm", here)),
-);
+await loadOsc();
 
 test("encode parity with the Python reference", () => {
     for (const vector of vectors) {

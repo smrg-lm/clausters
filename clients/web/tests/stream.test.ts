@@ -2,18 +2,13 @@
 // carries its own random stream.
 
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
 import { FunctionStream, Routine, StopStream } from "../src/base/stream.ts";
 import { Rng, seed, spawnRng } from "../src/base/rand.ts";
 
-await loadCore(
-    await readFile(
-        new URL("../dist/core/clausters_core_web_bg.wasm", new URL(".", import.meta.url)),
-    ),
-);
+await loadCore();
 
 test("a routine yields its delays in order and then ends", () => {
     const seen: string[] = [];

@@ -36,7 +36,7 @@ import { render } from "../src/render.ts";
 
 const here = new URL(".", import.meta.url);
 
-await loadOsc(await readFile(new URL("../dist/core/clausters_core_web_bg.wasm", here)));
+await loadOsc();
 await loadRenderer(await readFile(new URL("../dist/engine/clausters_web_bg.wasm", here)));
 
 interface Vector {

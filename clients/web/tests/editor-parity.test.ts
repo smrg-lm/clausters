@@ -36,7 +36,7 @@ import { Event as SeqEvent } from "../src/seq/event.ts";
 import { Timeline } from "../src/seq/timeline.ts";
 
 const here = new URL(".", import.meta.url);
-await loadCore(await readFile(new URL("../dist/core/clausters_core_web_bg.wasm", here)));
+await loadCore();
 
 const vectors = JSON.parse(
     await readFile(new URL("./editor-vectors.json", here), "utf8"),

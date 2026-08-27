@@ -10,7 +10,6 @@
 // reading alike.
 
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
@@ -24,11 +23,7 @@ import { Moment } from "../src/base/moment.ts";
 import { OscDestination } from "../src/base/destination.ts";
 import { flush } from "./flush.ts";
 
-await loadCore(
-    await readFile(
-        new URL("../dist/core/clausters_core_web_bg.wasm", new URL(".", import.meta.url)),
-    ),
-);
+await loadCore();
 
 function recorder(): Connection & { packets: Uint8Array[] } {
     const packets: Uint8Array[] = [];

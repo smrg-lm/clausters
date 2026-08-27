@@ -28,9 +28,7 @@ import { Score, setEngraverUrl } from "../src/gui/notation/index.ts";
 const here = new URL(".", import.meta.url);
 const engraver = new URL("../vendor/verovio/verovio.js", here);
 
-await loadCore(
-    await readFile(new URL("../dist/core/clausters_core_web_bg.wasm", here)),
-);
+await loadCore();
 
 interface Case {
     mei: string;

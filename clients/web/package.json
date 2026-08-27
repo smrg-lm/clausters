@@ -37,6 +37,10 @@
     "./runtime": {
       "types": "./dist/runtime.d.ts",
       "default": "./dist/runtime.js"
+    },
+    "./bundle-writer": {
+      "types": "./dist/bundle-writer.d.ts",
+      "default": "./dist/bundle-writer.js"
     }
   },
   "files": [

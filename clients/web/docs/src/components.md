@@ -61,6 +61,35 @@ The split is enforced by a test over the module graph, so the builders cannot cr
 
 ## Authoring a bundle
 
-Bundles are written with the Python client's writer, `clausters.bundle.Bundle`: it holds the symbol table so the author names things instead of numbering them, prefixes the def names with the bundle's, declares the parameters and the presets, and validates through the shared core before emitting — an unmountable bundle is unwritable. `examples/panels/piano/make_bundle.py` in the repository is the worked example, and the format itself is documented in the [server book](https://clausters.readthedocs.io/).
+A bundle is written with `Bundle` — this client's writer and the Python client's `clausters.bundle.Bundle` are the same writer in two languages. It holds the symbol table so the author names things instead of numbering them, prefixes the def names with the bundle's, declares the parameters and the presets, and validates through the shared core before emitting — an unmountable bundle is unwritable. The format itself is documented in the [server book](https://clausters.readthedocs.io/).
+
+`param`, `node`, `bus` and `buffer` each hand back the placeholder that stands for what they declare, so the template is written with names and the mount fills in numbers:
+
+```ts
+import { Bundle, loadCore } from "clausters/bundle-writer";
+import * as defs from "clausters/defs";
+import * as gui from "clausters/gui";
+
+await loadCore();                      // the writer validates through the core
+const b = new Bundle("fm-voice");
+const freq = b.param("freq", "float", { default: 220.0, min: 60.0, max: 700.0 });
+const lfo = b.bus("lfo");
+const node = b.node("voice");
+
+b.synthdef(voice());                   // named "fm-voice.voice"
+b.gui(gui.view({ layout: "col" },
+               gui.knob({ label: "freq", value: freq,
+                          bind: ["/node_set", node, "freq"], id: 2 }),
+               gui.meter(lfo, { rate: "control", id: 3 })));
+b.boot(["/synth_new", "fm-voice.voice", node, 0, 0, "freq", freq]);
+b.preset("bright", { freq: 660.0 });
+
+await b.write("./fm-voice");           // node: the directory a page serves
+const files = b.files();               // a page: the same bundle as text
+```
+
+**Where it runs.** `write` takes a directory and is a **node** verb, and that is the shape of the thing rather than a limitation: a bundle is an *input*, produced ahead of time and saved, so that a static page can boot it with no interpreter at all. A page can author one too; what it gets is `files`, the same bundle as text, which `openBundle({ files })` mounts with no round trip through disk (`examples/components/authored.html`).
+
+The two writers emit **the same bytes** for the same authoring calls — canonical JSON, keys sorted, an integral float spelled `220` because JavaScript has no other spelling for it — which is what makes "one bundle, two languages" a thing a test can check rather than a claim.
 
 One authoring rule follows from the holes living only in the GuiDef record: a bus or a node reaches a def **as a control**, never as a value baked into the def, or the def could not be shared between two instances.

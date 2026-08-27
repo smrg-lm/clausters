@@ -92,6 +92,24 @@ Widget ids are **local**: the root is 1 and the rest are yours to number from
 2 up. The mount offsets the whole block per instance, so the numbers never
 travel.
 
+## The directory, without the directory
+
+`files()` is `write()` without the disk: the same bundle as a mapping of path
+to text, validated the same way. It is what a caller mounting a bundle it has
+just authored takes — and it is the shape the web client's writer needs, since
+a page authors one and mounts it from memory rather than serving it.
+
+```python
+for path, text in b.files().items():
+    print(path, len(text))
+```
+
+The bytes are **canonical JSON** — keys sorted, no space between tokens, and an
+integral float written `220` rather than `220.0`. That last one is not a
+preference: the same writer exists in TypeScript, JavaScript has a single
+number type, and the two must emit the *same* directory for the same authoring
+calls, which is a claim a test can only check on bytes.
+
 ## Running what you wrote
 
 ```sh

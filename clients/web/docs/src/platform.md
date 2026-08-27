@@ -8,7 +8,8 @@ somebody took rather than as work nobody did.
 
 The rule for reading it: a row here is a limit of the browser. Anything not
 here and not in the Python client is a gap, and gaps live in
-`clients/web/PLAN.md`, not on this page.
+`clients/web/PLAN.md`, not on this page. The last section runs the other way —
+what this client does **outside** a tab, under node.
 
 ## Permanent
 
@@ -109,3 +110,33 @@ than left to be heard.
 **Buffer work is no longer paid in the audio callback.** A long take arrives in
 runs (a tenth of a second of stereo at a time) and becomes visible in one swap,
 and the jobs that can leave the audio thread do.
+
+## Without a tab: the client under node
+
+The other direction, and the reason it belongs on this page: part of this
+client is not about a browser at all. A def is built, a pattern is played and a
+bundle is written by code that names no canvas — and that code runs under
+**node**, which is what makes headless scripting and CI possible here the way
+`clients/python` runs without a display.
+
+What ports, and what does not:
+
+| Layer | Under node |
+|---|---|
+| The def builders, the sequencing layer, the arrangement, the data figures, the bundle writer (`clausters/defs`, `clausters/seq`, `clausters/form`, `clausters/data`, `clausters/bundle-writer`) | yes — they compute and serialize, and the shared core is what they compute with |
+| The `Server`/`GuiHost` handles over a **WebSocket** carrier, against a `clausters --ws` server and a `clausters-gui --ws` host | yes — node has a global `WebSocket`, and this is what the package's own WS suites drive |
+| The in-page engine (an AudioWorklet) and the page host (a canvas) | no — both are the document's, and there is no headless stand-in for them |
+| The package facade, `import "clausters"` | no — importing it registers the custom elements, which needs a document |
+
+So a node script imports the **subpaths** rather than the facade:
+
+```js
+import { Bundle, loadCore } from "clausters/bundle-writer";
+import * as defs from "clausters/defs";
+
+await loadCore();          // finds the core's .wasm on disk, beside the package
+```
+
+`loadCore()` is the one call that has to know where it is: in a browser it
+fetches the module next to the glue, and under node it reads it off disk. Both
+are the same call with no argument — the environment decides, not the caller.
