@@ -223,6 +223,7 @@ Its document-carrying calls take the document handle.
 | `clausters_log_undo_label` | `JsLog.undo_label` | `idiom` — a getter returning a string, where C sizes and fills |
 | `clausters_log_redo_label` | `JsLog.redo_label` | `idiom` — as above |
 | `clausters_log_len` | `JsLog.len` | `idiom` — a getter |
+| — | `JsLog.is_empty` | `idiom` — `len == 0`, as `JsScheduler` and `JsRegistry` already spell it |
 | `clausters_log_clear` | `JsLog.clear` | |
 
 ## OSC

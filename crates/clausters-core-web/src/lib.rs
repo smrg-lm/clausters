@@ -1340,6 +1340,13 @@ impl JsLog {
         self.0.len()
     }
 
+    /// Whether the log holds nothing — `len == 0`, spelled the way a JS
+    /// collection is read, as `JsScheduler` and `JsRegistry` already spell it.
+    #[wasm_bindgen(getter, js_name = isEmpty)]
+    pub fn is_empty(&self) -> bool {
+        self.0.len() == 0
+    }
+
     /// Forget everything, releasing what was spilled.
     pub fn clear(&mut self) {
         self.0.clear();

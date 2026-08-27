@@ -93,6 +93,11 @@ export class Log {
      */
     readonly canUndo: boolean;
     /**
+     * Whether the log holds nothing — `len == 0`, spelled the way a JS
+     * collection is read, as `JsScheduler` and `JsRegistry` already spell it.
+     */
+    readonly isEmpty: boolean;
+    /**
      * How many entries the log holds.
      */
     readonly len: number;
@@ -682,6 +687,7 @@ export interface InitOutput {
     readonly log_canRedo: (a: number) => number;
     readonly log_canUndo: (a: number) => number;
     readonly log_clear: (a: number) => void;
+    readonly log_isEmpty: (a: number) => number;
     readonly log_len: (a: number) => number;
     readonly log_new: (a: number, b: number) => number;
     readonly log_record: (a: number, b: number, c: number) => [number, number];
