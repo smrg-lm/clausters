@@ -83,22 +83,12 @@ already carry it.
 Same size of work, except the shape depends on an answer. The decision is named
 on each one; none of them is being taken by this file.
 
-- ⬜ **"A page cannot write a Faust constant that is *real* and integral"**
-  *(`clients/web/PLAN.md`, Found by use)*. Older than the box API that found it
-  (`signals.ts` has had it since W1) and invisible to the parity vectors, which
-  compare parsed JSON. A page has one number type, so it can only say the int.
-  **The decision:** first a measurement — how narrow the audible cases actually
-  are, given that Faust promotes int to real — and then, only if the escape
-  already documented is not enough, a spelling for the explicit `real` node the
-  two schemas already accept. It is a *surface*, so it is decided for both
-  clients at once.
-
-- ⬜ **"Who builds `libfaust-wasm`"** *(`clients/web/PLAN.md`, Future
-  directions)*. The last thing `W7`/`B5` left behind: the compiler a page loads
-  is built by hand today and staged by `build.sh`. **The decision:** CI grows an
-  emsdk leg, or the artifact is fetched and pinned by digest. Nothing is blocked
-  on it — what a wrong answer costs is a release built from an artifact nobody
-  can reproduce.
+**Nothing open.** Both entries this section held were taken on 2026-08-27 and
+shipped with their answers: the page's missing *real* constant, measured to cost
+nothing and answered by a verb both clients already have; and who builds
+`libfaust-wasm`, answered by the release, since there was never a fetchable build
+that binds the APIs our interpreter drives. Their plans' checkboxes and
+`docs/decisions.md` carry the record.
 
 ## 3. Tests and reviews pending
 

@@ -1,0 +1,22 @@
+# Pinned Emscripten SDK for the two vendored wasm builds.
+#
+# Single source of truth for `third_party/build-faust-wasm.sh` and
+# `third_party/build-verovio-wasm.sh`, and for the CI composite
+# `.github/actions/wasm-vendor`, which reads EMSDK_VERSION into its cache key.
+# Shell-sourceable: KEY=VALUE, no spaces, no quoting needed.
+#
+# Why this file exists, and it is not symmetry with faust.pin: the two artifacts
+# it builds are the *shipped* ones -- `libfaust-wasm` is the compiler a page
+# JITs Faust defs with, and `verovio.wasm` is the engraver a page lays scores
+# out with -- and neither is compiled from our sources. Their whole content
+# comes from the pinned upstream tree plus the toolchain, so an unpinned SDK
+# means the published npm package is built by whatever emsdk `install latest`
+# resolved to that morning. `clients/web/BUILD.md` used to say exactly that.
+#
+# The version is an emsdk *release* tag, so `./emsdk install $EMSDK_VERSION`
+# resolves it on any machine. Repin deliberately: a toolchain bump is a rebuild
+# of both artifacts and, for the Faust one, a re-read of the departures
+# `build-faust-wasm.sh` documents -- two of the five exist because a *current*
+# emcc changed under the pinned Faust's build files, so a newer SDK is exactly
+# where a sixth would appear.
+EMSDK_VERSION=6.0.8

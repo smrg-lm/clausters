@@ -207,8 +207,11 @@ export class Box extends FaustExpr<Box, BoxInput> {
  * `int 2` in both clients and `box(0.5)` is `real 0.5` in both. The one case a
  * page cannot say is the reference client's `box(2.0)`, a *real* whose value is
  * integral: JavaScript has one number type and `2.0` is `2` by the time this
- * sees it. Recorded in `clients/web/PLAN.md` ("Found by use"), where the
- * escape a page needs is still open.
+ * sees it. It costs nothing measurable — Faust promotes, and where a constant's
+ * type does pick an operator (`%`, `min`, `max`, the comparisons, against an
+ * *int* signal) the two spellings compute the same value — and where the type
+ * is wanted anyway the verb is `asfloat`: `box(2).asfloat()` compiles
+ * to the identical program as Python's `box(2.0)`. See `docs/decisions.md`.
  */
 export function box(x: BoxInput): Box {
     if (x instanceof Box) return x;

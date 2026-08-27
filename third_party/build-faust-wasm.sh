@@ -102,6 +102,18 @@ set +u
 set -u
 command -v em++ >/dev/null || { echo "em++ is not on the PATH after sourcing $emsdk" >&2; exit 1; }
 
+# The SDK is pinned too (third_party/emsdk.pin): this artifact is shipped and
+# nothing in it comes from our sources, so the toolchain is half of what it is.
+# shellcheck source=/dev/null
+. "$here/emsdk.pin"
+emcc_version="$(em++ --version 2>/dev/null | sed -n '1s/.*clang-like replacement[^)]*) \([0-9][0-9.]*\).*/\1/p')"
+if [ "$emcc_version" != "$EMSDK_VERSION" ]; then
+    echo "emcc is ${emcc_version:-unknown}, not the pinned $EMSDK_VERSION" >&2
+    echo "(cd $emsdk && ./emsdk install $EMSDK_VERSION && ./emsdk activate $EMSDK_VERSION)" >&2
+    echo "or set EMSDK_SKIP_PIN_CHECK=1 to build with the toolchain you have" >&2
+    [ "${EMSDK_SKIP_PIN_CHECK:-0}" = "1" ] || exit 1
+fi
+
 if [ "${FAUST_SKIP_FETCH:-0}" != "1" ]; then
     head="$(git -C "$src" rev-parse HEAD)"
     if [ "$head" != "$FAUST_SHA" ]; then

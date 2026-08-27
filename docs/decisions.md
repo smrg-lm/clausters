@@ -6969,3 +6969,90 @@ promises — and `Session.embed` takes no `workers` argument in the browser. Thi
 is now written where a reader meets it, in the web client's book ("What a tab
 cannot do"), beside every other limit that is the platform's rather than the
 port's.
+
+## A page has one number type, and Faust's promotion makes that cost nothing
+
+*2026-08-27.*
+
+Porting the box API found that a page cannot write a Faust constant that is
+*real* and integral. A def builder's numeric constant travels as a bare JSON
+number and the server reads it back with `serde_json`: an integral one becomes a
+Faust **int**, anything else a **real** (`src/faust/boxes.rs`, `number_box`; the
+signal schema does the same). Python separates them by the literal's type —
+`box(2)` is `int 2`, `box(2.0)` is `real 2.0` — and JavaScript has one number
+type, so `2.0` *is* `2` by the time `boxes.box`/`signals.signal` sees it. It is
+older than the box API (`signals.ts` has had it since W1) and the frozen parity
+vectors cannot see it, because they are compared as parsed JSON where `2.0` and
+`2` are the same value — worth knowing about what those vectors prove.
+
+The obvious repair is a spelling: both schemas already accept an explicit
+`{"op": "real", "value": x}` node. It was not taken, and the reason is a
+measurement rather than a preference. Compiling both spellings of every operator
+that could care (`faust -lang c`, the pinned compiler) says the constant's type
+never decides a **value**:
+
+- **`/` is real whatever its operands are.** `7 / 2` folds to `3.5f`; there is no
+  integer division to fall into.
+- **Any real operand promotes the whole expression.** An audio signal is real, so
+  `sig % 3` and `sig % 3.0` are the same `fmodf`, and so on through the arithmetic.
+- **Where int is *required*** — a table index, `@`, `select2`, the bitwise family
+  — a real is cast down silently, so the int a page emits is what those wanted.
+- **What is left is an operator pair chosen by type against an *int* signal**:
+  `%`, `min`, `max` and the comparisons compile to `%`/`min_i`/`>` against an int
+  and `fmodf`/`fminf`/`>` on floats. Both compute the same number for an integral
+  constant; they diverge only past 2²⁴, where the exact one is the int.
+
+So the gap is a spelling, not a behaviour — and the spelling already exists, in
+a verb both clients have: `asfloat`. `box(2).asfloat()` is `float(2)` in Faust,
+which the compiler folds to `2.0f`, and `int(x) % float(4)` is byte-identical to
+`int(x) % 4.0`. Adding a `real()` builder would put a name in one client that the
+other has no use for — Python has the float literal — which is the divergence the
+non-divergence rule exists to prevent, paid for a distinction nothing can hear.
+Recorded in the web client's book, under the platform's own limits.
+
+## The two vendored wasm artifacts are built by the release, from three pins
+
+*2026-08-27.*
+
+`libfaust-wasm` and `verovio.wasm` — the Faust compiler a page JITs a def with,
+the engraver it lays a score out with — are the only things a page loads that are
+not compiled from this repository's sources. Both were built on a maintainer's
+machine and staged by `clients/web/build.sh`, which left the packaging half open:
+CI grows an Emscripten leg, or the artifact is fetched from somewhere and pinned
+by digest.
+
+**Fetching was never actually available**, and that is what settles it. There is
+a published build of each, and neither is the one we need: npm's `verovio` is a
+different build of the same version, and `@grame/faustwasm` binds the Faust
+*source* API only — not the Box and Signal APIs, which `third_party/faust-wasm-bindings.patch`
+adds so that the one JSON interpreter (`faust::boxes`, `faust::signals`, in Rust)
+drives the same compiler in a tab as in a window. A def built with the box API
+would compile in a window and fail in a tab. So the artifact is ours, somebody
+has to build it, and "pinned by digest" would only ever pin *our own* build —
+which is the pin file, not a digest.
+
+**The cost of leaving it on a laptop was measured and it was not hypothetical.**
+`package.json`'s `files` lists `dist/`, and what is not in `dist/` is not
+published: `publish-npm` built the package in a runner with no SDK, `build.sh`
+printed its two `note: vendor/… missing` lines, and the published package shipped
+**with no compiler and no engraver**. It installs, it loads, it plays — and then a
+FaustDef will not compile and a score will not engrave, on the user's machine.
+That is the quietest failure in the package.
+
+So: **the release builds them**, through `.github/actions/wasm-vendor`, the same
+restore-or-build composite already proven for the two native libraries, running
+the same vendored recipes a maintainer runs. And **`tools/check-package.mjs`
+requires them**, so the silence cannot come back: a tree without them is not
+publishable, while a tree without them is still perfectly developable — nothing in
+`src/`, the suites or the smokes reaches either artifact.
+
+Two consequences worth naming. **The SDK is pinned** (`third_party/emsdk.pin`,
+read by both recipes and by the composite's cache key): these artifacts are almost
+entirely toolchain output, so an unpinned `emsdk install latest` meant the
+published package was built by whatever resolved that morning — and two of the
+five departures `build-faust-wasm.sh` documents exist precisely because a current
+emcc changed under the pinned Faust's build files. **CI does not build them**: the
+two builds are ~20 minutes cold, `ci.yml`'s smokes reach neither, and a page that
+wants the compiler is a manual test either way. The cache key is the three pins
+plus the recipes' hashes, so a repin or a flag change moves it with nothing to
+keep in sync in the callers.

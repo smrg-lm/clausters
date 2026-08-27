@@ -127,6 +127,18 @@ command -v em++ >/dev/null 2>&1 || {
   exit 1
 }
 
+# The SDK is pinned too (third_party/emsdk.pin): this artifact is shipped and
+# nothing in it comes from our sources, so the toolchain is half of what it is.
+# shellcheck source=/dev/null
+. "$here/emsdk.pin"
+emcc_version="$(em++ --version 2>/dev/null | sed -n '1s/.*clang-like replacement[^)]*) \([0-9][0-9.]*\).*/\1/p')"
+if [ "$emcc_version" != "$EMSDK_VERSION" ]; then
+    echo "emcc is ${emcc_version:-unknown}, not the pinned $EMSDK_VERSION" >&2
+    echo "(cd $emsdk && ./emsdk install $EMSDK_VERSION && ./emsdk activate $EMSDK_VERSION)" >&2
+    echo "or set EMSDK_SKIP_PIN_CHECK=1 to build with the toolchain you have" >&2
+    [ "${EMSDK_SKIP_PIN_CHECK:-0}" = "1" ] || exit 1
+fi
+
 # --- The resources that go inside the module ---------------------------------
 # `--embed-file` takes a *directory as it stands*, so the SMuFL data is staged
 # into the build directory first. This is what upstream's own buildToolkit does

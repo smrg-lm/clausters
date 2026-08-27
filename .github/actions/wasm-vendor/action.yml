@@ -1,0 +1,101 @@
+# Make the web client's two vendored wasm artifacts available, cheaply.
+#
+# These are the browser's halves of two libraries the workspace already builds
+# natively: `libfaust-wasm` (the Faust compiler a page JITs a def with) and
+# `verovio.wasm` (the engraver a page lays a score out with). Neither is
+# compiled from our sources, and neither has a usable published build --
+# upstream's `@grame/faustwasm` binds the Faust *source* API only, not the Box
+# and Signal APIs the one JSON interpreter drives, and the npm verovio is a
+# different build of the same version. So they are built here, from the same
+# pins the native libraries use, by the same vendored recipes a maintainer runs
+# (`third_party/build-{faust,verovio}-wasm.sh`).
+#
+# That is the whole reason this composite exists rather than a `curl`: the
+# artifact is *ours*, so somebody has to build it, and if that somebody is a
+# maintainer's laptop then `build.sh` in CI stages nothing and the published
+# npm package silently ships without a compiler and without an engraver --
+# `files:` lists `dist/`, and what is not there is not published. The check in
+# `tools/check-package.mjs` now refuses that package; this is what lets the
+# release satisfy it.
+#
+# The cache key covers every real input: the two upstream pins, the SDK pin
+# (third_party/emsdk.pin -- these artifacts are almost entirely toolchain
+# output, which is why that file exists) and a hash of both recipes, since the
+# flags and the bindings patch are as much a part of the artifact as the
+# sources. Edit any of them and the key moves on its own; the `-vN` suffix is
+# only for what cannot be hashed, a change in the staged layout below.
+#
+# Used by release.yml (publish-npm). ci.yml deliberately does not: the two
+# builds are ~20 minutes on a cold cache, the smokes it runs reach neither
+# artifact, and a page that wants the compiler is a manual test either way.
+name: Set up the web client's vendored wasm
+description: Restore, or build and cache, libfaust-wasm and verovio.wasm into clients/web/vendor.
+
+runs:
+  using: composite
+  steps:
+    - name: Read the pins
+      shell: bash
+      run: |
+        set -euo pipefail
+        cd "$GITHUB_WORKSPACE/third_party"
+        . ./faust.pin
+        . ./verovio.pin
+        . ./emsdk.pin
+        {
+          echo "FAUST_SHA=$FAUST_SHA"
+          echo "FAUST_ORIGIN=$FAUST_ORIGIN"
+          echo "VEROVIO_SHA=$VEROVIO_SHA"
+          echo "VEROVIO_ORIGIN=$VEROVIO_ORIGIN"
+          echo "EMSDK_VERSION=$EMSDK_VERSION"
+        } >> "$GITHUB_ENV"
+
+    - name: Restore the vendored artifacts
+      id: cache
+      uses: actions/cache@v6
+      with:
+        path: clients/web/vendor
+        key: >-
+          wasm-vendor-${{ env.FAUST_SHA }}-${{ env.VEROVIO_SHA }}-emsdk${{ env.EMSDK_VERSION }}-${{
+            hashFiles('third_party/build-faust-wasm.sh',
+                      'third_party/build-verovio-wasm.sh',
+                      'third_party/faust-wasm-bindings.patch',
+                      'third_party/faust-wasm-esm.py') }}-${{ runner.os }}-v1
+
+    - name: The pinned Emscripten SDK
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        sudo apt-get update
+        sudo apt-get install -y cmake make python3
+        git clone --depth 1 https://github.com/emscripten-core/emsdk.git "$RUNNER_TEMP/emsdk"
+        cd "$RUNNER_TEMP/emsdk"
+        ./emsdk install "$EMSDK_VERSION"
+        ./emsdk activate "$EMSDK_VERSION"
+
+    # Both recipes want the upstream tree at its pin. build-faust-wasm.sh does
+    # not fetch (it builds whatever build-faust.sh left behind), so the clone is
+    # done here; build-verovio-wasm.sh fetches its own when told it may.
+    - name: Build libfaust-wasm (vendored recipe, pinned toolchain)
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        src="$RUNNER_TEMP/faust-src"
+        git init -q "$src"
+        git -C "$src" remote add origin "$FAUST_ORIGIN"
+        git -C "$src" fetch --depth 1 origin "$FAUST_SHA"
+        git -C "$src" checkout -q --detach "$FAUST_SHA"
+        git -C "$src" submodule update --init --recursive --depth 1
+        EMSDK="$RUNNER_TEMP/emsdk" FAUST_SRC="$src" FAUST_SKIP_FETCH=1 \
+          "$GITHUB_WORKSPACE/third_party/build-faust-wasm.sh"
+
+    - name: Build verovio.wasm (vendored recipe, pinned toolchain)
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        EMSDK="$RUNNER_TEMP/emsdk" VEROVIO_SRC="$RUNNER_TEMP/verovio-src" \
+        VEROVIO_ALLOW_CHECKOUT=1 \
+          "$GITHUB_WORKSPACE/third_party/build-verovio-wasm.sh"

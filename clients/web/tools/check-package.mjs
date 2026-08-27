@@ -2,9 +2,12 @@
 // Is this working copy publishable as the `clausters` npm package?
 //
 // Two things a tarball cannot be trusted to carry on its own: the emitted
-// modules AND the three wasm bundles `build.sh` stages beside them (a `npm
-// run build` alone leaves them stale or missing, and a package without them
-// loads nothing), and a version that agrees with the rest of the repository.
+// modules AND the wasm `build.sh` stages beside them -- the three bundles it
+// compiles (a `npm run build` alone leaves them stale or missing, and a
+// package without them loads nothing) and the two vendored artifacts it copies
+// from `vendor/`, whose absence is quieter and worse, since the package still
+// loads and only fails at the def or the score -- and a version that agrees
+// with the rest of the repository.
 // `prepublishOnly` runs this, so a publish that would ship either mistake
 // stops here; `tests/package.test.ts` runs it too, so the check is exercised
 // long before anyone publishes.
@@ -54,6 +57,19 @@ const required = [
     "dist/gui-host/clausters_gui_bg.wasm",
     "dist/core/clausters_core_web.js",
     "dist/core/clausters_core_web_bg.wasm",
+    // The two vendored wasm artifacts, staged by build.sh from
+    // clients/web/vendor. They are not compiled from our sources and they have
+    // no usable published build, so they are built from pins by
+    // third_party/build-{faust,verovio}-wasm.sh -- and because build.sh only
+    // *notes* their absence, a package can be emitted without them and looks
+    // complete: it loads, it plays, and then a Faust def will not compile and a
+    // score will not engrave, on the user's machine and not here. That is what
+    // this pair is for. In CI they come from .github/actions/wasm-vendor.
+    "dist/vendor/faust/libfaust-wasm.js",
+    "dist/vendor/faust/libfaust-wasm.wasm",
+    "dist/vendor/faust/libfaust-wasm.data",
+    "dist/vendor/verovio/verovio.js",
+    "dist/vendor/verovio/verovio.wasm",
     // The clock's tick worker: loaded by URL into a scope of its own, so it is
     // never reached through the module graph a package check would follow.
     "dist/base/tick-worker.js",
@@ -63,7 +79,12 @@ const required = [
 ];
 for (const path of required) {
     if (!existsSync(join(here, path))) {
-        problems.push(`missing from the package: ${path} (run ./build.sh)`);
+        const how = path.startsWith("dist/vendor/")
+            ? "run third_party/build-" +
+              (path.includes("/faust/") ? "faust" : "verovio") +
+              "-wasm.sh, then ./build.sh"
+            : "run ./build.sh";
+        problems.push(`missing from the package: ${path} (${how})`);
     }
 }
 

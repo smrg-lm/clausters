@@ -41,6 +41,11 @@ test("the tarball carries the runtime and the wasm bundles", { skip }, async () 
         "dist/engine/worklet.js",
         "dist/gui-host/clausters_gui_bg.wasm",
         "dist/core/clausters_core_web_bg.wasm",
+        // The vendored pair: the Faust compiler and the engraver. Asserted
+        // here and not only in the checker because their absence is the one
+        // that does not show -- the package installs and runs without them.
+        "dist/vendor/faust/libfaust-wasm.wasm",
+        "dist/vendor/verovio/verovio.wasm",
         "COPYING",
     ]) {
         assert.ok(files.includes(path), `${path} is missing from the tarball`);

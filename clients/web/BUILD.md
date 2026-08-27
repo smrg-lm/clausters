@@ -63,37 +63,58 @@ node --version && npm --version
 Upgrading is the same recipe with a newer `V`; the `~/.local/lib/node`
 symlink flips atomically.
 
-## Installing the Emscripten SDK (user space, no sudo) — the engraver
+## Installing the Emscripten SDK (user space, no sudo) — the two vendored artifacts
 
-Only for **notation**: `gui/notation` engraves with verovio compiled to wasm,
-and that artifact is built here rather than taken from npm, because a page and a
-window must engrave with the same *build* and not merely the same version
-(`docs/decisions.md`). Nothing else in this package needs the SDK — skip this
-section unless you are touching notation, and note that `build.sh` says so and
-carries on when `vendor/verovio` is missing.
+Two of the things a page loads are **not compiled from this repository's
+sources**: the engraver (`gui/notation` lays scores out with verovio) and the
+Faust compiler (a page JITs a FaustDef with libfaust itself). Both are built
+here rather than taken from npm, and for one reason in two shapes — a page and a
+window must use the same *build*, not merely the same version: verovio's npm
+package is a different build of 6.3.0, and `@grame/faustwasm` binds the Faust
+source API only, not the Box and Signal APIs the one JSON interpreter drives
+(`docs/decisions.md`).
+
+Nothing else in this package needs the SDK, and `build.sh` says so and carries
+on when either `vendor/` directory is missing — so skip this section unless you
+are touching notation or Faust. What that leaves behind is a package that
+**loads and runs and then cannot compile a def or engrave a score**, which is
+why `npm run check-package` refuses it: the two artifacts are required for
+publishing, never for developing.
+
+The SDK version is pinned like everything else it builds
+(`third_party/emsdk.pin`), because these artifacts are almost entirely toolchain
+output:
 
 ```sh
 git clone --depth 1 https://github.com/emscripten-core/emsdk.git ~/.local/lib/emsdk
-cd ~/.local/lib/emsdk && ./emsdk install latest && ./emsdk activate latest
+cd ~/.local/lib/emsdk
+V=$(sed -n 's/^EMSDK_VERSION=//p' /path/to/clausters/third_party/emsdk.pin)
+./emsdk install "$V" && ./emsdk activate "$V"
 . ./emsdk_env.sh          # per shell, or from your profile
 ```
 
-Then build the engraver from the pin (`third_party/verovio.pin`, the same file
-the native library is built from):
+Both recipes check the active `emcc` against the pin and stop on a mismatch
+(`EMSDK_SKIP_PIN_CHECK=1` builds with the toolchain you have). Then, from the
+repository root:
 
 ```sh
-third_party/build-verovio-wasm.sh          # writes clients/web/vendor/verovio/
+third_party/build-verovio-wasm.sh    # writes clients/web/vendor/verovio/
+third_party/build-faust-wasm.sh      # writes clients/web/vendor/faust/
 ```
 
-It produces `verovio.js` (70 KB of Emscripten glue, an ES module) and
-`verovio.wasm` (6.5 MB, the engraver with the SMuFL data embedded). `build.sh`
-stages the pair into `dist/vendor/verovio/`; `vendor/` is git-ignored, like
-`dist/`. The module is **loaded on demand** — nothing in the slim runtime
-imports it, so a page that draws no notation never fetches it.
+The engraver is `verovio.js` (70 KB of Emscripten glue, an ES module) and
+`verovio.wasm` (6.5 MB, with the SMuFL data embedded). The compiler is
+`libfaust-wasm.js` (180 KB), `libfaust-wasm.wasm` (3.0 MB) and
+`libfaust-wasm.data` (2.1 MB, the Faust standard library for Emscripten's
+virtual FS). `build.sh` stages both into `dist/vendor/`; `vendor/` is
+git-ignored, like `dist/`. Both are **loaded on demand** — nothing in the slim
+runtime imports either, so a page that draws no notation and compiles no def
+fetches neither, and a page mounting a prebuilt bundle downloads no compiler.
 
 The SDK is ~1.7 GB installed and is the one heavy addition the repository's
-tooling rule admits (`PLAN.md`, "Tooling"). It is also what **W7** will need for
-`libfaust-wasm`; that milestone's own decisions are separate and still open.
+tooling rule admits (`PLAN.md`, "Tooling"). It is not needed to release:
+`.github/actions/wasm-vendor` builds both artifacts from the same pins and the
+same recipes, and caches them on the three pins plus the recipes' hashes.
 
 ## Build, check, test, serve
 

@@ -89,7 +89,7 @@ The repo-wide posture — minimal, user-space, reproducible — applied to the J
 - **No bundler for the package.** Nothing a page loads needs one: the package ships unbundled, the wasm bundles and the worklet module must stay static assets anyway (`AudioWorklet.addModule` and bundlers are a known friction), and the browser loads bare ESM natively. Evaluated and not adopted: **vite** (a dev server with HMR plus rollup/esbuild underneath — tens of MB of dev machinery whose two roles are already covered by `http.server` and `tsc --watch`; revisit only if HMR-grade DX is genuinely missed), **vitest** (pulls vite in as its platform). **`esbuild` was adopted 2026-08-04 for one artifact and dropped again on 2026-08-05** with the notebook front end that needed it: a client handed over a carrier and imported from `blob:` URLs cannot load a module graph with cycles (this one has three), which is the one condition this bullet always named. Nothing in `dist/` is bundled now — it is the `src/` tree emitted 1:1 — and the carrier that wanted it lives on the `jupyter` branch.
 - **Tests: `node:test`, built into node — zero dependencies.** Node runs `.ts` directly (native type stripping, default since 23.6), so pure-logic tests (codec parity, clock arithmetic, builders) run straight from source with `node --test`, no compile step, no runner package. Browser-only behavior (audio, canvas, the elements) keeps the B-track posture: headless-Chrome smoke scripts with the access-log beacon.
 - `typedoc` (the W5 API-reference generator) gets evaluated under this same lens when W5 starts.
-- The **Emscripten SDK** (`emcc`, user-space via `emsdk`) is the one heavy addition this lens admits, and it **arrived on 2026-08-21 with notation rather than with W7**: the engraver a page loads is built from `third_party/verovio.pin` by `third_party/build-verovio-wasm.sh`, because the published npm artifact is a different build of the same version and a build is what decides which score formats a client reads (`docs/decisions.md`, which also records what would reverse the choice). It stays out of the JS toolchain proper on the terms this bullet always set: nothing in `src/` or the test loop touches it, `build.sh` only stages its output, and the slim run-time entry never loads it. What follows is the original entry, still accurate about the *other* artifact: it builds `libfaust-wasm` so a Faust def compiles in the page (`third_party/BUILD-FAUST.md`, "WebAssembly parts" — documented, never built here). It stays out of the JS toolchain proper — nothing in `src/` or the test loop touches it, `build.sh` only stages its output as static assets, and the slim run-time entry never loads them. Evaluated under the same lens when W7 starts, decision recorded then.
+- The **Emscripten SDK** (`emcc`, user-space via `emsdk`) is the one heavy addition this lens admits, and it **arrived on 2026-08-21 with notation rather than with W7**: the engraver a page loads is built from `third_party/verovio.pin` by `third_party/build-verovio-wasm.sh`, because the published npm artifact is a different build of the same version and a build is what decides which score formats a client reads (`docs/decisions.md`, which also records what would reverse the choice). It stays out of the JS toolchain proper on the terms this bullet always set: nothing in `src/` or the test loop touches it, `build.sh` only stages its output, and the slim run-time entry never loads it. What follows is the original entry, still accurate about the *other* artifact: it builds `libfaust-wasm` so a Faust def compiles in the page (`third_party/BUILD-FAUST.md`, "WebAssembly parts" — documented, never built here). It stays out of the JS toolchain proper — nothing in `src/` or the test loop touches it, `build.sh` only stages its output as static assets, and the slim run-time entry never loads them. W7 evaluated it under the same lens on 2026-08-27 and the answer held for both artifacts: the SDK stays out of the JS toolchain, but the *release* carries it (`.github/actions/wasm-vendor`), and the SDK itself is pinned (`third_party/emsdk.pin`) — a package published without either artifact loads and runs and then cannot compile a def or engrave a score, which is why `check-package` now refuses one.
 
 ## Milestones
 
@@ -578,9 +578,9 @@ host bundles `build.sh` stages. Faust in the page adds a second compiler
 toolchain, in two halves — **only the first is packaging, and the second is the
 one that decides whether the milestone lands**:
 
-- ✅ **The compiler**, built on 2026-08-25. `libfaust-wasm` — the whole Faust compiler as a wasm library — built from `third_party/faust` at the same pin the native library uses, by `third_party/build-faust-wasm.sh`, producing `libfaust-wasm.{js,wasm,data}`, the `.data` carrying the stdlib for Emscripten's virtual FS, and staged by `build.sh` as static assets **off the slim `dist/runtime.js`**, since a page that mounts a *prebuilt* bundle must not download a compiler it never calls. The script documents five departures from `make wasmlib`, the largest being a patch that binds the Box and Signal APIs: upstream binds them for the native library and not for the wasm one, so without it a page could compile Faust source alone. **What is still open is the packaging half**: CI grows the emsdk leg or the artifact is fetched, a decision to record — the same question the engraver already answered once. It outlived this milestone and is carried, with its checkbox, in "Future directions" below ("Who builds `libfaust-wasm`").
+- ✅ **The compiler**, built on 2026-08-25. `libfaust-wasm` — the whole Faust compiler as a wasm library — built from `third_party/faust` at the same pin the native library uses, by `third_party/build-faust-wasm.sh`, producing `libfaust-wasm.{js,wasm,data}`, the `.data` carrying the stdlib for Emscripten's virtual FS, and staged by `build.sh` as static assets **off the slim `dist/runtime.js`**, since a page that mounts a *prebuilt* bundle must not download a compiler it never calls. The script documents five departures from `make wasmlib`, the largest being a patch that binds the Box and Signal APIs: upstream binds them for the native library and not for the wasm one, so without it a page could compile Faust source alone. The **packaging half** outlived this milestone and was closed on 2026-08-27: the release builds it (`.github/actions/wasm-vendor`), the SDK is pinned, and `check-package` refuses a package without it — the record is in "Future directions" below ("Who builds `libfaust-wasm`") and in `docs/decisions.md`.
 - ✅ **The engine's side, which a compiler alone does not solve, is `B5`** (root `PLAN.md`, B track), and it landed on 2026-08-25. The in-page engine had no libfaust and **no LLVM JIT**, so it could not instantiate what a compiler in the page produced; now the Faust module is compiled in the **NRT worker** (not the main thread, as this bullet first said — B6 priced that at the GUI host's frames) and **linked into the engine's own memory and function table**, so the node stays a node and nothing on the wire changes (`docs/decisions.md`). All three def forms work: the box and signal trees are read by `faust::boxes` and `faust::signals` compiled to wasm, so there is one reading of the schema and not two. W7 and B5 ship together, the way G25 pairs with M25; **W7's WS half was never blocked on it**.
-- **The decision is recorded** (`docs/decisions.md`, "The page's Faust is a second wasm module linked into the engine's own memory"): which instantiation path the engine takes and why the two it rejects are not near misses, why the protocol learns nothing, and the one hazard the wasm backend carries (its JSON data segment at absolute offset 0). What it leaves open is the packaging half alone — whether CI builds `libfaust-wasm` or fetches it — which is B5's, and is the same question the engraver already answered once.
+- **The decision is recorded** (`docs/decisions.md`, "The page's Faust is a second wasm module linked into the engine's own memory"): which instantiation path the engine takes and why the two it rejects are not near misses, why the protocol learns nothing, and the one hazard the wasm backend carries (its JSON data segment at absolute offset 0). What it left open was the packaging half alone — whether CI builds `libfaust-wasm` or fetches it — closed on 2026-08-27 in favour of the release building it, since there is no fetchable build that binds the Box and Signal APIs.
 
 **Acceptance:** the Python box-API and signal-API examples rebuilt in TS emit byte-identical spec JSON (new frozen vectors), and one of each compiles and plays **over either carrier** — against a `clausters --ws` server, and in the page with no server process, the source compiled by the staged `libfaust-wasm` and sounding through the in-page engine; a page that mounts a prebuilt bundle loads none of the compiler's assets.
 
@@ -1515,18 +1515,30 @@ this list rather than being ticked here.
   2026-08-26 — the TS bundle writer is a node milestone, and a node script has
   to be runnable before it can be an example)*. Already true in the harness, not
   yet a supported target: the `node --test` suites drive a real `clausters --ws` server and a real `clausters-gui --ws` host, so `WsConnection` runs under node's global `WebSocket` (`src/base/connection.ts` says so) and the wasm core loads there (`loadCore(bytes)`, node's `fetch` not reading `file://`). What remains is making it a *product*: a load path that finds the core's `.wasm` without the test's manual read, a documented entry point for headless scripting/CI the way `clients/python` runs without a display, and the boundary written down — the def, sequencing and GUI-driver layers port, the in-page engine (AudioWorklet) and the page host (canvas) do not.
-- ⬜ **Who builds `libfaust-wasm`** *(left over from **W7**/**B5**, 2026-08-27)*.
-  The compiler a page loads is built from `third_party/faust` at the native
-  library's pin by `third_party/build-faust-wasm.sh`, and today that build
-  happens on a maintainer's machine and its output is staged by `build.sh`.
-  What is undecided is the packaging half: CI grows an **emsdk** leg and builds
-  it, or the artifact is **fetched** from somewhere and pinned by digest. It is
-  the same question the engraver answered once, in the other direction (a
-  build, because a build is what decides which score formats a client reads) —
-  and it is exactly as answerable here, since a build is also what decides
-  whether the Box and Signal APIs are bound at all. Nothing is blocked on it:
-  the compiler works, the acceptances run against it, and what a wrong answer
-  costs is a release built from an artifact nobody can reproduce.
+- ✅ **Who builds `libfaust-wasm`** *(left over from **W7**/**B5**, decided and
+  done 2026-08-27)*. The question was whether CI grows an **emsdk** leg or the
+  artifact is **fetched** and pinned by digest, and fetching turned out never to
+  have been on the table: `@grame/faustwasm` binds the Faust *source* API alone,
+  so a box-API def would compile in a window and fail in a tab —
+  `faust-wasm-bindings.patch` is why our build exists, and "pinned by digest"
+  could only ever pin our own build, which is what a pin file already is.
+
+  **What the delay actually cost was measured, and it was live**: `files` lists
+  `dist/`, so a runner with no SDK printed `build.sh`'s two `note: vendor/…
+  missing` lines and published a package **with no compiler and no engraver** —
+  one that installs, loads and plays, and then cannot compile a def or engrave a
+  score. So the release builds both, through `.github/actions/wasm-vendor`
+  (restore-or-build, the composite already proven for the two native libraries,
+  running the same vendored recipes a maintainer runs), and
+  `tools/check-package.mjs` requires them so the silence cannot return — a tree
+  without them stays perfectly developable, since nothing in `src/`, the suites
+  or the smokes reaches either. The **SDK is pinned too**
+  (`third_party/emsdk.pin`, read by both recipes and by the cache key): these
+  artifacts are almost all toolchain output, and `emsdk install latest` meant the
+  published package was built by whatever resolved that morning. `ci.yml`
+  deliberately does not build them (~20 minutes cold, and its smokes reach
+  neither). Recorded in `docs/decisions.md` ("The two vendored wasm artifacts are
+  built by the release, from three pins").
 - ⬜ **Type-safe GuiDef/def schemas.** Generate TS types for the widget/def vocabularies from a single source shared with the server, so an invalid GuiDef is a compile error, not a runtime warning. Two things have since appeared that change the shape of the answer rather than the want: the frozen parity vectors (`tests/gen-*-vectors.py`) already catch a drifted *builder* at test time, and M30's `/def_query`/`/ugen_query` make the server's own catalogue readable at run time — so the open question is narrower, which source generates the types and when, not whether one exists.
 - ⬜ **A remote-server standalone page.** The in-tab standalone (a bundle booting against the embedded wasm engine) **shipped with the B track** and grew up in W4 (the bundle contract, the resolver, the pools, the components); what remains is the same mount against a **remote `--ws` server** — a one-file instrument front for a server running elsewhere. The old note called this cheap "once W1/W2 exist"; they exist, and W4 is what actually decides the work: `openBundle`/`startBundle` reach the page's `guiHost()` and `engine` singletons directly, so the step is giving the mount a **destination seam** (a `Server` + `GuiHost` pair, both already carrier-agnostic since W1/W2) in place of those singletons. The boot replay itself stays carrier-agnostic above the W0 seam, as it always was.
 
@@ -2422,8 +2434,8 @@ Python counterpart under another spelling or is a page's own (`ANY_PEER`,
 
 ## Found by use: the running list of fixes
 
-- ⬜ **A page cannot write a Faust constant that is *real* and integral**
-  *(found 2026-08-27, porting the box API)*. A def builder's numeric constant
+- ✅ **A page cannot write a Faust constant that is *real* and integral**
+  *(found 2026-08-27 porting the box API, measured and closed the same day)*. A def builder's numeric constant
   travels as a bare JSON number, and the server reads it back with
   `serde_json`: an integral one becomes a Faust **int**, anything else a
   **real** (`src/faust/boxes.rs`, `number_box`; the signal schema does the
@@ -2438,17 +2450,26 @@ Python counterpart under another spelling or is a page's own (`ANY_PEER`,
   `2` are the same value — which is worth knowing about what those vectors
   prove.
 
-  **How much it costs is not yet measured**, and that is the first thing to do
-  before designing anything: Faust promotes int to real in arithmetic, so the
-  cases where the distinction is audible rather than merely typed are narrow
-  (integer division, `%`, a table index, a fragment's argument). The escape a
-  page has today is written down in `docs/src/platform.md`: put that constant
-  inside a `boxes.faust(…)` fragment, whose text is spliced verbatim. If the
-  measurement says the escape is not enough, the fix is a spelling — the box
-  and signal schemas both already accept the explicit `{"op": "real", "value":
-  x}` node the server reads — and it is a **surface**, so it is decided for
-  both clients at once (the reference client has no `real()` either, it has
-  Python's float) rather than grown here first.
+  **Measured, and it costs nothing**, which is what closed it: compiling both
+  spellings of every operator that could care (`faust -lang c`, the pinned
+  compiler) says the constant's type never decides a value. `/` is real
+  whatever its operands are, so there is no integer division to fall into; any
+  real operand promotes the whole expression, so a constant against an audio
+  signal is the same either way; where int is *required* (a table index, `@`,
+  `select2`, the bitwise family) a real is cast down silently, so the int a
+  page emits is the one those wanted. What is left is the operator pair chosen
+  by type against an *int* signal — `%`, `min`, `max`, the comparisons — and
+  both members compute the same number for an integral constant, diverging only
+  past 2^24, where the exact one is the int.
+
+  **So no `real()` builder**, which would have been a name in one client the
+  other has no use for. The spelling already exists in a verb both clients
+  have: `asfloat`. `box(2).asfloat()` is Faust's `float(2)`, folded to `2.0f`,
+  and `int(x) % float(4)` compiles byte-identically to `int(x) % 4.0` — so the
+  reference client's `box(2.0)` has an exact page-side equivalent after all.
+  Written in `docs/src/platform.md`, in `boxes.box`'s own doc comment, and
+  recorded in `docs/decisions.md` ("A page has one number type, and Faust's
+  promotion makes that cost nothing").
 
 - ✅ **`Buffer.fromSamples` empties the array it is given** *(found and fixed
   2026-08-26, writing a `/buffer_write` round trip)*. The in-page carrier's `bufferLoad`

@@ -234,6 +234,14 @@ jobs:
             | tar -xz --strip-components=1 -C "$HOME/bin" \
               "wasm-bindgen-${PIN}-x86_64-unknown-linux-musl/wasm-bindgen"
           echo "$HOME/bin" >> "$GITHUB_PATH"
+      # The two vendored wasm artifacts build.sh stages beside its own: the
+      # Faust compiler a page JITs defs with and the engraver it lays scores
+      # out with. Built from the same pins the native libraries use, because
+      # neither has a usable published build (the composite says why). Without
+      # this step build.sh prints its two "note: vendor/... missing" lines and
+      # publishes a package with no compiler and no engraver -- which is what
+      # check-package now refuses.
+      - uses: ./.github/actions/wasm-vendor
       # build.sh compiles the engine, the GUI host and the core's JS door to
       # wasm, stages the bundles into dist/ and emits src/ -> dist/. The
       # checker then refuses a tree that is missing either half, or a version
