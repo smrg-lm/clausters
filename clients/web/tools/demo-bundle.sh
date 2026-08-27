@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Writes the demo bundle (clients/web/bundle-demo/) in the native persisted
+# Writes the demo bundle (clients/web/examples/out/demo/) in the native persisted
 # formats — the exact files `clausters-gui --standalone` reads, plus the
 # generated bundle.json manifest: a SynthDef spec whose drone also writes a
 # 0.5 Hz LFO to control bus 0 (OutCtl), and a GuiDef whose meter/scope read
@@ -9,7 +9,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-BUNDLE=bundle-demo
+# Every generator in the examples tree writes into examples/out/, which is
+# git-ignored: one directory to look in, and one to delete.
+BUNDLE=examples/out/demo
 rm -rf "$BUNDLE"
 mkdir -p "$BUNDLE/defs/synthdefs" "$BUNDLE/defs/guidefs"
 cat > "$BUNDLE/defs/synthdefs/web_drone.json" << 'EOF'

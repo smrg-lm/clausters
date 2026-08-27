@@ -12,7 +12,8 @@
 set -euo pipefail
 
 PORT=57110
-DATA_DIR="${CLAUSTERS_DATA_DIR:-/tmp/clausters-midi-standalone}"
+# examples/out/ is where every generator in this tree writes; git ignores it.
+DATA_DIR="${CLAUSTERS_DATA_DIR:-$(cd "$(dirname "$0")" && pwd)/out/midi-standalone}"
 SERVER=./target/release/clausters
 
 if [ ! -x "$SERVER" ]; then

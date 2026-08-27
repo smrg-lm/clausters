@@ -24,7 +24,7 @@ process anywhere. Press Power (the autoplay gesture) to boot.</div>
     <!--
       The browser twin of `clausters-gui --standalone <name>`, on the raw
       package API (the element version is examples/components/demo.html): fetches the
-      bundle (?bundle=<url prefix>, default "../../bundle-demo"; ?name=<GuiDef
+      bundle (?bundle=<url prefix>, default "../out/demo"; ?name=<GuiDef
       name>, default the manifest's) and boots it with `bootBundle` over the
       page singletons. See src/bundle.ts for the manifest, and
       docs/clients.md for the quick start.
@@ -77,7 +77,7 @@ process anywhere. Press Power (the autoplay gesture) to boot.</div>
         }, ANY_PEER);
 
         const { id } = await bootBundle({
-          base: params.get("bundle") ?? "../../bundle-demo",
+          base: params.get("bundle") ?? "../out/demo",
           name: params.get("name"),
         });
         note(`bundle up: GuiDef ${id} opened, engine live (context ` +

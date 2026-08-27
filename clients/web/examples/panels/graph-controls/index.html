@@ -19,7 +19,7 @@
   <body>
     <main>
       <div id="note">a GraphDef's control surface as one web component: the
-bundle below (authored by make_bundle.py with the Python client) boots an FM
+bundle below (authored by make_bundle.mjs) boots an FM
 voice -> tremolo graph on the wasm engine in this tab, and every knob sets a
 named surface port of the running graph — no server process, no script in
 between. The power button is the autoplay gesture.</div>
@@ -27,8 +27,16 @@ between. The power button is the autoplay gesture.</div>
     </main>
 
     <!--
-      The component page of examples/graph-controls (see make_bundle.py for
-      the authoring half and the bundle's contents).
+      The component page of examples/panels/graph-controls. The authoring half
+      is make_bundle.mjs beside it, and this page shows nothing until it has
+      been run:
+
+          node make_bundle.mjs
+
+      That writes the bundle into examples/out/graph-controls/ -- the ignored
+      directory every generator in this tree writes to -- which is what the
+      import below reaches. The script's own header says what the bundle holds
+      and how to boot the same files on the desktop.
 
       The bundle ships its own ES module: importing it registers the <fm-trem>
       tag and **nothing of the TypeScript client is loaded** — the run time is
@@ -48,7 +56,7 @@ between. The power button is the autoplay gesture.</div>
       graph-controls).
     -->
     <script type="module">
-      import "./bundle/index.js";   // registers <fm-trem>
+      import "../../out/graph-controls/index.js";   // registers <fm-trem>
       import { startPage, server, ANY_PEER } from "../../../dist/runtime.js";
       import { loadOsc, encodeMessage, decodePacket } from "../../../dist/base/osc.js";
 

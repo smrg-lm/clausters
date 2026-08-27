@@ -61,9 +61,10 @@
       go. The instrument is the bundle `examples/graph-controls` authors.
 
       What it needs: a browser with a WebGL2 or WebGPU adapter, and the
-      graph-controls bundle generated first:
+      graph-controls bundle generated first (it lands in examples/out/, which
+      is git-ignored — nothing here is committed):
 
-          python3 ../graph-controls/make_bundle.py
+          node ../panels/graph-controls/make_bundle.mjs
 
       How to run it: serve the PACKAGE ROOT (clients/web — never this folder;
       the generated module imports /dist/runtime.js):
@@ -73,7 +74,7 @@
       then open http://localhost:8000/examples/components/lifecycle.html.
     -->
     <script type="module">
-      import "/examples/panels/graph-controls/bundle/index.js";   // <fm-trem>
+      import "/examples/out/graph-controls/index.js";   // <fm-trem>
       import { pagePools } from "/dist/runtime.js";
 
       const rack = document.getElementById("rack");

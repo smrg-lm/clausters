@@ -18,7 +18,7 @@ Which directory it lives in decides its form. This is not taste.
 | --- | --- | --- |
 | `examples/` (root) | the **server** | a **closed script** — even the Python ones |
 | `clients/python/examples/` | the **Python client** + the GUI | a **`# %%` notebook** |
-| `clients/web/examples/` | the **web client** | a **page** (`.html`, or a directory with a bundle) |
+| `clients/web/examples/` | the **web client** | a **page** (`.html`), or a **node script** (`.mjs`) for what a page cannot do |
 
 The corpus says it plainly: of the 31 Python files in the root `examples/`, 30
 end in an `if __name__ == "__main__":` guard and one has cells; on the client
@@ -84,12 +84,50 @@ A few older examples end with plain top-level teardown and no guard
 guard is what keeps the file from tearing itself down under the reader's feet
 when it is imported.
 
-### The web client's examples are pages
+### The web client's examples are pages, and its generators are node scripts
 
-Not scripts. An `.html` the reader opens, or a directory holding a page plus its
-prebuilt bundle. The header comment carries what a module docstring would.
-Remember `dist/` is git-ignored: `./build.sh` from `clients/web` before the page
-will load anything.
+An `.html` the reader opens — that is the form, and it stays the form for
+anything a page can do. The header comment carries what a module docstring
+would. Remember `dist/` is git-ignored: `./build.sh` from `clients/web` before
+the page will load anything.
+
+The exception is **authoring**, and it is a real one rather than a
+convenience: writing a bundle is not something a page does, because a bundle is
+an *input* a static page boots with no interpreter at all. So a generator is a
+**node script** (`.mjs`, the extension this package already uses for node in
+`tools/`, and one a served directory cannot confuse with a page module),
+sitting **beside the page it feeds** — `examples/panels/piano/make_bundle.mjs`
+next to that example's `index.html`. It imports the built package by relative
+path (`../../../dist/…`), and it is the pair of a Python example, never of the
+page next to it.
+
+**The page says which script to run.** A page whose bundle a generator writes
+shows nothing until it has been written, so its header comment carries the
+command (`node make_bundle.mjs`) and where the output lands. A reader who opens
+a blank page and has to go looking is a reader the example failed.
+
+## A generator writes into `out/`
+
+An example that leaves a file behind — a bundle, a rendered WAV, a MIDI file, a
+saved session, a data directory — writes it into **`out/`, at the root of its
+own example tree**:
+
+| Tree | Where a run leaves its files |
+| --- | --- |
+| `examples/` | `examples/out/` |
+| `clients/python/examples/` | `clients/python/examples/out/` |
+| `clients/web/examples/` | `clients/web/examples/out/` |
+
+One ignored directory per tree (one line each in `.gitignore`), so a run leaves
+one place to look in and one to delete. Never the working directory — a default
+of `"envelope.wav"` scatters files wherever the reader happened to `cd`, and it
+is what made the ignore file grow a hand-maintained list of names. Never beside
+the source either: an example's directory holds what a person wrote.
+
+The default resolves from `__file__`, not from the cwd, so it lands in the same
+place however the example is run; an explicit path argument still overrides it.
+`/tmp` remains right for a file the run **consumes and deletes itself** (an
+impulse response rendered to be loaded back) — that is scratch, not a product.
 
 ## An example that exists twice is **one example in two languages**
 

@@ -48,9 +48,12 @@ the markup. Two instances of one bundle hold their own node ids and buses, and
 the def they share is sent once. Declared parameters are attributes, resolved
 attribute → preset → default. The first gesture anywhere on the page starts the
 audio for all of them; a component scrolled out of the viewport stops drawing
-and stops streaming. Write one with `clausters.bundle.Bundle` in the Python
-client — `examples/panels/piano/make_bundle.py` is the worked example — and see the
-server book's clients chapter for the format.
+and stops streaming. Write one with `Bundle` — `clausters/bundle-writer` here, `clausters.bundle`
+in the Python client, one writer in two languages that emit the same directory
+byte for byte. `write` is a node verb and `examples/panels/piano/make_bundle.mjs`
+is the worked example; a page authors one with `files()` and mounts it from
+memory (`examples/components/authored.html`). See the server book's clients
+chapter for the format.
 
 `<clausters-bundle src="./fm-voice">` mounts a bundle with no generated module.
 
@@ -142,4 +145,4 @@ win.widget("freq").bind("/node_set", note.id, "freq");   // host -> engine, no s
 win.widget("amp").onEvent((value) => note.set({ amp: value }));
 ```
 
-The examples (`examples/`, served pages): `synth.html` a def built, sent, played and retuned from TypeScript over **either** carrier (the choice is the one line of the page that names one), `demo.html` the web-components demo, `standalone.html` the raw-API standalone boot, `engine.html` the audible engine harness, `gui-host.html` a GUI built and driven from TypeScript — the bound and the scripted control paths side by side, a metered bus, the linked waveform + spectrogram, and one button that swaps the in-page host for a native `--ws` one — five ports of Python client examples, each named after the one it mirrors (`multichannel.html`, `typed-controls.html`, `graph-maths.html`, `wavetables.html`, `pause-resume.html`), `graph-controls/` — a GraphDef's control surface as one component, its bundle authored with the Python client (`make_bundle.py`) — `piano/` — a playable piano keyboard whose keys the GUI host maps to server voices itself (the widget's `voice` mode), the same authored-bundle posture — and `document/`, an interactive text with both of them interleaved with the prose, which is the shape the whole component format is for. The bundle format and the underlying pieces are documented in the server book (`docs/clients.md`, `docs/using-as-a-library.md`); the scripted acceptances are `scripts/smoke-web.sh` at the repo root (one runner over every page that beacons a verdict, `--list` to see them) plus `scripts/parity-web.sh`, and `./test.sh` here.
+The examples (`examples/`, served pages): `synth.html` a def built, sent, played and retuned from TypeScript over **either** carrier (the choice is the one line of the page that names one), `demo.html` the web-components demo, `standalone.html` the raw-API standalone boot, `engine.html` the audible engine harness, `gui-host.html` a GUI built and driven from TypeScript — the bound and the scripted control paths side by side, a metered bus, the linked waveform + spectrogram, and one button that swaps the in-page host for a native `--ws` one — five ports of Python client examples, each named after the one it mirrors (`multichannel.html`, `typed-controls.html`, `graph-maths.html`, `wavetables.html`, `pause-resume.html`), `graph-controls/` — a GraphDef's control surface as one component, its bundle authored by the node script beside the page (`make_bundle.mjs`, which writes into the git-ignored `examples/out/`) — `piano/` — a playable piano keyboard whose keys the GUI host maps to server voices itself (the widget's `voice` mode), the same authored-bundle posture — and `document/`, an interactive text with both of them interleaved with the prose, which is the shape the whole component format is for. The bundle format and the underlying pieces are documented in the server book (`docs/clients.md`, `docs/using-as-a-library.md`); the scripted acceptances are `scripts/smoke-web.sh` at the repo root (one runner over every page that beacons a verdict, `--list` to see them) plus `scripts/parity-web.sh`, and `./test.sh` here.

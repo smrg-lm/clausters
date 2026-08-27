@@ -34,6 +34,7 @@ next.
 import math
 import random
 import struct
+import pathlib
 import sys
 import tempfile
 import wave
@@ -54,6 +55,13 @@ from clausters.defs import (
     partconv_frames,
     sine,
 )
+
+#: Where a run leaves its file when no path is given: ``examples/out/``, the
+#: git-ignored directory every generator in this tree writes to — beside the
+#: examples rather than in whatever directory you ran from. Made here so that
+#: rendering is one call and not two.
+OUT = pathlib.Path(__file__).resolve().parents[1] / "out"
+OUT.mkdir(exist_ok=True)
 
 SR = 48000.0
 FFT_SIZE = 1024
@@ -130,7 +138,7 @@ Routine(sequence).play(session.clock)
 
 
 # %%
-def run(path: str = "convolution.wav"):
+def run(path: str = str(OUT / "convolution.wav")):
     """Render the score to ``path``."""
     stats = session.render(sample_rate=SR, channels=2, path=path)
 
@@ -143,6 +151,7 @@ def run(path: str = "convolution.wav"):
 
 # %%
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
-    run(next((a for a in sys.argv[1:] if not a.startswith("-")), "convolution.wav"))
+    run(next((a for a in sys.argv[1:] if not a.startswith("-")),
+             str(OUT / "convolution.wav")))
 else:
     print("score ready - run('out.wav') to render it")

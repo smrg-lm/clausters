@@ -32,11 +32,14 @@ integers (``1000``) and stay integers on the wire; control values are floats.
 Run it (the client importable as usual — ``pip install ./clients/python`` or
 ``PYTHONPATH=clients/python``)::
 
-    python clients/python/examples/panels/standalone.py /tmp/clausters-bundle
+    python clients/python/examples/panels/standalone.py
+
+With no argument it writes into ``examples/out/standalone/``, the git-ignored
+directory every generator in this tree writes to; a path argument overrides it.
 
 It writes the two files and prints, e.g.::
 
-    cargo run --features standalone --bin clausters-gui -- --standalone drone --data-dir /tmp/clausters-bundle
+    cargo run --features standalone --bin clausters-gui -- --standalone drone --data-dir <examples>/out/standalone
 
 The ``standalone`` feature links the embedded audio server into ``clausters-gui``
 (off by default, since it pulls the engine + audio backend). Run that command
@@ -49,6 +52,14 @@ AudioWorklet, the GUI host on a canvas, still no server process. That path
 needs one extra file (a ``bundle.json`` manifest, since HTTP cannot list
 directories) and the served page; the script prints those steps too. See "A
 standalone bundle in a tab" in ``docs/clients.md``.
+
+**Its pair in the web client is a node script**,
+``clients/web/examples/panels/standalone.mjs`` — the same two files written by
+the same calls in the other language. The page beside it,
+``standalone.html``, is not this example's other half: it is the counterpart of
+*running* ``clausters-gui --standalone``, in a tab. A page never writes a
+bundle, because a bundle is an input a static page boots with no interpreter at
+all.
 
 This file is organized as ``# %%`` cells (the VS Code / Jupyter convention):
 step through it with Shift+Enter, or run it as a plain script.
@@ -71,6 +82,10 @@ GUI_NAME = "drone"
 #: The node id the boot message creates and the knob binds to. A fixed,
 #: script-allocated id, so the saved GuiDef can name it directly.
 DRONE_NODE = 1000
+#: Where a run leaves the bundle when no path is given: ``examples/out/``, the
+#: git-ignored directory every generator in this tree writes to.
+OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                   "out", "standalone")
 
 
 # %% [markdown]
@@ -146,7 +161,7 @@ def write_bundle(data_dir: str):
 # This script only *writes* the bundle. Re-launching it needs no interpreter.
 
 # %%
-def run(data_dir: str = "/tmp/clausters-bundle"):
+def run(data_dir: str = OUT):
     """Write the bundle under ``data_dir`` and print the two ways to boot it."""
     data_dir = os.path.abspath(data_dir)
     synth_path, gui_path = write_bundle(data_dir)
@@ -178,6 +193,6 @@ def run(data_dir: str = "/tmp/clausters-bundle"):
 
 # %%
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
-    run(sys.argv[1] if len(sys.argv) > 1 else "/tmp/clausters-bundle")
+    run(sys.argv[1] if len(sys.argv) > 1 else OUT)
 else:
-    print("ready - run('/tmp/clausters-bundle') to write the bundle")
+    print("ready - run() to write the bundle into examples/out/standalone")

@@ -19,11 +19,12 @@ patch is one stored unit:
     *same* data dir and instantiates the GraphDef **without sending anything** —
     it only plays because the defs were reloaded from disk at boot.
 
-The data directory is **kept on disk** (``examples/defs_store/``) so you can
+The data directory is **kept on disk** (``examples/out/defs_store/``) so you can
 open the persisted defs and explore them; the server groups them under a
 ``defs/`` subdir (``defs/synthdefs/``, ``defs/faustdefs/``, ``defs/graphdefs/``)
 and keeps other persistent files like ``midi.json`` at the top level. Delete it
-yourself when done (``rm -rf examples/defs_store``).
+yourself when done (``rm -rf examples/out``) -- ``out/`` is the git-ignored
+directory every generator in this tree writes to.
 
 Real audio hardware is required. Build the server with the Faust feature first:
 
@@ -67,7 +68,7 @@ OPTIONS = ServerOptions(audio_buses=64, control_buses=512, sample_rate=48000)
 
 # Kept on disk after the run so the persisted defs can be explored. The server
 # nests the def kinds under a `defs/` subdir of this directory.
-DATA_DIR = os.path.join(HERE, "defs_store")
+DATA_DIR = os.path.join(HERE, "out", "defs_store")
 
 
 # --------------------------------------------------------------------------

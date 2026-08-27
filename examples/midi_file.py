@@ -25,6 +25,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "clients", "pyt
 from clausters.base import MidiServer, TempoClock
 from clausters.seq import Pbind, Pseq, Pwhite
 
+#: Where a run leaves its file when no path is given: ``examples/out/``, the
+#: git-ignored directory every generator in this tree writes to -- beside the
+#: examples rather than in whatever directory you ran from.
+OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "out")
+os.makedirs(OUT, exist_ok=True)
+
 
 def phrase() -> Pbind:
     """A short phrase: a walking scale degree, varied dynamics and durations."""
@@ -41,7 +47,8 @@ def main() -> None:
     args = sys.argv[1:]
     clip = "--clip" in args
     paths = [a for a in args if not a.startswith("--")]
-    out = paths[0] if paths else ("out.midiclip" if clip else "out.mid")
+    out = paths[0] if paths else os.path.join(
+        OUT, "midi_file.midiclip" if clip else "midi_file.mid")
 
     midi = MidiServer(channel=0, ppq=480)
     clock = TempoClock(tempo=2.0)  # 2 beats/second; tempo only scales the clock

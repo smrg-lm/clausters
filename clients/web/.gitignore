@@ -21,11 +21,11 @@ node_modules/
 !/src/gui-host/clausters_gui.d.ts
 /src/engine/clausters_web.js
 
-# The demo bundle the smokes write (tools/demo-bundle.sh), and the bundle
-# examples the make_bundle.py scripts generate.
-/bundle-demo/
-/examples/panels/graph-controls/bundle/
-/examples/panels/piano/bundle/
+# What the examples' generators write: the bundles the make_bundle.mjs scripts
+# author, the raw one standalone.mjs writes, and the demo bundle the smokes use
+# (tools/demo-bundle.sh). One directory per example tree, so a run leaves one
+# place to look in and one to delete.
+/examples/out/
 
 # Fixtures the parity/bulk harnesses generate next to the test pages.
 /tests/score.bin

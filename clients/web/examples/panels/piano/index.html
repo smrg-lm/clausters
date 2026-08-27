@@ -19,7 +19,7 @@
   <body>
     <main>
       <div id="note">a playable piano as one web component: the bundle below
-(authored by make_bundle.py with the Python client) opens a virtual keyboard
+(authored by make_bundle.mjs) opens a virtual keyboard
 whose keys the GUI host maps to server voices on the wasm engine in this tab —
 a /synth_new per key press, a gate release per key up, no server process, no
 script in between. Drag the strip above the keys to pan the MIDI range, wheel
@@ -29,8 +29,16 @@ power button is the autoplay gesture.</div>
     </main>
 
     <!--
-      The component page of examples/piano (see make_bundle.py for the
-      authoring half and the bundle's contents).
+      The component page of examples/panels/piano. The authoring half is
+      make_bundle.mjs beside it, and this page shows nothing until it has been
+      run:
+
+          node make_bundle.mjs
+
+      That writes the bundle into examples/out/piano/ -- the ignored directory
+      every generator in this tree writes to -- which is what the import below
+      reaches. The script's own header says what the bundle holds and how to
+      boot the same files on the desktop.
 
       The bundle ships its own ES module: importing it registers the
       `piano-keys` tag and **nothing of the TypeScript client is loaded** — the run time is
@@ -50,7 +58,7 @@ power button is the autoplay gesture.</div>
       pointer; the browser harness covers input.)
     -->
     <script type="module">
-      import "./bundle/index.js";   // registers <piano-keys>
+      import "../../out/piano/index.js";   // registers <piano-keys>
       import { startPage, server, ANY_PEER } from "../../../dist/runtime.js";
       import { loadOsc, encodeMessage, decodePacket } from "../../../dist/base/osc.js";
 

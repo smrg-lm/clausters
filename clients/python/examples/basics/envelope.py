@@ -26,6 +26,7 @@ re-render in the next one.
 """
 
 # %%
+import pathlib
 import sys
 
 from clausters import Session
@@ -39,6 +40,13 @@ from clausters.defs import (
     sine,
 )
 from clausters.seq import Pbind, Pseq
+
+#: Where a run leaves its file when no path is given: ``examples/out/``, the
+#: git-ignored directory every generator in this tree writes to — beside the
+#: examples rather than in whatever directory you ran from. Made here so that
+#: rendering is one call and not two.
+OUT = pathlib.Path(__file__).resolve().parents[1] / "out"
+OUT.mkdir(exist_ok=True)
 
 SR = 48000.0
 
@@ -84,7 +92,7 @@ session.play(phrase)
 
 
 # %%
-def run(path: str = "envelope.wav"):
+def run(path: str = str(OUT / "envelope.wav")):
     """Render the score to ``path``."""
     stats = session.render(sample_rate=SR, channels=2, path=path)
     peak = max(stats.peak, default=0.0)
@@ -95,6 +103,7 @@ def run(path: str = "envelope.wav"):
 
 # %%
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
-    run(next((a for a in sys.argv[1:] if not a.startswith("-")), "envelope.wav"))
+    run(next((a for a in sys.argv[1:] if not a.startswith("-")),
+             str(OUT / "envelope.wav")))
 else:
     print("score ready - run('out.wav') to render it")

@@ -217,29 +217,17 @@ run_page faust-artifact.html # what the vendored Faust compiler emits, asserted
 run_page faust.html    # a FaustDef compiled in the page, sounding, and set by name
 fetched 'vendor/faust/libfaust-wasm' "Faust compiler"   # the positive half of not_fetched
 
-# The components and lifecycle acceptances mount the example bundles, which are build
-# products (git-ignored, written by the Python client). Generate them here so a
-# fresh checkout runs the page; skip it — rather than fail — when the client is
-# not importable, the same posture as the WS suites above.
-#
-# The client's dependencies live in the repo's venv, so a bare `python3` is the
-# interpreter least likely to import it: prefer the venv when it is there, or
-# these two pages are skipped on a checkout that can perfectly well run them.
-PY="${PYTHON:-}"
-if [ -z "$PY" ]; then
-    if [ -x ../../.venv/bin/python ]; then PY="$(cd ../.. && pwd)/.venv/bin/python"
-    else PY=python3; fi
-fi
-if PYTHONPATH=../python "$PY" -c "import clausters.bundle" 2>/dev/null; then
-    for example in panels/graph-controls panels/piano; do
-        (cd "examples/$example" && PYTHONPATH=../../../../python "$PY" make_bundle.py >/dev/null)
-    done
-    run_page components.html  # bundles as components: N canvases in one document
-    # The bundles it mounts are SynthDef-only, so nothing in this page ever
-    # reaches `/def_send faust` and the compiler stays on the shelf.
-    not_fetched 'vendor/faust/libfaust' "Faust compiler"
-    run_page lifecycle.html   # and the unmount: a hundred of them come and go
-else
-    echo "components.html/lifecycle.html: SKIPPED ($PY cannot import the Python" \
-         "client, so the example bundles cannot be written)" >&2
-fi
+# The components and lifecycle acceptances mount the example bundles, which are
+# build products: git-ignored, written into examples/out/ by the examples' own
+# node scripts. Generate them here so a fresh checkout runs the page — no skip
+# branch any more, because nothing outside this package is needed to write them
+# (they were Python until the TypeScript writer landed, and these two pages
+# quietly skipped themselves on a checkout that could perfectly well run them).
+for example in panels/graph-controls panels/piano; do
+    (cd "examples/$example" && node make_bundle.mjs >/dev/null)
+done
+run_page components.html  # bundles as components: N canvases in one document
+# The bundles it mounts are SynthDef-only, so nothing in this page ever
+# reaches `/def_send faust` and the compiler stays on the shelf.
+not_fetched 'vendor/faust/libfaust' "Faust compiler"
+run_page lifecycle.html   # and the unmount: a hundred of them come and go

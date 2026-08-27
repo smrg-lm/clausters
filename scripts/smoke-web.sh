@@ -33,8 +33,9 @@ PORT="${PORT:-8138}"
 #
 # `demo-bundle` is tools/demo-bundle.sh -- the native persisted formats a
 # `clausters-gui --standalone` reads. `authored:<dir>` is an example's own
-# make_bundle.py, written with the Python client. Everything needs the package
-# staged into dist/, which is built once for the whole run.
+# make_bundle.mjs. Both write into clients/web/examples/out/, which is
+# git-ignored. Everything needs the package staged into dist/, which is built
+# once for the whole run.
 CASES=(
     "worklet|-|tests/smoke.html"
     "standalone|demo-bundle|examples/panels/standalone.html?smoke=1"
@@ -89,36 +90,12 @@ done
 
 [ -n "$need_demo_bundle" ] && clients/web/tools/demo-bundle.sh
 
-# The authored bundles are build products (git-ignored) written by the Python
-# client. Unlike clients/web/test.sh, which skips its two component pages when
-# the client is not importable, a missing bundle here is a failure: these cases
-# exist because their assertions were written and never fired, and a smoke that
-# skips itself is how that happened.
-if [ "${#authored[@]}" -gt 0 ]; then
-    PY="${PYTHON:-}"
-    if [ -z "$PY" ]; then
-        if [ -x "$ROOT/.venv/bin/python" ]; then PY="$ROOT/.venv/bin/python"; else PY=python3; fi
-    fi
-    if ! PYTHONPATH="$ROOT/clients/python" "$PY" -c "import clausters.bundle" 2>/dev/null; then
-        echo "$PY cannot import the Python client, so the authored bundles" \
-             "cannot be written (set PYTHON=... or run the cases that need none)" >&2
-        exit 1
-    fi
-    # Authoring is not pure Python: `Bundle.write` validates the manifest and
-    # the defs through the core's C ABI, so the client needs libclausters_ffi.
-    # In a source checkout that is the workspace build (the wheel bundles its
-    # own copy, and an env override beats both), and cargo no-ops when it is
-    # already there. The crate's default feature set is empty -- no libfaust, no
-    # libverovio -- so this costs a build of the core and nothing else.
-    if ! PYTHONPATH="$ROOT/clients/python" "$PY" -c \
-        "from clausters import _native; _native.lib()" 2>/dev/null; then
-        echo "staging libclausters_ffi (the bundle writer validates through it)"
-        cargo build -p clausters-ffi --release
-    fi
-    for dir in "${authored[@]}"; do
-        (cd "clients/web/$dir" && PYTHONPATH="$ROOT/clients/python" "$PY" make_bundle.py >/dev/null)
-    done
-fi
+# The authored bundles are build products (git-ignored) written by the
+# examples' own node scripts. They need nothing but the staged package: the
+# writer validates through the core's wasm door, which is in dist/ already.
+for dir in "${authored[@]}"; do
+    (cd "clients/web/$dir" && node make_bundle.mjs >/dev/null)
+done
 
 # --- The harness -------------------------------------------------------------
 

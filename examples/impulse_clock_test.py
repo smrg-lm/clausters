@@ -53,6 +53,12 @@ import clock_recorder as rec  # noqa: E402  (recording + final analysis, reused)
 from clausters.base import Routine, SampleClockTimebase, TempoClock  # noqa: E402
 from clausters.defs import Server, SynthDef, impulse, out  # noqa: E402
 
+#: Where a run leaves its file when no path is given: ``examples/out/``, the
+#: git-ignored directory every generator in this tree writes to -- beside the
+#: examples rather than in whatever directory you ran from.
+OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "out")
+os.makedirs(OUT, exist_ok=True)
+
 NODE_BASE = 4000
 NODE_SPAN = 1024  # node ids cycle here; each synth is freed long before reuse
 HOLD = 0.1        # beats: free the synth this long after its impulse
@@ -212,7 +218,7 @@ def parse_args(argv):
                    help="scheduling lookahead added to each /sched_at target")
     p.add_argument("--seconds", type=float, default=3700.0,
                    help="run duration (one impulse per second)")
-    p.add_argument("--out", default="/tmp/clausters_impulse_clock.wav")
+    p.add_argument("--out", default=os.path.join(OUT, "impulse_clock.wav"))
     p.add_argument("--target", default=None,
                    help="recorder node (default: the server's output node)")
     p.add_argument("--record-cmd", default=None,

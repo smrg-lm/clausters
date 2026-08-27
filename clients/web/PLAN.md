@@ -3020,7 +3020,7 @@ finished work, where a pending item reads as done.
   under them are untouched — this entry's record of the defect stands, and the
   square wave is drawn correctly by the one thing that draws it.
 
-- ⬜ **Two pairs read side by side turn out not to be pairs** *(found
+- ✅ **Two pairs read side by side turn out not to be pairs** *(found
   2026-08-24, in C45's pass over both example directories)*. The reorganization
   put every script beside its page for the first time, which is what made these
   legible; both are recorded rather than patched, because the rule is that a
@@ -3055,15 +3055,33 @@ finished work, where a pending item reads as done.
     `examples` skill, since that is where the three directories and their forms
     are written down.
 
-    **W15 shipped without answering it** *(2026-08-27)*, so this is now the one
+    **W15 shipped without answering it** *(2026-08-27)*, so it became the one
     thing between the writer and its examples rather than a note beside a
-    milestone. Three scripts wait on the answer, not one: the counterpart of
+    milestone. Three scripts waited on the answer, not one: the counterpart of
     `standalone.py`, and the two `examples/panels/*/make_bundle.py` that write
     the bundles this package's own pages mount — a Python script authoring the
-    web client's examples is itself the divergence, and it is only still there
-    because there was no TypeScript writer. The page half needed no decision
-    and shipped: `examples/components/authored.html` authors a bundle in the
-    tab and mounts it from memory.
+    web client's examples is itself the divergence, and it was only still there
+    because there was no TypeScript writer.
+
+    **Answered the same day, and the rule is in the `examples` skill.** A web
+    example is a page for anything a page can do, and a **node script**
+    (`.mjs`) for authoring, which is the one thing it cannot: writing a bundle
+    is not something a page does, because a bundle is an input a static page
+    boots with no interpreter. The script sits **beside the page it feeds**
+    (`panels/piano/make_bundle.mjs` next to that example's `index.html`), and
+    the page's header says which command to run, since a page whose bundle has
+    not been written shows nothing.
+
+    With that, the pair is `panels/standalone.mjs` ↔
+    `clients/python/examples/panels/standalone.py`, and `standalone.html` is a
+    lone page whose sibling is *running* `clausters-gui --standalone`; the two
+    `make_bundle.py` are gone, ported verb for verb, and their output is
+    **byte-identical** to what the Python writer emitted — which is the
+    canonical format proving itself outside a test. Two things fell out of it:
+    `./test.sh` and `scripts/smoke-web.sh` no longer skip or fail when the
+    Python client is not importable (this package now writes its own example
+    bundles), and every generator in the three example trees writes into an
+    ignored `out/` rather than into the working directory.
   - ✅ **`transport/sync`'s page has a half the script does not**, and says so in
     its own prose: a playhead that obeys the shared grid. That is not a platform
     difference — a script can follow a playhead — so it is the script that is

@@ -11,8 +11,12 @@ __pycache__/
 *.egg-info/
 .venv
 uv.lock
-# Persisted defs left on disk by examples/persistent_graphdef.py (explore, then rm -rf)
-/examples/defs_store
+# What the examples' generators write. One ignored directory per example tree
+# (the server's, the Python client's, the web client's), so a run leaves one
+# place to look in and one to delete — never the working directory, never a
+# file beside the source.
+/examples/out/
+/clients/python/examples/out/
 # Where scripts/render-all.sh drops its WAVs by default (a bench, not a fixture)
 /render
 # Personal scratch files (nombre.notrack.md): never committed.
@@ -23,26 +27,3 @@ uv.lock
 /specs/
 # Subagent-driven-development scratch (ledgers, briefs, review packages).
 /.superpowers/
-
-# Artifacts the session example hands to the standalone host and reads back.
-clients/python/examples/editors/session.json
-clients/python/examples/editors/session-edited.json
-clients/python/examples/editors/session-take.wav
-
-# The demo renders the client examples write to the working directory
-# (`python clients/python/examples/basics/envelope.py` leaves envelope.wav
-# where it was run). Named one by one, so a wav meant to be committed still
-# shows up.
-/automation_lane.wav
-/boxes_library.wav
-/chain.wav
-/convolution.wav
-/cross.wav
-/envelope.wav
-/graph_maths.wav
-/kernel.wav
-/multichannel.wav
-/offline_render.wav
-/pause_resume.wav
-/typed_controls.wav
-/wavetables.wav

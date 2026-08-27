@@ -33,6 +33,7 @@ re-render in the next one.
 """
 
 # %%
+import pathlib
 import sys
 
 from clausters import Event, Session, render
@@ -50,6 +51,13 @@ from clausters.defs import (
     rand,
     sine,
 )
+
+#: Where a run leaves its file when no path is given: ``examples/out/``, the
+#: git-ignored directory every generator in this tree writes to — beside the
+#: examples rather than in whatever directory you ran from. Made here so that
+#: rendering is one call and not two.
+OUT = pathlib.Path(__file__).resolve().parents[1] / "out"
+OUT.mkdir(exist_ok=True)
 
 SR = 48000.0
 VOICES = 12
@@ -98,7 +106,7 @@ Routine(sequence).play(session.clock)
 
 
 # %%
-def run(path: str = "multichannel.wav"):
+def run(path: str = str(OUT / "multichannel.wav")):
     """Render the score to ``path``."""
     stats = session.render(sample_rate=SR, channels=2, path=path)
     peak = max(stats.peak, default=0.0)
@@ -120,6 +128,7 @@ print(f"bare channel list: {pair.channels} channels, "
 
 # %%
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
-    run(next((a for a in sys.argv[1:] if not a.startswith("-")), "multichannel.wav"))
+    run(next((a for a in sys.argv[1:] if not a.startswith("-")),
+             str(OUT / "multichannel.wav")))
 else:
     print("score ready - run('out.wav') to render it")

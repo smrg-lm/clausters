@@ -182,10 +182,10 @@ on trust, so that is where drift accumulates:
   and both example directories. The baseline is zero, so anything it prints is
   yours; `docs/contributing.md` explains the rule choice.
 - **The web package is typechecked against nothing else.** Its Python (the
-  parity generators `clients/web/tests/gen-*-vectors.py`, the bundle authors
-  `clients/web/examples/*/make_bundle.py`) imports the Python client; its pages
-  (`clients/web/tests/*.html`, `examples/**`) are plain modules no
-  type-checker reads. `./build.sh && ./test.sh` from `clients/web` is the only
+  parity generators `clients/web/tests/gen-*-vectors.py`) imports the Python
+  client; its pages (`clients/web/tests/*.html`, `examples/**`) and its node
+  scripts (`examples/**/*.mjs`, which author the example bundles) are plain
+  modules no type-checker reads. `./build.sh && ./test.sh` from `clients/web` is the only
   thing that proves the package works — and `dist/` is git-ignored, so build
   before testing, always. Re-run the generators and commit whatever vectors
   move.

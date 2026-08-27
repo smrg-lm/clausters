@@ -109,9 +109,9 @@
 
       <h2>What this is made of</h2>
 
-      <p>Two directories, written by two Python scripts
-      (<code>examples/panels/graph-controls/make_bundle.py</code> and
-      <code>examples/panels/piano/make_bundle.py</code>), each ending in a generated
+      <p>Two directories, written by two node scripts
+      (<code>examples/panels/graph-controls/make_bundle.mjs</code> and
+      <code>examples/panels/piano/make_bundle.mjs</code>), each ending in a generated
       <code>index.js</code> that registers its tag. This page imports those two
       modules and writes no other JavaScript at all — the markup above is the
       whole integration.</p>
@@ -125,8 +125,8 @@
       It writes no script of its own beyond the two imports below. Both
       bundles are the ones the other two examples author; generate them first:
 
-          python3 ../graph-controls/make_bundle.py
-          python3 ../piano/make_bundle.py
+          node ../../panels/graph-controls/make_bundle.mjs
+          node ../../panels/piano/make_bundle.mjs
 
       then serve the PACKAGE ROOT (clients/web — never this folder; the
       generated modules import /dist/runtime.js):
@@ -136,8 +136,8 @@
       and open http://localhost:8000/examples/editors/document/.
     -->
     <script type="module">
-      import "/examples/panels/graph-controls/bundle/index.js";  // <fm-trem>
-      import "/examples/panels/piano/bundle/index.js";           // <piano-keys>
+      import "/examples/out/graph-controls/index.js";  // <fm-trem>
+      import "/examples/out/piano/index.js";           // <piano-keys>
     </script>
   </body>
 </html>

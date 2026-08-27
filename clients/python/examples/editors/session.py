@@ -38,10 +38,11 @@ What it shows, in the order the cells run:
   the whole claim: a file passed between two writers means the same thing to
   both.
 
-The two files it writes sit **beside this one** (``session.json``, and
-``session-edited.json`` once the host has saved) — handed to another program
-and read back from it, so they are worth keeping and looking at rather than
-leaving in a temp directory.
+The three files it writes go to ``examples/out/`` (``session.json``,
+``session-take.wav``, and ``session-edited.json`` once the host has saved) —
+the git-ignored directory every generator in this tree writes to. They are
+handed to another program and read back from it, so they are worth keeping and
+looking at rather than leaving in a temp directory.
 
 **What it needs:** nothing running — the host boots its own embedded server
 (a `--features standalone` build; without one the take still draws as a named
@@ -99,11 +100,15 @@ bass = Track(Timeline([
 # and reads each file into a server buffer of its own, which is what lets a clip
 # draw its waveform instead of an empty rectangle.
 
-#: A file beside this one, written here so the example needs nothing but itself
-#: — an ordinary WAV, the kind a person drags in, decoded by the server the way
-#: any other would be.
-take_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                         "session-take.wav")
+#: Where a run leaves its files: ``examples/out/``, the git-ignored directory
+#: every generator in this tree writes to.
+OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "out")
+os.makedirs(OUT, exist_ok=True)
+
+#: A file the example writes itself, so it needs nothing but itself — an
+#: ordinary WAV, the kind a person drags in, decoded by the server the way any
+#: other would be.
+take_path = os.path.join(OUT, "session-take.wav")
 
 
 def write_take(path: str, seconds: float = 2.0, freq: float = 440.0) -> int:
@@ -169,15 +174,12 @@ piece = Aggregate([
 # and this client and the standalone host are two readers of the same
 # definition rather than two implementations of one idea.
 
-#: The two artifacts, **beside this file** — the shape the server's examples
-#: already use for a companion (`config.toml`, `ws_ping.html` live next to the
-#: scripts that name them). Not a temp directory, because these are not scratch:
-#: one is handed to another program and the other comes back from it, and both
-#: are worth opening, diffing and re-running the host on. Named after the
-#: example so they group with it; git ignores them.
-HERE = os.path.dirname(os.path.abspath(__file__))
-path = os.path.join(HERE, "session.json")
-saved = os.path.join(HERE, "session-edited.json")
+#: The two artifacts, in the examples' own `out/`. Not a temp directory,
+#: because these are not scratch: one is handed to another program and the
+#: other comes back from it, and both are worth opening, diffing and re-running
+#: the host on. Named after the example so they group with it there.
+path = os.path.join(OUT, "session.json")
+saved = os.path.join(OUT, "session-edited.json")
 
 # %%
 with open(path, "w") as f:

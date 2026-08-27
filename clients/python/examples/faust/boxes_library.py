@@ -27,6 +27,7 @@ re-render in the next one.
 """
 
 # %%
+import pathlib
 import sys
 
 from clausters import Session
@@ -34,6 +35,13 @@ from clausters.base import Routine
 from clausters.defs import FaustDef
 from clausters.defs import boxes as box
 from clausters.defs import Synth
+
+#: Where a run leaves its file when no path is given: ``examples/out/``, the
+#: git-ignored directory every generator in this tree writes to — beside the
+#: examples rather than in whatever directory you ran from. Made here so that
+#: rendering is one call and not two.
+OUT = pathlib.Path(__file__).resolve().parents[1] / "out"
+OUT.mkdir(exist_ok=True)
 
 SR = 48000.0
 
@@ -94,7 +102,7 @@ Routine(sequence).play(session.clock)
 
 
 # %%
-def run(path: str = "boxes_library.wav"):
+def run(path: str = str(OUT / "boxes_library.wav")):
     """Render the score to ``path``."""
     stats = session.render(sample_rate=SR, channels=2, path=path)
     peak = max(stats.peak, default=0.0)
@@ -105,6 +113,7 @@ def run(path: str = "boxes_library.wav"):
 
 # %%
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
-    run(next((a for a in sys.argv[1:] if not a.startswith("-")), "boxes_library.wav"))
+    run(next((a for a in sys.argv[1:] if not a.startswith("-")),
+             str(OUT / "boxes_library.wav")))
 else:
     print("score ready - run('out.wav') to render it")

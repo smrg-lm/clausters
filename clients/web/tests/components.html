@@ -69,8 +69,8 @@
       beaconed as a fetch — the standard web-smoke posture (docs/decisions.md).
     -->
     <script type="module">
-      import "/examples/panels/graph-controls/bundle/index.js";  // <fm-trem>
-      import "/examples/panels/piano/bundle/index.js";           // <piano-keys>
+      import "/examples/out/graph-controls/index.js";  // <fm-trem>
+      import "/examples/out/piano/index.js";           // <piano-keys>
       import { startPage, server, ANY_PEER } from "/dist/runtime.js";
       import { loadOsc, decodePacket, encodeMessage } from "/dist/base/osc.js";
 
@@ -142,7 +142,7 @@
 
         // The def was sent once for the page, however many instances want it.
         const sent = performance.getEntriesByType("resource")
-            .filter((r) => r.name.includes("/graph-controls/bundle/defs/synthdefs/"));
+            .filter((r) => r.name.includes("/out/graph-controls/defs/synthdefs/"));
         const distinct = new Set(sent.map((r) => r.name));
         if (sent.length !== distinct.size) {
             throw new Error(`a def payload was fetched twice: ${sent.map((r) => r.name)}`);

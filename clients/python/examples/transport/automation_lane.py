@@ -26,6 +26,7 @@ it cell by cell (Shift+Enter) or as a plain script.
 """
 
 # %%
+import pathlib
 import sys
 
 from clausters import Session
@@ -33,6 +34,13 @@ from clausters.base.stream import Routine
 from clausters.defs import SynthDef, control, out, sine
 from clausters.seq import Automation
 from clausters.defs import Synth
+
+#: Where a run leaves its file when no path is given: ``examples/out/``, the
+#: git-ignored directory every generator in this tree writes to — beside the
+#: examples rather than in whatever directory you ran from. Made here so that
+#: rendering is one call and not two.
+OUT = pathlib.Path(__file__).resolve().parents[1] / "out"
+OUT.mkdir(exist_ok=True)
 
 SR = 48000
 
@@ -72,7 +80,8 @@ def score():
 session.clock.play(Routine(score))
 
 # %% Render it -- the server writes the WAV, we keep the stats.
-out_path = next((a for a in sys.argv[1:] if not a.startswith("-")), "automation_lane.wav")
+out_path = next((a for a in sys.argv[1:] if not a.startswith("-")),
+                str(OUT / "automation_lane.wav"))
 stats = session.render(sample_rate=SR, channels=2, path=out_path)
 peak = max(stats.peak, default=0.0)
 print(f"rendered {stats.frames} frames ({stats.duration:.2f} s) | peak {peak:.3f} -> {out_path}")

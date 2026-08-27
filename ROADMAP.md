@@ -83,16 +83,16 @@ already carry it.
 Same size of work, except the shape depends on an answer. The decision is named
 on each one; none of them is being taken by this file.
 
-- ⬜ **Where a node example lives** *(`clients/web/PLAN.md`, "Found by use",
-  "Two pairs read side by side turn out not to be pairs")*. `W15` shipped the
-  TypeScript bundle writer, so three scripts are now writable and homeless: the
-  counterpart of `examples/panels/standalone.py`, and the two
-  `examples/panels/*/make_bundle.py` that author the bundles this package's own
-  pages mount in Python.
-  **The decision:** `clients/web/examples/` holds pages, and the `examples`
-  skill says a web example *is* a page — so whether that directory grows a
-  script form, and where (its own subdirectory, beside the suites), is a rule
-  about the three example directories rather than a choice about one file.
+**Nothing open.** The three entries this section held were taken on
+2026-08-27 and shipped with their answers: the page's missing *real* constant,
+measured to cost nothing and answered by a verb both clients already have; who
+builds `libfaust-wasm`, answered by the release; and where a node example lives
+— a web example is a page for what a page can do and a node script (`.mjs`)
+beside it for authoring, which is the one thing it cannot, with every
+generator's output in an ignored `out/`. Their plans' checkboxes, the
+`examples` skill and `docs/decisions.md` carry the record — the example rule
+being the skill's, since that is where the three directories and their forms
+are written down.
 
 ## 3. Tests and reviews pending
 

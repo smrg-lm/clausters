@@ -121,9 +121,9 @@ cargo run --features standalone --bin clausters-gui -- \
     --standalone fm-voice --data-dir <dir>
 ```
 
-Worked examples: `clients/web/examples/panels/piano/make_bundle.py` (a keyboard whose
+Worked examples: `clients/web/examples/panels/piano/make_bundle.mjs` (a keyboard whose
 keys the host itself turns into voices) and
-`clients/web/examples/panels/graph-controls/make_bundle.py` (a GraphDef's control
+`clients/web/examples/panels/graph-controls/make_bundle.mjs` (a GraphDef's control
 surface), with `clients/web/examples/editors/document/` showing both mounted in one
 interactive text. The format itself — the manifest, the two sigils, the
 two-phase mount — is documented in the server guide's

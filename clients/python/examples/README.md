@@ -48,6 +48,13 @@ The ones that need a **running** server (`io/live_udp.py`, the transport and
 responder demos) name it in their docstring; the wheel ships that server as the
 `clausters` command.
 
+**What a run leaves behind goes in `out/`**, here beside the folders — the
+rendered WAVs, the MIDI files, the session an editor example hands to the host
+and reads back. It is git-ignored, so there is one place to look in and one to
+delete (`rm -rf clients/python/examples/out`), and a render lands there however
+you ran the example rather than in whatever directory you happened to be in. A
+path argument still overrides it: `python basics/envelope.py /tmp/mine.wav`.
+
 The lower-level demos — the transports, the raw OSC helpers, the audible tours
 of the UGen families — live in the repository-root
 [`examples/`](../../../examples/); those use a `sys.path` shim so they run

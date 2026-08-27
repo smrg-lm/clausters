@@ -60,6 +60,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "clients", "pyt
 import json_client as osc  # stdlib-only OSC encode/decode helpers
 from clausters.ipc import ShmClient
 
+#: Where a run leaves its file when no path is given: ``examples/out/``, the
+#: git-ignored directory every generator in this tree writes to -- beside the
+#: examples rather than in whatever directory you ran from.
+OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "out")
+os.makedirs(OUT, exist_ok=True)
+
 DEF_NAME = "clkimpulse"
 NODE_BASE = 4000
 NODE_SPAN = 1024  # node ids cycle here; each synth is freed long before reuse
@@ -414,7 +420,8 @@ def parse_args(argv):
     p.add_argument("--amp", type=float, default=0.5, help="impulse amplitude 0..1")
     p.add_argument("--lead", type=float, default=1.0,
                    help="seconds to schedule ahead of the clock")
-    p.add_argument("--out", default="/tmp/clausters_clock.wav", help="recording path")
+    p.add_argument("--out", default=os.path.join(OUT, "clock.wav"),
+                   help="recording path")
     p.add_argument("--target", default=None,
                    help="recorder node (default: the server's output node)")
     p.add_argument("--record-cmd", default=None,
