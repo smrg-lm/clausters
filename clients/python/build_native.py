@@ -590,14 +590,16 @@ def _set_origin_rpath(path: str):
     """Rewrite a vendored library's run path to ``$ORIGIN`` so it finds its
     siblings in ``_libs/`` (Linux only).
 
-    libfaust/libLLVM and their transitive deps come from the build host, not our
-    build, so they carry the host's run paths — libLLVM's is ``$ORIGIN/../lib``,
-    a directory that does not exist in the wheel. Worse, libLLVM uses ``DT_RUNPATH``,
-    which (unlike the ``DT_RPATH`` ``build.rs`` gives *our* artifacts) is **not**
-    inherited down the dependency chain: the standalone binary's ``$ORIGIN/../_libs``
-    is therefore not consulted for libLLVM's own deps (libxml2, libzstd, …), and
-    the loader falls through to the system, whose soname may differ (the
-    ``libxml2.so.2`` vs ``libxml2.so.16`` failure). Pointing every vendored lib at
+    The vendored libraries and their transitive deps come from the build host,
+    not our build, so they carry the host's run paths — a prefix's
+    ``$ORIGIN/../lib``, a directory that does not exist in the wheel. Worse, a
+    host library typically uses ``DT_RUNPATH``, which (unlike the ``DT_RPATH``
+    ``build.rs`` gives *our* artifacts) is **not** inherited down the dependency
+    chain: the standalone binary's ``$ORIGIN/../_libs`` is therefore not
+    consulted for a vendored library's own deps (libz, libzstd, …), and the
+    loader falls through to the system, whose soname may differ (the
+    ``libxml2.so.2`` vs ``libxml2.so.16`` failure that first showed this, back
+    when a shared libLLVM was bundled too). Pointing every vendored lib at
     ``$ORIGIN`` — the same directory they all live in — makes each one resolve its
     direct deps locally, which covers the whole graph. This is what auditwheel
     does; here it must run in ``build_native`` because the release builds a plain
@@ -672,12 +674,13 @@ def build_and_stage(profile: str = "release", *, allow_skip: bool = False) -> li
             copied.append(guiname)
     elif staged_gui_bin():
         copied.append(gui_bin_name())
-    # libfaust + its libLLVM, read off the staged artifacts: the `faust` feature
-    # is on by default, and bundling them is what lets an installed wheel
-    # JIT-compile a FaustDef with nothing else on the machine.
+    # libfaust and the few system libraries it still needs, read off the staged
+    # artifacts: the `faust` feature is on by default, and bundling them is what
+    # lets an installed wheel JIT-compile a FaustDef with nothing else on the
+    # machine.
     copied += stage_faust_libs(profile)
     # verovio, the engraver behind the `score` widget: bundled for the same
-    # reason as libLLVM above, and because the published one cannot edit.
+    # reason as libfaust above, and because the published one cannot edit.
     copied += stage_verovio()
     print("clausters: staged " + ", ".join(copied)
           + f" into {LIBS_DIR} and {BIN_DIR}")

@@ -24,10 +24,10 @@ FAUST_ORIGIN=https://github.com/smrg-lm/faust
 # commit by SHA only resolves unabbreviated.
 FAUST_SHA=9f685488554b77323374f1fa7d492c3626e6e83b
 
-# The LLVM the shipped libLLVM is built against. Pinned to 18: it is Ubuntu
+# The LLVM linked into the shipped libfaust. Pinned to 18: it is Ubuntu
 # 24.04's default (so CI installs it from the distro repos, no apt.llvm.org),
-# and the distro build targets a baseline x86-64, which keeps the bundled
-# libLLVM portable -- it runs on any x86-64 machine, where a higher-baseline
+# and the distro build targets a baseline x86-64, which keeps the linked-in
+# LLVM portable -- it runs on any x86-64 machine, where a higher-baseline
 # upstream build could hit an illegal instruction on older CPUs. The build
 # drives it through `llvm-config-<version>`; a developer on a different LLVM
 # (e.g. 21) overrides it with LLVM_CONFIG=llvm-config-21 -- the hand-written

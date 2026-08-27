@@ -148,6 +148,20 @@ echo "== building the compiler (this takes a while)"
 # the mixers into the virtual filesystem the .data file is built from.
 make -C "$build" wasmlib || true
 
+# And re-stage it when make did not, which is the case whenever the previous
+# run succeeded: `wasmlib` ends in `rm -rf wasm-filesystem`, and cmake reaches
+# that line only when it has nothing to relink -- so the recipe deletes the
+# directory the relink below needs, and the second run of this script dies in
+# `file_packager` with "$../../wasm-filesystem@usr does not exist". These are
+# the makefile's own two lines (build/Makefile, target `wasmlib`).
+if [ ! -d "$build/wasm-filesystem" ]; then
+    mkdir -p "$build/wasm-filesystem/share/faust" "$build/wasm-filesystem/rsrc"
+    cp "$src"/libraries/*.lib "$src"/libraries/dx7/*.lib "$src"/libraries/old/*.lib \
+       "$build/wasm-filesystem/share/faust"
+    cp "$src"/architecture/webaudio/mixer32.wasm \
+       "$src"/architecture/webaudio/mixer64.wasm "$build/wasm-filesystem/rsrc"
+fi
+
 echo "== linking with em++, for the browser"
 # The C box/signal API the one interpreter calls, read out of its own binding so
 # the artifact and `faust::ffi` cannot disagree. `_malloc`/`_free` come along

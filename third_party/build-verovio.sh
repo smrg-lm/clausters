@@ -12,7 +12,7 @@
 # data, installed into a prefix -- exactly the arrangement build-faust.sh uses
 # for libfaust, down to the default prefix, and consumed the same way
 # (clients/python/build_native.py stages the library and its resources into the
-# wheel, as it already does for libfaust and libLLVM).
+# wheel, as it already does for libfaust).
 #
 # Deliberately *only* the library. verovio also ships a SWIG Python module, and
 # building that would mean a second compile of the same sources, a second copy
