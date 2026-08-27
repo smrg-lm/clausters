@@ -74,65 +74,15 @@ The five sections, and the line between them:
 
 Each is small, owned by its plan, and blocked by nothing.
 
-**All four are done** *(2026-08-26)*, and each stays in its plan's "Found by
-use" with the record of what was wrong: `Editor._snap` deleted (the crate snaps
-a placement, and the TypeScript port was right to leave the method out);
-`guidef.waveform`'s `measure` docstring rewritten to the TSDoc's own sentences,
-which fixes more than a missing spelling — it had told the reader a stack is two
-views layered, the one picture that cannot work; `meters::label_strip` made
-`pub(crate)` and called by the three signal views that carried a copy of it; and
-`transport/sync.py` given the playhead half its page has had all along, call for
-call in the page's order.
-
-Section 3's review then opened, and what it turned up went the way the rule
-above says: three defects fixed the same afternoon and recorded in their commit
-(a heavy view that took a `label` and drew nothing, a caption whose clearance
-was measured against its box rather than its ink, and a panic on a window
-dragged small), plus the one general thing they exposed, which is the entry
-below in section 2.
+**Nothing open.** This section fills from section 3's review and empties again;
+a fix that lands leaves no line here, because its plan's checkbox and the commit
+already carry it.
 
 ## 2. Fixes that need a decision first
 
 Same size of work, except the shape depends on an answer. The decision is named
 on each one; none of them is being taken by this file.
 
-- ✅ **A running clock resumes what it is handed inside `play`, where the
-  reference client's returns first** *(fixed 2026-08-26)*. **The decision was
-  the microtask**, on the rule that the cheapest fix wins as long as it adds
-  nothing to the user's API — `play(routine)` is unchanged, and when a
-  scheduling call defers its own pump is this language's business. Not the
-  ticker (an item with no wait left is due) and not a worker (the pacing is
-  already in one; what cannot leave the page thread is the resume). The story
-  is in the commit; what it left open is one entry below.
-
-- ✅ **An unbounded bounce of an endless pattern hangs, in both clients**
-  *(fixed 2026-08-26)*. Neither of the two shapes this entry offered: the guard
-  is an **optional** bound on resumes in `render` (`max_steps` / `maxSteps`,
-  defaulting to none, so a real score's long render is untouched), passed by
-  `fromPattern` whenever no `dur` was given. Writing it in the recorder first is
-  what showed why it cannot live there — a routine that raises loses its own
-  place and nothing else, by the clock's design. In the commit.
-
-- ⬜ **`panels/standalone` is two different programs** *(`clients/web/PLAN.md`,
-  Found by use, "Two pairs read side by side turn out not to be pairs")*. The
-  script *authors* a bundle; the page *boots* one.
-  **The decision is taken** *(2026-08-26, with the user)*: **a page does not
-  write bundles, and that is the design rather than a limit.** A bundle is an
-  *input*, produced ahead of time and saved, so that a static page can boot it
-  against the gui client and a standalone server **with no interpreter**. That
-  it can be authored in TS at all is a convenience — not having to change
-  language — which is why `W15` already says the writer runs **in Node**.
-  So the two halves were paired wrong rather than one of them missing: the
-  counterpart of `standalone.py` is a **node script**, and the page is the
-  counterpart of *running* `clausters-gui --standalone`, which is the half the
-  Python example prints a command for.
-  **What that leaves:** `W15` is taken as a **node** milestone, which promotes
-  "Node target" from a future direction to its dependency (a load path that
-  finds the core's `.wasm` without the test's manual read, and a documented
-  entry point). And one small open question of **placement**: `clients/web/
-  examples/` holds pages, and a node script there would be the first — its own
-  subdirectory, or beside the suites.
-
 - ⬜ **Nothing resizes a window, so nothing tests a squeeze**
   *(`clients/gui/PLAN.md`, Found by use)*. Every suite draws into a mesh at a
   size it chose and every example opens at the size its GuiDef declares, so the
@@ -143,56 +93,11 @@ on each one; none of them is being taken by this file.
   ten and a half until 2026-08-26.
 
   **What it would take is not a window**: the drawing entry points are pure
-  functions over a `Mesh`, so a test can walk a view's rect down through the
-  sizes that matter and assert only that it draws and does not panic — which is
-  the shape the regression test for that panic already has.
-  **The decision:** whether that is *one* shared test over the element registry
-  (every registered element, a shrinking rect) or a case per widget, and whether
-  the browser front needs its own, since the compositor there hands out sizes
-  the native one does not. **Related:** it came out of section 3's manual review,
-  and it is the second thing that pass found that no suite could have — which is
-  the argument that entry makes.
-
-- ✅ **Four UGen builders take their statics positionally, interleaved with real
-  inputs** *(fixed 2026-08-26)*. **The decision was the timing, and it dissolved:**
-  nothing has been released, so everything that breaks rides the next one and
-  there was no tier to wait for. `poll`, `disk_in`, `disk_out` and `pv_kernel`
-  put their statics behind a `*` (an options object in TypeScript), so their
-  positional parameters are the wire's inputs in the wire's order; the anti-drift
-  exception list is empty and kept empty. The parity vectors regenerated
-  byte-identical, which is the proof that only the spelling moved.
-
-- ⬜ **Nothing resizes a window, so nothing tests a squeeze**
-  *(`clients/gui/PLAN.md`, Found by use)*. Every suite draws into a mesh at a
-  size it chose and every example opens at the size its GuiDef declares, so the
-  whole family of states where a widget is **smaller than its own contents** — a
-  lane under a line of text, a body under its rulers, a strip under its widest
-  label — is reachable only by a hand on a corner. Each is arithmetic with a
-  lower bound nobody states, and one of them was a panic between four pixels and
-  ten and a half until 2026-08-26.
-
-  **What it would take is not a window**: the drawing entry points are pure
-  functions over a `Mesh`, so a test can walk a view's rect down through the
-  sizes that matter and assert only that it draws and does not panic — which is
-  the shape the regression test for that panic already has.
-  **The decision:** whether that is *one* shared test over the element registry
-  (every registered element, a shrinking rect) or a case per widget, and whether
-  the browser front needs its own, since the compositor there hands out sizes
-  the native one does not. **Related:** it came out of section 3's manual review,
-  and it is the second thing that pass found that no suite could have — which is
-  the argument that entry makes.
-
-- ⬜ **Four UGen builders take their statics positionally, interleaved with real
-  inputs** *(`clients/python/PLAN.md`, Found by use)*. `poll`, `disk_in`,
-  `disk_out` and `pv_kernel`; `fft` and `conv` show the intended convention
-  (statics keyword-only, behind a `*`). Aligning them shrinks the anti-drift
-  exception list to the three cases the wire genuinely forces.
-  **The decision:** it breaks the client's source API, so it is not *what* but
-  *when* — it belongs to a release that bumps the breaking tier, and nothing has
-  said which one. **Related:** the exception lists it would shrink are also the
-  specification the "builders generated from the catalog" direction would need
-  (root `PLAN.md`, Future directions), so doing this first makes that one
-  cheaper rather than the other way round.
+  functions over a `Mesh`, so a test can walk a rect down through the sizes that
+  matter and assert only that it draws and does not panic.
+  **The decision:** whether that is *one* shared test over a table of widgets or
+  a case per widget, and whether the browser front needs its own, since the
+  compositor there hands out sizes the native one does not.
 
 ## 3. Tests and reviews pending
 
@@ -268,9 +173,14 @@ its plan; the plan is where its acceptance is read.
   (below) — W9 is the port of what the Python client *has*, not of what C18 would
   add.
 
-- ⬜ **`W15` — the TypeScript bundle writer** *(`clients/web/PLAN.md`)*.
-  **Related:** it is the surface the `panels/standalone` divergence (section 2)
-  is asking for — if a page can author a bundle, this is where it does.
+- ⬜ **`W15` — the TypeScript bundle writer** *(`clients/web/PLAN.md`)*. **A
+  node milestone**, decided 2026-08-26: a bundle is an input a static page boots
+  with no interpreter, so writing one is not something a page does; the page's
+  half of W15 is the in-memory mount, which writes nothing. That makes **"Node
+  target"** (`clients/web/PLAN.md`, Future directions) its dependency rather
+  than a someday. It also carries what is left of the `panels/standalone`
+  divergence: the counterpart of `standalone.py` is a node script, and where a
+  node script lives in `clients/web/examples/` — pages today — is open.
 
 - ⬜ **`T4` — `bundle_is_governed` re-resolves the group per message** *(root
   `PLAN.md`, T track)*. A linear `find` per targeted message, bounded and
