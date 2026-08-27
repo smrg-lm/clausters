@@ -44,6 +44,15 @@ searching for the title rather than by reading the plan through. If a search
 comes up empty, this file is stale and the plan is right — that is the normal
 failure, not a sign the work vanished.
 
+**What gets written down, here or in a plan: what is still open, and nothing
+else.** A bug found and fixed in the same pass is **not** an entry — its story
+(what was wrong, why, how it was fixed) belongs in the **commit message**, which
+is the record of what shipped. What may survive it is the *general* thing it
+exposed: a class of problem nothing covers, a rule nobody stated, a decision
+nobody took. That is written down, as an open item, and the bug is not. Closing
+a checkbox that was **already** open is the other case and stays right: that
+entry was pending, and it keeps the record of what was wrong.
+
 The five sections, and the line between them:
 
 1. **Fixes** — something is wrong, missing or duplicated, and what to do about
@@ -75,8 +84,12 @@ views layered, the one picture that cannot work; `meters::label_strip` made
 `transport/sync.py` given the playhead half its page has had all along, call for
 call in the page's order.
 
-So this section is empty until section 3's review fills it, which is what it is
-for.
+Section 3's review then opened, and what it turned up went the way the rule
+above says: three defects fixed the same afternoon and recorded in their commit
+(a heavy view that took a `label` and drew nothing, a caption whose clearance
+was measured against its box rather than its ink, and a panic on a window
+dragged small), plus the one general thing they exposed, which is the entry
+below in section 2.
 
 ## 2. Fixes that need a decision first
 
@@ -101,6 +114,26 @@ on each one; none of them is being taken by this file.
   **The decision:** whether a page can write a bundle at all. If it can, this is
   **`W15`** (section 4) and the fix rides with it; if it cannot, the example says
   so in its own prose and the script gains the launch half instead.
+
+- ⬜ **Nothing resizes a window, so nothing tests a squeeze**
+  *(`clients/gui/PLAN.md`, Found by use)*. Every suite draws into a mesh at a
+  size it chose and every example opens at the size its GuiDef declares, so the
+  whole family of states where a widget is **smaller than its own contents** — a
+  lane under a line of text, a body under its rulers, a strip under its widest
+  label — is reachable only by a hand on a corner. Each is arithmetic with a
+  lower bound nobody states, and one of them was a panic between four pixels and
+  ten and a half until 2026-08-26.
+
+  **What it would take is not a window**: the drawing entry points are pure
+  functions over a `Mesh`, so a test can walk a view's rect down through the
+  sizes that matter and assert only that it draws and does not panic — which is
+  the shape the regression test for that panic already has.
+  **The decision:** whether that is *one* shared test over the element registry
+  (every registered element, a shrinking rect) or a case per widget, and whether
+  the browser front needs its own, since the compositor there hands out sizes
+  the native one does not. **Related:** it came out of section 3's manual review,
+  and it is the second thing that pass found that no suite could have — which is
+  the argument that entry makes.
 
 - ⬜ **Four UGen builders take their statics positionally, interleaved with real
   inputs** *(`clients/python/PLAN.md`, Found by use)*. `poll`, `disk_in`,
