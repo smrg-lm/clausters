@@ -2,10 +2,13 @@
 # Writes the demo bundle (clients/web/examples/out/demo/) in the native persisted
 # formats — the exact files `clausters-gui --standalone` reads, plus the
 # generated bundle.json manifest: a SynthDef spec whose drone also writes a
-# 0.5 Hz LFO to control bus 0 (OutCtl), and a GuiDef whose meter/scope read
-# that bus and whose boot /synth_new brings the drone up. Shared by the
-# standalone and web-components smokes, and by the manual demo pages
-# (examples/components/demo.html, examples/panels/standalone.html).
+# 0.5 Hz LFO to control bus 0 (OutCtl), and a GuiDef whose meter and trace read
+# that bus and whose boot /synth_new brings the drone up. The trace is a
+# `signal` with view="trace": the six view names the catalog grew collapsed
+# into one element, and a hand-typed `scope` answers to no built-in at all --
+# laid out and never painted, which is a band of empty window and no error.
+# Shared by the standalone and web-components smokes, and by the manual demo
+# pages (examples/components/demo.html, examples/panels/standalone.html).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -33,7 +36,7 @@ cat > "$BUNDLE/defs/guidefs/webdrone.json" << 'EOF'
   {"id":10,"type":"knob","label":"freq","min":80.0,"max":600.0,"value":220.0,
    "bind":["/node_set",1000,"freq"]},
   {"id":11,"type":"meter","bus":0,"rate":"control","min":-1.0,"max":1.0,"label":"lfo"},
-  {"id":12,"type":"scope","bus":0,"rate":"control","min":-1.0,"max":1.0,"label":"lfo"}
+  {"id":12,"type":"signal","view":"trace","bus":0,"rate":"control","min":-1.0,"max":1.0,"label":"lfo"}
  ]}}
 EOF
 python3 tools/bundle-manifest.py "$BUNDLE"

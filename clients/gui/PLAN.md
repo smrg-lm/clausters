@@ -3547,3 +3547,34 @@ finished work, where a pending item reads as done.
   has to choose. Nothing is waiting on them — no widget wants one — which is why
   this is a review of what a GUI's gesture vocabulary should be rather than two
   items to implement. Worth doing before a widget invents one for itself.
+
+- ⬜ **A def can name a widget that does not exist, and nothing says so**
+  *(found 2026-08-27, in the manual review, on the demo bundle — the stale name
+  it hit is fixed in the commit; what is left here is the class)*. A type the
+  host has no built-in and no registration for resolves to `Unknown`: laid out,
+  never painted. That is the **right** behaviour and the plan says why — it is
+  how a host older than the def already behaves, and it is the seam the
+  crate's features hang on, so a family compiled out drops its rows and every
+  other widget still draws. What is missing is that it happens **silently**.
+  No warning on the host, nothing in the `/gui_def` reply, nothing in a
+  client's builder — so a def that names a widget nobody implements looks
+  exactly like a widget that draws nothing, and the reader's first guess is the
+  layout: a band of empty window, three elastic children where one is a ghost.
+
+  It went unseen for as long as it did because nothing catches it either. The
+  smokes that boot this bundle watch the meter's bus stream and passed
+  throughout; a page shows no console error; the def is valid JSON and its
+  props parse. The one thing that named it was a person looking at the window
+  and asking why the space was there.
+
+  The fix is a diagnostic, and where it goes is the decision: a host-side
+  `tracing::warn!` naming the type and the widget id is the cheapest and
+  reaches every leg (the browser's `log` goes to the console), but a def
+  arrives over the wire from a client that could have caught it at build time
+  — and the clients' builders emit the type name themselves, so the only defs
+  that can carry an unknown one are hand-written, like this bundle's. Worth
+  deciding whether the answer is only the warning, or also a reply the sender
+  can read (`/gui_def` acknowledges nothing today), and whether an unknown type
+  should still take a share of the layout at all or collapse to nothing so the
+  window looks wrong in the direction of "something is missing" rather than
+  "something is empty".
