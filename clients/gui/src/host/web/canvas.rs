@@ -170,7 +170,19 @@ impl CanvasSlot {
         let target = canvas.clone();
         let closure =
             Closure::<dyn FnMut(web_sys::MouseEvent)>::new(move |event: web_sys::MouseEvent| {
-                if event.target().as_ref() == Some(target.as_ref()) {
+                // **A canvas inside a component is in a shadow root**, and an
+                // event seen on `window` has already been *retargeted* to the
+                // host element -- `target` is the `<clausters-...>` tag, never
+                // the canvas, so the mask would stay 0 for every component on
+                // the page and the first move of any drag would look like a
+                // release the page never saw (see `CanvasSlot::buttons`): a
+                // held key let go the moment the pointer moved, a ruler that
+                // could not be dragged at all. The composed path is the one
+                // view that still names the canvas itself.
+                let canvas: &JsValue = target.as_ref();
+                let mine = event.target().as_ref() == Some(target.as_ref())
+                    || event.composed_path().iter().any(|node| &node == canvas);
+                if mine {
                     // A wheel event is a `MouseEvent` too but carries no button
                     // mask worth reading, so only the pointer ones set it.
                     if let Some(pointer) = event.dyn_ref::<web_sys::PointerEvent>() {
