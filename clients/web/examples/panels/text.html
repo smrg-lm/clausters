@@ -42,7 +42,6 @@ clips with an ellipsis instead of bleeding into its neighbor.</div>
 
       <div class="row">
         <button id="run">open the window</button>
-        <button id="live" disabled>push the live changes</button>
       </div>
       <div id="stage"></div>
       <pre id="log"></pre>
@@ -53,10 +52,10 @@ clips with an ellipsis instead of bleeding into its neighbor.</div>
       the four panels (sizes, the face's own alphabet, wrapped alignments,
       clipped controls), then the same props pushed live by name.
 
-      The platform's differences are the usual two -- the host is the wasm one
-      in this tab and draws into an element, and nothing is pumped -- plus one
-      the script has no counterpart for: its timed replay is a button here,
-      because a page has an event loop and no reason to sleep through a list.
+      The platform's differences are the usual two, and only those: the host is
+      the wasm one in this tab and draws into an element, and nothing is pumped.
+      The timed replay is the same list on the same schedule -- a page has a
+      clock of its own, so there is nothing here a script does that this cannot.
 
       Serve clients/web (the package root) and open /examples/panels/text.html.
       Build it first: ./build.sh
@@ -66,6 +65,19 @@ clips with an ellipsis instead of bleeding into its neighbor.</div>
 
       const $ = (id) => document.getElementById(id);
       const log = (line) => { $("log").textContent += line + "\n"; };
+
+      // ---- the props are live ----
+      // The same keys the GuiDef carried, pushed by name through the widget
+      // handles and **spaced**, so each is read as a change rather than as a
+      // new window: the title grows, the centered paragraph swings to one edge
+      // and then to the other, and the field is rewritten in Spanish.
+      // `panels/text.py` walks this same list on the script's own clock.
+      const CHANGES = [
+        [3.0, "title", { text: "TEXT_SIZE IS LIVE", textSize: 4.0 }],
+        [6.0, "center", { align: "start" }],
+        [9.0, "center", { align: "end" }],
+        [12.0, "field", { value: "el título cambió: ¿seguís ahí?" }],
+      ];
 
       const LOREM = "a wrapped label lays its words out on their own measured width, "
         + "drops the lines that overflow its rect, and aligns each line "
@@ -131,21 +143,17 @@ clips with an ellipsis instead of bleeding into its neighbor.</div>
         ).open($("stage"));
         log("one window: sizes, the face's own alphabet, wrapped alignments, "
           + "and clipped controls");
-        $("live").disabled = false;
-      }
-
-      // ---- the props are live ----
-      // Retitle bigger and re-align the centered paragraph — the same keys the
-      // GuiDef carried, pushed by name through the widget handles.
-      function live() {
-        win.widget("title").set({ text: "TEXT_SIZE IS LIVE", textSize: 4.0 });
-        win.widget("center").set({ align: "end" });
-        win.widget("field").set({ value: "el título cambió: ¿seguís ahí?" });
-        log("retitled at 4x, the centered paragraph aligned end, the field rewritten");
+        // The page's clock stands in for the script's loop: same list, same
+        // order, same spacing.
+        for (const [after, name, props] of CHANGES) {
+          setTimeout(() => {
+            win.widget(name).set(props);
+            log(`set ${JSON.stringify(props)} on ${name}`);
+          }, after * 1000);
+        }
       }
 
       $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
-      $("live").onclick = live;
     </script>
   </body>
 </html>
