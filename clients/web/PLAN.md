@@ -3336,3 +3336,120 @@ finished work, where a pending item reads as done.
   shape the desktop's own squeeze test took (`clients/gui/PLAN.md`, "Nothing
   resizes a window, so nothing tests a squeeze") and is what would have caught
   all three of these at once.
+
+- ⬜ **`boot()` adopts the page's engine where the reference client refuses**
+  *(found 2026-08-28, auditing the client's abstractions against the reference
+  after a reader asked why a page's boot takes three lines)*. **This is the
+  root of four of the entries below and is fixed first.**
+
+  In the Python client ownership is carried by the **verb**. `Server()` is a
+  handle on an address; `boot()` starts a server this handle owns and *raises*
+  if something already answers there ("Booting is for a server that is **not
+  there yet**"); `attach()` takes one already running, verifies it, and owns
+  nothing. There is no shared-versus-own axis anywhere, because the verb
+  already says it: `io/servers.py` boots two servers side by side with
+  `Server().boot()` and `Server(port=57130).boot()`, and needs no id share
+  between them.
+
+  This client made the page's memoized engine the **default target of `boot`**,
+  so `new Server().boot()` twice returns two handles on one server, silently.
+  Everything that follows is compensation for that: `own` had to be invented on
+  `Session.embed`, `IdShare` moved into the common path, and a destination
+  cannot close a carrier it never opened.
+
+  **The shape:** `boot()` brings up an engine this handle owns — a second
+  `boot()` is a second server, as in the reference. `attach()` reaches the one
+  already running in this page and verifies, raising when none is. The
+  page-wide sharing a component wants is `attach`, and boot-or-attach already
+  has a name in the reference (`Session.live(boot=True)`, "starting a server if
+  none is up"). The one real platform limit — an engine is an `AudioContext`
+  and Chrome caps them at six — is **documented**, not designed around, exactly
+  as `io/servers.py` documents needing a backend that mixes several streams.
+
+- ⬜ **The carrier is a positional argument where the reference builds its own**
+  *(found 2026-08-28, same pass)*. `new Server(connection)` and
+  `new GuiHost(connection)` make opening a carrier the caller's first step, so
+  a page's boot reads `await loadOsc(); new Server(await pageConnection())`
+  against the reference's `Server().boot()`. The constructor's own doc admits
+  it ("That is the one shape this client's `Server` does not share with the
+  reference") and blames a constructor that cannot await — but `boot()` is
+  already async, so the carrier can be *named* in the constructor and *opened*
+  in the verb.
+
+  **The shape**, mirroring `Server(host, port, interface=None, transport=None,
+  …)` and `GuiHost(host, port, transport="tcp", interface=None, share=None)`:
+  `new Server({ transport, url, latency, sizing, timeout, share, connection })`
+  with `transport` defaulting to the page's engine and `connection` the escape
+  the reference spells `interface=` (it is how a score is passed, as the
+  reference passes `OscNrtInterface`). `GuiHost` takes the same. Then
+  `loadOsc`, `pageConnection`, `pageGuiConnection`, `engine` and `newGuiHost`
+  stop appearing in examples at all.
+
+- ⬜ **`Session.embed` inverted the reference's default with a flag the
+  reference does not have** *(found 2026-08-28, same pass)*. Python is
+  `embed(tempo, latency, workers, timebase, server=None)` — no `own`, and every
+  session opens and owns a fresh server unless handed one. This client is
+  `embed({ own = false, engine, channels, … })`: shared by default, own by
+  flag. Falls out of the entry above — with the verb carrying ownership again,
+  `own` has nothing left to say and goes; `server=` is the handed-one case and
+  keeps its meaning under whatever `engine`/`connection` ends up named.
+
+- ⬜ **`Session.activate`/`deactivate` are missing, and `adoptDefault()` is
+  surface the reference does not have** *(found 2026-08-28, same pass)*. They
+  are not the same capability: `activate` makes the **whole** session ambient
+  (server, clock and random root) and `deactivate` gives the slot back, while
+  `adoptDefault` lends only the server and cannot be undone. The scoped form
+  this client does have (`use()`) is the reference's `with session:` — the half
+  a page needs *least*, since a page's handlers and console outlive every
+  block, which is precisely the case the reference's own docstring gives for
+  the unscoped pair existing.
+
+- ⬜ **`WindowHandle` is missing three verbs and renamed a fourth** *(found
+  2026-08-28, same pass)*. Against `clausters/gui/handle.py`: `set(**props)`
+  (`/gui_set` on the window root) and `free()` (free the window's subtree) do
+  not exist here, and `handle()` (a `WidgetHandle` for the root, so its props
+  can be set) does not either; `names()` is spelled `widgetNames()`. The
+  capability exists on the host (`GuiHost.set`, `GuiHost.free`) — it is the
+  handle, which is how a caller reaches it, that lacks them. `free` missing is
+  the worst of the four: it is the verb the repo fixes for the action.
+
+- ⬜ **`TempoClock` is missing `play` and `run`, and `lockTo` its `warmup`**
+  *(found 2026-08-28, same pass)*. `TempoClock.play(routine, quant)` snaps a
+  routine's start to a beat grid and is pure client-side logic with no platform
+  obstacle. `run(seconds)` blocks in the reference, but `Session.run(seconds)`
+  is already async here, so the clock's can be too. `lock_to(server,
+  warmup=True, timeout=2.0)` lost `warmup`. Also `Session.render` does not take
+  `workers`, `path` or `sample_format` — `path` being arguable rather than
+  impossible, the page having OPFS.
+
+- ⬜ **`OscDestination` cannot close its carrier** *(found 2026-08-28, same
+  pass)*. The reference's `close()` closes the interface **if this destination
+  opened it**; here the comment reads "The `Connection` is borrowed, never
+  closed here", which is true only because nothing in this client opens a
+  carrier of its own. Closes with the carrier entry above.
+
+- ⬜ **Two names for one concept across the clients** *(found 2026-08-28, same
+  pass)*. `SampleClockTimebase` here is `SampleTimebase`, an unforced rename.
+  `main.current_tt` is `currentRoutine` — the *mechanism* legitimately differs
+  (a thread-local against a module slot, justified in `base/context.ts`) but
+  the concept's name did not have to. And `IdShare`/`shareOf` live in
+  `base/core.ts` where the reference has `base/ids.py`, against this book's own
+  promise that "a reader who knows one client finds the other at the same
+  relative path".
+
+- ⬜ **`ManualTimebase` is surface only this client has** *(found 2026-08-28,
+  same pass)*. A hand-advanced timebase, exported from `index.ts`. Either the
+  reference has a gap (a deterministic timebase is useful to a user, not only
+  to a test) or it should not be public here. Undecided, and that is the entry:
+  by the non-divergence rule a surface in one client and not the other is a
+  defect whichever direction it runs in.
+
+**What this audit did *not* find, recorded so the next pass need not redo it.**
+Compared class by class against the reference and clean: `defs` entire (`bus`,
+`buffer`, `node`, `synthdef`, `faustdef`, `graphdef`, `patch`, `info` — reply
+records being interfaces rather than classes is idiom), `seq` entire (every
+pattern class pairs), `form` entire, `gui/guidef`, `gui/editor`,
+`gui/transport`, the responders, `Routine`/`Stream`, and the routine context
+with its random streams — which is the best port in the package: it replaces
+the reference's thread-local with a module slot and writes down why that is
+sound.
