@@ -14,12 +14,19 @@ The visual sibling has its own tour (``views/plotting.py``); the arrangement, be
 *rendered* rather than played, has its walkthrough in the composing chapters
 (see the book's "The ambient verbs" for why the split).
 
+A `clausters.Session` bundles a server, a clock and (if you ask for one) a GUI
+host into the handle a piece is written against. `activate` makes it the
+ambient session — server, clock and random root — which is what lets every verb
+below run with nothing wired.
+
 Run it as a script (``python verbs.py``) or cell by cell (``# %%``). Needs an
 audio device; the install bundles the server.
 """
 
-# %% Setup: boot once — the booted server becomes the default session, and
-# every verb below finds it with no wiring.
+# %% Setup: open one session and activate it. The carrier is the one line that
+# knows about one -- ``Session.embed()`` runs the server in this process, and
+# ``Session.live(...)`` would open the same session on a server it talks to,
+# with nothing below changed.
 import tempfile
 import time
 
@@ -30,10 +37,15 @@ from clausters.seq import Pbind, Pseq
 from clausters.seq.automation import Automation
 from clausters.seq.timeline import Timeline
 
-from clausters import Server
+from clausters import Session
 from clausters.defs import Buffer
 
-server = Server().boot()
+session = Session.embed().activate()
+# The session's clock is *this* session's, and an ambient `play` resolves it --
+# so it has to be running, or a generator below is queued on a clock that never
+# wakes. The default session starts its own clock on first use; a session you
+# hold is yours to start.
+session.start()
 
 #: Seconds between audible steps.
 PAUSE = 1.2
@@ -116,12 +128,24 @@ wav = tempfile.NamedTemporaryFile(suffix=".wav", delete=False).name
 render(Pbind(instrument="default", degree=Pseq([0, 4, 7, 12]), dur=0.25),
        path=wav)
 
+# %% A session can be offline, too. The `render` above bounces *one* playable
+# through a server nobody holds; `Session.nrt()` is the same change of state as
+# an **environment** — several things played into one score and rendered
+# together, with no audio device anywhere. The verbs inside it are the verbs
+# above, which is the whole point: only the carrier differs.
+print("a session that never sounds: the same verbs, rendered")
+offline = Session.nrt(tempo=2.0)
+offline.play(Pbind(instrument="default", degree=Pseq([0, 4, 7]), dur=0.25))
+stats = offline.render(channels=1)
+print(f"  offline session -> {stats.frames} frames, {stats.duration:.2f} s, "
+      f"peak {max(stats.peak, default=0.0):.3f}")
+
 # %% ...and the circle closes: the rendered file, loaded as a buffer and
 # played through the stock playbuf instrument (freed when the take ends).
 print("playing the rendered take back as a buffer")
-take = Buffer.read(wav, server=server)
+take = Buffer.read(wav)
 play(take, controls={"amp": 0.8})
 time.sleep(2.0)
 
-server.close()
+session.close()
 print("done")

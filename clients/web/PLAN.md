@@ -3454,7 +3454,7 @@ with its random streams — which is the best port in the package: it replaces
 the reference's thread-local with a module slot and writes down why that is
 sound.
 
-- ⬜ **`basics/verbs` opens a session where its twin opens a bare server**
+- ✅ **`basics/verbs` opens a session where its twin opens a bare server**
   *(found 2026-08-28, by ear, when `activate` started lending the clock)*. The
   script is `Server().boot()` and nothing else — no `Session`, no tempo, so it
   plays on the default clock at 1.0. The page opened `Session.embed({ tempo:
@@ -3466,12 +3466,23 @@ sound.
   lend the clock — which is the reference's behaviour — made the page run
   twice as fast, and a listener caught it in seconds. The 2.0 is gone.
 
-  **What is left open is the framing**: a session against a bare server is a
-  different set of calls in a different order, which is what "one example in
-  two languages" forbids. Decide which one the pair should be — the page's
-  session is arguably the better example, in which case the *script* is what
-  moves — and change both. Worth doing with the example in front of you, since
-  it is the first thing a reader of either client meets.
+  **Decided 2026-08-28: the script moves.** The page's session is the better
+  example — a `Session` is what the ambient verbs resolve against, and the
+  example is about the ambient verbs — so `verbs.py` opens
+  `Session.embed().activate()` and the pair reads the same call for call. Both
+  ends also gained the offline third: a `Session.nrt()` played into and
+  rendered, next to the free `render`, so the tour ends on the three carriers
+  a session has rather than on one.
+
+  **And the fix that decision uncovered**: neither leg **started** the
+  session's clock. While the ambient clock was the default session's, that one
+  starts itself on first use; a session you hold is yours to start, and
+  nobody did. So since `activate` began lending the clock, every step of the
+  tour that needed one — the generator, the pattern, the timeline, the
+  automation — was queued on a clock that never woke, and the tour ran with
+  four of its nine verbs silent. Python says so out loud at exit ("this
+  program ends with routines queued on a clock that was never started"), which
+  is how it was caught; the page said nothing at all.
 
   **And the class it belongs to**: a page can declare a parameter its twin
   does not have and stay silent about it for as long as nothing reads that

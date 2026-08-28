@@ -28,8 +28,9 @@ event keys, a generator, a pattern, a def, a timeline, a buffer — and a bare
 
 The carrier is the one line that knows about one. This page opens the session
 on the in-page engine; <code>Session.live(url)</code> would open the same
-session on a <code>clausters --ws</code> server, and nothing below would
-change.</div>
+session on a <code>clausters --ws</code> server and
+<code>Session.nrt()</code> one that never sounds — and nothing below would
+change. The tour ends on all three.</div>
 
       <div class="row">
         <button id="open">open a session</button>
@@ -88,11 +89,15 @@ change.</div>
       async function open() {
         // The AudioContext needs the gesture that got us here, which is why
         // this is a button.
-        // No tempo: `basics/verbs.py` opens a bare `Server().boot()` and plays
-        // on the default clock at 1.0, so declaring one here would make the
-        // same material run at a different speed than the script it ports.
+        // No tempo: the script opens a bare `Session.embed()` too, so the
+        // clock is at 1.0 on both sides and the same material runs at the same
+        // speed. `start()` because the clock an ambient `play` resolves is now
+        // *this* session's, and a generator below would otherwise be queued on
+        // a clock that never wakes -- the default session starts its own on
+        // first use; a session you hold is yours to start.
         session = (await Session.embed()).activate();
-        await defaultInstrument().send(session.server);
+        session.start();
+        await defaultInstrument().send();
         log(`session open: tempo ${session.clock.tempo}, `
           + `${session.server.sizing.audioBuses} audio buses`);
         log("adopted as the page's default — nothing below names a server");
@@ -209,6 +214,22 @@ change.</div>
         const stats = await render(sine(330.0).mul(0.15), { dur: 0.5, channels: 1 });
         log(`  render -> ${stats.frames} frames, ${stats.duration.toFixed(2)} s, `
           + `peak ${stats.peak[0].toFixed(3)}, seed ${stats.seed}`);
+
+        // A session can be offline, too. `render` above bounces *one* playable
+        // through a server nobody holds; `Session.nrt()` is the same change of
+        // state as an **environment** — several things played into one score
+        // and rendered together, with no audio device anywhere. The verbs
+        // inside it are the verbs above: only the carrier differs.
+        log("a session that never sounds: the same verbs, rendered");
+        const offline = await Session.nrt({ tempo: 2.0 });
+        offline.play(new seq.Pbind({
+          instrument: "default",
+          degree: new seq.Pseq([0, 4, 7]),
+          dur: 0.25,
+        }));
+        const take = await offline.render({ channels: 1 });
+        log(`  offline session -> ${take.frames} frames, `
+          + `${take.duration.toFixed(2)} s, peak ${take.peak[0].toFixed(3)}`);
         $("tour").disabled = false;
       }
 
