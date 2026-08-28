@@ -150,7 +150,7 @@ win.widget("curve").onEvent((...args) => {
 The same logical beat is available to anything else that speaks OSC. A **destination** is where OSC goes: `Server` is the one we control, `OscDestination` is any other application.
 
 ```js
-const lights = new clausters.OscDestination(new clausters.WsConnection("ws://localhost:7000"));
+const lights = await clausters.OscDestination.open("ws://localhost:7000");
 
 clock.play(new clausters.Routine(function* () {
     while (true) {

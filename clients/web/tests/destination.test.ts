@@ -131,7 +131,7 @@ test("at() moves along the same clock", () => {
 
 test("a destination sends a plain message", () => {
     const connection = recorder();
-    new OscDestination(connection).sendMsg("/hello", 1, 2.5, "there");
+    new OscDestination({ connection: connection }).sendMsg("/hello", 1, 2.5, "there");
 
     const [msg] = decodePacket(connection.packets[0]!);
     assert.equal(msg!.addr, "/hello");
@@ -144,7 +144,7 @@ test("a destination bundles at the routine's logical beat", async () => {
     // The payload of the design: another application gets the same logical
     // timing the server does, with no clock knowledge of its own.
     const connection = recorder();
-    const dest = new OscDestination(connection);
+    const dest = new OscDestination({ connection: connection });
     const { clock, run } = harness(1.0);
     clock.start();
     const origin = clock.startTime!;
@@ -172,7 +172,7 @@ test("a destination carries no latency", () => {
     const { clock } = harness(1.0);
     clock.start();
     const at = new Moment(clock, 4.0);
-    new OscDestination(connection).sendBundle([["/x"]], { at });
+    new OscDestination({ connection: connection }).sendBundle([["/x"]], { at });
     clock.stop();
 
     assert.ok(Math.abs(timetagOf(connection.packets[0]!) - at.instant()) < 1e-6);

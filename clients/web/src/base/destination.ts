@@ -12,6 +12,7 @@
 // the difference is the carrier, never the timing.
 
 import type { Connection } from "./connection.ts";
+import { WsConnection } from "./connection.ts";
 import { Moment } from "./moment.ts";
 import { encodeBundle, encodeMessage, oscArg, toBundle } from "./osc.ts";
 import type { MsgArg, TimedMessage } from "./osc.ts";
@@ -41,14 +42,38 @@ export interface Destination {
  * application needs is its own business, asked for as an explicit delay. No
  * `/sched_at` (our command).
  *
- * The `Connection` is borrowed, never closed here: whoever opened the carrier
- * owns it.
+ * The carrier is **created and closed by the destination unless one is passed**,
+ * in which case it is borrowed and left alone — the reference client's rule,
+ * where `OscDestination(host, port)` opens a UDP interface of its own and
+ * `interface=` hands it one. A page's only carrier to another application is a
+ * WebSocket and opening one is asynchronous, so the owning form is
+ * {@link OscDestination.open} rather than the constructor.
  */
 export class OscDestination implements Destination {
     readonly connection: Connection;
+    private ownsConnection = false;
 
-    constructor(connection: Connection) {
+    constructor({ connection }: { connection: Connection }) {
         this.connection = connection;
+    }
+
+    /**
+     * A destination that opens its own carrier to `url`, and closes it.
+     *
+     * The reference client's `OscDestination(host, port)` with no `interface=`:
+     * the socket is this destination's, so `close` ends it. A destination built
+     * around a carrier somebody else opened borrows it instead, and `close`
+     * leaves it running.
+     */
+    static async open(url: string): Promise<OscDestination> {
+        const dest = new OscDestination({ connection: await WsConnection.open(url) });
+        dest.ownsConnection = true;
+        return dest;
+    }
+
+    /** Closes the carrier, if this destination opened it. */
+    close(): void {
+        if (this.ownsConnection) this.connection.close?.();
     }
 
     /** Sends one message. **A message has no time** — it means "now". */

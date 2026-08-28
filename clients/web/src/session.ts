@@ -115,7 +115,7 @@ export class Session extends Environment {
      */
     private ownedGui: ClaustersGui | null = null;
     private ownedEngine: ClaustersServer | null = null;
-    private readonly destinations: { dest: OscDestination; connection: Connection }[] = [];
+    private readonly destinations: OscDestination[] = [];
 
     /**
      * Drives `server` on `clock` (a fresh one at tempo 1.0 when omitted).
@@ -467,9 +467,8 @@ export class Session extends Environment {
      * closed with it.
      */
     async destination(url: string): Promise<OscDestination> {
-        const connection = await WsConnection.open(url);
-        const dest = new OscDestination(connection);
-        this.destinations.push({ dest, connection });
+        const dest = await OscDestination.open(url);
+        this.destinations.push(dest);
         return dest;
     }
 
@@ -487,7 +486,9 @@ export class Session extends Environment {
         // session is the one that booted it (the page's is shared page state).
         this.ownedGui?.close();
         this.ownedGui = null;
-        for (const { connection } of this.destinations) connection.close();
+        // Each closes the carrier it opened, which is the destination's own
+        // rule now rather than a list of sockets this session keeps beside it.
+        for (const dest of this.destinations) dest.close();
         this.destinations.length = 0;
         this.clock.close();
         this.server.close();
