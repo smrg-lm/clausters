@@ -3513,3 +3513,50 @@ sound.
   somebody opens it. The second half is the standing one — the examples are
   the manual test surface, and a sweep across ninety of them is exactly where
   a mechanical edit goes wrong quietly.
+
+- ✅ **`transport/sync` stopped demonstrating anything the day `Session.embed`
+  started booting its own engine** *(found 2026-08-28, reading the four pairs
+  that put a `Routine` on a `TempoClock` after being asked where that pair
+  lives)*. The page opened three sessions — a conductor and two clients — on
+  what its own prose called "the page's engine (the same server two tabs would
+  share)". That was true while `embed` defaulted to the shared engine; once
+  ownership became the verb's to say, each `Session.embed()` brought up an
+  engine of its own, so the three had **three transports** and the alignment
+  the page exists to show was between numbers nobody was comparing. Nothing
+  failed, nothing threw, and no suite opens this page.
+
+  Ported properly it is also the script's shape, which it had drifted from:
+  the conductor `boot`s the shared server and the two clients `attach` to it
+  with `new Server({ engine: conductor.engine, share })`, each with its own
+  `TempoClock`, `lockTo`, `joinTransport` and `clock.play(routine, 4)` — the
+  script's `Server(share=...)`, `TempoClock(1.0)`, `lock_to`, `join_transport`
+  and `clock.play(Routine(...), quant=4)`, call for call. The page now prints
+  the **absolute sample** of each client's next bar, as the script does: that
+  the two numbers match is the alignment, where the grid beat it printed
+  before matched trivially.
+
+  **The class**: a default that moves changes what every caller of it means,
+  and an example is a caller no build reads. The audit's own entries named the
+  clients it fixed; what it did not do is re-read the pages that had been
+  written against the old default.
+
+- ✅ **Three `basics` pages built by hand the clock their scripts get from a
+  session** *(found 2026-08-28, same reading)*. `graph_maths.py`,
+  `multichannel.py` and `typed_controls.py` all open `Session.nrt(tempo=2.0)`
+  and play on `session.clock`; the three pages opened a bare `Server().boot()`
+  and then wrote `new TempoClock(2.0, { timebase: await server.sampleTimebase()
+  })` — which is exactly what the session does internally, spelled out. Same
+  music, different calls, which is what "one example in two languages" forbids.
+  The pages open `Session.embed` now and take `session.clock`.
+
+  The one line that stays different is named in each page's prose: the script
+  renders offline (`Session.nrt`) and the page plays live (`Session.embed`),
+  which is the standing "a page turns a script's sequence into a button" item
+  above and not a divergence of surface.
+
+  **Still open in that pair**: `multichannel.py` sounds each voice with
+  `Event(..., has_gate=True).play(session.server)` and lets the event release
+  it, while the page writes `new Synth(...)` and then a hand-built
+  `/node_set gate 0` bundle. Two ways to say one thing, and the script's is the
+  reference. Worth taking with the `basics/verbs` framing decision, since both
+  are "which of the two spellings is the pair".

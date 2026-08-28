@@ -53,8 +53,8 @@ emit the same spec JSON, which is exactly what the parity vectors assert.</div>
 
     <script type="module">
       import {
-        Server, Synth,
-        SynthDef, TempoClock, Routine,
+        Session, Synth,
+        SynthDef, Routine,
       } from "../../dist/index.js";
       import { control, out, sine } from "../../dist/defs/index.js";
 
@@ -82,16 +82,23 @@ emit the same spec JSON, which is exactly what the parity vectors assert.</div>
         return new SynthDef("web_maths_lead", out(0.0, sig), out(1.0, sig));
       };
 
+      let session = null;
       let server = null;
       let clock = null;
       let lead = null;
 
       async function start() {
-        server = await new Server().boot();   // or WsConnection
+        // The script opens `Session.nrt(tempo=2.0)` and renders the phrase to a
+        // file; this page plays it, so the factory is the live one. Everything
+        // after this line is the same call in the same order -- including the
+        // clock, which is the session's own, anchored to its server's sample
+        // counter rather than built by hand.
+        session = await Session.embed({ tempo: 2.0 });
+        server = session.server;
+        clock = session.clock;
 
         await mathsLead().send(server);
-        clock = new TempoClock(2.0, { timebase: await server.sampleTimebase() });
-        clock.start();
+        session.start();
 
         lead = new Synth("web_maths_lead", { note: 48.0, amp: 0.3 }, { server });
         log(`the lead is node ${lead.id}, sounding a MIDI 48 already shaped`);

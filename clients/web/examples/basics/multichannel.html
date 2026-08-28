@@ -45,8 +45,8 @@ socket. Swapping to a <code>--ws</code> server is the one line marked below.</di
 
     <script type="module">
       import {
-        Server, Synth,
-        SynthDef, TempoClock, Routine,
+        Session, Synth,
+        SynthDef, Routine,
       } from "../../dist/index.js";
       import { DoneAction, Env, control, dup, envGen, mix, out, rand, sine } from "../../dist/defs/index.js";
 
@@ -69,21 +69,27 @@ socket. Swapping to a <code>--ws</code> server is the one line marked below.</di
         return new SynthDef("web_unison", out(0.0, dup(sig)));
       };
 
+      let session = null;
       let server = null;
       let clock = null;
 
       async function start() {
-        // The one line that names a carrier: `WsConnection.open(url)` here
-        // sends the very same phrase to a `clausters --ws` server instead.
-        server = await new Server().boot();
+        // The script opens `Session.nrt(tempo=2.0)` and renders the phrase to
+        // a file; this page plays it, so the factory is the live one --
+        // `Session.live(url)` would put the same phrase on a
+        // `clausters --ws` server. The clock is the session's, anchored to its
+        // server's sample counter, which is what the script's `session.clock`
+        // is too.
+        session = await Session.embed({ tempo: 2.0 });
+        server = session.server;
+        clock = session.clock;
 
         const def = unison();
         await def.send(server);
         log(`def '${def.name}' loaded: ${VOICES} sines mixed to one, `
           + "fanned to two buses");
 
-        clock = new TempoClock(2.0, { timebase: await server.sampleTimebase() });
-        clock.start();
+        session.start();
         el("start").disabled = true;
         el("play").disabled = false;
       }

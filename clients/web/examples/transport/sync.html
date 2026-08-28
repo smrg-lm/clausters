@@ -31,10 +31,12 @@ a rolling state. Any client can <i>join</i> that grid with
 <code>clock.joinTransport(server)</code> (or
 <code>session.joinTransport()</code>), and from then on a <code>quant</code>-ed
 start snaps to the <b>shared</b> bar line rather than to "four beats after I
-happened to start". That is the whole trick: the two sessions below are as
-independent as two browser tabs — their own <code>Server</code>, their own
-<code>TempoClock</code>, started seconds apart — and they agree on nothing except
-three numbers each read once.
+happened to start". That is the whole trick: the two clients below are as
+independent as two browser tabs — their own <code>Server</code> handle, their
+own <code>TempoClock</code>, their own slice of the id space, started seconds
+apart — and they agree on nothing except three numbers each read once. The
+conductor <code>boot</code>s the server they share; they only
+<code>attach</code> to it.
 
 The second half is the rolling state. <code>server.transportPlay()</code> /
 <code>transportStop()</code> / <code>transportLocate(beat)</code> are broadcast to
@@ -66,7 +68,7 @@ Needs <code>./build.sh</code> in <code>clients/web</code> first
 
     <script type="module">
       import {
-        Event, Playhead, Routine, Session, SynthDef, Timeline,
+        Event, Playhead, Routine, Server, SynthDef, TempoClock, Timeline,
       } from "../../dist/index.js";
       import { Env, control, envGen, out, pan2, sine } from "../../dist/defs/index.js";
 
@@ -82,61 +84,80 @@ Needs <code>./build.sh</code> in <code>clients/web</code> first
         return new SynthDef("web_pluck", out(0.0, pan2(sine(freq).mul(env).mul(amp), 0.0)));
       }
 
-      // The bar every client snaps to, quoted in grid beats so the two
-      // printouts can be compared. This is public state only: the same number
-      // for every client on the same transport.
-      const nextBar = (clock, quant = 4) =>
-        Math.ceil((clock.gridBeat() + 1e-9) / quant) * quant;
+      /**
+       * The absolute sample the clock's next `quant`-beat bar falls on --
+       * computed from public state only, so it is the *same* number for every
+       * client on the same transport. That the two numbers match **is** the
+       * alignment, which is why this is what the page prints.
+       */
+      async function nextBarSample(server, clock, quant = 4) {
+        // The grid is read back from the server (the script's
+        // `server.transport()`, which blocks where a page awaits).
+        const { originSample, tempo } = await server.transport();
+        const rate = clock.timebase.sampleRate;
+        const target = Math.ceil((clock.gridBeat() + 1e-9) / quant) * quant;
+        return Math.round(originSample + target * rate / tempo);
+      }
 
       let conductor = null;
-      let clientA = null;
-      let clientB = null;
+      let a = null;
+      let b = null;
       let playhead = null;
 
       /**
-       * One independent client: its own session over the page's engine (the
-       * same server two tabs would share), locked to that server's sample
-       * clock and joined to the shared grid. Two of these stand in for two
-       * programs.
+       * One independent client: its own `Server` handle on the shared engine
+       * and its own `TempoClock`, locked to that server's sample clock and
+       * joined to the shared grid. Two of these stand in for two programs, the
+       * way the script's two connect to one `clausters` process.
+       *
+       * `share` is its slice of the client id space: several clients on one
+       * server each take one, so two of them never hand out the same node id.
        */
-      async function client(name) {
-        const session = await Session.embed({ tempo: 1.0 });
-        await session.joinTransport();   // adopts the grid's tempo, too
-        session.start();
-        log(`${name}: joined, tempo ${session.clock.tempo} b/s, `
-          + `grid beat ${session.clock.gridBeat().toFixed(3)}`);
-        return session;
+      async function client(name, share) {
+        // `attach`: the conductor's `boot` brought this engine up, and nothing
+        // here starts a server -- which is the script's `Server(share=...)`
+        // connecting to a process it did not launch.
+        const server = await new Server({ engine: conductor.engine, share })
+            .attach({ adoptDefault: false });
+        const clock = new TempoClock(1.0);   // the transport overwrites this
+        await clock.lockTo(server);          // sample-exact, drift-free timing
+        await clock.joinTransport(server);   // adopt the shared beat grid
+        log(`${name}: joined, tempo ${clock.tempo} b/s, `
+          + `grid beat ${clock.gridBeat().toFixed(3)}`);
+        return { server, clock };
       }
 
       /** One note at the next bar of the shared grid. */
-      function playAtNextBar(session, name, freq) {
-        const bar = nextBar(session.clock);
-        log(`${name}: waiting for grid beat ${bar}`);
-        new Routine(function* () {
-          new Event({ instrument: "web_pluck", freq, amp: 0.25 })
-            .play(session.server);
-          log(`${name}: sounded at grid beat ${session.clock.gridBeat().toFixed(3)}`);
-        }).play(session.clock, 4);       // quant 4: the shared bar line
+      async function playAtNextBar({ server, clock }, name, freq) {
+        log(`${name}: next bar -> sample ${await nextBarSample(server, clock)}`);
+        clock.start();
+        clock.play(new Routine(function* () {
+          new Event({ instrument: "web_pluck", freq, amp: 0.25 }).play(server);
+          log(`${name}: sounded at grid beat ${clock.gridBeat().toFixed(3)}`);
+        }), 4);                          // quant 4: the shared bar line
       }
 
       async function start() {
-        // The AudioContext needs the gesture that got us here, which is why
-        // this is a button. Over a socket the one line that changes is the
-        // factory: `Session.live("ws://127.0.0.1:57120")`.
-        conductor = await Session.embed({ tempo: 1.0 });
-        await pluck().send(conductor.server);
-        await conductor.server.sync();
+        // The conductor brings the shared server up -- the script's
+        // `Server().boot()`, which by hand would be `clausters`. The two
+        // clients below only connect to it. The AudioContext needs the gesture
+        // that got us here, which is why this is a button; over a socket the
+        // one line that changes is
+        // `new Server({ transport: "ws", url }).attach()`.
+        conductor = await new Server().boot();
+        await pluck().send(conductor);
+        await conductor.sync();
 
         // The conductor defines the grid: beat 0 here, two beats a second.
         // Last writer wins, and everyone else only ever reads it.
-        const anchor = await conductor.server.request("/clock_query", [], {
+        const anchor = await conductor.request("/clock_query", [], {
           expect: ["/clock_query.reply"],
         });
-        await conductor.server.setTransport(Number(anchor.args[0]), 2.0);
+        await conductor.setTransport(Number(anchor.args[0]), 2.0);
         log(`conductor: grid set at sample ${Number(anchor.args[0])}, 2 b/s`);
 
-        clientA = await client("client A");
-        playAtNextBar(clientA, "client A", 440.0);
+        a = await client("client A", { index: 0, of: 2 });
+        await playAtNextBar(a, "client A", 440.0);
 
         // A playhead that obeys the conductor rather than its own buttons.
         // The timeline is a bar of quarter notes, so a locate is audible as a
@@ -147,9 +168,9 @@ Needs <code>./build.sh</code> in <code>clients/web</code> first
           [2, new Event({ instrument: "web_pluck", freq: 330.0, amp: 0.15 })],
           [3, new Event({ instrument: "web_pluck", freq: 440.0, amp: 0.15 })],
         ]);
-        playhead = new Playhead(timeline, clientA.clock, clientA.server);
+        playhead = new Playhead(timeline, a.clock, a.server);
         playhead.loop(0, 4);
-        await playhead.followTransport(clientA.server, { quant: 4 });
+        await playhead.followTransport(a.server, { quant: 4 });
         log("client A: its playhead now follows the conductor's transport");
 
         $("start").disabled = true;
@@ -162,30 +183,34 @@ Needs <code>./build.sh</code> in <code>clients/web</code> first
         // The late joiner. Its own clock started just now, at its own beat 0 —
         // and it still lands on the same bar as the client that has been
         // running for a while, because the bar is the grid's, not its own.
-        clientB = clientB ?? await client("client B");
-        playAtNextBar(clientB, "client B", 880.0);
+        b = b ?? await client("client B", { index: 1, of: 2 });
+        await playAtNextBar(b, "client B", 880.0);
       }
 
       const play = async () => {
-        await conductor.server.transportPlay();
+        await conductor.transportPlay();
         log("conductor: transport play - every follower rolls");
       };
       const locate = async () => {
-        await conductor.server.transportLocate(4.0);
+        await conductor.transportLocate(4.0);
         log("conductor: locate to beat 4 - every follower seeks");
       };
       const halt = async () => {
-        await conductor.server.transportStop();
+        await conductor.transportStop();
         log("conductor: transport stop - every follower halts");
       };
 
       async function stop() {
         playhead?.unfollowTransport();
         playhead?.stop();
-        clientA?.close();
-        clientB?.close();
+        a?.clock.stop();
+        b?.clock.stop();
+        // The script's `finally`: the two clients let go of the server, and
+        // the conductor -- which booted it -- stops it.
+        a?.server.close();
+        b?.server.close();
         conductor?.close();
-        log("stopped: the sessions are closed; the grid stays on the server");
+        log("stopped: the clients let go and the conductor closed the server");
         for (const id of ["join", "play", "locate", "halt", "stop"]) {
           $(id).disabled = true;
         }
