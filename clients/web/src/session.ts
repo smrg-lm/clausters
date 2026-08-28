@@ -41,6 +41,7 @@ import type { IdShare } from "./base/core.ts";
 import { loadOsc } from "./base/osc.ts";
 import type { RenderOptions, RenderStats } from "./render.ts";
 import { Server } from "./defs/server/index.ts";
+import type { ServerOptions } from "./defs/server/index.ts";
 import type { ClaustersServer } from "./engine/server.ts";
 import { engine as engineInstance, server as pageEngine } from "./engine/server.ts";
 import { GuiHost } from "./gui/host.ts";
@@ -159,7 +160,7 @@ export class Session extends Environment {
         // none to reach, so the handle is the bare one the reference client
         // builds (`Server(interface=OscNrtInterface())`) and the allocators keep
         // the compiled sizing, which is the whole truth about an offline run.
-        const server = new Server(new ScoreConnection());
+        const server = new Server({ connection: new ScoreConnection() });
         return new Session(server, new TempoClock(tempo));
     }
 
@@ -184,7 +185,6 @@ export class Session extends Environment {
      * click rather than at load.
      */
     static async embed({
-        own = false,
         engine,
         channels,
         tempo = 1.0,
@@ -193,25 +193,29 @@ export class Session extends Environment {
         timeout,
         share,
     }: SessionOptions & {
-        own?: boolean;
         engine?: ClaustersServer;
         channels?: number;
     } = {}): Promise<Session> {
         await loadOsc();
+        // Handed an engine, this session drives that one and does not own it —
+        // the reference client's `server=`. Otherwise `boot` brings up one of
+        // its own, which is the reference's default and the reason there is no
+        // flag here: ownership is the verb's to say.
+        if (engine !== undefined) {
+            return Session.over(
+                { connection: await pageConnection(engine), timeout, share },
+                { tempo, timebase, latency },
+                "boot",
+            );
+        }
         const options = channels === undefined ? {} : { channels };
-        const audio = engine ?? (own ? await engineInstance(options) : await pageEngine(options));
-        // `boot`, because this carrier's server is one this page can bring up:
-        // the engine's `AudioContext` starts suspended, and starting it is what
-        // the gesture this call was made from pays for.
+        const audio = await engineInstance(options);
         const session = await Session.over(
-            await pageConnection(audio),
-            { tempo, timebase, latency, timeout, share },
+            { connection: await pageConnection(audio), timeout, share },
+            { tempo, timebase, latency },
             "boot",
         );
-        // `own` is what makes the engine this session's to close — whether it
-        // opened one or was handed one that belongs to it. The page's shared
-        // engine is never anyone's to stop, and that is the default.
-        if (own) session.ownedEngine = audio;
+        session.ownedEngine = audio;
         return session;
     }
 
@@ -239,22 +243,22 @@ export class Session extends Environment {
         // refuses to be built against silence instead of dropping every later
         // message into it.
         return Session.over(
-            await WsConnection.open(url),
-            { tempo, timebase, latency, timeout, share },
+            { transport: "ws", url, timeout, share },
+            { tempo, timebase, latency },
             "attach",
         );
     }
 
-    /** Builds the session around a server over `connection`. */
+    /** Builds the session around a server described by `options`. */
     private static async over(
-        connection: Connection,
-        { tempo, timebase, latency, timeout, share }: SessionOptions,
+        options: ServerOptions,
+        { tempo, timebase, latency }: SessionOptions,
         how: "boot" | "attach",
     ): Promise<Session> {
         // Not the default session's by being built: `adoptDefault()` is the
         // verb for that, the way the reference client's `Session.live` passes
         // `adopt_default=False` and leaves the slot to whoever asks.
-        const server = new Server(connection, { timeout, share });
+        const server = new Server(options);
         await server[how]({ adoptDefault: false });
         if (latency !== undefined) server.latency = latency;
         const session = new Session(server, new TempoClock(tempo, { timebase }));

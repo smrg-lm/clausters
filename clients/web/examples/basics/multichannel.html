@@ -76,7 +76,7 @@ socket. Swapping to a <code>--ws</code> server is the one line marked below.</di
         await loadOsc();
         // The one line that names a carrier: `WsConnection.open(url)` here
         // sends the very same phrase to a `clausters --ws` server instead.
-        server = await new Server(await pageConnection()).boot();
+        server = await new Server().boot();
 
         const def = unison();
         await def.send(server);

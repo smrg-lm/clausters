@@ -54,7 +54,7 @@ each.</div>
       The platform's difference is what "a second server" *is*. The script gives
       each handle an address and boots a process there, and a second boot on a
       busy port is refused; a tab has no ports and no processes, so a second
-      server is a second **engine** -- `engine()` beside the page's `server()`,
+      server is a second **engine**, which `boot` brings up on its own --
       each its own AudioContext and its own id space. The refusal that follows
       from an address is therefore not shown, and the two that are -- attach
       verifying, and close leaving the server standing -- are.
@@ -64,7 +64,7 @@ each.</div>
     -->
     <script type="module">
       import {
-        Server, engine, loadOsc, pageConnection, play, server as pageEngine,
+        Server, loadOsc, play,
       } from "../../dist/index.js";
       import { sine } from "../../dist/defs/index.js";
 
@@ -74,17 +74,20 @@ each.</div>
         $("log").scrollTop = $("log").scrollHeight;
       };
 
-      let a = null, b = null, other = null, low = null, bEngine = null;
+      let a = null, b = null, other = null, low = null;
 
       async function run() {
         $("run").disabled = true;
         await loadOsc();
 
-        // The page's engine, and a second one beside it.
-        bEngine = await engine();       // a second engine, not the page's
-        a = await new Server(await pageConnection(await pageEngine())).boot();
-        b = await new Server(await pageConnection(bEngine)).boot();
-        log("a -> the page's engine; b -> an engine of its own");
+        // Two servers, side by side. Each `boot` brings up one this handle
+        // owns -- its own engine, its own node, bus and buffer space -- so the
+        // two share nothing and need no id share between them. The script's
+        // twin says the same thing with a port: `Server().boot()` and
+        // `Server(port=57130).boot()`.
+        a = await new Server().boot();
+        b = await new Server().boot();
+        log("a and b -> two servers, each with an engine of its own");
 
         low = await play(sine(220.0).mul(0.12), { server: a });
         await play(sine(330.0).mul(0.12), { server: b });
@@ -97,7 +100,9 @@ each.</div>
       $("attach").onclick = async () => {
         // A second handle on b's carrier: it verifies, reconciles, and owns
         // nothing.
-        other = await new Server(await pageConnection(bEngine))
+        // `b.engine` is b's address in this page, the way 57130 is in the
+        // script: a second handle pointed at it reaches the same server.
+        other = await new Server({ engine: b.engine })
           .attach({ adoptDefault: false });
         const info = await other.queryInfo();
         log(`attached to b: ${info.actualSampleRate.toFixed(0)} Hz, `

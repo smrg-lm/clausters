@@ -20,21 +20,25 @@ Everything below assumes it has been awaited.
 
 ## The connection seam
 
-`Connection` is one duplex-OSC interface with two implementations:
+A handle names where its server is, and opens the carrier itself when a verb needs one — the reference client's `transport`, with the two a browser has:
 
 ```js
-const connection = await pageConnection();               // this tab's engine
-const connection = await WsConnection.open(url);         // a `--ws` server
+const server = await new Server().boot();                       // this tab
+const server = await new Server({ transport: "ws", url }).attach();
 ```
 
-So the shortest a page's boot gets is two lines, where the reference client's is one — the wasm above, and the carrier here:
+**The verbs are what say who owns what**, exactly as in the reference client, and this is the whole of the distinction:
+
+- `boot()` brings up a server **this handle owns** — in a tab, an engine of its own with its own `AudioContext` and its own node, bus and buffer space. Two booted handles are two servers that share nothing and need no id share between them, the way `Server().boot()` and `Server(port=57130).boot()` are two processes there.
+- `attach()` reaches one **already running** and owns nothing. In a page that is the engine everything else is on, which is what a component wants: its mix is the page's. It verifies, so a handle attached where nothing is up says so instead of quietly manufacturing what it was meant to find.
+
+An engine is an `AudioContext` and browsers cap those (Chrome at six), so a page holds fewer servers than a machine does — the same kind of limit the script's twin documents about an audio backend that has to mix several streams, and the same answer: the seventh boot fails saying so.
+
+`Connection` is the seam underneath, one duplex-OSC interface with two implementations — `pageConnection()` over this tab's engine, `WsConnection.open(url)` over a socket. A handle built with an explicit `connection` uses that one and skips `transport` entirely, which is the reference client's `interface=` and how an offline handle is made:
 
 ```js
-await loadOsc();
-const server = await new Server(await pageConnection()).boot();
+const score = new Server({ connection: new ScoreConnection() });
 ```
-
-Neither line has a counterpart in Python: there the core arrives with the import, and `Server()` knows what to do because there is a process to launch. Nothing else is needed — `boot()` starts the engine's audio itself, and the engine comes up on the page's defaults, so a page that reaches for `engine()` or `server(options)` first is asking for something other than the page's engine.
 
 `pageConnection()` wraps the page's engine — the server compiled to wasm in this tab's AudioWorklet — and `WsConnection` a browser (or node) `WebSocket`. Both carry raw OSC in both directions and nothing else, so **no layer above them names a transport**. Swapping carriers is a one-line edit in a program of any size, which is exactly the property the examples demonstrate by offering a radio button.
 
@@ -45,10 +49,16 @@ That engine is reachable directly when a page needs the browser-specific parts: 
 One engine and one GUI host per page is the **default, not a limit**: it is what a page wants, since its components belong to one mix. A document embedding several *independent* clients — isolated demos side by side, an editor beside a player — needs each to keep its own node, bus, buffer and widget ids, and asks for its own of each:
 
 ```ts
-import { engine, pageConnection, Server } from "clausters";
+import { Server } from "clausters";
 
-const audio = await engine({ channels: 2 });      // not the page's
-const server = await new Server(await pageConnection(audio)).boot();
+const server = await new Server().boot();     // its own engine, by booting one
+const second = await new Server().boot();     // and another, sharing nothing
+```
+
+A second handle on a server one of them booted is pointed at it by `engine`, which is a server's address in a page the way a port is on a machine:
+
+```ts
+const peer = await new Server({ engine: server.engine }).attach();
 ```
 
 The GUI host has the same pair. `newGuiHost()` boots an instance — its own engine unless you hand it one — where `guiHost()` returns the page's:
@@ -72,13 +82,13 @@ What each pair differs in is only what a page wants by default. `guiHost()` and 
 `Server` is the only object that knows a connection.
 
 ```js
-const server = new Server(connection);   // a handle: it reaches nothing
-await server.boot();                     // ...up comes the engine behind the carrier
+const server = new Server();             // a handle: it reaches nothing
+await server.boot();                     // ...and up comes a server it owns
 // or, for a server nobody here started:
-await new Server(await WsConnection.open(url)).attach();
+await new Server({ transport: "ws", url }).attach();
 ```
 
-**The constructor reaches nothing** — it is a handle over a carrier, as in the Python client — and one of two verbs brings it into contact with a server. `boot()` starts what the carrier points at, and what that means belongs to the carrier: the page's engine starts its audio (an `AudioContext` is created suspended, so this is the resume, and it must be reached from a gesture), a score has nothing to start, and a socket refuses because a tab starts nothing on another machine. `attach()` is the other half, for a server nobody here started, and it **verifies**: a carrier open with nothing behind it throws instead of swallowing every later message. Either way the allocators are reconciled against `/server_query`, so the client's ids match the server that is actually running (`reconcile()` on its own does just that). Each has its pair at the other end: `quit()` takes down what `boot` brought up, and `close()` lets this handle go and leaves the server standing.
+**The constructor reaches nothing** — it is a handle on a server, as in the Python client — and one of two verbs brings it into contact with one, opening the carrier on the way. `boot()` brings up a server this handle owns: in a tab an engine of its own, whose `AudioContext` is created suspended, so this starts its audio and must be reached from a gesture; a score has nothing to start; and a socket refuses, because a tab starts nothing on another machine. `attach()` is the other half, for a server nobody here started — the page's engine, or one at the far end of a socket — and it **verifies**: nothing running there throws instead of swallowing every later message. Either way the allocators are reconciled against `/server_query`, so the client's ids match the server that is actually running (`reconcile()` on its own does just that). Each has its pair at the other end: `quit()` takes down what `boot` brought up, and `close()` lets this handle go and leaves the server standing.
 
 It registers for the server's pushes, which is what lets a node id be recycled once its `/node_end` arrives, and it carries what is the server's own: the message paths (`sendMsg`, `sendBundle`, `request`, `sync()`), the id pools, `freeDef`, the bus and tap subscriptions, the [shared transport](transport.md) (`setTransport`, `transportGroup`, `transportPlay`/`transportStop`/`transportLocate`, `schedAtTransport`), and the introspection queries about what it holds (`queryInfo`, `queryDefs`, `queryBuffers`, `queryUgens`, `queryTree`, `dumpGraph`) and the live counters it reports (`status`, a `ServerStatus`: synths, groups, ugens, defs and the audio thread's share of the block budget, where `queryInfo` is the static configuration beside it). A command addressed to a resource is that resource's method — `def.send()`, `node.set`, `bus.watch`, `buffer.getSamples` — so the receiver is never an argument, and that holds for a question about one resource too: `node.info()` and `buffer.info()` ask about themselves, where `queryTree` and `queryBuffers` ask about all of them.
 

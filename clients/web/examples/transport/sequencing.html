@@ -121,8 +121,8 @@ clock and the server's, because they are the same clock.</div>
         // start the engine behind `pageConnection()` (`boot`), and can start
         // nothing on the machine a WebSocket points at (`attach`).
         server = await (kind === "page"
-          ? new Server(connection).boot()
-          : new Server(connection).attach());
+          ? new Server().boot()
+          : new Server({ transport: "ws", url: $("url").value }).attach());
         await voice().send(server);
         log(`connected over the ${kind === "page" ? "in-page engine" : "WebSocket"}`);
 

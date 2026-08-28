@@ -69,7 +69,12 @@
 
       async function run() {
         await loadOsc();
-        const server = await new Server(await pageConnection()).boot();
+        // This page's engine is brought up and resumed here, so the
+        // handle below attaches to a server already running -- the one
+        // its GUI host and its taps are on.
+        const raw = await engine({ channels: 2 });
+        await raw.resume();
+        const server = await new Server().attach();
 
         // The target: a synth that writes its own `cutoff` control to a
         // control bus, so what the lane produced is *readable* rather than

@@ -72,7 +72,7 @@ instrument, and it carries the gated envelope that makes a note end.</div>
       async function open() {
         $("open").disabled = true;
         await loadOsc();
-        server = await new Server(await pageConnection()).boot();
+        server = await new Server().boot();
         log("server up: the in-page engine, adopted as the default session's");
         $("note-btn").disabled = false;
         $("phrase").disabled = false;

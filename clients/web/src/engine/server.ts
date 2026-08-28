@@ -114,6 +114,19 @@ export function server(options: BootOptions = {}): Promise<ClaustersServer> {
 }
 
 /**
+ * The page's engine **only if one is already up**, else `null` — asked without
+ * bringing one into being, which {@link server} cannot be.
+ *
+ * This is what `Server.attach()` reads. Attaching is for a server already
+ * running, and it verifies rather than starting one: a handle pointing at
+ * silence has to say so instead of quietly manufacturing the thing it was
+ * meant to find. The reference client asks the same question of a port.
+ */
+export function pageEngineIfUp(): Promise<ClaustersServer> | null {
+    return instance;
+}
+
+/**
  * A **separate** engine, not the page's.
  *
  * The default is one engine per page, as {@link server} gives, because

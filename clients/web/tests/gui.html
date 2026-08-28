@@ -35,7 +35,7 @@
     -->
     <script type="module">
       import {
-        loadOsc, pageConnection, server as engine, Server, Synth,
+        loadOsc, server as engine, Server, Synth,
         SynthDef, GuiHost, gui, pageGuiConnection,
       } from "../dist/index.js";
       import { control, out, sine } from "../dist/defs/index.js";
@@ -73,9 +73,14 @@
       async function run() {
         await loadOsc();
 
-        // The audio side first: something for a bound widget to drive.
+        // The audio side first: something for a bound widget to drive. This
+        // test brings the page's engine up and resumes it, so the handle below
+        // `attach`es to a server already running -- which is also what the
+        // in-page GUI host is wired to, and binding a widget only reaches a
+        // node on the engine the host talks to.
         const raw = await engine({ channels: 2 });
-        const server = await new Server(await pageConnection()).boot();
+        await raw.resume();
+        const server = await new Server().attach();
         const freq = control("freq", 220.0);
         const amp = control("amp", 0.1);
         await new SynthDef("gui_tone", out(0.0, sine(freq).mul(amp))).send(server);

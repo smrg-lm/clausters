@@ -67,7 +67,7 @@ paused: it is still there.</div>
 
       async function start() {
         await loadOsc();
-        server = await new Server(await pageConnection()).boot();   // or WsConnection
+        server = await new Server().boot();   // or WsConnection
 
         await drone().send(server);
         node = new Synth("web_drone", { freq: 220.0, amp: 0.2 }, { server });

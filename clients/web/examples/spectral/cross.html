@@ -125,7 +125,7 @@ between the stages; the spectral frames are synth-private scratch.</div>
       }
 
       async function hear() {
-        const server = await new Server(await pageConnection()).boot();
+        const server = await new Server().boot();
         const buffer = await Buffer.fromSamples(take.samples, take.channels,
           take.sampleRate, { server });
         play(buffer);

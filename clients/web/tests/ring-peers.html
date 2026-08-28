@@ -82,7 +82,7 @@
         };
 
         const connection = await pageConnection();
-        const server = await new Server(connection).boot();
+        const server = await new Server().attach();
 
         const scriptBus = Bus.control(1, { server });
         const hostBus = Bus.control(1, { server });

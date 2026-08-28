@@ -51,7 +51,7 @@ function recorder(): Connection & { packets: Uint8Array[] } {
 // allocators from what it is told. It also keeps these fakes out of the default
 // slot, and what this file is about is what a **session** does with that slot.
 const openServer = (connection: Connection) =>
-    new Server(connection, {
+    new Server({ connection,
         sizing: {
             maxNodes: 8192, audioBuses: 128, controlBuses: 16384,
             maxBuffers: 4096, channels: 2,

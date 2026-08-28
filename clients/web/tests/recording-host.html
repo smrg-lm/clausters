@@ -87,7 +87,8 @@
         await loadOsc();
         await loadCore();
         const raw = await engine({ channels: 2 });
-        const server = await new Server(await pageConnection()).boot();
+        await raw.resume();
+        const server = await new Server().attach();
         await new GuiHost(await pageGuiConnection()).boot();
 
         await new SynthDef("host_recording",

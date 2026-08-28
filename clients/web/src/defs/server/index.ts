@@ -43,7 +43,10 @@ import type { MsgArg, OscMessage, TimedMessage } from "../../base/osc.ts";
 import { ROOT_NODE_ID } from "../node.ts";
 export type { TimedMessage } from "../../base/osc.ts";
 import type { Connection } from "../../base/connection.ts";
-import { ScoreConnection } from "../../base/connection.ts";
+import { pageConnection, ScoreConnection, WsConnection } from "../../base/connection.ts";
+import { engine as ownEngine, pageEngineIfUp } from "../../engine/server.ts";
+import type { ClaustersServer } from "../../engine/server.ts";
+import { loadCore } from "../../base/core.ts";
 import { OscReceiver } from "../../base/receiver.ts";
 import type { OscHandler } from "../../base/receiver.ts";
 import { OscFunc } from "../../responders.ts";
@@ -107,6 +110,51 @@ export type { MsgArg };
 /** The handle's default reply timeout, in seconds. */
 const DEFAULT_TIMEOUT = 5.0;
 
+/** Where `clausters --ws` listens, when a handle names no address. */
+const DEFAULT_WS_URL = "ws://127.0.0.1:57120";
+
+/**
+ * Where a handle's server is. The reference client's `transport`, with the
+ * values a browser actually has: it can run the server in this tab, and it can
+ * reach one over a WebSocket. It has no TCP and no UDP, which is why those two
+ * names are absent rather than renamed.
+ */
+export type ServerTransportName = "page" | "ws";
+
+/**
+ * What {@link Server} is built with — the reference client's constructor, in
+ * the shape a page takes it.
+ */
+export interface ServerOptions {
+    /** Where the server is; `"page"` (the default) or `"ws"`. */
+    transport?: ServerTransportName;
+    /** The `clausters --ws` address, when `transport` is `"ws"`. */
+    url?: string;
+    /**
+     * *Which* in-page engine, when it is not this page's own — the address of
+     * a server in a tab, where the reference client uses a port. Read it off a
+     * handle that booted one ({@link Server.engine}) to point a second handle
+     * at the same server, which is what `attach` is for.
+     */
+    engine?: ClaustersServer;
+    /**
+     * A carrier built by hand, which wins over `transport` — the reference
+     * client's `interface=`. This is how an offline handle is made
+     * (`new Server({ connection: new ScoreConnection() })`, the page's
+     * `Server(interface=OscNrtInterface())`) and how a handle is pointed at one
+     * particular engine among several.
+     */
+    connection?: Connection;
+    /** Seconds of scheduling headroom added to every timed send. */
+    latency?: number;
+    /** The server's capacities, when they are known without asking. */
+    sizing?: Partial<ServerSizing>;
+    /** The handle's own default reply wait, in seconds. */
+    timeout?: number;
+    /** This handle's slice of the id space, for a shared server. */
+    share?: IdShare;
+}
+
 interface Pending {
     match: (msg: OscMessage) => boolean;
     resolve: (msg: OscMessage) => void;
@@ -144,7 +192,48 @@ export interface ServerBootOptions {
 }
 
 export class Server {
-    readonly connection: Connection;
+    // Where this handle's server is, and its address — the constructor's
+    // `transport`/`url`. Private, and named apart from the option, because
+    // `Server.transport()` is already the transport grid's query; the reference
+    // client keeps its own `transport=` out of the instance for the same
+    // reason, the argument choosing a carrier rather than naming a field.
+    private readonly carrierKind: ServerTransportName;
+    private readonly carrierUrl: string;
+    private conn: Connection | null;
+    private audio: ClaustersServer | null;
+
+    /**
+     * The in-page engine this handle talks to, once it has one — `null` over a
+     * socket or a score, where there is no engine in this tab to name.
+     *
+     * This is a server's *address* in a page: hand it to a second handle
+     * (`new Server({ engine: first.engine }).attach()`) to reach the same
+     * server, the way the reference client hands a second handle the port.
+     */
+    get engine(): ClaustersServer | null {
+        return this.audio;
+    }
+    private recv: OscReceiver | null = null;
+    /** Whether `boot` brought up the engine under this handle, so `quit` ends it. */
+    private ownsEngine = false;
+
+    /**
+     * The carrier this handle talks over.
+     *
+     * A handle opens it in `boot`/`attach` (or is handed one), so asking before
+     * either says which of the two is missing rather than returning something
+     * that reaches nothing.
+     */
+    get connection(): Connection {
+        if (!this.conn) {
+            throw new ServerError(
+                "this handle has no carrier yet — boot() one, attach() to a " +
+                    "server already running, or build it with an explicit " +
+                    "`connection`.",
+            );
+        }
+        return this.conn;
+    }
     /**
      * The slice of the server's client id space this handle allocates from —
      * the whole of it unless a second client shares the server (`IdShare`).
@@ -176,7 +265,7 @@ export class Server {
      * ids have to be recycled.
      */
     get scoring(): boolean {
-        return this.connection.timeMode === "score";
+        return this.conn?.timeMode === "score";
     }
     /**
      * How long a reply is waited for, in seconds, when a call does not say.
@@ -210,45 +299,55 @@ export class Server {
      * handle waits for and what a page's responders match arrive the same way
      * and in the same order.
      */
-    readonly receiver: OscReceiver;
+    get receiver(): OscReceiver {
+        if (!this.recv) {
+            throw new ServerError(
+                "this handle has no receiving door yet — it opens with the " +
+                    "carrier, in boot() or attach().",
+            );
+        }
+        return this.recv;
+    }
     private readonly listener: OscHandler;
 
     /**
-     * A handle over `connection`. **Reaches nothing**: it builds the allocators
-     * and the receiving door and sends no packet, exactly as the reference
-     * client's `Server(...)` does, which is what makes it cheap to name a
-     * server before there is one to talk to.
+     * A handle on a server. **Reaches nothing**: it builds the allocators and
+     * sends no packet, exactly as the reference client's `Server(...)` does,
+     * which is what makes it cheap to name a server before there is one to
+     * talk to.
      *
-     * The carrier comes in already built — `await pageConnection()`,
-     * `await WsConnection.open(url)`, `new ScoreConnection()` — because opening
-     * one is asynchronous in a browser and a constructor cannot await. That is
-     * the one shape this client's `Server` does not share with the reference,
-     * where the handle takes an address and builds its own interface.
+     * `transport` names where that server is, the way the reference names it
+     * with a transport and an address, and the handle opens the carrier itself
+     * when a verb needs it — asynchronously, which a constructor cannot be but
+     * {@link Server.boot} and {@link Server.attach} already are:
      *
-     * Then one of the two verbs: {@link Server.boot} brings up what the carrier
-     * points at, {@link Server.attach} connects to one already running. With
-     * neither, the allocators keep `sizing` (the compiled defaults when it is
-     * absent), which is right only for a server whose configuration you already
-     * know — an offline score, or one you sized yourself.
+     * - `"page"` (the default) — the audio server compiled to wasm in this tab.
+     * - `"ws"` — a `clausters --ws` server at `url`.
      *
-     * The core wasm must be loaded first (`await loadOsc()`).
+     * Then one of the two verbs, and **they are what say who owns what**, as in
+     * the reference: {@link Server.boot} brings up a server this handle owns —
+     * so two booted handles are two servers, not two views of one — and
+     * {@link Server.attach} connects to one already running and owns nothing.
+     * With neither, the allocators keep `sizing` (the compiled defaults when it
+     * is absent), which is right only for a server whose configuration you
+     * already know — an offline score, or one you sized yourself.
      */
     constructor(
-        connection: Connection,
         {
+            transport = "page",
+            url = DEFAULT_WS_URL,
+            engine,
+            connection,
+            latency,
             sizing,
             timeout = DEFAULT_TIMEOUT,
             share = WHOLE_SHARE,
-        }: {
-            /** The server's capacities, when they are known without asking. */
-            sizing?: Partial<ServerSizing>;
-            /** The handle's own default reply wait, in seconds. */
-            timeout?: number;
-            /** This handle's slice of the id space, for a shared server. */
-            share?: IdShare;
-        } = {},
+        }: ServerOptions = {},
     ) {
-        this.connection = connection;
+        this.carrierKind = transport;
+        this.carrierUrl = url;
+        this.audio = engine ?? null;
+        this.conn = connection ?? null;
         this.sizing = {
             audioBuses: DEFAULT_AUDIO_BUSES,
             controlBuses: DEFAULT_CONTROL_BUSES,
@@ -272,9 +371,50 @@ export class Server {
             resolved.audioBuses, resolved.channels, share);
         this.controlBuses = new ControlBusAllocator(resolved.controlBuses, share);
         this.buffers = new BufferAllocator(resolved.maxBuffers, share);
-        this.receiver = new OscReceiver(connection);
+        if (latency !== undefined) this.latency = latency;
         this.listener = (addr, args) => this.dispatch({ addr, args });
-        this.receiver.add(this.listener);
+        if (this.conn) this.openReceiver(this.conn);
+    }
+
+    /**
+     * Wires the receiving door onto a carrier, once it exists — from the
+     * constructor when one was handed in, else from `boot`/`attach` when the
+     * handle opens its own.
+     */
+    private openReceiver(connection: Connection): void {
+        this.recv = new OscReceiver(connection);
+        this.recv.add(this.listener);
+    }
+
+    /**
+     * Opens this handle's carrier, or returns the one it already has.
+     *
+     * `own` is the difference between the two verbs and is the whole of it: a
+     * boot gets an engine of its own (its own `AudioContext`, its own node, bus
+     * and buffer space), an attach the one already running in this page. A
+     * socket is neither — it points at a server this page did not start and
+     * cannot, so `boot` refuses it before we get here.
+     */
+    private async openCarrier(own: boolean): Promise<Connection> {
+        if (this.conn) return this.conn;
+        await loadCore();
+        if (this.carrierKind === "ws") {
+            this.conn = await WsConnection.open(this.carrierUrl);
+        } else {
+            const found = this.audio ?? (own ? ownEngine() : pageEngineIfUp());
+            if (!found) {
+                throw new ServerError(
+                    "no engine is running in this page — attach() is for a " +
+                        "server already up, and nothing has booted one here. " +
+                        "boot() one instead, which brings up its own.",
+                );
+            }
+            this.ownsEngine = own && !this.audio;
+            this.audio = await found;
+            this.conn = await pageConnection(this.audio);
+        }
+        this.openReceiver(this.conn);
+        return this.conn;
     }
 
     // ---- coming up, and going down ----
@@ -286,13 +426,25 @@ export class Server {
      * client, where a socket has a process behind it and an offline interface
      * has nothing to start:
      *
-     * - the page's engine boots by starting its audio — an `AudioContext` is
-     *   created suspended, so this is the resume, and it must be reached from a
+     * - `transport: "page"` brings up an **engine of this handle's own** — its
+     *   own `AudioContext`, its own node, bus and buffer space. So two booted
+     *   handles are two servers that share nothing, which is what
+     *   `Server().boot()` and `Server(port=57130).boot()` are in the reference
+     *   client, and neither needs an id share against the other. The context is
+     *   created suspended, so this starts its audio and must be reached from a
      *   gesture (a click handler) like any other;
      * - a score has nothing to start and boots as a no-op rather than an error;
-     * - a **socket** points at a machine this page cannot spawn anything on, so
-     *   it refuses and names `attach`, the way the reference client refuses to
-     *   boot a handle pointing at another host.
+     * - `transport: "ws"` points at a machine this page cannot spawn anything
+     *   on, so it refuses and names `attach`, the way the reference client
+     *   refuses to boot a handle pointing at another host.
+     *
+     * **The page's shared engine is not what this returns**, and that is the
+     * point of the pair: components on one page belong to one mix, and reaching
+     * that one is {@link Server.attach} — the verb for a server this handle did
+     * not start. Booting where one is already up is a second server here rather
+     * than the reference's refusal, because a tab can hold several engines
+     * where a machine holds one server per port; what does not change is that a
+     * boot never silently hands you somebody else's.
      *
      * Then the allocators are reconciled with the server that came up and the
      * handle registers for its pushes, which is what recycles node ids as each
@@ -307,15 +459,23 @@ export class Server {
         timeout = this.timeout,
         adoptDefault = true,
     }: ServerBootOptions = {}): Promise<this> {
-        if (!this.connection.boot) {
+        if (this.carrierKind === "ws" && !this.conn) {
             throw new ServerError(
-                `this carrier goes to ${this.connection.url ?? "somewhere"} and a ` +
-                    "page can start nothing there — attach() to the server " +
-                    "running at that address, or open a carrier over something " +
-                    "this page can bring up (pageConnection()).",
+                `this handle points at ${this.carrierUrl} and a page can start nothing ` +
+                    "there — attach() to the server running at that address, or " +
+                    "boot() one with the default transport, which brings up an " +
+                    "engine in this tab.",
             );
         }
-        await this.connection.boot();
+        const connection = await this.openCarrier(true);
+        if (!connection.boot) {
+            throw new ServerError(
+                `this carrier goes to ${connection.url ?? "somewhere"} and a ` +
+                    "page can start nothing there — attach() to the server " +
+                    "running at that address.",
+            );
+        }
+        await connection.boot();
         this.booted = true;
         if (reconcile) await this.reconcile(timeout);
         if (notify) await this.notify(true, timeout);
@@ -344,6 +504,7 @@ export class Server {
         timeout = this.timeout,
         adoptDefault = true,
     }: ServerBootOptions = {}): Promise<this> {
+        await this.openCarrier(false);
         try {
             await this.queryInfo(timeout);
         } catch (error) {
@@ -958,8 +1119,8 @@ export class Server {
         this.clock = null;
         this.recycling?.free();
         this.recycling = null;
-        this.receiver.remove(this.listener);
-        this.receiver.stop();
+        this.recv?.remove(this.listener);
+        this.recv?.stop();
         for (const p of this.pending) {
             clearTimeout(p.timer);
             p.reject(new ReplyTimeout("the server was closed"));

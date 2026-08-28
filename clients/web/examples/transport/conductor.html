@@ -84,7 +84,7 @@ the same node id.</div>
        * server each take one, so two of them never hand out the same node id.
        */
       async function makeFollower(freq, share) {
-        const server = await new Server(await pageConnection(), { share }).attach();
+        const server = await new Server({ share }).attach();
         const clock = new TempoClock(2.0);
         await clock.lockTo(server);                       // sample-exact timing
         await clock.joinTransport(server);                // the shared grid
@@ -109,7 +109,7 @@ the same node id.</div>
 
         // The shared server: in a tab it is the engine every client is a client
         // of, where the script boots a process and the followers dial in.
-        conductor = await new Server(await pageConnection()).boot();
+        conductor = await new Server().boot();
         await conductor.setTransport(0, 2.0);
 
         followers.push(await makeFollower(440.0, { index: 0, of: 2 }));

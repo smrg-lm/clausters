@@ -56,7 +56,7 @@
       async function run() {
         await loadOsc();
         const connection = await pageConnection();
-        const server = await new Server(connection).boot();
+        const server = await new Server().boot();
 
         // A plain sine: the event's own release frees it, so /node_end is the
         // note ending exactly where the schedule put it.

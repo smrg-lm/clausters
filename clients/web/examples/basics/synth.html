@@ -115,8 +115,8 @@ after that line is the same code.</div>
         // start the engine behind `pageConnection()` (`boot`), and can start
         // nothing on the machine a WebSocket points at (`attach`).
         server = await (kind === "page"
-          ? new Server(connection).boot()
-          : new Server(connection).attach());
+          ? new Server().boot()
+          : new Server({ transport: "ws", url: $("url").value }).attach());
         log(`the server reports ${server.sizing.audioBuses} audio buses, `
           + `${server.sizing.maxBuffers} buffer slots`);
 

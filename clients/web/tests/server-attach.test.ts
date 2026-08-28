@@ -44,7 +44,7 @@ function bootable(): Connection & { packets: Uint8Array[]; booted: number } {
 
 test("a handle reaches nothing, and says nothing, until it is told to", () => {
     const carrier = silent();
-    const server = new Server(carrier);
+    const server = new Server({ connection: carrier });
     // Not one packet: the constructor is a handle over an address, the way the
     // reference client's is. Whether a server is there is not its question.
     assert.equal(carrier.packets.length, 0);
@@ -55,7 +55,7 @@ test("a handle reaches nothing, and says nothing, until it is told to", () => {
 });
 
 test("attach refuses a carrier nobody answers on", async () => {
-    const server = new Server(silent("ws://127.0.0.1:57120"), { timeout: 0.2 });
+    const server = new Server({ connection: silent("ws://127.0.0.1:57120"), timeout: 0.2 });
     await assert.rejects(
         () => server.attach({ notify: false }),
         (error: unknown) => {
@@ -73,7 +73,7 @@ test("attach probes even when the sizing was given", async () => {
     // What is being verified is the *server*, not the numbers — an explicit
     // sizing is exactly the case where nothing else would have asked.
     const carrier = silent();
-    const server = new Server(carrier, { sizing: { maxNodes: 64 }, timeout: 0.2 });
+    const server = new Server({ connection: carrier, sizing: { maxNodes: 64 }, timeout: 0.2 });
     await assert.rejects(() => server.attach({ notify: false }), ServerError);
     assert.equal(carrier.packets.length, 1, "one /server_query went out");
     server.close();
@@ -83,7 +83,7 @@ test("boot refuses a carrier this page cannot bring anything up on", async () =>
     // A socket points at a machine a tab can start nothing on. The reference
     // client refuses the same way, for the same reason, when a handle pointing
     // at another host is asked to boot.
-    const server = new Server(silent("ws://127.0.0.1:57120"), { timeout: 0.2 });
+    const server = new Server({ connection: silent("ws://127.0.0.1:57120"), timeout: 0.2 });
     await assert.rejects(
         () => server.boot({ notify: false }),
         (error: unknown) => {
@@ -101,7 +101,7 @@ test("boot asks the carrier to bring its own server up", async () => {
     // `reconcile: false`, because a fake that never replies has no capacities
     // to report and the round trip is not what this asserts.
     const carrier = bootable();
-    const server = new Server(carrier, { timeout: 0.2 });
+    const server = new Server({ connection: carrier, timeout: 0.2 });
     await server.boot({ reconcile: false, notify: false });
     assert.equal(carrier.booted, 1, "the carrier was asked to come up");
     assert.equal(server.booted, true, "and the handle knows it owns what came up");
@@ -114,7 +114,7 @@ test("a bulk chunk reads the carrier's capability, not its type", async () => {
     // a carrier this module never heard of answers the datagram-or-stream
     // question itself, through `Connection.stream`.
     const framed = { ...silent(), stream: true };
-    const server = new Server(framed, { timeout: 0.2 });
+    const server = new Server({ connection: framed, timeout: 0.2 });
     // As if `/server_query` had answered: the handle caches the ceiling, and
     // a stream carrier is the one allowed to size a request from it.
     (server as unknown as { maxFrame: number }).maxFrame = 1024 * 1024;
@@ -123,7 +123,7 @@ test("a bulk chunk reads the carrier's capability, not its type", async () => {
     // Bounded by one delivery — a datagram, the page's 64 KiB ring, which
     // drops a reply it cannot hold instead of splitting it. The ceiling is
     // cached all the same and is simply not what the chunk comes from.
-    const bounded = new Server(silent(), { timeout: 0.2 });
+    const bounded = new Server({ connection: silent(), timeout: 0.2 });
     (bounded as unknown as { maxFrame: number }).maxFrame = 1024 * 1024;
     assert.equal(await bounded.bulkChunk(0.2), 1024);
 });

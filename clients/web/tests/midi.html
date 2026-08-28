@@ -80,7 +80,7 @@
 
       async function run() {
         await loadOsc();
-        const server = await new Server(await pageConnection()).boot();
+        const server = await new Server().boot();
         const session = new Session(server);
         session.adoptDefault();
         const clock = session.clock.start();

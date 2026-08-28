@@ -356,7 +356,7 @@ async function fakeServer(): Promise<{ server: Server; carrier: FakeConnection }
             [128, 16384, 2, 64, 48000, 48000, 0, 8192, 4096, 512, 32, 8, 16384, 65536],
         );
     });
-    const server = new Server(carrier, { timeout: 0.5 });
+    const server = new Server({ connection: carrier, timeout: 0.5 });
     carrier.sent = [];
     return { server, carrier };
 }

@@ -31,7 +31,7 @@
     -->
     <script type="module">
       import {
-        loadOsc, pageConnection, server as engine, Server, Synth,
+        loadOsc, server as engine, Server, Synth,
         SynthDef,
       } from "../dist/index.js";
       import { DoneAction, Env, control, envGen, out, sine } from "../dist/defs/index.js";
@@ -51,8 +51,11 @@
       async function run() {
         await loadOsc();
 
-        // The engine handle is the page's; the connection over it is what the
-        // client sees, and `Server` never learns which one it got.
+        // The engine handle is the page's, and this test owns it: it brings it
+        // up and resumes it, so what `Server` finds below is a server already
+        // running. That is what makes `attach` the verb here -- `boot` would
+        // bring up an engine of its own, and the analyser tapped below would be
+        // watching the wrong one.
         const raw = await engine({ channels: 2 });
         await raw.resume();
         if (raw.context.state !== "running") {
@@ -63,8 +66,7 @@
         analyser.fftSize = 2048;
         raw.node.connect(analyser);
 
-        const connection = await pageConnection();
-        const server = await new Server(connection).boot();
+        const server = await new Server().attach();
         log(`sized from the engine: ${server.sizing.audioBuses} audio buses, `
           + `${server.sizing.controlBuses} control buses`);
 

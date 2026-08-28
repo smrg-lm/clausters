@@ -88,7 +88,7 @@ socket. Swapping to a <code>--ws</code> server is the one line marked below.</di
 
       async function start() {
         await loadOsc();
-        server = await new Server(await pageConnection()).boot();   // or WsConnection
+        server = await new Server().boot();   // or WsConnection
 
         await chainDef().send(server);
         log("def sent — the frame is scratch, so nothing was allocated for it");

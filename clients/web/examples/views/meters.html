@@ -135,7 +135,7 @@ Swapping to a <code>--ws</code> server (or to a native
         // `boot` because this page's carrier goes to an engine it can bring
         // up; over the WebSocket above the verb is `attach`, since nothing here
         // starts a server on another machine.
-        const server = await new Server(connection).boot();
+        const server = await new Server().attach();
         const info = await server.queryInfo();
         if (info.taps === 0) {
           log("this server records no audio buses (--taps 0): no oscilloscope");

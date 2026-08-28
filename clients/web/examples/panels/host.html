@@ -104,7 +104,7 @@
 
       async function audio() {
         if (!server) {
-          server = await new Server(await pageConnection()).boot();
+          server = await new Server().attach();
           // A tone whose cutoff a knob sweeps and whose pitch a bound one does.
           const freq = control("freq", 220.0);
           const amp = control("amp", 0.2);

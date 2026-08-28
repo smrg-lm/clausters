@@ -175,6 +175,7 @@ export { Server } from "./defs/server/index.ts";
 // The records the transport surface reports, for the same reason: a public
 // signature that names a type the reference cannot reach is a broken page.
 export type { TransportGrid, TransportState } from "./defs/server/index.ts";
+export type { ServerOptions, ServerTransportName } from "./defs/server/index.ts";
 export { AddAction, Group, Node, Synth } from "./defs/node.ts";
 // The options bags the node constructors take. Exported as types so the API
 // reference documents what those parameters accept: TypeDoc reports a public
