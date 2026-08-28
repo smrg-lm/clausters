@@ -46,7 +46,6 @@ widget draws, clamped to half the shorter side of each.</div>
 
       <div class="row">
         <button id="run">open the window</button>
-        <button id="restyle" disabled>restyle live</button>
       </div>
       <div id="stage"></div>
       <pre id="log"></pre>
@@ -74,6 +73,28 @@ widget draws, clamped to half the shorter side of each.</div>
 
       const $ = (id) => document.getElementById(id);
       const log = (line) => { $("log").textContent += line + "\n"; };
+
+      // ---- live restyles, by name ----
+      // Each is one `set` on one named widget, and they are **spaced**: the
+      // point is a sequence read one change at a time, not a second picture
+      // that appears at once. The group turns violet, an accent turns cyan,
+      // the group is cleared back to the host's table, the faded panel comes
+      // back, and only then do its corners square off. `panels/style.py` walks
+      // this same list on the script's own clock.
+      const CHANGES = [
+        [4.0, "cool", {
+          theme: '{"accent": "#b060e0", "accent_dim": "#6a3a8a", '
+            + '"hilite": "#d090f0", "panel": "#161020bf"}',
+        }, "the cool group turns violet (a set of its theme prop)"],
+        [8.0, "accent_a", { color: "#40d0d0" },
+          "accent 'a' turns cyan (a set of color)"],
+        [12.0, "cool", { theme: "" },
+          "the group clears: back to the host theme"],
+        [16.0, "ghost", { opacity: 1.0 },
+          "the faded panel comes back to full opacity"],
+        [20.0, "ghost", { radius: -1.0 },
+          "and its corners square off (a negative clears)"],
+      ];
 
       // Level 1: the host's own table — the whole host warms up.
       const HOST_THEME = { accent: "#e08840", accent_dim: "#8a5428", hilite: "#f0a060" };
@@ -141,27 +162,19 @@ widget draws, clamped to half the shorter side of each.</div>
         ).open($("stage"));
 
         log("host warm (its own table); one cool theme group, nested darker; "
-          + "three per-widget accents; a rounded panel and a faded one");
-        $("restyle").disabled = false;
-      }
-
-      // ---- live restyles, by name ----
-      // Turn the cool group violet, then one accent cyan, then bring the faded
-      // panel back and square its corners — each a `set` on a named widget.
-      function restyle() {
-        $("restyle").disabled = true;
-        win.widget("cool").set({
-          theme: '{"accent": "#b060e0", "accent_dim": "#6a3a8a", '
-            + '"hilite": "#d090f0", "panel": "#161020bf"}',
-        });
-        win.widget("accent_a").set({ color: "#40d0d0" });
-        win.widget("ghost").set({ opacity: 1.0, radius: -1.0 });
-        log("the cool group turned violet, accent 'a' cyan, and the faded panel "
-          + "came back at full opacity with square corners (a negative clears)");
+          + "three per-widget accents; a rounded panel and a faded one. "
+          + "Live restyles follow.");
+        // The page's clock stands in for the script's loop: same list, same
+        // order, same spacing.
+        for (const [after, name, props, what] of CHANGES) {
+          setTimeout(() => {
+            win.widget(name).set(props);
+            log(what);
+          }, after * 1000);
+        }
       }
 
       $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
-      $("restyle").onclick = restyle;
     </script>
   </body>
 </html>
