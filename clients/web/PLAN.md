@@ -3453,3 +3453,26 @@ pattern class pairs), `form` entire, `gui/guidef`, `gui/editor`,
 with its random streams — which is the best port in the package: it replaces
 the reference's thread-local with a module slot and writes down why that is
 sound.
+
+- ⬜ **`basics/verbs` opens a session where its twin opens a bare server**
+  *(found 2026-08-28, by ear, when `activate` started lending the clock)*. The
+  script is `Server().boot()` and nothing else — no `Session`, no tempo, so it
+  plays on the default clock at 1.0. The page opened `Session.embed({ tempo:
+  2.0 })`, and its whole prose is framed on the session.
+
+  **The tempo was fixed the day it was heard** and is not the entry: while
+  `adoptDefault` lent only the server, the page's 2.0 never reached an ambient
+  `play`, so the two ran at the same speed *by accident*; making `activate`
+  lend the clock — which is the reference's behaviour — made the page run
+  twice as fast, and a listener caught it in seconds. The 2.0 is gone.
+
+  **What is left open is the framing**: a session against a bare server is a
+  different set of calls in a different order, which is what "one example in
+  two languages" forbids. Decide which one the pair should be — the page's
+  session is arguably the better example, in which case the *script* is what
+  moves — and change both. Worth doing with the example in front of you, since
+  it is the first thing a reader of either client meets.
+
+  **And the class it belongs to**: a page can declare a parameter its twin
+  does not have and stay silent about it for as long as nothing reads that
+  parameter. Nothing in CI would have caught this one; an ear did.
