@@ -38,7 +38,7 @@ class Moment(NamedTuple):
         the routine plays on is asked for its own ``beats()`` instead. With no
         clock in either place, the clockless moment.
         """
-        tt = main.current_tt
+        tt = main.current_routine
         on = clock if clock is not None else getattr(tt, "clock", None)
         if on is None:
             return cls(None, 0.0)

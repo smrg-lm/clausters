@@ -36,7 +36,7 @@ class RecordDest:
         self.events = []
 
     def _beat(self):
-        return getattr(main.current_tt, "_logical_beat", 0.0) or 0.0
+        return getattr(main.current_routine, "_logical_beat", 0.0) or 0.0
 
     def play_event(self, event):
         self.events.append((self._beat(), event))

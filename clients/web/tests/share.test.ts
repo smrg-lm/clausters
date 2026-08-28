@@ -17,7 +17,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { loadCore, nodeIdPartition, shareOf, WHOLE_SHARE } from "../src/base/core.ts";
+import { loadCore, nodeIdPartition } from "../src/base/core.ts";
+import { shareOf, WHOLE_SHARE } from "../src/base/ids.ts";
 import type { Connection } from "../src/base/connection.ts";
 import { Server } from "../src/defs/server/index.ts";
 import { GuiHost } from "../src/gui/host.ts";

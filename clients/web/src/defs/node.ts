@@ -21,8 +21,9 @@
 // it stays; reach for `globalThis.Node` in the rare page that needs both.)
 
 import { AllocationError } from "../errors.ts";
-import { Registry, nodeIdPartition, shareOf } from "../base/core.ts";
-import type { IdShare } from "../base/core.ts";
+import { Registry, nodeIdPartition } from "../base/core.ts";
+import { shareOf } from "../base/ids.ts";
+import type { IdShare } from "../base/ids.ts";
 import { busIndex } from "./bus.ts";
 import type { BusLike } from "./bus.ts";
 import { parseNodeInfo } from "./info.ts";

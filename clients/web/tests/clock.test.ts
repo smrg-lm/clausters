@@ -13,7 +13,7 @@ import test from "node:test";
 import { loadCore } from "../src/base/core.ts";
 import { TempoClock, manualTicker } from "../src/base/clock.ts";
 import type { ManualTicker } from "../src/base/clock.ts";
-import { ManualTimebase, SampleTimebase } from "../src/base/timebase.ts";
+import { ManualTimebase, SampleClockTimebase } from "../src/base/timebase.ts";
 import type { Server } from "../src/defs/server/index.ts";
 import { Routine, YieldAndReset } from "../src/base/stream.ts";
 import { flush } from "./flush.ts";
@@ -404,7 +404,7 @@ function sampleGrid(rate = 48000) {
             },
         };
         const clock = new TempoClock(tempo, {
-            timebase: new SampleTimebase(() => sample, rate),
+            timebase: new SampleClockTimebase(() => sample, rate),
             ticker,
         });
         clocks.push({

@@ -20,12 +20,12 @@ to an offline NRT render, each with its own configuration) coexist in one proces
 without touching each other or the default session. A session can hold **several
 clocks** at different tempos, including the default one.
 
-The process-wide pieces are thread-local: `current_tt`, "which routine is
+The process-wide pieces are thread-local: `current_routine`, "which routine is
 running on this thread", and `current_session`, "which explicit session is
 active on this thread" (set by a `Session` while it plays/renders or as a
 context manager). Neither is a swapper of global state (as sclang's global rng
 was); together they say *which session you are in* -- at run time follow
-``current_tt.clock.session``, and at creation time (outside any routine)
+``current_routine.clock.session``, and at creation time (outside any routine)
 `current_session`. Both ``None`` means the default session, and resolution
 falls back to it.
 """
@@ -42,7 +42,7 @@ class Main(Environment):
 
     An `Environment` like any `clausters.Session` (server + random context), plus
     the two roles only the *default* one plays: it holds the process-wide
-    thread-local execution registry (`current_tt` / `current_session`) and it is
+    thread-local execution registry (`current_routine` / `current_session`) and it is
     the resolution authority — `resolve_server` / `resolve_clock` implement the
     single rule shared with the free `clausters.play` and every playable's
     ambient ``.play()``. It also keeps an opt-in `default_clock`. The default
@@ -57,16 +57,16 @@ class Main(Environment):
         self._local = threading.local()
 
     @property
-    def current_tt(self):
+    def current_routine(self):
         """The routine being resumed on **this thread** (thread-local), set by
         the clock around each wake, so ``Server`` can read the running routine's
         exact logical beat -- and so resolution can reach its session via
-        ``current_tt.clock.session``. ``None`` outside a routine."""
-        return getattr(self._local, "current_tt", None)
+        ``current_routine.clock.session``. ``None`` outside a routine."""
+        return getattr(self._local, "current_routine", None)
 
-    @current_tt.setter
-    def current_tt(self, value):
-        self._local.current_tt = value
+    @current_routine.setter
+    def current_routine(self, value):
+        self._local.current_routine = value
 
     @property
     def current_session(self):
@@ -85,9 +85,9 @@ class Main(Environment):
 
     def _ambient_session(self):
         """The session an ambient play belongs to: the running routine's
-        (``current_tt.clock.session``), else the explicit `current_session`
+        (``current_routine.clock.session``), else the explicit `current_session`
         active on this thread, else ``None`` (the default session, ``self``)."""
-        sess = getattr(getattr(self.current_tt, "clock", None), "session", None)
+        sess = getattr(getattr(self.current_routine, "clock", None), "session", None)
         return sess if sess is not None else self.current_session
 
     def resolve_server(self, server=None):
@@ -115,7 +115,7 @@ class Main(Environment):
         `get_default_clock`)."""
         if clock is not None:
             return clock
-        c = getattr(self.current_tt, "clock", None)
+        c = getattr(self.current_routine, "clock", None)
         if c is not None:
             return c
         sess = self.current_session
@@ -143,7 +143,7 @@ class Main(Environment):
         return self.default_clock.beats() if self.default_clock else 0.0
 
 
-# The process-wide default session (its `current_tt` is per-thread).
+# The process-wide default session (its `current_routine` is per-thread).
 main = Main()
 
 #: Public alias — the same object, named for what it is.

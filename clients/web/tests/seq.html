@@ -36,7 +36,7 @@
     -->
     <script type="module">
       import {
-        SampleTimebase, Server, SynthDef, TempoClock, loadOsc,
+        SampleClockTimebase, Server, SynthDef, TempoClock, loadOsc,
         pageConnection, seq,
       } from "../dist/index.js";
       import { control, out, sine } from "../dist/defs/index.js";
@@ -66,7 +66,7 @@
         // The in-page engine runs in this page's AudioContext, so the
         // timebase is anchored, not tracked.
         const timebase = await server.sampleTimebase();
-        if (!(timebase instanceof SampleTimebase)) {
+        if (!(timebase instanceof SampleClockTimebase)) {
           throw new Error("the page carrier did not yield a sample timebase");
         }
         log(`sample timebase: ${timebase.sampleRate} Hz, ` +

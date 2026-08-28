@@ -14,7 +14,7 @@ import { decodePacket } from "../src/base/osc.ts";
 import type { Connection } from "../src/base/connection.ts";
 import { TempoClock, manualTicker } from "../src/base/clock.ts";
 import type { ManualTicker } from "../src/base/clock.ts";
-import { SampleTimebase, secsToSamples, unixToNtp } from "../src/base/timebase.ts";
+import { SampleClockTimebase, secsToSamples, unixToNtp } from "../src/base/timebase.ts";
 import type { Timebase } from "../src/base/timebase.ts";
 import { Routine } from "../src/base/stream.ts";
 import { Server } from "../src/defs/server/index.ts";
@@ -85,7 +85,7 @@ function harness(timebase: Timebase & { advance(secs: number): void }, tempo = 1
  */
 function manualSampleTimebase(sampleRate = 48000) {
     let sample = 0;
-    const timebase = new SampleTimebase(() => sample, sampleRate) as SampleTimebase & {
+    const timebase = new SampleClockTimebase(() => sample, sampleRate) as SampleClockTimebase & {
         advance(secs: number): void;
     };
     timebase.advance = (secs: number) => {

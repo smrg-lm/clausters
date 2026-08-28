@@ -33,7 +33,7 @@ import { toJson, view, View } from "./guidef.ts";
 import type { Source } from "./guidef.ts";
 import type { GuiNode } from "./guidef.ts";
 import { GuiIdAllocator } from "./ids.ts";
-import type { IdShare } from "../base/core.ts";
+import type { IdShare } from "../base/ids.ts";
 import { WidgetHandle, WindowHandle } from "./handle.ts";
 import type { EventArgs } from "./handle.ts";
 import { canvasIn, guiHost, newCanvas, newGuiHost, pageGuiConnection, pageGuiIfUp } from "./page.ts";

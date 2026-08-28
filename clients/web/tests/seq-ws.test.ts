@@ -30,7 +30,7 @@ import { Server } from "../src/defs/server/index.ts";
 import { SynthDef } from "../src/defs/synthdef.ts";
 import { control, out, outCtl, sine } from "../src/defs/ugens/index.ts";
 import { TempoClock } from "../src/base/clock.ts";
-import { SampleTimebase } from "../src/base/timebase.ts";
+import { SampleClockTimebase } from "../src/base/timebase.ts";
 import { Event, Pbind, Playhead, Pseq, Timeline } from "../src/seq/index.ts";
 import { Automation } from "../src/seq/automation.ts";
 import { Bus } from "../src/defs/bus.ts";
@@ -168,17 +168,17 @@ test("the sample timebase anchors on the server's own clock", {
         await awaitEngine(server);
         const timebase = await server.sampleTimebase({ trackEvery: 0 });
         assert.ok(
-            timebase instanceof SampleTimebase,
+            timebase instanceof SampleClockTimebase,
             "a reachable server yields a sample timebase",
         );
-        const rate = (timebase as SampleTimebase).sampleRate;
+        const rate = (timebase as SampleClockTimebase).sampleRate;
         assert.ok(rate > 8000 && rate < 400000, `implausible rate ${rate}`);
 
         // The counter advances about as fast as real time (the model is a
         // regression over `/clock_query` anchors, so this is loose on purpose).
-        const first = (timebase as SampleTimebase).currentSample();
+        const first = (timebase as SampleClockTimebase).currentSample();
         await sleep(300);
-        const advanced = (timebase as SampleTimebase).currentSample() - first;
+        const advanced = (timebase as SampleClockTimebase).currentSample() - first;
         assert.ok(
             advanced > 0.2 * rate && advanced < 0.5 * rate,
             `the counter advanced ${advanced} samples in 300 ms`,

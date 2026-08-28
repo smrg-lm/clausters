@@ -20,7 +20,7 @@ current time (`beats`, `beats2secs`, `start_time`). Sending
 events belongs to `clausters.defs.server.Server`, which owns the
 destination/communication interface and reads the time from the clock of the
 routine being resumed (the clock sets ``routine.clock`` and
-``main.current_tt`` around each wake). Swapping that interface (RT/NRT/MIDI) is
+``main.current_routine`` around each wake). Swapping that interface (RT/NRT/MIDI) is
 the seam — and it lives on the Server, not here.
 """
 
@@ -102,7 +102,7 @@ class TempoClock:
         #: while the clock runs normally. See `freeze`.
         self._frozen_at = None
         #: the session this clock belongs to, so a play running on it resolves
-        #: that session's server/rng (``current_tt.clock.session``). A `Session`
+        #: that session's server/rng (``current_routine.clock.session``). A `Session`
         #: (or the default session's `get_default_clock`) sets it; ``None`` for a
         #: clock built standalone, which then resolves against the default
         #: session.
@@ -475,8 +475,8 @@ class TempoClock:
         """Resume ``item`` at ``beat``; reschedule if it asks for more time."""
         from .main import main
 
-        prev = main.current_tt
-        main.current_tt = item
+        prev = main.current_routine
+        main.current_routine = item
         if isinstance(item, Stream):
             item.clock = self          # the running thread carries its clock (sc3)
             item._logical_beat = beat  # ...and its exact logical time (yield-driven)
@@ -500,7 +500,7 @@ class TempoClock:
             traceback.print_exc()
             return
         finally:
-            main.current_tt = prev
+            main.current_routine = prev
         if isinstance(delta, (int, float)):
             with self._cond:
                 self._push(beat + float(delta), item)

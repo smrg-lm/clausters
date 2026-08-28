@@ -103,9 +103,9 @@ def test_routine_play_runs_on_an_existing_default_clock(clean_default):
     beats = []
 
     def gen():
-        beats.append(main.current_tt._logical_beat)
+        beats.append(main.current_routine._logical_beat)
         yield 1.0
-        beats.append(main.current_tt._logical_beat)
+        beats.append(main.current_routine._logical_beat)
 
     clock = main.get_default_clock(start=False)   # already there: not started
     Routine(gen).play()
@@ -122,9 +122,9 @@ def test_routine_run_plays_as_a_decorator(clean_default):
 
     @Routine.run
     def melody():
-        beats.append(main.current_tt._logical_beat)
+        beats.append(main.current_routine._logical_beat)
         yield 0.5
-        beats.append(main.current_tt._logical_beat)
+        beats.append(main.current_routine._logical_beat)
 
     assert isinstance(melody, Routine)
     clock.render()
@@ -197,9 +197,9 @@ def test_free_play_accepts_a_generator(clean_default):
     beats = []
 
     def gen():
-        beats.append(main.current_tt._logical_beat)
+        beats.append(main.current_routine._logical_beat)
         yield 1.0
-        beats.append(main.current_tt._logical_beat)
+        beats.append(main.current_routine._logical_beat)
 
     # Both forms: the genfunc, and an already-created generator object.
     play(gen, clock=main.get_default_clock(start=False))

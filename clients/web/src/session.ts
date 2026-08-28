@@ -37,7 +37,7 @@ import type { Connection } from "./base/connection.ts";
 import { OscDestination } from "./base/destination.ts";
 import { Environment } from "./base/environment.ts";
 import { main } from "./base/main.ts";
-import type { IdShare } from "./base/core.ts";
+import type { IdShare } from "./base/ids.ts";
 import { loadOsc } from "./base/osc.ts";
 import type { RenderOptions, RenderStats } from "./render.ts";
 import { Server } from "./defs/server/index.ts";

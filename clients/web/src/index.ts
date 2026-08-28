@@ -105,7 +105,7 @@ export type { ManualTicker, Schedulable, TempoClockOptions, Ticker } from "./bas
 export {
     ManualTimebase,
     MonotonicTimebase,
-    SampleTimebase,
+    SampleClockTimebase,
 } from "./base/timebase.ts";
 export type { Timebase } from "./base/timebase.ts";
 export { FunctionStream, Routine, StopStream, Stream, YieldAndReset } from "./base/stream.ts";
@@ -168,7 +168,8 @@ export * as data from "./data/index.ts";
 export { loadCore } from "./base/core.ts";
 // The id share every constructor that allocates ids accepts, for the same
 // reason the options bags below are exported: a public signature names it.
-export type { IdShare } from "./base/core.ts";
+export type { IdShare } from "./base/ids.ts";
+export { WHOLE_SHARE, shareOf } from "./base/ids.ts";
 export { Score, ScoreConnection, WsConnection, pageConnection } from "./base/connection.ts";
 export type { Connection, SampleClock } from "./base/connection.ts";
 export * as defs from "./defs/index.ts";

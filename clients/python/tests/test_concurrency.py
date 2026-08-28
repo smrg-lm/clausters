@@ -41,14 +41,14 @@ def _freqs(score):
     return sorted(out)
 
 
-def test_current_tt_is_thread_local():
-    main.current_tt = "main-thread"
+def test_current_routine_is_thread_local():
+    main.current_routine = "main-thread"
     seen = {}
 
     def worker():
-        seen["before"] = main.current_tt   # a fresh thread starts at None
-        main.current_tt = "worker"
-        seen["after"] = main.current_tt
+        seen["before"] = main.current_routine   # a fresh thread starts at None
+        main.current_routine = "worker"
+        seen["after"] = main.current_routine
 
     t = threading.Thread(target=worker)
     t.start()
@@ -56,8 +56,8 @@ def test_current_tt_is_thread_local():
 
     assert seen["before"] is None
     assert seen["after"] == "worker"
-    assert main.current_tt == "main-thread"  # the worker did not clobber us
-    main.current_tt = None
+    assert main.current_routine == "main-thread"  # the worker did not clobber us
+    main.current_routine = None
 
 
 def test_two_clocks_render_independently():

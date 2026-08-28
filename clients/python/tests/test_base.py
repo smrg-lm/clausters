@@ -268,7 +268,7 @@ def test_routine_renders_through_nrt_interface():
     server = Server(interface=OscNrtInterface())
     clock = TempoClock(tempo=2.0)
 
-    def arpeggio():  # finds its clock via main.current_tt; emits via the server
+    def arpeggio():  # finds its clock via main.current_routine; emits via the server
         for i, freq in enumerate([262.0, 330.0, 392.0, 523.0, 659.0]):
             node = 1000 + i
             server.send_bundle(("/synth_new", "default", node, 1, 0, "freq", freq, "amp", 0.2))

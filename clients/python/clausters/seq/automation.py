@@ -178,7 +178,7 @@ class Automation:
                     "(allocating/filling a buffer must not block the clock thread)")
             self.prepare(destination)
 
-        clock = getattr(main.current_tt, "clock", None)
+        clock = getattr(main.current_routine, "clock", None)
         dur_beats = self.duration()
         dur_secs = dur_beats if clock is None else dur_beats / clock.tempo
 

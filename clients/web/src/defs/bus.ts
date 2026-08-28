@@ -23,8 +23,9 @@
 // whose they are — one per client.
 
 import { AllocationError } from "../errors.ts";
-import { Registry, graphBusReserved, shareOf } from "../base/core.ts";
-import type { IdShare } from "../base/core.ts";
+import { Registry, graphBusReserved } from "../base/core.ts";
+import { shareOf } from "../base/ids.ts";
+import type { IdShare } from "../base/ids.ts";
 import type { Server } from "./server/index.ts";
 import { resolveServer } from "./wire.ts";
 

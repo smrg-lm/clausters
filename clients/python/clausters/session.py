@@ -81,7 +81,7 @@ class Session(Environment):
         self.server = server
         self.clock = clock if clock is not None else TempoClock()
         #: back-reference so a play running on this clock resolves *this*
-        #: session's server/rng (``current_tt.clock.session``), keeping several
+        #: session's server/rng (``current_routine.clock.session``), keeping several
         #: sessions isolated from each other and from the default session.
         self.clock.session = self
         #: the session's GUI host: the one handed to the constructor, or the one

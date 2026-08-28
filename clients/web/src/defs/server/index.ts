@@ -53,7 +53,7 @@ import { OscFunc } from "../../responders.ts";
 import type { RenderOptions, RenderStats } from "../../render.ts";
 import { main } from "../../base/main.ts";
 import { Moment } from "../../base/moment.ts";
-import { MonotonicTimebase, SampleTimebase } from "../../base/timebase.ts";
+import { MonotonicTimebase, SampleClockTimebase } from "../../base/timebase.ts";
 import type { Timebase } from "../../base/timebase.ts";
 import { sampleClockFor } from "../clocksync.ts";
 import type { ServerSampleClock } from "../clocksync.ts";
@@ -61,8 +61,8 @@ import type { TempoClock } from "../../base/clock.ts";
 import type { Event } from "../../seq/event.ts";
 import { CommandError, ReplyTimeout, ServerError } from "../../errors.ts";
 import { NodeIdAllocator } from "../node.ts";
-import { WHOLE_SHARE } from "../../base/core.ts";
-import type { IdShare } from "../../base/core.ts";
+import { WHOLE_SHARE } from "../../base/ids.ts";
+import type { IdShare } from "../../base/ids.ts";
 import { AudioBusAllocator, ControlBusAllocator } from "../bus.ts";
 import { BufferAllocator } from "../buffer.ts";
 import {
@@ -672,7 +672,7 @@ export class Server {
             return;
         }
         const timebase = when.clock?.timebase;
-        if (timebase instanceof SampleTimebase) {
+        if (timebase instanceof SampleClockTimebase) {
             // Anchored to the server's sample clock: schedule by absolute
             // sample. The seconds->sample rounding is the core's, shared with
             // the server.

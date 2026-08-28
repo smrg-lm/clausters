@@ -15,8 +15,9 @@
 // of wrapping. The `Server` sizes it from its options (`maxBuffers`).
 
 import { AllocationError, CommandError } from "../errors.ts";
-import { Registry, shareOf } from "../base/core.ts";
-import type { IdShare } from "../base/core.ts";
+import { Registry } from "../base/core.ts";
+import { shareOf } from "../base/ids.ts";
+import type { IdShare } from "../base/ids.ts";
 import { blobToSamples, samplesToBlob } from "../base/bulk.ts";
 import { fetchAudio, interleave } from "../data/samples.ts";
 import type { MsgArg } from "../base/osc.ts";

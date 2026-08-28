@@ -12,7 +12,7 @@ beginning to end:
   same streams, and concurrent routines (several clocks, RT next to NRT) stay
   reproducible **per routine** regardless of how their wakes interleave.
 - A draw always uses the generator of the **routine running right now**
-  (`current_rng`, via the thread-local ``main.current_tt``). Outside any routine
+  (`current_rng`, via the thread-local ``main.current_routine``). Outside any routine
   it falls back to the **active session's** root — the explicit
   `clausters.Session` on this thread if any, else the default session
   (``main``) — so ``seed(n)`` on one session reproduces *its* own sound without
@@ -34,7 +34,7 @@ def current_rng():
     on this thread (`clausters.base.main.Main.current_session`) if any, else the
     default session (``main.rng``). This is where every random value in the
     library comes from, and why each session reproduces independently."""
-    tt = main.current_tt
+    tt = main.current_routine
     rng = getattr(tt, "rng", None)
     if rng is not None:
         return rng

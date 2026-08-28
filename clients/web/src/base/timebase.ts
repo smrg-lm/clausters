@@ -17,7 +17,7 @@
 // - `MonotonicTimebase` (the default) — `performance.now()`. Events go out as
 //   NTP-timetagged bundles; the drift between the page's clock and the
 //   server's is small but real.
-// - `SampleTimebase` — seconds derived from the server's **sample counter**
+// - `SampleClockTimebase` — seconds derived from the server's **sample counter**
 //   (`sample() / sampleRate`). The client paces against the server's own
 //   clock and the `Server` emits `/sched_at <absolute sample>` instead of a
 //   wall-clock timetag, so there is no inter-clock drift and the timing is
@@ -129,7 +129,7 @@ export class MonotonicTimebase implements Timebase {
  * audio clock, or a `/clock_query`-anchored model against a remote server. It must
  * be **synchronous**: the clock reads it on every scheduling turn.
  */
-export class SampleTimebase implements Timebase {
+export class SampleClockTimebase implements Timebase {
     readonly kind = "sample";
     readonly sampleRate: number;
     private readonly sample: () => number;

@@ -17,8 +17,9 @@
 //   subtree first).
 
 import { AllocationError } from "../errors.ts";
-import { Registry, shareOf } from "../base/core.ts";
-import type { IdShare } from "../base/core.ts";
+import { Registry } from "../base/core.ts";
+import { shareOf } from "../base/ids.ts";
+import type { IdShare } from "../base/ids.ts";
 
 /**
  * The first id the allocator hands out. Hand-picked ids below this never

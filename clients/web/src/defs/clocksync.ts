@@ -1,7 +1,7 @@
 // Track the server's sample clock: over a socket, or read directly in this
 // process (mirrors `clausters/defs/clocksync.py`).
 //
-// Two ways to feed a `SampleTimebase`, one per carrier:
+// Two ways to feed a `SampleClockTimebase`, one per carrier:
 //
 // - `WsSampleClock` — over a socket, where the client cannot read the sample
 //   counter directly, it queries the server's `/clock_query` and models the
@@ -44,7 +44,7 @@
 
 import { ReplyTimeout } from "../errors.ts";
 import { SampleClockModel } from "../core/clausters_core_web.js";
-import { SampleTimebase } from "../base/timebase.ts";
+import { SampleClockTimebase } from "../base/timebase.ts";
 import type { SampleClock } from "../base/connection.ts";
 import type { Server } from "./server/index.ts";
 
@@ -74,8 +74,8 @@ export interface ServerSampleClock {
     readonly rate: number;
     /** The measured drift in parts per million, or `null` with no model. */
     readonly driftPpm: number | null;
-    /** A `SampleTimebase` reading this clock. */
-    timebase(): SampleTimebase;
+    /** A `SampleClockTimebase` reading this clock. */
+    timebase(): SampleClockTimebase;
     close(): void;
 }
 
@@ -173,8 +173,8 @@ export class WsSampleClock implements ServerSampleClock {
         return this.model.driftPpm;
     }
 
-    timebase(): SampleTimebase {
-        return new SampleTimebase(() => this.now(), this.rate);
+    timebase(): SampleClockTimebase {
+        return new SampleClockTimebase(() => this.now(), this.rate);
     }
 
     close(): void {
@@ -230,8 +230,8 @@ export class EmbedSampleClock implements ServerSampleClock {
         return null;
     }
 
-    timebase(): SampleTimebase {
-        return new SampleTimebase(() => this.clock.sample(), this.clock.sampleRate);
+    timebase(): SampleClockTimebase {
+        return new SampleClockTimebase(() => this.clock.sample(), this.clock.sampleRate);
     }
 
     close(): void {}

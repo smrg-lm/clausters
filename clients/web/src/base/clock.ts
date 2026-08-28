@@ -10,7 +10,7 @@
 // The defining property is that the **logical beat advances only by the
 // routines' yields**, never by wall-clock drift: a routine that yields `0.25`
 // is resumed exactly a quarter-beat later, whatever the browser's timers do.
-// That is what makes inter-event timing exact — and, with a `SampleTimebase`,
+// That is what makes inter-event timing exact — and, with a `SampleClockTimebase`,
 // sample-accurate. The wake-up only has to arrive within the emission
 // headroom (`Server.latency`); the exactness rides on the timetag, not on the
 // wake-up.
@@ -28,7 +28,7 @@ import { setCurrentRoutine } from "./context.ts";
 import { Routine, Stream, StopStream } from "./stream.ts";
 import {
     MonotonicTimebase,
-    SampleTimebase,
+    SampleClockTimebase,
     bar,
     beatInBar,
     beatsToSecs,
@@ -189,7 +189,7 @@ interface Entry {
 export interface TempoClockOptions {
     /**
      * The pacing source. Defaults to the page's monotonic clock; pass a
-     * `SampleTimebase` from `Server.sampleTimebase()` to pace against a
+     * `SampleClockTimebase` from `Server.sampleTimebase()` to pace against a
      * server's own sample counter.
      */
     timebase?: Timebase;
@@ -413,7 +413,7 @@ export class TempoClock {
         server: Server,
         { warmup = true, timeout }: { warmup?: boolean; timeout?: number } = {},
     ): Promise<this> {
-        if (this.timebase instanceof SampleTimebase) return this;
+        if (this.timebase instanceof SampleClockTimebase) return this;
         this.timebase = await server.sampleTimebase({
             ...(timeout === undefined ? {} : { timeout }),
             warmup,
@@ -440,7 +440,7 @@ export class TempoClock {
      * client land on.
      *
      * Reads the transport once; a server with none defined leaves the clock on
-     * its own grid (no-op). A clock on a `SampleTimebase` (`lockToServer`)
+     * its own grid (no-op). A clock on a `SampleClockTimebase` (`lockToServer`)
      * aligns **sample-exactly**, since the grid is defined on the very counter
      * it paces against; a wall-clock one aligns to beats through the server's
      * `/clock_query` anchor (drift-bounded, and re-joining re-anchors it).
@@ -453,7 +453,7 @@ export class TempoClock {
         const grid = await server.transport(timeout);
         if (grid === null) return this;
         this.tempo = grid.tempo;
-        if (this.timebase instanceof SampleTimebase) {
+        if (this.timebase instanceof SampleClockTimebase) {
             this.transport = { kind: "sample", origin: grid.originSample, tempo: grid.tempo };
             return this;
         }
@@ -507,7 +507,7 @@ export class TempoClock {
             // after the join) leaves the sample origin meaningless; the clock's
             // own beats are the honest answer until it re-joins.
             const timebase = this.timebase;
-            if (!(timebase instanceof SampleTimebase)) return this.beats();
+            if (!(timebase instanceof SampleClockTimebase)) return this.beats();
             return ((timebase.currentSample() - grid.origin) * grid.tempo) / timebase.sampleRate;
         }
         return (Date.now() / 1000 - grid.origin) * grid.tempo;

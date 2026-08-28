@@ -55,7 +55,7 @@ def _running_routine(clock, beat):
     r = type("R", (), {})()
     r.clock = clock
     r._logical_beat = beat
-    main.current_tt = r
+    main.current_routine = r
     return r
 
 
@@ -78,7 +78,7 @@ def test_monotonic_rt_emits_ntp_bundle():
     try:
         server.send_bundle(("/synth_new", "x", 1, 1, 0))
     finally:
-        main.current_tt = None
+        main.current_routine = None
     kind, when, addrs = server.interface.sent[-1]
     assert kind == "#bundle"                      # not /sched_at
     assert when == 1000.0 + 1.0                   # unix_start + beats2secs(1.0)
@@ -111,7 +111,7 @@ def test_sample_clock_emits_sched_with_exact_sample():
     try:
         server.send_bundle(("/synth_new", "default", 1000, 1, 0))
     finally:
-        main.current_tt = None
+        main.current_routine = None
     addr, args = server.interface.sent[-1]
     assert addr == "/sched_at"
     assert args[0] == 96_000 + 48_000             # origin + 1.0 s of samples
@@ -147,7 +147,7 @@ def test_a_resumed_clock_keeps_its_beat_axis():
         try:
             server.send_bundle(("/synth_new", "default", 1000, 1, 0))
         finally:
-            main.current_tt = None
+            main.current_routine = None
         addr, args = server.interface.sent[-1]
         assert addr == "/sched_at"
         assert args[0] == 480_000, "scheduled for now, not for the pre-stop axis"
@@ -166,7 +166,7 @@ def test_latency_shifts_the_scheduled_sample():
     try:
         server.send_bundle(("/synth_new", "default", 1, 1, 0))
     finally:
-        main.current_tt = None
+        main.current_routine = None
     _, args = server.interface.sent[-1]
     assert args[0] == round(0.25 * 48_000)        # 12000
 
