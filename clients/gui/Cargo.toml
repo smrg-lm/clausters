@@ -147,4 +147,13 @@ web-sys = { version = "0.3", features = [
     # The server->host leg (streamed buses, buffer replies) and the bulk fetch.
     "MessageEvent",
     "Response",
+    # The hidden composition field (`host::web::compose`): the element, where it
+    # is appended, and the event that carries what an input method produced.
+    # Declared here rather than relied on through winit's own list, which is
+    # winit's to change.
+    "EventTarget",
+    "HtmlElement",
+    "HtmlInputElement",
+    "InputEvent",
+    "CompositionEvent",
 ] }

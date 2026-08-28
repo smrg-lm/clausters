@@ -169,6 +169,12 @@ impl Element for Text {
         true
     }
 
+    /// Every key it answers is a character it stores, which is the whole of
+    /// what this asks — so the browser shell hands it a composed one.
+    fn takes_text(&self) -> bool {
+        true
+    }
+
     /// **The field, not the cell.** A field is the body drawn under its label,
     /// single-line or multiline alike, and a press on the label strip or on the
     /// air a row stretched around it used to focus the field and land a caret

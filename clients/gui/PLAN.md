@@ -2206,7 +2206,38 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   **The number is in, and it argues the other way** *(measured 2026-08-20; the profile is `clients/web/tools/bus-stream-profile.html`, run by `clients/web/tools/profile-bus-stream.sh`)*. The page builds N canvases, each a window with a control-rate meter and a control-rate scope on two buses of its own and an LFO per bus, and measures the same page three times over: streaming, with the subscription cancelled under the host's own peer tag, and streaming again — the same canvases ticking and drawing throughout, so what the phases differ by is the stream and nothing else. At **forty canvases (eighty buses)** one `/bus_stream.reply` frame is **824 bytes**, and taking it in — decode plus apply, timed around `bridge.server_reply`, which is the whole of what a shared segment would replace with a load — costs **~29 µs of the main thread per 33 ms frame: 0.09 % of it**, about 25 kB/s. At sixty-four canvases the frame is 1304 bytes and the cost is the same 28 µs: it is per-call overhead, not payload. The page's own frame rate, its event-loop lag and Chrome's blocked-time total do not separate the streaming phases from the cancelled one at all — the lag moves by a few tenths of a millisecond between runs, in both directions. (Headless Chrome on software WebGL, so the *drawing* is a floor rather than a forecast; the stream's own cost is CPU work either way and carries over.)
 
   So the trade-off has a price now and it is not close: SAB would give back a tenth of a percent of a frame, for COOP/COEP that an embeddable component cannot ask of a page it does not control, plus a second backend for one seam that both halves have to keep correct. **It stays shut**, and this entry is answered rather than pending — it reopens only on a page profile that shows the messages costing something, which is a measurement and not an argument. What the profile *did* find is a wall, and it is a different one: past 128 buses the subscription is refused and the page streams a stale subset (see "Found by use" below).
-- ⬜ **Composed text (IME) cannot be typed into a field.** K6 reads keys and nothing else: the native front takes winit's resolved characters, and in a page a `<canvas>` cannot host an input method at all — so a field takes Latin text and refuses everything a reader of Japanese, Chinese, Korean or a Latin script with dead keys actually types. It is recorded as a limit in `docs/decisions.md` rather than left to be found, and it is a *design* rather than a fix because the answer is not in the host: the page owns composition (an off-screen `<input>` or `contenteditable` fed through `beforeinput`, forwarded to the host as finished text), and the native front owns winit's own IME events — two different mechanisms filling one hole, which is exactly the shape the platform seam exists for. It becomes a milestone the day a field has to hold a name that is not ASCII. **The other half of the sentence has since closed**: text the host cannot *draw* is no better than text it cannot receive, and K9 gave the embedded face lowercase and accents while K10 put any real typeface behind `font-atlas` — so the drawing half is a matter of loading a face that carries the script, and the input half is the whole of what is left here.
+- ✅ **Composed text (IME) cannot be typed into a field.** K6 reads keys and nothing else: the native front takes winit's resolved characters, and in a page a `<canvas>` cannot host an input method at all — so a field takes Latin text and refuses everything a reader of Japanese, Chinese, Korean or a Latin script with dead keys actually types. It is recorded as a limit in `docs/decisions.md` rather than left to be found, and it is a *design* rather than a fix because the answer is not in the host: the page owns composition (an off-screen `<input>` or `contenteditable` fed through `beforeinput`, forwarded to the host as finished text), and the native front owns winit's own IME events — two different mechanisms filling one hole, which is exactly the shape the platform seam exists for. It becomes a milestone the day a field has to hold a name that is not ASCII. **The other half of the sentence has since closed**: text the host cannot *draw* is no better than text it cannot receive, and K9 gave the embedded face lowercase and accents while K10 put any real typeface behind `font-atlas` — so the drawing half is a matter of loading a face that carries the script, and the input half is the whole of what is left here.
+
+  **Closed 2026-08-27**, found by the user typing Spanish into `oscsend` in the
+  manual review — which is the day the entry said it would become a milestone,
+  and it arrived as "no se pueden poner acentos" rather than as a decision to
+  schedule. Both mechanisms are in, each on its own platform's terms, and the
+  entry's guess about which was which was right:
+
+  - **Native** was not a mechanism at all, it was a bug. winit composes through
+    xkb and hands the result over in the key event's `text`; the front was
+    reading `logical_key`, which on the press a dead key composes onto is the
+    *key* (`Space`) and not the character (`` ` ``). It was also asking
+    `key_without_modifiers` on every key, which unshifts, so the field held no
+    capital either. Two lines, in the commits.
+  - **The browser** is the mechanism the entry described: `host::web::compose`,
+    a hidden `<input>` per canvas that takes the keyboard **only while a widget
+    that takes text is focused** (`Element::takes_text`, the one thing a shell
+    now asks about the focus) and gives it back to the canvas otherwise, so no
+    gesture, shortcut or ring walk moved. It forwards `beforeinput` for a typed
+    or pasted character and `compositionend` for what an input method settled
+    on — never the steps in between, since the host has no notion of text that
+    is still being decided.
+
+  **What it does not do, and is the honest limit of the browser half**: a
+  composition in progress is invisible. A real IME shows its preedit — the
+  half-spelled phrase, the candidate list — and this shows nothing until the
+  composition ends, at which point the finished text appears at once. For a
+  dead key that is imperceptible (one press). For Japanese or Chinese it is the
+  difference between an input method and a keyboard that occasionally emits a
+  word, so a field is usable rather than good. Showing a preedit means the host
+  drawing text it does not own, under a caret it does not own, and that is a
+  widget design rather than a shell fix — it is what would open this again.
 - ⬜ **Packaging: an optional Tauri desktop wrapper** reusing the web frontend. The rest of what this entry once listed has shipped — the GUI chapter of the client's book (`gui.md` and its pages) and the worked `gui_*` examples — so the wrapper alone is what remains, and it stays **last** by the ordering rule above: it changes how the system ships, not what it can show.
 
 - ⬜ **Cache lifecycle**: a cache key (source path + mtime + analysis params) and memory-mapping the cache file instead of reading it into RAM.

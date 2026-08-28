@@ -121,6 +121,9 @@ impl WebApp {
         };
         let effects = slot.gestures.press(&mut self.host, &ctx, cx, cy);
         self.apply_gesture_effects(effects);
+        // A press is how a field is entered and how one is left, so it is where
+        // the keyboard is re-aimed (`compose`).
+        self.aim_keyboard(def);
         // A clip drag needs the frame tick even on an otherwise still window:
         // held against a lane's edge it scrolls the view, and a standing cursor
         // sends no events of its own.
@@ -176,7 +179,7 @@ impl WebApp {
     /// focus, then the element under the cursor — and the same window shortcut
     /// after them (`r` resets every axis). Escape is missing on purpose: it
     /// closes an OS window there and has no window to close here.
-    fn on_key(&mut self, def: i32, key: &Key) {
+    pub(super) fn on_key(&mut self, def: i32, key: &Key) {
         let Some((ctx, (cx, cy))) = self.gesture_ctx(def) else {
             return;
         };
@@ -192,6 +195,9 @@ impl WebApp {
                     .key(&mut self.host, &ctx, k, &mut self.text_clipboard)
             {
                 self.apply_gesture_effects(effects);
+                // Tab walks the ring and Escape leaves it, so a key moves the
+                // focus as readily as a press does (`compose`).
+                self.aim_keyboard(def);
                 return;
             }
         }

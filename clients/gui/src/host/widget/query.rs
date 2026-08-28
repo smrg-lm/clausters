@@ -137,6 +137,14 @@ impl WidgetKind {
         self.as_element().is_some_and(Element::accepts_focus)
     }
 
+    /// Whether this widget, focused, is taking **typed text**
+    /// ([`Element::takes_text`]) — what the browser shell reads to decide
+    /// where the keyboard goes, since composition needs an editable element
+    /// and a canvas is not one.
+    pub fn takes_text(&self) -> bool {
+        self.as_element().is_some_and(Element::takes_text)
+    }
+
     /// The area this widget occupies **outside its own rect** — an open list, a
     /// popup — or `None` for one that stays inside its placement.
     ///

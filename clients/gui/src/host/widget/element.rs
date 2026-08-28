@@ -1936,6 +1936,24 @@ pub trait Element: fmt::Debug {
         false
     }
 
+    /// Whether this element, while focused, is **taking typed text** — as
+    /// against reading keys as commands (a roll's arrows, a list's letters).
+    ///
+    /// It is the one thing a *shell* has to know about the focus, and only the
+    /// browser one uses it: a `<canvas>` hosts no input method, so a dead key
+    /// or an IME reaches it as `"Dead"` and the composed character never
+    /// exists. The shell answers that by giving the keyboard to a hidden
+    /// editable element while this is true, which is the only place composition
+    /// can happen — and by handing it back when it is false, so every gesture,
+    /// shortcut and ring walk stays exactly where it was.
+    ///
+    /// `false` by default, and true for an element whose keys are *characters
+    /// it stores*. An element that merely `accepts_focus` is not one: what
+    /// separates them is whether an accented letter would mean anything to it.
+    fn takes_text(&self) -> bool {
+        false
+    }
+
     /// A key while this element holds the focus, with the modifiers and the
     /// host-wide clipboard in [`KeyInput`]. `Some` is **consumed** — the window
     /// repaints and whatever came back is reported — and `None` hands the key

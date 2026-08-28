@@ -746,6 +746,21 @@ impl Host {
         self.focused
     }
 
+    /// Whether the focus in `def_id` is on a widget that **takes typed text**
+    /// ([`WidgetKind::takes_text`]).
+    ///
+    /// One question, asked by one caller: the browser shell, which must move
+    /// the keyboard to a hidden editable element while a field is being typed
+    /// into and give it back to the canvas otherwise. The native front needs
+    /// none of this — winit composes for it — so the answer lives here rather
+    /// than in either shell.
+    pub fn focus_takes_text(&self, def_id: i32) -> bool {
+        self.focused
+            .filter(|(def, _)| *def == def_id)
+            .and_then(|(_, id)| self.window_def(def_id)?.find(id))
+            .is_some_and(|w| w.kind.takes_text())
+    }
+
     /// Moves the focus to `widget_id` in window `def_id`, replacing whatever
     /// held it. Returns the def id that lost it, when another window did (so the
     /// front repaints that one too).

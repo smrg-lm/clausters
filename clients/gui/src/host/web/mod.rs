@@ -55,6 +55,7 @@ use super::{BusSource, ClientId, GUI_EVENT, Host, HostEffect, ServerLink};
 mod bridge;
 mod bulk;
 mod canvas;
+mod compose;
 mod input;
 mod serverleg;
 
@@ -175,6 +176,13 @@ enum WebEvent {
     /// The MSAA sample count canvases attached from here on are drawn with
     /// (the browser form of the native `[gui] msaa`).
     Msaa(u32),
+    /// Text the hidden composition field produced — a typed letter, an
+    /// accented one a dead key finished, an IME's output, a paste (`compose`).
+    Typed { def_id: i32, text: String },
+    /// A key that field saw which was **not** text: an editing key, Tab,
+    /// Escape, or the letter of a chord, with the modifiers the browser
+    /// reported on it.
+    ComposedKey { def_id: i32, key: String, mods: u8 },
 }
 
 /// The browser host application: the live [`Host`], one [`CanvasSlot`] per
@@ -697,6 +705,8 @@ impl WebApp {
                 widget_id,
                 data,
             } => self.on_bulk_ready(def_id, widget_id, data),
+            WebEvent::Typed { def_id, text } => self.on_typed(def_id, &text),
+            WebEvent::ComposedKey { def_id, key, mods } => self.on_composed_key(def_id, &key, mods),
             WebEvent::Msaa(samples) => {
                 // A canvas already showing keeps the pass its pipelines were
                 // built against, exactly as a native window does: the count is

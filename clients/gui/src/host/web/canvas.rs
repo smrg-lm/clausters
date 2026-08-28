@@ -98,6 +98,10 @@ pub(super) struct CanvasSlot {
     /// Fetched waveforms/spectrograms that arrived before the GPU was ready,
     /// placed on `GpuReady` (plots need no GPU and are placed immediately).
     pub(super) pending_bulk: Vec<(i32, Loaded)>,
+    /// The hidden editable element that owns the keyboard while a text widget
+    /// is focused, so the browser composes for it (`compose`). `None` on a
+    /// document that would not have one, which costs only composition.
+    pub(super) composer: Option<compose::Composer>,
 }
 
 /// The window-level pointer listener a [`CanvasSlot`] keeps, removed when the
@@ -146,6 +150,7 @@ impl CanvasSlot {
             gestures: Gestures::default(),
             histories: HashMap::new(),
             pending_bulk: Vec::new(),
+            composer: None,
         }
     }
 
@@ -273,6 +278,7 @@ impl WebApp {
         self.by_winit.insert(window.id(), def_id);
         let mut slot = CanvasSlot::new(window.clone());
         slot.watch_buttons();
+        slot.composer = compose::Composer::attach(self.id, def_id);
         self.canvases.insert(def_id, slot);
         log(&format!(
             "def {def_id}: canvas attached; requesting GPU adapter"
