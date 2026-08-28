@@ -37,6 +37,7 @@ use winit::keyboard::{Key, NamedKey};
 use winit::platform::web::{EventLoopExtWebSys, WindowAttributesExtWebSys, WindowExtWebSys};
 use winit::window::{Window, WindowId};
 
+use crate::canvas::CanvasView;
 use crate::gpu::Gpu;
 use crate::peaks::MultiPyramid;
 use crate::spectrogram::Stft;
@@ -672,6 +673,7 @@ impl WebApp {
                     overlay,
                     waveforms: HashMap::new(),
                     spectrograms: HashMap::new(),
+                    canvases: HashMap::new(),
                 });
                 let pending = std::mem::take(&mut slot.pending_bulk);
                 self.build_resources(def_id);

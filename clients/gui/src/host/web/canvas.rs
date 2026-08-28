@@ -23,6 +23,11 @@ pub(super) struct WindowRender {
     pub(super) overlay: Painter,
     pub(super) waveforms: HashMap<i32, WaveformSlot>,
     pub(super) spectrograms: HashMap<i32, SpectrogramSlot>,
+    /// One compiled view per `canvas` widget — the script's own shader, and
+    /// the pipeline it became. Kept here for the reason the two above are: it
+    /// is a GPU resource of this surface, and rebuilding it per frame would
+    /// recompile a shader thirty times a second.
+    pub(super) canvases: HashMap<i32, CanvasView>,
 }
 
 /// One canvas: a `window`-rooted GuiDef's drawing surface and everything that
@@ -402,7 +407,25 @@ impl WebApp {
         let Some(render) = slot.render.as_mut() else {
             return;
         };
-        let mut canvases = HashMap::new();
+        // **A `canvas` widget needs a view before the frame can draw it.** The
+        // frame only ever looks one up; building it is the front's, and the
+        // desktop does it once when it opens a window. A page has no such
+        // moment -- its GPU arrives after the tree and a def can be replaced
+        // under a live canvas -- so the map is topped up here instead, which
+        // costs a walk and compiles only what is missing. Without it the whole
+        // widget was silent: it laid out, drew its label, and left its own
+        // rectangle empty, on a page with no error anywhere.
+        for widget in tree.descendants() {
+            if let Some(SlotKind::Shader { source }) = widget.kind.needs().slot
+                && let Some(id) = widget.id
+                && !render.canvases.contains_key(&id)
+            {
+                render.canvases.insert(
+                    id,
+                    CanvasView::new(&render.gpu.device, render.gpu.target(), &source),
+                );
+            }
+        }
         frame::render(
             &mut render.gpu,
             &mut render.renderers,
@@ -410,7 +433,7 @@ impl WebApp {
             &mut render.overlay,
             &mut render.waveforms,
             &mut render.spectrograms,
-            &mut canvases,
+            &mut render.canvases,
             tree,
             &inputs,
             theme,

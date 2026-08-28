@@ -15,7 +15,10 @@
 //! validation error scope) and leaves the canvas un-painted with a warning,
 //! never crashing the host.
 
-use std::time::Instant;
+use std::cell::Cell;
+use std::rc::Rc;
+
+use web_time::Instant;
 
 use tracing::warn;
 
@@ -84,6 +87,16 @@ fn shade(uv: vec2<f32>, frag: vec4<f32>) -> vec4<f32> {
 /// ([`set_shader`](CanvasView::set_shader)).
 pub struct CanvasView {
     pipeline: Option<wgpu::RenderPipeline>,
+    /// Whether the shader this pipeline was built from actually compiled.
+    ///
+    /// A flag rather than a `None` pipeline because **the two fronts learn the
+    /// answer at different moments**: wgpu reports a validation error through a
+    /// future, and a desktop waits on it where a browser cannot block at all.
+    /// So both build the pipeline, both go on to draw the same way, and the one
+    /// thing that differs is when this is cleared -- before the first frame
+    /// natively, a task later in a tab. What a broken shader does is then one
+    /// rule in one place: nothing is drawn.
+    compiled: Rc<Cell<bool>>,
     uniform_buffer: wgpu::Buffer,
     bind_group: wgpu::BindGroup,
     pipeline_layout: wgpu::PipelineLayout,
@@ -130,9 +143,11 @@ impl CanvasView {
             bind_group_layouts: &[Some(&bind_group_layout)],
             immediate_size: 0,
         });
-        let pipeline = build_pipeline(device, target, &pipeline_layout, shader_src);
+        let compiled = Rc::new(Cell::new(true));
+        let pipeline = build_pipeline(device, target, &pipeline_layout, shader_src, &compiled);
         Self {
             pipeline,
+            compiled,
             uniform_buffer,
             bind_group,
             pipeline_layout,
@@ -149,7 +164,16 @@ impl CanvasView {
         if shader_src == self.shader_src {
             return;
         }
-        self.pipeline = build_pipeline(device, self.target, &self.pipeline_layout, shader_src);
+        // A fresh source is innocent until wgpu says otherwise, whichever
+        // front is asking and whenever its answer arrives.
+        self.compiled.set(true);
+        self.pipeline = build_pipeline(
+            device,
+            self.target,
+            &self.pipeline_layout,
+            shader_src,
+            &self.compiled,
+        );
         self.shader_src = shader_src.to_string();
     }
 
@@ -188,7 +212,9 @@ impl CanvasView {
     /// Records the full-viewport draw (a single triangle). A no-op when the
     /// shader failed to compile.
     pub fn draw(&self, pass: &mut wgpu::RenderPass<'_>) {
-        if let Some(pipeline) = &self.pipeline {
+        if let Some(pipeline) = &self.pipeline
+            && self.compiled.get()
+        {
             pass.set_pipeline(pipeline);
             pass.set_bind_group(0, &self.bind_group, &[]);
             pass.draw(0..3, 0..1);
@@ -203,6 +229,7 @@ fn build_pipeline(
     target: crate::view::Target,
     layout: &wgpu::PipelineLayout,
     user_src: &str,
+    compiled: &Rc<Cell<bool>>,
 ) -> Option<wgpu::RenderPipeline> {
     let full = format!("{PRELUDE}\n{user_src}\n{FOOTER}");
     let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
@@ -235,9 +262,29 @@ fn build_pipeline(
         multiview_mask: None,
         cache: None,
     });
-    if let Some(err) = pollster::block_on(scope.pop()) {
+    // **The one place the two fronts cannot do the same thing.** The error
+    // scope answers with a future: a desktop waits on it here, before the first
+    // frame, and a browser has no way to wait at all -- blocking on it panicked
+    // the whole host (`condvar wait not supported`), which is how a `canvas`
+    // widget came to take a page down with it. So the page reads the same
+    // answer a task later and clears the same flag; a broken shader draws
+    // nothing either way, and the only difference is that a tab may show one
+    // frame of it first.
+    let pending = scope.pop();
+    #[cfg(not(target_arch = "wasm32"))]
+    if let Some(err) = pollster::block_on(pending) {
         warn!("canvas shader failed to compile: {err}");
-        return None;
+        compiled.set(false);
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        let compiled = Rc::clone(compiled);
+        wasm_bindgen_futures::spawn_local(async move {
+            if let Some(err) = pending.await {
+                warn!("canvas shader failed to compile: {err}");
+                compiled.set(false);
+            }
+        });
     }
     Some(pipeline)
 }

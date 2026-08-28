@@ -67,6 +67,12 @@ patcher = []
 font-atlas = ["dep:fontdue"]
 
 [dependencies]
+# `Instant` that works on both targets. std's panics outright in wasm ("time not
+# implemented on this platform"), and the one thing here that reads a clock is
+# the `canvas` widget's `time` uniform -- so a shader took the whole page down
+# on the first frame it was built for. Not a new dependency in the tree: wgpu
+# and winit already pull this exact shim, and on native it re-exports std.
+web-time = "1.1"
 # The shared OSC seam (single `decode_packet` door, encode/bundle/message,
 # timetag math) the host's transports ride. A path dependency on the core: it
 # pulls only `rosc`, so the default gui build stays light.
