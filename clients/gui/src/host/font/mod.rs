@@ -19,8 +19,10 @@
 //! which are **composed rather than enumerated**: a base glyph plus a mark
 //! placed two rows above its own topmost ink ([`decompose`]). So `á` is `a`
 //! with an acute, `Ñ` is `N` with a tilde, and adding a mark is one row of a
-//! table rather than ninety-six hand-drawn bitmaps. Anything else falls back to
-//! a box.
+//! table rather than ninety-six hand-drawn bitmaps. The marks are there **on
+//! their own** as well (`` ` ``, `´`, `¨`, `¯`, `¸`), since a dead key leaves
+//! one standing whenever the letter after it takes no accent. Anything else
+//! falls back to a box.
 //!
 //! **A build may draw with a real typeface instead** (`atlas`, the `font-atlas`
 //! feature): the same entry points then measure and emit through a rasterized
@@ -309,6 +311,18 @@ fn base(c: char) -> Bitmap {
         'ð' => body([0x0C, 0x0A, 0x06, 0x0B, 0x11, 0x11, 0x0E]),
         'Þ' => body([0x10, 0x1C, 0x12, 0x12, 0x1C, 0x10, 0x10]),
         'þ' => descending([0x10, 0x10, 0x1C, 0x12, 0x12, 0x1C, 0x10], 0x10),
+        // **The accents on their own**, drawn as the marks a composed letter
+        // wears ([`Mark::rows`]) with nothing under them — what a dead key
+        // leaves when the letter after it takes no accent, or when the next
+        // press is the space that says "the mark itself". A keyboard produces
+        // every one of these, so a field that boxed them looked broken at the
+        // one moment a reader was testing exactly this.
+        '`' => body([0x08, 0x04, 0, 0, 0, 0, 0]),
+        '\u{b4}' => body([0x02, 0x04, 0, 0, 0, 0, 0]),
+        '\u{a8}' => body([0x0A, 0, 0, 0, 0, 0, 0]),
+        '\u{af}' => body([0x0E, 0, 0, 0, 0, 0, 0]),
+        // Under the line, where the letter it belongs to wears it.
+        '\u{b8}' => body([0, 0, 0, 0, 0, 0, 0x0C]),
         // The single-cell ellipsis clipped text ends in.
         '\u{2026}' => body([0, 0, 0, 0, 0, 0, 0x15]),
         _ => body([0x1F, 0x11, 0x11, 0x11, 0x11, 0x11, 0x1F]), // fallback box
@@ -714,6 +728,18 @@ mod tests {
         for c in ('\u{a1}'..='\u{ff}').filter(|c| c.is_alphabetic()) {
             assert_ne!(glyph(c), fallback, "{c} falls back to the box");
         }
+    }
+
+    /// The accents a dead key leaves standing on their own. A keyboard makes
+    /// them with two presses, so the box they used to draw was reachable by
+    /// anyone typing an accent the following letter could not take.
+    #[test]
+    fn a_standalone_accent_has_a_glyph() {
+        let fallback = base('\u{fffd}');
+        for c in ['`', '\u{b4}', '\u{a8}', '\u{af}', '\u{b8}'] {
+            assert_ne!(glyph(c), fallback, "{c:?} falls back to the box");
+        }
+        assert_ne!(glyph('`'), glyph('\u{b4}'), "grave and acute lean apart");
     }
 
     #[test]
