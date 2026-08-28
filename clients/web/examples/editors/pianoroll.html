@@ -118,7 +118,7 @@ until you press play.</div>
 
       function start() {
         stop();
-        loop = Routine.run(repeat, session.clock);
+        loop = new Routine(repeat).play(session.clock);
         win.widget("play").set({ label: "stop" });
       }
 

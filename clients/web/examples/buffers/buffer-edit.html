@@ -163,9 +163,9 @@ between editing a table and editing a five-minute take.</div>
       }
 
       $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
-      $("edits").onclick = () => Routine.run(sequence, session.clock);
+      $("edits").onclick = () => new Routine(sequence).play(session.clock);
       $("refusal").onclick = () => refusal().catch((e) => log(`error: ${e}`));
-      $("server").onclick = () => Routine.run(editedByTheServer, session.clock);
+      $("server").onclick = () => new Routine(editedByTheServer).play(session.clock);
     </script>
   </body>
 </html>

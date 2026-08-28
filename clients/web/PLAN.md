@@ -3562,7 +3562,7 @@ sound.
   the page was doing by hand is exactly what `sustain` and `hasGate` do, which
   is why the divergence was invisible: both sounded right.
 
-- ⬜ **`Routine.run` is what the pages use and what no script does** *(found
+- ✅ **`Routine.run` is what the pages use and what no script does** *(found
   2026-08-28, checking which examples use a clock's `run` after fixing the
   four `Routine`-on-a-`TempoClock` pairs)*. Five pages —
   `editors/pianoroll`, `buffers/buffer-edit`, `spectral/cross`,
@@ -3572,7 +3572,19 @@ sound.
   (`Routine.run` is a classmethod in `base/stream.py`, used there as a
   decorator), so this is not a missing surface: it is the same call written
   differently on each side, which is the thing "one example in two languages"
-  is about. Decide the spelling once and make all five pairs use it.
+  is about. The pages write `new Routine(fn).play(session.clock)` now — the
+  script's spelling, and the one the other four pairs already used.
+
+  **The rule that came with it, and holds for both clients**: inside a session
+  whose clock is the one being played on, `play` is called with **no clock** —
+  the ambient ladder resolves it. It is only spelled out where the session is
+  not ambient, which is the case in all five of these pairs (none of them
+  activates) and is why the argument stays here. Checked across both clients'
+  examples in the same pass: no site passes a clock it could have left out.
+  Worth knowing that **no Python example activates a session at all**, while
+  four pages do — `views/scoping`, `basics/verbs`, `buffers/offline-render`,
+  `io/responders` — which is the `basics/verbs` framing question again, one
+  file wider than it was written.
 
   Checked in the same pass and **not** a divergence: `TempoClock.run(seconds)`
   takes seconds in both clients (the one that takes a routine is

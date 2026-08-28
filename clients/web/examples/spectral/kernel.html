@@ -115,7 +115,7 @@ between bins, reading another chain — stays with the dedicated
           session.server.sendBundle([["/node_free", reference.id]]);
           session.server.sendBundle([["/node_free", gated.id]]);
         }
-        Routine.run(stop, session.clock);
+        new Routine(stop).play(session.clock);
 
         take = await session.render({ sampleRate: SR, channels: 2 });
         const peak = Math.max(...take.peak, 0.0);

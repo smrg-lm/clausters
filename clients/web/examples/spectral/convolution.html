@@ -132,7 +132,7 @@ obvious.</div>
             server.sendBundle([["/node_free", voice.id]]);
           }
         }
-        Routine.run(sequence, session.clock);
+        new Routine(sequence).play(session.clock);
 
         take = await session.render({ sampleRate: SR, channels: 2 });
         const peak = Math.max(...take.peak, 0.0);
