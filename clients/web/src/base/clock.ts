@@ -409,11 +409,15 @@ export class TempoClock {
      * The reference client's `TempoClock.lock_to`, and the verb
      * `Session.lockToServer` is the session-wide spelling of.
      */
-    async lockTo(server: Server, timeout?: number): Promise<this> {
+    async lockTo(
+        server: Server,
+        { warmup = true, timeout }: { warmup?: boolean; timeout?: number } = {},
+    ): Promise<this> {
         if (this.timebase instanceof SampleTimebase) return this;
-        this.timebase = await server.sampleTimebase(
-            timeout === undefined ? {} : { timeout },
-        );
+        this.timebase = await server.sampleTimebase({
+            ...(timeout === undefined ? {} : { timeout }),
+            warmup,
+        });
         return this;
     }
 
@@ -603,6 +607,21 @@ export class TempoClock {
     play<T extends Schedulable>(item: T, quant?: number): T {
         this.sched(quant ? quantDelay(this.gridBeat(), quant) : 0, item);
         return item;
+    }
+
+    /**
+     * Starts this clock, lets it run for `seconds`, and stops it.
+     *
+     * The reference client's `TempoClock.run`, which blocks the calling thread
+     * for that long; here the wait is a promise, because a page has one thread
+     * and blocking it would stop the very clock this is driving. Everything
+     * else is the same: a convenience over `start`/`stop` for a script whose
+     * whole life is one stretch of playing.
+     */
+    async run(seconds: number): Promise<this> {
+        this.start();
+        await new Promise((resolve) => setTimeout(resolve, seconds * 1000));
+        return this.stop();
     }
 
     /** Drops every item currently queued. */

@@ -1050,6 +1050,7 @@ export class Server {
      */
     async sampleTimebase(options: {
         timeout?: number;
+        warmup?: boolean;
         anchors?: number;
         gap?: number;
         trackEvery?: number;

@@ -19,15 +19,26 @@
 // counts, per-channel peak and RMS, the seed the take used, and the samples
 // themselves (interleaved `Float32Array`).
 //
-// **Where this client stops, and why.** The Python verb also writes a file,
-// through the server's own `--nrt` renderer: it hands a score to a process
-// that streams straight to disk, so a long bounce never builds millions
-// of floats just to be written out. A page has no such process and no
-// filesystem to write to — its renderer is the same wasm engine that makes its
-// sound, and what it produces is a `Float32Array` in this tab. So there is no
-// `path` here; `wavBytes(stats)` turns a finished render into a WAV a page can
-// download or feed back into a buffer, which is the browser's version of the
-// same intent.
+// **Where this client stops, and why.** The reference client's verb also
+// writes a file, through the server's own `--nrt` renderer: it hands a score to
+// a process that streams straight to disk, so a long bounce never builds
+// millions of floats just to be written out. A page has no such process — its
+// renderer is the same wasm engine that makes its sound, and what it produces
+// is a `Float32Array` in this tab.
+//
+// It is not that a page cannot write a file: it has OPFS, and `Buffer.write`
+// goes out to it. What it cannot do is write to a *path the caller names* —
+// OPFS is the page's own store, not the machine's — nor stream while
+// rendering, since the samples exist in full before anything can be written.
+// So `path` and the `sampleFormat` that only means anything beside it stay
+// out, and `wavBytes(stats)` is the browser's version of the same intent: a
+// finished render as WAV bytes, which the page then downloads, writes to OPFS,
+// or feeds back into a buffer.
+//
+// `workers` stays out for a harder reason: the wasm entry point renders on the
+// calling thread (`workers: 0`, fixed in `crates/clausters-web`), and wasm
+// threads need cross-origin isolation the embedding page has to grant. A count
+// this client could not honour would be a worse surface than none.
 //
 // ```ts
 // const stats = await render(sine(440).mul(0.2), { dur: 2.0 });

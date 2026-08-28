@@ -247,8 +247,15 @@ export class EmbedSampleClock implements ServerSampleClock {
  */
 export async function sampleClockFor(
     server: Server,
-    { timeout, anchors = 5, gap = 0.05, trackEvery = 0.5 }: {
+    { timeout, warmup = true, anchors = 5, gap = 0.05, trackEvery = 0.5 }: {
         timeout?: number;
+        /**
+         * Firm the model up with extra anchors before anything is scheduled —
+         * the reference client's `lock_to(warmup=True)`. Turned off, the clock
+         * locks on the single anchor the first query returned, which is enough
+         * to be *anchored* and not enough to be steady.
+         */
+        warmup?: boolean;
         anchors?: number;
         gap?: number;
         trackEvery?: number;
@@ -265,6 +272,6 @@ export async function sampleClockFor(
         return null;
     }
     const clock = new WsSampleClock(server, first, { timeout });
-    await clock.warmup(anchors, gap);
+    if (warmup) await clock.warmup(anchors, gap);
     return clock.track(trackEvery);
 }

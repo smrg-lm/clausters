@@ -360,7 +360,7 @@ export class Session extends Environment {
      * on wall-clock time (`Server.sampleTimebase` says so and warns).
      */
     async lockToServer(): Promise<this> {
-        await this.clock.lockTo(this.server, this.server.timeout);
+        await this.clock.lockTo(this.server, { timeout: this.server.timeout });
         return this;
     }
 

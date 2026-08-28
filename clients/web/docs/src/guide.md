@@ -260,11 +260,13 @@ Two things around it are the browser's:
 
 Above that sit `Event` and `rest`, the value patterns (`Pseq`, `Pser`, `Prand`, `Pwhite`, `Pseries`, `Pgeom`, `Pfunc`, `Pn`, `Pconst`), `Pbind`, and the seekable counterpart: `Timeline`, a static beat-sorted list that `Timeline.fromPattern` can bounce a pattern into, played by a `Playhead` with play/stop/locate/loop. Random values come from the stream a routine derives when it is created, so `seed(n)` replays a whole piece. The model itself — what an event's keys mean, how `dur` and `sustain` differ, what `Pbind` does with a pattern of patterns — is the Python book's [routines and clocks](https://clausters-python.readthedocs.io/) chapters; it is the same model.
 
-## Three things the browser changes
+## What the browser changes
 
 **Everything that waits is a promise.** Where the reference client blocks a thread on a reply, this one `await`s: `await server.sync()`, `await bus.get()`, `await server.queryTree()`. The page has a single thread and has to keep running, so "never block the clock thread" — a discipline in the Python client — is here simply the language.
 
 **The graph composes by method.** `sine(freq).mul(amp).add(bias)` where Python writes `sine(freq) * amp + bias`, TypeScript having no operator overloading. Because of that, parity between the clients is asserted on the **emitted spec**, never on the source text.
+
+**A render comes back as samples, not as a file.** `render(...)` resolves with the take in memory and `wavBytes(stats)` turns it into WAV bytes the page downloads, writes to OPFS or feeds back into a `Buffer`. The reference client's `path` and `sample_format` have no counterpart because a page cannot write to a path the caller names — OPFS is the page's own store — and cannot stream while rendering, the samples existing in full before anything is written. `workers` has none either: the wasm renderer runs on the calling thread, and wasm threads need a cross-origin isolation the embedding page has to grant.
 
 **Nothing pumps.** There is no drain call and no event loop of ours: a page subscribes once (`onEvent`, `onClosed`, an [`OscFunc`](responders.md) or the raw `onReply` under it) and the host's or server's messages arrive as calls, while a query resolves a promise.
 
