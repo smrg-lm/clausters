@@ -70,8 +70,6 @@ socket. Swapping to a <code>--ws</code> server is the one line marked below.</di
       };
 
       let session = null;
-      let server = null;
-      let clock = null;
 
       async function start() {
         // The script opens `Session.nrt(tempo=2.0)` and renders the phrase to
@@ -80,12 +78,10 @@ socket. Swapping to a <code>--ws</code> server is the one line marked below.</di
         // `clausters --ws` server. The clock is the session's, anchored to its
         // server's sample counter, which is what the script's `session.clock`
         // is too.
-        session = await Session.embed({ tempo: 2.0 });
-        server = session.server;
-        clock = session.clock;
+        session = (await Session.embed({ tempo: 2.0 })).activate();
 
         const def = unison();
-        await def.send(server);
+        await def.send();
         log(`def '${def.name}' loaded: ${VOICES} sines mixed to one, `
           + "fanned to two buses");
 
@@ -108,12 +104,12 @@ socket. Swapping to a <code>--ws</code> server is the one line marked below.</di
             new Event({
               instrument: "web_unison", freq: mtof(midi), amp: 0.4,
               dur, sustain: dur - 0.5, hasGate: true,
-            }).play(server);
+            }).play();
             log(`voice at MIDI ${midi}, sounding ${dur - 0.5} beats`);
             yield dur;
           }
           log("phrase done — each voice freed itself when its release ended");
-        }).play(clock);
+        }).play();
       }
 
       el("start").onclick = () => start().catch((err) => log(`error: ${err}`));

@@ -72,9 +72,9 @@ def maths_lead(name: str = "maths_lead") -> SynthDef:
 # number into Hz with `.midicps()`, so the score never computes a frequency.
 
 # %%
-session = Session.nrt(tempo=2.0)
-maths_lead().send(session.server)
-lead = Synth("maths_lead", {"note": 48.0, "amp": 0.3}, server=session.server)
+session = Session.nrt(tempo=2.0).activate()
+maths_lead().send()
+lead = Synth("maths_lead", {"note": 48.0, "amp": 0.3})
 
 
 def sequence():
@@ -85,7 +85,7 @@ def sequence():
     session.server.send_bundle(("/node_free", lead.id))
 
 
-Routine(sequence).play(session.clock)
+Routine(sequence).play()
 
 
 # %%

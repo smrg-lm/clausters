@@ -67,7 +67,7 @@ SAMPLES_PER_BEAT = SR * 60.0 / BPM      # the timeline sample units the widget u
 LOOP = 8.0                              # beats between repeats
 AMP = 0.2                               # what a full-velocity note reaches
 
-session = Session.live(tempo=BPM / 60.0)
+session = Session.live(tempo=BPM / 60.0).activate()
 gui = session.gui()
 
 
@@ -154,7 +154,7 @@ def start(*_):
     """Start the loop, from this beat."""
     global loop
     stop()
-    loop = Routine(repeat).play(session.clock)
+    loop = Routine(repeat).play()
     win["play"].set(label="stop")
 
 

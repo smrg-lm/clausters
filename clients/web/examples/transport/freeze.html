@@ -110,7 +110,7 @@ different pieces.</div>
         // The AudioContext needs the gesture that got us here, which is why
         // this is a button. Over a socket the one line that changes is this
         // one: `Session.live("ws://127.0.0.1:57120")`.
-        session = await Session.embed({ tempo: 2.0 });
+        session = (await Session.embed({ tempo: 2.0 })).activate();
         const server = session.server;
         await cloud().send(server);
         await server.sync();
@@ -125,7 +125,7 @@ different pieces.</div>
         session.start();
         await server.transportPlay();
         routine = new Routine(texture);
-        routine.play(session.clock);
+        routine.play();
 
         log(`the piece is group ${piece.id}, governed by the transport`);
         $("start").disabled = true;

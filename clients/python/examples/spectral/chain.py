@@ -80,14 +80,14 @@ def spectral_lowpass(name: str = "spectral_lp") -> SynthDef:
 # ## The score
 
 # %%
-session = Session.nrt(tempo=1.0)
-noisy().send(session.server)
-spectral_lowpass().send(session.server)
+session = Session.nrt(tempo=1.0).activate()
+noisy().send()
+spectral_lowpass().send()
 
 # Both play for the whole render; a routine frees them at t = 2 beats
 # (tempo 1 -> 2 s) so the offline render has a defined duration.
-raw = Synth("noisy", server=session.server)
-lp = Synth("spectral_lp", server=session.server)
+raw = Synth("noisy")
+lp = Synth("spectral_lp")
 
 
 def stop():
@@ -95,7 +95,7 @@ def stop():
     session.server.send_bundle(("/node_free", raw.id))
     session.server.send_bundle(("/node_free", lp.id))
 
-Routine(stop).play(session.clock)
+Routine(stop).play()
 
 
 # %%

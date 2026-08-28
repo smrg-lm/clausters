@@ -3593,3 +3593,26 @@ sound.
   cannot: `run` starts, waits and *stops*, and the page's clock has to stay up
   for the buttons that follow. That is the standing "a page turns a script's
   sequence into a button" item, not a gap.
+
+- ✅ **Both clients named the clock they were already standing in** *(found
+  2026-08-28, when the `Routine.run` fix raised the question of when a clock
+  has to be passed at all)*. Fifteen scripts and eleven pages wrote
+  `Routine(fn).play(session.clock)` while holding exactly one session — and
+  they had to, because **none of them activated it**: verified by running it,
+  an unactivated session is not ambient, so a bare `play()` falls through to
+  the default session's clock, which offline means a real-time clock in a
+  script that renders. So the argument was not redundant; the missing
+  `activate()` was.
+
+  The criterion, now rule 5 of the `examples` skill: an example built around
+  one session activates it and then names nothing it owns — `send()`,
+  `Synth(...)`, `play()`. What comes back is only what is *not* the default (a
+  second server, another session's clock). A method on the server is not an
+  argument and stays, and an example with no session at all is right as it is:
+  `main` is a session too, and its server and clock are the defaults there.
+
+  **What the pages needed and the scripts did not**: four render an offline
+  take and then sound it on a live server, so they `deactivate()` the score
+  session after rendering. Left ambient, their `play(buffer)` would have
+  reached the score instead of the engine — silence, with nothing to read.
+  The scripts end there, so they never meet it.

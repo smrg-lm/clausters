@@ -64,9 +64,9 @@ def drone(name: str = "drone") -> SynthDef:
 # out through `send_bundle` (stamped with the routine's logical beat).
 
 # %%
-session = Session.nrt(tempo=2.0)
-drone().send(session.server)             # /def_send synth at time 0
-node = Synth("drone", {"freq": 220.0, "amp": 0.2}, server=session.server)
+session = Session.nrt(tempo=2.0).activate()
+drone().send()             # /def_send synth at time 0
+node = Synth("drone", {"freq": 220.0, "amp": 0.2})
 
 
 def sequence():
@@ -78,7 +78,7 @@ def sequence():
     session.server.send_bundle(("/node_free", node.id))
 
 
-Routine(sequence).play(session.clock)
+Routine(sequence).play()
 
 
 # %% [markdown]

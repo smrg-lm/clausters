@@ -90,12 +90,12 @@ def cross(name: str = "cross") -> SynthDef:
 # ## The score
 
 # %%
-session = Session.nrt(tempo=2.0)
-cross().send(session.server)
+session = Session.nrt(tempo=2.0).activate()
+cross().send()
 
 
 def sequence():
-    voice = Synth("cross", server=session.server)
+    voice = Synth("cross")
     # A little melody in the modulator: the noise follows it.
     for midi, dur in [(57, 2.0), (60, 2.0), (64, 2.0), (62, 2.0)]:
         freq = 440.0 * 2.0 ** ((midi - 69.0) / 12.0)
@@ -106,7 +106,7 @@ def sequence():
     yield 4.0
     session.server.send_bundle(("/node_free", voice.id))
 
-Routine(sequence).play(session.clock)
+Routine(sequence).play()
 
 
 # %%

@@ -90,19 +90,19 @@ def unison(name: str = "unison") -> SynthDef:
 # `env_gen` waits for.
 
 # %%
-session = Session.nrt(tempo=2.0)
-unison().send(session.server)
+session = Session.nrt(tempo=2.0).activate()
+unison().send()
 
 
 def sequence():
     for midi, dur in [(45, 3.0), (52, 3.0), (50, 4.0)]:
         freq = 440.0 * 2.0 ** ((midi - 69.0) / 12.0)
         Event(instrument="unison", freq=freq, amp=0.4,
-              dur=dur, sustain=dur - 0.5, has_gate=True).play(session.server)
+              dur=dur, sustain=dur - 0.5, has_gate=True).play()
         yield dur
 
 
-Routine(sequence).play(session.clock)
+Routine(sequence).play()
 
 
 # %%

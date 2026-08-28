@@ -72,8 +72,6 @@ than an <code>/synth_new</code> per note.</div>
       };
 
       let session = null;
-      let server = null;
-      let clock = null;
       let lead = null;
 
       async function start() {
@@ -82,14 +80,14 @@ than an <code>/synth_new</code> per note.</div>
         // clock is the session's own -- anchored to its server's sample
         // counter -- which is the `session.clock` the script plays on, and the
         // slider below retunes that one.
-        session = await Session.embed({ tempo: Number(el("tempo").value) });
-        server = session.server;
-        clock = session.clock;
+        session = (await Session.embed({
+          tempo: Number(el("tempo").value),
+        })).activate();
 
-        await glideLead().send(server);
+        await glideLead().send();
         session.start();
 
-        lead = new Synth("web_glide_lead", { amp: 0.2, freq: mtof(48) }, { server });
+        lead = new Synth("web_glide_lead", { amp: 0.2, freq: mtof(48) });
         log(`the lead is node ${lead.id}, silent until a gate arrives`);
 
         el("start").disabled = true;
@@ -103,14 +101,14 @@ than an <code>/synth_new</code> per note.</div>
           for (const midi of [48, 55, 60, 63, 60, 55, 51, 48]) {
             // freq and gate in one timed bundle: the pitch starts gliding and
             // the pluck fires on the same instant.
-            server.sendBundle([
+            session.server.sendBundle([
               ["/node_set", ["i", lead.id],
                 "freq", ["f", mtof(midi)], "gate", ["f", 1.0]],
             ]);
             yield 0.5;
           }
           log("melody done — the lead is still there, waiting for a gate");
-        }).play(clock);
+        }).play();
       }
 
       el("start").onclick = () => start().catch((err) => log(`error: ${err}`));
@@ -123,7 +121,7 @@ than an <code>/synth_new</code> per note.</div>
       el("tempo").oninput = () => {
         const tempo = Number(el("tempo").value);
         el("tempov").textContent = `${tempo} beats/s`;
-        clock?.setTempo(tempo);
+        session?.clock.setTempo(tempo);
       };
     </script>
   </body>

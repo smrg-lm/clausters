@@ -104,20 +104,26 @@ between bins, reading another chain — stays with the dedicated
       async function render() {
         $("render").disabled = true;
 
-        const session = await Session.nrt({ tempo: 1.0 });
-        await raw().send(session.server);
-        await tiltedGate().send(session.server);
-        const reference = new Synth("raw", {}, { server: session.server });
-        const gated = new Synth("tiltgate", {}, { server: session.server });
+        const session = (await Session.nrt({ tempo: 1.0 })).activate();
+        await raw().send();
+        await tiltedGate().send();
+        const reference = new Synth("raw");
+        const gated = new Synth("tiltgate");
 
         function* stop() {
           yield 2.0;
           session.server.sendBundle([["/node_free", reference.id]]);
           session.server.sendBundle([["/node_free", gated.id]]);
         }
-        new Routine(stop).play(session.clock);
+        new Routine(stop).play();
 
         take = await session.render({ sampleRate: SR, channels: 2 });
+
+        // The score is rendered, so this session stops being the ambient one.
+        // The script ends here (it writes a file); the page goes on to sound
+        // the take on a live server, and an ambient `play` has to reach *that*
+        // one.
+        session.deactivate();
         const peak = Math.max(...take.peak, 0.0);
         log(`rendered ${take.frames} frames (${take.duration.toFixed(2)} s) `
           + `| peak ${peak.toFixed(3)}`);

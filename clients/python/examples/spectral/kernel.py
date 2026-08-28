@@ -100,12 +100,12 @@ def tilted_gate(name: str = "tiltgate") -> SynthDef:
 # ## The score
 
 # %%
-session = Session.nrt(tempo=1.0)
-raw().send(session.server)
-tilted_gate().send(session.server)
+session = Session.nrt(tempo=1.0).activate()
+raw().send()
+tilted_gate().send()
 
-reference = Synth("raw", server=session.server)
-gated = Synth("tiltgate", server=session.server)
+reference = Synth("raw")
+gated = Synth("tiltgate")
 
 
 def stop():
@@ -113,7 +113,7 @@ def stop():
     session.server.send_bundle(("/node_free", reference.id))
     session.server.send_bundle(("/node_free", gated.id))
 
-Routine(stop).play(session.clock)
+Routine(stop).play()
 
 
 # %%

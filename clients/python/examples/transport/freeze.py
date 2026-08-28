@@ -70,7 +70,7 @@ def cloud() -> SynthDef:
 # that group (the event's ``target``), so freezing the group freezes the piece.
 
 # %%
-session = Session.live(tempo=2.0, latency=0.1)
+session = Session.live(tempo=2.0, latency=0.1).activate()
 server = session.server
 cloud().send(server)
 server.sync()
@@ -98,7 +98,7 @@ def texture(n: int):
 
 session.start()
 server.transport_play()
-Routine(lambda: texture(64)).play(session.clock)
+Routine(lambda: texture(64)).play()
 
 print("playing ~4 s -- listen to the texture")
 time.sleep(4.0)

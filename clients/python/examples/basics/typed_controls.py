@@ -84,9 +84,9 @@ def mtof(midi: float) -> float:
 # before it ever sounded.
 
 # %%
-session = Session.nrt(tempo=2.0)
-glide_lead().send(session.server)        # /def_send synth at time 0
-lead = Synth("glide_lead", {"amp": 0.2, "freq": mtof(48)}, server=session.server)
+session = Session.nrt(tempo=2.0).activate()
+glide_lead().send()        # /def_send synth at time 0
+lead = Synth("glide_lead", {"amp": 0.2, "freq": mtof(48)})
 
 
 def sequence():
@@ -98,7 +98,7 @@ def sequence():
     session.server.send_bundle(("/node_free", lead.id))
 
 
-Routine(sequence).play(session.clock)
+Routine(sequence).play()
 
 
 # %%

@@ -188,7 +188,46 @@ These are what a generated example gets wrong, every time.
    The root `examples/` are the opposite case: several of them are there
    precisely to show the wire (`json_client.py`, `shm_client.py`,
    `tcp_client.py`, `osc_ping.rs`).
-5. **An example that wants to show a signal opens a host view.** `plot(...)`,
+5. **Nothing that is already the default is passed.** Both clients resolve an
+   ambient server and clock the same way — the running routine's, else the
+   **active session's**, else the default session's (`main`, which is a session
+   too: that is what "no session" means, not "no environment"). So an example
+   built around one session **activates it** and then names nothing it owns:
+
+   ```python
+   session = Session.nrt(tempo=2.0).activate()
+   lead().send()                       # not .send(session.server)
+   note = Synth("lead", {"freq": 220.0})
+   Routine(sequence).play()            # not .play(session.clock)
+   ```
+
+   ```js
+   const session = (await Session.nrt({ tempo: 2.0 })).activate();
+   await lead().send();
+   const note = new Synth("lead", { freq: 220.0 });
+   new Routine(sequence).play();
+   ```
+
+   The argument comes back only where it is **not** the default: a second
+   server, another session's clock, a handle the example is contrasting. A
+   `session.clock` handed to a `play` on that same session is noise, and it
+   teaches a reader that the wiring is theirs to carry.
+
+   Three things this does not mean. An example with **no** session is right as
+   it is — that is the common case, and the default server and clock are
+   `main`'s. A **method** on the server (`session.server.sendBundle(...)`,
+   `server.transportPlay()`) is not an argument and stays. And a local
+   `server = session.server` is worth keeping where the example calls methods
+   on it repeatedly — what goes is `server=server` on a constructor that would
+   have resolved it anyway.
+
+   `activate()` has a counterpart: **a page that opens a second environment
+   `deactivate()`s the first.** A page that renders an offline take and then
+   sounds it on a live server must not leave the score session ambient, or the
+   ambient `play` reaches the score instead of the engine — silence, with
+   nothing to read. The scripts do not need this because they end.
+
+6. **An example that wants to show a signal opens a host view.** `plot(...)`,
    `scope(bus)`, a `waveform`/`scope`/`spectrum` widget in a GuiDef — never a
    canvas the example feeds, and never arithmetic over samples to fill one.
    Everything drawn is drawn by the GUI host; a client names what to look at.

@@ -118,7 +118,7 @@ until you press play.</div>
 
       function start() {
         stop();
-        loop = new Routine(repeat).play(session.clock);
+        loop = new Routine(repeat).play();
         win.widget("play").set({ label: "stop" });
       }
 
@@ -136,7 +136,7 @@ until you press play.</div>
 
       async function run() {
         $("run").disabled = true;
-        session = await Session.embed({ tempo: BPM / 60.0 });
+        session = (await Session.embed({ tempo: BPM / 60.0 })).activate();
         await session.gui();
 
         win = await gui.view(

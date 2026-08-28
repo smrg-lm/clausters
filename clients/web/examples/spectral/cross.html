@@ -95,11 +95,11 @@ between the stages; the spectral frames are synth-private scratch.</div>
       async function render() {
         $("render").disabled = true;
 
-        const session = await Session.nrt({ tempo: 2.0 });
-        await cross().send(session.server);
+        const session = (await Session.nrt({ tempo: 2.0 })).activate();
+        await cross().send();
 
         function* sequence() {
-          const voice = new Synth("cross", {}, { server: session.server });
+          const voice = new Synth("cross");
           // A little melody in the modulator: the noise follows it.
           for (const [midi, dur] of [[57, 2.0], [60, 2.0], [64, 2.0], [62, 2.0]]) {
             const freq = 440.0 * 2.0 ** ((midi - 69.0) / 12.0);
@@ -111,9 +111,15 @@ between the stages; the spectral frames are synth-private scratch.</div>
           yield 4.0;
           session.server.sendBundle([["/node_free", voice.id]]);
         }
-        new Routine(sequence).play(session.clock);
+        new Routine(sequence).play();
 
         take = await session.render({ sampleRate: SR, channels: 2 });
+
+        // The score is rendered, so this session stops being the ambient one.
+        // The script ends here (it writes a file); the page goes on to sound
+        // the take on a live server, and an ambient `play` has to reach *that*
+        // one.
+        session.deactivate();
         const peak = Math.max(...take.peak, 0.0);
         log(`rendered ${take.frames} frames (${take.duration.toFixed(2)} s) `
           + `| peak ${peak.toFixed(3)}`);

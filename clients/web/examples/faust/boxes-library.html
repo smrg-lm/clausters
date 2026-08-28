@@ -118,10 +118,9 @@ Needs <code>./build.sh</code> in <code>clients/web</code> first
       // The fragment sliders are ordinary controls: /node_set by label.
       async function run() {
         $("render").disabled = true;
-        const session = await Session.nrt({ tempo: 2.0 });
-        await softVoice().send(session.server);   // NRT: scored at time 0
-        const voice = new Synth("soft_voice", { freq: 220.0, amp: 0.25 },
-          { server: session.server });
+        const session = (await Session.nrt({ tempo: 2.0 })).activate();
+        await softVoice().send();   // NRT: scored at time 0
+        const voice = new Synth("soft_voice", { freq: 220.0, amp: 0.25 });
 
         new Routine(function* () {
           const melody = [57, 60, 64, 67, 64, 60, 57, 52];
@@ -138,11 +137,12 @@ Needs <code>./build.sh</code> in <code>clients/web</code> first
           }
           yield 2.0;                              // let the reverb tail ring
           session.server.sendBundle([["/node_free", ["i", voice.id]]]);
-        }).play(session.clock);
+        }).play();
 
         // ---- the render ----
         log("rendering...");
         const stats = await session.render({ sampleRate: SR, channels: 2 });
+        session.deactivate();   // the score is rendered; nothing is ambient now
         const peak = Math.max(0.0, ...stats.peak);
         log(`rendered ${stats.frames} frames (${stats.duration.toFixed(2)} s) `
           + `| peak ${peak.toFixed(3)}`);

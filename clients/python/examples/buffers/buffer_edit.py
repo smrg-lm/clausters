@@ -62,7 +62,7 @@ from clausters.errors import CommandError
 #: when scanned at audio rate.
 FRAMES = 512
 
-session = Session.live()
+session = Session.live().activate()
 server = session.server
 
 # %% [markdown]
@@ -204,12 +204,12 @@ def run():
     # The clock has to be running for a routine to fire: playing one on a
     # stopped clock queues it forever, silently.
     session.start()
-    Routine(sequence).play(session.clock)
+    Routine(sequence).play()
     # The main thread waits while the clock thread plays -- never inside a
     # routine, which runs *on* that thread.
     time.sleep(6.5)
     show_the_refusal()
-    Routine(edited_by_the_server).play(session.clock)
+    Routine(edited_by_the_server).play()
     time.sleep(8.0)
     # Proof the server's own edits landed, read back once the routine is done
     # (a read is a round trip, so it belongs here and not inside the routine).

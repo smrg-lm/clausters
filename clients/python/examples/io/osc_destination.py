@@ -76,7 +76,7 @@ PORT = 57123
 listener = stand_in_for_another_app(PORT)
 print(f"standing in for an external app on UDP {listener.port}")
 
-session = Session.live(tempo=TEMPO, latency=0.1)
+session = Session.live(tempo=TEMPO, latency=0.1).activate()
 lights = session.destination("127.0.0.1", listener.port)
 lights.send_msg("/lamps/reset")
 
@@ -101,7 +101,7 @@ def cue(clock, beats):
 # %%
 def run(beats: float = 8.0):
     """Cue ``beats`` beats of notes and lamps together."""
-    Routine(lambda clock: cue(clock, beats)).play(session.clock)
+    Routine(lambda clock: cue(clock, beats)).play()
     session.run(beats / TEMPO + 1.0)
     print("done")
 

@@ -83,8 +83,6 @@ emit the same spec JSON, which is exactly what the parity vectors assert.</div>
       };
 
       let session = null;
-      let server = null;
-      let clock = null;
       let lead = null;
 
       async function start() {
@@ -93,14 +91,12 @@ emit the same spec JSON, which is exactly what the parity vectors assert.</div>
         // after this line is the same call in the same order -- including the
         // clock, which is the session's own, anchored to its server's sample
         // counter rather than built by hand.
-        session = await Session.embed({ tempo: 2.0 });
-        server = session.server;
-        clock = session.clock;
+        session = (await Session.embed({ tempo: 2.0 })).activate();
 
-        await mathsLead().send(server);
+        await mathsLead().send();
         session.start();
 
-        lead = new Synth("web_maths_lead", { note: 48.0, amp: 0.3 }, { server });
+        lead = new Synth("web_maths_lead", { note: 48.0, amp: 0.3 });
         log(`the lead is node ${lead.id}, sounding a MIDI 48 already shaped`);
 
         el("start").disabled = true;
@@ -112,11 +108,11 @@ emit the same spec JSON, which is exactly what the parity vectors assert.</div>
           // MIDI notes go out as they are: the def turns them into Hz with
           // .midicps(), so the client never converts a pitch by hand.
           for (const midi of [48, 52, 55, 59, 60, 59, 55, 52]) {
-            server.sendBundle([["/node_set", ["i", lead.id], "note", ["f", midi]]]);
+            session.server.sendBundle([["/node_set", ["i", lead.id], "note", ["f", midi]]]);
             yield 0.5;
           }
           log("phrase done");
-        }).play(clock);
+        }).play();
       }
 
       el("start").onclick = () => start().catch((err) => log(`error: ${err}`));
