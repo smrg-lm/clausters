@@ -27,6 +27,15 @@ const connection = await pageConnection();               // this tab's engine
 const connection = await WsConnection.open(url);         // a `--ws` server
 ```
 
+So the shortest a page's boot gets is two lines, where the reference client's is one — the wasm above, and the carrier here:
+
+```js
+await loadOsc();
+const server = await new Server(await pageConnection()).boot();
+```
+
+Neither line has a counterpart in Python: there the core arrives with the import, and `Server()` knows what to do because there is a process to launch. Nothing else is needed — `boot()` starts the engine's audio itself, and the engine comes up on the page's defaults, so a page that reaches for `engine()` or `server(options)` first is asking for something other than the page's engine.
+
 `pageConnection()` wraps the page's engine — the server compiled to wasm in this tab's AudioWorklet — and `WsConnection` a browser (or node) `WebSocket`. Both carry raw OSC in both directions and nothing else, so **no layer above them names a transport**. Swapping carriers is a one-line edit in a program of any size, which is exactly the property the examples demonstrate by offering a radio button.
 
 That engine is reachable directly when a page needs the browser-specific parts: `server()` gives `send`/`addReply`, its `clock()`, `bufferLoad(...)` (the browser's `/buffer_allocRead`, over `fetch` and `decodeAudioData`) and `resume()`/`suspend()`. Every component and script in the tab gets that same engine, so they meet in one node, bus and buffer namespace.

@@ -85,8 +85,7 @@
     -->
     <script type="module">
       import {
-        loadOsc, pageConnection, pageGuiConnection, WsConnection,
-        server as engine, Server, Bus, Synth, SynthDef, GuiHost, gui,
+        loadOsc, pageConnection, pageGuiConnection, WsConnection, Server, Bus, Synth, SynthDef, GuiHost, gui,
       } from "../../dist/index.js";
       import { control, lpf, out, saw } from "../../dist/defs/index.js";
 
@@ -100,7 +99,6 @@
       // engine only runs (and answers) while it does, so the server is opened
       // on the first click rather than at load — every button goes through
       // `audio()`.
-      const raw = await engine({ channels: 2 });
       let server = null;
       let voice = null;
 

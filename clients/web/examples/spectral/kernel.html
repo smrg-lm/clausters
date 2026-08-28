@@ -61,8 +61,8 @@ between bins, reading another chain — stays with the dedicated
     -->
     <script type="module">
       import {
-        Buffer, Routine, Server, Session, Synth, loadOsc, pageConnection, play,
-        server as engine, wavBytes,
+        Buffer, Routine, Server, Session, Synth, loadOsc, pageConnection,
+        play, wavBytes,
       } from "../../dist/index.js";
       import {
         SynthDef, control, fft, ifft, out, pvKernel, whiteNoise,
@@ -130,7 +130,6 @@ between bins, reading another chain — stays with the dedicated
       }
 
       async function hear() {
-        await (await engine({ channels: 2 })).resume();
         const server = await new Server(await pageConnection()).boot();
         const buffer = await Buffer.fromSamples(take.samples, take.channels,
           take.sampleRate, { server });

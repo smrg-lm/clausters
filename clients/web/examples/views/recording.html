@@ -96,7 +96,7 @@ socket.</div>
 
     <script type="module">
       import {
-        loadOsc, loadCore, pageConnection, server as engine, Server,
+        loadOsc, loadCore, pageConnection, server as pageEngine, Server,
         Buffer, Synth, SynthDef, GuiHost, gui, pageGuiConnection,
       } from "../../dist/index.js";
       import { control, line, out, recordBuf, sine } from "../../dist/defs/index.js";
@@ -185,7 +185,7 @@ socket.</div>
       async function run() {
         await loadOsc();
         await loadCore();
-        raw = await engine({ channels: 2 });
+        raw = await pageEngine();
         server = await new Server(await pageConnection()).boot();
         // The page's host, and the ambient one from here on: a view opens
         // without being told which host, exactly as the script does after

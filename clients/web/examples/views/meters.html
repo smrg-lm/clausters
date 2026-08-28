@@ -79,7 +79,7 @@ Swapping to a <code>--ws</code> server (or to a native
     -->
     <script type="module">
       import {
-        loadOsc, loadCore, pageConnection, server as engine, Server,
+        loadOsc, loadCore, pageConnection, Server,
         Bus, Buffer, Synth, SynthDef, GuiHost, gui, pageGuiConnection,
       } from "../../dist/index.js";
       import { control, out, outCtl, sine } from "../../dist/defs/index.js";
@@ -127,8 +127,6 @@ Swapping to a <code>--ws</code> server (or to a native
       async function run() {
         await loadOsc();
         await loadCore();
-
-        await engine({ channels: 2 });
 
         // ---- the one line that names a carrier ----
         const connection = await pageConnection();
