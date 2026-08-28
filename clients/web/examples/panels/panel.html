@@ -30,11 +30,15 @@ button and a menu, two of them non-linear (a curved knob and a stepped number)
 <code>set</code> and <i>listens</i> for the events your interactions emit. No
 audio server is involved.
 
-The reset button is wired <b>twice</b>, which is the point of the two
-vocabularies: <code>onEvent</code> is the raw stream and reports its value on
-the press and on the release plus the three interface events beside them, while
-<code>onClick</code> is the completed press — press the button, slide the
-pointer off it and let go, and the click never comes.
+The reset button of <b>each</b> panel carries both listening vocabularies at
+once, which is what puts them side by side: <code>onEvent</code> is the raw
+stream and reports its value on the press and on the release, plus the interface
+events beside them (<code>press</code>, <code>release</code>, and
+<code>click</code> only when the release landed on the button), while
+<code>onClick</code> fires on the completed press alone. So a cancelled press
+does not report less — press the button, slide the pointer off it and let go,
+and you still see <code>press</code> and <code>release</code>; what is missing
+is the <code>clicked</code> line, and that absence <i>is</i> the cancellation.
 
 The two panels are the point of the second half: a view is a definition, so
 opening it again gives a second instance with widget ids of its own. The same
@@ -141,9 +145,10 @@ names, two independent panels.</div>
           // `onEvent` above is the **raw** stream, so the reset button reports
           // its value (1 on the press, 0 on the release) *and* the three
           // interface events beside it: `press`, `release`, and `click` when the
-          // release landed on the button. This is the verb a command would
-          // actually be wired to -- press the button, slide off it and let go,
-          // and the click never comes.
+          // release landed on the button. `onClick` is the verb a command would
+          // actually be wired to, and it is the only one a cancelled press
+          // drops: slide off the button before letting go and `press`/`release`
+          // still report, `clicked` does not.
           win.widget("reset").onClick(() => log(`${tag} reset: clicked`));
         }
 
