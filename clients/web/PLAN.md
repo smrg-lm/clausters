@@ -3259,3 +3259,31 @@ finished work, where a pending item reads as done.
   Both authored pages passed on their first firing, which is the good outcome
   and not the expected one — an assertion never run is an assertion never
   checked.
+
+- ⬜ **`open()` with no host resolves the ambient one, and a page that meant
+  another handle gets a plausible wrong answer** *(found 2026-08-27, in the
+  manual review, reading `panels/attach.html` against `attach.py`; that page is
+  fixed in the commit — what is left is the class)*. A `View.open(element)`
+  with no `host` falls back to `resolveHost()`. That is the right default and
+  it is what makes `plot()` work with no ceremony. What has no answer is the
+  case the attach example is built on: a page holding **two** handles, one of
+  which deliberately did not become the ambient one. Leaving `host` out there
+  is never what the author meant, and nothing says so — the window opens, it
+  draws, its ids are valid, and the only symptom is that they came out of the
+  wrong allocator.
+
+  It is worth an entry because of how it hid. The page looked right: two
+  canvases, two panels, a log line reporting two different ids. It even printed
+  a line *claiming* the two shares do not collide, and the numbers it printed
+  (1002 and 1006) were both from the owner's share, so the check that was there
+  to catch exactly this passed on a comparison of a share with itself. What
+  found it was reading the two halves of the pair side by side and noticing
+  that the Python one said 525288 where the page said 1004.
+
+  The options, none of them obviously right: warn when a second `GuiHost`
+  exists and `open` had to guess; make a non-adopting `attach` poison the
+  ambient fallback for windows opened after it; or leave the resolution alone
+  and treat this as an example's bug, on the grounds that a default that
+  sometimes asks is worse than one that always answers. The Python client has
+  the same default (`plot` resolves a session's host) and the same gap, so
+  whatever is decided is decided for both.

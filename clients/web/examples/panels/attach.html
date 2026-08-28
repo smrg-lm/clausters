@@ -91,16 +91,22 @@ same ids and the second would silently take the first's widgets.</div>
         // agree.
         owner = await new GuiHost(await pageGuiConnection(), { share: { index: 0, of: 2 } })
           .boot();
-        const winA = await panelFor("booted").open($("a"));
+        const winA = await panelFor("booted").open($("a"), { host: owner });
         log(`booted: a host of this page's own, window ${winA.id}`);
 
         // ---- the second handle: attach ----
         // It verifies that a host answers before sending anything, and it owns
         // nothing: stopping it leaves the host and both windows exactly where
         // they are.
+        //
+        // Each window names **its own** handle. `open` with no `host` resolves
+        // the ambient one, which this handle deliberately did not become
+        // (`adoptAmbient: false`), so leaving it out would open both windows on
+        // the owner -- one allocator, two windows, and the id line below would
+        // be comparing a share against itself.
         attached = await new GuiHost(await pageGuiConnection(), { share: { index: 1, of: 2 } })
           .attach({ adoptAmbient: false });
-        const winB = await panelFor("attached").open($("b"));
+        const winB = await panelFor("attached").open($("b"), { host: attached });
         log(`attached: a second handle on the same host, window ${winB.id}`);
         log(`the ids do not collide: ${winA.widget("amount").id} and `
           + `${winB.widget("amount").id}`);
