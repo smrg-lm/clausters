@@ -221,6 +221,30 @@ These are what a generated example gets wrong, every time.
    on it repeatedly — what goes is `server=server` on a constructor that would
    have resolved it anyway.
 
+   **A clock made by hand is never the default — a booted server is.** The two
+   are asymmetric on purpose, in both clients: `Server().boot()` claims
+   `main.server` first-wins, so a later `Synth("beep")` finds it; a
+   `TempoClock(2.0)` claims nothing. `main.defaultClock` stays `null` until an
+   ambient `play` needs one, and then the client **builds its own** at tempo
+   1.0 and starts it. So an example with no session that makes its own clock
+   **passes it**:
+
+   ```python
+   clock = TempoClock(2.0, timebase=server.sample_timebase())
+   Routine(sequence).play(clock)       # without it: a new clock at 1.0
+   ```
+
+   Leaving it out there is not tidier, it is a different piece — the routine
+   runs on a clock the example never configured, at the wrong tempo and off
+   the server's sample counter. The rule above only drops a clock that a
+   session already made ambient. (A server is a process resource and there is
+   normally one; a clock is cheap and a piece usually has several, which is
+   why only the server adopts.) **Check this before relying on it**: it is
+   what the clients do today, not a decision anything guards — a first
+   hand-made clock could yet claim the default slot the way a booted server
+   does. `main.get_default_clock` / `Main.getDefaultClock` is the whole of it,
+   in five lines each.
+
    `activate()` has a counterpart: **a page that opens a second environment
    `deactivate()`s the first.** A page that renders an offline take and then
    sounds it on a live server must not leave the score session ambient, or the
