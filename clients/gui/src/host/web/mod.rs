@@ -144,7 +144,9 @@ enum WebEvent {
     /// The element entered or left the viewport (`IntersectionObserver`).
     SetVisible { def_id: i32, visible: bool },
     /// The async WebGPU device for one canvas is ready.
-    GpuReady { def_id: i32, gpu: Gpu },
+    /// Boxed: a `Gpu` is ~276 bytes and every other variant is a handful, so
+    /// carrying it inline would size the whole event queue to it.
+    GpuReady { def_id: i32, gpu: Box<Gpu> },
     /// Re-derive the server subscriptions from the current trees and send
     /// whatever changed — queued by [`WebApp::schedule_stream_sync`] and
     /// coalesced, so a document that opens forty canvases in one pass asks
@@ -656,7 +658,7 @@ impl WebApp {
                     gpu.config.width, gpu.config.height
                 ));
                 slot.render = Some(WindowRender {
-                    gpu,
+                    gpu: *gpu,
                     renderers,
                     painter,
                     overlay,
