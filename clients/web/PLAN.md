@@ -3316,3 +3316,23 @@ finished work, where a pending item reads as done.
   something a person does (the autoplay gesture, "open the window") or for a
   step the script also takes on its own. It is not legitimate as the page's
   answer to a script's clock.
+
+- ⬜ **No page in the suite exercises a `canvas`, and three bugs lived behind
+  that** *(found 2026-08-28, in the manual review; the three are fixed in their
+  commit — what is left is the coverage)*. The widget did nothing in a browser
+  and had never done anything: its view was never built, and once it was, the
+  host panicked twice on the way to the first frame (a `block_on` a browser
+  cannot serve, `std`'s `Instant`). None of the three is subtle. All three
+  needed somebody to open a page with a `canvas` on it, and no page in
+  `tests/` has one.
+
+  The gap is bigger than this widget, and it is what makes the entry worth
+  keeping: the acceptance pages cover the families that were being *built* when
+  each was written — plots, scopes, components, lifecycle, sequencing, MIDI,
+  Faust, buffers — and a widget that shipped on the desktop before the browser
+  front existed is covered by nothing. `canvas` is the one that was caught. The
+  cheap answer is a page that mounts one of every built-in element and asserts
+  only that the host draws a frame and does not panic, which is exactly the
+  shape the desktop's own squeeze test took (`clients/gui/PLAN.md`, "Nothing
+  resizes a window, so nothing tests a squeeze") and is what would have caught
+  all three of these at once.
