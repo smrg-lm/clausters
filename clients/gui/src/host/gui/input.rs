@@ -286,6 +286,12 @@ impl App {
         self.windows.get(&def_id).is_some_and(|ws| ws.shift)
     }
 
+    /// As [`Self::ctrl`], for Alt — the other modifier that makes a letter a
+    /// command rather than a character (`key_pressed` reads the pair).
+    pub(super) fn alt(&self, def_id: i32) -> bool {
+        self.windows.get(&def_id).is_some_and(|ws| ws.alt)
+    }
+
     pub(super) fn reset_timelines(&mut self, def_id: i32) {
         let ctx = self.gesture_ctx(def_id);
         let Some(ws) = self.windows.get_mut(&def_id) else {

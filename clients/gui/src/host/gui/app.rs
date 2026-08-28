@@ -756,9 +756,9 @@ impl ApplicationHandler<UserEvent> for App {
                 self.on_wheel(def_id, steps);
             }
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
-                // The letter, not the control character a chord would arrive
-                // as — see `key_pressed`.
-                let pressed = key_pressed(&event);
+                // The letter under a chord, the typed character otherwise —
+                // see `key_pressed`.
+                let pressed = key_pressed(&event, self.ctrl(def_id) || self.alt(def_id));
                 tracing::debug!(
                     "key: pressed={pressed:?} logical={:?} ctrl={} shift={}",
                     event.logical_key,
@@ -884,7 +884,7 @@ impl App {
 /// or `None` for one nothing focusable answers (the global shortcuts then run).
 /// A printable character (including Space) inserts; the named editing keys and
 /// Tab map one-to-one.
-/// **The key that was pressed, whatever was held over it.**
+/// **The key a chord was pressed on, and the character everything else typed.**
 ///
 /// winit's `logical_key` is the key *with modifiers applied*, which is right
 /// for typing and wrong for a shortcut: `Ctrl`+`Z` arrives as the control
@@ -895,10 +895,15 @@ impl App {
 /// `Ctrl`+`Shift`+`Z` is read as `z` with the shift taken from the tracked
 /// modifier state (which is where the rest of the host already reads it).
 ///
-/// Only the **letter** is restored: a named key (Escape, Tab, the arrows) is
-/// the same either way, and taking `logical_key` for those keeps the dead-key
-/// and IME behaviour the text path depends on.
-fn key_pressed(event: &winit::event::KeyEvent) -> Key {
+/// **Which is why it is asked only when a chord is held.** Applied to every
+/// key it also unshifts plain typing, and a text field could then hold no
+/// capital and no accented letter: `A` arrived as `a`, `Á` as `a`, and the
+/// field looked like it only spoke lowercase ASCII. So `chord` (Ctrl or Alt
+/// down, the two that turn a letter into a command) picks the reading: the
+/// bare letter for a shortcut, `logical_key` — shift applied, dead keys and
+/// IME composed — for everything a person is typing. A named key (Escape,
+/// Tab, the arrows) is the same either way.
+fn key_pressed(event: &winit::event::KeyEvent, chord: bool) -> Key {
     #[cfg(any(
         target_os = "windows",
         target_os = "macos",
@@ -910,7 +915,7 @@ fn key_pressed(event: &winit::event::KeyEvent) -> Key {
     ))]
     {
         use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
-        if let Key::Character(c) = event.key_without_modifiers() {
+        if chord && let Key::Character(c) = event.key_without_modifiers() {
             return Key::Character(c);
         }
     }
