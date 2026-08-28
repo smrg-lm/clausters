@@ -166,7 +166,7 @@ Beside the named ones there is the **default session**, `defaultSession`: the am
 ```js
 import { Session, Synth, play, Event, seq } from "clausters";
 
-const s = (await Session.embed()).adoptDefault();
+const s = (await Session.embed()).activate();
 
 play(new Event({ degree: 0, dur: 0.5 }));   // a note, now
 play(new seq.Pbind({ degree: new seq.Pseq([0, 2, 4]), dur: 0.5 }));
@@ -180,7 +180,7 @@ Resolution is one ladder, and it is worth knowing because it is what makes sever
 - **the server**: the one you passed, else the session of the routine running right now (a clock names its session), else the session active in a `use()` block, else the default session's;
 - **the clock**: the one you passed, else the clock driving the running routine, else the active session's, else the default session's — created at tempo 1.0 and started on first use, never at import.
 
-`adoptDefault()` lends the session's **server** and not its clock, which is deliberate: a stopped clock lent to `play()` would never fire. To put a piece on a *named* session's clock, use `s.play(pattern)` or write inside `s.use(...)`:
+`activate()` makes a session the ambient one and leaves it there — server, clock and random root together, the reference client's `Session.activate`. It is the unscoped form of `use()`, and in a page it is usually the one you want: a block cannot span an event handler, a timer or an `await`. `deactivate()` gives the slot back, and does nothing when another session holds it. Remember to `start()` a session whose clock a `play()` will resolve to; a stopped clock never fires. To reach one session without making it ambient, `s.play(pattern)` or write inside `s.use(...)`:
 
 ```js
 b.use(() => new Synth("beep"));   // reaches b, whatever the page's default is

@@ -184,7 +184,7 @@ over HTTP (<code>python3 -m http.server</code>) and open
         // filesystem, so the samples go straight into a buffer on the page's
         // engine. Either way the render is *samples* now: random-access
         // audio, sounded through an instrument like any other.
-        const session = (await Session.embed({ channels: 2 })).adoptDefault();
+        const session = (await Session.embed({ channels: 2 })).activate();
         const buffer = await Buffer.fromSamples(
           take.samples, take.channels, take.sampleRate,
           { server: session.server },

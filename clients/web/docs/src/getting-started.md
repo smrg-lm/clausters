@@ -58,9 +58,9 @@ Save this beside `dist/` and open it:
 
   document.getElementById("go").onclick = async () => {
     // One call: this tab's engine, a Server over it, and a clock anchored to
-    // that server's own sample counter. `adoptDefault` makes it the ambient
-    // one, so nothing below names a server.
-    const session = (await Session.embed()).adoptDefault();
+    // that server's own sample counter. `activate` makes it the ambient
+    // session, so nothing below names a server or a clock.
+    const session = (await Session.embed()).activate();
     await def.send();               // resolves when the server acked it
 
     const note = new Synth("hello", { freq: 330.0 });
@@ -82,7 +82,7 @@ A `Session` is not required: `new Server().boot()` gives the same server, and ev
 The same page drives a native server through the other factory:
 
 ```js
-const session = (await Session.live("ws://127.0.0.1:57120")).adoptDefault();
+const session = (await Session.live("ws://127.0.0.1:57120")).activate();
 ```
 
 with the server started as

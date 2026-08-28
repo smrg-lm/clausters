@@ -80,14 +80,15 @@ change.</div>
       // ---- opening the environment ----
       //
       // One call gives a server, a clock anchored to that server's own sample
-      // counter, and a random root of this session's own. `adoptDefault` lends
-      // its **server** to the page's default session, which is what makes the
-      // ambient verbs below resolve — the clock they use is the default
-      // session's, created and started by the first play.
+      // counter, and a random root of this session's own. `activate` makes it
+      // the ambient session — server, clock and random root — which is what
+      // makes the ambient verbs below resolve without naming anything. It is
+      // the unscoped form of `use()`, and the one a page wants: a block cannot
+      // span a button's handler.
       async function open() {
         // The AudioContext needs the gesture that got us here, which is why
         // this is a button.
-        session = (await Session.embed({ tempo: 2.0 })).adoptDefault();
+        session = (await Session.embed({ tempo: 2.0 })).activate();
         await defaultInstrument().send(session.server);
         log(`session open: tempo ${session.clock.tempo}, `
           + `${session.server.sizing.audioBuses} audio buses`);

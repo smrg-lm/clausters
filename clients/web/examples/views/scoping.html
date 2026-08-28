@@ -109,7 +109,7 @@ socket.</div>
       const windows = new Map();
 
       async function start() {
-        const session = (await Session.embed({ channels: 2 })).adoptDefault();
+        const session = (await Session.embed({ channels: 2 })).activate();
         await droneDef().send(session.server);
         await session.server.sync();
         node = new Synth("web_scoping_drone");

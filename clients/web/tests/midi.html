@@ -82,7 +82,7 @@
         await loadOsc();
         const server = await new Server().boot();
         const session = new Session(server);
-        session.adoptDefault();
+        session.activate();
         const clock = session.clock.start();
 
         // ---- one pattern, two destinations, one grid ----

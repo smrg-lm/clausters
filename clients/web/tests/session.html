@@ -81,7 +81,10 @@
         const audioB = await engine({ channels: 2 });
         const a = await Session.embed({ engine: audioA, tempo: 2.0 });
         const b = await Session.embed({ engine: audioB, tempo: 2.0 });
-        a.adoptDefault();   // the page's default: what an ambient verb reaches
+        // `activate` makes the whole session ambient -- server, clock and
+        // random root -- so an ambient `play` schedules on *this* clock, and a
+        // clock nobody started never fires.
+        a.activate().start();
         log(`two sessions open, each on its own engine`);
 
         const peakA = meter(audioA);

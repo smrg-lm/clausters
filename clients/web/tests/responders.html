@@ -72,7 +72,7 @@
         // A responder that names no receiver resolves the ambient session's
         // server — the page's answer to the reference client's default one.
         const session = new Session(server);
-        session.adoptDefault();
+        session.activate();
         const ambient = [];
         const ambientResp = oscfunc("/node_start")((msg) => ambient.push(Number(msg[1])));
         if (ambientResp.recv !== server.receiver) {

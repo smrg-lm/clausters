@@ -59,7 +59,7 @@
       };
 
       async function run() {
-        const session = (await Session.embed({ channels: 2 })).adoptDefault();
+        const session = (await Session.embed({ channels: 2 })).activate();
         const failures = [];
         const check = (ok, what) => { if (!ok) failures.push(what); };
         const shapes = {};

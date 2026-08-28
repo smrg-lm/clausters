@@ -255,8 +255,8 @@ export class Session extends Environment {
         { tempo, timebase, latency }: SessionOptions,
         how: "boot" | "attach",
     ): Promise<Session> {
-        // Not the default session's by being built: `adoptDefault()` is the
-        // verb for that, the way the reference client's `Session.live` passes
+        // Not the default session's by being built: `activate()` is the verb
+        // for that, the way the reference client's `Session.live` passes
         // `adopt_default=False` and leaves the slot to whoever asks.
         const server = new Server(options);
         await server[how]({ adoptDefault: false });
@@ -432,25 +432,36 @@ export class Session extends Environment {
     }
 
     /**
-     * Lends this session's **server** to the default session, first-wins —
-     * the browser counterpart of a free-standing `Server.boot()` adopting the
-     * default in the Python client. After it, `play(...)` and a bare
-     * `new Synth(...)` work with no session named.
+     * Makes this the ambient session, and leaves it there; returns `this`.
      *
-     * It lends the server and **not the clock**, which is the reference
-     * client's split and not an oversight: the default session's clock is
-     * created by the first ambient play and started right there, so lending a
-     * stopped one would hand `play()` a clock nothing ever starts. A
-     * session's own clock is reached through `session.play` or inside
-     * `session.use`.
+     * The unscoped form of {@link Session.use}. A block is the right shape when
+     * the session's life is the block's, and the wrong one for an environment
+     * that outlives every statement that uses it — which in a page is the
+     * ordinary case, not the exception: event handlers, a console, a timer, an
+     * `await` in the middle of a setup routine. After this, anything created
+     * with no session named (`play(...)`, a bare `new Synth`) resolves to *this*
+     * session's server, clock and random root.
      *
-     * Returns `this`. A server already adopted is left alone: whichever
-     * session claimed the slot first keeps it.
+     * The reference client's `Session.activate`, and its reason for existing is
+     * the same one written there: there is no block to be inside of.
      */
-    adoptDefault(): this {
-        main.server ??= this.server;
+    activate(): this {
+        main.currentSession = this;
         return this;
     }
+
+    /**
+     * Gives up being the ambient session; returns `this`.
+     *
+     * The counterpart of {@link Session.activate}, and a no-op when some
+     * *other* session is ambient — giving up a slot one does not hold would
+     * silently unseat the session that does.
+     */
+    deactivate(): this {
+        if (main.currentSession === this) main.currentSession = null;
+        return this;
+    }
+
 
     /**
      * An external OSC application as a destination, living as long as this

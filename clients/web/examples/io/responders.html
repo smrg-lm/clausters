@@ -80,7 +80,7 @@ Everything below runs on the <b>in-page engine</b>: no server process.
         // The page's own engine, adopted as the ambient session — which is
         // also what a responder naming no receiver will resolve.
         session = await Session.embed({ tempo: 1.0 });
-        session.adoptDefault();
+        session.activate();
         const server = session.server;
 
         // The reporter: a def whose only job is to say when something

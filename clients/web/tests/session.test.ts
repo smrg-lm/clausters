@@ -108,24 +108,35 @@ test("with nothing opened, resolution fails by naming the two ways to open one",
         assert.throws(() => new Synth("beep"), /no server to play on/);
     }));
 
-test("a session adopted as the default is what a bare constructor reaches", () =>
+test("an activated session is what a bare constructor reaches, and it lets go", () =>
     withCleanDefault(async () => {
         const { session, packets } = await fakeSession();
-        assert.equal(main.server, null, "a session is not the default by merely existing");
+        assert.equal(main.currentSession, null,
+            "a session is not ambient by merely existing");
 
-        session.adoptDefault();
+        session.activate();
         const synth = new Synth("beep", { freq: 440 });
         assert.equal(synth.server, session.server);
         assert.deepEqual(addrs(packets), ["/synth_new"]);
 
-        // First-wins: a second session does not take the slot from the first.
+        // Last-wins, not first-wins: `activate` is the reference client's, and
+        // it says "this one, from here on" rather than claiming a free slot.
         const other = await fakeSession();
-        other.session.adoptDefault();
-        assert.equal(main.server, session.server);
+        other.session.activate();
+        assert.equal(new Synth("beep").server, other.session.server);
 
-        // And giving it up puts the page back where it started.
+        // And it is reversible, which `adoptDefault` never was.
+        other.session.deactivate();
+        assert.equal(main.currentSession, null);
+
+        // Giving up a slot one does not hold is a no-op, so a session cannot
+        // unseat another by deactivating.
+        session.activate();
+        other.session.deactivate();
+        assert.equal(main.currentSession, session);
+
         session.close();
-        assert.equal(main.server, null);
+        assert.equal(main.currentSession, null);
         other.session.close();
     }));
 
@@ -133,7 +144,7 @@ test("`use` scopes the ambient session, and restores the previous one", () =>
     withCleanDefault(async () => {
         const a = await fakeSession();
         const b = await fakeSession();
-        a.session.adoptDefault();
+        a.session.activate();
 
         const inside = b.session.use(() => new Synth("beep"));
         assert.equal(inside.server, b.session.server, "the block's session wins");
@@ -149,7 +160,9 @@ test("`use` scopes the ambient session, and restores the previous one", () =>
             });
             assert.equal(main.currentSession, b.session);
         });
-        assert.equal(main.currentSession, null);
+        // Back to what was ambient around the blocks -- which `activate` made
+        // `a`, where the old first-wins adoption left this slot empty.
+        assert.equal(main.currentSession, a.session);
         a.session.close();
         b.session.close();
     }));
@@ -180,7 +193,7 @@ test("fromId adopts an id and sends nothing", () =>
         assert.deepEqual(addrs(packets), ["/node_set"]);
 
         // A handle that carries no server falls back to the ambient one.
-        session.adoptDefault();
+        session.activate();
         Group.fromId(7).free();
         assert.deepEqual(addrs(packets), ["/node_set", "/node_free"]);
         session.close();
@@ -232,7 +245,7 @@ test("two sessions are two random contexts", () =>
 test("play dispatches by kind against the ambient context", () =>
     withCleanDefault(async () => {
         const { session, packets } = await fakeSession();
-        session.adoptDefault();
+        session.activate();
 
         // An event, and a plain object of event keys: both a note, now.
         play(new Event({ degree: 0, dur: 0.5 }));
@@ -242,15 +255,16 @@ test("play dispatches by kind against the ambient context", () =>
             2,
         );
 
-        // A generator function, scheduled on the ambient clock — the default
-        // session's, created here: adopting a session lends its *server*, not
-        // its clock (a stopped clock lent to `play` would never fire).
+        // A generator function, scheduled on the ambient clock -- which is now
+        // *this session's*, because `activate` makes the whole session ambient
+        // (server, clock and random root) the way the reference client's does,
+        // where the old adoption lent the server alone and left the clock to
+        // the default session's.
         const routine = play(function* () {
             yield 1.0;
         }) as Routine;
         assert.ok(routine instanceof Routine);
-        assert.equal(routine.clock, defaultClock());
-        assert.notEqual(routine.clock, session.clock);
+        assert.equal(routine.clock, session.clock);
 
         assert.throws(() => play(42 as never), /don't know how to play/);
         session.close();
@@ -260,7 +274,7 @@ test("a session's clock names it, which is how a routine finds its server", () =
     withCleanDefault(async () => {
         const a = await fakeSession();
         const b = await fakeSession();
-        a.session.adoptDefault();
+        a.session.activate();
 
         // The routine runs on b's clock, so what it creates goes to b's
         // server — even though a is the page's default and b is not active.
