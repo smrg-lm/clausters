@@ -57,11 +57,16 @@ impl OscServer {
         let num_defs = self.translator.def_count();
         // avg/peak CPU are the engine's per-block load as a *percentage* of
         // the block budget (scsynth's convention). Peak is per poll window:
-        // reading it resets it. The trailing int (late blocks since boot, our
-        // engine-side xrun proxy) is appended after the scsynth-shaped fields,
-        // so positional readers keep working.
+        // reading it resets it. The trailing int is the late blocks since boot,
+        // our engine-side xrun proxy.
+        //
+        // **No leading pad.** scsynth's reply opens with an unused `1` and this
+        // one used to copy it, which left the counters one index off every
+        // other reply in this protocol -- `/server_query.reply` and the node
+        // queries all start at their first real field. The clients read this
+        // into a `ServerStatus` now, so the padding named nothing and only cost
+        // a reader the off-by-one.
         let args = vec![
-            OscType::Int(1),
             OscType::Int(counters.ugens.load(Ordering::Relaxed) as i32),
             OscType::Int(counters.synths.load(Ordering::Relaxed) as i32),
             OscType::Int(counters.groups.load(Ordering::Relaxed) as i32),

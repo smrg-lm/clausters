@@ -45,7 +45,7 @@ test("WsConnection: /server_status round trip", { skip: !hasServer }, async () =
         const reply = new Promise<number>((resolve) => {
             connection.addReply((bytes) => {
                 for (const { addr, args } of decodePacket(bytes)) {
-                    if (addr === "/server_status.reply") resolve(args[2] as number);
+                    if (addr === "/server_status.reply") resolve(args[1] as number);
                 }
             });
         });

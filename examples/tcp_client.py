@@ -46,7 +46,7 @@ def main():
 
         node = Synth("tcp_beep", {"freq": 330.0}, server=server)
         server.sync()
-        print("playing; synths =", server.status()[2])
+        print("playing; synths =", server.status().synths)
         time.sleep(1.0)
         node.free()
         print("freed")

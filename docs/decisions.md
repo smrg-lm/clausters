@@ -7179,3 +7179,27 @@ The Python writer moved to meet the format rather than the format bending to
 the reference client. That is the usual direction reversed, and it is right
 here: what is being defined is a **file**, not an API, and a file that only one
 language can write is not a format.
+
+## A reply opens on its first real field, so `/server_status` lost its leading pad
+
+scsynth's `/status.reply` opens with an unused `1`, and this protocol's
+`/server_status.reply` copied it. Nothing here ever read it: the field is a
+scsynth artifact that arrived by inheritance, and both clients skipped past it
+before parsing anything.
+
+It was dropped, and the reply now starts at `ugens`. What made that worth a
+breaking change to a documented wire rather than a curiosity to leave alone is
+that it was the **only** reply in the protocol shaped that way. `/server_query`
+opens on `audio_buses`, `/node_query` on `nodeID`, `/buffer_query` on its
+bufnum; every one of them is read positionally by clients that count from the
+first real field. `/server_status` made its readers count from the second, and
+that off-by-one is exactly the kind of thing a client gets wrong once and then
+carries — the more so now that both clients parse the reply into a
+`ServerStatus` record, where a padding argument names nothing at all and only
+shifts every index beside it.
+
+The compatibility this gives up is with **nobody**: the command names already
+diverge from scsynth (`/server_status`, not `/status`), so no sclang client
+speaks this protocol, and a padding int is not what would let one. The trailing
+`late_blocks` stays appended, which is the extension point that does earn its
+shape — a reader that stops at the eighth field keeps working.

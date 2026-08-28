@@ -176,13 +176,13 @@ mod osc {
         let builtin = if cfg!(feature = "synth") { 1 } else { 0 };
         server.send("/server_status", vec![]);
         let status = server.recv_until("/server_status.reply");
-        assert_eq!(status.args[4], OscType::Int(builtin + 1));
+        assert_eq!(status.args[3], OscType::Int(builtin + 1));
 
         // /def_free clears it
         server.send("/def_free", vec![OscType::String("fsine".into())]);
         server.send("/server_status", vec![]);
         let status = server.recv_until("/server_status.reply");
-        assert_eq!(status.args[4], OscType::Int(builtin));
+        assert_eq!(status.args[3], OscType::Int(builtin));
 
         server.quit();
     }

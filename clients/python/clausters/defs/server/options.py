@@ -4,7 +4,8 @@
 it sizes the handle's allocators and builds the process's command line.
 `ServerInfo` is the answer to `Server.query_info`: what the server it is
 talking to was actually built and booted with, which is not always the same
-thing.
+thing. `ServerStatus` is the answer to `Server.status`: what it is doing right
+now, which changes between two calls.
 """
 
 from dataclasses import dataclass, field
@@ -269,4 +270,63 @@ class ServerInfo:
             f"  taps    {taps}",
             f"  frame   {self.max_frame} bytes max",
             f"  stream  {self.max_stream_buses} buses per /bus_stream",
+        ])
+
+
+@dataclass
+class ServerStatus:
+    """The live counters a running server reports over ``/server_status``
+    (read-only; the result of `Server.status`).
+
+    The reply carries exactly these fields, in this order: the four counts, the
+    two CPU meters, the two sample rates and ``late_blocks``.
+
+    ``avg_cpu`` and ``peak_cpu`` are the audio thread's per-block processing
+    time as a **percentage of the block budget**, not of a core: the average is
+    an exponential moving average with a ~1 s time constant, the peak is the
+    worst single block **since the previous call**, so every call reports the
+    peak of its own interval and reading it resets the window. Expect the peak
+    to sit well above the average -- the callback must fit its worst block, not
+    its mean.
+
+    ``late_blocks`` counts, cumulatively since boot, the blocks whose
+    processing exceeded that budget. An occasional increment is a warning (a
+    device quantum larger than one block absorbs it); a steady climb is audible
+    trouble.
+
+    In an offline render both meters measure render speed rather than a real
+    callback, since there is none.
+    """
+
+    #: Live UGen instances across every playing node.
+    ugens: int
+    #: Playing synth nodes.
+    synths: int
+    #: Groups in the node tree, the root group included.
+    groups: int
+    #: Defs loaded, both families together (SynthDefs and FaustDefs).
+    defs: int
+    #: Percentage of the block budget, averaged (~1 s time constant).
+    avg_cpu: float
+    #: Percentage of the block budget, worst block since the previous call.
+    peak_cpu: float
+    #: The rate the server was asked for.
+    nominal_sample_rate: float
+    #: The rate the device actually runs at; it drifts from the nominal one.
+    actual_sample_rate: float
+    #: Blocks that missed their budget since boot. ``0`` against a server too
+    #: old to report it.
+    late_blocks: int = 0
+
+    def __str__(self) -> str:
+        drift = ("" if self.actual_sample_rate == self.nominal_sample_rate
+                 else f" (nominal {self.nominal_sample_rate:g})")
+        late = "" if self.late_blocks == 0 else f", {self.late_blocks} late"
+        return "\n".join([
+            f"server {self.actual_sample_rate:g} Hz{drift}",
+            f"  playing {self.synths} synths in {self.groups} groups, "
+            f"{self.ugens} ugens",
+            f"  loaded  {self.defs} defs",
+            f"  cpu     {self.avg_cpu:.1f}% avg, {self.peak_cpu:.1f}% peak"
+            f"{late}",
         ])

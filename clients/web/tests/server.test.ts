@@ -158,7 +158,7 @@ test("a SynthDef is defined, played, set and freed", { skip: !hasServer }, async
         // back from.
         const tree = await server.queryTree();
         assert.deepEqual(tree.children?.map((c) => c.id), [synth.id]);
-        assert.ok(Number((await server.status())[4]) >= 1, "the def is loaded");
+        assert.ok((await server.status()).defs >= 1, "the def is loaded");
 
         synth.set({ freq: 330.0 });
         await server.sync();

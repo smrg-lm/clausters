@@ -88,8 +88,10 @@ export {
     DEFAULT_TAP_FRAMES,
     DEFAULT_TAPS,
     formatServerInfo,
+    formatServerStatus,
 } from "./options.ts";
-export type { ServerInfo, ServerSizing } from "./options.ts";
+export type { ServerInfo, ServerSizing, ServerStatus } from "./options.ts";
+import type { ServerStatus } from "./options.ts";
 export { ServerQueries } from "./queries.ts";
 export { ServerStreams } from "./streams.ts";
 export { ServerTransport } from "./transport.ts";
@@ -787,15 +789,33 @@ export class Server {
     // ---- server control ----
 
     /**
-     * The live counters (`/server_status`): `[unused, ugens, synths, groups, defs,
-     * avgCpu, peakCpu, nominalSr, actualSr]`.
+     * The live counters (`/server_status`) as a {@link ServerStatus}: what is
+     * playing, what is loaded, and what the audio thread is spending.
+     *
+     * Structured, like every other reply this client hands back: the field
+     * order is the protocol's business, not the caller's.
+     * `formatServerStatus` reads it out.
+     *
+     * The peak CPU is the worst block **since the previous call**, so two
+     * readers polling the same server each reset the other's window.
      */
-    async status(timeout?: number): Promise<(number | string | boolean | null | Uint8Array)[]> {
+    async status(timeout?: number): Promise<ServerStatus> {
         const msg = await this.request("/server_status", [], {
             expect: ["/server_status.reply"],
             timeout,
         });
-        return msg.args;
+        const at = (i: number): number => Number(msg.args[i]);
+        return {
+            ugens: at(0),
+            synths: at(1),
+            groups: at(2),
+            defs: at(3),
+            avgCpu: at(4),
+            peakCpu: at(5),
+            nominalSampleRate: at(6),
+            actualSampleRate: at(7),
+            lateBlocks: msg.args.length > 8 ? at(8) : 0,
+        };
     }
 
     /**

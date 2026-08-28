@@ -56,7 +56,7 @@
               if (addr === "/server_status.reply") {
                 clearTimeout(timer);
                 connection.removeReply(onReply);
-                resolve(args[2]);
+                resolve(args[1]);
               }
             }
           };

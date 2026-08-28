@@ -23,9 +23,10 @@ export type {
     PortRate,
     PortSpec,
 } from "./patch.ts";
-export { formatServerInfo, Server } from "./server/index.ts";
+export { formatServerInfo, formatServerStatus, Server } from "./server/index.ts";
 export type {
-    MsgArg, ServerBootOptions, ServerInfo, ServerSizing, TimedMessage,
+    MsgArg, ServerBootOptions, ServerInfo, ServerSizing, ServerStatus,
+    TimedMessage,
     TransportGrid, TransportState,
 } from "./server/index.ts";
 export {

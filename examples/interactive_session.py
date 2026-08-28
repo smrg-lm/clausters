@@ -113,7 +113,7 @@ show_tree("empty tree (just the root group 0)")
 # %%
 beep = SynthDef("beep", out(0.0, sine(control("freq", 440.0)) * control("amp", 0.2)))
 beep.send(server)
-print("loaded def 'beep'; status:", server.status())   # [..., num_defs, ...]
+print(f"loaded def 'beep'; the server reports {server.status().defs} defs")
 
 # %% [markdown]
 # ## 5. Create groups

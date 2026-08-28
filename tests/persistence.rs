@@ -256,11 +256,11 @@ mod harness {
             panic!("never received {addr}");
         }
 
-        /// `/server_status.reply` def count (arg index 4).
+        /// `/server_status.reply` def count (arg index 3).
         pub fn def_count(&self) -> i32 {
             self.send("/server_status", vec![]);
             let status = self.recv_until("/server_status.reply");
-            match status.args[4] {
+            match status.args[3] {
                 OscType::Int(n) => n,
                 ref other => panic!("unexpected def count arg: {other:?}"),
             }

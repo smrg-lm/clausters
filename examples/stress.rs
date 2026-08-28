@@ -146,15 +146,15 @@ fn poll_status(
     loop {
         match recv(socket, fails)? {
             Some(msg) if msg.addr == "/server_status.reply" => {
-                let avg = match msg.args.get(5) {
+                let avg = match msg.args.get(4) {
                     Some(OscType::Float(v)) => *v,
                     _ => return Err("malformed /server_status.reply (avg)".into()),
                 };
-                let peak = match msg.args.get(6) {
+                let peak = match msg.args.get(5) {
                     Some(OscType::Float(v)) => *v,
                     _ => return Err("malformed /server_status.reply (peak)".into()),
                 };
-                let late = match msg.args.get(9) {
+                let late = match msg.args.get(8) {
                     Some(OscType::Int(v)) => *v,
                     _ => {
                         return Err(

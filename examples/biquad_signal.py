@@ -169,7 +169,7 @@ def run_live():
 
     fdef = build_def()
     server = Server(latency=LATENCY)                # 127.0.0.1:57110
-    print("status:", server.status()[:5])
+    print("status:", server.status())
     fdef.send(server)                       # RT: blocks until /done compiles
     clock = TempoClock(tempo=TEMPO)
     clock.play(Routine(lambda: voice(server)))

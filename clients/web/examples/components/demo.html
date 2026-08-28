@@ -104,7 +104,7 @@ through the raw singleton — the REPL surface a future TS client builds on.</di
         // would arrive either way; one listener covers both.
         engine.addReply((bytes) => {
           for (const { addr, args } of decodePacket(bytes)) {
-            if (addr === "/server_status.reply") synths = args[2];
+            if (addr === "/server_status.reply") synths = args[1];
             if (addr === "/bus_stream.reply") {
               for (let i = 0; i + 1 < args.length; i += 2) seen.add(args[i + 1]);
             }

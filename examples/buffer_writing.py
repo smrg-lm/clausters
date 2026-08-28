@@ -216,14 +216,14 @@ def main():
                                  "start_pos": float(int(LOOP * SR) // 2)},
                      target=stage)
         time.sleep(0.4)
-        print("   synths while it plays:", server.status()[2])
+        print("   synths while it plays:", server.status().synths)
         shot.set({"trig": 1.0})         # re-cued mid-pass: it starts over
         time.sleep(0.4)
         shot.set({"trig": 1.0})
         # Now left alone: the pass runs out and the done action takes the node
         # with it. Nothing frees it from here.
         time.sleep(1.5)
-        print("   synths once the pass ended:", server.status()[2],
+        print("   synths once the pass ended:", server.status().synths,
               "(it freed itself)")
 
         print("5. a comb delay running its line inside a pool buffer")

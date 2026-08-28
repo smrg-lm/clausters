@@ -44,7 +44,7 @@ from .info import (
     UgenInfo,
     UgenInput,
 )
-from .server import Server, ServerInfo, ServerOptions
+from .server import Server, ServerInfo, ServerOptions, ServerStatus
 from .signals import Signal
 from .synthdef import SynthDef
 from . import pv_expr
@@ -261,6 +261,7 @@ __all__ = [
     "Server",
     "ServerOptions",
     "ServerInfo",
+    "ServerStatus",
     "DefInfo",
     "ControlInfo",
     "BufferInfo",

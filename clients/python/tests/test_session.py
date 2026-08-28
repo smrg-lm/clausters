@@ -136,7 +136,7 @@ def test_embed_session_drives_in_process_server():
     s = _embed_session_or_skip()
     try:
         embed = s.server.interface.server          # the Clausters handle
-        assert s.server.status()[0] == 1           # request/reply over embed
+        assert s.server.status().groups >= 1       # request/reply over embed
 
         s.play(Pbind(instrument="default", freq=Pseq([440.0, 550.0, 660.0]),
                      dur=0.25, amp=0.2))

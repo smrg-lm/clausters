@@ -63,7 +63,12 @@ Two sections feed the client's defaults:
   still wins. `ServerOptions.args()` turns them into `clausters` CLI flags
   (`--outputs` only when set), so a server launched from the object matches it;
   `Server.query_info()` reads the same fields back from a running server
-  (including `input_channels` and the pool sizes) as a `ServerInfo`.
+  (including `input_channels` and the pool sizes) as a `ServerInfo`. Its live
+  counterpart is `Server.status()`, a `ServerStatus`: what the server is doing
+  now rather than what it was built with — how many synths, groups, UGens and
+  defs it holds, the audio thread's average and peak share of the block budget,
+  and the blocks that have missed it since boot. Both print as a readable
+  block.
 
   `ServerOptions` also carries the server's **behavior options** — `workers`,
   `tcp`, `ws`, `midi`, `persist`, `max_frame`, `max_clients`, `pin` — which

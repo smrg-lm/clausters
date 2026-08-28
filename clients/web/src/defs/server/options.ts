@@ -4,7 +4,9 @@
 // `ServerSizing` is what this client's allocators are built against, and
 // `ServerInfo` is the answer to `Server.queryInfo`: what the server it is
 // talking to was actually built and booted with, which is not always the same
-// thing. The `ServerOptions` half of the Python module — every flag a
+// thing; `ServerStatus` is the answer to `Server.status`: what it is doing
+// right now, which changes between two calls. The `ServerOptions` half of the
+// Python module — every flag a
 // *launched* server takes, and the command line it becomes — has no
 // counterpart here: a page cannot start a process, so a web client always
 // meets a server that is already running.
@@ -121,5 +123,68 @@ export function formatServerInfo(info: ServerInfo): string {
         `  taps    ${taps}`,
         `  frame   ${info.maxFrame} bytes max`,
         `  stream  ${info.maxStreamBuses} buses per /bus_stream`,
+    ].join("\n");
+}
+
+/**
+ * The live counters a running server reports over `/server_status` — the
+ * answer to {@link Server.status}.
+ *
+ * The reply carries exactly these fields, in this order: the four counts, the
+ * two CPU meters, the two sample rates and `lateBlocks`.
+ *
+ * `avgCpu` and `peakCpu` are the audio thread's per-block processing time as a
+ * **percentage of the block budget**, not of a core: the average is an
+ * exponential moving average with a ~1 s time constant, the peak is the worst
+ * single block **since the previous call**, so every call reports the peak of
+ * its own interval and reading it resets the window. Expect the peak to sit
+ * well above the average — the callback must fit its worst block, not its
+ * mean. In an offline render both measure render speed, since there is no
+ * callback.
+ */
+export interface ServerStatus {
+    /** Live UGen instances across every playing node. */
+    ugens: number;
+    /** Playing synth nodes. */
+    synths: number;
+    /** Groups in the node tree, the root group included. */
+    groups: number;
+    /** Defs loaded, both families together. */
+    defs: number;
+    /** Percentage of the block budget, averaged (~1 s time constant). */
+    avgCpu: number;
+    /** Percentage of the block budget, worst block since the previous call. */
+    peakCpu: number;
+    /** The rate the server was asked for. */
+    nominalSampleRate: number;
+    /** The rate the device actually runs at; it drifts from the nominal one. */
+    actualSampleRate: number;
+    /**
+     * Blocks that missed their budget since boot — cumulative. An occasional
+     * increment is a warning, a steady climb is audible trouble. `0` against a
+     * server too old to report it.
+     */
+    lateBlocks: number;
+}
+
+/**
+ * The server's live counters as the readable block `print` shows in the Python
+ * client (`ServerStatus.__str__`) — same fields, same order, same wording.
+ *
+ * A free function for the same reason {@link formatServerInfo} is one.
+ */
+export function formatServerStatus(status: ServerStatus): string {
+    const g = (value: number): string => Number(value.toPrecision(6)).toString();
+    const drift = status.actualSampleRate === status.nominalSampleRate
+        ? ""
+        : ` (nominal ${g(status.nominalSampleRate)})`;
+    const late = status.lateBlocks === 0 ? "" : `, ${status.lateBlocks} late`;
+    return [
+        `server ${g(status.actualSampleRate)} Hz${drift}`,
+        `  playing ${status.synths} synths in ${status.groups} groups, ` +
+            `${status.ugens} ugens`,
+        `  loaded  ${status.defs} defs`,
+        `  cpu     ${status.avgCpu.toFixed(1)}% avg, ` +
+            `${status.peakCpu.toFixed(1)}% peak${late}`,
     ].join("\n");
 }

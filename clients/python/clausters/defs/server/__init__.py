@@ -52,6 +52,7 @@ from .options import (
     DEFAULT_TAPS,
     DEFAULT_TAP_FRAMES,
     ServerInfo,
+    ServerStatus,
     ServerOptions,
 )
 from .queries import ServerQueries
@@ -64,6 +65,7 @@ from .transport import ServerTransport
 __all__ = [
     "Server",
     "ServerInfo",
+    "ServerStatus",
     "ServerOptions",
     "ServerQueries",
     "ServerStreams",
@@ -566,9 +568,28 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
     def notify(self, flag: bool = True, timeout: "float | None" = None):
         return self.request("/server_notify", 1 if flag else 0, timeout=timeout, expect=("/done",))
 
-    def status(self, timeout: "float | None" = None):
+    def status(self, timeout: "float | None" = None) -> ServerStatus:
+        """The live counters (``/server_status``) as a `ServerStatus`: what is
+        playing, what is loaded, and what the audio thread is spending.
+
+        Structured, like every other reply this client hands back: the field
+        order is the protocol's business, not the caller's.
+        ``print(status)`` reads it out. Blocking, RT only.
+
+        The peak CPU is the worst block **since the previous call**, so two
+        readers polling the same server each reset the other's window."""
         _, args = self.request("/server_status", timeout=timeout, expect=("/server_status.reply",))
-        return args
+        return ServerStatus(
+            ugens=int(args[0]),
+            synths=int(args[1]),
+            groups=int(args[2]),
+            defs=int(args[3]),
+            avg_cpu=float(args[4]),
+            peak_cpu=float(args[5]),
+            nominal_sample_rate=float(args[6]),
+            actual_sample_rate=float(args[7]),
+            late_blocks=int(args[8]) if len(args) > 8 else 0,
+        )
 
     def _barrier(self, timeout: "float | None" = None) -> None:
         """`sync`, but a ``/fail`` from the work being waited on ends the wait

@@ -232,7 +232,7 @@ def phase_reload(data_dir: str):
     proc = launch(data_dir)
     server = connect()
     try:
-        num_defs = server.status()[4]            # synth+faust defs reloaded at boot
+        num_defs = server.status().defs          # synth+faust defs reloaded at boot
         print(f"  server reports {num_defs} synth/faust defs after boot "
               "(built-in 'default' + fsine + bufplayer + mixer)")
         load_pluck(server, os.path.join(data_dir, "pluck.wav"))   # bufnum 0 again

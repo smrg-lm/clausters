@@ -163,7 +163,9 @@ impl TestServer {
 
     /// Ticks the engine and polls /server_status until the given reply argument
     /// matches or the deadline passes. Covers the network→FIFO→audio round
-    /// trip. Argument 2 is the synth count, 3 the group count.
+    /// trip. The reply opens on its first real field, so argument 1 is the
+    /// synth count and 2 the group count — reached through the two named
+    /// wrappers below rather than by index.
     fn wait_for_status(&mut self, arg_index: usize, expected: i32) {
         let mut out = vec![0.0f32; BLOCK_SIZE * 2];
         for _ in 0..100 {
@@ -178,6 +180,12 @@ impl TestServer {
     }
 
     fn wait_for_synth_count(&mut self, expected: i32) {
+        self.wait_for_status(1, expected);
+    }
+
+    /// The same poll on the group count, named so a test never spells the
+    /// field's position.
+    fn wait_for_group_count(&mut self, expected: i32) {
         self.wait_for_status(2, expected);
     }
 
@@ -213,21 +221,21 @@ fn status_reply_format() {
     let reply = server.recv();
 
     assert_eq!(reply.addr, "/server_status.reply");
-    // The 9 scsynth-shaped fields plus the appended late-block counter.
-    assert_eq!(reply.args.len(), 10);
-    assert_eq!(reply.args[0], OscType::Int(1));
-    assert_eq!(reply.args[2], OscType::Int(0)); // no synths yet
-    assert_eq!(reply.args[3], OscType::Int(1)); // root group
-    assert_eq!(reply.args[4], OscType::Int(1)); // the built-in "default" def
+    // The 8 scsynth-shaped fields it kept -- the leading unused int is not one
+    // of them -- plus the appended late-block counter.
+    assert_eq!(reply.args.len(), 9);
+    assert_eq!(reply.args[1], OscType::Int(0)); // no synths yet
+    assert_eq!(reply.args[2], OscType::Int(1)); // root group
+    assert_eq!(reply.args[3], OscType::Int(1)); // the built-in "default" def
     // avg/peak CPU are real measurements (percent, non-negative and finite).
-    for cpu in [&reply.args[5], &reply.args[6]] {
+    for cpu in [&reply.args[4], &reply.args[5]] {
         match cpu {
             OscType::Float(v) => assert!(*v >= 0.0 && v.is_finite(), "cpu = {v}"),
             other => panic!("cpu fields must be floats, got {other:?}"),
         }
     }
-    assert_eq!(reply.args[7], OscType::Double(48_000.0));
-    assert!(matches!(reply.args[9], OscType::Int(n) if n >= 0)); // late blocks
+    assert_eq!(reply.args[6], OscType::Double(48_000.0));
+    assert!(matches!(reply.args[8], OscType::Int(n) if n >= 0)); // late blocks
 
     server.quit();
 }
@@ -331,11 +339,11 @@ fn d_free_removes_def() {
     assert_eq!(server.recv().addr, "/done");
 
     server.send("/server_status", vec![]);
-    assert_eq!(server.recv().args[4], OscType::Int(2)); // default + temp
+    assert_eq!(server.recv().args[3], OscType::Int(2)); // default + temp
 
     server.send("/def_free", vec![OscType::String("temp".into())]);
     server.send("/server_status", vec![]);
-    assert_eq!(server.recv().args[4], OscType::Int(1));
+    assert_eq!(server.recv().args[3], OscType::Int(1));
 
     // s_new on the freed def now fails
     server.send(
@@ -462,10 +470,10 @@ fn g_new_and_free_update_group_count() {
         "/group_new",
         vec![OscType::Int(1), OscType::Int(1), OscType::Int(0)],
     );
-    server.wait_for_status(3, 2); // root + new group
+    server.wait_for_group_count(2); // root + new group
 
     server.send("/node_free", vec![OscType::Int(1)]);
-    server.wait_for_status(3, 1);
+    server.wait_for_group_count(1);
 
     server.quit();
 }
@@ -478,7 +486,7 @@ fn g_free_all_empties_group_but_keeps_it() {
         "/group_new",
         vec![OscType::Int(1), OscType::Int(1), OscType::Int(0)],
     );
-    server.wait_for_status(3, 2);
+    server.wait_for_group_count(2);
 
     // a synth inside the group (addAction tail of group 1)
     server.send(
@@ -494,7 +502,7 @@ fn g_free_all_empties_group_but_keeps_it() {
 
     server.send("/group_freeAll", vec![OscType::Int(1)]);
     server.wait_for_synth_count(0);
-    server.wait_for_status(3, 2); // the group itself survives
+    server.wait_for_group_count(2); // the group itself survives
 
     server.quit();
 }
@@ -2107,7 +2115,7 @@ fn the_transport_drives_a_piece_in_samples_with_no_grid() {
         "/group_new",
         vec![OscType::Int(100), OscType::Int(0), OscType::Int(0)],
     );
-    server.wait_for_status(3, 2); // the root group plus this one
+    server.wait_for_group_count(2); // the root group plus this one
 
     for (addr, args) in [
         ("/transport_group", vec![OscType::Int(100)]),
@@ -2632,7 +2640,7 @@ fn g_head_g_tail_and_n_order_reorder_children() {
         "/group_new",
         vec![OscType::Int(1), OscType::Int(1), OscType::Int(0)],
     );
-    server.wait_for_status(3, 2);
+    server.wait_for_group_count(2);
     for id in [1001, 1002, 1003] {
         server.new_synth(id, 1);
     }
@@ -2667,7 +2675,7 @@ fn g_head_rejects_auto_sorted_group() {
         "/group_new",
         vec![OscType::Int(1), OscType::Int(1), OscType::Int(0)],
     );
-    server.wait_for_status(3, 2);
+    server.wait_for_group_count(2);
     server.new_synth(1001, 1);
     server.wait_for_synth_count(1);
     // Turn on auto-sort: manual moves into the group must /fail.
@@ -2844,7 +2852,7 @@ fn clear_sched_flushes_pending_bundles() {
     }
     server.send("/server_status", vec![]);
     assert_eq!(
-        server.recv_until("/server_status.reply").args[2],
+        server.recv_until("/server_status.reply").args[1],
         OscType::Int(0),
         "a cleared bundle must not spawn its synth"
     );
