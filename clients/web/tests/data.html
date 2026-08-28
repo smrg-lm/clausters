@@ -38,7 +38,7 @@
     -->
     <script type="module">
       import {
-        loadOsc, loadCore, pageConnection, server as engine, Server,
+        loadCore, server as engine, Server,
         Bus, Buffer, Synth, SynthDef, data,
       } from "../dist/index.js";
       import { control, out, outCtl, sine } from "../dist/defs/index.js";
@@ -59,16 +59,12 @@
       const TONE_AMP = 0.4;
 
       async function run() {
-        await loadOsc();
-        await loadCore();
-
         const server = await new Server().boot();
         // The engine this handle booted -- its own, not the page's.
         const raw = server.engine;
         if (raw.context.state !== "running") {
           throw new Error(`context did not run: ${raw.context.state}`);
         }
-        const connection = await pageConnection();
         const info = await server.queryInfo();
         log(`engine: ${info.taps} taps of ${info.tapFrames} frames, `
           + `${info.controlBuses} control buses`);

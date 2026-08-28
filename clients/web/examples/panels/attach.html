@@ -65,7 +65,7 @@ same ids and the second would silently take the first's widgets.</div>
       Build it first: ./build.sh
     -->
     <script type="module">
-      import { GuiHost, gui, loadOsc, pageGuiConnection } from "../../dist/index.js";
+      import { GuiHost, gui } from "../../dist/index.js";
 
       const $ = (id) => document.getElementById(id);
       const log = (line) => { $("log").textContent += line + "\n"; };
@@ -82,7 +82,6 @@ same ids and the second would silently take the first's widgets.</div>
 
       async function run() {
         $("run").disabled = true;
-        await loadOsc();
 
         // ---- the owner: boot ----
         // Each handle takes one slice of the widget-id space, so the two never

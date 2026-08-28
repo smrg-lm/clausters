@@ -69,7 +69,7 @@ widget draws, clamped to half the shorter side of each.</div>
       Build it first: ./build.sh
     -->
     <script type="module">
-      import { GuiHost, gui, loadOsc, pageGuiConnection } from "../../dist/index.js";
+      import { GuiHost, gui } from "../../dist/index.js";
 
       const $ = (id) => document.getElementById(id);
       const log = (line) => { $("log").textContent += line + "\n"; };
@@ -119,7 +119,6 @@ widget draws, clamped to half the shorter side of each.</div>
 
       async function run() {
         $("run").disabled = true;
-        await loadOsc();
         const host = await new GuiHost().boot();
 
         // The host's own look, over the wire. A page has no launch flags at

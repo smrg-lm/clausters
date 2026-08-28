@@ -26,10 +26,10 @@
 // window and its nodes are freed, and what the page shares — the defs, the
 // sample buffers, the engine, the host — stays where it is.
 
-import { loadOsc, decodePacket, encodeMessage } from "./base/osc.ts";
+import { loadCore } from "./base/core.ts";
+import { decodePacket, encodeMessage } from "./base/osc.ts";
 import type { OscArg } from "./base/osc.ts";
 import { bundle_requirements, bundle_resolve } from "./core/clausters_core_web.js";
-import { loadCore } from "./base/core.ts";
 import { pagePools } from "./base/pool.ts";
 import type { Pools } from "./base/pool.ts";
 import { server } from "./engine/server.ts";
@@ -273,7 +273,6 @@ export async function openBundle(options: MountOptions): Promise<Mounted> {
     // The core first: the pools are built on its `Registry`, and the resolver
     // is one of its exports.
     await loadCore();
-    await loadOsc();
     const pools = options.pools ?? pagePools();
     const gui = await guiHost();
 

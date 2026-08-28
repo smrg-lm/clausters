@@ -161,7 +161,7 @@
 
         // The ambient host: with nothing registered every window above found
         // the session's host on its own; a registered one wins outright.
-        const registered = await new gui.GuiHost(await gui.pageGuiConnection()).boot();
+        const registered = await new gui.GuiHost().attach();
         gui.setAmbientHost(registered);
         const onRegistered = await scope(0);
         check(onRegistered.host === registered, "a registered host wins");

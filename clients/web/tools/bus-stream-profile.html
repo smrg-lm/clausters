@@ -58,7 +58,7 @@
     -->
     <script type="module">
       import {
-        loadOsc, loadCore, pageConnection, server as engine, Server,
+        server as engine, Server,
         Bus, Synth, SynthDef, GuiHost, guiHost, gui, decodePacket,
       } from "../dist/index.js";
       import { control, outCtl, sine } from "../dist/defs/index.js";
@@ -183,12 +183,9 @@
       // ---- the page ------------------------------------------------------
 
       async function run() {
-        await loadOsc();
-        await loadCore();
         const raw = await engine({ channels: 2, maxStreamBuses: MAX_BUSES });
         await raw.resume();
-        const connection = await pageConnection();
-        const server = await Server.open(connection);
+        const server = await new Server({ engine: raw }).boot();
 
         // One LFO per bus: the values the widgets read have to move, or the
         // host is drawing a constant and the tick does less work than it
@@ -199,7 +196,7 @@
         await server.sync();
 
         const gui_ = await guiHost();
-        const host = await GuiHost.page();
+        const host = await new GuiHost().boot();
 
         // The host's own reply door, wrapped where the cost lands: this is
         // the decode and the apply, the whole of what a shared segment would

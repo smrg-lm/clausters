@@ -51,7 +51,7 @@ this brings up only the GUI host.</div>
       Build it first: ./build.sh
     -->
     <script type="module">
-      import { GuiHost, Session, gui, loadOsc, pageGuiConnection, seq } from "../../dist/index.js";
+      import { GuiHost, Session, gui, seq } from "../../dist/index.js";
 
       const $ = (id) => document.getElementById(id);
       const log = (line) => { $("log").textContent += line + "\n"; };
@@ -66,7 +66,6 @@ this brings up only the GUI host.</div>
 
       async function run() {
         $("run").disabled = true;
-        await loadOsc();
 
         // ---- the take, rendered offline ----
         const nrt = await Session.nrt({ tempo: 2.0 });

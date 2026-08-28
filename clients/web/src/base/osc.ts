@@ -7,11 +7,11 @@
 // used (temporary from day one, removed with the consolidation into this
 // package).
 //
-// The wasm module must be loaded once before the sync codec calls:
-// `await loadOsc()` (idempotent) — the codec's name for `base/core.ts`'s one
-// core load, which everything else core-backed shares.
+// The wasm module must be loaded once before the sync codec calls, with the
+// one core load everything else core-backed shares: `await loadCore()`
+// (idempotent), from `base/core.ts`. `Server.boot`/`attach` do it themselves,
+// so only a caller that encodes without opening a server awaits it by hand.
 
-import { loadCore } from "./core.ts";
 import {
     osc_encode_bundle,
     osc_encode_immediate_bundle,
@@ -38,16 +38,8 @@ export interface OscMessage {
 }
 
 /**
- * Loads the core wasm once (later calls reuse it). `source` overrides the
- * default URL-relative lookup with raw module bytes (the node path).
- */
-export function loadOsc(source?: BufferSource): Promise<void> {
-    return loadCore(source);
-}
-
-/**
  * Encodes one OSC message: `encodeMessage("/synth_new", [["s","default"],
- * ["i",1000]])`. Requires a prior `loadOsc()`.
+ * ["i",1000]])`. Requires a prior `loadCore()`.
  */
 export function encodeMessage(addr: string, args: OscArg[] = []): Uint8Array {
     return osc_encode_message(addr, args);
@@ -55,7 +47,7 @@ export function encodeMessage(addr: string, args: OscArg[] = []): Uint8Array {
 
 /**
  * Decodes one packet into its messages (bundles flattened, in order).
- * Requires a prior `loadOsc()`.
+ * Requires a prior `loadCore()`.
  */
 export function decodePacket(bytes: Uint8Array): OscMessage[] {
     return osc_decode_packet(bytes) as unknown as OscMessage[];
@@ -74,7 +66,7 @@ export interface TimedOscMessage extends OscMessage {
 /**
  * `decodePacket` keeping each message's bundle time — what the responder layer
  * reads, so a callback is handed the same `time` the Python client hands its
- * own. Requires a prior `loadOsc()`.
+ * own. Requires a prior `loadCore()`.
  */
 export function decodePacketTimed(bytes: Uint8Array): TimedOscMessage[] {
     return osc_decode_packet_timed(bytes) as unknown as TimedOscMessage[];

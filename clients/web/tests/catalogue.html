@@ -38,7 +38,7 @@
     -->
     <script type="module">
       import {
-        loadOsc, pageConnection, server as engine, Server, Synth, SynthDef,
+        loadCore, server as engine, Server, Synth, SynthDef,
       } from "../dist/index.js";
       import {
         control, dseq, duty, fft, ifft, midSide, out, pvBrickWall, saw, sine,
@@ -95,7 +95,6 @@
       }
 
       async function run() {
-        await loadOsc();
         const server = await new Server().boot();
         // The engine this handle booted -- its own, not the page's.
         const raw = server.engine;
@@ -130,7 +129,7 @@
         await new SynthDef("cat_raw", out(0.0, noise())).send(server);
         await new SynthDef("cat_lp", out(0.0, ifft(pvBrickWall(
           fft(noise(), 1.0, { fftSize: 1024, hop: 0.5, wintype: 0 }),
-          0.75,   // keep the bottom quarter of the bins
+          0.75 // keep the bottom quarter of the bins
         )))).send(server);
         await server.sync();
 

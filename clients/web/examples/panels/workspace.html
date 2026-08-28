@@ -59,7 +59,7 @@ than pinning it to 1.</div>
       /examples/panels/workspace.html. Build it first: ./build.sh
     -->
     <script type="module">
-      import { GuiHost, gui, loadOsc, pageGuiConnection } from "../../dist/index.js";
+      import { GuiHost, gui } from "../../dist/index.js";
 
       const $ = (id) => document.getElementById(id);
       const log = (line) => {
@@ -152,7 +152,6 @@ than pinning it to 1.</div>
 
       async function run() {
         $("run").disabled = true;
-        await loadOsc();
         await new GuiHost().boot();
 
         const win = await workspace().open($("stage"));

@@ -35,8 +35,8 @@
     -->
     <script type="module">
       import {
-        loadOsc, loadCore, pageConnection, server as engine, Server,
-        Buffer, Synth, SynthDef, GuiHost, gui, pageGuiConnection,
+        loadCore, server as engine, Server,
+        Buffer, Synth, SynthDef, GuiHost, gui,
       } from "../dist/index.js";
       import { bufRateScale, bufRd, control, out, phasor, playBuf } from "../dist/defs/index.js";
 
@@ -78,9 +78,6 @@
       }
 
       async function run() {
-        await loadOsc();
-        await loadCore();
-
         const server = await new Server().boot();
         // The engine this handle booted -- its own, not the page's.
         const raw = server.engine;

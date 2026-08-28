@@ -79,8 +79,8 @@ clock and the server's, because they are the same clock.</div>
     -->
     <script type="module">
       import {
-        Server, SynthDef, TempoClock, WsConnection, loadOsc,
-        pageConnection, seq,
+        Server, SynthDef, TempoClock,
+        seq,
       } from "../../dist/index.js";
       import { DoneAction, Env, control, envGen, out, rlpf, saw } from "../../dist/defs/index.js";
 
@@ -113,13 +113,9 @@ clock and the server's, because they are the same clock.</div>
 
       async function connect() {
         const kind = document.querySelector("input[name=carrier]:checked").value;
-        await loadOsc();
-        const connection = kind === "page"
-          ? await pageConnection()
-          : await WsConnection.open(el("url").value);
         // The carrier decides which verb brings the server up: a page can
-        // start the engine behind `pageConnection()` (`boot`), and can start
-        // nothing on the machine a WebSocket points at (`attach`).
+        // start the engine it names (`boot`), and can start nothing on the
+        // machine a WebSocket points at (`attach`).
         server = await (kind === "page"
           ? new Server().boot()
           : new Server({ transport: "ws", url: $("url").value }).attach());

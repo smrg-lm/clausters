@@ -55,7 +55,7 @@ cursor to the sound means playing what was engraved.</div>
       /examples/editors/score-from-data.html. Build it first: ./build.sh
     -->
     <script type="module">
-      import { Event, Session, gui, loadOsc, seq } from "../../dist/index.js";
+      import { Event, Session, gui, seq } from "../../dist/index.js";
       const { notation } = gui;
 
       const $ = (id) => document.getElementById(id);
@@ -118,10 +118,6 @@ cursor to the sound means playing what was engraved.</div>
 
       async function run() {
         $("run").disabled = true;
-        // The core's wasm, before anything that computes: a script's client is
-        // native and has nothing to load.
-        await loadOsc();
-
         const source = buildTimeline();
         const score = await notation.Score.fromTimeline(source, {
           meter: "4/4", key: "C", beatUnit: 4, pageWidth: 1600,

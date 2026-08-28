@@ -38,8 +38,9 @@ through the raw singleton — the REPL surface a future TS client builds on.</di
       beaconed as a fetch, read from the HTTP access log.
     -->
     <script type="module">
-      import { server, startPage, loadOsc, encodeMessage, decodePacket, ANY_PEER,
-               DEFAULT_PEER } from "../../dist/index.js";
+      import { server, startPage, loadCore, encodeMessage, decodePacket, ANY_PEER,
+               DEFAULT_PEER,
+      } from "../../dist/index.js";
 
       const params = new URLSearchParams(location.search);
       const smoke = params.has("smoke");
@@ -60,7 +61,7 @@ through the raw singleton — the REPL surface a future TS client builds on.</di
         verdict(`FAIL: ${e.detail.error}`));
       element.addEventListener("clausters-ready", async (e) => {
         log(`bundle up: GuiDef ${e.detail.id}`);
-        await loadOsc(); // the codec runs through the shared core (wasm)
+        await loadCore(); // the codec runs through the shared core (wasm)
         const engine = await server();
         // Everything that comes back **except** the stream, which is the
         // element's host's and would drown the log. `DEFAULT_PEER` because

@@ -36,8 +36,8 @@
     -->
     <script type="module">
       import {
-        SampleClockTimebase, Server, SynthDef, TempoClock, loadOsc,
-        pageConnection, seq,
+        SampleClockTimebase, Server, SynthDef, TempoClock, loadCore,
+        seq,
       } from "../dist/index.js";
       import { control, out, sine } from "../dist/defs/index.js";
 
@@ -54,8 +54,6 @@
       const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
       async function run() {
-        await loadOsc();
-        const connection = await pageConnection();
         const server = await new Server().boot();
 
         // A plain sine: the event's own release frees it, so /node_end is the

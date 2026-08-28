@@ -63,8 +63,8 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
 
     <script type="module">
       import {
-        loadOsc, loadCore, pageConnection, server as pageEngine, Server,
-        Event, GuiHost, gui, seq, TempoClock, pageGuiConnection,
+        Server,
+        Event, GuiHost, gui, seq, TempoClock,
       } from "../../dist/index.js";
 
       const { notation } = gui;
@@ -97,8 +97,6 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
       // view is read-only, which is what a plain plot of a score wants.
       // `engraved` is a `source` holding the display list, not the list itself:
       // an edit re-engraves the score and calls `engraved.set(...)`, which
-        server = await new Server().boot();
-        const raw = server.engine;
       // reaches this definition *and* every window drawing it. Handed the raw
       // object the view would draw the same page and the definition would go
       // stale the first time a note moved.
@@ -190,9 +188,9 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
 
       async function run() {
         el("start").disabled = true;
-        await loadOsc();
-        await loadCore();
-        const raw = await pageEngine();
+        // The page sounds and draws, so the host goes over the engine this
+        // server brought up rather than one of its own.
+        server = await new Server().boot();
         // The page's host, and the ambient one from here on.
         await new GuiHost({ engine: server.engine }).boot();
 

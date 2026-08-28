@@ -60,7 +60,8 @@ power button is the autoplay gesture.</div>
     <script type="module">
       import "../../out/piano/index.js";   // registers <piano-keys>
       import { startPage, server, ANY_PEER } from "../../../dist/runtime.js";
-      import { loadOsc, encodeMessage, decodePacket } from "../../../dist/base/osc.js";
+      import { loadCore } from "../../../dist/base/core.js";
+      import { encodeMessage, decodePacket } from "../../../dist/base/osc.js";
 
       const smoke = new URLSearchParams(location.search).has("smoke");
       const element = document.querySelector("piano-keys");
@@ -82,7 +83,7 @@ power button is the autoplay gesture.</div>
       });
 
       async function smokeAsserts(id) {
-        await loadOsc();
+        await loadCore();
         const engine = await server();
         // The bus this instance was allocated — not a fixed 0. That is the
         // difference between a bundle and a component.

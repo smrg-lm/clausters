@@ -31,7 +31,7 @@
     -->
     <script type="module">
       import {
-        loadOsc, server as engine, Server, Synth,
+        loadCore, server as engine, Server, Synth,
         SynthDef,
       } from "../dist/index.js";
       import { DoneAction, Env, control, envGen, out, sine } from "../dist/defs/index.js";
@@ -49,7 +49,7 @@
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
       async function run() {
-        await loadOsc();
+        await loadCore();
 
         // The engine handle is the page's, and this test owns it: it brings it
         // up and resumes it, so what `Server` finds below is a server already

@@ -32,8 +32,8 @@
     <pre id="log"></pre>
     <script type="module">
       import {
-        loadOsc, loadCore, pageConnection, server as engine, Server,
-        Bus, Synth, SynthDef, GuiHost, gui, data, decodePacket, ANY_PEER, pageGuiConnection,
+        loadCore, server as engine, Server,
+        Bus, Synth, SynthDef, GuiHost, gui, data, decodePacket, ANY_PEER,
       } from "../dist/index.js";
       import { control, outCtl, sine } from "../dist/defs/index.js";
 
@@ -47,9 +47,6 @@
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
       async function run() {
-        await loadOsc();
-        await loadCore();
-
         const server = await new Server().boot();
         // The engine this handle booted -- its own, not the page's.
         const raw = server.engine;
@@ -81,8 +78,6 @@
           }
           return realSend(bytes, peer);
         };
-
-        const connection = await pageConnection();
 
         const scriptBus = Bus.control(1, { server });
         const hostBus = Bus.control(1, { server });

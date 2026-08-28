@@ -30,7 +30,7 @@
       the HTTP access log.
     -->
     <script type="module">
-      import { pageConnection, loadOsc, encodeMessage, decodePacket }
+      import { pageConnection, loadCore, encodeMessage, decodePacket }
         from "../dist/index.js";
 
       const smoke = new URLSearchParams(location.search).has("smoke");
@@ -65,7 +65,7 @@
         });
 
       async function run() {
-        await loadOsc();
+        await loadCore();
         const first = await pageConnection();
         const synths = await status(first);
         log(`first connection: /server_status.reply, ${synths} synth(s)`);

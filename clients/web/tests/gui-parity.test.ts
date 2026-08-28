@@ -21,7 +21,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { loadOsc } from "../src/base/osc.ts";
+import { loadCore } from "../src/base/core.ts";
 import { Env } from "../src/defs/ugens/index.ts";
 import { BASE_ID, GuiIdAllocator } from "../src/gui/ids.ts";
 import {
@@ -70,7 +70,7 @@ const here = new URL(".", import.meta.url);
 
 // The id allocator is core-backed (the same occupancy map the server and the
 // Python client use), so the wasm has to be in before it is exercised.
-await loadOsc();
+await loadCore();
 
 interface Vector {
     name: string;

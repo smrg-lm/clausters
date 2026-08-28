@@ -65,7 +65,7 @@ a chosen attack, decay, sustain and release.</div>
     -->
     <script type="module">
       import {
-        Buffer, Server, Session, loadOsc, pageConnection, play, seq, wavBytes,
+        Buffer, Server, Session, play, seq, wavBytes,
       } from "../../dist/index.js";
       import {
         DoneAction, Env, SynthDef, control, envGen, out, sine,
@@ -134,7 +134,6 @@ a chosen attack, decay, sustain and release.</div>
       // The take, heard: the samples go straight into the engine's buffer pool
       // and a `playBuf` reads them. This is the page's `pw-play`.
       async function hear() {
-        await loadOsc();
         const server = await new Server().boot();
         const buffer = await Buffer.fromSamples(
           take.samples, take.channels, take.sampleRate, { server },

@@ -40,8 +40,8 @@
     -->
     <script type="module">
       import {
-        OscFunc, Server, Session, Synth, SynthDef, loadOsc, oscfunc,
-        pageConnection, server as engine,
+        OscFunc, Server, Session, Synth, SynthDef, loadCore, oscfunc,
+        server as engine,
       } from "../dist/index.js";
       import { impulse, out, sendReply, sendTrig, sine } from "../dist/defs/index.js";
 
@@ -58,7 +58,6 @@
       const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
       async function run() {
-        await loadOsc();
         const server = await new Server().boot();
 
         // ---- the node notifications ----

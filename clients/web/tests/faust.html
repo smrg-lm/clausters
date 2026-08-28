@@ -50,7 +50,7 @@
       produced carry the same pitch the live engine just played.
     -->
     <script type="module">
-      import { Session, loadOsc, FaustDef, Synth, Bus, Buffer, Routine, data }
+      import { Session, loadCore, FaustDef, Synth, Bus, Buffer, Routine, data }
         from "../dist/index.js";
       import { boxes, signals } from "../dist/defs/index.js";
 
@@ -77,8 +77,7 @@
       };
 
       async function run() {
-        await loadOsc();
-        const session = await Session.embed({ own: true });
+        const session = await Session.embed();
         const server = session.server;
         const bus = Bus.audio(1, { server });
         // The engine runs at the context's rate; the client does not publish

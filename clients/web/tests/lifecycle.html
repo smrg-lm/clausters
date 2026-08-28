@@ -53,7 +53,8 @@
     <script type="module">
       import "/examples/out/graph-controls/index.js";  // <fm-trem>
       import { startPage, server, guiHost, pagePools, ANY_PEER } from "/dist/runtime.js";
-      import { loadOsc, decodePacket, encodeMessage } from "/dist/base/osc.js";
+      import { loadCore } from "/dist/base/core.js";
+      import { decodePacket, encodeMessage } from "/dist/base/osc.js";
 
       const CYCLES = 100;
 
@@ -151,7 +152,7 @@
 
         // The page's gesture: the survivor's engine half goes out.
         await startPage();
-        await loadOsc();
+        await loadCore();
         const engine = await server();
         const gui = await guiHost();
 

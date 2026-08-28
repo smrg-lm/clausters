@@ -13,7 +13,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { loadOsc } from "../src/base/osc.ts";
+import { loadCore } from "../src/base/core.ts";
 import { FaustDef } from "../src/defs/faustdef.ts";
 import { GraphDef } from "../src/defs/graphdef.ts";
 import { SynthDef } from "../src/defs/synthdef.ts";
@@ -93,7 +93,7 @@ import {
 
 const here = new URL(".", import.meta.url);
 
-await loadOsc();
+await loadCore();
 
 interface Vectors {
     synthdefs: { name: string; spec: unknown }[];

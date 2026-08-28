@@ -53,7 +53,7 @@ emit the same spec JSON, which is exactly what the parity vectors assert.</div>
 
     <script type="module">
       import {
-        loadOsc, pageConnection, Server, Synth,
+        Server, Synth,
         SynthDef, TempoClock, Routine,
       } from "../../dist/index.js";
       import { control, out, sine } from "../../dist/defs/index.js";
@@ -87,7 +87,6 @@ emit the same spec JSON, which is exactly what the parity vectors assert.</div>
       let lead = null;
 
       async function start() {
-        await loadOsc();
         server = await new Server().boot();   // or WsConnection
 
         await mathsLead().send(server);

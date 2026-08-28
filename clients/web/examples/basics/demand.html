@@ -65,7 +65,7 @@ socket. Swapping to a <code>--ws</code> server is the one line marked below.</di
     -->
     <script type="module">
       import {
-        loadOsc, pageConnection, Server, Synth, SynthDef,
+        Server, Synth, SynthDef,
       } from "../../dist/index.js";
       import {
         DoneAction, Env, control, dbrown, dgeom, dseq, duty, dxrand, envGen,
@@ -96,7 +96,7 @@ socket. Swapping to a <code>--ws</code> server is the one line marked below.</di
           220.0,
           330.0,
           dxrand([415.0, 494.0, 587.0], 3.0),
-          dgeom(4, 110.0, 1.5),   // drained: four rising pitches, not one
+          dgeom(4, 110.0, 1.5) // drained: four rising pitches, not one
         ], 0.0);
 
         // One driver for the note, another for its accent: `tduty` emits each
@@ -120,7 +120,6 @@ socket. Swapping to a <code>--ws</code> server is the one line marked below.</di
       let voice = null;
 
       async function start() {
-        await loadOsc();
         server = await new Server().boot();   // or WsConnection
 
         await sequenceDef().send(server);

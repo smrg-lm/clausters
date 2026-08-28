@@ -254,10 +254,63 @@ export class Server {
      * answer, which is why neither this nor the allocators under it is `readonly`.
      */
     sizing: ServerSizing;
-    nodes: NodeIdAllocator;
-    audioBuses: AudioBusAllocator;
-    controlBuses: ControlBusAllocator;
-    buffers: BufferAllocator;
+    /**
+     * The four allocators, built on first use rather than in the constructor.
+     *
+     * Every one of them is a core registry, and the core is wasm a page loads:
+     * `boot`/`attach` await that load themselves, so a handle built before it
+     * would otherwise die inside the constructor on a module nobody had loaded
+     * yet. Nothing reads an allocator before a verb has run, and
+     * {@link Server.reconcile} replaces them with the running server's own
+     * sizes, so building them late costs nothing and removes the one thing the
+     * constructor did that could fail.
+     */
+    private built: {
+        nodes?: NodeIdAllocator;
+        audioBuses?: AudioBusAllocator;
+        controlBuses?: ControlBusAllocator;
+        buffers?: BufferAllocator;
+    } = {};
+
+    get nodes(): NodeIdAllocator {
+        return (this.built.nodes ??= this.scoring
+            // An offline score has no `/node_end` stream to recycle from and
+            // no real-time bound on how many ids its length needs, so the
+            // registry is unbounded there — the reference client's rule.
+            ? NodeIdAllocator.unbounded(this.sizing.maxNodes)
+            : NodeIdAllocator.forMaxNodes(this.sizing.maxNodes, this.share));
+    }
+
+    set nodes(value: NodeIdAllocator) {
+        this.built.nodes = value;
+    }
+
+    get audioBuses(): AudioBusAllocator {
+        return (this.built.audioBuses ??= new AudioBusAllocator(
+            this.sizing.audioBuses, this.sizing.channels, this.share));
+    }
+
+    set audioBuses(value: AudioBusAllocator) {
+        this.built.audioBuses = value;
+    }
+
+    get controlBuses(): ControlBusAllocator {
+        return (this.built.controlBuses ??= new ControlBusAllocator(
+            this.sizing.controlBuses, this.share));
+    }
+
+    set controlBuses(value: ControlBusAllocator) {
+        this.built.controlBuses = value;
+    }
+
+    get buffers(): BufferAllocator {
+        return (this.built.buffers ??= new BufferAllocator(
+            this.sizing.maxBuffers, this.share));
+    }
+
+    set buffers(value: BufferAllocator) {
+        this.built.buffers = value;
+    }
     /**
      * Seconds added to every timed send — the scheduling headroom. Kept here
      * so the sequencing layer (a later milestone) has one place to read it.
@@ -368,18 +421,7 @@ export class Server {
         };
         this.timeout = timeout;
         this.share = share;
-        // An offline score has no `/node_end` stream to recycle from and no
-        // real-time bound on how many ids its length needs, so the registry is
-        // unbounded there — the reference client's rule.
-        const resolved = this.sizing;
-        this.nodes = this.scoring
-            ? NodeIdAllocator.unbounded(resolved.maxNodes)
-            : NodeIdAllocator.forMaxNodes(resolved.maxNodes, share);
         if (this.scoring) this.latency = 0.0;
-        this.audioBuses = new AudioBusAllocator(
-            resolved.audioBuses, resolved.channels, share);
-        this.controlBuses = new ControlBusAllocator(resolved.controlBuses, share);
-        this.buffers = new BufferAllocator(resolved.maxBuffers, share);
         if (latency !== undefined) this.latency = latency;
         this.listener = (addr, args) => this.dispatch({ addr, args });
         if (this.conn) this.openReceiver(this.conn);
@@ -553,13 +595,7 @@ export class Server {
             channels: info.channels,
             taps: info.taps,
         };
-        this.nodes = this.scoring
-            ? NodeIdAllocator.unbounded(this.sizing.maxNodes)
-            : NodeIdAllocator.forMaxNodes(this.sizing.maxNodes, this.share);
-        this.audioBuses = new AudioBusAllocator(
-            this.sizing.audioBuses, this.sizing.channels, this.share);
-        this.controlBuses = new ControlBusAllocator(this.sizing.controlBuses, this.share);
-        this.buffers = new BufferAllocator(this.sizing.maxBuffers, this.share);
+        this.built = {};        // rebuilt against the sizes just read
         return this;
     }
 

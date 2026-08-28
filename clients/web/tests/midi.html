@@ -45,7 +45,7 @@
     <script type="module">
       import {
         MidiFunc, MidiReceiver, MidiRtInterface, MidiServer, Server, Session,
-        Synth, SynthDef, loadOsc, pageConnection,
+        Synth, SynthDef, loadCore,
       } from "../dist/index.js";
       import { out, sine } from "../dist/defs/index.js";
       import { Pbind, Pseq } from "../dist/seq/index.js";
@@ -79,7 +79,6 @@
       }
 
       async function run() {
-        await loadOsc();
         const server = await new Server().boot();
         const session = new Session(server);
         session.activate();

@@ -34,7 +34,7 @@
       log.
     -->
     <script type="module">
-      import { Session, opfs, loadOsc, Buffer } from "../dist/index.js";
+      import { Session, opfs, loadCore, Buffer } from "../dist/index.js";
 
       const smoke = new URLSearchParams(location.search).has("smoke");
       const log = (line) => {
@@ -75,14 +75,14 @@
       }
 
       async function run() {
-        await loadOsc();
+        await loadCore();
         const FRAMES = 400;
         const take = wav(FRAMES, 2, 48000, (f, c) =>
           c === 0 ? Math.sin(f * 0.05) * 0.5 : -0.25);
         await opfs.writeFile("takes/take.wav", take.bytes);
         log(`wrote takes/take.wav (${take.bytes.length} bytes)`);
 
-        const session = await Session.embed({ own: true });
+        const session = await Session.embed();
 
         // 1) The read itself -- the same call a script makes against a native
         //    server, `Buffer.read(path)`, which until now had no file to name.

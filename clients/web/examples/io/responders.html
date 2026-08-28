@@ -57,7 +57,7 @@ Everything below runs on the <b>in-page engine</b>: no server process.
       // this page's AudioWorklet. `?auto=1` boots without the click, which is
       // how it is checked by hand under a headless browser.
       import {
-        OscFunc, Session, Synth, SynthDef, loadOsc, oscfunc,
+        OscFunc, Session, Synth, SynthDef, oscfunc,
       } from "../../dist/index.js";
       import {
         control, dust, envGen, Env, DoneAction, out, sendReply, sine,
@@ -75,7 +75,6 @@ Everything below runs on the <b>in-page engine</b>: no server process.
 
       async function boot() {
         document.getElementById("boot").disabled = true;
-        await loadOsc();
 
         // The page's own engine, adopted as the ambient session — which is
         // also what a responder naming no receiver will resolve.

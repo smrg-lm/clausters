@@ -63,7 +63,7 @@ obvious.</div>
     -->
     <script type="module">
       import {
-        Buffer, Routine, Server, Session, Synth, loadOsc, pageConnection, play, wavBytes,
+        Buffer, Routine, Server, Session, Synth, play, wavBytes,
       } from "../../dist/index.js";
       import {
         DoneAction, Env, SynthDef, control, conv, envGen, out, partconvFrames, sine,
@@ -112,7 +112,6 @@ obvious.</div>
 
       async function render() {
         $("render").disabled = true;
-        await loadOsc();
 
         const session = await Session.nrt({ tempo: 2.0 });
         const server = session.server;

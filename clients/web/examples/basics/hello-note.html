@@ -55,9 +55,7 @@ instrument, and it carries the gated envelope that makes a note end.</div>
       served root has to contain it. Build it first: ./build.sh
     -->
     <script type="module">
-      import {
-        Event, Server, loadOsc, pageConnection, play, seq,
-      } from "../../dist/index.js";
+      import { Event, Server, play, seq } from "../../dist/index.js";
 
       const $ = (id) => document.getElementById(id);
       const log = (line) => { $("log").textContent += line + "\n"; };
@@ -71,7 +69,6 @@ instrument, and it carries the gated envelope that makes a note end.</div>
       // makes `play` below need nothing.
       async function open() {
         $("open").disabled = true;
-        await loadOsc();
         server = await new Server().boot();
         log("server up: the in-page engine, adopted as the default session's");
         $("note-btn").disabled = false;

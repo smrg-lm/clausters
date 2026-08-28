@@ -16,7 +16,8 @@ import { spawnChild } from "./child.ts";
 
 import { WsConnection } from "../src/base/connection.ts";
 import type { Connection } from "../src/base/connection.ts";
-import { decodePacket, encodeMessage, loadOsc } from "../src/base/osc.ts";
+import { loadCore } from "../src/base/core.ts";
+import { decodePacket, encodeMessage } from "../src/base/osc.ts";
 import { GuiHost } from "../src/gui/host.ts";
 import { button, knob, label, panel, slider, waveform, window } from "../src/gui/guidef.ts";
 import { BASE_ID } from "../src/gui/ids.ts";
@@ -28,7 +29,7 @@ const udpPort = 57989; // the host front's UDP port, moved off 57210 likewise
 
 const hasHost = await access(hostBin).then(() => true, () => false);
 
-await loadOsc();
+await loadCore();
 
 /**
  * Starts a headless host and drives it through a connected `GuiHost`,

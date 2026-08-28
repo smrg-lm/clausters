@@ -41,7 +41,7 @@
     -->
     <script type="module">
       import {
-        loadOsc, loadCore, pageConnection, server as engine, Server,
+        loadCore, server as engine, Server,
         Buffer, OscFunc, Synth, SynthDef, data,
       } from "../dist/index.js";
       import { control, out, recordBuf, sine } from "../dist/defs/index.js";
@@ -84,8 +84,6 @@
       const AMP = 0.5;
 
       async function run() {
-        await loadOsc();
-        await loadCore();
         const server = await new Server().boot();
 
         // A tone recorded into an empty take, and heard while it records:

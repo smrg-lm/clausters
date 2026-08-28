@@ -50,7 +50,7 @@ than an <code>/synth_new</code> per note.</div>
 
     <script type="module">
       import {
-        loadOsc, pageConnection, Server, Synth,
+        Server, Synth,
         SynthDef, TempoClock, Routine,
       } from "../../dist/index.js";
       import { DoneAction, Env, control, envGen, out, rand, sine } from "../../dist/defs/index.js";
@@ -65,7 +65,7 @@ than an <code>/synth_new</code> per note.</div>
         const amp = control("amp", 0.2);
         const detune = rand(-4.0, 4.0);                       // ir: drawn once
         const env = envGen(Env.perc(0.005, 0.2), {
-          gate, doneAction: DoneAction.NONE,                  // never terminal
+          gate, doneAction: DoneAction.NONE // never terminal
         });
         const sig = sine(freq.add(detune)).mul(env).mul(amp);
         return new SynthDef("web_glide_lead", out(0.0, sig), out(1.0, sig));
@@ -76,7 +76,6 @@ than an <code>/synth_new</code> per note.</div>
       let lead = null;
 
       async function start() {
-        await loadOsc();
         server = await new Server().boot();   // or WsConnection
 
         await glideLead().send(server);

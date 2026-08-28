@@ -85,14 +85,12 @@
     -->
     <script type="module">
       import {
-        loadOsc, pageConnection, pageGuiConnection, WsConnection, Server, Bus, Synth, SynthDef, GuiHost, gui,
+        Server, Bus, Synth, SynthDef, GuiHost, gui,
       } from "../../dist/index.js";
       import { control, lpf, out, saw } from "../../dist/defs/index.js";
 
       const note = document.getElementById("note");
       const say = (text) => { note.textContent = text; };
-
-      await loadOsc();
 
       // The audio side: one engine in this tab, one `Server` over it. The
       // AudioContext starts suspended under the autoplay policy and the

@@ -81,12 +81,12 @@ element, and `tests/runtime-graph.test.ts` holds the line between them.
 
 The client seam (what the TypeScript client builds on):
 
-- `loadOsc()` / `encodeMessage(addr, args)` / `decodePacket(bytes)` — the OSC codec through `clausters-core` compiled to wasm (the `dist/core/` bundle), byte-identical to the server and the Python client by construction; `tests/osc-vectors.json` (generated from the Python client's codec) holds the parity. Arguments are tagged pairs — `encodeMessage("/synth_new", [["s","sine"], ["i",1000], ["f",440]])` — so the int/float distinction stays explicit.
+- `loadCore()` / `encodeMessage(addr, args)` / `decodePacket(bytes)` — the OSC codec through `clausters-core` compiled to wasm (the `dist/core/` bundle), byte-identical to the server and the Python client by construction; `tests/osc-vectors.json` (generated from the Python client's codec) holds the parity. Arguments are tagged pairs — `encodeMessage("/synth_new", [["s","sine"], ["i",1000], ["f",440]])` — so the int/float distinction stays explicit.
 - `Connection` — one duplex-OSC interface, two carriers: `WsConnection.open(url)` (a browser/node `WebSocket` to a `clausters --ws` server, default port 57120) and `pageConnection()` (the in-page engine, no process, no socket). Everything above the seam never names a transport.
 
 The client proper (`src/defs/`, mirroring the Python client's `clausters/defs/`):
 
-- `Server.open(connection)` — the only object that knows a connection. It sizes its node/bus/buffer allocators from the server's own `/server_query`, registers for the server's pushes (which is what recycles a node id once its `/node_end` arrives), and carries what is the server's own: the transport (`sendMsg`, `sendBundle`, `request`, `sync()`), the id pools, `freeDef`, the bus and tap subscriptions and the introspection queries about what it holds (`queryInfo`, `queryDefs`, `queryBuffers`, `queryUgens`, `queryTree`). A command addressed to a resource belongs to that resource, a question about one included: `def.send(server)`, `Synth.new(server, …)`, `Group.graph(server, …)`, `node.set`/`map`/`free`/`run`/`info`, `Bus.audio(server)` and `bus.set`, `Buffer.alloc(server, …)`, `buffer.info` and `buffer.getSamples`. **Everything that waits is a promise**: where the Python client blocks a thread on a reply, this one `await`s. How long it waits for one is the handle's — `server.timeout` (5 s), which every `timeout` argument falls back to when it is left out.
+- `new Server(options).boot()` / `.attach()` — the only object that knows a connection, and it opens its own: `boot` brings up the server this handle owns (the engine in this tab, or the one an `engine` names), `attach` reaches one already running (`{ transport: "ws", url }`). It sizes its node/bus/buffer allocators from the server's own `/server_query`, registers for the server's pushes (which is what recycles a node id once its `/node_end` arrives), and carries what is the server's own: the transport (`sendMsg`, `sendBundle`, `request`, `sync()`), the id pools, `freeDef`, the bus and tap subscriptions and the introspection queries about what it holds (`queryInfo`, `queryDefs`, `queryBuffers`, `queryUgens`, `queryTree`). A command addressed to a resource belongs to that resource, a question about one included: `def.send(server)`, `Synth.new(server, …)`, `Group.graph(server, …)`, `node.set`/`map`/`free`/`run`/`info`, `Bus.audio(server)` and `bus.set`, `Buffer.alloc(server, …)`, `buffer.info` and `buffer.getSamples`. **Everything that waits is a promise**: where the Python client blocks a thread on a reply, this one `await`s. How long it waits for one is the handle's — `server.timeout` (5 s), which every `timeout` argument falls back to when it is left out.
 - `SynthDef` + the lowercase UGen callables (`sine`, `saw`, `rlpf`, `envGen`, `out`, `pan2`, …), and `FaustDef` + the Faust signal API (`signals`), the two def families as peers. `GraphDef` wires several of either into one named, instantiable configuration with a port surface.
 - The graph composes **by method**, TypeScript having no operator overloading: `sine(freq).mul(amp)` where the Python client writes `sine(freq) * amp`. The emitted spec JSON is identical, and `tests/def-parity.test.ts` holds that against vectors frozen from the Python builders (`tests/gen-def-vectors.py`).
 
@@ -97,11 +97,12 @@ The GUI client (`src/gui/`, mirroring the Python client's `clausters/gui/`):
 - Widgets are addressed by **name**, not by integer: `win.widget("cutoff").set({ value: 800.0 })`, `.onEvent(fn)`, `.bind("/node_set", node.id, "freq")`. A **bound** widget's value goes from the host straight to the audio server, with no round trip through the page's script. **Nothing pumps** — events arrive as callbacks, `query` resolves a promise.
 
 ```js
-import { loadOsc, pageConnection, Server, Synth, SynthDef, control, out, sine }
+import { Server, Synth, SynthDef, control, out, sine }
   from "./dist/index.js";
 
-await loadOsc();
-const server = await Server.open(await pageConnection());  // or a WsConnection
+// The engine in this tab; `new Server({ transport: "ws", url }).attach()`
+// reaches a `clausters --ws` server instead.
+const server = await new Server().boot();
 
 const freq = control("freq", 440.0);
 await new SynthDef("beep", out(0.0, sine(freq).mul(0.2))).send(server);
@@ -120,7 +121,7 @@ The sequencing layer (`src/base/clock.ts` + `src/seq/`, mirroring the Python cli
 - `seq` — `Event`/`rest`, the value patterns (`Pseq`, `Pser`, `Prand`, `Pwhite`, `Pseries`, `Pgeom`, `Pfunc`, `Pn`, `Pconst`) and `Pbind`, plus the seekable counterpart: `Timeline` (a static, editable, beat-sorted list, `Timeline.fromPattern` to bounce one) and `Playhead` (play/stop/locate/loop). Random values come from the context stream a routine derives at creation, so `seed(n)` replays a whole piece.
 
 ```js
-import { Server, TempoClock, pageConnection, seq } from "./dist/index.js";
+import { Server, TempoClock, seq } from "./dist/index.js";
 
 const clock = new TempoClock(2.0, { timebase: await server.sampleTimebase() });
 clock.start();

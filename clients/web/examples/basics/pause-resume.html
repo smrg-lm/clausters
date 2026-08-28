@@ -46,7 +46,7 @@ paused: it is still there.</div>
 
     <script type="module">
       import {
-        loadOsc, pageConnection, Server, Synth,
+        Server, Synth,
         SynthDef,
       } from "../../dist/index.js";
       import { control, out, sine } from "../../dist/defs/index.js";
@@ -66,7 +66,6 @@ paused: it is still there.</div>
       let node = null;
 
       async function start() {
-        await loadOsc();
         server = await new Server().boot();   // or WsConnection
 
         await drone().send(server);

@@ -132,7 +132,7 @@
         //
         // With nothing registered the verb found the page's host on its own
         // (every window above proves it). A registered host wins outright.
-        const registered = await new gui.GuiHost(await gui.pageGuiConnection()).boot();
+        const registered = await new gui.GuiHost().attach();
         gui.setAmbientHost(registered);
         const onRegistered = await plot([1, 2, 3, 2, 1]);
         check(onRegistered.host === registered, "a registered host wins");

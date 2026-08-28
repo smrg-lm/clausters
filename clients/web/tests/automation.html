@@ -38,8 +38,8 @@
     -->
     <script type="module">
       import {
-        Bus, GuiHost, Server, Synth, SynthDef, gui, loadOsc,
-        pageConnection, seq, server as engine, pageGuiConnection,
+        Bus, GuiHost, Server, Synth, SynthDef, gui, loadCore,
+        seq, server as engine,
       } from "../dist/index.js";
       import { control, outCtl } from "../dist/defs/index.js";
 
@@ -68,7 +68,6 @@
       }
 
       async function run() {
-        await loadOsc();
         const server = await new Server().boot();
 
         // The target: a synth that writes its own `cutoff` control to a

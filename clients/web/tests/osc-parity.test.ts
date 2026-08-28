@@ -11,7 +11,8 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { loadOsc, encodeMessage, decodePacket } from "../src/base/osc.ts";
+import { loadCore } from "../src/base/core.ts";
+import { encodeMessage, decodePacket } from "../src/base/osc.ts";
 import type { OscArg } from "../src/base/osc.ts";
 
 interface Vector {
@@ -51,7 +52,7 @@ const toArgs = (raw: Vector["args"]): OscArg[] =>
             : ([tag, value] as OscArg),
     );
 
-await loadOsc();
+await loadCore();
 
 test("encode parity with the Python reference", () => {
     for (const vector of vectors) {

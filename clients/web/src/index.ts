@@ -79,8 +79,7 @@ export type {
     RenderOptions,
     RenderStats,
     RenderVerbOptions,
-    Renderable,
-} from "./render.ts";
+    Renderable } from "./render.ts";
 export { loadRenderer } from "./engine/render.ts";
 export type { EngineModule } from "./engine/render.ts";
 export { newPools, pagePools } from "./base/pool.ts";
@@ -90,23 +89,19 @@ export {
     decodePacketTimed,
     encodeBundle,
     encodeImmediateBundle,
-    encodeMessage,
-    loadOsc,
-} from "./base/osc.ts";
+    encodeMessage } from "./base/osc.ts";
 export type { BundleMessage, OscArg, OscMessage, TimedOscMessage } from "./base/osc.ts";
 export {
     TempoClock,
     defaultTicker,
     manualTicker,
     timerTicker,
-    workerTicker,
-} from "./base/clock.ts";
+    workerTicker } from "./base/clock.ts";
 export type { ManualTicker, Schedulable, TempoClockOptions, Ticker } from "./base/clock.ts";
 export {
     ManualTimebase,
     MonotonicTimebase,
-    SampleClockTimebase,
-} from "./base/timebase.ts";
+    SampleClockTimebase } from "./base/timebase.ts";
 export type { Timebase } from "./base/timebase.ts";
 export { FunctionStream, Routine, StopStream, Stream, YieldAndReset } from "./base/stream.ts";
 export type { RoutineFunc, RoutineState } from "./base/stream.ts";
@@ -122,16 +117,14 @@ export {
     midifunc,
     oscfunc,
     setDefaultMidiReceiver,
-    setDefaultOscReceiver,
-} from "./responders.ts";
+    setDefaultOscReceiver } from "./responders.ts";
 export type {
     ArgMatcher,
     MidiCallback,
     MidiMatcher,
     OscCallback,
     OscValue,
-    ResponderMessage,
-} from "./responders.ts";
+    ResponderMessage } from "./responders.ts";
 export { OscReceiver } from "./base/receiver.ts";
 export type { OscHandler } from "./base/receiver.ts";
 // MIDI: the ports, the score, the destination and the receiving door. The
@@ -144,8 +137,7 @@ export {
     MidiScore,
     MidiServer,
     parseMidi,
-    requestMidiPorts,
-} from "./base/midi.ts";
+    requestMidiPorts } from "./base/midi.ts";
 export type {
     MidiHandler,
     MidiInputPort,
@@ -155,8 +147,7 @@ export type {
     MidiPortOptions,
     MidiPorts,
     MidiReceiverOptions,
-    MidiServerOptions,
-} from "./base/midi.ts";
+    MidiServerOptions } from "./base/midi.ts";
 export { Rng, choice, currentRng, seed, spawnRng, uniform } from "./base/rand.ts";
 export * as builtins from "./base/builtins.ts";
 export * as seq from "./seq/index.ts";
@@ -216,8 +207,7 @@ export type {
     Resolved,
     Selection,
     Step,
-    Undone,
-} from "./document.ts";
+    Undone } from "./document.ts";
 
 /**
  * The page's own filesystem (OPFS) — where a soundfile a tab reads actually

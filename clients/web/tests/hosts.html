@@ -64,7 +64,7 @@
     -->
     <script type="module">
       import {
-        loadOsc, pageConnection, engine, Server, Synth, SynthDef,
+        loadCore, engine, Server, Synth, SynthDef,
       } from "../dist/index.js";
       import { control, out, sine } from "../dist/defs/index.js";
       import { decodePacket, encodeMessage } from "../dist/base/osc.js";
@@ -147,7 +147,7 @@
         audio.addReply((bytes) => bridge.server_reply(bytes));
         bridge.connect_page((bytes) => audio.send(bytes));
 
-        const server = await new Server({ connection: await pageConnection(audio) }).boot();
+        const server = await new Server({ engine: audio }).boot();
         await new SynthDef(
           "hosts_tone", out(0.0, sine(control("freq", 220.0)).mul(control("amp", 0.1))),
         ).send(server);
@@ -174,7 +174,7 @@
       }
 
       async function accept() {
-        await loadOsc();
+        await loadCore();
         const { default: init, start } = await import("../dist/gui-host/clausters_gui.js");
         await init();
 

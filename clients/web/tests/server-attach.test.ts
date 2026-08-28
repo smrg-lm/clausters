@@ -13,12 +13,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { loadOsc } from "../src/base/osc.ts";
+import { loadCore } from "../src/base/core.ts";
 import type { Connection } from "../src/base/connection.ts";
 import { Server } from "../src/defs/server/index.ts";
 import { ServerError } from "../src/errors.ts";
 
-await loadOsc();
+await loadCore();
 
 /** A carrier that records what it is given and never replies. */
 function silent(url?: string): Connection & { packets: Uint8Array[] } {

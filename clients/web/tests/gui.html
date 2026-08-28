@@ -35,8 +35,8 @@
     -->
     <script type="module">
       import {
-        loadOsc, server as engine, Server, Synth,
-        SynthDef, GuiHost, gui, pageGuiConnection,
+        loadCore, server as engine, Server, Synth,
+        SynthDef, GuiHost, gui,
       } from "../dist/index.js";
       import { control, out, sine } from "../dist/defs/index.js";
 
@@ -71,7 +71,7 @@
       }
 
       async function run() {
-        await loadOsc();
+        await loadCore();
 
         // The audio side first: something for a bound widget to drive. This
         // test brings the page's engine up and resumes it, so the handle below

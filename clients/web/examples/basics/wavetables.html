@@ -59,7 +59,7 @@ band-limited recipe instead of a clipped edge.</div>
 
     <script type="module">
       import {
-        loadOsc, pageConnection, Server, Buffer,
+        Server, Buffer,
         Synth, SynthDef,
       } from "../../dist/index.js";
       import { DoneAction, Env, control, envGen, out, shaper, sine, vosc } from "../../dist/defs/index.js";
@@ -100,7 +100,6 @@ band-limited recipe instead of a clipped edge.</div>
       let shapedVoice = null;
 
       async function start() {
-        await loadOsc();
         server = await new Server().boot();   // or WsConnection
 
         // 2048 frames hold a 1024-point table; the allocator hands out 0, 1, 2

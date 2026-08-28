@@ -39,7 +39,7 @@
 // ```
 
 import { main } from "./base/main.ts";
-import { loadOsc } from "./base/osc.ts";
+import { loadCore } from "./base/core.ts";
 import { asDef, exprChannels, isExpr } from "./defs/asdef.ts";
 import { Buffer } from "./defs/buffer.ts";
 import { FaustDef } from "./defs/faustdef.ts";
@@ -518,7 +518,7 @@ export async function resolveHost(): Promise<GuiHost> {
     // surface that resolves what it needs rather than asking for it. A page
     // that opened a `Session` first has already paid this; one that only wants
     // to look at something has not.
-    await loadOsc();
+    await loadCore();
     // Not the ambient one: this host is the *fallback* of the ambient ladder,
     // and registering it would make the fallback outrank a session opened
     // afterwards. The reference client draws the same line

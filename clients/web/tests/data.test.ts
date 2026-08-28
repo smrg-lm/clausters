@@ -21,7 +21,7 @@ import test from "node:test";
 import { readFile } from "node:fs/promises";
 
 import { loadCore } from "../src/base/core.ts";
-import { decodePacket, encodeMessage, loadOsc } from "../src/base/osc.ts";
+import { decodePacket, encodeMessage } from "../src/base/osc.ts";
 import type { Connection } from "../src/base/connection.ts";
 import { Buffer } from "../src/defs/buffer.ts";
 import { samplesToBlob } from "../src/base/bulk.ts";
@@ -37,7 +37,6 @@ import {
 } from "../src/data/index.ts";
 
 await loadCore();
-await loadOsc();
 
 interface Vectors {
     peaks: {

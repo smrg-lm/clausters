@@ -26,10 +26,10 @@ lowercase callables the Python client uses — a saw through a resonant filter,
 under an ADSR — then sent, instanced and retuned live.
 
 The <b>carrier</b> is the choice below, and it is the only line of this page
-that knows about one: <code>pageConnection()</code> runs the audio server in
-this tab's AudioWorklet, with no process anywhere; <code>WsConnection</code>
-talks to a <code>clausters --ws</code> server over a WebSocket. Everything
-after that line is the same code.</div>
+that knows about one: the default runs the audio server in this tab's
+AudioWorklet, with no process anywhere, and
+<code>{ transport: "ws", url }</code> talks to a <code>clausters --ws</code>
+server over a WebSocket. Everything after that line is the same code.</div>
 
       <div class="row">
         <label><input type="radio" name="carrier" value="page" checked />
@@ -63,7 +63,7 @@ after that line is the same code.</div>
     -->
     <script type="module">
       import {
-        loadOsc, pageConnection, WsConnection, Server,
+        Server,
         Synth, SynthDef,
       } from "../../dist/index.js";
       import { DoneAction, Env, control, envGen, out, rlpf, saw } from "../../dist/defs/index.js";
@@ -98,25 +98,16 @@ after that line is the same code.</div>
 
       async function connect() {
         const kind = document.querySelector("input[name=carrier]:checked").value;
-        await loadOsc();
-
-        let connection;
-        if (kind === "page") {
-          // The engine is this page's; the AudioContext needs the click that
-          // got us here to start, which is why `connect` is a button.
-          connection = await pageConnection();
-          log("connected: the in-page engine (no server process)");
-        } else {
-          connection = await WsConnection.open($("url").value);
-          log(`connected: ${$("url").value}`);
-        }
-
         // The carrier decides which verb brings the server up: a page can
-        // start the engine behind `pageConnection()` (`boot`), and can start
-        // nothing on the machine a WebSocket points at (`attach`).
+        // start the engine it names (`boot`) -- and the AudioContext needs the
+        // click that got us here, which is why `connect` is a button -- and it
+        // can start nothing on the machine a WebSocket points at (`attach`).
         server = await (kind === "page"
           ? new Server().boot()
           : new Server({ transport: "ws", url: $("url").value }).attach());
+        log(kind === "page"
+          ? "connected: the in-page engine (no server process)"
+          : `connected: ${$("url").value}`);
         log(`the server reports ${server.sizing.audioBuses} audio buses, `
           + `${server.sizing.maxBuffers} buffer slots`);
 

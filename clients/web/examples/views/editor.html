@@ -68,16 +68,14 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
 
     <script type="module">
       import {
-        loadOsc, loadCore, pageConnection, server as pageEngine, Server,
-        Buffer, Synth, SynthDef, GuiHost, gui, pageGuiConnection,
+        Server,
+        Buffer, Synth, SynthDef, GuiHost, gui,
       } from "../../dist/index.js";
       import { bufRateScale, bufRd, control, out, phasor, playBuf } from "../../dist/defs/index.js";
 
       const el = (id) => document.getElementById(id);
       const log = (line) => { el("log").textContent += line + "\n"; };
 
-        server = await new Server().boot();
-        const raw = server.engine;
       let server, raw, win = null;
       let buffer = null;          // the loaded Buffer handle
       let voice = null;           // the sounding node, if any
@@ -259,16 +257,17 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
       }
 
       async function run() {
-        await loadOsc();
-        await loadCore();
-        raw = await pageEngine();
+        // This page both sounds and draws, and a bound widget only reaches a
+        // node on the engine its host talks to -- so the host is booted over
+        // the engine this server brought up, not over one of its own.
+        server = await new Server().boot();
+        raw = server.engine;
         // The page's host, and the ambient one from here on — so a view opens
         // without being told where to draw, exactly as the script does after
         // `session.gui()`. Where the drawing *goes* is the document's say: the
         // view is opened into `#stage` below, and its canvas is made inside
         // that element and follows its box, at the display's true resolution.
-        await new GuiHost({ engine: server.engine }).boot();
-
+        await new GuiHost({ engine: raw }).boot();
 
         el("file").disabled = false;
         el("tone").disabled = false;

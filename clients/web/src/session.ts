@@ -38,7 +38,7 @@ import { OscDestination } from "./base/destination.ts";
 import { Environment } from "./base/environment.ts";
 import { main } from "./base/main.ts";
 import type { IdShare } from "./base/ids.ts";
-import { loadOsc } from "./base/osc.ts";
+import { loadCore } from "./base/core.ts";
 import type { RenderOptions, RenderStats } from "./render.ts";
 import { Server } from "./defs/server/index.ts";
 import type { ServerOptions } from "./defs/server/index.ts";
@@ -155,7 +155,7 @@ export class Session extends Environment {
      * seconds; at the default 1.0 a beat is a second.
      */
     static async nrt({ tempo = 1.0 }: { tempo?: number } = {}): Promise<Session> {
-        await loadOsc();
+        await loadCore();
         // Neither booted nor attached: a score has no server to bring up and
         // none to reach, so the handle is the bare one the reference client
         // builds (`Server(interface=OscNrtInterface())`) and the allocators keep
@@ -175,11 +175,12 @@ export class Session extends Environment {
      * either way the client shares memory with it — which is what lets a whole
      * take go into a buffer in one copy.
      *
-     * Defaults to the page's shared engine, which is what a page wants: its
-     * components play into one mix. Pass `own: true` for an engine of this
-     * session's own, so its nodes, buses and buffers share nothing with the
+     * `boot`s an engine of this session's own, which is the reference
+     * client's default and the reason there is no flag here: ownership is the
+     * verb's to say. So its nodes, buses and buffers share nothing with the
      * rest of the document — the case several sessions in one page exist for.
-     * An engine this session opened is closed with it; the page's is not.
+     * Pass `engine` to drive one that is already open instead; an engine this
+     * session opened is closed with it, one handed in is not.
      *
      * The `AudioContext` needs a user gesture to start, so call this from a
      * click rather than at load.
@@ -207,7 +208,7 @@ export class Session extends Environment {
          */
         channels?: number;
     } = {}): Promise<Session> {
-        await loadOsc();
+        await loadCore();
         // Handed an engine, this session drives that one and does not own it —
         // the reference client's `server=`. Otherwise `boot` brings up one of
         // its own, which is the reference's default and the reason there is no
@@ -248,7 +249,7 @@ export class Session extends Environment {
         url = "ws://127.0.0.1:57120",
         { tempo = 1.0, timebase, latency, timeout, share }: SessionOptions = {},
     ): Promise<Session> {
-        await loadOsc();
+        await loadCore();
         // `attach`: nothing here started that server, and a WebSocket that
         // connects proves a listener rather than a server — so the session
         // refuses to be built against silence instead of dropping every later

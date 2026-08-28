@@ -12,13 +12,13 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { loadOsc } from "../src/base/osc.ts";
+import { loadCore } from "../src/base/core.ts";
 import { Env } from "../src/defs/ugens/index.ts";
 import { Automation, autoLaneDef, envGenArgs, LANE_DEF } from "../src/seq/automation.ts";
 
 const here = new URL(".", import.meta.url);
 
-await loadOsc();
+await loadCore();
 
 interface AutomationVector {
     name: string;

@@ -16,7 +16,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { encodeBundle, encodeMessage, loadOsc } from "../src/base/osc.ts";
+import { loadCore } from "../src/base/core.ts";
+import { encodeBundle, encodeMessage } from "../src/base/osc.ts";
 import type { Connection } from "../src/base/connection.ts";
 import { OscReceiver } from "../src/base/receiver.ts";
 import { OscFunc, oscfunc } from "../src/responders.ts";
@@ -25,7 +26,7 @@ import { TempoClock, manualTicker } from "../src/base/clock.ts";
 import { ManualTimebase } from "../src/base/timebase.ts";
 
 const here = new URL(".", import.meta.url);
-await loadOsc();
+await loadCore();
 
 /** A carrier that sends nowhere and lets a test push packets in. */
 class FakeConnection implements Connection {

@@ -3337,7 +3337,7 @@ finished work, where a pending item reads as done.
   resizes a window, so nothing tests a squeeze") and is what would have caught
   all three of these at once.
 
-- ⬜ **`boot()` adopts the page's engine where the reference client refuses**
+- ✅ **`boot()` adopts the page's engine where the reference client refuses**
   *(found 2026-08-28, auditing the client's abstractions against the reference
   after a reader asked why a page's boot takes three lines)*. **This is the
   root of four of the entries below and is fixed first.**
@@ -3366,7 +3366,7 @@ finished work, where a pending item reads as done.
   and Chrome caps them at six — is **documented**, not designed around, exactly
   as `io/servers.py` documents needing a backend that mixes several streams.
 
-- ⬜ **The carrier is a positional argument where the reference builds its own**
+- ✅ **The carrier is a positional argument where the reference builds its own**
   *(found 2026-08-28, same pass)*. `new Server(connection)` and
   `new GuiHost(connection)` make opening a carrier the caller's first step, so
   a page's boot reads `await loadOsc(); new Server(await pageConnection())`
@@ -3385,7 +3385,7 @@ finished work, where a pending item reads as done.
   `loadOsc`, `pageConnection`, `pageGuiConnection`, `engine` and `newGuiHost`
   stop appearing in examples at all.
 
-- ⬜ **`Session.embed` inverted the reference's default with a flag the
+- ✅ **`Session.embed` inverted the reference's default with a flag the
   reference does not have** *(found 2026-08-28, same pass)*. Python is
   `embed(tempo, latency, workers, timebase, server=None)` — no `own`, and every
   session opens and owns a fresh server unless handed one. This client is
@@ -3394,7 +3394,7 @@ finished work, where a pending item reads as done.
   `own` has nothing left to say and goes; `server=` is the handed-one case and
   keeps its meaning under whatever `engine`/`connection` ends up named.
 
-- ⬜ **`Session.activate`/`deactivate` are missing, and `adoptDefault()` is
+- ✅ **`Session.activate`/`deactivate` are missing, and `adoptDefault()` is
   surface the reference does not have** *(found 2026-08-28, same pass)*. They
   are not the same capability: `activate` makes the **whole** session ambient
   (server, clock and random root) and `deactivate` gives the slot back, while
@@ -3404,7 +3404,7 @@ finished work, where a pending item reads as done.
   block, which is precisely the case the reference's own docstring gives for
   the unscoped pair existing.
 
-- ⬜ **`WindowHandle` is missing three verbs and renamed a fourth** *(found
+- ✅ **`WindowHandle` is missing three verbs and renamed a fourth** *(found
   2026-08-28, same pass)*. Against `clausters/gui/handle.py`: `set(**props)`
   (`/gui_set` on the window root) and `free()` (free the window's subtree) do
   not exist here, and `handle()` (a `WidgetHandle` for the root, so its props
@@ -3413,7 +3413,7 @@ finished work, where a pending item reads as done.
   handle, which is how a caller reaches it, that lacks them. `free` missing is
   the worst of the four: it is the verb the repo fixes for the action.
 
-- ⬜ **`TempoClock` is missing `play` and `run`, and `lockTo` its `warmup`**
+- ✅ **`TempoClock` is missing `play` and `run`, and `lockTo` its `warmup`**
   *(found 2026-08-28, same pass)*. `TempoClock.play(routine, quant)` snaps a
   routine's start to a beat grid and is pure client-side logic with no platform
   obstacle. `run(seconds)` blocks in the reference, but `Session.run(seconds)`
@@ -3422,13 +3422,13 @@ finished work, where a pending item reads as done.
   `workers`, `path` or `sample_format` — `path` being arguable rather than
   impossible, the page having OPFS.
 
-- ⬜ **`OscDestination` cannot close its carrier** *(found 2026-08-28, same
+- ✅ **`OscDestination` cannot close its carrier** *(found 2026-08-28, same
   pass)*. The reference's `close()` closes the interface **if this destination
   opened it**; here the comment reads "The `Connection` is borrowed, never
   closed here", which is true only because nothing in this client opens a
   carrier of its own. Closes with the carrier entry above.
 
-- ⬜ **Two names for one concept across the clients** *(found 2026-08-28, same
+- ✅ **Two names for one concept across the clients** *(found 2026-08-28, same
   pass)*. `SampleClockTimebase` here is `SampleTimebase`, an unforced rename.
   `main.current_tt` is `currentRoutine` — the *mechanism* legitimately differs
   (a thread-local against a module slot, justified in `base/context.ts`) but
@@ -3437,7 +3437,7 @@ finished work, where a pending item reads as done.
   promise that "a reader who knows one client finds the other at the same
   relative path".
 
-- ⬜ **`ManualTimebase` is surface only this client has** *(found 2026-08-28,
+- ✅ **`ManualTimebase` is surface only this client has** *(found 2026-08-28,
   same pass)*. A hand-advanced timebase, exported from `index.ts`. Either the
   reference has a gap (a deterministic timebase is useful to a user, not only
   to a test) or it should not be public here. Undecided, and that is the entry:
@@ -3476,3 +3476,40 @@ sound.
   **And the class it belongs to**: a page can declare a parameter its twin
   does not have and stay silent about it for as long as nothing reads that
   parameter. Nothing in CI would have caught this one; an ear did.
+
+- ✅ **`loadOsc` outlived the reason it existed, and the pages kept awaiting
+  it** *(found 2026-08-28, when a reader opened `basics/hello-note.html` after
+  the carrier work and the boot preamble was still there)*. The entry above
+  ends "then `loadOsc`, `pageConnection`, `pageGuiConnection`, `engine` and
+  `newGuiHost` stop appearing in examples at all" — and they did not. `boot`
+  and `attach` had started awaiting the core themselves, but eighty-odd pages
+  still opened with `await loadOsc()`, and most still imported a carrier they
+  no longer called. The name went too: `loadOsc` was an alias for `loadCore`
+  over the same wasm (`bundle.ts` awaited *both*, one line apart, which is
+  what an alias that means nothing looks like), and the codec is the smallest
+  thing the core does. One name now, and only a caller that uses the core
+  **without** opening a server — encoding a packet by hand, authoring a
+  bundle — awaits it.
+
+  **Two defects fell out of removing the awaits**, and both are the same
+  shape: the pages were carrying the earlier work's mistakes and nothing ran
+  them.
+
+  - `new Server()` died inside its own constructor on a page that had not
+    loaded the core: all four allocators are core registries, so moving the
+    load into the verbs left the constructor needing a module the verbs had
+    not yet fetched. Every page hid it by awaiting `loadOsc` first, so it
+    surfaced only when that line went. The allocators are built on first use
+    now, which is after a verb has run in every path and is where `reconcile`
+    replaces them anyway.
+  - `views/editor.html`, `views/recording.html` and `editors/score.html` had
+    a two-line boot block sitting at module scope, above the `let` that
+    declares the variable it assigns — left there by the mechanical pass that
+    migrated them, which no build and no test reads. They had been broken on
+    `main` since that commit.
+
+  **The class**: an `await` moved into a verb does not move what the
+  constructor already needed, and a page nothing runs stays broken until
+  somebody opens it. The second half is the standing one — the examples are
+  the manual test surface, and a sweep across ninety of them is exactly where
+  a mechanical edit goes wrong quietly.

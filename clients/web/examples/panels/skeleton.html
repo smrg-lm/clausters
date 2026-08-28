@@ -50,15 +50,13 @@ fresh id and hands back a handle that resolves the names.</div>
       /examples/panels/skeleton.html. Build it first: ./build.sh
     -->
     <script type="module">
-      import { GuiHost, gui, loadOsc, pageGuiConnection,
-      } from "../../dist/index.js";
+      import { GuiHost, gui } from "../../dist/index.js";
 
       const $ = (id) => document.getElementById(id);
       const log = (line) => { $("log").textContent += line + "\n"; };
 
       async function run() {
         $("run").disabled = true;
-        await loadOsc();
 
         // ---- the host ----
         // The page's, and the ambient one from here on, so the view below opens

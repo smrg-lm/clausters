@@ -23,7 +23,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { loadOsc } from "../src/base/osc.ts";
+import { loadCore } from "../src/base/core.ts";
 import { Routine } from "../src/base/stream.ts";
 import { Session } from "../src/session.ts";
 import { ScoreConnection } from "../src/base/connection.ts";
@@ -36,7 +36,7 @@ import { render } from "../src/render.ts";
 
 const here = new URL(".", import.meta.url);
 
-await loadOsc();
+await loadCore();
 await loadRenderer(await readFile(new URL("../dist/engine/clausters_web_bg.wasm", here)));
 
 interface Vector {

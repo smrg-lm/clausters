@@ -72,7 +72,8 @@
       import "/examples/out/graph-controls/index.js";  // <fm-trem>
       import "/examples/out/piano/index.js";           // <piano-keys>
       import { startPage, server, ANY_PEER } from "/dist/runtime.js";
-      import { loadOsc, decodePacket, encodeMessage } from "/dist/base/osc.js";
+      import { loadCore } from "/dist/base/core.js";
+      import { decodePacket, encodeMessage } from "/dist/base/osc.js";
 
       const verdict = (text) => {
         document.getElementById("verdict").textContent = text;
@@ -137,7 +138,7 @@
         // Phase 2, on the page's gesture: the engine half of every mounted
         // component goes out at once.
         await startPage();
-        await loadOsc();
+        await loadCore();
         const engine = await server();
 
         // The def was sent once for the page, however many instances want it.

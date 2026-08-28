@@ -47,7 +47,7 @@
         Bundle, defs, gui, openBundle, startBundle, freeBundle, startPage,
         server, ANY_PEER, loadCore,
       } from "/dist/index.js";
-      import { loadOsc, decodePacket } from "/dist/base/osc.js";
+      import { decodePacket } from "/dist/base/osc.js";
 
       const verdict = (text) => {
         document.getElementById("verdict").textContent = text;
@@ -106,7 +106,6 @@
         // `await loadCore()` a node script writing a bundle would run, here
         // finding the module next to the glue instead of on disk.
         await loadCore();
-        await loadOsc();
         const files = authored().files({ tag: "page-voice" });
         const paths = Object.keys(files).sort().join(" ");
         const expected = ["bundle.json", "defs/guidefs/page-voice.json",

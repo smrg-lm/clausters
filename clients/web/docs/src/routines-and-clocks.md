@@ -21,12 +21,11 @@ The `Server` stamps every event from the routine's **logical** time, not from "n
 An `Event` is a bag of note parameters that knows how to play itself: `event.play(server)` creates a synth at the routine's current logical beat and schedules its release after the note's sustain. Play it from inside a routine, yielding the gap to the next note:
 
 ```js
-import { Routine, Server, TempoClock, WsConnection, loadOsc, seq }
-  from "./dist/index.js";
+import { Routine, Server, TempoClock, seq } from "./dist/index.js";
 
-await loadOsc();                                   // the core's wasm: the codec
-const connection = await WsConnection.open("ws://127.0.0.1:57120");
-const server = await new Server({ transport: "ws", url }).attach();  // a running server
+// A server already running: `attach` owns nothing it did not start.
+const url = "ws://127.0.0.1:57120";
+const server = await new Server({ transport: "ws", url }).attach();
 server.latency = 0.1;                              // the emission headroom
 
 const clock = new TempoClock(2.0);                 // 2 beats per second

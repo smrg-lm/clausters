@@ -58,7 +58,8 @@ between. The power button is the autoplay gesture.</div>
     <script type="module">
       import "../../out/graph-controls/index.js";   // registers <fm-trem>
       import { startPage, server, ANY_PEER } from "../../../dist/runtime.js";
-      import { loadOsc, encodeMessage, decodePacket } from "../../../dist/base/osc.js";
+      import { loadCore } from "../../../dist/base/core.js";
+      import { encodeMessage, decodePacket } from "../../../dist/base/osc.js";
 
       const smoke = new URLSearchParams(location.search).has("smoke");
       const element = document.querySelector("fm-trem");
@@ -80,7 +81,7 @@ between. The power button is the autoplay gesture.</div>
       });
 
       async function smokeAsserts(id) {
-        await loadOsc();
+        await loadCore();
         const engine = await server();
         // The bus and the node this instance was allocated — not fixed
         // numbers: that is the difference between a bundle and a component.

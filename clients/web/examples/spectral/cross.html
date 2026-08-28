@@ -57,7 +57,7 @@ between the stages; the spectral frames are synth-private scratch.</div>
     -->
     <script type="module">
       import {
-        Buffer, Routine, Server, Session, Synth, loadOsc, pageConnection, play, wavBytes,
+        Buffer, Routine, Server, Session, Synth, play, wavBytes,
       } from "../../dist/index.js";
       import {
         SynthDef, control, fft, ifft, out, pvMagFreeze, pvMagMul, sine, whiteNoise,
@@ -94,7 +94,6 @@ between the stages; the spectral frames are synth-private scratch.</div>
 
       async function render() {
         $("render").disabled = true;
-        await loadOsc();
 
         const session = await Session.nrt({ tempo: 2.0 });
         await cross().send(session.server);

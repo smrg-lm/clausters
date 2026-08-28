@@ -36,8 +36,7 @@
     -->
     <script type="module">
       import {
-        Group, Server, Synth, SynthDef, TempoClock, loadOsc, pageConnection,
-        server as engine,
+        Group, Server, Synth, SynthDef, TempoClock, loadCore, server as engine,
       } from "../dist/index.js";
       import { control, out, sine } from "../dist/defs/index.js";
 
@@ -54,7 +53,6 @@
       const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
       async function run() {
-        await loadOsc();
         const server = await new Server().boot();
         // The engine this handle booted -- its own, not the page's.
         const raw = server.engine;

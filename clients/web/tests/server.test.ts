@@ -27,7 +27,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { spawnChild } from "./child.ts";
 
 import { WsConnection } from "../src/base/connection.ts";
-import { loadOsc } from "../src/base/osc.ts";
+import { loadCore } from "../src/base/core.ts";
 import { Bus } from "../src/defs/bus.ts";
 import { Buffer } from "../src/defs/buffer.ts";
 import { Group, Synth } from "../src/defs/node.ts";
@@ -51,7 +51,7 @@ const udpPort = 57888;
 
 const hasServer = await access(serverBin).then(() => true, () => false);
 
-await loadOsc();
+await loadCore();
 
 /**
  * Boots a server, runs `body` against a `Server` over its WS front, and

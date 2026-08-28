@@ -25,7 +25,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { spawnChild } from "./child.ts";
 
 import { WsConnection } from "../src/base/connection.ts";
-import { loadOsc } from "../src/base/osc.ts";
+import { loadCore } from "../src/base/core.ts";
 import { Server } from "../src/defs/server/index.ts";
 import { SynthDef } from "../src/defs/synthdef.ts";
 import { control, out, outCtl, sine } from "../src/defs/ugens/index.ts";
@@ -46,7 +46,7 @@ const udpPort = 57889;
 
 const hasServer = await access(serverBin).then(() => true, () => false);
 
-await loadOsc();
+await loadCore();
 
 async function withServer(body: (server: Server) => Promise<void>): Promise<void> {
     const child = spawnChild(serverBin, ["--port", String(udpPort), "--ws", String(wsPort),

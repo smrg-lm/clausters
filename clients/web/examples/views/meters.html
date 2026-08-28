@@ -79,8 +79,8 @@ Swapping to a <code>--ws</code> server (or to a native
     -->
     <script type="module">
       import {
-        loadOsc, loadCore, pageConnection, Server,
-        Bus, Buffer, Synth, SynthDef, GuiHost, gui, pageGuiConnection,
+        Server,
+        Bus, Buffer, Synth, SynthDef, GuiHost, gui,
       } from "../../dist/index.js";
       import { control, out, outCtl, sine } from "../../dist/defs/index.js";
 
@@ -125,16 +125,10 @@ Swapping to a <code>--ws</code> server (or to a native
       );
 
       async function run() {
-        await loadOsc();
-        await loadCore();
-
         // ---- the one line that names a carrier ----
-        const connection = await pageConnection();
-        // const connection = await WsConnection.open("ws://127.0.0.1:57120");
-
-        // `boot` because this page's carrier goes to an engine it can bring
-        // up; over the WebSocket above the verb is `attach`, since nothing here
-        // starts a server on another machine.
+        // `boot` because a page's default carrier is an engine it can bring
+        // up; `new Server({ transport: "ws", url }).attach()` reaches a
+        // `clausters --ws` server instead, and nothing below changes.
         const server = await new Server().boot();
         const info = await server.queryInfo();
         if (info.taps === 0) {

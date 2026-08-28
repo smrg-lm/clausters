@@ -57,7 +57,7 @@ const linked: WebAssembly.Instance[] = [];
 /**
  * Loads the engine wasm once. `source` overrides the URL-relative lookup with
  * raw module bytes — the node path, where there is no page to resolve a URL
- * against (the same shape `loadOsc` takes for the core).
+ * against (the same shape `loadCore` takes for the core).
  */
 export function loadRenderer(source?: BufferSource): Promise<EngineModule> {
     loaded ??= (async () => {

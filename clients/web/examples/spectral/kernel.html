@@ -61,8 +61,7 @@ between bins, reading another chain — stays with the dedicated
     -->
     <script type="module">
       import {
-        Buffer, Routine, Server, Session, Synth, loadOsc, pageConnection,
-        play, wavBytes,
+        Buffer, Routine, Server, Session, Synth, play, wavBytes,
       } from "../../dist/index.js";
       import {
         SynthDef, control, fft, ifft, out, pvKernel, whiteNoise,
@@ -104,7 +103,6 @@ between bins, reading another chain — stays with the dedicated
 
       async function render() {
         $("render").disabled = true;
-        await loadOsc();
 
         const session = await Session.nrt({ tempo: 1.0 });
         await raw().send(session.server);

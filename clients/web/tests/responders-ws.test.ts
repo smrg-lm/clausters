@@ -18,7 +18,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { spawnChild } from "./child.ts";
 
 import { WsConnection } from "../src/base/connection.ts";
-import { loadOsc } from "../src/base/osc.ts";
+import { loadCore } from "../src/base/core.ts";
 import { Server } from "../src/defs/server/index.ts";
 import { SynthDef } from "../src/defs/synthdef.ts";
 import { Synth } from "../src/defs/node.ts";
@@ -36,7 +36,7 @@ const udpPort = 57892;
 
 const hasServer = await access(serverBin).then(() => true, () => false);
 
-await loadOsc();
+await loadCore();
 
 /**
  * Waits until the engine is actually rendering: node notifications are emitted

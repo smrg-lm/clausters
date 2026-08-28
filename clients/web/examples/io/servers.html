@@ -64,7 +64,7 @@ each.</div>
     -->
     <script type="module">
       import {
-        Server, loadOsc, play,
+        Server, play,
       } from "../../dist/index.js";
       import { sine } from "../../dist/defs/index.js";
 
@@ -78,7 +78,6 @@ each.</div>
 
       async function run() {
         $("run").disabled = true;
-        await loadOsc();
 
         // Two servers, side by side. Each `boot` brings up one this handle
         // owns -- its own engine, its own node, bus and buffer space -- so the

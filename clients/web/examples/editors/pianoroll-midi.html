@@ -63,7 +63,7 @@ Plug the keyboard in, press <b>open</b>, allow MIDI, and play.</div>
       // Needs a MIDI input device, a browser with Web MIDI (Chrome, Edge) and
       // a WebGPU-or-WebGL2 adapter for the host's canvas.
       import {
-        MidiFunc, MidiReceiver, Session, gui, loadOsc, requestMidiPorts,
+        MidiFunc, MidiReceiver, Session, gui, requestMidiPorts,
       } from "../../dist/index.js";
 
       const $ = (id) => document.getElementById(id);
@@ -122,7 +122,6 @@ Plug the keyboard in, press <b>open</b>, allow MIDI, and play.</div>
 
       async function run() {
         $("run").disabled = true;
-        await loadOsc();
         session = await Session.embed({ tempo: BPM / 60.0 });
         await session.gui();
 

@@ -14,7 +14,8 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { spawnChild } from "./child.ts";
 
 import { WsConnection } from "../src/base/connection.ts";
-import { loadOsc, encodeMessage, decodePacket } from "../src/base/osc.ts";
+import { loadCore } from "../src/base/core.ts";
+import { encodeMessage, decodePacket } from "../src/base/osc.ts";
 
 const here = new URL(".", import.meta.url);
 const serverBin = new URL("../../../target/debug/clausters", here).pathname;
@@ -26,7 +27,7 @@ const udpPort = 57887;
 
 const hasServer = await access(serverBin).then(() => true, () => false);
 
-await loadOsc();
+await loadCore();
 
 test("WsConnection: /server_status round trip", { skip: !hasServer }, async () => {
     const server = spawnChild(serverBin, ["--port", String(udpPort), "--ws", String(wsPort),

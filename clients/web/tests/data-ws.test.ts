@@ -18,7 +18,6 @@ import { spawnChild } from "./child.ts";
 
 import { WsConnection } from "../src/base/connection.ts";
 import { loadCore } from "../src/base/core.ts";
-import { loadOsc } from "../src/base/osc.ts";
 import { Bus } from "../src/defs/bus.ts";
 import { Buffer } from "../src/defs/buffer.ts";
 import { Synth } from "../src/defs/node.ts";
@@ -37,7 +36,6 @@ const udpPort = 57891;
 
 const hasServer = await access(serverBin).then(() => true, () => false);
 
-await loadOsc();
 await loadCore();
 
 async function withServer(body: (server: Server) => Promise<void>): Promise<void> {

@@ -10,13 +10,13 @@ Everything that is a *value* or a *time* comes from `clausters-core` compiled to
 
 This is not an optimization. It is what makes a page numerically **equal** to the server and to the other client rather than merely close: a seeded pattern replays identically in three languages, and a beat resolves to the same instant on both sides of a socket, because there is one implementation.
 
-Loading it is explicit and happens once:
+`boot()` and `attach()` load it themselves, so a page that opens a server never
+names it. Only a caller that uses the core without opening one — encoding a
+packet by hand, authoring a bundle — awaits it:
 
 ```js
-await loadOsc();      // the codec; loadCore() is the same bundle, either name
+await loadCore();      // the wasm, once; later calls reuse it
 ```
-
-Everything below assumes it has been awaited.
 
 ## The connection seam
 
@@ -151,7 +151,7 @@ const s = await Session.embed({ tempo: 2.0 });       // this tab's engine
 const s = await Session.live(url);               // a `clausters --ws` server
 ```
 
-That one call opens the connection, opens the `Server`, builds a clock at that tempo and anchors it to the server's own sample counter — the four lines a page used to write by hand. It is also the unit of **isolation**: its own random root (`s.seed(1)` reproduces this session's samples and no other's), and, with `Session.embed({ own: true })`, its own engine, so its nodes, buses and buffers share nothing with the rest of the document. Several coexist, which is why this exists at all: since the engines and hosts became instances, an environment is a thing a page has more than one of.
+That one call opens the connection, opens the `Server`, builds a clock at that tempo and anchors it to the server's own sample counter — the four lines a page used to write by hand. It is also the unit of **isolation**: its own random root (`s.seed(1)` reproduces this session's samples and no other's) and its own engine, so its nodes, buses and buffers share nothing with the rest of the document. Several coexist, which is why this exists at all: since the engines and hosts became instances, an environment is a thing a page has more than one of.
 
 `s.close()` releases what the session owns — its GUI host, its server client, its clock, and an engine it opened for itself. The page's shared engine is not a session's to stop.
 

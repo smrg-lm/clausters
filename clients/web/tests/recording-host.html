@@ -60,9 +60,8 @@
       const saw = (needle) => seen.some((line) => line.includes(needle));
 
       const {
-        loadOsc, loadCore, pageConnection, server: engine, Server,
-        Buffer, Synth, SynthDef, GuiHost, gui, pageGuiConnection,
-      } = await import("../dist/index.js");
+        loadCore, server: engine, Server,
+        Buffer, Synth, SynthDef, GuiHost, gui, } = await import("../dist/index.js");
       const { control, out, recordBuf, sine } = await import("../dist/defs/index.js");
 
       const smoke = new URLSearchParams(location.search).has("smoke");
@@ -84,8 +83,6 @@
       const FRAMES = 256 * 260;   // 1.39 s
 
       async function run() {
-        await loadOsc();
-        await loadCore();
         const server = await new Server().boot();
         await new GuiHost({ engine: server.engine }).boot();
 

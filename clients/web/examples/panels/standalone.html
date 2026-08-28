@@ -35,7 +35,7 @@ process anywhere. Press Power (the autoplay gesture) to boot.</div>
       fetch the runner reads from the HTTP access log.
     -->
     <script type="module">
-      import { server, bootBundle, loadOsc, decodePacket, ANY_PEER }
+      import { server, bootBundle, loadCore, decodePacket, ANY_PEER }
         from "../../dist/index.js";
 
       const params = new URLSearchParams(location.search);
@@ -53,7 +53,7 @@ process anywhere. Press Power (the autoplay gesture) to boot.</div>
       const boot = async () => {
         const engine = await server();
         await engine.resume();
-        await loadOsc();
+        await loadCore();
 
         // Observe the bus stream for the harness/smoke readout: every
         // /bus_stream.reply the meter subscription brings in.

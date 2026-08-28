@@ -60,7 +60,7 @@ view's.</div>
       Build it first: ./build.sh
     -->
     <script type="module">
-      import { GuiHost, gui, loadOsc, pageGuiConnection } from "../../dist/index.js";
+      import { GuiHost, gui } from "../../dist/index.js";
 
       const $ = (id) => document.getElementById(id);
       const log = (line) => { $("log").textContent += line + "\n"; };
@@ -91,7 +91,6 @@ view's.</div>
 
       async function run() {
         $("run").disabled = true;
-        await loadOsc();
         await new GuiHost().boot();
 
         // ---- the window: a picker over a stack, a scroll slider under it ----
