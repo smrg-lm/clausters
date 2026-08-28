@@ -525,7 +525,7 @@ export class GuiHost {
         const rootHand = this.onInterfaceHandlers.get(id);
         if (this.children.has(id)) {
             if (previous !== undefined) {
-                for (const name of previous.widgetNames()) {
+                for (const name of previous.names()) {
                     const wid = previous.widget(name).id;
                     const func = this.onEventHandlers.get(wid);
                     if (func !== undefined) inherited.set(name, func);

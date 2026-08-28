@@ -16,7 +16,7 @@ import { spawnChild } from "./child.ts";
 
 import { WsConnection } from "../src/base/connection.ts";
 import type { Connection } from "../src/base/connection.ts";
-import { encodeMessage, loadOsc } from "../src/base/osc.ts";
+import { decodePacket, encodeMessage, loadOsc } from "../src/base/osc.ts";
 import { GuiHost } from "../src/gui/host.ts";
 import { button, knob, label, panel, slider, waveform, window } from "../src/gui/guidef.ts";
 import { BASE_ID } from "../src/gui/ids.ts";
@@ -84,7 +84,7 @@ test("GuiHost: a built panel defines, queries and frees on a native host", {
         // that went out; the tree that was written is left as it was written,
         // which is what lets one view open twice.
         assert.ok(win.id >= BASE_ID, `window id ${win.id} is below the base`);
-        assert.deepEqual(win.widgetNames(), ["cutoff", "freq", "view"]);
+        assert.deepEqual(win.names(), ["cutoff", "freq", "view"]);
         const freq = win.widget("freq");
         assert.ok(freq.id >= BASE_ID, `widget id ${freq.id} is below the base`);
         assert.equal(tree.children?.[1]?.children?.[0]?.id, undefined);
@@ -144,6 +144,43 @@ test("GuiHost: a redefine replaces the tree under the same root", {
         assert.equal(first.widget("cutoff").id, second.widget("cutoff").id);
         gui.closeAll();
     });
+});
+
+test("GuiHost: the window root is a widget, and freeing it is not closing it", () => {
+    // No live host: what is under test is the *client's* three verbs on the
+    // window root -- the reference client has them and this one had none.
+    const sent: string[] = [];
+    const gui = new GuiHost({
+        connection: {
+            send: (packet: Uint8Array) => {
+                for (const { addr } of decodePacket(packet)) sent.push(addr);
+            },
+            addReply: () => {},
+            removeReply: () => {},
+        } as unknown as Connection,
+    });
+
+    const win = gui.open(window({ title: "before" }, button({ name: "go" })));
+    sent.length = 0;
+
+    // `set` reaches the root itself, where `widget(name).set` reaches inside.
+    win.set({ title: "after" });
+    assert.deepEqual(sent, ["/gui_set"]);
+
+    // `handle()` is the root as an ordinary widget, so the same props travel
+    // by the same door.
+    sent.length = 0;
+    win.handle().set({ title: "again" });
+    assert.deepEqual(sent, ["/gui_set"]);
+    assert.equal(win.handle().id, win.id);
+
+    // `names()` is the reference's spelling; it was `widgetNames()` here.
+    assert.deepEqual(win.names(), ["go"]);
+
+    // And `free` is the other half of the pair `close` was standing in for.
+    sent.length = 0;
+    win.free();
+    assert.deepEqual(sent, ["/gui_free"]);
 });
 
 test("GuiHost: a redraw keeps a named widget's handler", () => {

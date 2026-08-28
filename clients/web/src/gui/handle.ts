@@ -150,7 +150,7 @@ export class WidgetHandle {
  * resolves the tree's **named** widgets and carries `close`/`onClosed`.
  */
 export class WindowHandle extends WidgetHandle {
-    private readonly names: Map<string, number>;
+    private readonly bound: Map<string, number>;
     /**
      * widget id → the def control it was built from, collected by the id walk
      * — what {@link WindowHandle.bind} wires in one verb.
@@ -175,17 +175,17 @@ export class WindowHandle extends WidgetHandle {
         controls: Map<number, string> = new Map(),
     ) {
         super(host, id);
-        this.names = names;
+        this.bound = names;
         this.controlMap = controls;
     }
 
     /** The `WidgetHandle` for the widget built with `name: …`. */
     widget(name: string): WidgetHandle {
-        const id = this.names.get(name);
+        const id = this.bound.get(name);
         if (id === undefined) {
             throw new Error(
                 `no widget named '${name}' in this window ` +
-                    `(names: ${this.widgetNames().join(", ")})`,
+                    `(names: ${this.names().join(", ")})`,
             );
         }
         return new WidgetHandle(this.host, id);
@@ -200,8 +200,8 @@ export class WindowHandle extends WidgetHandle {
      * @internal
      */
     refreshNames(names: Map<string, number>, controls?: Map<number, string>): void {
-        this.names.clear();
-        for (const [name, id] of names) this.names.set(name, id);
+        this.bound.clear();
+        for (const [name, id] of names) this.bound.set(name, id);
         if (controls === undefined) return;
         this.controlMap.clear();
         for (const [id, control] of controls) this.controlMap.set(id, control);
@@ -278,7 +278,7 @@ export class WindowHandle extends WidgetHandle {
      */
     get controls(): Record<string, string> {
         const byId = new Map<number, string>();
-        for (const [name, id] of this.names) byId.set(id, name);
+        for (const [name, id] of this.bound) byId.set(id, name);
         const out: Record<string, string> = {};
         for (const [id, control] of this.controlMap) out[byId.get(id) ?? control] = control;
         return out;
@@ -286,12 +286,33 @@ export class WindowHandle extends WidgetHandle {
 
     /** Whether this window binds `name`. */
     has(name: string): boolean {
-        return this.names.has(name);
+        return this.bound.has(name);
     }
 
     /** The names bound in this window, sorted. */
-    widgetNames(): string[] {
-        return [...this.names.keys()].sort();
+    names(): string[] {
+        return [...this.bound.keys()].sort();
+    }
+
+    /**
+     * A `WidgetHandle` for the window root itself, so its own props can be
+     * `set` and its own events listened to — the reference client's
+     * `WindowHandle.handle()`.
+     */
+    handle(): WidgetHandle {
+        return new WidgetHandle(this.host, this.id);
+    }
+
+    /**
+     * `/gui_set` the window root's own properties; returns `this`.
+     *
+     * The window is a widget like any other — a title, a size, a layout — and
+     * this is how those change after it is open, where `widget(name).set(...)`
+     * reaches the ones inside it.
+     */
+    set(props: Record<string, number | string | boolean>): this {
+        this.host.set(this.id, props);
+        return this;
     }
 
     /**
@@ -300,6 +321,18 @@ export class WindowHandle extends WidgetHandle {
      */
     close(): void {
         this.host.close(this.id);
+    }
+
+    /**
+     * Free this window's subtree: `/gui_free` frees the widgets and the window,
+     * and the ids return to the pool.
+     *
+     * The difference from {@link WindowHandle.close} is the host's own
+     * bookkeeping — `close` also drops the window from the set `closeAll`
+     * walks — which is the same pair the reference client keeps.
+     */
+    free(): void {
+        this.host.free(this.id);
     }
 
     /**

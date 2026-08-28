@@ -101,7 +101,7 @@
         // The canvas this window got, not a page-wide one: `open` makes a view
         // its own, which is what lets a document hold several.
         const canvas = win.canvas;
-        log(`window ${win.id}, widgets ${win.widgetNames().join(", ")}`);
+        log(`window ${win.id}, widgets ${win.names().join(", ")}`);
 
         // The ids were assigned in the document that went out, not in the
         // tree that was written -- an id names a live widget and a view is a
