@@ -84,7 +84,13 @@ the same node id.</div>
        * server each take one, so two of them never hand out the same node id.
        */
       async function makeFollower(freq, share) {
-        const server = await new Server({ share }).attach();
+        // `attach`, not a bare handle: the conductor booted this server and
+        // nothing here starts one -- the script's
+        // `Server(share=share).attach(adopt_default=False)`. The engine is
+        // named because a tab has no port to point at: it is the conductor's
+        // address in this page, the way 57110 is in the script.
+        const server = await new Server({ engine: conductor.engine, share })
+          .attach({ adoptDefault: false });
         const clock = new TempoClock(2.0);
         await clock.lockTo(server);                       // sample-exact timing
         await clock.joinTransport(server);                // the shared grid

@@ -3616,3 +3616,25 @@ sound.
   session after rendering. Left ambient, their `play(buffer)` would have
   reached the score instead of the engine — silence, with nothing to read.
   The scripts end there, so they never meet it.
+
+- ✅ **A second page put its followers on an engine that was not there**
+  *(found 2026-08-28, writing the Python equivalent of the sync page's client
+  line and checking who else builds one)*. `transport/conductor.html` made its
+  followers with `new Server({ share }).attach()` — no engine named, so the
+  verb looked for the *page's* memoized engine while the conductor had booted
+  one of its own. Nothing in the page ever brings the page engine up, so the
+  first follower raised "no engine is running in this page". Same regression as
+  the sync page and the same cause: `boot()` stopped meaning "the page's
+  engine" and the pages that assumed it were never opened again.
+
+  Its script was the other half of the pair: `sync.py` and `conductor.py` both
+  built their clients with a bare `Server(share=share)`, which **verifies
+  nothing** — a handle pointing where nobody answers drops every later message
+  into a UDP void — and leaves the allocators on compiled defaults instead of
+  the running server's capacities. Both use
+  `Server(share=share).attach(adopt_default=False)` now, which is what the
+  pages say.
+
+  **The class**: `attach` is the verb that says "this was already running", and
+  a bare constructor says nothing at all — so a client that skips it is not
+  simpler, it is unverified. Both scripts were run; both pages need an eye.

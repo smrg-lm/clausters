@@ -115,8 +115,10 @@ Needs <code>./build.sh</code> in <code>clients/web</code> first
        */
       async function client(name, share) {
         // `attach`: the conductor's `boot` brought this engine up, and nothing
-        // here starts a server -- which is the script's `Server(share=...)`
-        // connecting to a process it did not launch.
+        // here starts a server -- the script's
+        // `Server(share=share).attach(adopt_default=False)`, connecting to a
+        // process it did not launch. The engine is named because a tab has no
+        // port to point at.
         const server = await new Server({ engine: conductor.engine, share })
             .attach({ adoptDefault: false });
         const clock = new TempoClock(1.0);   // the transport overwrites this

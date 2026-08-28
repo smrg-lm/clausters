@@ -56,7 +56,11 @@ def make_client(share):
 
     ``share`` is its slice of the client id space: several clients on one server
     each take one, so two of them never hand out the same node id."""
-    server = Server(share=share)      # to 127.0.0.1:57110
+    # `attach`: the conductor booted this server and nothing here starts one.
+    # The verb also verifies -- a handle pointing where nobody answers raises
+    # instead of dropping every later message into a UDP void -- and sizes the
+    # allocators from the capacities the running server reports.
+    server = Server(share=share).attach(adopt_default=False)   # to 127.0.0.1:57110
     clock = TempoClock(tempo=1.0)     # the transport overwrites this tempo
     clock.lock_to(server)             # sample-exact, drift-free timing
     clock.join_transport(server)      # adopt the shared beat grid

@@ -56,7 +56,10 @@ def make_follower(freq, share):
 
     ``share`` is its slice of the client id space: several clients on one server
     each take one, so two of them never hand out the same node id."""
-    server = Server(share=share)
+    # `attach`, not a bare handle: the conductor booted this server, nothing
+    # here starts one, and the verb verifies it is up and sizes the allocators
+    # from what it reports.
+    server = Server(share=share).attach(adopt_default=False)
     clock = TempoClock(tempo=2.0)
     clock.lock_to(server)             # sample-exact timing
     clock.join_transport(server)      # adopt the shared grid (tempo + origin)
