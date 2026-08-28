@@ -1144,3 +1144,35 @@ work, where a pending item reads as done.)*
   score examples driving their round trip through one — an edit reaches the
   definition too, so a re-open shows the score as edited rather than as
   engraved.
+
+- ⬜ **`render()` cuts every take's release, in both clients** *(found
+  2026-08-28, measuring the first and last sample of every WAV the examples
+  write, after a listener asked whether the test synths click)*. The free
+  verb, on a pattern:
+
+  ```python
+  stats = render(Pbind(instrument="default", degree=Pseq([0, 4, 7]), dur=0.25),
+                 path="take.wav")   # 33600 frames; last sample -0.0725
+  ```
+
+  A render ends at the score's **last event**, and for a pattern that event is
+  the gate closing on the final note — so the file stops there and the
+  instrument's release (0.3 s for the built-in `default`) is never rendered.
+  The take ends on a step of -22.8 dBFS: a click, on every file the verb
+  writes, and it loops badly. `dur=` does not reach this — its docstring says
+  so ("ignored by the other kinds: their content sets the length") — and
+  `until=` moves where the clock stops draining, not where the score ends.
+
+  The examples work around it by scheduling their own closing event
+  (`/node_free 0` a release after the phrase), which is the idiom
+  `OscNrtInterface.render`'s own docstring recommends and is now what the
+  offline ones do. But **the verb should not need the workaround**: a caller
+  who hands `render` a pattern has said everything there is to say about the
+  length. What the fix is, is a decision — a `tail=` argument with a default,
+  a bounce that keeps rendering until the node tree empties, or a renderer
+  that stops when the output has been silent for a window — and it is one
+  choice for both clients, so it is written here rather than taken.
+
+  `clients/web/examples/buffers/offline-render.html` is where it still shows:
+  the page renders through the free verb where its script renders through
+  `session.render()`, so its downloadable take still ends on the step.

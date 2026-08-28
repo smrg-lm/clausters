@@ -39,7 +39,8 @@ import sys
 
 from clausters import Session
 from clausters.base import Routine
-from clausters.defs import SynthDef, control, fft, ifft, out, pv_kernel, white_noise
+from clausters.defs import (DoneAction, Env, SynthDef, control, env_gen, fft,
+                            ifft, out, pv_kernel, white_noise)
 from clausters.defs.pv_expr import bin_index, mag, nbins, param
 from clausters.defs import Synth
 
@@ -58,9 +59,21 @@ SR = 48000.0
 # Unprocessed noise, for the ear to compare against.
 
 # %%
+def fade():
+    """A short attack and release, opened at birth and closed by the gate.
+
+    Noise switched on at full amplitude starts the take on a step, which is a
+    click — audible on the first sample of a file meant to be listened to. Two
+    hundredths of a second of ramp costs nothing and is not the subject here;
+    the same envelope closes the take when the routine drops the gate."""
+    gate = control("gate", 1.0)
+    return env_gen(Env.asr(0.02, 1.0, 0.05), gate=gate,
+                   done_action=DoneAction.FREE_SELF)
+
+
 def raw(name: str = "raw") -> SynthDef:
     """The unprocessed reference: plain noise on the left channel."""
-    return SynthDef(name, out(0.0, white_noise() * 0.25))
+    return SynthDef(name, out(0.0, white_noise() * 0.25 * fade()))
 
 
 # %% [markdown]
@@ -93,7 +106,7 @@ def tilted_gate(name: str = "tiltgate") -> SynthDef:
     tilt = param(0) * (1 + 4 * bin_index / nbins)  # rising threshold
     chain = pv_kernel(chain, mag=mag * (mag >= tilt),
                       params=[control("thresh", 2.0)])
-    return SynthDef(name, out(1.0, ifft(chain)))
+    return SynthDef(name, out(1.0, ifft(chain) * fade()))
 
 
 # %% [markdown]
@@ -110,8 +123,15 @@ gated = Synth("tiltgate")
 
 def stop():
     yield 2.0
-    session.server.send_bundle(("/node_free", reference.id))
-    session.server.send_bundle(("/node_free", gated.id))
+    # Closed, not freed: the gate lets each envelope fall to zero instead of
+    # cutting the noise mid-sample.
+    session.server.send_bundle(("/node_set", reference.id, "gate", 0.0))
+    session.server.send_bundle(("/node_set", gated.id, "gate", 0.0))
+    yield 0.25
+    # The score's closing event, after the release: a render ends at its last
+    # event, so without this one the file would stop where the gate closed and
+    # the tail would be cut off — the click again, at the other end.
+    session.server.send_bundle(("/node_free", 0))
 
 Routine(stop).play()
 

@@ -86,7 +86,13 @@ Needs <code>./build.sh</code> in <code>clients/web</code> first
         // box.faust("os.osc") is the unapplied oscillator: one input (the
         // frequency), one output. Calling it wires the slider in; the result
         // is an ordinary Box, so `.mul(amp)` composes arithmetic around it.
-        const tone = box.faust("os.osc", { ins: 1, outs: 1 }).call(freq).mul(amp);
+        //
+        // si.smoo is the library's one-pole smoother: it turns a slider's
+        // steps into ramps, so `/node_set amp 0` below fades the voice out
+        // instead of cutting it off — a step to zero is a click, and this take
+        // is meant to be listened to.
+        const tone = box.faust("os.osc", { ins: 1, outs: 1 }).call(freq)
+          .mul(box.faust("si.smoo", { ins: 1, outs: 1 }).call(amp));
 
         // fi.lowpass(3): the order is structural, so it is an eval-arg
         // (spliced into the source); the cutoff and the signal are its two
@@ -135,8 +141,13 @@ Needs <code>./build.sh</code> in <code>clients/web</code> first
             ]);
             yield 0.5;
           }
+          // Faded, not freed: the smoothed `amp` reaches zero over a few
+          // milliseconds where a `/node_free` would cut the voice mid-sample.
+          session.server.sendBundle([["/node_set", ["i", voice.id],
+                                      "amp", ["f", 0.0]]]);
           yield 2.0;                              // let the reverb tail ring
-          session.server.sendBundle([["/node_free", ["i", voice.id]]]);
+          // The score's closing event: a render ends at its last event.
+          session.server.sendBundle([["/node_free", 0]]);
         }).play();
 
         // ---- the render ----

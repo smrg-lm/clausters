@@ -31,7 +31,8 @@ import sys
 
 from clausters import Session
 from clausters.base import Routine
-from clausters.defs import SynthDef, control, out, sine
+from clausters.defs import (DoneAction, Env, SynthDef, control, env_gen, out,
+                            sine)
 from clausters.defs import Synth
 
 #: Where a run leaves its file when no path is given: ``examples/out/``, the
@@ -62,7 +63,13 @@ def maths_lead(name: str = "maths_lead") -> SynthDef:
     # A unipolar LFO clipped to 0.8 -> a gentle tremolo (>=, clip2 both compose).
     trem = (sine(3.0) * 0.5 + 0.5).clip2(0.8)
 
-    sig = shaped * trem * amp
+    # A short attack and release, on the same `*` the rest of this def is made
+    # of: without it the lead starts and ends on a step, which is a click.
+    gate = control("gate", 1.0)
+    fade = env_gen(Env.asr(0.02, 1.0, 0.1), gate=gate,
+                   done_action=DoneAction.FREE_SELF)
+
+    sig = shaped * trem * amp * fade
     return SynthDef(name, out(0.0, sig), out(1.0, sig))
 
 
@@ -82,7 +89,13 @@ def sequence():
         session.server.send_bundle(("/node_set", lead.id, "note", float(midi)))
         yield 0.5
     yield 1.0
-    session.server.send_bundle(("/node_free", lead.id))
+    # Closed, not freed: the gate lets the envelope fall to zero instead of
+    # cutting the lead mid-sample.
+    session.server.send_bundle(("/node_set", lead.id, "gate", 0.0))
+    yield 0.5
+    # The score's closing event, after the release: a render ends at its last
+    # event, so without this one the release would be cut off.
+    session.server.send_bundle(("/node_free", 0))
 
 
 Routine(sequence).play()

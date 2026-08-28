@@ -58,7 +58,12 @@ def soft_voice(name: str = "soft_voice") -> FaustDef:
     # box.faust("os.osc") is the unapplied oscillator: one input (the
     # frequency), one output. Calling it wires the slider in; the result is
     # an ordinary Box, so `* amp` composes arithmetic around it.
-    tone = box.faust("os.osc", ins=1, outs=1)(freq) * amp
+    # si.smoo is the library's one-pole smoother: it turns a slider's steps
+    # into ramps, so `/node_set amp 0` below fades the voice out instead of
+    # cutting it off — a step to zero is a click, and this file is rendered to
+    # be listened to.
+    tone = box.faust("os.osc", ins=1, outs=1)(freq) * box.faust(
+        "si.smoo", ins=1, outs=1)(amp)
 
     # fi.lowpass(3): the order is structural, so it is an eval-arg (spliced
     # into the source); the cutoff and the signal are its two inputs.
@@ -94,8 +99,12 @@ def sequence():
         session.server.send_bundle(("/node_set", voice.id, "freq", hz,
                                     "cutoff", 600.0 + 400.0 * step))
         yield 0.5
+    # Faded, not freed: the smoothed `amp` reaches zero over a few
+    # milliseconds where a `/node_free` would cut the voice mid-sample.
+    session.server.send_bundle(("/node_set", voice.id, "amp", 0.0))
     yield 2.0                                # let the reverb tail ring
-    session.server.send_bundle(("/node_free", voice.id))
+    # The score's closing event: a render ends at its last event.
+    session.server.send_bundle(("/node_free", 0))
 
 
 Routine(sequence).play()

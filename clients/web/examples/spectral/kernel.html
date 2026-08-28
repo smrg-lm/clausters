@@ -64,7 +64,8 @@ between bins, reading another chain — stays with the dedicated
         Buffer, Routine, Server, Session, Synth, play, wavBytes,
       } from "../../dist/index.js";
       import {
-        SynthDef, control, fft, ifft, out, pvKernel, whiteNoise,
+        DoneAction, Env, SynthDef, control, envGen, fft, ifft, out, pvKernel,
+        whiteNoise,
       } from "../../dist/defs/index.js";
       import { binIndex, mag, nbins, param } from "../../dist/defs/pv_expr.js";
 
@@ -74,8 +75,22 @@ between bins, reading another chain — stays with the dedicated
       const SR = 48000.0;
       let take = null;
 
+      /**
+       * A short attack and release, opened at birth and closed by the gate.
+       *
+       * Noise switched on at full amplitude starts the take on a step, which
+       * is a click — audible on the first sample of a take meant to be heard.
+       * Two hundredths of a second of ramp costs nothing and is not the
+       * subject here; the same envelope closes the take when the routine
+       * drops the gate.
+       */
+      const fade = () => envGen(Env.asr(0.02, 1.0, 0.05), {
+        gate: control("gate", 1.0), doneAction: DoneAction.FREE_SELF,
+      });
+
       /** The unprocessed reference: plain noise on the left channel. */
-      const raw = (name = "raw") => new SynthDef(name, out(0.0, whiteNoise().mul(0.25)));
+      const raw = (name = "raw") =>
+        new SynthDef(name, out(0.0, whiteNoise().mul(0.25).mul(fade())));
 
       /**
        * Noise -> FFT -> a user-written tilted gate -> IFFT, on the right.
@@ -98,7 +113,7 @@ between bins, reading another chain — stays with the dedicated
           mag: mag.mul(mag.ge(tilt)),
           params: [control("thresh", 2.0)],
         });
-        return new SynthDef(name, out(1.0, ifft(chain)));
+        return new SynthDef(name, out(1.0, ifft(chain).mul(fade())));
       }
 
       async function render() {
@@ -112,8 +127,16 @@ between bins, reading another chain — stays with the dedicated
 
         function* stop() {
           yield 2.0;
-          session.server.sendBundle([["/node_free", reference.id]]);
-          session.server.sendBundle([["/node_free", gated.id]]);
+          // Closed, not freed: the gate lets each envelope fall to zero
+          // instead of cutting the noise mid-sample.
+          session.server.sendBundle([["/node_set", reference.id, "gate", 0.0]]);
+          session.server.sendBundle([["/node_set", gated.id, "gate", 0.0]]);
+          yield 0.25;
+          // The score's closing event, after the release: a render ends at its
+          // last event, so without this one the take would stop where the gate
+          // closed and the tail would be cut — the click again, at the other
+          // end.
+          session.server.sendBundle([["/node_free", 0]]);
         }
         new Routine(stop).play();
 

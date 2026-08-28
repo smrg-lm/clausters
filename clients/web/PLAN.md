@@ -3649,3 +3649,34 @@ sound.
   **The class**: `attach` is the verb that says "this was already running", and
   a bare constructor says nothing at all — so a client that skips it is not
   simpler, it is unverified. Both scripts were run; both pages need an eye.
+
+- ✅ **The examples clicked at both ends, and two of them started on a step**
+  *(found 2026-08-28, when a listener asked whether the envelope-free synths
+  in the test pages were deliberate)*. They are — a test measures one thing
+  and an envelope ramps exactly what is being measured — but the question is
+  the right one to ask of the **examples**, where what is taught is how the
+  API sounds. Measured rather than guessed: the first and last sample of every
+  WAV the Python examples write.
+
+  Two were true onsets, both noise switched on at full amplitude:
+  `spectral/chain` at 0.175 (-15 dBFS on the first sample) and
+  `spectral/kernel` at -0.164. Every other file started at 0.0000 — the
+  8-frame window of the first pass had been catching legitimate 2 ms attacks
+  and reporting them as steps, which is why the first count of "three" was
+  wrong.
+
+  Eight ended on a step: `chain` 0.198, `offline_render` 0.064, `envelope`
+  -0.042, `wavetables` 0.041, `cross` 0.040, `boxes_library` -0.032,
+  `multichannel` 0.027, `graph_maths` 0.015. Two causes, not one — a
+  `/node_free` cutting a sounding node mid-sample, and a render ending at the
+  score's last event with the release still to come. The defs that had no
+  envelope got one (`chain`, `kernel`, `cross`, `graph_maths`; the Faust voice
+  in `boxes_library` got `si.smoo` on its `amp`, which is the same idea from
+  that library), the routines close a gate where they freed a node, and the
+  offline ones schedule `/node_free 0` after the tail as the score's closing
+  event. All thirteen WAVs now measure 0.0000 at both ends, and both legs of
+  each pair carry the same change.
+
+  **What is left is not an example's to fix**: the free `render()` verb cuts
+  the release of anything it bounces, in both clients — written up in
+  `clients/python/PLAN.md`, since the fix is one decision for both.

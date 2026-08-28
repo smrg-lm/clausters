@@ -100,6 +100,11 @@ def sequence():
         Event(instrument="unison", freq=freq, amp=0.4,
               dur=dur, sustain=dur - 0.5, has_gate=True).play()
         yield dur
+    # The score's closing event, a release after the last gate: a render ends
+    # at its last event, so without this one the file would stop where that
+    # gate closed and the 1.2 s release would be cut — a click at the end.
+    yield 3.0
+    session.server.send_bundle(("/node_free", 0))
 
 
 Routine(sequence).play()

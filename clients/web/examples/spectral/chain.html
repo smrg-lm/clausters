@@ -62,7 +62,8 @@ socket. Swapping to a <code>--ws</code> server is the one line marked below.</di
         Server, Synth, SynthDef,
       } from "../../dist/index.js";
       import {
-        control, fft, ifft, out, pvBrickWall, pvMagFreeze, whiteNoise,
+        DoneAction, Env, control, envGen, fft, ifft, out, pvBrickWall,
+        pvMagFreeze, whiteNoise,
       } from "../../dist/defs/index.js";
 
       const el = (id) => document.getElementById(id);
@@ -79,7 +80,14 @@ socket. Swapping to a <code>--ws</code> server is the one line marked below.</di
                         { fftSize: 1024, hop: 0.5, wintype: 0 });
         chain = pvBrickWall(chain, wipe);
         chain = pvMagFreeze(chain, freeze);
-        const sig = ifft(chain);
+        // A short attack and release, opened at birth and closed by the gate:
+        // noise switched on at full amplitude starts on a step and a bare
+        // `free` ends on one, and both are clicks. The stop button drops the
+        // gate, so the envelope frees the node when it reaches zero.
+        const fade = envGen(Env.asr(0.02, 1.0, 0.05), {
+          gate: control("gate", 1.0), doneAction: DoneAction.FREE_SELF,
+        });
+        const sig = ifft(chain).mul(fade);
         return new SynthDef("web_spectral", out(0.0, sig), out(1.0, sig));
       };
 
@@ -109,7 +117,9 @@ socket. Swapping to a <code>--ws</code> server is the one line marked below.</di
       };
 
       el("stop").onclick = () => {
-        if (voice) voice.free();
+        // The gate, not `free`: the envelope fades out and frees the node
+        // itself, where a `/node_free` would cut the noise mid-sample.
+        if (voice) voice.set({ gate: 0.0 });
         voice = null;
         el("stop").disabled = true;
         el("play").disabled = false;

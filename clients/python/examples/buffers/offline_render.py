@@ -25,6 +25,7 @@ import pathlib
 import sys
 
 from clausters import Session
+from clausters.base import Routine
 from clausters.seq import Pbind, Pseq, Pwhite
 
 #: Where a run leaves its file when no path is given: ``examples/out/``, the
@@ -56,9 +57,25 @@ phrase = Pbind(
 # here) end to end, independently of any other session.
 
 # %%
-session = Session.nrt(tempo=2.0)
+session = Session.nrt(tempo=2.0).activate()
 session.seed(1)
 session.play(phrase)
+
+# A render ends at the score's **last event**, and the last one the phrase
+# writes is the gate closing on its final note — so without a later event the
+# file stops there and the built-in instrument's 0.3 s release is cut off,
+# which is a click at the end of the take. `/node_free 0` after the tail is
+# that closing event.
+PHRASE_BEATS = 6 * 2 * 0.25     # six degrees, twice, a quarter beat each
+TAIL = 1.0                      # beats: the release (0.3 s at 2 beats/s) and room
+
+
+def close():
+    yield PHRASE_BEATS + TAIL
+    session.server.send_bundle(("/node_free", 0))
+
+
+Routine(close).play()
 
 # %% [markdown]
 # ## Render

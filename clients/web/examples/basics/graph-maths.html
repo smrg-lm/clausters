@@ -56,7 +56,8 @@ emit the same spec JSON, which is exactly what the parity vectors assert.</div>
         Session, Synth,
         SynthDef, Routine,
       } from "../../dist/index.js";
-      import { control, out, sine } from "../../dist/defs/index.js";
+      import { DoneAction, Env, control, envGen, out, sine }
+        from "../../dist/defs/index.js";
 
       const el = (id) => document.getElementById(id);
       const log = (line) => { el("log").textContent += line + "\n"; };
@@ -78,7 +79,14 @@ emit the same spec JSON, which is exactly what the parity vectors assert.</div>
         // A unipolar LFO clipped to 0.8: a gentle tremolo.
         const trem = sine(3.0).mul(0.5).add(0.5).clip2(0.8);
 
-        const sig = shaped.mul(trem).mul(amp);
+        // A short attack and release, on the same `.mul()` the rest of this
+        // def is made of: without it the lead starts and ends on a step, which
+        // is a click.
+        const fade = envGen(Env.asr(0.02, 1.0, 0.1), {
+          gate: control("gate", 1.0), doneAction: DoneAction.FREE_SELF,
+        });
+
+        const sig = shaped.mul(trem).mul(amp).mul(fade);
         return new SynthDef("web_maths_lead", out(0.0, sig), out(1.0, sig));
       };
 
@@ -118,7 +126,9 @@ emit the same spec JSON, which is exactly what the parity vectors assert.</div>
       el("start").onclick = () => start().catch((err) => log(`error: ${err}`));
       el("play").onclick = play;
       el("free").onclick = () => {
-        lead.free();
+        // The gate, not `free`: the envelope releases and the node frees
+        // itself, where a `/node_free` would cut the lead mid-sample.
+        lead.set({ gate: 0.0 });
         log(`node ${lead.id} freed`);
         for (const id of ["play", "free"]) el(id).disabled = true;
       };

@@ -128,7 +128,11 @@ def sequence():
     server.send_bundle(("/node_set", answer.id, "drive", 0.9))  # harmonics in
     yield 2.0
     server.send_bundle(("/node_set", answer.id, "gate", 0.0))
-    yield 0.5
+    # The score's closing event, a release after the last gate: a render ends
+    # at its last event, so without this one the file would stop where that
+    # gate closed and the release would be cut — a click at the end.
+    yield 1.5
+    server.send_bundle(("/node_free", 0))
 
 Routine(sequence).play()
 

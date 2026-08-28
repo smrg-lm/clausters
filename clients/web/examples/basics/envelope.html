@@ -65,7 +65,7 @@ a chosen attack, decay, sustain and release.</div>
     -->
     <script type="module">
       import {
-        Buffer, Server, Session, play, seq, wavBytes,
+        Buffer, Routine, Server, Session, play, seq, wavBytes,
       } from "../../dist/index.js";
       import {
         DoneAction, Env, SynthDef, control, envGen, out, sine,
@@ -110,11 +110,28 @@ a chosen attack, decay, sustain and release.</div>
       // An offline session: its server writes a timestamped score instead of
       // sending anything, so the def is `send`-ed into the score at time 0 and
       // the phrase plays into it. `render` then turns the score into samples.
+      // The phrase: four degrees, twice, half a beat each -- and the beats of
+      // room the closing event leaves after it.
+      const PHRASE_BEATS = 8 * 0.5;
+      const TAIL = 1.5;      // the release (0.5 s at 2 beats/s), and room
+
       async function renderPhrase() {
-        const session = await Session.nrt({ tempo: 2.0 });
-        await adsrPad().send(session.server);   // /def_send synth at time 0
+        const session = (await Session.nrt({ tempo: 2.0 })).activate();
+        await adsrPad().send();                 // /def_send synth at time 0
         session.play(phrase());
+
+        // A render ends at the score's **last event**, and the last one the
+        // phrase writes is the gate closing on its final note — so without a
+        // later event the take stops there and the 0.5 s release is cut off,
+        // which is a click at the end. `/node_free 0` after the tail is that
+        // closing event.
+        new Routine(function* () {
+          yield PHRASE_BEATS + TAIL;
+          session.server.sendBundle([["/node_free", 0]]);
+        }).play();
+
         const stats = await session.render({ sampleRate: SR, channels: 2 });
+        session.deactivate();
         session.close();
         const peak = Math.max(...stats.peak, 0.0);
         log(`rendered ${stats.frames} frames (${stats.duration.toFixed(2)} s) `

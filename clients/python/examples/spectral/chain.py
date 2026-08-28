@@ -35,8 +35,12 @@ import sys
 from clausters import Session
 from clausters.base import Routine
 from clausters.defs import (
+    DoneAction,
+    Env,
     Synth,
     SynthDef,
+    control,
+    env_gen,
     fft,
     ifft,
     out,
@@ -59,9 +63,21 @@ SR = 48000.0
 # A band of noise -- the thing the filter has to act on.
 
 # %%
+def fade():
+    """A short attack and release, opened at birth and closed by the gate.
+
+    Noise switched on at full amplitude starts the take on a step, which is a
+    click — audible on the first sample of a file meant to be listened to. Two
+    hundredths of a second of ramp costs nothing and is not the subject here;
+    the same envelope closes the take when the routine drops the gate."""
+    gate = control("gate", 1.0)
+    return env_gen(Env.asr(0.02, 1.0, 0.05), gate=gate,
+                   done_action=DoneAction.FREE_SELF)
+
+
 def noisy(name: str = "noisy") -> SynthDef:
     """Plain band-unlimited noise on the left channel (the reference)."""
-    return SynthDef(name, out(0.0, white_noise() * 0.25))
+    return SynthDef(name, out(0.0, white_noise() * 0.25 * fade()))
 
 
 # %% [markdown]
@@ -73,7 +89,7 @@ def spectral_lowpass(name: str = "spectral_lp") -> SynthDef:
     """White noise -> FFT -> PV_BrickWall (low pass) -> IFFT, on the right."""
     chain = fft(white_noise() * 0.25, fft_size=1024, hop=0.5, wintype=0)
     chain = pv_brick_wall(chain, 0.75)  # keep the bottom 25% of bins
-    return SynthDef(name, out(1.0, ifft(chain)))
+    return SynthDef(name, out(1.0, ifft(chain) * fade()))
 
 
 # %% [markdown]
@@ -92,8 +108,15 @@ lp = Synth("spectral_lp")
 
 def stop():
     yield 2.0
-    session.server.send_bundle(("/node_free", raw.id))
-    session.server.send_bundle(("/node_free", lp.id))
+    # Closed, not freed: the gate lets each envelope fall to zero instead of
+    # cutting the noise mid-sample.
+    session.server.send_bundle(("/node_set", raw.id, "gate", 0.0))
+    session.server.send_bundle(("/node_set", lp.id, "gate", 0.0))
+    yield 0.25
+    # The score's closing event, after the release: a render ends at its last
+    # event, so without this one the file would stop where the gate closed and
+    # the tail would be cut off — the click again, at the other end.
+    session.server.send_bundle(("/node_free", 0))
 
 Routine(stop).play()
 

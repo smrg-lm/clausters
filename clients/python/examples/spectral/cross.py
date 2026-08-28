@@ -38,9 +38,12 @@ import sys
 from clausters import Session
 from clausters.base import Routine
 from clausters.defs import (
+    DoneAction,
+    Env,
     Synth,
     SynthDef,
     control,
+    env_gen,
     fft,
     ifft,
     out,
@@ -83,7 +86,14 @@ def cross(name: str = "cross") -> SynthDef:
     # Bin magnitudes are raw transform sums (a unit sine peaks at roughly
     # fft_size/4 in its bin), so scaling A by B's magnitudes multiplies the
     # level by that factor — the cross-synthesis needs a small make-up gain.
-    return SynthDef(name, out(0.0, mod * 0.05), out(1.0, sig * 0.01))
+    # A short attack and release, opened at birth and closed by the gate:
+    # noise switched on at full amplitude starts the take on a step, and a
+    # `/node_free` mid-sample ends it on one. Both are clicks, and this file is
+    # meant to be listened to.
+    gate = control("gate", 1.0)
+    fade = env_gen(Env.asr(0.02, 1.0, 0.05), gate=gate,
+                   done_action=DoneAction.FREE_SELF)
+    return SynthDef(name, out(0.0, mod * 0.05 * fade), out(1.0, sig * 0.01 * fade))
 
 
 # %% [markdown]
@@ -104,7 +114,12 @@ def sequence():
     # Freeze the last envelope: the melody stops, the texture holds.
     session.server.send_bundle(("/node_set", voice.id, "freeze", 1.0))
     yield 4.0
-    session.server.send_bundle(("/node_free", voice.id))
+    # Closed, not freed: the gate lets the envelope fall to zero.
+    session.server.send_bundle(("/node_set", voice.id, "gate", 0.0))
+    yield 0.25
+    # The score's closing event, after the release. A render ends at its last
+    # event, so without this one the file would stop where the gate closed.
+    session.server.send_bundle(("/node_free", 0))
 
 Routine(sequence).play()
 

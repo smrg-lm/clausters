@@ -30,6 +30,7 @@ import pathlib
 import sys
 
 from clausters import Session
+from clausters.base import Routine
 from clausters.defs import (
     DoneAction,
     Env,
@@ -86,9 +87,29 @@ phrase = Pbind(
 )
 
 # %%
-session = Session.nrt(tempo=2.0)
+session = Session.nrt(tempo=2.0).activate()
 adsr_pad().send(session.server)  # /def_send synth at time 0 in the score
 session.play(phrase)
+
+
+# %% [markdown]
+# ## The closing event
+# A render ends at the score's **last event**, and the last one the phrase
+# writes is the gate closing on its final note — so without a later event the
+# file stops there and the 0.5 s release is cut off, which is a click at the end
+# of the take. `/node_free 0` a release after the phrase is that event.
+
+# %%
+PHRASE_BEATS = 8 * 0.5          # four degrees, twice, half a beat each
+TAIL = 1.5                      # beats: the release (0.5 s at 2 beats/s) and room
+
+
+def close():
+    yield PHRASE_BEATS + TAIL
+    session.server.send_bundle(("/node_free", 0))
+
+
+Routine(close).play()
 
 
 # %%
