@@ -352,11 +352,6 @@ export class TempoClock {
         return this.monoStart;
     }
 
-    /** Whether the real-time driver is running. */
-    get isRunning(): boolean {
-        return this.running;
-    }
-
     /** How many items are queued. */
     get queued(): number {
         return this.queue.len;

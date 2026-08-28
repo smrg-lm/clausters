@@ -40,6 +40,28 @@ class MonotonicTimebase(Timebase):
         return time.monotonic()
 
 
+class ManualTimebase(Timebase):
+    """Time driven by hand: it advances only when `advance` is called.
+
+    What a test paces with, so the very code path a real clock runs advances
+    deterministically and instantly instead of waiting on a wall clock. It is
+    also the honest timebase for anything stepped by something that is not
+    time -- a frame, a user's gesture, a render tick.
+    """
+
+    kind = "manual"
+
+    def __init__(self, start: float = 0.0):
+        self._seconds = float(start)
+
+    def now(self) -> float:
+        return self._seconds
+
+    def advance(self, secs: float) -> None:
+        """Moves time forward by ``secs`` (never backwards)."""
+        self._seconds += max(float(secs), 0.0)
+
+
 class SampleClockTimebase(Timebase):
     """Seconds from the server's sample clock: ``now = sample() / sample_rate``."""
 

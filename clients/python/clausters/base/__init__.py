@@ -36,7 +36,7 @@ from .moment import Moment
 from .netaddr import NetAddr
 from .rand import choice, current_rng, next_below, next_f64, spawn_rng, uniform
 from .stream import FunctionStream, Routine, Stream, StopStream, YieldAndReset
-from .timebase import MonotonicTimebase, SampleClockTimebase, Timebase
+from .timebase import ManualTimebase, MonotonicTimebase, SampleClockTimebase, Timebase
 from ._midiinterface import (
     MidiNrtInterface,
     MidiReceiver,
@@ -61,6 +61,7 @@ __all__ = [
     "TempoClock",
     "Timebase",
     "MonotonicTimebase",
+    "ManualTimebase",
     "SampleClockTimebase",
     "Environment",
     "RandomContext",

@@ -8,6 +8,7 @@ import struct
 import pytest
 
 from clausters.base import (
+    ManualTimebase,
     MonotonicTimebase,
     OscNrtInterface,
     Routine,
@@ -247,3 +248,34 @@ if __name__ == "__main__":
                 print(f"{'skip' if skip else 'FAIL'} {name}: {e}")
                 if not skip:
                     traceback.print_exc()
+
+
+def test_manual_timebase_moves_only_when_advanced():
+    """The hand-driven timebase: what a test paces with, and the honest one for
+    anything stepped by something that is not time. Ported from the web client,
+    which had it while this one did not."""
+    tb = ManualTimebase()
+    assert tb.now() == 0.0
+
+    tb.advance(1.5)
+    assert tb.now() == 1.5
+
+    # Never backwards: time that could go back is not a timebase.
+    tb.advance(-10.0)
+    assert tb.now() == 1.5
+
+    assert ManualTimebase(4.0).now() == 4.0
+
+
+def test_queued_counts_what_is_in_the_schedule():
+    """`queued` says a routine actually left the queue, rather than that it
+    stopped producing -- the distinction `clear` and `unsched` turn on."""
+    clock = TempoClock(1.0, timebase=ManualTimebase())
+    assert clock.queued == 0
+
+    r = Routine(lambda: (yield 1.0))
+    clock.sched(0.0, r)
+    assert clock.queued == 1
+
+    clock.clear()
+    assert clock.queued == 0

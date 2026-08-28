@@ -147,7 +147,16 @@ export interface ServerOptions {
     connection?: Connection;
     /** Seconds of scheduling headroom added to every timed send. */
     latency?: number;
-    /** The server's capacities, when they are known without asking. */
+    /**
+     * The server's capacities, when they are known without asking.
+     *
+     * No counterpart in the reference client, and it needs none: there a
+     * `Server` handle is built against a process whose options the same script
+     * chose, so the numbers are already known. A page's engine is compiled with
+     * its defaults and a handle that never boots or attaches has nothing to ask,
+     * which is the case this exists for — an offline score, or a handle sized by
+     * whoever knows.
+     */
     sizing?: Partial<ServerSizing>;
     /** The handle's own default reply wait, in seconds. */
     timeout?: number;

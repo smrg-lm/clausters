@@ -132,6 +132,15 @@ class TempoClock:
         return self.secs2beats(self._now() - self._mono_start)
 
     @property
+    def queued(self) -> int:
+        """How many items are in the schedule queue right now.
+
+        What `clear` empties and `unsched` shrinks -- read for the same reason
+        the web client's tests read it: to say a routine actually left the
+        queue, rather than that it stopped producing."""
+        return len(self._queue)
+
+    @property
     def rolling(self) -> bool:
         """Whether the beat advances **by itself**: the real-time driver is
         running (`start`, not yet `stop`ped).

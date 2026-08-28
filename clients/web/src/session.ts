@@ -193,7 +193,18 @@ export class Session extends Environment {
         timeout,
         share,
     }: SessionOptions & {
+        /**
+         * An engine to drive rather than open — the reference client's
+         * `server=`, and the same rule: one handed in is not this session's to
+         * close.
+         */
         engine?: ClaustersServer;
+        /**
+         * The engine's output channel count. The reference reads this from the
+         * server's own options or its config file; a page has neither, and an
+         * `AudioContext`'s output width is fixed when it is created, so the
+         * only place to say it is here.
+         */
         channels?: number;
     } = {}): Promise<Session> {
         await loadOsc();
