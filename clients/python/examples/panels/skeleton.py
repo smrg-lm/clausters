@@ -2,11 +2,11 @@
 """Drive a headless ``clausters-gui`` host: build a GuiDef, read a widget back.
 
 The smallest round trip over the widget protocol, the GUI counterpart of
-``live_udp.py``. A GuiDef is built exactly the way a ``SynthDef``/``GraphDef`` is
+``io/live_udp.py``. A GuiDef is built exactly the way a ``SynthDef``/``GraphDef`` is
 -- a tree of ``{id, type, ...props, children}`` nodes serialized to JSON -- and
 sent in one ``/gui_def`` message; the host registers the tree and answers
 ``/gui_query`` with ``/gui_info``. This exercises the protocol and the dual-role
-host with **no display** (see ``window.py`` for the windowed version).
+host with **no display** (see ``views/window.py`` for the windowed version).
 
 This file is organized as ``# %%`` cells (the VS Code / Jupyter convention) and
 **runs out of the box**. Install once, from the repo root::

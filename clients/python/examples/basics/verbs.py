@@ -10,7 +10,7 @@ performs the change of state offline: an expression or a pattern in, samples
 the circle by rendering a phrase to a file, loading it back as a buffer and
 playing the take.
 
-The visual sibling has its own tour (``plotting.py``); the arrangement, being
+The visual sibling has its own tour (``views/plotting.py``); the arrangement, being
 *rendered* rather than played, has its walkthrough in the composing chapters
 (see the book's "The ambient verbs" for why the split).
 

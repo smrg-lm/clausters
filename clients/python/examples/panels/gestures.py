@@ -32,7 +32,7 @@ is bounded by its own content — its axis *is* the take — while a ``track`` l
 and a ``pianoroll`` are open-ended surfaces you place things on and zoom past
 the end of. So the lanes, the rolls and the rulers share one group here, and
 each waveform navigates alone. Audio joins a multitrack the way it does in
-``multitrack.py``: inside a ``clip``, which is what gives it a placement on
+``editors/multitrack.py``: inside a ``clip``, which is what gives it a placement on
 the open axis. The lane below each ruler carries the very same take that way.
 
 Two gestures are deliberately *not* in the table, because they are not
@@ -41,7 +41,7 @@ roll's keyboard gutter) always pans that axis, and the wheel always zooms.
 
 Run it as a script (``python gestures.py``) or cell by cell (``# %%``).
 Needs a display and a GPU adapter; the install bundles the GUI binary (see
-``editor.py`` for the setup notes).
+``views/editor.py`` for the setup notes).
 """
 
 # %%

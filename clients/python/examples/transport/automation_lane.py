@@ -15,7 +15,7 @@ Here a single sustained sine has its pitch swept by a lane: 220 Hz up to 880
 with no per-note retriggering.
 
 Runs from the *installed* package, offline (no server process, no display),
-like ``offline_render.py``::
+like ``buffers/offline_render.py``::
 
     python -m venv .venv && . .venv/bin/activate
     pip install -e ./clients/python

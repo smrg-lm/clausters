@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Maths on a UGen graph: the full operator set, not just ``+ - * /``.
 
-Runs from the *installed* package, offline, like ``offline_render.py``::
+Runs from the *installed* package, offline, like ``buffers/offline_render.py``::
 
     python -m venv .venv && . .venv/bin/activate
     pip install ./clients/python

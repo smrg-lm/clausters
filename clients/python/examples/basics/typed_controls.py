@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Typed controls: a `tr` trigger, a lagged control and an `ir` scalar.
 
-Runs from the *installed* package, offline, like ``offline_render.py``::
+Runs from the *installed* package, offline, like ``buffers/offline_render.py``::
 
     python -m venv .venv && . .venv/bin/activate
     pip install ./clients/python

@@ -47,7 +47,7 @@ clear of the bass register.
 
 Run it as a script (``python multitrack.py``) or cell by cell (``# %%``).
 Needs a display and a GPU adapter; the install bundles the GUI binary (see
-``editor.py`` for the setup notes).
+``views/editor.py`` for the setup notes).
 """
 
 # %%

@@ -39,9 +39,9 @@ itself immediately, and <code>dbrown</code> walks the detune by small steps,
 folded into its bounds.
 
 This is the counterpart of the client-side sequencing in
-<code>sequencing.html</code>, and the contrast is the point: there a routine on
-the page's clock sends a message per note; here nothing is sent after the
-synth starts. The page can stall and the sequence keeps its time.
+<code>transport/sequencing.html</code>, and the contrast is the point: there a
+routine on the page's clock sends a message per note; here nothing is sent
+after the synth starts. The page can stall and the sequence keeps its time.
 
 Everything sounds through the <b>in-page engine</b>: no server process, no
 socket. Swapping to a <code>--ws</code> server is the one line marked below.</div>

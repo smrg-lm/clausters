@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Two handles on one GUI host: `boot` owns the process, `attach` does not.
 
-The GUI parallel of ``servers.py``. A `GuiHost` is a handle on a host, and there
+The GUI parallel of ``io/servers.py``. A `GuiHost` is a handle on a host, and there
 are two verbs that reach one:
 
 - `boot`, for a host that is **not there yet**. It starts the ``clausters-gui``

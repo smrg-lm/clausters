@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Frequency-domain processing: an FFT -> PV_* -> IFFT chain.
 
-Runs from the *installed* package, offline, like ``typed_controls.py``::
+Runs from the *installed* package, offline, like ``basics/typed_controls.py``::
 
     python -m venv .venv && . .venv/bin/activate
     pip install ./clients/python

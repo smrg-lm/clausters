@@ -84,7 +84,7 @@ hands the press straight to the clip, so it still moves and trims like any
 other.
 
 Needs an audio device, a display and a GPU adapter; the install bundles the GUI
-binary (see ``editor.py`` for the setup notes). Run it as a script
+binary (see ``views/editor.py`` for the setup notes). Run it as a script
 (``python composer.py``) or cell by cell (``# %%``): the window stays up
 between cells.
 """

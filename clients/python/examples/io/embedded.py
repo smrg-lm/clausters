@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Play live from an *embedded* server running inside this process.
 
-The third session flavour, next to ``offline_render.py`` (NRT) and
+The third session flavour, next to ``buffers/offline_render.py`` (NRT) and
 ``live_udp.py`` (a separate server over UDP). ``Session.embed()`` opens the
 whole Clausters server -- audio device and engine -- *in this process*, through
 the native library bundled in the wheel. There is no socket and no separate

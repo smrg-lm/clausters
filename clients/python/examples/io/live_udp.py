@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Play live over UDP from the *installed* package.
 
-The live counterpart of ``offline_render.py``: the same ``Session`` / ``Pbind``
+The live counterpart of ``buffers/offline_render.py``: the same ``Session`` / ``Pbind``
 API, but a live RT session sends OSC over UDP to a running Clausters server. The
 only thing that changes between offline and live is the session factory -- the
 pattern and the clock are identical.
