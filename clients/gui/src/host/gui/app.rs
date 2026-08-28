@@ -884,7 +884,7 @@ impl App {
 /// or `None` for one nothing focusable answers (the global shortcuts then run).
 /// A printable character (including Space) inserts; the named editing keys and
 /// Tab map one-to-one.
-/// **The key a chord was pressed on, and the character everything else typed.**
+/// **The key a chord was pressed on, and the text everything else produced.**
 ///
 /// winit's `logical_key` is the key *with modifiers applied*, which is right
 /// for typing and wrong for a shortcut: `Ctrl`+`Z` arrives as the control
@@ -899,10 +899,19 @@ impl App {
 /// key it also unshifts plain typing, and a text field could then hold no
 /// capital and no accented letter: `A` arrived as `a`, `Á` as `a`, and the
 /// field looked like it only spoke lowercase ASCII. So `chord` (Ctrl or Alt
-/// down, the two that turn a letter into a command) picks the reading: the
-/// bare letter for a shortcut, `logical_key` — shift applied, dead keys and
-/// IME composed — for everything a person is typing. A named key (Escape,
-/// Tab, the arrows) is the same either way.
+/// down, the two that turn a letter into a command) picks the reading.
+///
+/// What everything else reads is **`text`**, not `logical_key`, and the two
+/// part company exactly where composition happens. A dead key composes onto
+/// the *next* press, and that press keeps its own identity: `` ` `` then Space
+/// is still the Space key, so `logical_key` says `Space` while `text` says
+/// `` ` ``. Reading the key there types a blank where the accent should be and
+/// loses the accent altogether. `text` is what this press actually put on the
+/// screen, which is the only question a field is asking.
+///
+/// A press with no text (an arrow, Escape) or whose text is a control
+/// character (Enter's `\r`, Tab's `\t`, Backspace) falls back to
+/// `logical_key`, where those are the named keys the editing verbs match on.
 fn key_pressed(event: &winit::event::KeyEvent, chord: bool) -> Key {
     #[cfg(any(
         target_os = "windows",
@@ -918,6 +927,12 @@ fn key_pressed(event: &winit::event::KeyEvent, chord: bool) -> Key {
         if chord && let Key::Character(c) = event.key_without_modifiers() {
             return Key::Character(c);
         }
+    }
+    if !chord
+        && let Some(text) = event.text.as_ref()
+        && !text.chars().any(char::is_control)
+    {
+        return Key::Character(text.clone());
     }
     event.logical_key.clone()
 }
