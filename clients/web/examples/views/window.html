@@ -72,7 +72,7 @@ only the GUI host.</div>
       async function run() {
         $("run").disabled = true;
         await loadOsc();
-        await new GuiHost(await pageGuiConnection()).boot();
+        await new GuiHost().boot();
 
         sig = gui.source(decayingSine(8000, 120.0));
         await gui.view(

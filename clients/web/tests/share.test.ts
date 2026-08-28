@@ -115,8 +115,8 @@ test("widget ids split the same way, so two clients of one host agree too", () =
 });
 
 test("a host client takes the share it is given", () => {
-    const kernel = new GuiHost(recorder(), { share: { index: 0, of: 2 } });
-    const page = new GuiHost(recorder(), { share: { index: 1, of: 2 } });
+    const kernel = new GuiHost({ connection: recorder(), share: { index: 0, of: 2 } });
+    const page = new GuiHost({ connection: recorder(), share: { index: 1, of: 2 } });
     assert.notEqual(kernel.allocId(), page.allocId());
     kernel.stop();
     page.stop();

@@ -81,7 +81,7 @@ this brings up only the GUI host.</div>
         for (let i = 0; i < take.frames; i++) mono[i] = take.samples[i * 2];
         log(`${mono.length * 4} B of raw f32 travel as one blob (no per-sample OSC)`);
 
-        await new GuiHost(await pageGuiConnection()).boot();
+        await new GuiHost().boot();
         await gui.view(
           { title: "Plot of an offline render", w: 720, h: 300 },
           gui.plot({

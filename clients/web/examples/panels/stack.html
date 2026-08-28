@@ -92,7 +92,7 @@ view's.</div>
       async function run() {
         $("run").disabled = true;
         await loadOsc();
-        await new GuiHost(await pageGuiConnection()).boot();
+        await new GuiHost().boot();
 
         // ---- the window: a picker over a stack, a scroll slider under it ----
         // The menu's options are the page names and its index *is* the stack's

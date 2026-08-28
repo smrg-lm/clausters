@@ -36,7 +36,9 @@ import { GuiIdAllocator } from "./ids.ts";
 import type { IdShare } from "../base/core.ts";
 import { WidgetHandle, WindowHandle } from "./handle.ts";
 import type { EventArgs } from "./handle.ts";
-import { canvasIn, guiHost, newCanvas, pageGuiConnection } from "./page.ts";
+import { canvasIn, guiHost, newCanvas, newGuiHost, pageGuiConnection, pageGuiIfUp } from "./page.ts";
+import { loadCore } from "../base/core.ts";
+import type { ClaustersServer } from "../engine/server.ts";
 import { ambientHost, setAmbientHost } from "./ambient.ts";
 import type { ClaustersGui, PageGuiConnection, Stage } from "./page.ts";
 
@@ -58,6 +60,47 @@ export const DEFAULT_PORT = 57210;
  * network carrier a browser can use.
  */
 export const DEFAULT_WS_PORT = 57220;
+
+/** Where a handle looks for a `clausters-gui --ws` host when it names no address. */
+const DEFAULT_WS_URL = `ws://127.0.0.1:${DEFAULT_WS_PORT}`;
+
+/**
+ * Where a handle's GUI host is. The reference client's `transport`, with the
+ * values a browser has: the wasm host in this tab, or a native
+ * `clausters-gui --ws` over a socket.
+ */
+export type GuiTransportName = "page" | "ws";
+
+/** What {@link GuiHost} is built with — the reference's constructor, page-shaped. */
+export interface GuiHostOptions {
+    /** Where the host is; `"page"` (the default) or `"ws"`. */
+    transport?: GuiTransportName;
+    /** The `clausters-gui --ws` address, when `transport` is `"ws"`. */
+    url?: string;
+    /**
+     * *Which* in-page host, when it is not this page's own — a host's address
+     * in a tab, where the reference client uses a port. Read it off a handle
+     * that booted one ({@link GuiHost.instanceOf}).
+     */
+    gui?: ClaustersGui;
+    /**
+     * The engine a **booted** host's audio leg is wired to, so a widget bound
+     * to a node reaches the server that holds it. This is what the reference
+     * client's `session.gui()` does — it boots a host with its client leg
+     * pointed at that session's server — and here it is spelled by handing a
+     * `Server`'s own engine over: `new GuiHost({ engine: server.engine })`.
+     * Without it a booted host brings up an engine of its own, and nothing on
+     * another server is bindable from it.
+     */
+    engine?: ClaustersServer;
+    /**
+     * A carrier built by hand, which wins over `transport` — the reference
+     * client's `interface=`.
+     */
+    connection?: Connection;
+    /** This handle's slice of the widget-id space, for a shared host. */
+    share?: IdShare;
+}
 
 /**
  * A widget's state as `/gui_info` reports it. An **empty** `type` means the
@@ -135,7 +178,43 @@ export const INTERFACE_EVENTS: readonly string[] = ["press", "release", "click"]
 const PROBE_ID = 0;
 
 export class GuiHost {
-    readonly connection: Connection;
+    // Where this handle's host is, and its address -- the constructor's
+    // `transport`/`url`, kept privately so the public surface stays the verbs.
+    private readonly carrierKind: GuiTransportName;
+    private readonly carrierUrl: string;
+    private conn: Connection | null = null;
+    private instance: ClaustersGui | null;
+    private readonly audio: ClaustersServer | null;
+
+    /**
+     * The in-page host instance this handle drives, once it has one — `null`
+     * over a socket. A host's address in a page: hand it to a second handle
+     * (`new GuiHost({ gui: first.instanceOf }).attach()`) to reach the same
+     * host, the way the reference client hands a second handle the port.
+     */
+    get instanceOf(): ClaustersGui | null {
+        return this.instance;
+    }
+    /** Whether `boot` brought up the host instance, so `stop` ends it. */
+    private ownsInstance = false;
+
+    /**
+     * The carrier this handle talks over.
+     *
+     * A handle opens it in `boot`/`attach` (or is handed one), so asking before
+     * either says which of the two is missing rather than returning something
+     * that reaches nothing.
+     */
+    get connection(): Connection {
+        if (!this.conn) {
+            throw new Error(
+                "this handle has no carrier yet — boot() a host, attach() to " +
+                    "one already running, or build it with an explicit " +
+                    "`connection`.",
+            );
+        }
+        return this.conn;
+    }
     /**
      * The one widget-id namespace for this host client — recycling, so a
      * freed subtree's ids return to the pool. Windows and widgets share it.
@@ -193,19 +272,80 @@ export class GuiHost {
     private readonly sources = new Map<number, Source[]>();
 
     /**
-     * Drives the host behind `connection`. The core wasm must be loaded first
-     * (`await loadOsc()`), as for the audio `Server`.
+     * A handle on a GUI host. **Reaches nothing**: it builds the widget-id
+     * allocator and sends no packet, exactly as the reference client's
+     * `GuiHost(...)` does.
+     *
+     * `transport` names where the host is, the way the reference names it with
+     * a transport and an address, and the handle opens the carrier itself when
+     * a verb needs it:
+     *
+     * - `"page"` (the default) — the `clausters-gui` wasm host in this tab.
+     * - `"ws"` — a native `clausters-gui --ws` host at `url`.
+     *
+     * Then one of the two verbs, and as with the audio `Server` **they are what
+     * say who owns what**: {@link GuiHost.boot} brings up a host this handle
+     * owns, {@link GuiHost.attach} connects to one already running and owns
+     * nothing.
      *
      * `share` takes one slice of the widget-id space instead of all of it,
      * for a host with more than one client naming widgets on it — the same
      * arrangement, and the same arithmetic, as the audio `Server`'s (see
      * `IdShare`).
      */
-    constructor(connection: Connection, { share }: { share?: IdShare } = {}) {
-        this.connection = connection;
+    constructor({
+        transport = "page",
+        url = DEFAULT_WS_URL,
+        gui,
+        engine,
+        connection,
+        share,
+    }: GuiHostOptions = {}) {
+        this.carrierKind = transport;
+        this.carrierUrl = url;
+        this.instance = gui ?? null;
+        this.audio = engine ?? null;
         this.alloc = new GuiIdAllocator(undefined, undefined, share);
         this.listener = (packet) => this.dispatch(packet);
+        if (connection) this.openOn(connection);
+    }
+
+    /** Wires this handle's reply listener onto a carrier, once it exists. */
+    private openOn(connection: Connection): void {
+        this.conn = connection;
         connection.addReply(this.listener);
+    }
+
+    /**
+     * Opens this handle's carrier, or returns the one it already has.
+     *
+     * `own` is the difference between the two verbs and is the whole of it: a
+     * boot gets a host instance of its own, an attach the one already running
+     * in this page. A socket is neither -- it points at a `clausters-gui`
+     * process this page did not start and cannot, so `boot` refuses it first.
+     */
+    private async openCarrier(own: boolean): Promise<Connection> {
+        if (this.conn) return this.conn;
+        await loadCore();
+        if (this.carrierKind === "ws") {
+            this.openOn(await WsConnection.open(this.carrierUrl));
+            return this.conn!;
+        }
+        const found = this.instance
+            ?? (own
+                ? newGuiHost(this.audio ? { engine: this.audio } : {})
+                : pageGuiIfUp());
+        if (!found) {
+            throw new Error(
+                "no GUI host is running in this page — attach() is for a host " +
+                    "already up, and nothing has booted one here. boot() one " +
+                    "instead, which brings up its own.",
+            );
+        }
+        this.ownsInstance = own && !this.instance;
+        this.instance = await found;
+        this.openOn(await pageGuiConnection(this.instance));
+        return this.conn!;
     }
 
     // ---- coming up, and going down ----
@@ -225,12 +365,20 @@ export class GuiHost {
      * this client go — and, there, stops a process it started.
      */
     async boot({ adoptAmbient = true }: { adoptAmbient?: boolean } = {}): Promise<this> {
-        const page = (this.connection as Partial<PageGuiConnection>).gui;
+        if (this.carrierKind === "ws" && !this.conn) {
+            throw new Error(
+                `this handle points at ${this.carrierUrl} and a page can start ` +
+                    "nothing there — attach() to the host running at that " +
+                    "address, or boot() one with the default transport, which " +
+                    "brings up a host in this tab.",
+            );
+        }
+        const connection = await this.openCarrier(true);
+        const page = (connection as Partial<PageGuiConnection>).gui;
         if (page === undefined) {
             throw new Error(
                 "this carrier goes to a host over a socket and a page can start " +
-                    "nothing there — attach() to the host running at that " +
-                    "address, or build the handle over pageGuiConnection().",
+                    "nothing there — attach() to the host running at that address.",
             );
         }
         this.page = page;
@@ -258,6 +406,7 @@ export class GuiHost {
         timeout = 1.0,
         adoptAmbient = true,
     }: { timeout?: number; adoptAmbient?: boolean } = {}): Promise<this> {
+        await this.openCarrier(false);
         try {
             await this.query(PROBE_ID, timeout);
         } catch (error) {
@@ -910,7 +1059,11 @@ export class GuiHost {
         if (ambientHost() === this) setAmbientHost(null);
         for (const dispose of this.fitted.values()) dispose();
         this.fitted.clear();
-        this.connection.removeReply(this.listener);
+        this.conn?.removeReply(this.listener);
+        // A host this handle booted is this handle's to release; one it
+        // attached to keeps drawing, windows and all -- the reference client's
+        // rule, where `stop` ends a booted process and lets an attached one be.
+        if (this.ownsInstance) this.instance?.close();
         for (const p of this.pending) {
             clearTimeout(p.timer);
             p.reject(new ReplyTimeout("the host client was closed"));

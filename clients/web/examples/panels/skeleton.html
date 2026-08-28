@@ -63,7 +63,7 @@ fresh id and hands back a handle that resolves the names.</div>
         // ---- the host ----
         // The page's, and the ambient one from here on, so the view below opens
         // without being told which host.
-        const host = await new GuiHost(await pageGuiConnection()).boot();
+        const host = await new GuiHost().boot();
 
         // ---- build a small panel and open it ----
         // Two controls and a waveform view. The root view carries no id (the id

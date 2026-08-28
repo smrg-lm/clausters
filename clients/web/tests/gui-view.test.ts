@@ -57,7 +57,7 @@ function recorder(): Connection & { packets: Uint8Array[] } {
 /** A host over a recorder, plus the messages it has sent, decoded. */
 function fakeHost(): { host: GuiHost; sent: () => { addr: string; args: unknown[] }[] } {
     const carrier = recorder();
-    const host = new GuiHost(carrier);
+    const host = new GuiHost({ connection: carrier });
     return {
         host,
         sent: () =>
@@ -217,8 +217,8 @@ test("a view with no host opens on the ambient one", async () => {
 
 test("a host adopts the ambient registration first-wins, and stop gives it up", () => {
     setAmbientHost(null);
-    const first = new GuiHost(recorder()).adoptAmbient();
-    const second = new GuiHost(recorder()).adoptAmbient();
+    const first = new GuiHost({ connection: recorder() }).adoptAmbient();
+    const second = new GuiHost({ connection: recorder() }).adoptAmbient();
     try {
         // The second call finds one registered and does not displace it.
         assert.equal(first.adoptAmbient(), first);

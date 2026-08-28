@@ -111,6 +111,8 @@ socket.</div>
       const LANES = 1;              // the navigation group the four takes share
       const LONG = 2;               // the finished take's own: a different axis
 
+        server = await new Server().boot();
+        const raw = server.engine;
       let server, raw, win = null;
       let takes = [], long = null, peer = null;
 
@@ -186,11 +188,10 @@ socket.</div>
         await loadOsc();
         await loadCore();
         raw = await pageEngine();
-        server = await new Server().attach();
         // The page's host, and the ambient one from here on: a view opens
         // without being told which host, exactly as the script does after
         // `session.gui()`.
-        await new GuiHost(await pageGuiConnection()).boot();
+        await new GuiHost({ engine: server.engine }).boot();
 
         await glissando().send(server);
         await server.sync();
@@ -248,7 +249,7 @@ socket.</div>
       // where — the announcement carries the span and never the samples.
       async function peerEdit() {
         el("edit").disabled = true;
-        peer ??= await new Server().attach();
+        peer ??= await new Server({ engine: server.engine }).attach();
         const take = takes[0];
         const held = new Buffer(take.bufnum, take.frames, 1, RATE, peer);
         const start = Math.round(take.frames / 3);

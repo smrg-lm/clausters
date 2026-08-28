@@ -76,6 +76,8 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
       const el = (id) => document.getElementById(id);
       const log = (line) => { el("log").textContent += line + "\n"; };
 
+        server = await new Server().boot();
+        const raw = server.engine;
       let server, raw, win = null;
       let buffer = null;          // the loaded Buffer handle
       let voice = null;           // the sounding node, if any
@@ -260,13 +262,12 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
         await loadOsc();
         await loadCore();
         raw = await pageEngine();
-        server = await new Server().attach();
         // The page's host, and the ambient one from here on — so a view opens
         // without being told where to draw, exactly as the script does after
         // `session.gui()`. Where the drawing *goes* is the document's say: the
         // view is opened into `#stage` below, and its canvas is made inside
         // that element and follows its box, at the display's true resolution.
-        await new GuiHost(await pageGuiConnection()).boot();
+        await new GuiHost({ engine: server.engine }).boot();
 
 
         el("file").disabled = false;

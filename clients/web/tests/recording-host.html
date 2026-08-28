@@ -86,10 +86,8 @@
       async function run() {
         await loadOsc();
         await loadCore();
-        const raw = await engine({ channels: 2 });
-        await raw.resume();
-        const server = await new Server().attach();
-        await new GuiHost(await pageGuiConnection()).boot();
+        const server = await new Server().boot();
+        await new GuiHost({ engine: server.engine }).boot();
 
         await new SynthDef("host_recording",
           out(0.0, recordBuf(control("buf", 0.0, "ir"), 0.0,

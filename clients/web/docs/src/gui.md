@@ -156,18 +156,17 @@ const info = await win.widget("cutoff").query();   // a round trip, so awaited
 ```
 
 Getting the host is the asynchronous part, since it loads wasm:
-`const host = await new GuiHost(await pageGuiConnection()).boot();`.
+`const host = await new GuiHost().boot();`.
 
-**Two ways to have a host, and one ambient rule.** A handle over `pageGuiConnection()`, `boot`ed, is the wasm
-host on this page's canvas — the ordinary one; a handle over a `WsConnection` drives a
-*native* `clausters-gui --ws` from the tab, which is the same object over a
-different carrier and is this client's `attach`: it connects to a host it did
-not open. Either becomes the **ambient** host if none is registered (first-wins,
+**Two ways to have a host, and one ambient rule.** `boot()` brings up a wasm host this handle
+owns; `attach()` connects to one it did not open — the host already up in this
+page, or, with `transport: "ws"`, a *native* `clausters-gui --ws` driven from
+the tab, which is the same object over a different carrier. Either becomes the **ambient** host if none is registered (first-wins,
 the mirror of the audio server's default-session adoption), which is why
 `view(...).open()` needs no argument, and `stop()` gives the registration up. A
 `Session` opened with `Session.embed()` carries one either way; a session drives
 a host it did not open by being **given** one — `new Session(server, clock,
-await new GuiHost(await WsConnection.open(url)).attach())` — the way it is given a `Server`.
+await new GuiHost({ transport: "ws", url }).attach())` — the way it is given a `Server`.
 `newGuiHost()` boots an instance that is **not** the page's — its own engine
 unless you hand it one — for a document holding several independent
 instruments. It appends no canvas of its own; its views take the elements they

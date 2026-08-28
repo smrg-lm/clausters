@@ -118,7 +118,7 @@ names, two independent panels.</div>
       async function run() {
         $("run").disabled = true;
         await loadOsc();
-        await new GuiHost(await pageGuiConnection()).boot();
+        await new GuiHost().boot();
 
         // ---- two panels from one view ----
         // `open` is what makes an *instance*: it allocates the widget ids and

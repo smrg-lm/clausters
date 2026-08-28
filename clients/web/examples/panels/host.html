@@ -104,7 +104,7 @@
 
       async function audio() {
         if (!server) {
-          server = await new Server().attach();
+          server = await new Server().boot();
           // A tone whose cutoff a knob sweeps and whose pitch a bound one does.
           const freq = control("freq", 220.0);
           const amp = control("amp", 0.2);
@@ -117,10 +117,15 @@
 
       const playing = () => (voice ??= new Synth("gui_tone", { freq: 220.0, amp: 0.2 }, { server }));
 
-      // The GUI side. Over `pageGuiConnection()` the handle `boot`s this page's
-      // wasm host; over a `WsConnection` it `attach`es to a native one, and nothing
-      // below this line would change.
-      let host = await new GuiHost(await pageGuiConnection()).boot();
+      // The GUI side. With the default transport the handle `boot`s a wasm host
+      // in this tab; with `transport: "ws"` it `attach`es to a native one, and
+      // nothing below this line would change.
+      //
+      // It is booted **on** the audio server's engine, so a bound widget's
+      // `/node_set` reaches the node that server holds -- what the script's
+      // twin gets from `session.gui()`, which points the host it boots at that
+      // session's server.
+      let host = await new GuiHost({ engine: (await audio()).engine }).boot();
 
       const panel = () => gui.view(
         { title: "a tone", w: 520, h: 300, layout: "col", margin: 8.0, gap: 8.0 },
@@ -243,7 +248,7 @@
         const url = document.getElementById("ws").value;
         try {
             host.stop();
-            host = await new GuiHost(await WsConnection.open(url)).attach();
+            host = await new GuiHost({ transport: "ws", url }).attach();
             win = null;
             say(`driving the native host at ${url} — open a demo`);
         } catch (error) {

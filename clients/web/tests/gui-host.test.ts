@@ -47,7 +47,7 @@ async function withHost(body: (gui: GuiHost) => Promise<void>): Promise<void> {
             if (!connection) await sleep(100);
         }
         assert.ok(connection, "host WS endpoint never came up");
-        const gui = new GuiHost(connection);
+        const gui = new GuiHost({ connection });
         try {
             await body(gui);
         } finally {
@@ -155,12 +155,14 @@ test("GuiHost: a redraw keeps a named widget's handler", () => {
     // event can be delivered exactly as the host would deliver one.
     let deliver: ((packet: Uint8Array) => void) | undefined;
     const gui = new GuiHost({
-        send: () => {},
-        addReply: (fn: (packet: Uint8Array) => void) => {
-            deliver = fn;
-        },
-        removeReply: () => {},
-    } as unknown as Connection);
+        connection: {
+            send: () => {},
+            addReply: (fn: (packet: Uint8Array) => void) => {
+                deliver = fn;
+            },
+            removeReply: () => {},
+        } as unknown as Connection,
+    });
     const event = (id: number, value: number) =>
         deliver!(encodeMessage("/gui_event", [["i", id], ["i", 1], ["i", 0], ["i", value]]));
 
@@ -187,12 +189,14 @@ function stubbed(): { gui: GuiHost; tag: (id: number, tag: string) => void;
     value: (id: number, v: number) => void } {
     let deliver: ((packet: Uint8Array) => void) | undefined;
     const gui = new GuiHost({
-        send: () => {},
-        addReply: (fn: (packet: Uint8Array) => void) => {
-            deliver = fn;
-        },
-        removeReply: () => {},
-    } as unknown as Connection);
+        connection: {
+            send: () => {},
+            addReply: (fn: (packet: Uint8Array) => void) => {
+                deliver = fn;
+            },
+            removeReply: () => {},
+        } as unknown as Connection,
+    });
     return {
         gui,
         tag: (id, t) =>

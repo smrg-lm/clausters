@@ -307,10 +307,9 @@ export class Session extends Environment {
             // A host of this session's own, wired to this session's engine —
             // and this session's to close, unlike the page's shared one.
             this.ownedGui = await newGuiHost({ engine: this.ownedEngine });
-            this.gui_ = await new GuiHost(
-                await pageGuiConnection(this.ownedGui), { share }).boot();
+            this.gui_ = await new GuiHost({ gui: this.ownedGui, share }).boot();
         } else {
-            this.gui_ = await new GuiHost(await pageGuiConnection(), { share }).boot();
+            this.gui_ = await new GuiHost({ share }).attach();
         }
         return this.gui_;
     }

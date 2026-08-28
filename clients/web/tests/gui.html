@@ -78,9 +78,7 @@
         // `attach`es to a server already running -- which is also what the
         // in-page GUI host is wired to, and binding a widget only reaches a
         // node on the engine the host talks to.
-        const raw = await engine({ channels: 2 });
-        await raw.resume();
-        const server = await new Server().attach();
+        const server = await new Server().boot();
         const freq = control("freq", 220.0);
         const amp = control("amp", 0.1);
         await new SynthDef("gui_tone", out(0.0, sine(freq).mul(amp))).send(server);
@@ -90,7 +88,7 @@
 
         // The GUI side: the same panel a script would write, over the in-page
         // host — nothing here names a carrier.
-        const host = await new GuiHost(await pageGuiConnection()).boot();
+        const host = await new GuiHost({ engine: server.engine }).boot();
         const tree = gui.view(
           { title: "driven from TypeScript", w: 480, h: 300, layout: "col",
             margin: 8.0, gap: 8.0 },

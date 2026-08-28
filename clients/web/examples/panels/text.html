@@ -134,7 +134,7 @@ clips with an ellipsis instead of bleeding into its neighbor.</div>
       async function run() {
         $("run").disabled = true;
         await loadOsc();
-        await new GuiHost(await pageGuiConnection()).boot();
+        await new GuiHost().boot();
 
         win = await gui.view(
           { title: "Text", w: 980, h: 820, layout: "col" },

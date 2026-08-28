@@ -46,6 +46,7 @@ export { GuiHost, guiHost, newGuiHost, pageGuiConnection } from "./gui/host.ts";
 export { canvasBox, onScaleChange } from "./gui/page.ts";
 export type { CanvasBox } from "./gui/page.ts";
 export type { ClaustersGui } from "./gui/host.ts";
+export type { GuiHostOptions, GuiTransportName } from "./gui/host.ts";
 export * as gui from "./gui/index.ts";
 export { bootBundle, freeBundle, openBundle, startBundle } from "./bundle.ts";
 export type { BundleManifest, MountOptions, Mounted, ParamSpec } from "./bundle.ts";

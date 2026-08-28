@@ -120,7 +120,7 @@ widget draws, clamped to half the shorter side of each.</div>
       async function run() {
         $("run").disabled = true;
         await loadOsc();
-        const host = await new GuiHost(await pageGuiConnection()).boot();
+        const host = await new GuiHost().boot();
 
         // The host's own look, over the wire. A page has no launch flags at
         // all, so this verb is the only way it reaches level 1 — and it is the

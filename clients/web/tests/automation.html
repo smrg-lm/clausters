@@ -69,12 +69,7 @@
 
       async function run() {
         await loadOsc();
-        // This page's engine is brought up and resumed here, so the
-        // handle below attaches to a server already running -- the one
-        // its GUI host and its taps are on.
-        const raw = await engine({ channels: 2 });
-        await raw.resume();
-        const server = await new Server().attach();
+        const server = await new Server().boot();
 
         // The target: a synth that writes its own `cutoff` control to a
         // control bus, so what the lane produced is *readable* rather than
@@ -128,7 +123,7 @@
         log(`stopped: held at ${held.toFixed(0)}`);
 
         // ---- the editor half: the curve drawn, edited, and played back ----
-        const host = await new GuiHost(await pageGuiConnection()).boot();
+        const host = await new GuiHost({ engine: server.engine }).boot();
         const win = host.open(gui.view(
           { title: "automation", w: 480, h: 300, layout: "col", margin: 8.0 },
           gui.bpf({

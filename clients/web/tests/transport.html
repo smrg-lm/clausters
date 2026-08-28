@@ -55,8 +55,9 @@
 
       async function run() {
         await loadOsc();
-        const raw = await engine({ channels: 2 });
-        await raw.resume();
+        const server = await new Server().boot();
+        // The engine this handle booted -- its own, not the page's.
+        const raw = server.engine;
         const analyser = raw.context.createAnalyser();
         analyser.fftSize = 2048;
         raw.node.connect(analyser);
@@ -75,7 +76,6 @@
           return top;
         };
 
-        const server = await new Server().attach();
 
         // A drone with no envelope: what survives the freeze is its phase, and
         // nothing but the transport can silence it.

@@ -56,8 +56,9 @@
         // running. That is what makes `attach` the verb here -- `boot` would
         // bring up an engine of its own, and the analyser tapped below would be
         // watching the wrong one.
-        const raw = await engine({ channels: 2 });
-        await raw.resume();
+        const server = await new Server().boot();
+        // The engine this handle booted -- its own, not the page's.
+        const raw = server.engine;
         if (raw.context.state !== "running") {
           throw new Error(`context did not run: ${raw.context.state}`);
         }
@@ -66,7 +67,6 @@
         analyser.fftSize = 2048;
         raw.node.connect(analyser);
 
-        const server = await new Server().attach();
         log(`sized from the engine: ${server.sizing.audioBuses} audio buses, `
           + `${server.sizing.controlBuses} control buses`);
 

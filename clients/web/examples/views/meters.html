@@ -135,7 +135,7 @@ Swapping to a <code>--ws</code> server (or to a native
         // `boot` because this page's carrier goes to an engine it can bring
         // up; over the WebSocket above the verb is `attach`, since nothing here
         // starts a server on another machine.
-        const server = await new Server().attach();
+        const server = await new Server().boot();
         const info = await server.queryInfo();
         if (info.taps === 0) {
           log("this server records no audio buses (--taps 0): no oscilloscope");
@@ -164,7 +164,7 @@ Swapping to a <code>--ws</code> server (or to a native
         // this tab comes up and becomes the ambient one, so the view below
         // needs no host named. Over `WsConnection.open("ws://127.0.0.1:57220")`
         // the verb would be `attach` and nothing below this line would change.
-        await new GuiHost(await pageGuiConnection()).boot();
+        await new GuiHost({ engine: server.engine }).boot();
         // The view opens itself, into the element that decides how wide it is
         // — the canvas is made inside `#stage` and follows its box, so the
         // layout has the say: full width here, and just as full on a phone.

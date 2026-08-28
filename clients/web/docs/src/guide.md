@@ -190,18 +190,21 @@ b.use(() => new Synth("beep"));   // reaches b, whatever the page's default is
 
 ### The GUI leg
 
-`s.gui()` opens the session's host once and wires it to **this session's** engine, so a bound widget reaches this server and not the page's — the browser parallel of the Python client's `session.gui()`, which boots a `clausters-gui` process pointed at its session's server. A session drives a native `--ws` host instead by being **given** one — `new Session(server, clock, await new GuiHost(await WsConnection.open(url)).attach())` — the way it is given a `Server` it did not open.
+`s.gui()` opens the session's host once and wires it to **this session's** engine, so a bound widget reaches this server and not the page's — the browser parallel of the Python client's `session.gui()`, which boots a `clausters-gui` process pointed at its session's server. A session drives a native `--ws` host instead by being **given** one — `new Session(server, clock, await new GuiHost({ transport: "ws", url }).attach())` — the way it is given a `Server` it did not open.
 
 `s.guiHost` reads back what the session has without opening anything.
 
 ## Driving the GUI host
 
-`GuiHost` is the same seam again — a connection and a name:
+`GuiHost` is the same shape again — a transport, and the pair of verbs saying who owns what:
 
 ```js
-const host = await new GuiHost(await pageGuiConnection()).boot();   // this page's wasm host
-const host = await new GuiHost(await WsConnection.open(url)).attach();  // a native `clausters-gui --ws`
+const host = await new GuiHost().boot();                            // a wasm host of its own
+const host = await new GuiHost().attach();                          // the one already up in this page
+const host = await new GuiHost({ transport: "ws", url }).attach();  // a native `clausters-gui --ws`
 ```
+
+A booted host brings up an engine of its own along with it, so a widget bound to a node has to be told which server holds it — `new GuiHost({ engine: server.engine })`, which is what `session.gui()` does for you and what the reference client's `session.gui()` does by pointing the process it boots at that session's server.
 
 The widget catalogue is a set of builders in the `gui` namespace, and a whole tree goes out in one `/gui_def`. **The view is the subject**: it opens itself, on the host it was told or the ambient one — the handle above became the ambient host by booting — exactly as it reads in the Python client:
 

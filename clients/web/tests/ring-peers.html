@@ -49,9 +49,10 @@
       async function run() {
         await loadOsc();
         await loadCore();
-        const raw = await engine({ channels: 2 });
-        await raw.resume();
 
+        const server = await new Server().boot();
+        // The engine this handle booted -- its own, not the page's.
+        const raw = server.engine;
         // A raw window onto every /bus_stream.reply the engine emits, whoever
         // subscribed: which bus indices arrive is the whole question. Replies
         // are addressed per client now, so this is the observer door.
@@ -82,7 +83,6 @@
         };
 
         const connection = await pageConnection();
-        const server = await new Server().attach();
 
         const scriptBus = Bus.control(1, { server });
         const hostBus = Bus.control(1, { server });
@@ -107,7 +107,7 @@
 
         // Phase 2: the GUI host opens a window with a meter on the other bus,
         // which makes it subscribe its own set through the same page.
-        const host = await new GuiHost(await pageGuiConnection()).boot();
+        const host = await new GuiHost({ engine: server.engine }).boot();
         host.open(gui.view({ title: "probe", w: 320, h: 160 },
           // Control-rate: an audio meter reads a bus *level* out of the data
           // plane and demands no `/bus_stream`, so it would subscribe nothing.

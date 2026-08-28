@@ -103,7 +103,7 @@ has no offline drive.</div>
         // element, so the view gets a canvas of its own — *a view with no
         // element is a canvas*, which is how the page finishes the reference
         // client's *a view with no parent is a window*.
-        await new GuiHost(await pageGuiConnection()).boot();
+        await new GuiHost().boot();
         win = await gui.view(
           { title: "pitch lane", w: 520, h: 260, layout: "col", margin: 8.0 },
           gui.bpf({

@@ -221,6 +221,19 @@ export function guiHost(): Promise<ClaustersGui> {
 }
 
 /**
+ * The page's GUI host **only if one is already up**, else `null` — asked
+ * without bringing one into being, which {@link guiHost} cannot be.
+ *
+ * What `GuiHost.attach()` reads, for the same reason the audio side has
+ * `pageEngineIfUp`: attaching is for a host already running, and a handle
+ * pointed at silence has to say so rather than manufacture what it was meant
+ * to find.
+ */
+export function pageGuiIfUp(): Promise<ClaustersGui> | null {
+    return instance;
+}
+
+/**
  * A GUI host of one's own, sharing the page with whatever else is on it.
  *
  * The instance counterpart of `guiHost`, as `engine` is of `server`. What a
