@@ -45,7 +45,7 @@ socket. Swapping to a <code>--ws</code> server is the one line marked below.</di
 
     <script type="module">
       import {
-        Session, Synth,
+        Event, Session,
         SynthDef, Routine,
       } from "../../dist/index.js";
       import { DoneAction, Env, control, dup, envGen, mix, out, rand, sine } from "../../dist/defs/index.js";
@@ -99,19 +99,18 @@ socket. Swapping to a <code>--ws</code> server is the one line marked below.</di
       function play() {
         new Routine(function* () {
           for (const [midi, dur] of [[45, 3.0], [52, 3.0], [50, 4.0]]) {
-            const voice = new Synth("web_unison", {
-              freq: mtof(midi), amp: 0.4,
-            }, { server });
-            log(`voice on node ${voice.id} at MIDI ${midi}`);
-            yield dur - 0.5;
-            // Timed, not immediate: the bundle is stamped with the routine's
-            // logical beat, so the release lands where the music says.
-            // Every argument is tagged: a JS number is a double with no
-            // int/float distinction, and a control value has to be a float.
-            server.sendBundle([
-              ["/node_set", ["i", voice.id], "gate", ["f", 0.0]],
-            ]);
-            yield 0.5;
+            // An event, not a `new Synth`: it rides the bundle path, so the
+            // `/synth_new` carries the routine's exact logical beat and the
+            // release goes out a `sustain` later, timed the same way. That is
+            // what makes this a sequence rather than a chord. `hasGate`
+            // releases by closing the gate, which is what this def's `envGen`
+            // waits for.
+            new Event({
+              instrument: "web_unison", freq: mtof(midi), amp: 0.4,
+              dur, sustain: dur - 0.5, hasGate: true,
+            }).play(server);
+            log(`voice at MIDI ${midi}, sounding ${dur - 0.5} beats`);
+            yield dur;
           }
           log("phrase done — each voice freed itself when its release ended");
         }).play(clock);

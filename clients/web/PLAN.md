@@ -3554,9 +3554,30 @@ sound.
   which is the standing "a page turns a script's sequence into a button" item
   above and not a divergence of surface.
 
-  **Still open in that pair**: `multichannel.py` sounds each voice with
-  `Event(..., has_gate=True).play(session.server)` and lets the event release
-  it, while the page writes `new Synth(...)` and then a hand-built
-  `/node_set gate 0` bundle. Two ways to say one thing, and the script's is the
-  reference. Worth taking with the `basics/verbs` framing decision, since both
-  are "which of the two spellings is the pair".
+  **And the same pair said one thing two ways**: `multichannel.py` sounds each
+  voice with `Event(..., has_gate=True).play(session.server)` and lets the
+  event release it; the page wrote `new Synth(...)` and then a hand-built
+  `/node_set gate 0` bundle, yielding `dur - 0.5` and `0.5` where the script
+  yields `dur`. The script's is the reference and the page has it now. What
+  the page was doing by hand is exactly what `sustain` and `hasGate` do, which
+  is why the divergence was invisible: both sounded right.
+
+- ⬜ **`Routine.run` is what the pages use and what no script does** *(found
+  2026-08-28, checking which examples use a clock's `run` after fixing the
+  four `Routine`-on-a-`TempoClock` pairs)*. Five pages —
+  `editors/pianoroll`, `buffers/buffer-edit`, `spectral/cross`,
+  `spectral/kernel`, `spectral/convolution` — write
+  `Routine.run(fn, session.clock)`, and all five twins write
+  `Routine(fn).play(session.clock)`. Both spellings exist in both clients
+  (`Routine.run` is a classmethod in `base/stream.py`, used there as a
+  decorator), so this is not a missing surface: it is the same call written
+  differently on each side, which is the thing "one example in two languages"
+  is about. Decide the spelling once and make all five pairs use it.
+
+  Checked in the same pass and **not** a divergence: `TempoClock.run(seconds)`
+  takes seconds in both clients (the one that takes a routine is
+  `Routine.run`), and exactly one example uses it — `transport/sync.py`'s
+  `ca.run(3.0)`, to let the bar arrive before winding the clock down. Its page
+  cannot: `run` starts, waits and *stops*, and the page's clock has to stay up
+  for the buttons that follow. That is the standing "a page turns a script's
+  sequence into a button" item, not a gap.
