@@ -3287,3 +3287,32 @@ finished work, where a pending item reads as done.
   sometimes asks is worse than one that always answers. The Python client has
   the same default (`plot` resolves a session's host) and the same gap, so
   whatever is decided is decided for both.
+
+- ⬜ **A page turns a script's sequence into a button, and then explains why**
+  *(found 2026-08-27 and 2026-08-28, in the manual review, on `panels/style`
+  and `panels/text`; both pages are fixed in their commits — what is left is
+  the class and the sweep)*. Both twins replaced a timed list with one button
+  that fired every change at once, and both lost steps doing it: `style`
+  dropped the theme clear and merged `opacity` with `radius`, `text` dropped
+  the first of the two alignments. What each was showing — that a prop is
+  *live*, one change at a time — is precisely what a single button cannot show,
+  so the page produced a similar picture and demonstrated nothing.
+
+  The reason it is a class and not two bugs is the second page's prose, which
+  had written the drift down as a rule: the button was "one the script has no
+  counterpart for … because a page has an event loop and no reason to sleep
+  through a list". A page has a clock; nothing was impossible. That sentence is
+  a scaffold that became a norm, and the next page would have inherited it.
+
+  **What is not yet done is the sweep.** Only these two Python examples pace
+  with an explicit `CHANGES` list, and both are answered; what nothing has
+  looked at is the rest of the pairs, where the script paces with `sleep`s
+  inside its own loop and the page may again be waiting for a hand. The review
+  will reach them one by one, and this entry closes when it has — or sooner, if
+  somebody reads the pairs for this one property alone.
+
+  **The rule it leaves behind**, worth stating once because both pages broke
+  it the same way: a button in a page is legitimate when it stands for
+  something a person does (the autoplay gesture, "open the window") or for a
+  step the script also takes on its own. It is not legitimate as the page's
+  answer to a script's clock.
