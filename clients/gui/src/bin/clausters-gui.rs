@@ -1137,6 +1137,16 @@ fn run_standalone(
         tracing::info!("standalone: sent {} boot message(s)", boot.len());
     }
 
+    // **The data plane, before the link takes the server.** A meter or a scope
+    // reads the buses out of the segment, not out of a reply, and an embedded
+    // server has one of its own -- the in-process twin of mapping `--shm`.
+    // Without this the widgets that watch a bus draw an empty box forever,
+    // while the same bundle's meter fills in a browser tab.
+    let bus = embed.bus_source(HeadClock::Device);
+    if bus.is_none() {
+        tracing::warn!("standalone: no data plane -- bus meters and scopes will stay empty");
+    }
+
     // Register the GuiDef so the windowed front opens it on resume. The embed is
     // the host's server link, so bound widgets drive it directly.
     let mut host = Host::new()
@@ -1160,7 +1170,7 @@ fn run_standalone(
     let socket =
         UdpSocket::bind(udp_bind).map_err(|e| format!("failed to bind UDP {udp_bind}: {e}"))?;
     tracing::info!("standalone: opening GuiDef \"{name}\" (id {id})");
-    gui::run(host, Arc::new(socket), None, None, None)
+    gui::run(host, Arc::new(socket), bus, None, None)
 }
 
 /// Encodes and sends one OSC message to the embedded server, warning if the ring
