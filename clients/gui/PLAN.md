@@ -2277,15 +2277,58 @@ is a real ABI round, not one line.
   optional per-note marks the milestones below fill in. The document header —
   clef, key, staff grouping — is part of it, since it is what `voice_to_mei`
   takes as arguments today and what a second staff needs to be more than a
-  string. What crosses the ABI, and in what form, is settled here: `Slot` stays
-  the v1 wire and the model is the thing above it. **Acceptance:** the three
-  operations that cannot be stated today can each be *written down* against the
+  string. `Slot` stays the v1 wire and the model is the thing above it.
+
+  **What crosses the ABI, and what shape the client surface takes, is settled
+  here** — not in N2, because every operation N2 writes lands on whatever is
+  decided. Four questions, none of them answered today, and each one a place
+  where two clients diverge by choosing separately: whether an operation
+  **returns a new score or mutates one** (an algebra wants values, so
+  `concat(transpose(a, 2), b)` reads; editing wants mutation with an undo stack,
+  and the two can be one only if it is said so); whether there is **one C symbol
+  per operation or the operation crosses as data**; **who owns the intermediates**
+  a functional form creates; and **how much sugar each language may add**. The
+  shape is already in the tree twice and does not have to be invented:
+  `Score.edit(action, **param)` sends an action name and a JSON payload through
+  one symbol (`clausters_score_edit`), and `voice_to_mei` is data in, data out.
+  Taking that form means **a new operation costs no new symbol** — no
+  `docs/bindings.md` row, no `CORE_ABI_VERSION` round — and leaves each client
+  what `clausters.gui.notation` already declares itself to be, "a shell of names,
+  dicts and one handle whose lifetime Python owns".
+
+  **The cost of that form is parity, and this project has paid it twice.** A
+  data-driven surface is invisible to the binding tests: `tests/bindings.rs`
+  would see one symbol and no operations, so the two clients could expose
+  different sets of verbs with nothing going red. That is structurally the same
+  blind spot recorded in this plan's "Found by use" for the props manifest,
+  which cannot see a divergence between two builders of one wire type, and the
+  same class the UGen contrast tests caught eleven of. So the form comes with an
+  obligation attached: **a catalog of the operations, in the core, contrasted
+  against what each client exposes**, exactly as the UGen catalog is contrasted
+  against the builders.
+
+  **The line the sugar may not cross**, and it is the one rule that keeps the
+  algebra single: *what computes is Rust, what names is the shell*. Chaining,
+  `a + b` for concatenation and `score[3:10]` for a slice are idiom and belong to
+  each language — but only while they **assemble the operation** and compute
+  nothing. Resolving "measures 3 to 10" to a span of rational time is arithmetic
+  against the grid, and two clients doing it separately round differently across
+  a meter change, so it is Rust. The one reduction that legitimately stays in
+  each client is the one that already does: client-native types
+  (`Event`/`Timeline`) into content.
+
+  **Acceptance:** the three operations that cannot be stated today can each be *written down* against the
   model (transposing a span addressed by measure, augmenting a phrase, changing
   the meter), even where they are not implemented until N2; a voice with no
   meter change and no marks round-trips to the same MEI `voice_to_mei` writes
   today, byte for byte; the model compiles to wasm with `clausters-notation`
-  absent; `docs/decisions.md` carries why it is in core rather than in the
-  verovio crate, and why the grid is not derived.
+  absent; the four questions above are answered in writing, with what each
+  answer beat; the operation catalog exists and something reads it against both
+  clients, so a verb that reaches only one of them fails a test rather than
+  waiting to be noticed; `docs/decisions.md` carries why the model is in core
+  rather than in the verovio crate, why the grid is not derived, and — if the
+  operation crosses as data — why a surface the binding table cannot see is
+  worth its own catalog.
 
 - ⬜ **N2 — The algebra, and the edit operations**. Three families over the two
   structures, and the whole point of the model. **On the content**: concatenate,
@@ -2295,14 +2338,24 @@ is a real ABI round, not one line.
   editing verbs (insert a note, delete one, change a value, tie, split a voice)
   are the same family — they rewrite the model, and the page is re-engraved from
   it, so **verovio is not asked to edit**. Names come from the arrangement and
-  the patterns wherever the operation is theirs. **Acceptance:** the composition
+  the patterns wherever the operation is theirs, and the whole family lands on
+  the surface N1 settled — this milestone writes operations, it does not
+  re-decide their shape. Each one goes into the catalog as it is written, and
+  into **both** clients in the same commit: an algebra is the worst possible
+  thing to port later, since two surfaces that offer different verbs still both
+  work. **Acceptance:** the composition
   of two operations is the operation on the composed score (concatenating two
   scores then transposing equals transposing each then concatenating), pinned by
   tests; an operation on the content leaves the grid untouched and vice versa; a
   phrase augmented against a fixed grid re-bars correctly, ties across the new
   barlines and sounds the augmented durations; `Score`'s edit path stops calling
   `Toolkit::Edit`, and the undo stack — already ours — steps over model
-  snapshots rather than MEI text.
+  snapshots rather than MEI text; and the two clients' surfaces are **read side
+  by side, verb by verb**, before either is believed — the rule this project
+  already has for a port, applied where what is ported is an algebra rather than
+  an example. Each client's sugar is checked against the line N1 drew: it
+  assembles operations and computes nothing, and a measure range is resolved by
+  the core in both.
 
 - ⬜ **N3 — That it is well written**. The emission of everything the model can
   now say, judged **by eye** on the page, which is the first thing a score
