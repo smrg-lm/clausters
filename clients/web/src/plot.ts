@@ -57,13 +57,6 @@ import { Automation } from "./seq/automation.ts";
 import { Pattern } from "./seq/pattern.ts";
 import { bounceDef } from "./render.ts";
 
-/**
- * Inline `data` ceiling: at most this many floats ride the GuiDef JSON. More
- * take the blob path — the samples travel beside the message rather than
- * inside it, which is what keeps a megabyte of floats out of the tree.
- */
-const INLINE_MAX = 2048;
-
 /** The module's own host, opened lazily when no session brought one. */
 let ownHost: GuiHost | null = null;
 
@@ -314,7 +307,7 @@ export async function plot(
 
     let widget: guidef.GuiNode;
     const blobs: Uint8Array[] = [];
-    if (drawn.samples.length <= INLINE_MAX) {
+    if (drawn.samples.length <= guidef.INLINE_MAX) {
         widget = guidef.plot({ ...props, data: [...drawn.samples] });
     } else {
         // A page shares no filesystem with its host, so the samples travel

@@ -65,6 +65,7 @@ import {
     button,
 } from "../src/gui/guidef.ts";
 import type { GuiNode } from "../src/gui/guidef.ts";
+import * as guidef from "../src/gui/guidef.ts";
 
 const here = new URL(".", import.meta.url);
 
@@ -316,6 +317,79 @@ const trees: Record<string, () => GuiNode> = {
 for (const [name, build] of Object.entries(trees)) {
     test(`GuiDef parity: ${name}`, () => {
         assert.deepEqual(JSON.parse(toJson(build())), find(name));
+    });
+}
+
+// ---- the sweep: every builder, every option, one at a time ----
+//
+// The trees above are a sample of what a script writes, and a sample cannot
+// see the prop nobody put in one. `gen-gui-vectors.py` also freezes the
+// exhaustive reading — each builder crossed with each option its Python
+// signature declares — and this rebuilds every one of them here.
+//
+// It is the reading `docs/gui-props.md` cannot make: that manifest compares
+// the two surfaces by **wire type**, unioning every builder of a type
+// (`waveform`, `plot` and `scope` all build a `signal`), so an option missing
+// from one builder of a type reads as present. Here the key is the builder,
+// and the comparison is of what it built rather than of what it declares.
+
+/** A swept option's Python name as the option this client takes. */
+const camel = (name: string): string =>
+    name.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
+
+/**
+ * The builders whose first argument is the widget's subject rather than its
+ * option bag — the value the sentence is about (`label(text)`, `meter(bus)`),
+ * which Python takes as its first keyword. The rest of the options follow in
+ * the bag, so a sweep of one of these passes the subject and an empty bag, or
+ * the subject itself when that is what is being swept.
+ */
+const SUBJECT: Record<string, { option: string; blank: unknown }> = {
+    label: { option: "text", blank: "" },
+    menu: { option: "options", blank: [] },
+    meter: { option: "bus", blank: 0 },
+    scope: { option: "bus", blank: 0 },
+    phasescope: { option: "bus", blank: 0 },
+    spectrum: { option: "bus", blank: 0 },
+    canvas: { option: "shader", blank: undefined },
+};
+
+/** What a builder needs before it builds anything — `gen-gui-vectors.py`'s. */
+const REQUIRED: Record<string, Record<string, unknown>> = {
+    clip: { dur: 4.0 },
+};
+
+interface SweptCase {
+    builder: string;
+    option: string;
+    value: unknown;
+    tree: unknown;
+}
+
+const swept: SweptCase[] = JSON.parse(
+    await readFile(new URL("gui-sweep-vectors.json", here), "utf8"),
+) as SweptCase[];
+
+const builders = guidef as unknown as Record<
+    string,
+    (...args: unknown[]) => GuiNode
+>;
+
+for (const one of swept) {
+    test(`GuiDef parity: ${one.builder}(${one.option})`, () => {
+        const build = builders[one.builder];
+        assert.ok(build, `the web client has no ${one.builder} builder`);
+        const bag = { ...REQUIRED[one.builder], [camel(one.option)]: one.value };
+        const subject = SUBJECT[one.builder];
+        let node: GuiNode;
+        if (subject === undefined) {
+            node = build(bag);
+        } else if (subject.option === one.option) {
+            node = build(one.value, { ...REQUIRED[one.builder] });
+        } else {
+            node = build(subject.blank, bag);
+        }
+        assert.deepEqual(JSON.parse(toJson(node)), one.tree);
     });
 }
 

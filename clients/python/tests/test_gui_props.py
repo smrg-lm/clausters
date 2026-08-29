@@ -57,6 +57,9 @@ ELEMENT_DIRS = {"signal": ROOT / "clients/gui/src/host/elements/signal"}
 #: Where the axis pair's key is declared.
 AXES_MOD = ROOT / "clients/gui/src/host/widget/axes.rs"
 MANIFEST = ROOT / "docs/gui-props.md"
+#: The manifest section holding the per-builder table (the one keyed by
+#: builder name rather than by wire type).
+BUILDER_SECTION = "## The divergences between the two builders"
 
 sys.path.insert(0, str(ROOT / "clients/python"))
 
@@ -79,9 +82,8 @@ def strip_comments(text: str) -> str:
 
 # ---------------------------------------------------------------- the Python side
 
-def python_props() -> dict:
-    """``{model kind: {prop}}`` from the builders' own signatures, unioned over
-    every builder that emits that kind."""
+def python_builders() -> dict:
+    """``{builder name: (kind, {prop})}`` from the builders' own signatures."""
     from clausters.gui import guidef
 
     out = {}
@@ -101,11 +103,23 @@ def python_props() -> dict:
             # is the escape hatch every builder carries, not declared props.
             if p.kind not in (p.VAR_KEYWORD, p.VAR_POSITIONAL)
         }
-        # Several builders share one model type — `waveform`, `plot` and
-        # `scope` all build a `signal` — so a kind's vocabulary is the union of
-        # what its builders offer, not whichever one was read last.
-        out.setdefault(kind.group(1), set())
-        out[kind.group(1)] |= params - NOT_A_PROP
+        out[name] = (kind.group(1), params - NOT_A_PROP)
+    return out
+
+
+def python_props() -> dict:
+    """``{model kind: {prop}}``, unioned over every builder that emits it.
+
+    Several builders share one model type — `waveform`, `plot` and `scope` all
+    build a `signal` — so a kind's vocabulary is the union of what its builders
+    offer, not whichever one was read last. That union is what the manifest's
+    main table compares; the per-builder reading further down is the one it
+    hides.
+    """
+    out = {}
+    for kind, params in python_builders().values():
+        out.setdefault(kind, set())
+        out[kind] |= params
     return out
 
 
@@ -119,8 +133,8 @@ def _ts_interfaces(src: str) -> dict:
     return out
 
 
-def web_props() -> dict:
-    """``{widget kind: {prop}}`` from each builder's option type."""
+def web_builders() -> dict:
+    """``{builder name: (kind, {prop})}`` from each builder's option type."""
     src = GUIDEF_TS.read_text()
     ifaces = _ts_interfaces(src)
 
@@ -182,8 +196,16 @@ def web_props() -> dict:
             if "Options" in line or "GuiNode" in line:
                 continue
             props.add(pm.group(2))
-        out.setdefault(kind.group(1), set())
-        out[kind.group(1)] |= {snake(p) for p in props} - NOT_A_PROP
+        out[m.group(1)] = (kind.group(1), {snake(p) for p in props} - NOT_A_PROP)
+    return out
+
+
+def web_props() -> dict:
+    """``{widget kind: {prop}}``, unioned over the builders that emit it."""
+    out = {}
+    for kind, props in web_builders().values():
+        out.setdefault(kind, set())
+        out[kind] |= props
     return out
 
 
@@ -511,8 +533,8 @@ def host_props() -> dict:
 
 # -------------------------------------------------------------------- the manifest
 
-def manifest_rows() -> dict:
-    """``{(widget, prop): (sides, verdict)}`` from the divergence table.
+def manifest_rows(section: str = "## The divergences") -> dict:
+    """``{(widget, prop): (sides, verdict)}`` from one of the manifest's tables.
 
     A row that does not parse is an error, not a row to skip: a silently ignored
     line is a declaration nobody makes and nothing enforces.
@@ -520,11 +542,11 @@ def manifest_rows() -> dict:
     rows, table = {}, False
     for line in MANIFEST.read_text().split("\n"):
         if line.startswith("## "):
-            table = line.strip() == "## The divergences"
+            table = line.strip() == section
             continue
         if not table or not line.startswith("|"):
             continue
-        if set(line) <= set("|- ") or line.startswith("| widget "):  # rule, header
+        if set(line) <= set("|- ") or line.startswith(("| widget ", "| builder ")):
             continue
         m = re.match(r"\|\s*`([a-z]+)`\s*\|\s*`([a-z_0-9]+)`\s*\|([^|]*)\|(.*)\|\s*$", line)
         assert m, f"unreadable row in docs/gui-props.md:\n  {line}"
@@ -551,6 +573,44 @@ def divergences() -> dict:
                 where.append("web")
             if len(where) < 3:
                 out[(widget, prop)] = " ".join(where)
+    return out
+
+
+# ------------------------------------------------ the same reading, keyed by builder
+#
+# The table above compares the three surfaces by **wire type**, and a type is
+# built by several builders: `waveform`, `plot` and `scope` are all a `signal`,
+# `panel` and `stack` are both a `layout`, a lane and a ruler are both a
+# `field`. So the vocabularies it compares are unions, and a prop one builder
+# of a type is missing reads as present because a sibling has it. That is the
+# right reading for "does this widget's prop reach all three" and the wrong one
+# for "do the two clients offer the same thing", which is what a reader
+# comparing the two modules is actually asking.
+#
+# This reading answers the second question. It leaves the host out — the host
+# has no builders, and a client offering a prop the host parses on that type is
+# what the table above is for — and compares the two clients builder by
+# builder, over the props each one names for itself.
+
+
+def builder_divergences() -> dict:
+    """``{(builder, prop): sides}`` for a prop only one client's builder names.
+
+    The generic props are excluded for the reason they are excluded above: the
+    host parses them off every node, the web client declares them once in
+    `WidgetOptions` and Python takes them through the `**props` every builder
+    ends with. Neither names them per builder, so comparing them per builder
+    would report every builder twice over.
+    """
+    py, web = python_builders(), web_builders()
+    generic = generic_props() | {"theme", "flow"}
+    out = {}
+    for builder in sorted(set(py) & set(web)):
+        p, w = py[builder][1], web[builder][1]
+        for prop in sorted((p | w) - generic):
+            where = [s for s, has in (("python", prop in p), ("web", prop in w)) if has]
+            if len(where) < 2:
+                out[(builder, prop)] = " ".join(where)
     return out
 
 
@@ -608,3 +668,55 @@ def test_every_divergence_carries_a_verdict():
     assert declared, "docs/gui-props.md declares nothing — is the table still there?"
     blank = sorted(k for k, (_, verdict) in declared.items() if not verdict)
     assert not blank, f"a row with no verdict: {blank}"
+
+
+def test_the_two_clients_build_the_same_widgets():
+    """A builder one client has and the other does not, aliases included."""
+    py, web = set(python_builders()), set(web_builders())
+    # The model's second names (`notes` for `pianoroll`, `window` for `view`)
+    # are `export const` aliases in TypeScript, which the reader — which reads
+    # `export function` — does not see. They are the same function under two
+    # names in both clients, so an alias missing from the web module is a
+    # missing line rather than a missing builder, and `gui-parity.test.ts`
+    # calls each of them by name.
+    aliases = {"window", "notes", "curve", "nodes", "keys"}
+    assert not (web - py), f"a builder only the web client has: {sorted(web - py)}"
+    missing = sorted(py - web - aliases)
+    assert not missing, f"a builder only the Python client has: {missing}"
+
+
+def test_builder_divergences_are_the_ones_the_manifest_declares():
+    found = builder_divergences()
+    declared = manifest_rows(BUILDER_SECTION)
+    undeclared = {k: v for k, v in found.items() if k not in declared}
+    assert not undeclared, (
+        "one client's builder names a prop the other's does not, and "
+        f"docs/gui-props.md's {BUILDER_SECTION.removeprefix('## ')!r} section "
+        "does not say why:\n"
+        + "\n".join(f"  {b}.{p}: only {sides}" for (b, p), sides in sorted(undeclared.items()))
+    )
+
+
+def test_the_builder_table_has_no_stale_rows():
+    found = builder_divergences()
+    declared = manifest_rows(BUILDER_SECTION)
+    stale = sorted(k for k in declared if k not in found)
+    assert not stale, (
+        "docs/gui-props.md names a per-builder divergence that is no longer "
+        f"there (the two builders now agree): {stale}"
+    )
+
+
+def test_the_builder_table_records_where_each_divergence_lives():
+    found = builder_divergences()
+    declared = manifest_rows(BUILDER_SECTION)
+    wrong = {
+        k: (declared[k][0], sides)
+        for k, sides in found.items()
+        if k in declared and declared[k][0] != sides
+    }
+    assert not wrong, (
+        "docs/gui-props.md records the wrong surfaces for:\n"
+        + "\n".join(f"  {b}.{p}: says {said!r}, measured {real!r}"
+                    for (b, p), (said, real) in sorted(wrong.items()))
+    )

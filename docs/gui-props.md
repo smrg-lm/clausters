@@ -86,6 +86,55 @@ measured, so a row that becomes half-true fails rather than rotting.
 | `field` | `y_start` | host web | **idiom** — as above |
 | `field` | `y_len` | host web | **idiom** — as above |
 
+## The divergences between the two builders
+
+The table above compares by **wire type**, and a type is built by several
+builders: `waveform`, `plot` and `scope` are all a `signal`, `panel` and
+`stack` are both a `layout`, a lane and a ruler are both a `field`. So the
+vocabularies it compares are unions, and a prop *one* builder of a type is
+missing reads as present because a sibling has it. That is the right reading
+for "does this prop reach all three surfaces" and the wrong one for "do the two
+clients offer the same thing" — which is the question somebody reading
+`guidef.py` against `guidef.ts` is actually asking, and the one the
+non-divergence rule is about.
+
+So there is a second reading, keyed by **builder name**, over the two clients
+only: the host has no builders, and a client naming a prop the host parses on
+that type is what the first table is for. The generic props stay out for the
+reason they are out above — neither client names them per builder. Five rows
+below are the same `EditorProps` story the first table tells about `field`,
+now said about the two builders it is actually about.
+
+| builder | prop | surfaces | verdict |
+|---|---|---|---|
+| `layout` | `layout` | web | **idiom** — `flow`'s old name, kept so a def written before the rename keeps building. The web client declares it once in the `ContainerOptions` every container extends, so every container has it; Python names it per builder and named it on the two whose own parameter is not already called that (`panel`, `scroll`). Neither client can reach the third state — Python's `layout()` taking a `layout=` would shadow the builder's own name in its own signature |
+| `plane` | `layout` | web | **idiom** — `flow`'s old name, kept so a def written before the rename keeps building. The web client declares it once in the `ContainerOptions` every container extends, so every container has it; Python names it per builder and named it on the two whose own parameter is not already called that (`panel`, `scroll`). Neither client can reach the third state — Python's `layout()` taking a `layout=` would shadow the builder's own name in its own signature |
+| `track` | `sel_start` | web | **idiom** — the lane draws neither a selection nor a vertical window (`EditorProps::parse_lane`), and the free-standing ruler draws its ticks and nothing else (`draw_time_ruler`, which returns before anything but `time_ticks`). Both parse the whole bundle only because they share the host's `EditorProps`; the web client declares that bundle once as `TimelineOptions` and so offers its inert members too, and Python names props case by case and names only the ones each builder acts on |
+| `track` | `sel_len` | web | **idiom** — as above |
+| `track` | `sel_min` | web | **idiom** — as above |
+| `track` | `sel_max` | web | **idiom** — as above |
+| `track` | `y_start` | web | **idiom** — as above |
+| `track` | `y_len` | web | **idiom** — as above |
+| `timeruler` | `sel_start` | web | **idiom** — as above; the ruler is missing the playhead family too, which the lane does draw |
+| `timeruler` | `sel_len` | web | **idiom** — as above; the ruler is missing the playhead family too, which the lane does draw |
+| `timeruler` | `sel_min` | web | **idiom** — as above; the ruler is missing the playhead family too, which the lane does draw |
+| `timeruler` | `sel_max` | web | **idiom** — as above; the ruler is missing the playhead family too, which the lane does draw |
+| `timeruler` | `y_start` | web | **idiom** — as above; the ruler is missing the playhead family too, which the lane does draw |
+| `timeruler` | `y_len` | web | **idiom** — as above; the ruler is missing the playhead family too, which the lane does draw |
+| `timeruler` | `playhead` | web | **idiom** — as above; the ruler is missing the playhead family too, which the lane does draw |
+| `timeruler` | `playhead_at` | web | **idiom** — as above; the ruler is missing the playhead family too, which the lane does draw |
+| `timeruler` | `playhead_loop_start` | web | **idiom** — as above; the ruler is missing the playhead family too, which the lane does draw |
+| `timeruler` | `playhead_loop_len` | web | **idiom** — as above; the ruler is missing the playhead family too, which the lane does draw |
+
+**What the two readings cost, and what a third one covers.** Both are static:
+they compare the names a surface declares, not what a builder does with one.
+A prop that lands under the wrong wire key, or as `true` where the other client
+writes `1`, has the same name on both sides and passes here. That is
+`clients/web/tests/gui-parity.test.ts`'s sweep — every builder crossed with
+every option, built in both clients and compared as documents — which is the
+third reading and the only executed one. The three catch different things and
+none of them subsumes another.
+
 ## What the table says, read as a whole
 
 The table used to be twenty-eight rows, twenty-six of them pointing one way:

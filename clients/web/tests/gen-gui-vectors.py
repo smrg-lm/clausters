@@ -12,7 +12,18 @@ shared, the language surface is not.
 Every tree is stored as it goes on the wire — through `to_json`, so the
 client-only `name` key is stripped there too, and the comparison covers that.
 
-The JSON is committed; regenerate with:
+It also writes gui-sweep-vectors.json, the **exhaustive** half: every builder
+crossed with every option it declares, one option at a time. The hand-written
+trees above are a sample — they show the shapes a script actually writes — and
+a sample is blind to the prop nobody thought to put in one. `docs/gui-props.md`
+compares the two clients' surfaces by **wire type**, folding every builder of a
+type into one union (`waveform`, `plot` and `scope` all build a `signal`), so a
+prop one builder of a type is missing is invisible there as well. This sweep is
+the reading neither covers: keyed by builder, and executed rather than parsed,
+so a prop that lands under the wrong key or with the wrong flag shape is a
+failing case rather than a matching name.
+
+Both files are committed; regenerate with:
 
     python3 gen-gui-vectors.py
 
@@ -20,6 +31,7 @@ The JSON is committed; regenerate with:
 .venv has it installed editable).
 """
 
+import inspect
 import json
 import pathlib
 import sys
@@ -248,11 +260,103 @@ def cases():
     return [(name, json.loads(g.to_json(tree))) for name, tree in out]
 
 
+#: Never swept: the client-side identity keys, the child lists, and the def
+#: control a widget is built *from* — a source of props, not a prop, and the
+#: one parameter each client spells in its own object model.
+NOT_SWEPT = {"id", "name", "children", "clips", "control"}
+
+#: What a builder needs before it builds anything, whatever is being swept.
+REQUIRED = {"clip": {"dur": 4.0}}
+
+#: The payload options, whose value is a shape rather than a scalar. Every one
+#: is normalized by the builder (flattened, de-interleaved, packed), so the
+#: sweep is checking that both clients normalize it the same way, not just that
+#: they carry it.
+SHAPES = {
+    "data": [0.125, -0.25, 0.5],
+    "points": [[0.0, 0.0], [0.5, 1.0, "exp"], [1.0, 0.0]],
+    "notes": [[0.0, 1.0, 60], [1.0, 0.5, 64, 90, 1]],
+    "osc": [[0.5, "mark"], 1.5],
+    "boxes": [{"def": "saw", "x": 10.0, "y": 20.0}],
+    "cords": [0, 0, 1, 0],
+    "options": ["a", "b", "c"],
+    "params": [0.25, 0.5, 0.75, 1.0],
+    "buses": [4, 5],
+    "voice_args": [("amp", 0.3), ("pan", -0.5)],
+    "axes": {"x": {"unit": "beats", "tempo": 2.0}, "y": {"bit_depth": 16}},
+    "gestures": {"drag": "pan"},
+    "theme": {"accent": "#ff8800"},
+    "display_list": None,
+}
+
+#: A value for an option whose Python annotation names its type. The value only
+#: has to survive the round trip, so one per type is enough — except for the
+#: string options that are enums, which take a member the host would accept.
+BY_TYPE = {"float": 3.5, "int": 7, "bool": True, "str": "q", "dict": {"a": "b"}}
+
+#: The string options whose value is read rather than carried, so an arbitrary
+#: string would be a legal document that means nothing.
+ENUMS = {
+    "flow": "row", "layout": "row", "axis": "y", "rate": "control",
+    "ruler": "beats", "ruler_y": "db", "view": "spectrogram",
+    "freq_scale": "mel", "measure": "rms", "mode": "gate", "align": "center",
+    "unit": "beats", "hidden": "sel", "layer": "take", "shader": "return frag;",
+}
+
+
+def sweep():
+    """(builder, option, value, tree) for every option of every builder.
+
+    The builders are read the way a script reaches them — off the module, by
+    signature — so an option that exists only in a docstring is not swept and
+    one added without a test is swept the day it lands.
+    """
+    out = []
+    for name, fn in sorted(vars(g).items()):
+        if not inspect.isfunction(fn) or name.startswith("_"):
+            continue
+        if fn.__module__ != g.__name__:
+            continue
+        if not getattr(fn, "__doc__", None):
+            continue
+        source = inspect.getsource(fn)
+        if 'node("' not in source:
+            continue
+        for param in inspect.signature(fn).parameters.values():
+            option = param.name
+            if option in NOT_SWEPT:
+                continue
+            if param.kind in (param.VAR_KEYWORD, param.VAR_POSITIONAL):
+                continue
+            if option in SHAPES:
+                value = SHAPES[option]
+            elif option in ENUMS:
+                value = ENUMS[option]
+            else:
+                hint = str(param.annotation)
+                value = next(
+                    (v for t, v in BY_TYPE.items() if t in hint), None)
+            if value is None:
+                continue
+            kwargs = {**REQUIRED.get(name, {}), option: value}
+            out.append((name, option, value, json.loads(g.to_json(fn(**kwargs)))))
+    return out
+
+
 def main():
     vectors = [{"name": n, "tree": t} for n, t in cases()]
     out_path = pathlib.Path(__file__).with_name("gui-vectors.json")
     out_path.write_text(json.dumps(vectors, ensure_ascii=False, indent=2) + "\n")
     print(f"wrote {out_path.name}: {len(vectors)} vectors")
+
+    swept = [
+        {"builder": b, "option": o, "value": v, "tree": t}
+        for b, o, v, t in sweep()
+    ]
+    sweep_path = pathlib.Path(__file__).with_name("gui-sweep-vectors.json")
+    sweep_path.write_text(json.dumps(swept, ensure_ascii=False, indent=1) + "\n")
+    builders = len({c["builder"] for c in swept})
+    print(f"wrote {sweep_path.name}: {len(swept)} options over {builders} builders")
 
 
 if __name__ == "__main__":

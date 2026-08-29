@@ -1421,7 +1421,7 @@ export function scroll(
  * `"end"`.
  */
 export function label(
-    text: string,
+    text = "",
     options: WidgetOptions & { textSize?: number; wrap?: boolean; align?: string } = {},
 ): GuiNode {
     const { textSize, wrap, align, ...rest } = options;

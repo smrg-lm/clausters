@@ -2254,7 +2254,7 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 
 ## Found by use: the running list of fixes
 
-- ⬜ **The props manifest compares wire types, so a divergence between two
+- ✅ **The props manifest compares wire types, so a divergence between two
   builders of one type is invisible to it** *(found 2026-08-28, reading
   `gui/guidef.py` against `gui/guidef.ts` by hand and finding five differences
   the green test had never seen)*. `test_gui_props.py` folds every builder of
@@ -2273,14 +2273,33 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   excluded). All five shipped; none of them ever turned the test red, and
   nothing else would have caught them.
 
-  What is open is whether a second reading belongs beside it — the same three
-  readers keyed by **builder name** rather than by wire type, over the pairs
-  that exist in both clients, with the excluded props included since a client
-  either offers them or does not. That is a different question from the one the
-  manifest answers, so it wants its own table rather than more rows in
-  `docs/gui-props.md`; and it would have to say what a legitimate per-builder
-  difference looks like (`plot` deliberately fixes `navigable`, `phasescope`
-  fixes `view`) before it could be anything but noise.
+  **Two readings now sit beside it, and they answer different questions.** The
+  first is static and keyed by builder name, over the two clients only (the
+  host has no builders): `docs/gui-props.md` grew a second table for it, and
+  `test_gui_props.py` holds it the way it holds the first — undeclared,
+  stale and wrong-surfaces. It came out at eighteen rows, all `idiom` and all
+  one story: TypeScript declares a bundle once in an interface (`ContainerOptions`'s
+  `layout`, `TimelineOptions`'s selection and playhead) and every builder that
+  extends it inherits members it does nothing with, while Python names props
+  per builder and names only the ones each acts on.
+
+  The second is **executed**, which neither manifest reading is: `gen-gui-vectors.py`
+  now also freezes a sweep — every builder crossed with every option its Python
+  signature declares, one at a time — and `gui-parity.test.ts` rebuilds all 469
+  of them with the web builders and compares the documents. That is what
+  catches a prop landing under the wrong wire key, or as `true` where the other
+  writes `1`: names that match on both sides and mean different things, which
+  no static reading can see. It is Python-driven, so it covers what the web
+  client is missing and the static table covers the other direction.
+
+  Checked by breaking each one on purpose: putting the pre-fix `scroll` back
+  fails `GuiDef parity: scroll(flow)`, and taking `sel_min`/`sel_max` off the
+  Python spectrogram fails the builder table. What neither guards is a
+  **generic** prop a builder does not name — `view` was the one container
+  whose signature omitted `color` — because both readings exclude the generics
+  by construction and the sweep is generated from the signature that would be
+  missing it. That is naming rather than capability (Python reaches every
+  generic prop through `**props`), so it is left as it is rather than guarded.
 
 - ✅ **Nothing resizes a window, so nothing tests a squeeze** *(named 2026-08-26,
   after a drag on a corner panicked the host in `ruler::draw_ticks_v` — see the

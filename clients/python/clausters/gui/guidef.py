@@ -961,7 +961,7 @@ def signal(*, view: str | None = None, data=None, blob: int | None = None,
 def view(*children, title: str | None = None, w: int | None = None, h: int | None = None,
          flow: str | None = None, layout: str | None = None, margin: float | None = None,
          gap: float | None = None, cols: int | None = None, hug: bool | None = None,
-         theme: dict | None = None, **props) -> View:
+         theme: dict | None = None, color: str | None = None, **props) -> View:
     """A view's **root**: a container that becomes an OS window when nothing
     holds it, and an ordinary component when something does. It takes no id.
 
@@ -993,7 +993,7 @@ def view(*children, title: str | None = None, w: int | None = None, h: int | Non
     def, so a standalone bundle ships its look.
     """
     extra = _drop_none(title=title, w=w, h=h, flow=flow or layout, margin=margin, gap=gap,
-                       cols=cols, theme=theme)
+                       cols=cols, theme=theme, color=color)
     if hug is not None:
         extra["hug"] = 1 if hug else 0
     return node("window", children=children, **extra, **props)

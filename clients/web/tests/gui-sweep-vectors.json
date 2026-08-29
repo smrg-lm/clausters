@@ -1,0 +1,5494 @@
+[
+ {
+  "builder": "bpf",
+  "option": "points",
+  "value": [
+   [
+    0.0,
+    0.0
+   ],
+   [
+    0.5,
+    1.0,
+    "exp"
+   ],
+   [
+    1.0,
+    0.0
+   ]
+  ],
+  "tree": {
+   "type": "curve",
+   "points": [
+    0.0,
+    0.0,
+    1,
+    0.0,
+    0.5,
+    1.0,
+    2,
+    0.0,
+    1.0,
+    0.0,
+    1,
+    0.0
+   ]
+  }
+ },
+ {
+  "builder": "bpf",
+  "option": "min",
+  "value": 3.5,
+  "tree": {
+   "type": "curve",
+   "axes": {
+    "y": {
+     "min": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "bpf",
+  "option": "max",
+  "value": 3.5,
+  "tree": {
+   "type": "curve",
+   "axes": {
+    "y": {
+     "max": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "bpf",
+  "option": "duration",
+  "value": 3.5,
+  "tree": {
+   "type": "curve",
+   "duration": 3.5
+  }
+ },
+ {
+  "builder": "bpf",
+  "option": "exp",
+  "value": true,
+  "tree": {
+   "type": "curve",
+   "exp": 1
+  }
+ },
+ {
+  "builder": "bpf",
+  "option": "label",
+  "value": "q",
+  "tree": {
+   "type": "curve",
+   "label": "q"
+  }
+ },
+ {
+  "builder": "bpf",
+  "option": "color",
+  "value": "q",
+  "tree": {
+   "type": "curve",
+   "color": "q"
+  }
+ },
+ {
+  "builder": "bpf",
+  "option": "axes",
+  "value": {
+   "x": {
+    "unit": "beats",
+    "tempo": 2.0
+   },
+   "y": {
+    "bit_depth": 16
+   }
+  },
+  "tree": {
+   "type": "curve",
+   "axes": {
+    "x": {
+     "unit": "beats",
+     "tempo": 2.0
+    },
+    "y": {
+     "bit_depth": 16
+    }
+   }
+  }
+ },
+ {
+  "builder": "button",
+  "option": "label",
+  "value": "q",
+  "tree": {
+   "type": "button",
+   "label": "q"
+  }
+ },
+ {
+  "builder": "button",
+  "option": "mode",
+  "value": "gate",
+  "tree": {
+   "type": "button",
+   "mode": "gate"
+  }
+ },
+ {
+  "builder": "button",
+  "option": "on",
+  "value": 3.5,
+  "tree": {
+   "type": "button",
+   "on": 3.5
+  }
+ },
+ {
+  "builder": "button",
+  "option": "off",
+  "value": 3.5,
+  "tree": {
+   "type": "button",
+   "off": 3.5
+  }
+ },
+ {
+  "builder": "button",
+  "option": "text_size",
+  "value": 3.5,
+  "tree": {
+   "type": "button",
+   "text_size": 3.5
+  }
+ },
+ {
+  "builder": "button",
+  "option": "color",
+  "value": "q",
+  "tree": {
+   "type": "button",
+   "color": "q"
+  }
+ },
+ {
+  "builder": "canvas",
+  "option": "shader",
+  "value": "return frag;",
+  "tree": {
+   "type": "canvas",
+   "shader": "return frag;"
+  }
+ },
+ {
+  "builder": "canvas",
+  "option": "params",
+  "value": [
+   0.25,
+   0.5,
+   0.75,
+   1.0
+  ],
+  "tree": {
+   "type": "canvas",
+   "params": [
+    0.25,
+    0.5,
+    0.75,
+    1.0
+   ]
+  }
+ },
+ {
+  "builder": "canvas",
+  "option": "buses",
+  "value": [
+   4,
+   5
+  ],
+  "tree": {
+   "type": "canvas",
+   "buses": [
+    4,
+    5
+   ]
+  }
+ },
+ {
+  "builder": "canvas",
+  "option": "label",
+  "value": "q",
+  "tree": {
+   "type": "canvas",
+   "label": "q"
+  }
+ },
+ {
+  "builder": "canvas",
+  "option": "color",
+  "value": "q",
+  "tree": {
+   "type": "canvas",
+   "color": "q"
+  }
+ },
+ {
+  "builder": "clip",
+  "option": "offset",
+  "value": 3.5,
+  "tree": {
+   "type": "field",
+   "dur": 4.0,
+   "offset": 3.5
+  }
+ },
+ {
+  "builder": "clip",
+  "option": "dur",
+  "value": 3.5,
+  "tree": {
+   "type": "field",
+   "dur": 3.5,
+   "offset": 0.0
+  }
+ },
+ {
+  "builder": "clip",
+  "option": "data",
+  "value": [
+   0.125,
+   -0.25,
+   0.5
+  ],
+  "tree": {
+   "type": "field",
+   "dur": 4.0,
+   "offset": 0.0,
+   "data": [
+    0.125,
+    -0.25,
+    0.5
+   ]
+  }
+ },
+ {
+  "builder": "clip",
+  "option": "blob",
+  "value": 7,
+  "tree": {
+   "type": "field",
+   "dur": 4.0,
+   "offset": 0.0,
+   "blob": 7
+  }
+ },
+ {
+  "builder": "clip",
+  "option": "buffer",
+  "value": 7,
+  "tree": {
+   "type": "field",
+   "dur": 4.0,
+   "offset": 0.0,
+   "buffer": 7
+  }
+ },
+ {
+  "builder": "clip",
+  "option": "path",
+  "value": "q",
+  "tree": {
+   "type": "field",
+   "dur": 4.0,
+   "offset": 0.0,
+   "path": "q"
+  }
+ },
+ {
+  "builder": "clip",
+  "option": "cache",
+  "value": "q",
+  "tree": {
+   "type": "field",
+   "dur": 4.0,
+   "offset": 0.0,
+   "cache": "q"
+  }
+ },
+ {
+  "builder": "clip",
+  "option": "channels",
+  "value": 7,
+  "tree": {
+   "type": "field",
+   "dur": 4.0,
+   "offset": 0.0,
+   "channels": 7
+  }
+ },
+ {
+  "builder": "clip",
+  "option": "base_bucket",
+  "value": 7,
+  "tree": {
+   "type": "field",
+   "dur": 4.0,
+   "offset": 0.0,
+   "base_bucket": 7
+  }
+ },
+ {
+  "builder": "clip",
+  "option": "view",
+  "value": "spectrogram",
+  "tree": {
+   "type": "field",
+   "dur": 4.0,
+   "offset": 0.0,
+   "view": "spectrogram"
+  }
+ },
+ {
+  "builder": "clip",
+  "option": "window_size",
+  "value": 7,
+  "tree": {
+   "type": "field",
+   "dur": 4.0,
+   "offset": 0.0,
+   "window_size": 7
+  }
+ },
+ {
+  "builder": "clip",
+  "option": "hop",
+  "value": 7,
+  "tree": {
+   "type": "field",
+   "dur": 4.0,
+   "offset": 0.0,
+   "hop": 7
+  }
+ },
+ {
+  "builder": "clip",
+  "option": "db_floor",
+  "value": 3.5,
+  "tree": {
+   "type": "field",
+   "dur": 4.0,
+   "offset": 0.0,
+   "db_floor": 3.5
+  }
+ },
+ {
+  "builder": "clip",
+  "option": "db_ceil",
+  "value": 3.5,
+  "tree": {
+   "type": "field",
+   "dur": 4.0,
+   "offset": 0.0,
+   "db_ceil": 3.5
+  }
+ },
+ {
+  "builder": "clip",
+  "option": "freq_scale",
+  "value": "mel",
+  "tree": {
+   "type": "field",
+   "dur": 4.0,
+   "offset": 0.0,
+   "freq_scale": "mel"
+  }
+ },
+ {
+  "builder": "clip",
+  "option": "colormap",
+  "value": 7,
+  "tree": {
+   "type": "field",
+   "dur": 4.0,
+   "offset": 0.0,
+   "colormap": 7
+  }
+ },
+ {
+  "builder": "clip",
+  "option": "notes",
+  "value": [
+   [
+    0.0,
+    1.0,
+    60
+   ],
+   [
+    1.0,
+    0.5,
+    64,
+    90,
+    1
+   ]
+  ],
+  "tree": {
+   "type": "field",
+   "dur": 4.0,
+   "offset": 0.0,
+   "notes": [
+    0.0,
+    1.0,
+    60.0,
+    100,
+    0,
+    1.0,
+    0.5,
+    64.0,
+    90,
+    1
+   ]
+  }
+ },
+ {
+  "builder": "clip",
+  "option": "points",
+  "value": [
+   [
+    0.0,
+    0.0
+   ],
+   [
+    0.5,
+    1.0,
+    "exp"
+   ],
+   [
+    1.0,
+    0.0
+   ]
+  ],
+  "tree": {
+   "type": "field",
+   "dur": 4.0,
+   "offset": 0.0,
+   "points": [
+    0.0,
+    0.0,
+    1,
+    0.0,
+    0.5,
+    1.0,
+    2,
+    0.0,
+    1.0,
+    0.0,
+    1,
+    0.0
+   ]
+  }
+ },
+ {
+  "builder": "clip",
+  "option": "exp",
+  "value": true,
+  "tree": {
+   "type": "field",
+   "dur": 4.0,
+   "offset": 0.0,
+   "exp": 1
+  }
+ },
+ {
+  "builder": "clip",
+  "option": "min",
+  "value": 3.5,
+  "tree": {
+   "type": "field",
+   "dur": 4.0,
+   "offset": 0.0,
+   "min": 3.5
+  }
+ },
+ {
+  "builder": "clip",
+  "option": "max",
+  "value": 3.5,
+  "tree": {
+   "type": "field",
+   "dur": 4.0,
+   "offset": 0.0,
+   "max": 3.5
+  }
+ },
+ {
+  "builder": "clip",
+  "option": "editable",
+  "value": true,
+  "tree": {
+   "type": "field",
+   "dur": 4.0,
+   "offset": 0.0,
+   "editable": 1
+  }
+ },
+ {
+  "builder": "clip",
+  "option": "notes_editable",
+  "value": true,
+  "tree": {
+   "type": "field",
+   "dur": 4.0,
+   "offset": 0.0,
+   "notes_editable": 1
+  }
+ },
+ {
+  "builder": "clip",
+  "option": "points_editable",
+  "value": true,
+  "tree": {
+   "type": "field",
+   "dur": 4.0,
+   "offset": 0.0,
+   "points_editable": 1
+  }
+ },
+ {
+  "builder": "clip",
+  "option": "start",
+  "value": 3.5,
+  "tree": {
+   "type": "field",
+   "dur": 4.0,
+   "offset": 0.0,
+   "start": 3.5
+  }
+ },
+ {
+  "builder": "clip",
+  "option": "loop",
+  "value": true,
+  "tree": {
+   "type": "field",
+   "dur": 4.0,
+   "offset": 0.0,
+   "loop": 1
+  }
+ },
+ {
+  "builder": "clip",
+  "option": "fit",
+  "value": true,
+  "tree": {
+   "type": "field",
+   "dur": 4.0,
+   "offset": 0.0,
+   "fit": 1
+  }
+ },
+ {
+  "builder": "clip",
+  "option": "layer",
+  "value": "take",
+  "tree": {
+   "type": "field",
+   "dur": 4.0,
+   "offset": 0.0,
+   "layer": "take"
+  }
+ },
+ {
+  "builder": "clip",
+  "option": "hidden",
+  "value": "sel",
+  "tree": {
+   "type": "field",
+   "dur": 4.0,
+   "offset": 0.0,
+   "hidden": "sel"
+  }
+ },
+ {
+  "builder": "clip",
+  "option": "label",
+  "value": "q",
+  "tree": {
+   "type": "field",
+   "dur": 4.0,
+   "offset": 0.0,
+   "label": "q"
+  }
+ },
+ {
+  "builder": "clip",
+  "option": "color",
+  "value": "q",
+  "tree": {
+   "type": "field",
+   "dur": 4.0,
+   "offset": 0.0,
+   "color": "q"
+  }
+ },
+ {
+  "builder": "curve",
+  "option": "points",
+  "value": [
+   [
+    0.0,
+    0.0
+   ],
+   [
+    0.5,
+    1.0,
+    "exp"
+   ],
+   [
+    1.0,
+    0.0
+   ]
+  ],
+  "tree": {
+   "type": "curve",
+   "points": [
+    0.0,
+    0.0,
+    1,
+    0.0,
+    0.5,
+    1.0,
+    2,
+    0.0,
+    1.0,
+    0.0,
+    1,
+    0.0
+   ]
+  }
+ },
+ {
+  "builder": "curve",
+  "option": "min",
+  "value": 3.5,
+  "tree": {
+   "type": "curve",
+   "axes": {
+    "y": {
+     "min": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "curve",
+  "option": "max",
+  "value": 3.5,
+  "tree": {
+   "type": "curve",
+   "axes": {
+    "y": {
+     "max": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "curve",
+  "option": "duration",
+  "value": 3.5,
+  "tree": {
+   "type": "curve",
+   "duration": 3.5
+  }
+ },
+ {
+  "builder": "curve",
+  "option": "exp",
+  "value": true,
+  "tree": {
+   "type": "curve",
+   "exp": 1
+  }
+ },
+ {
+  "builder": "curve",
+  "option": "label",
+  "value": "q",
+  "tree": {
+   "type": "curve",
+   "label": "q"
+  }
+ },
+ {
+  "builder": "curve",
+  "option": "color",
+  "value": "q",
+  "tree": {
+   "type": "curve",
+   "color": "q"
+  }
+ },
+ {
+  "builder": "curve",
+  "option": "axes",
+  "value": {
+   "x": {
+    "unit": "beats",
+    "tempo": 2.0
+   },
+   "y": {
+    "bit_depth": 16
+   }
+  },
+  "tree": {
+   "type": "curve",
+   "axes": {
+    "x": {
+     "unit": "beats",
+     "tempo": 2.0
+    },
+    "y": {
+     "bit_depth": 16
+    }
+   }
+  }
+ },
+ {
+  "builder": "field",
+  "option": "axes",
+  "value": {
+   "x": {
+    "unit": "beats",
+    "tempo": 2.0
+   },
+   "y": {
+    "bit_depth": 16
+   }
+  },
+  "tree": {
+   "type": "field",
+   "axes": {
+    "x": {
+     "unit": "beats",
+     "tempo": 2.0
+    },
+    "y": {
+     "bit_depth": 16
+    }
+   }
+  }
+ },
+ {
+  "builder": "field",
+  "option": "offset",
+  "value": 3.5,
+  "tree": {
+   "type": "field",
+   "offset": 3.5
+  }
+ },
+ {
+  "builder": "field",
+  "option": "dur",
+  "value": 3.5,
+  "tree": {
+   "type": "field",
+   "dur": 3.5
+  }
+ },
+ {
+  "builder": "field",
+  "option": "label",
+  "value": "q",
+  "tree": {
+   "type": "field",
+   "label": "q"
+  }
+ },
+ {
+  "builder": "field",
+  "option": "height",
+  "value": 3.5,
+  "tree": {
+   "type": "field",
+   "height": 3.5
+  }
+ },
+ {
+  "builder": "field",
+  "option": "snap",
+  "value": 3.5,
+  "tree": {
+   "type": "field",
+   "snap": 3.5
+  }
+ },
+ {
+  "builder": "field",
+  "option": "header_w",
+  "value": 3.5,
+  "tree": {
+   "type": "field",
+   "header_w": 3.5
+  }
+ },
+ {
+  "builder": "field",
+  "option": "mute",
+  "value": true,
+  "tree": {
+   "type": "field",
+   "mute": true
+  }
+ },
+ {
+  "builder": "field",
+  "option": "solo",
+  "value": true,
+  "tree": {
+   "type": "field",
+   "solo": true
+  }
+ },
+ {
+  "builder": "field",
+  "option": "level",
+  "value": 3.5,
+  "tree": {
+   "type": "field",
+   "level": 3.5
+  }
+ },
+ {
+  "builder": "field",
+  "option": "h",
+  "value": 3.5,
+  "tree": {
+   "type": "field",
+   "h": 3.5
+  }
+ },
+ {
+  "builder": "field",
+  "option": "theme",
+  "value": {
+   "accent": "#ff8800"
+  },
+  "tree": {
+   "type": "field",
+   "theme": {
+    "accent": "#ff8800"
+   }
+  }
+ },
+ {
+  "builder": "field",
+  "option": "color",
+  "value": "q",
+  "tree": {
+   "type": "field",
+   "color": "q"
+  }
+ },
+ {
+  "builder": "keys",
+  "option": "min",
+  "value": 7,
+  "tree": {
+   "type": "keys",
+   "min": 7
+  }
+ },
+ {
+  "builder": "keys",
+  "option": "max",
+  "value": 7,
+  "tree": {
+   "type": "keys",
+   "max": 7
+  }
+ },
+ {
+  "builder": "keys",
+  "option": "active_min",
+  "value": 7,
+  "tree": {
+   "type": "keys",
+   "active_min": 7
+  }
+ },
+ {
+  "builder": "keys",
+  "option": "active_max",
+  "value": 7,
+  "tree": {
+   "type": "keys",
+   "active_max": 7
+  }
+ },
+ {
+  "builder": "keys",
+  "option": "pan",
+  "value": true,
+  "tree": {
+   "type": "keys",
+   "pan": 1
+  }
+ },
+ {
+  "builder": "keys",
+  "option": "overview",
+  "value": true,
+  "tree": {
+   "type": "keys",
+   "overview": 1
+  }
+ },
+ {
+  "builder": "keys",
+  "option": "velocity",
+  "value": 7,
+  "tree": {
+   "type": "keys",
+   "velocity": 7
+  }
+ },
+ {
+  "builder": "keys",
+  "option": "channel",
+  "value": 7,
+  "tree": {
+   "type": "keys",
+   "channel": 7
+  }
+ },
+ {
+  "builder": "keys",
+  "option": "voice",
+  "value": "q",
+  "tree": {
+   "type": "keys",
+   "voice": "q"
+  }
+ },
+ {
+  "builder": "keys",
+  "option": "voice_args",
+  "value": [
+   [
+    "amp",
+    0.3
+   ],
+   [
+    "pan",
+    -0.5
+   ]
+  ],
+  "tree": {
+   "type": "keys",
+   "voice_args": [
+    "amp",
+    0.3,
+    "pan",
+    -0.5
+   ]
+  }
+ },
+ {
+  "builder": "keys",
+  "option": "label",
+  "value": "q",
+  "tree": {
+   "type": "keys",
+   "label": "q"
+  }
+ },
+ {
+  "builder": "keys",
+  "option": "color",
+  "value": "q",
+  "tree": {
+   "type": "keys",
+   "color": "q"
+  }
+ },
+ {
+  "builder": "knob",
+  "option": "label",
+  "value": "q",
+  "tree": {
+   "type": "knob",
+   "label": "q"
+  }
+ },
+ {
+  "builder": "knob",
+  "option": "min",
+  "value": 3.5,
+  "tree": {
+   "type": "knob",
+   "min": 3.5
+  }
+ },
+ {
+  "builder": "knob",
+  "option": "max",
+  "value": 3.5,
+  "tree": {
+   "type": "knob",
+   "max": 3.5
+  }
+ },
+ {
+  "builder": "knob",
+  "option": "curve",
+  "value": 3.5,
+  "tree": {
+   "type": "knob",
+   "curve": 3.5
+  }
+ },
+ {
+  "builder": "knob",
+  "option": "step",
+  "value": 3.5,
+  "tree": {
+   "type": "knob",
+   "step": 3.5
+  }
+ },
+ {
+  "builder": "knob",
+  "option": "value",
+  "value": 3.5,
+  "tree": {
+   "type": "knob",
+   "value": 3.5
+  }
+ },
+ {
+  "builder": "knob",
+  "option": "text_size",
+  "value": 3.5,
+  "tree": {
+   "type": "knob",
+   "text_size": 3.5
+  }
+ },
+ {
+  "builder": "knob",
+  "option": "color",
+  "value": "q",
+  "tree": {
+   "type": "knob",
+   "color": "q"
+  }
+ },
+ {
+  "builder": "label",
+  "option": "text",
+  "value": "q",
+  "tree": {
+   "type": "label",
+   "text": "q"
+  }
+ },
+ {
+  "builder": "label",
+  "option": "text_size",
+  "value": 3.5,
+  "tree": {
+   "type": "label",
+   "text": "",
+   "text_size": 3.5
+  }
+ },
+ {
+  "builder": "label",
+  "option": "wrap",
+  "value": true,
+  "tree": {
+   "type": "label",
+   "text": "",
+   "wrap": 1
+  }
+ },
+ {
+  "builder": "label",
+  "option": "align",
+  "value": "center",
+  "tree": {
+   "type": "label",
+   "text": "",
+   "align": "center"
+  }
+ },
+ {
+  "builder": "label",
+  "option": "color",
+  "value": "q",
+  "tree": {
+   "type": "label",
+   "text": "",
+   "color": "q"
+  }
+ },
+ {
+  "builder": "layout",
+  "option": "flow",
+  "value": "row",
+  "tree": {
+   "type": "layout",
+   "flow": "row"
+  }
+ },
+ {
+  "builder": "layout",
+  "option": "index",
+  "value": 7,
+  "tree": {
+   "type": "layout",
+   "index": 7
+  }
+ },
+ {
+  "builder": "layout",
+  "option": "margin",
+  "value": 3.5,
+  "tree": {
+   "type": "layout",
+   "margin": 3.5
+  }
+ },
+ {
+  "builder": "layout",
+  "option": "gap",
+  "value": 3.5,
+  "tree": {
+   "type": "layout",
+   "gap": 3.5
+  }
+ },
+ {
+  "builder": "layout",
+  "option": "cols",
+  "value": 7,
+  "tree": {
+   "type": "layout",
+   "cols": 7
+  }
+ },
+ {
+  "builder": "layout",
+  "option": "hug",
+  "value": true,
+  "tree": {
+   "type": "layout",
+   "hug": 1
+  }
+ },
+ {
+  "builder": "layout",
+  "option": "theme",
+  "value": {
+   "accent": "#ff8800"
+  },
+  "tree": {
+   "type": "layout",
+   "theme": {
+    "accent": "#ff8800"
+   }
+  }
+ },
+ {
+  "builder": "layout",
+  "option": "color",
+  "value": "q",
+  "tree": {
+   "type": "layout",
+   "color": "q"
+  }
+ },
+ {
+  "builder": "menu",
+  "option": "options",
+  "value": [
+   "a",
+   "b",
+   "c"
+  ],
+  "tree": {
+   "type": "menu",
+   "options": [
+    "a",
+    "b",
+    "c"
+   ]
+  }
+ },
+ {
+  "builder": "menu",
+  "option": "index",
+  "value": 7,
+  "tree": {
+   "type": "menu",
+   "options": [],
+   "index": 7
+  }
+ },
+ {
+  "builder": "menu",
+  "option": "label",
+  "value": "q",
+  "tree": {
+   "type": "menu",
+   "options": [],
+   "label": "q"
+  }
+ },
+ {
+  "builder": "menu",
+  "option": "text_size",
+  "value": 3.5,
+  "tree": {
+   "type": "menu",
+   "options": [],
+   "text_size": 3.5
+  }
+ },
+ {
+  "builder": "menu",
+  "option": "color",
+  "value": "q",
+  "tree": {
+   "type": "menu",
+   "options": [],
+   "color": "q"
+  }
+ },
+ {
+  "builder": "meter",
+  "option": "bus",
+  "value": 7,
+  "tree": {
+   "type": "meter",
+   "bus": 7,
+   "rate": "audio"
+  }
+ },
+ {
+  "builder": "meter",
+  "option": "rate",
+  "value": "control",
+  "tree": {
+   "type": "meter",
+   "bus": 0,
+   "rate": "control"
+  }
+ },
+ {
+  "builder": "meter",
+  "option": "min",
+  "value": 3.5,
+  "tree": {
+   "type": "meter",
+   "bus": 0,
+   "rate": "audio",
+   "min": 3.5
+  }
+ },
+ {
+  "builder": "meter",
+  "option": "max",
+  "value": 3.5,
+  "tree": {
+   "type": "meter",
+   "bus": 0,
+   "rate": "audio",
+   "max": 3.5
+  }
+ },
+ {
+  "builder": "meter",
+  "option": "label",
+  "value": "q",
+  "tree": {
+   "type": "meter",
+   "bus": 0,
+   "rate": "audio",
+   "label": "q"
+  }
+ },
+ {
+  "builder": "meter",
+  "option": "color",
+  "value": "q",
+  "tree": {
+   "type": "meter",
+   "bus": 0,
+   "rate": "audio",
+   "color": "q"
+  }
+ },
+ {
+  "builder": "nodes",
+  "option": "group",
+  "value": 7,
+  "tree": {
+   "type": "nodes",
+   "group": 7
+  }
+ },
+ {
+  "builder": "nodes",
+  "option": "controls",
+  "value": true,
+  "tree": {
+   "type": "nodes",
+   "group": 0,
+   "controls": 1
+  }
+ },
+ {
+  "builder": "nodes",
+  "option": "label",
+  "value": "q",
+  "tree": {
+   "type": "nodes",
+   "group": 0,
+   "label": "q"
+  }
+ },
+ {
+  "builder": "nodes",
+  "option": "color",
+  "value": "q",
+  "tree": {
+   "type": "nodes",
+   "group": 0,
+   "color": "q"
+  }
+ },
+ {
+  "builder": "nodetree",
+  "option": "group",
+  "value": 7,
+  "tree": {
+   "type": "nodes",
+   "group": 7
+  }
+ },
+ {
+  "builder": "nodetree",
+  "option": "controls",
+  "value": true,
+  "tree": {
+   "type": "nodes",
+   "group": 0,
+   "controls": 1
+  }
+ },
+ {
+  "builder": "nodetree",
+  "option": "label",
+  "value": "q",
+  "tree": {
+   "type": "nodes",
+   "group": 0,
+   "label": "q"
+  }
+ },
+ {
+  "builder": "nodetree",
+  "option": "color",
+  "value": "q",
+  "tree": {
+   "type": "nodes",
+   "group": 0,
+   "color": "q"
+  }
+ },
+ {
+  "builder": "notes",
+  "option": "notes",
+  "value": [
+   [
+    0.0,
+    1.0,
+    60
+   ],
+   [
+    1.0,
+    0.5,
+    64,
+    90,
+    1
+   ]
+  ],
+  "tree": {
+   "type": "notes",
+   "notes": [
+    0.0,
+    1.0,
+    60.0,
+    100,
+    0,
+    1.0,
+    0.5,
+    64.0,
+    90,
+    1
+   ]
+  }
+ },
+ {
+  "builder": "notes",
+  "option": "osc",
+  "value": [
+   [
+    0.5,
+    "mark"
+   ],
+   1.5
+  ],
+  "tree": {
+   "type": "notes",
+   "osc": [
+    0.5,
+    "mark",
+    1.5,
+    ""
+   ]
+  }
+ },
+ {
+  "builder": "notes",
+  "option": "min",
+  "value": 3.5,
+  "tree": {
+   "type": "notes",
+   "axes": {
+    "y": {
+     "min": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "notes",
+  "option": "max",
+  "value": 3.5,
+  "tree": {
+   "type": "notes",
+   "axes": {
+    "y": {
+     "max": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "notes",
+  "option": "snap",
+  "value": 3.5,
+  "tree": {
+   "type": "notes",
+   "snap": 3.5
+  }
+ },
+ {
+  "builder": "notes",
+  "option": "velocity",
+  "value": true,
+  "tree": {
+   "type": "notes",
+   "velocity": 1
+  }
+ },
+ {
+  "builder": "notes",
+  "option": "osc_lane",
+  "value": true,
+  "tree": {
+   "type": "notes",
+   "osc_lane": 1
+  }
+ },
+ {
+  "builder": "notes",
+  "option": "midi_in",
+  "value": true,
+  "tree": {
+   "type": "notes",
+   "midi_in": 1
+  }
+ },
+ {
+  "builder": "notes",
+  "option": "link",
+  "value": 7,
+  "tree": {
+   "type": "notes",
+   "axes": {
+    "x": {
+     "link": 7
+    }
+   }
+  }
+ },
+ {
+  "builder": "notes",
+  "option": "ruler",
+  "value": "beats",
+  "tree": {
+   "type": "notes",
+   "axes": {
+    "x": {
+     "unit": "beats"
+    }
+   }
+  }
+ },
+ {
+  "builder": "notes",
+  "option": "sample_rate",
+  "value": 3.5,
+  "tree": {
+   "type": "notes",
+   "axes": {
+    "x": {
+     "sample_rate": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "notes",
+  "option": "tempo",
+  "value": 3.5,
+  "tree": {
+   "type": "notes",
+   "axes": {
+    "x": {
+     "tempo": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "notes",
+  "option": "beat_at",
+  "value": 3.5,
+  "tree": {
+   "type": "notes",
+   "axes": {
+    "x": {
+     "beat_at": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "notes",
+  "option": "quant",
+  "value": 3.5,
+  "tree": {
+   "type": "notes",
+   "axes": {
+    "x": {
+     "quant": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "notes",
+  "option": "sel_start",
+  "value": 3.5,
+  "tree": {
+   "type": "notes",
+   "axes": {
+    "x": {
+     "sel_start": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "notes",
+  "option": "sel_len",
+  "value": 3.5,
+  "tree": {
+   "type": "notes",
+   "axes": {
+    "x": {
+     "sel_len": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "notes",
+  "option": "sel_min",
+  "value": 3.5,
+  "tree": {
+   "type": "notes",
+   "axes": {
+    "y": {
+     "sel_min": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "notes",
+  "option": "sel_max",
+  "value": 3.5,
+  "tree": {
+   "type": "notes",
+   "axes": {
+    "y": {
+     "sel_max": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "notes",
+  "option": "playhead_at",
+  "value": 3.5,
+  "tree": {
+   "type": "notes",
+   "axes": {
+    "x": {
+     "playhead_at": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "notes",
+  "option": "playhead",
+  "value": 3.5,
+  "tree": {
+   "type": "notes",
+   "axes": {
+    "x": {
+     "playhead": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "notes",
+  "option": "playhead_loop_start",
+  "value": 3.5,
+  "tree": {
+   "type": "notes",
+   "axes": {
+    "x": {
+     "playhead_loop_start": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "notes",
+  "option": "playhead_loop_len",
+  "value": 3.5,
+  "tree": {
+   "type": "notes",
+   "axes": {
+    "x": {
+     "playhead_loop_len": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "notes",
+  "option": "y_start",
+  "value": 3.5,
+  "tree": {
+   "type": "notes",
+   "axes": {
+    "y": {
+     "start": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "notes",
+  "option": "y_len",
+  "value": 3.5,
+  "tree": {
+   "type": "notes",
+   "axes": {
+    "y": {
+     "len": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "notes",
+  "option": "label",
+  "value": "q",
+  "tree": {
+   "type": "notes",
+   "label": "q"
+  }
+ },
+ {
+  "builder": "notes",
+  "option": "color",
+  "value": "q",
+  "tree": {
+   "type": "notes",
+   "color": "q"
+  }
+ },
+ {
+  "builder": "notes",
+  "option": "axes",
+  "value": {
+   "x": {
+    "unit": "beats",
+    "tempo": 2.0
+   },
+   "y": {
+    "bit_depth": 16
+   }
+  },
+  "tree": {
+   "type": "notes",
+   "axes": {
+    "x": {
+     "unit": "beats",
+     "tempo": 2.0
+    },
+    "y": {
+     "bit_depth": 16
+    }
+   }
+  }
+ },
+ {
+  "builder": "number",
+  "option": "label",
+  "value": "q",
+  "tree": {
+   "type": "number",
+   "label": "q"
+  }
+ },
+ {
+  "builder": "number",
+  "option": "min",
+  "value": 3.5,
+  "tree": {
+   "type": "number",
+   "min": 3.5
+  }
+ },
+ {
+  "builder": "number",
+  "option": "max",
+  "value": 3.5,
+  "tree": {
+   "type": "number",
+   "max": 3.5
+  }
+ },
+ {
+  "builder": "number",
+  "option": "curve",
+  "value": 3.5,
+  "tree": {
+   "type": "number",
+   "curve": 3.5
+  }
+ },
+ {
+  "builder": "number",
+  "option": "step",
+  "value": 3.5,
+  "tree": {
+   "type": "number",
+   "step": 3.5
+  }
+ },
+ {
+  "builder": "number",
+  "option": "value",
+  "value": 3.5,
+  "tree": {
+   "type": "number",
+   "value": 3.5
+  }
+ },
+ {
+  "builder": "number",
+  "option": "text_size",
+  "value": 3.5,
+  "tree": {
+   "type": "number",
+   "text_size": 3.5
+  }
+ },
+ {
+  "builder": "number",
+  "option": "color",
+  "value": "q",
+  "tree": {
+   "type": "number",
+   "color": "q"
+  }
+ },
+ {
+  "builder": "panel",
+  "option": "flow",
+  "value": "row",
+  "tree": {
+   "type": "layout",
+   "flow": "row"
+  }
+ },
+ {
+  "builder": "panel",
+  "option": "layout",
+  "value": "row",
+  "tree": {
+   "type": "layout",
+   "flow": "row"
+  }
+ },
+ {
+  "builder": "panel",
+  "option": "margin",
+  "value": 3.5,
+  "tree": {
+   "type": "layout",
+   "margin": 3.5
+  }
+ },
+ {
+  "builder": "panel",
+  "option": "gap",
+  "value": 3.5,
+  "tree": {
+   "type": "layout",
+   "gap": 3.5
+  }
+ },
+ {
+  "builder": "panel",
+  "option": "cols",
+  "value": 7,
+  "tree": {
+   "type": "layout",
+   "cols": 7
+  }
+ },
+ {
+  "builder": "panel",
+  "option": "hug",
+  "value": true,
+  "tree": {
+   "type": "layout",
+   "hug": 1
+  }
+ },
+ {
+  "builder": "panel",
+  "option": "theme",
+  "value": {
+   "accent": "#ff8800"
+  },
+  "tree": {
+   "type": "layout",
+   "theme": {
+    "accent": "#ff8800"
+   }
+  }
+ },
+ {
+  "builder": "panel",
+  "option": "color",
+  "value": "q",
+  "tree": {
+   "type": "layout",
+   "color": "q"
+  }
+ },
+ {
+  "builder": "patch",
+  "option": "boxes",
+  "value": [
+   {
+    "def": "saw",
+    "x": 10.0,
+    "y": 20.0
+   }
+  ],
+  "tree": {
+   "type": "plane",
+   "boxes": [
+    {
+     "def": "saw",
+     "x": 10.0,
+     "y": 20.0
+    }
+   ]
+  }
+ },
+ {
+  "builder": "patch",
+  "option": "cords",
+  "value": [
+   0,
+   0,
+   1,
+   0
+  ],
+  "tree": {
+   "type": "plane",
+   "cords": [
+    0,
+    0,
+    1,
+    0
+   ]
+  }
+ },
+ {
+  "builder": "patch",
+  "option": "label",
+  "value": "q",
+  "tree": {
+   "type": "plane",
+   "label": "q"
+  }
+ },
+ {
+  "builder": "patch",
+  "option": "color",
+  "value": "q",
+  "tree": {
+   "type": "plane",
+   "color": "q"
+  }
+ },
+ {
+  "builder": "phasescope",
+  "option": "bus",
+  "value": 7,
+  "tree": {
+   "type": "signal",
+   "bus": 7,
+   "view": "phase"
+  }
+ },
+ {
+  "builder": "phasescope",
+  "option": "window_ms",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "bus": 0,
+   "view": "phase",
+   "window_ms": 3.5
+  }
+ },
+ {
+  "builder": "phasescope",
+  "option": "hold",
+  "value": true,
+  "tree": {
+   "type": "signal",
+   "bus": 0,
+   "view": "phase",
+   "hold": 1
+  }
+ },
+ {
+  "builder": "phasescope",
+  "option": "label",
+  "value": "q",
+  "tree": {
+   "type": "signal",
+   "bus": 0,
+   "view": "phase",
+   "label": "q"
+  }
+ },
+ {
+  "builder": "phasescope",
+  "option": "color",
+  "value": "q",
+  "tree": {
+   "type": "signal",
+   "bus": 0,
+   "view": "phase",
+   "color": "q"
+  }
+ },
+ {
+  "builder": "piano",
+  "option": "min",
+  "value": 7,
+  "tree": {
+   "type": "keys",
+   "min": 7
+  }
+ },
+ {
+  "builder": "piano",
+  "option": "max",
+  "value": 7,
+  "tree": {
+   "type": "keys",
+   "max": 7
+  }
+ },
+ {
+  "builder": "piano",
+  "option": "active_min",
+  "value": 7,
+  "tree": {
+   "type": "keys",
+   "active_min": 7
+  }
+ },
+ {
+  "builder": "piano",
+  "option": "active_max",
+  "value": 7,
+  "tree": {
+   "type": "keys",
+   "active_max": 7
+  }
+ },
+ {
+  "builder": "piano",
+  "option": "pan",
+  "value": true,
+  "tree": {
+   "type": "keys",
+   "pan": 1
+  }
+ },
+ {
+  "builder": "piano",
+  "option": "overview",
+  "value": true,
+  "tree": {
+   "type": "keys",
+   "overview": 1
+  }
+ },
+ {
+  "builder": "piano",
+  "option": "velocity",
+  "value": 7,
+  "tree": {
+   "type": "keys",
+   "velocity": 7
+  }
+ },
+ {
+  "builder": "piano",
+  "option": "channel",
+  "value": 7,
+  "tree": {
+   "type": "keys",
+   "channel": 7
+  }
+ },
+ {
+  "builder": "piano",
+  "option": "voice",
+  "value": "q",
+  "tree": {
+   "type": "keys",
+   "voice": "q"
+  }
+ },
+ {
+  "builder": "piano",
+  "option": "voice_args",
+  "value": [
+   [
+    "amp",
+    0.3
+   ],
+   [
+    "pan",
+    -0.5
+   ]
+  ],
+  "tree": {
+   "type": "keys",
+   "voice_args": [
+    "amp",
+    0.3,
+    "pan",
+    -0.5
+   ]
+  }
+ },
+ {
+  "builder": "piano",
+  "option": "label",
+  "value": "q",
+  "tree": {
+   "type": "keys",
+   "label": "q"
+  }
+ },
+ {
+  "builder": "piano",
+  "option": "color",
+  "value": "q",
+  "tree": {
+   "type": "keys",
+   "color": "q"
+  }
+ },
+ {
+  "builder": "pianoroll",
+  "option": "notes",
+  "value": [
+   [
+    0.0,
+    1.0,
+    60
+   ],
+   [
+    1.0,
+    0.5,
+    64,
+    90,
+    1
+   ]
+  ],
+  "tree": {
+   "type": "notes",
+   "notes": [
+    0.0,
+    1.0,
+    60.0,
+    100,
+    0,
+    1.0,
+    0.5,
+    64.0,
+    90,
+    1
+   ]
+  }
+ },
+ {
+  "builder": "pianoroll",
+  "option": "osc",
+  "value": [
+   [
+    0.5,
+    "mark"
+   ],
+   1.5
+  ],
+  "tree": {
+   "type": "notes",
+   "osc": [
+    0.5,
+    "mark",
+    1.5,
+    ""
+   ]
+  }
+ },
+ {
+  "builder": "pianoroll",
+  "option": "min",
+  "value": 3.5,
+  "tree": {
+   "type": "notes",
+   "axes": {
+    "y": {
+     "min": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "pianoroll",
+  "option": "max",
+  "value": 3.5,
+  "tree": {
+   "type": "notes",
+   "axes": {
+    "y": {
+     "max": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "pianoroll",
+  "option": "snap",
+  "value": 3.5,
+  "tree": {
+   "type": "notes",
+   "snap": 3.5
+  }
+ },
+ {
+  "builder": "pianoroll",
+  "option": "velocity",
+  "value": true,
+  "tree": {
+   "type": "notes",
+   "velocity": 1
+  }
+ },
+ {
+  "builder": "pianoroll",
+  "option": "osc_lane",
+  "value": true,
+  "tree": {
+   "type": "notes",
+   "osc_lane": 1
+  }
+ },
+ {
+  "builder": "pianoroll",
+  "option": "midi_in",
+  "value": true,
+  "tree": {
+   "type": "notes",
+   "midi_in": 1
+  }
+ },
+ {
+  "builder": "pianoroll",
+  "option": "link",
+  "value": 7,
+  "tree": {
+   "type": "notes",
+   "axes": {
+    "x": {
+     "link": 7
+    }
+   }
+  }
+ },
+ {
+  "builder": "pianoroll",
+  "option": "ruler",
+  "value": "beats",
+  "tree": {
+   "type": "notes",
+   "axes": {
+    "x": {
+     "unit": "beats"
+    }
+   }
+  }
+ },
+ {
+  "builder": "pianoroll",
+  "option": "sample_rate",
+  "value": 3.5,
+  "tree": {
+   "type": "notes",
+   "axes": {
+    "x": {
+     "sample_rate": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "pianoroll",
+  "option": "tempo",
+  "value": 3.5,
+  "tree": {
+   "type": "notes",
+   "axes": {
+    "x": {
+     "tempo": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "pianoroll",
+  "option": "beat_at",
+  "value": 3.5,
+  "tree": {
+   "type": "notes",
+   "axes": {
+    "x": {
+     "beat_at": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "pianoroll",
+  "option": "quant",
+  "value": 3.5,
+  "tree": {
+   "type": "notes",
+   "axes": {
+    "x": {
+     "quant": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "pianoroll",
+  "option": "sel_start",
+  "value": 3.5,
+  "tree": {
+   "type": "notes",
+   "axes": {
+    "x": {
+     "sel_start": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "pianoroll",
+  "option": "sel_len",
+  "value": 3.5,
+  "tree": {
+   "type": "notes",
+   "axes": {
+    "x": {
+     "sel_len": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "pianoroll",
+  "option": "sel_min",
+  "value": 3.5,
+  "tree": {
+   "type": "notes",
+   "axes": {
+    "y": {
+     "sel_min": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "pianoroll",
+  "option": "sel_max",
+  "value": 3.5,
+  "tree": {
+   "type": "notes",
+   "axes": {
+    "y": {
+     "sel_max": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "pianoroll",
+  "option": "playhead_at",
+  "value": 3.5,
+  "tree": {
+   "type": "notes",
+   "axes": {
+    "x": {
+     "playhead_at": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "pianoroll",
+  "option": "playhead",
+  "value": 3.5,
+  "tree": {
+   "type": "notes",
+   "axes": {
+    "x": {
+     "playhead": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "pianoroll",
+  "option": "playhead_loop_start",
+  "value": 3.5,
+  "tree": {
+   "type": "notes",
+   "axes": {
+    "x": {
+     "playhead_loop_start": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "pianoroll",
+  "option": "playhead_loop_len",
+  "value": 3.5,
+  "tree": {
+   "type": "notes",
+   "axes": {
+    "x": {
+     "playhead_loop_len": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "pianoroll",
+  "option": "y_start",
+  "value": 3.5,
+  "tree": {
+   "type": "notes",
+   "axes": {
+    "y": {
+     "start": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "pianoroll",
+  "option": "y_len",
+  "value": 3.5,
+  "tree": {
+   "type": "notes",
+   "axes": {
+    "y": {
+     "len": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "pianoroll",
+  "option": "label",
+  "value": "q",
+  "tree": {
+   "type": "notes",
+   "label": "q"
+  }
+ },
+ {
+  "builder": "pianoroll",
+  "option": "color",
+  "value": "q",
+  "tree": {
+   "type": "notes",
+   "color": "q"
+  }
+ },
+ {
+  "builder": "pianoroll",
+  "option": "axes",
+  "value": {
+   "x": {
+    "unit": "beats",
+    "tempo": 2.0
+   },
+   "y": {
+    "bit_depth": 16
+   }
+  },
+  "tree": {
+   "type": "notes",
+   "axes": {
+    "x": {
+     "unit": "beats",
+     "tempo": 2.0
+    },
+    "y": {
+     "bit_depth": 16
+    }
+   }
+  }
+ },
+ {
+  "builder": "plane",
+  "option": "flow",
+  "value": "row",
+  "tree": {
+   "type": "plane",
+   "flow": "row"
+  }
+ },
+ {
+  "builder": "plane",
+  "option": "axis",
+  "value": "y",
+  "tree": {
+   "type": "plane",
+   "axis": "y"
+  }
+ },
+ {
+  "builder": "plane",
+  "option": "zoom",
+  "value": true,
+  "tree": {
+   "type": "plane",
+   "zoom": 1
+  }
+ },
+ {
+  "builder": "plane",
+  "option": "content_w",
+  "value": 3.5,
+  "tree": {
+   "type": "plane",
+   "content_w": 3.5
+  }
+ },
+ {
+  "builder": "plane",
+  "option": "content_h",
+  "value": 3.5,
+  "tree": {
+   "type": "plane",
+   "content_h": 3.5
+  }
+ },
+ {
+  "builder": "plane",
+  "option": "view_x",
+  "value": 3.5,
+  "tree": {
+   "type": "plane",
+   "view_x": 3.5
+  }
+ },
+ {
+  "builder": "plane",
+  "option": "view_y",
+  "value": 3.5,
+  "tree": {
+   "type": "plane",
+   "view_y": 3.5
+  }
+ },
+ {
+  "builder": "plane",
+  "option": "view_zoom",
+  "value": 3.5,
+  "tree": {
+   "type": "plane",
+   "view_zoom": 3.5
+  }
+ },
+ {
+  "builder": "plane",
+  "option": "boxes",
+  "value": [
+   {
+    "def": "saw",
+    "x": 10.0,
+    "y": 20.0
+   }
+  ],
+  "tree": {
+   "type": "plane",
+   "boxes": [
+    {
+     "def": "saw",
+     "x": 10.0,
+     "y": 20.0
+    }
+   ]
+  }
+ },
+ {
+  "builder": "plane",
+  "option": "cords",
+  "value": [
+   0,
+   0,
+   1,
+   0
+  ],
+  "tree": {
+   "type": "plane",
+   "cords": [
+    0,
+    0,
+    1,
+    0
+   ]
+  }
+ },
+ {
+  "builder": "plane",
+  "option": "margin",
+  "value": 3.5,
+  "tree": {
+   "type": "plane",
+   "margin": 3.5
+  }
+ },
+ {
+  "builder": "plane",
+  "option": "gap",
+  "value": 3.5,
+  "tree": {
+   "type": "plane",
+   "gap": 3.5
+  }
+ },
+ {
+  "builder": "plane",
+  "option": "cols",
+  "value": 7,
+  "tree": {
+   "type": "plane",
+   "cols": 7
+  }
+ },
+ {
+  "builder": "plane",
+  "option": "theme",
+  "value": {
+   "accent": "#ff8800"
+  },
+  "tree": {
+   "type": "plane",
+   "theme": {
+    "accent": "#ff8800"
+   }
+  }
+ },
+ {
+  "builder": "plane",
+  "option": "color",
+  "value": "q",
+  "tree": {
+   "type": "plane",
+   "color": "q"
+  }
+ },
+ {
+  "builder": "plot",
+  "option": "data",
+  "value": [
+   0.125,
+   -0.25,
+   0.5
+  ],
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "navigable": 0,
+   "data": [
+    0.125,
+    -0.25,
+    0.5
+   ]
+  }
+ },
+ {
+  "builder": "plot",
+  "option": "blob",
+  "value": 7,
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "navigable": 0,
+   "blob": 7
+  }
+ },
+ {
+  "builder": "plot",
+  "option": "path",
+  "value": "q",
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "navigable": 0,
+   "path": "q"
+  }
+ },
+ {
+  "builder": "plot",
+  "option": "cache",
+  "value": "q",
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "navigable": 0,
+   "cache": "q"
+  }
+ },
+ {
+  "builder": "plot",
+  "option": "buffer",
+  "value": 7,
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "navigable": 0,
+   "buffer": 7
+  }
+ },
+ {
+  "builder": "plot",
+  "option": "channels",
+  "value": 7,
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "navigable": 0,
+   "channels": 7
+  }
+ },
+ {
+  "builder": "plot",
+  "option": "view",
+  "value": "spectrogram",
+  "tree": {
+   "type": "signal",
+   "view": "spectrogram",
+   "navigable": 0
+  }
+ },
+ {
+  "builder": "plot",
+  "option": "overlay",
+  "value": true,
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "navigable": 0,
+   "overlay": 1
+  }
+ },
+ {
+  "builder": "plot",
+  "option": "measure",
+  "value": "rms",
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "navigable": 0,
+   "measure": "rms"
+  }
+ },
+ {
+  "builder": "plot",
+  "option": "sample_rate",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "navigable": 0,
+   "axes": {
+    "x": {
+     "sample_rate": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "plot",
+  "option": "min",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "navigable": 0,
+   "axes": {
+    "y": {
+     "min": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "plot",
+  "option": "max",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "navigable": 0,
+   "axes": {
+    "y": {
+     "max": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "plot",
+  "option": "ruler",
+  "value": "beats",
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "navigable": 0,
+   "axes": {
+    "x": {
+     "unit": "beats"
+    }
+   }
+  }
+ },
+ {
+  "builder": "plot",
+  "option": "ruler_y",
+  "value": "db",
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "navigable": 0,
+   "axes": {
+    "y": {
+     "unit": "db"
+    }
+   }
+  }
+ },
+ {
+  "builder": "plot",
+  "option": "fft_size",
+  "value": 7,
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "navigable": 0,
+   "fft_size": 7
+  }
+ },
+ {
+  "builder": "plot",
+  "option": "db_floor",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "navigable": 0,
+   "db_floor": 3.5
+  }
+ },
+ {
+  "builder": "plot",
+  "option": "db_ceil",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "navigable": 0,
+   "db_ceil": 3.5
+  }
+ },
+ {
+  "builder": "plot",
+  "option": "freq_scale",
+  "value": "mel",
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "navigable": 0,
+   "freq_scale": "mel"
+  }
+ },
+ {
+  "builder": "plot",
+  "option": "label",
+  "value": "q",
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "navigable": 0,
+   "label": "q"
+  }
+ },
+ {
+  "builder": "plot",
+  "option": "color",
+  "value": "q",
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "navigable": 0,
+   "color": "q"
+  }
+ },
+ {
+  "builder": "plot",
+  "option": "axes",
+  "value": {
+   "x": {
+    "unit": "beats",
+    "tempo": 2.0
+   },
+   "y": {
+    "bit_depth": 16
+   }
+  },
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "navigable": 0,
+   "axes": {
+    "x": {
+     "unit": "beats",
+     "tempo": 2.0
+    },
+    "y": {
+     "bit_depth": 16
+    }
+   }
+  }
+ },
+ {
+  "builder": "scope",
+  "option": "bus",
+  "value": 7,
+  "tree": {
+   "type": "signal",
+   "bus": 7,
+   "rate": "audio",
+   "view": "trace"
+  }
+ },
+ {
+  "builder": "scope",
+  "option": "rate",
+  "value": "control",
+  "tree": {
+   "type": "signal",
+   "bus": 0,
+   "rate": "control",
+   "view": "trace"
+  }
+ },
+ {
+  "builder": "scope",
+  "option": "channels",
+  "value": 7,
+  "tree": {
+   "type": "signal",
+   "bus": 0,
+   "rate": "audio",
+   "view": "trace",
+   "channels": 7
+  }
+ },
+ {
+  "builder": "scope",
+  "option": "overlay",
+  "value": true,
+  "tree": {
+   "type": "signal",
+   "bus": 0,
+   "rate": "audio",
+   "view": "trace",
+   "overlay": 1
+  }
+ },
+ {
+  "builder": "scope",
+  "option": "measure",
+  "value": "rms",
+  "tree": {
+   "type": "signal",
+   "bus": 0,
+   "rate": "audio",
+   "view": "trace",
+   "measure": "rms"
+  }
+ },
+ {
+  "builder": "scope",
+  "option": "window_ms",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "bus": 0,
+   "rate": "audio",
+   "view": "trace",
+   "window_ms": 3.5
+  }
+ },
+ {
+  "builder": "scope",
+  "option": "trigger",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "bus": 0,
+   "rate": "audio",
+   "view": "trace",
+   "trigger": 3.5
+  }
+ },
+ {
+  "builder": "scope",
+  "option": "hold",
+  "value": true,
+  "tree": {
+   "type": "signal",
+   "bus": 0,
+   "rate": "audio",
+   "view": "trace",
+   "hold": 1
+  }
+ },
+ {
+  "builder": "scope",
+  "option": "min",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "bus": 0,
+   "rate": "audio",
+   "view": "trace",
+   "axes": {
+    "y": {
+     "min": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "scope",
+  "option": "max",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "bus": 0,
+   "rate": "audio",
+   "view": "trace",
+   "axes": {
+    "y": {
+     "max": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "scope",
+  "option": "ruler",
+  "value": "beats",
+  "tree": {
+   "type": "signal",
+   "bus": 0,
+   "rate": "audio",
+   "view": "trace",
+   "axes": {
+    "x": {
+     "unit": "beats"
+    }
+   }
+  }
+ },
+ {
+  "builder": "scope",
+  "option": "ruler_y",
+  "value": "db",
+  "tree": {
+   "type": "signal",
+   "bus": 0,
+   "rate": "audio",
+   "view": "trace",
+   "axes": {
+    "y": {
+     "unit": "db"
+    }
+   }
+  }
+ },
+ {
+  "builder": "scope",
+  "option": "label",
+  "value": "q",
+  "tree": {
+   "type": "signal",
+   "bus": 0,
+   "rate": "audio",
+   "view": "trace",
+   "label": "q"
+  }
+ },
+ {
+  "builder": "scope",
+  "option": "color",
+  "value": "q",
+  "tree": {
+   "type": "signal",
+   "bus": 0,
+   "rate": "audio",
+   "view": "trace",
+   "color": "q"
+  }
+ },
+ {
+  "builder": "scope",
+  "option": "axes",
+  "value": {
+   "x": {
+    "unit": "beats",
+    "tempo": 2.0
+   },
+   "y": {
+    "bit_depth": 16
+   }
+  },
+  "tree": {
+   "type": "signal",
+   "bus": 0,
+   "rate": "audio",
+   "view": "trace",
+   "axes": {
+    "x": {
+     "unit": "beats",
+     "tempo": 2.0
+    },
+    "y": {
+     "bit_depth": 16
+    }
+   }
+  }
+ },
+ {
+  "builder": "score",
+  "option": "playhead",
+  "value": 3.5,
+  "tree": {
+   "type": "score",
+   "playhead": 3.5
+  }
+ },
+ {
+  "builder": "score",
+  "option": "playhead_at",
+  "value": 3.5,
+  "tree": {
+   "type": "score",
+   "playhead_at": 3.5
+  }
+ },
+ {
+  "builder": "score",
+  "option": "playhead_loop_start",
+  "value": 3.5,
+  "tree": {
+   "type": "score",
+   "playhead_loop_start": 3.5
+  }
+ },
+ {
+  "builder": "score",
+  "option": "playhead_loop_len",
+  "value": 3.5,
+  "tree": {
+   "type": "score",
+   "playhead_loop_len": 3.5
+  }
+ },
+ {
+  "builder": "score",
+  "option": "sample_rate",
+  "value": 3.5,
+  "tree": {
+   "type": "score",
+   "sample_rate": 3.5
+  }
+ },
+ {
+  "builder": "score",
+  "option": "selected",
+  "value": "q",
+  "tree": {
+   "type": "score",
+   "selected": "q"
+  }
+ },
+ {
+  "builder": "score",
+  "option": "editable",
+  "value": true,
+  "tree": {
+   "type": "score",
+   "editable": true
+  }
+ },
+ {
+  "builder": "score",
+  "option": "color",
+  "value": "q",
+  "tree": {
+   "type": "score",
+   "color": "q"
+  }
+ },
+ {
+  "builder": "scroll",
+  "option": "axis",
+  "value": "y",
+  "tree": {
+   "type": "plane",
+   "axis": "y"
+  }
+ },
+ {
+  "builder": "scroll",
+  "option": "zoom",
+  "value": true,
+  "tree": {
+   "type": "plane",
+   "zoom": 1
+  }
+ },
+ {
+  "builder": "scroll",
+  "option": "content_w",
+  "value": 3.5,
+  "tree": {
+   "type": "plane",
+   "content_w": 3.5
+  }
+ },
+ {
+  "builder": "scroll",
+  "option": "content_h",
+  "value": 3.5,
+  "tree": {
+   "type": "plane",
+   "content_h": 3.5
+  }
+ },
+ {
+  "builder": "scroll",
+  "option": "view_x",
+  "value": 3.5,
+  "tree": {
+   "type": "plane",
+   "view_x": 3.5
+  }
+ },
+ {
+  "builder": "scroll",
+  "option": "view_y",
+  "value": 3.5,
+  "tree": {
+   "type": "plane",
+   "view_y": 3.5
+  }
+ },
+ {
+  "builder": "scroll",
+  "option": "view_zoom",
+  "value": 3.5,
+  "tree": {
+   "type": "plane",
+   "view_zoom": 3.5
+  }
+ },
+ {
+  "builder": "scroll",
+  "option": "flow",
+  "value": "row",
+  "tree": {
+   "type": "plane",
+   "flow": "row"
+  }
+ },
+ {
+  "builder": "scroll",
+  "option": "layout",
+  "value": "row",
+  "tree": {
+   "type": "plane",
+   "flow": "row"
+  }
+ },
+ {
+  "builder": "scroll",
+  "option": "margin",
+  "value": 3.5,
+  "tree": {
+   "type": "plane",
+   "margin": 3.5
+  }
+ },
+ {
+  "builder": "scroll",
+  "option": "gap",
+  "value": 3.5,
+  "tree": {
+   "type": "plane",
+   "gap": 3.5
+  }
+ },
+ {
+  "builder": "scroll",
+  "option": "cols",
+  "value": 7,
+  "tree": {
+   "type": "plane",
+   "cols": 7
+  }
+ },
+ {
+  "builder": "scroll",
+  "option": "theme",
+  "value": {
+   "accent": "#ff8800"
+  },
+  "tree": {
+   "type": "plane",
+   "theme": {
+    "accent": "#ff8800"
+   }
+  }
+ },
+ {
+  "builder": "scroll",
+  "option": "color",
+  "value": "q",
+  "tree": {
+   "type": "plane",
+   "color": "q"
+  }
+ },
+ {
+  "builder": "signal",
+  "option": "view",
+  "value": "spectrogram",
+  "tree": {
+   "type": "signal",
+   "view": "spectrogram"
+  }
+ },
+ {
+  "builder": "signal",
+  "option": "data",
+  "value": [
+   0.125,
+   -0.25,
+   0.5
+  ],
+  "tree": {
+   "type": "signal",
+   "data": [
+    0.125,
+    -0.25,
+    0.5
+   ]
+  }
+ },
+ {
+  "builder": "signal",
+  "option": "blob",
+  "value": 7,
+  "tree": {
+   "type": "signal",
+   "blob": 7
+  }
+ },
+ {
+  "builder": "signal",
+  "option": "buffer",
+  "value": 7,
+  "tree": {
+   "type": "signal",
+   "buffer": 7
+  }
+ },
+ {
+  "builder": "signal",
+  "option": "path",
+  "value": "q",
+  "tree": {
+   "type": "signal",
+   "path": "q"
+  }
+ },
+ {
+  "builder": "signal",
+  "option": "cache",
+  "value": "q",
+  "tree": {
+   "type": "signal",
+   "cache": "q"
+  }
+ },
+ {
+  "builder": "signal",
+  "option": "bus",
+  "value": 7,
+  "tree": {
+   "type": "signal",
+   "bus": 7
+  }
+ },
+ {
+  "builder": "signal",
+  "option": "rate",
+  "value": "control",
+  "tree": {
+   "type": "signal",
+   "rate": "control"
+  }
+ },
+ {
+  "builder": "signal",
+  "option": "channels",
+  "value": 7,
+  "tree": {
+   "type": "signal",
+   "channels": 7
+  }
+ },
+ {
+  "builder": "signal",
+  "option": "retention",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "retention": 3.5
+  }
+ },
+ {
+  "builder": "signal",
+  "option": "base_bucket",
+  "value": 7,
+  "tree": {
+   "type": "signal",
+   "base_bucket": 7
+  }
+ },
+ {
+  "builder": "signal",
+  "option": "navigable",
+  "value": true,
+  "tree": {
+   "type": "signal",
+   "navigable": 1
+  }
+ },
+ {
+  "builder": "signal",
+  "option": "selectable",
+  "value": true,
+  "tree": {
+   "type": "signal",
+   "selectable": 1
+  }
+ },
+ {
+  "builder": "signal",
+  "option": "editable",
+  "value": true,
+  "tree": {
+   "type": "signal",
+   "editable": 1
+  }
+ },
+ {
+  "builder": "signal",
+  "option": "overlay",
+  "value": true,
+  "tree": {
+   "type": "signal",
+   "overlay": 1
+  }
+ },
+ {
+  "builder": "signal",
+  "option": "measure",
+  "value": "rms",
+  "tree": {
+   "type": "signal",
+   "measure": "rms"
+  }
+ },
+ {
+  "builder": "signal",
+  "option": "fills",
+  "value": true,
+  "tree": {
+   "type": "signal",
+   "fills": 1
+  }
+ },
+ {
+  "builder": "signal",
+  "option": "at",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "at": 3.5
+  }
+ },
+ {
+  "builder": "signal",
+  "option": "dur",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "dur": 3.5
+  }
+ },
+ {
+  "builder": "signal",
+  "option": "start",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "start": 3.5
+  }
+ },
+ {
+  "builder": "signal",
+  "option": "loop",
+  "value": true,
+  "tree": {
+   "type": "signal",
+   "loop": 1
+  }
+ },
+ {
+  "builder": "signal",
+  "option": "axes",
+  "value": {
+   "x": {
+    "unit": "beats",
+    "tempo": 2.0
+   },
+   "y": {
+    "bit_depth": 16
+   }
+  },
+  "tree": {
+   "type": "signal",
+   "axes": {
+    "x": {
+     "unit": "beats",
+     "tempo": 2.0
+    },
+    "y": {
+     "bit_depth": 16
+    }
+   }
+  }
+ },
+ {
+  "builder": "signal",
+  "option": "label",
+  "value": "q",
+  "tree": {
+   "type": "signal",
+   "label": "q"
+  }
+ },
+ {
+  "builder": "signal",
+  "option": "color",
+  "value": "q",
+  "tree": {
+   "type": "signal",
+   "color": "q"
+  }
+ },
+ {
+  "builder": "slider",
+  "option": "label",
+  "value": "q",
+  "tree": {
+   "type": "slider",
+   "label": "q"
+  }
+ },
+ {
+  "builder": "slider",
+  "option": "min",
+  "value": 3.5,
+  "tree": {
+   "type": "slider",
+   "min": 3.5
+  }
+ },
+ {
+  "builder": "slider",
+  "option": "max",
+  "value": 3.5,
+  "tree": {
+   "type": "slider",
+   "max": 3.5
+  }
+ },
+ {
+  "builder": "slider",
+  "option": "curve",
+  "value": 3.5,
+  "tree": {
+   "type": "slider",
+   "curve": 3.5
+  }
+ },
+ {
+  "builder": "slider",
+  "option": "step",
+  "value": 3.5,
+  "tree": {
+   "type": "slider",
+   "step": 3.5
+  }
+ },
+ {
+  "builder": "slider",
+  "option": "value",
+  "value": 3.5,
+  "tree": {
+   "type": "slider",
+   "value": 3.5
+  }
+ },
+ {
+  "builder": "slider",
+  "option": "vertical",
+  "value": true,
+  "tree": {
+   "type": "slider",
+   "vertical": true
+  }
+ },
+ {
+  "builder": "slider",
+  "option": "text_size",
+  "value": 3.5,
+  "tree": {
+   "type": "slider",
+   "text_size": 3.5
+  }
+ },
+ {
+  "builder": "slider",
+  "option": "color",
+  "value": "q",
+  "tree": {
+   "type": "slider",
+   "color": "q"
+  }
+ },
+ {
+  "builder": "spectrogram",
+  "option": "data",
+  "value": [
+   0.125,
+   -0.25,
+   0.5
+  ],
+  "tree": {
+   "type": "signal",
+   "view": "spectrogram",
+   "data": [
+    0.125,
+    -0.25,
+    0.5
+   ]
+  }
+ },
+ {
+  "builder": "spectrogram",
+  "option": "blob",
+  "value": 7,
+  "tree": {
+   "type": "signal",
+   "view": "spectrogram",
+   "blob": 7
+  }
+ },
+ {
+  "builder": "spectrogram",
+  "option": "buffer",
+  "value": 7,
+  "tree": {
+   "type": "signal",
+   "view": "spectrogram",
+   "buffer": 7
+  }
+ },
+ {
+  "builder": "spectrogram",
+  "option": "path",
+  "value": "q",
+  "tree": {
+   "type": "signal",
+   "view": "spectrogram",
+   "path": "q"
+  }
+ },
+ {
+  "builder": "spectrogram",
+  "option": "cache",
+  "value": "q",
+  "tree": {
+   "type": "signal",
+   "view": "spectrogram",
+   "cache": "q"
+  }
+ },
+ {
+  "builder": "spectrogram",
+  "option": "channels",
+  "value": 7,
+  "tree": {
+   "type": "signal",
+   "view": "spectrogram",
+   "channels": 7
+  }
+ },
+ {
+  "builder": "spectrogram",
+  "option": "window_size",
+  "value": 7,
+  "tree": {
+   "type": "signal",
+   "view": "spectrogram",
+   "window_size": 7
+  }
+ },
+ {
+  "builder": "spectrogram",
+  "option": "hop",
+  "value": 7,
+  "tree": {
+   "type": "signal",
+   "view": "spectrogram",
+   "hop": 7
+  }
+ },
+ {
+  "builder": "spectrogram",
+  "option": "sample_rate",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "view": "spectrogram",
+   "axes": {
+    "x": {
+     "sample_rate": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "spectrogram",
+  "option": "db_floor",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "view": "spectrogram",
+   "db_floor": 3.5
+  }
+ },
+ {
+  "builder": "spectrogram",
+  "option": "db_ceil",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "view": "spectrogram",
+   "db_ceil": 3.5
+  }
+ },
+ {
+  "builder": "spectrogram",
+  "option": "freq_scale",
+  "value": "mel",
+  "tree": {
+   "type": "signal",
+   "view": "spectrogram",
+   "freq_scale": "mel"
+  }
+ },
+ {
+  "builder": "spectrogram",
+  "option": "log_freq",
+  "value": true,
+  "tree": {
+   "type": "signal",
+   "view": "spectrogram",
+   "log_freq": 1
+  }
+ },
+ {
+  "builder": "spectrogram",
+  "option": "colormap",
+  "value": 7,
+  "tree": {
+   "type": "signal",
+   "view": "spectrogram",
+   "colormap": 7
+  }
+ },
+ {
+  "builder": "spectrogram",
+  "option": "ruler",
+  "value": "beats",
+  "tree": {
+   "type": "signal",
+   "view": "spectrogram",
+   "axes": {
+    "x": {
+     "unit": "beats"
+    }
+   }
+  }
+ },
+ {
+  "builder": "spectrogram",
+  "option": "ruler_y",
+  "value": "db",
+  "tree": {
+   "type": "signal",
+   "view": "spectrogram",
+   "axes": {
+    "y": {
+     "unit": "db"
+    }
+   }
+  }
+ },
+ {
+  "builder": "spectrogram",
+  "option": "tempo",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "view": "spectrogram",
+   "axes": {
+    "x": {
+     "tempo": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "spectrogram",
+  "option": "beat_at",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "view": "spectrogram",
+   "axes": {
+    "x": {
+     "beat_at": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "spectrogram",
+  "option": "quant",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "view": "spectrogram",
+   "axes": {
+    "x": {
+     "quant": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "spectrogram",
+  "option": "sel_start",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "view": "spectrogram",
+   "axes": {
+    "x": {
+     "sel_start": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "spectrogram",
+  "option": "sel_len",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "view": "spectrogram",
+   "axes": {
+    "x": {
+     "sel_len": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "spectrogram",
+  "option": "sel_min",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "view": "spectrogram",
+   "axes": {
+    "y": {
+     "sel_min": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "spectrogram",
+  "option": "sel_max",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "view": "spectrogram",
+   "axes": {
+    "y": {
+     "sel_max": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "spectrogram",
+  "option": "playhead_at",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "view": "spectrogram",
+   "axes": {
+    "x": {
+     "playhead_at": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "spectrogram",
+  "option": "playhead",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "view": "spectrogram",
+   "axes": {
+    "x": {
+     "playhead": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "spectrogram",
+  "option": "playhead_loop_start",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "view": "spectrogram",
+   "axes": {
+    "x": {
+     "playhead_loop_start": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "spectrogram",
+  "option": "playhead_loop_len",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "view": "spectrogram",
+   "axes": {
+    "x": {
+     "playhead_loop_len": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "spectrogram",
+  "option": "y_start",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "view": "spectrogram",
+   "axes": {
+    "y": {
+     "start": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "spectrogram",
+  "option": "y_len",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "view": "spectrogram",
+   "axes": {
+    "y": {
+     "len": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "spectrogram",
+  "option": "link",
+  "value": 7,
+  "tree": {
+   "type": "signal",
+   "view": "spectrogram",
+   "axes": {
+    "x": {
+     "link": 7
+    }
+   }
+  }
+ },
+ {
+  "builder": "spectrogram",
+  "option": "axes",
+  "value": {
+   "x": {
+    "unit": "beats",
+    "tempo": 2.0
+   },
+   "y": {
+    "bit_depth": 16
+   }
+  },
+  "tree": {
+   "type": "signal",
+   "view": "spectrogram",
+   "axes": {
+    "x": {
+     "unit": "beats",
+     "tempo": 2.0
+    },
+    "y": {
+     "bit_depth": 16
+    }
+   }
+  }
+ },
+ {
+  "builder": "spectrogram",
+  "option": "color",
+  "value": "q",
+  "tree": {
+   "type": "signal",
+   "view": "spectrogram",
+   "color": "q"
+  }
+ },
+ {
+  "builder": "spectrum",
+  "option": "bus",
+  "value": 7,
+  "tree": {
+   "type": "signal",
+   "bus": 7,
+   "view": "spectrum"
+  }
+ },
+ {
+  "builder": "spectrum",
+  "option": "channels",
+  "value": 7,
+  "tree": {
+   "type": "signal",
+   "bus": 0,
+   "view": "spectrum",
+   "channels": 7
+  }
+ },
+ {
+  "builder": "spectrum",
+  "option": "fft_size",
+  "value": 7,
+  "tree": {
+   "type": "signal",
+   "bus": 0,
+   "view": "spectrum",
+   "fft_size": 7
+  }
+ },
+ {
+  "builder": "spectrum",
+  "option": "db_floor",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "bus": 0,
+   "view": "spectrum",
+   "db_floor": 3.5
+  }
+ },
+ {
+  "builder": "spectrum",
+  "option": "db_ceil",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "bus": 0,
+   "view": "spectrum",
+   "db_ceil": 3.5
+  }
+ },
+ {
+  "builder": "spectrum",
+  "option": "freq_scale",
+  "value": "mel",
+  "tree": {
+   "type": "signal",
+   "bus": 0,
+   "view": "spectrum",
+   "freq_scale": "mel"
+  }
+ },
+ {
+  "builder": "spectrum",
+  "option": "log_freq",
+  "value": true,
+  "tree": {
+   "type": "signal",
+   "bus": 0,
+   "view": "spectrum",
+   "log_freq": 1
+  }
+ },
+ {
+  "builder": "spectrum",
+  "option": "averaging",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "bus": 0,
+   "view": "spectrum",
+   "averaging": 3.5
+  }
+ },
+ {
+  "builder": "spectrum",
+  "option": "peak_hold",
+  "value": true,
+  "tree": {
+   "type": "signal",
+   "bus": 0,
+   "view": "spectrum",
+   "peak_hold": 1
+  }
+ },
+ {
+  "builder": "spectrum",
+  "option": "navigable",
+  "value": true,
+  "tree": {
+   "type": "signal",
+   "bus": 0,
+   "view": "spectrum",
+   "navigable": 1
+  }
+ },
+ {
+  "builder": "spectrum",
+  "option": "view_start",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "bus": 0,
+   "view": "spectrum",
+   "axes": {
+    "x": {
+     "start": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "spectrum",
+  "option": "view_len",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "bus": 0,
+   "view": "spectrum",
+   "axes": {
+    "x": {
+     "len": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "spectrum",
+  "option": "ruler",
+  "value": "beats",
+  "tree": {
+   "type": "signal",
+   "bus": 0,
+   "view": "spectrum",
+   "axes": {
+    "x": {
+     "unit": "beats"
+    }
+   }
+  }
+ },
+ {
+  "builder": "spectrum",
+  "option": "ruler_y",
+  "value": "db",
+  "tree": {
+   "type": "signal",
+   "bus": 0,
+   "view": "spectrum",
+   "axes": {
+    "y": {
+     "unit": "db"
+    }
+   }
+  }
+ },
+ {
+  "builder": "spectrum",
+  "option": "label",
+  "value": "q",
+  "tree": {
+   "type": "signal",
+   "bus": 0,
+   "view": "spectrum",
+   "label": "q"
+  }
+ },
+ {
+  "builder": "spectrum",
+  "option": "color",
+  "value": "q",
+  "tree": {
+   "type": "signal",
+   "bus": 0,
+   "view": "spectrum",
+   "color": "q"
+  }
+ },
+ {
+  "builder": "spectrum",
+  "option": "axes",
+  "value": {
+   "x": {
+    "unit": "beats",
+    "tempo": 2.0
+   },
+   "y": {
+    "bit_depth": 16
+   }
+  },
+  "tree": {
+   "type": "signal",
+   "bus": 0,
+   "view": "spectrum",
+   "axes": {
+    "x": {
+     "unit": "beats",
+     "tempo": 2.0
+    },
+    "y": {
+     "bit_depth": 16
+    }
+   }
+  }
+ },
+ {
+  "builder": "stack",
+  "option": "index",
+  "value": 7,
+  "tree": {
+   "type": "layout",
+   "flow": "stack",
+   "index": 7
+  }
+ },
+ {
+  "builder": "stack",
+  "option": "margin",
+  "value": 3.5,
+  "tree": {
+   "type": "layout",
+   "flow": "stack",
+   "margin": 3.5
+  }
+ },
+ {
+  "builder": "stack",
+  "option": "hug",
+  "value": true,
+  "tree": {
+   "type": "layout",
+   "flow": "stack",
+   "hug": 1
+  }
+ },
+ {
+  "builder": "stack",
+  "option": "theme",
+  "value": {
+   "accent": "#ff8800"
+  },
+  "tree": {
+   "type": "layout",
+   "flow": "stack",
+   "theme": {
+    "accent": "#ff8800"
+   }
+  }
+ },
+ {
+  "builder": "stack",
+  "option": "color",
+  "value": "q",
+  "tree": {
+   "type": "layout",
+   "flow": "stack",
+   "color": "q"
+  }
+ },
+ {
+  "builder": "text",
+  "option": "value",
+  "value": "q",
+  "tree": {
+   "type": "text",
+   "value": "q"
+  }
+ },
+ {
+  "builder": "text",
+  "option": "label",
+  "value": "q",
+  "tree": {
+   "type": "text",
+   "label": "q"
+  }
+ },
+ {
+  "builder": "text",
+  "option": "text_size",
+  "value": 3.5,
+  "tree": {
+   "type": "text",
+   "text_size": 3.5
+  }
+ },
+ {
+  "builder": "text",
+  "option": "multiline",
+  "value": true,
+  "tree": {
+   "type": "text",
+   "multiline": true
+  }
+ },
+ {
+  "builder": "text",
+  "option": "color",
+  "value": "q",
+  "tree": {
+   "type": "text",
+   "color": "q"
+  }
+ },
+ {
+  "builder": "timeruler",
+  "option": "h",
+  "value": 3.5,
+  "tree": {
+   "type": "field",
+   "h": 3.5
+  }
+ },
+ {
+  "builder": "timeruler",
+  "option": "ruler",
+  "value": "beats",
+  "tree": {
+   "type": "field",
+   "h": 20.0,
+   "axes": {
+    "x": {
+     "unit": "beats"
+    }
+   }
+  }
+ },
+ {
+  "builder": "timeruler",
+  "option": "sample_rate",
+  "value": 3.5,
+  "tree": {
+   "type": "field",
+   "h": 20.0,
+   "axes": {
+    "x": {
+     "sample_rate": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "timeruler",
+  "option": "tempo",
+  "value": 3.5,
+  "tree": {
+   "type": "field",
+   "h": 20.0,
+   "axes": {
+    "x": {
+     "tempo": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "timeruler",
+  "option": "beat_at",
+  "value": 3.5,
+  "tree": {
+   "type": "field",
+   "h": 20.0,
+   "axes": {
+    "x": {
+     "beat_at": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "timeruler",
+  "option": "quant",
+  "value": 3.5,
+  "tree": {
+   "type": "field",
+   "h": 20.0,
+   "axes": {
+    "x": {
+     "quant": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "timeruler",
+  "option": "link",
+  "value": 7,
+  "tree": {
+   "type": "field",
+   "h": 20.0,
+   "axes": {
+    "x": {
+     "link": 7
+    }
+   }
+  }
+ },
+ {
+  "builder": "timeruler",
+  "option": "theme",
+  "value": {
+   "accent": "#ff8800"
+  },
+  "tree": {
+   "type": "field",
+   "h": 20.0,
+   "theme": {
+    "accent": "#ff8800"
+   }
+  }
+ },
+ {
+  "builder": "timeruler",
+  "option": "color",
+  "value": "q",
+  "tree": {
+   "type": "field",
+   "h": 20.0,
+   "color": "q"
+  }
+ },
+ {
+  "builder": "timeruler",
+  "option": "axes",
+  "value": {
+   "x": {
+    "unit": "beats",
+    "tempo": 2.0
+   },
+   "y": {
+    "bit_depth": 16
+   }
+  },
+  "tree": {
+   "type": "field",
+   "h": 20.0,
+   "axes": {
+    "x": {
+     "unit": "beats",
+     "tempo": 2.0
+    },
+    "y": {
+     "bit_depth": 16
+    }
+   }
+  }
+ },
+ {
+  "builder": "toggle",
+  "option": "label",
+  "value": "q",
+  "tree": {
+   "type": "toggle",
+   "label": "q"
+  }
+ },
+ {
+  "builder": "toggle",
+  "option": "value",
+  "value": true,
+  "tree": {
+   "type": "toggle",
+   "value": 1
+  }
+ },
+ {
+  "builder": "toggle",
+  "option": "on",
+  "value": 3.5,
+  "tree": {
+   "type": "toggle",
+   "on": 3.5
+  }
+ },
+ {
+  "builder": "toggle",
+  "option": "off",
+  "value": 3.5,
+  "tree": {
+   "type": "toggle",
+   "off": 3.5
+  }
+ },
+ {
+  "builder": "toggle",
+  "option": "text_size",
+  "value": 3.5,
+  "tree": {
+   "type": "toggle",
+   "text_size": 3.5
+  }
+ },
+ {
+  "builder": "toggle",
+  "option": "color",
+  "value": "q",
+  "tree": {
+   "type": "toggle",
+   "color": "q"
+  }
+ },
+ {
+  "builder": "track",
+  "option": "label",
+  "value": "q",
+  "tree": {
+   "type": "field",
+   "label": "q"
+  }
+ },
+ {
+  "builder": "track",
+  "option": "height",
+  "value": 3.5,
+  "tree": {
+   "type": "field",
+   "height": 3.5
+  }
+ },
+ {
+  "builder": "track",
+  "option": "snap",
+  "value": 3.5,
+  "tree": {
+   "type": "field",
+   "snap": 3.5
+  }
+ },
+ {
+  "builder": "track",
+  "option": "header_w",
+  "value": 3.5,
+  "tree": {
+   "type": "field",
+   "header_w": 3.5
+  }
+ },
+ {
+  "builder": "track",
+  "option": "mute",
+  "value": true,
+  "tree": {
+   "type": "field",
+   "mute": true
+  }
+ },
+ {
+  "builder": "track",
+  "option": "solo",
+  "value": true,
+  "tree": {
+   "type": "field",
+   "solo": true
+  }
+ },
+ {
+  "builder": "track",
+  "option": "level",
+  "value": 3.5,
+  "tree": {
+   "type": "field",
+   "level": 3.5
+  }
+ },
+ {
+  "builder": "track",
+  "option": "ruler",
+  "value": "beats",
+  "tree": {
+   "type": "field",
+   "axes": {
+    "x": {
+     "unit": "beats"
+    }
+   }
+  }
+ },
+ {
+  "builder": "track",
+  "option": "sample_rate",
+  "value": 3.5,
+  "tree": {
+   "type": "field",
+   "axes": {
+    "x": {
+     "sample_rate": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "track",
+  "option": "tempo",
+  "value": 3.5,
+  "tree": {
+   "type": "field",
+   "axes": {
+    "x": {
+     "tempo": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "track",
+  "option": "beat_at",
+  "value": 3.5,
+  "tree": {
+   "type": "field",
+   "axes": {
+    "x": {
+     "beat_at": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "track",
+  "option": "quant",
+  "value": 3.5,
+  "tree": {
+   "type": "field",
+   "axes": {
+    "x": {
+     "quant": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "track",
+  "option": "playhead_at",
+  "value": 3.5,
+  "tree": {
+   "type": "field",
+   "axes": {
+    "x": {
+     "playhead_at": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "track",
+  "option": "playhead",
+  "value": 3.5,
+  "tree": {
+   "type": "field",
+   "axes": {
+    "x": {
+     "playhead": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "track",
+  "option": "playhead_loop_start",
+  "value": 3.5,
+  "tree": {
+   "type": "field",
+   "axes": {
+    "x": {
+     "playhead_loop_start": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "track",
+  "option": "playhead_loop_len",
+  "value": 3.5,
+  "tree": {
+   "type": "field",
+   "axes": {
+    "x": {
+     "playhead_loop_len": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "track",
+  "option": "link",
+  "value": 7,
+  "tree": {
+   "type": "field",
+   "axes": {
+    "x": {
+     "link": 7
+    }
+   }
+  }
+ },
+ {
+  "builder": "track",
+  "option": "theme",
+  "value": {
+   "accent": "#ff8800"
+  },
+  "tree": {
+   "type": "field",
+   "theme": {
+    "accent": "#ff8800"
+   }
+  }
+ },
+ {
+  "builder": "track",
+  "option": "color",
+  "value": "q",
+  "tree": {
+   "type": "field",
+   "color": "q"
+  }
+ },
+ {
+  "builder": "track",
+  "option": "axes",
+  "value": {
+   "x": {
+    "unit": "beats",
+    "tempo": 2.0
+   },
+   "y": {
+    "bit_depth": 16
+   }
+  },
+  "tree": {
+   "type": "field",
+   "axes": {
+    "x": {
+     "unit": "beats",
+     "tempo": 2.0
+    },
+    "y": {
+     "bit_depth": 16
+    }
+   }
+  }
+ },
+ {
+  "builder": "view",
+  "option": "title",
+  "value": "q",
+  "tree": {
+   "type": "window",
+   "title": "q"
+  }
+ },
+ {
+  "builder": "view",
+  "option": "w",
+  "value": 7,
+  "tree": {
+   "type": "window",
+   "w": 7
+  }
+ },
+ {
+  "builder": "view",
+  "option": "h",
+  "value": 7,
+  "tree": {
+   "type": "window",
+   "h": 7
+  }
+ },
+ {
+  "builder": "view",
+  "option": "flow",
+  "value": "row",
+  "tree": {
+   "type": "window",
+   "flow": "row"
+  }
+ },
+ {
+  "builder": "view",
+  "option": "layout",
+  "value": "row",
+  "tree": {
+   "type": "window",
+   "flow": "row"
+  }
+ },
+ {
+  "builder": "view",
+  "option": "margin",
+  "value": 3.5,
+  "tree": {
+   "type": "window",
+   "margin": 3.5
+  }
+ },
+ {
+  "builder": "view",
+  "option": "gap",
+  "value": 3.5,
+  "tree": {
+   "type": "window",
+   "gap": 3.5
+  }
+ },
+ {
+  "builder": "view",
+  "option": "cols",
+  "value": 7,
+  "tree": {
+   "type": "window",
+   "cols": 7
+  }
+ },
+ {
+  "builder": "view",
+  "option": "hug",
+  "value": true,
+  "tree": {
+   "type": "window",
+   "hug": 1
+  }
+ },
+ {
+  "builder": "view",
+  "option": "theme",
+  "value": {
+   "accent": "#ff8800"
+  },
+  "tree": {
+   "type": "window",
+   "theme": {
+    "accent": "#ff8800"
+   }
+  }
+ },
+ {
+  "builder": "view",
+  "option": "color",
+  "value": "q",
+  "tree": {
+   "type": "window",
+   "color": "q"
+  }
+ },
+ {
+  "builder": "waveform",
+  "option": "data",
+  "value": [
+   0.125,
+   -0.25,
+   0.5
+  ],
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "data": [
+    0.125,
+    -0.25,
+    0.5
+   ]
+  }
+ },
+ {
+  "builder": "waveform",
+  "option": "blob",
+  "value": 7,
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "blob": 7
+  }
+ },
+ {
+  "builder": "waveform",
+  "option": "buffer",
+  "value": 7,
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "buffer": 7
+  }
+ },
+ {
+  "builder": "waveform",
+  "option": "path",
+  "value": "q",
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "path": "q"
+  }
+ },
+ {
+  "builder": "waveform",
+  "option": "cache",
+  "value": "q",
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "cache": "q"
+  }
+ },
+ {
+  "builder": "waveform",
+  "option": "channels",
+  "value": 7,
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "channels": 7
+  }
+ },
+ {
+  "builder": "waveform",
+  "option": "base_bucket",
+  "value": 7,
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "base_bucket": 7
+  }
+ },
+ {
+  "builder": "waveform",
+  "option": "overlay",
+  "value": true,
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "overlay": 1
+  }
+ },
+ {
+  "builder": "waveform",
+  "option": "measure",
+  "value": "rms",
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "measure": "rms"
+  }
+ },
+ {
+  "builder": "waveform",
+  "option": "fills",
+  "value": true,
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "fills": 1
+  }
+ },
+ {
+  "builder": "waveform",
+  "option": "ruler",
+  "value": "beats",
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "axes": {
+    "x": {
+     "unit": "beats"
+    }
+   }
+  }
+ },
+ {
+  "builder": "waveform",
+  "option": "ruler_y",
+  "value": "db",
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "axes": {
+    "y": {
+     "unit": "db"
+    }
+   }
+  }
+ },
+ {
+  "builder": "waveform",
+  "option": "bit_depth",
+  "value": 7,
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "axes": {
+    "y": {
+     "bit_depth": 7
+    }
+   }
+  }
+ },
+ {
+  "builder": "waveform",
+  "option": "min",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "axes": {
+    "y": {
+     "min": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "waveform",
+  "option": "max",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "axes": {
+    "y": {
+     "max": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "waveform",
+  "option": "sample_rate",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "axes": {
+    "x": {
+     "sample_rate": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "waveform",
+  "option": "tempo",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "axes": {
+    "x": {
+     "tempo": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "waveform",
+  "option": "beat_at",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "axes": {
+    "x": {
+     "beat_at": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "waveform",
+  "option": "quant",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "axes": {
+    "x": {
+     "quant": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "waveform",
+  "option": "sel_start",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "axes": {
+    "x": {
+     "sel_start": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "waveform",
+  "option": "sel_len",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "axes": {
+    "x": {
+     "sel_len": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "waveform",
+  "option": "sel_min",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "axes": {
+    "y": {
+     "sel_min": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "waveform",
+  "option": "sel_max",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "axes": {
+    "y": {
+     "sel_max": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "waveform",
+  "option": "playhead_at",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "axes": {
+    "x": {
+     "playhead_at": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "waveform",
+  "option": "playhead",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "axes": {
+    "x": {
+     "playhead": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "waveform",
+  "option": "playhead_loop_start",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "axes": {
+    "x": {
+     "playhead_loop_start": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "waveform",
+  "option": "playhead_loop_len",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "axes": {
+    "x": {
+     "playhead_loop_len": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "waveform",
+  "option": "y_start",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "axes": {
+    "y": {
+     "start": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "waveform",
+  "option": "y_len",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "axes": {
+    "y": {
+     "len": 3.5
+    }
+   }
+  }
+ },
+ {
+  "builder": "waveform",
+  "option": "link",
+  "value": 7,
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "axes": {
+    "x": {
+     "link": 7
+    }
+   }
+  }
+ },
+ {
+  "builder": "waveform",
+  "option": "axes",
+  "value": {
+   "x": {
+    "unit": "beats",
+    "tempo": 2.0
+   },
+   "y": {
+    "bit_depth": 16
+   }
+  },
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "axes": {
+    "x": {
+     "unit": "beats",
+     "tempo": 2.0
+    },
+    "y": {
+     "bit_depth": 16
+    }
+   }
+  }
+ },
+ {
+  "builder": "waveform",
+  "option": "color",
+  "value": "q",
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "color": "q"
+  }
+ },
+ {
+  "builder": "window",
+  "option": "title",
+  "value": "q",
+  "tree": {
+   "type": "window",
+   "title": "q"
+  }
+ },
+ {
+  "builder": "window",
+  "option": "w",
+  "value": 7,
+  "tree": {
+   "type": "window",
+   "w": 7
+  }
+ },
+ {
+  "builder": "window",
+  "option": "h",
+  "value": 7,
+  "tree": {
+   "type": "window",
+   "h": 7
+  }
+ },
+ {
+  "builder": "window",
+  "option": "flow",
+  "value": "row",
+  "tree": {
+   "type": "window",
+   "flow": "row"
+  }
+ },
+ {
+  "builder": "window",
+  "option": "layout",
+  "value": "row",
+  "tree": {
+   "type": "window",
+   "flow": "row"
+  }
+ },
+ {
+  "builder": "window",
+  "option": "margin",
+  "value": 3.5,
+  "tree": {
+   "type": "window",
+   "margin": 3.5
+  }
+ },
+ {
+  "builder": "window",
+  "option": "gap",
+  "value": 3.5,
+  "tree": {
+   "type": "window",
+   "gap": 3.5
+  }
+ },
+ {
+  "builder": "window",
+  "option": "cols",
+  "value": 7,
+  "tree": {
+   "type": "window",
+   "cols": 7
+  }
+ },
+ {
+  "builder": "window",
+  "option": "hug",
+  "value": true,
+  "tree": {
+   "type": "window",
+   "hug": 1
+  }
+ },
+ {
+  "builder": "window",
+  "option": "theme",
+  "value": {
+   "accent": "#ff8800"
+  },
+  "tree": {
+   "type": "window",
+   "theme": {
+    "accent": "#ff8800"
+   }
+  }
+ },
+ {
+  "builder": "window",
+  "option": "color",
+  "value": "q",
+  "tree": {
+   "type": "window",
+   "color": "q"
+  }
+ }
+]
