@@ -168,8 +168,7 @@ its plan; the plan is where its acceptance is read.
   algebra and edits (`N2`), the emission judged by eye (`N3`, where tuplets,
   polyphony, markup and spelling all land), the interpreter that plays what the
   symbols mean (`N4`) and the enriched forward path (`N5`). Taken one at a
-  time; nothing outside the track waits on any of them, and owning the model
-  frees `third_party/verovio.pin` to follow releases.
+  time, and nothing outside the track waits on any of them.
 
 ### Waiting on a decision
 

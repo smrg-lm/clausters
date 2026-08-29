@@ -1801,6 +1801,26 @@ implementation detail: the client half reduces to the voice, the shared half in
 encoding (tuplets, voices, spelling, articulations) extends the *shared* half,
 so both clients gain it at once. This lands with **W16** and not before.
 
+**What that seam grows into is decided, and this port follows it rather than
+re-deriving it** (`clients/gui/PLAN.md`, "N track — notation: the score model").
+Richer encoding turned out not to be four refinements of `mei` but a **model**
+in `clausters_core::notation`: two durational structures that do not contain
+each other — the metric layout, which does not sound and is addressable, and
+flat voices of content — with durations as exact rationals, ticks demoted to one
+edge conversion among ms and MEI values, and an algebra of operations over both.
+Two consequences reach this package directly. **The algebra's client surface is
+settled once, in `N1`, for both clients** — value or handle semantics, a symbol
+per operation or the operation as data, who owns intermediates, how much sugar a
+language may add — so nothing here chooses it separately; if the operation
+crosses as data, `tests/bindings.rs` sees one symbol and no verbs, and the
+**operation catalog contrasted against both clients** is what keeps the two from
+drifting, exactly where the props manifest could not see a divergence. And the
+line that keeps one algebra holds here too: *what computes is Rust, what names
+is the shell* — `a + b` and a slice syntax are idiom while they assemble an
+operation, but resolving a measure range to a span of rational time is
+arithmetic against the grid and belongs to the core, or the two clients round
+differently across a meter change.
+
 **The blocker moved on 2026-08-21, and it moved the port's shape with it.**
 verovio 6.3.0 is released and published on npm as an Emscripten build, and its
 exports are the *same C wrapper* `clausters-notation` binds

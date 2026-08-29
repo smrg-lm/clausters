@@ -2159,11 +2159,15 @@ half-paid.** The MEI *writer* is ours (`voice_to_mei`); the undo stack is ours
 (MEI snapshots, because verovio's cannot survive the reload its own stale caches
 force); the edit cycle is action → commit → reload for the same reason. We
 already pay the price of not trusting its editor without taking the benefit.
-The benefit is concrete: `third_party/verovio.pin` names a `develop` commit
-rather than a release tag **only** because `Toolkit::Edit()` is dead in 6.2.1
-(`docs/decisions.md`, "Score editing: verovio's editor is dead in the released
-wheel"). A model that rewrites its own MEI and re-engraves does not call the
-editor, and the pin is free to follow releases.
+**The benefit is not the pin** — that was freed by upstream, not by us: 6.3.0
+shipped with the editor working and `third_party/verovio.pin` took the release
+tag on 2026-08-21, so `Toolkit::Edit()` being dead in 6.2.1 (`docs/decisions.md`,
+"Score editing: verovio's editor is dead in the released wheel") is history and
+not a reason for anything. The benefit is that a model rewriting its own MEI
+never enters that cycle: no commit-then-reload to refresh caches an edit does
+not invalidate, no snapshot stack shadowing an editor's own — and, the half that
+matters, **the structural edits its action vocabulary cannot express** (insert a
+measure, split a voice, change the meter) become possible rather than refused.
 
 ### Where the model lives, and why it is not a client module
 
@@ -2237,7 +2241,7 @@ metric position accents. It can wait; what cannot wait is that the model
 *store* the symbols, because an interpreter can be written later against symbols
 that were kept and never against symbols that were dropped.
 
-### Three constraints on the work
+### Four constraints on the work
 
 **The algebra must not become a second vocabulary.** Concatenating, stacking,
 repeating, transposing, augmenting is composition, and this project already has
@@ -2263,10 +2267,13 @@ draws with no host line touched and is deliberately not separately clickable.
 
 **And it is not a port debt.** The encoding and the model are the shared half,
 and `clients/web/PLAN.md` already records that richer encoding extends it so
-both clients gain it at once. New C ABI symbols owe their rows in
-`docs/bindings.md` (`tests/bindings.rs` and `test_native_parity.py` fail without
-them) and move `CORE_ABI_VERSION`; the model is a large enough surface that this
-is a real ABI round, not one line.
+both clients gain it at once — it now also names the model and the catalog as
+the shape the port follows. **How much of an ABI round this is depends on the
+shape N1 settles**, which is why the framing does not decide it: a symbol per
+operation is a `docs/bindings.md` row and a `CORE_ABI_VERSION` move for every
+verb, while operations crossing as data cost neither and pay in parity instead.
+Whatever symbols the model itself needs owe their rows either way
+(`tests/bindings.rs` and `test_native_parity.py` fail without them).
 
 - ⬜ **N1 — The model: two durational structures, in rationals**. The metric
   layout and the content, each addressable, neither containing the other, in
@@ -2323,9 +2330,9 @@ is a real ABI round, not one line.
   meter change and no marks round-trips to the same MEI `voice_to_mei` writes
   today, byte for byte; the model compiles to wasm with `clausters-notation`
   absent; the four questions above are answered in writing, with what each
-  answer beat; the operation catalog exists and something reads it against both
-  clients, so a verb that reaches only one of them fails a test rather than
-  waiting to be noticed; `docs/decisions.md` carries why the model is in core
+  answer beat; the operation catalog and the contrast that reads it against both
+  clients **exist**, even holding only the handful of verbs N1 itself needs, so
+  that N2 fills a mechanism rather than building one late; `docs/decisions.md` carries why the model is in core
   rather than in the verovio crate, why the grid is not derived, and — if the
   operation crosses as data — why a surface the binding table cannot see is
   worth its own catalog.
@@ -2415,9 +2422,10 @@ is a real ABI round, not one line.
   model: the client-side reduction reads more than `midinote` and `dur`, and the
   slot's optional fields carry it. This is last on purpose — it works at v1
   level today, and every field it adds is a field the model already holds, so
-  it is filling a structure rather than growing one. The surface question the
-  earlier reading made its first milestone is settled here and is smaller than
-  it looked, because the three candidates are not competitors but carriers for
+  it is filling a structure rather than growing one. The **note-entry** surface
+  question the earlier reading made its first milestone — how a client *says*
+  notation intent, which is not the algebra's client surface N1 settles — is
+  answered here, and is smaller than it looked, because the three candidates are not competitors but carriers for
   three different classes of data: **per-note intent** (articulation, dynamic,
   grace, spelling) rides the slot, which is symmetric — the same field is
   written going out and read coming back; **spans and document-level material**
