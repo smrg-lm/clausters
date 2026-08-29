@@ -35,6 +35,7 @@ import sys
 
 from clausters import Session
 from clausters.base import Routine
+from clausters.base.builtins import midicps
 from clausters.defs import (
     DoneAction,
     Env,
@@ -72,10 +73,6 @@ def glide_lead(name: str = "glide_lead") -> SynthDef:
     return SynthDef(name, out(0.0, sig), out(1.0, sig))
 
 
-def mtof(midi: float) -> float:
-    return 440.0 * 2.0 ** ((midi - 69.0) / 12.0)
-
-
 # %% [markdown]
 # ## One persistent synth, driven by a routine
 # The lag and the trigger only make sense on a synth that outlives its notes,
@@ -88,14 +85,14 @@ def mtof(midi: float) -> float:
 # %%
 session = Session.nrt(tempo=2.0).activate()
 glide_lead().send()        # /def_send synth at time 0
-lead = Synth("glide_lead", {"amp": 0.2, "freq": mtof(48),
+lead = Synth("glide_lead", {"amp": 0.2, "freq": midicps(48),
                             "detune": random.uniform(-4.0, 4.0)})
 
 
 def sequence():
     for i, midi in enumerate([48, 55, 60, 63, 60, 55, 51, 48]):
         session.server.send_bundle(
-            ("/node_set", lead.id, "freq", mtof(midi), "gate", 1.0))
+            ("/node_set", lead.id, "freq", midicps(midi), "gate", 1.0))
         if i == 3:
             # An ir control is frozen at init: this set lands and does nothing.
             session.server.send_bundle(

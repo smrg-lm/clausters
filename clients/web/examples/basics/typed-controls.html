@@ -56,6 +56,7 @@ than an <code>/synth_new</code> per note.</div>
         SynthDef, Routine,
       } from "../../dist/index.js";
       import { DoneAction, Env, control, envGen, out, sine } from "../../dist/defs/index.js";
+      import { midicps } from "../../dist/base/builtins.js";
 
       const el = (id) => document.getElementById(id);
       const log = (line) => { el("log").textContent += line + "\n"; };
@@ -90,15 +91,13 @@ than an <code>/synth_new</code> per note.</div>
         session.start();
 
         lead = new Synth("web_glide_lead", {
-          amp: 0.2, freq: mtof(48), detune: -4.0 + 8.0 * Math.random(),
+          amp: 0.2, freq: midicps(48), detune: -4.0 + 8.0 * Math.random(),
         });
         log(`the lead is node ${lead.id}, silent until a gate arrives`);
 
         el("start").disabled = true;
         for (const id of ["play", "free", "tempo"]) el(id).disabled = false;
       }
-
-      const mtof = (midi) => 440.0 * 2.0 ** ((midi - 69.0) / 12.0);
 
       function play() {
         new Routine(function* () {
@@ -108,7 +107,7 @@ than an <code>/synth_new</code> per note.</div>
             // the pluck fires on the same instant.
             session.server.sendBundle([
               ["/node_set", ["i", lead.id],
-                "freq", ["f", mtof(melody[i])], "gate", ["f", 1.0]],
+                "freq", ["f", midicps(melody[i])], "gate", ["f", 1.0]],
             ]);
             if (i === 3) {
               // An ir control is frozen at init: this set lands and does nothing.
