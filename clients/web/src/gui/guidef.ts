@@ -609,7 +609,7 @@ export class View implements GuiNode {
 
 /**
  * The options every widget takes: the client-side `id`/`name`, the place
- * props the container's layout applies (all device pixels, all live via
+ * props the container's layout applies (all logical pixels, all live via
  * `set`), the leaf style prop, and any wire prop this client does not name.
  */
 export interface WidgetOptions {
@@ -771,6 +771,12 @@ export interface TimelineOptions extends WidgetOptions {
      * select and locate as one (negative unlinks).
      */
     link?: number;
+    /**
+     * The axis pair written the long way, for a property this client does not
+     * name flat yet — `{ x: { unit: "beats", tempo: 2.0 }, y: { bit_depth: 16 } }`.
+     * Merged over the flat options per axis, so what it names wins.
+     */
+    axes?: AxisPair;
 }
 
 /** Where a heavy view's samples come from, in the host's precedence order. */
@@ -841,15 +847,34 @@ function strip(value: boolean | string | undefined): string | number | undefined
 const PLOT_VIEW: Record<string, string> = { signal: "trace", spectrum: "spectrum" };
 
 /**
+ * The axis pair a two-axis container's chrome belongs to, written the long
+ * way. Every builder that takes the chrome flat also takes this, and what is
+ * named here **wins** over the flat option describing the same property — the
+ * flat keywords are the shorthand, this is the pair itself.
+ */
+export interface AxisPair {
+    x?: Props;
+    y?: Props;
+}
+
+/**
  * The axis pair `{x, y}` the chrome of a two-axis container belongs to, as
  * the one `axes` prop it rides under (or nothing, when neither side was
  * named). `x`/`y` are already the free-placement props, which is why the pair
  * nests rather than sitting bare on the node.
+ *
+ * `given` is the caller's own `axes` argument, merged over the flat chrome per
+ * axis: an axis it names contributes its properties on top of the ones the
+ * flat options wrote, and an axis it leaves out is the flat one untouched.
  */
-function axes(x: Props, y: Props): Props {
+function axes(x: Props, y: Props, given?: AxisPair): Props {
     const out: Props = {};
-    if (Object.keys(x).length > 0) out.x = x;
-    if (Object.keys(y).length > 0) out.y = y;
+    const merged = {
+        x: { ...x, ...(given?.x ?? {}) },
+        y: { ...y, ...(given?.y ?? {}) },
+    };
+    if (Object.keys(merged.x).length > 0) out.x = merged.x;
+    if (Object.keys(merged.y).length > 0) out.y = merged.y;
     return Object.keys(out).length > 0 ? { axes: out } : {};
 }
 
@@ -1023,7 +1048,7 @@ export function plane(
  */
 export function field(
     options: WidgetOptions & {
-        axes?: { x?: Props; y?: Props };
+        axes?: AxisPair;
         offset?: number;
         dur?: number;
         label?: string;
@@ -1145,7 +1170,7 @@ export function signal(
          */
         start?: number;
         loop?: boolean;
-        axes?: { x?: Props; y?: Props };
+        axes?: AxisPair;
         label?: string;
     } = {},
 ): GuiNode {
@@ -1333,6 +1358,8 @@ export function stack(
  */
 export function scroll(
     options: ContainerOptions & {
+        /** The arrangement inside the content area; `layout` is its old name. */
+        flow?: string;
         /** `"both"` (the default), `"x"` or `"y"`. */
         axis?: string;
         /** The wheel zoom (on by default). */
@@ -1360,7 +1387,7 @@ export function scroll(
 ): GuiNode {
     const {
         axis, zoom, contentW, contentH, viewX, viewY, viewZoom,
-        layout, margin, gap, cols, theme, ...rest
+        flow, layout, margin, gap, cols, theme, ...rest
     } = options;
     return node("plane", {
         ...rest,
@@ -1372,7 +1399,7 @@ export function scroll(
             ["view_x", viewX],
             ["view_y", viewY],
             ["view_zoom", viewZoom],
-            ["flow", layout],
+            ["flow", flow ?? layout],
             ["margin", margin],
             ["gap", gap],
             ["cols", cols],
@@ -1933,12 +1960,17 @@ export function plot(
         /** What the columns measure — see `signal`. */
         measure?: "peak" | "rms";
         label?: string;
+        /**
+         * The axis pair written the long way, merged over the flat chrome
+         * options per axis (what it names wins).
+         */
+        axes?: AxisPair;
     } = {},
 ): GuiNode {
     const {
         cache, path, buffer, data, blob, channels, view, overlay, sampleRate,
         min, max, ruler, rulerY, fftSize, dbFloor, dbCeil, freqScale, measure,
-        label: text, ...rest
+        label: text, axes: pair, ...rest
     } = options;
     // A plot is the trace (or the spectrum) of a signal that does **not**
     // navigate — the capability, not a different element.
@@ -1950,6 +1982,7 @@ export function plot(
         ...axes(
             drop([["unit", ruler], ["sample_rate", sampleRate]]),
             drop([["unit", rulerY], ["min", min], ["max", max]]),
+            pair,
         ),
         ...drop([
             ["overlay", flag(overlay)],
@@ -2027,11 +2060,16 @@ export function scope(
         /** What the columns measure — see `signal`. */
         measure?: "peak" | "rms";
         label?: string;
+        /**
+         * The axis pair written the long way, merged over the flat chrome
+         * options per axis (what it names wins).
+         */
+        axes?: AxisPair;
     } = {},
 ): GuiNode {
     const {
         rate = "audio", channels, overlay, windowMs, trigger, hold, min, max,
-        ruler, rulerY, measure, label: text, ...rest
+        ruler, rulerY, measure, label: text, axes: pair, ...rest
     } = options;
     return node("signal", {
         ...rest,
@@ -2041,6 +2079,7 @@ export function scope(
         ...axes(
             drop([["unit", strip(ruler)]]),
             drop([["unit", strip(rulerY)], ["min", min], ["max", max]]),
+            pair,
         ),
         ...drop([
             ["channels", channels],
@@ -2118,12 +2157,17 @@ export function spectrum(
         ruler?: boolean | string;
         rulerY?: boolean | string;
         label?: string;
+        /**
+         * The axis pair written the long way, merged over the flat chrome
+         * options per axis (what it names wins).
+         */
+        axes?: AxisPair;
     } = {},
 ): GuiNode {
     const {
         channels, fftSize, dbFloor, dbCeil, freqScale, logFreq, averaging,
         peakHold, navigable, viewStart, viewLen, ruler, rulerY,
-        label: text, ...rest
+        label: text, axes: pair, ...rest
     } = options;
     return node("signal", {
         ...rest,
@@ -2136,6 +2180,7 @@ export function spectrum(
                 ["len", viewLen],
             ]),
             drop([["unit", strip(rulerY)]]),
+            pair,
         ),
         ...drop([
             ["channels", channels],
@@ -2194,12 +2239,19 @@ export function bpf(
         duration?: number;
         exp?: boolean;
         label?: string;
+        /**
+         * The axis pair written the long way, merged over the flat chrome
+         * options per axis (what it names wins).
+         */
+        axes?: AxisPair;
     } = {},
 ): GuiNode {
-    const { points, min, max, duration, exp, label: text, ...rest } = options;
+    const {
+        points, min, max, duration, exp, label: text, axes: pair, ...rest
+    } = options;
     return node("curve", {
         ...rest,
-        ...axes({}, drop([["min", min], ["max", max]])),
+        ...axes({}, drop([["min", min], ["max", max]]), pair),
         ...drop([
             ["points", held(points, flatPoints)],
             ["duration", duration],
@@ -2315,11 +2367,20 @@ export function piano(
  * them —
  * and its ticks are indented by the **group's** gutter — the widest any member
  * asks for — so they stand over the samples they label. A press locates the transport, Shift+drag pans and the
- * wheel zooms: you scrub on the ruler. `h` is its thickness in device pixels.
+ * wheel zooms: you scrub on the ruler. `h` is its thickness in logical pixels.
  */
-export function timeruler(options: TimelineOptions = {}): GuiNode {
-    const { h = 20, ...timeline } = options;
-    return node("field", { ...timelineProps(timeline), h });
+export function timeruler(
+    options: TimelineOptions & {
+        /** A theme group over the strip. */
+        theme?: Record<string, string>;
+    } = {},
+): GuiNode {
+    const { h = 20, theme, ...timeline } = options;
+    return node("field", {
+        ...timelineProps(timeline),
+        h,
+        ...drop([["theme", theme]]),
+    });
 }
 
 /**
@@ -2641,7 +2702,7 @@ function timelineProps(options: TimelineOptions, y: Props = {}): Props {
         ruler, sampleRate, tempo, beatAt, quant, selStart, selLen,
         selMin, selMax,
         playheadAt, playhead, playheadLoopStart, playheadLoopLen,
-        yStart, yLen, link, ...rest
+        yStart, yLen, link, axes: pair, ...rest
     } = options;
     return {
         ...rest,
@@ -2669,6 +2730,7 @@ function timelineProps(options: TimelineOptions, y: Props = {}): Props {
                 ]),
                 ...y,
             },
+            pair,
         ),
     };
 }

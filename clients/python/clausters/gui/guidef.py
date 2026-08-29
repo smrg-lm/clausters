@@ -769,8 +769,8 @@ def node(type: str, *, children=None, id: int | None = None, **props) -> View:
 
 def layout(*children, flow: str | None = None, index: int | None = None,
            margin: float | None = None, gap: float | None = None, cols: int | None = None,
-           theme: dict | None = None, color: str | None = None, id: int | None = None,
-           **props) -> View:
+           hug: bool | None = None, theme: dict | None = None, color: str | None = None,
+           id: int | None = None, **props) -> View:
     """A container with **no axes**, arranging its children by ``flow``.
 
     ``flow`` is ``"row"``, ``"col"`` (the default), ``"grid"``, ``"free"`` — or
@@ -780,12 +780,19 @@ def layout(*children, flow: str | None = None, index: int | None = None,
     is why `stack` is a shortcut rather than a type.
 
     ``margin`` insets the children, ``gap`` separates them, ``cols`` fixes the
-    ``grid`` column count. ``theme`` (a partial ``{"role": "#rrggbb[aa]"}``
+    ``grid`` column count. ``hug`` sizes the container to its content instead
+    of to the share its own container offers: a ``row`` adds its children up
+    along its axis and takes the tallest across it, a ``col`` the other way
+    round, a ``grid`` counts its cells. The question reaches the whole subtree,
+    and an axis a child leaves elastic (a plane, a lane, a heavy view) is one
+    the container hands back. ``theme`` (a partial ``{"role": "#rrggbb[aa]"}``
     table) makes it a **theme group** over its whole subtree; ``color``
     re-seeds the accent family for itself.
     """
     extra = _drop_none(flow=flow, index=index, margin=margin, gap=gap, cols=cols,
                        theme=theme, color=color)
+    if hug is not None:
+        extra["hug"] = 1 if hug else 0
     return node("layout", id=id, children=children, **extra, **props)
 
 
@@ -1526,6 +1533,7 @@ def spectrogram(*, data=None, blob: int | None = None, buffer: int | None = None
                 ruler: str | None = None, ruler_y: str | None = None, tempo: float | None = None,
                 beat_at: float | None = None, quant: float | None = None,
                 sel_start: float | None = None, sel_len: float | None = None,
+                sel_min: float | None = None, sel_max: float | None = None,
                 playhead_at: float | None = None, playhead: float | None = None,
                 playhead_loop_start: float | None = None,
                 playhead_loop_len: float | None = None, y_start: float | None = None,
@@ -1556,6 +1564,8 @@ def spectrogram(*, data=None, blob: int | None = None, buffer: int | None = None
     chrome (``sel_start``/``sel_len``, ``playhead_at``/``playhead`` and their
     ``playhead_loop_start``/``playhead_loop_len`` region, drag-to-select /
     Shift+drag pan / wheel zoom) also works exactly as on the `waveform` —
+    ``sel_min``/``sel_max`` restricting the selection to a band of the value
+    axis, which here is a band of **frequencies** —
     including the vertical view window ``y_start``/``y_len``, which here
     slices the **frequency display axis** (normalized, ``0, 1`` = the full
     axis, whatever the ``freq_scale``): wheel over the Hz-ruler strip zooms,
@@ -1572,6 +1582,7 @@ def spectrogram(*, data=None, blob: int | None = None, buffer: int | None = None
     extra.update(_axes(axes, ruler=ruler, ruler_y=ruler_y, sample_rate=sample_rate,
                        tempo=tempo, beat_at=beat_at, quant=quant,
                        sel_start=sel_start, sel_len=sel_len,
+                       sel_min=sel_min, sel_max=sel_max,
                        playhead_at=playhead_at, playhead=playhead,
                        playhead_loop_start=playhead_loop_start,
                        playhead_loop_len=playhead_loop_len,
