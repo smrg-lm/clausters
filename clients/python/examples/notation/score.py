@@ -40,7 +40,7 @@ and stage it once (``third_party/BUILD-VEROVIO.md``)::
 Then, with the client importable (``pip install ./clients/python`` or
 ``PYTHONPATH=clients/python``)::
 
-    python clients/python/examples/editors/score.py
+    python clients/python/examples/notation/score.py
 
 A window opens showing the engraved phrase, stopped at the top -- press **play**
 and the cursor follows the sound. Click a note to hear it and select it, drag one

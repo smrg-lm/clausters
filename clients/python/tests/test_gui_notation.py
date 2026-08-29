@@ -317,3 +317,85 @@ def test_a_generated_score_is_editable():
     nid = s.display_list()["notes"][0]["id"]
     assert s.transpose(nid, 2) is True
     assert s.display_list()["notes"][0]["pitch"] == 64   # two steps up: E4
+
+
+# -- the score model ---------------------------------------------------------
+#
+# The model crosses as data and so do the operations, which buys a new verb for
+# no ABI at all and costs the one thing `tests/bindings.rs` used to give free:
+# it sees one symbol and no verbs. So the catalog is what parity is read
+# against, and these are that reading for this client.
+
+
+def test_the_catalog_and_this_shell_name_the_same_verbs():
+    """Every operation the core knows has a helper here, and every helper here
+    names an operation the core knows.
+
+    This is the test the binding table cannot be: operations ride inside a
+    payload through one symbol, so a verb that reached only one client would
+    drift silently — the same structural blindness the props manifest has.
+    """
+    catalogued = {spec["op"] for spec in notation.ops()}
+    # The shell's helpers are named after their verb, one function each.
+    exposed = {name for name in catalogued if hasattr(notation, name)}
+    assert catalogued == exposed, (
+        f"the core knows {sorted(catalogued - exposed)} with no helper here"
+    )
+    for spec in notation.ops():
+        assert set(spec["required"]) <= {"semitones", "steps", "span"}
+
+
+def test_a_voice_lifts_into_the_model_and_writes_the_same_bytes():
+    voice = [{"midis": [60], "ticks": 8}, {"ticks": 8}, {"midis": [64, 67], "ticks": 16}]
+    sheet = notation.sheet_from_voice(voice, meter="4/4", clef="G2", key="C")
+    # ticks became exact rationals, and MIDI numbers became spelled pitches
+    items = sheet["staves"][0]["voices"][0]["items"]
+    assert items[0]["dur"] == [1, 4] and items[0]["pitches"][0]["step"] == "c"
+    assert items[1]["kind"] == "rest"
+    assert len(items[2]["pitches"]) == 2
+    # and writing a monophonic one out is byte for byte what `from_notes`
+    # produces, because `from_notes` now travels this same road
+    mono = notation.sheet_from_voice(
+        [{"midis": [60], "ticks": 8}, {"ticks": 8}, {"midis": [64], "ticks": 16}])
+    assert notation.to_mei(mono) == notation.from_notes(
+        [Event(midinote=60, dur=1.0), rest(1.0),
+         Event(midinote=64, dur=2.0)], meter="4/4")
+
+
+def test_transposing_keeps_the_spelling_the_interval_implies():
+    sheet = notation.sheet_from_voice([{"midis": [60], "ticks": 8}])
+    # a major third up from C is E natural, not F flat
+    up = notation.transpose(sheet, 4)
+    assert up["staves"][0]["voices"][0]["items"][0]["pitches"][0] == {
+        "step": "e", "alter": 0, "octave": 4}
+    # a minor third is the same two steps with the alteration doing the work
+    minor = notation.transpose(sheet, 3)
+    assert minor["staves"][0]["voices"][0]["items"][0]["pitches"][0]["alter"] == -1
+    # and the sheet that was sent is untouched, because it crossed by value
+    assert sheet["staves"][0]["voices"][0]["items"][0]["pitches"][0]["step"] == "c"
+
+
+def test_a_measure_span_is_resolved_by_the_core_against_the_grid():
+    # eight quarters; in 4/4 measure 2 starts at the fifth
+    voice = [{"midis": [60], "ticks": 8} for _ in range(8)]
+    sheet = notation.sheet_from_voice(voice, meter="4/4")
+    out = notation.transpose(sheet, 12, span=notation.measures(2, 2))
+    octaves = [i["pitches"][0]["octave"] for i in out["staves"][0]["voices"][0]["items"]]
+    assert octaves == [4, 4, 4, 4, 5, 5, 5, 5]
+    # in 3/4 the same span names different notes -- the arithmetic no client does
+    sheet = notation.sheet_from_voice(voice, meter="3/4")
+    out = notation.transpose(sheet, 12, span=notation.measures(2, 2))
+    octaves = [i["pitches"][0]["octave"] for i in out["staves"][0]["voices"][0]["items"]]
+    assert octaves == [4, 4, 4, 5, 5, 5, 4, 4]
+
+
+def test_what_is_refused_says_why_and_changes_nothing():
+    sheet = notation.sheet_from_voice([{"midis": [60], "ticks": 8}])
+    with pytest.raises(ValueError, match="backwards"):
+        notation.transpose(sheet, 1, span=notation.measures(4, 2))
+    with pytest.raises(ValueError, match="from 1"):
+        notation.transpose(sheet, 1, span=notation.measures(0, 1))
+    # and what the model can hold but MEI cannot yet be written for
+    sheet["staves"][0]["voices"][0]["items"][0]["dur"] = [1, 12]
+    with pytest.raises(ValueError, match="tuplet"):
+        notation.to_mei(sheet)

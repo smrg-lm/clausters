@@ -19,8 +19,7 @@ from __future__ import annotations
 
 import json
 
-from ... import _native
-from ._abi import _MISSING, _text, _u8
+from . import sheet
 
 # 32nd-note resolution: every duration snaps to an integer number of these, so
 # the encoder's barline splitting and tie decomposition are exact integer
@@ -46,8 +45,9 @@ def from_notes(notes, *, meter: str = "4/4", clef: str = "G2", key: str = "C",
     A duration that is not a single note value is written as **tied** notes (a
     dotted value when exact, e.g. ``1.5`` beats -> a dotted quarter), and a note
     that overruns a barline is split and tied across it. Off-grid durations
-    (finer than a 32nd, e.g. a triplet) snap to the grid — tuplets are the
-    engraving-refinements milestone.
+    (finer than a 32nd, e.g. a triplet) snap to the grid here, on the way in:
+    the model itself holds an exact rational, so a tuplet is representable the
+    moment a caller can express one — writing it is the emission milestone.
     """
     return _voice_to_mei(_voice_from_notes(notes, beat_unit),
                          meter=meter, clef=clef, key=key)
@@ -64,8 +64,8 @@ def from_timeline(timeline, *, meter: str = "4/4", clef: str = "G2",
     skipped, as are rest events (they read as silence, i.e. a gap).
 
     Each group is written for its **shortest** ``dur`` (one layer, so it is
-    clamped never to overrun the next onset — mixed-duration polyphony is the
-    engraving-refinements milestone). Options and the tie/barline behaviour are
+    clamped never to overrun the next onset — the model holds several voices
+    already, and writing them is the emission milestone). Options and the tie/barline behaviour are
     as `from_notes`; returns the MEI for `engrave`/`Score`/`Score.from_timeline`.
     """
     return _voice_to_mei(_voice_from_timeline(timeline, beat_unit),
@@ -80,15 +80,15 @@ def from_timeline(timeline, *, meter: str = "4/4", clef: str = "G2",
 
 
 def _voice_to_mei(voice: list, *, meter: str, clef: str, key: str) -> str:
-    """Hand a reduced voice to the shared MEI encoder."""
-    if not _native.has_notation():
-        raise RuntimeError(_MISSING)
-    raw = json.dumps(voice).encode("utf-8")
-    return _text(_native.lib().clausters_core_voice_to_mei,
-                 _native.as_u8(raw), len(raw),
-                 _u8(meter), len(meter.encode("utf-8")),
-                 _u8(clef), len(clef.encode("utf-8")),
-                 _u8(key), len(key.encode("utf-8")))
+    """Hand a reduced voice to the shared encoder, through the model.
+
+    One path to MEI, not two: the voice is lifted into a sheet and the sheet is
+    written out, which is the same road `sheet.transpose` and every later
+    operation travel. The bytes are the encoder's own — the core's
+    ``voice_to_mei`` goes through the model too — so nothing about the output
+    changed when the model arrived.
+    """
+    return sheet.to_mei(sheet.from_voice(voice, meter=meter, clef=clef, key=key))
 
 
 def _dur_ticks(beats: float, beat_unit: int) -> int:

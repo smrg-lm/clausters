@@ -164,8 +164,8 @@ its plan; the plan is where its acceptance is read.
   direction went through a different intermediate, and the editable `Score` is
   an action API with no structure under it. The track builds that structure in
   `clausters_core::notation` — two durational structures that do not contain
-  each other, the metric layout and the content, in exact rationals — then its
-  algebra and edits (`N2`), the emission judged by eye (`N3`, where tuplets,
+  each other, the metric layout and the content, in exact rationals (**`N1`
+  landed 2026-08-29**) — then its algebra and edits (`N2`), the emission judged by eye (`N3`, where tuplets,
   polyphony, markup and spelling all land), the interpreter that plays what the
   symbols mean (`N4`) and the enriched forward path (`N5`). Taken one at a
   time, and nothing outside the track waits on any of them.

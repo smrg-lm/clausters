@@ -615,6 +615,41 @@ export function secs_to_beats(tempo: number, base_beats: number, base_seconds: n
 export function secs_to_samples(secs: number, sample_rate: number): number;
 
 /**
+ * Apply one operation to a score model, both as JSON, returning the new model.
+ *
+ * **One export for every operation there will ever be**: the verb and its
+ * parameters are inside `op` (`{"op": "transpose", "semitones": 2}`), so a new
+ * operation costs nothing here. What the C ABI answers in an envelope
+ * (`{"ok": …}` / `{"error": …}`) this **throws** instead, which is the same
+ * behaviour in the shape a page expects — and the reason the refusal reaches
+ * the caller either way, since a refused operation has to say why.
+ *
+ * A refused operation changes nothing: the model crossed by value, so the
+ * caller still holds what it sent.
+ */
+export function sheetApply(sheet: string, op: string): string;
+
+/**
+ * Every operation this core knows, as JSON — the verb and the parameters each
+ * takes.
+ *
+ * The parity surface the binding table cannot provide: operations cross as
+ * data, so nothing fails when one client grows a verb the other lacks. This
+ * package is contrasted against this list, as the Python client is.
+ */
+export function sheetOps(): string;
+
+/**
+ * Write a score model out as MEI.
+ *
+ * Throws with the emitter's own reason when the model holds something MEI
+ * cannot be written for yet — a duration that is not an exact note value, an
+ * accidental past a double, or polyphony — each saying which it is, so a
+ * caller knows whether it is wrong or early.
+ */
+export function sheetToMei(sheet: string): string;
+
+/**
  * Walk a verovio SVG into a `score` display list, as JSON.
  *
  * The one-shot path: a page that only draws a score engraves once and walks
@@ -652,6 +687,17 @@ export function unix_to_sample(unix_secs: number, anchor_unix: number, anchor_sa
  * encoding extends for every client at once.
  */
 export function voiceToMei(voice: string, meter: string, clef: string, key: string): string;
+
+/**
+ * Lift a **voice** — the v1 wire form, a JSON array of slots — into the score
+ * model.
+ *
+ * The bridge a client crosses once: it reduces its own sequencing types to
+ * slots, which reads client-native types and stays here, and everything above
+ * that is the model. Ticks become exact durations and MIDI numbers become
+ * spelled pitches in the world `key` implies.
+ */
+export function voiceToSheet(voice: string, meter: string, clef: string, key: string): string;
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
@@ -762,11 +808,15 @@ export interface InitOutput {
     readonly score_undo: (a: number) => number;
     readonly secs_to_beats: (a: number, b: number, c: number, d: number) => number;
     readonly secs_to_samples: (a: number, b: number) => number;
+    readonly sheetApply: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly sheetOps: () => [number, number, number, number];
+    readonly sheetToMei: (a: number, b: number) => [number, number, number, number];
     readonly svgToDisplayList: (a: number, b: number) => [number, number, number, number];
     readonly unary: (a: number, b: number, c: number) => [number, number, number];
     readonly unix_to_ntp: (a: number) => bigint;
     readonly unix_to_sample: (a: number, b: number, c: number, d: number) => number;
     readonly voiceToMei: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];
+    readonly voiceToSheet: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];
     readonly clausters_midi_abi_version: () => number;
     readonly clausters_midi_free: (a: number, b: number) => void;
     readonly clausters_midi_write_clip: (a: number, b: number, c: number, d: number, e: number) => number;

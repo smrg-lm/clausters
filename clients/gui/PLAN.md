@@ -2132,7 +2132,7 @@ somewhere the encoder refinements could not reach.
 **The inverse path already exists, and it is written by hand.**
 `Score.display_list()` returns a `notes` layer — `{"t", "dur", "pitch", "id"}`,
 ms and MIDI pitch — which is notation to events, and
-`clients/python/examples/editors/score_from_data.py` turns it into a `Timeline`
+`clients/python/examples/notation/score_from_data.py` turns it into a `Timeline`
 with `Event(midinote=…, dur=…, amp=0.11)`. That hardcoded amplitude is the
 finding: the page has no dynamics to give, so the example invents one. By this
 project's own rule an example that cannot be written with the supported surface
@@ -2290,13 +2290,14 @@ together" rule, stated again because this track is the one place where honouring
 it late costs the most.
 
 **The examples get their own family.** Notation has two examples today, and they
-sit in `editors/` next to the multitrack ones (`editors/score.py`,
-`editors/score_from_data.py`, and `editors/score.html`,
-`editors/score-from-data.html` in the web package). This track multiplies them —
+sat in `editors/` next to the multitrack ones and **moved to `notation/` with
+N1** (`notation/score.py`, `notation/score_from_data.py`, and
+`notation/score.html`, `notation/score-from-data.html` in the web package).
+This track multiplies them —
 composing a score algorithmically, editing one by hand, hearing one interpreted —
-and they are not the arrangement's editors. They move to a `notation/` family in
-both packages, mirrored path for path as the `examples` skill requires, and the
-milestone that grows an example grows **both** copies of it.
+and they are not the arrangement's editors, so they have a family of their own,
+mirrored path for path as the `examples` skill requires, and the milestone that
+grows an example grows **both** copies of it.
 
 **Every edit action is in Rust; a client only binds it — this is what a
 standalone needs.** Not a preference and not only the non-divergence rule: a
@@ -2322,7 +2323,7 @@ verb, while operations crossing as data cost neither and pay in parity instead.
 Whatever symbols the model itself needs owe their rows either way
 (`tests/bindings.rs` and `test_native_parity.py` fail without them).
 
-- ⬜ **N1 — The model: two durational structures, in rationals**. The metric
+- ✅ **N1 — The model: two durational structures, in rationals** *(done 2026-08-29)*. The metric
   layout and the content, each addressable, neither containing the other, in
   `clausters_core::notation`. Durations and positions are exact rationals; the
   grid carries meter changes, an anacrusis and irregular bars; the content is
@@ -2383,6 +2384,37 @@ Whatever symbols the model itself needs owe their rows either way
   rather than in the verovio crate, why the grid is not derived, and — if the
   operation crosses as data — why a surface the binding table cannot see is
   worth its own catalog.
+
+  **What shipped.** `clausters_core::notation::model` — `Sheet` (the name is not
+  `Score`, which is already the engraver-driven handle: one is data with no
+  engraver near it, the other a handle to a layout engine), `Grid` with its
+  meters and its irregular bars, flat `Staff`/`Voice`/`Item`, and `Pitch`
+  carrying step, alter and octave so `F#` and `Gb` are two notes. `Marks` is
+  declared and unemitted, waiting for N3. The exact rational is **not** under
+  `notation`: `clausters_core::ratio::Ratio` sits beside `measure`, `scale` and
+  `tempoclock`, because duration and position arithmetic outlives its first
+  caller. Emission is `sheet_to_mei`, and **`voice_to_mei` is now a front door
+  on it** — the v1 slots become a sheet and the sheet is written — which is what
+  makes the byte-for-byte acceptance structural rather than a spot check: the
+  six-case golden in `testdata/voice_to_mei.txt` was captured from the previous
+  commit and not one byte moved. Two duplications went with it: the encoder's
+  own spelling tables (now `Pitch::from_midi`, one rule) and the silent
+  `_ => ""` that would have written a triple sharp as a natural (now a refusal).
+  The four questions were answered as **data both ways** — the model crosses by
+  value, the operation crosses as a payload through one symbol — which dissolved
+  the third (there are no intermediates to own) and left the fourth as the line
+  *what computes is Rust, what names is the shell*. Symbols:
+  `clausters_core_voice_to_sheet`, `_sheet_apply`, `_sheet_to_mei`,
+  `_sheet_ops`, all four mirrored in wasm, `CORE_ABI_VERSION` 22 → 23. The
+  catalog and its contrast landed with the one verb N1 needed (`transpose`,
+  which exercises the span addressing that is the Rust-only half), read against
+  both clients by `test_gui_notation.py` and `sheet.test.ts` — the same
+  assertions in the same order. Client shells: `clausters/gui/notation/sheet.py`
+  and `src/gui/notation/sheet.ts`, both of which `from_notes` now travels
+  through, so there is one road to MEI rather than two. Docs: the composition
+  chapter of both books, `docs/bindings.md`, and two `docs/decisions.md`
+  entries — the surface shape, and the model's own. The examples moved to their
+  `notation/` family in the same pass.
 
 - ⬜ **N2 — The algebra, and the edit operations**. Three families over the two
   structures, and the whole point of the model. **On the content**: concatenate,

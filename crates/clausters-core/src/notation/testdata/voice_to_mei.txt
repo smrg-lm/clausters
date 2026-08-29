@@ -1,0 +1,81 @@
+=== melody
+<?xml version="1.0" encoding="UTF-8"?>
+<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.0">
+ <meiHead><fileDesc><titleStmt><title/></titleStmt><pubStmt/></fileDesc></meiHead>
+ <music><body><mdiv><score>
+  <scoreDef meter.count="4" meter.unit="4" key.sig="0">
+   <staffGrp><staffDef n="1" lines="5" clef.shape="G" clef.line="2"/></staffGrp>
+  </scoreDef>
+  <section>
+   <measure n="1"><staff n="1"><layer n="1"><note dur="4" oct="4" pname="c"/><note dur="8" oct="4" pname="d"/><note dur="4" dots="1" oct="4" pname="e"/><rest dur="4"/></layer></staff></measure>
+   <measure n="2" right="end"><staff n="1"><layer n="1"><note dur="4" oct="4" pname="f"/></layer></staff></measure>
+  </section>
+ </score></mdiv></body></music>
+</mei>
+=== split
+<?xml version="1.0" encoding="UTF-8"?>
+<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.0">
+ <meiHead><fileDesc><titleStmt><title/></titleStmt><pubStmt/></fileDesc></meiHead>
+ <music><body><mdiv><score>
+  <scoreDef meter.count="4" meter.unit="4" key.sig="0">
+   <staffGrp><staffDef n="1" lines="5" clef.shape="G" clef.line="2"/></staffGrp>
+  </scoreDef>
+  <section>
+   <measure n="1"><staff n="1"><layer n="1"><note dur="2" oct="4" pname="c"/><note dur="2" oct="4" pname="g" tie="i"/></layer></staff></measure>
+   <measure n="2" right="end"><staff n="1"><layer n="1"><note dur="4" oct="4" pname="g" tie="t"/></layer></staff></measure>
+  </section>
+ </score></mdiv></body></music>
+</mei>
+=== chord
+<?xml version="1.0" encoding="UTF-8"?>
+<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.0">
+ <meiHead><fileDesc><titleStmt><title/></titleStmt><pubStmt/></fileDesc></meiHead>
+ <music><body><mdiv><score>
+  <scoreDef meter.count="4" meter.unit="4" key.sig="0">
+   <staffGrp><staffDef n="1" lines="5" clef.shape="G" clef.line="2"/></staffGrp>
+  </scoreDef>
+  <section>
+   <measure n="1" right="end"><staff n="1"><layer n="1"><chord dur="4"><note oct="4" pname="c"/><note oct="4" pname="e"/><note oct="4" pname="g"/></chord></layer></staff></measure>
+  </section>
+ </score></mdiv></body></music>
+</mei>
+=== empty
+<?xml version="1.0" encoding="UTF-8"?>
+<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.0">
+ <meiHead><fileDesc><titleStmt><title/></titleStmt><pubStmt/></fileDesc></meiHead>
+ <music><body><mdiv><score>
+  <scoreDef meter.count="4" meter.unit="4" key.sig="0">
+   <staffGrp><staffDef n="1" lines="5" clef.shape="G" clef.line="2"/></staffGrp>
+  </scoreDef>
+  <section>
+   <measure n="1" right="end"><staff n="1"><layer n="1"><rest dur="1"/></layer></staff></measure>
+  </section>
+ </score></mdiv></body></music>
+</mei>
+=== flats
+<?xml version="1.0" encoding="UTF-8"?>
+<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.0">
+ <meiHead><fileDesc><titleStmt><title/></titleStmt><pubStmt/></fileDesc></meiHead>
+ <music><body><mdiv><score>
+  <scoreDef meter.count="3" meter.unit="4" key.sig="2f">
+   <staffGrp><staffDef n="1" lines="5" clef.shape="F" clef.line="4"/></staffGrp>
+  </scoreDef>
+  <section>
+   <measure n="1" right="end"><staff n="1"><layer n="1"><note dur="4" oct="4" pname="d"><accid accid="f"/></note><note dur="4" oct="4" pname="g"><accid accid="f"/></note></layer></staff></measure>
+  </section>
+ </score></mdiv></body></music>
+</mei>
+=== odd
+<?xml version="1.0" encoding="UTF-8"?>
+<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.0">
+ <meiHead><fileDesc><titleStmt><title/></titleStmt><pubStmt/></fileDesc></meiHead>
+ <music><body><mdiv><score>
+  <scoreDef meter.count="7" meter.unit="8" key.sig="6s">
+   <staffGrp><staffDef n="1" lines="5" clef.shape="C" clef.line="3"/></staffGrp>
+  </scoreDef>
+  <section>
+   <measure n="1"><staff n="1"><layer n="1"><note dur="8" oct="4" pname="c" tie="i"/><note dur="32" oct="4" pname="c" tie="t"/><note dur="2" oct="4" pname="d" tie="i"/><note dur="8" oct="4" pname="d" tie="m"/><note dur="16" dots="1" oct="4" pname="d" tie="m"/></layer></staff></measure>
+   <measure n="2" right="end"><staff n="1"><layer n="1"><note dur="8" oct="4" pname="d" tie="t"/></layer></staff></measure>
+  </section>
+ </score></mdiv></body></music>
+</mei>

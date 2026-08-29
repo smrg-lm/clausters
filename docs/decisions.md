@@ -7203,3 +7203,106 @@ diverge from scsynth (`/server_status`, not `/status`), so no sclang client
 speaks this protocol, and a padding int is not what would let one. The trailing
 `late_blocks` stays appended, which is the extension point that does earn its
 shape — a reader that stops at the eighth field keeps working.
+
+## The score model is data, and so are the operations on it — in the core, not in a client
+
+Notation grew a **model**: a `Sheet` in `clausters_core::notation` with two
+durational structures that do not contain each other, and an algebra of
+operations over them. The shape of that surface was decided before any of it
+was written, because everything after it lands on the decision.
+
+**It is in `clausters-core`, not in `clausters-notation` and not in a client.**
+The axis is *pure versus platform*, not *general versus notation-specific*.
+`clausters-notation` is the native libverovio binding — a `build.rs`, a C++
+dependency, a default-off feature — and it does not compile to wasm, while
+verovio's own wasm build only emits SVG, so in a page that crate does not exist
+at all. The precedent was already built: the `Engraver` **trait** is in the
+core and only the layout engine is per-platform (`Toolkit` natively,
+`JsEngraver` in a page). MEI names no language's types, so nothing about the
+model is client-native; a Python or TypeScript module holding it would reopen
+the move that put this layer in the workspace in the first place.
+
+**The model crosses to a client by value, as data.** A client holds a plain
+dict or object, not a handle. The alternative — an opaque handle with methods —
+reads well for editing and badly for an algebra, because composing operations
+creates intermediate scores somebody then has to own and free. By value there
+are no intermediates: an operation is a function from a score to a score, a
+refused one changes nothing because it was never handed over, and the question
+of lifetime does not arise. The engraver stays a handle, because verovio has
+state; the model has none.
+
+**An operation crosses as data too, through one symbol.** The verb and its
+parameters ride inside a payload (`{"op": "transpose", "semitones": 2}`), which
+is the shape `clausters_score_edit` and the document crate's intents already
+use. A new verb then costs no `docs/bindings.md` row and no `CORE_ABI_VERSION`
+round — with dozens of operations ahead of it, a symbol per verb would have
+been dozens of ABI rounds.
+
+**What that costs is parity, and the cost is paid explicitly.** A data-carried
+verb is invisible to `tests/bindings.rs`, which sees one symbol and no
+operations, so two clients could offer different verbs with nothing going red.
+This is structurally the same blindness the GUI props manifest has — it folds
+every builder of one wire type into a union and so cannot see a divergence
+between two of them, which is how five stood unnoticed — and the same class the
+UGen contrast tests caught eleven of. So the shape came with an obligation
+attached: `clausters_core_sheet_ops` publishes the catalog, and each client is
+read against it by a test of its own.
+
+**The line inside a client is: what computes is Rust, what names is the shell.**
+Sugar is idiom and belongs to each language — chaining, an operator for
+concatenation, a slice syntax — but only while it *assembles* an operation.
+Resolving "measures 3 to 10" into a stretch of time is arithmetic against the
+grid; it changes the moment a meter changes or a bar is irregular, and two
+clients doing it separately disagree about which notes an edit touches, which
+is a divergence nobody sees until they compare two screens.
+
+**The strongest reason for all of it is the standalone.** A host opened on a
+saved session has no client language in the process, and a score it opens has to
+be editable there. That makes the completeness of the vocabulary on the Rust
+side a requirement rather than a preference: the standalone holds the model and
+applies the same operations through the same one door, with no client involved.
+
+## Two durational structures, and durations as exact rationals
+
+The model's own shape, which the milestone that built it settled and the ones
+after it extend.
+
+**The metric layout and the content do not contain each other.** Measures do not
+sound: they are the layout the content is written over. Keeping them as a
+structure of their own — addressable, editable, carrying meter changes and bars
+whose length is not their meter's — is what makes ordinary editing expressible
+at all. *Transpose measures 3 to 10* needs the measure to be an **addressing
+system**, which it cannot be while it is a by-product of emission; *augment a
+phrase and re-bar it* needs the content to change length while the grid stands;
+*change the meter* is then an operation rather than an argument to the encoder.
+It also makes **metric position** computable, which is meaning and not layout —
+whether a note falls on a downbeat is a fact about the music.
+
+The content is **flat** for the mirror reason: nesting notes inside measures
+breaks under every operation that changes a length. MEI nests, so emission
+*projects* the flat content onto the grid, splitting and tying at each barline —
+which the encoder already did.
+
+**Durations are exact rationals, and ticks are a boundary.** A quarter is `1/4`
+and a triplet eighth is `1/12`: exact as a fraction, unrepresentable in binary
+floating point and impossible on any fixed grid of ticks. The encoder used to
+declare `TPW = 32` as its foundation — every duration an integer count of 32nds,
+*so that* barline splitting was exact integer arithmetic — and that foundation
+is what made tuplets a question about moving the base. Exactness comes from the
+rational instead, and ticks become one edge conversion among several: MIDI's own
+ticks, OSC's seconds or beats, MEI's `@dur` and dots, each done at that
+protocol's edge and nowhere above it.
+
+**Pitches carry their spelling.** `F#` and `Gb` are one MIDI number and two
+different notes on the page, so the model stores what is written and computes
+the sounding number from it. Going the other way is a *choice* and says so by
+taking one: `Pitch::from_midi(midi, flats)`. This is what lets transposition be
+musically right rather than merely audible — a major third up from C is E, not
+F-flat — since an interval has a diatonic size as well as a chromatic one.
+
+**What the model can hold, the emitter may refuse.** A tuplet, an accidental
+past a double, more than one voice: each is representable and not yet writable,
+and each refusal says which milestone owes the work, because a caller reading
+"cannot" needs to know whether it is wrong or early. Silently snapping a triplet
+onto the tick grid would produce a wrong score that looks right, which is the
+one failure this layer must never produce.

@@ -76,6 +76,7 @@ loaders:
       - clausters.gui.notation
       - clausters.gui.notation.engraver
       - clausters.gui.notation.mei
+      - clausters.gui.notation.sheet
       - clausters.gui.notation.view
       - clausters.gui.transport
 processors:

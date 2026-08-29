@@ -36,24 +36,33 @@ own unit filled in.
 **Module layout.** The layer's growth is semantic rather than graphic, so it is
 a package split by what each part knows: `engraver` holds the engraver and its
 output (`Score`, `engrave`, `svg_to_display_list`, `page_json`), `mei` is the
-encoder that turns the client's own sequencing data into a score, and `view` is
-the pair of helpers that put a page on screen and play it (`score_view`,
-`transport`). Every name is re-exported here, so ``clausters.gui.notation.Score``
-keeps meaning what it always did.
+reduction that turns the client's own sequencing data into a voice, `sheet` is
+the **score model** — notation as data, and operations as data over it — and
+`view` is the pair of helpers that put a page on screen and play it
+(`score_view`, `transport`). Every name is re-exported here, so
+``clausters.gui.notation.Score`` keeps meaning what it always did.
 """
 
 from .engraver import Score, engrave, page_json, svg_to_display_list
 from .mei import from_notes, from_timeline
+from .sheet import apply, measures, ops, to_mei, transpose
+from .sheet import from_voice as sheet_from_voice
 from .view import score_view, transport
 
 __all__ = [
     "Score",
+    "apply",
     "engrave",
     "from_notes",
     "from_timeline",
+    "measures",
+    "ops",
     "page_json",
     "score_view",
+    "sheet_from_voice",
     "svg_to_display_list",
+    "to_mei",
     "transport",
+    "transpose",
 ]
 

@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 22
+CORE_ABI_VERSION = 23
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -531,6 +531,15 @@ def _configure_notation(lib: ctypes.CDLL) -> None:
         lib.clausters_core_svg_to_display_list.argtypes = [u8p, size, u8p, size]
         lib.clausters_core_voice_to_mei.restype = size
         lib.clausters_core_voice_to_mei.argtypes = [u8p, size] * 4 + [u8p, size]
+        # The score model: notation as data, and operations as data over it.
+        lib.clausters_core_voice_to_sheet.restype = size
+        lib.clausters_core_voice_to_sheet.argtypes = [u8p, size] * 4 + [u8p, size]
+        lib.clausters_core_sheet_apply.restype = size
+        lib.clausters_core_sheet_apply.argtypes = [u8p, size] * 2 + [u8p, size]
+        lib.clausters_core_sheet_to_mei.restype = size
+        lib.clausters_core_sheet_to_mei.argtypes = [u8p, size, u8p, size]
+        lib.clausters_core_sheet_ops.restype = size
+        lib.clausters_core_sheet_ops.argtypes = [u8p, size]
     except AttributeError:
         return
     _HAS_NOTATION = True

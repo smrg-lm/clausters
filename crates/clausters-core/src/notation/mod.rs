@@ -33,10 +33,14 @@
 
 mod cursors;
 mod mei;
+mod model;
+mod ops;
 mod score;
 mod svg;
 
 pub use cursors::{Cursor, TimemapEntry, cursor_track};
-pub use mei::{Slot, voice_to_mei};
+pub use mei::{Slot, sheet_to_mei, voice_to_mei, voice_to_sheet};
+pub use model::{Grid, Item, Marks, Meter, Pitch, Sheet, Staff, Step, Voice};
+pub use ops::{Op, OpSpec, Span, apply, catalog, default_steps, transpose_pitch};
 pub use score::{Engraver, NoteEvent, Page, Score, engrave_options};
 pub use svg::{DisplayList, Prim, svg_to_display_list};

@@ -25,11 +25,19 @@
 // own `seq` data into MEI (the inverse direction, data→score); and
 // `svgToDisplayList`, the adapter the first two both flow through. `scoreView`
 // and `transport` are the two helpers that put a page on screen and *play* it.
+//
+// `sheet` is the **score model** underneath all of that: notation as data, and
+// operations as data over it. A sheet is a plain object a caller holds, an
+// operation is a payload it sends, and the whole vocabulary lives in Rust —
+// which is what lets a standalone host with no client language edit the same
+// score through the same one door.
 
 export { Score, engrave, pageJson, svgToDisplayList } from "./engraver.ts";
 export type { EngraveOptions, Page } from "./engraver.ts";
 export { fromNotes, fromTimeline } from "./mei.ts";
 export type { MeiOptions, Slot } from "./mei.ts";
+export { apply, fromVoice as sheetFromVoice, measures, ops, toMei, transpose } from "./sheet.ts";
+export type { Op, OpSpec, Ratio, Sheet, TransposeOptions } from "./sheet.ts";
 export { scoreView, transport } from "./view.ts";
 export type { ScoreViewOptions } from "./view.ts";
 export { setEngraverUrl } from "./_verovio.ts";

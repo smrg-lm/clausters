@@ -16,7 +16,7 @@
 
 import { Event as SeqEvent } from "../../seq/event.ts";
 import { Timeline } from "../../seq/timeline.ts";
-import { voiceToMei as coreVoiceToMei } from "../../core/clausters_core_web.js";
+import { fromVoice, toMei } from "./sheet.ts";
 
 /**
  * 32nd-note resolution: every duration snaps to an integer number of these, so
@@ -57,8 +57,9 @@ export interface MeiOptions {
  * A duration that is not a single note value is written as **tied** notes (a
  * dotted value when exact, e.g. `1.5` beats → a dotted quarter), and a note that
  * overruns a barline is split and tied across it. Off-grid durations (finer than
- * a 32nd, e.g. a triplet) snap to the grid — tuplets are the
- * engraving-refinements milestone.
+ * a 32nd, e.g. a triplet) snap to the grid here, on the way in: the model itself
+ * holds an exact rational, so a tuplet is representable the moment a caller can
+ * express one — writing it is the emission milestone.
  */
 export function fromNotes(
     notes: Iterable<SeqEvent>,
@@ -77,9 +78,9 @@ export function fromNotes(
  * (they read as silence, i.e. a gap).
  *
  * Each group is written for its **shortest** `dur` (one layer, so it is clamped
- * never to overrun the next onset — mixed-duration polyphony is the
- * engraving-refinements milestone). Options and the tie/barline behaviour are as
- * {@link fromNotes}.
+ * never to overrun the next onset — the model holds several voices already, and
+ * writing them is the emission milestone). Options and the tie/barline
+ * behaviour are as {@link fromNotes}.
  */
 export function fromTimeline(
     timeline: Timeline | Iterable<readonly [number, unknown]>,
@@ -94,12 +95,20 @@ export function fromTimeline(
 // encoder as JSON, one object per slot, which lays it out into barred, tied
 // measures and emits the XML.
 
-/** Hand a reduced voice to the shared MEI encoder. */
+/**
+ * Hand a reduced voice to the shared encoder, through the model.
+ *
+ * One path to MEI, not two: the voice is lifted into a sheet and the sheet is
+ * written out, which is the same road {@link transpose} and every later
+ * operation travel. The bytes are the encoder's own — the core's `voiceToMei`
+ * goes through the model too — so nothing about the output changed when the
+ * model arrived.
+ */
 function voiceToMei(
     voice: Slot[],
     { meter, clef, key }: { meter: string; clef: string; key: string },
 ): string {
-    return coreVoiceToMei(JSON.stringify(voice), meter, clef, key);
+    return toMei(fromVoice(voice, { meter, clef, key }));
 }
 
 /**

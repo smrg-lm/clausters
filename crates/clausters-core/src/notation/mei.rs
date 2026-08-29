@@ -14,13 +14,21 @@
 //! are emitted: verovio mints them on load, so id stability across editing is
 //! unchanged.
 //!
-//! Two seams are kept deliberately narrow so the engraving-refinements work can
-//! extend rather than rewrite them: the pitch spelling ([`spell`]) and the
-//! beats->written-value step ([`pieces`]). This encoder reads only the written
-//! duration a caller already reduced to ticks; performance nuance, tuplets and
-//! full polyphony are that later pass.
+//! **Ticks live here and nowhere above.** The model counts in exact [`Ratio`]s;
+//! this encoder is the boundary where a duration becomes MEI's `@dur` and
+//! `@dots`, and `TPW` is the resolution *this* conversion works at, not a
+//! foundation anything else rests on. A duration that does not land on that
+//! grid is refused by name rather than snapped, because a triplet silently
+//! rounded to a 32nd is a wrong score that looks right.
+//!
+//! Two seams stay deliberately narrow so the emission milestone extends rather
+//! than rewrites them: the value decomposition ([`pieces`]) and the projection
+//! of flat content onto the grid ([`sheet_to_mei`]).
 
 use serde::Deserialize;
+
+use super::model::{Grid, Item, Pitch, Sheet, Staff, Voice};
+use crate::ratio::Ratio;
 
 // 32nd-note resolution: every duration is an integer number of these, so
 // barline splitting and tie decomposition are exact integer arithmetic.
@@ -35,37 +43,6 @@ const VALUES: [(i32, i32); 6] = [
     (8, TPW / 8),
     (16, TPW / 16),
     (32, TPW / 32),
-];
-
-// Chromatic spelling: pitch-class -> (pname, accid), one table per accidental
-// world. `accid` is "" (natural, no <accid> child), "s" (sharp) or "f" (flat).
-const SHARP: [(&str, &str); 12] = [
-    ("c", ""),
-    ("c", "s"),
-    ("d", ""),
-    ("d", "s"),
-    ("e", ""),
-    ("f", ""),
-    ("f", "s"),
-    ("g", ""),
-    ("g", "s"),
-    ("a", ""),
-    ("a", "s"),
-    ("b", ""),
-];
-const FLAT: [(&str, &str); 12] = [
-    ("c", ""),
-    ("d", "f"),
-    ("d", ""),
-    ("e", "f"),
-    ("e", ""),
-    ("f", ""),
-    ("g", "f"),
-    ("g", ""),
-    ("a", "f"),
-    ("a", ""),
-    ("b", "f"),
-    ("b", ""),
 ];
 
 /// A key name -> (MEI `key.sig`, prefer flats when spelling chromatic notes).
@@ -109,45 +86,115 @@ pub enum Slot {
     Rest { ticks: i32 },
 }
 
-impl Slot {
-    fn ticks(&self) -> i32 {
-        match self {
-            Slot::Note { ticks, .. } | Slot::Rest { ticks } => *ticks,
-        }
-    }
-    /// Whether this slot draws pitches. A `Note` with no pitches is a rest — the
-    /// wire form has no discriminator, so the emptiness is what says so.
-    fn is_note(&self) -> bool {
-        matches!(self, Slot::Note { midis, .. } if !midis.is_empty())
-    }
-}
-
 /// Engrave a voice into a minimal MEI document, splitting notes across barlines
 /// and tying the pieces.
 ///
-/// `meter` is `"num/den"` (e.g. `"4/4"`), `clef` is a shape+line like `"G2"`,
-/// `"F4"` or `"C3"`, and `key` selects the key signature and sharp-vs-flat
-/// spelling (`key_signature`, private: a link there resolves only in a build
-/// documenting private items). A duration that is not a single note value
-/// is written as tied notes (a dotted value when exact), and a note that
-/// overruns a barline is split and tied across it.
+/// The **v1 wire form**, kept as it was: `meter` is `"num/den"` (e.g. `"4/4"`),
+/// `clef` is a shape+line like `"G2"`, `"F4"` or `"C3"`, and `key` selects the
+/// key signature and sharp-vs-flat spelling (`key_signature`, private: a link
+/// there resolves only in a build documenting private items). A duration that
+/// is not a single note value is written as tied notes (a dotted value when
+/// exact), and a note that overruns a barline is split and tied across it.
+///
+/// It is now a thin front door on [`voice_to_sheet`] + [`sheet_to_mei`]: the
+/// slots become a one-staff, one-voice [`Sheet`] and the model is what is
+/// written out. That is deliberate rather than tidy — it is the standing proof
+/// that the model can represent everything the wire form could, since any
+/// divergence shows up as a difference in these bytes.
 pub fn voice_to_mei(voice: &[Slot], meter: &str, clef: &str, key: &str) -> String {
+    // A voice that came in as ticks is on the tick grid by construction, and
+    // one staff with one voice is what `voice_to_sheet` builds, so neither
+    // refusal can fire here.
+    sheet_to_mei(&voice_to_sheet(voice, meter, clef, key)).expect("a v1 voice is always writable")
+}
+
+/// Lift a v1 voice into the score model: the bridge between the wire form a
+/// client already reduces to and the model everything above now speaks.
+///
+/// The [`Slot`] stays what it always was — a total, discriminator-free form
+/// where a slot with no pitches *is* a rest — and this is where it stops being
+/// the ceiling: ticks become exact durations, MIDI numbers become spelled
+/// pitches (in the accidental world `key` implies, which is the only choice a
+/// bare number leaves), and the `meter`/`clef`/`key` a caller used to pass at
+/// every call become part of the sheet.
+pub fn voice_to_sheet(voice: &[Slot], meter: &str, clef: &str, key: &str) -> Sheet {
     let (num, den) = parse_meter(meter);
-    let bar = num * TPW / den; // ticks per measure
-    let (keysig, flats) = key_signature(key);
-    let (shape, line) = parse_clef(clef);
+    let (_, flats) = key_signature(key);
+    let items = voice
+        .iter()
+        .map(|slot| match slot {
+            Slot::Note { midis, ticks } if !midis.is_empty() => Item::Note {
+                pitches: midis.iter().map(|&m| Pitch::from_midi(m, flats)).collect(),
+                dur: Ratio::from_ticks(*ticks as i64, TPW as i64),
+                tie: false,
+                marks: Default::default(),
+            },
+            Slot::Note { ticks, .. } | Slot::Rest { ticks } => Item::Rest {
+                dur: Ratio::from_ticks(*ticks as i64, TPW as i64),
+            },
+        })
+        .collect();
+    Sheet {
+        grid: Grid::uniform(num as i64, den as i64),
+        key: key.to_string(),
+        staves: vec![Staff {
+            clef: clef.to_string(),
+            voices: vec![Voice { items }],
+        }],
+    }
+}
+
+/// Write a [`Sheet`] out as a minimal MEI document: project the flat content
+/// onto the grid, splitting and tying across every barline the grid puts in the
+/// way.
+///
+/// This is the **boundary where exact durations become note values**. A
+/// duration that is not an integer count of 32nds — a triplet, which is exactly
+/// what rationals exist to keep exact — is refused by name rather than snapped
+/// onto the grid, and so is the polyphony the model can hold and this emitter
+/// cannot yet write. Both refusals say which milestone owes the work, because a
+/// caller reading "cannot" needs to know whether it is wrong or early.
+pub fn sheet_to_mei(sheet: &Sheet) -> Result<String, String> {
+    let (keysig, _) = key_signature(&sheet.key);
+    let staff = match sheet.staves.as_slice() {
+        [] => &Staff::default(),
+        [one] => one,
+        _ => {
+            return Err("writing more than one staff is the emission milestone; \
+                        this sheet has several"
+                .to_string());
+        }
+    };
+    let voice = match staff.voices.as_slice() {
+        [] => &Voice::default(),
+        [one] => one,
+        _ => {
+            return Err("writing more than one voice on a staff is the emission \
+                        milestone; this staff has several"
+                .to_string());
+        }
+    };
+    let (shape, line) = parse_clef(&staff.clef);
+    let meter = sheet.grid.meter_at(0);
+    let (num, den) = (meter.count, meter.unit);
 
     // Each cell is a rendered `<note>`/`<rest>`/`<chord>` string.
     let mut measures: Vec<Vec<String>> = vec![Vec::new()];
     let mut pos = 0; // ticks into the current (last) measure
-    for slot in voice {
-        // (value, dots, measure_index) for every piece the slot spans.
+    let mut bar = bar_ticks(&sheet.grid, 0)?;
+    // Whether the previous item tied into this one, so a tie the caller wrote
+    // and a tie a barline forced compose instead of overwriting each other.
+    let mut tied_in = false;
+    for item in &voice.items {
+        let total = ticks(item.dur())?;
+        // (value, dots, measure_index) for every piece the item spans.
         let mut specs: Vec<(i32, i32, usize)> = Vec::new();
-        let mut remaining = slot.ticks();
+        let mut remaining = total;
         while remaining > 0 {
             if pos == bar {
                 measures.push(Vec::new());
                 pos = 0;
+                bar = bar_ticks(&sheet.grid, measures.len() - 1)?;
             }
             let take = remaining.min(bar - pos);
             for (value, dots) in pieces(take) {
@@ -156,31 +203,32 @@ pub fn voice_to_mei(voice: &[Slot], meter: &str, clef: &str, key: &str) -> Strin
             pos += take;
             remaining -= take;
         }
+        let sounds = !item.pitches().is_empty();
+        let tied_out = matches!(item, Item::Note { tie: true, .. });
         let n = specs.len();
         for (idx, (value, dots, mi)) in specs.iter().copied().enumerate() {
-            // A split note ties its pieces: initial / medial / terminal.
-            let tie = if slot.is_note() && n > 1 {
-                Some(if idx == 0 {
-                    "i"
-                } else if idx == n - 1 {
-                    "t"
-                } else {
-                    "m"
-                })
-            } else {
-                None
+            // A piece opens a tie when it is not the last of a split note, or
+            // when the caller tied this item to the next; it closes one when it
+            // is not the first, or when the previous item tied into this one.
+            let opens = sounds && (idx + 1 < n || (idx + 1 == n && tied_out));
+            let closes = sounds && (idx > 0 || (idx == 0 && tied_in));
+            let tie = match (opens, closes) {
+                (true, true) => Some("m"),
+                (true, false) => Some("i"),
+                (false, true) => Some("t"),
+                (false, false) => None,
             };
-            measures[mi].push(element(slot, value, dots, tie, flats));
+            measures[mi].push(element(item.pitches(), value, dots, tie)?);
         }
+        tied_in = tied_out && sounds;
     }
 
     if measures.iter().all(Vec::is_empty) {
         // An empty voice still needs a drawable bar of rests.
-        let rest = Slot::Rest { ticks: 0 };
-        measures[0] = pieces(bar)
+        measures[0] = pieces(bar_ticks(&sheet.grid, 0)?)
             .into_iter()
-            .map(|(value, dots)| element(&rest, value, dots, None, flats))
-            .collect();
+            .map(|(value, dots)| element(&[], value, dots, None))
+            .collect::<Result<Vec<_>, _>>()?;
     }
 
     let last = measures.len() - 1;
@@ -191,7 +239,7 @@ pub fn voice_to_mei(voice: &[Slot], meter: &str, clef: &str, key: &str) -> Strin
         .collect::<Vec<_>>()
         .join("\n");
 
-    format!(
+    Ok(format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
          <mei xmlns=\"http://www.music-encoding.org/ns/mei\" meiversion=\"5.0\">\n\
          \x20<meiHead><fileDesc><titleStmt><title/></titleStmt>\
@@ -204,7 +252,26 @@ pub fn voice_to_mei(voice: &[Slot], meter: &str, clef: &str, key: &str) -> Strin
          \x20\x20<section>\n{body}\n\x20\x20</section>\n\
          \x20</score></mdiv></body></music>\n\
          </mei>\n"
-    )
+    ))
+}
+
+/// A duration as an integer count of 32nds, or a refusal naming what it is that
+/// the grid cannot hold. This is the one place the conversion happens.
+fn ticks(dur: Ratio) -> Result<i32, String> {
+    dur.as_ticks(TPW as i64)
+        .and_then(|t| i32::try_from(t).ok())
+        .ok_or_else(|| {
+            format!(
+                "the duration {dur} is not an exact number of 32nd notes, so it \
+                 cannot be written as plain note values; tuplets are the emission \
+                 milestone"
+            )
+        })
+}
+
+/// The length of one measure of the grid, in ticks.
+fn bar_ticks(grid: &Grid, measure: usize) -> Result<i32, String> {
+    ticks(grid.bar_len(measure))
 }
 
 /// Decompose a tick count (within one bar) into `(mei_dur, dots)` note values,
@@ -256,27 +323,48 @@ fn measure_xml(index: usize, cells: &[String], last: bool) -> String {
     )
 }
 
-fn element(slot: &Slot, value: i32, dots: i32, tie: Option<&str>, flats: bool) -> String {
+fn element(pitches: &[Pitch], value: i32, dots: i32, tie: Option<&str>) -> Result<String, String> {
     let d = if dots != 0 { " dots=\"1\"" } else { "" };
-    match slot {
-        // A pitchless slot draws as a rest either way it was spelled.
-        Slot::Rest { .. } => format!("<rest dur=\"{value}\"{d}/>"),
-        Slot::Note { midis, .. } if midis.is_empty() => format!("<rest dur=\"{value}\"{d}/>"),
-        Slot::Note { midis, .. } if midis.len() == 1 => {
-            note_xml(midis[0], Some(value), dots, tie, flats)
-        }
-        Slot::Note { midis, .. } => {
-            let inner: String = midis
+    Ok(match pitches {
+        // Nothing to sound draws as a rest, however the caller spelled it.
+        [] => format!("<rest dur=\"{value}\"{d}/>"),
+        [one] => note_xml(one, Some(value), dots, tie)?,
+        many => {
+            let inner = many
                 .iter()
-                .map(|&m| note_xml(m, None, 0, tie, flats))
-                .collect();
+                .map(|p| note_xml(p, None, 0, tie))
+                .collect::<Result<String, _>>()?;
             format!("<chord dur=\"{value}\"{d}>{inner}</chord>")
         }
-    }
+    })
 }
 
-fn note_xml(midi: i32, value: Option<i32>, dots: i32, tie: Option<&str>, flats: bool) -> String {
-    let (pname, octave, accid) = spell(midi, flats);
+fn note_xml(
+    pitch: &Pitch,
+    value: Option<i32>,
+    dots: i32,
+    tie: Option<&str>,
+) -> Result<String, String> {
+    // A pitch already carries its spelling. Which accidental world a bare MIDI
+    // number was spelled into was decided on the way in, before this point.
+    let (pname, octave) = (pitch.step.pname(), pitch.octave);
+    // MEI writes up to a double accidental. Anything past that is refused
+    // rather than dropped: a triple sharp silently written as a natural is a
+    // wrong score that looks right, which is the one failure this layer must
+    // never produce.
+    let accid = match pitch.alter {
+        0 => "",
+        1 => "s",
+        -1 => "f",
+        2 => "x",
+        -2 => "ff",
+        alter => {
+            return Err(format!(
+                "the pitch {pname}{octave} is altered by {alter} semitones, and \
+                 MEI writes at most a double accidental; respell it"
+            ));
+        }
+    };
     let mut head = match value {
         Some(v) => format!("<note dur=\"{v}\""),
         None => "<note".to_string(),
@@ -288,18 +376,11 @@ fn note_xml(midi: i32, value: Option<i32>, dots: i32, tie: Option<&str>, flats: 
     if let Some(tie) = tie {
         head.push_str(&format!(" tie=\"{tie}\""));
     }
-    if accid.is_empty() {
+    Ok(if accid.is_empty() {
         format!("{head}/>")
     } else {
         format!("{head}><accid accid=\"{accid}\"/></note>")
-    }
-}
-
-/// A MIDI note -> `(pname, octave, accid)` in scientific pitch (60 -> c4).
-fn spell(midi: i32, flats: bool) -> (&'static str, i32, &'static str) {
-    let table = if flats { &FLAT } else { &SHARP };
-    let (pname, accid) = table[midi.rem_euclid(12) as usize];
-    (pname, midi.div_euclid(12) - 1, accid)
+    })
 }
 
 fn parse_meter(meter: &str) -> (i32, i32) {
@@ -318,6 +399,7 @@ fn parse_clef(clef: &str) -> (String, i32) {
 
 #[cfg(test)]
 mod tests {
+    use super::super::model::Step;
     use super::*;
 
     fn note(midi: i32, ticks: i32) -> Slot {
@@ -329,11 +411,17 @@ mod tests {
 
     #[test]
     fn midi_spells_to_scientific_pitch_with_the_accidental_world() {
-        assert_eq!(spell(60, false), ("c", 4, "")); // middle C
-        assert_eq!(spell(61, false), ("c", 4, "s")); // C#
-        assert_eq!(spell(66, false), ("f", 4, "s")); // F#
-        assert_eq!(spell(61, true), ("d", 4, "f")); // spelled Db
-        assert_eq!(spell(72, false), ("c", 5, "")); // an octave up
+        // The spelling rule is the model's `Pitch::from_midi` and there is one
+        // of it: this encoder used to carry a second copy of the same tables.
+        let spelled = |midi, flats| {
+            let p = Pitch::from_midi(midi, flats);
+            (p.step.pname(), p.octave, p.alter)
+        };
+        assert_eq!(spelled(60, false), ("c", 4, 0)); // middle C
+        assert_eq!(spelled(61, false), ("c", 4, 1)); // C#
+        assert_eq!(spelled(66, false), ("f", 4, 1)); // F#
+        assert_eq!(spelled(61, true), ("d", 4, -1)); // spelled Db
+        assert_eq!(spelled(72, false), ("c", 5, 0)); // an octave up
     }
 
     #[test]
@@ -411,6 +499,100 @@ mod tests {
         let mei = voice_to_mei(&voice[2..], "4/4", "G2", "C");
         assert!(mei.contains("<rest dur=\"4\"/>"), "a quarter rest");
         assert!(!mei.contains("<chord"), "never an empty chord");
+    }
+
+    #[test]
+    fn what_the_model_can_hold_and_mei_cannot_write_is_refused_by_name() {
+        use super::super::model::{Marks, Staff, Voice};
+        let note = |alter, dur| Item::Note {
+            pitches: vec![Pitch {
+                step: Step::C,
+                alter,
+                octave: 4,
+            }],
+            dur,
+            tie: false,
+            marks: Marks::default(),
+        };
+        let sheet_of = |items| Sheet {
+            staves: vec![Staff {
+                clef: "G2".into(),
+                voices: vec![Voice { items }],
+            }],
+            ..Default::default()
+        };
+
+        // A triplet eighth is exact in the model and has no note value here.
+        let err = sheet_to_mei(&sheet_of(vec![note(0, Ratio::new(1, 12))]))
+            .expect_err("refuses a tuplet");
+        assert!(err.contains("1/12") && err.contains("tuplet"), "{err}");
+
+        // A triple sharp is data the model can hold and MEI cannot spell.
+        let err =
+            sheet_to_mei(&sheet_of(vec![note(3, Ratio::new(1, 4))])).expect_err("refuses a triple");
+        assert!(err.contains("double accidental"), "{err}");
+
+        // And two voices are representable long before they are writable.
+        let two = Sheet {
+            staves: vec![Staff {
+                clef: "G2".into(),
+                voices: vec![Voice::default(), Voice::default()],
+            }],
+            ..Default::default()
+        };
+        let err = sheet_to_mei(&two).expect_err("refuses polyphony");
+        assert!(err.contains("emission milestone"), "{err}");
+    }
+
+    /// The six cases below are the **byte-for-byte** record of what this encoder
+    /// wrote before the score model existed, captured from the previous commit
+    /// and compared against what it writes now that `voice_to_mei` builds a
+    /// `Sheet` and emits *that*. It is the acceptance the model rests on: the
+    /// model can represent everything the v1 wire form could, and the proof is
+    /// that not one byte moves. A diff here is either a real change to the
+    /// engraving (which has to be deliberate and re-recorded) or the model
+    /// losing something on the way through.
+    #[test]
+    fn the_model_writes_the_bytes_the_wire_form_always_wrote() {
+        let cases: Vec<(&str, Vec<Slot>, &str, &str, &str)> = vec![
+            (
+                "melody",
+                vec![
+                    note(60, 8),
+                    note(62, 4),
+                    note(64, 12),
+                    Slot::Rest { ticks: 8 },
+                    note(65, 8),
+                ],
+                "4/4",
+                "G2",
+                "C",
+            ),
+            ("split", vec![note(60, 16), note(67, 24)], "4/4", "G2", "C"),
+            (
+                "chord",
+                vec![Slot::Note {
+                    midis: vec![60, 64, 67],
+                    ticks: 8,
+                }],
+                "4/4",
+                "G2",
+                "C",
+            ),
+            ("empty", vec![], "4/4", "G2", "C"),
+            ("flats", vec![note(61, 8), note(66, 8)], "3/4", "F4", "Bb"),
+            // an odd meter and durations that do not fit its bar, so the split
+            // and the decomposition both have to land where they always did
+            ("odd", vec![note(60, 5), note(62, 27)], "7/8", "C3", "F#"),
+        ];
+        let mut out = String::new();
+        for (name, voice, meter, clef, key) in cases {
+            out.push_str(&format!(
+                "=== {name}\n{}",
+                voice_to_mei(&voice, meter, clef, key)
+            ));
+        }
+        assert_eq!(out, include_str!("testdata/voice_to_mei.txt"));
     }
 
     #[test]

@@ -117,8 +117,16 @@ pub use time::*;
 /// `clausters_core_peaks_multi_write_buckets`, the receiving half of
 /// `/buffer_stream`: a run of buckets somebody else measured, folded into a
 /// cache in place, so a client that cannot map the memory a recording is
-/// filling still draws it.
-pub const CORE_ABI_VERSION: u32 = 22;
+/// filling still draws it. **v23 the score model** — `clausters_core_sheet_apply`,
+/// `clausters_core_sheet_to_mei` and `clausters_core_sheet_ops`: notation as
+/// data a client holds and operations as data it sends, so one implementation
+/// of what an edit to a score *means* serves every client and, more to the
+/// point, serves a standalone host that has no client language in the process
+/// at all. It is the same by-value shape the document surface took at v15, for
+/// the same reason. The verbs are **not** symbols — they ride inside the
+/// payload — so the catalog is what says which exist, and adding one moves
+/// nothing here.
+pub const CORE_ABI_VERSION: u32 = 23;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

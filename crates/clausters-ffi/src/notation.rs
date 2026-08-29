@@ -20,7 +20,10 @@
 //! Strings cross as UTF-8 pointer+length; invalid UTF-8 is read lossily rather
 //! than refused, so no binding has to validate before calling.
 
-use clausters_core::notation::{Slot, svg_to_display_list, voice_to_mei};
+use clausters_core::notation::{
+    Op, Sheet, Slot, apply, catalog, sheet_to_mei, svg_to_display_list, voice_to_mei,
+    voice_to_sheet,
+};
 
 /// Read a pointer+length as UTF-8 (lossily), or `None` when the pointer is null.
 ///
@@ -119,6 +122,157 @@ pub unsafe extern "C" fn clausters_core_voice_to_mei(
     let mei = voice_to_mei(&voice, &meter, &clef, &key);
     // SAFETY: caller guarantees `out` is writable for `out_cap` bytes.
     unsafe { fill(mei.as_bytes(), out, out_cap) }
+}
+
+/// Lift a **voice** — the v1 wire form, a JSON array of slots — into the score
+/// model, written to `out` as the same envelope the other sheet calls answer
+/// in. Returns the byte count it needs, or `0` when a pointer is null.
+///
+/// This is the bridge a client crosses once: it reduces its own sequencing
+/// types to slots (which reads client-native types and stays in the client),
+/// and everything above that is the model. Ticks become exact durations and
+/// MIDI numbers become spelled pitches in the world `key` implies.
+///
+/// # Safety
+/// Each pointer must be readable for its length, and `out` writable for
+/// `out_cap` bytes (or null, to size only).
+#[unsafe(no_mangle)]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn clausters_core_voice_to_sheet(
+    voice: *const u8,
+    voice_len: usize,
+    meter: *const u8,
+    meter_len: usize,
+    clef: *const u8,
+    clef_len: usize,
+    key: *const u8,
+    key_len: usize,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    // SAFETY: caller guarantees every range.
+    let (Some(voice), Some(meter), Some(clef), Some(key)) = (unsafe {
+        (
+            text(voice, voice_len),
+            text(meter, meter_len),
+            text(clef, clef_len),
+            text(key, key_len),
+        )
+    }) else {
+        return 0;
+    };
+    let json = match serde_json::from_str::<Vec<Slot>>(&voice) {
+        Err(e) => envelope_error(&format!("the voice could not be read: {e}")),
+        Ok(voice) => {
+            let sheet = voice_to_sheet(&voice, &meter, &clef, &key);
+            serde_json::json!({ "ok": sheet }).to_string()
+        }
+    };
+    // SAFETY: caller guarantees `out` is writable for `out_cap` bytes.
+    unsafe { fill(json.as_bytes(), out, out_cap) }
+}
+
+/// Apply one operation to a score model, both crossing as JSON, and write the
+/// result to `out` (capacity `out_cap`). Returns the byte count the result
+/// needs, or `0` when either pointer is null.
+///
+/// **One symbol for every operation there will ever be.** The verb and its
+/// parameters are inside `op` (`{"op": "transpose", "semitones": 2}`), so a new
+/// operation is a new entry in `clausters_core_sheet_ops` and nothing here
+/// changes — no row of `docs/bindings.md`, no `CORE_ABI_VERSION` round. What
+/// that costs is that this table cannot see the verbs, which is exactly what
+/// the catalog is contrasted against.
+///
+/// The result is an **envelope**, so a refusal keeps its reason: `{"ok": …}`
+/// carries the new sheet, `{"error": "…"}` a sentence saying what was refused.
+/// A refused operation changes nothing — the caller still holds the sheet it
+/// sent, because the model crossed by value and was never handed over.
+///
+/// # Safety
+/// Each pointer must be readable for its length, and `out` writable for
+/// `out_cap` bytes (or null, to size only).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_core_sheet_apply(
+    sheet: *const u8,
+    sheet_len: usize,
+    op: *const u8,
+    op_len: usize,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    // SAFETY: caller guarantees both ranges.
+    let (Some(sheet), Some(op)) = (unsafe { (text(sheet, sheet_len), text(op, op_len)) }) else {
+        return 0;
+    };
+    let json = match (
+        serde_json::from_str::<Sheet>(&sheet),
+        serde_json::from_str::<Op>(&op),
+    ) {
+        (Err(e), _) => envelope_error(&format!("the sheet could not be read: {e}")),
+        (_, Err(e)) => envelope_error(&format!("the operation could not be read: {e}")),
+        (Ok(sheet), Ok(op)) => match apply(sheet, &op) {
+            Ok(sheet) => serde_json::json!({ "ok": sheet }).to_string(),
+            Err(e) => envelope_error(&e),
+        },
+    };
+    // SAFETY: caller guarantees `out` is writable for `out_cap` bytes.
+    unsafe { fill(json.as_bytes(), out, out_cap) }
+}
+
+/// Write a score model out as MEI, in the same envelope
+/// [`clausters_core_sheet_apply`] uses: `{"ok": "<mei…>"}` or `{"error": "…"}`.
+///
+/// The refusals are the ones the emitter owes a caller: a duration that is not
+/// an exact note value (a tuplet), an accidental past a double, and the
+/// polyphony the model can hold before this emitter can write it. Each says
+/// which it is, because a caller reading "cannot" needs to know whether it is
+/// wrong or early.
+///
+/// # Safety
+/// `sheet` must be readable for `sheet_len` bytes and `out` writable for
+/// `out_cap` bytes (or null, to size only).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_core_sheet_to_mei(
+    sheet: *const u8,
+    sheet_len: usize,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    // SAFETY: caller guarantees the range.
+    let Some(sheet) = (unsafe { text(sheet, sheet_len) }) else {
+        return 0;
+    };
+    let json = match serde_json::from_str::<Sheet>(&sheet) {
+        Err(e) => envelope_error(&format!("the sheet could not be read: {e}")),
+        Ok(sheet) => match sheet_to_mei(&sheet) {
+            Ok(mei) => serde_json::json!({ "ok": mei }).to_string(),
+            Err(e) => envelope_error(&e),
+        },
+    };
+    // SAFETY: caller guarantees `out` is writable for `out_cap` bytes.
+    unsafe { fill(json.as_bytes(), out, out_cap) }
+}
+
+/// Every operation this core knows, as JSON — each entry naming the verb and
+/// the parameters it takes.
+///
+/// **This is the parity surface the ABI cannot provide.** Operations cross as
+/// data through one symbol, so a binding table proves nothing about which verbs
+/// a client offers; each client is contrasted against this list instead, and a
+/// verb that reaches only one of them fails a test there.
+///
+/// # Safety
+/// `out` must be null or writable for `out_cap` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_core_sheet_ops(out: *mut u8, out_cap: usize) -> usize {
+    let json = serde_json::to_vec(catalog()).unwrap_or_default();
+    // SAFETY: caller guarantees `out` is writable for `out_cap` bytes.
+    unsafe { fill(&json, out, out_cap) }
+}
+
+/// A refusal, in the envelope both sheet calls answer in.
+fn envelope_error(message: &str) -> String {
+    serde_json::json!({ "error": message }).to_string()
 }
 
 // ---- the engraver and the editable score (feature `verovio`) ---------------

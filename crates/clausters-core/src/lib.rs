@@ -88,6 +88,7 @@ pub mod oscil;
 pub mod patch;
 pub mod peaks;
 pub mod pvprog;
+pub mod ratio;
 pub mod registry;
 pub mod rng;
 pub mod scale;

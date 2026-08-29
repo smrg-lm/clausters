@@ -1587,6 +1587,71 @@ pub fn voice_to_mei(voice: &str, meter: &str, clef: &str, key: &str) -> Result<S
     ))
 }
 
+/// Lift a **voice** — the v1 wire form, a JSON array of slots — into the score
+/// model.
+///
+/// The bridge a client crosses once: it reduces its own sequencing types to
+/// slots, which reads client-native types and stays here, and everything above
+/// that is the model. Ticks become exact durations and MIDI numbers become
+/// spelled pitches in the world `key` implies.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = voiceToSheet)]
+pub fn voice_to_sheet(voice: &str, meter: &str, clef: &str, key: &str) -> Result<String, JsError> {
+    let voice: Vec<clausters_core::notation::Slot> =
+        serde_json::from_str(voice).map_err(|e| JsError::new(&format!("voice: {e}")))?;
+    let sheet = clausters_core::notation::voice_to_sheet(&voice, meter, clef, key);
+    serde_json::to_string(&sheet).map_err(|e| JsError::new(&e.to_string()))
+}
+
+/// Apply one operation to a score model, both as JSON, returning the new model.
+///
+/// **One export for every operation there will ever be**: the verb and its
+/// parameters are inside `op` (`{"op": "transpose", "semitones": 2}`), so a new
+/// operation costs nothing here. What the C ABI answers in an envelope
+/// (`{"ok": …}` / `{"error": …}`) this **throws** instead, which is the same
+/// behaviour in the shape a page expects — and the reason the refusal reaches
+/// the caller either way, since a refused operation has to say why.
+///
+/// A refused operation changes nothing: the model crossed by value, so the
+/// caller still holds what it sent.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = sheetApply)]
+pub fn sheet_apply(sheet: &str, op: &str) -> Result<String, JsError> {
+    let sheet: clausters_core::notation::Sheet =
+        serde_json::from_str(sheet).map_err(|e| JsError::new(&format!("sheet: {e}")))?;
+    let op: clausters_core::notation::Op =
+        serde_json::from_str(op).map_err(|e| JsError::new(&format!("op: {e}")))?;
+    let out = clausters_core::notation::apply(sheet, &op).map_err(|e| JsError::new(&e))?;
+    serde_json::to_string(&out).map_err(|e| JsError::new(&e.to_string()))
+}
+
+/// Write a score model out as MEI.
+///
+/// Throws with the emitter's own reason when the model holds something MEI
+/// cannot be written for yet — a duration that is not an exact note value, an
+/// accidental past a double, or polyphony — each saying which it is, so a
+/// caller knows whether it is wrong or early.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = sheetToMei)]
+pub fn sheet_to_mei(sheet: &str) -> Result<String, JsError> {
+    let sheet: clausters_core::notation::Sheet =
+        serde_json::from_str(sheet).map_err(|e| JsError::new(&format!("sheet: {e}")))?;
+    clausters_core::notation::sheet_to_mei(&sheet).map_err(|e| JsError::new(&e))
+}
+
+/// Every operation this core knows, as JSON — the verb and the parameters each
+/// takes.
+///
+/// The parity surface the binding table cannot provide: operations cross as
+/// data, so nothing fails when one client grows a verb the other lacks. This
+/// package is contrasted against this list, as the Python client is.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = sheetOps)]
+pub fn sheet_ops() -> Result<String, JsError> {
+    serde_json::to_string(clausters_core::notation::catalog())
+        .map_err(|e| JsError::new(&e.to_string()))
+}
+
 // ---- MIDI files (W9) --------------------------------------------------------
 //
 // A page has no filesystem and no virtual OS port, but it does have a score to

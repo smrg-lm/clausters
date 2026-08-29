@@ -127,7 +127,44 @@ score = notation.Score.from_timeline(timeline, meter="4/4", key="C")
 dl = score.display_list()          # the engraved page, for the score widget
 ```
 
-`from_notes` is the melodic sibling — a plain list of events (a `rest` for silence), written back to back. A note whose duration is not a single value is written as tied notes (a dotted value when it lands exactly, like `1.5` beats → a dotted quarter), and a note overrunning a barline is split and tied across it. `beat_unit` sets what one beat is worth (`4` = a quarter, matching a `TEMPO` of one beat per second). The result flows into `engrave` (a one-shot view), `Score` (to edit and redraw) or `Score.from_timeline` (both at once); `examples/editors/score_from_data.py` builds a timeline of chords and a melody, engraves it and plays it from the same timeline.
+`from_notes` is the melodic sibling — a plain list of events (a `rest` for silence), written back to back. A note whose duration is not a single value is written as tied notes (a dotted value when it lands exactly, like `1.5` beats → a dotted quarter), and a note overrunning a barline is split and tied across it. `beat_unit` sets what one beat is worth (`4` = a quarter, matching a `TEMPO` of one beat per second). The result flows into `engrave` (a one-shot view), `Score` (to edit and redraw) or `Score.from_timeline` (both at once); `examples/notation/score_from_data.py` builds a timeline of chords and a melody, engraves it and plays it from the same timeline.
+
+## The score behind the page: editing it as data
+
+An engraved page is a picture of something, and that something is a **sheet** —
+the score as plain data, which `clausters.gui.notation` hands you and takes back:
+
+```python
+from clausters.gui import notation
+
+sheet = notation.sheet_from_voice([{"midis": [60], "ticks": 8}])  # a quarter, middle C
+sheet = notation.transpose(sheet, 4)                     # up a major third: E
+mei = notation.to_mei(sheet)                             # ready for engrave/Score
+```
+
+A sheet is two structures that do not contain each other. The **grid** is the
+metric layout — measures and meter changes — which does not sound and is what
+lets you *address* the music: `notation.measures(3, 10)` names measures 3 to 10,
+and the span it covers is worked out against the grid, so it stays right across
+a meter change or an irregular bar. The **staves** hold the content, flat, so
+lengthening a phrase does not break anything it was nested in. Every duration is
+an exact fraction of a whole note (`[1, 4]` is a quarter, `[1, 12]` a triplet
+eighth), so nothing rounds on the way through.
+
+Pitches carry their **spelling**, which is why transposing sounds right *and*
+looks right: a major third up from C is E, not F-flat. `semitones` gives the
+chromatic size and `steps` the diatonic one; leave `steps` out and the ordinary
+reading of that interval is used.
+
+None of this arithmetic is written in Python. Operations are named here and
+carried out in the shared core, which is what keeps every client — and a
+standalone host with no client at all — editing a score the same way.
+`notation.ops()` lists the verbs the core knows.
+
+Writing a sheet out can be **refused**, with a reason: a duration that is not an
+exact note value (a tuplet), an accidental past a double, more than one voice.
+Each says which it is, so you can tell a mistake from a feature that has not
+landed yet.
 
 ## See also
 

@@ -255,6 +255,10 @@ out an opaque handle and takes it back to every call, and wasm has a class.
 |---|---|---|
 | `clausters_core_svg_to_display_list` | `svg_to_display_list` | |
 | `clausters_core_voice_to_mei` | `voice_to_mei` | |
+| `clausters_core_voice_to_sheet` | `voice_to_sheet` | `idiom` — the envelope-versus-throw difference below. The bridge from the v1 wire form to the model: the reduction to slots stays in each client, because it reads client-native types, and everything above the slot is one implementation |
+| `clausters_core_sheet_apply` | `sheet_apply` | `idiom` — C answers in an envelope (`{"ok": …}` / `{"error": …}`), wasm throws. Same behaviour, and a refusal keeps its reason either way. **One symbol for every operation there will ever be**: the verb is inside the payload, so the table below cannot see the verbs — that is what `clausters_core_sheet_ops` is contrasted against |
+| `clausters_core_sheet_to_mei` | `sheet_to_mei` | `idiom` — the same envelope-versus-throw difference |
+| `clausters_core_sheet_ops` | `sheet_ops` | the operation catalog. It exists **because** this table is blind to a data-carried verb: each client is read against this list, so an operation that reaches only one of them fails a test there instead of drifting |
 | — | `engrave_options` | `idiom` — the engraver's options JSON. A native caller builds it from `EngraveOptions` inside `clausters-notation`, which is where its resource path also lives; a page has no such struct and calls the core's builder directly, so both configure verovio identically |
 | `clausters_score_open` | `JsScore.new` | `idiom` — a constructor where C mints a handle. The engraver is built by the binding either way: natively from a resource path, in a page from the loaded module |
 | `clausters_score_free` | — | `n/a` — wasm frees by `Drop` |

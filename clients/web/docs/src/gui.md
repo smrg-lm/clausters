@@ -303,7 +303,31 @@ static cursor where the music stopped. `update` is the one thing a script owes
 it: a pass ends when its last item *starts*, so the transport keeps sweeping
 that last note's tail and parks only at the piece's extent.
 
-The example is `examples/editors/score.html`.
+The example is `examples/notation/score.html`.
+
+### The score behind the page
+
+An engraved page is a picture of a **sheet** — the score as plain data, which
+the `notation` module hands you and takes back:
+
+```js
+let sheet = notation.sheetFromVoice([{ midis: [60], ticks: 8 }]);
+sheet = notation.transpose(sheet, 4);          // up a major third: E
+const mei = notation.toMei(sheet);             // ready for engrave/Score
+```
+
+A sheet is two structures that do not contain each other: the **grid** (the
+metric layout — measures and meter changes, which does not sound and is what
+`notation.measures(3, 10)` addresses against) and the **staves** (the content,
+flat). Durations are exact fractions of a whole note, `[1, 4]` for a quarter,
+and pitches carry their spelling, so transposing sounds right and looks right —
+a major third up from C is E, not F-flat.
+
+None of that arithmetic is written in TypeScript: operations are named here and
+carried out in the shared core, the same one the Python client and a standalone
+host use. `notation.ops()` lists the verbs it knows, and writing a sheet out
+throws with a reason when the model holds something MEI cannot say yet — a
+tuplet, an accidental past a double, more than one voice.
 
 ## Bindings, and the page that runs without a script
 

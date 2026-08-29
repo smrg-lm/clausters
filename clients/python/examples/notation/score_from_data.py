@@ -29,7 +29,7 @@ source checkout build and stage it once::
 
 Then, with the client importable::
 
-    python clients/python/examples/editors/score_from_data.py
+    python clients/python/examples/notation/score_from_data.py
 
 A window shows the engraved timeline; press **play** and the cursor follows the
 sound. Close the window to stop. Needs an audio device, a display and a GPU.
