@@ -1176,3 +1176,38 @@ work, where a pending item reads as done.)*
   `clients/web/examples/buffers/offline-render.html` is where it still shows:
   the page renders through the free verb where its script renders through
   `session.render()`, so its downloadable take still ends on the step.
+
+- ⬜ **`OscEvent` and `MidiEvent` are not events, and the name promises a
+  conversion that does not exist** *(found 2026-08-29 by the user, reading the
+  three classes against each other while sizing the note-entry surface the
+  engraving track needs)*. Three classes share a prefix and nothing else.
+
+  There is **no hierarchy**: `Event` is a `dict` subclass, `OscEvent` and
+  `MidiEvent` are plain classes with two attributes and one, none inherits from
+  any of them, and the only contract they share is `play(destination)` — which
+  `Timeline`'s own docstring already names, and does not call an event: *"an
+  item is anything that can render itself on a destination"*. `Event` is the
+  only one of the three that carries musical time (`dur`/`delta`/`sustain`) and
+  pitch; the other two wrap a raw payload and have no duration at all, which is
+  why a timeline of them has no rhythm and why the MEI encoder skips them by
+  asking for `midinote` rather than by asking what class they are.
+
+  The second half is what makes the name actively misleading. **There is no
+  conversion**: an `Event` never becomes an `OscEvent` or a `MidiEvent`, and
+  those two are not an intermediate form of anything — they exist only to put a
+  raw message on a timeline. Whether an `Event` sounds as OSC or as MIDI is
+  **double dispatch on the destination**, not on the event: `Event.play` calls
+  `destination.play_event(self)`, and the `Server` renders it as `/synth_new`
+  plus a release while a `MidiServer` renders the same event as note on/off. So
+  a shared `*Event` prefix suggests both a kinship and a translation step, and
+  neither is there.
+
+  The fix is the word the interface already uses: **`OscItem` and `MidiItem`**,
+  which leaves `Event` as the only thing called an event — which is what it is.
+  `MidiEvent.message` already reads as a message rather than as an event, so the
+  attribute needs nothing. Both clients in the same commit
+  (`clients/web/src/seq/timeline.ts` mirrors the two classes exactly), plus the
+  `seq` pages of both books and the timeline examples. It **breaks the client's source API**, so
+  like the positional-statics entry above it belongs to a release that bumps the
+  breaking tier; whether the old names stand as deprecated aliases for one
+  release is that release's call, not a decision this entry waits on.

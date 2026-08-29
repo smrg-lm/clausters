@@ -74,8 +74,18 @@ The five sections, and the line between them:
 
 Each is small, owned by its plan, and blocked by nothing.
 
-**Nothing open.** This section fills from section 3's review and empties again;
-a fix that lands leaves no line here, because its plan's checkbox and the commit
+- ⬜ **`OscEvent` and `MidiEvent` are not events, and the name promises a
+  conversion that does not exist** *(`clients/python/PLAN.md`, Found by use)*.
+  The only contract the three classes share is `play(destination)`, which
+  `Timeline`'s own docstring calls an **item**; `Event` alone carries musical
+  time and pitch, and an `Event` never converts into either of the other two —
+  OSC versus MIDI is double dispatch on the destination. Rename them to
+  `OscItem`/`MidiItem` in both clients, with the two books and the timeline
+  examples. Breaks the client's source API, so it rides a release that bumps the
+  breaking tier.
+
+This section otherwise fills from section 3's review and empties again; a fix
+that lands leaves no line here, because its plan's checkbox and the commit
 already carry it.
 
 ## 2. Fixes that need a decision first
