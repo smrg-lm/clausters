@@ -2241,7 +2241,7 @@ metric position accents. It can wait; what cannot wait is that the model
 *store* the symbols, because an interpreter can be written later against symbols
 that were kept and never against symbols that were dropped.
 
-### Seven constraints on the work
+### Eight constraints on the work
 
 **The algebra must not become a second vocabulary.** Concatenating, stacking,
 repeating, transposing, augmenting is composition, and this project already has
@@ -2297,6 +2297,20 @@ composing a score algorithmically, editing one by hand, hearing one interpreted 
 and they are not the arrangement's editors. They move to a `notation/` family in
 both packages, mirrored path for path as the `examples` skill requires, and the
 milestone that grows an example grows **both** copies of it.
+
+**Every edit action is in Rust; a client only binds it — this is what a
+standalone needs.** Not a preference and not only the non-divergence rule: a
+host opened on a saved session has **no client language attached**, and the
+document crate already decided what that host can and cannot do (a frozen
+generator draws, contributes its extent and emits nothing). A score it opens has
+to be *editable* there, so the edit vocabulary must be complete on the Rust
+side — every verb, its validation and its refusals — and a client contributes
+nothing but the name it calls it by. Any edit that only works because a client
+computed something first is an edit a standalone cannot perform, which is how
+the surface silently splits in two. This is the strongest of the reasons the
+model crosses as data and the operations cross as data with it: the standalone
+holds the model and applies the same operations, through the same one symbol,
+with no client in the process at all.
 
 **And it is not a port debt.** The encoding and the model are the shared half,
 and `clients/web/PLAN.md` already records that richer encoding extends it so
