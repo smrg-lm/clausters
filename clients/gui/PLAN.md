@@ -2241,7 +2241,7 @@ metric position accents. It can wait; what cannot wait is that the model
 *store* the symbols, because an interpreter can be written later against symbols
 that were kept and never against symbols that were dropped.
 
-### Four constraints on the work
+### Seven constraints on the work
 
 **The algebra must not become a second vocabulary.** Concatenating, stacking,
 repeating, transposing, augmenting is composition, and this project already has
@@ -2264,6 +2264,39 @@ hand: note entry, changing a value and adding a mark are new gestures, and
 will have to widen. It stays true for everything that is only *drawn*: the
 display list dispatches by tag, so a tuplet bracket, a hairpin or a dynamic
 draws with no host line touched and is deliberately not separately clickable.
+
+**Everything is modularized, in the core and in the clients.** The track adds a
+model, an algebra, an emitter and an interpreter, and they are four things, not
+one file that grows. In the core they are submodules of `notation` beside the
+ones already there (`mei`, `svg`, `score`, `cursors`); in each client they are
+modules of the package `E15` already split by what each part knows
+(`engraver`/`mei`/`view`), so score editing never lands as more weight on
+`mei.py`. **And what is general does not live under `notation` at all.** Exact
+rational arithmetic is the clearest case: it is duration and position
+arithmetic, useful anywhere the client counts musical time, so it belongs beside
+`measure.rs`, `scale.rs` and `tempoclock.rs` in the core's own namespace, not
+inside a notation submodule that happens to have needed it first. The rule is
+the placement rule the GUI work already runs on, one level up: **a function that
+outlives its first caller goes where its subject is, not where it was wanted.**
+
+**Both clients, in one piece of work: Python first, TypeScript after, neither
+postponed.** The order is fixed because the Python client is the reference and
+the port is a transliteration of it — but the *deferral* is what is ruled out
+here. No milestone in this track closes with one client done and the other
+named in a plan entry: an algebra whose two surfaces are written months apart
+is two algebras, and unlike a widget the divergence is invisible, since two
+different verb sets both work. This is the standing "the packages move
+together" rule, stated again because this track is the one place where honouring
+it late costs the most.
+
+**The examples get their own family.** Notation has two examples today, and they
+sit in `editors/` next to the multitrack ones (`editors/score.py`,
+`editors/score_from_data.py`, and `editors/score.html`,
+`editors/score-from-data.html` in the web package). This track multiplies them —
+composing a score algorithmically, editing one by hand, hearing one interpreted —
+and they are not the arrangement's editors. They move to a `notation/` family in
+both packages, mirrored path for path as the `examples` skill requires, and the
+milestone that grows an example grows **both** copies of it.
 
 **And it is not a port debt.** The encoding and the model are the shared half,
 and `clients/web/PLAN.md` already records that richer encoding extends it so
@@ -2406,8 +2439,8 @@ Whatever symbols the model itself needs owe their rows either way
   the precedent and the wording for it (`docs/decisions.md`, "a buffer sounds
   through an instrument"): explicit at render time, never inferred from the
   page. What it replaces is named: `notation.to_notes`/`to_timeline` instead of
-  the hand-written converter in `examples/editors/score_from_data.py`, whose
-  `amp=0.11` is the missing feature this closes. The flat `notes` layer does not
+  the hand-written converter in the `score_from_data` example, whose `amp=0.11`
+  is the missing feature this closes. The flat `notes` layer does not
   go away — it is what the cursor and the timemap need — it stops being the only
   way back. **Acceptance:** the example's converter is deleted and the example
   reads the same or better; a staccato note sounds shorter than a plain one of
@@ -2457,8 +2490,8 @@ which is why "raise the tick base" is no longer a decision anyone has to take.
 as future (`clients/python/clausters/gui/notation/mei.py` says "tuplets are the
 engraving-refinements milestone" and "mixed-duration polyphony is the
 engraving-refinements milestone"), the notation pages of the client's book, and
-`examples/editors/score_from_data.py`, which is this feature's manual test
-surface and grows the case the milestone adds.
+the score examples in their `notation/` family — this feature's manual test
+surface — which grow the case the milestone adds, in both packages.
 
 ## ✅ In-browser audio engine (Web Audio / AudioWorklet) — shipped as the server's B track
 
