@@ -29,9 +29,11 @@
 <code>gate</code> is a trigger (<code>rate: "tr"</code>): a
 <code>/node_set gate 1</code> holds for one block and the server resets it, so
 every set <b>re-plucks</b> the percussive envelope; a plain control gate would
-stay at 1 and never trigger again. <code>detune</code> is drawn once with
-<code>rand</code> — an <code>ir</code> scalar, frozen for the synth's life, so
-each new lead is a little different.
+stay at 1 and never trigger again. <code>detune</code> is a scalar
+(<code>rate: "ir"</code>): the value given at <code>/synth_new</code> is read
+once and then frozen, so the <code>/node_set detune</code> the routine sends
+halfway through is <b>ignored</b> — the pitch does not move. A plain control
+would have taken it.
 
 The lag and the trigger only make sense on a synth that <b>outlives its
 notes</b>, which is what one persistent node driven by a routine gives, rather
@@ -53,7 +55,7 @@ than an <code>/synth_new</code> per note.</div>
         Session, Synth,
         SynthDef, Routine,
       } from "../../dist/index.js";
-      import { DoneAction, Env, control, envGen, out, rand, sine } from "../../dist/defs/index.js";
+      import { DoneAction, Env, control, envGen, out, sine } from "../../dist/defs/index.js";
 
       const el = (id) => document.getElementById(id);
       const log = (line) => { el("log").textContent += line + "\n"; };
@@ -63,7 +65,7 @@ than an <code>/synth_new</code> per note.</div>
         const freq = control("freq", 220.0, { lag: 0.12 });   // portamento
         const gate = control("gate", 0.0, { rate: "tr" });    // re-trigger
         const amp = control("amp", 0.2);
-        const detune = rand(-4.0, 4.0);                       // ir: drawn once
+        const detune = control("detune", 0.0, { rate: "ir" }); // frozen at init
         const env = envGen(Env.perc(0.005, 0.2), {
           gate, doneAction: DoneAction.NONE // never terminal
         });
@@ -87,7 +89,9 @@ than an <code>/synth_new</code> per note.</div>
         await glideLead().send();
         session.start();
 
-        lead = new Synth("web_glide_lead", { amp: 0.2, freq: mtof(48) });
+        lead = new Synth("web_glide_lead", {
+          amp: 0.2, freq: mtof(48), detune: -4.0 + 8.0 * Math.random(),
+        });
         log(`the lead is node ${lead.id}, silent until a gate arrives`);
 
         el("start").disabled = true;
@@ -98,13 +102,20 @@ than an <code>/synth_new</code> per note.</div>
 
       function play() {
         new Routine(function* () {
-          for (const midi of [48, 55, 60, 63, 60, 55, 51, 48]) {
+          const melody = [48, 55, 60, 63, 60, 55, 51, 48];
+          for (let i = 0; i < melody.length; i++) {
             // freq and gate in one timed bundle: the pitch starts gliding and
             // the pluck fires on the same instant.
             session.server.sendBundle([
               ["/node_set", ["i", lead.id],
-                "freq", ["f", mtof(midi)], "gate", ["f", 1.0]],
+                "freq", ["f", mtof(melody[i])], "gate", ["f", 1.0]],
             ]);
+            if (i === 3) {
+              // An ir control is frozen at init: this set lands and does nothing.
+              session.server.sendBundle([
+                ["/node_set", ["i", lead.id], "detune", ["f", 200.0]],
+              ]);
+            }
             yield 0.5;
           }
           log("melody done — the lead is still there, waiting for a gate");

@@ -14,8 +14,10 @@ The point of interest is the SynthDef and the control **types**:
 - ``gate`` is a trigger (``rate="tr"``): a ``/node_set gate 1`` holds for one block
   and the server resets it, so each set **re-plucks** the percussive envelope.
   A plain ``kr`` gate would stay 1 and never re-trigger.
-- ``detune`` is drawn once with ``rand`` (an ``ir`` scalar): a small random
-  offset frozen for the synth's life — re-run the render and it redraws.
+- ``detune`` is a scalar (``rate="ir"``): the value given at ``/synth_new`` is
+  read once and then frozen, so the ``/node_set detune`` the routine sends
+  halfway through is **ignored** — the pitch does not move. A plain ``kr``
+  control would have taken it.
 
 One persistent synth is driven by a `Routine` that sets ``freq``/``gate`` per
 note; the lag and the trigger only make sense on a synth that outlives its
@@ -28,6 +30,7 @@ and re-render in the next one.
 
 # %%
 import pathlib
+import random
 import sys
 
 from clausters import Session
@@ -40,7 +43,6 @@ from clausters.defs import (
     control,
     env_gen,
     out,
-    rand,
     sine,
 )
 
@@ -63,7 +65,7 @@ def glide_lead(name: str = "glide_lead") -> SynthDef:
     freq = control("freq", 220.0, lag=0.12)          # portamento
     gate = control("gate", 0.0, rate="tr")           # one-block re-trigger
     amp = control("amp", 0.2)
-    detune = rand(-4.0, 4.0)                          # ir: drawn once, held
+    detune = control("detune", 0.0, rate="ir")       # read at init, then frozen
     env = env_gen(Env.perc(attack=0.005, release=0.2), gate=gate,
                   done_action=DoneAction.NONE)
     sig = sine(freq + detune) * env * amp
@@ -86,13 +88,18 @@ def mtof(midi: float) -> float:
 # %%
 session = Session.nrt(tempo=2.0).activate()
 glide_lead().send()        # /def_send synth at time 0
-lead = Synth("glide_lead", {"amp": 0.2, "freq": mtof(48)})
+lead = Synth("glide_lead", {"amp": 0.2, "freq": mtof(48),
+                            "detune": random.uniform(-4.0, 4.0)})
 
 
 def sequence():
-    for midi in [48, 55, 60, 63, 60, 55, 51, 48]:
+    for i, midi in enumerate([48, 55, 60, 63, 60, 55, 51, 48]):
         session.server.send_bundle(
             ("/node_set", lead.id, "freq", mtof(midi), "gate", 1.0))
+        if i == 3:
+            # An ir control is frozen at init: this set lands and does nothing.
+            session.server.send_bundle(
+                ("/node_set", lead.id, "detune", 200.0))
         yield 0.5                                 # beats between notes
     yield 1.0
     session.server.send_bundle(("/node_free", lead.id))
