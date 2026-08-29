@@ -2254,6 +2254,34 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 
 ## Found by use: the running list of fixes
 
+- ⬜ **The props manifest compares wire types, so a divergence between two
+  builders of one type is invisible to it** *(found 2026-08-28, reading
+  `gui/guidef.py` against `gui/guidef.ts` by hand and finding five differences
+  the green test had never seen)*. `test_gui_props.py` folds every builder of
+  one wire type into one union — "`waveform`, `plot` and `scope` all build a
+  `signal`", and the comment says so on purpose — and `generic_props()` drops
+  the place props, `theme`, `flow` and `axes` out of the comparison entirely.
+  Both choices are right for what the test is *for*: it guards the three
+  **surfaces** against each other, and a union is the surface. But the clients
+  are compared builder by builder by a reader, and there the folding hides
+  exactly the class that drifts: `layout` could not say `hug` while `panel`
+  could (same type, `layout`), `scroll` took only the old name for `flow` while
+  `plane` took both (same type, `plane`), the spectrogram had no
+  `sel_min`/`sel_max` while the waveform did (same type, `signal`), the ruler
+  took no `theme` (a generic prop, excluded) and only two builders in the whole
+  web client took `axes` (structural, flattened at the host's door and
+  excluded). All five shipped; none of them ever turned the test red, and
+  nothing else would have caught them.
+
+  What is open is whether a second reading belongs beside it — the same three
+  readers keyed by **builder name** rather than by wire type, over the pairs
+  that exist in both clients, with the excluded props included since a client
+  either offers them or does not. That is a different question from the one the
+  manifest answers, so it wants its own table rather than more rows in
+  `docs/gui-props.md`; and it would have to say what a legitimate per-builder
+  difference looks like (`plot` deliberately fixes `navigable`, `phasescope`
+  fixes `view`) before it could be anything but noise.
+
 - ✅ **Nothing resizes a window, so nothing tests a squeeze** *(named 2026-08-26,
   after a drag on a corner panicked the host in `ruler::draw_ticks_v` — see the
   commit; what is left here is the class, not that bug)*. Every suite draws into
