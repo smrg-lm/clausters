@@ -426,7 +426,7 @@ The plan carried notation for years as "Verovio's SVG, hosted by the web surface
 - ✅ **G31d — The edit round trip: drag a note, `"transpose"`** *(done 2026-07-23)*: a drag on an engraved element moves it up or down the staff in **whole diatonic steps**, drawn as it goes, and the release emits `"transpose" <xml:id> <steps>`; the client applies it, re-engraves, and replaces the drawing with one `/gui_set <id> display_list` (a new prop — until then a page could only change by redefining its window). Steps rather than a coordinate, because Verovio's coordinate-taking `drag` reads a page y in a frame that does not line up with the display list's, and its editor transposes by steps anyway; the quantum travels **with the page** (`step`, page units per diatonic step, measured from the staff-line spacing) since it follows the engraver's unit size, not the staff scale. Two things the drag revealed about what an "element" is: a sounding element **claims every primitive drawn inside it** (Verovio ids a note's stem and flag separately, which scattered one note across three draggable things), while a chord deliberately stays a container so its notes remain separately transposable. And the staff furniture a pitch implies — **ledger lines**, drawn per staff, so no per-element displacement can move them — is *re-derived* by the host from the staves it reads back out of the engraving, with the engraved ones over the notehead's column suppressed: that is the half that could not be faked, since a note dragged back onto the staff has to *lose* them. The host cannot re-engrave, so the preview stands after release until the new page arrives.
 - ✅ **G31e — A reproducible Verovio build** *(done 2026-07-23)*: `third_party/verovio.pin` + `build-verovio.sh`, the arrangement `build-faust.sh` established (source uncommitted, reproducibility in two committed files). It pins a `develop` commit rather than a release tag on purpose: in 6.2.1 — the PyPI wheel included — the score editor is **dead in any build keeping Humdrum support**, a guard typo that makes every `Toolkit::Edit()` return false; upstream inverted it after 6.2.1. Recorded in `docs/decisions.md`; repin to 6.3.0 when it ships. The editing half of the widget therefore needs a Verovio whose editor works, which the docs and the smoke step both say.
 - ✅ **G31f — Engrave the client's own data: `from_notes` / `from_timeline`** *(done 2026-07-24)*: the inverse of the score→sound flow. Until now a page could only be *typed* (ABC/PAE/MEI/MusicXML); now `clausters.gui.notation.from_notes` (a monophonic run of `Event`s) and `from_timeline` (a `Timeline`, simultaneous events → a chord, gaps → rests) turn the client's own `clausters.seq` data into **MEI** that flows into the same `engrave`/`Score` path — a third way in, beside typed text and the SVG adapter, with `Score.from_notes`/`from_timeline` as the generate-and-edit shortcut. MEI is the target because it spells pitch and value explicitly, sidestepping ABC's contextual traps, and it needs no ids (Verovio mints them on load, so id stability across editing is unchanged). The substance is the rhythm: durations decompose into tied note values (a dotted value when exact) and a note overrunning a barline splits and ties across it, all in exact 32nd-note ticks. Example `examples/editors/score_from_data.py` (a Timeline of chords + melody, engraved then played from the same timeline); tests cover the pure encoder (spelling, decomposition, cross-bar ties, chords/rests) without the engraver. v1 reads only the written `dur`; the refinements are the next line.
-- ⬜ **G31g — Engraving refinements** — **promoted out of this section to the `N` track** ("N track — engraving: what the encoder still owes the page", N1-N4). It stopped being one refinement the day it was sized: the encoder's four owings split into a surface decision, two additive passes and one that changes the tick base, taken one at a time. The G31 section stays the record of how the widget got here; what it still owes is numbered there.
+- ⬜ **G31g — Engraving refinements** — **promoted out of this section to the `N` track** ("N track — notation: the score model, and what is written on it", N1-N5). It stopped being one refinement the day it was sized, and stopped being an encoder's refinements the day the layer was read against itself: the return path already existed and was being written by hand, each direction went through a different intermediate, and `Score` turned out to be an action API with no structure under it. So what G31g owed is now owed by a **model** — two durational structures in exact rationals, in the core — and the four refinements are distributed over its emission. The G31 section stays the record of how the widget got here; what it still owes is numbered there.
 - ✅ **G31h — The notation layer moves to `clausters-notation`/`core`/`ffi`** *(done 2026-07-24)*: the entire notation layer used to live in the Python client (`clausters.gui.notation`) — the `ctypes` binding to libverovio, `svg_to_display_list`, the editable `Score` model (`transpose`, `undo`/`redo` over its own MEI-snapshot stack, the edit→commit→reload cycle) and the `from_notes`/`from_timeline` encoder. The host is deliberately **dumb about the domain** (it draws the display list and reports gestures as requests, holding no score), which keeps it reusable across languages — but it pushes all the notation *logic* onto the client, so a second client (JS/wasm) would reimplement every line. Per the cross-client rule (`clients/python/PLAN.md`, "Build strategy") that logic moves down and each client rebinds it. **The planning pass settled the shape — this is now a build, not a design:**
   - **Where the native half lives.** libverovio is C++; `clausters-core` is deliberately `build.rs`-free and wasm-clean, so it cannot host the binding. A new **`clausters-notation`** crate (its own `build.rs`, the libverovio binding, the `Score` model) owns everything native, behind a `verovio` feature **default-off** for flexibility — the Python reference wheel turns it on (`build_native.py`), exactly as it already stages `libverovio.so`. `clausters-ffi` re-exports its `extern "C"` surface. Linking/staging mirror libfaust: `DT_RPATH` of `$ORIGIN`/`$ORIGIN/../_libs`/prefix, `CLAUSTERS_VEROVIO` to locate, the SMuFL resource dir resolved inside the Rust binding.
   - **Where the pure half lives.** The SVG→display-list walk (moving to Rust XML parsing via `roxmltree`, wasm-safe — no duplicate parser per client) and the MEI encoder go into **`clausters-core`** behind an opt-in `notation` feature, so they compile to wasm and a future JS/wasm client reuses them. The `Event`/`Timeline`→*voice* reduction reads client-native types and **stays in each client**; the core exposes `voice_to_mei(voice, meter, clef, key)` — that is where the agnostic/shell line falls.
@@ -2113,130 +2113,291 @@ What deliberately stays out: DR14 and the other publisher-specific scores (they 
 
 **What stays out of the track**: the log itself and everything about its contents (the crate's O5); undo of node-tree commands (playing a synth is not an edit) and of navigation (a view is not data); a history that outlives its session; and any merge or conflict machinery, which only a persisted, two-writer history would need — this one has neither.
 
-## N track — engraving: what the encoder still owes the page
+## N track — notation: the score model, and what is written on it
 
 G31 built the widget and G31h moved the whole notation layer into the workspace
 (`clausters-notation` + `clausters_core::notation`), where every client rebinds
-it. What neither of them did is *deepen the encoding*: v1 writes a monophonic
-run of plain note values, and the four things it cannot say — performance
-nuance, tuplets, real polyphony, tonal spelling — were carried as one line
-(G31g) until they were sized. They are not one thing, so they are numbered
-here.
+it. What neither of them did is give notation a **model**. v1 writes a
+monophonic run of plain note values out of a client's `Event`s, and the four
+things it cannot say — performance nuance, tuplets, real polyphony, tonal
+spelling — were carried as one line (`G31g`) until they were sized. Sizing them
+first split them into four encoder refinements; reading the layer against
+itself split them differently, and the track below is the second reading.
 
-**What sizes this whole track, and it is not obvious until it is looked at: we
-write MEI and verovio lays it out.** Everything visual belongs to the engraver
-the moment the document says it — the tuplet bracket and its number, the stem
-split between layers, a staccato placed against the stem verovio chose, the
-brace of a grand staff, the cue-size of a grace note. So what is left to
-implement is only what decides *what the document says*: the client's surface
-for saying it, and the arithmetic that lays a voice out. That is why one of
-these is a surface decision, two are additive, and exactly one negotiates with
-the representation.
+### What the layer turned out to be missing
 
-**Nothing in this track changes the host.** The display list is a codepoint
-table plus `glyph`/`line`/`fill` prims, and the SVG walk dispatches by tag
-(`use`/`path`/`polygon`/`rect`/`ellipse`/`text`), so new engraving draws with no
-line touched in either. The one host-side whitelist, `is_element_class`
-(`note`/`rest`/`mRest`), governs *hit-test identity* rather than drawing: a
-grace note is already a `note`; a tuplet bracket or a dynamic draws without
-being separately clickable, which is what is wanted.
+Four findings, taken in the order they were found. Each one moves the work
+somewhere the encoder refinements could not reach.
 
-**And nothing in it is a port debt.** The encoding is the shared half, and
-`clients/web/PLAN.md` already records that richer encoding extends it so both
-clients gain it at once. A new C ABI symbol still owes its `n/a` row in
-`docs/bindings.md` — one line, not a port.
+**The inverse path already exists, and it is written by hand.**
+`Score.display_list()` returns a `notes` layer — `{"t", "dur", "pitch", "id"}`,
+ms and MIDI pitch — which is notation to events, and
+`clients/python/examples/editors/score_from_data.py` turns it into a `Timeline`
+with `Event(midinote=…, dur=…, amp=0.11)`. That hardcoded amplitude is the
+finding: the page has no dynamics to give, so the example invents one. By this
+project's own rule an example that cannot be written with the supported surface
+is reporting a missing feature, and this one has been reporting it since it was
+written.
 
-- ⬜ **N1 — How a client says it: the note-entry surface**. The surface comes
-  first because the three milestones after it all read from it, and if each
-  invents its own convention the encoder grows three. Today the entry points are
-  `from_notes` (a run of `Event`s, reading `midinote` and `dur`) and
-  `from_timeline`, and the shared wire is the `Slot` — `{"midis": [...],
-  "ticks": n}`, deliberately total, a slot with no pitches *being* a rest. Both
-  are exactly wide enough for v1 and carry nothing else. **The question is where
-  notation intent lives**, and it has three candidate answers that are not
-  equivalent: **reserved `Event` keys** (`artic`, `dynam`, `grace`, `voice`),
-  which costs nothing to write and puts notation vocabulary into a namespace the
-  sequencer also owns; **a `notation=` argument** parallel to the data, which
-  keeps the two vocabularies apart and makes the common case wordier; or **a
-  score-entry API of its own**, a builder that produces slots directly, which is
-  honest for someone *writing music* and a second surface for someone who
-  already has a `Timeline`. Whichever wins, the `Slot` grows optional fields to
-  carry it, and it must stay total — an old slot with none of them is still
-  valid, which is what keeps this from being a wire break. **The other half of
-  the same decision** is what the reduction does with *simultaneity*: v1
-  collapses events sharing a beat into a chord and clamps to the shortest `dur`,
-  which is the assumption N3 lifts, so the surface has to be able to say "these
-  are two voices" before N3 can honour it. **Acceptance:** the chosen surface is
-  written down with the two it beat and why; a phrase carrying no notation
-  intent produces exactly the slots it produces today; the reference client's
-  surface is mirrored in the web plan rather than left to be re-derived.
+**Each direction goes through a different intermediate.** Forward is `Event` →
+`Slot` (the client's half) → MEI (`voice_to_mei`, the shared half). Backward is
+MEI → verovio → `NoteEvent` (`t`/`dur`/`pitch`/`id`, already flattened to ms) →
+whatever the driver assembles. They are not one seam walked in two directions:
+the `Slot` — the deliberate, total, ABI-crossing form — takes no part in the
+return. That is why the forward path can be enriched and the return cannot;
+there is nowhere to put what is enriched.
 
-- ⬜ **N2 — The markup the engraver already knows**: articulations, dynamics and
-  hairpins, grace notes, tonal spelling and the suppression of redundant
-  accidentals, plus **written duration beyond `dur`** — reading
-  `sustain`/`legato`/`stretch` so a note is drawn shorter than its slot,
-  staccato where that is what it means. Every one of these is *emission*, not
-  analysis: optional fields on the slot, branches in `element`/`note_xml`, and
-  the reads N1 settled. **The accidental one is the finding worth keeping**: it
-  is not a per-measure state machine but the difference between the *written*
-  accidental (`<accid>`, which forces the print — what `note_xml` emits today)
-  and the *sounding* one (`@accid.ges`), which hands the decision to the
-  engraver that already holds the key signature. Verify before switching, since
-  it also changes what is drawn on the notes that legitimately carry one:
-  engrave one phrase both ways and compare. No new symbol, so
-  `CORE_ABI_VERSION` does not move. **Acceptance:** a phrase with staccato, a
-  hairpin and a grace note engraves with each mark present and placed by
-  verovio; a scale in a key with a signature prints no accidental its armature
-  already implies, while a chromatic note still prints its own; a note whose
-  written duration is half its slot is drawn short.
+**`Score` is an action API, not a data structure.** There *is* an editable score
+today (`clausters_notation::Score`: MEI document, `edit`/`transpose`,
+undo/redo), but it is an opaque handle to verovio's document — it cannot be
+walked, inspected or composed, only sent actions keyed by `xml:id`. Structural
+editing needs a structure, so "add score editing" and "build the model" are the
+same work.
 
-- ⬜ **N3 — Polyphony: several voices, several staves**: the refinement composes
-  several `voice`s *above* the monophonic `voice_to_mei`, which stays the
-  per-layer primitive rather than being widened — the shape G31f fixed and this
-  milestone honours. Three costs, and only one is an algorithm. The
-  **refactor**: the barring loop and the measure assembly are one function
-  today, so they separate and N voices merge by measure index. The
-  **algorithm**, which is each client's half because it reads client-native
-  types: turning overlapping events into layers rather than a chord, on whatever
-  N1 gave it to say so with. The **ABI round**, since a polyphonic entry point
-  is a new symbol: `CORE_ABI_VERSION` moves, `docs/bindings.md` grows a row
-  (`tests/bindings.rs` fails without it), and
-  `test_native_parity.py`/`_native.py` follow — the round A1 already walked.
-  **One found-by-use it has to fix, or the cursor lies**: `staff_systems`
-  (`clausters_core::notation::cursors`) clusters systems on "the gap between
-  systems is far wider than one between staff lines", which reads a two-staff
-  grand staff as *two* systems and gives the playback cursor the wrong span.
-  **Acceptance:** two voices of different values on one staff engrave as two
-  layers with verovio's own stem split; a piano texture engraves on two staves
-  under one brace; the cursor spans the whole grand staff, not half of it; a
-  monophonic voice stays byte-identical to what the encoder writes today.
+**Owning the model makes verovio a layout engine again, and that is already
+half-paid.** The MEI *writer* is ours (`voice_to_mei`); the undo stack is ours
+(MEI snapshots, because verovio's cannot survive the reload its own stale caches
+force); the edit cycle is action → commit → reload for the same reason. We
+already pay the price of not trusting its editor without taking the benefit.
+The benefit is concrete: `third_party/verovio.pin` names a `develop` commit
+rather than a release tag **only** because `Toolkit::Edit()` is dead in 6.2.1
+(`docs/decisions.md`, "Score editing: verovio's editor is dead in the released
+wheel"). A model that rewrites its own MEI and re-engraves does not call the
+editor, and the pin is free to follow releases.
 
-- ⬜ **N4 — Tuplets, and the tick base they need**: the only milestone that
-  changes the representation rather than extending it, which is why it rides
-  alone and why nothing above waits on it. `TPW = 32` is the encoder's declared
-  foundation — every duration is an integer number of 32nds, *so that* barline
-  splitting and tie decomposition are exact integer arithmetic — and a triplet
-  is a third, which does not live on that grid. The decision **is** the
-  milestone: raise the base to one that divides by three (and then how far —
-  quintuplets?), or detect tuplet groupings by ratio and leave the grid alone.
-  Either way `ticks` means something new **on the wire**, which reaches the slot
-  JSON, each client's beats->ticks reduction and the byte-identical parity
-  vectors that currently pin the encoder. Verovio draws the bracket, the number
-  and the rebeaming from `<tuplet num numbase>`; what cannot be delegated is
-  **detecting** the group — the engraver infers nothing — and reconciling it
-  with the barline split, since a tuplet does not break at an arbitrary point.
-  **Acceptance:** three eighths in the time of two engrave as a bracketed
-  triplet and sound on the right beats; a tuplet that would cross a barline is
-  either kept whole in one measure or refused with a message saying so, never
-  silently snapped; every voice with no tuplet in it engraves byte-identically
-  to before the base moved.
+### Where the model lives, and why it is not a client module
+
+**In `clausters_core::notation`, whole.** The axis is not "general versus
+notation-specific" — it is **pure versus platform**. `clausters-notation` is the
+native libverovio binding: it has a `build.rs`, depends on C++, sits behind a
+default-off `verovio` feature and does not compile to wasm, and verovio's own
+wasm build only emits SVG, so in a page that crate does not exist at all. The
+precedent is already built and is exactly this case: the `Engraver` **trait** is
+in core, and only the layout engine is per-platform — `impl Engraver for
+Toolkit` in `clausters-notation` (native), `impl Engraver for JsEngraver` in
+`clausters-core-web` (the page). `Score`, `NoteEvent`, `Page`,
+`svg_to_display_list` and `voice_to_mei` are already core's.
+
+So the model and its algebra go beside them, and `clausters-notation` gains
+nothing: it stays the native `Engraver`. **A Python/TypeScript module holding
+the model would reopen G31h**, which moved this layer down for exactly this
+reason ("it pushes all the notation logic onto the client, so a second client
+would reimplement every line"), and would break the standing rule that the logic
+is in Rust and there is one of it. MEI names no language's types, so nothing
+about the model is client-native; what stays in each client is only the
+`Event`/`Timeline` reduction, which is where the line already falls.
+
+### What the model is
+
+**Two durational structures that coexist, neither containing the other.**
+
+- The **metric layout** — measures and meter changes. It does not sound. It is
+  a structure of its own, addressable and editable, carrying meter changes, an
+  anacrusis and irregular bars; today it is a `"4/4"` string the encoder uses to
+  split and then discards.
+- The **content** — voices of notes, chords and rests. It sounds. It is flat:
+  notes are *not* nested inside measures, because containment breaks under every
+  algebraic operation (augment a phrase and the containment is wrong).
+
+The two are independent, and that independence is what makes ordinary editing
+expressible at all. Three cases that cannot even be stated today: *transpose
+measures 3 to 10* (the grid resolves a span of musical time and the operation
+applies to the content in it — the measure is an **addressing system**, a role
+it cannot have while it is a by-product of emission); *augment a phrase and
+reorganize it against the current measures* (the content changes length, the
+grid stands, the barring is recomputed); *change the meter* as an operation on
+the grid itself rather than an argument to the encoder.
+
+It also makes **metric position** computable, which is meaning and not layout:
+accenting beats 1 and 3 of a 4/4 is a function of position against the grid, and
+only a grid you can query can answer it. Note that this is style, not notation —
+whoever interprets it must be replaceable.
+
+MEI nests (`<measure><staff><layer>`), so emission **projects** flat content
+onto the grid: the split-and-tie `voice_to_mei` already does. A flat model and a
+nested document are not in conflict.
+
+**Durations are exact rationals, not ticks.** `TPW = 32` is declared today as
+the encoder's foundation — every duration an integer count of 32nds, *so that*
+barline splitting and tie decomposition are exact integer arithmetic. Exactness
+comes from the rational instead, and a triplet eighth is `1/12`: exact as a
+rational, unrepresentable on that grid. Ticks are then **one edge conversion
+among several** — ms for MIDI, seconds or beats for OSC, `@dur`/`@dots` for MEI
+— each done at its own boundary, exactly as a duration is converted today for
+the two protocols. The `Slot` and its `ticks` stay as the v1 wire form; `TPW`
+stops being a foundation and becomes an encoder detail.
+
+**What is well written comes before what is heard.** The first thing asked of a
+score editor is that the score be *right on the page*; playing it matters, but
+only if the player honours what the symbols mean. That orders the track (the
+emission milestone precedes the interpreter) and it also says what the return
+path is: not a converter but an **interpreter** — staccato shortens, a dynamic
+sets amplitude, a slur binds, a tuplet divides the time, a repeat expands, the
+metric position accents. It can wait; what cannot wait is that the model
+*store* the symbols, because an interpreter can be written later against symbols
+that were kept and never against symbols that were dropped.
+
+### Three constraints on the work
+
+**The algebra must not become a second vocabulary.** Concatenating, stacking,
+repeating, transposing, augmenting is composition, and this project already has
+composition in two places: the arrangement's `Aggregate` with its **concrete**
+and **logical** kinds, and the patterns. A score algebra does not replace the
+patterns — a pattern is forward-only and may be endless, a score is finite,
+random-access and carries spelling, voices and beaming, which is precisely the
+**generator**/**generated** distinction the arrangement already draws. Where an
+operation is the same operation, it takes the same name it has there.
+
+**The scope is closed by what is emitted, not by the specification.** MEI is
+enormous and this is not an MEI library. The model covers what the encoder
+writes plus what each milestone below adds — a list that grows per milestone and
+is written down each time.
+
+**This track now reaches the host.** The earlier reading of it claimed nothing
+here changes the host, and that stops being true once a page can be *edited* by
+hand: note entry, changing a value and adding a mark are new gestures, and
+`is_element_class` (`note`/`rest`/`mRest`) — which governs hit-test identity —
+will have to widen. It stays true for everything that is only *drawn*: the
+display list dispatches by tag, so a tuplet bracket, a hairpin or a dynamic
+draws with no host line touched and is deliberately not separately clickable.
+
+**And it is not a port debt.** The encoding and the model are the shared half,
+and `clients/web/PLAN.md` already records that richer encoding extends it so
+both clients gain it at once. New C ABI symbols owe their rows in
+`docs/bindings.md` (`tests/bindings.rs` and `test_native_parity.py` fail without
+them) and move `CORE_ABI_VERSION`; the model is a large enough surface that this
+is a real ABI round, not one line.
+
+- ⬜ **N1 — The model: two durational structures, in rationals**. The metric
+  layout and the content, each addressable, neither containing the other, in
+  `clausters_core::notation`. Durations and positions are exact rationals; the
+  grid carries meter changes, an anacrusis and irregular bars; the content is
+  flat voices of notes, chords and rests carrying pitch **with its spelling**
+  (`F#` and `Gb` are one `midinote` and two notes on the page), ties, and the
+  optional per-note marks the milestones below fill in. The document header —
+  clef, key, staff grouping — is part of it, since it is what `voice_to_mei`
+  takes as arguments today and what a second staff needs to be more than a
+  string. What crosses the ABI, and in what form, is settled here: `Slot` stays
+  the v1 wire and the model is the thing above it. **Acceptance:** the three
+  operations that cannot be stated today can each be *written down* against the
+  model (transposing a span addressed by measure, augmenting a phrase, changing
+  the meter), even where they are not implemented until N2; a voice with no
+  meter change and no marks round-trips to the same MEI `voice_to_mei` writes
+  today, byte for byte; the model compiles to wasm with `clausters-notation`
+  absent; `docs/decisions.md` carries why it is in core rather than in the
+  verovio crate, and why the grid is not derived.
+
+- ⬜ **N2 — The algebra, and the edit operations**. Three families over the two
+  structures, and the whole point of the model. **On the content**: concatenate,
+  stack voices, repeat, transpose, retrograde, invert, augment and diminish.
+  **On the grid**: insert or change a meter, add or remove measures. **Addressed
+  by the grid**: any content operation applied to a span named in measures. The
+  editing verbs (insert a note, delete one, change a value, tie, split a voice)
+  are the same family — they rewrite the model, and the page is re-engraved from
+  it, so **verovio is not asked to edit**. Names come from the arrangement and
+  the patterns wherever the operation is theirs. **Acceptance:** the composition
+  of two operations is the operation on the composed score (concatenating two
+  scores then transposing equals transposing each then concatenating), pinned by
+  tests; an operation on the content leaves the grid untouched and vice versa; a
+  phrase augmented against a fixed grid re-bars correctly, ties across the new
+  barlines and sounds the augmented durations; `Score`'s edit path stops calling
+  `Toolkit::Edit`, and the undo stack — already ours — steps over model
+  snapshots rather than MEI text.
+
+- ⬜ **N3 — That it is well written**. The emission of everything the model can
+  now say, judged **by eye** on the page, which is the first thing a score
+  editor owes. This is where the four old refinements land as *emission* rather
+  than as encoder branches: **tuplets** (rationals make them representable in
+  N1; here the encoder detects the grouping and emits `<tuplet num numbase>`,
+  reconciled with the barline split, verovio drawing the bracket, the number and
+  the rebeaming); **polyphony** (several voices on a staff, several staves under
+  a brace — in the model this is stacking, not a refactor of the encoder);
+  **the markup verovio already knows** (articulations, dynamics and hairpins,
+  grace notes, ornaments, stem direction) and **tonal spelling**, including the
+  difference between the *written* accidental (`<accid>`, forced) and the
+  *sounding* one (`@accid.ges`, which hands the decision to the engraver holding
+  the key signature); and **written duration** shorter than the slot. Two
+  cautions the surface work found: reading `legato` as staccato would restyle
+  every existing score, since `0.8` is an audio default and not an intention,
+  and the same holds for `amp` at `0.1` as a dynamic — notation intent is
+  declared, never inferred from a performance default. The **hand that edits**
+  belongs here too and may be taken on its own: the host's note-entry gestures
+  and the widening of `is_element_class`. **One found-by-use it has to fix, or
+  the cursor lies**: `staff_systems` (`clausters_core::notation::cursors`)
+  clusters systems on "the gap between systems is far wider than one between
+  staff lines", which reads a two-staff grand staff as *two* systems and gives
+  the playback cursor the wrong span. **Acceptance:** three eighths in the time
+  of two engrave as a bracketed triplet; a tuplet that would cross a barline is
+  kept whole or refused with a message, never silently snapped; a piano texture
+  engraves on two staves under one brace and the cursor spans both; a scale in a
+  key with a signature prints no accidental its armature implies while a
+  chromatic note prints its own; a phrase with staccato, a hairpin and a grace
+  note engraves with each mark placed by verovio; a score with none of this is
+  byte-identical to what the encoder writes today.
+
+- ⬜ **N4 — The interpreter: notation to events**. The return path, and the
+  reason it is a milestone rather than a conversion: the player must **honour
+  what the symbols mean**. Staccato shortens, a dynamic sets amplitude, a slur
+  binds, a tuplet divides the time, a repeat expands, and the metric position
+  accents. Numeric and timing rules, so it lives in the core and there is one of
+  it — with the default interpretation **replaceable**, since accenting 1 and 3
+  of a 4/4 belongs to a style and not to the notation. It needs the one thing
+  notation cannot carry, a **staff-to-instrument binding**, and the project has
+  the precedent and the wording for it (`docs/decisions.md`, "a buffer sounds
+  through an instrument"): explicit at render time, never inferred from the
+  page. What it replaces is named: `notation.to_notes`/`to_timeline` instead of
+  the hand-written converter in `examples/editors/score_from_data.py`, whose
+  `amp=0.11` is the missing feature this closes. The flat `notes` layer does not
+  go away — it is what the cursor and the timemap need — it stops being the only
+  way back. **Acceptance:** the example's converter is deleted and the example
+  reads the same or better; a staccato note sounds shorter than a plain one of
+  the same value and a hairpin is heard across its span; a score composed
+  algorithmically in N2 plays; an interpretation is overridden without editing
+  the core; the round trip is honest — what a trip through notation loses
+  (exact timing, microtones, continuous amplitude, the instrument) and what a
+  trip through events loses (spelling, stems, beaming, which voice) is written
+  down rather than found.
+
+- ⬜ **N5 — Events to notation, enriched**. The forward path catches up with the
+  model: the client-side reduction reads more than `midinote` and `dur`, and the
+  slot's optional fields carry it. This is last on purpose — it works at v1
+  level today, and every field it adds is a field the model already holds, so
+  it is filling a structure rather than growing one. The surface question the
+  earlier reading made its first milestone is settled here and is smaller than
+  it looked, because the three candidates are not competitors but carriers for
+  three different classes of data: **per-note intent** (articulation, dynamic,
+  grace, spelling) rides the slot, which is symmetric — the same field is
+  written going out and read coming back; **spans and document-level material**
+  (slurs, hairpins, tuplet groups, meter, repeats, the brace) cannot live on an
+  event at all and travel beside the voice, as the model's grid and header;
+  **bindings** (staff to instrument, voice to channel) are neither and are
+  N4's. Whatever a client reads from an `Event`, the rule the fields obey is
+  that they are **musical facts, not encoder directives** — `articulations:
+  ["staccato"]` and not `shorten_drawn_value`, `accidental: written | sounding`
+  and not `print_accid` — because a fact can be read back by N4 and a directive
+  can only be written. Growing `_RESERVED` is part of the correctness of any
+  reserved-key spelling, not a tidy-up: `_control_args` forwards every numeric
+  non-reserved key to the synth, and `bool` is an `int` in Python, so a stray
+  `grace=True` is sent as a control `1.0` and ignored in silence.
+  **Acceptance:** a phrase carrying no notation intent produces exactly the
+  slots it produces today; a phrase carrying it engraves the marks N3 emits; a
+  score written from events, interpreted back by N4 and written again is stable
+  in what both directions agree on, and what they do not is the documented loss.
+
+**What became of the earlier numbering.** `G31g` was one line; the first sizing
+made it `N1`–`N4` (surface, markup, polyphony, tuplets). The four are all still
+here and none of them is a milestone any more: the **surface** is N5's, being a
+question about carriers rather than the decision everything waited on; the
+**markup**, **polyphony** and **tuplets** are all N3, as emission over a model
+that can represent them, with tuplets additionally answered in N1 by rationals —
+which is why "raise the tick base" is no longer a decision anyone has to take.
 
 **Closing any of these** includes the docstrings that currently promise the work
 as future (`clients/python/clausters/gui/notation/mei.py` says "tuplets are the
 engraving-refinements milestone" and "mixed-duration polyphony is the
 engraving-refinements milestone"), the notation pages of the client's book, and
-`examples/editors/score_from_data.py`, which is this feature's manual test surface
-and grows the case the milestone adds.
+`examples/editors/score_from_data.py`, which is this feature's manual test
+surface and grows the case the milestone adds.
 
 ## ✅ In-browser audio engine (Web Audio / AudioWorklet) — shipped as the server's B track
 

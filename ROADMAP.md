@@ -32,7 +32,7 @@ Where the work lives:
 | Track | File | What it is |
 |---|---|---|
 | `Ox` | `crates/clausters-document/PLAN.md` | the document: tree, intents, log, session, bindings |
-| `Dx`, `Hx`, `Ax`, `Kx`, `Ex`, `Gx`, `Lx`, `Px`, `Nx` | `clients/gui/PLAN.md` | the GUI host: gestures, undo from the hand, measured layers, the widget API, the patcher, engraving |
+| `Dx`, `Hx`, `Ax`, `Kx`, `Ex`, `Gx`, `Lx`, `Px`, `Nx` | `clients/gui/PLAN.md` | the GUI host: gestures, undo from the hand, measured layers, the widget API, the patcher, the score model |
 | `Cx` | `clients/python/PLAN.md` | the Python client |
 | `Wx` | `clients/web/PLAN.md` | the web client |
 | `Mx`, `Sx`, `Tx`, `Rx`, `Bx`, `Ux` | `PLAN.md` (root) | the server, and its engine in the browser (`Bx`) |
@@ -156,14 +156,20 @@ its plan; the plan is where its acceptance is read.
 
 ### Ready — no decision in front of them
 
-- ⬜ **The `N` track — engraving refinements**, `N1`-`N4` *(`clients/gui/PLAN.md`,
-  "N track — engraving: what the encoder still owes the page")*. What was one
-  line as `G31g` was sized and split: the note-entry surface (`N1`, a decision
-  the other three read from), the markup verovio already knows (`N2`), polyphony
-  (`N3`) and tuplets with the tick base they need (`N4`, the only one that
-  changes the representation). Not permanent limits: a refinement pass on the
-  same encoder, behind the seams that were left for it, so it extends rather
-  than rewrites. Taken one at a time, and nothing waits on any of them.
+- ⬜ **The `N` track — notation: the score model**, `N1`-`N5`
+  *(`clients/gui/PLAN.md`, "N track — notation: the score model, and what is
+  written on it")*. What was one line as `G31g`, and then four encoder
+  refinements, became a **model** once the layer was read against itself: the
+  return path already existed and was being written by hand in an example, each
+  direction went through a different intermediate, and the editable `Score` is
+  an action API with no structure under it. The track builds that structure in
+  `clausters_core::notation` — two durational structures that do not contain
+  each other, the metric layout and the content, in exact rationals — then its
+  algebra and edits (`N2`), the emission judged by eye (`N3`, where tuplets,
+  polyphony, markup and spelling all land), the interpreter that plays what the
+  symbols mean (`N4`) and the enriched forward path (`N5`). Taken one at a
+  time; nothing outside the track waits on any of them, and owning the model
+  frees `third_party/verovio.pin` to follow releases.
 
 ### Waiting on a decision
 
