@@ -36,7 +36,31 @@ export { Score, engrave, pageJson, svgToDisplayList } from "./engraver.ts";
 export type { EngraveOptions, Page } from "./engraver.ts";
 export { fromNotes, fromTimeline } from "./mei.ts";
 export type { MeiOptions, Slot } from "./mei.ts";
-export { apply, fromVoice as sheetFromVoice, measures, ops, toMei, transpose } from "./sheet.ts";
+export {
+    apply,
+    concat,
+    del,
+    fromVoice as sheetFromVoice,
+    insert,
+    insertMeasures,
+    invert,
+    measures,
+    ops,
+    pitch,
+    removeMeasures,
+    repeat,
+    retrograde,
+    setDur,
+    setMeter,
+    setPitches,
+    silence,
+    stack,
+    stretch,
+    tie,
+    toMei,
+    toVoice,
+    transpose,
+} from "./sheet.ts";
 export type { Op, OpSpec, Ratio, Sheet, TransposeOptions } from "./sheet.ts";
 export { scoreView, transport } from "./view.ts";
 export type { ScoreViewOptions } from "./view.ts";

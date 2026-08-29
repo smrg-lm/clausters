@@ -176,6 +176,12 @@ impl Marks {
 
 /// One durational item of a voice: a note or chord, or a rest.
 ///
+/// Every item carries an **id**, which is how an edit names it. Not an index:
+/// an index moves when anything before it is inserted or removed, so a caller
+/// holding one would be addressing a different note after every edit but its
+/// own. The id is minted once, travels with the item through every operation,
+/// and is what a client keeps when it wants to come back to *this* note.
+///
 /// A note with no pitches is not representable — that is what a rest is — so the
 /// two are separate variants rather than one with an empty list. (The v1 wire
 /// [`super::Slot`] does spell a rest as an empty pitch list, because a wire form
@@ -186,6 +192,10 @@ impl Marks {
 pub enum Item {
     /// A note (one pitch) or chord (several), lasting `dur`.
     Note {
+        /// This item's identity, stable across every operation. `0` means one
+        /// was never assigned, which [`Sheet::assign_ids`] fixes.
+        #[serde(default)]
+        id: u64,
         /// The written pitches, low to high by convention but not required.
         pitches: Vec<Pitch>,
         /// The written value, in whole notes.
@@ -201,6 +211,9 @@ pub enum Item {
     },
     /// A rest, lasting `dur`.
     Rest {
+        /// This item's identity, stable across every operation.
+        #[serde(default)]
+        id: u64,
         /// The written value, in whole notes.
         dur: Ratio,
     },
@@ -210,8 +223,35 @@ impl Item {
     /// The written value of this item.
     pub fn dur(&self) -> Ratio {
         match self {
-            Item::Note { dur, .. } | Item::Rest { dur } => *dur,
+            Item::Note { dur, .. } | Item::Rest { dur, .. } => *dur,
         }
+    }
+
+    /// This item's identity.
+    pub fn id(&self) -> u64 {
+        match self {
+            Item::Note { id, .. } | Item::Rest { id, .. } => *id,
+        }
+    }
+
+    /// The same item with a different written value — how a duration edit and
+    /// the time-scaling operations rebuild one without restating its pitches.
+    pub fn with_dur(&self, dur: Ratio) -> Item {
+        let mut out = self.clone();
+        match &mut out {
+            Item::Note { dur: d, .. } | Item::Rest { dur: d, .. } => *d = dur,
+        }
+        out
+    }
+
+    /// The same item under a different id — what a copy needs, since two items
+    /// sharing an id would both answer to one edit.
+    pub fn with_id(&self, id: u64) -> Item {
+        let mut out = self.clone();
+        match &mut out {
+            Item::Note { id: i, .. } | Item::Rest { id: i, .. } => *i = id,
+        }
+        out
     }
 
     /// The pitches this item sounds — empty for a rest.
@@ -219,6 +259,15 @@ impl Item {
         match self {
             Item::Note { pitches, .. } => pitches,
             Item::Rest { .. } => &[],
+        }
+    }
+
+    /// A rest of the same length, keeping the id — what silencing a note is,
+    /// as against deleting it, which would shorten the voice.
+    pub fn silenced(&self) -> Item {
+        Item::Rest {
+            id: self.id(),
+            dur: self.dur(),
         }
     }
 }
@@ -426,6 +475,10 @@ impl Grid {
 /// no client language in the process at all.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Sheet {
+    /// The next id to mint. `0` reads as "nothing has been minted yet", which
+    /// is what a sheet written by hand or by an older client arrives as.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub next_id: u64,
     /// The metric layout.
     #[serde(default)]
     pub grid: Grid,
@@ -442,9 +495,14 @@ fn default_key() -> String {
     "C".to_string()
 }
 
+fn is_zero(n: &u64) -> bool {
+    *n == 0
+}
+
 impl Default for Sheet {
     fn default() -> Sheet {
         Sheet {
+            next_id: 0,
             grid: Grid::default(),
             key: default_key(),
             staves: vec![Staff::default()],
@@ -471,6 +529,59 @@ impl Sheet {
     /// to — how an operation walks the content without caring how it is split.
     pub fn voices_mut(&mut self) -> impl Iterator<Item = &mut Voice> {
         self.staves.iter_mut().flat_map(|s| s.voices.iter_mut())
+    }
+
+    /// Every voice on the sheet, in reading order.
+    pub fn voices(&self) -> impl Iterator<Item = &Voice> {
+        self.staves.iter().flat_map(|s| s.voices.iter())
+    }
+
+    /// Mint one id. Every item an operation creates takes one from here, so no
+    /// two items in a sheet answer to the same edit.
+    pub fn mint(&mut self) -> u64 {
+        self.next_id = self.next_id.max(1);
+        let id = self.next_id;
+        self.next_id += 1;
+        id
+    }
+
+    /// Give every unidentified item an id, and put the counter past every id
+    /// already in use.
+    ///
+    /// Called before any operation, so a sheet written by hand, parsed from an
+    /// older payload, or built by a caller who never thought about identity
+    /// behaves exactly like one this layer minted — an edit can name any note
+    /// in it, and nothing collides.
+    pub fn assign_ids(&mut self) {
+        let used = self
+            .voices()
+            .flat_map(|v| v.items.iter())
+            .map(Item::id)
+            .max()
+            .unwrap_or(0);
+        self.next_id = self.next_id.max(used + 1);
+        let mut next = self.next_id;
+        for voice in self.staves.iter_mut().flat_map(|s| s.voices.iter_mut()) {
+            for item in &mut voice.items {
+                if item.id() == 0 {
+                    *item = item.with_id(next);
+                    next += 1;
+                }
+            }
+        }
+        self.next_id = next;
+    }
+
+    /// The item with this id, and where it is — `(staff, voice, index)`.
+    pub fn locate(&self, id: u64) -> Option<(usize, usize, usize)> {
+        for (si, staff) in self.staves.iter().enumerate() {
+            for (vi, voice) in staff.voices.iter().enumerate() {
+                if let Some(ii) = voice.items.iter().position(|i| i.id() == id) {
+                    return Some((si, vi, ii));
+                }
+            }
+        }
+        None
     }
 }
 
@@ -578,6 +689,7 @@ mod tests {
                 clef: "G2".into(),
                 voices: vec![Voice {
                     items: vec![Item::Note {
+                        id: 1,
                         pitches: vec![Pitch {
                             step: Step::C,
                             alter: 0,

@@ -335,14 +335,15 @@ def test_the_catalog_and_this_shell_name_the_same_verbs():
     payload through one symbol, so a verb that reached only one client would
     drift silently — the same structural blindness the props manifest has.
     """
-    catalogued = {spec["op"] for spec in notation.ops()}
-    # The shell's helpers are named after their verb, one function each.
-    exposed = {name for name in catalogued if hasattr(notation, name)}
-    assert catalogued == exposed, (
-        f"the core knows {sorted(catalogued - exposed)} with no helper here"
-    )
-    for spec in notation.ops():
-        assert set(spec["required"]) <= {"semitones", "steps", "span"}
+    catalogued = [spec["op"] for spec in notation.ops()]
+    # The shell's helpers are named after their verb, one function each. This
+    # client's spelling *is* the catalog's, so there is no mapping to get wrong
+    # -- the web client needs one, since `delete` is a reserved word there.
+    missing = [verb for verb in catalogued if not callable(getattr(notation, verb, None))]
+    assert missing == [], f"the core knows {missing} with no helper here"
+    # and the catalog is not empty, which is how this test would pass by
+    # checking nothing at all
+    assert len(catalogued) >= 17, f"only {len(catalogued)} verbs in the catalog"
 
 
 def test_a_voice_lifts_into_the_model_and_writes_the_same_bytes():
@@ -399,3 +400,54 @@ def test_what_is_refused_says_why_and_changes_nothing():
     sheet["staves"][0]["voices"][0]["items"][0]["dur"] = [1, 12]
     with pytest.raises(ValueError, match="tuplet"):
         notation.to_mei(sheet)
+
+
+def _items(sheet):
+    return sheet["staves"][0]["voices"][0]["items"]
+
+
+def test_the_algebra_rearranges_a_score_and_composes():
+    four = notation.sheet_from_voice([{"midis": [60], "ticks": 8}] * 4)
+
+    # one score after another
+    assert len(_items(notation.concat(four, four))) == 8
+    # and at the same time, as voices or as staves
+    assert len(notation.stack(four, four)["staves"][0]["voices"]) == 2
+    assert len(notation.stack(four, four, as_staff=True)["staves"]) == 2
+    # a stretch does not move a barline: four quarters doubled is two bars
+    assert _items(notation.stretch(four, (2, 1)))[0]["dur"] == [1, 2]
+    assert notation.to_mei(notation.stretch(four, (2, 1))).count("<measure") == 2
+    # reversing keeps the length
+    assert len(_items(notation.retrograde(four))) == 4
+    # and composing two operations is the operation on the composed score
+    def up(s):
+        return notation.transpose(s, 2)
+    assert notation.to_mei(up(notation.concat(four, four))) == notation.to_mei(
+        notation.concat(up(four), up(four)))
+
+
+def test_the_grid_opens_and_closes_and_the_music_moves_with_it():
+    eight = notation.sheet_from_voice([{"midis": [60], "ticks": 8}] * 8)
+    assert notation.to_mei(notation.insert_measures(eight, 2, 1)).count("<measure") == 3
+    assert notation.to_mei(notation.remove_measures(eight, 2, 2)).count("<measure") == 1
+    # changing the meter rewrites no note
+    remetered = notation.set_meter(eight, 2, 3, 4)
+    assert [i["dur"] for i in _items(remetered)] == [i["dur"] for i in _items(eight)]
+
+
+def test_an_edit_names_its_item_and_deleting_is_not_silencing():
+    three = notation.sheet_from_voice([{"midis": [60], "ticks": 8}] * 3)
+    id = _items(three)[1]["id"]
+
+    assert len(_items(notation.delete(three, id))) == 2
+    assert len(_items(notation.silence(three, id))) == 3
+    assert _items(notation.silence(three, id))[1]["id"] == id, "silencing keeps the item"
+    assert _items(notation.set_dur(three, id, (1, 2)))[1]["dur"] == [1, 2]
+    assert len(_items(notation.insert(three, (1, 8), after=id))) == 4
+    assert _items(notation.set_pitches(
+        three, id, [notation.pitch("b", 3, 1)]))[1]["pitches"][0]["step"] == "b"
+    assert _items(notation.tie(three, id))[1]["tie"] is True
+    assert len(notation.to_voice(three, [id], 1)["staves"][0]["voices"]) == 2
+    # and every verb refuses an item that is not there, saying which
+    with pytest.raises(ValueError, match="999"):
+        notation.delete(three, 999)

@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: composing a score algorithmically</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 60rem; }
+      #note { font-size: 13px; line-height: 1.5; max-width: 46rem; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+      #stage { width: 920px; max-width: 100%; height: 460px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">Composing a score <b>algorithmically</b>: the sheet and its
+operations.
+
+<code>score.html</code> types a phrase by hand and
+<code>score-from-data.html</code> engraves a timeline. This is the third thing,
+and the one the model exists for: a piece built by <i>operating on a score</i>. A
+four-note motif is stated, and everything after it is that motif under an
+operation — repeated, inverted, turned backwards, augmented, transposed, and
+finally stacked against itself.
+
+The whole piece is written in six lines of algebra, and none of the arithmetic is
+in TypeScript. A <b>sheet</b> is a plain object a caller holds, an operation is a
+payload it sends, and both cross to <code>clausters_core::notation</code> — the
+same core the Python client binds and the same one a standalone host with no
+client language uses to edit a score it opened.
+
+Two things to watch for: <b>spelling survives the algebra</b> (inverting the
+motif about its own first note gives A-flat, not G-sharp), and <b>the grid does
+not move when the content does</b> (stretching doubles the written values against
+the barlines that were already there, so the phrase re-bars across them).</div>
+
+      <button id="run">compose and open</button>
+      <div id="stage"></div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/notation/compose.py, call for
+      call: the motif from a voice, the five operations in the same order, the
+      concatenation into a piece, the refused two-voice coda, `toMei` into the
+      ordinary `Score` path, and the same minimal transport with the by-hand
+      cursor anchor.
+
+      The platform's differences are the usual two -- the host is the wasm one
+      in this tab and draws into an element, and nothing is pumped -- plus the
+      engraver's own: it is fetched on demand here, so the first engraving
+      awaits a download that a script's bundled library does not.
+
+      Serve clients/web (the package root) and open
+      /examples/notation/compose.html. Build it first: ./build.sh
+    -->
+    <script type="module">
+      import { Event, Session, gui, seq } from "../../dist/index.js";
+      const { notation } = gui;
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => { $("log").textContent += line + "\n"; };
+
+      const TEMPO = 1.0;
+
+      /** The letters of a sheet's first voice, for reading a phrase in the log. */
+      function steps(sheet) {
+        return sheet.staves[0].voices[0].items.map((item) =>
+          (item.pitches ?? []).map((p) =>
+            p.step.toUpperCase() + "b".repeat(-p.alter) + "#".repeat(p.alter)
+          ).join("") || "-"
+        ).join(" ");
+      }
+
+      /**
+       * Place the **engraved** notes on a timeline to play them: their `t` and
+       * `dur` are the score's own timemap, so the sound runs on the clock the
+       * cursor reads.
+       */
+      function playbackTimeline(notes) {
+        const timeline = new seq.Timeline();
+        for (const note of notes) {
+          timeline.add(note.t / 1000.0, new Event({
+            midinote: note.pitch, dur: note.dur / 1000.0, amp: 0.11,
+          }));
+        }
+        return timeline;
+      }
+
+      /** A minimal transport over the composed page. Every widget is *named*. */
+      const scene = (displayList, sampleRate) => gui.view(
+        {
+          layout: "col", title: "A score composed by operating on one",
+          w: 920, h: 460,
+        },
+        gui.panel({ layout: "row", h: 34.0 },
+          gui.button({ name: "play", label: "play" }),
+          gui.button({ name: "stop", label: "stop" })),
+        notation.scoreView(displayList, { name: "score", width: 880.0, sampleRate }),
+      );
+
+      async function run() {
+        $("run").disabled = true;
+
+        // A sheet comes from a voice: the flat slot stream a client reduces its
+        // own data to. Four quarter notes, C-E-G-E, in 4/4.
+        const MOTIF = [60, 64, 67, 64].map((pitch) => ({ midis: [pitch], ticks: 8 }));
+        const motif = notation.sheetFromVoice(MOTIF, { meter: "4/4", key: "C" });
+        log(`motif       ${steps(motif)}`);
+
+        // The motif turned about its own first note.
+        const turned = notation.invert(motif);
+        log(`inverted    ${steps(turned)}`);
+
+        // Backwards: the durations come back mirrored, so the phrase lasts as long.
+        const backwards = notation.retrograde(motif);
+        log(`retrograde  ${steps(backwards)}`);
+
+        // Twice as slow, against the barlines it already had.
+        const slow = notation.stretch(motif, [2, 1]);
+
+        // Up a major third -- E, not F-flat: the interval has a diatonic size.
+        const up = notation.transpose(motif, 4);
+        log(`up a third  ${steps(up)}`);
+
+        // One after another: the piece.
+        let piece = motif;
+        for (const section of [turned, backwards, slow, up]) {
+          piece = notation.concat(piece, section);
+        }
+        log(`the piece is ${notation.toMei(piece).match(/<measure/g).length} measures`);
+
+        // The algebra can already say *counterpoint*: `stack` puts the motif
+        // against itself an octave down as a second voice on the same staff.
+        // Writing two voices out is the emission milestone, so the engraver's
+        // door refuses it -- by name, rather than quietly dropping a voice.
+        const coda = notation.stack(motif, notation.transpose(motif, -12));
+        log(`the coda holds ${coda.staves[0].voices.length} voices`);
+        try {
+          notation.toMei(coda);
+        } catch (refusal) {
+          log(`and writing it out says: ${refusal.message ?? refusal}`);
+        }
+
+        // From here it is the ordinary notation path.
+        const score = await notation.Score.open(notation.toMei(piece), { pageWidth: 1600 });
+        const dl = score.displayList();
+        log(`engraved ${dl.notes.length} notes into ${dl.prims.length} primitives`);
+
+        const session = await Session.embed({ tempo: TEMPO });
+        const server = session.server;
+        const sr = (await server.queryInfo()).actualSampleRate;
+        await session.gui();
+        const win = await scene(dl, sr).open($("stage"));
+        session.start();
+
+        const playhead = new seq.Playhead(playbackTimeline(dl.notes), session.clock, server);
+
+        win.widget("play").onClick(async () => {
+          playhead.play({ at: 0.0 });
+          // anchor the cursor: the clock now, plus the play latency, is score 0
+          const reply = await server.request("/clock_query", [],
+            { expect: ["/clock_query.reply"] });
+          const now = Number(reply.args[0]) + server.latency * sr;
+          win.widget("score").set({ playheadAt: now });
+          log("playing — the cursor follows the sound");
+        });
+        win.widget("stop").onClick(() => {
+          playhead.stop();
+          win.widget("score").set({ playheadAt: -1.0, playhead: 0.0 });
+          log("stopped");
+        });
+        log("press play — the cursor follows the sound");
+      }
+
+      $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
+    </script>
+  </body>
+</html>

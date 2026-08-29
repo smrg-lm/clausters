@@ -7306,3 +7306,58 @@ and each refusal says which milestone owes the work, because a caller reading
 "cannot" needs to know whether it is wrong or early. Silently snapping a triplet
 onto the tick grid would produce a wrong score that looks right, which is the
 one failure this layer must never produce.
+
+## The score algebra: what each operation had to decide
+
+The operations over the score model are small, and each one had a musical
+question in it that a plausible implementation gets wrong. The answers, because
+none of them is recoverable from reading the code.
+
+**Concatenation takes the first score's grid, continued — and refuses rather
+than inventing a barline.** When the first score ends *on* a barline the second
+score's meters are appended shifted by the measures the first occupies, so a 4/4
+section before a 3/4 one is exactly that. When it ends mid-measure there is no
+barline for the second grid to begin at, and a second score carrying a metric
+layout of its own is refused. The alternatives were both worse: silently
+re-barring the second score gives music in bars nobody wrote, and padding the
+first to a full measure changes what the caller handed over. A refusal that says
+which measure it stopped in leaves the choice where it belongs.
+
+**Stacking refuses two different grids outright.** Two scores cannot share a
+moment in time while disagreeing about where the barlines are, and adopting one
+of the two would silently re-bar the other.
+
+**Deleting and silencing are two verbs.** `delete` takes an item out and
+everything after it moves earlier by its value; `silence` leaves a rest of the
+same length, so nothing moves. One verb with a flag would have been smaller and
+would have made the destructive reading the default reading — a caller who
+wanted the second and got the first has a piece shorter than it was, with no
+sign of where the time went.
+
+**An edit names its item by id, not by index or by time.** An index moves the
+moment anything before it is inserted or removed, so a caller holding one would
+be addressing a different note after every edit but its own; a time is ambiguous
+the moment two voices sound at once. Ids are minted on the sheet, travel through
+every operation, and are re-minted only where two sheets meet — because two
+items answering to one id would both answer to one edit, and the result of
+joining two scores is a new score rather than either of its parts.
+
+**An interval has two sizes, and both are stored.** Transposition takes a
+chromatic size in semitones and a diatonic size in staff places; given only the
+first, the second is the ordinary reading of that interval (4 semitones is a
+major third, so 2 places). That is what makes a transposition come out spelled
+the way it would be written — a major third up from C is E, never F-flat — and
+it generalizes to inversion, which mirrors the notehead across the axis on the
+staff and the sound across it in semitones, letting the accidental take up
+whatever is left.
+
+**Time-scaling leaves the grid alone, on purpose.** Stretching a phrase against
+the barlines it was written on is what augmentation *is*: the values grow, the
+bars do not, and the music re-bars and ties across them. An implementation that
+scaled the grid too would keep the page looking identical and would have
+performed no augmentation at all.
+
+**Only three operations move both structures**, and they are the three that add
+or remove time: `repeat`, `insert_measures`, `remove_measures`. Everything else
+is content or grid, never both, which is the invariant the whole algebra is read
+against.

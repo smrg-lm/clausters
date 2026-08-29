@@ -166,6 +166,59 @@ exact note value (a tuplet), an accidental past a double, more than one voice.
 Each says which it is, so you can tell a mistake from a feature that has not
 landed yet.
 
+### Composing by operating on a score
+
+Every operation is a function from a score to a score, so they compose — and
+composing two of them gives the same music as applying them to the composed
+score, which is what makes an algebra worth the name:
+
+```python
+motif = notation.sheet_from_voice(
+    [{"midis": [p], "ticks": 8} for p in (60, 64, 67, 64)])
+
+piece = motif
+for section in (notation.invert(motif),          # turned about its first note
+                notation.retrograde(motif),      # backwards
+                notation.stretch(motif, (2, 1)), # twice as slow
+                notation.transpose(motif, 4)):   # up a major third
+    piece = notation.concat(piece, section)
+```
+
+`concat` puts one score after another and `stack` puts one against another —
+as more voices on the same staves, or (`as_staff=True`) as staves below.
+`repeat` plays a stretch several times in a row. On the grid there are
+`set_meter`, `insert_measures` and `remove_measures`.
+
+**The two structures move independently, and reading the operations against
+that is how they stop being surprising.** `stretch` doubles the written values
+and leaves every barline where it was, so the phrase re-bars across them and
+ties where a value now overruns one — augmentation, as it looks on a page.
+`set_meter` rewrites no note: the same notes simply fall in different measures
+afterwards. Only the three that *add or remove time* — `repeat`,
+`insert_measures`, `remove_measures` — move both.
+
+### Editing one note
+
+An edit names its item by **id**, never by position, so an id you kept still
+names the same note after any number of other edits:
+
+```python
+first = piece["staves"][0]["voices"][0]["items"][0]["id"]
+piece = notation.set_dur(piece, first, (1, 2))         # a half note
+piece = notation.set_pitches(piece, first, [notation.pitch("b", 3, 1)])
+```
+
+Beside those: `insert` writes a new note, chord or rest; `tie` ties one into the
+next; `to_voice` moves items to another voice on their staff, leaving rests
+where they were, which is how two lines written as one come apart.
+
+**`delete` and `silence` are different acts**, and picking the wrong one is how
+time goes missing: `delete` takes the item out and everything after it moves
+earlier by its value; `silence` leaves a rest of the same length, so nothing
+moves and the item keeps its id.
+
+`examples/notation/compose.py` builds a whole piece this way and plays it.
+
 ## See also
 
 - [Routines and clocks](routines-and-clocks.md) — the generative counterpart (the open-ended side you can capture *from*).

@@ -122,19 +122,27 @@ pub fn voice_to_sheet(voice: &[Slot], meter: &str, clef: &str, key: &str) -> She
     let (_, flats) = key_signature(key);
     let items = voice
         .iter()
-        .map(|slot| match slot {
-            Slot::Note { midis, ticks } if !midis.is_empty() => Item::Note {
-                pitches: midis.iter().map(|&m| Pitch::from_midi(m, flats)).collect(),
-                dur: Ratio::from_ticks(*ticks as i64, TPW as i64),
-                tie: false,
-                marks: Default::default(),
-            },
-            Slot::Note { ticks, .. } | Slot::Rest { ticks } => Item::Rest {
-                dur: Ratio::from_ticks(*ticks as i64, TPW as i64),
-            },
+        .enumerate()
+        .map(|(i, slot)| {
+            let id = i as u64 + 1;
+            let dur = |ticks: &i32| Ratio::from_ticks(*ticks as i64, TPW as i64);
+            match slot {
+                Slot::Note { midis, ticks } if !midis.is_empty() => Item::Note {
+                    id,
+                    pitches: midis.iter().map(|&m| Pitch::from_midi(m, flats)).collect(),
+                    dur: dur(ticks),
+                    tie: false,
+                    marks: Default::default(),
+                },
+                Slot::Note { ticks, .. } | Slot::Rest { ticks } => Item::Rest {
+                    id,
+                    dur: dur(ticks),
+                },
+            }
         })
         .collect();
     Sheet {
+        next_id: voice.len() as u64 + 1,
         grid: Grid::uniform(num as i64, den as i64),
         key: key.to_string(),
         staves: vec![Staff {
@@ -505,6 +513,7 @@ mod tests {
     fn what_the_model_can_hold_and_mei_cannot_write_is_refused_by_name() {
         use super::super::model::{Marks, Staff, Voice};
         let note = |alter, dur| Item::Note {
+            id: 1,
             pitches: vec![Pitch {
                 step: Step::C,
                 alter,

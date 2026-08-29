@@ -45,23 +45,44 @@ the **score model** — notation as data, and operations as data over it — and
 
 from .engraver import Score, engrave, page_json, svg_to_display_list
 from .mei import from_notes, from_timeline
-from .sheet import apply, measures, ops, to_mei, transpose
+from .sheet import (
+    apply, concat, delete, insert, insert_measures, invert, measures, ops,
+    pitch, remove_measures, repeat, retrograde, set_dur, set_meter,
+    set_pitches, silence, stack, stretch, tie, to_mei, to_voice, transpose,
+)
 from .sheet import from_voice as sheet_from_voice
 from .view import score_view, transport
 
 __all__ = [
     "Score",
     "apply",
+    "concat",
+    "delete",
     "engrave",
     "from_notes",
     "from_timeline",
+    "insert",
+    "insert_measures",
+    "invert",
     "measures",
     "ops",
     "page_json",
+    "pitch",
+    "remove_measures",
+    "repeat",
+    "retrograde",
+    "set_dur",
+    "set_meter",
+    "set_pitches",
     "score_view",
     "sheet_from_voice",
+    "silence",
+    "stack",
+    "stretch",
     "svg_to_display_list",
+    "tie",
     "to_mei",
+    "to_voice",
     "transport",
     "transpose",
 ]

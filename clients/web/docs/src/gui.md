@@ -329,6 +329,32 @@ host use. `notation.ops()` lists the verbs it knows, and writing a sheet out
 throws with a reason when the model holds something MEI cannot say yet — a
 tuplet, an accidental past a double, more than one voice.
 
+Every operation is a function from a score to a score, so they compose:
+
+```js
+let piece = motif;
+for (const section of [notation.invert(motif),        // about its first note
+                       notation.retrograde(motif),    // backwards
+                       notation.stretch(motif, [2, 1]), // twice as slow
+                       notation.transpose(motif, 4)]) { // up a major third
+    piece = notation.concat(piece, section);
+}
+```
+
+`concat` puts one score after another, `stack` puts one against another,
+`repeat` plays a stretch several times; `setMeter`, `insertMeasures` and
+`removeMeasures` work on the grid. **The two structures move independently**:
+`stretch` leaves every barline where it was, so the phrase re-bars across them
+and ties where a value overruns one, and `setMeter` rewrites no note. Only the
+three that add or remove time move both.
+
+An edit names its item by **id**, never by position — `insert`, `del` (`delete`
+is a reserved word here), `silence`, `setDur`, `setPitches`, `tie`, `toVoice`.
+`del` and `silence` are different acts: the first takes the item out and what
+follows moves earlier, the second leaves a rest and nothing moves.
+
+`examples/notation/compose.html` builds a whole piece this way and plays it.
+
 ## Bindings, and the page that runs without a script
 
 A widget's value can bypass this script entirely — to the audio server, or to

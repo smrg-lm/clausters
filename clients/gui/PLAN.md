@@ -2416,7 +2416,7 @@ Whatever symbols the model itself needs owe their rows either way
   entries — the surface shape, and the model's own. The examples moved to their
   `notation/` family in the same pass.
 
-- ⬜ **N2 — The algebra, and the edit operations**. Three families over the two
+- ✅ **N2 — The algebra, and the edit operations** *(done 2026-08-29)*. Three families over the two
   structures, and the whole point of the model. **On the content**: concatenate,
   stack voices, repeat, transpose, retrograde, invert, augment and diminish.
   **On the grid**: insert or change a meter, add or remove measures. **Addressed
@@ -2442,6 +2442,54 @@ Whatever symbols the model itself needs owe their rows either way
   an example. Each client's sugar is checked against the line N1 drew: it
   assembles operations and computes nothing, and a measure range is resolved by
   the core in both.
+
+  **What shipped.** Seventeen verbs, in `clausters_core::notation::algebra` (the
+  structural ones) and `::edit` (the ones that name a single item), with `ops`
+  keeping the vocabulary and the dispatch. Content: `concat`, `stack`,
+  `repeat`, `retrograde`, `invert`, `stretch`, `transpose`. Grid: `set_meter`,
+  `insert_measures`, `remove_measures`. Items: `insert`, `delete`, `silence`,
+  `set_dur`, `set_pitches`, `tie`, `to_voice`. **No new symbol and no ABI
+  round** — which is the whole point of the shape N1 settled, and the first
+  time it paid.
+
+  The model grew the one thing the verbs needed: **an item carries an id**,
+  minted on the sheet, travelling through every operation and re-minted only
+  where two sheets meet. Not an index (it moves under every other edit) and not
+  a time (it is ambiguous the moment two voices sound). A sheet that never had
+  ids gets them on the first operation, so a hand-written payload behaves like
+  one this layer minted.
+
+  Each verb had a musical question in it, and the six that a plausible
+  implementation gets wrong are in `docs/decisions.md`: concatenation refusing
+  to invent a barline rather than silently re-barring; stacking refusing two
+  grids; `delete` and `silence` as two verbs rather than one with a flag;
+  addressing by id; an interval carrying both its sizes; and time-scaling
+  leaving the grid alone, which is what makes it augmentation rather than a
+  no-op that looks identical.
+
+  **What is deferred, and why it is not a shrunken scope.** This milestone's
+  acceptance also asked that `Score`'s edit path stop calling `Toolkit::Edit`
+  and that its undo stack step over model snapshots. The model-side half is
+  done — every structural edit is here, including the ones verovio's action
+  vocabulary cannot express at all (open a measure, split a voice, change the
+  meter) — but wiring the *engraved page* to it needs something this track does
+  not have yet: a score opened from typed text (ABC, MusicXML, a hand-written
+  MEI) has no model behind it, and giving it one is an **MEI reader**, which is
+  N4's inverse path. Doing it now would fork `Score` into a model-backed path
+  and a verovio-backed one, which is precisely the divergence this track exists
+  to avoid. Recorded here rather than quietly dropped; it is the first thing
+  after the reader lands.
+
+  Tests: 22 in the core (the algebra's composition law, the two structures'
+  independence, the augmentation that re-bars and ties, every refusal), plus the
+  same assertions in the same order in both clients. Clients:
+  `notation/sheet.py` and `sheet.ts` grew a helper per verb — `delete` is `del`
+  in TypeScript, a reserved word being the only place the two spellings differ,
+  and the contrast test carries the mapping so a *missing* verb still fails.
+  Example: `notation/compose.py` and `compose.html`, a piece built entirely by
+  operating on a motif, whose last cell stacks it against itself and is
+  **refused by name** — the algebra says counterpoint long before the emitter
+  can write it, and saying so is better than dropping a voice.
 
 - ⬜ **N3 — That it is well written**. The emission of everything the model can
   now say, judged **by eye** on the page, which is the first thing a score
@@ -2531,6 +2579,18 @@ question about carriers rather than the decision everything waited on; the
 **markup**, **polyphony** and **tuplets** are all N3, as emission over a model
 that can represent them, with tuplets additionally answered in N1 by rationals —
 which is why "raise the tick base" is no longer a decision anyone has to take.
+
+**The examples are behind the model, and the milestone that lands the feature
+lands the update.** `notation/compose.py` and its page build a piece by
+operating on a score, and their last cell **stacks the motif against itself and
+is refused**, because the algebra says counterpoint long before the emitter can
+write it. That refusal is deliberate — it is how the example says which
+milestone owes the work rather than quietly dropping a voice — and it is also a
+standing note: **N3 turns that cell into a real two-voice coda**, in both
+copies, and the same pass re-reads the rest of the file for anything else the
+emitter has since learned to say. The same holds each time this track lands
+something a score can now be: the example that shows it is part of the
+milestone, not a follow-up.
 
 **Closing any of these** includes the docstrings that currently promise the work
 as future (`clients/python/clausters/gui/notation/mei.py` says "tuplets are the

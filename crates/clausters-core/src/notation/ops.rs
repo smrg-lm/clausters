@@ -31,6 +31,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::model::{Item, Pitch, Sheet, Step};
+use super::{algebra, edit};
 use crate::ratio::Ratio;
 
 /// What part of the score an operation applies to.
@@ -104,6 +105,131 @@ pub enum Op {
         #[serde(default)]
         span: Span,
     },
+    /// Play `sheet` after this one.
+    Concat {
+        /// The score that follows.
+        sheet: Sheet,
+    },
+    /// Play `sheet` at the same time as this one.
+    Stack {
+        /// The score that sounds with it.
+        sheet: Sheet,
+        /// Write it on staves of its own rather than as more voices on these.
+        #[serde(default)]
+        as_staff: bool,
+    },
+    /// Play a stretch `count` times in a row — `2` is one repeat.
+    Repeat {
+        /// How many times it is heard in total.
+        count: usize,
+        /// What is repeated; everything, by default.
+        #[serde(default)]
+        span: Span,
+    },
+    /// Reverse the order of the span's items.
+    Retrograde {
+        /// What is reversed; everything, by default.
+        #[serde(default)]
+        span: Span,
+    },
+    /// Mirror the span's pitches about an axis.
+    Invert {
+        /// The pitch to turn about; the span's first sounding pitch by default.
+        #[serde(default)]
+        axis: Option<Pitch>,
+        /// What is mirrored; everything, by default.
+        #[serde(default)]
+        span: Span,
+    },
+    /// Multiply the span's written values — augmentation is `[2, 1]`,
+    /// diminution `[1, 2]`.
+    Stretch {
+        /// The factor, as an exact ratio.
+        factor: Ratio,
+        /// What is scaled; everything, by default.
+        #[serde(default)]
+        span: Span,
+    },
+    /// Put a meter in force from a measure onward. The grid alone changes.
+    SetMeter {
+        /// The measure it starts at, counting from 1.
+        measure: usize,
+        /// Beats in the bar.
+        count: i64,
+        /// What one beat is worth.
+        unit: i64,
+    },
+    /// Open empty measures before a measure, pushing the music along.
+    InsertMeasures {
+        /// The measure they are opened before, counting from 1.
+        at: usize,
+        /// How many.
+        count: usize,
+    },
+    /// Take measures out, with what was written in them.
+    RemoveMeasures {
+        /// The first measure to go, counting from 1.
+        first: usize,
+        /// The last, inclusive.
+        last: usize,
+    },
+    /// Write a new note, chord or rest into a voice.
+    Insert {
+        /// The item it goes after; omitted, it goes first.
+        #[serde(default)]
+        after: Option<u64>,
+        /// The pitches; none for a rest.
+        #[serde(default)]
+        pitches: Vec<Pitch>,
+        /// Its written value.
+        dur: Ratio,
+        /// Which staff, when it goes first.
+        #[serde(default)]
+        staff: usize,
+        /// Which voice, when it goes first.
+        #[serde(default)]
+        voice: usize,
+    },
+    /// Take an item out; what follows moves earlier by its value.
+    Delete {
+        /// The item.
+        id: u64,
+    },
+    /// Turn an item into a rest of the same length; nothing moves.
+    Silence {
+        /// The item.
+        id: u64,
+    },
+    /// Give an item a different written value.
+    SetDur {
+        /// The item.
+        id: u64,
+        /// Its new value.
+        dur: Ratio,
+    },
+    /// Give an item different pitches — none makes it a rest.
+    SetPitches {
+        /// The item.
+        id: u64,
+        /// Its new pitches.
+        #[serde(default)]
+        pitches: Vec<Pitch>,
+    },
+    /// Tie an item into the next, or untie it.
+    Tie {
+        /// The item.
+        id: u64,
+        /// Whether it is tied.
+        #[serde(default)]
+        tied: bool,
+    },
+    /// Move items to another voice on their staff, leaving rests behind.
+    ToVoice {
+        /// The items to move; they must all be in one voice.
+        ids: Vec<u64>,
+        /// The voice they go to.
+        voice: usize,
+    },
 }
 
 /// The diatonic size a chromatic interval is ordinarily read as: 4 semitones is
@@ -153,6 +279,42 @@ pub fn apply(sheet: Sheet, op: &Op) -> Result<Sheet, String> {
             steps,
             span,
         } => transpose(sheet, *semitones, *steps, span),
+        Op::Concat { sheet: other } => algebra::concat(sheet, other),
+        Op::Stack {
+            sheet: other,
+            as_staff,
+        } => algebra::stack(sheet, other, *as_staff),
+        Op::Repeat { count, span } => algebra::repeat(sheet, *count, span),
+        Op::Retrograde { span } => algebra::retrograde(sheet, span),
+        Op::Invert { axis, span } => algebra::invert(sheet, *axis, span),
+        Op::Stretch { factor, span } => algebra::stretch(sheet, *factor, span),
+        Op::SetMeter {
+            measure,
+            count,
+            unit,
+        } => algebra::set_meter(sheet, *measure, *count, *unit),
+        Op::InsertMeasures { at, count } => algebra::insert_measures(sheet, *at, *count),
+        Op::RemoveMeasures { first, last } => algebra::remove_measures(sheet, *first, *last),
+        Op::Insert {
+            after,
+            pitches,
+            dur,
+            staff,
+            voice,
+        } => edit::insert(
+            sheet,
+            after.map(edit::At::After).unwrap_or(edit::At::Start),
+            pitches.clone(),
+            *dur,
+            *staff,
+            *voice,
+        ),
+        Op::Delete { id } => edit::delete(sheet, *id),
+        Op::Silence { id } => edit::silence(sheet, *id),
+        Op::SetDur { id, dur } => edit::set_dur(sheet, *id, *dur),
+        Op::SetPitches { id, pitches } => edit::set_pitches(sheet, *id, pitches.clone()),
+        Op::Tie { id, tied } => edit::tie(sheet, *id, *tied),
+        Op::ToVoice { ids, voice } => edit::to_voice(sheet, ids, *voice),
     }
 }
 
@@ -201,11 +363,93 @@ pub struct OpSpec {
 /// client is contrasted against this list instead: a verb here with no binding,
 /// or a binding with no verb here, fails a test in that client.
 pub fn catalog() -> &'static [OpSpec] {
-    &[OpSpec {
-        op: "transpose",
-        required: &["semitones"],
-        optional: &["steps", "span"],
-    }]
+    &[
+        OpSpec {
+            op: "transpose",
+            required: &["semitones"],
+            optional: &["steps", "span"],
+        },
+        OpSpec {
+            op: "concat",
+            required: &["sheet"],
+            optional: &[],
+        },
+        OpSpec {
+            op: "stack",
+            required: &["sheet"],
+            optional: &["as_staff"],
+        },
+        OpSpec {
+            op: "repeat",
+            required: &["count"],
+            optional: &["span"],
+        },
+        OpSpec {
+            op: "retrograde",
+            required: &[],
+            optional: &["span"],
+        },
+        OpSpec {
+            op: "invert",
+            required: &[],
+            optional: &["axis", "span"],
+        },
+        OpSpec {
+            op: "stretch",
+            required: &["factor"],
+            optional: &["span"],
+        },
+        OpSpec {
+            op: "set_meter",
+            required: &["measure", "count", "unit"],
+            optional: &[],
+        },
+        OpSpec {
+            op: "insert_measures",
+            required: &["at", "count"],
+            optional: &[],
+        },
+        OpSpec {
+            op: "remove_measures",
+            required: &["first", "last"],
+            optional: &[],
+        },
+        OpSpec {
+            op: "insert",
+            required: &["dur"],
+            optional: &["after", "pitches", "staff", "voice"],
+        },
+        OpSpec {
+            op: "delete",
+            required: &["id"],
+            optional: &[],
+        },
+        OpSpec {
+            op: "silence",
+            required: &["id"],
+            optional: &[],
+        },
+        OpSpec {
+            op: "set_dur",
+            required: &["id", "dur"],
+            optional: &[],
+        },
+        OpSpec {
+            op: "set_pitches",
+            required: &["id"],
+            optional: &["pitches"],
+        },
+        OpSpec {
+            op: "tie",
+            required: &["id"],
+            optional: &["tied"],
+        },
+        OpSpec {
+            op: "to_voice",
+            required: &["ids", "voice"],
+            optional: &[],
+        },
+    ]
 }
 
 #[cfg(test)]
@@ -229,6 +473,7 @@ mod tests {
                     items: pitches
                         .iter()
                         .map(|p| Item::Note {
+                            id: 0,
                             pitches: vec![*p],
                             dur,
                             tie: false,

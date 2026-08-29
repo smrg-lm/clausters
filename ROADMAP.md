@@ -164,11 +164,15 @@ its plan; the plan is where its acceptance is read.
   direction went through a different intermediate, and the editable `Score` is
   an action API with no structure under it. The track builds that structure in
   `clausters_core::notation` — two durational structures that do not contain
-  each other, the metric layout and the content, in exact rationals (**`N1`
-  landed 2026-08-29**) — then its algebra and edits (`N2`), the emission judged by eye (`N3`, where tuplets,
-  polyphony, markup and spelling all land), the interpreter that plays what the
-  symbols mean (`N4`) and the enriched forward path (`N5`). Taken one at a
-  time, and nothing outside the track waits on any of them.
+  each other, the metric layout and the content, in exact rationals — and its
+  algebra of seventeen verbs, which rearrange a score and edit one note.
+  **`N1` and `N2` both landed 2026-08-29**; what is left is the emission judged
+  by eye (`N3`, where tuplets, polyphony, markup and spelling all land), the
+  interpreter that plays what the symbols mean (`N4`) and the enriched forward
+  path (`N5`). Taken one at a time, and nothing outside the track waits on any
+  of them. **`N3` is next**, and it also owes what `N2` deferred by name:
+  wiring the engraved page's own edits to the model needs the MEI reader that
+  `N4` brings, so it is the first thing after that.
 
 ### Waiting on a decision
 

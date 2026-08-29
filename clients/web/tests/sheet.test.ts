@@ -14,37 +14,60 @@ import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
 import {
+    concat,
+    del,
     fromNotes,
+    insert,
+    insertMeasures,
     measures,
     ops,
+    pitch,
+    removeMeasures,
+    retrograde,
+    setDur,
+    setMeter,
+    setPitches,
     sheetFromVoice,
+    silence,
+    stack,
+    stretch,
+    tie,
     toMei,
+    toVoice,
     transpose,
 } from "../src/gui/notation/index.ts";
+import type { Sheet } from "../src/gui/notation/index.ts";
 import { Event } from "../src/seq/event.ts";
 import { rest } from "../src/seq/event.ts";
 import * as notation from "../src/gui/notation/index.ts";
 
 await loadCore();
 
+/**
+ * The catalog's `snake_case` verb under this language's spelling.
+ *
+ * Casing is idiom and nothing else -- the call is the same call. The one
+ * exception is written out rather than special-cased silently: `delete` is a
+ * reserved word here, so the verb is `del`, which is the only place the two
+ * clients' spellings diverge at all.
+ */
+function helperFor(verb: string): string {
+    if (verb === "delete") return "del";
+    return verb.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
+}
+
 test("the catalog and this shell name the same verbs", () => {
     // This is the test the binding table cannot be: operations ride inside a
     // payload through one symbol, so a verb that reached only one client would
     // drift silently -- the same structural blindness the props manifest has.
-    const catalogued = new Set(ops().map((spec) => spec.op));
-    const exposed = new Set(
-        [...catalogued].filter((name) => typeof (notation as Record<string, unknown>)[name] === "function"),
-    );
-    assert.deepEqual(
-        [...catalogued].sort(),
-        [...exposed].sort(),
-        "the core knows a verb this shell has no helper for",
-    );
-    for (const spec of ops()) {
-        for (const name of spec.required) {
-            assert.ok(["semitones", "steps", "span"].includes(name), name);
-        }
-    }
+    const shell = notation as unknown as Record<string, unknown>;
+    const missing = ops()
+        .map((spec) => spec.op)
+        .filter((verb) => typeof shell[helperFor(verb)] !== "function");
+    assert.deepEqual(missing, [], "the core knows a verb this shell has no helper for");
+    // and the catalog is not empty, which is how this test would pass by
+    // checking nothing at all
+    assert.ok(ops().length >= 17, `only ${ops().length} verbs in the catalog`);
 });
 
 test("a voice lifts into the model and writes the same bytes", () => {
@@ -118,4 +141,53 @@ test("what is refused says why and changes nothing", () => {
     const tuplet = JSON.parse(JSON.stringify(sheet));
     tuplet.staves[0].voices[0].items[0].dur = [1, 12];
     assert.throws(() => toMei(tuplet), /tuplet/);
+});
+
+test("the algebra rearranges a score and composes", () => {
+    const four = sheetFromVoice(Array.from({ length: 4 }, () => ({ midis: [60], ticks: 8 })));
+    const items = (s: Sheet) =>
+        (s.staves[0] as { voices: { items: Record<string, any>[] }[] }).voices[0].items;
+
+    // one score after another
+    assert.equal(items(concat(four, four)).length, 8);
+    // and at the same time, as voices or as staves
+    assert.equal((stack(four, four).staves[0] as { voices: unknown[] }).voices.length, 2);
+    assert.equal(stack(four, four, { asStaff: true }).staves.length, 2);
+    // a stretch does not move a barline: four quarters doubled is two bars
+    assert.deepEqual(items(stretch(four, 2))[0].dur, [1, 2]);
+    assert.equal(toMei(stretch(four, 2)).match(/<measure/g)?.length, 2);
+    // reversing keeps the length
+    assert.equal(items(retrograde(four)).length, 4);
+    // and composing two operations is the operation on the composed score
+    const up = (s: Sheet) => transpose(s, 2);
+    assert.equal(toMei(up(concat(four, four))), toMei(concat(up(four), up(four))));
+});
+
+test("the grid opens and closes, and the music moves with it", () => {
+    const eight = sheetFromVoice(Array.from({ length: 8 }, () => ({ midis: [60], ticks: 8 })));
+    assert.equal(toMei(insertMeasures(eight, 2, 1)).match(/<measure/g)?.length, 3);
+    assert.equal(toMei(removeMeasures(eight, 2, 2)).match(/<measure/g)?.length, 1);
+    // changing the meter rewrites no note
+    const remetered = setMeter(eight, 2, 3, 4);
+    const items = (s: Sheet) =>
+        (s.staves[0] as { voices: { items: Record<string, any>[] }[] }).voices[0].items;
+    assert.deepEqual(items(remetered).map((i) => i.dur), items(eight).map((i) => i.dur));
+});
+
+test("an edit names its item, and deleting is not silencing", () => {
+    const three = sheetFromVoice(Array.from({ length: 3 }, () => ({ midis: [60], ticks: 8 })));
+    const items = (s: Sheet) =>
+        (s.staves[0] as { voices: { items: Record<string, any>[] }[] }).voices[0].items;
+    const id = items(three)[1].id as number;
+
+    assert.equal(items(del(three, id)).length, 2);
+    assert.equal(items(silence(three, id)).length, 3);
+    assert.equal(items(silence(three, id))[1].id, id, "silencing keeps the item");
+    assert.deepEqual(items(setDur(three, id, [1, 2]))[1].dur, [1, 2]);
+    assert.equal(items(insert(three, [1, 8], { after: id })).length, 4);
+    assert.equal(items(setPitches(three, id, [pitch("b", 3, 1)]))[1].pitches[0].step, "b");
+    assert.equal(items(tie(three, id))[1].tie, true);
+    assert.equal((toVoice(three, [id], 1).staves[0] as { voices: unknown[] }).voices.length, 2);
+    // and every verb refuses an item that is not there, saying which
+    assert.throws(() => del(three, 999), /999/);
 });

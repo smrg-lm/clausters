@@ -167,3 +167,223 @@ export function transpose(
     if (span !== undefined) op.span = span;
     return apply(sheet, op);
 }
+
+/**
+ * A written pitch: the letter its notehead sits on, its scientific octave (`4`
+ * is the octave of middle C) and how many semitones it is altered by.
+ *
+ * Naming a pitch, not deriving one. Spelling a MIDI number is a *rule* — `F#`
+ * and `Gb` are one number and two notes — so it happens in the core, on the way
+ * in through {@link fromVoice}; a caller writing a note into a score names the
+ * note it means.
+ */
+export function pitch(step: string, octave: number, alter = 0): unknown {
+    return { step, octave, alter };
+}
+
+/** An exact ratio, as a pair or a whole number. */
+function ratio(value: Ratio | number): Ratio {
+    return Array.isArray(value) ? value : [value, 1];
+}
+
+function withSpan(op: Op, span?: unknown): Op {
+    if (span !== undefined) op.span = span;
+    return op;
+}
+
+// -- the algebra: operations that rearrange a score ---------------------------
+
+/**
+ * `other` after `sheet`.
+ *
+ * Each voice continues the voice in the same position, with a rest filling any
+ * that ran short. The **grid is the first score's, continued**: when it ends on
+ * a barline, the second score's meters follow it, so a 4/4 section before a 3/4
+ * one is exactly that. When it ends mid-measure there is no barline for the
+ * second grid to start at, and a second score with a metric layout of its own is
+ * refused rather than silently re-barred.
+ */
+export function concat(sheet: Sheet, other: Sheet): Sheet {
+    return apply(sheet, { op: "concat", sheet: other });
+}
+
+/**
+ * `other` at the same time as `sheet`.
+ *
+ * `asStaff: false` writes its voices on the same staves — counterpoint on one
+ * staff; `true` appends staves below — a second hand or instrument. Both are
+ * superposition; the difference is where the notes are written.
+ *
+ * Throws when the two grids differ: two scores cannot share a moment while
+ * disagreeing about where the barlines are.
+ */
+export function stack(sheet: Sheet, other: Sheet, { asStaff = false } = {}): Sheet {
+    return apply(sheet, { op: "stack", sheet: other, as_staff: asStaff });
+}
+
+/**
+ * A stretch played `count` times in a row — `2` is one repeat, `1` changes
+ * nothing.
+ *
+ * The copies go where the original is, pushing what follows later, and the grid
+ * grows by as many measures as the stretch spans. `count: 0` is refused: that is
+ * a deletion, and it has its own verb.
+ */
+export function repeat(sheet: Sheet, count: number, { span }: { span?: unknown } = {}): Sheet {
+    return apply(sheet, withSpan({ op: "repeat", count }, span));
+}
+
+/**
+ * The span's items in reverse order, voice by voice.
+ *
+ * The durations come back mirrored, so the stretch lasts exactly as long as it
+ * did and the grid is untouched. A tie travels with the pair it joined.
+ */
+export function retrograde(sheet: Sheet, { span }: { span?: unknown } = {}): Sheet {
+    return apply(sheet, withSpan({ op: "retrograde" }, span));
+}
+
+/**
+ * Mirror the span's pitches about `axis` ({@link pitch}).
+ *
+ * Exact in both dimensions the model keeps apart: the notehead reflects across
+ * the axis on the staff and the sound reflects across it in semitones, with the
+ * accidental taking up what is left — which is what an inversion written by hand
+ * looks like. Without an axis, the line turns about its own first note.
+ */
+export function invert(
+    sheet: Sheet,
+    { axis, span }: { axis?: unknown; span?: unknown } = {},
+): Sheet {
+    const op: Op = { op: "invert" };
+    if (axis !== undefined) op.axis = axis;
+    return apply(sheet, withSpan(op, span));
+}
+
+/**
+ * Multiply the span's written values. Augmentation is `[2, 1]`, diminution
+ * `[1, 2]`, and anything else is the same operation at another ratio.
+ *
+ * **The grid does not move**, which is the point: the phrase is re-barred
+ * against the barlines it already had, tying across them where a value now
+ * overruns one.
+ */
+export function stretch(
+    sheet: Sheet,
+    factor: Ratio | number,
+    { span }: { span?: unknown } = {},
+): Sheet {
+    return apply(sheet, withSpan({ op: "stretch", factor: ratio(factor) }, span));
+}
+
+// -- the algebra: operations on the metric layout ------------------------------
+
+/**
+ * Put `count`/`unit` in force from `measure` (counting from 1).
+ *
+ * The grid alone changes: the same notes fall in different measures afterwards,
+ * which is what changing the meter of a piece means.
+ */
+export function setMeter(sheet: Sheet, measure: number, count: number, unit: number): Sheet {
+    return apply(sheet, { op: "set_meter", measure, count, unit });
+}
+
+/**
+ * Open `count` empty measures before measure `at`.
+ *
+ * Time is added, so both structures move: a rest of the new measures' length is
+ * written in, and every meter after the cut slides along with the music.
+ */
+export function insertMeasures(sheet: Sheet, at: number, count: number): Sheet {
+    return apply(sheet, { op: "insert_measures", at, count });
+}
+
+/**
+ * Take measures `first` to `last` out, with whatever was written in them. The
+ * other half of {@link insertMeasures}, and the same rule.
+ */
+export function removeMeasures(sheet: Sheet, first: number, last: number): Sheet {
+    return apply(sheet, { op: "remove_measures", first, last });
+}
+
+// -- the edit verbs: what a hand does to one item ------------------------------
+
+/**
+ * Write a new note, chord or rest into a voice.
+ *
+ * `after` names the item it follows (by id) and puts it in that item's own
+ * voice; without one it goes first, on `staff`/`voice`. No `pitches` is a rest.
+ * Everything after it moves later by `dur`: writing a note into finished music
+ * adds time.
+ */
+export function insert(
+    sheet: Sheet,
+    dur: Ratio | number,
+    { after, pitches = [], staff = 0, voice = 0 }: {
+        after?: number;
+        pitches?: unknown[];
+        staff?: number;
+        voice?: number;
+    } = {},
+): Sheet {
+    const op: Op = { op: "insert", dur: ratio(dur), pitches, staff, voice };
+    if (after !== undefined) op.after = after;
+    return apply(sheet, op);
+}
+
+/**
+ * Take an item out; everything after it moves earlier by its value.
+ *
+ * Not {@link silence} — that leaves a rest and nothing moves. Confusing the two
+ * is how a piece comes out shorter than it was with no obvious sign of where.
+ */
+export function del(sheet: Sheet, id: number): Sheet {
+    return apply(sheet, { op: "delete", id });
+}
+
+/**
+ * Turn an item into a rest of the same length. Nothing moves, and it is still
+ * the same item, so an id kept for it still names it.
+ */
+export function silence(sheet: Sheet, id: number): Sheet {
+    return apply(sheet, { op: "silence", id });
+}
+
+/**
+ * Give an item a different written value. What follows moves by the difference,
+ * and the measures it now falls across are worked out when the page is written.
+ */
+export function setDur(sheet: Sheet, id: number, dur: Ratio | number): Sheet {
+    return apply(sheet, { op: "set_dur", id, dur: ratio(dur) });
+}
+
+/**
+ * Give an item different pitches — one for a note, several for a chord, none to
+ * make it a rest. The value and the id are kept, so this is the same item newly
+ * spelled rather than a replacement.
+ */
+export function setPitches(sheet: Sheet, id: number, pitches: unknown[]): Sheet {
+    return apply(sheet, { op: "set_pitches", id, pitches });
+}
+
+/**
+ * Tie an item into the one after it, or untie it.
+ *
+ * This is the tie you *write* — the note goes on sounding through the next item.
+ * The ties added where a value crosses a barline are made when the page is
+ * written and are never stored, so the two compose.
+ */
+export function tie(sheet: Sheet, id: number, tied = true): Sheet {
+    return apply(sheet, { op: "tie", id, tied });
+}
+
+/**
+ * Move items to another voice on their staff, leaving rests where they were.
+ *
+ * How two lines written as one come apart: the items keep their ids and their
+ * place in time, and a rest holds each gap open, so nothing around either line
+ * moves. Throws when the items are not all in one voice.
+ */
+export function toVoice(sheet: Sheet, ids: number[], voice: number): Sheet {
+    return apply(sheet, { op: "to_voice", ids, voice });
+}

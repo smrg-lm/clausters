@@ -31,14 +31,21 @@
 //! the score model included, so a page runs the same state machine a window
 //! does rather than a second one written in TypeScript.
 
+mod algebra;
 mod cursors;
+mod edit;
 mod mei;
 mod model;
 mod ops;
 mod score;
 mod svg;
 
+pub use algebra::{
+    concat, insert_measures, invert, invert_pitch, remove_measures, repeat, retrograde, set_meter,
+    stack, stretch,
+};
 pub use cursors::{Cursor, TimemapEntry, cursor_track};
+pub use edit::{At, delete, insert, set_dur, set_pitches, silence, tie, to_voice};
 pub use mei::{Slot, sheet_to_mei, voice_to_mei, voice_to_sheet};
 pub use model::{Grid, Item, Marks, Meter, Pitch, Sheet, Staff, Step, Voice};
 pub use ops::{Op, OpSpec, Span, apply, catalog, default_steps, transpose_pitch};
