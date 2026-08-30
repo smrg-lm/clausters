@@ -426,7 +426,7 @@ The plan carried notation for years as "Verovio's SVG, hosted by the web surface
 - ✅ **G31d — The edit round trip: drag a note, `"transpose"`** *(done 2026-07-23)*: a drag on an engraved element moves it up or down the staff in **whole diatonic steps**, drawn as it goes, and the release emits `"transpose" <xml:id> <steps>`; the client applies it, re-engraves, and replaces the drawing with one `/gui_set <id> display_list` (a new prop — until then a page could only change by redefining its window). Steps rather than a coordinate, because Verovio's coordinate-taking `drag` reads a page y in a frame that does not line up with the display list's, and its editor transposes by steps anyway; the quantum travels **with the page** (`step`, page units per diatonic step, measured from the staff-line spacing) since it follows the engraver's unit size, not the staff scale. Two things the drag revealed about what an "element" is: a sounding element **claims every primitive drawn inside it** (Verovio ids a note's stem and flag separately, which scattered one note across three draggable things), while a chord deliberately stays a container so its notes remain separately transposable. And the staff furniture a pitch implies — **ledger lines**, drawn per staff, so no per-element displacement can move them — is *re-derived* by the host from the staves it reads back out of the engraving, with the engraved ones over the notehead's column suppressed: that is the half that could not be faked, since a note dragged back onto the staff has to *lose* them. The host cannot re-engrave, so the preview stands after release until the new page arrives.
 - ✅ **G31e — A reproducible Verovio build** *(done 2026-07-23)*: `third_party/verovio.pin` + `build-verovio.sh`, the arrangement `build-faust.sh` established (source uncommitted, reproducibility in two committed files). It pins a `develop` commit rather than a release tag on purpose: in 6.2.1 — the PyPI wheel included — the score editor is **dead in any build keeping Humdrum support**, a guard typo that makes every `Toolkit::Edit()` return false; upstream inverted it after 6.2.1. Recorded in `docs/decisions.md`; repin to 6.3.0 when it ships. The editing half of the widget therefore needs a Verovio whose editor works, which the docs and the smoke step both say.
 - ✅ **G31f — Engrave the client's own data: `from_notes` / `from_timeline`** *(done 2026-07-24)*: the inverse of the score→sound flow. Until now a page could only be *typed* (ABC/PAE/MEI/MusicXML); now `clausters.gui.notation.from_notes` (a monophonic run of `Event`s) and `from_timeline` (a `Timeline`, simultaneous events → a chord, gaps → rests) turn the client's own `clausters.seq` data into **MEI** that flows into the same `engrave`/`Score` path — a third way in, beside typed text and the SVG adapter, with `Score.from_notes`/`from_timeline` as the generate-and-edit shortcut. MEI is the target because it spells pitch and value explicitly, sidestepping ABC's contextual traps, and it needs no ids (Verovio mints them on load, so id stability across editing is unchanged). The substance is the rhythm: durations decompose into tied note values (a dotted value when exact) and a note overrunning a barline splits and ties across it, all in exact 32nd-note ticks. Example `examples/editors/score_from_data.py` (a Timeline of chords + melody, engraved then played from the same timeline); tests cover the pure encoder (spelling, decomposition, cross-bar ties, chords/rests) without the engraver. v1 reads only the written `dur`; the refinements are the next line.
-- ⬜ **G31g — Engraving refinements** — **promoted out of this section to the `N` track** ("N track — notation: the score model, and what is written on it", N1-N5). It stopped being one refinement the day it was sized, and stopped being an encoder's refinements the day the layer was read against itself: the return path already existed and was being written by hand, each direction went through a different intermediate, and `Score` turned out to be an action API with no structure under it. So what G31g owed is now owed by a **model** — two durational structures in exact rationals, in the core — and the four refinements are distributed over its emission. The G31 section stays the record of how the widget got here; what it still owes is numbered there.
+- ✅ **G31g — Engraving refinements** *(shipped 2026-08-29/30 as `N1`-`N6`)* — **promoted out of this section to the `N` track** ("N track — notation: the score model, and what is written on it"). It stopped being one refinement the day it was sized, and stopped being an encoder's refinements the day the layer was read against itself: the return path already existed and was being written by hand, each direction went through a different intermediate, and `Score` turned out to be an action API with no structure under it. So what G31g owed is now owed by a **model** — two durational structures in exact rationals, in the core — and the four refinements are distributed over its emission. The G31 section stays the record of how the widget got here; what it still owes is numbered there. **`N1`-`N6` closed on 2026-08-29/30**, so what this line owed is written: the model, its verbs, the emission of everything it can hold, the interpreter, the reader and the enriched forward path. What is numbered `N7`-`N9` there is not this line's — those are the *editing* questions the G31 open lines left standing, plus one the editor example turned up.
 - ✅ **G31h — The notation layer moves to `clausters-notation`/`core`/`ffi`** *(done 2026-07-24)*: the entire notation layer used to live in the Python client (`clausters.gui.notation`) — the `ctypes` binding to libverovio, `svg_to_display_list`, the editable `Score` model (`transpose`, `undo`/`redo` over its own MEI-snapshot stack, the edit→commit→reload cycle) and the `from_notes`/`from_timeline` encoder. The host is deliberately **dumb about the domain** (it draws the display list and reports gestures as requests, holding no score), which keeps it reusable across languages — but it pushes all the notation *logic* onto the client, so a second client (JS/wasm) would reimplement every line. Per the cross-client rule (`clients/python/PLAN.md`, "Build strategy") that logic moves down and each client rebinds it. **The planning pass settled the shape — this is now a build, not a design:**
   - **Where the native half lives.** libverovio is C++; `clausters-core` is deliberately `build.rs`-free and wasm-clean, so it cannot host the binding. A new **`clausters-notation`** crate (its own `build.rs`, the libverovio binding, the `Score` model) owns everything native, behind a `verovio` feature **default-off** for flexibility — the Python reference wheel turns it on (`build_native.py`), exactly as it already stages `libverovio.so`. `clausters-ffi` re-exports its `extern "C"` surface. Linking/staging mirror libfaust: `DT_RPATH` of `$ORIGIN`/`$ORIGIN/../_libs`/prefix, `CLAUSTERS_VEROVIO` to locate, the SMuFL resource dir resolved inside the Rust binding.
   - **Where the pure half lives.** The SVG→display-list walk (moving to Rust XML parsing via `roxmltree`, wasm-safe — no duplicate parser per client) and the MEI encoder go into **`clausters-core`** behind an opt-in `notation` feature, so they compile to wasm and a future JS/wasm client reuses them. The `Event`/`Timeline`→*voice* reduction reads client-native types and **stays in each client**; the core exposes `voice_to_mei(voice, meter, clef, key)` — that is where the agnostic/shell line falls.
@@ -442,9 +442,9 @@ The plan carried notation for years as "Verovio's SVG, hosted by the web surface
 
 Open lines (unnumbered until a design converges):
 
-- **Per-element edit properties.** A widget-level `editable` flag now gates the whole page — off by default (a `score` is a read-only view; a drag does nothing), on for an editor that applies the `"transpose"` round trip, since the host cannot fulfil an edit the driver will not apply. That is the coarse cut; the finer one remains open: *which element* allows *which* edit is a per-element property (a notehead transposes, a barline does not), deliberately not gated yet since Verovio's editor is still developing and the obvious next wants (lengthening a stem, which autolayout normally does) are edits, not restrictions.
-- **More edit verbs.** The payload is a tag plus flat primitives, so duration, accidentals, articulation and stem direction extend it without touching the protocol — each is a Verovio editor action plus a client method, the `"transpose"` shape reused.
-- **Notation as a composition surface.** The `score` is a view of a *score*; binding it to the arrangement (`clausters.form`) the way `track`/`clip` are bound is the open question the multitrack and piano-roll views already answered for their own material.
+- ~~**Per-element edit properties.**~~ **Numbered `N8`** on 2026-08-30. A widget-level `editable` flag now gates the whole page — off by default (a `score` is a read-only view; a drag does nothing), on for an editor that applies the `"transpose"` round trip, since the host cannot fulfil an edit the driver will not apply. That is the coarse cut; the finer one remains open: *which element* allows *which* edit is a per-element property (a notehead transposes, a barline does not), deliberately not gated yet since Verovio's editor is still developing and the obvious next wants (lengthening a stem, which autolayout normally does) are edits, not restrictions.
+- ~~**More edit verbs.**~~ **Delivered by `N2`/`N5`, and not the way this line predicted.** It expected each verb to be a verovio editor action plus a client method; what shipped is a verb of the **model** — `set_dur`, `set_pitches`, `set_marks`, `move_steps` — applied through one `Score.apply`, so duration, accidentals, articulation and stem direction are edits to a structure rather than actions on a layout engine's document. The prediction about the *protocol* held exactly: the payload is still a tag plus flat primitives, and the three gestures a page reports (`"element"`, `"transpose"`, `"insert"`) grew without the wire changing shape.
+- ~~**Notation as a composition surface.**~~ **Numbered `N9`** on 2026-08-30, once the model it needed existed: binding the `score` to the arrangement (`clausters.form`) the way `track`/`clip` are bound is the open question the multitrack and piano-roll views already answered for their own material.
 
 ## G32: host gaps the editor example turned up
 
@@ -2831,6 +2831,84 @@ Whatever symbols the model itself needs owe their rows either way
   not an element, the fit, and the three shapes the press can take), 54 in the
   Python client and 33 in the web one.
 
+- ⬜ **N7 — What opening a foreign score preserves**. The reader takes every
+  layout decision it finds as a decision **somebody made**, and most of them
+  were made by an engraver. A two-bar ABC phrase that says nothing whatever
+  about its page comes into the model carrying a **page break at measure 1**,
+  because verovio's importer wrote a `<pb>` and the reader stored it; every
+  `<beam>` in a document arrives the same way, as a beam a writer asked for.
+  Nothing looks wrong today — the engraving is identical, since what is stored
+  is what the engraver would have done anyway — and it stays invisible until
+  the music changes underneath it: a rhythm edited afterwards keeps beams that
+  no longer suit it, and a bar inserted before the break keeps a page turn
+  nobody chose.
+
+  This is the other half of a line `N6` did draw and drew well. It already
+  refuses to read the emitter's *own* invented rests, on the test that they
+  carry no id — "an element with no id was invented by the emitter" — and it
+  already declines to store the double bar that ends any piece, because that is
+  what the page says with or without it. What it does not do is ask the same
+  question of the decisions that *do* have somewhere to be stored.
+
+  **The decision, and it is one:** what should opening somebody else's score
+  preserve? The plainest answer is the one the padding rule already uses —
+  read layout only from a document **this layer wrote** (it has our ids) and
+  let the engraver work the rest out again — and it has a cost worth naming: a
+  MusicXML file exported from a notation program *does* carry breaks and beams
+  its author chose, and this would drop them. The alternative is a per-kind
+  rule, or a flag on the read. None of the three is obviously right, which is
+  why this is a milestone rather than the fix it looked like.
+  **Acceptance:** a document this layer wrote round-trips its beams, breaks and
+  barlines unchanged; one it did not is read for its **music**, with whatever
+  the rule decides about its layout stated where a reader meets it — the book's
+  composition chapter and `sheet_from_mei`'s own docstring — and a test for
+  each direction. *(Found 2026-08-29 reading an ABC phrase into the model, as
+  the beam half; the break half fell out of the `N5` editor example on
+  2026-08-30, which is what made it a milestone rather than an entry.)*
+
+- ⬜ **N8 — Which element admits which edit**. A page is editable or it is not:
+  `editable` gates the whole of it, and `entry` the whole of it again. That is
+  the coarse cut and it was the right one to ship — the host cannot fulfil an
+  edit the driver will not apply, so the flag is the driver saying it will —
+  but it leaves a page where a barline drags like a notehead and a rest offers
+  a transposition that means nothing.
+
+  The finer cut is a **per-element property**, and what makes it a milestone
+  rather than a flag is that the host has no idea what an element *is*: to a
+  renderer an id is an id, which is exactly the finding `N6` answered once
+  already with the display list's `elements` list. So this is that answer
+  generalized — the engraving walk knows a notehead from a barline from a rest,
+  and what it knows has to reach the host as something narrower than "this id
+  is a sounding element". What shape that takes is the decision: a class per
+  element, a set of admitted gestures per element, or a rule the host applies
+  to a class it is told.
+  **Acceptance:** a drag on something that cannot be transposed does nothing
+  and says nothing (rather than reporting an edit the model refuses); note
+  entry declines where a note cannot go; and whatever the page allows is
+  readable from the display list rather than guessed from a shape.
+
+- ⬜ **N9 — The score in the arrangement**. The `score` widget is a view of a
+  *score*, standing on its own: a client engraves one, drives one transport
+  over it, and hears it. What it is not is a view of **the piece** — the
+  arrangement (`clausters.form`) places elements in time, groups them and
+  renders them, and a score is exactly the kind of element it should be able to
+  place, alongside a take and a pattern.
+
+  Both neighbouring views have already answered this for their own material,
+  which is what makes the question askable rather than open-ended: a `clip`
+  draws a take placed on a lane and edits it back, and the piano roll draws
+  notes on the same axis. A score placed on a lane is the third, and it brings
+  its own questions — what a score's *element* is (the sheet, or a stretch of
+  it), whether the arrangement's beat axis and the page's own metric grid are
+  one axis or two, and what a clip of a score draws when the lane is a
+  centimetre tall. The model needs nothing new to hold it: an element is
+  already deliberately general, and a sheet is data.
+  **Acceptance:** a sheet is an element of an arrangement, placed and rendered
+  like any other; the editor draws it and edits it back through the verbs it
+  already has; and the composition chapter shows the same piece as a score and
+  as a timeline. *(The G31 line "Notation as a composition surface", numbered
+  2026-08-30 now that the model it needed exists.)*
+
 **What became of the earlier numbering.** `G31g` was one line; the first sizing
 made it `N1`–`N4` (surface, markup, polyphony, tuplets). The four are all still
 here and none of them is a milestone any more: the **surface** is N5's, being a
@@ -3019,19 +3097,6 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   the one case that has to stay legal — a **chord** holding one of its pitches
   over — so the requirement is that the two items share *a* pitch, not all of
   them.
-
-- ⬜ **A beam verovio computed comes back as a beam somebody chose** *(found
-  2026-08-29, reading an ABC phrase into the model)*. The reader takes every
-  `<beam>` in a document as a written beam, because the document does not say
-  which of them a writer asked for and which the engraver worked out. So opening
-  a typed score freezes its automatic beaming into the model as intention, and
-  a later edit to the rhythm keeps beams that no longer suit it. The engraving
-  is identical today, so nothing looks wrong until the music changes underneath
-  them. What it needs is a way to tell the two apart — the plainest being to
-  read beams only from a document this layer wrote (the same "it has our ids"
-  test the padding rule already uses) and to let the engraver rebeam anything
-  else — which is a decision about what opening a foreign score should preserve,
-  not only a fix.
 
 - ✅ **The props manifest compares wire types, so a divergence between two
   builders of one type is invisible to it** *(found 2026-08-28, reading

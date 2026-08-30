@@ -156,10 +156,23 @@ its plan; the plan is where its acceptance is read.
 
 ### Ready — no decision in front of them
 
-**Nothing open here.** The `N` track — the last entry this section held — closed
-on 2026-08-30 with `N5`; its plan's checkboxes and the git history carry it.
+**Nothing open here.**
 
 ### Waiting on a decision
+
+- ⬜ **The `N` track's second half — notation: what a page lets a hand do**,
+  `N7`-`N9` *(`clients/gui/PLAN.md`, "N track — notation: the score model, and
+  what is written on it")*. `N1`-`N6` closed on 2026-08-29/30: the model, its
+  verbs, the emission, the interpreter, the reader and the enriched forward
+  path. The three that follow were the notation lines left standing under
+  `G31`, plus one the editor example turned up, and each is numbered now
+  because each is a **decision** before it is work.
+  **`N7`** — what opening somebody else's score should preserve, since the
+  reader stores an engraver's beams and page breaks as though a writer had
+  chosen them. **`N8`** — which element admits which edit, where today a page
+  is editable or it is not. **`N9`** — the score as an element of the
+  arrangement, the question the multitrack and piano-roll views already
+  answered for their own material.
 
 - ⬜ **`T2` — `/transport_set`'s grid origin on the transport axis** *(root
   `PLAN.md`, T track)*. With a group bound, `originSample` is still read on the
