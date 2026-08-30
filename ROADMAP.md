@@ -273,6 +273,23 @@ into this file is exactly the migration the rules forbid.
   solve. **Related:** "Staleness per node rather than per document" in the same
   list is its seam, and buys nothing until this exists.
 
+- ⬜ **Nothing maps a drawn structure onto something that sounds, so every
+  example that plays rewrites the same bridge** *(`clients/python/PLAN.md`,
+  Future directions)*. A design, not a fix, and the abstractions are open: the
+  entry names what has to be decided first — which structure is the source of
+  truth — and lists what the answer would be built from (`Ppar`/`Pmono`, a verb
+  from a timeline straight to something playing, a chord-aware event). It is
+  here because it is not a milestone of any track and every example that sounds
+  is already paying for it.
+
+- ⬜ **A roll that sounds has no cursor on it: the playhead props are there and
+  nothing outside the `Editor` moves them** *(`clients/gui/PLAN.md`, Future
+  directions)*. **Related:** the visible half of the entry above, and it closes
+  with it — whatever ends up owning the mapping is what sets `playhead_at`. It
+  is filed on the host's side so it is found from there, and it carries one
+  question of its own: whether a widget can follow a player without an `Editor`
+  in between.
+
 ### The larger questions, and the plans' own Future directions
 
 Named, not enumerated: each is written where it belongs and is read there.
