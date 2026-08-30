@@ -1256,6 +1256,55 @@ work, where a pending item reads as done.)*
   executable — left as it is, and named here so it is not rediscovered as a
   surprise.
 
+- ⬜ **Two views of one arrangement keep two histories, so an undo writes a state
+  nobody was in** *(found 2026-08-30 by the user, arguing that an undo stack
+  belongs to the data and not to the view; measured the same day)*. `Editor`
+  mints its own history — `self._log = _native.Log()` per instance, and its own
+  `_document` derived from the tree — and the web client does the same
+  (`this.log ??= new Log()`). But the tree is shared Python (or TS) objects, so
+  two editors on one composition edit **one** dataset through **two** logs. The
+  code documents that arrangement as supported: `apply`'s own docstring says a
+  poll loop may be shared "even one shared with a second editor (a dedicated
+  piano-roll beside the multitrack, say)", and `open_pianoroll` sets the mode on
+  the editor it is called on, so two windows *are* two editors.
+
+  Measured, on a `Track` of two notes, A the multitrack and B a dedicated roll on
+  the same arrangement:
+
+  ```
+  start:             [60, 64]
+  after A (2nd->65): [60, 65]
+  after B (1st->62): [62, 65]
+  A.undo() first:    [60, 64]   <- B's edit is gone, and B never asked
+  B.undo() after:    [60, 65]   <- a state that never existed
+  ```
+
+  `b.can_undo` is `False` after A's edit, so the second view cannot undo what was
+  done to the data it is showing; and each history, stepped in its own order,
+  reverts across the other's edits. **This is the exact failure the document
+  crate placed its log to avoid** — `log.rs`: "a script editing the arrangement,
+  *a second editor*, or a re-render would leave that log describing a document
+  that had moved on, and undo would write a state nobody was ever in". The crate
+  avoided it for the host; the client reintroduced it one level up by keying the
+  log to the editor instead of to the data.
+
+  **The fix is not "share the log between editors"**, or not only: what it
+  exposes is that **the client's data has no owner**. The arrangement is loose
+  objects and every editor derives its own document from them, so there is
+  nothing for a history to belong to. That is the same hole as "The mapping
+  exists and is private to the `Editor`" (Future directions) seen from the
+  history's side, and the shape it wants — an editable structure that owns its
+  model and its log, with views attached to it — is what the editor
+  generalization is about. Whatever is built, **the rule is settled and is not
+  what is open**: the stack belongs to the data, an undo in one view updates the
+  others, and the "combinable stack" only ever combines *different datasets* open
+  in one session, never views of one.
+
+  A cheap containment exists in the meantime and is worth naming: one editor is
+  one history, so a script that wants two windows over one composition today has
+  no correct way to do it, and the honest thing is that the second window is
+  read-only. Both clients.
+
 ## Future directions (a design that is not a fix)
 
 Every entry carries a checkbox, like "Found by use" above: an open direction has

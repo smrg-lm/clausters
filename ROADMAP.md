@@ -83,7 +83,23 @@ already carry it.
 Same size of work, except the shape depends on an answer. The decision is named
 on each one; none of them is being taken by this file.
 
-**Nothing open.** The three entries this section held were taken on
+- ⬜ **Two views of one arrangement keep two histories, so an undo writes a
+  state nobody was in** *(`clients/python/PLAN.md`, Found by use)*. Measured, in
+  both clients: the log is minted per `Editor` while the tree is shared, so a
+  second window over one composition edits one dataset through two histories,
+  and stepping one of them reverts across the other's edits. The rule it breaks
+  is not in question — a stack belongs to the data, and an undo in one view
+  updates the others.
+  **The decision:** who owns an editable structure in the client. There is no
+  owner today (the tree is loose objects and each editor derives its own
+  document), so there is nothing for a history to belong to, and sharing a log
+  between editors would only paper over that. It is the history's side of "The
+  mapping exists and is private to the `Editor`" (section 5), and it is settled
+  by whatever that decides. The containment until then is named in the entry:
+  one editor is one history, so a second window over one composition is
+  read-only.
+
+**The three that came before are closed.** They were taken on
 2026-08-27 and shipped with their answers: the page's missing *real* constant,
 measured to cost nothing and answered by a verb both clients already have; who
 builds `libfaust-wasm`, answered by the release; and where a node example lives
