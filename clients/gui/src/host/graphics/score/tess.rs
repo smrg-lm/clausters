@@ -116,12 +116,23 @@ impl ScoreData {
                         color,
                     );
                 }
-                Prim::Text { s, x, y, size, .. } => {
+                Prim::Text {
+                    s,
+                    x,
+                    y,
+                    size,
+                    anchor,
+                    ..
+                } => {
                     // baseline -> top-left for the host font; em height in px.
                     let em = (size * fit.sy).abs();
                     let scale = (em / crate::host::font::GLYPH_H as f32).max(0.5);
                     let [sx, sy] = fit.apply(*x, *y);
-                    crate::host::font::text(mesh, s, sx, sy - em, scale, color);
+                    // The anchor is resolved here and nowhere earlier, because
+                    // it takes the width of the string *in the host's font*,
+                    // which is the one thing the engraver could not know.
+                    let left = anchor.left(sx, crate::host::font::width(s, scale));
+                    crate::host::font::text(mesh, s, left, sy - em, scale, color);
                 }
             }
         }

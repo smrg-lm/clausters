@@ -77,8 +77,13 @@ impl Element for Score {
                     data.selected = keep.selected;
                     // A re-engraved page carries only the drawing; whether the
                     // widget edits is the host's own state, like the chrome, so
-                    // an editor stays an editor across the round trip.
+                    // an editor stays an editor across the round trip. Note
+                    // entry is the same kind of state and was being dropped
+                    // here: the page took one insertion and then silently
+                    // stopped taking any, because answering the first one
+                    // replaced the display list.
                     data.editable = keep.editable;
+                    data.entry = keep.entry;
                     true
                 }
                 None => false,
@@ -478,6 +483,100 @@ mod tests {
             Claim::events(Events::message(vec![
                 OscType::String("insert".into()),
                 OscType::String("n2".into()),
+                OscType::Int(-4),
+                OscType::Int(0),
+            ]))
+        );
+    }
+
+    /// **A staff is named by its place in its system, not down the page.** The
+    /// two differ the moment a score wraps, and a two-staff score whose third
+    /// system reported staff 4 was naming a staff no model has.
+    #[test]
+    fn a_wrapped_score_names_the_staff_of_its_system() {
+        let metrics = Metrics::default();
+        let input = input(&metrics);
+        // Two systems of two staves each, and the client's own reading of which
+        // staves belong to which system.
+        let props: Map<String, Value> = serde_json::from_str(
+            r#"{"vb":[1000,5000],"step":90,"entry":true,"elements":["n1"],
+                "systems":[[20,1740],[2500,4520]],
+                "glyphs":{"E0A4":"M0 0 L100 0 L100 -100 L0 -100 Z"},
+                "prims":[
+                  {"k":"line","pts":[[0,20],[1000,20]],"w":4},
+                  {"k":"line","pts":[[0,200],[1000,200]],"w":4},
+                  {"k":"line","pts":[[0,380],[1000,380]],"w":4},
+                  {"k":"line","pts":[[0,560],[1000,560]],"w":4},
+                  {"k":"line","pts":[[0,740],[1000,740]],"w":4},
+                  {"k":"line","pts":[[0,1020],[1000,1020]],"w":4},
+                  {"k":"line","pts":[[0,1200],[1000,1200]],"w":4},
+                  {"k":"line","pts":[[0,1380],[1000,1380]],"w":4},
+                  {"k":"line","pts":[[0,1560],[1000,1560]],"w":4},
+                  {"k":"line","pts":[[0,1740],[1000,1740]],"w":4},
+                  {"k":"line","pts":[[0,2500],[1000,2500]],"w":4},
+                  {"k":"line","pts":[[0,2680],[1000,2680]],"w":4},
+                  {"k":"line","pts":[[0,2860],[1000,2860]],"w":4},
+                  {"k":"line","pts":[[0,3040],[1000,3040]],"w":4},
+                  {"k":"line","pts":[[0,3220],[1000,3220]],"w":4},
+                  {"k":"line","pts":[[0,3800],[1000,3800]],"w":4},
+                  {"k":"line","pts":[[0,3980],[1000,3980]],"w":4},
+                  {"k":"line","pts":[[0,4160],[1000,4160]],"w":4},
+                  {"k":"line","pts":[[0,4340],[1000,4340]],"w":4},
+                  {"k":"line","pts":[[0,4520],[1000,4520]],"w":4},
+                  {"k":"glyph","cp":"E0A4","xf":[100,200,1,-1],"id":"n1"}]}"#,
+        )
+        .unwrap();
+        let mut score = Score {
+            data: ScoreData::parse(&props),
+            origin_y: None,
+        };
+        assert_eq!(score.data.staves.len(), 4, "four staves drawn");
+        // A press on the *second* system's lower staff is staff 1 of the score
+        // -- it is the fourth staff down the page, and that is not its name.
+        let claim = score.press(at(&score, input.rect, 700.0, 4340.0), &input);
+        assert_eq!(
+            claim,
+            Claim::events(Events::message(vec![
+                OscType::String("insert".into()),
+                OscType::String(String::new()),
+                OscType::Int(-6),
+                OscType::Int(1),
+            ]))
+        );
+    }
+
+    /// **Note entry survives a re-engrave**, which is not a detail: answering
+    /// an insertion *is* a new display list, so a page that lost the flag there
+    /// took one note and then silently stopped taking any.
+    #[test]
+    fn a_re_engraved_page_still_takes_note_entry() {
+        let metrics = Metrics::default();
+        let input = input(&metrics);
+        let mut score = entry_page();
+        let page: Map<String, Value> = serde_json::from_str(
+            r#"{"vb":[1000,1000],"step":90,
+                "glyphs":{"E0A4":"M0 0 L100 0 L100 -100 L0 -100 Z"},
+                "elements":["n1"],
+                "prims":[
+                  {"k":"line","pts":[[0,20],[1000,20]],"w":4},
+                  {"k":"line","pts":[[0,200],[1000,200]],"w":4},
+                  {"k":"line","pts":[[0,380],[1000,380]],"w":4},
+                  {"k":"line","pts":[[0,560],[1000,560]],"w":4},
+                  {"k":"line","pts":[[0,740],[1000,740]],"w":4},
+                  {"k":"glyph","cp":"E0A4","xf":[100,200,1,-1],"id":"n1"}]}"#,
+        )
+        .unwrap();
+        assert!(Element::set(
+            &mut score,
+            "display_list",
+            &Value::Object(page)
+        ));
+        let claim = score.press(at(&score, input.rect, 700.0, 380.0), &input);
+        assert_eq!(
+            claim,
+            Claim::events(Events::message(vec![
+                OscType::String("insert".into()),
+                OscType::String("n1".into()),
                 OscType::Int(-4),
                 OscType::Int(0),
             ]))

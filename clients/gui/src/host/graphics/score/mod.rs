@@ -221,8 +221,38 @@ pub enum Prim {
         x: f32,
         y: f32,
         size: f32,
+        /// How the string sits against `x`: `Middle` centres it, `End` puts its
+        /// right edge there. A title is centred on the page and a composer
+        /// flush to its right margin, and both say so this way rather than with
+        /// a pre-measured x -- the width is the renderer's, and only the
+        /// renderer knows it.
+        anchor: Anchor,
         id: Option<String>,
     },
+}
+
+/// Where a text primitive's `x` falls in the string it places.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Anchor {
+    /// `x` is the left edge -- the SVG default, and what a measure number or a
+    /// volta uses.
+    #[default]
+    Start,
+    /// `x` is the middle.
+    Middle,
+    /// `x` is the right edge.
+    End,
+}
+
+impl Anchor {
+    /// The left edge of a `width`-wide string placed against `x`.
+    pub fn left(self, x: f32, width: f32) -> f32 {
+        match self {
+            Anchor::Start => x,
+            Anchor::Middle => x - 0.5 * width,
+            Anchor::End => x - width,
+        }
+    }
 }
 
 impl Prim {
@@ -369,6 +399,15 @@ pub struct ScoreData {
     /// because the walk that engraved the page is what knows, and to a renderer
     /// an id is an id.
     pub elements: std::collections::HashSet<String>,
+    /// The page's systems, each the `[y_top, y_bottom]` its staves span.
+    ///
+    /// The client reads them and the host does not re-derive them, for the
+    /// reason the client's own walk gives: a **gap cannot tell a grand staff
+    /// from two systems**, and what settles it — a barline drawn through the
+    /// brace — is a notation fact rather than a measurement. Without it a press
+    /// on the third system's upper staff named staff 4 of a two-staff score,
+    /// which no model has.
+    pub systems: Vec<[f32; 2]>,
 }
 
 impl Default for ScoreData {
@@ -392,6 +431,7 @@ impl Default for ScoreData {
             editable: false,
             entry: false,
             elements: std::collections::HashSet::new(),
+            systems: Vec::new(),
         }
     }
 }

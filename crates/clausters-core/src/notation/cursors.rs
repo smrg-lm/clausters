@@ -101,7 +101,7 @@ fn id_positions(prims: &[Prim]) -> BTreeMap<&str, (f64, f64)> {
 /// what makes them one system. So the lines are grouped into staves by their own
 /// even spacing — five lines, one gap, no guessing — and staves are joined into
 /// a system when a line is drawn through them.
-fn staff_systems(prims: &[Prim]) -> Vec<(f64, f64)> {
+pub(super) fn staff_systems(prims: &[Prim]) -> Vec<(f64, f64)> {
     let ys = staff_line_ys(prims);
     if ys.is_empty() {
         return Vec::new();
@@ -317,6 +317,7 @@ mod tests {
             prims,
             step: 45.0,
             elements: Vec::new(),
+            systems: Vec::new(),
         };
         let track = cursor_track(&dl, &[entry(0.0, &["n1"])]);
         assert_eq!(track.len(), 1);
@@ -338,6 +339,7 @@ mod tests {
             prims,
             step: 45.0,
             elements: Vec::new(),
+            systems: Vec::new(),
         };
         let track = cursor_track(&dl, &[entry(0.0, &["n1"])]);
         assert_eq!(track.len(), 1);

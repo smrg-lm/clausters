@@ -60,13 +60,24 @@ impl ScoreData {
                     // a stroke is a hairline in one axis: give it its width.
                     Some(b.grown(width * 0.5))
                 }
-                Prim::Text { s, x, y, size, .. } => Some(Bounds {
-                    x0: *x,
+                Prim::Text {
+                    s,
+                    x,
+                    y,
+                    size,
+                    anchor,
+                    ..
+                } => {
                     // the host font is roughly 0.6 em wide per character
-                    x1: x + 0.6 * size * s.chars().count() as f32,
-                    y0: y - size,
-                    y1: *y,
-                }),
+                    let w = 0.6 * size * s.chars().count() as f32;
+                    let x0 = anchor.left(*x, w);
+                    Some(Bounds {
+                        x0,
+                        x1: x0 + w,
+                        y0: y - size,
+                        y1: *y,
+                    })
+                }
             };
             // What the box stands for: a notehead is the oval inside it, and
             // everything else fills what was measured around it.
@@ -139,6 +150,37 @@ impl ScoreData {
             }
         }
         self.staves.extend(group);
+    }
+
+    /// Which staff **of the score** a drawn staff is: its rank inside its own
+    /// system, not its place down the page.
+    ///
+    /// The two differ the moment a score wraps: the third system's upper staff
+    /// is the fifth drawn on a two-staff page, and naming it staff 4 names a
+    /// staff no model has. Systems come from the client (`systems`), because
+    /// telling a grand staff from two systems is a notation fact — a barline
+    /// through the brace — and not something a measurement settles. With none
+    /// sent, a one-system page is the only case that can be right, and the rank
+    /// down the page is that.
+    fn staff_of_system(&self, staff: Staff) -> Option<usize> {
+        let down_the_page = self.staves.iter().position(|s| *s == staff)?;
+        let mid = 0.5 * (staff.y0 + staff.y1);
+        let Some(system) = self
+            .systems
+            .iter()
+            .find(|[y0, y1]| mid >= *y0 - self.step && mid <= *y1 + self.step)
+        else {
+            return Some(down_the_page);
+        };
+        Some(
+            self.staves[..down_the_page]
+                .iter()
+                .filter(|s| {
+                    let m = 0.5 * (s.y0 + s.y1);
+                    m >= system[0] - self.step && m <= system[1] + self.step
+                })
+                .count(),
+        )
     }
 
     /// The staff a page-y belongs to: the nearest one, since a note off the
@@ -230,7 +272,7 @@ impl ScoreData {
         let inv = self.fit(rect).invert()?;
         let [px, py] = inv.apply(x, y);
         let staff = self.staff_at(py)?;
-        let index = self.staves.iter().position(|s| *s == staff)?;
+        let index = self.staff_of_system(staff)?;
         // The elements of this staff, which is the nearest one to each: a hit
         // is placed by where it is drawn, exactly as a note off the staff still
         // belongs to the staff its ledger lines count from.

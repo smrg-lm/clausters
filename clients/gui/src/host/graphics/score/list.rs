@@ -12,7 +12,7 @@
 
 use serde_json::{Map, Value};
 
-use super::{Affine, Cursor, Prim, STEP, ScoreData};
+use super::{Affine, Anchor, Cursor, Prim, STEP, ScoreData};
 
 impl ScoreData {
     /// Parse the `score` widget's display-list props sent by the client:
@@ -105,6 +105,16 @@ impl ScoreData {
                     .collect()
             })
             .unwrap_or_default();
+        data.systems = props
+            .get("systems")
+            .and_then(Value::as_array)
+            .map(|xs| {
+                xs.iter()
+                    .filter_map(Value::as_array)
+                    .filter_map(|b| Some([b.first()?.as_f64()? as f32, b.get(1)?.as_f64()? as f32]))
+                    .collect()
+            })
+            .unwrap_or_default();
         data.index();
         data
     }
@@ -173,6 +183,11 @@ fn parse_prim(v: &Value) -> Option<Prim> {
             x: obj.get("x")?.as_f64()? as f32,
             y: obj.get("y")?.as_f64()? as f32,
             size: obj.get("size").and_then(Value::as_f64).unwrap_or(0.0) as f32,
+            anchor: match obj.get("anchor").and_then(Value::as_str) {
+                Some("middle") => Anchor::Middle,
+                Some("end") => Anchor::End,
+                _ => Anchor::Start,
+            },
             id,
         }),
         _ => None,

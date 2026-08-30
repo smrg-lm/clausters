@@ -48,6 +48,19 @@ pub struct DisplayList {
     /// element it fell after.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub elements: Vec<String>,
+    /// The page's **systems**, each the `[y_top, y_bottom]` its staves span,
+    /// top to bottom.
+    ///
+    /// A renderer clusters the staff lines into staves on its own — the spacing
+    /// says where one ends — but it cannot tell a **grand staff from two
+    /// systems** that way: the two staves of a piano part are further apart
+    /// than the lines of one staff and closer than two systems, and any
+    /// threshold between those holds for one page size and not the next. What
+    /// settles it is already drawn (a barline through the brace) and is read
+    /// here, once, so a host asking "which staff of the score is this?" gets
+    /// the score's answer rather than a count down the page.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub systems: Vec<[f64; 2]>,
 }
 
 /// One placed primitive. The `k` discriminator names the kind; every primitive
@@ -91,6 +104,15 @@ pub enum Prim {
         x: f64,
         y: f64,
         size: f64,
+        /// How the string sits against `x`: `"middle"` centres it and `"end"`
+        /// puts its right edge there. Absent is the SVG default, `start`.
+        ///
+        /// A title is centred on the page and a composer flush to its right
+        /// margin, and both say so with `text-anchor` rather than with a
+        /// pre-measured x -- the width is the renderer's, and only the renderer
+        /// knows it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        anchor: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         id: Option<String>,
     },
@@ -143,12 +165,17 @@ pub fn svg_to_display_list(svg: &str) -> DisplayList {
         &mut elements,
     );
     let step = staff_step(&prims);
+    let systems = super::cursors::staff_systems(&prims)
+        .into_iter()
+        .map(|(y0, y1)| [r(y0, 1), r(y1, 1)])
+        .collect();
     DisplayList {
         vb,
         glyphs,
         prims,
         step,
         elements,
+        systems,
     }
 }
 
@@ -389,33 +416,64 @@ fn points_to_path(points_str: &str) -> String {
 }
 
 fn text_prim(node: Node, xf: Xf, nid: Option<&str>) -> Option<Prim> {
-    // the string lives in nested <tspan>s; the baseline x, y on the outer <text>
-    let s: String = node
-        .descendants()
-        .filter(Node::is_text)
-        .filter_map(|n| n.text())
-        .collect();
+    let s = drawn_text(node);
     let s = s.trim();
     if s.is_empty() {
         return None;
     }
-    let x: f64 = node
-        .attribute("x")
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(0.0);
-    let y: f64 = node
-        .attribute("y")
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(0.0);
-    let (px, py) = apply(xf, x, y);
+    // The baseline and the anchor are on the `<text>` for the music's own
+    // labels (a measure number, a volta), and on an inner `<tspan class="rend">`
+    // for anything laid out as a block -- the page head's title and composer,
+    // where the `<text>` carries nothing but `font-size="0px"`. Reading only
+    // the outer node put every one of those at the page margin, on top of each
+    // other, which is what a title and a composer overlapping looked like.
+    let placed = placement(node)?;
+    let (px, py) = apply(xf, placed.0, placed.1);
     let size = text_font_size(node) * xf.2;
     Some(Prim::Text {
         s: s.to_string(),
         x: r(px, 1),
         y: r(py, 1),
         size: r(size, 1),
+        anchor: placed.2,
         id: nid.map(str::to_string),
     })
+}
+
+/// The text a `<text>` element actually draws.
+///
+/// An SVG `<title>` is a tooltip and a `<desc>` is metadata: neither is drawn,
+/// and verovio writes a `<title class="labelAttr">` inside the page head naming
+/// the field. Collected with the rest it put the word "title" in front of the
+/// title.
+fn drawn_text(node: Node) -> String {
+    fn visit(node: Node, out: &mut String) {
+        for child in node.children() {
+            if child.is_text() {
+                out.push_str(child.text().unwrap_or(""));
+            } else if child.is_element() && !matches!(child.tag_name().name(), "title" | "desc") {
+                visit(child, out);
+            }
+        }
+    }
+    let mut out = String::new();
+    visit(node, &mut out);
+    out
+}
+
+/// Where a `<text>` is placed: `(x, y, text-anchor)`, taken from the element
+/// itself or from the first descendant that carries an `x`.
+fn placement(node: Node) -> Option<(f64, f64, Option<String>)> {
+    let at = |n: Node| {
+        let x: f64 = n.attribute("x")?.parse().ok()?;
+        let y: f64 = n.attribute("y").and_then(|v| v.parse().ok()).unwrap_or(0.0);
+        let anchor = n
+            .attribute("text-anchor")
+            .filter(|a| *a != "start")
+            .map(str::to_string);
+        Some((x, y, anchor))
+    };
+    at(node).or_else(|| node.descendants().filter(Node::is_element).find_map(at))
 }
 
 fn fontsize_re() -> &'static Regex {
@@ -771,6 +829,63 @@ mod tests {
     }
 
     #[test]
+    fn a_page_head_is_placed_by_its_tspan_and_never_by_its_tooltip() {
+        // verovio writes the page head as a `<text font-size="0px">` carrying
+        // nothing, with the position, the anchor and the string on tspans
+        // inside it -- and an SVG `<title>` naming the field, which is a
+        // tooltip and is not drawn. Reading only the outer element put the
+        // title and the composer at the same place, on top of each other, with
+        // the word "title" in front of the title.
+        let head = r##"<svg xmlns="http://www.w3.org/2000/svg">
+          <svg class="definition-scale" viewBox="0 0 21000 29700">
+            <g class="page-margin" transform="translate(500, 500)">
+              <g class="pgHead">
+                <text font-size="0px">
+                  <tspan class="rend" x="10000" y="415" text-anchor="middle">
+                    <title class="labelAttr">title</title>
+                    <tspan class="text"><tspan font-size="607px">Eight bars</tspan></tspan>
+                  </tspan>
+                </text>
+                <text font-size="0px">
+                  <tspan class="rend" x="20000" y="825" text-anchor="end">
+                    <tspan class="text"><tspan font-size="405px">a composer</tspan></tspan>
+                  </tspan>
+                </text>
+              </g>
+            </g>
+          </svg>
+        </svg>"##;
+        let dl = svg_to_display_list(head);
+        let texts: Vec<_> = dl
+            .prims
+            .iter()
+            .filter_map(|p| match p {
+                Prim::Text {
+                    s, x, y, anchor, ..
+                } => Some((s.as_str(), *x, *y, anchor.as_deref())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            texts,
+            vec![
+                ("Eight bars", 10500.0, 915.0, Some("middle")),
+                ("a composer", 20500.0, 1325.0, Some("end")),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_label_placed_on_the_text_itself_keeps_the_default_anchor() {
+        // The music's own labels -- a measure number, a volta -- carry their
+        // position on the `<text>`, and nothing about an anchor: `start` is the
+        // SVG default and is left out rather than written down.
+        let dl = svg_to_display_list(SVG);
+        let text = dl.prims.iter().find(|p| p.id() == Some("dyn-1")).unwrap();
+        assert!(matches!(text, Prim::Text { anchor, .. } if anchor.is_none()));
+    }
+
+    #[test]
     fn the_step_is_measured_from_the_staff_lines() {
         // two staff lines 90 apart -> a diatonic step is half that, 45. Only one
         // pair here, so the median gap is 90.
@@ -837,6 +952,7 @@ mod tests {
             prims,
             step: 90.0,
             elements: Vec::new(),
+            systems: Vec::new(),
         }
     }
 
@@ -889,6 +1005,7 @@ mod tests {
             }],
             step: 90.0,
             elements: Vec::new(),
+            systems: Vec::new(),
         };
         assert_eq!(bare.staff_position("n1"), None);
     }
