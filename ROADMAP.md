@@ -304,6 +304,22 @@ into this file is exactly the migration the rules forbid.
   it cannot do is follow a pattern player, which is forward-only and has no
   position — the question this one owns.
 
+- ⬜ **A drawn curve is a list of points, and `Env` is an envelope for
+  `EnvGen`** *(`clients/python/PLAN.md`, Future directions)*. A design. The two
+  differ by axis, not by spelling — segment durations with a release node
+  against absolute `(t, v, shape, curve)` tuples — and the conversion is lossy
+  that way; `Automation` holds the curve and its placement at once, which is why
+  a curve cannot be edited without an arrangement. The third data kind of the
+  mapping question above.
+
+- ⬜ **`Track` wraps a `Timeline`, so the tree has two ways of placing things**
+  *(`clients/python/PLAN.md`, Future directions)*. A design, and the one that
+  reaches furthest: it is the arrangement model in both clients plus the bridge
+  that writes the document. The crate is already written for the other model (a
+  lane is a projection; `SetMembers` is the roll's edit as a member list with
+  ids), and as an aggregate a note — and an OSC marker — gains the id that today
+  it lacks.
+
 ### The larger questions, and the plans' own Future directions
 
 Named, not enumerated: each is written where it belongs and is read there.

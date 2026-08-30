@@ -1361,3 +1361,67 @@ than being ticked here.
   **Related:** "A roll that sounds shows no cursor, and what can drive the line
   is a `Playhead`" (`clients/gui/PLAN.md`, Future directions) is the same
   question seen from the view.
+
+- ⬜ **A drawn curve is a list of points, and `Env` is an envelope for `EnvGen`**
+  *(named 2026-08-30 by the user, sizing what a general curve editor would need)*.
+  The two are not two spellings of one thing, and the axis is what separates
+  them. `Env` holds `levels`, segment `times` as **durations** (one fewer than
+  the levels) and a curve each, plus `release_node`/`loop_node`: it is a
+  *dynamic* envelope, whose contract is `EnvGen`'s — it sustains while the gate
+  is held. A curve on a timeline is **absolute** — `(t, v, shape, curve)` per
+  break-point — and has no sustain and no loop to speak of. `env_to_points` /
+  `points_to_env` therefore convert rather than repack, and the conversion is
+  **lossy in one direction**: `release_node` and `loop_node` have nowhere to go,
+  and the last point carries a linear placeholder no segment uses.
+
+  **The wire already speaks points**: the `"points"` edit-back is `t v shape
+  curve` per break-point and the `bpf` prop takes the same. The only thing that
+  insists on `Env` is the client, in `Automation`, which keeps one so it can
+  discretize it into a control buffer.
+
+  **And `Automation` holds two things at once**: the curve (the data) and its
+  placement with its targets (a beat, `(node, control)` pairs, `play` as a
+  timeline item). That is why a curve cannot be edited without an arrangement —
+  the only object that owns one is also a placement.
+
+  The direction: the break-point list is the curve editor's model, `Env` stays
+  what `EnvGen` plays, and `Automation` is the placement of a curve on targets.
+  **What is open** is whether the point list becomes a named type in both
+  clients or stays the flat list the wire uses, whether `Env` keeps a round trip
+  at all or only `points_to_env` at render time, and what a drawn curve would do
+  if it ever needed a sustain — the one thing `Env` says that points cannot.
+  **Related:** "The mapping exists and is private to the `Editor`" — this is the
+  same question for the third data kind.
+
+- ⬜ **`Track` wraps a `Timeline`, so the tree has two ways of placing things**
+  *(named 2026-08-30 by the user: a track is a restricted `Aggregate`, and the
+  timeline is not the tree)*. An `Aggregate` places members by offset; a
+  `Timeline` places items by beat; `Track` is an `Element` that wraps one, so
+  both mechanisms live in the same tree and the editor has to ask which it is
+  looking at, at every node. The visible consequence is `_editable_timeline`,
+  which answers **only** for an element wrapping a `Timeline`: a `Sequence` of
+  `Clang`s — musically the same thing — draws in a roll and cannot be edited.
+  Editability depends on what the element wrapped, not on what it is.
+
+  **The document crate is already written for the other model.** Its header says
+  the tree stays general and that a lane is a *projection* ("there is no lane
+  here"); its `SetMembers` intent is documented as "the roll's edit: notes added,
+  moved and removed arrive as the resulting list. Members keep their ids". So the
+  document already thinks a roll's notes are members of an aggregate, with
+  identity — the outlier is the client's `Track`, which keeps them as timeline
+  items with no node.
+
+  What it would give, beyond removing the second mechanism: every note gets an
+  id, which is what makes an edit survive its siblings moving; and so do the OSC
+  markers, which are un-editable today *because* they are items without nodes.
+  What `Timeline` keeps is the role it already has everywhere else — the flat,
+  playable projection anything flattens to (`Element.to_timeline`), not a
+  container in the tree.
+
+  **What is open**: where the timeline's own verbs land once a track is an
+  aggregate (`quantize`, `from_pattern`, random access, the `Playhead` scan —
+  flatten-then-play already covers the last), how it meets the crate's open
+  decision on member identity, and that it is the arrangement model in both
+  clients plus the bridge that writes the document. **Related:** "Two views of
+  one arrangement keep two histories" (Found by use) — a note with no id is also
+  a note a history cannot name.
