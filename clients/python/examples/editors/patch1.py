@@ -198,21 +198,21 @@ print("press render to hear the chain, stop to free it.")
 _closed = False
 
 
-def on_patch(tag, *rest):
+def on_patch(tag, *payload):
     """The canvas edits onto the patch model."""
-    if tag == "wire" and len(rest) >= 4:
-        src, outlet, dst, inlet = int(rest[0]), rest[1], int(rest[2]), rest[3]
+    if tag == "wire" and len(payload) >= 4:
+        src, outlet, dst, inlet = int(payload[0]), payload[1], int(payload[2]), payload[3]
         p.connect(src, outlet, dst, inlet)
         print(f"  wired {src}.{outlet} -> {dst}.{inlet} — press render to hear it")
-    elif tag == "move" and len(rest) >= 3:
-        index, x, y = int(rest[0]), float(rest[1]), float(rest[2])
+    elif tag == "move" and len(payload) >= 3:
+        index, x, y = int(payload[0]), float(payload[1]), float(payload[2])
         placed[index] = (x, y)
         print(f"  moved box {index} to ({x:.0f}, {y:.0f})")
 
 
-def on_view(tag, *rest):
-    if tag == "view" and len(rest) >= 3:
-        print(f"  view x={rest[0]:.0f} y={rest[1]:.0f} zoom={rest[2]:.2f}")
+def on_view(tag, *payload):
+    if tag == "view" and len(payload) >= 3:
+        print(f"  view x={payload[0]:.0f} y={payload[1]:.0f} zoom={payload[2]:.2f}")
 
 
 win["patch"].on_event(on_patch)

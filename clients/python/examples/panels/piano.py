@@ -147,11 +147,11 @@ def note_event(pitch: int, velocity: int, state: int, channel: int) -> None:
 # window's close is a handle too.
 
 # %%
-def on_keys(tag, *rest):
-    if tag == "note" and len(rest) >= 4:
-        note_event(int(rest[0]), int(rest[1]), int(rest[2]), int(rest[3]))
-    elif tag == "range" and len(rest) >= 2:
-        print(f"  visible range {rest[0]}..{rest[1]}")
+def on_keys(tag, *payload):
+    if tag == "note" and len(payload) >= 4:
+        note_event(int(payload[0]), int(payload[1]), int(payload[2]), int(payload[3]))
+    elif tag == "range" and len(payload) >= 2:
+        print(f"  visible range {payload[0]}..{payload[1]}")
 
 
 win["keys"].on_event(on_keys)

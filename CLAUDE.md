@@ -252,6 +252,16 @@ on trust, so that is where drift accumulates:
   re-read the sentences it touched: agreement, the possessive, and whether the
   new word is the right one *there* — often it is `buffer`, `take`, `piece`,
   `contents` or `audio` rather than the one word the rename reached for.
+- **A word this domain already owns never names a language construct.**
+  `rest` is a **silence** here, so it never names varargs or a leftover: an
+  event handler's tail is the `payload` (`def on_score(tag, *payload)`,
+  `(tag, ...payload) =>`), and a builder's leftover options are `params` or
+  `options`. The JavaScript object-rest idiom (`const { flow, ...rest } =
+  options`) is the language's own construct and stays. The same care goes to
+  every term the notation, arrangement and audio vocabularies have claimed —
+  `note`, `voice`, `staff`, `clip`, `take`, `element`, `slot`, `tie`, `step`:
+  reusing one for a generic programming thing costs a reader a double take on
+  every line it appears in.
 - **Type and class names** are CamelCase, with an acronym inside a name
   taking only its first letter in uppercase — `OscFunc`, `MidiFunc`,
   `OscUdpInterface`, `OscTcpInterface`, `NodeIdAllocator` — never all-caps

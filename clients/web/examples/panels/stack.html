@@ -135,7 +135,7 @@ view's.</div>
         // Panning or zooming a page with the pointer does report, though: an
         // unbound view sends its new window as an event, which is the path the
         // slider replaced.
-        win.widget("wave").onEvent((tag, ...rest) => {
+        win.widget("wave").onEvent((tag, ...payload) => {
           if (tag === "view") log(`the axis moved by hand: ${tag} ${rest}`);
         });
       }

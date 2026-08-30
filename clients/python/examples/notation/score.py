@@ -228,7 +228,7 @@ def redo():
     else:
         print("  nothing to redo")
 
-def on_score(tag, *rest):
+def on_score(tag, *payload):
     """The page's two edit-backs, wired to the ``score`` handle. A click
     reports the MEI id under the cursor (``"element"``) — this side
     selects it and sounds it; a drag reports a ``"transpose"`` naming the
@@ -238,17 +238,17 @@ def on_score(tag, *rest):
     reply thread, and the ambient session is per-thread, so every `play`
     here names its `server` instead of letting it resolve."""
     global selected
-    if tag == "element" and rest:
-        selected = rest[0] or None
-        note = by_id.get(rest[0])
+    if tag == "element" and payload:
+        selected = payload[0] or None
+        note = by_id.get(payload[0])
         if note is None:
-            print(f"  clicked {rest[0] or '(blank paper)'}")
+            print(f"  clicked {payload[0] or '(blank paper)'}")
             return
-        print(f"  clicked note {rest[0]}: MIDI {note['pitch']} "
+        print(f"  clicked note {payload[0]}: MIDI {note['pitch']} "
               f"at {note['t']:.0f} ms")
         play(Event(midinote=note["pitch"], dur=note["dur"] / 1000.0,
                    amp=0.15), server=server)
-    elif tag == "transpose" and len(rest) >= 2:
+    elif tag == "transpose" and len(payload) >= 2:
         # The host drew the drag; this side makes it true -- move the note
         # **to** the staff position the payload names, re-engrave, and send
         # the page back, which is what retires the preview. The ids survive
@@ -259,7 +259,7 @@ def on_score(tag, *rest):
         # makes it safe to arrive late or twice: `transpose_to` computes the
         # step count against the engraving it has right now, so a page this
         # side re-engraved meanwhile cannot make the edit land somewhere else.
-        element, position = rest[0], int(rest[1])
+        element, position = payload[0], int(payload[1])
         if not score.transpose_to(element, position):
             print(f"  refused to transpose {element}: this verovio has "
                   "no working editor")

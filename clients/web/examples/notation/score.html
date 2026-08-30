@@ -158,19 +158,19 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
         return last ? (last.t + last.dur) / 1000.0 : 0.0;
       };
 
-      const onScore = (tag, ...rest) => {
-        if (tag === "element" && rest.length) {
-          selected = rest[0] || null;
-          const note = byId.get(rest[0]);
-          if (note === undefined) return log(`  clicked ${rest[0] || "(blank paper)"}`);
-          log(`  clicked note ${rest[0]}: MIDI ${note.pitch} at ${note.t.toFixed(0)} ms`);
+      const onScore = (tag, ...payload) => {
+        if (tag === "element" && payload.length) {
+          selected = payload[0] || null;
+          const note = byId.get(payload[0]);
+          if (note === undefined) return log(`  clicked ${payload[0] || "(blank paper)"}`);
+          log(`  clicked note ${payload[0]}: MIDI ${note.pitch} at ${note.t.toFixed(0)} ms`);
           sound(note);
-        } else if (tag === "transpose" && rest.length >= 2) {
+        } else if (tag === "transpose" && payload.length >= 2) {
           // The host drew the drag; this side makes it true. The payload is a
           // position and not a displacement, which is what makes it safe to
           // arrive late or twice: the step count is computed against the
           // engraving this side has right now.
-          const [element, position] = [rest[0], Math.round(rest[1])];
+          const [element, position] = [payload[0], Math.round(payload[1])];
           if (!score.transposeTo(element, position)) {
             return log(`  refused to transpose ${element}`);
           }

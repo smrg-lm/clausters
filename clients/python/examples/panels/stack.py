@@ -138,7 +138,7 @@ print("bound: picker -> pages.index, scroll -> wave.view_start; "
 _closed = False
 win.on_closed(lambda: globals().__setitem__("_closed", True))
 win["wave"].on_event(
-    lambda tag, *rest: print(f"the axis moved by hand: {tag} {rest}")
+    lambda tag, *payload: print(f"the axis moved by hand: {tag} {payload}")
     if tag == "view" else None)
 
 

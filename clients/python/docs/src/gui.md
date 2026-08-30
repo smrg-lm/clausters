@@ -793,7 +793,7 @@ Drag a clip, or its edge. The host draws the move as it happens and, on
 release, emits what you did — not pixels:
 
 ```python
-win["a"].on_event(lambda tag, *rest: print(tag, rest))
+win["a"].on_event(lambda tag, *payload: print(tag, payload))
 # "clip" (offset, dur)  when a clip is moved or resized
 # "locate" (position)   when the ruler or empty lane space is clicked
 # "view" (start, len)   when the axis is zoomed or panned

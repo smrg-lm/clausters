@@ -165,21 +165,21 @@ not an <code>OUT</code>.</div>
         log("press render to hear the chain, stop to free it.");
 
         // The canvas edits, onto the patch model.
-        win.widget("patch").onEvent((tag, ...rest) => {
-          if (tag === "wire" && rest.length >= 4) {
+        win.widget("patch").onEvent((tag, ...payload) => {
+          if (tag === "wire" && payload.length >= 4) {
             const [src, outlet, dst, inlet] = rest;
             p.connect(Number(src), outlet, Number(dst), inlet);
             log(`  wired ${src}.${outlet} -> ${dst}.${inlet} — press render to hear it`);
-          } else if (tag === "move" && rest.length >= 3) {
+          } else if (tag === "move" && payload.length >= 3) {
             const [index, x, y] = rest;
             placed[Number(index)] = [Number(x), Number(y)];
             log(`  moved box ${index} to (${Number(x).toFixed(0)}, ${Number(y).toFixed(0)})`);
           }
         });
-        win.widget("workspace").onEvent((tag, ...rest) => {
-          if (tag === "view" && rest.length >= 3) {
-            log(`  view x=${rest[0].toFixed(0)} y=${rest[1].toFixed(0)} `
-              + `zoom=${rest[2].toFixed(2)}`);
+        win.widget("workspace").onEvent((tag, ...payload) => {
+          if (tag === "view" && payload.length >= 3) {
+            log(`  view x=${payload[0].toFixed(0)} y=${payload[1].toFixed(0)} `
+              + `zoom=${payload[2].toFixed(2)}`);
           }
         });
         win.widget("render").onClick(() => render());
