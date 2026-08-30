@@ -3075,6 +3075,28 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   verbatim 2026-08-20. Two of the questions that stood beside them have since landed —
   the LOD crossfade in G20 and the `bpf` editor's edit-back in G21.)*
 
+- ⬜ **A roll that sounds has no cursor on it: the playhead props are there and
+  nothing outside the `Editor` moves them** *(named 2026-08-30 by the user,
+  looking at `examples/editors/pianoroll` in both clients)*. The chrome is
+  finished and general — `playhead`, `playhead_at`, `playhead_loop_start`,
+  `playhead_loop_len` on every widget with a time axis, anchored to the engine's
+  sample clock so the host advances the line itself between messages, and the
+  multitrack drives all four through `Editor`'s transport. What has no answer is
+  the case the piano-roll example is: a script that plays a pattern and draws a
+  roll of the same notes, with **nothing joining the two** — the notes sound and
+  the cursor stays where it was, because moving it means knowing at which engine
+  sample the piece started, and the thing that would know is the mapping the
+  client does not have.
+
+  So this is not the host's to fix, and it is written here to be found from the
+  host's side: it is the visible half of **"Nothing maps a drawn structure onto
+  something that sounds"** (`clients/python/PLAN.md`, Future directions), and it
+  closes when that decision is taken — whatever ends up owning the mapping is
+  what sets `playhead_at`. Worth deciding at the same time whether a client
+  playing *anything* should be able to say "this widget follows this player"
+  without an `Editor` in between, since the roll, the waveform and the engraved
+  page would all take it.
+
 ## Found by use: the running list of fixes
 
 - ✅ **A tie between two different pitches is accepted, written, and dropped by
