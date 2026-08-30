@@ -223,9 +223,8 @@ into this file is exactly the migration the rules forbid.
   pyramid, the RMS layer and the `measure` prop); everything after them is open —
   band-limited reconstruction and true peak, the loudness family, the loudness
   layer and its read-out, and the two milestones that make the layer stack
-  explicit and publish its rules from the clients. **Related:** the `measure`
-  docstring fix (section 1) is what ships today, not a piece of this; and the
-  audio editor's layers below land on this track's stack rules.
+  explicit and publish its rules from the clients. **Related:** the audio
+  editor's layers below land on this track's stack rules.
 
 - ⬜ **The D track's spectral half — the hand that edits data**
   *(`clients/gui/PLAN.md`, "D track")*. `D1`–`D4` and `D8` shipped (the grabbable
