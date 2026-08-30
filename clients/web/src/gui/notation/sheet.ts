@@ -387,3 +387,70 @@ export function tie(sheet: Sheet, id: number, tied = true): Sheet {
 export function toVoice(sheet: Sheet, ids: number[], voice: number): Sheet {
     return apply(sheet, { op: "to_voice", ids, voice });
 }
+
+/** What {@link marks} takes. */
+export interface MarkOptions {
+    /** Articulations, by their MEI names (`stacc`, `acc`, `ten`, `marc`). */
+    articulations?: string[];
+    /** A dynamic written under the staff at this note (`pp`…`ff`). */
+    dynamic?: string;
+    /** An ornament: `trill`, `mordent`, `turn`, `fermata`. */
+    ornament?: string;
+    /** That this is a grace note: `acc` (acciaccatura) or `unacc`. */
+    grace?: string;
+    /** A forced stem direction, `up` or `down`. */
+    stem?: string;
+    /** How long it **sounds**, when that is not how long it is written. */
+    sounding?: Ratio | number;
+}
+
+/**
+ * What a note carries beyond its pitch and value.
+ *
+ * Every one of them is a fact about the note, not an instruction to the
+ * engraver, which is what lets a player read them back. `sounding` is kept apart
+ * from the written value because a page that shortened the value would be a
+ * different piece of music.
+ */
+export function marks(options: MarkOptions = {}): unknown {
+    const out: Record<string, unknown> = {};
+    if (options.articulations?.length) out.articulations = options.articulations;
+    for (const key of ["dynamic", "ornament", "grace", "stem"] as const) {
+        if (options[key] !== undefined) out[key] = options[key];
+    }
+    if (options.sounding !== undefined) out.sounding = ratio(options.sounding);
+    return out;
+}
+
+/**
+ * Give an item the marks it carries ({@link marks}).
+ *
+ * It **replaces** rather than merges: reading the marks, changing one and
+ * sending them back is two calls and no ambiguity, where a merge would leave no
+ * way to remove a mark at all. Throws on a rest, which has nothing to
+ * articulate.
+ */
+export function setMarks(sheet: Sheet, id: number, m: unknown): Sheet {
+    return apply(sheet, { op: "set_marks", id, marks: m });
+}
+
+/**
+ * Write something between two notes: `"slur"`, `"crescendo"` or
+ * `"diminuendo"`.
+ *
+ * It cannot go on an item because it has two ends, so it goes on the sheet
+ * beside the staves. Adding the same one twice changes nothing; naming an item
+ * that is not there throws, because a hairpin that never appears with no reason
+ * given is worse than an error.
+ */
+export function addSpanner(sheet: Sheet, kind: string, from: number, to: number): Sheet {
+    return apply(sheet, { op: "add_spanner", kind, from, to });
+}
+
+/**
+ * Take back what {@link addSpanner} wrote. Removing one that is not there
+ * changes nothing rather than throwing, since the state asked for holds.
+ */
+export function removeSpanner(sheet: Sheet, kind: string, from: number, to: number): Sheet {
+    return apply(sheet, { op: "remove_spanner", kind, from, to });
+}

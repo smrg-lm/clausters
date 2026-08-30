@@ -211,6 +211,33 @@ def _cargo_build_bin(workspace: str, profile: str, features: str = "",
     subprocess.run(cmd, cwd=workspace, check=True)
 
 
+def _stage(src: str, dst: str) -> None:
+    """Put ``src`` at ``dst`` **atomically**: copy beside it, then rename over.
+
+    Not `shutil.copy2` straight onto ``dst``, which opens the destination for
+    writing and **truncates it in place**. Any process holding the old file
+    mapped -- every Python that reached this package through ``ctypes.CDLL``, and
+    a running server or GUI host -- is then reading pages that no longer exist
+    and takes a ``SIGBUS`` on the next fault: a crash with no traceback, no
+    message and no obvious cause. It is easy to hit, because refreshing the
+    binaries is the documented thing to do before a manual test and there is no
+    reason to expect it to be unsafe while a window is open.
+
+    ``os.replace`` swaps the directory entry instead, so the old inode stays
+    alive for whoever still holds it and only new openers see the new file. The
+    temporary goes in the destination's own directory, because the rename has to
+    stay on one filesystem, and is cleaned up if the copy fails.
+    """
+    tmp = dst + ".staging"
+    try:
+        shutil.copy2(src, tmp)
+        os.replace(tmp, dst)
+    except BaseException:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+        raise
+
+
 def stage(workspace: str, profile: str) -> list[str]:
     """Copy every freshly built cdylib into ``clausters/_libs/``."""
     target = os.path.join(workspace, "target", profile)
@@ -220,19 +247,19 @@ def stage(workspace: str, profile: str) -> list[str]:
         for name in _dylib_names(stem):
             src = os.path.join(target, name)
             if os.path.exists(src):
-                shutil.copy2(src, os.path.join(LIBS_DIR, name))
+                _stage(src, os.path.join(LIBS_DIR, name))
                 copied.append(name)
     return copied
 
 
 def stage_binary(workspace: str, profile: str) -> str | None:
-    """Copy the freshly built standalone binary into ``clausters/_bin/``,
-    preserving its executable bit (``copy2``). Returns its name or ``None``."""
+    """Stage the freshly built standalone binary into ``clausters/_bin/``,
+    preserving its executable bit. Returns its name or ``None``."""
     src = os.path.join(workspace, "target", profile, bin_name())
     if not os.path.exists(src):
         return None
     os.makedirs(BIN_DIR, exist_ok=True)
-    shutil.copy2(src, os.path.join(BIN_DIR, bin_name()))
+    _stage(src, os.path.join(BIN_DIR, bin_name()))
     return bin_name()
 
 
@@ -266,7 +293,7 @@ def stage_gui_binary(workspace: str, profile: str) -> str | None:
         return None
     os.makedirs(BIN_DIR, exist_ok=True)
     dst = os.path.join(BIN_DIR, gui_bin_name())
-    shutil.copy2(src, dst)
+    _stage(src, dst)
     _strip(dst)
     return gui_bin_name()
 
@@ -363,7 +390,7 @@ def stage_faust_libs(profile: str) -> list[str]:
         # Re-running staging resolves a root to its already-staged copy (the
         # artifacts' rpath includes ``_libs``); don't copy a file onto itself.
         if os.path.realpath(dst) != src:
-            shutil.copy2(src, dst)
+            _stage(src, dst)
             _strip(dst)
         if platform.system() == "Linux":
             _set_origin_rpath(dst)
@@ -563,7 +590,7 @@ def stage_verovio() -> list[str]:
     name = _verovio_name()
     os.makedirs(LIBS_DIR, exist_ok=True)
     dst = os.path.join(LIBS_DIR, name)
-    shutil.copy2(os.path.join(prefix, "lib", name), dst)
+    _stage(os.path.join(prefix, "lib", name), dst)
     _strip(dst)
     data_src = os.path.join(prefix, "share", "verovio")
     staged = [name]

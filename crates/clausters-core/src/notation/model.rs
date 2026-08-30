@@ -94,6 +94,16 @@ pub struct Pitch {
     pub alter: i32,
     /// Scientific octave — `4` is the octave of middle C.
     pub octave: i32,
+    /// Whether the accidental must be **printed** even where the key signature
+    /// or the measure already implies it — a courtesy or editorial accidental.
+    ///
+    /// Left false, the alteration is stated as the *sounding* one and the
+    /// engraver decides whether to draw a sign, which is what keeps a scale in
+    /// E flat from carrying a flat on every note. It is a fact about the score,
+    /// not an instruction to the encoder: this pitch is one whose accidental
+    /// the writer wants seen.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub forced: bool,
 }
 
 impl Pitch {
@@ -141,6 +151,9 @@ impl Pitch {
         Pitch {
             step: Step::ALL[step],
             alter,
+            // A spelling chosen from a bare number is never a courtesy sign:
+            // the writer said nothing about wanting it printed.
+            forced: false,
             // The octave is the sounding one: a `cb4` sounds in octave 3 but is
             // written in 4, so it is derived from the *natural* the spelling
             // sits on rather than from the MIDI number directly.
@@ -161,16 +174,43 @@ pub struct Marks {
     /// Articulations, by their MEI names (`stacc`, `acc`, `ten`, `marc`, …).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub articulations: Vec<String>,
-    /// A dynamic attached to this note (`pp`, `mf`, `ff`, …).
+    /// A dynamic attached to this note (`pp`, `mf`, `ff`, …). It is written
+    /// under the staff at this note's own position.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dynamic: Option<String>,
+    /// An ornament on this note (`trill`, `mordent`, `turn`, `fermata`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ornament: Option<String>,
+    /// That this is a grace note, and of which kind (`acc` for an
+    /// acciaccatura, `unacc` for an appoggiatura, `unknown`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grace: Option<String>,
+    /// A forced stem direction (`up`, `down`). Left out, the engraver decides,
+    /// which is what it is for — a stem is a layout answer and only a writer
+    /// overruling it is a musical statement.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stem: Option<String>,
+    /// How long the note **sounds**, when that is not how long it is written.
+    ///
+    /// The written value is the item's `dur`; this is the length in the air, so
+    /// a staccato quarter that sounds an eighth carries both. A performance
+    /// nuance a client already has (`sustain` against `dur`) reaches the page
+    /// through here, and the two are kept apart because a page that shortened
+    /// the written value would be a different piece of music.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sounding: Option<Ratio>,
 }
 
 impl Marks {
     /// Whether the note carries nothing beyond its pitch and value — the case a
     /// v1 payload produces, and the one that has to stay byte-identical.
     pub fn is_empty(&self) -> bool {
-        self.articulations.is_empty() && self.dynamic.is_none()
+        self.articulations.is_empty()
+            && self.dynamic.is_none()
+            && self.ornament.is_none()
+            && self.grace.is_none()
+            && self.stem.is_none()
+            && self.sounding.is_none()
     }
 }
 
@@ -260,6 +300,19 @@ impl Item {
             Item::Note { pitches, .. } => pitches,
             Item::Rest { .. } => &[],
         }
+    }
+
+    /// The marks this item carries, if it can carry any.
+    pub fn marks(&self) -> Option<&Marks> {
+        match self {
+            Item::Note { marks, .. } => Some(marks),
+            Item::Rest { .. } => None,
+        }
+    }
+
+    /// Whether this item sounds — a note with pitches, as against a rest.
+    pub fn sounds(&self) -> bool {
+        !self.pitches().is_empty()
     }
 
     /// A rest of the same length, keeping the id — what silencing a note is,
@@ -467,6 +520,24 @@ impl Grid {
     }
 }
 
+/// Something written **between** two notes rather than on one: a slur, a
+/// crescendo.
+///
+/// It cannot live on an item, because it has two ends — which is the whole
+/// reason the sheet carries a list of them beside the staves rather than the
+/// content carrying them. `from` and `to` are item ids, so a spanner survives
+/// every operation that keeps those items and is refused by the emitter when
+/// one of them is gone.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Spanner {
+    /// What it is: `slur`, `crescendo`, `diminuendo`.
+    pub kind: String,
+    /// The item it starts on.
+    pub from: u64,
+    /// The item it ends on.
+    pub to: u64,
+}
+
 /// A score as data: the metric layout, the staves written over it, and the key
 /// they are read in.
 ///
@@ -489,6 +560,9 @@ pub struct Sheet {
     /// The staves, top to bottom.
     #[serde(default)]
     pub staves: Vec<Staff>,
+    /// What is written between two notes rather than on one.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub spanners: Vec<Spanner>,
 }
 
 fn default_key() -> String {
@@ -506,6 +580,7 @@ impl Default for Sheet {
             grid: Grid::default(),
             key: default_key(),
             staves: vec![Staff::default()],
+            spanners: Vec::new(),
         }
     }
 }
@@ -595,11 +670,13 @@ mod tests {
             step: Step::F,
             alter: 1,
             octave: 4,
+            forced: false,
         };
         let g_flat = Pitch {
             step: Step::G,
             alter: -1,
             octave: 4,
+            forced: false,
         };
         // One MIDI number, two notes on the page -- which is the whole reason
         // spelling is stored rather than derived.
@@ -618,6 +695,7 @@ mod tests {
             step: Step::C,
             alter: -1,
             octave: 4,
+            forced: false,
         };
         assert_eq!(c_flat.midi(), 59);
         // and the round trip through a spelling choice lands on b3, which is
@@ -694,6 +772,7 @@ mod tests {
                             step: Step::C,
                             alter: 0,
                             octave: 4,
+                            forced: false,
                         }],
                         dur: Ratio::new(1, 4),
                         tie: false,

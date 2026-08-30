@@ -5,7 +5,8 @@
 timeline. This is the third thing, and the one the model exists for: a piece
 built by *operating on a score*. A four-note motif is stated, and everything
 after it is that motif under an operation -- repeated, inverted, turned
-backwards, augmented, transposed, and finally stacked against itself.
+backwards, augmented, transposed, and finally stacked against itself as a coda
+on two staves.
 
 The whole piece is written in six lines of algebra, and none of the arithmetic
 is in Python. A **sheet** is a plain dict a caller holds, an operation is a
@@ -23,10 +24,13 @@ Two things worth watching for as you read:
   written values against the barlines that were already there, so the phrase
   re-bars across them and ties where a value now overruns one -- which is what
   augmentation looks like on a page.
-* **What the model holds, the page may refuse.** The last cell stacks the motif
-  against itself as a second voice, which the algebra says fine and the engraver
-  cannot write yet: the refusal names the milestone that owes it rather than
-  quietly dropping a voice.
+* **What is written and what is heard are two things.** The coda's first note
+  carries a staccato, which shortens it in performance and changes nothing about
+  the page. Honouring that is the interpreter's, not the engraving's -- writing
+  a shortened length into the document moves every attack after it.
+* **A tuplet cannot be split.** Three triplet eighths are `1/12` each -- exact
+  as a rational, impossible on any grid of 32nds -- and a group that would cross
+  a barline is refused by name rather than written into bars nobody meant.
 
 The engraver ships inside the package (``third_party/BUILD-VEROVIO.md``); in a
 source checkout build and stage it once::
@@ -111,21 +115,60 @@ print(f"the piece is {notation.to_mei(piece).count('<measure')} measures")
 
 
 # %% [markdown]
-# ## What the model holds and the page cannot yet show
-# The algebra can already say *counterpoint*: `stack` puts the motif against
-# itself an octave down as a second voice on the same staff. Writing two voices
-# out is the emission milestone, though, so the engraver's door refuses it -- by
-# name, saying which it is, because a caller reading "cannot" needs to know
-# whether it is wrong or early. That refusal is the feature: the alternative is
-# a page that quietly drops a voice.
+# ## A coda on two staves, and the marks on it
+# `stack` puts the motif against itself an octave down. It goes on a **staff of
+# its own** (`as_staff=True`), in the bass clef the register asks for: written as
+# a second voice on the treble staff the same notes are correct and unreadable,
+# a run of ledger lines under the line they answer. Two staves take a brace and
+# one barline through both.
+#
+# The marks go on afterwards, and they are two different kinds of thing. What
+# one note carries goes on the note; a slur has **two ends** and so lives beside
+# the staves.
+#
+# What a staccato *means* for playback is deliberately not on the page: a
+# shortened note is a performance decision, and writing it into the document
+# makes an engraver's own clock advance by the shortened length, which pulls
+# every attack after it earlier. The dot is written; honouring it is the
+# interpreter's, and that is the next milestone.
 
 # %%
-coda = notation.stack(motif, notation.transpose(motif, -12))
-print(f"the coda holds {len(coda['staves'][0]['voices'])} voices")
+lower = notation.transpose(motif, -12)
+lower["staves"][0]["clef"] = "F4"          # the register asks for a bass clef
+coda = notation.stack(motif, lower, as_staff=True)
+print(f"the coda has {len(coda['staves'])} staves")
+
+upper = coda["staves"][0]["voices"][0]["items"]
+coda = notation.set_marks(coda, upper[0]["id"],
+                          notation.marks(articulations=["stacc"], dynamic="mf"))
+coda = notation.add_spanner(coda, "slur", upper[0]["id"], upper[-1]["id"])
+
+piece = notation.concat(piece, coda)
+print(f"with the coda: {notation.to_mei(piece).count('<measure')} measures, "
+      f"{len(piece['spanners'])} slur")
+
+
+# %% [markdown]
+# ## What a page still refuses
+# A tuplet cannot be split, so one that would cross a barline is refused by
+# name rather than written into bars nobody meant. Three triplet eighths fill a
+# quarter -- exact as `1/12` each, and impossible on any grid of 32nds.
+
+# %%
+triplet = notation.sheet_from_voice([{"midis": [72], "ticks": 8}])
+triplet["staves"][0]["voices"][0]["items"] = [
+    {"kind": "note", "id": i + 1, "pitches": [notation.pitch(step, 5)], "dur": [1, 12]}
+    for i, step in enumerate(("c", "d", "e"))
+]
+print("a triplet writes as:",
+      "num=\"3\" numbase=\"2\"" in notation.to_mei(triplet))
+
+crossing = notation.concat(
+    notation.sheet_from_voice([{"midis": [72], "ticks": 28}]), triplet)
 try:
-    notation.to_mei(coda)
+    notation.to_mei(crossing)
 except ValueError as refusal:
-    print("and writing it out says:", refusal)
+    print("and one that would not fit says:", refusal)
 
 
 # %% [markdown]

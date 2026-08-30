@@ -353,6 +353,19 @@ is a reserved word here), `silence`, `setDur`, `setPitches`, `tie`, `toVoice`.
 `del` and `silence` are different acts: the first takes the item out and what
 follows moves earlier, the second leaves a rest and nothing moves.
 
+A sheet holds more than pitches and values: `setMarks` gives one note its
+articulations, a dynamic, an ornament and a forced stem, and holds **how long it
+sounds** as against how long it is written — kept in the score and not written
+onto the page, since an engraver would read it as the real duration and move
+every attack after it; `addSpanner` writes a slur or a hairpin,
+which has two ends and so lives beside the staves rather than on a note.
+`stack` gives several voices on one staff or, with `asStaff`, several staves
+under a brace. Tuplets need nothing declared — a duration like `[1, 12]` is
+already inside one — though a tuplet that would cross a barline is refused by
+name, since it cannot be split. And accidentals are printed only where they are
+needed: not where the key signature implies them, not twice in a bar, and a
+natural is a sign where the key alters that step.
+
 `examples/notation/compose.html` builds a whole piece this way and plays it.
 
 ## Bindings, and the page that runs without a script

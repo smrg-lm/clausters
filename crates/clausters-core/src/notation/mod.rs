@@ -45,9 +45,12 @@ pub use algebra::{
     stack, stretch,
 };
 pub use cursors::{Cursor, TimemapEntry, cursor_track};
-pub use edit::{At, delete, insert, set_dur, set_pitches, silence, tie, to_voice};
+pub use edit::{
+    At, add_spanner, delete, insert, remove_spanner, set_dur, set_marks, set_pitches, silence, tie,
+    to_voice,
+};
 pub use mei::{Slot, sheet_to_mei, voice_to_mei, voice_to_sheet};
-pub use model::{Grid, Item, Marks, Meter, Pitch, Sheet, Staff, Step, Voice};
+pub use model::{Grid, Item, Marks, Meter, Pitch, Sheet, Spanner, Staff, Step, Voice};
 pub use ops::{Op, OpSpec, Span, apply, catalog, default_steps, transpose_pitch};
 pub use score::{Engraver, NoteEvent, Page, Score, engrave_options};
 pub use svg::{DisplayList, Prim, svg_to_display_list};

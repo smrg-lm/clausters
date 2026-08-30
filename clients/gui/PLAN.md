@@ -2491,7 +2491,7 @@ Whatever symbols the model itself needs owe their rows either way
   **refused by name** — the algebra says counterpoint long before the emitter
   can write it, and saying so is better than dropping a voice.
 
-- ⬜ **N3 — That it is well written**. The emission of everything the model can
+- ✅ **N3 — That it is well written** *(done 2026-08-30; the host's own note-entry gestures deliberately left out — see below)*. The emission of everything the model can
   now say, judged **by eye** on the page, which is the first thing a score
   editor owes. This is where the four old refinements land as *emission* rather
   than as encoder branches: **tuplets** (rationals make them representable in
@@ -2521,6 +2521,80 @@ Whatever symbols the model itself needs owe their rows either way
   chromatic note prints its own; a phrase with staccato, a hairpin and a grace
   note engraves with each mark placed by verovio; a score with none of this is
   byte-identical to what the encoder writes today.
+
+  **What shipped.** The projection was rebuilt: every voice of every staff is
+  laid over the same measures and the measures are assembled from the
+  projections, so polyphony is `<layer>`s and a grand staff is two `<staffDef>`s
+  under a brace with one barline through both. A voice that runs short is filled
+  with rests so the staves stay in step. **Tuplets need nothing declared**: the
+  ratio is *in the rational* — a denominator carrying an odd factor is inside a
+  tuplet, and that factor is how many notes are in the time of the nearest power
+  of two below it — so consecutive items sharing one ratio become
+  `<tuplet num numbase>`, and a group that would cross a barline is refused by
+  name rather than split, since splitting it would stop it being a tuplet.
+  **Every element now carries the model's own id** (`n7`, `n7-2` for a split
+  piece, `n7-p1` for a chord's pitch), which is what will let a gesture on the
+  page name a note in the model. Marks reach the page — articulations, a forced
+  stem, grace, and `dur.ges` for a note that sounds shorter than it is written —
+  and what MEI hangs off the *measure* rather than the note is gathered
+  separately: `<dynam>`, ornaments, and the two-ended things, which the sheet
+  now carries as `spanners` because a slur has two ends and cannot live on an
+  item. Three verbs went with them (`set_marks`, `add_spanner`,
+  `remove_spanner`), taking the catalog to twenty.
+
+  **Two findings, both of which reversed something.** The accidental rule was a
+  hypothesis this plan carried and told whoever implemented it to verify;
+  verifying reversed it. Verovio **infers nothing** — `<accid>` is always drawn,
+  even where the armature implies it and even twice in a bar, and `@accid.ges`
+  is never drawn — so the suppression is the encoder's, and it needs both halves
+  the hypothesis denied: the key signature *and* a per-measure memory. It also
+  turned up a silent wrong the old encoder had been writing for as long as it
+  existed: a C in a key that sharpens C came out with no sign at all, which
+  reads as C sharp. And the cursor's grand staff was fixed by reading a
+  **barline through the brace** instead of a gap threshold, since no distance
+  can tell a braced pair from two systems. Both are in `docs/decisions.md` with
+  the measurements.
+
+  **What the by-eye pass caught, which nothing else would have.** Reading the
+  engraved page turned up a defect the tests could not see: `concat` and `stack`
+  carried the notes of the score they joined and **dropped its spanners**, so a
+  slur written over a phrase vanished the moment the phrase was joined to
+  another — the music still there, the mark not, and nothing said so. Renumbering
+  now carries what points at the renumbered ids, and what *removes* items prunes
+  the spanners left dangling, since a caller who deleted a note did not ask for a
+  score that can no longer be engraved. Two things the same pass showed were
+  **not** defects and were the example teaching badly instead: two voices an
+  octave apart on one treble staff are drawn correctly and read as a mess of
+  ledger lines (the coda moved to a staff of its own in the bass clef, which is
+  also what shows the brace), and a note written a quarter that *sounds* an
+  eighth is `sounding` working — the example now says you will hear it.
+
+  **And two more the by-eye pass caught, both reported by ear and by reading the
+  page.** A **sounding length written as `@dur.ges`** does not shade a note: an
+  engraver reads it as the real duration and advances its own clock by it, so a
+  staccato quarter written that way pulled every attack after it a quarter-beat
+  earlier and the measure came out short. Measured three ways and recorded; the
+  emitter now writes the articulation and not the length, the model keeps the
+  fact, and honouring it is `N4`'s — which is the track's own division between
+  what is written and what is heard. And a **rest covering a measure is
+  `<mRest/>`**, drawn centred, where a decomposed whole rest hangs at the start
+  of the bar and reads as a rest on the downbeat with something after it — the
+  case that matters being a rest *longer* than a measure, which is what an empty
+  staff under a written one actually is, and which a rule written only for a
+  one-bar rest leaves untouched.
+
+  The golden was **re-recorded twice**, both times deliberately, and its
+  docstring says which four things moved and why. Tests: 86 in the core; the same assertions
+  in both clients, taking them to 34 and 10. The example's coda is now the
+  two-voice ending it always described, with its marks and its slur, and it
+  grew the tuplet that is refused for crossing a barline — in both copies.
+
+  **The hand that edits is not here**, which this milestone's own text allows
+  ("may be taken on its own"). Note entry is a gesture in the host and needs
+  `is_element_class` widened, and it lands on the same seam `N2` deferred: the
+  page's edits reach the model through ids, and a score opened from typed text
+  has no model until the reader `N4` brings. Taking them together is what makes
+  both cheap.
 
 - ⬜ **N4 — The interpreter: notation to events**. The return path, and the
   reason it is a milestone rather than a conversion: the player must **honour

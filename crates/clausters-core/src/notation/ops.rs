@@ -30,7 +30,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::model::{Item, Pitch, Sheet, Step};
+use super::model::{Item, Marks, Pitch, Sheet, Step};
 use super::{algebra, edit};
 use crate::ratio::Ratio;
 
@@ -223,6 +223,32 @@ pub enum Op {
         #[serde(default)]
         tied: bool,
     },
+    /// Give an item the marks it carries; replaces rather than merges.
+    SetMarks {
+        /// The item.
+        id: u64,
+        /// Everything it carries beyond its pitch and value.
+        #[serde(default)]
+        marks: Marks,
+    },
+    /// Write a slur or a hairpin between two notes.
+    AddSpanner {
+        /// `slur`, `crescendo` or `diminuendo`.
+        kind: String,
+        /// The item it starts on.
+        from: u64,
+        /// The item it ends on.
+        to: u64,
+    },
+    /// Take one back.
+    RemoveSpanner {
+        /// Which kind.
+        kind: String,
+        /// Its start.
+        from: u64,
+        /// Its end.
+        to: u64,
+    },
     /// Move items to another voice on their staff, leaving rests behind.
     ToVoice {
         /// The items to move; they must all be in one voice.
@@ -259,6 +285,7 @@ pub fn transpose_pitch(pitch: &Pitch, steps: i32, semitones: i32) -> Pitch {
         step,
         alter: pitch.midi() + semitones - natural,
         octave,
+        forced: pitch.forced,
     }
 }
 
@@ -314,6 +341,9 @@ pub fn apply(sheet: Sheet, op: &Op) -> Result<Sheet, String> {
         Op::SetDur { id, dur } => edit::set_dur(sheet, *id, *dur),
         Op::SetPitches { id, pitches } => edit::set_pitches(sheet, *id, pitches.clone()),
         Op::Tie { id, tied } => edit::tie(sheet, *id, *tied),
+        Op::SetMarks { id, marks } => edit::set_marks(sheet, *id, marks.clone()),
+        Op::AddSpanner { kind, from, to } => edit::add_spanner(sheet, kind, *from, *to),
+        Op::RemoveSpanner { kind, from, to } => edit::remove_spanner(sheet, kind, *from, *to),
         Op::ToVoice { ids, voice } => edit::to_voice(sheet, ids, *voice),
     }
 }
@@ -445,6 +475,21 @@ pub fn catalog() -> &'static [OpSpec] {
             optional: &["tied"],
         },
         OpSpec {
+            op: "set_marks",
+            required: &["id"],
+            optional: &["marks"],
+        },
+        OpSpec {
+            op: "add_spanner",
+            required: &["kind", "from", "to"],
+            optional: &[],
+        },
+        OpSpec {
+            op: "remove_spanner",
+            required: &["kind", "from", "to"],
+            optional: &[],
+        },
+        OpSpec {
             op: "to_voice",
             required: &["ids", "voice"],
             optional: &[],
@@ -462,6 +507,7 @@ mod tests {
             step,
             alter,
             octave,
+            forced: false,
         }
     }
 

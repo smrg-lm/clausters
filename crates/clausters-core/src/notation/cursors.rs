@@ -87,25 +87,67 @@ fn id_positions(prims: &[Prim]) -> BTreeMap<&str, (f64, f64)> {
 }
 
 /// Cluster the horizontal staff lines into systems, each a `(y_top, y_bottom)`
-/// pair. A large vertical gap between lines starts a new system.
+/// pair.
+///
+/// **A gap cannot tell a grand staff from two systems**, which is what this used
+/// to try: the two staves of a piano part are further apart than the lines of
+/// one staff and closer than two systems, and any threshold between those is a
+/// number that holds for one page size and not the next. It read a braced pair
+/// as two systems and gave the playback cursor half the span it should sweep.
+///
+/// What settles it is already drawn: **a barline through the brace**. A single
+/// vertical line running from the top staff's top line to the bottom staff's
+/// bottom line exists only where the two are barred together, which is exactly
+/// what makes them one system. So the lines are grouped into staves by their own
+/// even spacing — five lines, one gap, no guessing — and staves are joined into
+/// a system when a line is drawn through them.
 fn staff_systems(prims: &[Prim]) -> Vec<(f64, f64)> {
     let ys = staff_line_ys(prims);
-    let Some(&first) = ys.first() else {
+    if ys.is_empty() {
         return Vec::new();
-    };
-    let mut systems = Vec::new();
-    let mut group = vec![first];
+    }
+    // The staff-line spacing is the smallest gap there is: every other gap on
+    // the page is between staves or between systems.
+    let spacing = ys
+        .windows(2)
+        .map(|w| w[1] - w[0])
+        .fold(f64::INFINITY, f64::min)
+        .max(1.0);
+
+    let mut staves: Vec<(f64, f64)> = Vec::new();
+    let (mut top, mut prev) = (ys[0], ys[0]);
     for &y in &ys[1..] {
-        if y - group[group.len() - 1] > 500.0 {
-            // a gap between systems is far wider than one between staff lines
-            systems.push((group[0], group[group.len() - 1]));
-            group = vec![y];
-        } else {
-            group.push(y);
+        if y - prev > spacing * 1.5 {
+            staves.push((top, prev));
+            top = y;
+        }
+        prev = y;
+    }
+    staves.push((top, prev));
+
+    let mut systems: Vec<(f64, f64)> = Vec::new();
+    for staff in staves {
+        match systems.last_mut() {
+            Some(last) if barred_through(prims, last.0, staff.1, spacing) => last.1 = staff.1,
+            _ => systems.push(staff),
         }
     }
-    systems.push((group[0], group[group.len() - 1]));
     systems
+}
+
+/// Whether a vertical line runs the whole way from `top` to `bottom` — the
+/// barline of a braced system, and the only thing on the page that says two
+/// staves are read together.
+fn barred_through(prims: &[Prim], top: f64, bottom: f64, tol: f64) -> bool {
+    prims.iter().any(|p| match p {
+        Prim::Line { pts, .. } if pts.len() == 2 => {
+            let (a, b) = (pts[0], pts[1]);
+            (a[0] - b[0]).abs() < tol
+                && a[1].min(b[1]) <= top + tol
+                && a[1].max(b[1]) >= bottom - tol
+        }
+        _ => false,
+    })
 }
 
 /// The `(y0, y1)` cursor span for a note at page-y `y`: its system's staff
@@ -249,5 +291,58 @@ mod tests {
         assert_eq!(map.len(), 2);
         assert_eq!(map[0].on, ["note-1"]);
         assert!(map[1].on.is_empty(), "an off-only entry carries no onsets");
+    }
+
+    /// A vertical barline from `top` to `bottom` — what a brace bars through.
+    fn barline(x: f64, top: f64, bottom: f64) -> Prim {
+        Prim::Line {
+            pts: vec![[x, top], [x, bottom]],
+            w: 9.0,
+            id: None,
+        }
+    }
+
+    #[test]
+    fn a_grand_staff_is_one_system_and_the_cursor_spans_both() {
+        // Two staves 900 apart -- further than the 90 between lines, and the
+        // distance a gap threshold used to read as two systems.
+        let mut prims = staff(0.0);
+        prims.extend(staff(900.0));
+        // barred through: this is what makes them one system
+        prims.push(barline(0.0, 0.0, 1260.0));
+        prims.push(glyph("n1", 100.0, 180.0));
+        let dl = DisplayList {
+            vb: [2000.0, 2000.0],
+            glyphs: Default::default(),
+            prims,
+            step: 45.0,
+        };
+        let track = cursor_track(&dl, &[entry(0.0, &["n1"])]);
+        assert_eq!(track.len(), 1);
+        // the span reaches past the *lower* staff, not just the upper one
+        assert!(track[0].y1 > 1260.0, "spans both staves: {:?}", track[0]);
+        assert!(track[0].y0 < 0.0);
+    }
+
+    #[test]
+    fn two_systems_with_no_line_through_them_stay_two() {
+        // The same geometry, without the barline that joins them: a page that
+        // wrapped, where the cursor must not sweep the system below.
+        let mut prims = staff(0.0);
+        prims.extend(staff(900.0));
+        prims.push(glyph("n1", 100.0, 180.0));
+        let dl = DisplayList {
+            vb: [2000.0, 2000.0],
+            glyphs: Default::default(),
+            prims,
+            step: 45.0,
+        };
+        let track = cursor_track(&dl, &[entry(0.0, &["n1"])]);
+        assert_eq!(track.len(), 1);
+        assert!(
+            track[0].y1 < 900.0,
+            "stops at its own system: {:?}",
+            track[0]
+        );
     }
 }

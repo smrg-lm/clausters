@@ -27,7 +27,7 @@ operations.
 and the one the model exists for: a piece built by <i>operating on a score</i>. A
 four-note motif is stated, and everything after it is that motif under an
 operation — repeated, inverted, turned backwards, augmented, transposed, and
-finally stacked against itself.
+finally stacked against itself as a coda on two staves.
 
 The whole piece is written in six lines of algebra, and none of the arithmetic is
 in TypeScript. A <b>sheet</b> is a plain object a caller holds, an operation is a
@@ -38,7 +38,11 @@ client language uses to edit a score it opened.
 Two things to watch for: <b>spelling survives the algebra</b> (inverting the
 motif about its own first note gives A-flat, not G-sharp), and <b>the grid does
 not move when the content does</b> (stretching doubles the written values against
-the barlines that were already there, so the phrase re-bars across them).</div>
+the barlines that were already there, so the phrase re-bars across them). The
+coda's first note carries a staccato, which shortens it in performance and
+changes nothing about the page — honouring it is the interpreter's, not the
+engraving's. And a tuplet cannot be split, so one that would cross a barline is
+refused by name.</div>
 
       <button id="run">compose and open</button>
       <div id="stage"></div>
@@ -48,7 +52,8 @@ the barlines that were already there, so the phrase re-bars across them).</div>
     <!--
       The web sibling of clients/python/examples/notation/compose.py, call for
       call: the motif from a voice, the five operations in the same order, the
-      concatenation into a piece, the refused two-voice coda, `toMei` into the
+      concatenation into a piece, the two-staff coda with its marks and slur,
+      the tuplet that is refused for crossing a barline, `toMei` into the
       ordinary `Score` path, and the same minimal transport with the by-hand
       cursor anchor.
 
@@ -136,16 +141,45 @@ the barlines that were already there, so the phrase re-bars across them).</div>
         }
         log(`the piece is ${notation.toMei(piece).match(/<measure/g).length} measures`);
 
-        // The algebra can already say *counterpoint*: `stack` puts the motif
-        // against itself an octave down as a second voice on the same staff.
-        // Writing two voices out is the emission milestone, so the engraver's
-        // door refuses it -- by name, rather than quietly dropping a voice.
-        const coda = notation.stack(motif, notation.transpose(motif, -12));
-        log(`the coda holds ${coda.staves[0].voices.length} voices`);
+        // `stack` puts the motif against itself an octave down. It goes on a
+        // staff of its own, in the bass clef the register asks for: written as
+        // a second voice on the treble staff the same notes are correct and
+        // unreadable, a run of ledger lines under the line they answer.
+        const lower = notation.transpose(motif, -12);
+        lower.staves[0].clef = "F4";
+        let coda = notation.stack(motif, lower, { asStaff: true });
+        log(`the coda has ${coda.staves.length} staves`);
+
+        // The marks go on afterwards, and they are two different kinds of
+        // thing: what one note carries goes on the note, while a slur has two
+        // ends and lives beside the staves. What a staccato *means* for
+        // playback is deliberately not on the page -- a shortened note is a
+        // performance decision, and writing it into the document makes an
+        // engraver's clock advance by the shortened length, pulling every
+        // attack after it earlier.
+        const upper = coda.staves[0].voices[0].items;
+        coda = notation.setMarks(coda, upper[0].id, notation.marks({
+          articulations: ["stacc"], dynamic: "mf",
+        }));
+        coda = notation.addSpanner(coda, "slur", upper[0].id, upper.at(-1).id);
+
+        piece = notation.concat(piece, coda);
+        log(`with the coda: ${notation.toMei(piece).match(/<measure/g).length} measures, `
+            + `${piece.spanners.length} slur`);
+
+        // A tuplet cannot be split, so one that would cross a barline is
+        // refused by name rather than written into bars nobody meant.
+        const triplet = notation.sheetFromVoice([{ midis: [72], ticks: 8 }]);
+        triplet.staves[0].voices[0].items = ["c", "d", "e"].map((step, i) => ({
+          kind: "note", id: i + 1, pitches: [notation.pitch(step, 5)], dur: [1, 12],
+        }));
+        log(`a triplet writes as: ${notation.toMei(triplet).includes('num="3" numbase="2"')}`);
+        const crossing = notation.concat(
+          notation.sheetFromVoice([{ midis: [72], ticks: 28 }]), triplet);
         try {
-          notation.toMei(coda);
+          notation.toMei(crossing);
         } catch (refusal) {
-          log(`and writing it out says: ${refusal.message ?? refusal}`);
+          log(`and one that would not fit says: ${refusal.message ?? refusal}`);
         }
 
         // From here it is the ordinary notation path.

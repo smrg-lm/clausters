@@ -342,3 +342,65 @@ def _span_op(op: dict, span: dict | None) -> dict:
     if span is not None:
         op["span"] = span
     return op
+
+
+def marks(*, articulations: list | None = None, dynamic: str | None = None,
+          ornament: str | None = None, grace: str | None = None,
+          stem: str | None = None, sounding=None) -> dict:
+    """What a note carries beyond its pitch and value.
+
+    ``articulations`` are MEI's names (``"stacc"``, ``"acc"``, ``"ten"``,
+    ``"marc"``); ``dynamic`` is written under the staff at this note
+    (``"pp"``…``"ff"``); ``ornament`` is ``"trill"``, ``"mordent"``, ``"turn"``
+    or ``"fermata"``; ``grace`` makes it a grace note (``"acc"`` for an
+    acciaccatura, ``"unacc"`` for an appoggiatura); ``stem`` forces ``"up"`` or
+    ``"down"``; ``sounding`` is how long it **sounds** when that is not how long
+    it is written — a staccato quarter that sounds an eighth carries both, and
+    the two are kept apart because a page that shortened the written value would
+    be a different piece of music.
+
+    Every one of them is a fact about the note, not an instruction to the
+    engraver, which is what lets a player read them back.
+    """
+    out: dict = {}
+    if articulations:
+        out["articulations"] = articulations
+    for key, value in (("dynamic", dynamic), ("ornament", ornament),
+                       ("grace", grace), ("stem", stem)):
+        if value is not None:
+            out[key] = value
+    if sounding is not None:
+        num, den = sounding if isinstance(sounding, (tuple, list)) else (sounding, 1)
+        out["sounding"] = [num, den]
+    return out
+
+
+def set_marks(sheet: dict, id: int, marks: dict) -> dict:
+    """Give an item the marks it carries (`marks`).
+
+    It **replaces** rather than merges: reading the marks, changing one and
+    sending them back is two calls and no ambiguity, where a merge would leave
+    no way to remove a mark at all. Refused on a rest, which has nothing to
+    articulate.
+    """
+    return apply(sheet, {"op": "set_marks", "id": id, "marks": marks})
+
+
+def add_spanner(sheet: dict, kind: str, from_id: int, to_id: int) -> dict:
+    """Write something between two notes: ``"slur"``, ``"crescendo"`` or
+    ``"diminuendo"``.
+
+    It cannot go on an item because it has two ends, so it goes on the sheet
+    beside the staves. Adding the same one twice changes nothing; naming an item
+    that is not there is refused, because a hairpin that never appears with no
+    reason given is worse than an error.
+    """
+    return apply(sheet, {"op": "add_spanner", "kind": kind,
+                         "from": from_id, "to": to_id})
+
+
+def remove_spanner(sheet: dict, kind: str, from_id: int, to_id: int) -> dict:
+    """Take back what `add_spanner` wrote. Removing one that is not there
+    changes nothing rather than refusing, since the state asked for holds."""
+    return apply(sheet, {"op": "remove_spanner", "kind": kind,
+                         "from": from_id, "to": to_id})

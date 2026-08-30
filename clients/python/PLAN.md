@@ -1212,22 +1212,29 @@ work, where a pending item reads as done.)*
   breaking tier; whether the old names stand as deprecated aliases for one
   release is that release's call, not a decision this entry waits on.
 
-- ⬜ **Staging overwrites a library that may be mapped, so refreshing the
-  binaries can kill a running process** *(found 2026-08-29, hunting a Python
-  crash that left no output; not the crash's confirmed cause, which was never
-  identified — every background task exited 0 and no log carried a fault — but
-  a real hazard the hunt turned up)*. `build_native.py` stages every artifact
-  with `shutil.copy2(src, dst)`, which opens the destination for writing and
-  **truncates it in place**. Any process holding the old file mapped — every
-  Python that reached the package through `ctypes.CDLL`, and a running server or
-  GUI host — is then reading pages that no longer exist and takes a `SIGBUS` on
-  the next fault: a crash with no traceback, no message and no obvious cause.
-  It is easy to hit, because `scripts/refresh-bin.sh` is the documented thing to
-  run before a manual test and there is no reason to expect it to be unsafe
-  while anything else is open. **The fix is one helper**: copy to a temporary in
-  the destination's own directory and `os.replace` over — atomic, same
-  filesystem, and the old inode stays alive for whoever still holds it. Five
-  call sites (`stage_libs`, `stage_binary`, the GUI host, the dependency walk,
-  libverovio). The verovio *data* directory is `rmtree` + `copytree` and has the
-  same shape with a smaller blast radius, since those files are read rather than
-  mapped executable.
+- ✅ **Staging overwrote a library that was mapped, so refreshing the binaries
+  killed a running process** *(found 2026-08-29 hunting a Python crash that left
+  no output, and filed then as an unconfirmed hazard; **confirmed and fixed
+  2026-08-30** when it happened again in the open — `scripts/refresh-bin.sh` was
+  run while a window from `examples/notation/compose.py` was up, and that window
+  died)*. `build_native.py` staged every artifact with `shutil.copy2(src, dst)`,
+  which opens the destination for writing and **truncates it in place**. Any
+  process holding the old file mapped — every Python that reached the package
+  through `ctypes.CDLL`, and a running server or GUI host — is then reading
+  pages that no longer exist and takes a `SIGBUS` on the next fault: a crash
+  with no traceback, no message and no obvious cause, which is why the first
+  occurrence was never identified.
+
+  It was easy to hit precisely because refreshing the binaries is the
+  *documented* thing to do before a manual test, and nothing suggested it was
+  unsafe while something was open.
+
+  Fixed with one helper, `_stage`: copy to a temporary in the destination's own
+  directory, then `os.replace` over it. The rename is atomic and stays on one
+  filesystem, so the old inode lives on for whoever still holds it and only new
+  openers see the new file. All five call sites go through it (`stage`,
+  `stage_binary`, the GUI host, the dependency walk, libverovio). The verovio
+  *data* directory is still `rmtree` + `copytree` and has the same shape with a
+  much smaller blast radius, since those files are read rather than mapped
+  executable — left as it is, and named here so it is not rediscovered as a
+  surprise.

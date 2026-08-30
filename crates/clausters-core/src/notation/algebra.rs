@@ -79,17 +79,49 @@ fn padded(items: Vec<Item>, len: Ratio, mint: &mut dyn FnMut() -> u64) -> Vec<It
     out
 }
 
-/// Renumber every item of `sheet` past `from`, and return the next free id.
+/// Renumber every item of `sheet` past `from`, moving what points at those
+/// items along with them, and return the next free id.
+///
+/// **A spanner points at ids, so renumbering has to carry it.** Leaving it
+/// behind loses a slur or a hairpin silently, which is the worst way for an
+/// operation to fail: the music is still there, the mark is not, and nothing
+/// said so.
 fn renumber(sheet: &mut Sheet, from: u64) -> u64 {
     let mut next = from.max(1);
+    let mut moved: std::collections::HashMap<u64, u64> = std::collections::HashMap::new();
     for voice in sheet.staves.iter_mut().flat_map(|s| s.voices.iter_mut()) {
         for item in &mut voice.items {
+            moved.insert(item.id(), next);
             *item = item.with_id(next);
             next += 1;
         }
     }
+    for spanner in &mut sheet.spanners {
+        if let Some(&id) = moved.get(&spanner.from) {
+            spanner.from = id;
+        }
+        if let Some(&id) = moved.get(&spanner.to) {
+            spanner.to = id;
+        }
+    }
     sheet.next_id = next;
     next
+}
+
+/// Drop the spanners whose ends are no longer in the score.
+///
+/// What removes items has to do this, or the score becomes unwritable: the
+/// emitter refuses a spanner pointing at a note that is not there, and rightly
+/// — but a caller who deleted a note did not ask for a score that cannot be
+/// engraved. The slur over it goes with it.
+pub(super) fn prune_spanners(sheet: &mut Sheet) {
+    let live: std::collections::HashSet<u64> = sheet
+        .voices()
+        .flat_map(|v| v.items.iter().map(Item::id))
+        .collect();
+    sheet
+        .spanners
+        .retain(|s| live.contains(&s.from) && live.contains(&s.to));
 }
 
 /// One score after another.
@@ -177,6 +209,7 @@ pub fn concat(mut a: Sheet, b: &Sheet) -> Result<Sheet, String> {
             }
         }
     }
+    a.spanners.extend(b.spanners);
     a.next_id = mint();
     Ok(a)
 }
@@ -205,6 +238,7 @@ pub fn stack(mut a: Sheet, b: &Sheet, as_staff: bool) -> Result<Sheet, String> {
         );
     }
     let next = renumber(&mut b, a.next_id);
+    a.spanners.extend(std::mem::take(&mut b.spanners));
     if as_staff {
         a.staves.extend(b.staves);
     } else {
@@ -383,6 +417,7 @@ pub fn invert_pitch(pitch: &Pitch, axis: &Pitch) -> Pitch {
         step,
         alter: 2 * axis.midi() - pitch.midi() - natural,
         octave,
+        forced: pitch.forced,
     }
 }
 
@@ -514,6 +549,7 @@ pub fn remove_measures(mut sheet: Sheet, first: usize, last: usize) -> Result<Sh
     shift_grid(&mut sheet.grid, last, -(removed as isize));
     tidy(&mut sheet.grid);
     sheet.next_id = mint();
+    prune_spanners(&mut sheet);
     Ok(sheet)
 }
 
@@ -622,6 +658,7 @@ mod tests {
                                 step: Step::C,
                                 alter: 0,
                                 octave: 4,
+                                forced: false,
                             }],
                             dur: Ratio::new(1, 4),
                             tie: false,
@@ -675,6 +712,58 @@ mod tests {
         // The music is the same; only the minted ids can differ, and they are
         // not the music, so the written page is what is compared.
         assert_eq!(sheet_to_mei(&left).unwrap(), sheet_to_mei(&right).unwrap());
+    }
+
+    #[test]
+    fn joining_two_scores_carries_what_is_written_between_their_notes() {
+        use crate::notation::model::Spanner;
+        // A slur over the second score's two notes has to survive being joined
+        // to the first, ids and all -- losing it silently is the worst way an
+        // operation can fail: the music is there and the mark is not.
+        let mut b = quarters(2);
+        let ids: Vec<u64> = b.staves[0].voices[0].items.iter().map(Item::id).collect();
+        b.spanners = vec![Spanner {
+            kind: "slur".into(),
+            from: ids[0],
+            to: ids[1],
+        }];
+        let joined = concat(quarters(4), &b).unwrap();
+        assert_eq!(joined.spanners.len(), 1, "the slur came along");
+        // and it points at the notes it was written over, which were renumbered
+        let live: Vec<u64> = joined
+            .voices()
+            .flat_map(|v| v.items.iter().map(Item::id))
+            .collect();
+        assert!(live.contains(&joined.spanners[0].from));
+        assert!(live.contains(&joined.spanners[0].to));
+        // the page can be written, which is what proves the ends resolve
+        assert!(sheet_to_mei(&joined).is_ok());
+
+        // stacking carries it too
+        let stacked = stack(quarters(2), &b, false).unwrap();
+        assert_eq!(stacked.spanners.len(), 1);
+        assert!(sheet_to_mei(&stacked).is_ok());
+    }
+
+    #[test]
+    fn removing_the_notes_a_slur_was_over_removes_the_slur() {
+        use crate::notation::model::Spanner;
+        // Two bars; a slur over the second bar's notes. Dropping that bar has
+        // to take the slur, or the score cannot be engraved at all.
+        let mut sheet = quarters(8);
+        let ids: Vec<u64> = sheet.staves[0].voices[0]
+            .items
+            .iter()
+            .map(Item::id)
+            .collect();
+        sheet.spanners = vec![Spanner {
+            kind: "slur".into(),
+            from: ids[4],
+            to: ids[7],
+        }];
+        let cut = remove_measures(sheet, 2, 2).unwrap();
+        assert!(cut.spanners.is_empty());
+        assert!(sheet_to_mei(&cut).is_ok());
     }
 
     #[test]
@@ -809,12 +898,14 @@ mod tests {
             step: Step::C,
             alter: 0,
             octave: 4,
+            forced: false,
         };
         // a rising major third inverts to a falling one: E4 -> Ab3
         let e = Pitch {
             step: Step::E,
             alter: 0,
             octave: 4,
+            forced: false,
         };
         let down = invert_pitch(&e, &axis);
         assert_eq!(down.step, Step::A);

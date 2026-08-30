@@ -7361,3 +7361,117 @@ performed no augmentation at all.
 or remove time: `repeat`, `insert_measures`, `remove_measures`. Everything else
 is content or grid, never both, which is the invariant the whole algebra is read
 against.
+
+## Accidentals: the engraver infers nothing, so the suppression is ours
+
+The plan carried a hypothesis for years: that suppressing a redundant accidental
+was "not a per-measure state machine but the difference between the *written*
+accidental (`<accid>`, which forces the print) and the *sounding* one
+(`@accid.ges`), which hands the decision to the engraver that already holds the
+key signature". It also said to **verify before switching**. Verifying reversed
+it.
+
+Engraving one phrase both ways, and counting the sharps actually drawn:
+
+| | `<accid accid="s"/>` | `@accid.ges="s"` |
+|---|---|---|
+| F sharp in C major | 1 — correct | **0 — a wrong score** |
+| F sharp in G major | 2 — the armature's and a redundant one | 1 — the armature's only |
+| the same F sharp twice in one bar | 2 | 1 (from the one written) |
+
+Verovio draws exactly what the document says and infers nothing. `<accid>` is
+always drawn, including where the key signature already implies it and where the
+same note was altered earlier in the bar; `@accid.ges` is never drawn at all. So
+an F sharp in C major written as the sounding form comes out as a plain F: a
+wrong score that looks right, which is the one failure this layer must never
+produce.
+
+The decision is therefore the encoder's, and it needs **both** halves the
+hypothesis denied — the key signature, and a per-measure memory of what has
+already been printed. An accidental holds for the rest of its measure at its own
+step and octave; a new measure starts again from the armature. Three things
+print: an alteration the armature does not give, a **return to the natural** of a
+step the armature alters (a sign, not silence — this is what the old encoder got
+wrong, writing a C in F sharp major with nothing at all, which reads as C sharp),
+and anything a caller marked as a courtesy accidental.
+
+Two details the implementation settles. The memory is per **staff**, not per
+voice: two voices share a bar, and the second does not restate what the first
+printed. And only the **first piece** of a note split across a barline prints its
+accidental — the tie carries it, and restating it reads as a second, different
+alteration.
+
+## A grand staff is one system because a barline says so, not because a gap is small
+
+The playback cursor sweeps the vertical span of the system the sounding note is
+on, and the span came from clustering the horizontal staff lines: a gap wider
+than 500 page units started a new system. That threshold cannot tell a **grand
+staff** from two systems — the two staves of a piano part are further apart than
+the lines of one staff and closer than two systems, and any number between those
+holds for one page size and not the next. It read a braced pair as two systems
+and gave the cursor half the span it should sweep.
+
+What settles it is already drawn: **a barline through the brace**. A single
+vertical line running from the top staff's top line to the bottom staff's bottom
+line exists only where two staves are barred together, which is exactly what
+makes them one system. So the lines are grouped into staves by their own even
+spacing — five lines, one gap, nothing to guess — and two staves are joined into
+a system when a line is drawn through them. A page that wrapped into several
+systems has no such line between them and stays several.
+
+## A sounding length is not written onto the page
+
+MEI has `@dur.ges`, a *gestural* duration, and it reads like the way to say
+"written a quarter, sounds an eighth" — the exact separation the score model
+keeps between the value on the page and the length in the air. Writing it turned
+out to corrupt the performance rather than shade it.
+
+Measuring the onsets an engraving produces, for four quarter notes where the
+first carries the mark:
+
+| | onsets (ms) | first note (ms) |
+|---|---|---|
+| plain | 0, 500, 1000, 1500 | 500 |
+| `<artic artic="stacc"/>` alone | 0, 500, 1000, 1500 | 500 |
+| `@dur.ges="8"` | **0, 250, 750, 1250** | 250 |
+
+The engraver reads the gestural duration as the note's real one and advances its
+own clock by it, so the note does not merely sound short — **every attack after
+it moves a quarter-beat earlier and the measure comes out short**. A staccato
+quarter is not an eighth: it sounds about half as long and the next attack is
+exactly where it was.
+
+So the emitter writes the articulation and **not** the sounding length. The model
+keeps the fact (`Marks::sounding`), because it is a fact about the music and
+because an interpreter can only honour what was kept; honouring it is the
+interpreter's, which is the milestone after this one. The division is the
+track's own: what is *written* belongs to the page, what is *heard* belongs to
+whoever plays it, and putting performance into the document and asking a layout
+engine's MIDI export to time it is exactly the confusion the two structures exist
+to avoid.
+
+The same measurement says a staccato alone changes nothing about playback today,
+which is correct and is the interpreter's to fix, not the engraving's.
+
+## A rest that fills a measure is `<mRest/>`
+
+The emitter wrote every rest by decomposing its length into note values, which
+for a whole measure gives `<rest dur="1"/>` — drawn hanging at the **start** of
+the bar. A reader looks for a whole-measure rest in the **middle** of it, and MEI
+has an element that says exactly that: `<mRest/>`, which an engraver centres.
+The distinction is not cosmetic — a rest at the start of a bar reads as a rest on
+the downbeat with something following it.
+
+**The case that matters is a rest *longer* than a measure**, which is the
+ordinary one rather than the exception: an empty staff under a written one is one
+long rest, written by the operations that keep voices in step. Handling only a
+rest that measures exactly one bar leaves that long one to the ordinary
+decomposition, which writes a whole rest at the *start* of each bar it covers —
+which is what this looked like on the page. So every full measure a rest covers
+is written this way, and only its ragged ends, where it begins or finishes
+mid-measure, are decomposed into values.
+
+The glyph is the **whole rest**, hanging from the fourth line, which is the
+convention for a full measure in any meter — a half rest means half a measure of
+actual silence. The host has always listed `mRest` among the classes a click can
+name, which is the earlier half of this layer expecting them.

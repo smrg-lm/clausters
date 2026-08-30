@@ -14,17 +14,20 @@ import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
 import {
+    addSpanner,
     concat,
     del,
     fromNotes,
     insert,
     insertMeasures,
+    marks,
     measures,
     ops,
     pitch,
     removeMeasures,
     retrograde,
     setDur,
+    setMarks,
     setMeter,
     setPitches,
     sheetFromVoice,
@@ -67,7 +70,7 @@ test("the catalog and this shell name the same verbs", () => {
     assert.deepEqual(missing, [], "the core knows a verb this shell has no helper for");
     // and the catalog is not empty, which is how this test would pass by
     // checking nothing at all
-    assert.ok(ops().length >= 17, `only ${ops().length} verbs in the catalog`);
+    assert.ok(ops().length >= 20, `only ${ops().length} verbs in the catalog`);
 });
 
 test("a voice lifts into the model and writes the same bytes", () => {
@@ -190,4 +193,71 @@ test("an edit names its item, and deleting is not silencing", () => {
     assert.equal((toVoice(three, [id], 1).staves[0] as { voices: unknown[] }).voices.length, 2);
     // and every verb refuses an item that is not there, saying which
     assert.throws(() => del(three, 999), /999/);
+});
+
+test("polyphony, tuplets and marks reach the page", () => {
+    const items = (s: Sheet) =>
+        (s.staves[0] as { voices: { items: Record<string, any>[] }[] }).voices[0].items;
+
+    // two voices on one staff, and two staves under a brace
+    let duo = sheetFromVoice([{ midis: [60], ticks: 16 }, { midis: [60], ticks: 16 }]);
+    duo = stack(duo, transpose(duo, -12));
+    assert.equal(toMei(duo).match(/<layer/g)?.length, 2);
+    const grand = stack(
+        sheetFromVoice([{ midis: [60], ticks: 32 }]),
+        sheetFromVoice([{ midis: [48], ticks: 32 }]),
+        { asStaff: true },
+    );
+    assert.match(toMei(grand), /symbol="brace"/);
+
+    // three in the time of two, which no grid of 32nds can hold
+    const tup = sheetFromVoice([{ midis: [60], ticks: 24 }]);
+    (tup.staves[0] as any).voices[0].items = [1, 2, 3].map((id) => ({
+        kind: "note", id, pitches: [{ step: "c", octave: 4 }], dur: [1, 12],
+    })).concat([{ kind: "rest", id: 4, dur: [3, 4] } as any]);
+    assert.match(toMei(tup), /num="3" numbase="2"/);
+
+    // the marks a note carries, and what is written between two notes
+    let s = sheetFromVoice([
+        { midis: [60], ticks: 8 }, { midis: [64], ticks: 8 }, { midis: [67], ticks: 16 },
+    ]);
+    const ids = items(s).map((i) => i.id as number);
+    s = setMarks(s, ids[0], marks({ articulations: ["stacc"], dynamic: "mf", sounding: [1, 8] }));
+    s = addSpanner(s, "crescendo", ids[0], ids[2]);
+    const mei = toMei(s);
+    assert.match(mei, /<artic artic="stacc"\/>/);
+    assert.ok(mei.includes("<dynam") && mei.includes('form="cres"'));
+    // A sounding length stays in the score and is deliberately not written: an
+    // engraver reads one as the note's real duration and advances its own clock
+    // by it, which pulls every attack after it earlier.
+    assert.ok(mei.includes('dur="4"') && !mei.includes("dur.ges"));
+    // and a spanner naming a note that is not there is refused, not dropped
+    assert.throws(() => addSpanner(s, "slur", ids[0], 999), /999/);
+});
+
+test("an accidental is printed only where it is needed", () => {
+    // a scale in B flat prints no flat its armature already implies
+    const flats = sheetFromVoice([{ midis: [70], ticks: 8 }, { midis: [70], ticks: 8 }],
+        { key: "Bb" });
+    assert.ok(!toMei(flats).includes('<accid accid="f"/>'));
+    assert.match(toMei(flats), /accid\.ges="f"/);
+    // a chromatic note prints its own, and does not restate it in the same bar
+    const sharp = sheetFromVoice([{ midis: [66], ticks: 8 }, { midis: [66], ticks: 8 }]);
+    assert.equal(toMei(sharp).match(/<accid accid="s"\/>/g)?.length, 1);
+    // and a natural in a key that alters that step is a *sign*, not silence
+    const natural = sheetFromVoice([{ midis: [60], ticks: 8 }], { key: "F#" });
+    assert.match(toMei(natural), /<accid accid="n"\/>/);
+});
+
+test("a rest that fills a measure is written as one", () => {
+    // MEI has an element for it and an engraver draws it centred in the bar,
+    // which is where a reader looks; a decomposed whole rest hangs at the start
+    // and reads as a rest on the downbeat with something after it.
+    const duo = stack(
+        sheetFromVoice([{ midis: [60], ticks: 32 }, { midis: [60], ticks: 32 }]),
+        sheetFromVoice([{ midis: [60], ticks: 32 }]),
+    );
+    const mei = toMei(duo);
+    assert.match(mei, /<mRest\/>/);
+    assert.ok(!mei.includes('<rest dur="1"'));
 });

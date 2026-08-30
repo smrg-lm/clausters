@@ -217,6 +217,40 @@ time goes missing: `delete` takes the item out and everything after it moves
 earlier by its value; `silence` leaves a rest of the same length, so nothing
 moves and the item keeps its id.
 
+### What the page can say
+
+A sheet holds more than pitches and values, and all of it is written out by
+`to_mei`:
+
+```python
+sheet = notation.set_marks(sheet, id, notation.marks(
+    articulations=["stacc"], dynamic="mf", sounding=(1, 8)))
+sheet = notation.add_spanner(sheet, "slur", first_id, last_id)
+```
+
+`marks` is what one note carries — articulations, a dynamic, an ornament,
+whether it is a grace note and a forced stem. It also holds **how long the note
+sounds** as against how long it is written — kept in the score and deliberately
+*not* written onto the page, because an engraver reads a written sounding length
+as the note's real duration and advances its own clock by it, which pulls every
+attack after it earlier. Shortening a staccato is the player's decision, and the
+interpreter is what will honour it. A slur or a hairpin has *two* ends, so
+it goes on the sheet beside the staves (`add_spanner`) rather than on a note.
+
+**Several voices and several staves** come from `stack`: as voices they are two
+layers on one staff, as staves (`as_staff=True`) they take a brace and one
+barline through both.
+
+**Tuplets need nothing declared.** A duration whose denominator carries an odd
+factor is already inside one — a triplet eighth is `[1, 12]` — so three of them
+engrave as a bracketed triplet. A tuplet cannot be split, so a group that would
+cross a barline is refused by name rather than written into bars nobody meant.
+
+**Accidentals are printed only where they are needed**: not where the key
+signature already implies them, and not twice in a bar. A natural is a *sign*
+where the key alters that step, and `notation.pitch(..., forced=True)`-style
+courtesy accidentals are what the pitch's own `forced` flag is for.
+
 `examples/notation/compose.py` builds a whole piece this way and plays it.
 
 ## See also

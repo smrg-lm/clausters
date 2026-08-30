@@ -37,6 +37,7 @@ export type { EngraveOptions, Page } from "./engraver.ts";
 export { fromNotes, fromTimeline } from "./mei.ts";
 export type { MeiOptions, Slot } from "./mei.ts";
 export {
+    addSpanner,
     apply,
     concat,
     del,
@@ -44,13 +45,16 @@ export {
     insert,
     insertMeasures,
     invert,
+    marks,
     measures,
     ops,
     pitch,
     removeMeasures,
+    removeSpanner,
     repeat,
     retrograde,
     setDur,
+    setMarks,
     setMeter,
     setPitches,
     silence,
@@ -61,7 +65,7 @@ export {
     toVoice,
     transpose,
 } from "./sheet.ts";
-export type { Op, OpSpec, Ratio, Sheet, TransposeOptions } from "./sheet.ts";
+export type { MarkOptions, Op, OpSpec, Ratio, Sheet, TransposeOptions } from "./sheet.ts";
 export { scoreView, transport } from "./view.ts";
 export type { ScoreViewOptions } from "./view.ts";
 export { setEngraverUrl } from "./_verovio.ts";

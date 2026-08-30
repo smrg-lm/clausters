@@ -343,7 +343,7 @@ def test_the_catalog_and_this_shell_name_the_same_verbs():
     assert missing == [], f"the core knows {missing} with no helper here"
     # and the catalog is not empty, which is how this test would pass by
     # checking nothing at all
-    assert len(catalogued) >= 17, f"only {len(catalogued)} verbs in the catalog"
+    assert len(catalogued) >= 20, f"only {len(catalogued)} verbs in the catalog"
 
 
 def test_a_voice_lifts_into_the_model_and_writes_the_same_bytes():
@@ -451,3 +451,70 @@ def test_an_edit_names_its_item_and_deleting_is_not_silencing():
     # and every verb refuses an item that is not there, saying which
     with pytest.raises(ValueError, match="999"):
         notation.delete(three, 999)
+
+
+def test_polyphony_tuplets_and_marks_reach_the_page():
+    # two voices on one staff, and two staves under a brace
+    duo = notation.sheet_from_voice([{"midis": [60], "ticks": 16}] * 2)
+    duo = notation.stack(duo, notation.transpose(duo, -12))
+    mei = notation.to_mei(duo)
+    assert mei.count("<layer") == 2
+    grand = notation.stack(
+        notation.sheet_from_voice([{"midis": [60], "ticks": 32}]),
+        notation.sheet_from_voice([{"midis": [48], "ticks": 32}]), as_staff=True)
+    assert 'symbol="brace"' in notation.to_mei(grand)
+
+    # three in the time of two, which no grid of 32nds can hold
+    triplet = {"kind": "note", "pitches": [{"step": "c", "octave": 4}], "dur": [1, 12]}
+    tup = notation.sheet_from_voice([{"midis": [60], "ticks": 24}])
+    tup["staves"][0]["voices"][0]["items"] = [dict(triplet, id=i + 1) for i in range(3)] + [
+        {"kind": "rest", "id": 4, "dur": [3, 4]}]
+    assert 'num="3" numbase="2"' in notation.to_mei(tup)
+
+    # the marks a note carries, and what is written between two notes
+    s = notation.sheet_from_voice([{"midis": [60], "ticks": 8},
+                                   {"midis": [64], "ticks": 8},
+                                   {"midis": [67], "ticks": 16}])
+    ids = [i["id"] for i in _items(s)]
+    s = notation.set_marks(s, ids[0], notation.marks(
+        articulations=["stacc"], dynamic="mf", sounding=(1, 8)))
+    s = notation.add_spanner(s, "crescendo", ids[0], ids[2])
+    mei = notation.to_mei(s)
+    assert '<artic artic="stacc"/>' in mei
+    assert '<dynam' in mei and 'form="cres"' in mei
+    # A sounding length stays in the score and is deliberately not written:
+    # an engraver reads one as the note's real duration and advances its own
+    # clock by it, which pulls every attack after it earlier.
+    assert 'dur="4"' in mei and "dur.ges" not in mei
+    # and a spanner naming a note that is not there is refused, not dropped
+    with pytest.raises(ValueError, match="999"):
+        notation.add_spanner(s, "slur", ids[0], 999)
+
+
+def test_an_accidental_is_printed_only_where_it_is_needed():
+    # a scale in B flat prints no flat its armature already implies
+    flats = notation.sheet_from_voice([{"midis": [70], "ticks": 8}] * 2, key="Bb")
+    mei = notation.to_mei(flats)
+    assert '<accid accid="f"/>' not in mei
+    assert 'accid.ges="f"' in mei
+    # a chromatic note prints its own, and does not restate it in the same bar
+    sharp = notation.sheet_from_voice([{"midis": [66], "ticks": 8}] * 2, key="C")
+    mei = notation.to_mei(sharp)
+    assert mei.count('<accid accid="s"/>') == 1
+    assert mei.count('accid.ges="s"') == 1
+    # and a natural in a key that alters that step is a *sign*, not silence --
+    # written with nothing at all it would read as the altered note
+    natural = notation.sheet_from_voice([{"midis": [60], "ticks": 8}], key="F#")
+    assert '<accid accid="n"/>' in notation.to_mei(natural)
+
+
+def test_a_rest_that_fills_a_measure_is_written_as_one():
+    # MEI has an element for it and an engraver draws it centred in the bar,
+    # which is where a reader looks; a decomposed whole rest hangs at the start
+    # and reads as a rest on the downbeat with something after it.
+    duo = notation.stack(
+        notation.sheet_from_voice([{"midis": [60], "ticks": 32}] * 2),
+        notation.sheet_from_voice([{"midis": [60], "ticks": 32}]))
+    mei = notation.to_mei(duo)
+    assert "<mRest/>" in mei
+    assert '<rest dur="1"' not in mei

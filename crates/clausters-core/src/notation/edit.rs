@@ -25,7 +25,7 @@
 //! splitting a voice are ordinary operations here and are not in that vocabulary
 //! at all.
 
-use super::model::{Item, Marks, Pitch, Sheet};
+use super::model::{Item, Marks, Pitch, Sheet, Spanner};
 use crate::ratio::Ratio;
 
 /// Where a new item goes.
@@ -100,6 +100,9 @@ pub fn delete(mut sheet: Sheet, id: u64) -> Result<Sheet, String> {
     sheet.assign_ids();
     let (si, vi, ii) = sheet.locate(id).ok_or_else(|| missing(id))?;
     sheet.staves[si].voices[vi].items.remove(ii);
+    // A slur that ended on it goes with it: the alternative is a score that
+    // cannot be engraved because of a note the caller meant to remove.
+    super::algebra::prune_spanners(&mut sheet);
     Ok(sheet)
 }
 
@@ -188,6 +191,76 @@ pub fn tie(mut sheet: Sheet, id: u64, tied: bool) -> Result<Sheet, String> {
     Ok(sheet)
 }
 
+/// Give an item the marks it carries: articulations, a dynamic, an ornament,
+/// whether it is a grace note, a forced stem, and how long it sounds as against
+/// how long it is written.
+///
+/// It replaces rather than merges, which is the honest shape for something a
+/// caller holds whole: reading the marks, changing one and sending them back is
+/// two calls and no ambiguity, where a merge would leave no way to *remove* a
+/// mark at all.
+///
+/// # Errors
+/// When the item is not in the sheet, or is a rest — a rest has no pitch to
+/// articulate and nothing to say about how long it sounds.
+pub fn set_marks(mut sheet: Sheet, id: u64, marks: Marks) -> Result<Sheet, String> {
+    sheet.assign_ids();
+    let (si, vi, ii) = sheet.locate(id).ok_or_else(|| missing(id))?;
+    match &mut sheet.staves[si].voices[vi].items[ii] {
+        Item::Note { marks: m, .. } => *m = marks,
+        Item::Rest { .. } => {
+            return Err(format!(
+                "item {id} is a rest, and a rest carries no articulation, dynamic \
+                 or sounding length"
+            ));
+        }
+    }
+    Ok(sheet)
+}
+
+/// Write something between two notes: a slur, a crescendo, a diminuendo.
+///
+/// It cannot go on an item because it has two ends, so it goes on the sheet
+/// beside the staves. Adding the same one twice changes nothing, which is what
+/// makes a caller resending its state harmless.
+///
+/// # Errors
+/// When either end is not in the sheet. A spanner pointing at a note that is
+/// not there would be a mark that never appears and no reason why.
+pub fn add_spanner(mut sheet: Sheet, kind: &str, from: u64, to: u64) -> Result<Sheet, String> {
+    sheet.assign_ids();
+    for id in [from, to] {
+        if sheet.locate(id).is_none() {
+            return Err(missing(id));
+        }
+    }
+    if from == to {
+        return Err(
+            "a slur or a hairpin runs between two notes, not from one to \
+                    itself"
+                .to_string(),
+        );
+    }
+    let spanner = Spanner {
+        kind: kind.to_string(),
+        from,
+        to,
+    };
+    if !sheet.spanners.contains(&spanner) {
+        sheet.spanners.push(spanner);
+    }
+    Ok(sheet)
+}
+
+/// Take back what [`add_spanner`] wrote. Removing one that is not there changes
+/// nothing rather than refusing, since the state a caller asked for holds.
+pub fn remove_spanner(mut sheet: Sheet, kind: &str, from: u64, to: u64) -> Result<Sheet, String> {
+    sheet
+        .spanners
+        .retain(|s| !(s.kind == kind && s.from == from && s.to == to));
+    Ok(sheet)
+}
+
 /// Move items to another voice on the same staff, leaving rests where they were.
 ///
 /// How two lines written as one come apart. The items keep their ids and their
@@ -270,6 +343,7 @@ mod tests {
             step: Step::C,
             alter: 0,
             octave: 4,
+            forced: false,
         }
     }
 
@@ -350,6 +424,7 @@ mod tests {
                 step: Step::B,
                 alter: 1,
                 octave: 3,
+                forced: false,
             }],
         )
         .unwrap();
