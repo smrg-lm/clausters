@@ -815,19 +815,19 @@ to play it, and a logical aggregate emits the bus-wired configuration the server
 already expresses (a `GraphDef`) rather than a wiring language of its own. Both
 exceptions were resolved in the algebra's favour, and both are recorded above.
 
-## The piano-roll: OSC events get their own lane, and the notes live once
+## The piano-roll: OSC items get their own lane, and the notes live once
 
 The editor-grade `pianoroll` draws the two message families a sequence carries —
-MIDI notes and OSC events — and it had to place them without lying about what
+MIDI notes and OSC items — and it had to place them without lying about what
 each is.
 
 **Context.** A note has a pitch, so it maps naturally onto the grid's vertical
-axis (pitch × time). An OSC event does not: a `/trig` or a `/cue` is a moment, not
+axis (pitch × time). An OSC item does not: a `/trig` or a `/cue` is a moment, not
 a pitch. Forcing it into the grid means inventing a vertical position for
 something that has none — the same kind of lie the patcher refused when it
 declined to guess signal direction from a control's name.
 
-**Decision.** MIDI notes draw in the pitch × time grid; OSC events draw as flags
+**Decision.** MIDI notes draw in the pitch × time grid; OSC items draw as markers
 in a **separate lane** below it, on the shared time axis but with no pitch
 pretence. Velocity gets its own lane too (the DAW convention), so the grid stays
 one clean plane of notes.
@@ -872,13 +872,13 @@ code it already had.
 **Edit-back to the data (the Editor's dedicated view).** When the `Editor`
 opens an element as a dedicated piano-roll, a per-note edit writes back only to a
 **generated element**: a `Track`'s editable `Timeline` is rebuilt from the
-`"notes"` payload (times converted to beats, the OSC/MIDI events sharing the
+`"notes"` payload (times converted to beats, the OSC/MIDI items sharing the
 timeline preserved). A generator (`Pbind`/`Routine`) is forward-only — there is
 no second note to rewrite until it evaluates again — so its bounced notes are
 shown **read-only**, and bouncing it to a `Track` is what makes them editable.
 This is not a new rule: it is the generated/generator distinction of the
 arrangement model (above) doing its job at the granularity of a single note.
-OSC events stay display-only in this view too: the `(time, label)` flag is a
+OSC items stay display-only in this view too: the `(time, label)` marker is a
 lossy projection of the message, so writing it back would silently drop the
 arguments.
 

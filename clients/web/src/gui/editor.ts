@@ -65,7 +65,7 @@ import type { Member } from "../form/index.ts";
 import { FIRST_VERSION } from "../form/document.ts";
 import { Automation } from "../seq/automation.ts";
 import { Event as SeqEvent } from "../seq/event.ts";
-import { OscItem, Timeline } from "../seq/timeline.ts";
+import { MidiItem, OscItem, Timeline } from "../seq/timeline.ts";
 import type { Playhead } from "../seq/timeline.ts";
 import type { TempoClock } from "../base/clock.ts";
 import {
@@ -561,7 +561,7 @@ export class Editor {
 
     /**
      * The dedicated piano-roll view: one `pianoroll` widget drawing a single
-     * events element's MIDI notes (grid) and OSC events (lane), instead of a
+     * events element's MIDI notes (grid) and OSC markers (lane), instead of a
      * multitrack of clips.
      */
     private drawPianoroll(): GuiNode {
@@ -1683,8 +1683,9 @@ export class Editor {
     }
 
     /**
-     * The OSC events of an element as `[timeUnits, label]` pairs — the
-     * piano-roll's event lane. Display only: a marker carries the time and a
+     * The OSC (and raw MIDI) items of an element as `[timeUnits, label]` pairs
+     * — the piano-roll's OSC lane. An `OscItem` labels with its address, a
+     * `MidiItem` with a short tag. Display only: a marker carries the time and a
      * label, not the full message, so it is not written back.
      */
     private oscOf(element: Element): [number, string][] {
@@ -1698,7 +1699,9 @@ export class Editor {
         const out: [number, string][] = [];
         for (const [beat, item] of events) {
             if (item instanceof OscItem) {
-                out.push([this.beatsToUnits(beat), String(item.message[0])]);
+                out.push([this.beatsToUnits(beat), String(item.addr)]);
+            } else if (item instanceof MidiItem) {
+                out.push([this.beatsToUnits(beat), "midi"]);
             }
         }
         return out;
@@ -2826,7 +2829,7 @@ function editableTimeline(element: Element): Timeline | null {
 /**
  * Rewrite a timeline in place: keep the items `keep(item)` is true for, drop the
  * rest, and add `fresh` — so one kind of item (the notes) is replaced while the
- * others (OSC events) are preserved. Uses only the public timeline API.
+ * others (OSC items) are preserved. Uses only the public timeline API.
  */
 function rewriteTimeline(
     timeline: Timeline,

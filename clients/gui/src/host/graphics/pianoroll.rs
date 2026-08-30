@@ -1,5 +1,5 @@
 //! The piano-roll graphic primitives: a note grid, a piano keyboard gutter, a
-//! velocity lane and an OSC-event lane, all pure over a [`Draw`] (the
+//! velocity lane and an OSC lane, all pure over a [`Draw`] (the
 //! flat-geometry [`crate::host::paint`] painter) so they are unit-testable without a
 //! window — the static-view posture of `track`/`bpf`.
 //!
@@ -10,7 +10,7 @@
 //!
 //! - the dedicated **`pianoroll` widget** (`WidgetKind::PianoRoll`) — an
 //!   editor-grade view with a keyboard, rulers, group navigation, selection and
-//!   a playhead, drawing MIDI notes in the grid and OSC events in their lane;
+//!   a playhead, drawing MIDI notes in the grid and OSC markers in their lane;
 //! - the multitrack **`clip` body** — a clip with `notes` draws its compact
 //!   piano-roll by calling [`draw_notes`] on the clip's rect, so a note lines up
 //!   on the shared time axis and the two never disagree on geometry.
@@ -85,7 +85,7 @@ impl Note {
     }
 }
 
-/// One OSC event marker on the event lane: its `time` (timeline samples,
+/// One marker on the OSC lane: its `time` (timeline samples,
 /// relative to the region offset) and an optional short `label` (an address or
 /// tag) drawn beside the flag.
 #[derive(Clone, Debug, PartialEq)]
@@ -103,7 +103,7 @@ pub struct OscMark {
 pub const KEYBOARD_W: f32 = 44.0;
 /// The velocity lane height, device pixels.
 pub const VELOCITY_H: f32 = 52.0;
-/// The OSC event lane height, device pixels.
+/// The OSC lane height, device pixels.
 pub const OSC_H: f32 = 16.0;
 /// The smallest note bar height (a note never collapses below this even when a
 /// semitone row is sub-pixel).
@@ -437,13 +437,13 @@ pub fn draw_velocity_lane(d: &mut Draw, lane: Rect, nav: &View, offset: f64, not
     mesh.border(lane, m.divider_w, theme.frame);
 }
 
-/// Draw the OSC event lane: a flag at each marker's time, with its label.
+/// Draw the OSC lane: a flag at each marker's time, with its label.
 pub fn draw_osc_lane(d: &mut Draw, lane: Rect, nav: &View, offset: f64, marks: &[OscMark]) {
     let (mesh, m, theme) = d.parts();
     if lane.w <= 0.0 || lane.h <= 0.0 {
         return;
     }
-    mesh.rect(lane, theme.event_lane);
+    mesh.rect(lane, theme.osc_lane);
     let (x_lo, x_hi) = (lane.x, lane.x + lane.w);
     for mark in marks {
         let x = to_x(offset + mark.time, nav, lane) as f32;

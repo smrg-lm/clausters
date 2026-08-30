@@ -467,7 +467,7 @@ class Editor:
 
     def _draw_pianoroll(self) -> dict:
         """The dedicated piano-roll view: one `pianoroll` widget drawing a single
-        events element's MIDI notes (grid) and OSC events (lane), instead of a
+        events element's MIDI notes (grid) and OSC markers (lane), instead of a
         multitrack of clips. The notes ride the shared beats grid; the pitch
         window frames them (falling back to `DEFAULT_PITCH`). Pure — it builds the
         tree and the edit-back registry."""
@@ -620,7 +620,7 @@ class Editor:
         """`draw` a single events element as a **dedicated piano-roll** window
         and open it on ``host`` (or the ambient host, like `open`) — the
         editor-grade note view (a keyboard, an
-        editable note grid, a velocity lane, an OSC-event lane) of one MIDI/OSC
+        editable note grid, a velocity lane, an OSC lane) of one MIDI/OSC
         element, as opposed to `open`, where the same notes are only a clip body.
 
         Edits write back through `poll` exactly as the multitrack does, **when the
@@ -1588,8 +1588,8 @@ class Editor:
         return f"w{i}"
 
     def _osc(self, element) -> list:
-        """The OSC (and raw MIDI) events of an element as ``(time_units, label)``
-        pairs — the piano-roll's event lane. An `OscItem` labels with its address,
+        """The OSC (and raw MIDI) items of an element as ``(time_units, label)``
+        pairs — the piano-roll's OSC lane. An `OscItem` labels with its address,
         a `MidiItem` with a short tag. Display only: a marker carries the time and
         a label, not the full message, so it is not written back (see
         `open_pianoroll`)."""

@@ -1,5 +1,5 @@
 //! `notes` — the editor-grade piano roll: a keyboard gutter, a note grid, a
-//! velocity lane and an event lane, placed on a navigation group's shared time
+//! velocity lane and an OSC lane, placed on a navigation group's shared time
 //! axis.
 //!
 //! **The leaf that is placed on somebody else's axis and edits what is drawn on
@@ -109,7 +109,7 @@ enum Drag {
         press_velocity: i32,
         orig: Vec<(usize, i32)>,
     },
-    /// An event marker sliding along the time axis.
+    /// A marker sliding along the time axis.
     OscMark { index: usize },
     /// The marquee: the shared time selection swept from `anchor`, restricted
     /// in pitch when the press was on the grid (`pitch` is `None` on the
@@ -141,8 +141,8 @@ fn from_props(props: &Map<String, Value>) -> Notes {
     let osc = parse_osc(props);
     Notes {
         notes: parse_notes(props),
-        // The velocity lane is on by default; the event lane shows when there
-        // are events or it is explicitly asked for (so an empty lane can still
+        // The velocity lane is on by default; the OSC lane shows when there
+        // are markers or it is explicitly asked for (so an empty lane can still
         // be opened to author them).
         velocity_lane: props.get("velocity").and_then(truthy).unwrap_or(true),
         osc_lane: props
@@ -1081,7 +1081,7 @@ impl Notes {
         Claim::take()
     }
 
-    /// A press on the event lane: Ctrl adds or removes a marker, a press on one
+    /// A press on the OSC lane: Ctrl adds or removes a marker, a press on one
     /// slides it.
     fn press_osc(&mut self, h: &Hit, at: (f64, f64), input: &Input, is_body: bool) -> Claim {
         if input.mods.ctrl {
@@ -1162,7 +1162,7 @@ fn parse_notes(props: &serde_json::Map<String, Value>) -> Vec<Note> {
 }
 
 /// Parse a `pianoroll`'s `osc` prop — a flat `[time, label, time, label, …]`
-/// list of OSC event markers (the label a short address/tag, an empty string
+/// list of OSC markers (the label a short address/tag, an empty string
 /// meaning none). A trailing partial pair is dropped.
 fn parse_osc(props: &serde_json::Map<String, Value>) -> Vec<OscMark> {
     let Some(Value::Array(items)) = props.get("osc") else {
@@ -1314,8 +1314,8 @@ mod tests {
         assert_eq!(r.snap, 0.0);
         assert!(r.notes.is_empty() && r.osc.is_empty());
 
-        // The canonical quintuple form, and the event lane opening because
-        // there are events.
+        // The canonical quintuple form, and the OSC lane opening because
+        // there are markers.
         let r = roll(
             r#"{"notes":[0.0,100.0,60.0,90,2],"osc":[50.0,"hit"],
                 "min":48,"max":72,"snap":25.0,"midi_in":true}"#,
@@ -1323,7 +1323,7 @@ mod tests {
         assert_eq!(r.notes.len(), 1);
         assert_eq!((r.notes[0].velocity, r.notes[0].channel), (90, 2));
         assert_eq!(r.osc.len(), 1);
-        assert!(r.osc_lane, "events open their lane");
+        assert!(r.osc_lane, "markers open their lane");
         assert!(r.midi_in);
         assert_eq!(r.snap, 25.0);
     }

@@ -373,8 +373,8 @@ export interface SourceInput {
     points?: PointSpec;
     /** A roll's notes. */
     notes?: NoteSpec;
-    /** A roll's OSC event flags. */
-    osc?: OscEventSpec;
+    /** A roll's OSC markers. */
+    osc?: OscMarkSpec;
     /** A patcher's boxes. */
     boxes?: readonly unknown[];
     /** A patcher's cords. */
@@ -400,7 +400,7 @@ export interface SourceInput {
  * `baseBucket` sizes the peak pyramid.
  *
  * For a **structure**, name the prop it is: `points` (a `bpf`'s break-points),
- * `notes` / `osc` (a roll's notes and event flags), `boxes` / `cords` (a
+ * `notes` / `osc` (a roll's notes and markers), `boxes` / `cords` (a
  * patcher's boxes and wires) or `displayList` (an engraved `score` page). It
  * takes the same form the builder's own option takes, is normalized the same
  * way, and {@link Source.set} replaces it live:
@@ -2263,19 +2263,20 @@ export function bpf(
 
 /**
  * The editor-grade `pianoroll`: a keyboard gutter, a note grid, a velocity
- * lane and an OSC-event lane — the timeline sibling of the compact `clip`
+ * lane and an OSC lane — the timeline sibling of the compact `clip`
  * roll, drawing the same notes with editing, rulers and navigation.
  *
  * `notes` are `[start, dur, pitch]` or `[start, dur, pitch, velocity,
  * channel]` MIDI notes (times in timeline samples, pitch drawn over
- * `[min, max]`); `osc` are `[time, label]` (or bare `time`) event flags. An
+ * `[min, max]`); `osc` are `[time, label]` (or bare `time`) markers, one per
+ * OSC or raw-MIDI timeline item. An
  * edit flows back as a flat `"notes"` or `"osc"` event. `midiIn` arms live
  * MIDI painting in the native host.
  */
 export function pianoroll(
     options: TimelineOptions & {
         notes?: NoteSpec | Source;
-        osc?: OscEventSpec | Source;
+        osc?: OscMarkSpec | Source;
         min?: number;
         max?: number;
         snap?: number;
@@ -2789,8 +2790,8 @@ export type PointSpec =
 /** Notes: `[start, dur, pitch]`, optionally with `velocity` and `channel`. */
 export type NoteSpec = readonly (readonly number[])[];
 
-/** OSC event flags: `[time, label]` pairs, or a bare `time`. */
-export type OscEventSpec = readonly (number | readonly [number] | readonly [number, string])[];
+/** OSC markers: `[time, label]` pairs, or a bare `time`. */
+export type OscMarkSpec = readonly (number | readonly [number] | readonly [number, string])[];
 
 /**
  * A `points` argument as the flat quad list: a flat list is validated (whole
@@ -2871,7 +2872,7 @@ export function scorePage(displayList: Record<string, unknown>): Props {
 const STRUCTURES: Record<string, { props: (v: unknown) => Props; slots: readonly string[] }> = {
     points: { props: (v) => ({ points: flatPoints(v as PointSpec) }), slots: ["points"] },
     notes: { props: (v) => ({ notes: flatNotes(v as NoteSpec) }), slots: ["notes"] },
-    osc: { props: (v) => ({ osc: flatOsc(v as OscEventSpec) }), slots: ["osc"] },
+    osc: { props: (v) => ({ osc: flatOsc(v as OscMarkSpec) }), slots: ["osc"] },
     boxes: { props: (v) => ({ boxes: [...(v as readonly unknown[])] }), slots: ["boxes"] },
     cords: { props: (v) => ({ cords: flatCords(v as readonly number[]) }), slots: ["cords"] },
     display_list: {
@@ -2891,11 +2892,11 @@ function held<T>(value: T | Source | undefined, flatten: (v: T) => unknown): unk
 }
 
 /** An `osc` argument as the flat `time, label` pairs the host reads. */
-export function flatOsc(events: OscEventSpec): (number | string)[] {
+export function flatOsc(marks: OscMarkSpec): (number | string)[] {
     const out: (number | string)[] = [];
-    for (const event of events) {
-        if (typeof event === "number") out.push(event, "");
-        else out.push(event[0], event.length > 1 ? String(event[1]) : "");
+    for (const mark of marks) {
+        if (typeof mark === "number") out.push(mark, "");
+        else out.push(mark[0], mark.length > 1 ? String(mark[1]) : "");
     }
     return out;
 }

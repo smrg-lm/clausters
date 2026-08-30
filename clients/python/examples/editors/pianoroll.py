@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Draw MIDI notes (and OSC events) in the editor-grade ``pianoroll`` and hear
+"""Draw MIDI notes (and OSC markers) in the editor-grade ``pianoroll`` and hear
 them play.
 
 The dedicated piano-roll view, the editor-grade sibling of the multitrack's
 compact `clip` roll (they share the host's note primitives, so a note is drawn
 and edited the same way in both). It contemplates the two message families a
 sequence carries: **MIDI notes** in the grid (pitch x time, with velocity and
-channel) and **OSC events** as flags in a lane below it.
+channel) and **OSC items** as markers in a lane below it.
 
 Editing gestures, all live and native (the browser keeps display + ``/gui_set``
 parity):
@@ -78,7 +78,7 @@ def beats(b: float) -> float:
 # %% [markdown]
 # ## Open the piano-roll window
 # One ascending major scale, an eighth note each, growing in velocity -- plus two
-# OSC event markers in the lane below. The widgets are *named*, so the script
+# OSC markers in the lane below. The widgets are *named*, so the script
 # drives and listens to the roll by name; the pitch window frames the octave
 # around middle C. The hint and the transport are fixed-height (``h``), so the
 # roll -- the only weighted child -- keeps the rest of the window.

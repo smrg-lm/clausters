@@ -1218,6 +1218,17 @@ work, where a pending item reads as done.)*
   `clients/web/src` and from every docstring, comment and book page that named
   them, and the release that carries it bumps the breaking tier.
 
+  The **piano-roll's lane carried the same word** and went with it. What the
+  `pianoroll` draws below its grid is one marker per OSC or raw-MIDI *item*, so
+  calling it "the OSC event lane" re-told the story the rename removed: it is
+  **the OSC lane**, its contents are **markers** (the host already named the
+  struct `OscMark`), and the prose says so in the host, both clients' `guidef`
+  and `Editor`, `docs/gui-protocol.md`, the ADR and the two books. Two names
+  moved with it — the web client's `OscEventSpec` is `OscMarkSpec`, and the
+  theme colour `event_lane` is `osc_lane`, matching the prop it paints. The
+  theme key is user configuration, so that one is a break too, and rides the
+  same release.
+
 - ✅ **Staging overwrote a library that was mapped, so refreshing the binaries
   killed a running process** *(found 2026-08-29 hunting a Python crash that left
   no output, and filed then as an unconfirmed hazard; **confirmed and fixed

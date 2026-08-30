@@ -1524,7 +1524,7 @@ pub trait Element: fmt::Debug {
     ///
     /// It is a door because the roll is the one leaf whose picture is *not* the
     /// rectangle minus its chrome: strips are stacked under its grid (a
-    /// velocity lane, an event lane) that read the same time and are not part
+    /// velocity lane, an OSC lane) that read the same time and are not part
     /// of the body a sample maps into, and its keyboard gutter is a vertical
     /// surface whatever `ruler_y` says. The hit-test has to place the axis
     /// exactly where the drawing did, so it asks.

@@ -3700,3 +3700,21 @@ sound.
   **What is left is not an example's to fix**: the free `render()` verb cuts
   the release of anything it bounces, in both clients — written up in
   `clients/python/PLAN.md`, since the fix is one decision for both.
+
+- ✅ **The port improvised the roll's OSC lane, and the root barrel exported a
+  name Python does not** *(found 2026-08-30 while renaming `OscEvent`/`MidiEvent`
+  to `OscItem`/`MidiItem`, reading the two clients' timeline and editor side by
+  side; fixed the same day)*. Three divergences in the one seam, none of which
+  any build could see:
+
+  - `Editor.oscOf` labelled only `OscItem`s, so a raw MIDI item on a timeline
+    drew **no marker** in the web roll while the same piece drew one labelled
+    `midi` in Python (`Editor._osc`). The lane is display-only, so nothing
+    failed — the picture was simply missing a flag.
+  - `OscItem` stored the whole message as one `message` tuple where Python has
+    `addr` and `args`, which is why the editor read `item.message[0]` for what
+    Python calls `item.addr`. Same result, different object: it now carries the
+    two attributes Python's does.
+  - the root barrel re-exported `MidiItem`, which `clausters/__init__.py` does
+    not: both clients re-export `Event`, `rest`, `Timeline` and `Playhead` at
+    the top level and keep the two raw-message items under `seq`.

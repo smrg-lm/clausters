@@ -136,7 +136,7 @@ the tree. The mapping is one rule, not a heuristic per case:
   dragged in a clip body writes back onto the element's timeline, exactly as one
   dragged in the dedicated roll does. (The same notes drive the standalone,
   editor-grade `clausters.gui.pianoroll` widget — a keyboard, an editable note
-  grid, a velocity lane and an OSC-event lane — when you want to author them
+  grid, a velocity lane and an OSC lane — when you want to author them
   directly rather than through the multitrack.)
 - a nested aggregate draws as the labeled rectangle that **summarizes** it,
   until you `expand` it into lanes of its own. That collapse/expand is the arrangement's
@@ -257,15 +257,15 @@ instead:
 
 ```python
 roll = Editor(melody, sample_rate=SR, tempo=2.0, quant=0.25)
-roll.open_pianoroll(gui)      # keyboard, note grid, velocity + OSC-event lanes
+roll.open_pianoroll(gui)      # keyboard, note grid, velocity + OSC lanes
 ```
 
 Edits flow back through `poll` exactly as the multitrack's do, **when the
 element is editable**: a dragged, added or removed note rebuilds a `Track`'s
-timeline (times converted to beats, any OSC/MIDI events on the same timeline
+timeline (times converted to beats, any OSC/MIDI items on the same timeline
 preserved). A generator — a `Pbind`, a `Routine` — is forward-only, so its
 bounced notes are shown *read-only*; bounce it to a `Track` (the change of state)
-and the same view becomes an editor. OSC events are shown in their lane but not
+and the same view becomes an editor. OSC items are shown in their lane but not
 written back: their marker carries a time and a label, not the full message.
 
 Quantization exists on both surfaces, because the GUI also runs standalone:

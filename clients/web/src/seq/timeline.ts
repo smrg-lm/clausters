@@ -70,14 +70,16 @@ export class Entry {
  * playhead's current logical beat.
  */
 export class OscItem {
-    readonly message: TimedMessage;
+    readonly addr: string;
+    readonly args: readonly MsgArg[];
 
     constructor(addr: string, ...args: MsgArg[]) {
-        this.message = [addr, ...args];
+        this.addr = addr;
+        this.args = args;
     }
 
     play(destination: PlayDestination): void {
-        destination.sendBundle([this.message]);
+        destination.sendBundle([[this.addr, ...this.args]]);
     }
 }
 

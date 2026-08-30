@@ -819,7 +819,7 @@ from clausters.gui import (bpf, canvas, curve, keys, meter, nodes, nodetree,
 
 | Element | Shortcut | What it is |
 |---|---|---|
-| `notes` | `pianoroll` | the editor-grade piano-roll: a keyboard, a MIDI-note grid, a velocity lane and an OSC-event lane. `notes=[(start, dur, pitch[, vel[, chan]])]`, `osc=[(time, label)]`, `min`/`max` the pitch window, `snap` the grid. `midi_in=True` arms live MIDI painting in the native host |
+| `notes` | `pianoroll` | the editor-grade piano-roll: a keyboard, a MIDI-note grid, a velocity lane and an OSC lane. `notes=[(start, dur, pitch[, vel[, chan]])]`, `osc=[(time, label)]` markers, `min`/`max` the pitch window, `snap` the grid. `midi_in=True` arms live MIDI painting in the native host |
 | `curve` | `bpf` | a drawable break-point envelope, played by the server's own shape math. `points=[(t, v[, shape])]` or an `Env` through `env_to_points`; edits come back as `"points"` |
 | `keys` | `piano` | a playable keyboard with real piano proportions. `min`/`max` are the visible range (its overview strip pans and zooms it), `active_min`/`active_max` gray the keys outside a mapping, and `voice="def"` has the **host** manage one server voice per held key |
 | `nodes` | `nodetree` | the audio server's node graph, live, with each synth's controls |

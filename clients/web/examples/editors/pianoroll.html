@@ -20,14 +20,14 @@
   </head>
   <body>
     <main>
-      <div id="note">Draw MIDI notes (and OSC events) in the editor-grade
+      <div id="note">Draw MIDI notes (and OSC markers) in the editor-grade
 <code>pianoroll</code> and hear them play.
 
 The dedicated piano-roll view, the editor-grade sibling of the multitrack's
 compact clip roll — they share the host's note primitives, so a note is drawn
 and edited the same way in both. It contemplates the two message families a
 sequence carries: <b>MIDI notes</b> in the grid (pitch × time, with velocity and
-channel) and <b>OSC events</b> as flags in a lane below it.
+channel) and <b>OSC items</b> as markers in a lane below it.
 
 Editing gestures, all live: drag a note to move it (snapped to the grid), wheel
 over the grid to zoom the shared time axis, Shift+drag to pan, drag empty grid

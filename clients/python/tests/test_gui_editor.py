@@ -170,7 +170,7 @@ def test_a_generator_lane_shows_the_notes_its_pattern_will_play():
 
 
 def _track_with_a_take():
-    """A `Track` of two notes and one OSC event on an editable timeline."""
+    """A `Track` of two notes and one OSC item on an editable timeline."""
     from clausters.form import Track
     from clausters.seq.event import Event as SeqEvent
     from clausters.seq.timeline import OscItem, Timeline
@@ -188,7 +188,7 @@ def test_an_element_renders_as_a_dedicated_piano_roll():
     ed._mode, ed._roll_element = "pianoroll", track
     (roll,) = ed.draw()["children"][:1]
     assert roll["type"] == "notes"
-    # Notes as quintuples (pitch is the 3rd), the OSC event on its own lane.
+    # Notes as quintuples (pitch is the 3rd), the OSC item on its own lane.
     assert [roll["notes"][i] for i in (2, 7)] == [60.0, 64.0]
     assert roll["osc"] == [pytest.approx(0.5 * BEAT), "/cue"]
     assert roll["axes"]["x"]["unit"] == "beats"
@@ -280,7 +280,7 @@ def test_a_note_edit_rewrites_the_editable_timeline():
     items = tl.range(0.0, float("inf"))
     pitches = [it.get("midinote") for _b, it in items if hasattr(it, "get")]
     assert pitches == [62, 67]                       # the notes were rewritten
-    # The OSC event on the same timeline is preserved.
+    # The OSC item on the same timeline is preserved.
     from clausters.seq.timeline import OscItem
     assert any(isinstance(it, OscItem) for _b, it in items)
 
@@ -315,7 +315,7 @@ def test_a_note_edited_in_a_clip_body_reaches_the_arrangement():
     items = tl.range(0.0, float("inf"))
     assert [(b, it.get("midinote")) for b, it in items
             if hasattr(it, "get") and it.get("midinote")] == [(0.5, 62), (1.0, 64)]
-    # The OSC event sharing the timeline is preserved.
+    # The OSC item sharing the timeline is preserved.
     from clausters.seq.timeline import OscItem
     assert any(isinstance(it, OscItem) for _b, it in items)
 

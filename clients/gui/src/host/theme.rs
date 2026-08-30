@@ -197,9 +197,9 @@ theme_roles! {
     selected_edge = [1.0, 1.0, 1.0, 1.0];
     /// A velocity bar.
     velocity = [0.70, 0.55, 0.90, 1.0];
-    /// The OSC event lane's background.
-    event_lane = [0.10, 0.09, 0.13, 1.0];
-    /// An event marker flag (an OSC marker, an overview's pressed key).
+    /// The OSC lane's background.
+    osc_lane = [0.10, 0.09, 0.13, 1.0];
+    /// A marker flag (an OSC marker, an overview's pressed key).
     flag = [0.95, 0.75, 0.45, 1.0];
     /// The oscilloscope's trigger-level line.
     trigger = [0.85, 0.80, 0.40, 0.4];

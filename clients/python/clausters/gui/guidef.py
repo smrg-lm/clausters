@@ -690,7 +690,7 @@ def source(samples=None, *, buffer: "int | None" = None, path: "str | None" = No
     peak pyramid.
 
     For a **structure**, name the prop it is: ``points=`` (a `bpf`'s
-    break-points), ``notes=`` / ``osc=`` (a roll's notes and event flags),
+    break-points), ``notes=`` / ``osc=`` (a roll's notes and markers),
     ``boxes=`` / ``cords=`` (a patcher's boxes and wires) or ``display_list=``
     (an engraved `score` page). It takes the same form the builder's own keyword
     takes, is normalized the same way, and `Source.set` replaces it live::
@@ -2313,7 +2313,7 @@ def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | No
               y_start: float | None = None, y_len: float | None = None, label: str | None = None,
               color: str | None = None, axes: dict | None = None, id: int | None = None, **props) -> View:
     """The dedicated editor-grade ``pianoroll`` view: a piano keyboard gutter, a
-    note grid, an optional velocity lane and an OSC-event lane — the timeline
+    note grid, an optional velocity lane and an OSC lane — the timeline
     sibling of the compact `clip` piano-roll body, drawing the **same notes** with
     the same geometry (they share the host's ``pianoroll`` primitives), plus
     editing, rulers and navigation.
@@ -2325,9 +2325,9 @@ def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | No
       note number drawn over the ``[min, max]`` window (default the 88-key range
       21–108), ``velocity`` ``0..127`` (default 100), ``channel`` ``0..15``. The
       notes are the MIDI messages the roll represents.
-    - ``osc`` — an iterable of ``(time, label)`` (or bare ``time``) OSC events,
-      drawn as flags in a lane below the grid — the OSC messages the roll carries
-      alongside the notes.
+    - ``osc`` — an iterable of ``(time, label)`` (or bare ``time``) markers, one
+      per OSC or raw-MIDI timeline item, drawn as flags in a lane below the grid —
+      the messages the roll carries alongside the notes.
 
     Editing (native gestures; the browser keeps display + ``/gui_set`` parity):
     drag a note to move it in time/pitch, drag an edge to resize it, Ctrl+click to
