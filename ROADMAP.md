@@ -74,6 +74,19 @@ The five sections, and the line between them:
 
 Each is small, owned by its plan, and blocked by nothing.
 
+- ⬜ **Beats name what is measured in seconds, in three places and in the
+  document's own unit** *(`clients/python/PLAN.md` and
+  `crates/clausters-document/PLAN.md`, both "Found by use")*. Storing something
+  in beats says its seconds follow the tempo: right for a note, wrong for a
+  take's length, an `Env`'s segment times and the temporal metadata of a leaf
+  that references samples. The rule is stated in the entries (an onset takes the
+  unit of what contains it, a duration the unit of the material) and nothing
+  waits on a decision; it is here because it crosses the format, both clients
+  and the host, so it is one pass and not four. Carries one finding to measure
+  first: the editor's beats→samples bridge freezes a tempo and discards the
+  clock's rebase, so a `set_tempo` should make what is drawn and what sounds
+  disagree.
+
 This section otherwise fills from section 3's review and empties again; a fix
 that lands leaves no line here, because its plan's checkbox and the commit
 already carry it.

@@ -459,6 +459,51 @@ Every entry carries a checkbox, and one that converges into numbered milestones 
 
 Every entry is a checkbox, and a fixed one stays with the record of what was wrong.
 
+- ⬜ **The document measures two kinds of leaf with one unit, and for one of
+  them the unit is wrong** *(found 2026-08-30 by the user, arguing that concrete
+  time is seconds or samples and that beats are a ruler and a snap the editor
+  imposes)*. `Beats = f64` is the unit of `Node.onset`, `Node.duration` and
+  `Intent::Place.offset`, for every body. **Storing a quantity in beats is a
+  statement**: it says *the seconds this is worth must follow the tempo*, since
+  the stored number never changes and only its worth in seconds does. For a
+  clang that is exactly right — a note is musical, and a tempo change is
+  supposed to shorten it. For a leaf that references samples it is false: a
+  take's length is `frames / sample_rate`, a wall-clock fact already fixed
+  before the document saw it, and keeping it in beats would need the number
+  rewritten at every tempo change, which nothing does.
+
+  **The rule, as the user stated it**, and it is two rules rather than one
+  because onset and duration answer to different things:
+
+  - **An onset is in the unit of what contains it.** Concrete material inside a
+    sequence measured in beats has its onset in beats — the placement is a
+    musical decision and follows the grid it was placed on.
+  - **A duration is in the unit of the material.** Audio is seconds; a sequence
+    of events is beats. Concrete material is one of those two, and its own
+    nature says which.
+
+  **The document already knows which is which** and needs no new field: the body
+  says it. `Clang` and `Sequence` are events; `Vector` and `Segments` reference
+  samples. So the unit of a duration is derived from the body kind, and only
+  `Beats` as the name of every temporal field has to give.
+
+  **And the conversion belongs to the flattening, not to the structure.** A
+  timeline is a list ordered by *one* number, so it cannot hold items in two
+  bases: the tree keeps each leaf in the unit that leaf is in, and
+  `to_timeline`/`render` convert to the clock's unit while flattening for
+  playback. That leaves `Playhead` and `TempoClock` untouched, which is where
+  beats are correct — everything that runs on a tempo clock stays in beats:
+  `Event.dur`/`delta`/`sustain`, a timeline's keys, patterns, routines, and the
+  editor's ruler and snap.
+
+  **What it reaches**: the alias and the doc lines here, the temporal metadata's
+  meaning per body, the `Place` intent, the Python bridge (`to_document` /
+  `from_document`), both clients' arrangement models and the host wherever it is
+  told a length. The client half is written in `clients/python/PLAN.md` ("Three
+  places call beats what is measured in seconds") with the concrete symbols; this
+  entry is the format's half. **It is a fix and not a design**: the rule is
+  stated, nothing here is waiting on a decision.
+
 - ✅ **Material assembled from several windows had no body, so a joined clip was carried and not understood** *(found 2026-08-18 building the multitrack's join: the arrangement grew a `Segments` element — several windows onto several buffers, read as one — and wrote a `segments` node the crate could only keep as `Body::Unknown`)*. The forward-compatibility door did its job: the node round-tripped whole, so nothing was lost and the script-driven editor worked. What did not work is everything that *interprets* a document — the standalone host drew such a clip with no material, `Session::dangling` reported no missing source for its buffers, and a selection over it resolved to nothing.
 
   **`Body::Segments` closed it the same day**: a list of `SegmentRef` (which source, from which frame, for how long in beats), with the same `config` a `Vector` carries because what the element *is* is one thing to play. It is **not a sixth primitive** — it is the `Vector` primitive over more than one window, which is the framing the arrangement uses too. Four readers learned it: the source walk (`Session::dangling`), the resolver (one `Resolved` per window the selection reaches, since each is a different part of different material), the staleness check (the **stalest** of its sources, because an edit against it was made against every window it shows) and the standalone host's drawing (one clip, a take body per window, each over its own stretch — which the clip protocol had just made sayable).

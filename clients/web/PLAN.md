@@ -3718,3 +3718,13 @@ sound.
   - the root barrel re-exported `MidiItem`, which `clausters/__init__.py` does
     not: both clients re-export `Event`, `rest`, `Timeline` and `Playhead` at
     the top level and keep the two raw-message items under `seq`.
+
+- ⬜ **Three places call beats what is measured in seconds** *(found 2026-08-30
+  by the user; written in full in `clients/python/PLAN.md`, "Three places call
+  beats what is measured in seconds")*. The port carries the same three: the
+  automation's curve naming an `Env`'s seconds beats, a take's length stored in
+  beats (`Vector`/`Segments`/`Segment` and the event's `dur`), and the segment
+  tuple mixing frames with beats. The rule is the same — an onset is in the unit
+  of what contains it, a duration in the unit of the material — and so is the
+  place the conversion belongs, the flattening for playback. It lands in the same
+  commit as the Python fix, since it is one arrangement model in two languages.

@@ -1305,6 +1305,64 @@ work, where a pending item reads as done.)*
   no correct way to do it, and the honest thing is that the second window is
   read-only. Both clients.
 
+- ⬜ **Three places call beats what is measured in seconds** *(found 2026-08-30
+  by the user, from "el tiempo concreto o se mide en muestras o se mide en
+  segundos, los beats son una abstracción impuesta")*. Beats are the
+  `TempoClock`'s unit, and storing something in beats says *its seconds follow
+  the tempo* — right for a note, wrong for anything whose seconds are already
+  fixed. Three fixes, one finding to measure, and a prose pass:
+
+  1. **`Automation` calls the seconds of an `Env` beats.** `Env` documents
+     `times` as "the segment `times` **in seconds**"; `Automation.from_points`
+     says "Times are **in beats**" and `duration()` says "The curve's length
+     **in beats** (the sum of its segment times)" — and **nothing converts
+     between them**: `points_to_env` stores the numbers as they arrive and
+     `duration()` reads them back. One number with two names, working only
+     because no conversion exists to be wrong. The curve is in seconds; the
+     `Automation` side is what says it wrong.
+  2. **A take's length is stored in beats.** `Vector.duration`,
+     `Segments.duration` and `Segment.duration`, and `Vector.to_event` puts that
+     number in the event's `dur`. A take's length is `frames / sample_rate`, so
+     at double tempo the note is freed at half the wall-clock time over a buffer
+     still playing at rate 1 — the take is cut. Durations of concrete material
+     go in seconds.
+  3. **`Segment` mixes the two bases in one tuple** — its own docstring says
+     "``start`` is in frames, ``duration`` in beats"
+     (`clausters/form/element.py`). One base for both fields.
+
+  **The rule that decides each case** (the user's, and it is two rules): an
+  **onset** is in the unit of what contains it — concrete material inside a
+  sequence measured in beats is placed in beats; a **duration** is in the unit
+  of the material — audio is seconds, a sequence of events is beats. Nothing
+  that runs on a tempo clock changes: `Event.dur`/`delta`/`sustain`, a
+  `Timeline`'s keys, patterns, routines, `Playhead`, and the editor's ruler and
+  snap all stay in beats, and the conversion happens where the tree is flattened
+  for playback (`form.render.to_timeline`), never in the structure — a timeline
+  is ordered by one number and cannot hold two bases.
+
+  **A finding on the editor's bridge, to be measured before it is fixed.**
+  `Editor.beats_to_units` calls `_native.beats_to_secs(self.tempo, 0.0, 0.0,
+  beats)` — a straight line through the origin at a tempo **frozen at
+  construction** — while `TempoClock` calls the same function with
+  `self._base_beats, self._base_secs`, the anchor `set_tempo` moves so that a
+  tempo change has no discontinuity. The two mappings agree only while the tempo
+  has never changed since beat zero: after any `set_tempo`, the editor's
+  conversion and the clock's differ by the accumulated offset, so what is drawn
+  and what sounds should drift apart. `Transport` takes the same scalar tempo
+  and should inherit it. The dimensional reading of `units_per_beat` is right
+  (`sample_rate / tempo` is samples-per-second over beats-per-second, and the
+  tempo comes from the clock at construction); what is suspect is the frozen
+  scalar and the discarded base. **Measure it before touching it** — a piece
+  drawn, a `set_tempo`, and the drawn position of a clip against the beat it
+  actually sounds on.
+
+  **And the prose that follows the change**: the "in beats" lines of
+  `form/element.py` and `form/aggregate.py` that stop being true, the crate's
+  `Beats` alias and its doc lines, and wherever the books and
+  `docs/architecture.md` explain the beats↔samples bridge. **Both clients**, and
+  the format's half is `crates/clausters-document/PLAN.md` ("The document
+  measures two kinds of leaf with one unit").
+
 ## Future directions (a design that is not a fix)
 
 Every entry carries a checkbox, like "Found by use" above: an open direction has
