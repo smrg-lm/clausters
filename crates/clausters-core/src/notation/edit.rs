@@ -339,7 +339,20 @@ pub fn to_voice(mut sheet: Sheet, ids: &[u64], target: usize) -> Result<Sheet, S
         return Err(format!("voice {target} is the voice these items are in"));
     }
 
+    let mut next = sheet.next_id;
+    let mut mint = move || {
+        next += 1;
+        next - 1
+    };
+
     // Where each moved item sounds, so the target voice can be padded to it.
+    //
+    // **The item keeps its id and the rest left behind is given a new one.** A
+    // caller holding the id is holding the *note*, and it is the note that
+    // moved; the silence is a new thing this edit invented. Left sharing the
+    // id, two items answered to it and every later edit reached whichever came
+    // first -- the rest -- so selecting the moved note and lengthening it
+    // lengthened a silence in the other voice.
     let mut onset = Ratio::ZERO;
     let mut moving: Vec<(Ratio, Item)> = Vec::new();
     let source = &mut sheet.staves[si].voices[vi];
@@ -347,7 +360,7 @@ pub fn to_voice(mut sheet: Sheet, ids: &[u64], target: usize) -> Result<Sheet, S
         let dur = item.dur();
         if ids.contains(&item.id()) {
             moving.push((onset, item.clone()));
-            *item = item.silenced();
+            *item = Item::Rest { id: mint(), dur };
         }
         onset = onset + dur;
     }
@@ -356,11 +369,6 @@ pub fn to_voice(mut sheet: Sheet, ids: &[u64], target: usize) -> Result<Sheet, S
     while staff.voices.len() <= target {
         staff.voices.push(super::model::Voice::default());
     }
-    let mut next = sheet.next_id;
-    let mut mint = move || {
-        next += 1;
-        next - 1
-    };
     let into = &mut staff.voices[target];
     for (at, item) in moving {
         let have = into.items.iter().fold(Ratio::ZERO, |acc, i| acc + i.dur());
@@ -707,6 +715,21 @@ mod tests {
         assert_eq!(moved[0].dur(), Ratio::new(1, 4)); // the pad
         assert!(moved[0].pitches().is_empty());
         assert_eq!(moved[1].id(), second);
+        // **The note kept the id and the silence got a new one.** A caller
+        // holding the id is holding the note, and the note is what moved;
+        // sharing it made two items answer to one name, and `locate` reached
+        // the rest -- so an edit on the moved note landed on a silence in the
+        // other voice.
+        let ids: Vec<u64> = out.staves[0]
+            .voices
+            .iter()
+            .flat_map(|v| v.items.iter().map(|i| i.id()))
+            .collect();
+        let mut unique = ids.clone();
+        unique.sort_unstable();
+        unique.dedup();
+        assert_eq!(ids.len(), unique.len(), "no two items share an id: {ids:?}");
+        assert_eq!(out.locate(second).map(|(_, v, _)| v), Some(1));
     }
 
     #[test]
