@@ -11,7 +11,7 @@
 // An *item* is anything that can render itself on a destination — it has a
 // `play(destination)` method. `Event` already is one, so a timeline of events
 // renders to whatever destination the playhead holds, exactly like the rest of
-// the client. `OscEvent` wraps a raw OSC message, so a timeline can also be a
+// the client. `OscItem` wraps a raw OSC message, so a timeline can also be a
 // plain, editable OSC score.
 //
 // This layer is **client-side**: each playhead has its own local transport
@@ -45,7 +45,7 @@ export interface PlayDestination extends EventDestination {
     /**
      * Raw MIDI at the playhead's beat, on a destination that carries MIDI
      * (`MidiServer`). Optional because most destinations do not: an
-     * `OscEvent` on a MIDI port and a `MidiEvent` on an OSC server are both
+     * `OscItem` on a MIDI port and a `MidiItem` on an OSC server are both
      * mistakes, and each is reported by the destination that cannot answer.
      */
     sendMessage?(message: ArrayLike<number>): unknown;
@@ -69,7 +69,7 @@ export class Entry {
  * A raw OSC message as a timeline item: rendering it sends the message at the
  * playhead's current logical beat.
  */
-export class OscEvent {
+export class OscItem {
     readonly message: TimedMessage;
 
     constructor(addr: string, ...args: MsgArg[]) {
@@ -85,7 +85,7 @@ export class OscEvent {
  * Raw MIDI bytes as a timeline item: rendering it emits the message at the
  * playhead's current logical beat through a `MidiServer`.
  */
-export class MidiEvent {
+export class MidiItem {
     readonly message: Uint8Array;
 
     constructor(message: ArrayLike<number>) {
@@ -95,7 +95,7 @@ export class MidiEvent {
     play(destination: PlayDestination): void {
         if (typeof destination.sendMessage !== "function") {
             throw new TypeError(
-                "a MidiEvent needs a MIDI destination (a MidiServer), " +
+                "a MidiItem needs a MIDI destination (a MidiServer), " +
                     "not one that carries OSC",
             );
         }

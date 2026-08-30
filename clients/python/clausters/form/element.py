@@ -120,7 +120,7 @@ class Element:
     def play(self, destination):
         """Delegate playing to the wrapped item's ``play(destination)`` — the
         double-dispatch seam shared by `clausters.seq.Event`,
-        `clausters.seq.timeline.OscEvent`/`MidiEvent` and
+        `clausters.seq.timeline.OscItem`/`MidiItem` and
         `clausters.seq.Automation`.
 
         Container and pattern-backed elements (`Aggregate`, `Track`, a `Sequence`

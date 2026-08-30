@@ -26,7 +26,7 @@ import {
     Pser,
     Pseries,
     Pwhite,
-    OscEvent,
+    OscItem,
     Playhead,
     Timeline,
     rest,
@@ -386,7 +386,7 @@ test("a raw OSC item on a timeline is sent at its beat", async () => {
     const destination = recorder();
     const { clock, run } = harness();
     const timeline = new Timeline([
-        [0.5, new OscEvent("/node_set", ["i", 1000], "gate", ["f", 0])],
+        [0.5, new OscItem("/node_set", ["i", 1000], "gate", ["f", 0])],
     ]);
     new Playhead(timeline, clock, destination).play();
     clock.start();

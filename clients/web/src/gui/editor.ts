@@ -65,7 +65,7 @@ import type { Member } from "../form/index.ts";
 import { FIRST_VERSION } from "../form/document.ts";
 import { Automation } from "../seq/automation.ts";
 import { Event as SeqEvent } from "../seq/event.ts";
-import { OscEvent, Timeline } from "../seq/timeline.ts";
+import { OscItem, Timeline } from "../seq/timeline.ts";
 import type { Playhead } from "../seq/timeline.ts";
 import type { TempoClock } from "../base/clock.ts";
 import {
@@ -1697,7 +1697,7 @@ export class Editor {
         }
         const out: [number, string][] = [];
         for (const [beat, item] of events) {
-            if (item instanceof OscEvent) {
+            if (item instanceof OscItem) {
                 out.push([this.beatsToUnits(beat), String(item.message[0])]);
             }
         }
@@ -2852,7 +2852,7 @@ function curveRange(points: readonly [number, number, number, number][]): [numbe
 
 /**
  * The MIDI pitch of a flattened item, or `null` when it carries none — an
- * `OscEvent`, a rest, an automation lane.
+ * `OscItem`, a rest, an automation lane.
  */
 function pitchOf(item: unknown): number | null {
     if (!(item instanceof SeqEvent) || item.get("type") === "rest") return null;

@@ -9,8 +9,8 @@ This layer ships:
   ``Pfunc``, ``Pn``, ``Pconst``) plus `Pbind` (an event pattern).
 - `eventstream` — `EventStreamPlayer`.
 - `timeline` — `Timeline` (a static, editable, random-access sequence) and
-  `Playhead` (DAW-style play/stop/locate/loop over it), plus the `OscEvent` /
-  `MidiEvent` raw-message items.
+  `Playhead` (DAW-style play/stop/locate/loop over it), plus the `OscItem` /
+  `MidiItem` raw-message items.
 
 A ``Pbind(...).play(clock, server)`` runs live (RT) or builds an NRT score for
 ``server.render()`` purely by which interface the Server holds — the seam.
@@ -19,7 +19,7 @@ A ``Pbind(...).play(clock, server)`` runs live (RT) or builds an NRT score for
 from .automation import Automation, add_automation_def
 from .event import Event, rest
 from .eventstream import EventStreamPlayer
-from .timeline import MidiEvent, OscEvent, Playhead, Timeline
+from .timeline import MidiItem, OscItem, Playhead, Timeline
 from .pattern import (
     INF,
     Pattern,
@@ -43,8 +43,8 @@ __all__ = [
     "EventStreamPlayer",
     "Timeline",
     "Playhead",
-    "OscEvent",
-    "MidiEvent",
+    "OscItem",
+    "MidiItem",
     "Pattern",
     "Pbind",
     "Pconst",

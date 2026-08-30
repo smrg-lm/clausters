@@ -37,13 +37,13 @@ tl.duration()         # the beat of the last item
 
 ### What an item is
 
-An *item* is anything that can render itself on a destination — it has a `play(destination)` method. `Event` already is one (it plays a note on a `Server` for OSC, or a `MidiServer` for MIDI — the same double dispatch the patterns use), so a timeline of `Event`s renders to OSC *or* MIDI depending only on the destination the playhead holds. For a plain editable OSC or MIDI score, `OscEvent` and `MidiEvent` wrap a raw message:
+An *item* is anything that can render itself on a destination — it has a `play(destination)` method. `Event` already is one (it plays a note on a `Server` for OSC, or a `MidiServer` for MIDI — the same double dispatch the patterns use), so a timeline of `Event`s renders to OSC *or* MIDI depending only on the destination the playhead holds. For a plain editable OSC or MIDI score, `OscItem` and `MidiItem` wrap a raw message:
 
 ```python
-from clausters.seq import OscEvent, MidiEvent
+from clausters.seq import OscItem, MidiItem
 
-tl.add(0.0, OscEvent("/synth_new", "default", -1, 0, 0, "freq", 440.0))
-tl.add(1.0, MidiEvent(b"\x90\x3c\x64"))     # note on, key 60, vel 100
+tl.add(0.0, OscItem("/synth_new", "default", -1, 0, 0, "freq", 440.0))
+tl.add(1.0, MidiItem(b"\x90\x3c\x64"))     # note on, key 60, vel 100
 ```
 
 ## The playhead
@@ -421,4 +421,4 @@ the order they come in.
 - [A DAW-style transport](transport.md) — the shared beat grid clients phase-align on.
 - [Timing models](timing-models.md) — the timing references a playhead inherits (`quant`, `lock_to`, `join_transport`).
 - [Examples](examples.md) — `timeline.py`, the playhead live.
-- [API reference](api.md) — `Timeline`, `Playhead`, `OscEvent`, `MidiEvent`.
+- [API reference](api.md) — `Timeline`, `Playhead`, `OscItem`, `MidiItem`.

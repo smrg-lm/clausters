@@ -46,7 +46,7 @@ function is the uniform entry that picks the right one.
 | a `Timeline` | drives it through a playhead on the ambient clock | the `Playhead` — `.stop()` (and `locate`/`loop`) |
 | a `Buffer` | sounds it through the stock playbuf instrument (`rate`/`amp` controls, freed when the take ends) | the `Synth` — `.free()` cuts the take early |
 | an `Automation` | prepares it if needed and applies the curve to its target controls, now | the automation itself — `.stop()` interrupts the sweep (the controls hold their last value) |
-| anything with `play(destination)` (the timeline-item protocol: `OscEvent`, `MidiEvent`, …) | dispatches to it | whatever it returns |
+| anything with `play(destination)` (the timeline-item protocol: `OscItem`, `MidiItem`, …) | dispatches to it | whatever it returns |
 
 Everything `play` returns knows how to **end what it started** — even the
 self-terminating kinds, whose duration can be extreme: a note frees itself

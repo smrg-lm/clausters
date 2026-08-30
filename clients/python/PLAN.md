@@ -1177,10 +1177,11 @@ work, where a pending item reads as done.)*
   the page renders through the free verb where its script renders through
   `session.render()`, so its downloadable take still ends on the step.
 
-- ⬜ **`OscEvent` and `MidiEvent` are not events, and the name promises a
+- ✅ **`OscEvent` and `MidiEvent` are not events, and the name promises a
   conversion that does not exist** *(found 2026-08-29 by the user, reading the
   three classes against each other while sizing the note-entry surface the
-  engraving track needs)*. Three classes share a prefix and nothing else.
+  engraving track needs; renamed 2026-08-30)*. Three classes share a prefix and
+  nothing else.
 
   There is **no hierarchy**: `Event` is a `dict` subclass, `OscEvent` and
   `MidiEvent` are plain classes with two attributes and one, none inherits from
@@ -1211,6 +1212,11 @@ work, where a pending item reads as done.)*
   like the positional-statics entry above it belongs to a release that bumps the
   breaking tier; whether the old names stand as deprecated aliases for one
   release is that release's call, not a decision this entry waits on.
+
+  **Renamed 2026-08-30**, in both clients in one commit, with no deprecated
+  alias: the old names are gone from `clausters.seq`, from the `seq` barrel of
+  `clients/web/src` and from every docstring, comment and book page that named
+  them, and the release that carries it bumps the breaking tier.
 
 - ✅ **Staging overwrote a library that was mapped, so refreshing the binaries
   killed a running process** *(found 2026-08-29 hunting a Python crash that left

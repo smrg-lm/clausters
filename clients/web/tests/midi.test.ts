@@ -29,7 +29,7 @@ import {
 } from "../src/base/midi.ts";
 import type { MidiInputPort, MidiMessage, MidiOutputPort } from "../src/base/midi.ts";
 import { MidiFunc, setDefaultMidiReceiver } from "../src/responders.ts";
-import { MidiEvent, OscEvent } from "../src/seq/timeline.ts";
+import { MidiItem, OscItem } from "../src/seq/timeline.ts";
 import { Event } from "../src/seq/event.ts";
 import type { EventDestination } from "../src/seq/event.ts";
 import { Pbind, Pseq } from "../src/seq/pattern.ts";
@@ -167,7 +167,7 @@ test("a real-time server keeps no score", () => {
 test("a MidiServer answers no OSC, loudly", () => {
     const server = new MidiServer();
     assert.throws(() => server.sendMsg("/synth_new"), /carries no OSC/);
-    assert.throws(() => new OscEvent("/x", 1).play(server), /carries no OSC/);
+    assert.throws(() => new OscItem("/x", 1).play(server), /carries no OSC/);
 });
 
 // ---- the live interface ----
@@ -355,14 +355,14 @@ test("a pattern plays to MIDI on the beat grid it plays to a server", async () =
 
 // ---- the timeline item ----
 
-test("a MidiEvent renders through a MidiServer and refuses an OSC one", async () => {
+test("a MidiItem renders through a MidiServer and refuses an OSC one", async () => {
     const server = new MidiServer();
     const clock = new TempoClock(1.0, {
         timebase: new ManualTimebase(1000),
         ticker: manualTicker(),
     }).start();
     clock.play(new Routine(function* () {
-        new MidiEvent([0xb0, 74, 40]).play(server);
+        new MidiItem([0xb0, 74, 40]).play(server);
     }));
     await flush();
 
@@ -371,7 +371,7 @@ test("a MidiEvent renders through a MidiServer and refuses an OSC one", async ()
         [[0, [0xb0, 74, 40]]],
     );
     assert.throws(
-        () => new MidiEvent([0x90, 60, 1]).play({} as never),
+        () => new MidiItem([0x90, 60, 1]).play({} as never),
         /needs a MIDI destination/,
     );
 });

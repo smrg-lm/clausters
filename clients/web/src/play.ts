@@ -23,7 +23,7 @@
 //   sounds through an instrument; here the verb provides the default one —
 //   `rate`/`amp` controls, freed when the take ends);
 // - anything else following the **timeline-item protocol**
-//   (`play(destination)` — an `OscEvent`, …) → dispatched to it with the
+//   (`play(destination)` — an `OscItem`, …) → dispatched to it with the
 //   ambient server.
 //
 // Everything resolves against the ambient environment (the running session,
@@ -154,7 +154,7 @@ export function play(playable: Playable, options: PlayOptions = {}): unknown {
     if (typeof playable === "object" && typeof (playable as Playable & {
         play?: unknown;
     }).play === "function") {
-        // The timeline-item protocol (`OscEvent`, and anything else a
+        // The timeline-item protocol (`OscItem`, and anything else a
         // Playhead could play): play(destination).
         return (playable as { play(destination: unknown): unknown })
             .play(main.resolveServer(server));

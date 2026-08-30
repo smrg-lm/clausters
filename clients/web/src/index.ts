@@ -154,7 +154,7 @@ export * as seq from "./seq/index.ts";
 // The names a piece types without a namespace, as the Python facade exports
 // them; the enumerative half (the value patterns) stays behind `seq`.
 export { Event, rest } from "./seq/event.ts";
-export { MidiEvent, Playhead, Timeline } from "./seq/timeline.ts";
+export { MidiItem, Playhead, Timeline } from "./seq/timeline.ts";
 export * as data from "./data/index.ts";
 export { loadCore } from "./base/core.ts";
 // The id share every constructor that allocates ids accepts, for the same

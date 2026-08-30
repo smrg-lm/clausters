@@ -19,8 +19,8 @@ from clausters.base.main import main
 from clausters.seq import (
     INF,
     Event,
-    MidiEvent,
-    OscEvent,
+    MidiItem,
+    OscItem,
     Pbind,
     Playhead,
     Pseq,
@@ -135,7 +135,7 @@ def test_playhead_loop_wraps():
 
 
 def test_playhead_renders_raw_osc_and_midi_items():
-    tl = Timeline([(0.0, OscEvent("/foo", 1)), (1.0, MidiEvent(b"\x90\x3c\x64"))])
+    tl = Timeline([(0.0, OscItem("/foo", 1)), (1.0, MidiItem(b"\x90\x3c\x64"))])
     clock = TempoClock(1.0)
     dest = RecordDest()
     Playhead(tl, clock, dest).play()

@@ -180,7 +180,7 @@ class MidiServer:
     def send_message(self, message):
         """Emit a raw MIDI message at the running routine's logical beat — the
         MIDI counterpart of ``Server.send_bundle`` for a raw OSC message, used by
-        `clausters.seq.timeline.MidiEvent`."""
+        `clausters.seq.timeline.MidiItem`."""
         beat = Moment.current().beat
         self.interface.emit(beat, bytes(message))
         return None

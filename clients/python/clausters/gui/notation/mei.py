@@ -76,7 +76,7 @@ def from_timeline(timeline, *, meter: str = "4/4", clef: str = "G2",
     The timeline's placements become the score's rhythm: events **sharing a
     beat** are written as one chord, a gap between a group's written end and the
     next onset becomes a rest, and a gap before the first onset is a leading
-    rest. Non-`Event` items (`OscEvent`/`MidiEvent`, which carry no pitch) are
+    rest. Non-`Event` items (`OscItem`/`MidiItem`, which carry no pitch) are
     skipped, as are rest events (they read as silence, i.e. a gap).
 
     Each group is written for its **shortest** ``dur`` (one layer, so it is

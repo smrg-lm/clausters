@@ -210,9 +210,9 @@ def test_flatten_accumulates_nested_offsets():
 
 
 def test_flatten_track_shifts_its_timeline():
-    from clausters.seq import OscEvent, Timeline
+    from clausters.seq import OscItem, Timeline
 
-    a, b = OscEvent("/x", "a"), OscEvent("/x", "b")
+    a, b = OscItem("/x", "a"), OscItem("/x", "b")
     track = Track(Timeline([(0.0, a), (1.0, b)]))
     flat = flatten(Aggregate([(4.0, track)]))
     assert flat == [(4.0, a), (5.0, b)]

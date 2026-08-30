@@ -8,7 +8,7 @@
 // - `automation` — `Automation` (a break-point control curve rendered as a
 //   control vector) and the lane def it plays through.
 // - `timeline` — `Timeline` (a static, editable, random-access sequence) and
-//   `Playhead` (play/stop/locate/loop over it), plus the `OscEvent`/`MidiEvent` raw-message
+//   `Playhead` (play/stop/locate/loop over it), plus the `OscItem`/`MidiItem` raw-message
 //   item.
 
 export {
@@ -38,5 +38,5 @@ export {
     asPattern,
 } from "./pattern.ts";
 export type { Bindings } from "./pattern.ts";
-export { Entry, MidiEvent, OscEvent, Playhead, Timeline } from "./timeline.ts";
+export { Entry, MidiItem, OscItem, Playhead, Timeline } from "./timeline.ts";
 export type { PlayDestination, TimelineItem } from "./timeline.ts";

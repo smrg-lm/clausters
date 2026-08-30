@@ -28,7 +28,7 @@ Like SuperCollider's ``play`` (and sc3's), it dispatches by kind:
   triggered on the ambient server — the interactive "apply this curve to
   that node's control, now" (outside a clock its beats read as seconds);
 - anything else following the **timeline-item protocol**
-  (``play(destination)`` — an `OscEvent`, a `MidiEvent`, ...) -> dispatched
+  (``play(destination)`` — an `OscItem`, a `MidiItem`, ...) -> dispatched
   to it with the ambient server.
 
 An arrangement `Element` is **not** playable — its change of state to sound
@@ -147,7 +147,7 @@ def play(playable, *, server=None, clock=None, quant=None, controls=None):
             "clausters.render / clausters.form.render"
         )
     if callable(getattr(playable, "play", None)):
-        # The timeline-item protocol (`OscEvent`, `MidiEvent`, and anything
+        # The timeline-item protocol (`OscItem`, `MidiItem`, and anything
         # else a Playhead could play): play(destination).
         return playable.play(main.resolve_server(server))
     raise TypeError(

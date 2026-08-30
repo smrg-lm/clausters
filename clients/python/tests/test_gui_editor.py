@@ -173,12 +173,12 @@ def _track_with_a_take():
     """A `Track` of two notes and one OSC event on an editable timeline."""
     from clausters.form import Track
     from clausters.seq.event import Event as SeqEvent
-    from clausters.seq.timeline import OscEvent, Timeline
+    from clausters.seq.timeline import OscItem, Timeline
 
     tl = Timeline()
     tl.add(0.0, SeqEvent(dict(midinote=60, dur=1.0, amp=0.5)))
     tl.add(1.0, SeqEvent(dict(midinote=64, dur=0.5, amp=0.8)))
-    tl.add(0.5, OscEvent("/cue"))
+    tl.add(0.5, OscItem("/cue"))
     return Track(tl), tl
 
 
@@ -281,8 +281,8 @@ def test_a_note_edit_rewrites_the_editable_timeline():
     pitches = [it.get("midinote") for _b, it in items if hasattr(it, "get")]
     assert pitches == [62, 67]                       # the notes were rewritten
     # The OSC event on the same timeline is preserved.
-    from clausters.seq.timeline import OscEvent
-    assert any(isinstance(it, OscEvent) for _b, it in items)
+    from clausters.seq.timeline import OscItem
+    assert any(isinstance(it, OscItem) for _b, it in items)
 
 
 def test_a_generator_element_is_read_only_in_the_piano_roll():
@@ -316,8 +316,8 @@ def test_a_note_edited_in_a_clip_body_reaches_the_arrangement():
     assert [(b, it.get("midinote")) for b, it in items
             if hasattr(it, "get") and it.get("midinote")] == [(0.5, 62), (1.0, 64)]
     # The OSC event sharing the timeline is preserved.
-    from clausters.seq.timeline import OscEvent
-    assert any(isinstance(it, OscEvent) for _b, it in items)
+    from clausters.seq.timeline import OscItem
+    assert any(isinstance(it, OscItem) for _b, it in items)
 
 
 def test_a_generator_clip_body_is_read_only_and_the_refusal_says_why():

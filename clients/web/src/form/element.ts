@@ -212,7 +212,7 @@ export class Element {
 
     /**
      * Delegates playing to the wrapped item's `play(destination)` — the
-     * double-dispatch seam shared by `seq.Event`, `seq.OscEvent` and
+     * double-dispatch seam shared by `seq.Event`, `seq.OscItem` and
      * `seq.Automation`.
      *
      * Container and pattern-backed elements ({@link Aggregate}, {@link Track}, a

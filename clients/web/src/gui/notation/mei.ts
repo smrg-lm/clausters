@@ -122,7 +122,7 @@ export function fromNotes(
  * The timeline's placements become the score's rhythm: events **sharing a beat**
  * are written as one chord, a gap between a group's written end and the next
  * onset becomes a rest, and a gap before the first onset is a leading rest.
- * Items that carry no pitch (an `OscEvent`) are skipped, as are rest events
+ * Items that carry no pitch (an `OscItem`) are skipped, as are rest events
  * (they read as silence, i.e. a gap).
  *
  * Each group is written for its **shortest** `dur` (one layer, so it is clamped

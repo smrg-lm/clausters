@@ -352,7 +352,7 @@ export class MidiServer implements EventDestination {
     /**
      * Emits a raw MIDI message at the running routine's logical beat — the MIDI
      * counterpart of `Server.sendBundle` for a raw OSC message, and what
-     * `MidiEvent` renders through.
+     * `MidiItem` renders through.
      */
     sendMessage(message: ArrayLike<number>): null {
         this.interface.emit(Moment.current().beat, message);
@@ -361,7 +361,7 @@ export class MidiServer implements EventDestination {
 
     /**
      * The two OSC verbs a destination is asked for. A MIDI port carries no
-     * OSC, so both are errors rather than silent no-ops: an `OscEvent` on a
+     * OSC, so both are errors rather than silent no-ops: an `OscItem` on a
      * `MidiServer` is a mistake, and one that says so is better than one that
      * plays nothing.
      */

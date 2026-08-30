@@ -13,8 +13,8 @@ An *item* is anything that can render itself on a destination — it has a
 `play(destination)` method. `clausters.seq.event.Event` already is one (it plays
 a note on a `Server` or a `MidiServer` — the same double dispatch the patterns
 use), so a timeline of `Event`s renders to OSC *or* MIDI by which destination
-the playhead holds, exactly like the rest of the client. `OscEvent` and
-`MidiEvent` wrap a raw OSC message or MIDI bytes, so a timeline can also be a
+the playhead holds, exactly like the rest of the client. `OscItem` and
+`MidiItem` wrap a raw OSC message or MIDI bytes, so a timeline can also be a
 plain, editable OSC/MIDI score.
 
 This layer is **client-side**: each playhead has its own local transport over
@@ -41,7 +41,7 @@ class _Entry:
         self.item = item
 
 
-class OscEvent:
+class OscItem:
     """A raw OSC message ``(addr, *args)`` as a timeline item: rendering it sends
     the message at the playhead's current logical beat through a `Server`."""
 
@@ -53,7 +53,7 @@ class OscEvent:
         destination.send_bundle((self.addr, *self.args))
 
 
-class MidiEvent:
+class MidiItem:
     """Raw MIDI bytes as a timeline item: rendering it emits the message at the
     playhead's current logical beat through a `MidiServer`."""
 

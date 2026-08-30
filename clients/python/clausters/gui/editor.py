@@ -43,7 +43,7 @@ from ..defs.ugens import points_to_env
 from ..form.render import flatten
 from ..seq.automation import Automation
 from ..seq.event import Event as SeqEvent
-from ..seq.timeline import MidiEvent, OscEvent, Timeline
+from ..seq.timeline import MidiItem, OscItem, Timeline
 from .guidef import (_flat_notes, _flat_points, clip, patch, pianoroll, signal,
                      scroll, timeruler, track, waveform, window)
 from .transport import Transport
@@ -1589,8 +1589,8 @@ class Editor:
 
     def _osc(self, element) -> list:
         """The OSC (and raw MIDI) events of an element as ``(time_units, label)``
-        pairs — the piano-roll's event lane. An `OscEvent` labels with its address,
-        a `MidiEvent` with a short tag. Display only: a marker carries the time and
+        pairs — the piano-roll's event lane. An `OscItem` labels with its address,
+        a `MidiItem` with a short tag. Display only: a marker carries the time and
         a label, not the full message, so it is not written back (see
         `open_pianoroll`)."""
         if isinstance(element, (Aggregate, Vector)):
@@ -1601,9 +1601,9 @@ class Editor:
             return []
         out = []
         for beat, item in events:
-            if isinstance(item, OscEvent):
+            if isinstance(item, OscItem):
                 out.append((self.beats_to_units(beat), str(item.addr)))
-            elif isinstance(item, MidiEvent):
+            elif isinstance(item, MidiItem):
                 out.append((self.beats_to_units(beat), "midi"))
         return out
 
@@ -2651,7 +2651,7 @@ def _curve_range(points) -> tuple:
 
 def _pitch(item):
     """The MIDI pitch of a flattened item, or ``None`` when it carries none — an
-    `OscEvent`/`MidiEvent`, a rest, an automation lane. Flattening yields the
+    `OscItem`/`MidiItem`, a rest, an automation lane. Flattening yields the
     wrapped items, so a note is a `clausters.seq.Event`, whose `midinote`
     resolves an explicit pitch or a scale degree."""
     if not isinstance(item, SeqEvent) or item.get("type") == "rest":
