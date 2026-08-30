@@ -168,14 +168,12 @@ its plan; the plan is where its acceptance is read.
   vocabulary of twenty-four verbs, which rearrange a score and edit one note,
   and the
   emission that writes all of it: polyphony, tuplets, markup and spelling.
-  **`N1` to `N4` landed 2026-08-29/30**; what is left is the reader that takes a
-  document back into the model (`N6`) and the enriched forward path (`N5`).
-  **`N6` is next**, and the two deferred pieces ride with it because they are
-  what it unblocks: `Score`'s edit path moving onto the model (`N2`) and the
-  host's note-entry gestures (`N3`). A score opened from typed text has no model
-  until something can read one back. It is numbered after `N5` and taken before
-  it because `N5` fills a structure that already exists, while these two are
-  blocked.
+  **`N1` to `N4` and `N6` landed 2026-08-29/30**, the last of them carrying the
+  two pieces earlier milestones had deferred — `Score`'s edit path onto the
+  model and the host's note-entry gestures — since both were waiting on the
+  reader. **What is left is `N5`**, the enriched forward path: the client-side
+  reduction reads more than `midinote` and `dur`. It is last because it fills a
+  structure that already exists rather than growing one.
 
 ### Waiting on a decision
 

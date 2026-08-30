@@ -786,6 +786,7 @@ mod tests {
                 after: None,
                 dur: Ratio::new(1, 2),
                 pitches: Vec::new(),
+                position: None,
                 staff: 0,
                 voice: 0,
             },

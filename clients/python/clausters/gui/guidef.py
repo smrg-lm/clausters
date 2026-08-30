@@ -1830,12 +1830,18 @@ def _flat_cords(cords) -> list:
 
 def _score_props(display_list) -> dict:
     """An engraved page as the props a **definition** carries it in: the wire
-    spells a `score`'s drawing as five keys, one per part of the display list,
-    and `GuiHost.set` spells the same page as the one ``display_list``."""
+    spells a `score`'s drawing as six keys, one per part of the display list,
+    and `GuiHost.set` spells the same page as the one ``display_list``.
+
+    ``elements`` is the last of them and the odd one: not a drawing layer but
+    the list of ids that name a **sounding element**, which the engraving walk
+    knows and a renderer cannot re-derive — to the host an id is an id, and a
+    staff's lines carry the staff's. It is what lets a press on blank paper say
+    which element it fell after."""
     dl = dict(display_list or {})
     return _drop_none(vb=dl.get("vb"), glyphs=dl.get("glyphs"),
                       prims=dl.get("prims"), cursors=dl.get("cursors"),
-                      step=dl.get("step"))
+                      step=dl.get("step"), elements=dl.get("elements"))
 
 
 #: The **structure** props a `Source` may stand in for: for each one, how a
@@ -1850,7 +1856,10 @@ _STRUCTURES = {
     "osc": (lambda v: {"osc": _flat_osc(v)}, ("osc",)),
     "boxes": (lambda v: {"boxes": _flat_boxes(v)}, ("boxes",)),
     "cords": (lambda v: {"cords": _flat_cords(v)}, ("cords",)),
-    "display_list": (_score_props, ("vb", "glyphs", "prims", "cursors", "step")),
+    "display_list": (
+        _score_props,
+        ("vb", "glyphs", "prims", "cursors", "step", "elements"),
+    ),
 }
 
 #: The structure prop names, in the order a message names them.
@@ -1951,7 +1960,8 @@ def plot(*, data=None, blob: int | None = None,
 def score(*, display_list: dict | None = None, playhead: float | None = None,
           playhead_at: float | None = None, playhead_loop_start: float | None = None,
           playhead_loop_len: float | None = None, sample_rate: float | None = None,
-          selected: str | None = None, editable: bool | None = None, color: str | None = None,
+          selected: str | None = None, editable: bool | None = None,
+          entry: bool | None = None, color: str | None = None,
           id: int | None = None, **props) -> View:
     """An engraved music-notation ``score`` page.
 
@@ -1997,6 +2007,21 @@ def score(*, display_list: dict | None = None, playhead: float | None = None,
     inspecting a page (clicking a note to hear it) is not editing it. Toggle it
     live with ``GuiHost.set(score_id, editable=True)``.
 
+    **Note entry is opt-in too**, with ``entry=True``, and it is its own flag
+    rather than a second meaning for ``editable`` because it takes over a
+    gesture that already does something: on any other page, pressing blank paper
+    clears the selection, and a page that had not asked for note entry would
+    start reporting an insertion every time a user dismissed one. With it on, a
+    press that lands on blank paper inside a staff emits
+    ``"insert" <after-xml:id> <position> <staff>`` — the element the new note
+    would **follow** on that staff (empty when the press is before everything on
+    it), the staff position in whole steps from the top line, and which staff,
+    counted from the top. The host names a *place* and nothing more: a staff
+    position is not a pitch until something knows the clef and the key, and a
+    duration is a choice nobody made by clicking. Both are the driver's, which
+    is the same line every other score gesture draws — and
+    `clausters.gui.notation.insert` is what turns the three into an operation.
+
     The **playback cursor** rides the display list's ``cursors`` track (the
     engraved timemap: musical time in ms to the placed x of the event sounding
     then), and it is driven exactly like the timeline views':
@@ -2020,7 +2045,7 @@ def score(*, display_list: dict | None = None, playhead: float | None = None,
                        playhead_loop_start=playhead_loop_start,
                        playhead_loop_len=playhead_loop_len,
                        sample_rate=sample_rate, selected=selected,
-                       editable=editable)
+                       editable=editable, entry=entry)
     if isinstance(display_list, Source):
         extra["display_list"] = display_list   # `node` expands it into the five
     else:

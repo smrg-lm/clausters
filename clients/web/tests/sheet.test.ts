@@ -494,3 +494,42 @@ test("a refused operation leaves the page and the model alone", {
     assert.equal(score.mei(), before);
     assert.ok(!score.canUndo);
 });
+
+// -- note entry: the page names a place, the model turns it into a note --------
+
+test("a place on the staff becomes a pitch the clef and the key agree on", () => {
+    // What the page's `"insert"` gesture reports is a staff position, because a
+    // renderer can measure a place and not a pitch. The model reads it.
+    const sheet = sheetFromVoice([{ midis: [60], ticks: 8 }], { clef: "G2" });
+    const pitchesOf = (s: Sheet, i: number) =>
+        (s.staves as { voices: { items: { pitches: unknown[] }[] }[] }[])[0]
+            .voices[0].items[i].pitches;
+    // the top line of a treble staff is F5
+    const written = insert(sheet, [1, 4], { after: idsOf(sheet)[0], position: 0 });
+    assert.deepEqual(pitchesOf(written, 1), [{ step: "f", alter: 0, octave: 5 }]);
+
+    // the same place on a bass staff is A3, which is why this is not a client's
+    // arithmetic to do
+    const bass = sheetFromVoice([{ midis: [48], ticks: 8 }], { clef: "F4" });
+    const low = insert(bass, [1, 4], { after: idsOf(bass)[0], position: 0 });
+    assert.equal((pitchesOf(low, 1)[0] as { step: string }).step, "a");
+});
+
+test("a place clicked in a key arrives in that key", () => {
+    const sheet = sheetFromVoice([{ midis: [60], ticks: 8 }], { key: "Eb" });
+    // four steps below the top line F5 is B4, and in E flat that is a B flat
+    const written = insert(sheet, [1, 4], { after: idsOf(sheet)[0], position: -4 });
+    const added = (written.staves as { voices: { items: { pitches: unknown[] }[] }[] }[])[0]
+        .voices[0].items[1].pitches;
+    assert.deepEqual(added, [{ step: "b", alter: -1, octave: 4 }]);
+});
+
+test("a page can ask for note entry and says so on the wire", () => {
+    // The gesture is opt-in and its own flag: on every other page a press on
+    // blank paper clears the selection, and a page that never asked for note
+    // entry must keep doing exactly that.
+    const page = { vb: [10, 10], glyphs: {}, prims: [] };
+    const kids = (n: unknown) => (n as { children: Record<string, unknown>[] }).children;
+    assert.ok(!("entry" in kids(notation.scoreView(page, { name: "s" }))[0]));
+    assert.equal(kids(notation.scoreView(page, { name: "s", entry: true }))[0].entry, true);
+});

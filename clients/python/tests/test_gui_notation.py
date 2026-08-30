@@ -92,7 +92,7 @@ def test_the_page_json_carries_the_drawing_layers_only():
     requires_engraver()
     dl = notation.engrave(PHRASE)
     page = json.loads(notation.page_json(dl))
-    assert sorted(page) == ["cursors", "glyphs", "prims", "step", "vb"]
+    assert sorted(page) == ["cursors", "elements", "glyphs", "prims", "step", "vb"]
     # what the builder sends when it defines the widget, so a re-engraved page
     # replaces it exactly
     built = score(id=11, display_list=dl)
@@ -716,3 +716,58 @@ def test_a_refused_operation_leaves_the_page_and_the_model_alone():
     assert not score.apply({"op": "move_steps", "id": 9999, "steps": 1})
     assert score.mei() == before
     assert not score.can_undo
+
+
+# -- note entry: the page names a place, the model turns it into a note --------
+
+
+def test_a_place_on_the_staff_becomes_a_pitch_the_clef_and_the_key_agree_on():
+    # What the page's `"insert"` gesture reports is a staff position, because a
+    # renderer can measure a place and not a pitch. The model reads it.
+    sheet = notation.sheet_from_voice([{"midis": [60], "ticks": 8}], clef="G2")
+    first = sheet["staves"][0]["voices"][0]["items"][0]["id"]
+    # the top line of a treble staff is F5
+    written = notation.insert(sheet, (1, 4), after=first, position=0)
+    added = written["staves"][0]["voices"][0]["items"][1]["pitches"][0]
+    assert added == {"step": "f", "alter": 0, "octave": 5}
+
+    # the same place on a bass staff is A3, which is why this is not a client's
+    # arithmetic to do
+    bass = notation.sheet_from_voice([{"midis": [48], "ticks": 8}], clef="F4")
+    at = bass["staves"][0]["voices"][0]["items"][0]["id"]
+    low = notation.insert(bass, (1, 4), after=at, position=0)
+    assert low["staves"][0]["voices"][0]["items"][1]["pitches"][0]["step"] == "a"
+
+
+def test_a_place_clicked_in_a_key_arrives_in_that_key():
+    sheet = notation.sheet_from_voice([{"midis": [60], "ticks": 8}], key="Eb")
+    first = sheet["staves"][0]["voices"][0]["items"][0]["id"]
+    # four steps below the top line F5 is B4, and in E flat that is a B flat
+    written = notation.insert(sheet, (1, 4), after=first, position=-4)
+    added = written["staves"][0]["voices"][0]["items"][1]["pitches"][0]
+    assert added == {"step": "b", "alter": -1, "octave": 4}
+
+
+def test_a_page_can_ask_for_note_entry_and_says_so_on_the_wire():
+    # The gesture is opt-in and its own flag: on every other page a press on
+    # blank paper clears the selection, and a page that never asked for note
+    # entry must keep doing exactly that.
+    page = {"vb": [10, 10], "glyphs": {}, "prims": []}
+    plain = notation.score_view(page, name="s")["children"][0]
+    assert "entry" not in plain
+    taking = notation.score_view(page, name="s", entry=True)["children"][0]
+    assert taking["entry"] is True
+
+
+def test_the_page_carries_which_ids_are_sounding_elements():
+    # A staff's lines carry the staff's id, so to a renderer an id is an id.
+    # The engraving walk is what knows, and it says so.
+    sheet = notation.sheet_from_voice([{"midis": [60], "ticks": 8}] * 2)
+    dl = notation.Score(notation.to_mei(sheet)).display_list()
+    ids = {p["id"] for p in dl["prims"] if "id" in p}
+    assert set(dl["elements"]) <= ids
+    # the two notes, and the rest the emitter wrote to fill the bar -- a rest is
+    # a sounding element in exactly this sense: something a gesture can land on
+    # and a new note can follow
+    assert len(dl["elements"]) == 3, dl["elements"]
+    assert dl["elements"][:2] == ["n1", "n2"]

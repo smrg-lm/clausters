@@ -531,3 +531,59 @@ fn line_prim_renders_within_clip() {
     );
     assert!(!mesh.is_empty(), "a staff line should paint");
 }
+
+/// **A press on blank paper names a place, in the ids the client engraved.**
+/// The host is the only one that can measure where the finger went; it says so
+/// and stops there — no pitch, because that needs a clef and a key it does not
+/// have, and no duration, because a click implies none.
+#[test]
+fn a_press_on_blank_paper_names_the_staff_the_step_and_what_it_follows() {
+    let mut data = staffed_page();
+    // The client says which ids are sounding elements. Without that a staff
+    // line, which carries the staff's id, would be "the element to the left" of
+    // everything -- to a renderer an id is an id.
+    data.elements.insert("n1".to_string());
+    let rect = Rect::new(0.0, 0.0, 11000.0, 3000.0);
+    assert_eq!(data.fit(rect).sx, 1.0);
+
+    // To the right of the note, on the staff: it follows the note.
+    let entry = data
+        .entry_at(rect, 4000.0, 1400.0)
+        .expect("a staff is there");
+    assert_eq!(entry.after.as_deref(), Some("n1"));
+    assert_eq!(entry.staff, 0);
+    // 1400 is two steps of 90... no: the staff's top line is 1040 and a step is
+    // 90, so 1400 is four steps below it.
+    assert_eq!(entry.position, -4);
+
+    // Before everything: nothing to follow, which is where an empty score
+    // begins rather than an error.
+    let first = data.entry_at(rect, 700.0, 1040.0).expect("still the staff");
+    assert_eq!(first.after, None);
+    assert_eq!(first.position, 0, "the top line itself");
+}
+
+/// **The furniture is not an element.** A staff's lines carry the staff's id,
+/// so without the client's list the nearest thing to the left of any press is
+/// always a staff line -- and an insertion "after the staff" names nothing a
+/// model can resolve.
+#[test]
+fn a_staff_line_is_never_what_a_new_note_follows() {
+    let data = staffed_page();
+    assert!(data.elements.is_empty(), "nothing was declared an element");
+    let rect = Rect::new(0.0, 0.0, 11000.0, 3000.0);
+    let entry = data
+        .entry_at(rect, 4000.0, 1400.0)
+        .expect("a staff is there");
+    assert_eq!(entry.after, None, "the staff line is not a candidate");
+}
+
+/// The measurement follows the page fit, exactly as hit testing does: the same
+/// screen point on a half-scale page is a different place on the page.
+#[test]
+fn an_insertion_point_follows_the_page_fit() {
+    let data = staffed_page();
+    let full = data.entry_at(Rect::new(0.0, 0.0, 11000.0, 3000.0), 4000.0, 1400.0);
+    let half = data.entry_at(Rect::new(0.0, 0.0, 5500.0, 1500.0), 2000.0, 700.0);
+    assert_eq!(full.map(|e| e.position), half.map(|e| e.position));
+}

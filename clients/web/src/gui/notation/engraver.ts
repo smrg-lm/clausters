@@ -29,7 +29,7 @@ import type { Timeline } from "../../seq/timeline.ts";
  * the client's own layer. {@link pageJson} and the `score` builder send exactly
  * these.
  */
-const PAGE_LAYERS = ["vb", "glyphs", "prims", "cursors", "step"] as const;
+const PAGE_LAYERS = ["vb", "glyphs", "prims", "cursors", "step", "elements"] as const;
 
 /** One engraved page: what is drawn, where the cursor goes, and what sounds. */
 export interface Page {

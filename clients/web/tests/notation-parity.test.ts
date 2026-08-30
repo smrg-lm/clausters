@@ -44,6 +44,10 @@ const vectors = JSON.parse(
 /**
  * The page with every engraver-minted id replaced by the order it first appears
  * in — the same normalization the generator applies.
+ *
+ * `elements` is a list of those same ids rather than objects carrying one, so
+ * it is normalized by name: leaving it raw would compare two engravings' minted
+ * ids directly, which is the one thing this exists to avoid.
  */
 function normalized(value: unknown, ids = new Map<string, number>()): unknown {
     if (Array.isArray(value)) return value.map((v) => normalized(v, ids));
@@ -53,6 +57,12 @@ function normalized(value: unknown, ids = new Map<string, number>()): unknown {
             if (key === "id" && typeof v === "string") {
                 if (!ids.has(v)) ids.set(v, ids.size);
                 out[key] = ids.get(v);
+            } else if (key === "elements" && Array.isArray(v)) {
+                out[key] = v.map((e) => {
+                    const id = e as string;
+                    if (!ids.has(id)) ids.set(id, ids.size);
+                    return ids.get(id);
+                });
             } else {
                 out[key] = normalized(v, ids);
             }

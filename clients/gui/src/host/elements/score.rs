@@ -107,6 +107,7 @@ impl Element for Score {
             // Turn editing on or off live (a view that becomes an editor, or
             // the reverse). A drag only transposes while this is true.
             "editable" => v.as_bool().map(|b| data.editable = b).is_some(),
+            "entry" => v.as_bool().map(|b| data.entry = b).is_some(),
             _ => false,
         }
     }
@@ -175,6 +176,24 @@ impl Element for Score {
                 steps: 0,
             });
             self.origin_y = Some(at.1);
+        }
+        // A press on blank paper, on a page that takes note entry, reports
+        // *where* it landed rather than only that nothing is there. The host
+        // names a place — the staff, how far up it, the element it would follow
+        // — and nothing else: a staff position is not a pitch until something
+        // knows the clef and the key, and a duration is a choice nobody made by
+        // clicking. Both are the client's, which is the line every other score
+        // gesture already draws.
+        if picked.is_none()
+            && self.data.entry
+            && let Some(entry) = self.data.entry_at(input.rect, at.0 as f32, at.1 as f32)
+        {
+            return Claim::events(Events::message(vec![
+                OscType::String("insert".into()),
+                OscType::String(entry.after.unwrap_or_default()),
+                OscType::Int(entry.position),
+                OscType::Int(entry.staff as i32),
+            ]));
         }
         match (changed, dragging) {
             // Nothing selected, nothing to drag: the press was never this
@@ -270,6 +289,14 @@ mod tests {
             data: ScoreData::parse(&props),
             origin_y: None,
         }
+    }
+
+    /// The same page, taking note entry, with the client's element list on it.
+    fn entry_page() -> Score {
+        let mut score = page(true);
+        score.data.entry = true;
+        score.data.elements = ["n1", "n2"].iter().map(|s| s.to_string()).collect();
+        score
     }
 
     fn input<'a>(m: &'a Metrics) -> Input<'a> {
@@ -431,5 +458,69 @@ mod tests {
         assert!(score.data.editable, "an editor stays an editor");
         assert!(score.data.drag.is_none());
         assert!(score.data.prims.is_empty(), "and the drawing was replaced");
+    }
+    /// **A press on blank paper reports a place, on a page that asked for one.**
+    /// It names the staff, how far up it, and the element the note would follow
+    /// — and nothing else. A staff position is not a pitch until something
+    /// knows the clef and the key, and the host knows neither.
+    #[test]
+    fn a_page_taking_note_entry_reports_where_a_press_landed() {
+        let metrics = Metrics::default();
+        let input = input(&metrics);
+        let mut score = entry_page();
+
+        // To the right of both notes, on the staff: it follows the second. The
+        // top line is y=20 and a step is 90, so the middle line at y=380 is
+        // four steps below it.
+        let claim = score.press(at(&score, input.rect, 700.0, 380.0), &input);
+        assert_eq!(
+            claim,
+            Claim::events(Events::message(vec![
+                OscType::String("insert".into()),
+                OscType::String("n2".into()),
+                OscType::Int(-4),
+                OscType::Int(0),
+            ]))
+        );
+    }
+
+    /// **The gesture is opt-in, and not a second meaning for `editable`.** On
+    /// every other page a press on blank paper clears the selection, so a page
+    /// that never asked for note entry must keep doing exactly that.
+    #[test]
+    fn a_page_that_did_not_ask_for_note_entry_only_clears_the_selection() {
+        let metrics = Metrics::default();
+        let input = input(&metrics);
+        let mut score = page(true);
+        score.data.elements = ["n1", "n2"].iter().map(|s| s.to_string()).collect();
+        score.press(at(&score, input.rect, 150.0, 200.0), &input);
+        assert_eq!(score.data.selected.as_deref(), Some("n1"));
+
+        let claim = score.press(at(&score, input.rect, 700.0, 380.0), &input);
+        assert_eq!(
+            claim,
+            Claim::events(Events::message(vec![
+                OscType::String("element".into()),
+                OscType::String(String::new()),
+            ])),
+            "the selection is cleared, as it always was"
+        );
+    }
+
+    /// A press that lands *on* an element is a selection, whatever the page
+    /// takes: note entry is what happens where there is nothing.
+    #[test]
+    fn note_entry_does_not_take_over_a_press_on_a_note() {
+        let metrics = Metrics::default();
+        let input = input(&metrics);
+        let mut score = entry_page();
+        let claim = score.press(at(&score, input.rect, 150.0, 200.0), &input);
+        assert_eq!(
+            claim,
+            Claim::events(Events::message(vec![
+                OscType::String("element".into()),
+                OscType::String("n1".into()),
+            ]))
+        );
     }
 }

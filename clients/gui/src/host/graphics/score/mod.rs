@@ -276,6 +276,21 @@ pub struct Staff {
     pub width: f32,
 }
 
+/// Where a press on blank paper landed: the staff it belongs to (top down from
+/// zero), how far up that staff in whole diatonic steps, and the element the
+/// note would follow.
+///
+/// It carries no pitch and no duration on purpose. A staff position becomes a
+/// pitch only once something knows the clef and the key, and a duration is a
+/// choice nobody made by clicking — both are the client's, which is the same
+/// line every other score gesture draws.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Entry {
+    pub staff: usize,
+    pub position: i32,
+    pub after: Option<String>,
+}
+
 /// The default page units per diatonic step: verovio's default `unit` (9) times
 /// its definition factor (10). Used when a display list names no `step` — every
 /// display list `clausters.gui.notation` builds does.
@@ -340,6 +355,20 @@ pub struct ScoreData {
     /// editor opts in (`editable: true`). Selection and the `"element"` click are
     /// not gated by this: inspecting a read-only page is not editing it.
     pub editable: bool,
+    /// Whether a press on **blank paper** inside a staff reports where it
+    /// landed (`"insert"`), for a page that takes note entry.
+    ///
+    /// Its own flag rather than a second meaning for `editable`, because it
+    /// takes over a gesture that already does something useful: on any other
+    /// page, pressing blank paper clears the selection, and a page that had not
+    /// asked for note entry would start reporting an insertion every time a
+    /// user dismissed one.
+    pub entry: bool,
+    /// The ids that name a **sounding element** — a note, a rest — as against
+    /// the staff and layer furniture that also carries one. Sent by the client,
+    /// because the walk that engraved the page is what knows, and to a renderer
+    /// an id is an id.
+    pub elements: std::collections::HashSet<String>,
 }
 
 impl Default for ScoreData {
@@ -361,6 +390,8 @@ impl Default for ScoreData {
             step: STEP,
             drag: None,
             editable: false,
+            entry: false,
+            elements: std::collections::HashSet::new(),
         }
     }
 }

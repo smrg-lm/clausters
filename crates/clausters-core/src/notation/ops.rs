@@ -181,6 +181,14 @@ pub enum Op {
         /// The pitches; none for a rest.
         #[serde(default)]
         pitches: Vec<Pitch>,
+        /// Where on the staff, in whole diatonic steps from its **top line**,
+        /// positive upward — what a gesture on the page reports, since a
+        /// renderer can measure a place and not a pitch. Given, the pitch is
+        /// worked out from the staff's clef and the key, so no client has to
+        /// know how to read a C clef. Ignored when `pitches` is given, and
+        /// left out with no pitches the item is a rest.
+        #[serde(default)]
+        position: Option<i32>,
         /// Its written value.
         dur: Ratio,
         /// Which staff, when it goes first.
@@ -356,17 +364,33 @@ pub fn apply(sheet: Sheet, op: &Op) -> Result<Sheet, String> {
         Op::Insert {
             after,
             pitches,
+            position,
             dur,
             staff,
             voice,
-        } => edit::insert(
-            sheet,
-            after.map(edit::At::After).unwrap_or(edit::At::Start),
-            pitches.clone(),
-            *dur,
-            *staff,
-            *voice,
-        ),
+        } => {
+            // A gesture on the page reports a *place*; the pitch it names is
+            // the staff's clef and the key read together, which is knowledge
+            // the model has and a renderer does not.
+            let pitches = match (pitches.is_empty(), position) {
+                (true, Some(position)) => {
+                    let at = after
+                        .and_then(|id| sheet.locate(id))
+                        .map(|(si, _, _)| si)
+                        .unwrap_or(*staff);
+                    vec![edit::pitch_at(&sheet, at, *position)?]
+                }
+                _ => pitches.clone(),
+            };
+            edit::insert(
+                sheet,
+                after.map(edit::At::After).unwrap_or(edit::At::Start),
+                pitches,
+                *dur,
+                *staff,
+                *voice,
+            )
+        }
         Op::Delete { id } => edit::delete(sheet, *id),
         Op::Silence { id } => edit::silence(sheet, *id),
         Op::SetDur { id, dur } => edit::set_dur(sheet, *id, *dur),
@@ -482,7 +506,7 @@ pub fn catalog() -> &'static [OpSpec] {
         OpSpec {
             op: "insert",
             required: &["dur"],
-            optional: &["after", "pitches", "staff", "voice"],
+            optional: &["after", "pitches", "position", "staff", "voice"],
         },
         OpSpec {
             op: "delete",

@@ -430,22 +430,33 @@ export function removeMeasures(sheet: Sheet, first: number, last: number): Sheet
  * Write a new note, chord or rest into a voice.
  *
  * `after` names the item it follows (by id) and puts it in that item's own
- * voice; without one it goes first, on `staff`/`voice`. No `pitches` is a rest.
+ * voice; without one it goes first, on `staff`/`voice`. No `pitches` and no
+ * `position` is a rest.
  * Everything after it moves later by `dur`: writing a note into finished music
  * adds time.
  */
 export function insert(
     sheet: Sheet,
     dur: Ratio | number,
-    { after, pitches = [], staff = 0, voice = 0 }: {
+    { after, pitches = [], position, staff = 0, voice = 0 }: {
         after?: number;
         pitches?: unknown[];
+        /**
+         * A place on the staff — whole diatonic steps from its **top line**,
+         * positive upward — which is what the page's own `"insert"` gesture
+         * reports, since a renderer can measure a place and not a pitch. Given,
+         * the pitch is worked out from that staff's clef and the key, so
+         * clicking the middle line in E flat writes a B flat and no client has
+         * to know how to read a C clef. `pitches` wins where both are given.
+         */
+        position?: number;
         staff?: number;
         voice?: number;
     } = {},
 ): Sheet {
     const op: Op = { op: "insert", dur: ratio(dur), pitches, staff, voice };
     if (after !== undefined) op.after = after;
+    if (position !== undefined) op.position = position;
     return apply(sheet, op);
 }
 

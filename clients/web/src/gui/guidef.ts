@@ -2593,7 +2593,19 @@ export function clip(
  * from its staff's top line, positive upward — a *request* the driver applies
  * and answers with a re-engraved page. The position is absolute rather than a
  * displacement, so a resend cannot move the note twice and a page re-engraved
- * under the gesture needs no rebasing. The playback cursor works exactly as a timeline view's:
+ * under the gesture needs no rebasing.
+ *
+ * `entry` turns on **note entry**, and it is its own flag rather than a second
+ * meaning for `editable` because it takes over a gesture that already does
+ * something: on any other page, pressing blank paper clears the selection. With
+ * it on, a press on blank paper inside a staff emits
+ * `"insert" <after-xml:id> <position> <staff>` — the element the new note would
+ * *follow* on that staff (empty before everything on it), the staff position,
+ * and which staff from the top. The host names a place and nothing more: a
+ * staff position is not a pitch until something knows the clef and the key, and
+ * a duration is a choice nobody made by clicking.
+ *
+ * The playback cursor works exactly as a timeline view's:
  * `playheadAt` anchors it to the engine clock, `playhead` is a static time in
  * milliseconds.
  */
@@ -2608,11 +2620,12 @@ export function score(
         sampleRate?: number;
         selected?: string;
         editable?: boolean;
+        entry?: boolean;
     } = {},
 ): GuiNode {
     const {
         displayList, playhead, playheadAt, playheadLoopStart, playheadLoopLen,
-        sampleRate, selected, editable, ...rest
+        sampleRate, selected, editable, entry, ...rest
     } = options;
     return node("score", {
         ...rest,
@@ -2624,6 +2637,7 @@ export function score(
             ["sample_rate", sampleRate],
             ["selected", selected],
             ["editable", editable],
+            ["entry", entry],
         ]),
         // A source goes in as itself and `node` expands it into the five;
         // anything else is expanded here.
@@ -2828,8 +2842,14 @@ export function flatCords(cords: readonly number[]): number[] {
 
 /**
  * An engraved page as the props a **definition** carries it in: the wire spells
- * a `score`'s drawing as five keys, one per part of the display list, and
+ * a `score`'s drawing as six keys, one per part of the display list, and
  * `GuiHost.set` spells the same page as the one `display_list`.
+ *
+ * `elements` is the last of them and the odd one: not a drawing layer but the
+ * list of ids that name a **sounding element**, which the engraving walk knows
+ * and a renderer cannot re-derive — to the host an id is an id, and a staff's
+ * lines carry the staff's. It is what lets a press on blank paper say which
+ * element it fell after.
  */
 export function scorePage(displayList: Record<string, unknown>): Props {
     const dl = displayList ?? {};
@@ -2839,6 +2859,7 @@ export function scorePage(displayList: Record<string, unknown>): Props {
         ["prims", dl.prims],
         ["cursors", dl.cursors],
         ["step", dl.step],
+        ["elements", dl.elements],
     ]);
 }
 
@@ -2855,7 +2876,7 @@ const STRUCTURES: Record<string, { props: (v: unknown) => Props; slots: readonly
     cords: { props: (v) => ({ cords: flatCords(v as readonly number[]) }), slots: ["cords"] },
     display_list: {
         props: (v) => scorePage(v as Record<string, unknown>),
-        slots: ["vb", "glyphs", "prims", "cursors", "step"],
+        slots: ["vb", "glyphs", "prims", "cursors", "step", "elements"],
     },
 };
 

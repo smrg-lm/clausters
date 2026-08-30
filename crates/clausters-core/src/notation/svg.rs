@@ -34,6 +34,20 @@ pub struct DisplayList {
     pub glyphs: BTreeMap<String, String>,
     pub prims: Vec<Prim>,
     pub step: f64,
+    /// Which of the ids on `prims` name a **sounding element** — a note, a
+    /// chord's note, a rest — as against the furniture that also carries one: a
+    /// staff's lines take the staff's id, a layer's take the layer's.
+    ///
+    /// The walk already knows which is which (`is_element_class`, private: a
+    /// link there resolves only in a build documenting private items — it is
+    /// what decides that a note's parts stop having ids of their own), and this
+    /// is that knowledge written down instead of thrown away. A host cannot
+    /// re-derive it: to a renderer an id is an id, and telling a notehead from a
+    /// staff line by the shape of its box is a guess that fails on the first
+    /// rest. It is what lets a gesture that lands on *blank paper* say which
+    /// element it fell after.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub elements: Vec<String>,
 }
 
 /// One placed primitive. The `k` discriminator names the kind; every primitive
@@ -117,6 +131,7 @@ pub fn svg_to_display_list(svg: &str) -> DisplayList {
 
     let mut glyphs = BTreeMap::new();
     let mut prims = Vec::new();
+    let mut elements = Vec::new();
     walk(
         target,
         IDENTITY,
@@ -125,6 +140,7 @@ pub fn svg_to_display_list(svg: &str) -> DisplayList {
         &glyph_defs,
         &mut glyphs,
         &mut prims,
+        &mut elements,
     );
     let step = staff_step(&prims);
     DisplayList {
@@ -132,6 +148,7 @@ pub fn svg_to_display_list(svg: &str) -> DisplayList {
         glyphs,
         prims,
         step,
+        elements,
     }
 }
 
@@ -217,6 +234,7 @@ fn walk(
     glyph_defs: &BTreeMap<String, &str>,
     glyphs: &mut BTreeMap<String, String>,
     prims: &mut Vec<Prim>,
+    elements: &mut Vec<String>,
 ) {
     let xf = compose(parent_xf, parse_transform(node.attribute("transform")));
     // Which element a primitive belongs to. verovio gives a note's *parts* ids
@@ -229,6 +247,12 @@ fn walk(
     let nid: Option<&str> = match own {
         Some(own) if !owned => {
             owned = is_element_class(node.attribute("class").unwrap_or(""));
+            // Where ownership begins is exactly where a sounding element does,
+            // so this is the one place that knows, and it says so here rather
+            // than leaving a renderer to guess from a box.
+            if owned {
+                elements.push(own.to_string());
+            }
             Some(own)
         }
         _ => mei_id,
@@ -318,7 +342,7 @@ fn walk(
         }
         _ => {
             for child in node.children().filter(Node::is_element) {
-                walk(child, xf, nid, owned, glyph_defs, glyphs, prims);
+                walk(child, xf, nid, owned, glyph_defs, glyphs, prims, elements);
             }
         }
     }
@@ -812,6 +836,7 @@ mod tests {
             glyphs: BTreeMap::new(),
             prims,
             step: 90.0,
+            elements: Vec::new(),
         }
     }
 
@@ -863,6 +888,7 @@ mod tests {
                 id: Some("n1".into()),
             }],
             step: 90.0,
+            elements: Vec::new(),
         };
         assert_eq!(bare.staff_position("n1"), None);
     }

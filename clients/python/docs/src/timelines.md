@@ -304,6 +304,20 @@ other act — a named interval, keeping the alteration the arithmetic implies.
 A document that could not be read into a model still draws and still plays;
 `sheet()` raises there, and that is how you tell.
 
+**A page can also be written on.** `score_view(..., entry=True)` opts into note
+entry: a press on blank paper inside a staff reports `"insert" <after>
+<position> <staff>` — the element the new note would follow, how far up the
+staff the press landed, and which staff. It names a *place*, not a note, since a
+staff position is a pitch only once something knows the clef and the key. Hand
+the three straight to `insert`:
+
+```python
+sheet = notation.insert(sheet, (1, 4), after=after_id, position=position)
+```
+
+and the pitch is worked out from that staff's clef and the key — clicking the
+middle line in E flat writes a B flat.
+
 ### Hearing what the page says
 
 The way back out is `to_notes`, and it is not a conversion: the symbols mean

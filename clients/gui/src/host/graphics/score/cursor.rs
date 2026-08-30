@@ -20,7 +20,7 @@ use std::collections::HashMap;
 
 use super::glyphs::path_bounds;
 use super::tess::staff_distance;
-use super::{Affine, Bounds, HitBox, HitShape, Prim, ScoreData, Staff, is_notehead};
+use super::{Affine, Bounds, Entry, HitBox, HitShape, Prim, ScoreData, Staff, is_notehead};
 use crate::host::layout::Rect;
 
 impl ScoreData {
@@ -210,6 +210,46 @@ impl ScoreData {
                     .unwrap_or(std::cmp::Ordering::Equal)
             })
             .map(|h| h.id.as_str())
+    }
+
+    /// Where a press on **blank paper** landed, for a page that takes note
+    /// entry: which staff, how far up it, and the element the new note would
+    /// follow.
+    ///
+    /// This is the gesture's whole contribution, and the division is the same
+    /// one every other score gesture keeps: the host measures the *page*, which
+    /// is the only thing it has, and names what it found by the ids the client
+    /// engraved. It decides no duration, no pitch and no spelling — a staff
+    /// position is not a pitch until something knows the clef and the key, and
+    /// the host knows neither.
+    ///
+    /// `after` is the last element to the **left** on that staff, so a client
+    /// inserts after it; `None` means the press was before everything on the
+    /// staff, which is where a score with nothing written yet begins.
+    pub fn entry_at(&self, rect: Rect, x: f32, y: f32) -> Option<Entry> {
+        let inv = self.fit(rect).invert()?;
+        let [px, py] = inv.apply(x, y);
+        let staff = self.staff_at(py)?;
+        let index = self.staves.iter().position(|s| *s == staff)?;
+        // The elements of this staff, which is the nearest one to each: a hit
+        // is placed by where it is drawn, exactly as a note off the staff still
+        // belongs to the staff its ledger lines count from.
+        let after = self
+            .hits
+            .iter()
+            .filter(|h| self.elements.contains(&h.id))
+            .filter(|h| {
+                let mid = 0.5 * (h.bounds.y0 + h.bounds.y1);
+                self.staff_at(mid) == Some(staff)
+            })
+            .filter(|h| h.bounds.x1 <= px)
+            .max_by(|a, b| a.bounds.x1.total_cmp(&b.bounds.x1))
+            .map(|h| h.id.clone());
+        Some(Entry {
+            staff: index,
+            position: (((staff.y0 - py) / self.step).round()) as i32,
+            after,
+        })
     }
 
     /// The musical time (ms) the cursor sits at this frame: the engine clock

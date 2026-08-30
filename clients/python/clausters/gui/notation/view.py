@@ -16,7 +16,8 @@ def score_view(display_list, *, scroll_id: int | None = None,
                score_id: int | None = None, name: str | None = None,
                width: float = 1000.0, zoom: bool = True,
                sample_rate: float | None = None,
-               editable: bool | None = None) -> dict:
+               editable: bool | None = None,
+               entry: bool | None = None) -> dict:
     """Wrap an engraved ``display_list`` in a `scroll` sized to the page, ready
     to drop into a window. The page is a dict, or a
     `clausters.gui.guidef.Source` holding one so a re-engrave reaches the
@@ -32,7 +33,11 @@ def score_view(display_list, *, scroll_id: int | None = None,
     through (omitted = the server's own). ``editable`` opts the page into pitch
     editing (`clausters.gui.guidef.score`): left off, a drag does nothing and the
     view is read-only, which is what a plain plot of a score wants; a driver that
-    applies the ``"transpose"`` round trip passes ``editable=True``.
+    applies the ``"transpose"`` round trip passes ``editable=True``. ``entry``
+    opts it into **note entry**: a press on blank paper inside a staff reports
+    ``"insert" <after-xml:id> <position> <staff>`` — a place, not a note, since
+    the pitch needs the clef and the key and the duration is nobody's until a
+    driver chooses one.
 
     Returns the `scroll` node. ``scroll_id``/``score_id`` name the two widgets by
     hand; left ``None`` the host assigns them when the tree is opened. ``name``
@@ -50,7 +55,7 @@ def score_view(display_list, *, scroll_id: int | None = None,
     height = round(width * aspect, 1)
     return scroll(
         score(id=score_id, name=name, display_list=display_list,
-              sample_rate=sample_rate, editable=editable,
+              sample_rate=sample_rate, editable=editable, entry=entry,
               x=0.0, y=0.0, w=width, h=height),
         id=scroll_id, axis="both" if zoom else "y", zoom=zoom,
         content_w=width, content_h=height,

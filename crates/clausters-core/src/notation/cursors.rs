@@ -316,6 +316,7 @@ mod tests {
             glyphs: Default::default(),
             prims,
             step: 45.0,
+            elements: Vec::new(),
         };
         let track = cursor_track(&dl, &[entry(0.0, &["n1"])]);
         assert_eq!(track.len(), 1);
@@ -336,6 +337,7 @@ mod tests {
             glyphs: Default::default(),
             prims,
             step: 45.0,
+            elements: Vec::new(),
         };
         let track = cursor_track(&dl, &[entry(0.0, &["n1"])]);
         assert_eq!(track.len(), 1);

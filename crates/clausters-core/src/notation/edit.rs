@@ -444,6 +444,47 @@ pub fn move_steps(mut sheet: Sheet, id: u64, steps: i32) -> Result<Sheet, String
     Ok(sheet)
 }
 
+/// The pitch a **staff position** names on `staff`: what a place on the page
+/// means, once the clef and the key are known.
+///
+/// `position` is whole diatonic steps from the staff's **top line**, positive
+/// upward — the coordinate a gesture on the page reports, because it is the one
+/// thing a renderer can measure without knowing any notation.
+///
+/// This is where the rest of it is known, and it is here rather than in a
+/// client for the ordinary reason: a client working it out for itself is a
+/// second answer to a question the engraver already answered, and the two would
+/// disagree the first time somebody wrote a C clef. The alteration comes from
+/// the key signature, so clicking a B in E flat writes a B flat.
+///
+/// # Errors
+/// When there is no such staff.
+pub fn pitch_at(sheet: &Sheet, staff: usize, position: i32) -> Result<Pitch, String> {
+    let clef = sheet
+        .staves
+        .get(staff)
+        .map(|s| s.clef.as_str())
+        .ok_or_else(|| format!("this score has no staff {staff}"))?;
+    // A clef puts one pitch on one line, counted from the bottom. The top line
+    // is line 5, two diatonic steps above line 4, and so on up.
+    let (shape, line) = clef.split_at(1);
+    let line: i32 = line.parse().unwrap_or(2);
+    let (step, octave) = match shape {
+        "F" => (Step::F, 3),
+        "C" => (Step::C, 4),
+        _ => (Step::G, 4),
+    };
+    // One continuous diatonic ladder, so a position is plain arithmetic on it.
+    let ladder = octave * 7 + step.index() + (5 - line) * 2 + position;
+    let step = Step::ALL[ladder.rem_euclid(7) as usize];
+    Ok(Pitch {
+        step,
+        alter: super::mei::key_alteration(&sheet.key, step),
+        octave: ladder.div_euclid(7),
+        forced: false,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -613,5 +654,48 @@ mod tests {
         assert_eq!(items(&sheet)[0].id(), 1);
         assert_eq!(items(&sheet)[1].id(), 2);
         assert!(delete(sheet, 2).is_ok());
+    }
+    #[test]
+    fn a_staff_position_is_a_pitch_once_the_clef_and_the_key_are_known() {
+        use crate::notation::{Slot, voice_to_sheet};
+        // The treble staff's top line is F5, and every clef is the same
+        // arithmetic on the line it names.
+        let treble = voice_to_sheet(&[Slot::Rest { ticks: 8 }], "4/4", "G2", "C");
+        let top = pitch_at(&treble, 0, 0).unwrap();
+        assert_eq!((top.step, top.octave), (Step::F, 5));
+        // Two steps down is the next line, D5; six down is the bottom line, E4.
+        assert_eq!(pitch_at(&treble, 0, -2).unwrap().step, Step::D);
+        let bottom = pitch_at(&treble, 0, -8).unwrap();
+        assert_eq!((bottom.step, bottom.octave), (Step::E, 4));
+
+        // The bass staff's top line is A3, the alto clef's is G4 -- which is
+        // the reason this is here and not in a client: nobody should have to
+        // know how to read a C clef twice.
+        let bass = voice_to_sheet(&[Slot::Rest { ticks: 8 }], "4/4", "F4", "C");
+        let top = pitch_at(&bass, 0, 0).unwrap();
+        assert_eq!((top.step, top.octave), (Step::A, 3));
+        let alto = voice_to_sheet(&[Slot::Rest { ticks: 8 }], "4/4", "C3", "C");
+        let top = pitch_at(&alto, 0, 0).unwrap();
+        assert_eq!((top.step, top.octave), (Step::G, 4));
+    }
+
+    #[test]
+    fn a_place_clicked_in_a_key_arrives_in_that_key() {
+        use crate::notation::{Slot, voice_to_sheet};
+        // Clicking the middle line in E flat writes a B flat: the armature is
+        // part of what the place means, not something applied afterwards. Four
+        // steps below the top line F5 is B4.
+        let sheet = voice_to_sheet(&[Slot::Rest { ticks: 8 }], "4/4", "G2", "Eb");
+        let b = pitch_at(&sheet, 0, -4).unwrap();
+        assert_eq!(b.step, Step::B);
+        assert_eq!(b.alter, -1);
+        assert!(!b.forced, "the armature says it; the page need not");
+    }
+
+    #[test]
+    fn a_staff_that_is_not_there_says_so() {
+        use crate::notation::{Slot, voice_to_sheet};
+        let sheet = voice_to_sheet(&[Slot::Rest { ticks: 8 }], "4/4", "G2", "C");
+        assert!(pitch_at(&sheet, 4, 0).is_err());
     }
 }

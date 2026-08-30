@@ -349,19 +349,28 @@ def remove_measures(sheet: dict, first: int, last: int) -> dict:
 
 
 def insert(sheet: dict, dur, *, after: int | None = None, pitches: list | None = None,
-           staff: int = 0, voice: int = 0) -> dict:
+           position: int | None = None, staff: int = 0, voice: int = 0) -> dict:
     """Write a new note, chord or rest into a voice.
 
     ``after`` names the item it follows (by id) and puts it in that item's own
-    voice; without one it goes first, on ``staff``/``voice``. No ``pitches`` is a
-    rest. Everything after it moves later by ``dur``: writing a note into
-    finished music adds time.
+    voice; without one it goes first, on ``staff``/``voice``. No ``pitches`` and
+    no ``position`` is a rest. Everything after it moves later by ``dur``:
+    writing a note into finished music adds time.
+
+    ``position`` is a place on the staff — whole diatonic steps from its **top
+    line**, positive upward — which is what the page's own ``"insert"`` gesture
+    reports, since a renderer can measure a place and not a pitch. Given, the
+    pitch is worked out from that staff's clef and the key, so clicking the
+    middle line in E flat writes a B flat and no client has to know how to read
+    a C clef. ``pitches`` wins where both are given.
     """
     num, den = dur if isinstance(dur, (tuple, list)) else (dur, 1)
     op = {"op": "insert", "dur": [num, den], "pitches": pitches or [],
           "staff": staff, "voice": voice}
     if after is not None:
         op["after"] = after
+    if position is not None:
+        op["position"] = position
     return apply(sheet, op)
 
 

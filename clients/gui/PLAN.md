@@ -2702,7 +2702,7 @@ Whatever symbols the model itself needs owe their rows either way
   score written from events, interpreted back by N4 and written again is stable
   in what both directions agree on, and what they do not is the documented loss.
 
-- ⬜ **N6 — The reader: a document back into the model**. The direction `N4`
+- ✅ **N6 — The reader: a document back into the model** *(done 2026-08-29)*. The direction `N4`
   turned out not to be. A `Score` opened from typed text — ABC, MusicXML, a
   hand-written MEI, anything the engraver auto-detects — holds a document and no
   model, so every verb the model has is unavailable on exactly the scores a user
@@ -2777,11 +2777,36 @@ Whatever symbols the model itself needs owe their rows either way
   emitter states the sounding one as a child `<accid>` while verovio hands back
   attributes.
 
-  **Still open**: the host's own note-entry gestures (deferred in `N3`), which
-  are the last piece and the only one that is not core work — a gesture on empty
-  staff space, `is_element_class` widened so a click can name what it lands on,
-  a payload on the `/gui_*` wire and a builder in each client. It was blocked on
-  the reader and is not any more.
+  **And the hand that writes** *(2026-08-29)*, the piece `N3` deferred and the
+  last of this milestone. A press on blank paper inside a staff reports
+  `"insert" <after> <position> <staff>` on a page that took the new `entry`
+  prop — its own opt-in and not a second meaning for `editable`, because the
+  gesture takes over one that already does something: on every other page a
+  press on blank paper clears the selection, and a page that had not asked for
+  note entry would report an insertion every time a user dismissed one.
+
+  **It names a place and not a note.** A staff position becomes a pitch only
+  once something knows the clef and the key, and the host knows neither; a
+  duration is not implied by a click at all. Reading the place is
+  `notation::pitch_at` in the core, reaching the wire as an optional `position`
+  on the `insert` verb — no ABI, since the operation was already data — and
+  clicking the middle line in E flat writes a B flat because the armature is
+  part of what the place means.
+
+  **`is_element_class` was widened, though not in the direction the earlier note
+  expected.** The problem was not which classes are elements but that the host
+  could not tell: to a renderer an id is an id, a staff's lines carry the
+  staff's, so "the nearest element to the left" was always a staff line and an
+  insertion "after the staff" names nothing a model can resolve. The walk is the
+  one place that knows, so the display list grew an `elements` list — a sixth
+  page key — and the host filters by it. The notation parity vectors moved with
+  it, and their normalizer learned the new field: a list of *ids* rather than
+  objects carrying one would otherwise have compared two engravings' minted ids
+  directly, which is the one thing that normalization exists to prevent.
+
+  Tests: 334 in the core, 40 in the host (the measurement, the furniture that is
+  not an element, the fit, and the three shapes the press can take), 54 in the
+  Python client and 33 in the web one.
 
 **What became of the earlier numbering.** `G31g` was one line; the first sizing
 made it `N1`–`N4` (surface, markup, polyphony, tuplets). The four are all still

@@ -31,6 +31,8 @@ export interface ScoreViewOptions {
     sampleRate?: number;
     /** Opt the page into pitch editing. */
     editable?: boolean;
+    /** Opt into note entry: a press on blank paper reports where it landed. */
+    entry?: boolean;
 }
 
 /**
@@ -48,7 +50,11 @@ export interface ScoreViewOptions {
  *
  * `editable` opts the page into pitch editing: left off, a drag does nothing and
  * the view is read-only, which is what a plain plot of a score wants; a driver
- * that applies the `"transpose"` round trip passes `editable: true`.
+ * that applies the `"transpose"` round trip passes `editable: true`. `entry`
+ * opts it into **note entry**: a press on blank paper inside a staff reports
+ * `"insert" <after-xml:id> <position> <staff>` — a place, not a note, since the
+ * pitch needs the clef and the key and the duration is nobody's until a driver
+ * chooses one.
  */
 export function scoreView(
     displayList: Record<string, unknown> | Source,
@@ -60,6 +66,7 @@ export function scoreView(
         zoom = true,
         sampleRate,
         editable,
+        entry,
     }: ScoreViewOptions = {},
 ): GuiNode {
     // The scroll is sized from the page, so the size has to be readable here
@@ -84,6 +91,7 @@ export function scoreView(
             displayList,
             sampleRate,
             editable,
+            entry,
             x: 0.0,
             y: 0.0,
             w: width,

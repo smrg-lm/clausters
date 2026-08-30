@@ -394,6 +394,13 @@ is not transposition: it moves along the staff and takes the key signature's
 alteration for the letter it lands on, so a note dragged onto a B in E flat is a
 B flat.
 
+**A page can also be written on**: `scoreView(..., { entry: true })` opts into
+note entry, and a press on blank paper inside a staff reports `"insert" <after>
+<position> <staff>`. It names a *place*, not a note — a staff position is a
+pitch only once something knows the clef and the key — so the three go straight
+to `insert(sheet, [1, 4], { after, position })`, which works the pitch out from
+that staff's clef and the key.
+
 The way back out is `toNotes`, and it is not a conversion: the symbols mean
 something, and honouring them is the whole of the step.
 

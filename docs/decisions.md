@@ -7575,3 +7575,41 @@ smaller one measured the same way: an accidental is an attribute on the note
 *or* a child `<accid>` element, and our emitter writes the sounding one as a
 child while verovio hands back attributes — so all four places are read, or an
 alteration is lost depending on which side of the engraver a document came from.
+
+## Note entry: the host names a place, and nothing more
+
+The last gesture the score page owed, and the one that decides what a renderer
+is allowed to know. A press on blank paper inside a staff reports
+`"insert" <after> <position> <staff>` — the element the new note would follow on
+that staff, how far up the staff the press landed, and which staff.
+
+**It names a place and not a note**, which is the same division every other
+score gesture keeps. A staff position becomes a pitch only once something knows
+the clef and the key, and the host knows neither; a duration is not implied by a
+click at all. Both stay the client's. What the host contributes is the one
+measurement nobody else can make — where on the page the finger went — reported
+in the ids the client engraved.
+
+**It is its own opt-in (`entry`), not a second meaning for `editable`.** The
+gesture takes over one that already does something useful: on every other page a
+press on blank paper clears the selection. A page that had not asked for note
+entry would start reporting an insertion every time a user dismissed one, which
+is a regression disguised as a feature.
+
+**The display list grew an `elements` list, and that is the widening `N3` asked
+for.** To a renderer an id is an id: a staff's lines carry the staff's id, a
+layer's carry the layer's, so "the nearest element to the left" was always a
+staff line — and an insertion "after the staff" names nothing a model can
+resolve. The engraving walk is the one place that knows which ids are sounding
+elements (`is_element_class` already decides it, which is what makes a note's
+parts stop having ids of their own), and it now writes that down instead of
+throwing it away. It is a list of ids rather than a flag on each primitive
+because one id covers the several primitives a note is drawn from.
+
+**Reading the place is `pitch_at`, in the core.** A clef puts one pitch on one
+line, the top line is two diatonic steps above the fourth, and the arrival takes
+the key signature's alteration — so clicking the middle line in E flat writes a
+B flat. A client working that out for itself would be a second answer to a
+question the engraver already answers, and the two would disagree the first time
+somebody wrote a C clef. It reaches the wire as an optional `position` on the
+`insert` verb, which costs no ABI: the operation was already data.

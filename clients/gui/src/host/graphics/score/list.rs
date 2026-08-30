@@ -91,6 +91,20 @@ impl ScoreData {
             .get("editable")
             .and_then(Value::as_bool)
             .unwrap_or(false);
+        data.entry = props.get("entry").and_then(Value::as_bool).unwrap_or(false);
+        // Which ids name a sounding element rather than the furniture that also
+        // carries one. The client's walk is what knows; a renderer cannot
+        // re-derive it, since to it an id is an id.
+        data.elements = props
+            .get("elements")
+            .and_then(Value::as_array)
+            .map(|xs| {
+                xs.iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default();
         data.index();
         data
     }
