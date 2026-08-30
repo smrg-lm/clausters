@@ -165,7 +165,8 @@ its plan; the plan is where its acceptance is read.
   an action API with no structure under it. The track builds that structure in
   `clausters_core::notation` — two durational structures that do not contain
   each other, the metric layout and the content, in exact rationals — and its
-  algebra of twenty verbs, which rearrange a score and edit one note, and the
+  vocabulary of twenty-four verbs, which rearrange a score and edit one note,
+  and the
   emission that writes all of it: polyphony, tuplets, markup and spelling.
   **`N1` to `N4` landed 2026-08-29/30**; what is left is the reader that takes a
   document back into the model (`N6`) and the enriched forward path (`N5`).

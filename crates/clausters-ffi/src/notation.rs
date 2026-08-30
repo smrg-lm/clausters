@@ -278,7 +278,7 @@ pub unsafe extern "C" fn clausters_core_sheet_ops(out: *mut u8, out_cap: usize) 
 /// that one turns a model into sound, this turns a *document* into a model. A
 /// score opened from typed text — ABC, MusicXML, a hand-written MEI — is a
 /// document and nothing else until this reads one, which is why every verb in
-/// the algebra is unavailable on it until then.
+/// none of the model's verbs is available on it until then.
 ///
 /// There is one input format rather than four: the engraver normalizes whatever
 /// it loaded to MEI (`clausters_score_mei`), so a caller reads that.
@@ -549,7 +549,7 @@ pub unsafe extern "C" fn clausters_score_transpose_to(
 ///
 /// **This is the edit path**, and the reason it is not the engraver's editor:
 /// there is one implementation of what an edit to a score means, it is the
-/// algebra every client already binds, and a standalone host holding a sheet
+/// vocabulary every client already binds, and a standalone host holding a sheet
 /// performs the same operation through the same code. A refused operation
 /// leaves both the page and the model as they were.
 ///

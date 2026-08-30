@@ -8,7 +8,7 @@ after it is that motif under an operation -- repeated, inverted, turned
 backwards, augmented, transposed, and finally stacked against itself as a coda
 on two staves.
 
-The whole piece is written in six lines of algebra, and none of the arithmetic
+The whole piece is written in six lines of operators, and none of the arithmetic
 is in Python. A **sheet** is a plain dict a caller holds, an operation is a
 payload it sends, and both cross to `clausters_core::notation`, which is the
 same core the web client binds and the same one a standalone host with no
@@ -17,7 +17,7 @@ the names, and the order it puts them in.
 
 Two things worth watching for as you read:
 
-* **Spelling survives the algebra.** Inverting the motif about its own first
+* **Spelling survives the operators.** Inverting the motif about its own first
   note gives A-flat, not G-sharp, because a pitch keeps the letter its notehead
   sits on and an interval has a diatonic size as well as a chromatic one.
 * **The grid does not move when the content does.** ``stretch`` doubles the

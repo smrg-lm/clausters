@@ -2182,7 +2182,7 @@ Toolkit` in `clausters-notation` (native), `impl Engraver for JsEngraver` in
 `clausters-core-web` (the page). `Score`, `NoteEvent`, `Page`,
 `svg_to_display_list` and `voice_to_mei` are already core's.
 
-So the model and its algebra go beside them, and `clausters-notation` gains
+So the model and its operators go beside them, and `clausters-notation` gains
 nothing: it stays the native `Engraver`. **A Python/TypeScript module holding
 the model would reopen G31h**, which moved this layer down for exactly this
 reason ("it pushes all the notation logic onto the client, so a second client
@@ -2201,7 +2201,7 @@ about the model is client-native; what stays in each client is only the
   split and then discards.
 - The **content** — voices of notes, chords and rests. It sounds. It is flat:
   notes are *not* nested inside measures, because containment breaks under every
-  algebraic operation (augment a phrase and the containment is wrong).
+  operation over a whole score (augment a phrase and the containment is wrong).
 
 The two are independent, and that independence is what makes ordinary editing
 expressible at all. Three cases that cannot even be stated today: *transpose
@@ -2243,10 +2243,10 @@ that were kept and never against symbols that were dropped.
 
 ### Eight constraints on the work
 
-**The algebra must not become a second vocabulary.** Concatenating, stacking,
+**The operators must not become a second vocabulary.** Concatenating, stacking,
 repeating, transposing, augmenting is composition, and this project already has
 composition in two places: the arrangement's `Aggregate` with its **concrete**
-and **logical** kinds, and the patterns. A score algebra does not replace the
+and **logical** kinds, and the patterns. A score's operators do not replace the
 patterns — a pattern is forward-only and may be endless, a score is finite,
 random-access and carries spelling, voices and beaming, which is precisely the
 **generator**/**generated** distinction the arrangement already draws. Where an
@@ -2266,7 +2266,7 @@ display list dispatches by tag, so a tuplet bracket, a hairpin or a dynamic
 draws with no host line touched and is deliberately not separately clickable.
 
 **Everything is modularized, in the core and in the clients.** The track adds a
-model, an algebra, an emitter and an interpreter, and they are four things, not
+model, its operators, an emitter and an interpreter, and they are four things, not
 one file that grows. In the core they are submodules of `notation` beside the
 ones already there (`mei`, `svg`, `score`, `cursors`); in each client they are
 modules of the package `E15` already split by what each part knows
@@ -2283,8 +2283,8 @@ outlives its first caller goes where its subject is, not where it was wanted.**
 postponed.** The order is fixed because the Python client is the reference and
 the port is a transliteration of it — but the *deferral* is what is ruled out
 here. No milestone in this track closes with one client done and the other
-named in a plan entry: an algebra whose two surfaces are written months apart
-is two algebras, and unlike a widget the divergence is invisible, since two
+named in a plan entry: a vocabulary whose two surfaces are written months apart
+is two vocabularies, and unlike a widget the divergence is invisible, since two
 different verb sets both work. This is the standing "the packages move
 together" rule, stated again because this track is the one place where honouring
 it late costs the most.
@@ -2338,7 +2338,7 @@ Whatever symbols the model itself needs owe their rows either way
   here** — not in N2, because every operation N2 writes lands on whatever is
   decided. Four questions, none of them answered today, and each one a place
   where two clients diverge by choosing separately: whether an operation
-  **returns a new score or mutates one** (an algebra wants values, so
+  **returns a new score or mutates one** (an operator wants values, so
   `concat(transpose(a, 2), b)` reads; editing wants mutation with an undo stack,
   and the two can be one only if it is said so); whether there is **one C symbol
   per operation or the operation crosses as data**; **who owns the intermediates**
@@ -2363,7 +2363,7 @@ Whatever symbols the model itself needs owe their rows either way
   against the builders.
 
   **The line the sugar may not cross**, and it is the one rule that keeps the
-  algebra single: *what computes is Rust, what names is the shell*. Chaining,
+  vocabulary single: *what computes is Rust, what names is the shell*. Chaining,
   `a + b` for concatenation and `score[3:10]` for a slice are idiom and belong to
   each language — but only while they **assemble the operation** and compute
   nothing. Resolving "measures 3 to 10" to a span of rational time is arithmetic
@@ -2416,7 +2416,7 @@ Whatever symbols the model itself needs owe their rows either way
   entries — the surface shape, and the model's own. The examples moved to their
   `notation/` family in the same pass.
 
-- ✅ **N2 — The algebra, and the edit operations** *(done 2026-08-29)*. Three families over the two
+- ✅ **N2 — The operators, and the edit verbs** *(done 2026-08-29)*. Three families over the two
   structures, and the whole point of the model. **On the content**: concatenate,
   stack voices, repeat, transpose, retrograde, invert, augment and diminish.
   **On the grid**: insert or change a meter, add or remove measures. **Addressed
@@ -2427,7 +2427,7 @@ Whatever symbols the model itself needs owe their rows either way
   the patterns wherever the operation is theirs, and the whole family lands on
   the surface N1 settled — this milestone writes operations, it does not
   re-decide their shape. Each one goes into the catalog as it is written, and
-  into **both** clients in the same commit: an algebra is the worst possible
+  into **both** clients in the same commit: a vocabulary is the worst possible
   thing to port later, since two surfaces that offer different verbs still both
   work. **Acceptance:** the composition
   of two operations is the operation on the composed score (concatenating two
@@ -2438,12 +2438,12 @@ Whatever symbols the model itself needs owe their rows either way
   `Toolkit::Edit`, and the undo stack — already ours — steps over model
   snapshots rather than MEI text; and the two clients' surfaces are **read side
   by side, verb by verb**, before either is believed — the rule this project
-  already has for a port, applied where what is ported is an algebra rather than
+  already has for a port, applied where what is ported is a vocabulary rather than
   an example. Each client's sugar is checked against the line N1 drew: it
   assembles operations and computes nothing, and a measure range is resolved by
   the core in both.
 
-  **What shipped.** Seventeen verbs, in `clausters_core::notation::algebra` (the
+  **What shipped.** Seventeen verbs, in `clausters_core::notation::operators` (the
   structural ones) and `::edit` (the ones that name a single item), with `ops`
   keeping the vocabulary and the dispatch. Content: `concat`, `stack`,
   `repeat`, `retrograde`, `invert`, `stretch`, `transpose`. Grid: `set_meter`,
@@ -2480,7 +2480,7 @@ Whatever symbols the model itself needs owe their rows either way
   to avoid. Recorded here rather than quietly dropped; it is the first thing
   after the reader lands.
 
-  Tests: 22 in the core (the algebra's composition law, the two structures'
+  Tests: 22 in the core (the operators' composition law, the two structures'
   independence, the augmentation that re-bars and ties, every refusal), plus the
   same assertions in the same order in both clients. Clients:
   `notation/sheet.py` and `sheet.ts` grew a helper per verb — `delete` is `del`
@@ -2488,7 +2488,7 @@ Whatever symbols the model itself needs owe their rows either way
   and the contrast test carries the mapping so a *missing* verb still fails.
   Example: `notation/compose.py` and `compose.html`, a piece built entirely by
   operating on a motif, whose last cell stacks it against itself and is
-  **refused by name** — the algebra says counterpoint long before the emitter
+  **refused by name** — the operators say counterpoint long before the emitter
   can write it, and saying so is better than dropping a voice.
 
 - ✅ **N3 — That it is well written** *(done 2026-08-30; the host's own note-entry gestures deliberately left out — see below)*. The emission of everything the model can
@@ -2681,7 +2681,7 @@ Whatever symbols the model itself needs owe their rows either way
   level today, and every field it adds is a field the model already holds, so
   it is filling a structure rather than growing one. The **note-entry** surface
   question the earlier reading made its first milestone — how a client *says*
-  notation intent, which is not the algebra's client surface N1 settles — is
+  notation intent, which is not the client surface N1 settles — is
   answered here, and is smaller than it looked, because the three candidates are not competitors but carriers for
   three different classes of data: **per-note intent** (articulation, dynamic,
   grace, spelling) rides the slot, which is symmetric — the same field is
@@ -2794,7 +2794,7 @@ which is why "raise the tick base" is no longer a decision anyone has to take.
 **The examples are behind the model, and the milestone that lands the feature
 lands the update.** `notation/compose.py` and its page build a piece by
 operating on a score, and their last cell **stacks the motif against itself and
-is refused**, because the algebra says counterpoint long before the emitter can
+is refused**, because the operators say counterpoint long before the emitter can
 write it. That refusal is deliberate — it is how the example says which
 milestone owes the work rather than quietly dropping a voice — and it is also a
 standing note: **N3 turns that cell into a real two-voice coda**, in both

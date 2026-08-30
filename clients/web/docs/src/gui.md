@@ -373,7 +373,7 @@ reads one:
 ```ts
 const score = await notation.Score.open(PHRASE);   // ABC, MusicXML, MEI
 let sheet = notation.sheetFromMei(score.mei());
-sheet = notation.transpose(sheet, 2);              // the whole algebra applies
+sheet = notation.transpose(sheet, 2);              // every verb applies
 ```
 
 One input format rather than four: the engraver normalizes whatever it loaded.

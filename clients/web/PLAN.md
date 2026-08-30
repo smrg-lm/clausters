@@ -1807,7 +1807,7 @@ Richer encoding turned out not to be four refinements of `mei` but a **model**
 in `clausters_core::notation`: two durational structures that do not contain
 each other — the metric layout, which does not sound and is addressable, and
 flat voices of content — with durations as exact rationals, ticks demoted to one
-edge conversion among ms and MEI values, and an algebra of operations over both.
+edge conversion among ms and MEI values, and a vocabulary of operations over both.
 Two consequences reach this package directly. **The algebra's client surface is
 settled once, in `N1`, for both clients** — value or handle semantics, a symbol
 per operation or the operation as data, who owns intermediates, how much sugar a

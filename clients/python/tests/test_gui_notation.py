@@ -406,7 +406,7 @@ def _items(sheet):
     return sheet["staves"][0]["voices"][0]["items"]
 
 
-def test_the_algebra_rearranges_a_score_and_composes():
+def test_the_operators_rearrange_a_score_and_compose():
     four = notation.sheet_from_voice([{"midis": [60], "ticks": 8}] * 4)
 
     # one score after another
@@ -624,7 +624,7 @@ def test_a_score_written_read_and_written_again_is_the_same_bytes():
     assert notation.to_mei(notation.sheet_from_mei(once)) == once
 
 
-def test_a_typed_score_opens_into_the_model_and_the_algebra_can_touch_it():
+def test_a_typed_score_opens_into_the_model_and_its_verbs_can_touch_it():
     # ABC is what a reader types; verovio normalizes whatever it loaded to MEI,
     # so there is one input format here rather than four.
     phrase = ("X:1\nT:Six bars\nC:Anon.\nM:4/4\nL:1/4\nK:G\n"

@@ -271,7 +271,7 @@ impl<E: Engraver> Score<E> {
     ///
     /// This is the edit path, and the reason it is not verovio's editor: there
     /// is one implementation of what an edit to a score means, it is the
-    /// algebra every client already binds, and a standalone host holding a
+    /// vocabulary every client already binds, and a standalone host holding a
     /// sheet performs the same operation through the same code. Driving the
     /// engraver's editor instead would be a second answer to the same question,
     /// reachable only from a process that has an engraver in it.

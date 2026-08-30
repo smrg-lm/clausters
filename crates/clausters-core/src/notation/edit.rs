@@ -1,6 +1,6 @@
 //! The edit verbs: what a hand does to one item.
 //!
-//! The same family as the algebra — a function from a sheet to a sheet, crossing
+//! The same family as the operators — a function from a sheet to a sheet, crossing
 //! as data — and the same reason they are here rather than in a client: a
 //! standalone host opened on a saved session has no client language in the
 //! process, and the score it opens has to be editable there. So the arithmetic,
@@ -102,7 +102,7 @@ pub fn delete(mut sheet: Sheet, id: u64) -> Result<Sheet, String> {
     sheet.staves[si].voices[vi].items.remove(ii);
     // A slur that ended on it goes with it: the alternative is a score that
     // cannot be engraved because of a note the caller meant to remove.
-    super::algebra::prune_spanners(&mut sheet);
+    super::operators::prune_spanners(&mut sheet);
     Ok(sheet)
 }
 

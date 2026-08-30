@@ -270,7 +270,7 @@ out an opaque handle and takes it back to every call, and wasm has a class.
 | `clausters_score_transpose` | `JsScore.transpose` | |
 | `clausters_score_transpose_to` | `JsScore.transpose_to` | the absolute form, and the one an edit travels in: `transpose` is verovio's relative call and stays for a caller that has the delta |
 | `clausters_score_edit` | `JsScore.edit` | |
-| `clausters_score_apply` | `JsScore.apply` | the **edit path**: one model operation as one undo step. It is not the engraver's editor, because there is one implementation of what an edit to a score means and it is the algebra both clients already bind — a standalone host holding a sheet performs the same operation through the same code |
+| `clausters_score_apply` | `JsScore.apply` | the **edit path**: one model operation as one undo step. It is not the engraver's editor, because there is one implementation of what an edit to a score means and it is the vocabulary both clients already bind — a standalone host holding a sheet performs the same operation through the same code |
 | `clausters_score_sheet` | `JsScore.sheet` | `idiom` — the envelope-versus-throw difference. The open document as the model, or a refusal when it could not be read into one, which is a state rather than a failure: the page still draws and still plays |
 | `clausters_score_undo` | `JsScore.undo` | |
 | `clausters_score_redo` | `JsScore.redo` | |

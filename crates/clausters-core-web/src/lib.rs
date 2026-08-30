@@ -1505,7 +1505,7 @@ impl JsScore {
     ///
     /// This is the edit path, and the reason it is not the engraver's editor:
     /// there is one implementation of what an edit to a score means, and it is
-    /// the algebra this package already binds. Returns whether it was applied;
+    /// vocabulary this package already binds. Returns whether it was applied;
     /// a refusal leaves both the page and the model as they were.
     pub fn apply(&mut self, op: &str) -> Result<bool, JsError> {
         let op: clausters_core::notation::Op =
@@ -1685,7 +1685,7 @@ pub fn sheet_ops() -> Result<String, JsError> {
 /// The other return path, and not the one {@link sheetPerform} is: that turns a
 /// model into sound, this turns a *document* into a model. A score opened from
 /// typed text is a document and nothing else until this reads one, which is why
-/// the algebra cannot touch it until then. There is one input format rather than
+/// the model's verbs cannot touch it until then. There is one input format rather than
 /// four, because the engraver normalizes whatever it loaded to MEI.
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_name = meiToSheet)]

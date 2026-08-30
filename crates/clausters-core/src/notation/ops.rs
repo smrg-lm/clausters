@@ -31,7 +31,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::model::{Header, Item, Marks, Pitch, Sheet, Step};
-use super::{algebra, edit};
+use super::{edit, operators};
 use crate::ratio::Ratio;
 
 /// What part of the score an operation applies to.
@@ -337,22 +337,22 @@ pub fn apply(sheet: Sheet, op: &Op) -> Result<Sheet, String> {
             steps,
             span,
         } => transpose(sheet, *semitones, *steps, span),
-        Op::Concat { sheet: other } => algebra::concat(sheet, other),
+        Op::Concat { sheet: other } => operators::concat(sheet, other),
         Op::Stack {
             sheet: other,
             as_staff,
-        } => algebra::stack(sheet, other, *as_staff),
-        Op::Repeat { count, span } => algebra::repeat(sheet, *count, span),
-        Op::Retrograde { span } => algebra::retrograde(sheet, span),
-        Op::Invert { axis, span } => algebra::invert(sheet, *axis, span),
-        Op::Stretch { factor, span } => algebra::stretch(sheet, *factor, span),
+        } => operators::stack(sheet, other, *as_staff),
+        Op::Repeat { count, span } => operators::repeat(sheet, *count, span),
+        Op::Retrograde { span } => operators::retrograde(sheet, span),
+        Op::Invert { axis, span } => operators::invert(sheet, *axis, span),
+        Op::Stretch { factor, span } => operators::stretch(sheet, *factor, span),
         Op::SetMeter {
             measure,
             count,
             unit,
-        } => algebra::set_meter(sheet, *measure, *count, *unit),
-        Op::InsertMeasures { at, count } => algebra::insert_measures(sheet, *at, *count),
-        Op::RemoveMeasures { first, last } => algebra::remove_measures(sheet, *first, *last),
+        } => operators::set_meter(sheet, *measure, *count, *unit),
+        Op::InsertMeasures { at, count } => operators::insert_measures(sheet, *at, *count),
+        Op::RemoveMeasures { first, last } => operators::remove_measures(sheet, *first, *last),
         Op::Insert {
             after,
             pitches,

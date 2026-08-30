@@ -309,7 +309,7 @@ function withSpan(op: Op, span?: unknown): Op {
     return op;
 }
 
-// -- the algebra: operations that rearrange a score ---------------------------
+// -- the operators: what rearranges a whole score -----------------------------
 
 /**
  * `other` after `sheet`.
@@ -394,7 +394,7 @@ export function stretch(
     return apply(sheet, withSpan({ op: "stretch", factor: ratio(factor) }, span));
 }
 
-// -- the algebra: operations on the metric layout ------------------------------
+// -- the operators: what rearranges the metric layout --------------------------
 
 /**
  * Put `count`/`unit` in force from `measure` (counting from 1).

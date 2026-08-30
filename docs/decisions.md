@@ -7307,7 +7307,7 @@ and each refusal says which milestone owes the work, because a caller reading
 onto the tick grid would produce a wrong score that looks right, which is the
 one failure this layer must never produce.
 
-## The score algebra: what each operation had to decide
+## The score's operators: what each one had to decide
 
 The operations over the score model are small, and each one had a musical
 question in it that a plausible implementation gets wrong. The answers, because

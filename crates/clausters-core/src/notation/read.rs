@@ -2,7 +2,7 @@
 //!
 //! The other return path, and not the one the interpreter is. [`super::perform`]
 //! turns a model into sound; this turns a *document* into a model — which is
-//! what a score opened from typed text needs before any verb in the algebra can
+//! what a score opened from typed text needs before any of the model's verbs can
 //! touch it. A score typed as ABC, imported from MusicXML or written by hand is
 //! a document and nothing else until something reads one.
 //!

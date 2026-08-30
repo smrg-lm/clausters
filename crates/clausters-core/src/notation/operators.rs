@@ -1,4 +1,5 @@
-//! The algebra: operations that rearrange a score's content and its grid.
+//! The operators: what rearranges a score's content and its grid, as against
+//! what edits one note of it.
 //!
 //! Every one of them is a function from a sheet to a sheet, which is what lets
 //! them compose — `concat(transpose(a, 2), b)` is a sentence, and the result of
@@ -691,7 +692,7 @@ mod tests {
 
     #[test]
     fn operations_compose() {
-        // The acceptance the whole algebra rests on: composing two operations
+        // The acceptance the whole family rests on: composing two operations
         // is the operation on the composed score. Transposing two sheets and
         // then joining them is joining them and then transposing.
         let a = quarters(4);

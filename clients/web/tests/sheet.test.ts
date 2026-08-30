@@ -166,7 +166,7 @@ test("what is refused says why and changes nothing", () => {
     assert.throws(() => toMei(tuplet), /tuplet/);
 });
 
-test("the algebra rearranges a score and composes", () => {
+test("the operators rearrange a score and compose", () => {
     const four = sheetFromVoice(Array.from({ length: 4 }, () => ({ midis: [60], ticks: 8 })));
     const items = (s: Sheet) =>
         (s.staves[0] as { voices: { items: Record<string, any>[] }[] }).voices[0].items;
@@ -385,7 +385,7 @@ test("a score written, read and written again is the same bytes", () => {
     assert.equal(toMei(sheetFromMei(once)), once);
 });
 
-test("a typed score opens into the model and the algebra can touch it", {
+test("a typed score opens into the model and its verbs can touch it", {
     skip: engraved ? false : "run third_party/build-verovio-wasm.sh",
 }, async () => {
     // ABC is what a reader types; verovio normalizes whatever it loaded to MEI,

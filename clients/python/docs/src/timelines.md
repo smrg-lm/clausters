@@ -170,7 +170,7 @@ landed yet.
 
 Every operation is a function from a score to a score, so they compose — and
 composing two of them gives the same music as applying them to the composed
-score, which is what makes an algebra worth the name:
+score:
 
 ```python
 motif = notation.sheet_from_voice(
@@ -262,7 +262,7 @@ reads one:
 ```python
 score = notation.Score(PHRASE)          # ABC, MusicXML, MEI: the engraver reads them
 sheet = notation.sheet_from_mei(score.mei())
-sheet = notation.transpose(sheet, 2)    # and now the whole algebra applies
+sheet = notation.transpose(sheet, 2)    # and now every verb applies
 ```
 
 There is one input format rather than four: the engraver normalizes whatever it

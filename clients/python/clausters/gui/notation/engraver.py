@@ -105,7 +105,7 @@ class Score:
     def sheet(self) -> dict:
         """The open score as the **model** (`clausters.gui.notation.sheet`).
 
-        Every verb in the algebra applies to it, including on a score that was
+        Every one of the model's verbs applies to it, including on a score that was
         typed rather than built: the engraver normalizes whatever it loaded and
         this reads that, so a phrase in ABC is as editable as one made by
         operating on a motif.

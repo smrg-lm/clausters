@@ -602,7 +602,7 @@ TypeScript. `clausters-ffi` exposes both over the C ABI and
 `Event`/`Timeline` into a voice **and the building of them back out of a
 performed note** — the one step that reads client-native types, and the seam a
 richer encoding extends). The **score model** sits under the encoder
-(`notation::model`, `ops`, `algebra`, `edit`), and its two directions are the
+(`notation::model`, `ops`, `operators`, `edit`), and its two directions are the
 same shape in both bindings: the model and an operation both cross as *data*
 through one symbol, so a new verb costs no ABI at all, and the parity a binding
 table cannot give is given by two catalog calls instead — `sheet_ops` for the

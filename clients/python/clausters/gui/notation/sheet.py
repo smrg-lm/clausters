@@ -244,7 +244,7 @@ def pitch(step: str, octave: int, alter: int = 0) -> dict:
     return {"step": step, "octave": octave, "alter": alter}
 
 
-# -- the algebra: operations that rearrange a score ---------------------------
+# -- the operators: what rearranges a whole score -----------------------------
 
 
 def concat(sheet: dict, other: dict) -> dict:
@@ -317,7 +317,7 @@ def stretch(sheet: dict, factor, *, span: dict | None = None) -> dict:
     return apply(sheet, _span_op({"op": "stretch", "factor": [num, den]}, span))
 
 
-# -- the algebra: operations on the metric layout ------------------------------
+# -- the operators: what rearranges the metric layout --------------------------
 
 
 def set_meter(sheet: dict, measure: int, count: int, unit: int) -> dict:
