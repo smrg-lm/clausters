@@ -14,6 +14,7 @@ from ..transport import Transport
 
 def score_view(display_list, *, scroll_id: int | None = None,
                score_id: int | None = None, name: str | None = None,
+               scroll_name: str | None = None,
                width: float = 1000.0, zoom: bool = True,
                sample_rate: float | None = None,
                editable: bool | None = None,
@@ -43,7 +44,18 @@ def score_view(display_list, *, scroll_id: int | None = None,
     hand; left ``None`` the host assigns them when the tree is opened. ``name``
     tags the inner `score` so a driver can address it by name — the page the
     transport anchors, and the one a re-engrave pushes back — instead of tracking
-    its id (``win[name].set(display_list=…)``)."""
+    its id (``win[name].set(display_list=…)``). ``scroll_name`` tags the
+    **scroll**, which a driver needs for one thing: **the page is drawn to fit
+    the box it is given**, so an edit that adds a system would shrink the whole
+    engraving to keep it inside. Growing the box with the page instead keeps the
+    drawn size fixed and lets the scroll do what it is for::
+
+        h = round(width * vb[1] / vb[0], 1)
+        win[name].set(h=h)
+        win[scroll_name].set(content_h=h)
+
+    Left out, the view fits whatever it is sent, which is what a page that is
+    never edited wants."""
     from ..guidef import Source, score, scroll
 
     # The scroll is sized from the page, so the size has to be readable here
@@ -57,7 +69,7 @@ def score_view(display_list, *, scroll_id: int | None = None,
         score(id=score_id, name=name, display_list=display_list,
               sample_rate=sample_rate, editable=editable, entry=entry,
               x=0.0, y=0.0, w=width, h=height),
-        id=scroll_id, axis="both" if zoom else "y", zoom=zoom,
+        id=scroll_id, name=scroll_name, axis="both" if zoom else "y", zoom=zoom,
         content_w=width, content_h=height,
     )
 

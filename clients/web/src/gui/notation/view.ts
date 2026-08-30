@@ -23,6 +23,8 @@ export interface ScoreViewOptions {
     scoreId?: number;
     /** Tags the inner `score` so a driver can address it by name. */
     name?: string;
+    /** Tags the `scroll`, so a driver can grow its content with the page. */
+    scrollName?: string;
     /** The content width, in the host's units. */
     width?: number;
     /** Cursor-anchored zoom, which also decides the pan axes. */
@@ -55,6 +57,20 @@ export interface ScoreViewOptions {
  * `"insert" <after-xml:id> <position> <staff>` — a place, not a note, since the
  * pitch needs the clef and the key and the duration is nobody's until a driver
  * chooses one.
+ *
+ * `scrollName` tags the **scroll**, which a driver needs for one thing: the page
+ * is drawn to fit the box it is given, so an edit that adds a system would
+ * shrink the whole engraving to keep it inside. Growing the box with the page
+ * instead keeps the drawn size fixed and lets the scroll do what it is for:
+ *
+ * ```ts
+ * const h = Math.round((width * vb[1]) / vb[0] * 10) / 10;
+ * win.widget(name).set({ h });
+ * win.widget(scrollName).set({ contentH: h });
+ * ```
+ *
+ * Left out, the view fits whatever it is sent, which is what a page that is
+ * never edited wants.
  */
 export function scoreView(
     displayList: Record<string, unknown> | Source,
@@ -62,6 +78,7 @@ export function scoreView(
         scrollId,
         scoreId,
         name,
+        scrollName,
         width = 1000.0,
         zoom = true,
         sampleRate,
@@ -80,6 +97,7 @@ export function scoreView(
     return scroll(
         {
             id: scrollId,
+            name: scrollName,
             axis: zoom ? "both" : "y",
             zoom,
             contentW: width,
