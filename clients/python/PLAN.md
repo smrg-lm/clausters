@@ -1262,32 +1262,53 @@ Every entry carries a checkbox, like "Found by use" above: an open direction has
 to read as open, and one that converges into a milestone leaves this list rather
 than being ticked here.
 
-- ⬜ **Nothing maps a drawn structure onto something that sounds, so every
-  example that plays rewrites the same bridge** *(named 2026-08-30 by the user,
-  looking at `examples/editors/pianoroll` in both clients and asking why
-  overlapping notes sound one after another)*. The roll hands back what it draws
-  — flat quintuples, `start dur pitch velocity channel`, superpositions included
-  — and the sequencing layer accepts one event pattern, `Pbind`, which is serial
-  by definition. Between the two there is no verb, so the example builds one by
-  hand: it sorts by onset, sets each event's `dur` to the distance to the next
-  onset and plays a single voice, which is why two notes drawn on top of each
-  other are heard in succession. That is the example being deliberately
-  restricted, not a defect in it — but the restriction is not a choice anyone
-  made either, and **every playing example carries some version of the same
-  conversion**, each written again.
+- ⬜ **The mapping exists and is private to the `Editor`, so every example that
+  plays writes a worse one** *(named 2026-08-30 by the user, from
+  `examples/editors/pianoroll` in both clients — first as "nothing maps a drawn
+  structure onto something that sounds", then narrowed the same day by reading
+  what `Timeline`, `Playhead` and `Editor` already do)*.
 
-  sclang answers this with two event patterns we do not have: **`Ppar`** (several
-  event patterns merged into one stream on the union of their times) and
-  **`Pmono`** (one sustained voice re-set rather than re-triggered). Whether those
-  are the right two abstractions *here* is exactly what is not settled: the
-  alternatives are a verb that turns a timeline (or a roll's edit-back) into a
-  playing thing directly, leaving the pattern catalog alone, or a chord-aware
-  event whose `midinote` takes a list. The question to answer before writing any
-  of it is **which structure is the source of truth** — the timeline, the notes
-  the roll emits, or a pattern — because the other two then map onto it, and that
-  is the decision this entry is waiting on.
+  **What already works, and was the part that was missing from the question.** A
+  `Timeline` holds items at beats and a `Playhead` plays it: the feeder walks the
+  entries in order and calls `item.play(destination)` at each one's beat, with
+  **no notion of a voice anywhere** — two `Event`s on the same beat both sound,
+  each carrying its own `sustain`, so overlapping notes are two synths with their
+  own releases. It seeks (`play(at=…)`, `locate`, `loop`), it reports `position`,
+  `playing` and `finished`, and it follows the server's transport. The
+  arrangement's own path is built on exactly that: `Editor.render` flattens the
+  tree to absolute beats and plays it through a `Playhead`, and `Editor._apply_notes`
+  rebuilds a roll's `"notes"` payload onto the element's `Timeline` as `Event`s,
+  keeping the OSC/MIDI items that share it.
 
-  The **visible playhead** belongs to the same hole: the `pianoroll` already has
-  `playhead`/`playhead_at`, no example drives them, and what should drive them is
-  whatever ends up owning the mapping. One decision, taken once, for both
-  clients.
+  **So the gap is not the mapping, it is that only the editor has it**, and it is
+  three concrete things:
+
+  - `session.play` takes an event pattern (`pattern.play(clock, server, quant)`).
+    A `Timeline` has no `play`, and nothing in the session hands back a
+    `Playhead`, so playing one means building the transport by hand.
+  - the conversion from a roll's flat quintuples to a `Timeline` of `Event`s is
+    `Editor._apply_notes`, private and reachable only through an arrangement. A
+    script that opens a bare `pianoroll` has to write it again.
+  - **`Ppar` and `Pmono` do not exist**, and are a separate question from the two
+    above: they are pattern-side, and a pattern is serial by construction. They
+    are named here so the two do not get confused again — the roll does not need
+    them, and a `Pbind` is what makes the example monophonic.
+
+  **What the example is doing, and why that is a choice.** It sorts the notes by
+  onset, gives each event the distance to the next one and plays a single
+  `Pbind`, which is why two notes drawn on top of each other are heard in
+  succession. The same notes as a `Timeline` of `Event`s under a `Playhead` would
+  have been polyphonic and seekable with no new machinery. The restriction is the
+  example's, not the layer's.
+
+  **What is undecided** is the shape of the public verb, and only that: a
+  `session.play` that accepts a timeline, a `Timeline.play(destination, clock)`
+  that returns its playhead, or a constructor (`Timeline.from_notes`) that takes
+  what a roll sends — plus whether the pattern catalog grows `Ppar`/`Pmono` at
+  all. Whichever it is, it is one decision for both clients, and the timeline is
+  the candidate for the source of truth because it is the only flat structure the
+  client has.
+
+  **Related:** "A roll that sounds shows no cursor, and what can drive the line
+  is a `Playhead`" (`clients/gui/PLAN.md`, Future directions) is the same
+  question seen from the view.

@@ -273,22 +273,20 @@ into this file is exactly the migration the rules forbid.
   solve. **Related:** "Staleness per node rather than per document" in the same
   list is its seam, and buys nothing until this exists.
 
-- ⬜ **Nothing maps a drawn structure onto something that sounds, so every
-  example that plays rewrites the same bridge** *(`clients/python/PLAN.md`,
-  Future directions)*. A design, not a fix, and the abstractions are open: the
-  entry names what has to be decided first — which structure is the source of
-  truth — and lists what the answer would be built from (`Ppar`/`Pmono`, a verb
-  from a timeline straight to something playing, a chord-aware event). It is
-  here because it is not a milestone of any track and every example that sounds
-  is already paying for it.
+- ⬜ **The mapping exists and is private to the `Editor`, so every example that
+  plays writes a worse one** *(`clients/python/PLAN.md`, Future directions)*. A
+  design, not a fix. The entry records what already works — a `Timeline` under a
+  `Playhead` plays polyphonically and seeks — and narrows the gap to three
+  things: `session.play` takes only a pattern, the roll's notes → timeline
+  conversion is private to the editor, and `Ppar`/`Pmono` are a separate
+  pattern-side question. What is open is the shape of the public verb.
 
-- ⬜ **A roll that sounds has no cursor on it: the playhead props are there and
-  nothing outside the `Editor` moves them** *(`clients/gui/PLAN.md`, Future
-  directions)*. **Related:** the visible half of the entry above, and it closes
-  with it — whatever ends up owning the mapping is what sets `playhead_at`. It
-  is filed on the host's side so it is found from there, and it carries one
-  question of its own: whether a widget can follow a player without an `Editor`
-  in between.
+- ⬜ **A roll that sounds shows no cursor, and what can drive the line is a
+  `Playhead`** *(`clients/gui/PLAN.md`, Future directions)*. **Related:** the
+  same question from the view's side, and it closes with the entry above. The
+  host's half is done and general (`Transport` drives any widget's line); what
+  it cannot do is follow a pattern player, which is forward-only and has no
+  position — the question this one owns.
 
 ### The larger questions, and the plans' own Future directions
 
