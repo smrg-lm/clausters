@@ -10,6 +10,7 @@
 // Needs `./build.sh` (the core wasm). Run with `npm test`.
 
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
@@ -19,6 +20,7 @@ import {
     del,
     fromNotes,
     insert,
+    header,
     insertMeasures,
     interpretation,
     marks,
@@ -27,10 +29,14 @@ import {
     pitch,
     removeMeasures,
     retrograde,
+    setBarline,
+    setBreak,
     setDur,
+    setHeader,
     setMarks,
     setMeter,
     setPitches,
+    sheetFromMei,
     sheetFromVoice,
     silence,
     stack,
@@ -46,8 +52,18 @@ import type { Sheet } from "../src/gui/notation/index.ts";
 import { Event } from "../src/seq/event.ts";
 import { rest } from "../src/seq/event.ts";
 import * as notation from "../src/gui/notation/index.ts";
+import { setEngraverUrl } from "../src/gui/notation/index.ts";
 
 await loadCore();
+
+/**
+ * The engraver is fetched on demand in a page, so a script has to say where it
+ * is. Only the one test that opens a *typed* score needs it; everything else
+ * here is the model, which is pure data and needs no engraver at all.
+ */
+const engraver = new URL("../vendor/verovio/verovio.js", new URL(".", import.meta.url));
+const engraved = existsSync(engraver);
+if (engraved) setEngraverUrl(engraver.href);
 
 /**
  * The catalog's `snake_case` verb under this language's spelling.
@@ -358,4 +374,77 @@ test("a hairpin written to a note that is gone is refused by name", () => {
     const sheet = quarters(2);
     sheet.spanners = [{ kind: "crescendo", from: 1, to: 99 }];
     assert.throws(() => toNotes(sheet), /crescendo/);
+});
+
+// -- the reader: a document back into the model -------------------------------
+
+test("a score written, read and written again is the same bytes", () => {
+    const sheet = concat(quarters(4), quarters(4));
+    const once = toMei(sheet);
+    assert.equal(toMei(sheetFromMei(once)), once);
+});
+
+test("a typed score opens into the model and the algebra can touch it", {
+    skip: engraved ? false : "run third_party/build-verovio-wasm.sh",
+}, async () => {
+    // ABC is what a reader types; verovio normalizes whatever it loaded to MEI,
+    // so there is one input format here rather than four.
+    const phrase = "X:1\nT:Six bars\nC:Anon.\nM:4/4\nL:1/4\nK:G\n"
+        + "C D E F | G/A/G/F/ E D | [CEG] G C2 |\n";
+    const score = await notation.Score.open(phrase);
+    const sheet = sheetFromMei(score.mei());
+    const head = sheet.header as { title: string; composer: string };
+    assert.equal(head.title, "Six bars");
+    assert.equal(head.composer, "Anon.");
+    assert.equal(sheet.key, "G");
+    const staves = sheet.staves as { voices: { items: Record<string, unknown>[] }[] }[];
+    const items = staves[0].voices[0].items;
+    assert.equal((items[10].pitches as unknown[]).length, 3, "the chord came back a chord");
+    assert.deepEqual(items[4].dur, [1, 8]);
+    // and every verb the model has now works on it, which is the whole point
+    const up = transpose(sheet, 2);
+    const moved = (up.staves as { voices: { items: { pitches: { step: string }[] }[] }[] }[]);
+    assert.equal(moved[0].voices[0].items[0].pitches[0].step, "d");
+});
+
+test("the emitter's own padding does not come back as music", () => {
+    // A voice is written into whole measures, so a short one is padded. Reading
+    // that back would grow the score by a rest every time it was saved.
+    const duo = stack(quarters(8), quarters(4), { asStaff: true });
+    const back = sheetFromMei(toMei(duo));
+    const staves = back.staves as { voices: { items: unknown[] }[] }[];
+    assert.equal(staves[1].voices[0].items.length, 4, "four quarters, not padding");
+});
+
+test("the header, the barlines and the breaks are edited and survive", () => {
+    let sheet = concat(quarters(4), quarters(4));
+    sheet = setHeader(sheet, header({ title: "Study", composer: "A. Composer" }));
+    sheet = setBarline(sheet, 1, "rptend");
+    sheet = setBreak(sheet, 2, "system");
+    const back = sheetFromMei(toMei(sheet));
+    assert.deepEqual(back.header, { title: "Study", composer: "A. Composer" });
+    const grid = back.grid as { barlines: unknown[]; breaks: unknown[] };
+    assert.deepEqual(grid.barlines, [[0, "rptend"]]);
+    assert.deepEqual(grid.breaks, [[1, "system"]]);
+    // and taking one back removes it rather than storing "ordinary"
+    const plain = setBarline(sheet, 1, "single");
+    assert.deepEqual((plain.grid as { barlines?: unknown[] }).barlines ?? [], []);
+});
+
+test("a beam somebody chose is a spanner like any other", () => {
+    let sheet = sheetFromVoice(Array.from({ length: 4 }, () => ({ midis: [60], ticks: 4 })));
+    const ids = idsOf(sheet);
+    sheet = addSpanner(sheet, "beam", ids[0], ids[3]);
+    const mei = toMei(sheet);
+    assert.match(mei, /<beam>/);
+    const back = sheetFromMei(mei);
+    assert.deepEqual(
+        (back.spanners as unknown[]).find((s) => (s as { kind: string }).kind === "beam"),
+        { kind: "beam", from: ids[0], to: ids[3] },
+    );
+});
+
+test("what is not a score says so", () => {
+    assert.throws(() => sheetFromMei("<not xml"), /XML/);
+    assert.throws(() => sheetFromMei("<mei><music/></mei>"), /score/);
 });

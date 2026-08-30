@@ -26,6 +26,7 @@
 
 import {
     interpretation as coreInterpretation,
+    meiToSheet,
     sheetApply,
     sheetOps,
     sheetPerform,
@@ -99,6 +100,14 @@ export interface OpSpec {
     optional: string[];
 }
 
+/** What is written above the music: the title, and who wrote it. */
+export interface HeaderFields {
+    title?: string;
+    subtitle?: string;
+    composer?: string;
+    lyricist?: string;
+}
+
 /** What {@link transpose} takes past the interval itself. */
 export interface TransposeOptions {
     /** The diatonic size of the interval, in places on the staff. */
@@ -152,6 +161,31 @@ export function apply(sheet: Sheet, op: Op): Sheet {
  */
 export function toMei(sheet: Sheet): string {
     return sheetToMei(JSON.stringify(sheet));
+}
+
+/**
+ * Read an MEI **document** into a sheet.
+ *
+ * The other return path, and not the one {@link toNotes} is: that turns a score
+ * into sound, this turns a *document* into a score. A page opened from typed
+ * text — ABC, MusicXML, a hand-written MEI — is a document and nothing else
+ * until this reads one, which is why none of the verbs above can touch it
+ * before that.
+ *
+ * There is one input format rather than four: the engraver normalizes whatever
+ * it loaded to MEI, so hand it `Score.mei()` and every importer verovio has is
+ * covered.
+ *
+ * What the model does not hold is **what the engraver recomputes when nobody
+ * chose it** — automatic beaming, the line breaks that merely fit, the staff
+ * geometry — so it is not read and is not loss. What a writer chose is held:
+ * the header, the barlines, the breaks, the beams. Ids written by this layer
+ * come back; a document from anywhere else gets fresh ones.
+ *
+ * Throws when the text is not readable XML or carries no score.
+ */
+export function fromMei(mei: string): Sheet {
+    return JSON.parse(meiToSheet(mei)) as Sheet;
 }
 
 /**
@@ -537,4 +571,55 @@ export function addSpanner(sheet: Sheet, kind: string, from: number, to: number)
  */
 export function removeSpanner(sheet: Sheet, kind: string, from: number, to: number): Sheet {
     return apply(sheet, { op: "remove_spanner", kind, from, to });
+}
+
+/**
+ * What is written above the music, for {@link setHeader}.
+ *
+ * Every field is optional because most of them are most of the time: a score
+ * built by operating on a motif is untitled until somebody names it, and that
+ * is a state rather than something missing.
+ */
+export function header(fields: HeaderFields = {}): HeaderFields {
+    const out: HeaderFields = {};
+    for (const key of ["title", "subtitle", "composer", "lyricist"] as const) {
+        if (fields[key]) out[key] = fields[key];
+    }
+    return out;
+}
+
+/**
+ * Write what is above the music ({@link header}).
+ *
+ * It **replaces** rather than merges, as {@link setMarks} does: with a merge
+ * there would be no way to clear a field at all, since an omitted one and an
+ * emptied one look identical on the wire.
+ */
+export function setHeader(sheet: Sheet, fields: HeaderFields): Sheet {
+    return apply(sheet, { op: "set_header", header: fields });
+}
+
+/**
+ * Give `measure` (1-based) a right barline: `"end"`, `"rptstart"`, `"rptend"`,
+ * `"rptboth"`, `"dbl"`, `"invis"` — or `"single"`, which takes the override
+ * back rather than storing one saying "ordinary".
+ *
+ * A repeat barline is **notation**: it is drawn, and it is not what makes a
+ * passage play twice. Repetition is written out ({@link repeat}), which is why
+ * the interpreter has nothing to expand.
+ */
+export function setBarline(sheet: Sheet, measure: number, kind: string): Sheet {
+    return apply(sheet, { op: "set_barline", measure, kind });
+}
+
+/**
+ * Break the `"system"` or the `"page"` before `measure` (1-based); `"none"`
+ * takes it back.
+ *
+ * This is layout, and it is an edit for the same reason a forced stem is one:
+ * the engraver breaks lines wherever they fit, and a break somebody *chose* is
+ * a statement about the page that no recomputation recovers.
+ */
+export function setBreak(sheet: Sheet, measure: number, kind: string): Sheet {
+    return apply(sheet, { op: "set_break", measure, kind });
 }

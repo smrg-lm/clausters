@@ -1652,6 +1652,20 @@ pub fn sheet_ops() -> Result<String, JsError> {
         .map_err(|e| JsError::new(&e.to_string()))
 }
 
+/// Read an MEI document into the score model.
+///
+/// The other return path, and not the one {@link sheetPerform} is: that turns a
+/// model into sound, this turns a *document* into a model. A score opened from
+/// typed text is a document and nothing else until this reads one, which is why
+/// the algebra cannot touch it until then. There is one input format rather than
+/// four, because the engraver normalizes whatever it loaded to MEI.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = meiToSheet)]
+pub fn mei_to_sheet(mei: &str) -> Result<String, JsError> {
+    let sheet = clausters_core::notation::mei_to_sheet(mei).map_err(|e| JsError::new(&e))?;
+    serde_json::to_string(&sheet).map_err(|e| JsError::new(&e.to_string()))
+}
+
 /// Read a score model into the notes it **sounds**, under `interp`.
 ///
 /// Each note carries two lengths — `dur`, what is written, and `sustain`, what

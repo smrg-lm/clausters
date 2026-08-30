@@ -613,3 +613,71 @@ def test_a_hairpin_written_to_a_note_that_is_gone_is_refused_by_name():
     sheet["spanners"] = [{"kind": "crescendo", "from": 1, "to": 99}]
     with pytest.raises(ValueError, match="crescendo"):
         notation.to_notes(sheet)
+
+
+# -- the reader: a document back into the model -------------------------------
+
+
+def test_a_score_written_read_and_written_again_is_the_same_bytes():
+    sheet = notation.concat(_quarters(4), _quarters(4))
+    once = notation.to_mei(sheet)
+    assert notation.to_mei(notation.sheet_from_mei(once)) == once
+
+
+def test_a_typed_score_opens_into_the_model_and_the_algebra_can_touch_it():
+    # ABC is what a reader types; verovio normalizes whatever it loaded to MEI,
+    # so there is one input format here rather than four.
+    phrase = ("X:1\nT:Six bars\nC:Anon.\nM:4/4\nL:1/4\nK:G\n"
+              "C D E F | G/A/G/F/ E D | [CEG] G C2 |\n")
+    sheet = notation.sheet_from_mei(notation.Score(phrase).mei())
+    assert sheet["header"]["title"] == "Six bars"
+    assert sheet["header"]["composer"] == "Anon."
+    assert sheet["key"] == "G"
+    items = sheet["staves"][0]["voices"][0]["items"]
+    assert len(items[10]["pitches"]) == 3, "the chord came back a chord"
+    assert items[4]["dur"] == [1, 8]
+    # and every verb the model has now works on it, which is the whole point
+    up = notation.transpose(sheet, 2)
+    assert up["staves"][0]["voices"][0]["items"][0]["pitches"][0]["step"] == "d"
+    assert len(notation.Score(notation.to_mei(up)).display_list()["notes"]) > 0
+
+
+def test_the_emitters_own_padding_does_not_come_back_as_music():
+    # A voice is written into whole measures, so a short one is padded. Reading
+    # that back would grow the score by a rest every time it was saved.
+    duo = notation.stack(_quarters(8), _quarters(4), as_staff=True)
+    back = notation.sheet_from_mei(notation.to_mei(duo))
+    lower = back["staves"][1]["voices"][0]["items"]
+    assert len(lower) == 4, f"four quarters, not eight bars of padding: {lower}"
+
+
+def test_the_header_the_barlines_and_the_breaks_are_edited_and_survive():
+    sheet = notation.concat(_quarters(4), _quarters(4))
+    sheet = notation.set_header(sheet, notation.header(
+        title="Study", composer="A. Composer"))
+    sheet = notation.set_barline(sheet, 1, "rptend")
+    sheet = notation.set_break(sheet, 2, "system")
+    back = notation.sheet_from_mei(notation.to_mei(sheet))
+    assert back["header"] == {"title": "Study", "composer": "A. Composer"}
+    assert back["grid"]["barlines"] == [[0, "rptend"]]
+    assert back["grid"]["breaks"] == [[1, "system"]]
+    # and taking one back removes it rather than storing "ordinary"
+    plain = notation.set_barline(sheet, 1, "single")
+    assert plain["grid"].get("barlines", []) == []
+
+
+def test_a_beam_somebody_chose_is_a_spanner_like_any_other():
+    sheet = notation.sheet_from_voice([{"midis": [60], "ticks": 4}] * 4)
+    ids = [i["id"] for i in sheet["staves"][0]["voices"][0]["items"]]
+    sheet = notation.add_spanner(sheet, "beam", ids[0], ids[3])
+    mei = notation.to_mei(sheet)
+    assert "<beam>" in mei
+    back = notation.sheet_from_mei(mei)
+    assert {"kind": "beam", "from": ids[0], "to": ids[3]} in back["spanners"]
+
+
+def test_what_is_not_a_score_says_so():
+    with pytest.raises(ValueError, match="XML"):
+        notation.sheet_from_mei("<not xml")
+    with pytest.raises(ValueError, match="score"):
+        notation.sheet_from_mei("<mei><music/></mei>")

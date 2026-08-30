@@ -131,8 +131,13 @@ pub use time::*;
 /// caller starts from when it wants another one. Two symbols rather than one
 /// because an override has to be able to read the defaults before editing them,
 /// and a client that wrote those numbers down for itself would play the same
-/// score at a different amplitude than the other client does.
-pub const CORE_ABI_VERSION: u32 = 24;
+/// score at a different amplitude than the other client does. **v25 the
+/// reader** — `clausters_core_mei_to_sheet`: a *document* back into the model,
+/// which is the other return path and the one that makes a score opened from
+/// typed text editable at all. One symbol for every notation format there is,
+/// because the engraver normalizes whatever it loaded to MEI before this sees
+/// it.
+pub const CORE_ABI_VERSION: u32 = 25;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

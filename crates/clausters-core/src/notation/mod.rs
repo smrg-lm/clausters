@@ -38,6 +38,7 @@ mod interp;
 mod mei;
 mod model;
 mod ops;
+mod read;
 mod score;
 mod svg;
 
@@ -47,12 +48,13 @@ pub use algebra::{
 };
 pub use cursors::{Cursor, TimemapEntry, cursor_track};
 pub use edit::{
-    At, add_spanner, delete, insert, remove_spanner, set_dur, set_marks, set_pitches, silence, tie,
-    to_voice,
+    At, add_spanner, delete, insert, remove_spanner, set_barline, set_break, set_dur, set_header,
+    set_marks, set_pitches, silence, tie, to_voice,
 };
 pub use interp::{Accent, Articulation, Interpretation, Note, default_interpretation, perform};
 pub use mei::{Slot, sheet_to_mei, voice_to_mei, voice_to_sheet};
-pub use model::{Grid, Item, Marks, Meter, Pitch, Sheet, Spanner, Staff, Step, Voice};
+pub use model::{Grid, Header, Item, Marks, Meter, Pitch, Sheet, Spanner, Staff, Step, Voice};
 pub use ops::{Op, OpSpec, Span, apply, catalog, default_steps, transpose_pitch};
+pub use read::mei_to_sheet;
 pub use score::{Engraver, NoteEvent, Page, Score, engrave_options};
 pub use svg::{DisplayList, Prim, svg_to_display_list};

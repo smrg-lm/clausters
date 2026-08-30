@@ -51,11 +51,13 @@ from .mei import (
     to_timeline,
 )
 from .sheet import (
-    add_spanner, apply, concat, delete, insert, insert_measures, interpretation,
-    invert, marks, measures, ops, pitch, remove_measures, remove_spanner,
-    repeat, retrograde, set_dur, set_marks, set_meter, set_pitches, silence,
-    stack, stretch, tie, to_mei, to_notes, to_voice, transpose,
+    add_spanner, apply, concat, delete, header, insert, insert_measures,
+    interpretation, invert, marks, measures, ops, pitch, remove_measures,
+    remove_spanner, repeat, retrograde, set_barline, set_break, set_dur,
+    set_header, set_marks, set_meter, set_pitches, silence, stack, stretch, tie,
+    to_mei, to_notes, to_voice, transpose,
 )
+from .sheet import from_mei as sheet_from_mei
 from .sheet import from_voice as sheet_from_voice
 from .view import score_view, transport
 
@@ -68,6 +70,7 @@ __all__ = [
     "engrave",
     "from_notes",
     "from_timeline",
+    "header",
     "insert",
     "insert_measures",
     "interpretation",
@@ -82,10 +85,14 @@ __all__ = [
     "repeat",
     "retrograde",
     "score_view",
+    "set_barline",
+    "set_break",
     "set_dur",
+    "set_header",
     "set_marks",
     "set_meter",
     "set_pitches",
+    "sheet_from_mei",
     "sheet_from_notes",
     "sheet_from_timeline",
     "sheet_from_voice",

@@ -607,6 +607,10 @@ same shape in both bindings: the model and an operation both cross as *data*
 through one symbol, so a new verb costs no ABI at all, and the parity a binding
 table cannot give is given by two catalog calls instead — `sheet_ops` for the
 verbs, `interpretation` for the numbers the reading depends on. **The
+reader** (`notation::read`) is the way back *in*: a document into the model,
+which is what a score opened from typed text needs before any verb can touch it,
+and one parser rather than one per format because the engraver normalizes
+whatever it loaded to MEI first. **The
 interpreter** (`notation::interp`) is the way back out, and it is in the core
 for the reason every numeric rule is: what a staccato does to a length is one
 implementation or it is two answers. It is the layer's own division — what is

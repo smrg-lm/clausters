@@ -21,9 +21,10 @@ builds a payload and sends it; turning "measures 3 to 10" into a stretch of time
 is arithmetic against the grid, it changes the moment a meter changes or a bar
 is irregular, and it is done once, in Rust, for every client.
 
-Two doors in and two out: `from_voice` lifts the v1 slot stream (which is what
+Three doors in and two out: `from_voice` lifts the v1 slot stream (which is what
 a client's own reduction of its `Event`s and `Timeline`s produces) into a sheet,
-`to_mei` writes a sheet out as MEI for the engraver, `to_notes` reads it back
+`from_mei` reads a document the other way, `to_mei` writes a sheet out as MEI
+for the engraver, `to_notes` reads it back
 into what it *sounds* (under an `interpretation`, which is data and replaceable),
 and `ops` lists the verbs this core knows — the list each client is contrasted against, since operations
 ride inside a payload and the binding table cannot see them.
@@ -106,6 +107,33 @@ def to_mei(sheet: dict) -> str:
     raw = json.dumps(sheet)
     return _unwrap(_text(_core().clausters_core_sheet_to_mei,
                          _u8(raw), len(raw.encode("utf-8"))))
+
+
+def from_mei(mei: str) -> dict:
+    """Read an MEI **document** into a sheet.
+
+    The other return path, and not the one `to_notes` is: that one turns a score
+    into sound, this turns a *document* into a score. A page opened from typed
+    text — ABC, MusicXML, a hand-written MEI — is a document and nothing else
+    until this reads one, which is why none of the verbs above can touch it
+    before that.
+
+    There is one input format rather than four: the engraver normalizes whatever
+    it loaded to MEI, so hand it ``Score.mei()`` and every importer verovio has
+    is covered.
+
+    What the model does not hold is **what the engraver recomputes when nobody
+    chose it** — automatic beaming, the line breaks that merely fit, the staff
+    geometry — so it is not read and is not loss. What a writer chose is held:
+    the header, the barlines, the breaks, the beams. Ids written by this layer
+    come back, so an item edited before a save is the same item after it; a
+    document from anywhere else gets fresh ones, because an id means something
+    only inside the model that minted it.
+
+    Raises ``ValueError`` when the text is not readable XML or carries no score.
+    """
+    return _unwrap(_text(_core().clausters_core_mei_to_sheet,
+                         _u8(mei), len(mei.encode("utf-8"))))
 
 
 def interpretation() -> dict:
@@ -453,3 +481,52 @@ def remove_spanner(sheet: dict, kind: str, from_id: int, to_id: int) -> dict:
     changes nothing rather than refusing, since the state asked for holds."""
     return apply(sheet, {"op": "remove_spanner", "kind": kind,
                          "from": from_id, "to": to_id})
+
+
+def header(*, title: str = "", subtitle: str = "", composer: str = "",
+           lyricist: str = "") -> dict:
+    """What is written above the music, for `set_header`.
+
+    Every field is optional because most of them are most of the time: a score
+    built by operating on a motif is untitled until somebody names it, and that
+    is a state rather than something missing.
+    """
+    out = {}
+    for key, value in (("title", title), ("subtitle", subtitle),
+                       ("composer", composer), ("lyricist", lyricist)):
+        if value:
+            out[key] = value
+    return out
+
+
+def set_header(sheet: dict, header: dict) -> dict:
+    """Write what is above the music (`header`).
+
+    It **replaces** rather than merges, as `set_marks` does: with a merge there
+    would be no way to clear a field at all, since an omitted one and an emptied
+    one look identical on the wire.
+    """
+    return apply(sheet, {"op": "set_header", "header": header})
+
+
+def set_barline(sheet: dict, measure: int, kind: str) -> dict:
+    """Give ``measure`` (1-based) a right barline: ``"end"``, ``"rptstart"``,
+    ``"rptend"``, ``"rptboth"``, ``"dbl"``, ``"invis"`` — or ``"single"``, which
+    takes the override back rather than storing one saying "ordinary".
+
+    A repeat barline is **notation**: it is drawn, and it is not what makes a
+    passage play twice. Repetition is written out (`repeat`), which is why the
+    interpreter has nothing to expand.
+    """
+    return apply(sheet, {"op": "set_barline", "measure": measure, "kind": kind})
+
+
+def set_break(sheet: dict, measure: int, kind: str) -> dict:
+    """Break the ``"system"`` or the ``"page"`` before ``measure`` (1-based);
+    ``"none"`` takes it back.
+
+    This is layout, and it is an edit for the same reason a forced stem is one:
+    the engraver breaks lines wherever they fit, and a break somebody *chose* is
+    a statement about the page that no recomputation recovers.
+    """
+    return apply(sheet, {"op": "set_break", "measure": measure, "kind": kind})

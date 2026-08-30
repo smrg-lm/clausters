@@ -21,8 +21,8 @@
 //! than refused, so no binding has to validate before calling.
 
 use clausters_core::notation::{
-    Interpretation, Op, Sheet, Slot, apply, catalog, default_interpretation, perform, sheet_to_mei,
-    svg_to_display_list, voice_to_mei, voice_to_sheet,
+    Interpretation, Op, Sheet, Slot, apply, catalog, default_interpretation, mei_to_sheet, perform,
+    sheet_to_mei, svg_to_display_list, voice_to_mei, voice_to_sheet,
 };
 
 /// Read a pointer+length as UTF-8 (lossily), or `None` when the pointer is null.
@@ -268,6 +268,41 @@ pub unsafe extern "C" fn clausters_core_sheet_ops(out: *mut u8, out_cap: usize) 
     let json = serde_json::to_vec(catalog()).unwrap_or_default();
     // SAFETY: caller guarantees `out` is writable for `out_cap` bytes.
     unsafe { fill(&json, out, out_cap) }
+}
+
+/// Read an MEI document into the score model, written to `out` in the same
+/// envelope the other sheet calls answer in. Returns the byte count it needs,
+/// or `0` when `mei` is null.
+///
+/// **The other return path**, and not the one `clausters_core_sheet_perform` is:
+/// that one turns a model into sound, this turns a *document* into a model. A
+/// score opened from typed text — ABC, MusicXML, a hand-written MEI — is a
+/// document and nothing else until this reads one, which is why every verb in
+/// the algebra is unavailable on it until then.
+///
+/// There is one input format rather than four: the engraver normalizes whatever
+/// it loaded to MEI (`clausters_score_mei`), so a caller reads that.
+///
+/// # Safety
+/// `mei` must be readable for `mei_len` bytes and `out` writable for `out_cap`
+/// bytes (or null, to size only).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_core_mei_to_sheet(
+    mei: *const u8,
+    mei_len: usize,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    // SAFETY: caller guarantees the range.
+    let Some(mei) = (unsafe { text(mei, mei_len) }) else {
+        return 0;
+    };
+    let json = match mei_to_sheet(&mei) {
+        Ok(sheet) => serde_json::json!({ "ok": sheet }).to_string(),
+        Err(e) => envelope_error(&e),
+    };
+    // SAFETY: caller guarantees `out` is writable for `out_cap` bytes.
+    unsafe { fill(json.as_bytes(), out, out_cap) }
 }
 
 /// Read a score model into the notes it **sounds**, under `interp` — the

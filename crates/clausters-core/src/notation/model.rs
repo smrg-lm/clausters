@@ -422,6 +422,21 @@ pub struct Grid {
     /// An **anacrusis is the override at measure 0** — one concept, not two.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub irregular: Vec<(usize, Ratio)>,
+    /// Measures whose **right barline** is not the ordinary single one, as
+    /// `(measure, kind)` — `end`, `rptstart`, `rptend`, `rptboth`, `dbl`,
+    /// `invis`. It is on the grid because a barline is where a measure ends,
+    /// which is the grid's whole subject.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub barlines: Vec<(usize, String)>,
+    /// Measures a **break** was written before, as `(measure, kind)` —
+    /// `system` or `page`.
+    ///
+    /// This is layout, and it is in the model for the same reason a forced stem
+    /// is: the engraver breaks lines wherever they fit, and a break somebody
+    /// *chose* is a statement about the page that no recomputation can recover.
+    /// What the engraver decides when nobody decided stays the engraver's.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub breaks: Vec<(usize, String)>,
 }
 
 impl Default for Grid {
@@ -433,6 +448,8 @@ impl Default for Grid {
                 unit: 4,
             }],
             irregular: Vec::new(),
+            barlines: Vec::new(),
+            breaks: Vec::new(),
         }
     }
 }
@@ -448,6 +465,8 @@ impl Grid {
                 unit,
             }],
             irregular: Vec::new(),
+            barlines: Vec::new(),
+            breaks: Vec::new(),
         }
     }
 
@@ -521,7 +540,14 @@ impl Grid {
 }
 
 /// Something written **between** two notes rather than on one: a slur, a
-/// crescendo.
+/// crescendo, a beam.
+///
+/// A **beam** belongs here, which looks like a category error and is not. It
+/// has two ends and joins items exactly as a slur does, and a beam somebody
+/// *chose* — one that crosses a beat to group the rhythm a particular way — is
+/// a statement about the music. What the engraver beams when nobody said
+/// anything stays the engraver's, and is not in the model at all: the same line
+/// [`Marks::stem`] draws.
 ///
 /// It cannot live on an item, because it has two ends — which is the whole
 /// reason the sheet carries a list of them beside the staves rather than the
@@ -536,6 +562,42 @@ pub struct Spanner {
     pub from: u64,
     /// The item it ends on.
     pub to: u64,
+}
+
+/// What is written above the music, and what a score editor offers a field for:
+/// the title and who wrote it.
+///
+/// Every field is optional, because most of them are most of the time — a score
+/// built by operating on a motif is untitled until somebody names it, and that
+/// is a normal state rather than a missing one. They are **named fields and not
+/// a map** so that each has one home in MEI and one spelling in every client;
+/// a header line this does not have is a gap to write down, not a key to
+/// invent.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Header {
+    /// What the piece is called.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub title: String,
+    /// A second line under the title.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub subtitle: String,
+    /// Who composed it.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub composer: String,
+    /// Who wrote the words.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub lyricist: String,
+}
+
+impl Header {
+    /// Whether nothing is written above the music — the case a generated score
+    /// arrives in, and the one that must stay byte-identical to a v1 document.
+    pub fn is_empty(&self) -> bool {
+        self.title.is_empty()
+            && self.subtitle.is_empty()
+            && self.composer.is_empty()
+            && self.lyricist.is_empty()
+    }
 }
 
 /// A score as data: the metric layout, the staves written over it, and the key
@@ -557,6 +619,9 @@ pub struct Sheet {
     /// signature and the sharp-versus-flat world a spelling defaults to.
     #[serde(default = "default_key")]
     pub key: String,
+    /// What is written above the music: the title, and who wrote it.
+    #[serde(default, skip_serializing_if = "Header::is_empty")]
+    pub header: Header,
     /// The staves, top to bottom.
     #[serde(default)]
     pub staves: Vec<Staff>,
@@ -579,6 +644,7 @@ impl Default for Sheet {
             next_id: 0,
             grid: Grid::default(),
             key: default_key(),
+            header: Header::default(),
             staves: vec![Staff::default()],
             spanners: Vec::new(),
         }
@@ -719,6 +785,7 @@ mod tests {
                 },
             ],
             irregular: Vec::new(),
+            ..Grid::default()
         };
         assert_eq!(grid.bar_len(0), Ratio::ONE);
         assert_eq!(grid.bar_len(2), Ratio::new(3, 4));
@@ -740,6 +807,7 @@ mod tests {
                 unit: 4,
             }],
             irregular: vec![(0, Ratio::new(1, 4))],
+            ..Grid::default()
         };
         assert_eq!(grid.bar_len(0), Ratio::new(1, 4));
         assert_eq!(grid.measure_start(1), Ratio::new(1, 4));

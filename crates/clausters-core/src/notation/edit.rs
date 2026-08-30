@@ -25,7 +25,7 @@
 //! splitting a voice are ordinary operations here and are not in that vocabulary
 //! at all.
 
-use super::model::{Item, Marks, Pitch, Sheet, Spanner};
+use super::model::{Header, Item, Marks, Pitch, Sheet, Spanner};
 use crate::ratio::Ratio;
 
 /// Where a new item goes.
@@ -331,6 +331,76 @@ pub fn to_voice(mut sheet: Sheet, ids: &[u64], target: usize) -> Result<Sheet, S
     }
     sheet.next_id = mint();
     Ok(sheet)
+}
+
+/// Write what is above the music: the title, and who wrote it.
+///
+/// It **replaces** rather than merges, as [`set_marks`] does and for the same
+/// reason: with a merge there would be no way to clear a field at all, since an
+/// omitted one and an emptied one look identical on the wire.
+///
+/// # Errors
+/// Never — a header is text and there is nothing to refuse.
+pub fn set_header(mut sheet: Sheet, header: Header) -> Result<Sheet, String> {
+    sheet.header = header;
+    Ok(sheet)
+}
+
+/// Give a measure a right barline other than the ordinary single one.
+///
+/// `measure` is 1-based, as everywhere a caller names one. `single` removes the
+/// override rather than storing one, so the state a caller asks for is the
+/// state it gets and a sheet never carries a note saying "ordinary".
+///
+/// # Errors
+/// When the measure number is 0, or the kind is not one MEI draws.
+pub fn set_barline(mut sheet: Sheet, measure: usize, kind: &str) -> Result<Sheet, String> {
+    let index = measure_index(measure)?;
+    const KINDS: [&str; 7] = [
+        "single", "end", "rptstart", "rptend", "rptboth", "dbl", "invis",
+    ];
+    if !KINDS.contains(&kind) {
+        return Err(format!(
+            "there is no barline called {kind}; it is one of {}",
+            KINDS.join(", ")
+        ));
+    }
+    sheet.grid.barlines.retain(|(m, _)| *m != index);
+    if kind != "single" {
+        sheet.grid.barlines.push((index, kind.to_string()));
+        sheet.grid.barlines.sort();
+    }
+    Ok(sheet)
+}
+
+/// Break the system or the page before a measure.
+///
+/// This is layout, and it is an edit for the reason a forced stem is one: the
+/// engraver breaks lines wherever they fit, and a break somebody *chose* is a
+/// statement about the page. `none` takes it back.
+///
+/// # Errors
+/// When the measure number is 0, or the kind is not `system`, `page` or `none`.
+pub fn set_break(mut sheet: Sheet, measure: usize, kind: &str) -> Result<Sheet, String> {
+    let index = measure_index(measure)?;
+    if !["system", "page", "none"].contains(&kind) {
+        return Err(format!(
+            "there is no break called {kind}; it is system, page or none"
+        ));
+    }
+    sheet.grid.breaks.retain(|(m, _)| *m != index);
+    if kind != "none" {
+        sheet.grid.breaks.push((index, kind.to_string()));
+        sheet.grid.breaks.sort();
+    }
+    Ok(sheet)
+}
+
+/// A measure a caller named, as the grid indexes them.
+fn measure_index(measure: usize) -> Result<usize, String> {
+    measure
+        .checked_sub(1)
+        .ok_or_else(|| "measures are numbered from 1, so there is no measure 0".to_string())
 }
 
 #[cfg(test)]

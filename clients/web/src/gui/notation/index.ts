@@ -48,7 +48,9 @@ export {
     apply,
     concat,
     del,
+    fromMei as sheetFromMei,
     fromVoice as sheetFromVoice,
+    header,
     insert,
     insertMeasures,
     interpretation,
@@ -61,7 +63,10 @@ export {
     removeSpanner,
     repeat,
     retrograde,
+    setBarline,
+    setBreak,
     setDur,
+    setHeader,
     setMarks,
     setMeter,
     setPitches,
@@ -75,6 +80,7 @@ export {
     transpose,
 } from "./sheet.ts";
 export type {
+    HeaderFields,
     Interpretation,
     MarkOptions,
     Op,

@@ -524,6 +524,17 @@ export function lissajous(left: Float32Array, right: Float32Array): Float32Array
 export function map(op: string, clip: string, x: number, in_lo: number, in_hi: number, out_lo: number, out_hi: number, curve: number): number;
 
 /**
+ * Read an MEI document into the score model.
+ *
+ * The other return path, and not the one {@link sheetPerform} is: that turns a
+ * model into sound, this turns a *document* into a model. A score opened from
+ * typed text is a document and nothing else until this reads one, which is why
+ * the algebra cannot touch it until then. There is one input format rather than
+ * four, because the engraver normalizes whatever it loaded to MEI.
+ */
+export function meiToSheet(mei: string): string;
+
+/**
  * MIDI 2.0 Clip File (SMF2CLIP) bytes from the same arguments, carrying note
  * velocities at 16-bit resolution.
  *
@@ -768,6 +779,7 @@ export interface InitOutput {
     readonly log_undo: (a: number, b: number) => [number, number, number, number];
     readonly log_undoLabel: (a: number) => [number, number];
     readonly map: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => [number, number, number];
+    readonly meiToSheet: (a: number, b: number) => [number, number, number, number];
     readonly midiWriteClip: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
     readonly midiWriteSmf: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
     readonly node_id_partition: (a: number) => [number, number, number];

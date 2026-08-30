@@ -253,6 +253,38 @@ courtesy accidentals are what the pitch's own `forced` flag is for.
 
 `examples/notation/compose.py` builds a whole piece this way and plays it.
 
+### Opening a score that was only a document
+
+A page typed as ABC, imported from MusicXML or written by hand is a *document*
+and nothing else — none of the verbs above can touch it — until `sheet_from_mei`
+reads one:
+
+```python
+score = notation.Score(PHRASE)          # ABC, MusicXML, MEI: the engraver reads them
+sheet = notation.sheet_from_mei(score.mei())
+sheet = notation.transpose(sheet, 2)    # and now the whole algebra applies
+```
+
+There is one input format rather than four: the engraver normalizes whatever it
+loaded, so you hand this `Score.mei()`.
+
+**What the model holds is what somebody chose.** The header
+(`notation.header(title=..., composer=...)` and `set_header`), the barlines
+(`set_barline`), the breaks (`set_break`) and the beams (a `"beam"` spanner) are
+all read and written, because each is a statement: a beam that crosses a beat
+groups the rhythm a particular way, and a break in a published score is a
+decision about the page. What the engraver works out when nobody said anything —
+the automatic beaming, the line breaks that merely fit — is not read and is not
+loss, because it is recomputed identically every time.
+
+Two things it does *not* read back, and both are deliberate: the rests the
+emitter invents to complete a bar or to keep a short voice level with its
+neighbour (they are not in the model, and reading them would make a score gain a
+bar of silence for having been saved), and the ids of a document written
+somewhere else (an id means something only inside the model that minted it, so
+fresh ones are minted). A score this layer wrote keeps its ids, which is what
+lets an item you were editing before a save still be that item after it.
+
 ### Hearing what the page says
 
 The way back out is `to_notes`, and it is not a conversion: the symbols mean

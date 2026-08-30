@@ -30,7 +30,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::model::{Item, Marks, Pitch, Sheet, Step};
+use super::model::{Header, Item, Marks, Pitch, Sheet, Step};
 use super::{algebra, edit};
 use crate::ratio::Ratio;
 
@@ -231,9 +231,32 @@ pub enum Op {
         #[serde(default)]
         marks: Marks,
     },
-    /// Write a slur or a hairpin between two notes.
+    /// Write what is above the music: the title, and who wrote it.
+    SetHeader {
+        /// The whole header, replacing whatever was there. It **replaces**
+        /// rather than merges, as `set_marks` does and for the same reason:
+        /// clearing a field would otherwise have no spelling.
+        #[serde(default)]
+        header: Header,
+    },
+    /// Give a measure a right barline other than the ordinary single one.
+    SetBarline {
+        /// Which measure, 1-based, as a reader says it.
+        measure: usize,
+        /// `single` (which removes the override), `end`, `rptstart`, `rptend`,
+        /// `rptboth`, `dbl` or `invis`.
+        kind: String,
+    },
+    /// Break the system or the page before a measure.
+    SetBreak {
+        /// Which measure the break comes before, 1-based.
+        measure: usize,
+        /// `system`, `page`, or `none` to take the break back.
+        kind: String,
+    },
+    /// Write a slur, a hairpin or a beam between two notes.
     AddSpanner {
-        /// `slur`, `crescendo` or `diminuendo`.
+        /// `slur`, `crescendo`, `diminuendo` or `beam`.
         kind: String,
         /// The item it starts on.
         from: u64,
@@ -342,6 +365,9 @@ pub fn apply(sheet: Sheet, op: &Op) -> Result<Sheet, String> {
         Op::SetPitches { id, pitches } => edit::set_pitches(sheet, *id, pitches.clone()),
         Op::Tie { id, tied } => edit::tie(sheet, *id, *tied),
         Op::SetMarks { id, marks } => edit::set_marks(sheet, *id, marks.clone()),
+        Op::SetHeader { header } => edit::set_header(sheet, header.clone()),
+        Op::SetBarline { measure, kind } => edit::set_barline(sheet, *measure, kind),
+        Op::SetBreak { measure, kind } => edit::set_break(sheet, *measure, kind),
         Op::AddSpanner { kind, from, to } => edit::add_spanner(sheet, kind, *from, *to),
         Op::RemoveSpanner { kind, from, to } => edit::remove_spanner(sheet, kind, *from, *to),
         Op::ToVoice { ids, voice } => edit::to_voice(sheet, ids, *voice),
@@ -478,6 +504,21 @@ pub fn catalog() -> &'static [OpSpec] {
             op: "set_marks",
             required: &["id"],
             optional: &["marks"],
+        },
+        OpSpec {
+            op: "set_header",
+            required: &[],
+            optional: &["header"],
+        },
+        OpSpec {
+            op: "set_barline",
+            required: &["measure", "kind"],
+            optional: &[],
+        },
+        OpSpec {
+            op: "set_break",
+            required: &["measure", "kind"],
+            optional: &[],
         },
         OpSpec {
             op: "add_spanner",
@@ -631,6 +672,7 @@ mod tests {
             }],
             // an anacrusis of one quarter
             irregular: vec![(0, Ratio::new(1, 4))],
+            ..Grid::default()
         };
         let out = apply(
             sheet,

@@ -2723,6 +2723,38 @@ Whatever symbols the model itself needs owe their rows either way
   or preserved, never dropped in silence; and a sheet written out, read back and
   written again is byte-identical.
 
+  **What shipped so far** *(2026-08-29)*: the reader itself
+  (`clausters_core::notation::read`, `clausters_core_mei_to_sheet` /
+  `meiToSheet`, `CORE_ABI_VERSION` 25), which meets three of the four
+  acceptance clauses — an ABC score opens, is transposed and re-engraves; what
+  is not a score says so; and the round trip is byte-identical.
+
+  Measuring first is what shaped it. **One input format, not four**: the
+  engraver normalizes whatever it loaded to MEI, so there is one parser.
+  **An element with no id was invented by the emitter** — the padding that
+  completes a bar and keeps voices in step is not content, and reading it back
+  made a score gain a bar of silence for having been saved. **Split pieces
+  rejoin** by their shared id. **Verovio respells a tie** as a `<tie>` element
+  hanging off the measure, so reading only our own `@tie` would lose every tie a
+  score picked up by being saved once.
+
+  The model grew where a document is musical, which is what "never dropped in
+  silence" cost: a **header** (title, subtitle, composer, lyricist — named
+  fields, not a map), a measure's **right barline**, a **break** before a
+  measure, and **beams** as spanners. The line is the one `Marks::stem` already
+  drew — the engraver's default is the engraver's, a writer's choice is the
+  model's — and it was drawn there after the first reading of it ("layout is
+  recomputable, so it is not loss") turned out to be true only of the beams and
+  breaks nobody chose. Three verbs went with it (`set_header`, `set_barline`,
+  `set_break`), taking the catalog to twenty-three. Tests: 14 in the core and
+  the same assertions in both clients (47 and 26).
+
+  **Still open, and the reason this stays unchecked**: the second acceptance
+  clause. `Score`'s edit path is still verovio's editor actions rather than the
+  model's verbs (deferred in `N2`), and the host's note-entry gestures are not
+  written (deferred in `N3`). Both were blocked on the reader and are not any
+  more.
+
 **What became of the earlier numbering.** `G31g` was one line; the first sizing
 made it `N1`–`N4` (surface, markup, polyphony, tuplets). The four are all still
 here and none of them is a milestone any more: the **surface** is N5's, being a
@@ -2890,6 +2922,33 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   the LOD crossfade in G20 and the `bpf` editor's edit-back in G21.)*
 
 ## Found by use: the running list of fixes
+
+- ⬜ **A tie between two different pitches is accepted, written, and dropped by
+  the engraver with a warning nobody reads** *(found 2026-08-29, round-tripping
+  an emitted document through verovio while building the reader)*. `tie` sets
+  the flag on any item; the emitter writes `@tie="i"`/`"t"`; verovio answers
+  `Unable to match @tie of note 'n3', skipping it` on stderr and hands back a
+  document with no tie in it. A tie joins two notes of the **same** pitch — that
+  is what a tie is, as against a slur — so the model should refuse one that does
+  not, at the verb rather than at emission, with the sentence saying which two
+  pitches it was asked to join. Until then a caller can write a tie that is
+  silently not there, and the only sign is a warning on a stream no client
+  shows. Found while chasing a different suspicion (that ties were being lost),
+  which turned out to be verovio respelling them as `<tie>` elements — a real
+  finding, and this one fell out beside it.
+
+- ⬜ **A beam verovio computed comes back as a beam somebody chose** *(found
+  2026-08-29, reading an ABC phrase into the model)*. The reader takes every
+  `<beam>` in a document as a written beam, because the document does not say
+  which of them a writer asked for and which the engraver worked out. So opening
+  a typed score freezes its automatic beaming into the model as intention, and
+  a later edit to the rhythm keeps beams that no longer suit it. The engraving
+  is identical today, so nothing looks wrong until the music changes underneath
+  them. What it needs is a way to tell the two apart — the plainest being to
+  read beams only from a document this layer wrote (the same "it has our ids"
+  test the padding rule already uses) and to let the engraver rebeam anything
+  else — which is a decision about what opening a foreign score should preserve,
+  not only a fix.
 
 - ✅ **The props manifest compares wire types, so a divergence between two
   builders of one type is invisible to it** *(found 2026-08-28, reading

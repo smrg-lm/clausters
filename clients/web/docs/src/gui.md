@@ -366,6 +366,26 @@ name, since it cannot be split. And accidentals are printed only where they are
 needed: not where the key signature implies them, not twice in a bar, and a
 natural is a sign where the key alters that step.
 
+A page typed as ABC, imported from MusicXML or written by hand is a *document*
+and nothing else — none of the verbs above can touch it — until `sheetFromMei`
+reads one:
+
+```ts
+const score = await notation.Score.open(PHRASE);   // ABC, MusicXML, MEI
+let sheet = notation.sheetFromMei(score.mei());
+sheet = notation.transpose(sheet, 2);              // the whole algebra applies
+```
+
+One input format rather than four: the engraver normalizes whatever it loaded.
+**What the model holds is what somebody chose** — the header (`header`,
+`setHeader`), the barlines (`setBarline`), the breaks (`setBreak`) and the beams
+(a `"beam"` spanner) — because each is a statement, where the beaming and the
+line breaks the engraver works out when nobody said anything are recomputed
+identically and are not loss. It does not read back the rests the emitter
+invents to fill a bar or level a short voice (a score would gain a bar of
+silence for having been saved) nor the ids of a foreign document (an id means
+something only inside the model that minted it).
+
 The way back out is `toNotes`, and it is not a conversion: the symbols mean
 something, and honouring them is the whole of the step.
 

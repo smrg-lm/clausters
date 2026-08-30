@@ -27,7 +27,7 @@
 
 use serde::Deserialize;
 
-use super::model::{Grid, Item, Marks, Pitch, Sheet, Staff, Voice};
+use super::model::{Grid, Header, Item, Marks, Pitch, Sheet, Staff, Voice};
 use crate::ratio::Ratio;
 
 // 32nd-note resolution: every duration is an integer number of these, so
@@ -145,6 +145,7 @@ pub fn voice_to_sheet(voice: &[Slot], meter: &str, clef: &str, key: &str) -> She
         next_id: voice.len() as u64 + 1,
         grid: Grid::uniform(num as i64, den as i64),
         key: key.to_string(),
+        header: Header::default(),
         staves: vec![Staff {
             clef: clef.to_string(),
             voices: vec![Voice { items }],
@@ -204,7 +205,9 @@ pub fn sheet_to_mei(sheet: &Sheet) -> Result<String, String> {
         };
         let mut per_voice = Vec::new();
         for voice in voices {
-            per_voice.push(project(voice, &sheet.grid, count, &printed)?);
+            let mut cells = project(voice, &sheet.grid, count, &printed)?;
+            beam(&mut cells, voice, sheet)?;
+            per_voice.push(cells);
         }
         projected.push(per_voice);
     }
@@ -212,7 +215,7 @@ pub fn sheet_to_mei(sheet: &Sheet) -> Result<String, String> {
     let body = (0..count)
         .map(|m| {
             let extra = attached.get(&m).map(String::as_str).unwrap_or("");
-            measure_xml(m, &projected, extra, m + 1 == count)
+            measure_xml(m, &projected, extra, m + 1 == count, &sheet.grid)
         })
         .collect::<Vec<_>>()
         .join("\n");
@@ -236,10 +239,11 @@ pub fn sheet_to_mei(sheet: &Sheet) -> Result<String, String> {
         format!("<staffGrp>{defs}</staffGrp>")
     };
 
+    let head = header_xml(&sheet.header);
     Ok(format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
          <mei xmlns=\"http://www.music-encoding.org/ns/mei\" meiversion=\"5.0\">\n\
-         \x20<meiHead><fileDesc><titleStmt><title/></titleStmt>\
+         \x20<meiHead><fileDesc><titleStmt>{head}</titleStmt>\
          <pubStmt/></fileDesc></meiHead>\n\
          \x20<music><body><mdiv><score>\n\
          \x20\x20<scoreDef meter.count=\"{num}\" meter.unit=\"{den}\" key.sig=\"{keysig}\">\n\
@@ -249,6 +253,118 @@ pub fn sheet_to_mei(sheet: &Sheet) -> Result<String, String> {
          \x20</score></mdiv></body></music>\n\
          </mei>\n"
     ))
+}
+
+/// Wrap each written beam around the elements it covers.
+///
+/// It runs **after** the projection rather than inside it because a beam is a
+/// fact about items and the projection is about measures, and the two do not
+/// line up: an item can be split across a barline, and a beam cannot cross one
+/// — a beam is a visual group within a bar, so a run that spans a barline is
+/// beamed on each side of it rather than refused. Matching is by the `xml:id`
+/// each element already carries, which is exactly what those ids were put there
+/// for.
+///
+/// # Errors
+/// When a beam names an item that is not in this score — the same refusal every
+/// other spanner makes.
+fn beam(cells: &mut [Vec<String>], voice: &Voice, sheet: &Sheet) -> Result<(), String> {
+    for spanner in sheet.spanners.iter().filter(|s| s.kind == "beam") {
+        let (from, to) = (spanner.from, spanner.to);
+        if sheet.locate(from).is_none() || sheet.locate(to).is_none() {
+            let missing = if sheet.locate(from).is_none() {
+                from
+            } else {
+                to
+            };
+            return Err(format!(
+                "the beam is written to an item ({missing}) that is not on this sheet"
+            ));
+        }
+        let (Some(a), Some(b)) = (index_of(voice, from), index_of(voice, to)) else {
+            continue; // the beam belongs to another voice
+        };
+        let covered: Vec<u64> = voice.items[a.min(b)..=a.max(b)]
+            .iter()
+            .map(Item::id)
+            .collect();
+        for measure in cells.iter_mut() {
+            let run: Vec<usize> = measure
+                .iter()
+                .enumerate()
+                .filter(|(_, cell)| covered.iter().any(|id| cell_is(cell, *id)))
+                .map(|(i, _)| i)
+                .collect();
+            // Two notes at least: one note under a beam is a flag, and MEI
+            // reads a one-element `<beam>` as an error rather than as nothing.
+            if run.len() < 2 {
+                continue;
+            }
+            let (first, last) = (run[0], run[run.len() - 1]);
+            measure[first].insert_str(0, "<beam>");
+            measure[last].push_str("</beam>");
+        }
+    }
+    Ok(())
+}
+
+/// Where `id` sits in `voice`, if it is in this one at all.
+fn index_of(voice: &Voice, id: u64) -> Option<usize> {
+    voice.items.iter().position(|i| i.id() == id)
+}
+
+/// Whether this rendered element is `id`'s — its own `xml:id`, or one of the
+/// suffixed ids a split piece of it carries.
+fn cell_is(cell: &str, id: u64) -> bool {
+    let stem = format!("xml:id=\"n{id}");
+    match cell.find(&stem) {
+        None => false,
+        Some(at) => matches!(
+            cell[at + stem.len()..].chars().next(),
+            Some('"') | Some('-')
+        ),
+    }
+}
+
+/// What is written above the music, as MEI's `<titleStmt>` children.
+///
+/// An empty header writes the bare `<title/>` the encoder has always written,
+/// so a score that names nothing is byte-identical to what a v1 document was.
+fn header_xml(header: &Header) -> String {
+    if header.is_empty() {
+        return "<title/>".to_string();
+    }
+    let mut out = String::new();
+    if header.subtitle.is_empty() {
+        out.push_str(&header_field("title", &header.title, ""));
+    } else {
+        out.push_str(&format!(
+            "<title>{}{}</title>",
+            header_field("title", &header.title, " type=\"main\""),
+            header_field("title", &header.subtitle, " type=\"subordinate\"")
+        ));
+    }
+    out.push_str(&header_field("composer", &header.composer, ""));
+    out.push_str(&header_field("lyricist", &header.lyricist, ""));
+    out
+}
+
+/// One header element, or nothing when the field was left empty.
+fn header_field(name: &str, text: &str, attrs: &str) -> String {
+    if text.is_empty() {
+        return String::new();
+    }
+    format!("<{name}{attrs}>{}</{name}>", escape(text))
+}
+
+/// The five XML entities, so a title carrying an ampersand does not end the
+/// document early.
+fn escape(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
 }
 
 /// How many measures the score needs: enough for its longest voice, and never
@@ -543,8 +659,20 @@ fn measure_xml(
     projected: &[Vec<Vec<Vec<String>>>],
     attached: &str,
     last: bool,
+    grid: &Grid,
 ) -> String {
-    let right = if last { " right=\"end\"" } else { "" };
+    // A barline somebody chose wins over the final one the last measure gets by
+    // default: a piece that ends on a repeat ends on a repeat.
+    let right = match grid.barlines.iter().find(|(m, _)| *m == index) {
+        Some((_, kind)) => format!(" right=\"{kind}\""),
+        None if last => " right=\"end\"".to_string(),
+        None => String::new(),
+    };
+    let brk = match grid.breaks.iter().find(|(m, _)| *m == index) {
+        Some((_, kind)) if kind == "page" => "<pb/>",
+        Some(_) => "<sb/>",
+        None => "",
+    };
     let staves: String = projected
         .iter()
         .enumerate()
@@ -561,7 +689,7 @@ fn measure_xml(
         })
         .collect();
     format!(
-        "   <measure n=\"{}\"{right}>{staves}{attached}</measure>",
+        "{brk}   <measure n=\"{}\"{right}>{staves}{attached}</measure>",
         index + 1
     )
 }
@@ -666,6 +794,11 @@ fn attachments(
     }
 
     for spanner in &sheet.spanners {
+        // A beam is written *around* its elements, inside the layer, so it is
+        // not one of the things that hang off the measure.
+        if spanner.kind == "beam" {
+            continue;
+        }
         let &(measure, si) = placed.get(&spanner.from).ok_or_else(|| {
             format!(
                 "a {} starts on item {}, which is not in this score",
@@ -691,8 +824,8 @@ fn attachments(
             other => {
                 return Err(format!(
                     "\"{other}\" is not something this layer knows how to write \
-                     between two notes; it writes a slur, a crescendo and a \
-                     diminuendo"
+                     between two notes; it writes a slur, a crescendo, a \
+                     diminuendo and a beam"
                 ));
             }
         };
