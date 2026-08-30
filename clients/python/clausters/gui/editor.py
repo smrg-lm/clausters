@@ -628,8 +628,8 @@ class Editor:
         `clausters.seq.Timeline`): a dragged, added or removed note is rebuilt onto
         its timeline. A **generator** (a `Pbind`/`Routine`) is forward-only, so its
         bounced notes are shown *read-only* (bounce it to a `Track` to edit). OSC
-        events are shown but not edited back yet (a marker carries only its time
-        and address, not the full message).
+        markers are shown but not edited back yet (one carries only its time and
+        address, not the full message).
 
         Returns the **window handle**, like `open`."""
         host = _resolve_host(host)
