@@ -681,3 +681,38 @@ def test_what_is_not_a_score_says_so():
         notation.sheet_from_mei("<not xml")
     with pytest.raises(ValueError, match="score"):
         notation.sheet_from_mei("<mei><music/></mei>")
+
+
+# -- the score's edit path, on the model --------------------------------------
+
+
+def test_an_open_score_carries_the_model_and_is_edited_through_its_verbs():
+    score = notation.Score("X:1\nT:t\nM:4/4\nL:1/4\nK:G\nC D E F |\n")
+    assert len(score.sheet()["staves"][0]["voices"][0]["items"]) == 4
+    # the same payload the sheet verbs build: an edit to an open score and an
+    # edit to a sheet in hand are one operation through one implementation
+    assert score.apply({"op": "transpose", "semitones": 2})
+    steps = [i["pitches"][0]["step"]
+             for i in score.sheet()["staves"][0]["voices"][0]["items"]]
+    assert steps == ["d", "e", "f", "g"]
+    # and undo puts the model back, not only the page
+    assert score.undo()
+    assert score.sheet()["staves"][0]["voices"][0]["items"][0]["pitches"][0]["step"] == "c"
+
+
+def test_a_note_dragged_on_the_page_moves_the_models_item():
+    score = notation.Score("X:1\nT:t\nM:4/4\nL:1/4\nK:Eb\nA A A A |\n")
+    first = score.sheet()["staves"][0]["voices"][0]["items"][0]["id"]
+    assert score.transpose(f"n{first}", 1)
+    moved = score.sheet()["staves"][0]["voices"][0]["items"][0]["pitches"][0]
+    # in E flat, dragging a note onto B gives B flat: reading in a key is what
+    # the arrival means, and nobody has to say so
+    assert moved["step"] == "b" and moved["alter"] == -1
+
+
+def test_a_refused_operation_leaves_the_page_and_the_model_alone():
+    score = notation.Score("X:1\nT:t\nM:4/4\nL:1/4\nK:C\nC D E F |\n")
+    before = score.mei()
+    assert not score.apply({"op": "move_steps", "id": 9999, "steps": 1})
+    assert score.mei() == before
+    assert not score.can_undo

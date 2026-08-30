@@ -20,6 +20,7 @@ import {
 import { Toolkit } from "./_verovio.ts";
 import { fromNotes, fromTimeline } from "./mei.ts";
 import type { MeiOptions } from "./mei.ts";
+import type { Op, Sheet } from "./sheet.ts";
 import type { Event as SeqEvent } from "../../seq/event.ts";
 import type { Timeline } from "../../seq/timeline.ts";
 
@@ -140,6 +141,37 @@ export class Score {
         return this.inner.mei();
     }
 
+    /**
+     * The open score as the **model**.
+     *
+     * Every verb in the algebra applies to it, including on a score that was
+     * typed rather than built: the engraver normalizes whatever it loaded and
+     * this reads that, so a phrase in ABC is as editable as one made by
+     * operating on a motif.
+     *
+     * Throws when the document could not be read into a model — a state and not
+     * a failure, since the page still draws and still plays and only the
+     * model's verbs are unavailable on it.
+     */
+    sheet(): Sheet {
+        return JSON.parse(this.inner.sheet()) as Sheet;
+    }
+
+    /**
+     * Apply one **model** operation as a single undo step, and re-engrave.
+     *
+     * This is the edit path. `op` is the payload the sheet verbs build, so an
+     * edit to an open score and an edit to a sheet in hand are the same
+     * operation through the same code — which is what lets a standalone host
+     * with no client language perform it too.
+     *
+     * `false` when the document has no model behind it or the operation was
+     * refused; either way the page and the model are as they were.
+     */
+    apply(op: Op): boolean {
+        return this.inner.apply(JSON.stringify(op));
+    }
+
     /** Whether there is an edit to step back over. */
     get canUndo(): boolean {
         return this.inner.canUndo;
@@ -162,8 +194,13 @@ export class Score {
 
     /**
      * Move the note `elementId` by `steps` **diatonic** steps along the staff —
-     * up when positive — as one undo step. The relative form; reach for it only
-     * when the delta is what you actually have.
+     * up when positive — as one undo step.
+     *
+     * It is the **model's** move where the page named a model item (the note
+     * takes the key signature's alteration for the letter it lands on, which is
+     * what reading in a key means) and falls back to the engraver's editor only
+     * for an element this layer did not write. The relative form; reach for it
+     * only when the delta is what you actually have.
      */
     transpose(elementId: string, steps: number): boolean {
         return this.inner.transpose(elementId, steps);

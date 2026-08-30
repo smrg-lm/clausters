@@ -27,7 +27,7 @@
 
 use serde::Deserialize;
 
-use super::model::{Grid, Header, Item, Marks, Pitch, Sheet, Staff, Voice};
+use super::model::{Grid, Header, Item, Marks, Pitch, Sheet, Staff, Step, Voice};
 use crate::ratio::Ratio;
 
 // 32nd-note resolution: every duration is an integer number of these, so
@@ -832,6 +832,19 @@ fn attachments(
         out.entry(measure).or_default().push_str(&xml);
     }
     Ok(out)
+}
+
+/// What the key signature alters this step by: the accidental a note written on
+/// that letter carries without printing one.
+///
+/// It is here because the key-name table is, and it is **public** because
+/// moving a note along the staff needs it: a note dragged onto a letter the
+/// armature alters arrives altered, which is what reading in a key means. A
+/// client computing this for itself would be a second answer to a question the
+/// engraver and the model already agree on.
+pub fn key_alteration(key: &str, step: Step) -> i32 {
+    let (keysig, _) = key_signature(key);
+    key_alterations(keysig)[step.index() as usize]
 }
 
 /// Which steps a key signature alters, indexed by step (`C` = 0 … `B` = 6).

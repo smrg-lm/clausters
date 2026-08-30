@@ -28,10 +28,11 @@
 //! anywhere else has ids of its own shape; those are dropped and fresh ones
 //! minted, because an id is only meaningful inside the model that minted it.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use roxmltree::{Document, Node};
 
+use super::key_alteration;
 use super::model::{Grid, Header, Item, Marks, Meter, Pitch, Sheet, Spanner, Staff, Step, Voice};
 use crate::ratio::Ratio;
 
@@ -89,7 +90,15 @@ pub fn mei_to_sheet(mei: &str) -> Result<Sheet, String> {
                             {
                                 sheet.grid.barlines.push((measure, right.to_string()));
                             }
-                            read_measure(node, &mut content, &mut beams, &mut ties, &mut attached);
+                            let key = sheet.key.clone();
+                            read_measure(
+                                node,
+                                &key,
+                                &mut content,
+                                &mut beams,
+                                &mut ties,
+                                &mut attached,
+                            );
                             measure += 1;
                         }
                         _ => {}
@@ -278,12 +287,18 @@ fn read_meter(score_def: Node, measure: usize) -> Option<Meter> {
 /// collected for later.
 fn read_measure(
     measure: Node,
+    key: &str,
     content: &mut Vec<Vec<Vec<Item>>>,
     beams: &mut Vec<(usize, usize, usize, usize)>,
     ties: &mut Vec<(String, String)>,
     attached: &mut Vec<(String, String, Option<String>)>,
 ) {
     for staff in measure.children().filter(|n| n.has_tag_name("staff")) {
+        // An accidental holds for the rest of its measure, at its own step and
+        // octave, on this staff. A new measure starts again from the armature —
+        // the ordinary convention, and the one the emitter writes with, so the
+        // two have to agree or a score means something different after a save.
+        let mut in_force: HashMap<(i32, i32), i32> = HashMap::new();
         let si = number(staff, 1) - 1;
         while content.len() <= si {
             content.push(Vec::new());
@@ -294,7 +309,14 @@ fn read_measure(
                 content[si].push(Vec::new());
             }
             let mut here = Vec::new();
-            read_items(layer, Ratio::ONE, &mut content[si][vi], &mut here);
+            read_items(
+                layer,
+                Ratio::ONE,
+                key,
+                &mut in_force,
+                &mut content[si][vi],
+                &mut here,
+            );
             beams.extend(here.into_iter().map(|(a, b)| (si, vi, a, b)));
         }
     }
@@ -325,7 +347,14 @@ fn read_measure(
 ///
 /// `scale` is what a surrounding tuplet does to every written value inside it,
 /// which is how a triplet eighth comes back as `1/12` rather than `1/8`.
-fn read_items(node: Node, scale: Ratio, out: &mut Vec<Item>, beams: &mut Vec<(usize, usize)>) {
+fn read_items(
+    node: Node,
+    scale: Ratio,
+    key: &str,
+    in_force: &mut HashMap<(i32, i32), i32>,
+    out: &mut Vec<Item>,
+    beams: &mut Vec<(usize, usize)>,
+) {
     for child in node.children().filter(Node::is_element) {
         match child.tag_name().name() {
             // Containers: a beam is read from the elements it wraps (the
@@ -335,7 +364,7 @@ fn read_items(node: Node, scale: Ratio, out: &mut Vec<Item>, beams: &mut Vec<(us
                 // elements inside it are beamed together, which the model holds
                 // as a spanner over the first and the last of them.
                 let first = out.len();
-                read_items(child, scale, out, beams);
+                read_items(child, scale, key, in_force, out, beams);
                 if out.len() > first {
                     beams.push((first, out.len() - 1));
                 }
@@ -347,14 +376,21 @@ fn read_items(node: Node, scale: Ratio, out: &mut Vec<Item>, beams: &mut Vec<(us
                     .unwrap_or("2")
                     .parse()
                     .unwrap_or(2);
-                read_items(child, scale * Ratio::new(numbase, num), out, beams);
+                read_items(
+                    child,
+                    scale * Ratio::new(numbase, num),
+                    key,
+                    in_force,
+                    out,
+                    beams,
+                );
             }
             "chord" => {
                 let dur = duration(child, scale).unwrap_or(Ratio::new(1, 4));
                 let pitches: Vec<Pitch> = child
                     .children()
                     .filter(|n| n.has_tag_name("note"))
-                    .filter_map(pitch_of)
+                    .filter_map(|n| pitch_of(n, key, in_force))
                     .collect();
                 out.push(Item::Note {
                     id: id_of(child),
@@ -366,7 +402,7 @@ fn read_items(node: Node, scale: Ratio, out: &mut Vec<Item>, beams: &mut Vec<(us
             }
             "note" => {
                 let dur = duration(child, scale).unwrap_or(Ratio::new(1, 4));
-                let Some(pitch) = pitch_of(child) else {
+                let Some(pitch) = pitch_of(child, key, in_force) else {
                     continue;
                 };
                 out.push(Item::Note {
@@ -417,7 +453,16 @@ fn duration(node: Node, scale: Ratio) -> Option<Ratio> {
 /// are both alterations and only the first is a statement that it must be seen,
 /// which is exactly what `forced` holds — so the distinction the emitter makes
 /// survives the trip back.
-fn pitch_of(note: Node) -> Option<Pitch> {
+///
+/// **A note with no accidental of its own is not a natural.** It takes what is
+/// in force: an accidental printed earlier in this measure at its step and
+/// octave, or failing that the key signature's. The emitter writes nothing
+/// where the armature already says it — which is correct engraving — so a
+/// reader that did not apply the armature would turn every B flat in E flat
+/// into a B natural, silently, on the first save. This is the same mistake the
+/// encoder was once making in the other direction, and it is caught by the same
+/// rule read backwards.
+fn pitch_of(note: Node, key: &str, in_force: &mut HashMap<(i32, i32), i32>) -> Option<Pitch> {
     let step = match note.attribute("pname")? {
         "c" => Step::C,
         "d" => Step::D,
@@ -428,19 +473,40 @@ fn pitch_of(note: Node) -> Option<Pitch> {
         "b" => Step::B,
         _ => return None,
     };
+    let octave = note
+        .attribute("oct")
+        .and_then(|o| o.parse().ok())
+        .unwrap_or(4);
+    // Both spellings, and both places. An accidental is an attribute on the
+    // note or a child `<accid>` element, and the emitter writes the *sounding*
+    // one as a child while verovio hands back attributes -- so a reader that
+    // knew only one of the four would lose an alteration depending on which
+    // side of the engraver the document came from.
+    let child = find(note, "accid");
     let printed = note
         .attribute("accid")
-        .map(str::to_string)
-        .or_else(|| Some(find(note, "accid")?.attribute("accid")?.to_string()));
-    let sounding = note.attribute("accid.ges");
-    let alter = printed.as_deref().or(sounding).map(alteration).unwrap_or(0);
+        .or_else(|| child?.attribute("accid"))
+        .map(str::to_string);
+    let sounding = note
+        .attribute("accid.ges")
+        .or_else(|| child?.attribute("accid.ges"));
+    let here = (step.index(), octave);
+    let alter = match printed.as_deref().or(sounding) {
+        Some(accid) => {
+            let alter = alteration(accid);
+            // A printed accidental holds for the rest of the measure; a merely
+            // sounding one states this note and says nothing about the next.
+            if printed.is_some() {
+                in_force.insert(here, alter);
+            }
+            alter
+        }
+        None => *in_force.get(&here).unwrap_or(&key_alteration(key, step)),
+    };
     Some(Pitch {
         step,
         alter,
-        octave: note
-            .attribute("oct")
-            .and_then(|o| o.parse().ok())
-            .unwrap_or(4),
+        octave,
         forced: printed.is_some(),
     })
 }
@@ -899,6 +965,61 @@ mod tests {
         assert!(items.iter().all(|i| i.id() != 0));
         // and the barline the last measure gets by default is not an override
         assert!(sheet.grid.barlines.is_empty());
+    }
+
+    #[test]
+    fn a_note_with_no_accidental_takes_what_the_armature_says() {
+        // The emitter writes nothing where the armature already says it, which
+        // is correct engraving -- so a reader that did not apply the armature
+        // would turn every B flat in E flat into a B natural, silently, on the
+        // first save. The same mistake the encoder once made in the other
+        // direction, caught by the same rule read backwards.
+        let sheet = voice_to_sheet(
+            &[Slot::Note {
+                midis: vec![70],
+                ticks: 8,
+            }],
+            "4/4",
+            "G2",
+            "Eb",
+        );
+        let mei = sheet_to_mei(&sheet).unwrap();
+        // Nothing is *printed*: the armature says it. The sounding alteration
+        // is still stated, as a child `<accid accid.ges>`, which is one of the
+        // four places an accidental can be and the one our own emitter uses.
+        assert!(
+            !mei.contains("<accid accid=\""),
+            "nothing is printed: {mei}"
+        );
+        assert!(mei.contains("accid.ges=\"f\""), "{mei}");
+        let back = mei_to_sheet(&mei).unwrap();
+        let pitch = back.staves[0].voices[0].items[0].pitches()[0];
+        assert_eq!(pitch.step, Step::B);
+        assert_eq!(pitch.alter, -1, "the armature is what says so");
+        round_trips(&sheet).unwrap();
+    }
+
+    #[test]
+    fn an_accidental_holds_for_its_measure_and_a_new_one_starts_again() {
+        // c#4 then c4 in one bar: the second is written natural, and the third,
+        // in the next bar, is a plain c that the armature leaves alone.
+        let mei = "<mei><music><body><mdiv><score>\
+            <scoreDef meter.count=\"1\" meter.unit=\"4\" keysig=\"0\">\
+            <staffGrp><staffDef n=\"1\" clef.shape=\"G\" clef.line=\"2\"/></staffGrp>\
+            </scoreDef><section>\
+            <measure n=\"1\"><staff n=\"1\"><layer n=\"1\">\
+            <note dur=\"8\" oct=\"4\" pname=\"c\" accid=\"s\"/>\
+            <note dur=\"8\" oct=\"4\" pname=\"c\"/>\
+            </layer></staff></measure>\
+            <measure n=\"2\"><staff n=\"1\"><layer n=\"1\">\
+            <note dur=\"4\" oct=\"4\" pname=\"c\"/>\
+            </layer></staff></measure>\
+            </section></score></mdiv></body></music></mei>";
+        let sheet = mei_to_sheet(mei).unwrap();
+        let items = &sheet.staves[0].voices[0].items;
+        assert_eq!(items[0].pitches()[0].alter, 1, "the sharp as written");
+        assert_eq!(items[1].pitches()[0].alter, 1, "still sharp: same bar");
+        assert_eq!(items[2].pitches()[0].alter, 0, "a new bar starts again");
     }
 
     #[test]

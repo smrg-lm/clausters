@@ -285,6 +285,25 @@ somewhere else (an id means something only inside the model that minted it, so
 fresh ones are minted). A score this layer wrote keeps its ids, which is what
 lets an item you were editing before a save still be that item after it.
 
+**An open score is edited through the same verbs.** `Score.sheet()` hands back
+the model behind the page and `Score.apply(op)` applies one operation as a
+single undo step, re-engraving as it goes — so editing a score you have open and
+editing a sheet in your hand are the same operation:
+
+```python
+score = notation.Score(PHRASE)
+score.apply({"op": "transpose", "semitones": 2})   # what `transpose` builds
+score.undo()                                        # the model goes back too
+```
+
+Dragging a note on the page is `move_steps`, which is **not** transposition: it
+moves along the staff and takes the key signature's alteration for the letter it
+lands on, so a note dragged onto a B in E flat is a B flat. `transpose` is the
+other act — a named interval, keeping the alteration the arithmetic implies.
+
+A document that could not be read into a model still draws and still plays;
+`sheet()` raises there, and that is how you tell.
+
 ### Hearing what the page says
 
 The way back out is `to_notes`, and it is not a conversion: the symbols mean

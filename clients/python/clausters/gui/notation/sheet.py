@@ -499,6 +499,21 @@ def header(*, title: str = "", subtitle: str = "", composer: str = "",
     return out
 
 
+def move_steps(sheet: dict, id: int, steps: int) -> dict:
+    """Move an item along the staff by ``steps`` **diatonic** places, up when
+    positive — what dragging a note on the page is.
+
+    The arrival takes the **key signature's** alteration for the letter it lands
+    on, which is what reading in a key means: dragging a note onto a B in E flat
+    gives a B flat, and nobody has to say so. That is the difference between
+    this and `transpose`, which moves by a named *interval* and keeps the
+    alteration the arithmetic implies.
+
+    A chord moves whole. Refused on a rest, which has no pitch to move.
+    """
+    return apply(sheet, {"op": "move_steps", "id": id, "steps": steps})
+
+
 def set_header(sheet: dict, header: dict) -> dict:
     """Write what is above the music (`header`).
 

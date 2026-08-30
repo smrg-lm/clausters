@@ -2749,11 +2749,39 @@ Whatever symbols the model itself needs owe their rows either way
   `set_break`), taking the catalog to twenty-three. Tests: 14 in the core and
   the same assertions in both clients (47 and 26).
 
-  **Still open, and the reason this stays unchecked**: the second acceptance
-  clause. `Score`'s edit path is still verovio's editor actions rather than the
-  model's verbs (deferred in `N2`), and the host's note-entry gestures are not
-  written (deferred in `N3`). Both were blocked on the reader and are not any
-  more.
+  **Then the edit path** *(2026-08-29)*, which is the second acceptance clause
+  and the piece `N2` deferred. `Score::apply(&Op)` takes the same payload the
+  sheet verbs build, applies it to the model, re-emits and reloads — so an edit
+  to an open score and an edit to a sheet in hand are one operation through one
+  implementation, and a standalone host holding a sheet performs it with no
+  engraver anywhere. The engraver's editor stays as the escape hatch it now
+  honestly is: a document that could not be read into a model still draws and
+  still plays, and `transpose` falls back to `keyDown` for it. `Score::sheet()`
+  says which of the two a caller has.
+
+  Dragging a note is `move_steps`, a **new verb** and not transposition: moving
+  along the staff takes the key signature's alteration for the letter it lands
+  on, because that is what reading in a key means. `Op::Transpose` is the other
+  act — a named interval, keeping the alteration the arithmetic implies — and
+  conflating them is how a drag in a flat key produces a natural nobody asked
+  for. Catalog at twenty-four; `clausters_score_apply` and
+  `clausters_score_sheet` take `CORE_ABI_VERSION` to 26.
+
+  Writing it caught a defect in the reader that the round-trip tests could not
+  see, because both halves of the round trip were wrong together: the emitter
+  writes no accidental where the armature already gives one, so reading a bare
+  `pname="b"` as B natural turned **every B flat in E flat into a B natural on
+  the first save**. The reader now runs the emitter's own rule backwards — each
+  measure starts from the armature, a printed accidental holds to the end of it
+  — and reads an accidental from all four places it can be written, since our
+  emitter states the sounding one as a child `<accid>` while verovio hands back
+  attributes.
+
+  **Still open**: the host's own note-entry gestures (deferred in `N3`), which
+  are the last piece and the only one that is not core work — a gesture on empty
+  staff space, `is_element_class` widened so a click can name what it lands on,
+  a payload on the `/gui_*` wire and a builder in each client. It was blocked on
+  the reader and is not any more.
 
 **What became of the earlier numbering.** `G31g` was one line; the first sizing
 made it `N1`–`N4` (surface, markup, polyphony, tuplets). The four are all still

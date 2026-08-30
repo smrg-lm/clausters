@@ -1501,6 +1501,34 @@ impl JsScore {
         self.0.mei()
     }
 
+    /// Apply one **model** operation as a single undo step, and re-engrave.
+    ///
+    /// This is the edit path, and the reason it is not the engraver's editor:
+    /// there is one implementation of what an edit to a score means, and it is
+    /// the algebra this package already binds. Returns whether it was applied;
+    /// a refusal leaves both the page and the model as they were.
+    pub fn apply(&mut self, op: &str) -> Result<bool, JsError> {
+        let op: clausters_core::notation::Op =
+            serde_json::from_str(op).map_err(|e| JsError::new(&format!("op: {e}")))?;
+        Ok(self.0.apply(&op))
+    }
+
+    /// The open score as the **model**.
+    ///
+    /// Throws when the document could not be read into one — a state and not a
+    /// failure, since the page still draws and still plays and only the model's
+    /// verbs are unavailable on it.
+    pub fn sheet(&self) -> Result<String, JsError> {
+        let sheet = self.0.sheet().ok_or_else(|| {
+            JsError::new(
+                "this document could not be read into the score model, so the \
+                 model's verbs are not available on it; the page still draws \
+                 and still plays",
+            )
+        })?;
+        serde_json::to_string(sheet).map_err(|e| JsError::new(&e.to_string()))
+    }
+
     /// Whether there is an edit to step back over.
     #[wasm_bindgen(getter, js_name = canUndo)]
     pub fn can_undo(&self) -> bool {

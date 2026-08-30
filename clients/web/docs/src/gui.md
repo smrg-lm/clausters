@@ -386,6 +386,14 @@ invents to fill a bar or level a short voice (a score would gain a bar of
 silence for having been saved) nor the ids of a foreign document (an id means
 something only inside the model that minted it).
 
+**An open score is edited through the same verbs**: `score.sheet()` hands back
+the model behind the page and `score.apply(op)` applies one operation as a
+single undo step, re-engraving as it goes — so editing a score you have open and
+editing a sheet in hand are one operation. Dragging a note is `moveSteps`, which
+is not transposition: it moves along the staff and takes the key signature's
+alteration for the letter it lands on, so a note dragged onto a B in E flat is a
+B flat.
+
 The way back out is `toNotes`, and it is not a conversion: the symbols mean
 something, and honouring them is the whole of the step.
 

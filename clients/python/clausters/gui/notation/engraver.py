@@ -21,6 +21,7 @@ import os
 from ... import _libpath, _native
 from ._abi import _MISSING, _engraver, _text, _u8
 from .mei import from_notes, from_timeline
+from .sheet import _unwrap
 
 # Where the SMuFL data the engraver reads lives. verovio bakes a resource path
 # in at *build* time -- the configure-time prefix, which is not where a wheel's
@@ -101,13 +102,47 @@ class Score:
         """Step forward again after `undo`; False when there is nothing to redo."""
         return bool(_native.lib().clausters_score_redo(self._h))
 
+    def sheet(self) -> dict:
+        """The open score as the **model** (`clausters.gui.notation.sheet`).
+
+        Every verb in the algebra applies to it, including on a score that was
+        typed rather than built: the engraver normalizes whatever it loaded and
+        this reads that, so a phrase in ABC is as editable as one made by
+        operating on a motif.
+
+        Raises ``ValueError`` when the document could not be read into a model —
+        a state and not a failure, since the page still draws and still plays
+        and only the model's verbs are unavailable on it.
+        """
+        return _unwrap(_text(_native.lib().clausters_score_sheet, self._h))
+
+    def apply(self, op: dict) -> bool:
+        """Apply one **model** operation as a single undo step, and re-engrave.
+
+        This is the edit path. ``op`` is the payload the sheet verbs build
+        (``clausters.gui.notation.sheet.transpose`` and the rest), so an edit to
+        an open score and an edit to a sheet in hand are the same operation
+        through the same code — which is what lets a standalone host with no
+        client language perform it too.
+
+        Returns False when the document has no model behind it or the operation
+        was refused; either way the page and the model are as they were.
+        """
+        raw = json.dumps(op).encode("utf-8")
+        return bool(_native.lib().clausters_score_apply(
+            self._h, _native.as_u8(raw), len(raw)))
+
     def transpose(self, element_id: str, steps: int) -> bool:
         """Move a note by ``steps`` **diatonic** steps along the staff — up when
         positive — as one undo step.
 
-        This is the pitch edit as the *engraver* expresses it, in steps rather
-        than in a position, because its coordinate-taking ``drag`` reads an
-        absolute page y in a frame that does not line up with the display list's
+        It is the **model's** move where the page named a model item — the note
+        takes the key signature's alteration for the letter it lands on, which
+        is what reading in a key means — and falls back to the engraver's editor
+        only for an element this layer did not write.
+
+        It is in steps rather than in a position because the engraver's
+        coordinate-taking ``drag`` reads an absolute page y in a frame that does not line up with the display list's
         (passing a note its own drawn y moves it six steps), so a caller would
         have to carry an unexplained offset. Steps are exact.
 

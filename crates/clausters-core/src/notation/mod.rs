@@ -48,11 +48,11 @@ pub use algebra::{
 };
 pub use cursors::{Cursor, TimemapEntry, cursor_track};
 pub use edit::{
-    At, add_spanner, delete, insert, remove_spanner, set_barline, set_break, set_dur, set_header,
-    set_marks, set_pitches, silence, tie, to_voice,
+    At, add_spanner, delete, insert, move_steps, remove_spanner, set_barline, set_break, set_dur,
+    set_header, set_marks, set_pitches, silence, tie, to_voice,
 };
 pub use interp::{Accent, Articulation, Interpretation, Note, default_interpretation, perform};
-pub use mei::{Slot, sheet_to_mei, voice_to_mei, voice_to_sheet};
+pub use mei::{Slot, key_alteration, sheet_to_mei, voice_to_mei, voice_to_sheet};
 pub use model::{Grid, Header, Item, Marks, Meter, Pitch, Sheet, Spanner, Staff, Step, Voice};
 pub use ops::{Op, OpSpec, Span, apply, catalog, default_steps, transpose_pitch};
 pub use read::mei_to_sheet;

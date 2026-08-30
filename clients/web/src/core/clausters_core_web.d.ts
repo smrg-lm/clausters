@@ -361,6 +361,15 @@ export class Score {
     free(): void;
     [Symbol.dispose](): void;
     /**
+     * Apply one **model** operation as a single undo step, and re-engrave.
+     *
+     * This is the edit path, and the reason it is not the engraver's editor:
+     * there is one implementation of what an edit to a score means, and it is
+     * the algebra this package already binds. Returns whether it was applied;
+     * a refusal leaves both the page and the model as they were.
+     */
+    apply(op: string): boolean;
+    /**
      * This score engraved into a page: the display list the host draws, the
      * cursor track a playhead follows, and the notes that sound.
      */
@@ -388,6 +397,14 @@ export class Score {
      * Step forward again after an undo; `false` when there is nothing to redo.
      */
     redo(): boolean;
+    /**
+     * The open score as the **model**.
+     *
+     * Throws when the document could not be read into one — a state and not a
+     * failure, since the page still draws and still plays and only the model's
+     * verbs are unavailable on it.
+     */
+    sheet(): string;
     /**
      * Move a note by `steps` diatonic steps along the staff, as one undo step.
      * The relative form: reach for it only when the delta is what you have.
@@ -834,6 +851,7 @@ export interface InitOutput {
     readonly scheduler_popDue: (a: number, b: number) => [number, number];
     readonly scheduler_push: (a: number, b: number, c: number) => void;
     readonly scheduler_remove: (a: number, b: number) => number;
+    readonly score_apply: (a: number, b: number, c: number) => [number, number, number];
     readonly score_canRedo: (a: number) => number;
     readonly score_canUndo: (a: number) => number;
     readonly score_displayList: (a: number, b: number) => [number, number, number, number];
@@ -841,6 +859,7 @@ export interface InitOutput {
     readonly score_mei: (a: number) => [number, number];
     readonly score_new: (a: any, b: number, c: number) => [number, number, number];
     readonly score_redo: (a: number) => number;
+    readonly score_sheet: (a: number) => [number, number, number, number];
     readonly score_transpose: (a: number, b: number, c: number, d: number) => number;
     readonly score_transposeTo: (a: number, b: number, c: number, d: number, e: number) => number;
     readonly score_undo: (a: number) => number;

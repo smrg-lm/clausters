@@ -589,6 +589,22 @@ export function header(fields: HeaderFields = {}): HeaderFields {
 }
 
 /**
+ * Move an item along the staff by `steps` **diatonic** places, up when positive
+ * — what dragging a note on the page is.
+ *
+ * The arrival takes the **key signature's** alteration for the letter it lands
+ * on, which is what reading in a key means: dragging a note onto a B in E flat
+ * gives a B flat, and nobody has to say so. That is the difference between this
+ * and {@link transpose}, which moves by a named *interval* and keeps the
+ * alteration the arithmetic implies.
+ *
+ * A chord moves whole. Refused on a rest, which has no pitch to move.
+ */
+export function moveSteps(sheet: Sheet, id: number, steps: number): Sheet {
+    return apply(sheet, { op: "move_steps", id, steps });
+}
+
+/**
  * Write what is above the music ({@link header}).
  *
  * It **replaces** rather than merges, as {@link setMarks} does: with a merge

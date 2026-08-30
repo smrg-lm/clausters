@@ -541,6 +541,67 @@ pub unsafe extern "C" fn clausters_score_transpose_to(
     unsafe { &mut *h }.transpose_to(&id, position, page) as i32
 }
 
+/// Apply one **model** operation to an open score as a single undo step, and
+/// re-engrave. `op` is the operation as JSON, the same payload
+/// [`clausters_core_sheet_apply`] takes. Returns `1` when it was applied, `0`
+/// when the document has no model behind it, the operation was refused, or a
+/// pointer is null.
+///
+/// **This is the edit path**, and the reason it is not the engraver's editor:
+/// there is one implementation of what an edit to a score means, it is the
+/// algebra every client already binds, and a standalone host holding a sheet
+/// performs the same operation through the same code. A refused operation
+/// leaves both the page and the model as they were.
+///
+/// # Safety
+/// `h` must be a live score handle and `op` readable for `op_len` bytes.
+#[cfg(feature = "verovio")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_score_apply(h: *mut Score, op: *const u8, op_len: usize) -> i32 {
+    if h.is_null() {
+        return 0;
+    }
+    // SAFETY: caller guarantees the range.
+    let Some(op) = (unsafe { text(op, op_len) }) else {
+        return 0;
+    };
+    let Ok(op) = serde_json::from_str::<Op>(&op) else {
+        return 0;
+    };
+    // SAFETY: caller guarantees a live handle.
+    unsafe { &mut *h }.apply(&op) as i32
+}
+
+/// The open score as the **model**, written to `out` in the usual envelope:
+/// `{"ok": …}` with the sheet, or `{"error": "…"}` when the document could not
+/// be read into one — which is a state and not a failure, since the page still
+/// draws and still plays and only the model's verbs are unavailable.
+///
+/// # Safety
+/// `h` must be a live score handle and `out` writable for `out_cap` bytes (or
+/// null, to size only).
+#[cfg(feature = "verovio")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_score_sheet(
+    h: *mut Score,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    if h.is_null() {
+        return 0;
+    }
+    // SAFETY: caller guarantees a live handle.
+    let json = match unsafe { &*h }.sheet() {
+        Some(sheet) => serde_json::json!({ "ok": sheet }).to_string(),
+        None => envelope_error(
+            "this document could not be read into the score model, so the model's \
+             verbs are not available on it; the page still draws and still plays",
+        ),
+    };
+    // SAFETY: caller guarantees `out` is writable for `out_cap` bytes.
+    unsafe { fill(json.as_bytes(), out, out_cap) }
+}
+
 /// Apply one raw editor action (`set`, `insert`, `delete`, ...) as a single
 /// undo step — the escape hatch for what [`clausters_score_transpose`] does
 /// not cover. `param` is the action's parameter object as JSON. Returns `1`

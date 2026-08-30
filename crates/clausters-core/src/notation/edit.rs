@@ -25,7 +25,7 @@
 //! splitting a voice are ordinary operations here and are not in that vocabulary
 //! at all.
 
-use super::model::{Header, Item, Marks, Pitch, Sheet, Spanner};
+use super::model::{Header, Item, Marks, Pitch, Sheet, Spanner, Step};
 use crate::ratio::Ratio;
 
 /// Where a new item goes.
@@ -401,6 +401,47 @@ fn measure_index(measure: usize) -> Result<usize, String> {
     measure
         .checked_sub(1)
         .ok_or_else(|| "measures are numbered from 1, so there is no measure 0".to_string())
+}
+
+/// Move an item along the staff by `steps` **diatonic** places, up when
+/// positive — what dragging a note on the page is.
+///
+/// The arrival takes the **key signature's** alteration for the letter it lands
+/// on, which is what reading in a key means: dragging a note onto a B in E flat
+/// gives a B flat, not a B natural, and nobody has to say so. That is the
+/// difference between this and [`super::Op::Transpose`], which moves by a named
+/// *interval* and keeps the alteration the arithmetic implies.
+///
+/// A chord moves whole. Naming one note of a chord is something the wire can
+/// already do (`n7-p1`) and this cannot yet act on; it is written down rather
+/// than guessed at.
+///
+/// # Errors
+/// When no item has that id, or it is a rest — a rest has no pitch to move, and
+/// silently doing nothing would read as a gesture that failed to register.
+pub fn move_steps(mut sheet: Sheet, id: u64, steps: i32) -> Result<Sheet, String> {
+    sheet.assign_ids();
+    let key = sheet.key.clone();
+    let Some((si, vi, ii)) = sheet.locate(id) else {
+        return Err(format!("no item on this sheet has the id {id}"));
+    };
+    let item = &mut sheet.staves[si].voices[vi].items[ii];
+    let Item::Note { pitches, .. } = item else {
+        return Err(format!(
+            "item {id} is a rest, and a rest has no pitch to move along the staff"
+        ));
+    };
+    for pitch in pitches.iter_mut() {
+        let index = pitch.step.index() + steps;
+        let step = Step::ALL[index.rem_euclid(7) as usize];
+        *pitch = Pitch {
+            step,
+            alter: super::mei::key_alteration(&key, step),
+            octave: pitch.octave + index.div_euclid(7),
+            forced: pitch.forced,
+        };
+    }
+    Ok(sheet)
 }
 
 #[cfg(test)]

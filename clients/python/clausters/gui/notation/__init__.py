@@ -52,7 +52,8 @@ from .mei import (
 )
 from .sheet import (
     add_spanner, apply, concat, delete, header, insert, insert_measures,
-    interpretation, invert, marks, measures, ops, pitch, remove_measures,
+    interpretation, invert, marks, measures, move_steps, ops, pitch,
+    remove_measures,
     remove_spanner, repeat, retrograde, set_barline, set_break, set_dur,
     set_header, set_marks, set_meter, set_pitches, silence, stack, stretch, tie,
     to_mei, to_notes, to_voice, transpose,
@@ -77,6 +78,7 @@ __all__ = [
     "invert",
     "marks",
     "measures",
+    "move_steps",
     "ops",
     "page_json",
     "pitch",

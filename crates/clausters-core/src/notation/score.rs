@@ -23,7 +23,10 @@
 
 use serde::Serialize;
 
-use super::{Cursor, DisplayList, TimemapEntry, cursor_track, svg_to_display_list};
+use super::{
+    Cursor, DisplayList, Op, Sheet, TimemapEntry, apply, cursor_track, mei_to_sheet, sheet_to_mei,
+    svg_to_display_list,
+};
 
 /// verovio's `keyDown` codes for the arrow keys (`vrvdef.h`): what moves a note
 /// one diatonic step along the staff.
@@ -154,6 +157,13 @@ pub struct NoteEvent {
 /// crashes the process. Owning the stack sidesteps all three.
 pub struct Score<E: Engraver> {
     engraver: E,
+    /// The document as the **model**, read at open and kept in step with it.
+    ///
+    /// `None` when the document could not be read into one at all, which is a
+    /// state and not a failure: the page still draws and still plays, and only
+    /// the model's verbs are unavailable on it. A caller learns which it has
+    /// from [`Score::sheet`].
+    sheet: Option<Sheet>,
     undo: Vec<String>,
     redo: Vec<String>,
     /// Whether the page has been drawn since the last load. Editing a document
@@ -170,14 +180,19 @@ impl<E: Engraver> Score<E> {
     /// Constructing the engraver — a resource path, options, whatever the
     /// binding needs — happens before this and belongs to the binding.
     pub fn open(engraver: E, data: &str) -> Option<Self> {
-        {
+        let sheet = {
             let _guard = engraver.lock();
             if !engraver.load_data(data) {
                 return None;
             }
-        }
+            // The engraver normalizes whatever it loaded, so this reads one
+            // encoding whatever the caller typed -- which is what makes a score
+            // opened as ABC editable by the same verbs as one built in code.
+            mei_to_sheet(&engraver.mei()).ok()
+        };
         Some(Self {
             engraver,
+            sheet,
             undo: Vec::new(),
             redo: Vec::new(),
             drawn: false,
@@ -223,7 +238,9 @@ impl<E: Engraver> Score<E> {
         };
         let current = self.mei_locked();
         self.redo.push(current);
-        self.load_locked(&previous)
+        let ok = self.load_locked(&previous);
+        self.resync_locked();
+        ok
     }
 
     /// Step forward again after [`Score::undo`]; `false` when there is nothing to
@@ -235,17 +252,76 @@ impl<E: Engraver> Score<E> {
         };
         let current = self.mei_locked();
         self.undo.push(current);
-        self.load_locked(&next)
+        let ok = self.load_locked(&next);
+        self.resync_locked();
+        ok
+    }
+
+    /// This score as the **model**, or `None` when the document could not be
+    /// read into one.
+    ///
+    /// It is the live model: every edit made through [`Score::apply`] is in it,
+    /// and so is every one made through the engraver escape hatch, since the
+    /// document is re-read after each.
+    pub fn sheet(&self) -> Option<&Sheet> {
+        self.sheet.as_ref()
+    }
+
+    /// Apply one **model** operation as a single undo step, and re-engrave.
+    ///
+    /// This is the edit path, and the reason it is not verovio's editor: there
+    /// is one implementation of what an edit to a score means, it is the
+    /// algebra every client already binds, and a standalone host holding a
+    /// sheet performs the same operation through the same code. Driving the
+    /// engraver's editor instead would be a second answer to the same question,
+    /// reachable only from a process that has an engraver in it.
+    ///
+    /// Returns whether it was applied. `false` when the document has no model,
+    /// when the operation was refused (the sheet is untouched, since it crossed
+    /// by value), or when the engraver could not load what the operation
+    /// produced.
+    pub fn apply(&mut self, op: &Op) -> bool {
+        let Some(sheet) = self.sheet.clone() else {
+            return false;
+        };
+        let Ok(edited) = apply(sheet, op) else {
+            return false;
+        };
+        let Ok(mei) = sheet_to_mei(&edited) else {
+            return false;
+        };
+        let _guard = self.engraver.lock();
+        let before = self.mei_locked();
+        if !self.load_locked(&mei) {
+            self.load_locked(&before);
+            return false;
+        }
+        self.undo.push(before);
+        if self.undo.len() > UNDO_LIMIT {
+            self.undo.drain(..self.undo.len() - UNDO_LIMIT);
+        }
+        self.redo.clear();
+        // Re-read rather than trusting `edited`: what the engraver holds is
+        // what the page draws and what the next edit starts from, and the two
+        // must not be allowed to differ.
+        self.sheet = mei_to_sheet(&self.mei_locked()).ok();
+        true
     }
 
     /// Move the note `element_id` by `steps` **diatonic** steps along the staff —
     /// up when positive — as one undo step.
     ///
-    /// This is the pitch edit as **verovio** expresses it, and it is in steps
-    /// rather than in a position because verovio's coordinate-taking `drag`
-    /// reads an absolute page y in a frame that does not line up with the
-    /// display list's (passing a note its own drawn y moves it six steps), so a
-    /// caller would have to carry an unexplained offset. Steps are exact.
+    /// It is the **model's** move where the page named a model item — the note
+    /// takes the key signature's alteration for the letter it lands on, which
+    /// is what reading in a key means — and falls back to the engraver's editor
+    /// only for an element this layer did not write, which is the one case
+    /// there is no item to move.
+    ///
+    /// It is in steps rather than in a position because verovio's
+    /// coordinate-taking `drag` reads an absolute page y in a frame that does
+    /// not line up with the display list's (passing a note its own drawn y
+    /// moves it six steps), so a caller would have to carry an unexplained
+    /// offset. Steps are exact.
     ///
     /// It is **not** the shape an edit travels in: a displacement made against
     /// a page that has since been re-engraved has to be rebased, which is why
@@ -256,15 +332,25 @@ impl<E: Engraver> Score<E> {
         if steps == 0 {
             return false;
         }
-        let key = if steps > 0 { KEY_UP } else { KEY_DOWN };
-        let action = serde_json::json!({
-            "action": "keyDown",
-            "param": { "elementId": element_id, "key": key },
-        })
-        .to_string();
-        let actions = vec![action; steps.unsigned_abs() as usize];
-        let _guard = self.engraver.lock();
-        self.apply_locked(&actions)
+        match item_id(element_id) {
+            // The ordinary path: the page named an item of the model, and the
+            // move is the model's own verb.
+            Some(id) => self.apply(&Op::MoveSteps { id, steps }),
+            // A document with no model behind it, or an element this layer did
+            // not write. The engraver's editor is what is left, and it is why
+            // the escape hatch stays.
+            None => {
+                let key = if steps > 0 { KEY_UP } else { KEY_DOWN };
+                let action = serde_json::json!({
+                    "action": "keyDown",
+                    "param": { "elementId": element_id, "key": key },
+                })
+                .to_string();
+                let actions = vec![action; steps.unsigned_abs() as usize];
+                let _guard = self.engraver.lock();
+                self.apply_locked(&actions)
+            }
+        }
     }
 
     /// Move the note `element_id` **to** the diatonic staff position
@@ -331,12 +417,24 @@ impl<E: Engraver> Score<E> {
         // Reload our own edited MEI: the layout is fresh after `commit`, but the
         // MIDI/timemap cache is not, and `notes` is read from it.
         let edited = self.mei_locked();
-        self.load_locked(&edited)
+        let ok = self.load_locked(&edited);
+        self.resync_locked();
+        ok
     }
 
     fn load_locked(&mut self, mei: &str) -> bool {
         self.drawn = false;
         self.engraver.load_data(mei)
+    }
+
+    /// Read the model back out of whatever the engraver now holds.
+    ///
+    /// Called after every path that changes the document without going through
+    /// [`Score::apply`] — an undo, a redo, a raw editor action — because a
+    /// model that had drifted from the page would apply the next operation to a
+    /// score nobody is looking at.
+    fn resync_locked(&mut self) {
+        self.sheet = mei_to_sheet(&self.mei_locked()).ok();
     }
 
     /// Draw the page if it has not been drawn since the last load, so the editor
@@ -401,6 +499,23 @@ impl<E: Engraver> Score<E> {
     }
 }
 
+/// The **model** item an engraved element belongs to, or `None` when the
+/// element was not written from one.
+///
+/// The page names elements the way the emitter wrote them: `n7` is the item,
+/// `n7-2` a piece of it split across a barline, `n7-p1` one pitch of a chord.
+/// All three are the same item, which is what lets a gesture anywhere on a note
+/// reach the note. An id of any other shape belongs to a document this layer
+/// did not write, and there is nothing in the model to move.
+fn item_id(element_id: &str) -> Option<u64> {
+    element_id
+        .strip_prefix('n')?
+        .split('-')
+        .next()?
+        .parse()
+        .ok()
+}
+
 fn number(value: &serde_json::Value, key: &str) -> Option<f64> {
     value.get(key)?.as_f64()
 }
@@ -420,7 +535,7 @@ mod tests {
     /// binding (`clausters-notation`), where there is a C++ library to be right
     /// about.
     #[derive(Default)]
-    struct Fake {
+    pub(super) struct Fake {
         mei: RefCell<String>,
         actions: RefCell<Vec<String>>,
         renders: RefCell<Vec<i32>>,
@@ -429,13 +544,13 @@ mod tests {
     }
 
     impl Fake {
-        fn with(mei: &str) -> Self {
+        pub(super) fn with(mei: &str) -> Self {
             Self {
                 mei: RefCell::new(mei.to_string()),
                 ..Default::default()
             }
         }
-        fn actions(&self) -> Vec<String> {
+        pub(super) fn actions(&self) -> Vec<String> {
             self.actions.borrow().clone()
         }
     }
@@ -595,5 +710,122 @@ mod tests {
         assert!(!score.transpose("note-1", 0));
         assert!(fake.actions().is_empty());
         assert!(!score.can_undo());
+    }
+}
+
+#[cfg(test)]
+mod model_tests {
+    use super::tests::Fake;
+    use super::*;
+    use crate::notation::{Item, Slot, voice_to_sheet};
+
+    /// A real score, as MEI, so the model path has something to read.
+    fn mei_of(n: usize) -> String {
+        let voice: Vec<Slot> = (0..n)
+            .map(|_| Slot::Note {
+                midis: vec![60],
+                ticks: 8,
+            })
+            .collect();
+        sheet_to_mei(&voice_to_sheet(&voice, "4/4", "G2", "C")).unwrap()
+    }
+
+    #[test]
+    fn a_score_opened_from_a_document_carries_the_model_behind_it() {
+        let fake = Fake::with(&mei_of(4));
+        let score = Score::open(&fake, &mei_of(4)).unwrap();
+        let sheet = score.sheet().expect("the document read into a model");
+        assert_eq!(sheet.staves[0].voices[0].items.len(), 4);
+    }
+
+    #[test]
+    fn an_edit_goes_through_the_models_verbs_and_not_the_engravers_editor() {
+        let fake = Fake::with(&mei_of(2));
+        let mut score = Score::open(&fake, &mei_of(2)).unwrap();
+        assert!(score.transpose("n1", 1));
+        // The move is the model's, so the engraver was handed a *document* and
+        // never an editor action: there is one implementation of what an edit
+        // means, and a standalone with no engraver performs the same one.
+        assert_eq!(fake.actions(), Vec::<String>::new());
+        let moved = &score.sheet().unwrap().staves[0].voices[0].items[0];
+        assert_eq!(moved.pitches()[0].step, crate::notation::Step::D);
+        assert_eq!(moved.pitches()[0].octave, 4);
+    }
+
+    #[test]
+    fn an_operation_is_applied_re_engraved_and_undone_as_one_step() {
+        let fake = Fake::with(&mei_of(4));
+        let mut score = Score::open(&fake, &mei_of(4)).unwrap();
+        assert!(score.apply(&Op::Transpose {
+            semitones: 12,
+            steps: None,
+            span: Default::default(),
+        }));
+        let up = score.sheet().unwrap().staves[0].voices[0].items[0].pitches()[0];
+        assert_eq!(up.octave, 5);
+        assert!(score.undo());
+        // Undo puts the model back too, not only the page: the next edit starts
+        // from what is drawn.
+        let back = score.sheet().unwrap().staves[0].voices[0].items[0].pitches()[0];
+        assert_eq!(back.octave, 4);
+    }
+
+    #[test]
+    fn a_refused_operation_changes_neither_the_page_nor_the_model() {
+        let fake = Fake::with(&mei_of(2));
+        let mut score = Score::open(&fake, &mei_of(2)).unwrap();
+        let before = score.mei();
+        assert!(!score.apply(&Op::MoveSteps { id: 99, steps: 1 }));
+        assert_eq!(score.mei(), before);
+        assert!(!score.can_undo(), "a refusal is not an undo step");
+    }
+
+    #[test]
+    fn an_element_this_layer_did_not_write_still_moves_through_the_engraver() {
+        // A document with no model behind it: the escape hatch is what is left,
+        // and it is why it stays.
+        let fake = Fake::with("not a score");
+        let mut score = Score::open(&fake, "not a score").unwrap();
+        assert!(score.sheet().is_none());
+        assert!(score.transpose("abc123", 1));
+        assert!(fake.actions().iter().any(|a| a.contains("keyDown")));
+    }
+
+    #[test]
+    fn a_chords_pitch_and_a_split_piece_both_name_the_note_they_belong_to() {
+        assert_eq!(item_id("n7"), Some(7));
+        assert_eq!(item_id("n7-2"), Some(7));
+        assert_eq!(item_id("n7-p1"), Some(7));
+        assert_eq!(item_id("m1ocu09p"), None);
+    }
+
+    #[test]
+    fn a_rest_says_it_has_no_pitch_rather_than_moving_nothing() {
+        let sheet = voice_to_sheet(&[Slot::Rest { ticks: 8 }], "4/4", "G2", "C");
+        let id = sheet.staves[0].voices[0].items[0].id();
+        let err = crate::notation::move_steps(sheet, id, 1).unwrap_err();
+        assert!(err.contains("rest"), "{err}");
+    }
+
+    #[test]
+    fn a_note_dragged_onto_a_letter_the_armature_alters_arrives_altered() {
+        // In E flat, dragging a note onto B gives B flat -- which is what
+        // reading in a key means, and what nobody should have to say.
+        let sheet = voice_to_sheet(
+            &[Slot::Note {
+                midis: [69].into(),
+                ticks: 8,
+            }],
+            "4/4",
+            "G2",
+            "Eb",
+        );
+        let id = sheet.staves[0].voices[0].items[0].id();
+        let moved = crate::notation::move_steps(sheet, id, 1).unwrap();
+        let Item::Note { pitches, .. } = &moved.staves[0].voices[0].items[0] else {
+            panic!("a note");
+        };
+        assert_eq!(pitches[0].step, crate::notation::Step::B);
+        assert_eq!(pitches[0].alter, -1);
     }
 }

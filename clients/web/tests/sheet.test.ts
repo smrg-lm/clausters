@@ -25,6 +25,7 @@ import {
     interpretation,
     marks,
     measures,
+    moveSteps,
     ops,
     pitch,
     removeMeasures,
@@ -447,4 +448,49 @@ test("a beam somebody chose is a spanner like any other", () => {
 test("what is not a score says so", () => {
     assert.throws(() => sheetFromMei("<not xml"), /XML/);
     assert.throws(() => sheetFromMei("<mei><music/></mei>"), /score/);
+});
+
+// -- the score's edit path, on the model --------------------------------------
+
+test("an open score carries the model and is edited through its verbs", {
+    skip: engraved ? false : "run third_party/build-verovio-wasm.sh",
+}, async () => {
+    const score = await notation.Score.open("X:1\nT:t\nM:4/4\nL:1/4\nK:G\nC D E F |\n");
+    const items = (s: notation.Sheet) =>
+        (s.staves as { voices: { items: { id: number; pitches: { step: string }[] }[] }[] }[])[0]
+            .voices[0].items;
+    assert.equal(items(score.sheet()).length, 4);
+    // the same payload the sheet verbs build: an edit to an open score and an
+    // edit to a sheet in hand are one operation through one implementation
+    assert.ok(score.apply({ op: "transpose", semitones: 2 }));
+    assert.deepEqual(items(score.sheet()).map((i) => i.pitches[0].step), ["d", "e", "f", "g"]);
+    // and undo puts the model back, not only the page
+    assert.ok(score.undo());
+    assert.equal(items(score.sheet())[0].pitches[0].step, "c");
+});
+
+test("a note dragged on the page moves the model's item", {
+    skip: engraved ? false : "run third_party/build-verovio-wasm.sh",
+}, async () => {
+    const score = await notation.Score.open("X:1\nT:t\nM:4/4\nL:1/4\nK:Eb\nA A A A |\n");
+    const items = (s: notation.Sheet) =>
+        (s.staves as { voices: { items: { id: number; pitches: { step: string; alter: number }[] }[] }[] }[])[0]
+            .voices[0].items;
+    const first = items(score.sheet())[0].id;
+    assert.ok(score.transpose(`n${first}`, 1));
+    const moved = items(score.sheet())[0].pitches[0];
+    // in E flat, dragging a note onto B gives B flat: reading in a key is what
+    // the arrival means, and nobody has to say so
+    assert.equal(moved.step, "b");
+    assert.equal(moved.alter, -1);
+});
+
+test("a refused operation leaves the page and the model alone", {
+    skip: engraved ? false : "run third_party/build-verovio-wasm.sh",
+}, async () => {
+    const score = await notation.Score.open("X:1\nT:t\nM:4/4\nL:1/4\nK:C\nC D E F |\n");
+    const before = score.mei();
+    assert.ok(!score.apply({ op: "move_steps", id: 9999, steps: 1 }));
+    assert.equal(score.mei(), before);
+    assert.ok(!score.canUndo);
 });

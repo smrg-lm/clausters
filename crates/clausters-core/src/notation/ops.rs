@@ -231,6 +231,14 @@ pub enum Op {
         #[serde(default)]
         marks: Marks,
     },
+    /// Move an item along the staff by whole diatonic places — what dragging a
+    /// note on the page is, as against transposing by a named interval.
+    MoveSteps {
+        /// The item.
+        id: u64,
+        /// How many places on the staff, up when positive.
+        steps: i32,
+    },
     /// Write what is above the music: the title, and who wrote it.
     SetHeader {
         /// The whole header, replacing whatever was there. It **replaces**
@@ -365,6 +373,7 @@ pub fn apply(sheet: Sheet, op: &Op) -> Result<Sheet, String> {
         Op::SetPitches { id, pitches } => edit::set_pitches(sheet, *id, pitches.clone()),
         Op::Tie { id, tied } => edit::tie(sheet, *id, *tied),
         Op::SetMarks { id, marks } => edit::set_marks(sheet, *id, marks.clone()),
+        Op::MoveSteps { id, steps } => edit::move_steps(sheet, *id, *steps),
         Op::SetHeader { header } => edit::set_header(sheet, header.clone()),
         Op::SetBarline { measure, kind } => edit::set_barline(sheet, *measure, kind),
         Op::SetBreak { measure, kind } => edit::set_break(sheet, *measure, kind),
@@ -504,6 +513,11 @@ pub fn catalog() -> &'static [OpSpec] {
             op: "set_marks",
             required: &["id"],
             optional: &["marks"],
+        },
+        OpSpec {
+            op: "move_steps",
+            required: &["id", "steps"],
+            optional: &[],
         },
         OpSpec {
             op: "set_header",

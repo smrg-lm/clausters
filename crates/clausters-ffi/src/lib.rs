@@ -136,8 +136,13 @@ pub use time::*;
 /// which is the other return path and the one that makes a score opened from
 /// typed text editable at all. One symbol for every notation format there is,
 /// because the engraver normalizes whatever it loaded to MEI before this sees
-/// it.
-pub const CORE_ABI_VERSION: u32 = 25;
+/// it. **v26 the score's edit path** — `clausters_score_apply` and
+/// `clausters_score_sheet`: an open document is edited through the *model's*
+/// verbs rather than through the engraver's editor, so there is one
+/// implementation of what an edit to a score means and a standalone host
+/// performs the same one. The engraver's editor stays as the escape hatch for a
+/// document that has no model behind it.
+pub const CORE_ABI_VERSION: u32 = 26;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

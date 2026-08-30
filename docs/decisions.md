@@ -7532,3 +7532,46 @@ the spelling, the stems and beams, which voice a note was in, and every mark
 there is no rule for yet — a grace note, an ornament and a fermata are on the
 page and read as ordinary notes. Pitch, written value and order survive both
 ways, and that is the whole of what a round trip is entitled to assume.
+
+## The score's edit path is the model's verbs, not the engraver's editor
+
+`Score` drove verovio's editor: an edit was a `keyDown` action, a `commit` and a
+reload. That worked and was a second implementation of what an edit to a score
+means — one in the algebra every client binds, one reachable only from a process
+with an engraver in it. The divergence this track exists to avoid, sitting in
+the middle of it.
+
+Now an edit is `Score::apply(&Op)`: the same payload the sheet verbs build,
+applied to the model, re-emitted and reloaded. An edit to an open score and an
+edit to a sheet in hand are the same operation through the same code, and a
+standalone host holding a sheet performs it with no engraver anywhere.
+
+**The engraver's editor stays, as the escape hatch it now honestly is.** A
+document that could not be read into a model still draws and still plays, and
+`transpose` falls back to `keyDown` for it — which is the one case where there
+is no item to move. `Score::sheet()` is how a caller learns which of the two it
+has, and a document with no model is a *state* rather than a failure.
+
+**Dragging a note is `move_steps`, and it is not transposition.** Moving along
+the staff takes the **key signature's** alteration for the letter it lands on:
+drag a note onto a B in E flat and it is a B flat, because that is what reading
+in a key means. `Op::Transpose` is the other thing — a named interval, keeping
+the alteration the arithmetic implies. Two verbs because they are two acts, and
+conflating them is how a drag in a flat key produces a natural nobody asked for.
+
+**The model is re-read from the engraver after every edit, never trusted from
+the operation's own result.** What the engraver holds is what the page draws and
+what the next edit starts from; letting the two differ would mean applying an
+operation to a score nobody is looking at. The same re-read runs after an undo,
+a redo and a raw editor action, so the model is never behind the page.
+
+**A reader has to apply the key signature, and finding that out cost a test.**
+The emitter writes no accidental where the armature already gives one — correct
+engraving — so a reader that took a bare `pname="b"` as B natural turned every B
+flat in E flat into a B natural on the first save. The rule is the emitter's own
+read backwards: start each measure from the armature, and let a printed
+accidental hold to the end of that measure at its step and octave. Beside it, a
+smaller one measured the same way: an accidental is an attribute on the note
+*or* a child `<accid>` element, and our emitter writes the sounding one as a
+child while verovio hands back attributes — so all four places are read, or an
+alteration is lost depending on which side of the engraver a document came from.

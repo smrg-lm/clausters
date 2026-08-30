@@ -57,6 +57,7 @@ export {
     invert,
     marks,
     measures,
+    moveSteps,
     ops,
     pitch,
     removeMeasures,
