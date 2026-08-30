@@ -36,20 +36,25 @@ own unit filled in.
 **Module layout.** The layer's growth is semantic rather than graphic, so it is
 a package split by what each part knows: `engraver` holds the engraver and its
 output (`Score`, `engrave`, `svg_to_display_list`, `page_json`), `mei` is the
-reduction that turns the client's own sequencing data into a voice, `sheet` is
-the **score model** — notation as data, and operations as data over it — and
+pair of reductions between the client's own sequencing data and a score, in
+both directions (`from_timeline`, `to_timeline`), `sheet` is
+the **score model** — notation as data, operations as data over it, and the
+reading that turns it back into sound (`to_notes`, `interpretation`) — and
 `view` is the pair of helpers that put a page on screen and play it
 (`score_view`, `transport`). Every name is re-exported here, so
 ``clausters.gui.notation.Score`` keeps meaning what it always did.
 """
 
 from .engraver import Score, engrave, page_json, svg_to_display_list
-from .mei import from_notes, from_timeline
+from .mei import (
+    from_notes, from_timeline, sheet_from_notes, sheet_from_timeline,
+    to_timeline,
+)
 from .sheet import (
-    add_spanner, apply, concat, delete, insert, insert_measures, invert, marks,
-    measures, ops, pitch, remove_measures, remove_spanner, repeat, retrograde,
-    set_dur, set_marks, set_meter, set_pitches, silence, stack, stretch, tie,
-    to_mei, to_voice, transpose,
+    add_spanner, apply, concat, delete, insert, insert_measures, interpretation,
+    invert, marks, measures, ops, pitch, remove_measures, remove_spanner,
+    repeat, retrograde, set_dur, set_marks, set_meter, set_pitches, silence,
+    stack, stretch, tie, to_mei, to_notes, to_voice, transpose,
 )
 from .sheet import from_voice as sheet_from_voice
 from .view import score_view, transport
@@ -65,6 +70,7 @@ __all__ = [
     "from_timeline",
     "insert",
     "insert_measures",
+    "interpretation",
     "invert",
     "marks",
     "measures",
@@ -75,11 +81,13 @@ __all__ = [
     "remove_spanner",
     "repeat",
     "retrograde",
+    "score_view",
     "set_dur",
     "set_marks",
     "set_meter",
     "set_pitches",
-    "score_view",
+    "sheet_from_notes",
+    "sheet_from_timeline",
     "sheet_from_voice",
     "silence",
     "stack",
@@ -87,6 +95,8 @@ __all__ = [
     "svg_to_display_list",
     "tie",
     "to_mei",
+    "to_notes",
+    "to_timeline",
     "to_voice",
     "transport",
     "transpose",

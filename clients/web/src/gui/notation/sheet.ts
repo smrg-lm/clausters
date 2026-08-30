@@ -25,8 +25,10 @@
 // client.
 
 import {
+    interpretation as coreInterpretation,
     sheetApply,
     sheetOps,
+    sheetPerform,
     sheetToMei,
     voiceToSheet as coreVoiceToSheet,
 } from "../../core/clausters_core_web.js";
@@ -55,6 +57,39 @@ export interface Sheet {
 export interface Op {
     op: string;
     [key: string]: unknown;
+}
+
+/**
+ * How the symbols are read: the whole of what the interpreter believes. Loose
+ * for the same reason a {@link Sheet} is — the fields are the core's, they grow
+ * with the reading, and a client that pinned them would drift from it.
+ */
+export interface Interpretation {
+    beat_unit: number;
+    amp: number;
+    dynamics: Record<string, number>;
+    accents: unknown[];
+    [key: string]: unknown;
+}
+
+/** One sounding note, as the interpreter heard it. */
+export interface PerformedNote {
+    /** Onset, in beats. */
+    t: number;
+    /** The **written** value, in beats. */
+    dur: number;
+    /** How long it is **held**, in beats. */
+    sustain: number;
+    /** MIDI note number. */
+    pitch: number;
+    /** Linear amplitude. */
+    amp: number;
+    /** The staff it is written on, 0-based from the top. */
+    staff: number;
+    /** The voice of that staff, 0-based. */
+    voice: number;
+    /** The model id of the item it came from. */
+    id: number;
 }
 
 /** One entry of the operation catalog. */
@@ -117,6 +152,55 @@ export function apply(sheet: Sheet, op: Op): Sheet {
  */
 export function toMei(sheet: Sheet): string {
     return sheetToMei(JSON.stringify(sheet));
+}
+
+/**
+ * The default **reading** of a score: every number {@link toNotes} depends on.
+ *
+ * What a staccato does to a length, what `mf` is in amplitude, how far a
+ * crescendo travels, which positions in the bar are stressed. Read it, change
+ * what you disagree with, and pass it back to {@link toNotes} — that is the
+ * whole of overriding an interpretation, and nothing in the core is edited to
+ * play a score in another style.
+ *
+ * It comes from Rust rather than being written here for the same reason the
+ * operations do: two clients each holding their own copy of the dynamics table
+ * play the same score at two amplitudes, and nothing compares them. It is also
+ * the **parity surface** for the reading, since the interpretation rides inside
+ * a payload and the binding table cannot see its fields.
+ */
+export function interpretation(): Interpretation {
+    return JSON.parse(coreInterpretation()) as Interpretation;
+}
+
+/**
+ * Read `sheet` into the notes it **sounds**, in time order.
+ *
+ * The path back out of the score, and the reason it is not a conversion: the
+ * symbols mean something. A staccato shortens the sound and moves no attack, a
+ * dynamic governs every note after it until the next one, a hairpin is a shape
+ * over a stretch of notes rather than a mark on any of them, and a tie is one
+ * sound of the summed length.
+ *
+ * Each note carries **two lengths** — `dur`, what is written, and `sustain`,
+ * what is heard — in beats (a quarter is one beat by default,
+ * `interp.beat_unit`); plus `t`, `pitch`, `amp`, the `staff` and `voice` it was
+ * written on, and the model `id` it came from. The pair of lengths maps
+ * straight onto an `Event`'s `dur` and `sustain`, which is what
+ * {@link toTimeline} does.
+ *
+ * `interp` is the reading ({@link interpretation}); left out, the default. Any
+ * field left out of it keeps its default, so overriding one is a one-key
+ * object.
+ *
+ * **The instrument is not in the notation** — a staff does not say what plays
+ * it — so the notes name their staff and the binding is made where the score is
+ * rendered.
+ */
+export function toNotes(sheet: Sheet, interp?: Interpretation): PerformedNote[] {
+    return JSON.parse(
+        sheetPerform(JSON.stringify(sheet), interp ? JSON.stringify(interp) : ""),
+    ) as PerformedNote[];
 }
 
 /**

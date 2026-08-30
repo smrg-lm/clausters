@@ -20,6 +20,7 @@ import {
     fromNotes,
     insert,
     insertMeasures,
+    interpretation,
     marks,
     measures,
     ops,
@@ -36,6 +37,8 @@ import {
     stretch,
     tie,
     toMei,
+    toNotes,
+    toTimeline,
     toVoice,
     transpose,
 } from "../src/gui/notation/index.ts";
@@ -260,4 +263,99 @@ test("a rest that fills a measure is written as one", () => {
     const mei = toMei(duo);
     assert.match(mei, /<mRest\/>/);
     assert.ok(!mei.includes('<rest dur="1"'));
+});
+
+// -- the interpreter: what the page means, read back into sound ---------------
+
+function quarters(n: number, options = {}): Sheet {
+    return sheetFromVoice(Array.from({ length: n }, () => ({ midis: [60], ticks: 8 })), options);
+}
+
+function idsOf(sheet: Sheet): number[] {
+    const staves = sheet.staves as { voices: { items: { id: number }[] }[] }[];
+    return staves[0].voices[0].items.map((item) => item.id);
+}
+
+test("the interpretation is data and comes from the core", () => {
+    const reading = interpretation();
+    // every number the reading depends on, in one value a caller can edit --
+    // and none of them written down in this client
+    assert.ok(reading.dynamics.mf > reading.dynamics.p);
+    assert.equal((reading.articulations as Record<string, { factor: number }>).stacc.factor, 0.5);
+    assert.equal(reading.beat_unit, 4);
+    // the downbeat, and nothing else: one and three in a 4/4 is a style
+    assert.deepEqual((reading.accents as { at: number[] }[]).map((a) => a.at), [[0, 1]]);
+});
+
+test("a staccato shortens the sound and moves no attack", () => {
+    let sheet = quarters(4);
+    const ids = idsOf(sheet);
+    sheet = setMarks(sheet, ids[1], marks({ articulations: ["stacc"] }));
+    const notes = toNotes(sheet);
+    // the written value and the heard one are two numbers, and only one moved
+    assert.equal(notes[1].dur, 1.0);
+    assert.equal(notes[1].sustain, 0.5);
+    assert.deepEqual(notes.map((n) => n.t), [0.0, 1.0, 2.0, 3.0]);
+});
+
+test("a dynamic governs until the next one and a hairpin shapes a span", () => {
+    let sheet = quarters(8);
+    const ids = idsOf(sheet);
+    sheet = setMarks(sheet, ids[1], marks({ dynamic: "p" }));
+    sheet = addSpanner(sheet, "crescendo", ids[1], ids[4]);
+    const amps = toNotes(sheet).map((n) => n.amp);
+    // the mark is on one note and governs every note after it
+    assert.ok(amps[1] < amps[0]);
+    // the hairpin rises across its span...
+    assert.ok(amps[2] > amps[1] && amps[3] > amps[2] && amps[4] > amps[3]);
+    // ...and past its far end nothing of it is left
+    assert.equal(amps[5], amps[6]);
+});
+
+test("a tie is one sound and a tuplet needs no rule", () => {
+    const tied = tie(quarters(3), 1, true);
+    const notes = toNotes(tied);
+    assert.equal(notes.length, 2, "the second note does not attack again");
+    assert.equal(notes[0].dur, 2.0);
+    assert.equal(notes[1].t, 2.0);
+    // a triplet's division is already exact in the rational the item holds
+    const triplet = stretch(quarters(3), [1, 3]);
+    assert.ok(Math.abs(toNotes(triplet)[2].t - 2 / 3) < 1e-12);
+});
+
+test("an interpretation is overridden without editing the core", () => {
+    const style = interpretation();
+    (style.accents as unknown[]).push({ at: [1, 2], gain: 1.1, meter: "4/4" });
+    style.detach = 0.6;
+    const notes = toNotes(quarters(4), style);
+    // a stress this reader believes in and the default does not
+    assert.ok(Math.abs(notes[2].amp / notes[1].amp - 1.1) < 1e-12);
+    // and a player who detaches by habit, which the default deliberately is not
+    assert.equal(notes[1].sustain, 0.6);
+    assert.equal(toNotes(quarters(4))[1].sustain, 1.0);
+});
+
+test("a staff names itself and never what plays it", () => {
+    const duo = stack(quarters(2), quarters(2), { asStaff: true });
+    const notes = toNotes(duo);
+    assert.deepEqual([...new Set(notes.map((n) => n.staff))].sort(), [0, 1]);
+    // the binding is made where the score is rendered, explicitly
+    const timeline = toTimeline(duo, { instruments: { 0: "flute", 1: "cello" } });
+    const played = new Set([...timeline].map(([, event]) => (event as Event).get("instrument")));
+    assert.deepEqual([...played].sort(), ["cello", "flute"]);
+});
+
+test("a timeline carries both lengths onto the event", () => {
+    let sheet = quarters(2);
+    sheet = setMarks(sheet, idsOf(sheet)[0], marks({ articulations: ["stacc"] }));
+    const [, first] = [...toTimeline(sheet)][0] as [number, Event];
+    assert.equal(first.get("dur"), 1.0);
+    assert.equal(first.sustain(), 0.5);
+    assert.equal(first.midinote(), 60);
+});
+
+test("a hairpin written to a note that is gone is refused by name", () => {
+    const sheet = quarters(2);
+    sheet.spanners = [{ kind: "crescendo", from: 1, to: 99 }];
+    assert.throws(() => toNotes(sheet), /crescendo/);
 });

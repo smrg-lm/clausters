@@ -34,6 +34,7 @@
 mod algebra;
 mod cursors;
 mod edit;
+mod interp;
 mod mei;
 mod model;
 mod ops;
@@ -49,6 +50,7 @@ pub use edit::{
     At, add_spanner, delete, insert, remove_spanner, set_dur, set_marks, set_pitches, silence, tie,
     to_voice,
 };
+pub use interp::{Accent, Articulation, Interpretation, Note, default_interpretation, perform};
 pub use mei::{Slot, sheet_to_mei, voice_to_mei, voice_to_sheet};
 pub use model::{Grid, Item, Marks, Meter, Pitch, Sheet, Spanner, Staff, Step, Voice};
 pub use ops::{Op, OpSpec, Span, apply, catalog, default_steps, transpose_pitch};

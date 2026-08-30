@@ -125,8 +125,14 @@ pub use time::*;
 /// at all. It is the same by-value shape the document surface took at v15, for
 /// the same reason. The verbs are **not** symbols — they ride inside the
 /// payload — so the catalog is what says which exist, and adding one moves
-/// nothing here.
-pub const CORE_ABI_VERSION: u32 = 23;
+/// nothing here. **v24 the interpreter** — `clausters_core_sheet_perform` and
+/// `clausters_core_interpretation`: the path back out of the score, reading
+/// what the symbols *mean* into sounding notes, and the default reading a
+/// caller starts from when it wants another one. Two symbols rather than one
+/// because an override has to be able to read the defaults before editing them,
+/// and a client that wrote those numbers down for itself would play the same
+/// score at a different amplitude than the other client does.
+pub const CORE_ABI_VERSION: u32 = 24;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

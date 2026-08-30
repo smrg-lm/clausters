@@ -599,8 +599,20 @@ TypeScript. `clausters-ffi` exposes both over the C ABI and
 `clausters-core-web` over wasm, and each client is a thin shell over that
 (`clients/python/clausters/gui/notation/` is `ctypes` and
 `clients/web/src/gui/notation/` is `cwrap`, each plus the reduction of its own
-`Event`/`Timeline` into a voice — the one step that reads client-native types,
-and the seam a richer encoding extends). The engraver is built twice from one
+`Event`/`Timeline` into a voice **and the building of them back out of a
+performed note** — the one step that reads client-native types, and the seam a
+richer encoding extends). The **score model** sits under the encoder
+(`notation::model`, `ops`, `algebra`, `edit`), and its two directions are the
+same shape in both bindings: the model and an operation both cross as *data*
+through one symbol, so a new verb costs no ABI at all, and the parity a binding
+table cannot give is given by two catalog calls instead — `sheet_ops` for the
+verbs, `interpretation` for the numbers the reading depends on. **The
+interpreter** (`notation::interp`) is the way back out, and it is in the core
+for the reason every numeric rule is: what a staccato does to a length is one
+implementation or it is two answers. It is the layer's own division — what is
+written against what is heard — so a performed note carries both lengths, and
+the one thing notation cannot carry, the staff-to-instrument binding, is made
+explicitly by the caller at render time rather than inferred from the page. The engraver is built twice from one
 pin (`third_party/build-verovio{,-wasm}.sh`, the same importer options), which
 is what makes the two drawings comparable rather than merely similar, and
 `clients/web/tests/notation-parity.test.ts` compares them. The host never links

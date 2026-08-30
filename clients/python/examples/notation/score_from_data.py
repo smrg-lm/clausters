@@ -1,19 +1,24 @@
 #!/usr/bin/env python3
-"""Engraving **sequencing data** as a score: `notation.from_timeline`.
+"""Engraving **sequencing data** as a score, and hearing the score back.
 
 The companion to ``score.py``, which types a phrase by hand. Here the score
 is not typed at all -- it is generated from the client's own data. A `Timeline`
-of `Event`s (a chord progression under a melody) is turned into MEI by
-`clausters.gui.notation.from_timeline`, engraved into the `score` display list,
+of `Event`s (a chord progression under a melody) is turned into a score by
+`clausters.gui.notation.sheet_from_timeline`, engraved into the `score` display list,
 and shown in the window: chords stacked on the beat, the melody above them,
 rests where the data leaves gaps.
 
 This is the inverse of the usual notation flow -- the events *are* the source
 and the score is the view of them (data -> score). What is then **played** is
-the engraved score's own ``notes`` layer, not the source timeline: engraving
-carries its own tempo, so anchoring the playback cursor to the sound means
-playing what the timemap timed, exactly as ``score.py`` does. The piece you
-hear is the piece you see, cursor locked to it.
+not the source timeline but the **score**, read back by
+`clausters.gui.notation.to_timeline`: the round trip closes here, and it is a
+round trip rather than a copy, because the notation carries what the events had
+no way to say and the events carried what the page has no way to hold. Going
+out, the exact onsets snap to written values and the amplitudes become a
+dynamic or nothing at all; coming back, a written value becomes an exact
+duration and a symbol becomes a decision -- which is the interpreter's, and is
+data a caller can replace (`clausters.gui.notation.interpretation`). The piece
+you hear is the piece you see, cursor locked to it.
 
 The page here is a **read-only view** -- the default: a drag on a note does
 nothing, because this script does not apply edits. ``score.py`` is the other
@@ -46,9 +51,10 @@ from clausters import Event, Session
 from clausters.gui import button, notation, panel, view
 from clausters.seq.timeline import Playhead, Timeline
 
-# One beat per second, so an engraved millisecond is a beat/1000 -- score time
-# and clock time are the same axis, which is what ties the cursor to the sound.
-TEMPO = 1.0
+# Two beats per second: the quarter = 120 the engraver times the page at. Score
+# time and clock time are then the same axis, which is what ties the cursor to
+# the sound -- a quarter is one beat in the model and half a second on the page.
+TEMPO = 2.0
 
 
 # %% [markdown]
@@ -73,23 +79,6 @@ def build_timeline() -> Timeline:
     for beat, pitch, dur in melody:
         tl.add(beat, Event(midinote=pitch, dur=dur, amp=0.14))
     return tl
-
-
-# %% [markdown]
-# ## What the engraving plays back
-
-# %%
-def playback_timeline(notes: list) -> Timeline:
-    """Place the **engraved** notes on a timeline to play them (their ``t``/
-    ``dur`` are the score's own timemap, in ms -> beats/1000, so the sound runs
-    on the same clock the cursor reads). Chords fall on the same beat and simply
-    stack, as they were engraved."""
-    timeline = Timeline()
-    for note in notes:
-        timeline.add(note["t"] / 1000.0,
-                     Event(midinote=note["pitch"], dur=note["dur"] / 1000.0,
-                           amp=0.11))
-    return timeline
 
 
 # %% [markdown]
@@ -119,8 +108,10 @@ def scene(display_list: dict, sample_rate: float) -> dict:
 
 # %%
 source = build_timeline()
-score = notation.Score.from_timeline(source, meter="4/4", key="C",
-                                     beat_unit=4, page_width=1600)
+# Stop at the **model** rather than at the MEI: the sheet is what is engraved
+# *and* what is read back into sound, so both directions leave from one place.
+sheet = notation.sheet_from_timeline(source, meter="4/4", key="C", beat_unit=4)
+score = notation.Score(notation.to_mei(sheet), page_width=1600)
 dl = score.display_list()
 print(f"engraved {len(dl['notes'])} notes into {len(dl['prims'])} primitives")
 
@@ -137,11 +128,13 @@ session.start()
 
 # %% [markdown]
 # ## Transport
-# Play the engraved score, not the source timeline: the cursor rides the
-# engraving's timemap, so the sound must run on the same time base.
+# Play the **score**, not the source timeline: the cursor rides the engraving's
+# timemap, so the sound must run on the same time base -- and what makes it the
+# score rather than a copy of the source is that the symbols are read, not the
+# events replayed.
 
 # %%
-playhead = Playhead(playback_timeline(dl["notes"]), session.clock, server)
+playhead = Playhead(notation.to_timeline(sheet), session.clock, server)
 
 
 def play():

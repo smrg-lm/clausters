@@ -366,6 +366,39 @@ name, since it cannot be split. And accidentals are printed only where they are
 needed: not where the key signature implies them, not twice in a bar, and a
 natural is a sign where the key alters that step.
 
+The way back out is `toNotes`, and it is not a conversion: the symbols mean
+something, and honouring them is the whole of the step.
+
+```ts
+for (const note of notation.toNotes(sheet)) { /* t, dur, sustain, pitch, amp, staff, voice, id */ }
+const timeline = notation.toTimeline(sheet, { instruments: { 0: "piano", 1: "bass" } });
+```
+
+Every note comes back with **two lengths**: `dur`, what is written, and
+`sustain`, what is heard. A staccato quarter is still a quarter, so the next
+attack is where it always was and only the sound is shorter; `toTimeline` puts
+the pair straight onto an `Event`'s `dur` and `sustain`. A **dynamic** governs
+every note after it until the next one; a **hairpin** is a shape over a stretch
+of notes; a **tie** is one sound of the summed length; a note's metric position
+stresses it.
+
+**The reading is data, and it is yours.** `notation.interpretation()` hands back
+every number it depends on — change what you disagree with and pass it to
+`toNotes`; nothing in the core is edited to play a score in another style. What
+the defaults claim is as little as a player can claim and still be playing: the
+only metric stress is the **downbeat**, because stressing one and three of a 4/4
+belongs to a style, and a style passes its own accents.
+
+**What plays a staff is not in the notation**, so each note names the `staff` it
+was written on and the binding is made where the score is rendered.
+
+**The round trip is honest, and both directions lose something.** Events to a
+score loses exact onsets, continuous amplitude, microtones and the instrument;
+back again loses the spelling, the stems and beams, which voice a note was in,
+and every mark the interpreter has no rule for yet — a grace note, an ornament
+and a fermata are on the page and read as ordinary notes. What survives both
+ways is pitch, written value and order.
+
 `examples/notation/compose.html` builds a whole piece this way and plays it.
 
 ## Bindings, and the page that runs without a script

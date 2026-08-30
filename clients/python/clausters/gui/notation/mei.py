@@ -1,10 +1,17 @@
-"""Score generation: the client's sequencing data into MEI.
+"""The two directions between the client's sequencing data and a score.
 
 The third way into the engraver, beside typed score text and the SVG adapter:
 turn the client's own `clausters.seq` data (Event, Timeline) into MEI — the
 format `clausters.gui.notation.engrave` already reads — so a melody or a
 bounced timeline is *seen* and edited as notation, the inverse of the
 score->sound flow.
+
+**And back again.** `to_timeline` is the return trip: a sheet read into what it
+sounds (`clausters.gui.notation.to_notes`, which is where the symbols are
+honoured) and placed on a `clausters.seq.timeline.Timeline` of `Event`s. It is
+here rather than beside the model because it is the same seam in the other
+direction — building `Event`s reads Python-native types and stays in this
+client, while what a staccato *means* is one implementation in Rust.
 
 The **seam this module is** is worth naming, because it is where the
 agnostic/shell line falls and it is what a richer encoding extends: the
@@ -49,8 +56,8 @@ def from_notes(notes, *, meter: str = "4/4", clef: str = "G2", key: str = "C",
     the model itself holds an exact rational, so a tuplet is representable the
     moment a caller can express one — writing it is the emission milestone.
     """
-    return _voice_to_mei(_voice_from_notes(notes, beat_unit),
-                         meter=meter, clef=clef, key=key)
+    return sheet.to_mei(sheet_from_notes(notes, meter=meter, clef=clef,
+                                         key=key, beat_unit=beat_unit))
 
 
 def from_timeline(timeline, *, meter: str = "4/4", clef: str = "G2",
@@ -68,8 +75,77 @@ def from_timeline(timeline, *, meter: str = "4/4", clef: str = "G2",
     already, and writing them is the emission milestone). Options and the tie/barline behaviour are
     as `from_notes`; returns the MEI for `engrave`/`Score`/`Score.from_timeline`.
     """
-    return _voice_to_mei(_voice_from_timeline(timeline, beat_unit),
-                         meter=meter, clef=clef, key=key)
+    return sheet.to_mei(sheet_from_timeline(timeline, meter=meter, clef=clef,
+                                            key=key, beat_unit=beat_unit))
+
+
+# -- stopping at the model ----------------------------------------------------
+# The same two reductions, handing back the **sheet** rather than the MEI. What
+# they are for is everything the model can do that a string cannot: operate on
+# the score, and read it back into sound.
+
+
+def sheet_from_notes(notes, *, meter: str = "4/4", clef: str = "G2",
+                     key: str = "C", beat_unit: int = 4) -> dict:
+    """`from_notes`, stopping at the score model instead of the MEI.
+
+    The sheet is what `clausters.gui.notation.to_mei` writes and what
+    `clausters.gui.notation.to_notes` reads back, so a caller that wants to
+    operate on the score — or hear it as the page says rather than as the events
+    said — starts here.
+    """
+    return sheet.from_voice(_voice_from_notes(notes, beat_unit),
+                            meter=meter, clef=clef, key=key)
+
+
+def sheet_from_timeline(timeline, *, meter: str = "4/4", clef: str = "G2",
+                        key: str = "C", beat_unit: int = 4) -> dict:
+    """`from_timeline`, stopping at the score model instead of the MEI."""
+    return sheet.from_voice(_voice_from_timeline(timeline, beat_unit),
+                            meter=meter, clef=clef, key=key)
+
+
+def to_timeline(score, *, instruments=None, interp: dict | None = None,
+                **event_keys):
+    """Read a sheet into a `clausters.seq.timeline.Timeline` that plays it.
+
+    The return trip, and the one `clausters.gui.notation.to_notes` does the
+    thinking for: each sounding note becomes an `clausters.seq.event.Event` at
+    its onset, carrying the **written** value as ``dur`` and the **heard** one as
+    ``sustain`` — which is the pair the page keeps apart and the reason a
+    staccato quarter is still a quarter.
+
+    ``instruments`` binds a staff to what plays it, since the notation does not
+    say: a def name for every staff, or a mapping from staff index (0 is the top
+    one) to def name. Left out, events take the client's default instrument.
+    Anything in ``event_keys`` is merged into every event, for the parameters a
+    score has no symbol for at all (``pan``, a control the def reads).
+
+    ``interp`` is the reading (`clausters.gui.notation.interpretation`); left
+    out, the default.
+    """
+    from ...seq.event import Event
+    from ...seq.timeline import Timeline
+
+    out = Timeline()
+    for note in sheet.to_notes(score, interp):
+        event = dict(event_keys)
+        event.update(midinote=note["pitch"], dur=note["dur"],
+                     sustain=note["sustain"], amp=note["amp"])
+        instrument = _instrument(instruments, note["staff"])
+        if instrument is not None:
+            event["instrument"] = instrument
+        out.add(note["t"], Event(event))
+    return out
+
+
+def _instrument(instruments, staff: int):
+    """What plays ``staff``: one name for every staff, or a mapping."""
+    if instruments is None:
+        return None
+    if isinstance(instruments, str):
+        return instruments
+    return instruments.get(staff)
 
 
 # -- the intermediate voice: back-to-back slots -----------------------------
@@ -77,18 +153,6 @@ def from_timeline(timeline, *, meter: str = "4/4", clef: str = "G2",
 # carries one midi, a chord slot several, a rest none. It crosses to the shared
 # encoder as JSON, one object per slot, which lays it out into barred, tied
 # measures and emits the XML.
-
-
-def _voice_to_mei(voice: list, *, meter: str, clef: str, key: str) -> str:
-    """Hand a reduced voice to the shared encoder, through the model.
-
-    One path to MEI, not two: the voice is lifted into a sheet and the sheet is
-    written out, which is the same road `sheet.transpose` and every later
-    operation travel. The bytes are the encoder's own — the core's
-    ``voice_to_mei`` goes through the model too — so nothing about the output
-    changed when the model arrived.
-    """
-    return sheet.to_mei(sheet.from_voice(voice, meter=meter, clef=clef, key=key))
 
 
 def _dur_ticks(beats: float, beat_unit: int) -> int:

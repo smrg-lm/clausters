@@ -1652,6 +1652,44 @@ pub fn sheet_ops() -> Result<String, JsError> {
         .map_err(|e| JsError::new(&e.to_string()))
 }
 
+/// Read a score model into the notes it **sounds**, under `interp`.
+///
+/// Each note carries two lengths — `dur`, what is written, and `sustain`, what
+/// is heard — because an honoured articulation makes them different numbers and
+/// collapsing them would move every attack after a staccato. It also names the
+/// `staff` and `voice` it was written on, which is what a caller binds an
+/// instrument to: the notation does not say what plays it.
+///
+/// `interp` may be `""` or `"{}"` for the default reading, and any field left
+/// out keeps its default. What the default *is* comes back from
+/// [`interpretation`], so this package writes none of those numbers down.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = sheetPerform)]
+pub fn sheet_perform(sheet: &str, interp: &str) -> Result<String, JsError> {
+    let sheet: clausters_core::notation::Sheet =
+        serde_json::from_str(sheet).map_err(|e| JsError::new(&format!("sheet: {e}")))?;
+    let interp: clausters_core::notation::Interpretation = if interp.trim().is_empty() {
+        clausters_core::notation::default_interpretation()
+    } else {
+        serde_json::from_str(interp).map_err(|e| JsError::new(&format!("interpretation: {e}")))?
+    };
+    let notes = clausters_core::notation::perform(sheet, &interp).map_err(|e| JsError::new(&e))?;
+    serde_json::to_string(&notes).map_err(|e| JsError::new(&e.to_string()))
+}
+
+/// The default interpretation, as JSON — every number the reading depends on,
+/// and the value an override starts from.
+///
+/// The parity surface for the reading, as `sheetOps` is for the verbs: the
+/// interpretation crosses inside a payload, so nothing structural notices when
+/// one client's idea of `mf` drifts from the other's.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = interpretation)]
+pub fn interpretation() -> Result<String, JsError> {
+    serde_json::to_string(&clausters_core::notation::default_interpretation())
+        .map_err(|e| JsError::new(&e.to_string()))
+}
+
 // ---- MIDI files (W9) --------------------------------------------------------
 //
 // A page has no filesystem and no virtual OS port, but it does have a score to

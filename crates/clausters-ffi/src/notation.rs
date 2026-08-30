@@ -21,8 +21,8 @@
 //! than refused, so no binding has to validate before calling.
 
 use clausters_core::notation::{
-    Op, Sheet, Slot, apply, catalog, sheet_to_mei, svg_to_display_list, voice_to_mei,
-    voice_to_sheet,
+    Interpretation, Op, Sheet, Slot, apply, catalog, default_interpretation, perform, sheet_to_mei,
+    svg_to_display_list, voice_to_mei, voice_to_sheet,
 };
 
 /// Read a pointer+length as UTF-8 (lossily), or `None` when the pointer is null.
@@ -266,6 +266,77 @@ pub unsafe extern "C" fn clausters_core_sheet_to_mei(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn clausters_core_sheet_ops(out: *mut u8, out_cap: usize) -> usize {
     let json = serde_json::to_vec(catalog()).unwrap_or_default();
+    // SAFETY: caller guarantees `out` is writable for `out_cap` bytes.
+    unsafe { fill(&json, out, out_cap) }
+}
+
+/// Read a score model into the notes it **sounds**, under `interp` — the
+/// reading, as JSON — and write them to `out` (capacity `out_cap`). Returns the
+/// byte count the result needs, or `0` when `sheet` is null.
+///
+/// The answer is the same envelope the other sheet calls use: `{"ok": [ … ]}`
+/// with one entry per sounding note, or `{"error": "…"}`.
+///
+/// Each note carries **two lengths** — `dur`, what is written, and `sustain`,
+/// what is heard — because they are different numbers whenever an articulation
+/// is honoured, and a caller that collapsed them into one would move every
+/// attack after a staccato. It also carries the `staff` and `voice` it was
+/// written on, which is what a caller binds an instrument to: the notation does
+/// not say what plays it.
+///
+/// `interp` may be null or `{}` for the default reading; any field left out of
+/// it keeps its default, so overriding one is a one-key object. What the
+/// default *is* — every number in it — comes back from
+/// [`clausters_core_interpretation`], so no client writes those numbers down.
+///
+/// # Safety
+/// Each pointer must be readable for its length, and `out` writable for
+/// `out_cap` bytes (or null, to size only).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_core_sheet_perform(
+    sheet: *const u8,
+    sheet_len: usize,
+    interp: *const u8,
+    interp_len: usize,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    // SAFETY: caller guarantees the ranges.
+    let Some(sheet) = (unsafe { text(sheet, sheet_len) }) else {
+        return 0;
+    };
+    // SAFETY: caller guarantees the range; a null pointer is the default.
+    let interp = unsafe { text(interp, interp_len) };
+    let read = match interp.as_deref().filter(|s| !s.trim().is_empty()) {
+        None => Ok(default_interpretation()),
+        Some(text) => serde_json::from_str::<Interpretation>(text),
+    };
+    let json = match (serde_json::from_str::<Sheet>(&sheet), read) {
+        (Err(e), _) => envelope_error(&format!("the sheet could not be read: {e}")),
+        (_, Err(e)) => envelope_error(&format!("the interpretation could not be read: {e}")),
+        (Ok(sheet), Ok(interp)) => match perform(sheet, &interp) {
+            Ok(notes) => serde_json::json!({ "ok": notes }).to_string(),
+            Err(e) => envelope_error(&e),
+        },
+    };
+    // SAFETY: caller guarantees `out` is writable for `out_cap` bytes.
+    unsafe { fill(json.as_bytes(), out, out_cap) }
+}
+
+/// The default interpretation, as JSON — every number the reading depends on.
+///
+/// **The parity surface for the reading**, and the value an override starts
+/// from. The interpretation crosses inside a payload, so the binding table sees
+/// one symbol and none of its fields; each client is contrasted against this,
+/// as it is against `clausters_core_sheet_ops` for the verbs. It is also why no
+/// client carries its own copy of the dynamics table: two clients with two
+/// copies play the same score at two amplitudes, and nothing compares them.
+///
+/// # Safety
+/// `out` must be null or writable for `out_cap` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_core_interpretation(out: *mut u8, out_cap: usize) -> usize {
+    let json = serde_json::to_vec(&default_interpretation()).unwrap_or_default();
     // SAFETY: caller guarantees `out` is writable for `out_cap` bytes.
     unsafe { fill(&json, out, out_cap) }
 }

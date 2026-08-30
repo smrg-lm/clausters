@@ -40,8 +40,9 @@ motif about its own first note gives A-flat, not G-sharp), and <b>the grid does
 not move when the content does</b> (stretching doubles the written values against
 the barlines that were already there, so the phrase re-bars across them). The
 coda's first note carries a staccato, which shortens it in performance and
-changes nothing about the page — honouring it is the interpreter's, not the
-engraving's. And a tuplet cannot be split, so one that would cross a barline is
+changes nothing about the page — honouring it is the <i>interpreter's</i>, not
+the engraving's, and it is what <code>notation.toTimeline</code> does at the end
+of this page. And a tuplet cannot be split, so one that would cross a barline is
 refused by name.</div>
 
       <button id="run">compose and open</button>
@@ -54,8 +55,8 @@ refused by name.</div>
       call: the motif from a voice, the five operations in the same order, the
       concatenation into a piece, the two-staff coda with its marks and slur,
       the tuplet that is refused for crossing a barline, `toMei` into the
-      ordinary `Score` path, and the same minimal transport with the by-hand
-      cursor anchor.
+      ordinary `Score` path, `toTimeline` reading the sheet back into what it
+      sounds, and the same minimal transport with the by-hand cursor anchor.
 
       The platform's differences are the usual two -- the host is the wasm one
       in this tab and draws into an element, and nothing is pumped -- plus the
@@ -66,13 +67,16 @@ refused by name.</div>
       /examples/notation/compose.html. Build it first: ./build.sh
     -->
     <script type="module">
-      import { Event, Session, gui, seq } from "../../dist/index.js";
+      import { Session, gui, seq } from "../../dist/index.js";
       const { notation } = gui;
 
       const $ = (id) => document.getElementById(id);
       const log = (line) => { $("log").textContent += line + "\n"; };
 
-      const TEMPO = 1.0;
+      // Two beats per second: the quarter = 120 the engraver times the page at.
+      // Score time and clock time are then the same axis, which is what ties the
+      // cursor to the sound.
+      const TEMPO = 2.0;
 
       /** The letters of a sheet's first voice, for reading a phrase in the log. */
       function steps(sheet) {
@@ -81,21 +85,6 @@ refused by name.</div>
             p.step.toUpperCase() + "b".repeat(-p.alter) + "#".repeat(p.alter)
           ).join("") || "-"
         ).join(" ");
-      }
-
-      /**
-       * Place the **engraved** notes on a timeline to play them: their `t` and
-       * `dur` are the score's own timemap, so the sound runs on the clock the
-       * cursor reads.
-       */
-      function playbackTimeline(notes) {
-        const timeline = new seq.Timeline();
-        for (const note of notes) {
-          timeline.add(note.t / 1000.0, new Event({
-            midinote: note.pitch, dur: note.dur / 1000.0, amp: 0.11,
-          }));
-        }
-        return timeline;
       }
 
       /** A minimal transport over the composed page. Every widget is *named*. */
@@ -194,7 +183,15 @@ refused by name.</div>
         const win = await scene(dl, sr).open($("stage"));
         session.start();
 
-        const playhead = new seq.Playhead(playbackTimeline(dl.notes), session.clock, server);
+        // What plays is the **interpretation of the sheet**, not the engraved
+        // notes: `toTimeline` reads the page's own symbols -- the staccato
+        // shortens the sound and moves no attack, the downbeat is stressed, a
+        // dynamic governs the notes after it -- and hands back events carrying
+        // both lengths, `dur` written and `sustain` heard. Pass `instruments`
+        // to say what plays each staff; left out, as here, they take the
+        // client's default, because the notation itself never says.
+        const playhead = new seq.Playhead(
+          notation.toTimeline(piece), session.clock, server);
 
         win.widget("play").onClick(async () => {
           playhead.play({ at: 0.0 });

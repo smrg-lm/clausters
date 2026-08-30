@@ -518,3 +518,98 @@ def test_a_rest_that_fills_a_measure_is_written_as_one():
     mei = notation.to_mei(duo)
     assert "<mRest/>" in mei
     assert '<rest dur="1"' not in mei
+
+
+# -- the interpreter: what the page means, read back into sound ---------------
+
+
+def _quarters(n: int, **kw) -> dict:
+    return notation.sheet_from_voice([{"midis": [60], "ticks": 8}] * n, **kw)
+
+
+def test_the_interpretation_is_data_and_comes_from_the_core():
+    reading = notation.interpretation()
+    # every number the reading depends on, in one value a caller can edit --
+    # and none of them written down in this client
+    assert reading["dynamics"]["mf"] > reading["dynamics"]["p"]
+    assert reading["articulations"]["stacc"]["factor"] == 0.5
+    assert reading["beat_unit"] == 4
+    # the downbeat, and nothing else: one and three in a 4/4 is a style
+    assert [a["at"] for a in reading["accents"]] == [[0, 1]]
+
+
+def test_a_staccato_shortens_the_sound_and_moves_no_attack():
+    sheet = _quarters(4)
+    ids = [i["id"] for i in sheet["staves"][0]["voices"][0]["items"]]
+    sheet = notation.set_marks(sheet, ids[1],
+                               notation.marks(articulations=["stacc"]))
+    notes = notation.to_notes(sheet)
+    # the written value and the heard one are two numbers, and only one moved
+    assert notes[1]["dur"] == 1.0
+    assert notes[1]["sustain"] == 0.5
+    assert [n["t"] for n in notes] == [0.0, 1.0, 2.0, 3.0]
+
+
+def test_a_dynamic_governs_until_the_next_one_and_a_hairpin_shapes_a_span():
+    sheet = _quarters(8)
+    ids = [i["id"] for i in sheet["staves"][0]["voices"][0]["items"]]
+    sheet = notation.set_marks(sheet, ids[1], notation.marks(dynamic="p"))
+    sheet = notation.add_spanner(sheet, "crescendo", ids[1], ids[4])
+    notes = notation.to_notes(sheet)
+    amps = [n["amp"] for n in notes]
+    # the mark is on one note and governs every note after it
+    assert amps[1] < amps[0]
+    # the hairpin rises across its span...
+    assert amps[2] > amps[1] and amps[3] > amps[2] and amps[4] > amps[3]
+    # ...and past its far end nothing of it is left
+    assert amps[5] == amps[6]
+
+
+def test_a_tie_is_one_sound_and_a_tuplet_needs_no_rule():
+    tied = notation.tie(_quarters(3), 1, True)
+    notes = notation.to_notes(tied)
+    assert len(notes) == 2, "the second note does not attack again"
+    assert notes[0]["dur"] == 2.0 and notes[1]["t"] == 2.0
+    # a triplet's division is already exact in the rational the item holds
+    triplet = notation.stretch(_quarters(3), (1, 3))
+    onsets = [n["t"] for n in notation.to_notes(triplet)]
+    assert abs(onsets[2] - 2.0 / 3.0) < 1e-12
+
+
+def test_an_interpretation_is_overridden_without_editing_the_core():
+    style = notation.interpretation()
+    style["accents"].append({"at": [1, 2], "gain": 1.1, "meter": "4/4"})
+    style["detach"] = 0.6
+    notes = notation.to_notes(_quarters(4), style)
+    # a stress this reader believes in and the default does not
+    assert abs(notes[2]["amp"] / notes[1]["amp"] - 1.1) < 1e-12
+    # and a player who detaches by habit, which the default deliberately is not
+    assert notes[1]["sustain"] == 0.6
+    assert notation.to_notes(_quarters(4))[1]["sustain"] == 1.0
+
+
+def test_a_staff_names_itself_and_never_what_plays_it():
+    duo = notation.stack(_quarters(2), _quarters(2), as_staff=True)
+    notes = notation.to_notes(duo)
+    assert sorted({n["staff"] for n in notes}) == [0, 1]
+    # the binding is made where the score is rendered, explicitly
+    timeline = notation.to_timeline(duo, instruments={0: "flute", 1: "cello"})
+    assert {event["instrument"] for _, event in timeline} == {"flute", "cello"}
+
+
+def test_a_timeline_carries_both_lengths_onto_the_event():
+    sheet = _quarters(2)
+    ids = [i["id"] for i in sheet["staves"][0]["voices"][0]["items"]]
+    sheet = notation.set_marks(sheet, ids[0],
+                               notation.marks(articulations=["stacc"]))
+    timeline = notation.to_timeline(sheet)
+    _, first = next(iter(timeline))
+    assert first["dur"] == 1.0 and first.sustain() == 0.5
+    assert first["midinote"] == 60
+
+
+def test_a_hairpin_written_to_a_note_that_is_gone_is_refused_by_name():
+    sheet = _quarters(2)
+    sheet["spanners"] = [{"kind": "crescendo", "from": 1, "to": 99}]
+    with pytest.raises(ValueError, match="crescendo"):
+        notation.to_notes(sheet)

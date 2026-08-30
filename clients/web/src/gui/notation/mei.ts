@@ -1,10 +1,17 @@
-// Score generation: the client's sequencing data into MEI (mirrors
+// The two directions between the client's sequencing data and a score (mirrors
 // `clausters/gui/notation/mei.py`).
 //
 // The third way into the engraver, beside typed score text and the SVG adapter:
 // turn the client's own `seq` data (`Event`, `Timeline`) into MEI — the format
 // `engrave` already reads — so a melody or a bounced timeline is *seen* and
 // edited as notation, the inverse of the score→sound flow.
+//
+// **And back again.** {@link toTimeline} is the return trip: a sheet read into
+// what it sounds (`toNotes`, which is where the symbols are honoured) and placed
+// on a `seq.Timeline` of `Event`s. It is here rather than beside the model
+// because it is the same seam in the other direction — building `Event`s reads
+// this language's types and stays in this client, while what a staccato *means*
+// is one implementation in Rust.
 //
 // **The seam this module is** is worth naming, because it is where the
 // agnostic/shell line falls and it is what a richer encoding extends: the
@@ -16,7 +23,8 @@
 
 import { Event as SeqEvent } from "../../seq/event.ts";
 import { Timeline } from "../../seq/timeline.ts";
-import { fromVoice, toMei } from "./sheet.ts";
+import type { Interpretation, Sheet } from "./sheet.ts";
+import { fromVoice, toMei, toNotes } from "./sheet.ts";
 
 /**
  * 32nd-note resolution: every duration snaps to an integer number of these, so
@@ -65,7 +73,7 @@ export function fromNotes(
     notes: Iterable<SeqEvent>,
     { meter = "4/4", clef = "G2", key = "C", beatUnit = 4 }: MeiOptions = {},
 ): string {
-    return voiceToMei(voiceFromNotes(notes, beatUnit), { meter, clef, key });
+    return toMei(sheetFromNotes(notes, { meter, clef, key, beatUnit }));
 }
 
 /**
@@ -86,7 +94,88 @@ export function fromTimeline(
     timeline: Timeline | Iterable<readonly [number, unknown]>,
     { meter = "4/4", clef = "G2", key = "C", beatUnit = 4 }: MeiOptions = {},
 ): string {
-    return voiceToMei(voiceFromTimeline(timeline, beatUnit), { meter, clef, key });
+    return toMei(sheetFromTimeline(timeline, { meter, clef, key, beatUnit }));
+}
+
+// -- stopping at the model ----------------------------------------------------
+// The same two reductions, handing back the **sheet** rather than the MEI. What
+// they are for is everything the model can do that a string cannot: operate on
+// the score, and read it back into sound.
+
+/**
+ * {@link fromNotes}, stopping at the score model instead of the MEI.
+ *
+ * The sheet is what `toMei` writes and what `toNotes` reads back, so a caller
+ * that wants to operate on the score — or hear it as the page says rather than
+ * as the events said — starts here.
+ */
+export function sheetFromNotes(
+    notes: Iterable<SeqEvent>,
+    { meter = "4/4", clef = "G2", key = "C", beatUnit = 4 }: MeiOptions = {},
+): Sheet {
+    return fromVoice(voiceFromNotes(notes, beatUnit), { meter, clef, key });
+}
+
+/** {@link fromTimeline}, stopping at the score model instead of the MEI. */
+export function sheetFromTimeline(
+    timeline: Timeline | Iterable<readonly [number, unknown]>,
+    { meter = "4/4", clef = "G2", key = "C", beatUnit = 4 }: MeiOptions = {},
+): Sheet {
+    return fromVoice(voiceFromTimeline(timeline, beatUnit), { meter, clef, key });
+}
+
+/** What {@link toTimeline} takes past the sheet itself. */
+export interface PlaybackOptions {
+    /**
+     * What plays each staff: one def name for every staff, or a mapping from
+     * staff index (0 is the top one) to def name.
+     */
+    instruments?: string | Record<number, string>;
+    /** The reading (`interpretation`); left out, the default. */
+    interp?: Interpretation;
+    /** Merged into every event, for what a score has no symbol for at all. */
+    event?: Record<string, unknown>;
+}
+
+/**
+ * Read a sheet into a `seq.Timeline` that plays it.
+ *
+ * The return trip, and the one `toNotes` does the thinking for: each sounding
+ * note becomes an `Event` at its onset, carrying the **written** value as `dur`
+ * and the **heard** one as `sustain` — which is the pair the page keeps apart
+ * and the reason a staccato quarter is still a quarter.
+ *
+ * `instruments` binds a staff to what plays it, since the notation does not
+ * say. Left out, events take the client's default instrument.
+ */
+export function toTimeline(
+    score: Sheet,
+    { instruments, interp, event = {} }: PlaybackOptions = {},
+): Timeline {
+    const out = new Timeline();
+    for (const note of toNotes(score, interp)) {
+        const fields: Record<string, unknown> = {
+            ...event,
+            midinote: note.pitch,
+            dur: note.dur,
+            sustain: note.sustain,
+            amp: note.amp,
+        };
+        const instrument = instrumentFor(instruments, note.staff);
+        if (instrument !== undefined) fields.instrument = instrument;
+        out.add(note.t, new SeqEvent(fields));
+    }
+    return out;
+}
+
+/** What plays `staff`: one name for every staff, or a mapping. */
+function instrumentFor(
+    instruments: string | Record<number, string> | undefined,
+    staff: number,
+): string | undefined {
+    if (instruments === undefined) return undefined;
+    if (typeof instruments === "string") return instruments;
+    return instruments[staff];
 }
 
 // -- the intermediate voice: back-to-back slots -----------------------------
@@ -94,22 +183,6 @@ export function fromTimeline(
 // carries one midi, a chord slot several, a rest none. It crosses to the shared
 // encoder as JSON, one object per slot, which lays it out into barred, tied
 // measures and emits the XML.
-
-/**
- * Hand a reduced voice to the shared encoder, through the model.
- *
- * One path to MEI, not two: the voice is lifted into a sheet and the sheet is
- * written out, which is the same road {@link transpose} and every later
- * operation travel. The bytes are the encoder's own — the core's `voiceToMei`
- * goes through the model too — so nothing about the output changed when the
- * model arrived.
- */
-function voiceToMei(
-    voice: Slot[],
-    { meter, clef, key }: { meter: string; clef: string; key: string },
-): string {
-    return toMei(fromVoice(voice, { meter, clef, key }));
-}
 
 /**
  * A *duration* in beats → 32nd-note ticks (a whole note is `beatUnit` beats).

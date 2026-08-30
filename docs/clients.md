@@ -483,7 +483,7 @@ package over the same OSC, against a native server.
 | Multitrack editor + patcher (tracks/clips, piano-roll, automation curves, `patch`) and the driver that binds them to the arrangement | done |
 | Multitrack editor + transport + patcher in the web client (the same driver, its drawn tree compared with the Python client's) | done |
 | Engraved music notation (the `score` widget, its display list and the click/transpose edit round trip) | done |
-| Notation layer in the shared core (`clausters_core::notation` — the score model, the SVG walk, the MEI encoder — with `clausters-notation` the libverovio binding; every client a shell) | done |
+| Notation layer in the shared core (`clausters_core::notation` — the score model, the SVG walk, the MEI encoder, the interpreter that reads a page back into sound — with `clausters-notation` the libverovio binding; every client a shell) | done |
 | Notation in the web client (the same core over wasm, driving verovio compiled from the same pin; parity checked against the Python client's engraving) | done |
 | Reproducible `third_party` Faust and verovio builds (pin + script; native/CI/release) | done |
 | TypeScript/web client (the core over wasm, `Server` + both def families, the GUI, the sequencing layer, the OSC responders, the document's components) | done |

@@ -499,6 +499,16 @@ export function engraveOptions(scale: number, page_width: number, extra?: string
 export function graph_bus_reserved(): Uint32Array;
 
 /**
+ * The default interpretation, as JSON — every number the reading depends on,
+ * and the value an override starts from.
+ *
+ * The parity surface for the reading, as `sheetOps` is for the verbs: the
+ * interpretation crosses inside a payload, so nothing structural notices when
+ * one client's idea of `mf` drifts from the other's.
+ */
+export function interpretation(): string;
+
+/**
  * JS face: the **Lissajous / goniometer** projection of a stereo pair, as
  * interleaved `[x, y]` pairs (`x` = side, `y` = mid) — one pair per input
  * frame. An empty array when the two channels differ in length.
@@ -640,6 +650,21 @@ export function sheetApply(sheet: string, op: string): string;
 export function sheetOps(): string;
 
 /**
+ * Read a score model into the notes it **sounds**, under `interp`.
+ *
+ * Each note carries two lengths — `dur`, what is written, and `sustain`, what
+ * is heard — because an honoured articulation makes them different numbers and
+ * collapsing them would move every attack after a staccato. It also names the
+ * `staff` and `voice` it was written on, which is what a caller binds an
+ * instrument to: the notation does not say what plays it.
+ *
+ * `interp` may be `""` or `"{}"` for the default reading, and any field left
+ * out keeps its default. What the default *is* comes back from
+ * [`interpretation`], so this package writes none of those numbers down.
+ */
+export function sheetPerform(sheet: string, interp: string): string;
+
+/**
  * Write a score model out as MEI.
  *
  * Throws with the emitter's own reason when the model holds something MEI
@@ -728,6 +753,7 @@ export interface InitOutput {
     readonly document_version: (a: number) => bigint;
     readonly engraveOptions: (a: number, b: number, c: number, d: number) => [number, number];
     readonly graph_bus_reserved: () => [number, number];
+    readonly interpretation: () => [number, number, number, number];
     readonly lissajous: (a: number, b: number, c: number, d: number) => [number, number];
     readonly log_apply: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly log_canRedo: (a: number) => number;
@@ -810,6 +836,7 @@ export interface InitOutput {
     readonly secs_to_samples: (a: number, b: number) => number;
     readonly sheetApply: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly sheetOps: () => [number, number, number, number];
+    readonly sheetPerform: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly sheetToMei: (a: number, b: number) => [number, number, number, number];
     readonly svgToDisplayList: (a: number, b: number) => [number, number, number, number];
     readonly unary: (a: number, b: number, c: number) => [number, number, number];

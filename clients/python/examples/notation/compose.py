@@ -26,8 +26,10 @@ Two things worth watching for as you read:
   augmentation looks like on a page.
 * **What is written and what is heard are two things.** The coda's first note
   carries a staccato, which shortens it in performance and changes nothing about
-  the page. Honouring that is the interpreter's, not the engraving's -- writing
-  a shortened length into the document moves every attack after it.
+  the page. Honouring that is the *interpreter's*, not the engraving's -- writing
+  a shortened length into the document moves every attack after it -- and it is
+  what `notation.to_timeline` does at the end of this file: it reads the sheet's
+  symbols into events carrying both lengths.
 * **A tuplet cannot be split.** Three triplet eighths are `1/12` each -- exact
   as a rational, impossible on any grid of 32nds -- and a group that would cross
   a barline is refused by name rather than written into bars nobody meant.
@@ -53,13 +55,14 @@ it as a plain script.
 # %%
 import sys
 
-from clausters import Event, Session
+from clausters import Session
 from clausters.gui import button, notation, panel, view
-from clausters.seq.timeline import Playhead, Timeline
+from clausters.seq.timeline import Playhead
 
-# One beat per second, so an engraved millisecond is a beat/1000 -- score time
-# and clock time are the same axis, which is what ties the cursor to the sound.
-TEMPO = 1.0
+# Two beats per second: the quarter = 120 the engraver times the page at. Score
+# time and clock time are then the same axis, which is what ties the cursor to
+# the sound -- a quarter is one beat here and half a second there.
+TEMPO = 2.0
 
 
 # %% [markdown]
@@ -186,18 +189,6 @@ print(f"engraved {len(dl['notes'])} notes into {len(dl['prims'])} primitives")
 # ## The window
 
 # %%
-def playback_timeline(notes: list) -> Timeline:
-    """Place the **engraved** notes on a timeline to play them: their ``t`` and
-    ``dur`` are the score's own timemap, so the sound runs on the clock the
-    cursor reads."""
-    timeline = Timeline()
-    for note in notes:
-        timeline.add(note["t"] / 1000.0,
-                     Event(midinote=note["pitch"], dur=note["dur"] / 1000.0,
-                           amp=0.11))
-    return timeline
-
-
 def scene(display_list: dict, sample_rate: float) -> dict:
     """A minimal transport over the composed page. Every widget is *named*, so
     the script drives it by name and never picks an id."""
@@ -224,7 +215,14 @@ win = scene(dl, sr).open()
 session.start()
 
 # %%
-playhead = Playhead(playback_timeline(dl["notes"]), session.clock, server)
+# What plays is the **interpretation of the sheet**, not the engraved notes:
+# `to_timeline` reads the page's own symbols -- the staccato shortens the sound
+# and moves no attack, the downbeat is stressed, a dynamic governs the notes
+# after it -- and hands back events carrying both lengths, ``dur`` written and
+# ``sustain`` heard. Pass ``instruments=`` to say what plays each staff; left
+# out, as here, they take the client's default, because the notation itself
+# never says.
+playhead = Playhead(notation.to_timeline(piece), session.clock, server)
 
 
 def play():

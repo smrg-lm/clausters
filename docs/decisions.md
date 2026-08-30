@@ -7475,3 +7475,60 @@ The glyph is the **whole rest**, hanging from the fourth line, which is the
 convention for a full measure in any meter — a half rest means half a measure of
 actual silence. The host has always listed `mRest` among the classes a click can
 name, which is the earlier half of this layer expecting them.
+
+## The interpretation is data, and the defaults claim as little as a player can
+
+Reading a score back into events is not a conversion, so it is a layer with a
+name (`clausters_core::notation::interp`) rather than a function on the emitter.
+The reason is that no symbol can be read off the note it sits on: a dynamic
+governs the notes **after** it, a hairpin is a shape over a stretch of them and
+lives on neither end, a tie makes two items one sound. What can be read off one
+note — a staccato — is exactly the case the previous decision showed must not be
+written into the document.
+
+Three choices in it were not obvious.
+
+**Two lengths, always.** A performed note carries `dur` (written) and `sustain`
+(heard), never one number. Collapsing them is the same defect `@dur.ges`
+produced from the other direction: shorten the written value and every attack
+after it moves. The pair maps onto the client `Event`'s own `dur`/`sustain`,
+which already made the distinction, so nothing new had to be invented on either
+side of the wire — the model and the event agreed all along and only the encoder
+did not.
+
+**The reading is a value the caller holds.** Every number it depends on — what a
+staccato does to a length, what `mf` is in amplitude, how far a crescendo
+travels, which positions in the bar are stressed — is one JSON object passed in,
+and it comes *back* from the core (`clausters_core_interpretation`) so an
+override starts from the defaults rather than restating them. Two symbols
+therefore, not one: a client that wrote the dynamics table down for itself would
+play the same score at a different amplitude than the other client does, and
+nothing structural compares two tables. This is the same blindness `sheet_ops`
+answers for the verbs, and the same answer.
+
+**The defaults stress the downbeat and nothing else.** A player has to claim
+*something* or it is not playing, and the smallest claim that is still a reading
+is that a bar has a strong first beat — common to every metric style that has
+any. "One and three of a 4/4" is a style, and a style says so by passing its own
+accents; an accent may name the meter it applies in, since half a bar is a
+different place in a 4/4 and in a 3/4. In the same spirit `detach` and `slur`
+both default to `1.0`: a player who shortens every unslurred note is a reading,
+not a fact, so the default reads the page literally and an interpretation that
+disagrees is one key.
+
+**What needed no rule at all.** A *tuplet* divides the time exactly in the
+rational the item already holds, so onsets land on it without the interpreter
+knowing tuplets exist. A *repeat* is not a symbol this model carries: repetition
+is written out by the `repeat` operation, so by the time a sheet exists there is
+nothing left to expand. Both are consequences of decisions taken two milestones
+earlier, and are recorded here because "the player must expand a repeat" is the
+kind of requirement that gets implemented before anybody checks whether the
+model can state one.
+
+**What the two directions lose is written down rather than found.** Events to a
+score loses exact onsets (they snap to written values), continuous amplitude (it
+becomes a dynamic or nothing), microtones and the instrument. Back again loses
+the spelling, the stems and beams, which voice a note was in, and every mark
+there is no rule for yet — a grace note, an ornament and a fermata are on the
+page and read as ordinary notes. Pitch, written value and order survive both
+ways, and that is the whole of what a round trip is entitled to assume.

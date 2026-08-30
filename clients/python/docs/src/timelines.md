@@ -253,6 +253,63 @@ courtesy accidentals are what the pitch's own `forced` flag is for.
 
 `examples/notation/compose.py` builds a whole piece this way and plays it.
 
+### Hearing what the page says
+
+The way back out is `to_notes`, and it is not a conversion: the symbols mean
+something, and honouring them is the whole of the step.
+
+```python
+for note in notation.to_notes(sheet):
+    ...      # t, dur, sustain, pitch, amp, staff, voice, id -- all in beats
+
+timeline = notation.to_timeline(sheet, instruments={0: "piano", 1: "bass"})
+```
+
+Every note comes back with **two lengths**: `dur`, what is written, and
+`sustain`, what is heard. They are different numbers whenever an articulation is
+honoured, and keeping them apart is the point — a staccato quarter is still a
+quarter, so the next attack is where it always was and only the sound is
+shorter. `to_timeline` puts the pair straight onto an `Event`'s `dur` and
+`sustain`.
+
+What else is read: a **dynamic** governs every note after it until the next one
+is written; a **hairpin** is a shape over a stretch of notes rather than a mark
+on any of them, and it arrives where the dynamic at its far end says, or travels
+a default distance when nothing is written there; a **tie** is one sound of the
+summed length; a note's **metric position** stresses it. A tuplet needs no rule
+at all — its division is already exact in the fraction the item holds.
+
+**The reading is data, and it is yours.** `notation.interpretation()` hands back
+every number it depends on — what a staccato does to a length, what `mf` is in
+amplitude, how far a crescendo travels, which positions in the bar are stressed.
+Change what you disagree with and pass it to `to_notes`; nothing in the core is
+edited to play a score in another style:
+
+```python
+style = notation.interpretation()
+style["accents"].append({"at": [1, 2], "gain": 1.1, "meter": "4/4"})
+style["detach"] = 0.9                  # a player who does not hold notes whole
+notes = notation.to_notes(sheet, style)
+```
+
+What the defaults claim is deliberately as little as a player can claim and
+still be playing: the marks mean roughly what a dictionary says, and the only
+metric stress is the **downbeat**. Stressing one and three of a 4/4 belongs to a
+style, and a style says so by passing its own accents.
+
+**What plays a staff is not in the notation.** A page does not say what
+instrument reads it, so each note names the `staff` and `voice` it was written
+on and the binding is made where the score is rendered — `instruments=` above,
+a name for every staff or a mapping from staff index.
+
+**The round trip is honest, and both directions lose something.** Going from
+events to a score loses exact onsets (they snap to written values), continuous
+amplitude (it becomes a dynamic, or nothing), microtones, and which instrument
+played. Coming back loses the spelling, the stems and beams, which voice a note
+was written in, and every mark the interpreter has no rule for yet — grace
+notes, ornaments and fermatas are on the page and are read as ordinary notes.
+What survives both ways is what the two agree on: pitch, written value, order.
+
 ## See also
 
 - [Routines and clocks](routines-and-clocks.md) — the generative counterpart (the open-ended side you can capture *from*).

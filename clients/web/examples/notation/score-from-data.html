@@ -19,20 +19,26 @@
   </head>
   <body>
     <main>
-      <div id="note">Engraving <b>sequencing data</b> as a score:
-<code>notation.fromTimeline</code>.
+      <div id="note">Engraving <b>sequencing data</b> as a score, and hearing
+the score back.
 
 The companion to <code>score.html</code>, which types a phrase by hand. Here the
 score is not typed at all — it is generated from the client's own data. A
 <code>Timeline</code> of events (a chord progression under a melody) is turned
-into MEI, engraved into the <code>score</code> display list, and shown: chords
+into a score by <code>notation.sheetFromTimeline</code>, engraved into the
+<code>score</code> display list, and shown: chords
 stacked on the beat, the melody above them, rests where the data leaves gaps.
 
 This is the inverse of the usual notation flow — the events <i>are</i> the
 source and the score is the view of them (data → score). What is then
-<b>played</b> is the engraved score's own <code>notes</code> layer, not the
-source timeline: engraving carries its own tempo, so anchoring the playback
-cursor to the sound means playing what was engraved.</div>
+<b>played</b> is not the source timeline but the <b>score</b>, read back by
+<code>notation.toTimeline</code>: the round trip closes here, and it is a round
+trip rather than a copy, because the notation carries what the events had no way
+to say and the events carried what the page has no way to hold. Going out, the
+exact onsets snap to written values and the amplitudes become a dynamic or
+nothing at all; coming back, a written value becomes an exact duration and a
+symbol becomes a decision — which is the interpreter's, and is data a caller can
+replace (<code>notation.interpretation</code>).</div>
 
       <button id="run">engrave and open</button>
       <div id="stage"></div>
@@ -41,9 +47,9 @@ cursor to the sound means playing what was engraved.</div>
 
     <!--
       The web sibling of clients/python/examples/notation/score_from_data.py,
-      call for call: the timeline built in code, `fromTimeline`, the display
-      list, the minimal transport over it, the playhead over the *engraved*
-      notes, and the by-hand cursor anchor (a `/clock_query` plus the server's
+      call for call: the timeline built in code, `sheetFromTimeline`, the
+      display list, the minimal transport over it, the playhead over the
+      *interpreted sheet*, and the by-hand cursor anchor (a `/clock_query` plus the server's
       latency) that the script uses rather than the notation transport.
 
       The platform's differences are the usual two -- the host is the wasm one
@@ -61,7 +67,10 @@ cursor to the sound means playing what was engraved.</div>
       const $ = (id) => document.getElementById(id);
       const log = (line) => { $("log").textContent += line + "\n"; };
 
-      const TEMPO = 1.0;
+      // Two beats per second: the quarter = 120 the engraver times the page at,
+      // so score time and clock time are the same axis and the cursor is locked
+      // to the sound.
+      const TEMPO = 2.0;
 
       /**
        * A four-bar timeline built in code: a triad on each downbeat with a
@@ -88,22 +97,6 @@ cursor to the sound means playing what was engraved.</div>
         return tl;
       }
 
-      /**
-       * Place the **engraved** notes on a timeline to play them (their `t`/`dur`
-       * are the score's own timemap, in ms → beats/1000, so the sound runs on
-       * the same clock the cursor reads). Chords fall on the same beat and
-       * simply stack, as they were engraved.
-       */
-      function playbackTimeline(notes) {
-        const timeline = new seq.Timeline();
-        for (const note of notes) {
-          timeline.add(note.t / 1000.0, new Event({
-            midinote: note.pitch, dur: note.dur / 1000.0, amp: 0.11,
-          }));
-        }
-        return timeline;
-      }
-
       /** A minimal transport over the engraved page. Every widget is *named*. */
       const scene = (displayList, sampleRate) => gui.view(
         {
@@ -119,9 +112,13 @@ cursor to the sound means playing what was engraved.</div>
       async function run() {
         $("run").disabled = true;
         const source = buildTimeline();
-        const score = await notation.Score.fromTimeline(source, {
-          meter: "4/4", key: "C", beatUnit: 4, pageWidth: 1600,
+        // Stop at the **model** rather than at the MEI: the sheet is what is
+        // engraved *and* what is read back into sound, so both directions leave
+        // from one place.
+        const sheet = notation.sheetFromTimeline(source, {
+          meter: "4/4", key: "C", beatUnit: 4,
         });
+        const score = await notation.Score.open(notation.toMei(sheet), { pageWidth: 1600 });
         const dl = score.displayList();
         log(`engraved ${dl.notes.length} notes into ${dl.prims.length} primitives`);
 
@@ -132,7 +129,11 @@ cursor to the sound means playing what was engraved.</div>
         const win = await scene(dl, sr).open($("stage"));
         session.start();
 
-        const playhead = new seq.Playhead(playbackTimeline(dl.notes), session.clock, server);
+        // Play the **score**, not the source timeline: what makes it the score
+        // rather than a copy of the source is that the symbols are read, not
+        // the events replayed.
+        const playhead = new seq.Playhead(
+          notation.toTimeline(sheet), session.clock, server);
 
         win.widget("play").onClick(async () => {
           playhead.play({ at: 0.0 });

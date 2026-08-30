@@ -2596,7 +2596,7 @@ Whatever symbols the model itself needs owe their rows either way
   has no model until the reader `N4` brings. Taking them together is what makes
   both cheap.
 
-- ⬜ **N4 — The interpreter: notation to events**. The return path, and the
+- ✅ **N4 — The interpreter: notation to events** *(done 2026-08-29; the MEI reader and the two pieces waiting on it — `Score`'s edit path onto the model and the host's note-entry gestures — are not here, see below)*. The return path, and the
   reason it is a milestone rather than a conversion: the player must **honour
   what the symbols mean**. Staccato shortens, a dynamic sets amplitude, a slur
   binds, a tuplet divides the time, a repeat expands, and the metric position
@@ -2618,6 +2618,62 @@ Whatever symbols the model itself needs owe their rows either way
   (exact timing, microtones, continuous amplitude, the instrument) and what a
   trip through events loses (spelling, stems, beaming, which voice) is written
   down rather than found.
+
+  **What shipped.** `clausters_core::notation::interp`, and it is a layer rather
+  than a function because **no symbol can be read off the note it sits on**: a
+  dynamic governs the notes after it, a hairpin is a shape over a stretch of
+  them and lives on neither end, a tie makes two items one sound. A performed
+  note carries **two lengths** — `dur` written, `sustain` heard — which is the
+  same distinction `@dur.ges` violated from the other direction, and it maps
+  onto the client `Event`'s own `dur`/`sustain` with nothing invented: the model
+  and the event had agreed all along and only the encoder had not. Beside them
+  it carries the `staff` and `voice` it came from, which is where the
+  **staff-to-instrument binding** attaches — explicitly, at render time, as
+  `docs/decisions.md` already required of a buffer sounding through an
+  instrument.
+
+  **The reading is a value the caller holds** (`Interpretation`), and it comes
+  *back* from the core (`clausters_core_interpretation` / `interpretation`) so
+  an override starts from the defaults rather than restating them — two ABI
+  symbols rather than one, because a client that wrote the dynamics table down
+  for itself would play the same score at a different amplitude and nothing
+  structural compares two tables. That second call is the **parity surface for
+  the reading**, exactly as `sheet_ops` is for the verbs. `CORE_ABI_VERSION` is
+  24.
+
+  **The defaults claim as little as a player can and still be playing**: the
+  marks mean roughly what a dictionary says, `detach` and `slur` are both `1.0`
+  so an unmarked page is read literally, and the only metric stress is the
+  **downbeat**. One and three of a 4/4 is a style, and a style passes its own
+  accents — which may name the meter they apply in, since half a bar is a
+  different place in a 4/4 and in a 3/4.
+
+  **Two clauses of this milestone needed no code, and that is a finding rather
+  than a gap.** A *tuplet* divides the time exactly in the rational the item
+  already holds, so onsets land on it without the interpreter knowing tuplets
+  exist; a *repeat* is not a symbol this model carries at all, because
+  repetition is written out by `repeat` (`N2`), so by the time a sheet exists
+  there is nothing to expand. Both are consequences of decisions taken two
+  milestones earlier, and both are written into `docs/decisions.md` because
+  "the player must expand a repeat" is the kind of requirement that gets built
+  before anybody checks whether the model can state one.
+
+  The examples' hand-written converters are **deleted**, in both clients: what
+  plays is now the interpretation of the sheet, and `score_from_data` stops at
+  the model on the way out so both directions leave from one place. Their
+  `TEMPO` moved to `2.0`, which is the quarter = 120 the engraver times a page
+  at — measured, not assumed (an engraved quarter is 500 ms), and it is what
+  keeps the cursor locked to the sound now that the sound is timed from the
+  model rather than from the timemap. Tests: 15 in the core, and the same
+  assertions in the same order in both clients, taking them to 41 and 20.
+
+  **The MEI reader is not here**, and with it the two pieces that were deferred
+  onto this milestone because they need one: `Score`'s edit path moving onto the
+  model (`N2`) and the host's note-entry gestures (`N3`). This milestone's own
+  acceptance is the interpreter and is met; the reader is the *other* return
+  path — text back into the model, rather than the model into sound — and
+  putting them in one milestone conflated two directions that share only a
+  preposition. It is the next thing, and `ROADMAP.md` says so.
 
 - ⬜ **N5 — Events to notation, enriched**. The forward path catches up with the
   model: the client-side reduction reads more than `midinote` and `dur`, and the
@@ -2645,6 +2701,27 @@ Whatever symbols the model itself needs owe their rows either way
   slots it produces today; a phrase carrying it engraves the marks N3 emits; a
   score written from events, interpreted back by N4 and written again is stable
   in what both directions agree on, and what they do not is the documented loss.
+
+- ⬜ **N6 — The reader: a document back into the model**. The direction `N4`
+  turned out not to be. A `Score` opened from typed text — ABC, MusicXML, a
+  hand-written MEI, anything the engraver auto-detects — holds a document and no
+  model, so every verb the model has is unavailable on exactly the scores a user
+  is most likely to open. What it unblocks is already written down and waiting
+  on it by name: **`Score`'s edit path onto the model** (deferred in `N2` —
+  today an edit is a verovio editor action, which is a second implementation of
+  what an edit means and the divergence this track exists to avoid), and **the
+  host's note-entry gestures** (deferred in `N3` — a gesture on the page names a
+  note by id, and an id means nothing without a model behind it). Reading is
+  narrower than it looks: the engraver normalizes whatever it loaded to MEI
+  (`Engraver::mei`), so there is one input format rather than four, and the
+  ids are already there. What it must not do is lose what it cannot represent —
+  a document holds more than the model does, and a reader that silently drops it
+  turns "open, edit one note, save" into a lossy pass over somebody's score.
+  **Acceptance:** a score typed as ABC opens, is transposed by `transpose` and
+  re-engraves; a note dragged on the page moves the model's item and not
+  verovio's document; what the reader cannot represent is named in its refusal
+  or preserved, never dropped in silence; and a sheet written out, read back and
+  written again is byte-identical.
 
 **What became of the earlier numbering.** `G31g` was one line; the first sizing
 made it `N1`–`N4` (surface, markup, polyphony, tuplets). The four are all still

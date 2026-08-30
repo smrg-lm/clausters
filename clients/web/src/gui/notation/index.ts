@@ -26,16 +26,23 @@
 // `svgToDisplayList`, the adapter the first two both flow through. `scoreView`
 // and `transport` are the two helpers that put a page on screen and *play* it.
 //
-// `sheet` is the **score model** underneath all of that: notation as data, and
-// operations as data over it. A sheet is a plain object a caller holds, an
+// `sheet` is the **score model** underneath all of that: notation as data,
+// operations as data over it, and the reading that turns it back into sound
+// (`toNotes`, `interpretation`, and `toTimeline` beside it). A sheet is a plain object a caller holds, an
 // operation is a payload it sends, and the whole vocabulary lives in Rust —
 // which is what lets a standalone host with no client language edit the same
 // score through the same one door.
 
 export { Score, engrave, pageJson, svgToDisplayList } from "./engraver.ts";
 export type { EngraveOptions, Page } from "./engraver.ts";
-export { fromNotes, fromTimeline } from "./mei.ts";
-export type { MeiOptions, Slot } from "./mei.ts";
+export {
+    fromNotes,
+    fromTimeline,
+    sheetFromNotes,
+    sheetFromTimeline,
+    toTimeline,
+} from "./mei.ts";
+export type { MeiOptions, PlaybackOptions, Slot } from "./mei.ts";
 export {
     addSpanner,
     apply,
@@ -44,6 +51,7 @@ export {
     fromVoice as sheetFromVoice,
     insert,
     insertMeasures,
+    interpretation,
     invert,
     marks,
     measures,
@@ -62,10 +70,20 @@ export {
     stretch,
     tie,
     toMei,
+    toNotes,
     toVoice,
     transpose,
 } from "./sheet.ts";
-export type { MarkOptions, Op, OpSpec, Ratio, Sheet, TransposeOptions } from "./sheet.ts";
+export type {
+    Interpretation,
+    MarkOptions,
+    Op,
+    OpSpec,
+    PerformedNote,
+    Ratio,
+    Sheet,
+    TransposeOptions,
+} from "./sheet.ts";
 export { scoreView, transport } from "./view.ts";
 export type { ScoreViewOptions } from "./view.ts";
 export { setEngraverUrl } from "./_verovio.ts";

@@ -21,10 +21,11 @@ builds a payload and sends it; turning "measures 3 to 10" into a stretch of time
 is arithmetic against the grid, it changes the moment a meter changes or a bar
 is irregular, and it is done once, in Rust, for every client.
 
-Two doors in and one out: `from_voice` lifts the v1 slot stream (which is what a
-client's own reduction of its `Event`s and `Timeline`s produces) into a sheet,
-`to_mei` writes a sheet out as MEI for the engraver, and `ops` lists the verbs
-this core knows — the list each client is contrasted against, since operations
+Two doors in and two out: `from_voice` lifts the v1 slot stream (which is what
+a client's own reduction of its `Event`s and `Timeline`s produces) into a sheet,
+`to_mei` writes a sheet out as MEI for the engraver, `to_notes` reads it back
+into what it *sounds* (under an `interpretation`, which is data and replaceable),
+and `ops` lists the verbs this core knows — the list each client is contrasted against, since operations
 ride inside a payload and the binding table cannot see them.
 """
 
@@ -105,6 +106,54 @@ def to_mei(sheet: dict) -> str:
     raw = json.dumps(sheet)
     return _unwrap(_text(_core().clausters_core_sheet_to_mei,
                          _u8(raw), len(raw.encode("utf-8"))))
+
+
+def interpretation() -> dict:
+    """The default **reading** of a score: every number `to_notes` depends on.
+
+    What a staccato does to a length, what ``mf`` is in amplitude, how far a
+    crescendo travels, which positions in the bar are stressed. Read it, change
+    what you disagree with, and pass it back to `to_notes` — that is the whole
+    of overriding an interpretation, and nothing in the core is edited to play a
+    score in another style.
+
+    It comes from Rust rather than being written here for the same reason the
+    operations do: two clients each holding their own copy of the dynamics table
+    play the same score at two amplitudes, and nothing compares them. It is also
+    the **parity surface** for the reading, since the interpretation rides inside
+    a payload and the binding table cannot see its fields.
+    """
+    return json.loads(_text(_core().clausters_core_interpretation))
+
+
+def to_notes(sheet: dict, interp: dict | None = None) -> list:
+    """Read ``sheet`` into the notes it **sounds**, in time order.
+
+    The path back out of the score, and the reason it is not a conversion: the
+    symbols mean something. A staccato shortens the sound and moves no attack, a
+    dynamic governs every note after it until the next one, a hairpin is a shape
+    over a stretch of notes rather than a mark on any of them, and a tie is one
+    sound of the summed length.
+
+    Each note is a dict with **two lengths** — ``dur``, what is written, and
+    ``sustain``, what is heard — in beats (a quarter is one beat by default,
+    ``interp["beat_unit"]``); plus ``t``, ``pitch``, ``amp``, the ``staff`` and
+    ``voice`` it was written on, and the model ``id`` it came from. The pair of
+    lengths maps straight onto an `clausters.seq.event.Event`'s ``dur`` and
+    ``sustain``, which is what `to_timeline` does.
+
+    ``interp`` is the reading (`interpretation`); left out, the default. Any
+    field left out of it keeps its default, so overriding one is a one-key dict.
+
+    **The instrument is not in the notation** — a staff does not say what plays
+    it — so the notes name their staff and the binding is made where the score
+    is rendered.
+    """
+    a = json.dumps(sheet)
+    b = json.dumps(interp if interp is not None else {})
+    return _unwrap(_text(_core().clausters_core_sheet_perform,
+                         _u8(a), len(a.encode("utf-8")),
+                         _u8(b), len(b.encode("utf-8"))))
 
 
 def ops() -> list:
