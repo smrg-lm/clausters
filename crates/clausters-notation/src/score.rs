@@ -96,10 +96,7 @@ mod tests {
     fn phrase() -> String {
         let voice: Vec<Slot> = [60, 62, 64, 65, 67, 69, 71, 72]
             .into_iter()
-            .map(|midi| Slot::Note {
-                midis: vec![midi],
-                ticks: 8, // a quarter, at 32 ticks to the whole note
-            })
+            .map(|midi| Slot::note(vec![midi], 8)) // a quarter, at 32 ticks to the whole note
             .collect();
         voice_to_mei(&voice, "4/4", "G2", "C")
     }

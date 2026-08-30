@@ -23,6 +23,7 @@ import {
     header,
     insertMeasures,
     interpretation,
+    itemId,
     marks,
     measures,
     moveSteps,
@@ -38,6 +39,8 @@ import {
     setMeter,
     setPitches,
     sheetFromMei,
+    sheetFromNotes,
+    sheetFromTimeline,
     sheetFromVoice,
     silence,
     stack,
@@ -52,6 +55,7 @@ import {
 import type { Sheet } from "../src/gui/notation/index.ts";
 import { Event } from "../src/seq/event.ts";
 import { rest } from "../src/seq/event.ts";
+import { Timeline } from "../src/seq/timeline.ts";
 import * as notation from "../src/gui/notation/index.ts";
 import { setEngraverUrl } from "../src/gui/notation/index.ts";
 
@@ -288,6 +292,11 @@ function quarters(n: number, options = {}): Sheet {
     return sheetFromVoice(Array.from({ length: n }, () => ({ midis: [60], ticks: 8 })), options);
 }
 
+function items(sheet: Sheet): unknown[] {
+    const staves = sheet.staves as { voices: { items: unknown[] }[] }[];
+    return staves[0].voices[0].items;
+}
+
 function idsOf(sheet: Sheet): number[] {
     const staves = sheet.staves as { voices: { items: { id: number }[] }[] }[];
     return staves[0].voices[0].items.map((item) => item.id);
@@ -369,6 +378,101 @@ test("a timeline carries both lengths onto the event", () => {
     assert.equal(first.get("dur"), 1.0);
     assert.equal(first.sustain(), 0.5);
     assert.equal(first.midinote(), 60);
+});
+
+test("an event carrying nothing produces the slot it always did", () => {
+    const plain = sheetFromNotes([new Event({ midinote: 60, dur: 1 })]);
+    const item = items(plain)[0] as Record<string, any>;
+    // No marks, no tie, and the pitch spelled by the key alone. The default
+    // `legato` of 0.8 is a playback default, not a fact about the page, so it
+    // reaches nothing: only a `sustain` the caller wrote does.
+    assert.ok(item.marks === undefined || Object.keys(item.marks as object).length === 0);
+    assert.ok(!item.tie);
+});
+
+test("what the note says on the page rides the event", () => {
+    const sheet = sheetFromNotes([
+        new Event({ midinote: 60, dur: 1, articulations: ["stacc"], dynamic: "mf" }),
+        new Event({ midinote: 62, dur: 1, ornament: "trill", stem: "up", tie: true }),
+        new Event({ midinote: 63, dur: 1, spelling: "flat", accidental: "written" }),
+    ]);
+    const [a, b, c] = items(sheet) as Record<string, any>[];
+    assert.deepEqual(a?.marks.articulations, ["stacc"]);
+    assert.equal(a?.marks.dynamic, "mf");
+    assert.equal(b?.marks.ornament, "trill");
+    assert.equal(b?.tie, true);
+    // C major would spell 63 as a D sharp; this note said otherwise, and asked
+    // for the sign to be printed.
+    assert.equal(c?.pitches[0].step, "e");
+    assert.equal(c?.pitches[0].alter, -1);
+    assert.equal(c?.pitches[0].forced, true);
+});
+
+test("a sustain reaches the page only where no symbol says it", () => {
+    // Held for half its value, with nothing written to explain it: the page
+    // carries the length.
+    let sheet = sheetFromNotes([new Event({ midinote: 60, dur: 1, sustain: 0.5 })]);
+    let item = items(sheet)[0] as Record<string, any>;
+    assert.deepEqual(item.marks.sounding, [1, 8]); // an exact eighth
+    // The same length under a staccato is what the staccato *means*, so writing
+    // it again would shorten the note twice on the way back.
+    sheet = sheetFromNotes([
+        new Event({ midinote: 60, dur: 1, sustain: 0.5, articulations: ["stacc"] }),
+    ]);
+    item = items(sheet)[0] as Record<string, any>;
+    assert.equal(item.marks.sounding, undefined);
+    assert.deepEqual(item.marks.articulations, ["stacc"]);
+});
+
+test("a score played and written back engraves the same page", () => {
+    // The round trip the two directions have to agree on: what is written is
+    // honoured on the way out and written again on the way back, unchanged.
+    const written = sheetFromNotes([
+        new Event({ midinote: 60, dur: 1, articulations: ["stacc"], dynamic: "mf" }),
+        new Event({ midinote: 68, dur: 1, spelling: "flat" }),
+    ]);
+    const again = sheetFromTimeline(toTimeline(written));
+    const [first, second] = items(again) as Record<string, any>[];
+    assert.deepEqual(first?.marks.articulations, ["stacc"]);
+    assert.equal(first?.marks.dynamic, "mf");
+    assert.equal(first?.marks.sounding, undefined);
+    assert.equal(second?.pitches[0].step, "a");
+    assert.equal(second?.pitches[0].alter, -1);
+    // And the sound is the same on both readings.
+    assert.deepEqual(
+        toNotes(written).map((n) => n.sustain),
+        toNotes(again).map((n) => n.sustain),
+    );
+});
+
+test("a page element names the model item it was written from", () => {
+    // All three spellings the emitter uses are the same item, which is what lets
+    // a gesture anywhere on a note reach the note.
+    assert.equal(itemId("n7"), 7);
+    assert.equal(itemId("n7-2"), 7); // a piece split across a barline
+    assert.equal(itemId("n7-p1"), 7); // one pitch of a chord
+    // An element from a document this layer did not write names nothing.
+    assert.equal(itemId("m3f9a"), undefined);
+});
+
+test("a chord is one slot and reads the marks of all of it", () => {
+    // A chord tone carrying nothing is not a chord carrying nothing: the events
+    // sharing a beat are read together, so a mark on any of them is the chord's.
+    const timeline = new Timeline();
+    timeline.add(0.0, new Event({ midinote: 60, dur: 1.0 }));
+    timeline.add(0.0, new Event({ midinote: 64, dur: 1.0, dynamic: "mf" }));
+    timeline.add(0.0, new Event({ midinote: 67, dur: 1.0, articulations: ["stacc"] }));
+    const sheet = sheetFromTimeline(timeline);
+    const marks = (items(sheet)[0] as Record<string, any>).marks;
+    assert.equal(marks.dynamic, "mf");
+    assert.deepEqual(marks.articulations, ["stacc"]);
+});
+
+test("a notation key is never sent to the synth", () => {
+    const event = new Event({ midinote: 60, tie: true, dynamic: "mf", cutoff: 800 });
+    const args = JSON.stringify(event.controlArgs());
+    assert.ok(!args.includes("tie") && !args.includes("dynamic"), args);
+    assert.ok(args.includes("cutoff"), args);
 });
 
 test("a hairpin written to a note that is gone is refused by name", () => {

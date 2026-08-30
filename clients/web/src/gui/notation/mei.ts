@@ -21,7 +21,7 @@
 // half in `clausters_core::notation`. Every client writes the same document
 // from the same voice.
 
-import { Event as SeqEvent } from "../../seq/event.ts";
+import { NOTATION_KEYS, Event as SeqEvent } from "../../seq/event.ts";
 import { Timeline } from "../../seq/timeline.ts";
 import type { Interpretation, Sheet } from "./sheet.ts";
 import { fromVoice, toMei, toNotes } from "./sheet.ts";
@@ -33,10 +33,43 @@ import { fromVoice, toMei, toNotes } from "./sheet.ts";
  */
 const TPW = 32; // ticks per whole note
 
-/** One slot of the reduced voice: a note or chord, or a rest with no pitches. */
+/**
+ * One slot of the reduced voice: a note or chord, or a rest with no pitches.
+ *
+ * Everything past `midis` and `ticks` is **what is written on the note** — each
+ * field optional, and each a musical fact rather than an instruction to the
+ * engraver, which is what lets the same field be read in both directions. A
+ * slot carrying none of them produces exactly the item it always did; an
+ * unknown key is refused by the core rather than dropped.
+ *
+ * What a slot cannot say is anything that is not one note's: a slur, a hairpin,
+ * a meter change or a title span notes or the document, and they are written
+ * *beside* the voice with the model's own verbs. The **nth slot becomes the
+ * item with id `n + 1`**, which is how a caller names its own notes to them.
+ */
 export interface Slot {
+    /** The MIDI pitches sounding: one for a note, several for a chord. */
     midis?: number[];
+    /** How long it lasts, in 32nd-notes. */
     ticks: number;
+    /** Articulations, by their MEI names (`stacc`, `acc`, `ten`, `marc`). */
+    articulations?: string[];
+    /** A dynamic written at this note, governing the ones after it. */
+    dynamic?: string;
+    /** An ornament: `trill`, `mordent`, `turn`, `fermata`. */
+    ornament?: string;
+    /** That this is a grace note: `acc` (acciaccatura) or `unacc`. */
+    grace?: string;
+    /** A stem direction the writer forced, `up` or `down`. */
+    stem?: string;
+    /** How long it is **held**, in ticks, when no symbol already says it. */
+    sounding?: number;
+    /** Which enharmonic to spell an altered pitch as: `"sharp"`/`"flat"`. */
+    spelling?: string;
+    /** `"written"` for an accidental to be printed, else `"sounding"`. */
+    accidental?: string;
+    /** That this note ties into the next slot. */
+    tie?: boolean;
 }
 
 /** What both entry points take past the data itself. */
@@ -58,6 +91,13 @@ export interface MeiOptions {
  * occupies its written `dur` beats back to back, so this is the notation of a
  * melody the way a `Pbind`/`Routine` sequence reads it. The pitch is the event's
  * `midinote()` (rounded to the nearest semitone), the value is `dur`.
+ *
+ * An event may also say what the note is **on a page** (`seq.NOTATION_KEYS`):
+ * `articulations`, `dynamic`, `ornament`, `grace`, `stem`, `spelling`,
+ * `accidental` and `tie` reach the score under their own names, and an explicit
+ * `sustain` becomes how long the note is *held* — but only where no
+ * articulation already says so, since a staccato that was also written as a
+ * short length would be shortened twice on the way back.
  *
  * Returns the MEI to hand to `engrave` (a one-shot display list) or to `Score`
  * (to edit and redraw).
@@ -147,6 +187,14 @@ export interface PlaybackOptions {
  *
  * `instruments` binds a staff to what plays it, since the notation does not
  * say. Left out, events take the client's default instrument.
+ *
+ * **What is on the page comes with it.** Each event also carries the marks the
+ * note was written with (`seq.NOTATION_KEYS`) — its articulations verbatim, not the
+ * `sustain` they produced — so a timeline read from a score and written back
+ * with {@link sheetFromTimeline} engraves the same page. What does not survive
+ * that trip is everything that is not one note's: a slur, a hairpin, a tuplet,
+ * the meter and the barlines, the title — none of them can ride an event, and
+ * they are the reason a score is a score rather than a list of notes.
  */
 export function toTimeline(
     score: Sheet,
@@ -161,6 +209,11 @@ export function toTimeline(
             sustain: note.sustain,
             amp: note.amp,
         };
+        Object.assign(fields, note.marks ?? {});
+        delete fields.sounding; // `sustain` already holds it, in beats
+        for (const key of ["spelling", "accidental"] as const) {
+            if (note[key] !== undefined) fields[key] = note[key];
+        }
         const instrument = instrumentFor(instruments, note.staff);
         if (instrument !== undefined) fields.instrument = instrument;
         out.add(note.t, new SeqEvent(fields));
@@ -205,10 +258,55 @@ function voiceFromNotes(notes: Iterable<SeqEvent>, beatUnit: number): Slot[] {
     const voice: Slot[] = [];
     for (const event of notes) {
         const ticks = durTicks(Number(event.get("dur")), beatUnit);
-        if (event.get("type") === "rest") voice.push({ ticks });
-        else voice.push({ midis: [Math.round(event.midinote())], ticks });
+        if (event.get("type") === "rest") {
+            voice.push({ ticks });
+            continue;
+        }
+        const slot: Slot = { midis: [Math.round(event.midinote())], ticks };
+        writeMarks(slot, [event], ticks, beatUnit);
+        voice.push(slot);
     }
     return voice;
+}
+
+/**
+ * Put what `events` say about the *page* onto `slot`.
+ *
+ * Every key is carried under its own name (`seq.Event` and the slot agree on
+ * the vocabulary, which is what keeps the two directions one thing), except the
+ * length in the air, which is the one place the two do not line up:
+ *
+ * **A `sustain` reaches the page only when nothing on the page already says
+ * it.** An event that is both staccato and short is not two facts: the staccato
+ * is the fact, and the short length is what an interpretation makes of it.
+ * Written as both, the next reading would shorten an already shortened note. So
+ * `sounding` is what the sustain says that no symbol said — and it is left out
+ * entirely when the note is held for its written value, where it says nothing.
+ *
+ * A chord is **one** slot and the model puts one set of marks on it, so the
+ * events sharing a beat are read together and the first to say something wins
+ * that key. Which is right rather than a compromise: what is written is written
+ * on the chord, so a staccato any of its notes carries is the chord's. A slot
+ * cannot hold two notes marked differently, and that is the documented loss.
+ */
+function writeMarks(slot: Slot, events: SeqEvent[], ticks: number, beatUnit: number): void {
+    for (const key of NOTATION_KEYS) {
+        for (const event of events) {
+            const value = event.get(key);
+            if (value !== undefined && value !== null) {
+                (slot as unknown as Record<string, unknown>)[key] = value;
+                break;
+            }
+        }
+    }
+    const stated = events.find((e) => {
+        const sustain = e.get("sustain");
+        return sustain !== undefined && sustain !== null;
+    });
+    if (stated === undefined) return;
+    if ((slot.articulations ?? []).length) return;
+    const held = durTicks(stated.sustain(), beatUnit);
+    if (held !== ticks) slot.sounding = held;
 }
 
 /**
@@ -246,7 +344,9 @@ function voiceFromTimeline(
             const next = posTicks(beats[i + 1] as number, beatUnit);
             if (next > onset) ticks = Math.min(ticks, next - onset);
         }
-        voice.push({ midis: events.map((e) => Math.round(e.midinote())), ticks });
+        const slot: Slot = { midis: events.map((e) => Math.round(e.midinote())), ticks };
+        writeMarks(slot, events, ticks, beatUnit);
+        voice.push(slot);
         end = onset + ticks;
     }
     return voice;

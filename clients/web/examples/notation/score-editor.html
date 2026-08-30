@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: editing a score by hand</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 76rem; }
+      #note, #log { max-width: 52rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+      .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      #stage { align-self: stretch; height: min(72vh, 620px); }
+      #stage canvas { display: block; width: 100%; height: 100%; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">The web port of the Python client's
+<code>score_editor.py</code>: <b>editing a score by hand</b> — the page, the
+model, and every verb between them.
+
+<code>score.html</code> plays an engraved phrase and drags a note;
+<code>compose.html</code> builds a piece by operating on it; this one opens a
+document <i>somebody else typed</i> and edits it the way a score editor does.
+
+<b>A document becomes a model.</b> The phrase below is ABC. Until it is
+<i>read</i> (<code>score.sheet()</code>) it is a picture: it draws, it plays,
+and not one verb applies to it.
+
+<b>A page is a document, and a document was decided.</b> The title, the double
+bar dividing the two halves and the system break are written into the model,
+because each is a statement somebody made. What the engraver decides when nobody
+decided is not stored and is not loss — it is worked out again identically every
+time.
+
+<b>A gesture names a place; the model names the note.</b> A click reports the
+<i>element</i> under the cursor and <code>notation.itemId</code> turns it into
+the model item it was written from — <code>n7</code>, <code>n7-2</code> (a piece
+split across a barline) and <code>n7-p1</code> (one pitch of a chord) are all
+item 7. From there every verb applies.
+
+<b>Writing a note.</b> With <code>entry</code> a press on blank paper reports
+where the press landed — a place, not a note — and <code>insert</code> puts one
+there, the pitch worked out from that staff's clef and the key.
+
+<b>What is written is what is heard</b>, because the piece is read out of the
+model: a staccato you just added shortens the sound and moves no attack.
+
+<b>Click</b> a note to select and hear it, <b>drag</b> one up or down the staff
+to move it, <b>press blank paper</b> inside the staff to write a quarter. The
+buttons act on the selection. Everything runs on the <b>in-page engine</b>: no
+server process, no socket.</div>
+
+      <div class="row">
+        <button id="start">start</button>
+      </div>
+
+      <div id="stage"></div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/notation/score_editor.py, call
+      for call: the document opened, the three decisions written into the model,
+      the page with `editable` and `entry`, the same verbs on the same
+      selection, the playback read out of the model, and the same three
+      edit-backs.
+
+      The platform's differences are the usual two -- the host is the wasm one in
+      this tab and draws into an element, and nothing is pumped -- plus the
+      engraver's own: it is fetched on demand here, so opening the score awaits
+      a download that a script's bundled library does not.
+
+      Serve clients/web (the package root) and open
+      /examples/notation/score-editor.html. Build it first: ./build.sh
+    -->
+    <script type="module">
+      import {
+        Server,
+        Event, GuiHost, gui, seq, TempoClock,
+      } from "../../dist/index.js";
+
+      const { notation } = gui;
+      const el = (id) => document.getElementById(id);
+      const log = (line) => { el("log").textContent += line + "\n"; };
+
+      // Eight bars in ABC — a score as it usually arrives: typed by somebody
+      // else, in a format that is not ours. `M:` is the meter, `L:` the length
+      // a bare letter means, `K:` the key (E flat, so every B, E and A is flat
+      // and none of them carries a sign).
+      const PHRASE = `X:1
+T:Eight bars
+M:4/4
+L:1/4
+K:Eb
+G A B c | d2 c B | A G F G | E4 |
+B c d e | f2 e d | c B A B | G4 |
+`;
+
+      // One beat per second, so the engraving's milliseconds are the model's
+      // beats times 1000: score time and clock time are the same axis, which is
+      // what lets a single anchor tie the cursor to the sound.
+      const TEMPO = 1.0;
+
+      let server, host = null, raw = null, win = null;
+      let score = null, engraved = null, clock = null, transport = null;
+      // What the page named, and the model item behind it.
+      const selected = { element: null, item: null };
+
+      // ---- the window ----
+      // A page that can be written on, under two rows of verbs. `editable` opts
+      // it into pitch dragging and `entry` into note entry. They are separate
+      // opt-ins because a press on blank paper already means something
+      // everywhere else — it clears the selection — and a page that never asked
+      // to be written on must go on meaning that.
+      const scene = (page) => gui.view(
+        { title: "score editor", layout: "col", margin: 8.0, gap: 8.0 },
+        gui.panel(
+          { layout: "row", h: 34, gap: 8.0 },
+          gui.button({ name: "play", label: "play" }),
+          gui.button({ name: "stop", label: "stop" }),
+          gui.button({ name: "up", label: "up" }),
+          gui.button({ name: "down", label: "down" }),
+          gui.button({ name: "longer", label: "longer" }),
+          gui.button({ name: "shorter", label: "shorter" }),
+        ),
+        gui.panel(
+          { layout: "row", h: 34, gap: 8.0 },
+          gui.button({ name: "stacc", label: "staccato" }),
+          gui.button({ name: "dynamic", label: "mf" }),
+          gui.button({ name: "tie", label: "tie" }),
+          gui.button({ name: "silence", label: "silence" }),
+          gui.button({ name: "delete", label: "delete" }),
+          gui.button({ name: "undo", label: "undo" }),
+          gui.button({ name: "redo", label: "redo" }),
+        ),
+        notation.scoreView(page, {
+          name: "page", editable: true, entry: true, width: 1000.0,
+        }),
+      );
+
+      // Every edit ends here: re-engrave and replace the drawn page in place.
+      // `engraved.set` is the whole of it — the source rewrites the definition
+      // and pushes the layers to every window already showing them.
+      const refresh = () => { engraved.set(score.displayList()); };
+
+      // The selected item as the model holds it, so an edit that depends on the
+      // current value (longer, shorter, a mark it toggles) reads it rather than
+      // guessing.
+      const find = (id) => {
+        for (const staff of score.sheet().staves) {
+          for (const voice of staff.voices) {
+            for (const entry of voice.items) if (entry.id === id) return entry;
+          }
+        }
+        return null;
+      };
+
+      const item = () => {
+        if (selected.item === null) log("  select a note first (click one)");
+        return selected.item;
+      };
+
+      // One operation on the selected item, as one undo step.
+      const edit = (op, rest = {}) => {
+        const id = item();
+        if (id === null) return;
+        if (score.apply({ op, id, ...rest })) {
+          refresh();
+          log(`  ${op} on item ${id}`);
+        } else {
+          log(`  ${op} refused on item ${id}`);
+        }
+      };
+
+      // Twice as long, or half: the written value, against the barlines that
+      // were already there. A value that now overruns a bar is split and tied
+      // when the page is written, which is what augmentation looks like.
+      const scaleDur = (factor) => {
+        const entry = selected.item === null ? null : find(item());
+        if (entry === null) return;
+        const [num, den] = entry.dur;
+        edit("set_dur", { dur: factor > 1 ? [num * factor, den] : [num, den * 2] });
+      };
+
+      // Add or take away a staccato. A mark is *replaced* rather than merged,
+      // so toggling one reads the marks, changes one and writes them back.
+      const toggleStacc = () => {
+        const entry = selected.item === null ? null : find(item());
+        if (entry === null) return;
+        const marks = { ...(entry.marks ?? {}) };
+        const articulations = [...(marks.articulations ?? [])];
+        const at = articulations.indexOf("stacc");
+        if (at >= 0) articulations.splice(at, 1);
+        else articulations.push("stacc");
+        marks.articulations = articulations;
+        edit("set_marks", { marks });
+      };
+
+      // One playback pass, read out of the model as it stands right now: the
+      // symbols are what is played, so a staccato added a moment ago is
+      // honoured and every attack after it stays where it was.
+      const pass = (at) =>
+        new seq.Playhead(notation.toTimeline(score.sheet()), clock, server).play({ at });
+
+      // Where the piece ends, in beats — the last note's onset plus its written
+      // value. The transport parks the cursor there when a pass runs out.
+      const extent = () => {
+        let end = 0.0;
+        for (const note of notation.toNotes(score.sheet())) {
+          end = Math.max(end, note.t + note.dur);
+        }
+        return end;
+      };
+
+      // ---- the page's three edit-backs ----
+      const onScore = (tag, ...rest) => {
+        if (tag === "element" && rest.length) {
+          selected.element = rest[0] || null;
+          selected.item = rest[0] ? (notation.itemId(rest[0]) ?? null) : null;
+          const entry = selected.item === null ? null : find(selected.item);
+          if (entry === null) return log(`  clicked ${rest[0] || "(blank paper)"}`);
+          const pitches = entry.pitches ?? [];
+          log(`  selected item ${selected.item} (${rest[0]}), `
+            + `${pitches.length} pitch(es), written ${JSON.stringify(entry.dur)}`);
+          for (const note of notation.toNotes(score.sheet())) {
+            if (note.id === selected.item) {
+              new Event({ midinote: note.pitch, dur: note.sustain, amp: 0.15 })
+                .play(server);
+              break;
+            }
+          }
+        } else if (tag === "transpose" && rest.length >= 2) {
+          // The page reports where the note landed; the model is told to move
+          // it there, and the step count is worked out against the note it has.
+          // It is `move_steps` and not `transpose` — moving along the staff
+          // takes the key signature's alteration for the letter it lands on, so
+          // a note dragged onto a B in E flat is a B flat.
+          const id = notation.itemId(rest[0]);
+          if (id === undefined) return log(`  ${rest[0]} was not written from this model`);
+          const entry = find(id);
+          if (entry === null || !(entry.pitches ?? []).length) return;
+          if (score.transposeTo(rest[0], Math.round(rest[1]))) {
+            refresh();
+            log(`  moved item ${id} to staff position ${Math.round(rest[1])}`);
+          }
+        } else if (tag === "insert" && rest.length >= 3) {
+          // A place, not a note: a staff position is a pitch only once
+          // something knows the clef and the key, and `insert` is what knows.
+          const [after, position, staff] = [rest[0], Math.round(rest[1]), Math.round(rest[2])];
+          const op = {
+            op: "insert", dur: [1, 4], pitches: [], position, staff, voice: 0,
+          };
+          const id = after ? notation.itemId(after) : undefined;
+          if (id !== undefined) op.after = id;
+          if (score.apply(op)) {
+            refresh();
+            log(`  wrote a quarter at staff position ${position} on staff ${staff}`);
+          } else {
+            log("  the insert was refused");
+          }
+        }
+      };
+
+      // The stack is the *model's*: every edit above is one operation, so one
+      // step back is one operation undone — including the ones from a gesture.
+      const step = (name, act) => () => {
+        if (act()) { refresh(); log(`  ${name}`); }
+        else log(`  nothing to ${name}`);
+      };
+
+      async function run() {
+        el("start").disabled = true;
+        server = await new Server().boot();
+        raw = server.engine;
+        host = await new GuiHost({ engine: raw }).boot();
+
+        // Opening the score is the one asynchronous step of the layer, and only
+        // because the engraver module is fetched the first time a page engraves.
+        log("loading the engraver …");
+        score = await notation.Score.open(PHRASE, { pageWidth: 1100 });
+        const sheet = score.sheet();   // throws if it could not be read
+        const items = sheet.staves.reduce(
+          (n, staff) => n + staff.voices.reduce((m, v) => m + v.items.length, 0), 0);
+        log(`read ${items} items out of a document that was only text`);
+
+        // The decisions that are the writer's, not the engraver's. None of them
+        // changes a note; all three are statements, and a statement is stored.
+        // (Ask for the double bar that ends any piece and nothing is stored:
+        // `set_barline` on the final measure says what the page already says.)
+        score.apply({ op: "set_header",
+          header: notation.header({ title: "Eight bars", composer: "typed by hand" }) });
+        score.apply({ op: "set_barline", measure: 4, kind: "dbl" });
+        score.apply({ op: "set_break", measure: 5, kind: "system" });
+
+        engraved = gui.source(undefined, { displayList: score.displayList() });
+        win = await scene(engraved).open(el("stage"));
+
+        clock = new TempoClock(TEMPO).start();
+        transport = notation.transport(host, win.widget("page").id, {
+          source: pass, tempo: TEMPO, extent,
+          sampleRate: raw.context.sampleRate,
+        });
+        transport.locate(0.0);
+        setInterval(() => transport.update(), 100);
+
+        win.widget("page").onEvent(onScore);
+        win.widget("play").onClick(() => transport.play(server));
+        win.widget("stop").onClick(() => transport.stop());
+        win.widget("up").onClick(() => edit("move_steps", { steps: 1 }));
+        win.widget("down").onClick(() => edit("move_steps", { steps: -1 }));
+        win.widget("longer").onClick(() => scaleDur(2));
+        win.widget("shorter").onClick(() => scaleDur(1));
+        win.widget("stacc").onClick(toggleStacc);
+        win.widget("dynamic").onClick(
+          () => edit("set_marks", { marks: notation.marks({ dynamic: "mf" }) }));
+        win.widget("tie").onClick(() => edit("tie", { tied: true }));
+        win.widget("silence").onClick(() => edit("silence"));
+        win.widget("delete").onClick(() => edit("delete"));
+        win.widget("undo").onClick(step("undo", () => score.undo()));
+        win.widget("redo").onClick(step("redo", () => score.redo()));
+        log("click a note to select and hear it, drag one up or down the staff, "
+          + "press blank paper inside the staff to write a quarter; the buttons "
+          + "act on the selection");
+      }
+
+      el("start").onclick = () => run().catch((error) => log(`error: ${error}`));
+    </script>
+  </body>
+</html>

@@ -75,15 +75,117 @@ fn key_signature(key: &str) -> (&'static str, bool) {
 /// per-layer primitive — polyphony stacks several, it never widens the slot.
 ///
 /// As JSON (what a binding sends) a slot is an object: `{"midis": [60, 64],
-/// "ticks": 8}` is a chord, `{"ticks": 8}` a rest — a slot with no pitches *is*
-/// a rest, which keeps the wire form total without a discriminator.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(untagged)]
-pub enum Slot {
-    /// A note (one pitch) or chord (several), lasting `ticks`.
-    Note { midis: Vec<i32>, ticks: i32 },
-    /// A rest, lasting `ticks`.
-    Rest { ticks: i32 },
+/// "ticks": 8}` is a chord, `{"ticks": 8}` a rest — **a slot with no pitches
+/// *is* a rest**, which keeps the wire form total without a discriminator. The
+/// model says the same thing with two variants, because a model is not a wire
+/// and can be exact; here totality is worth more, and unknown keys are refused
+/// so that a misspelt mark is an error rather than a silent rest.
+///
+/// # What a slot may carry beyond a pitch and a value
+///
+/// Every field below is optional and every one is **a musical fact, not an
+/// instruction to the encoder** — the same rule [`Marks`] states, and the
+/// reason these can be read back by the interpreter rather than only written.
+/// A slot carrying none of them produces exactly the item it always did.
+///
+/// | field | what it says |
+/// |---|---|
+/// | `articulations` | `["stacc"]`, `["ten", "acc"]` — MEI's own names |
+/// | `dynamic` | a dynamic written at this note, governing the ones after it |
+/// | `ornament` | `trill`, `mordent`, `turn`, `fermata` |
+/// | `grace` | that this is a grace note: `acc`, `unacc` |
+/// | `stem` | a stem direction the writer forced: `up`, `down` |
+/// | `sounding` | how long it is *held*, in ticks, when no symbol says it |
+/// | `spelling` | `sharp` or `flat`: which enharmonic, against the key's own |
+/// | `accidental` | `written` for a sign to be printed, else `sounding` |
+/// | `tie` | that it ties into the next slot |
+///
+/// Marks are a **note's**: a slot with no pitches ignores them, because a rest
+/// carries none in the model either.
+///
+/// What a slot deliberately cannot say is anything that is not one note's:
+/// a slur, a hairpin, a meter change, a barline or a title span notes or the
+/// document, and they are written *beside* the voice — with the model's own
+/// verbs, on the sheet this builds. The **nth slot becomes the item with id
+/// `n + 1`**, which is what makes that addressable from the client's own
+/// indices.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Slot {
+    /// The MIDI pitches sounding: one for a note, several for a chord, none
+    /// for a rest.
+    #[serde(default)]
+    pub midis: Vec<i32>,
+    /// How long it lasts, in 32nd-notes.
+    pub ticks: i32,
+    /// Articulations, by their MEI names (`stacc`, `acc`, `ten`, `marc`, …).
+    #[serde(default)]
+    pub articulations: Vec<String>,
+    /// A dynamic written at this note (`pp`, `mf`, `ff`, …).
+    #[serde(default)]
+    pub dynamic: Option<String>,
+    /// An ornament on this note (`trill`, `mordent`, `turn`, `fermata`).
+    #[serde(default)]
+    pub ornament: Option<String>,
+    /// That this is a grace note, and of which kind (`acc`, `unacc`).
+    #[serde(default)]
+    pub grace: Option<String>,
+    /// A stem direction the writer forced (`up`, `down`).
+    #[serde(default)]
+    pub stem: Option<String>,
+    /// How long the note is **held**, in ticks, when that is not its written
+    /// value and no articulation already says so.
+    #[serde(default)]
+    pub sounding: Option<i32>,
+    /// Which enharmonic spelling to give the altered pitches — `"sharp"` or
+    /// `"flat"` — against the world the key implies. A bare MIDI number
+    /// cannot say it, and this is the only thing about it a *number* can:
+    /// a caller who knows the letter writes the pitch itself, with
+    /// [`Op::SetPitches`](super::Op::SetPitches) on the sheet.
+    #[serde(default)]
+    pub spelling: Option<String>,
+    /// `"written"` where the accidental is to be printed even though the key
+    /// or the measure already implies it — a courtesy sign. `"sounding"`, or
+    /// left out, leaves the decision to the engraver.
+    #[serde(default)]
+    pub accidental: Option<String>,
+    /// That this note ties into the next slot: one sound across both values.
+    #[serde(default)]
+    pub tie: bool,
+}
+
+impl Slot {
+    /// A note or chord of `ticks` 32nd-notes, carrying no marks.
+    pub fn note(midis: Vec<i32>, ticks: i32) -> Slot {
+        Slot {
+            midis,
+            ticks,
+            ..Default::default()
+        }
+    }
+
+    /// A rest of `ticks` 32nd-notes.
+    pub fn rest(ticks: i32) -> Slot {
+        Slot {
+            ticks,
+            ..Default::default()
+        }
+    }
+
+    /// The marks this slot puts on its note, in the model's own terms — ticks
+    /// become an exact [`Ratio`], and everything else is carried verbatim.
+    fn marks(&self) -> Marks {
+        Marks {
+            articulations: self.articulations.clone(),
+            dynamic: self.dynamic.clone(),
+            ornament: self.ornament.clone(),
+            grace: self.grace.clone(),
+            stem: self.stem.clone(),
+            sounding: self
+                .sounding
+                .map(|t| Ratio::from_ticks(t as i64, TPW as i64)),
+        }
+    }
 }
 
 /// Engrave a voice into a minimal MEI document, splitting notes across barlines
@@ -119,25 +221,37 @@ pub fn voice_to_mei(voice: &[Slot], meter: &str, clef: &str, key: &str) -> Strin
 /// every call become part of the sheet.
 pub fn voice_to_sheet(voice: &[Slot], meter: &str, clef: &str, key: &str) -> Sheet {
     let (num, den) = parse_meter(meter);
-    let (_, flats) = key_signature(key);
+    let (_, key_flats) = key_signature(key);
     let items = voice
         .iter()
         .enumerate()
         .map(|(i, slot)| {
             let id = i as u64 + 1;
-            let dur = |ticks: &i32| Ratio::from_ticks(*ticks as i64, TPW as i64);
-            match slot {
-                Slot::Note { midis, ticks } if !midis.is_empty() => Item::Note {
-                    id,
-                    pitches: midis.iter().map(|&m| Pitch::from_midi(m, flats)).collect(),
-                    dur: dur(ticks),
-                    tie: false,
-                    marks: Default::default(),
-                },
-                Slot::Note { ticks, .. } | Slot::Rest { ticks } => Item::Rest {
-                    id,
-                    dur: dur(ticks),
-                },
+            let dur = Ratio::from_ticks(slot.ticks as i64, TPW as i64);
+            if slot.midis.is_empty() {
+                return Item::Rest { id, dur };
+            }
+            // Which accidental world this note is spelled into: the key's,
+            // unless the slot chose one for itself.
+            let flats = match slot.spelling.as_deref() {
+                Some("flat") => true,
+                Some("sharp") => false,
+                _ => key_flats,
+            };
+            let forced = slot.accidental.as_deref() == Some("written");
+            Item::Note {
+                id,
+                pitches: slot
+                    .midis
+                    .iter()
+                    .map(|&m| Pitch {
+                        forced,
+                        ..Pitch::from_midi(m, flats)
+                    })
+                    .collect(),
+                dur,
+                tie: slot.tie,
+                marks: slot.marks(),
             }
         })
         .collect();
@@ -1137,10 +1251,7 @@ mod tests {
     use super::*;
 
     fn note(midi: i32, ticks: i32) -> Slot {
-        Slot::Note {
-            midis: vec![midi],
-            ticks,
-        }
+        Slot::note(vec![midi], ticks)
     }
 
     #[test]
@@ -1176,7 +1287,7 @@ mod tests {
             note(60, 8),
             note(62, 4),
             note(64, 12),
-            Slot::Rest { ticks: 8 },
+            Slot::rest(8),
             note(65, 8),
         ];
         let mei = voice_to_mei(&voice, "4/4", "G2", "C");
@@ -1198,10 +1309,7 @@ mod tests {
 
     #[test]
     fn a_chord_stacks_notes_under_one_value() {
-        let voice = vec![Slot::Note {
-            midis: vec![60, 64, 67],
-            ticks: 8,
-        }];
+        let voice = vec![Slot::note(vec![60, 64, 67], 8)];
         let mei = voice_to_mei(&voice, "4/4", "G2", "C");
         assert!(mei.contains("<chord xml:id=\"n1\" dur=\"4\">"));
         assert_eq!(mei.matches("<note").count(), 3);
@@ -1224,14 +1332,8 @@ mod tests {
             r#"[{"midis": [60, 64], "ticks": 8}, {"ticks": 8}, {"midis": [], "ticks": 8}]"#,
         )
         .expect("parses");
-        assert_eq!(
-            voice[0],
-            Slot::Note {
-                midis: vec![60, 64],
-                ticks: 8
-            }
-        );
-        assert_eq!(voice[1], Slot::Rest { ticks: 8 });
+        assert_eq!(voice[0], Slot::note(vec![60, 64], 8));
+        assert_eq!(voice[1], Slot::rest(8));
         // A pitchless slot is a rest however it was spelled, so it draws as one.
         let mei = voice_to_mei(&voice[2..], "4/4", "G2", "C");
         assert!(
@@ -1239,6 +1341,57 @@ mod tests {
             "a quarter rest"
         );
         assert!(!mei.contains("<chord"), "never an empty chord");
+    }
+
+    #[test]
+    fn a_slot_carries_what_is_written_on_the_note_and_nothing_it_cannot() {
+        let voice: Vec<Slot> = serde_json::from_str(
+            r#"[{"midis": [60], "ticks": 8, "articulations": ["stacc"],
+                 "dynamic": "mf", "ornament": "trill", "stem": "up",
+                 "sounding": 4, "tie": true}]"#,
+        )
+        .expect("parses");
+        let sheet = voice_to_sheet(&voice, "4/4", "G2", "C");
+        let Item::Note { marks, tie, .. } = &sheet.staves[0].voices[0].items[0] else {
+            panic!("a note");
+        };
+        assert!(tie, "the slot tied into the next");
+        assert_eq!(marks.articulations, ["stacc"]);
+        assert_eq!(marks.dynamic.as_deref(), Some("mf"));
+        assert_eq!(marks.ornament.as_deref(), Some("trill"));
+        assert_eq!(marks.stem.as_deref(), Some("up"));
+        // Ticks are the slot's unit and the model's is a rational: an eighth.
+        assert_eq!(marks.sounding, Some(Ratio::new(1, 8)));
+    }
+
+    #[test]
+    fn a_misspelt_mark_is_an_error_rather_than_a_silent_rest() {
+        // The wire form is total -- a slot with no pitches *is* a rest -- so a
+        // key it does not know would otherwise be dropped and the note with it.
+        let refused: Result<Vec<Slot>, _> =
+            serde_json::from_str(r#"[{"midis": [60], "ticks": 8, "articulation": ["stacc"]}]"#);
+        assert!(refused.is_err(), "an unknown key is refused");
+    }
+
+    #[test]
+    fn a_slot_spells_against_the_key_and_asks_for_the_sign() {
+        // C major spells the black keys with sharps; this note says otherwise,
+        // and asks for the flat to be printed as well.
+        let voice: Vec<Slot> = serde_json::from_str(
+            r#"[{"midis": [63], "ticks": 8, "spelling": "flat", "accidental": "written"}]"#,
+        )
+        .expect("parses");
+        let sheet = voice_to_sheet(&voice, "4/4", "G2", "C");
+        let pitch = sheet.staves[0].voices[0].items[0].pitches()[0];
+        assert_eq!(pitch.step, Step::E);
+        assert_eq!(pitch.alter, -1);
+        assert!(pitch.forced);
+        // Without the slot saying so, the same number is a D sharp.
+        let plain = voice_to_sheet(&[Slot::note(vec![63], 8)], "4/4", "G2", "C");
+        assert_eq!(
+            plain.staves[0].voices[0].items[0].pitches()[0].step,
+            Step::D
+        );
     }
 
     #[test]
@@ -1307,7 +1460,7 @@ mod tests {
                     note(60, 8),
                     note(62, 4),
                     note(64, 12),
-                    Slot::Rest { ticks: 8 },
+                    Slot::rest(8),
                     note(65, 8),
                 ],
                 "4/4",
@@ -1317,10 +1470,7 @@ mod tests {
             ("split", vec![note(60, 16), note(67, 24)], "4/4", "G2", "C"),
             (
                 "chord",
-                vec![Slot::Note {
-                    midis: vec![60, 64, 67],
-                    ticks: 8,
-                }],
+                vec![Slot::note(vec![60, 64, 67], 8)],
                 "4/4",
                 "G2",
                 "C",

@@ -526,6 +526,18 @@ export function graph_bus_reserved(): Uint32Array;
 export function interpretation(): string;
 
 /**
+ * The **model** item an engraved element belongs to, or `-1` when the element
+ * was not written from one.
+ *
+ * The page names elements the way the emitter wrote them: `n7` is the item,
+ * `n7-2` a piece of it split across a barline, `n7-p1` one pitch of a chord.
+ * All three are the same item, which is what lets a gesture anywhere on a note
+ * reach the note — and it is the step a client takes between a page's
+ * selection and a model verb.
+ */
+export function itemId(element_id: string): number;
+
+/**
  * JS face: the **Lissajous / goniometer** projection of a stereo pair, as
  * interleaved `[x, y]` pairs (`x` = side, `y` = mid) — one pair per input
  * frame. An empty array when the two channels differ in length.
@@ -782,6 +794,7 @@ export interface InitOutput {
     readonly engraveOptions: (a: number, b: number, c: number, d: number) => [number, number];
     readonly graph_bus_reserved: () => [number, number];
     readonly interpretation: () => [number, number, number, number];
+    readonly itemId: (a: number, b: number) => number;
     readonly lissajous: (a: number, b: number, c: number, d: number) => [number, number];
     readonly log_apply: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly log_canRedo: (a: number) => number;

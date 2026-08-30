@@ -61,6 +61,17 @@ def a_chord_timeline():
     return timeline
 
 
+def with_what_is_written_on_it():
+    """What an event says about the *page*: the marks reach the score through
+    the slot, so both clients engrave the same signs from the same events."""
+    return [
+        Event(midinote=60, dur=1.0, articulations=["stacc"], dynamic="mf"),
+        Event(midinote=62, dur=1.0, ornament="trill", stem="up"),
+        Event(midinote=63, dur=1.0, spelling="flat", accidental="written"),
+        Event(midinote=65, dur=1.0, sustain=0.5),
+    ]
+
+
 #: (name, the MEI, the options the page is engraved with).
 def cases():
     return [
@@ -71,6 +82,8 @@ def cases():
         # shared `engrave_options`, so both clients configure verovio the same.
         ("a_small_page", notation.from_notes(a_scale()),
          {"scale": 30, "page_width": 1200}),
+        ("with_what_is_written_on_it",
+         notation.from_notes(with_what_is_written_on_it()), {}),
         # A key and a clef the encoder spells with: flats, and the bass staff.
         ("in_f_on_the_bass_clef",
          notation.from_notes([Event(midinote=m, dur=1.0) for m in (53, 55, 57, 58)],

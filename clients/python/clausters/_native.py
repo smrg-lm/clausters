@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 26
+CORE_ABI_VERSION = 27
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -546,6 +546,8 @@ def _configure_notation(lib: ctypes.CDLL) -> None:
         lib.clausters_core_interpretation.argtypes = [u8p, size]
         lib.clausters_core_mei_to_sheet.restype = size
         lib.clausters_core_mei_to_sheet.argtypes = [u8p, size, u8p, size]
+        lib.clausters_core_item_id.restype = ctypes.c_int64
+        lib.clausters_core_item_id.argtypes = [u8p, size]
     except AttributeError:
         return
     _HAS_NOTATION = True

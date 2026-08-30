@@ -40,7 +40,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 
-use super::model::{Item, Sheet};
+use super::model::{Item, Marks, Sheet};
 use crate::ratio::Ratio;
 
 /// One sounding note, as the interpreter heard it.
@@ -71,6 +71,30 @@ pub struct Note {
     /// The model id of the item it came from, so a sounding note can be traced
     /// back to the note on the page.
     pub id: u64,
+    /// Which enharmonic spelling the writer chose — `"sharp"` or `"flat"` —
+    /// where the note is altered at all; `None` on a natural, where nothing
+    /// was chosen.
+    ///
+    /// A written fact on a sounding note, and it is here for one reason: a
+    /// client that plays a score and then writes it back has only `pitch`, and
+    /// a number cannot tell A flat from G sharp. Double alterations spell as
+    /// their direction, which is as much as the two words can say.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spelling: Option<String>,
+    /// `"written"` where the accidental is one the writer wants printed even
+    /// though the key already implies it — a courtesy sign. `None` otherwise:
+    /// the engraver decides.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub accidental: Option<String>,
+    /// What is written on the note beyond its pitch and value, **verbatim**.
+    ///
+    /// Not what the interpreter made of it: a staccato is already honoured in
+    /// `sustain`, and it is still here, because the page said it and a client
+    /// writing the note back writes the staccato rather than a shortened
+    /// length. Empty on a note that carries nothing, which is the case a v1
+    /// payload produces and the one that stays byte-identical.
+    #[serde(default, skip_serializing_if = "Marks::is_empty")]
+    pub marks: Marks,
 }
 
 /// What one articulation does to a note.
@@ -382,6 +406,13 @@ pub fn perform(mut sheet: Sheet, interp: &Interpretation) -> Result<Vec<Note>, S
                 staff: p.staff,
                 voice: p.voice,
                 id: p.item.id(),
+                spelling: match pitch.alter {
+                    0 => None,
+                    n if n > 0 => Some("sharp".into()),
+                    _ => Some("flat".into()),
+                },
+                accidental: pitch.forced.then(|| "written".to_string()),
+                marks: marks.cloned().unwrap_or_default(),
             });
         }
     }
@@ -615,6 +646,54 @@ mod tests {
             notes.iter().map(|n| n.t).collect::<Vec<_>>(),
             vec![0.0, 1.0, 2.0, 3.0]
         );
+    }
+
+    #[test]
+    fn a_sounding_note_carries_what_was_written_on_it_as_it_was_written() {
+        // The staccato is honoured -- and it is still on the note. A client
+        // that plays the page and writes it back writes the staccato, not the
+        // shortened length it produced, or the second reading shortens it
+        // again.
+        let mut sheet = quarters(2);
+        mark(
+            &mut sheet,
+            1,
+            Marks {
+                articulations: vec!["stacc".into()],
+                dynamic: Some("mf".into()),
+                ..Marks::default()
+            },
+        );
+        let notes = perform(sheet, &Interpretation::default()).unwrap();
+        assert_eq!(notes[0].sustain, 0.5);
+        assert_eq!(notes[0].marks.articulations, ["stacc"]);
+        assert_eq!(notes[0].marks.dynamic.as_deref(), Some("mf"));
+        // A note nothing is written on carries nothing, which is what keeps a
+        // plain phrase's payload what it always was.
+        assert!(notes[1].marks.is_empty());
+        assert!(!serde_json::to_string(&notes[1]).unwrap().contains("marks"));
+    }
+
+    #[test]
+    fn a_number_cannot_tell_a_flat_from_g_sharp_and_the_note_can() {
+        let mut sheet = quarters(2);
+        let items = &mut sheet.staves[0].voices[0].items;
+        let Item::Note { pitches, .. } = &mut items[0] else {
+            panic!("a note");
+        };
+        pitches[0] = Pitch {
+            step: Step::A,
+            alter: -1,
+            octave: 4,
+            forced: true,
+        };
+        let notes = perform(sheet, &Interpretation::default()).unwrap();
+        assert_eq!(notes[0].pitch, 68);
+        assert_eq!(notes[0].spelling.as_deref(), Some("flat"));
+        assert_eq!(notes[0].accidental.as_deref(), Some("written"));
+        // A natural chose nothing and says so.
+        assert_eq!(notes[1].spelling, None);
+        assert_eq!(notes[1].accidental, None);
     }
 
     #[test]

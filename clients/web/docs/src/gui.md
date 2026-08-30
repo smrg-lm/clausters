@@ -427,14 +427,35 @@ belongs to a style, and a style passes its own accents.
 **What plays a staff is not in the notation**, so each note names the `staff` it
 was written on and the binding is made where the score is rendered.
 
+**An event can also say what the note is on a page.** Beside `midinote` and
+`dur`, an event carries `articulations`, `dynamic`, `ornament`, `grace`, `stem`,
+`spelling`, `accidental` and `tie` — the notation keys, reserved so none of them
+reaches the synth as a control. Every one is a **musical fact rather than an
+instruction to the engraver** (`articulations: ["stacc"]`, never "draw a dot"),
+which is what lets the same key be read in both directions: written on the way
+out, and put back on the event by `toTimeline` on the way in. An explicit
+`sustain` becomes how long the note is *held*, but only where no symbol already
+says it — a note that is both staccato and short is one fact, not two, and
+writing both would shorten it twice on the next reading.
+
 **The round trip is honest, and both directions lose something.** Events to a
 score loses exact onsets, continuous amplitude, microtones and the instrument;
-back again loses the spelling, the stems and beams, which voice a note was in,
-and every mark the interpreter has no rule for yet — a grace note, an ornament
-and a fermata are on the page and read as ordinary notes. What survives both
-ways is pitch, written value and order.
+coming back, a note keeps everything written *on* it and loses everything that is
+not one note's — a slur and a hairpin have two ends, a meter change and a barline
+belong to the grid, a title belongs to the document. What survives both ways is
+the note: its pitch and spelling, its written value, its marks, and their order.
 
-`examples/notation/compose.html` builds a whole piece this way and plays it.
+**A gesture names an element; a verb names an item**, and `notation.itemId` is
+the step between them. The page reports the element under the cursor the way the
+emitter spelled it — `n7` is the item, `n7-2` a piece of it split across a
+barline, `n7-p1` one pitch of a chord — and all three are item 7, which is what
+lets a gesture anywhere on a note reach the note. It comes from the core because
+the answer is the *emitter's*: a client reading the ids itself would disagree the
+first time a split was spelled differently.
+
+`examples/notation/compose.html` builds a whole piece this way and plays it, and
+`examples/notation/score-editor.html` opens a document, edits it by hand through
+the model's verbs, and plays it back from the model.
 
 ## Bindings, and the page that runs without a script
 

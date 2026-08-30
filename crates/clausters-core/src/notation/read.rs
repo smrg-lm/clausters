@@ -730,12 +730,7 @@ mod tests {
     };
 
     fn quarters(n: usize) -> Sheet {
-        let voice: Vec<Slot> = (0..n)
-            .map(|_| Slot::Note {
-                midis: vec![60],
-                ticks: 8,
-            })
-            .collect();
+        let voice: Vec<Slot> = (0..n).map(|_| Slot::note(vec![60], 8)).collect();
         voice_to_sheet(&voice, "4/4", "G2", "C")
     }
 
@@ -975,15 +970,7 @@ mod tests {
         // would turn every B flat in E flat into a B natural, silently, on the
         // first save. The same mistake the encoder once made in the other
         // direction, caught by the same rule read backwards.
-        let sheet = voice_to_sheet(
-            &[Slot::Note {
-                midis: vec![70],
-                ticks: 8,
-            }],
-            "4/4",
-            "G2",
-            "Eb",
-        );
+        let sheet = voice_to_sheet(&[Slot::note(vec![70], 8)], "4/4", "G2", "Eb");
         let mei = sheet_to_mei(&sheet).unwrap();
         // Nothing is *printed*: the armature says it. The sounding alteration
         // is still stated, as a child `<accid accid.ges>`, which is one of the

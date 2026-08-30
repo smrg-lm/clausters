@@ -25,7 +25,22 @@ _RESERVED = {
     "type", "instrument", "dur", "legato", "stretch", "sustain", "delta",
     "add_action", "target", "group", "server", "has_gate",
     "midinote", "degree", "octave", "root", "scale", "node",
+    # What the note says on a page. None of it is a synth control, and a
+    # `bool` is an `int` in Python -- so a `tie=True` that was not reserved
+    # would be sent as a control ``1.0`` and ignored in silence.
+    "articulations", "dynamic", "ornament", "grace", "stem",
+    "spelling", "accidental", "tie",
 }
+
+#: The reserved keys that say what the note is on a **page** rather than what it
+#: does in the air, read by `clausters.gui.notation.sheet_from_notes` and
+#: written back by `clausters.gui.notation.to_timeline`. Every one is a musical
+#: fact -- ``articulations=["stacc"]``, not an instruction to shorten a drawn
+#: value -- which is what lets the same key be read in both directions.
+NOTATION_KEYS = (
+    "articulations", "dynamic", "ornament", "grace", "stem",
+    "spelling", "accidental", "tie",
+)
 
 #: Default parameters merged into every `Event`. ``type`` selects behaviour
 #: (``note`` or ``rest``); ``instrument`` is the def name; ``dur`` is the beats
@@ -66,6 +81,14 @@ class Event(dict):
     ``degree`` within ``octave``/``root``/``scale``), `delta` is the beats to
     the next event and `sustain` the beats the synth sounds. `play` renders the
     event on a destination -- a `Server` or a MIDI destination.
+
+    An event may also carry what the note is **on a page** (`NOTATION_KEYS`):
+    ``articulations``, ``dynamic``, ``ornament``, ``grace``, ``stem``,
+    ``spelling``, ``accidental`` and ``tie``. They change nothing about how the
+    event sounds -- an articulation is honoured when a *score* is read, not when
+    an event is played -- and they are reserved, so none of them reaches the
+    synth as a control. What reads them is
+    `clausters.gui.notation.sheet_from_notes`.
     """
 
     def __init__(self, *args, **kwargs):

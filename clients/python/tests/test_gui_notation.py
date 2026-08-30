@@ -608,6 +608,97 @@ def test_a_timeline_carries_both_lengths_onto_the_event():
     assert first["midinote"] == 60
 
 
+def test_an_event_carrying_nothing_produces_the_slot_it_always_did():
+    plain = notation.sheet_from_notes([Event(midinote=60, dur=1)])
+    item = plain["staves"][0]["voices"][0]["items"][0]
+    # No marks, no tie, and the pitch spelled by the key alone. The default
+    # `legato` of 0.8 is a playback default, not a fact about the page, so it
+    # reaches nothing: only a `sustain` the caller wrote does.
+    assert "marks" not in item or item["marks"] == {}
+    assert not item.get("tie")
+
+
+def test_what_the_note_says_on_the_page_rides_the_event():
+    notes = [Event(midinote=60, dur=1, articulations=["stacc"], dynamic="mf"),
+             Event(midinote=62, dur=1, ornament="trill", stem="up", tie=True),
+             Event(midinote=63, dur=1, spelling="flat", accidental="written")]
+    sheet = notation.sheet_from_notes(notes)
+    items = sheet["staves"][0]["voices"][0]["items"]
+    assert items[0]["marks"]["articulations"] == ["stacc"]
+    assert items[0]["marks"]["dynamic"] == "mf"
+    assert items[1]["marks"]["ornament"] == "trill"
+    assert items[1]["tie"] is True
+    # C major would spell 63 as a D sharp; this note said otherwise, and asked
+    # for the sign to be printed.
+    assert items[2]["pitches"][0]["step"] == "e"
+    assert items[2]["pitches"][0]["alter"] == -1
+    assert items[2]["pitches"][0]["forced"] is True
+
+
+def test_a_sustain_reaches_the_page_only_where_no_symbol_says_it():
+    # Held for half its value, with nothing written to explain it: the page
+    # carries the length.
+    sheet = notation.sheet_from_notes([Event(midinote=60, dur=1, sustain=0.5)])
+    item = sheet["staves"][0]["voices"][0]["items"][0]
+    assert item["marks"]["sounding"] == [1, 8]  # an exact eighth
+    # The same length under a staccato is what the staccato *means*, so writing
+    # it again would shorten the note twice on the way back.
+    sheet = notation.sheet_from_notes(
+        [Event(midinote=60, dur=1, sustain=0.5, articulations=["stacc"])])
+    item = sheet["staves"][0]["voices"][0]["items"][0]
+    assert "sounding" not in item["marks"]
+    assert item["marks"]["articulations"] == ["stacc"]
+
+
+def test_a_score_played_and_written_back_engraves_the_same_page():
+    # The round trip the two directions have to agree on: what is written is
+    # honoured on the way out and written again on the way back, unchanged.
+    written = notation.sheet_from_notes([
+        Event(midinote=60, dur=1, articulations=["stacc"], dynamic="mf"),
+        Event(midinote=68, dur=1, spelling="flat"),
+    ])
+    again = notation.sheet_from_timeline(notation.to_timeline(written))
+    first, second = again["staves"][0]["voices"][0]["items"][:2]
+    assert first["marks"]["articulations"] == ["stacc"]
+    assert first["marks"]["dynamic"] == "mf"
+    assert "sounding" not in first["marks"]
+    assert second["pitches"][0]["step"] == "a" and second["pitches"][0]["alter"] == -1
+    # And the sound is the same on both readings.
+    assert [n["sustain"] for n in notation.to_notes(written)] == \
+        [n["sustain"] for n in notation.to_notes(again)]
+
+
+def test_a_page_element_names_the_model_item_it_was_written_from():
+    # All three spellings the emitter uses are the same item, which is what lets
+    # a gesture anywhere on a note reach the note.
+    assert notation.item_id("n7") == 7
+    assert notation.item_id("n7-2") == 7      # a piece split across a barline
+    assert notation.item_id("n7-p1") == 7     # one pitch of a chord
+    # An element from a document this layer did not write names nothing.
+    assert notation.item_id("m3f9a") is None
+
+
+def test_a_chord_is_one_slot_and_reads_the_marks_of_all_of_it():
+    # A chord tone carrying nothing is not a chord carrying nothing: the events
+    # sharing a beat are read together, so a mark on any of them is the chord's.
+    timeline = Timeline()
+    timeline.add(0.0, Event(midinote=60, dur=1.0))
+    timeline.add(0.0, Event(midinote=64, dur=1.0, dynamic="mf"))
+    timeline.add(0.0, Event(midinote=67, dur=1.0, articulations=["stacc"]))
+    sheet = notation.sheet_from_timeline(timeline)
+    marks = sheet["staves"][0]["voices"][0]["items"][0]["marks"]
+    assert marks["dynamic"] == "mf"
+    assert marks["articulations"] == ["stacc"]
+
+
+def test_a_notation_key_is_never_sent_to_the_synth():
+    # A `bool` is an `int` in Python, so an unreserved `tie=True` would arrive
+    # as a control 1.0 and be ignored in silence.
+    args = Event(midinote=60, tie=True, dynamic="mf", cutoff=800)._control_args()
+    assert "tie" not in args and "dynamic" not in args
+    assert args[args.index("cutoff") + 1] == 800.0
+
+
 def test_a_hairpin_written_to_a_note_that_is_gone_is_refused_by_name():
     sheet = _quarters(2)
     sheet["spanners"] = [{"kind": "crescendo", "from": 1, "to": 99}]

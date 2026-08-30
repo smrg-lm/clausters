@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 
+from ...seq.event import NOTATION_KEYS
 from . import sheet
 
 # 32nd-note resolution: every duration snaps to an integer number of these, so
@@ -42,6 +43,14 @@ def from_notes(notes, *, meter: str = "4/4", clef: str = "G2", key: str = "C",
     ``dur`` beats back to back, so this is the notation of a melody the way a
     ``Pbind``/``Routine`` sequence reads it. The pitch is the event's
     `Event.midinote` (rounded to the nearest semitone), the value is ``dur``.
+
+    An event may also say what the note is **on a page**
+    (`clausters.seq.event.NOTATION_KEYS`): ``articulations``, ``dynamic``,
+    ``ornament``, ``grace``, ``stem``, ``spelling``, ``accidental`` and ``tie``
+    reach the score under their own names, and an explicit ``sustain`` becomes
+    how long the note is *held* -- but only where no articulation already says
+    so, since a staccato that was also written as a short length would be
+    shortened twice on the way back.
 
     Returns the MEI to hand to `engrave` (a one-shot display list), `Score` (to
     edit and redraw) or `Score.from_notes` (the two in one). ``meter`` (``"4/4"``)
@@ -123,6 +132,15 @@ def to_timeline(score, *, instruments=None, interp: dict | None = None,
 
     ``interp`` is the reading (`clausters.gui.notation.interpretation`); left
     out, the default.
+
+    **What is on the page comes with it.** Each event also carries the marks the
+    note was written with (`clausters.seq.event.NOTATION_KEYS`) -- its
+    articulations verbatim, not the ``sustain`` they produced -- so a timeline
+    read from a score and written back with `sheet_from_timeline` engraves the
+    same page. What does not survive that trip is everything that is not one
+    note's: a slur, a hairpin, a tuplet, the meter and the barlines, the title
+    -- none of them can ride an event, and they are the reason a score is a
+    score rather than a list of notes.
     """
     from ...seq.event import Event
     from ...seq.timeline import Timeline
@@ -132,6 +150,11 @@ def to_timeline(score, *, instruments=None, interp: dict | None = None,
         event = dict(event_keys)
         event.update(midinote=note["pitch"], dur=note["dur"],
                      sustain=note["sustain"], amp=note["amp"])
+        event.update(note.get("marks", {}))
+        event.pop("sounding", None)  # `sustain` already holds it, in beats
+        for key in ("spelling", "accidental"):
+            if note.get(key) is not None:
+                event[key] = note[key]
         instrument = _instrument(instruments, note["staff"])
         if instrument is not None:
             event["instrument"] = instrument
@@ -175,8 +198,47 @@ def _voice_from_notes(notes, beat_unit: int) -> list:
         if ev.get("type") == "rest":
             voice.append({"ticks": ticks})
         else:
-            voice.append({"midis": [round(ev.midinote())], "ticks": ticks})
+            slot = {"midis": [round(ev.midinote())], "ticks": ticks}
+            _write_marks(slot, [ev], ticks, beat_unit)
+            voice.append(slot)
     return voice
+
+
+def _write_marks(slot: dict, events, ticks: int, beat_unit: int) -> None:
+    """Put what ``events`` say about the *page* onto ``slot``.
+
+    Every key is carried under its own name (`clausters.seq.event.Event` and
+    the slot agree on the vocabulary, which is what keeps the two directions
+    one thing), except the length in the air, which is the one place the two
+    do not line up:
+
+    **A ``sustain`` reaches the page only when nothing on the page already
+    says it.** An event that is both staccato and short is not two facts: the
+    staccato is the fact, and the short length is what an interpretation makes
+    of it. Written as both, the next reading would shorten an already
+    shortened note. So ``sounding`` is what the sustain says that no symbol
+    said -- and it is left out entirely when the note is held for its written
+    value, where it says nothing at all.
+
+    A chord is **one** slot and the model puts one set of marks on it, so the
+    events sharing a beat are read together and the first to say something
+    wins that key. Which is right rather than a compromise: what is written is
+    written on the chord, so a staccato any of its notes carries is the
+    chord's. A slot cannot hold two notes marked differently, and that is the
+    documented loss.
+    """
+    for key in NOTATION_KEYS:
+        for ev in events:
+            value = ev.get(key)
+            if value is not None:
+                slot[key] = value
+                break
+    stated = next((ev for ev in events if ev.get("sustain") is not None), None)
+    if stated is None or slot.get("articulations"):
+        return
+    held = _dur_ticks(stated.sustain(), beat_unit)
+    if held != ticks:
+        slot["sounding"] = held
 
 
 def _voice_from_timeline(timeline, beat_unit: int) -> list:
@@ -201,8 +263,10 @@ def _voice_from_timeline(timeline, beat_unit: int) -> list:
             nxt = _pos_ticks(beats[i + 1], beat_unit)
             if nxt > onset:
                 ticks = min(ticks, nxt - onset)
-        voice.append({"midis": [round(ev.midinote()) for ev in groups[beat]],
-                      "ticks": ticks})
+        slot = {"midis": [round(ev.midinote()) for ev in groups[beat]],
+                "ticks": ticks}
+        _write_marks(slot, groups[beat], ticks, beat_unit)
+        voice.append(slot)
         end = onset + ticks
     return voice
 

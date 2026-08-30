@@ -141,8 +141,11 @@ pub use time::*;
 /// verbs rather than through the engraver's editor, so there is one
 /// implementation of what an edit to a score means and a standalone host
 /// performs the same one. The engraver's editor stays as the escape hatch for a
-/// document that has no model behind it.
-pub const CORE_ABI_VERSION: u32 = 26;
+/// document that has no model behind it. **v27 which item a page element is** —
+/// `clausters_core_item_id`: the step between a selection on the page and a
+/// model verb, answered by the emitter that spelled the element rather than by
+/// each client working the spelling out again.
+pub const CORE_ABI_VERSION: u32 = 27;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

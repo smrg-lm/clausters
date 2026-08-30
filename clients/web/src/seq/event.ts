@@ -26,7 +26,28 @@ const RESERVED = new Set([
     "type", "instrument", "dur", "legato", "stretch", "sustain", "delta",
     "addAction", "target", "group", "server", "hasGate",
     "midinote", "degree", "octave", "root", "scale", "node",
+    // What the note says on a page. None of it is a synth control.
+    "articulations", "dynamic", "ornament", "grace", "stem",
+    "spelling", "accidental", "tie",
 ]);
+
+/**
+ * The reserved keys that say what the note is on a **page** rather than what it
+ * does in the air, read by `gui.notation.sheetFromNotes` and written back by
+ * `gui.notation.toTimeline`. Every one is a musical fact —
+ * `articulations: ["stacc"]`, not an instruction to shorten a drawn value —
+ * which is what lets the same key be read in both directions.
+ */
+export const NOTATION_KEYS = [
+    "articulations",
+    "dynamic",
+    "ornament",
+    "grace",
+    "stem",
+    "spelling",
+    "accidental",
+    "tie",
+] as const;
 
 /**
  * Defaults merged into every `Event`. `type` selects behaviour (`note` or
@@ -79,6 +100,13 @@ export interface EventDestination {
  * `freq` resolve pitch (an explicit `freq` wins, else `midinote`, else
  * `degree` within `octave`/`root`/`scale`), `delta` is the beats to the next
  * event and `sustain` the beats the synth sounds.
+ *
+ * An event may also carry what the note is **on a page**
+ * ({@link NOTATION_KEYS}): `articulations`, `dynamic`, `ornament`, `grace`,
+ * `stem`, `spelling`, `accidental` and `tie`. They change nothing about how the
+ * event sounds — an articulation is honoured when a *score* is read, not when
+ * an event is played — and they are reserved, so none of them reaches the synth
+ * as a control. What reads them is `gui.notation.sheetFromNotes`.
  */
 export class Event {
     readonly props: EventProps;

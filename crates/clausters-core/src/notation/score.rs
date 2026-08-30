@@ -507,7 +507,13 @@ impl<E: Engraver> Score<E> {
 /// All three are the same item, which is what lets a gesture anywhere on a note
 /// reach the note. An id of any other shape belongs to a document this layer
 /// did not write, and there is nothing in the model to move.
-fn item_id(element_id: &str) -> Option<u64> {
+///
+/// It is public because a **client** needs it for the same reason this module
+/// does: the page reports the element under a gesture, and every model verb
+/// names an item. Working it out in a client would be a second answer to a
+/// question the emitter already answered, and the two would disagree the first
+/// time the emitter spelled a split or a chord differently.
+pub fn item_id(element_id: &str) -> Option<u64> {
     element_id
         .strip_prefix('n')?
         .split('-')
@@ -721,12 +727,7 @@ mod model_tests {
 
     /// A real score, as MEI, so the model path has something to read.
     fn mei_of(n: usize) -> String {
-        let voice: Vec<Slot> = (0..n)
-            .map(|_| Slot::Note {
-                midis: vec![60],
-                ticks: 8,
-            })
-            .collect();
+        let voice: Vec<Slot> = (0..n).map(|_| Slot::note(vec![60], 8)).collect();
         sheet_to_mei(&voice_to_sheet(&voice, "4/4", "G2", "C")).unwrap()
     }
 
@@ -801,7 +802,7 @@ mod model_tests {
 
     #[test]
     fn a_rest_says_it_has_no_pitch_rather_than_moving_nothing() {
-        let sheet = voice_to_sheet(&[Slot::Rest { ticks: 8 }], "4/4", "G2", "C");
+        let sheet = voice_to_sheet(&[Slot::rest(8)], "4/4", "G2", "C");
         let id = sheet.staves[0].voices[0].items[0].id();
         let err = crate::notation::move_steps(sheet, id, 1).unwrap_err();
         assert!(err.contains("rest"), "{err}");
@@ -811,15 +812,7 @@ mod model_tests {
     fn a_note_dragged_onto_a_letter_the_armature_alters_arrives_altered() {
         // In E flat, dragging a note onto B gives B flat -- which is what
         // reading in a key means, and what nobody should have to say.
-        let sheet = voice_to_sheet(
-            &[Slot::Note {
-                midis: [69].into(),
-                ticks: 8,
-            }],
-            "4/4",
-            "G2",
-            "Eb",
-        );
+        let sheet = voice_to_sheet(&[Slot::note(vec![69], 8)], "4/4", "G2", "Eb");
         let id = sheet.staves[0].voices[0].items[0].id();
         let moved = crate::notation::move_steps(sheet, id, 1).unwrap();
         let Item::Note { pitches, .. } = &moved.staves[0].voices[0].items[0] else {

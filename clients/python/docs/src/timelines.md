@@ -127,6 +127,28 @@ score = notation.Score.from_timeline(timeline, meter="4/4", key="C")
 dl = score.display_list()          # the engraved page, for the score widget
 ```
 
+**An event can also say what the note is on a page.** Beside `midinote` and
+`dur`, an event carries `articulations`, `dynamic`, `ornament`, `grace`, `stem`,
+`spelling`, `accidental` and `tie` — the notation keys, reserved so none of them
+reaches the synth as a control:
+
+```python
+Event(midinote=60, dur=1, articulations=["stacc"], dynamic="mf")
+Event(midinote=63, dur=1, spelling="flat", accidental="written")  # an E flat, printed
+```
+
+Every one is a **musical fact rather than an instruction to the engraver** —
+`articulations=["stacc"]`, never "draw a dot" — which is what lets the same key
+be read in both directions: written on the way out, and put back on the event by
+`to_timeline` on the way in. An event that carries none of them engraves exactly
+what it always did.
+
+An explicit `sustain` becomes how long the note is *held*, but **only where no
+symbol already says it**. A note that is both staccato and short is not two
+facts: the staccato is the fact, and the short length is what an interpretation
+made of it. Written as both, the next reading would shorten an already shortened
+note.
+
 `from_notes` is the melodic sibling — a plain list of events (a `rest` for silence), written back to back. A note whose duration is not a single value is written as tied notes (a dotted value when it lands exactly, like `1.5` beats → a dotted quarter), and a note overrunning a barline is split and tied across it. `beat_unit` sets what one beat is worth (`4` = a quarter, matching a `TEMPO` of one beat per second). The result flows into `engrave` (a one-shot view), `Score` (to edit and redraw) or `Score.from_timeline` (both at once); `examples/notation/score_from_data.py` builds a timeline of chords and a melody, engraves it and plays it from the same timeline.
 
 ## The score behind the page: editing it as data
@@ -318,6 +340,22 @@ sheet = notation.insert(sheet, (1, 4), after=after_id, position=position)
 and the pitch is worked out from that staff's clef and the key — clicking the
 middle line in E flat writes a B flat.
 
+**A gesture names an element; a verb names an item**, and `notation.item_id` is
+the step between them. The page reports the element under the cursor the way the
+emitter spelled it — `n7` is the item, `n7-2` a piece of it split across a
+barline, `n7-p1` one pitch of a chord — and all three are item 7, which is what
+lets a gesture anywhere on a note reach the note:
+
+```python
+item = notation.item_id(element)      # None where the element is not the model's
+score.apply({"op": "set_marks", "id": item, "marks": notation.marks(...)})
+```
+
+It comes from the core because the answer is the *emitter's*: a client reading
+the ids itself would disagree the first time a split was spelled differently.
+`examples/notation/score_editor.py` is the whole of this — a document opened,
+edited by hand through the model's verbs, and played back from it.
+
 ### Hearing what the page says
 
 The way back out is `to_notes`, and it is not a conversion: the symbols mean
@@ -370,10 +408,12 @@ a name for every staff or a mapping from staff index.
 **The round trip is honest, and both directions lose something.** Going from
 events to a score loses exact onsets (they snap to written values), continuous
 amplitude (it becomes a dynamic, or nothing), microtones, and which instrument
-played. Coming back loses the spelling, the stems and beams, which voice a note
-was written in, and every mark the interpreter has no rule for yet — grace
-notes, ornaments and fermatas are on the page and are read as ordinary notes.
-What survives both ways is what the two agree on: pitch, written value, order.
+played. Coming back, a note keeps everything written *on* it — that is what the
+notation keys carry — and loses everything that is not one note's: a slur and a
+hairpin have two ends, a meter change and a barline belong to the grid, a title
+belongs to the document, and none of the three can ride an event. What survives
+both ways is the note: its pitch and spelling, its written value, its marks, and
+the order they come in.
 
 ## See also
 

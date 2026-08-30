@@ -56,5 +56,5 @@ pub use operators::{
 };
 pub use ops::{Op, OpSpec, Span, apply, catalog, default_steps, transpose_pitch};
 pub use read::mei_to_sheet;
-pub use score::{Engraver, NoteEvent, Page, Score, engrave_options};
+pub use score::{Engraver, NoteEvent, Page, Score, engrave_options, item_id};
 pub use svg::{DisplayList, Prim, svg_to_display_list};

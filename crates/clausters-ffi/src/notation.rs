@@ -21,8 +21,8 @@
 //! than refused, so no binding has to validate before calling.
 
 use clausters_core::notation::{
-    Interpretation, Op, Sheet, Slot, apply, catalog, default_interpretation, mei_to_sheet, perform,
-    sheet_to_mei, svg_to_display_list, voice_to_mei, voice_to_sheet,
+    Interpretation, Op, Sheet, Slot, apply, catalog, default_interpretation, item_id, mei_to_sheet,
+    perform, sheet_to_mei, svg_to_display_list, voice_to_mei, voice_to_sheet,
 };
 
 /// Read a pointer+length as UTF-8 (lossily), or `None` when the pointer is null.
@@ -398,6 +398,27 @@ fn options(scale: i32, page_width: i32, extra: Option<String>) -> EngraveOptions
     }
 }
 
+/// The **model** item an engraved element belongs to, or `-1` when the element
+/// was not written from one.
+///
+/// The page names elements the way the emitter wrote them: `n7` is the item,
+/// `n7-2` a piece of it split across a barline, `n7-p1` one pitch of a chord.
+/// All three are the same item, which is what lets a gesture anywhere on a note
+/// reach the note — and it is the step every client takes between a page's
+/// selection and a model verb, which is why it is answered here rather than
+/// spelled out again in each of them.
+///
+/// # Safety
+/// `id` must be readable for `id_len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_core_item_id(id: *const u8, id_len: usize) -> i64 {
+    // SAFETY: caller guarantees the range.
+    let Some(id) = (unsafe { text(id, id_len) }) else {
+        return -1;
+    };
+    item_id(&id).map_or(-1, |id| id as i64)
+}
+
 /// Open `data` as an editable score, kept laid out so edits land on the same
 /// document the display list was drawn from. Returns an opaque handle, or
 /// null when `data` is null or could not be loaded. Free with
@@ -768,10 +789,7 @@ mod tests {
         /// A one-bar C major triad, written by the core's own encoder.
         fn mei() -> String {
             clausters_core::notation::voice_to_mei(
-                &[clausters_core::notation::Slot::Note {
-                    midis: vec![60, 64, 67],
-                    ticks: 32,
-                }],
+                &[clausters_core::notation::Slot::note(vec![60, 64, 67], 32)],
                 "4/4",
                 "G2",
                 "C",

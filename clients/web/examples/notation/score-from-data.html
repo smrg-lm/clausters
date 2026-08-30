@@ -35,10 +35,19 @@ source and the score is the view of them (data → score). What is then
 <code>notation.toTimeline</code>: the round trip closes here, and it is a round
 trip rather than a copy, because the notation carries what the events had no way
 to say and the events carried what the page has no way to hold. Going out, the
-exact onsets snap to written values and the amplitudes become a dynamic or
-nothing at all; coming back, a written value becomes an exact duration and a
-symbol becomes a decision — which is the interpreter's, and is data a caller can
-replace (<code>notation.interpretation</code>).</div>
+exact onsets snap to written values; coming back, a written value becomes an
+exact duration and a symbol becomes a decision — which is the interpreter's, and
+is data a caller can replace (<code>notation.interpretation</code>).
+
+<b>The events say more than pitch and length.</b> Each one here also carries what
+its note is on a <i>page</i> — an articulation, a dynamic, an ornament, a
+spelling — and those are the keys the engraving reads and <code>toTimeline</code>
+puts back. They are musical facts and not drawing instructions, which is what
+lets the same key be read in both directions: the staccato in bar 1 is written as
+a staccato, honoured as a shorter sound, and comes back as a staccato rather than
+as the length it produced. Watch the two eighths in bar 1 (dots), the accent in
+bar 3, the D flat near the end (a printed accidental, and not the C sharp a bare
+MIDI number would have been spelled as), and the dynamics under the staff.</div>
 
       <button id="run">engrave and open</button>
       <div id="stage"></div>
@@ -61,7 +70,7 @@ replace (<code>notation.interpretation</code>).</div>
       /examples/notation/score-from-data.html. Build it first: ./build.sh
     -->
     <script type="module">
-      import { Event, Session, gui, seq } from "../../dist/index.js";
+      import { Event, Session, gui, loadCore, seq } from "../../dist/index.js";
       const { notation } = gui;
 
       const $ = (id) => document.getElementById(id);
@@ -86,13 +95,35 @@ replace (<code>notation.interpretation</code>).</div>
             tl.add(beat, new Event({ midinote: pitch, dur: 4.0, amp: 0.08 }));
           }
         }
-        // a melody above them: quarters and eighths, with a rest left in bar 2
-        const melody = [[0, 72, 1.0], [1, 74, 0.5], [1.5, 76, 0.5], [2, 77, 1.0],
-          [3, 76, 1.0], [4, 74, 1.0], [6, 72, 1.0], [7, 74, 1.0],
-          [8, 76, 1.0], [9, 79, 1.0], [10, 77, 2.0],
-          [12, 76, 1.0], [13, 74, 1.0], [14, 72, 2.0]];
-        for (const [beat, pitch, dur] of melody) {
-          tl.add(beat, new Event({ midinote: pitch, dur, amp: 0.14 }));
+        // A melody above them: quarters and eighths, with a rest left in bar 2.
+        // The fourth field is what the note says on the *page* — an
+        // articulation, a dynamic, a spelling. None of it changes what an Event
+        // does when it is played; it changes what is written when the timeline
+        // is engraved, and it comes back on the event when the page is read.
+        const melody = [
+          [0, 72, 1.0, { dynamic: "mf" }],
+          [1, 74, 0.5, { articulations: ["stacc"] }],
+          [1.5, 76, 0.5, { articulations: ["stacc"] }],
+          [2, 77, 1.0, {}],
+          [3, 76, 1.0, {}],
+          [4, 74, 1.0, { dynamic: "p" }],
+          // Held for half its value with nothing written to say so: the page
+          // carries the length itself, since no symbol explains it.
+          [6, 72, 1.0, { sustain: 0.5 }],
+          [7, 74, 1.0, {}],
+          [8, 76, 1.0, { dynamic: "f", articulations: ["marc"] }],
+          [9, 79, 1.0, {}],
+          [10, 77, 2.0, { articulations: ["ten"] }],
+          [12, 76, 1.0, { dynamic: "mp" }],
+          [13, 74, 0.5, {}],
+          // A chromatic neighbour leaning on the C below it. In C major a bare
+          // 73 would be spelled as a C sharp; a D flat is what it *is*, and the
+          // sign is asked for so a reader sees it.
+          [13.5, 73, 0.5, { spelling: "flat", accidental: "written" }],
+          [14, 72, 2.0, { ornament: "fermata" }],
+        ];
+        for (const [beat, pitch, dur, written] of melody) {
+          tl.add(beat, new Event({ midinote: pitch, dur, amp: 0.14, ...written }));
         }
         return tl;
       }
@@ -111,6 +142,10 @@ replace (<code>notation.interpretation</code>).</div>
 
       async function run() {
         $("run").disabled = true;
+        // The core carries the model, and in a page it is a wasm module that
+        // has to be there before the first call into it -- the one line a
+        // script does not need, because ctypes loads its library on first use.
+        await loadCore();
         const source = buildTimeline();
         // Stop at the **model** rather than at the MEI: the sheet is what is
         // engraved *and* what is read back into sound, so both directions leave

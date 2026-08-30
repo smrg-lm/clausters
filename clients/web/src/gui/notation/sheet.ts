@@ -26,6 +26,7 @@
 
 import {
     interpretation as coreInterpretation,
+    itemId as coreItemId,
     meiToSheet,
     sheetApply,
     sheetOps,
@@ -91,6 +92,27 @@ export interface PerformedNote {
     voice: number;
     /** The model id of the item it came from. */
     id: number;
+    /**
+     * Which enharmonic spelling the writer chose — `"sharp"` or `"flat"` —
+     * where the note is altered at all; absent on a natural, where nothing was
+     * chosen. A written fact on a sounding note, and here for one reason: a
+     * client that plays a score and writes it back has only `pitch`, and a
+     * number cannot tell A flat from G sharp.
+     */
+    spelling?: string;
+    /**
+     * `"written"` where the accidental is one the writer wants printed even
+     * though the key already implies it — a courtesy sign.
+     */
+    accidental?: string;
+    /**
+     * What is written on the note beyond its pitch and value, **verbatim** —
+     * not what the interpreter made of it. A staccato is already honoured in
+     * `sustain` and is still here, because a client writing the note back
+     * writes the staccato rather than a shortened length. Absent where the
+     * note carries nothing.
+     */
+    marks?: MarkOptions;
 }
 
 /** One entry of the operation catalog. */
@@ -126,6 +148,20 @@ export interface TransposeOptions {
  * **spelled** pitches in the accidental world `key` implies — the only choice a
  * bare number leaves, and the reason the key is asked for here rather than at
  * the end.
+ *
+ * A slot may also carry **what is written on the note**, each field optional
+ * and each a musical fact rather than an instruction to the engraver:
+ * `articulations`, `dynamic`, `ornament`, `grace`, `stem`, `sounding` (how long
+ * it is held, in ticks, when no symbol says it), `spelling`
+ * (`"sharp"`/`"flat"`, against the key's own world), `accidental` (`"written"`
+ * for a sign to be printed) and `tie`. A slot carrying none of them produces
+ * exactly the item it always did, and an unknown key is refused rather than
+ * dropped.
+ *
+ * What a slot cannot say is anything that is not one note's — a slur, a meter
+ * change, a title. Those are written *beside* the voice, with the verbs below,
+ * and the **nth slot becomes the item with id n + 1**, which is how a caller
+ * names its own notes to them.
  */
 export function fromVoice(
     voice: Slot[],
@@ -235,6 +271,25 @@ export function toNotes(sheet: Sheet, interp?: Interpretation): PerformedNote[] 
     return JSON.parse(
         sheetPerform(JSON.stringify(sheet), interp ? JSON.stringify(interp) : ""),
     ) as PerformedNote[];
+}
+
+/**
+ * Which **model item** the engraved element `elementId` belongs to, or
+ * `undefined` where it was not written from one.
+ *
+ * The step between a selection on the page and a verb on the model. The page
+ * names elements the way the emitter wrote them — `n7` is the item, `n7-2` a
+ * piece of it split across a barline, `n7-p1` one pitch of a chord — and all
+ * three are item 7, which is what lets a gesture anywhere on a note reach the
+ * note.
+ *
+ * It comes from the core rather than being spelled out here, because the answer
+ * is the *emitter's*: a client reading the ids itself would disagree the first
+ * time a split or a chord was spelled differently.
+ */
+export function itemId(elementId: string): number | undefined {
+    const id = coreItemId(elementId);
+    return id < 0 ? undefined : id;
 }
 
 /**

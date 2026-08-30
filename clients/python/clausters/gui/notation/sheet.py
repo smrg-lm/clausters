@@ -69,6 +69,20 @@ def from_voice(voice: list, *, meter: str = "4/4", clef: str = "G2",
     become **spelled** pitches in the accidental world ``key`` implies — the
     only choice a bare number leaves, and the reason the key is asked for here
     rather than at the end.
+
+    A slot may also carry **what is written on the note**, each key optional and
+    each a musical fact rather than an instruction to the engraver:
+    ``articulations`` (``["stacc"]``), ``dynamic``, ``ornament``, ``grace``,
+    ``stem``, ``sounding`` (how long it is held, in ticks, when no symbol says
+    it), ``spelling`` (``"sharp"``/``"flat"``, against the key's own world),
+    ``accidental`` (``"written"`` for a sign to be printed) and ``tie``. A slot
+    carrying none of them produces exactly the item it always did, and an
+    unknown key is refused rather than dropped.
+
+    What a slot cannot say is anything that is not one note's -- a slur, a
+    meter change, a title. Those are written *beside* the voice, with the verbs
+    below, and the **nth slot becomes the item with id n + 1**, which is how a
+    caller names its own notes to them.
     """
     raw = json.dumps(voice)
     return _unwrap(_text(_core().clausters_core_voice_to_sheet,
@@ -194,6 +208,25 @@ def ops() -> list:
     divergences stand. Both clients are read against this list instead.
     """
     return json.loads(_text(_core().clausters_core_sheet_ops))
+
+
+def item_id(element_id: str) -> int | None:
+    """Which **model item** the engraved element ``element_id`` belongs to, or
+    ``None`` where it was not written from one.
+
+    The step between a selection on the page and a verb on the model. The page
+    names elements the way the emitter wrote them — ``n7`` is the item,
+    ``n7-2`` a piece of it split across a barline, ``n7-p1`` one pitch of a
+    chord — and all three are item 7, which is what lets a gesture anywhere on
+    a note reach the note.
+
+    It comes from the core rather than being spelled out here, because the
+    answer is the *emitter's*: a client reading the ids itself would disagree
+    the first time a split or a chord was spelled differently.
+    """
+    raw = element_id.encode("utf-8")
+    id = _core().clausters_core_item_id(_native.as_u8(raw), len(raw))
+    return None if id < 0 else int(id)
 
 
 # -- spans, and the verbs -----------------------------------------------------

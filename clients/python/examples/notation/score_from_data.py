@@ -14,11 +14,21 @@ not the source timeline but the **score**, read back by
 `clausters.gui.notation.to_timeline`: the round trip closes here, and it is a
 round trip rather than a copy, because the notation carries what the events had
 no way to say and the events carried what the page has no way to hold. Going
-out, the exact onsets snap to written values and the amplitudes become a
-dynamic or nothing at all; coming back, a written value becomes an exact
-duration and a symbol becomes a decision -- which is the interpreter's, and is
-data a caller can replace (`clausters.gui.notation.interpretation`). The piece
-you hear is the piece you see, cursor locked to it.
+out, the exact onsets snap to written values; coming back, a written value
+becomes an exact duration and a symbol becomes a decision -- which is the
+interpreter's, and is data a caller can replace
+(`clausters.gui.notation.interpretation`). The piece you hear is the piece you
+see, cursor locked to it.
+
+**The events say more than pitch and length.** Each one here also carries what
+its note is on a *page* -- an articulation, a dynamic, an ornament, a spelling
+-- and those are the keys the engraving reads and `to_timeline` puts back. They
+are musical facts and not drawing instructions, which is what lets the same key
+be read in both directions: the staccato in bar 1 is written as a staccato,
+honoured as a shorter sound, and comes back as a staccato rather than as the
+length it produced. Watch the two eighths in bar 1 (dots), the accent in bar 3,
+the D flat near the end (a printed accidental, and not the C sharp a bare MIDI
+number would have been spelled as), and the dynamics under the staff.
 
 The page here is a **read-only view** -- the default: a drag on a note does
 nothing, because this script does not apply edits. ``score.py`` is the other
@@ -71,13 +81,35 @@ def build_timeline() -> Timeline:
                         (8, (62, 67, 71)), (12, (60, 64, 67))]:
         for pitch in triad:
             tl.add(beat, Event(midinote=pitch, dur=4.0, amp=0.08))
-    # a melody above them: quarters and eighths, with a rest left in bar 2
-    melody = [(0, 72, 1.0), (1, 74, 0.5), (1.5, 76, 0.5), (2, 77, 1.0),
-              (3, 76, 1.0), (4, 74, 1.0), (6, 72, 1.0), (7, 74, 1.0),
-              (8, 76, 1.0), (9, 79, 1.0), (10, 77, 2.0),
-              (12, 76, 1.0), (13, 74, 1.0), (14, 72, 2.0)]
-    for beat, pitch, dur in melody:
-        tl.add(beat, Event(midinote=pitch, dur=dur, amp=0.14))
+    # A melody above them: quarters and eighths, with a rest left in bar 2.
+    # The fourth field is what the note says on the *page* -- an articulation,
+    # a dynamic, a spelling. None of it changes what an Event does when it is
+    # played; it changes what is written when the timeline is engraved, and it
+    # comes back on the event when the page is read.
+    melody = [
+        (0, 72, 1.0, {"dynamic": "mf"}),
+        (1, 74, 0.5, {"articulations": ["stacc"]}),
+        (1.5, 76, 0.5, {"articulations": ["stacc"]}),
+        (2, 77, 1.0, {}),
+        (3, 76, 1.0, {}),
+        (4, 74, 1.0, {"dynamic": "p"}),
+        # Held for half its value with nothing written to say so: the page
+        # carries the length itself, since no symbol explains it.
+        (6, 72, 1.0, {"sustain": 0.5}),
+        (7, 74, 1.0, {}),
+        (8, 76, 1.0, {"dynamic": "f", "articulations": ["marc"]}),
+        (9, 79, 1.0, {}),
+        (10, 77, 2.0, {"articulations": ["ten"]}),
+        (12, 76, 1.0, {"dynamic": "mp"}),
+        (13, 74, 0.5, {}),
+        # A chromatic neighbour leaning on the C below it. In C major a bare 73
+        # would be spelled as a C sharp; a D flat is what it *is*, and the sign
+        # is asked for so a reader sees it.
+        (13.5, 73, 0.5, {"spelling": "flat", "accidental": "written"}),
+        (14, 72, 2.0, {"ornament": "fermata"}),
+    ]
+    for beat, pitch, dur, written in melody:
+        tl.add(beat, Event(midinote=pitch, dur=dur, amp=0.14, **written))
     return tl
 
 

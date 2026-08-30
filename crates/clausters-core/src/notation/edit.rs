@@ -169,18 +169,38 @@ pub fn set_pitches(mut sheet: Sheet, id: u64, pitches: Vec<Pitch>) -> Result<She
 /// a barline are made from the projection and never stored, so the two compose
 /// instead of overwriting each other.
 ///
+/// **A tie joins two notes of the same pitch** — that is what a tie is, as
+/// against a slur — so one asked to join a note to a different pitch is refused
+/// here, at the verb. Written anyway it engraves as nothing: the emitter puts
+/// out the `@tie`, the engraver cannot match it, and the only sign is a warning
+/// on a stream no client shows. A chord may tie partially (one of its pitches
+/// held over), so what is required is that the two share *a* pitch, not all of
+/// them.
+///
 /// # Errors
-/// When the item is a rest (nothing sounds through a silence) or is the last in
-/// its voice (there is nothing to tie into).
+/// When the item is a rest (nothing sounds through a silence), is the last in
+/// its voice (there is nothing to tie into), or the next item shares no pitch
+/// with it — each saying which.
 pub fn tie(mut sheet: Sheet, id: u64, tied: bool) -> Result<Sheet, String> {
     sheet.assign_ids();
     let (si, vi, ii) = sheet.locate(id).ok_or_else(|| missing(id))?;
     let items = &mut sheet.staves[si].voices[vi].items;
-    if ii + 1 == items.len() && tied {
-        return Err(format!(
-            "item {id} is the last in its voice, so there is nothing after it \
-             to tie into"
-        ));
+    if tied {
+        let Some(next) = items.get(ii + 1) else {
+            return Err(format!(
+                "item {id} is the last in its voice, so there is nothing after it \
+                 to tie into"
+            ));
+        };
+        let (here, there) = (items[ii].pitches(), next.pitches());
+        if !here.is_empty() && !here.iter().any(|p| there.contains(p)) {
+            return Err(format!(
+                "item {id} would tie {} into {}, and a tie joins two notes of \
+                 the same pitch -- a line between different ones is a slur",
+                spell(here),
+                spell(there),
+            ));
+        }
     }
     match &mut items[ii] {
         Item::Note { tie: t, .. } => *t = tied,
@@ -189,6 +209,29 @@ pub fn tie(mut sheet: Sheet, id: u64, tied: bool) -> Result<Sheet, String> {
         }
     }
     Ok(sheet)
+}
+
+/// Pitches as a reader would name them, for a refusal that has to say which
+/// two it was asked to join. A rest has none and says so.
+fn spell(pitches: &[Pitch]) -> String {
+    if pitches.is_empty() {
+        return "a rest".to_string();
+    }
+    pitches
+        .iter()
+        .map(|p| {
+            let sign = match p.alter {
+                0 => "",
+                1 => "#",
+                -1 => "b",
+                2 => "##",
+                -2 => "bb",
+                _ => "?",
+            };
+            format!("{}{sign}{}", p.step.pname(), p.octave)
+        })
+        .collect::<Vec<_>>()
+        .join("+")
 }
 
 /// Give an item the marks it carries: articulations, a dynamic, an ornament,
@@ -608,6 +651,49 @@ mod tests {
     }
 
     #[test]
+    fn a_tie_between_two_different_pitches_is_refused_and_names_both() {
+        // A line between different pitches is a slur, and a tie written there
+        // engraves as nothing at all: the emitter puts out the `@tie`, the
+        // engraver cannot match it, and the only sign is a warning on a stream
+        // no client shows. So it is refused here instead, with the two names.
+        let sheet = three();
+        let first = items(&sheet)[0].id();
+        let second = items(&sheet)[1].id();
+        let moved = set_pitches(
+            sheet,
+            second,
+            vec![Pitch {
+                step: Step::D,
+                alter: 0,
+                octave: 4,
+                forced: false,
+            }],
+        );
+        let err = tie(moved.unwrap(), first, true).unwrap_err();
+        assert!(err.contains("c4") && err.contains("d4"), "{err}");
+        assert!(err.contains("slur"), "{err}");
+    }
+
+    #[test]
+    fn a_chord_may_tie_one_of_its_pitches_over() {
+        // Holding one note of a chord through the next is ordinary writing, so
+        // what is required is that the two share *a* pitch, not all of them.
+        let mut sheet = three();
+        let items_mut = &mut sheet.staves[0].voices[0].items;
+        let Item::Note { pitches, .. } = &mut items_mut[1] else {
+            panic!("a note");
+        };
+        pitches.push(Pitch {
+            step: Step::E,
+            alter: 0,
+            octave: 4,
+            forced: false,
+        });
+        let first = items(&sheet)[0].id();
+        assert!(tie(sheet, first, true).is_ok());
+    }
+
+    #[test]
     fn moving_items_to_another_voice_leaves_the_time_they_took() {
         let sheet = three();
         let second = items(&sheet)[1].id();
@@ -660,7 +746,7 @@ mod tests {
         use crate::notation::{Slot, voice_to_sheet};
         // The treble staff's top line is F5, and every clef is the same
         // arithmetic on the line it names.
-        let treble = voice_to_sheet(&[Slot::Rest { ticks: 8 }], "4/4", "G2", "C");
+        let treble = voice_to_sheet(&[Slot::rest(8)], "4/4", "G2", "C");
         let top = pitch_at(&treble, 0, 0).unwrap();
         assert_eq!((top.step, top.octave), (Step::F, 5));
         // Two steps down is the next line, D5; six down is the bottom line, E4.
@@ -671,10 +757,10 @@ mod tests {
         // The bass staff's top line is A3, the alto clef's is G4 -- which is
         // the reason this is here and not in a client: nobody should have to
         // know how to read a C clef twice.
-        let bass = voice_to_sheet(&[Slot::Rest { ticks: 8 }], "4/4", "F4", "C");
+        let bass = voice_to_sheet(&[Slot::rest(8)], "4/4", "F4", "C");
         let top = pitch_at(&bass, 0, 0).unwrap();
         assert_eq!((top.step, top.octave), (Step::A, 3));
-        let alto = voice_to_sheet(&[Slot::Rest { ticks: 8 }], "4/4", "C3", "C");
+        let alto = voice_to_sheet(&[Slot::rest(8)], "4/4", "C3", "C");
         let top = pitch_at(&alto, 0, 0).unwrap();
         assert_eq!((top.step, top.octave), (Step::G, 4));
     }
@@ -685,7 +771,7 @@ mod tests {
         // Clicking the middle line in E flat writes a B flat: the armature is
         // part of what the place means, not something applied afterwards. Four
         // steps below the top line F5 is B4.
-        let sheet = voice_to_sheet(&[Slot::Rest { ticks: 8 }], "4/4", "G2", "Eb");
+        let sheet = voice_to_sheet(&[Slot::rest(8)], "4/4", "G2", "Eb");
         let b = pitch_at(&sheet, 0, -4).unwrap();
         assert_eq!(b.step, Step::B);
         assert_eq!(b.alter, -1);
@@ -695,7 +781,7 @@ mod tests {
     #[test]
     fn a_staff_that_is_not_there_says_so() {
         use crate::notation::{Slot, voice_to_sheet};
-        let sheet = voice_to_sheet(&[Slot::Rest { ticks: 8 }], "4/4", "G2", "C");
+        let sheet = voice_to_sheet(&[Slot::rest(8)], "4/4", "G2", "C");
         assert!(pitch_at(&sheet, 4, 0).is_err());
     }
 }

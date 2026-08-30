@@ -7613,3 +7613,65 @@ B flat. A client working that out for itself would be a second answer to a
 question the engraver already answers, and the two would disagree the first time
 somebody wrote a C clef. It reaches the wire as an optional `position` on the
 `insert` verb, which costs no ABI: the operation was already data.
+
+## What an event says about a page: three classes, and only one of them fits on a note
+
+The forward path — a client's own events engraved as a score — read `midinote`
+and `dur` and nothing else, so a phrase that had been shaped in a client arrived
+on the page as bare noteheads. The question it left open was where a client
+*says* notation intent, and it looked like a choice between three designs. It is
+not: the three are carriers for three different classes of data, and which
+carrier a thing takes follows from what the thing is.
+
+- **Per-note intent** — an articulation, a dynamic, an ornament, a grace note,
+  a spelling — is one note's, so it rides the **slot**, which is symmetric: the
+  same field is written going out and read coming back.
+- **Spans and document-level material** — a slur, a hairpin, a tuplet group, the
+  meter, the barlines, the title — cannot live on an event at all, because they
+  have two ends or none. They travel *beside* the voice, as the model's grid,
+  spanners and header, and the model's own verbs write them.
+- **Bindings** — a staff to an instrument, a voice to a channel — are neither,
+  and the interpreter already settled them: a page does not say what plays it.
+
+So the slot grew nine optional fields and the wire form grew nothing else. What
+makes that safe rather than a widening is the rule every field obeys: **a
+musical fact, not an instruction to the encoder.** `articulations: ["stacc"]`
+and not `shorten_drawn_value`; `accidental: "written"` and not `print_accid`. A
+fact can be read back by the interpreter that plays the page; an instruction can
+only ever be written, and a format that accumulates instructions stops being a
+score.
+
+**The slot stopped being an untagged enum.** It was two variants with no
+discriminator — a slot with no pitches *is* a rest — and that stays true, but as
+a struct with a defaulted pitch list rather than a fallthrough. With nine
+optional fields the enum had a trap: a note whose `articulations` was misspelt
+or mistyped failed the note variant, matched the rest variant (which ignores
+unknown keys), and became a **silent rest**. The struct refuses unknown fields
+instead, so a typo is an error with a name.
+
+## A sustain reaches the page only where no symbol already says it
+
+An event carries `sustain`, the model carries `Marks::sounding`, and the two are
+the same quantity, so the reduction that engraves an event looks like it should
+copy one into the other. It must not, in two cases, and both are about not
+counting the same fact twice.
+
+**A note held for its written value says nothing**, so no length is written.
+The client's default `legato` of 0.8 shortens every note ever sequenced; it is a
+playback default, not a statement about the music, and a score that recorded it
+would carry a sounding length on every single note. Only a `sustain` the caller
+wrote reaches the page at all.
+
+**A note that is both staccato and short is one fact, not two.** The staccato is
+what the writer said; the short length is what an interpretation made of it. Put
+on the page as both, the next reading would apply the staccato to an already
+shortened value and the note would halve again on every round trip. So
+`sounding` is *what the sustain says that no symbol said* — and where a symbol
+said it, the symbol is written and the length is dropped.
+
+This is what makes the round trip stable rather than merely lossy in a
+documented way. A score read into events and written back engraves the same
+page, because what comes back on the event is what was **written** — the
+articulation verbatim — and not what the interpreter computed from it. The
+interpreter's note carries both for that reason: `sustain`, which is the
+performance, and `marks`, which is the page.

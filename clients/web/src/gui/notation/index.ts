@@ -55,6 +55,7 @@ export {
     insertMeasures,
     interpretation,
     invert,
+    itemId,
     marks,
     measures,
     moveSteps,

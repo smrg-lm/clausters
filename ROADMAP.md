@@ -156,24 +156,8 @@ its plan; the plan is where its acceptance is read.
 
 ### Ready — no decision in front of them
 
-- ⬜ **The `N` track — notation: the score model**, `N1`-`N5`
-  *(`clients/gui/PLAN.md`, "N track — notation: the score model, and what is
-  written on it")*. What was one line as `G31g`, and then four encoder
-  refinements, became a **model** once the layer was read against itself: the
-  return path already existed and was being written by hand in an example, each
-  direction went through a different intermediate, and the editable `Score` is
-  an action API with no structure under it. The track builds that structure in
-  `clausters_core::notation` — two durational structures that do not contain
-  each other, the metric layout and the content, in exact rationals — and its
-  vocabulary of twenty-four verbs, which rearrange a score and edit one note,
-  and the
-  emission that writes all of it: polyphony, tuplets, markup and spelling.
-  **`N1` to `N4` and `N6` landed 2026-08-29/30**, the last of them carrying the
-  two pieces earlier milestones had deferred — `Score`'s edit path onto the
-  model and the host's note-entry gestures — since both were waiting on the
-  reader. **What is left is `N5`**, the enriched forward path: the client-side
-  reduction reads more than `midinote` and `dur`. It is last because it fills a
-  structure that already exists rather than growing one.
+**Nothing open here.** The `N` track — the last entry this section held — closed
+on 2026-08-30 with `N5`; its plan's checkboxes and the git history carry it.
 
 ### Waiting on a decision
 

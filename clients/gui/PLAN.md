@@ -2675,7 +2675,7 @@ Whatever symbols the model itself needs owe their rows either way
   putting them in one milestone conflated two directions that share only a
   preposition. It is the next thing, and `ROADMAP.md` says so.
 
-- ⬜ **N5 — Events to notation, enriched**. The forward path catches up with the
+- ✅ **N5 — Events to notation, enriched** *(done 2026-08-30)*. The forward path catches up with the
   model: the client-side reduction reads more than `midinote` and `dur`, and the
   slot's optional fields carry it. This is last on purpose — it works at v1
   level today, and every field it adds is a field the model already holds, so
@@ -2701,6 +2701,29 @@ Whatever symbols the model itself needs owe their rows either way
   slots it produces today; a phrase carrying it engraves the marks N3 emits; a
   score written from events, interpreted back by N4 and written again is stable
   in what both directions agree on, and what they do not is the documented loss.
+  **All three met**, and three things the reading did not foresee:
+  - **A `sustain` is not a `sounding`.** The client's `legato` shortens every
+    note ever sequenced, so reading it would put a sounding length on all of
+    them — and a note that is both staccato and short is *one* fact, so writing
+    both would shorten it again on every round trip. The rule that came out is
+    the one that makes the trip stable: `sounding` is what the sustain says
+    that **no symbol said**, and nothing where the note is held for its written
+    value.
+  - **The slot stopped being an untagged enum.** Totality stays (a slot with no
+    pitches *is* a rest) but as a struct with a defaulted pitch list: with nine
+    optional fields the enum had a trap, since a note whose `articulations` was
+    mistyped failed the note variant, matched the rest variant, and became a
+    **silent rest**. The struct refuses unknown keys instead.
+  - **A page's selection could not reach a verb.** `Score.transpose_to` takes
+    an element id and every other verb takes an item id, so a click could
+    select a note and edit nothing but its pitch. `clausters_core_item_id` is
+    the missing step (`CORE_ABI_VERSION` 27), answered by the emitter that
+    spelled the element rather than by each client spelling it out again.
+
+  Its example is `score_editor.py` / `score-editor.html`, which is also the
+  example `N6` shipped without: a document opened, given a title, a double bar
+  and a system break, edited by hand through the model's verbs, written on with
+  note entry, and played back from the model.
 
 - ✅ **N6 — The reader: a document back into the model** *(done 2026-08-29)*. The direction `N4`
   turned out not to be. A `Score` opened from typed text — ABC, MusicXML, a
@@ -2976,9 +2999,11 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 
 ## Found by use: the running list of fixes
 
-- ⬜ **A tie between two different pitches is accepted, written, and dropped by
+- ✅ **A tie between two different pitches is accepted, written, and dropped by
   the engraver with a warning nobody reads** *(found 2026-08-29, round-tripping
-  an emitted document through verovio while building the reader)*. `tie` sets
+  an emitted document through verovio while building the reader; fixed
+  2026-08-30, walked into again by `N5`'s editor example, where a **tie** button
+  does nothing on any two notes that differ — which is most of them)*. `tie` sets
   the flag on any item; the emitter writes `@tie="i"`/`"t"`; verovio answers
   `Unable to match @tie of note 'n3', skipping it` on stderr and hands back a
   document with no tie in it. A tie joins two notes of the **same** pitch — that
@@ -2989,6 +3014,11 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   shows. Found while chasing a different suspicion (that ties were being lost),
   which turned out to be verovio respelling them as `<tie>` elements — a real
   finding, and this one fell out beside it.
+  **Fixed as written**: `edit::tie` refuses it, naming both pitches and saying
+  that a line between different ones is a slur. What the entry did not say is
+  the one case that has to stay legal — a **chord** holding one of its pitches
+  over — so the requirement is that the two items share *a* pitch, not all of
+  them.
 
 - ⬜ **A beam verovio computed comes back as a beam somebody chose** *(found
   2026-08-29, reading an ABC phrase into the model)*. The reader takes every

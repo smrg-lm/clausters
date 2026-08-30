@@ -19,7 +19,7 @@ export {
     autoLaneDef,
 } from "./automation.ts";
 export type { AutomationTarget, AutomationTargets } from "./automation.ts";
-export { DEFAULTS, Event, rest } from "./event.ts";
+export { DEFAULTS, Event, NOTATION_KEYS, rest } from "./event.ts";
 export type { EventDestination, EventProps } from "./event.ts";
 export { EventStreamPlayer } from "./eventstream.ts";
 export {

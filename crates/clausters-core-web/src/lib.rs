@@ -1732,6 +1732,20 @@ pub fn interpretation() -> Result<String, JsError> {
         .map_err(|e| JsError::new(&e.to_string()))
 }
 
+/// The **model** item an engraved element belongs to, or `-1` when the element
+/// was not written from one.
+///
+/// The page names elements the way the emitter wrote them: `n7` is the item,
+/// `n7-2` a piece of it split across a barline, `n7-p1` one pitch of a chord.
+/// All three are the same item, which is what lets a gesture anywhere on a note
+/// reach the note — and it is the step a client takes between a page's
+/// selection and a model verb.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = itemId)]
+pub fn item_id(element_id: &str) -> f64 {
+    clausters_core::notation::item_id(element_id).map_or(-1.0, |id| id as f64)
+}
+
 // ---- MIDI files (W9) --------------------------------------------------------
 //
 // A page has no filesystem and no virtual OS port, but it does have a score to
