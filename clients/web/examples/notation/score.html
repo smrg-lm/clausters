@@ -80,6 +80,7 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
       let engraved = null;   // the same page as a `source`, so an edit reaches
                              // the definition and every window at once
       let clock = null, transport = null, selected = null;
+      let host = null, raw = null;   // the page's GuiHost, and the engine it draws over
 
       // The melody, written as the client's own events — the inverse
       // direction, data to score: `fromNotes` reduces them to a voice and the
@@ -191,8 +192,9 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
         // The page sounds and draws, so the host goes over the engine this
         // server brought up rather than one of its own.
         server = await new Server().boot();
+        raw = server.engine;
         // The page's host, and the ambient one from here on.
-        await new GuiHost({ engine: server.engine }).boot();
+        host = await new GuiHost({ engine: raw }).boot();
 
         // Opening the score is the one asynchronous step of the layer, and
         // only because the engraver module is fetched the first time a page

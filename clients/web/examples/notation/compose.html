@@ -67,7 +67,7 @@ refused by name.</div>
       /examples/notation/compose.html. Build it first: ./build.sh
     -->
     <script type="module">
-      import { Session, gui, seq } from "../../dist/index.js";
+      import { Session, gui, loadCore, seq } from "../../dist/index.js";
       const { notation } = gui;
 
       const $ = (id) => document.getElementById(id);
@@ -82,7 +82,10 @@ refused by name.</div>
       function steps(sheet) {
         return sheet.staves[0].voices[0].items.map((item) =>
           (item.pitches ?? []).map((p) =>
-            p.step.toUpperCase() + "b".repeat(-p.alter) + "#".repeat(p.alter)
+            // `repeat` throws on a negative count where Python's `*` gives "",
+            // so the sign is clamped rather than carried into the call.
+            p.step.toUpperCase() + "b".repeat(Math.max(0, -p.alter))
+              + "#".repeat(Math.max(0, p.alter))
           ).join("") || "-"
         ).join(" ");
       }
@@ -101,6 +104,10 @@ refused by name.</div>
 
       async function run() {
         $("run").disabled = true;
+        // The core carries the model, and in a page it is a wasm module that
+        // has to be there before the first call into it -- the one line a
+        // script does not need, because ctypes loads its library on first use.
+        await loadCore();
 
         // A sheet comes from a voice: the flat slot stream a client reduces its
         // own data to. Four quarter notes, C-E-G-E, in 4/4.
