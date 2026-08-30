@@ -1255,3 +1255,39 @@ work, where a pending item reads as done.)*
   much smaller blast radius, since those files are read rather than mapped
   executable — left as it is, and named here so it is not rediscovered as a
   surprise.
+
+## Future directions (a design that is not a fix)
+
+Every entry carries a checkbox, like "Found by use" above: an open direction has
+to read as open, and one that converges into a milestone leaves this list rather
+than being ticked here.
+
+- ⬜ **Nothing maps a drawn structure onto something that sounds, so every
+  example that plays rewrites the same bridge** *(named 2026-08-30 by the user,
+  looking at `examples/editors/pianoroll` in both clients and asking why
+  overlapping notes sound one after another)*. The roll hands back what it draws
+  — flat quintuples, `start dur pitch velocity channel`, superpositions included
+  — and the sequencing layer accepts one event pattern, `Pbind`, which is serial
+  by definition. Between the two there is no verb, so the example builds one by
+  hand: it sorts by onset, sets each event's `dur` to the distance to the next
+  onset and plays a single voice, which is why two notes drawn on top of each
+  other are heard in succession. That is the example being deliberately
+  restricted, not a defect in it — but the restriction is not a choice anyone
+  made either, and **every playing example carries some version of the same
+  conversion**, each written again.
+
+  sclang answers this with two event patterns we do not have: **`Ppar`** (several
+  event patterns merged into one stream on the union of their times) and
+  **`Pmono`** (one sustained voice re-set rather than re-triggered). Whether those
+  are the right two abstractions *here* is exactly what is not settled: the
+  alternatives are a verb that turns a timeline (or a roll's edit-back) into a
+  playing thing directly, leaving the pattern catalog alone, or a chord-aware
+  event whose `midinote` takes a list. The question to answer before writing any
+  of it is **which structure is the source of truth** — the timeline, the notes
+  the roll emits, or a pattern — because the other two then map onto it, and that
+  is the decision this entry is waiting on.
+
+  The **visible playhead** belongs to the same hole: the `pianoroll` already has
+  `playhead`/`playhead_at`, no example drives them, and what should drive them is
+  whatever ends up owning the mapping. One decision, taken once, for both
+  clients.
