@@ -73,7 +73,8 @@ back to back — you hear the two notes in a row from a single clip, and the cli
 draws a waveform per piece. Press `e` inside it and it comes apart into the two
 windows it was made of, because nothing was copied. That element is a
 `Segments`, and you can write one directly:
-``Segments([(buf, 0, 2.0), (other_buf, 0, 2.0)], instrument="take")``.
+``Segments([(buf, 0, 1.0), (other_buf, 0, 1.0)], instrument="take")`` — a
+window's length being in seconds, like every length over samples.
 
 **And one about what your hand is on.** A clip draws its contents over each
 other and *one* of them is being edited: press the sweep's curve and you edit the
@@ -166,10 +167,16 @@ sampler().send(server)
 # %%
 SR = float(server.options.sample_rate)
 BEAT = SR / TEMPO
+#: The bounce's length, twice: in **beats** of the clock that renders it, and in
+#: the **seconds** it therefore lasts. A take's length is the second one -- the
+#: samples are as long as they are, and a tempo change does not shorten a
+#: recording -- so this is what the elements below are placed with.
+TAKE_BEATS = 2.0
+TAKE_SECS = TAKE_BEATS / TEMPO
 folder = Path(tempfile.mkdtemp(prefix="clausters-"))
 
 
-def bounce_take(path: str, beats: float = 2.0, note: int = 60) -> str:
+def bounce_take(path: str, beats: float = TAKE_BEATS, note: int = 60) -> str:
     """Render a two-beat bass note offline and write it to a WAV — the take a
     composition loads from disk. (The event closes the score: it schedules the
     ``/node_free`` that ends it.)"""
@@ -212,8 +219,8 @@ other_buf = ServerBuffer.read(str(other_wav), server=server)
 # twice: the samples are shared, the placements are not. One object in two
 # places would be one name for two positions, and an edit-back could not say
 # which of them it meant.
-take = Vector(buf, duration=2.0, instrument="take")       # the element over it
-take_again = Vector(other_buf, duration=2.0, instrument="take")   # the other file
+take = Vector(buf, duration=TAKE_SECS, instrument="take")       # the element over it
+take_again = Vector(other_buf, duration=TAKE_SECS, instrument="take")  # the other file
 melody = Track(Timeline([                                 # an aggregate of clangs
     (0.0, SeqEvent(midinote=72, dur=1.0)),
     (1.0, SeqEvent(midinote=76, dur=1.0)),
@@ -239,7 +246,8 @@ bass = Sequence(Pbind(midinote=Pseq([48, 48, 55, 53], 2),  # a Function (generat
 # timeline is not a drone, it is a leak.
 
 # %%
-SWEEP = 4.0        # the sweep's length in beats (the curve's, and its voice's)
+SWEEP = 4.0                 # the curve's length in **seconds** (an `Env`'s times)
+SWEEP_BEATS = SWEEP * TEMPO   # ...and the same stretch in beats, for its voice
 
 
 def drone(name: str = "drone") -> SynthDef:
@@ -277,7 +285,7 @@ sweep.prepare(server)            # the control buffer + bus, off the clock threa
 # curve over the note), which drags as one. The voice cannot outlive its envelope,
 # and the envelope cannot be left behind.
 voice = Clang(SeqEvent(instrument="drone", freq_bus=sweep.bus.index,
-                       dur=SWEEP, legato=1.0, amp=0.12, has_gate=True))
+                       dur=SWEEP_BEATS, legato=1.0, amp=0.12, has_gate=True))
 sweep_clip = Aggregate([(0.0, voice), (0.0, Element(sweep, duration=SWEEP))],
                    name="sweep")
 

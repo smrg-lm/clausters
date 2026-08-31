@@ -113,8 +113,10 @@ if __name__ == "__main__":
             "selection": selection,
             "inBeats": in_beats,
             "framesPerBeat": 48_000.0,
+            "framesPerSecond": 48_000.0,
             "spans": _native.document_resolve(
-                start_document, selection, frames_per_beat=48_000.0, in_beats=in_beats
+                start_document, selection, frames_per_beat=48_000.0,
+                frames_per_second=48_000.0, in_beats=in_beats,
             ),
         })
 

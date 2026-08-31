@@ -1117,13 +1117,15 @@ impl JsDocument {
 
     /// Resolve a selection to the spans of samples underneath it.
     /// `resolve(requestJson) -> resolvedJson`, the request carrying
-    /// `{ selection, framesPerBeat, inBeats? }`.
+    /// `{ selection, framesPerBeat, framesPerSecond, inBeats? }` — two ratios
+    /// because a placement is in beats and a take's length is in seconds.
     pub fn resolve(&self, request: &str) -> Result<String, JsError> {
         #[derive(serde::Deserialize)]
         #[serde(rename_all = "camelCase")]
         struct Request {
             selection: clausters_document::Selection,
             frames_per_beat: f64,
+            frames_per_second: f64,
             #[serde(default)]
             in_beats: bool,
         }
@@ -1131,6 +1133,7 @@ impl JsDocument {
             serde_json::from_str(request).map_err(|e| JsError::new(&format!("resolve: {e}")))?;
         let mapping = clausters_document::Mapping {
             frames_per_beat: request.frames_per_beat,
+            frames_per_second: request.frames_per_second,
             unit: if request.in_beats {
                 clausters_document::Unit::Beats
             } else {

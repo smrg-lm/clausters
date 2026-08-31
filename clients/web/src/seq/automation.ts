@@ -117,7 +117,10 @@ export function envGenArgs(env: Env): MsgArg[] {
  * A control-automation lane: a break-point curve (`Env`) driving one or more
  * `[node, control]` targets, rendered as a control buffer read onto a control
  * bus. Editable through `toPoints`/`fromPoints` — the `bpf` widget's flat
- * `[time, value, shape, curve, …]` form, in real control units.
+ * `[time, value, shape, curve, …]` form: times in seconds, values in real
+ * control units. Its times are an `Env`'s, so they are in **seconds**: the
+ * curve is a shape in real time, and the clock's tempo enters only where the
+ * lane is scheduled.
  *
  * ```ts
  * const auto = Automation.fromPoints(
@@ -128,6 +131,13 @@ export function envGenArgs(env: Env): MsgArg[] {
  * ```
  */
 export class Automation {
+    /**
+     * The unit this object's length is in — **seconds**, because the curve is an
+     * `Env` and an envelope's segment times are real time. Read by
+     * `form.Element.durationUnit`, so an element wrapping a curve is measured
+     * the way the curve is.
+     */
+    readonly durationUnit = "seconds";
     env: Env;
     targets: AutomationTarget[];
     readonly name: string;
@@ -155,7 +165,12 @@ export class Automation {
     /**
      * Builds one from a `bpf` breakpoint list — `[[time, value, shape, curve],
      * …]`, or the flat `[t, v, shape, curve, …]` a `"points"` event carries.
-     * Times are in beats; values in the target control's real units.
+     *
+     * Times are in **seconds** — they are an `Env`'s segment times, which is
+     * what the curve is stored as and what the envelope math on the server
+     * reads — and values are in the target control's real units. The conversion
+     * to the clock's beats happens where the lane is scheduled ({@link
+     * Automation.play}), not in the curve.
      */
     static fromPoints(
         points: readonly number[] | readonly (readonly number[])[],
@@ -183,7 +198,10 @@ export class Automation {
         return envToPoints(this.env);
     }
 
-    /** The curve's length in beats (the sum of its segment times). */
+    /**
+     * The curve's length in **seconds** (the sum of its segment times, which is
+     * what an `Env` measures them in).
+     */
     duration(): number {
         return this.env.times.reduce((sum, t) => sum + t, 0);
     }
@@ -249,8 +267,8 @@ export class Automation {
         }
         const server = main.resolveServer(destination);
         const clock = Moment.current().clock;
-        const durBeats = this.duration();
-        const durSecs = clock === null ? durBeats : durBeats / clock.tempo;
+        const durSecs = this.duration();
+        const durBeats = clock === null ? durSecs : durSecs * clock.tempo;
 
         const node = server.nodes.alloc();
         this.node = node;

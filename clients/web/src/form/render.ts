@@ -50,6 +50,7 @@ import {
     Track,
     Vector,
     registerRendering,
+    toBeats,
 } from "./element.ts";
 
 /** One flattened item: what plays, and the absolute beat it plays at. */
@@ -77,10 +78,17 @@ export type RenderResult = Playhead | Promise<Group>;
  * Flattens `element` into `[absoluteBeat, item]` pairs, sorted by beat,
  * accumulating nested placement offsets onto `base`. The items are playable
  * (they follow the `play(destination)` protocol).
+ *
+ * `tempo` (beats per second) is where the tree's two units meet. An onset is in
+ * beats and a length is in the unit of its own data ({@link Element.durationUnit}:
+ * a take's is seconds), and a timeline is ordered by **one** number — so the
+ * conversion belongs to the flattening and never to the structure. At the
+ * default tempo of one beat a second the two coincide, which is what a script
+ * that never set a tempo has always been running under.
  */
-export function flatten(element: Element, base = 0.0): Flat[] {
+export function flatten(element: Element, base = 0.0, tempo = 1.0): Flat[] {
     const out: Flat[] = [];
-    emit(element, Number(base), out);
+    emit(element, Number(base), out, null, Number(tempo));
     // A stable sort (the language guarantees one), which is what keeps a
     // note-off before the re-trigger placed at the same beat.
     out.sort((a, b) => a[0] - b[0]);
@@ -89,11 +97,12 @@ export function flatten(element: Element, base = 0.0): Flat[] {
 
 /**
  * Flattens `element` into a flat `seq.Timeline` in absolute beats — the
- * structure a `Playhead` plays and a transport seeks.
+ * structure a `Playhead` plays and a transport seeks. `tempo` is the clock's,
+ * in beats per second (see {@link flatten}).
  */
-export function toTimeline(element: Element, base = 0.0): Timeline {
+export function toTimeline(element: Element, base = 0.0, tempo = 1.0): Timeline {
     const timeline = new Timeline();
-    for (const [beat, item] of flatten(element, base)) timeline.add(beat, item);
+    for (const [beat, item] of flatten(element, base, tempo)) timeline.add(beat, item);
     return timeline;
 }
 
@@ -124,7 +133,8 @@ export function render(
             "an abstract element (no content) is pure context; it has nothing to render",
         );
     }
-    const timeline = toTimeline(element, Number(element.onset ?? 0.0));
+    const tempo = Number((clock as { tempo?: number } | undefined)?.tempo ?? 1.0) || 1.0;
+    const timeline = toTimeline(element, Number(element.onset ?? 0.0), tempo);
     const playhead = new Playhead(
         timeline,
         clock as TempoClock,
@@ -161,15 +171,26 @@ export async function renderLogical(
  * clip's length is what you hear of it), so events past the placement's end are
  * dropped and a single-event element sounds for exactly that long. A placement
  * with no length lets the element be its own.
+ *
+ * The placement's length is in the placed element's own unit — a clip of audio
+ * is trimmed in seconds — so it crosses to beats here, once, against the element
+ * it was written for.
  */
-function emit(element: Element, base: number, out: Flat[], dur: number | null = null): void {
+function emit(
+    element: Element,
+    base: number,
+    out: Flat[],
+    dur: number | null = null,
+    tempo = 1.0,
+): void {
     let placed: Flat[] = [];
-    emitElement(element, base, placed);
+    emitElement(element, base, placed, tempo);
     if (dur !== null) {
-        const end = base + Number(dur);
+        const length = toBeats(dur, element.durationUnit, tempo);
+        const end = base + length;
         placed = placed
             .filter(([beat]) => beat < end - 1e-9)
-            .map(([beat, item]) => [beat, sized(item, Math.min(dur, end - beat))]);
+            .map(([beat, item]) => [beat, sized(item, Math.min(length, end - beat))]);
     }
     out.push(...placed);
 }
@@ -186,7 +207,7 @@ function sized(item: unknown, dur: number): unknown {
     return item;
 }
 
-function emitElement(element: Element, base: number, out: Flat[]): void {
+function emitElement(element: Element, base: number, out: Flat[], tempo: number): void {
     if (element instanceof Aggregate) {
         if (element.kind !== CONCRETE) {
             throw new Error(
@@ -194,21 +215,21 @@ function emitElement(element: Element, base: number, out: Flat[]): void {
             );
         }
         for (const member of element.handles) {
-            emit(member.element, base + member.offset, out, member.dur);
+            emit(member.element, base + member.offset, out, member.dur, tempo);
         }
     } else if (element instanceof Track) {
         for (const [beat, item] of element.timeline) out.push([base + beat, item]);
     } else if (element instanceof Clang) {
         out.push([base, element.wraps]);
     } else if (element instanceof Sequence || element instanceof Generator) {
-        emitSequence(element.wraps, base, out);
+        emitSequence(element.wraps, base, out, tempo);
     } else if (element instanceof Segments) {
         // Several windows read as one thing: one event per segment, each at its
         // own offset inside the element and each carrying its own window, so
         // what sounds is continuous even though the source is not one buffer.
         // Without an instrument it is structure, exactly as a `Vector` is.
         if (element.instrument !== null) {
-            for (const [offset, event] of element.toEvents()) {
+            for (const [offset, event] of element.toEvents(tempo)) {
                 out.push([base + offset, event]);
             }
         }
@@ -216,7 +237,7 @@ function emitElement(element: Element, base: number, out: Flat[]): void {
         // A buffer is data; the instrument is what makes it sound (a def whose
         // `buf` control plays it). Without one it is structure only — it draws
         // in the editor and contributes its extent, but emits no event.
-        if (element.instrument !== null) out.push([base, element.toEvent()]);
+        if (element.instrument !== null) out.push([base, element.toEvent(tempo)]);
     } else if (element instanceof Element) {
         // An abstract context element yields no event.
         if (element.wraps === null) return;
@@ -237,7 +258,7 @@ function emitElement(element: Element, base: number, out: Flat[]): void {
  * A List/Function backed by an event pattern is bounced; a list of elements is
  * laid out successively by their durations.
  */
-function emitSequence(wrapped: unknown, base: number, out: Flat[]): void {
+function emitSequence(wrapped: unknown, base: number, out: Flat[], tempo = 1.0): void {
     if (wrapped === null || wrapped === undefined || typeof wrapped === "string") {
         // A **frozen** generator: the document named an algorithm and nothing in
         // this process supplied one, so what came back is the reference itself
@@ -261,6 +282,14 @@ function emitSequence(wrapped: unknown, base: number, out: Flat[]): void {
         // the same thing or a reopened piece would sound different from the one
         // that was saved.
         out.push([base, wrapped]);
+    } else if (!Array.isArray(wrapped)) {
+        // **A def is not a list of elements.** A generator wrapping a `SynthDef`
+        // is a *resident* one — the server produces its audio, and there is
+        // nothing here to lay out — so this says so rather than failing inside
+        // an iteration the def never meant to offer.
+        throw new Error(
+            `cannot flatten a generator wrapping ${(wrapped as object).constructor.name}`,
+        );
     } else {
         let cursor = base;
         for (const item of wrapped as Iterable<unknown>) {
@@ -269,8 +298,10 @@ function emitSequence(wrapped: unknown, base: number, out: Flat[]): void {
                     "a Sequence of raw values is data (a parameter), not events",
                 );
             }
-            emit(item, cursor, out);
-            cursor += item.duration ?? 0.0;
+            emit(item, cursor, out, null, tempo);
+            // Laid out successively on the beat axis, so each length crosses
+            // from whatever unit its own data is in.
+            cursor += toBeats(item.duration ?? 0.0, item.durationUnit, tempo);
         }
     }
 }

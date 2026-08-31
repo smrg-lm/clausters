@@ -12,14 +12,17 @@ Three things are worth knowing about how it is built.
 transport-agnostic; the editor imports the arrangement, never the reverse. This
 module is the only one that knows both worlds.
 
-**Beats meet samples here.** The arrangement places elements in *beats*; the
-multitrack view places clips in *timeline samples*, because a clip's body is
-audio data and its sample 0 sits at the clip's offset. The editor is the only
-converter: one beat is `sample_rate / tempo` timeline units, so an audio take
-placed at its own length sits 1:1 on the axis. A musical `quant` becomes the
-lane's drag grid, so the grid a clip is dropped on is the grid the arrangement
-re-schedules on. The arithmetic itself is the core's (`beats_to_secs` →
-`secs_to_samples`), not a second implementation.
+**Beats meet samples here, on two ratios and not one.** The arrangement places
+elements in *beats* and measures each one's length in the unit of its own data
+(seconds for a take, beats for a phrase of events); the multitrack view places
+clips in *timeline samples*, because a clip's body is audio data and its sample
+0 sits at the clip's offset. The editor is the only converter, and it holds both
+ratios: an **onset** crosses on `units_per_beat` (`sample_rate / tempo`) and a
+**length in seconds** on `units_per_second` (the rate itself), so a take is as
+wide as it sounds whatever the tempo is and only its placement follows the
+grid. A musical `quant` becomes the lane's drag grid, so the grid a clip is
+dropped on is the grid the arrangement re-schedules on. The arithmetic itself is
+the core's (`beats_to_secs` → `secs_to_samples`), not a second implementation.
 
 **One mapping rule, not a heuristic per case.** The root `Aggregate`'s members are
 the *lanes*; a lane's members are its *clips*; a `Vector` clip draws its take, a
@@ -38,7 +41,8 @@ from .handle import WindowHandle
 from ..form.document import (FIRST_VERSION, ID_ATTR, leaf_config, leaf_node,
                              next_node_id, to_document)
 from ..form.aggregate import CONCRETE, LOGICAL, SIMULTANEOUS, Aggregate
-from ..form.element import (Element, Clang, Segment, Segments, Vector)
+from ..form.element import (BEATS, SECONDS, Element, Clang, Segment, Segments,
+                            Vector, to_beats)
 from ..defs.ugens import points_to_env
 from ..form.render import flatten
 from ..seq.automation import Automation
@@ -289,6 +293,40 @@ class Editor:
         a dragged clip back into a placement."""
         secs = _native.samples_to_secs(int(round(units)), self.sample_rate)
         return _native.secs_to_beats(self.tempo, 0.0, 0.0, secs)
+
+    @property
+    def units_per_second(self) -> float:
+        """Timeline samples per second — the axis *is* samples, so this is the
+        engine's sample rate. It is the other half of the bridge: a length in
+        seconds (a take's) crosses on this one, and only an onset crosses on
+        `units_per_beat`."""
+        return self.sample_rate
+
+    def secs_to_units(self, secs: float) -> float:
+        """Seconds → timeline samples: what a length of recorded audio is
+        drawn with, since its seconds were fixed before any tempo was."""
+        return float(_native.secs_to_samples(float(secs), self.sample_rate))
+
+    def units_to_secs(self, units: float) -> float:
+        """Timeline samples → seconds: the inverse, for an edit-back that
+        resized something measured in seconds."""
+        return _native.samples_to_secs(int(round(units)), self.sample_rate)
+
+    def length_to_units(self, length: float, element) -> float:
+        """A length of ``element``, in that element's own unit, as timeline
+        samples — the one place the editor decides which of the two ratios a
+        number crosses on."""
+        if getattr(element, "duration_unit", BEATS) == SECONDS:
+            return self.secs_to_units(length)
+        return self.beats_to_units(length)
+
+    def units_to_length(self, units: float, element) -> float:
+        """Timeline samples as a length of ``element``, in that element's own
+        unit — the inverse of `length_to_units`, and what an edit-back writes
+        back onto the arrangement."""
+        if getattr(element, "duration_unit", BEATS) == SECONDS:
+            return self.units_to_secs(units)
+        return self.units_to_beats(units)
 
     # ---- the base level: collapse (a summary rectangle) vs expand (lanes) ----
 
@@ -644,8 +682,14 @@ class Editor:
         """The composition's length in beats, **read from the arrangement** — the
         end of its last placed element. It is not a constant: move a clip past the end
         and the piece gets longer, which is exactly what a transport must ask
-        (a hard-coded length would cut the playback short at the old end)."""
-        return self._extent(self.element if element is None else element)
+        (a hard-coded length would cut the playback short at the old end).
+
+        Beats whatever the element is measured in: a transport is on a clock, so
+        an element that is its own length in seconds (a lone take opened as a
+        composition) crosses here."""
+        element = self.element if element is None else element
+        unit = element.duration_unit if isinstance(element, Element) else BEATS
+        return to_beats(self._extent(element), unit, self.tempo)
 
     @property
     def playhead(self):
@@ -895,7 +939,12 @@ class Editor:
         # actually happened.
         asked_offset = (self.units_to_beats(offset) - placed.base if moved
                         else member.offset)
-        asked_dur = self.units_to_beats(dur) if resized else member.dur
+        # **The length goes back in the unit of what it measures.** A placement
+        # is musical and crosses on the beat; a clip of samples is as long as
+        # its seconds, and dividing those by the beat would write a length the
+        # next tempo change moves.
+        asked_dur = (self.units_to_length(dur, member.element) if resized
+                     else member.dur)
         node = self._node_id(member.element, member)
         if node is None:
             return False
@@ -916,7 +965,8 @@ class Editor:
         # acknowledgement carrying a value.
         new_dur = effective.get("dur")
         snapped_offset = self.beats_to_units(float(effective["offset"]) + placed.base)
-        snapped_dur = dur if new_dur is None else self.beats_to_units(float(new_dur))
+        snapped_dur = (dur if new_dur is None
+                       else self.length_to_units(float(new_dur), member.element))
         if abs(snapped_offset - offset) >= 0.5 or abs(snapped_dur - dur) >= 0.5:
             self._correct(int(args[0]), offset=snapped_offset, dur=snapped_dur)
             offset, dur = snapped_offset, snapped_dur
@@ -979,7 +1029,7 @@ class Editor:
         if placed is not None:
             props.update(offset=placed.offset, dur=placed.dur)
             auto = _automation(placed.member.element if placed.member is not None
-                               else self.element)
+                               else self.element, self.tempo)
             if auto is not None:
                 # A curve is as much of "what this widget should be drawing" as
                 # a placement is, and an undone one is the case that needs it:
@@ -987,7 +1037,7 @@ class Editor:
                 # Flat: already-resolved quads, as `_body_for` sends them.
                 props["points"] = _flat_points(
                     [x for t, v, shape, curve in _quads(auto.to_points())
-                     for x in (self.beats_to_units(t), v, shape, curve)])
+                     for x in (self.secs_to_units(t), v, shape, curve)])
             held = (placed.member.element if placed.member is not None
                     else self.element)
             if isinstance(held, Vector):
@@ -1165,6 +1215,7 @@ class Editor:
         _, document = self._history()
         return document.resolve(self.selection,
                                 frames_per_beat=self.units_per_beat,
+                                frames_per_second=self.units_per_second,
                                 in_beats=True)
 
     def _window_moved(self, placed, start) -> bool:
@@ -1202,7 +1253,7 @@ class Editor:
             return False
         edited = members[index]
         edited["offset"] = self.units_to_beats(offset) - placed.base
-        edited["dur"] = self.units_to_beats(dur)
+        edited["dur"] = self.units_to_length(dur, member.element)
         edited["node"] = dict(edited["node"])
         config = dict(edited["node"].get("config") or {})
         config["start"] = float(start)
@@ -1242,7 +1293,9 @@ class Editor:
                             "holds " + _name(element))
             return False
         length = member.length if member.length is not None else element.duration
-        at = self.units_to_beats(at_units)
+        # In the element's own unit -- seconds, for the only elements a split
+        # applies to -- because that is what the placement's length is in.
+        at = self.units_to_length(at_units, element)
         if length is None or not (0.0 < at < float(length)):
             return False
         node = self._node_id(owner)
@@ -1255,8 +1308,10 @@ class Editor:
         # conversion sees it, or the next one would renumber the tree around it.
         was_dur = member.dur
         member.dur = float(at)
-        handle = owner.add(second_element, member.offset + float(at),
-                           float(length) - float(at))
+        # The onset is the aggregate's, so it is in beats: the cut's own
+        # seconds cross here and nowhere else.
+        onset = member.offset + to_beats(float(at), element.duration_unit, self.tempo)
+        handle = owner.add(second_element, onset, float(length) - float(at))
         setattr(handle, ID_ATTR, self._mint_id())
         whole = to_document(owner, version=self._version)["root"]
         outcome = self._record({"intent": "setmembers", "node": node,
@@ -1277,7 +1332,8 @@ class Editor:
 
     def _tail(self, element, at: float, length: float):
         """The element the **second half** of a cut reads: the same samples,
-        from ``at`` beats in.
+        from ``at`` seconds in (``at`` and ``length`` are the element's own
+        unit, which for samples is seconds).
 
         The first half is not built at all — it is the element it always was,
         with its placement shortened, which is the arrangement's own rule (a
@@ -1295,16 +1351,16 @@ class Editor:
                 elif end > at + 1e-9:
                     head = at - offset
                     after.append(Segment(seg.buffer,
-                                         seg.start + self.beats_to_units(head),
+                                         seg.start + self.secs_to_units(head),
                                          seg.duration - head))
             return self._joined_element([element], after)
         return Vector(element.wraps, duration=length - at,
                       instrument=element.instrument, controls=element.controls,
-                      start=element.start + self.beats_to_units(at),
+                      start=element.start + self.secs_to_units(at),
                       loop=element.loop, name=element.name)
 
     def _segments_within(self, element, length) -> list:
-        """The segments a placement of ``length`` beats actually shows of a
+        """The segments a placement of ``length`` seconds actually shows of a
         `Segments` — the placement being a window onto the samples like every
         other placement here, so a half whose placement was shortened by a split
         holds the samples it *plays*, not everything the element still knows
@@ -1410,7 +1466,7 @@ class Editor:
             if seg.buffer is not segments[0].buffer or abs(seg.start - expected) >= 0.5:
                 contiguous = False
                 break
-            expected += self.beats_to_units(seg.duration)
+            expected += self.secs_to_units(seg.duration)
         if contiguous:
             return Vector(segments[0].buffer,
                           duration=sum(seg.duration for seg in segments),
@@ -1425,7 +1481,7 @@ class Editor:
         """A curve edited in place on an automation clip (the flat ``"points"``
         payload the `bpf` view also sends): the break-points go back onto the
         element's `clausters.seq.Automation`, with their times converted from
-        timeline units to beats. The `Env` is the automation's source of truth, so
+        timeline units to the seconds an `Env` measures its segments in. The `Env` is the automation's source of truth, so
         this *is* the edit — the next render plays the curve as drawn."""
         clip = (placed.member.element if placed.member is not None
                 else self.element)
@@ -1435,13 +1491,13 @@ class Editor:
         # addressed to the aggregate replaced an empty configuration with a
         # `points` the crate had nowhere to keep: the edit reported success,
         # changed nothing and left no undo behind.
-        element, member = _curve_owner(clip, placed.member)
-        auto = _automation(element)
+        element, member = _curve_owner(clip, placed.member, self.tempo)
+        auto = _automation(element, self.tempo)
         if auto is None or not values:
             return False
         flat = []
         for t, v, shape, curve in _quads(list(values)):
-            flat += [self.units_to_beats(t), float(v), int(shape), float(curve)]
+            flat += [self.units_to_secs(t), float(v), int(shape), float(curve)]
         node = self._node_id(element, member)
         if node is None:
             return False
@@ -1805,7 +1861,7 @@ class Editor:
             element.start = float(config.get("start", 0.0))
             element.loop = bool(config.get("loop", False))
             return True
-        auto = _automation(element)
+        auto = _automation(element, self.tempo)
         flat = config.get("points")
         if auto is None or flat is None:
             return False
@@ -2214,7 +2270,7 @@ class Editor:
         edit-back writes through."""
         if (isinstance(element, Aggregate) and element.kind == CONCRETE
                 and len(element) > 1
-                and element.temporal_relation() == SIMULTANEOUS
+                and element.temporal_relation(self.tempo) == SIMULTANEOUS
                 and not self.is_expanded(element)):
             # Its members start and end together: they are *one* thing on the
             # timeline, so they are one clip with layered bodies — not a lane of
@@ -2242,29 +2298,30 @@ class Editor:
         self._lanes[wid] = label
         return lane
 
-    def _drawn_beats(self, element, member) -> float:
-        """The length one clip is drawn at, **in beats** — the placement's when
-        it overrides, else the element's own, else what the element extends to.
+    def _drawn_length(self, element, member) -> float:
+        """The length one clip is drawn at, **in the element's own unit** — the
+        placement's when it overrides, else the element's own, else what the
+        element extends to.
 
         One rule, in one place, because two of them is how a picture and a
         model come to disagree: the draw asks this, and so does every path that
         has to put a placement back (`_redrawn`, after an inverse or a redo)."""
-        beats = member.dur if (member is not None and member.dur is not None) else None
-        if beats is None and isinstance(element, Element):
-            beats = element.duration
-        if beats is None:
-            beats = self._extent(element)
-        return beats
+        length = member.dur if (member is not None and member.dur is not None) else None
+        if length is None and isinstance(element, Element):
+            length = element.duration
+        if length is None:
+            length = self._extent(element)
+        return length
 
     def _drawn_dur(self, element, member, body=None) -> float:
         """The same length in **timeline units**, which needs the body: a take
         with no duration given is as long as it is (1 unit = 1 sample)."""
-        beats = self._drawn_beats(element, member)
+        length = self._drawn_length(element, member)
         if body is None:
-            body = self._body_for(element, beats)
-        if "buffer" in body and beats <= 0.0:
+            body = self._body_for(element, length)
+        if "buffer" in body and length <= 0.0:
             return float(element.wraps.frames)
-        return self.beats_to_units(beats)
+        return self.length_to_units(length, element)
 
     def _clip_for(self, element, base: float, owner, member) -> dict:
         """One `clip`: the element placed at ``base`` beats (absolute on the shared
@@ -2272,8 +2329,8 @@ class Editor:
         drew, which is what the edit-back path resolves against."""
         wid = self._new_id()
         offset = self.beats_to_units(base)
-        dur_beats = self._drawn_beats(element, member)
-        body = self._body_for(element, dur_beats)
+        dur_length = self._drawn_length(element, member)
+        body = self._body_for(element, dur_length)
         dur = self._drawn_dur(element, member, body)
 
         # The placement's own base: a clip's offset is absolute on the shared axis,
@@ -2284,7 +2341,7 @@ class Editor:
         # no id of its own, so a note dragged inside one arrives tagged with *this
         # clip's* id. Registering what the body draws is what lets that edit reach
         # the arrangement — without it the note moves on screen and nowhere else.
-        roll = _roll_owner(element)
+        roll = _roll_owner(element, self.tempo)
         if "notes" in body and roll is not None:
             self._rolls[wid] = roll
         return clip(id=wid, offset=offset, dur=dur, label=_name(element), **body)
@@ -2321,7 +2378,8 @@ class Editor:
         """The clip-body props an element draws with — and a **simultaneous** aggregate
         draws with *all of its members'*, layered in one clip.
 
-        ``limit`` is the **placement's** length in beats when it has one: a
+        ``limit`` is the **placement's** length in the element's own unit when
+        it has one (seconds for samples, beats for events): a
         placement is a window onto an element, so a clip shortened over samples
         assembled from segments draws the segments it plays and not the ones it
         no longer reaches.
@@ -2336,15 +2394,17 @@ class Editor:
         # A simultaneous aggregate first: it is one thing on the timeline, and its
         # members' bodies layer (each keeps its own value axis).
         if (isinstance(element, Aggregate) and len(element) > 1
-                and element.temporal_relation() == SIMULTANEOUS):
+                and element.temporal_relation(self.tempo) == SIMULTANEOUS):
             body: dict = {}
             for m in element.handles:
                 body.update(self._body_for(m.element, limit))
             return body
 
-        auto = _automation(element)
+        auto = _automation(element, self.tempo)
         if auto is not None:
-            points = [(self.beats_to_units(t), v, shape, curve)
+            # A curve's times are an `Env`'s, so they are seconds and cross on
+            # the rate: the shape is drawn where it sounds, whatever the tempo.
+            points = [(self.secs_to_units(t), v, shape, curve)
                       for t, v, shape, curve in _quads(auto.to_points())]
             lo, hi = self._axis_for(auto, points)
             # **Flat, because these quads are already resolved.** A `points`
@@ -2373,8 +2433,8 @@ class Editor:
                     continue
                 take = dict(view="trace", buffer=buf.bufnum,
                             channels=max(1, channels),
-                            at=self.beats_to_units(offset),
-                            dur=self.beats_to_units(seg.duration))
+                            at=self.secs_to_units(offset),
+                            dur=self.secs_to_units(seg.duration))
                 if seg.start:
                     take["start"] = float(seg.start)
                 children.append(signal(**take))
@@ -2458,26 +2518,38 @@ class Editor:
         return notes
 
     def _extent(self, element) -> float:
-        """An element's length in beats: its own ``duration`` when it has one,
-        else what it spans — an aggregate over its placed members, an envelope over its
-        curve, anything else over its flattened events (a bounced pattern
-        included)."""
+        """An element's length **in its own unit** (`duration_unit`: seconds for
+        samples and for a curve, beats for events): its own ``duration`` when it
+        has one, else what it spans — an aggregate over its placed members, an
+        envelope over its curve, anything else over its flattened events (a
+        bounced pattern included).
+
+        An aggregate spans *beats*, since that is what its members' offsets are
+        in, so each member's length crosses on the way into the sum."""
         if isinstance(element, Element) and element.duration is not None:
             return float(element.duration)
-        auto = _automation(element)
+        # **The aggregate rule comes first**, and the curve's own length second:
+        # a simultaneous aggregate holding a curve spans *beats*, like every
+        # aggregate, and answering with the envelope's seconds would hand a
+        # caller a number in one unit under a name that says the other.
+        if isinstance(element, Aggregate):
+            return max((m.offset + to_beats(
+                m.dur if m.dur is not None else self._extent(m.element),
+                m.element.duration_unit if isinstance(m.element, Element) else BEATS,
+                self.tempo)
+                for m in element.handles), default=0.0)
+        auto = _automation(element, self.tempo)
         if auto is not None:
             return auto.duration()
-        if isinstance(element, Aggregate):
-            return max((m.offset + (m.dur if m.dur is not None
-                                    else self._extent(m.element))
-                        for m in element.handles), default=0.0)
         if isinstance(element, Segments):
             # Its contents are a list, and its extent is the whole of it.
             return sum(seg.duration for seg in element.segments)
         if isinstance(element, Vector):
             buf = element.wraps
             rate = buf.sample_rate or self.sample_rate
-            return self.units_to_beats(buf.frames * (self.sample_rate / rate))
+            # Its own seconds: the frames it holds over the rate they were
+            # recorded at, which no tempo enters.
+            return float(buf.frames) / float(rate)
         try:
             events = flatten(element, 0.0)
         except (NotImplementedError, TypeError):
@@ -2548,7 +2620,7 @@ def _name(element) -> str:
     return type(element).__name__.lower()
 
 
-def _automation(element):
+def _automation(element, tempo: float = 1.0):
     """The `clausters.seq.Automation` an element carries, or ``None``. An automation
     is a *curve* — the List/Vector duality of the arrangement — so it needs no primitive
     of its own: any element wrapping one draws (and edits) as an envelope.
@@ -2559,9 +2631,9 @@ def _automation(element):
     if isinstance(getattr(element, "wraps", None), Automation):
         return element.wraps
     if (isinstance(element, Aggregate) and len(element) > 1
-            and element.temporal_relation() == SIMULTANEOUS):
+            and element.temporal_relation(tempo) == SIMULTANEOUS):
         for _offset, _dur, child in element.members:
-            auto = _automation(child)
+            auto = _automation(child, tempo)
             if auto is not None:
                 return auto
     return None
@@ -2582,7 +2654,7 @@ def _quintuples(flat) -> list:
     return [tuple(flat[i:i + 5]) for i in range(0, len(flat) - 4, 5)]
 
 
-def _roll_owner(element):
+def _roll_owner(element, tempo: float = 1.0):
     """The element whose notes a clip's roll body draws — what a ``"notes"``
     edit-back is written onto.
 
@@ -2593,7 +2665,7 @@ def _roll_owner(element):
     the member that carries them, not to the aggregate. ``None`` when no member
     has an editable timeline — a layered roll nobody can write to."""
     if (isinstance(element, Aggregate) and len(element) > 1
-            and element.temporal_relation() == SIMULTANEOUS):
+            and element.temporal_relation(tempo) == SIMULTANEOUS):
         for m in element.handles:
             if _editable_timeline(m.element) is not None:
                 return m.element
@@ -2601,7 +2673,7 @@ def _roll_owner(element):
     return element
 
 
-def _curve_owner(element, member=None):
+def _curve_owner(element, member=None, tempo: float = 1.0):
     """The element whose `clausters.seq.Automation` a clip's curve body draws —
     what a ``"points"`` edit-back is written onto — and the member handle that
     places it.
@@ -2613,9 +2685,9 @@ def _curve_owner(element, member=None):
     was placed by.
     """
     if (isinstance(element, Aggregate) and len(element) > 1
-            and element.temporal_relation() == SIMULTANEOUS):
+            and element.temporal_relation(tempo) == SIMULTANEOUS):
         for handle in element.handles:
-            if _automation(handle.element) is not None:
+            if _automation(handle.element, tempo) is not None:
                 return handle.element, handle
     return element, member
 

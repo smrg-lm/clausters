@@ -33,7 +33,7 @@
 //! than the session. Given none, a take is still drawn: its placement and its
 //! name, honest about the rest.
 
-use clausters_document::{Beats, Body, Document, Member, Node, NodeId};
+use clausters_document::{Beats, Body, Document, Member, Node, NodeId, TimeUnit};
 use serde_json::{Map, Value, json};
 
 use super::sources::Takes;
@@ -52,9 +52,13 @@ pub struct Bound {
 /// How the picture is scaled and labelled.
 #[derive(Debug, Clone, Copy)]
 pub struct Look<'a> {
-    /// Samples per beat — the unit a clip's `offset`/`dur` are in, since the
-    /// shared time axis measures samples and the document measures beats.
+    /// Samples per beat — what a clip's `offset` is drawn with, since the
+    /// shared time axis measures samples and a placement is in beats.
     pub units_per_beat: f64,
+    /// Samples per second — what a clip's `dur` is drawn with when the data
+    /// it shows is measured in seconds ([`clausters_document::Body::duration_unit`]:
+    /// a take's length is a wall-clock fact, so no tempo scales it).
+    pub units_per_second: f64,
     /// The rate the ruler names its ticks in.
     pub sample_rate: f64,
     /// Beats per second, for the ruler's bar and beat lines.
@@ -82,6 +86,7 @@ impl Default for Look<'_> {
     fn default() -> Self {
         Self {
             units_per_beat: 48_000.0,
+            units_per_second: 48_000.0,
             sample_rate: 48_000.0,
             tempo: 1.0,
             quant: 0.0,
@@ -278,7 +283,7 @@ fn clip_of(
         node: member.node.id,
     });
     let take = take_of(&member.node, look);
-    let dur = clip_dur(member, look.takes, look.units_per_beat);
+    let dur = clip_units(member, look.takes, look);
     let mut props = Map::new();
     props.insert("id".into(), json!(widget));
     props.insert("type".into(), json!("field"));
@@ -286,7 +291,7 @@ fn clip_of(
         "offset".into(),
         json!((base + member.offset) * look.units_per_beat),
     );
-    props.insert("dur".into(), json!(dur * look.units_per_beat));
+    props.insert("dur".into(), json!(dur));
     props.insert("label".into(), json!(label_of(&member.node)));
     // The samples, as a **server buffer**: the clip's take body fetches it
     // over the host's client leg, which is the same route a script's clip
@@ -305,8 +310,11 @@ fn clip_of(
         let mut children = Vec::new();
         let mut cursor = 0.0f64;
         for segment in segments {
-            let (at, len) = (cursor, segment.duration);
-            cursor += segment.duration;
+            // A window's length is in seconds -- these are samples -- so it is
+            // drawn against the rate and not against the tempo.
+            let len = segment.duration * look.units_per_second;
+            let at = cursor;
+            cursor += len;
             let Some(take) = look.takes.and_then(|t| t.get(segment.source.source)) else {
                 continue;
             };
@@ -317,8 +325,8 @@ fn clip_of(
             if let Some(channels) = take.channels {
                 body.insert("channels".into(), json!(channels));
             }
-            body.insert("at".into(), json!(at * look.units_per_beat));
-            body.insert("dur".into(), json!(len * look.units_per_beat));
+            body.insert("at".into(), json!(at));
+            body.insert("dur".into(), json!(len));
             if segment.start != 0.0 {
                 body.insert("start".into(), json!(segment.start));
             }
@@ -417,35 +425,44 @@ fn take_editors(
 }
 
 /// The samples a node draws, when it names some and somebody resolved it.
-/// The length a clip is drawn at, in beats: the placement's where it overrides,
-/// else the element's own, else **the samples'** — a take placed 1:1 is as long
-/// as it is, which is the one length nobody has to state — else a beat, because
-/// a clip with no length at all would be a line.
+/// The length a clip is drawn at, **in timeline units**: the placement's where
+/// it overrides, else the element's own, else **the samples'** — a take placed
+/// 1:1 is as long as it is, which is the one length nobody has to state — else
+/// a beat, because a clip with no length at all would be a line.
+///
+/// The unit conversion is part of the rule rather than the caller's: a length
+/// is in the unit of its own data ([`clausters_document::Body::duration_unit`]),
+/// so a take's seconds meet the axis through the rate and a phrase's beats
+/// through the tempo. Handing a number back without saying which it was is how
+/// the two get multiplied by the wrong ratio.
 ///
 /// One rule, in one place. The draw asks it, and so does the adoption of an
 /// applied edit ([`super::super::Host::adopt`]): a placement whose length went
 /// back to *unstated* has to be redrawn at whatever that means here, and an
 /// adopter with a shorter rule of its own left the clip at the size the hand
 /// had given it — which is an undo that moves the document and not the picture.
-pub(crate) fn clip_dur(
+pub(crate) fn clip_units(
     member: &Member,
     takes: Option<&super::sources::Takes>,
-    units_per_beat: f64,
-) -> Beats {
-    member
-        .dur
-        .or(member.node.duration)
-        .or_else(|| {
-            takes
-                .and_then(|t| match &member.node.body {
-                    Body::Vector { source, .. } => t.get(source.source),
-                    _ => None,
-                })
-                .and_then(|t| t.frames)
-                .map(|f| f as f64 / units_per_beat)
+    look: &Look<'_>,
+) -> f64 {
+    if let Some(dur) = member.length().filter(|d| *d > 0.0) {
+        return match member.duration_unit() {
+            TimeUnit::Seconds => dur * look.units_per_second,
+            TimeUnit::Beats => dur * look.units_per_beat,
+        };
+    }
+    // The samples' own length is already in frames, which is what the axis
+    // counts.
+    takes
+        .and_then(|t| match &member.node.body {
+            Body::Vector { source, .. } => t.get(source.source),
+            _ => None,
         })
+        .and_then(|t| t.frames)
+        .map(|f| f as f64)
         .filter(|d| *d > 0.0)
-        .unwrap_or(1.0)
+        .unwrap_or(look.units_per_beat)
 }
 
 fn take_of(node: &Node, look: &Look<'_>) -> Option<super::sources::Take> {
@@ -832,12 +849,46 @@ mod take_tests {
         assert_eq!(takes[1]["buffer"], 8, "and the second's, a different file");
         // Each on its own stretch of the clip, in timeline units.
         assert_eq!(takes[0]["at"], 0.0);
-        assert_eq!(takes[1]["at"], look.units_per_beat);
-        assert_eq!(takes[1]["dur"], 2.0 * look.units_per_beat);
+        // A window's length is in seconds, so it is drawn against the rate.
+        assert_eq!(takes[1]["at"], look.units_per_second);
+        assert_eq!(takes[1]["dur"], 2.0 * look.units_per_second);
         // ...and the second reads its own frame, which the first does not name.
         assert_eq!(takes[1]["start"], 480.0);
         assert!(takes[0].get("start").is_none());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_takes_length_is_drawn_against_the_rate_and_a_phrases_against_the_tempo() {
+        // At 120 bpm a beat is 24 000 frames and a second is still 48 000, so
+        // the two ratios say different things about the same number. A take
+        // three seconds long is 144 000 units wide whatever the tempo is --
+        // drawing it through the beat would have stretched it to six beats of
+        // picture over three seconds of sound.
+        let look = Look {
+            units_per_beat: 24_000.0,
+            units_per_second: 48_000.0,
+            tempo: 2.0,
+            ..Look::default()
+        };
+        let mut node = take(2, 3);
+        node.duration = Some(3.0);
+        let document = Document::new(Node::new(
+            NodeId(1),
+            Body::Aggregate {
+                grouping: Grouping::Concrete,
+                members: vec![Member {
+                    offset: 4.0,
+                    dur: None,
+                    node,
+                }],
+                config: Opaque::none(),
+            },
+        ));
+        let drawn = draw(&document, &look, "rates");
+        let clip = &drawn.def["children"][0]["children"][0];
+        assert_eq!(clip["offset"], 4.0 * 24_000.0, "a placement is musical");
+        assert_eq!(clip["dur"], 3.0 * 48_000.0, "a recording is not");
     }
 
     /// A resolved take also **opens as an editor**, on its own axis and bound

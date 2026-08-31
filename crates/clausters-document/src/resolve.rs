@@ -10,11 +10,14 @@
 //!
 //! # The tempo is the caller's; the arithmetic is here
 //!
-//! [`Mapping`] takes **frames per beat** rather than a tempo and a sample rate,
-//! which keeps the crate out of a policy it has no business in while still
-//! doing the conversion once instead of in every client. It is the same line
-//! the rest of the crate draws around a leaf's configuration: carry what is
-//! given, own what is shared.
+//! [`Mapping`] takes **frames per beat** and **frames per second** rather than
+//! a tempo and a sample rate, which keeps the crate out of a policy it has no
+//! business in while still doing the conversion once instead of in every
+//! client. It needs both because the tree measures its two kinds of length in
+//! two units: an onset is in beats and a take's length is in seconds
+//! ([`crate::Body::duration_unit`]), so one ratio can place a clip and the
+//! other says how long it is. It is the same line the rest of the crate draws
+//! around a leaf's configuration: carry what is given, own what is shared.
 //!
 //! # What a resolution has to include, and what it must not
 //!
@@ -32,7 +35,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{Beats, Body, Document, Member, Node, NodeId, Range, Selection, SourceId};
+use crate::{Beats, Body, Document, Member, Node, NodeId, Range, Selection, SourceId, TimeUnit};
 
 /// Which unit a selection's numbers are in.
 ///
@@ -55,25 +58,45 @@ pub struct Mapping {
     /// Frames of samples per beat of the arrangement. Supplied rather than
     /// derived: tempo and sample rate are the caller's.
     pub frames_per_beat: f64,
+    /// Frames of samples per second — the sample rate, and what a length that
+    /// is already in seconds is measured with.
+    pub frames_per_second: f64,
     /// What the selection's numbers mean.
     pub unit: Unit,
 }
 
 impl Mapping {
     /// A selection in frames on the shared axis.
-    pub fn frames(frames_per_beat: f64) -> Self {
+    pub fn frames(frames_per_beat: f64, frames_per_second: f64) -> Self {
         Self {
             frames_per_beat,
+            frames_per_second,
             unit: Unit::Frames,
         }
     }
 
     /// A selection in beats.
-    pub fn beats(frames_per_beat: f64) -> Self {
+    pub fn beats(frames_per_beat: f64, frames_per_second: f64) -> Self {
         Self {
             frames_per_beat,
+            frames_per_second,
             unit: Unit::Beats,
         }
+    }
+
+    /// Beats per second — the tempo the two ratios imply. Zero when the caller
+    /// gave a degenerate pair, which every reader here already guards for.
+    fn tempo(self) -> f64 {
+        if self.frames_per_beat > 0.0 {
+            self.frames_per_second / self.frames_per_beat
+        } else {
+            0.0
+        }
+    }
+
+    /// A length in its own unit, as beats of the arrangement.
+    fn length_in_beats(self, length: f64, unit: TimeUnit) -> Beats {
+        unit.to_beats(length, self.tempo())
     }
 
     /// A position in the selection's own unit, as beats.
@@ -262,11 +285,17 @@ fn pieces_of_segments(
     let Body::Segments { segments, .. } = &member.node.body else {
         return;
     };
-    let placed = member.dur.or(member.node.duration);
+    // The placement's length and each window's are both in seconds here (these
+    // are samples), and the axis they are laid on is beats, so each one crosses
+    // once, on the way out.
+    let placed = member
+        .length()
+        .map(|d| mapping.length_in_beats(d, TimeUnit::Seconds));
     let mut cursor = 0.0;
     for segment in segments {
-        let (from_beat, to_beat) = (at + cursor, at + cursor + segment.duration);
-        cursor += segment.duration;
+        let length = mapping.length_in_beats(segment.duration, TimeUnit::Seconds);
+        let (from_beat, to_beat) = (at + cursor, at + cursor + length);
+        cursor += length;
         // Past what the placement shows: the rest of the samples is there and
         // is not being played, so it is not under anything.
         let to_beat = match placed {
@@ -302,8 +331,8 @@ fn pieces_of_segments(
 /// How long the placement is, in beats: what was written on it, or what the
 /// trim implies when nothing was.
 fn placed_extent(member: &Member, trim: Option<Range>, mapping: &Mapping) -> Option<Beats> {
-    if let Some(dur) = member.dur.or(member.node.duration) {
-        return (dur > 0.0).then_some(dur);
+    if let Some(dur) = member.length() {
+        return (dur > 0.0).then(|| mapping.length_in_beats(dur, member.duration_unit()));
     }
     let trim = trim?;
     if trim.is_empty() || mapping.frames_per_beat <= 0.0 {

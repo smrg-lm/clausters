@@ -82,8 +82,16 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
       const log = (line) => { el("log").textContent += line + "\n"; };
 
       const TEMPO = 2.0;   // beats per second (120 bpm)
+      // The bounce's length, twice: in **beats** of the clock that renders it,
+      // and in the **seconds** it therefore lasts. A take's length is the
+      // second one -- the samples are as long as they are, and a tempo change
+      // does not shorten a recording -- so that is what the elements are placed
+      // with.
+      const TAKE_BEATS = 2.0;
+      const TAKE_SECS = TAKE_BEATS / TEMPO;
       const QUANT = 0.5;   // the drag grid: half a beat
-      const SWEEP = 4.0;   // the sweep's length in beats (the curve's, and its voice's)
+      const SWEEP = 4.0;          // the curve's length in **seconds** (an `Env`'s times)
+      const SWEEP_BEATS = SWEEP * TEMPO;  // ...and the same stretch in beats, for its voice
 
       let session, server, SR, editor = null, win = null;
 
@@ -133,7 +141,7 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
       // clients (`Buffer.from_samples` there) and means the same thing. It is
       // the *file* a page does not have, not the verb. Everything above and
       // below this line is the same call in the same order.
-      async function bounce(midinote, beats = 2.0) {
+      async function bounce(midinote, beats = TAKE_BEATS) {
         const offline = await Session.nrt({ tempo: TEMPO });
         // One octave under the melody rather than three: the take has to be
         // *heard* moving when a clip is dragged.
@@ -155,8 +163,8 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
 
         // Two **elements** over two server buffers, since this lane places a
         // take twice: the samples are shared, the placements are not.
-        const take = new Vector(buf, null, 2.0, { instrument: "take" });
-        const takeAgain = new Vector(otherBuf, null, 2.0, { instrument: "take" });
+        const take = new Vector(buf, null, TAKE_SECS, { instrument: "take" });
+        const takeAgain = new Vector(otherBuf, null, TAKE_SECS, { instrument: "take" });
         const melody = new Track(new seq.Timeline([
           [0.0, new Event({ midinote: 72, dur: 1.0 })],
           [1.0, new Event({ midinote: 76, dur: 1.0 })],
@@ -183,7 +191,7 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
         // bodies — the curve over the note — which drags as one.
         const voice = new Clang(new Event({
           instrument: "drone", freq_bus: sweep.bus.index,
-          dur: SWEEP, legato: 1.0, amp: 0.12, hasGate: true,
+          dur: SWEEP_BEATS, legato: 1.0, amp: 0.12, hasGate: true,
         }));
         const sweepClip = new Aggregate(
           [[0.0, voice], [0.0, new Element(sweep, null, SWEEP)]],

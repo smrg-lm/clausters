@@ -702,6 +702,7 @@ fn run_session(
     host.owner = Some(
         owner
             .with_units_per_beat(tree::Look::default().units_per_beat)
+            .with_units_per_second(tree::Look::default().units_per_second)
             .with_takes(load.takes.clone()),
     );
     let origin = ClientId::Udp(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)));

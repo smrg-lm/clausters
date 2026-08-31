@@ -703,3 +703,51 @@ fn staleness_never_shadows_a_better_reason() {
     assert!(!outcome.stale);
     assert_eq!(outcome.reason.as_deref(), Some("no such node"));
 }
+
+#[test]
+fn the_grid_snaps_a_takes_onset_and_leaves_its_seconds_alone() {
+    // A grid is musical and a take's length is not on it: snapping the seconds
+    // of a recording to a beat would trim it to fit a ruler it was never
+    // measured against. The onset is the placement and still snaps.
+    let mut d = Document::new(Node::new(
+        NodeId(1),
+        Body::Aggregate {
+            grouping: Grouping::Concrete,
+            members: vec![Member {
+                offset: 0.0,
+                dur: None,
+                node: Node::new(
+                    NodeId(2),
+                    Body::Vector {
+                        source: SourceRef {
+                            source: SourceId(100),
+                            lifetime: Lifetime::External,
+                            generation: 1,
+                            range: None,
+                        },
+                        config: Opaque::none(),
+                    },
+                ),
+            }],
+            config: Opaque::none(),
+        },
+    ));
+    let outcome = apply(
+        &mut d,
+        &Intent::Place {
+            node: NodeId(2),
+            offset: 4.3,
+            dur: Some(2.37),
+        },
+        &Against::unstated(),
+        &Rules::quantized(1.0),
+    );
+    assert_eq!(
+        outcome.effective,
+        Intent::Place {
+            node: NodeId(2),
+            offset: 4.0,
+            dur: Some(2.37)
+        }
+    );
+}

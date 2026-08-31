@@ -38,6 +38,12 @@ await loadCore();
 const SR = 48_000.0;
 const TEMPO = 2.0; // beats per second (120 bpm)
 const BEAT = SR / TEMPO; // 24000 timeline samples per beat
+/**
+ * Timeline samples per **second**, the other half of the bridge: an onset is in
+ * beats and a length is in the unit of the data it measures, so a take's and a
+ * curve's lengths are drawn against this one and no tempo enters them.
+ */
+const SEC = SR;
 
 /**
  * The stamp every `/gui_event` carries as its second argument. Any non-zero
@@ -50,16 +56,18 @@ const SEQ = 1;
  */
 const UNSTATED = 0;
 
-const buffer = (bufnum: number, beats = 4.0): SourceLike => ({
+const buffer = (bufnum: number, secs = 2.0): SourceLike => ({
     bufnum,
-    frames: Math.trunc(beats * BEAT),
+    frames: Math.trunc(secs * SR),
     channels: 1,
     sampleRate: SR,
 });
 
 /** A two-lane composition: a take on one lane, a melody on another. */
 function song(): Aggregate {
-    const take = new Vector(buffer(7), null, 4.0);
+    // 96 000 frames is two seconds at 48 kHz, and a take's duration is in
+    // seconds -- so this one is as long as its samples, whatever the tempo.
+    const take = new Vector(buffer(7), null, 2.0);
     const audio = new Aggregate([[0.0, take]], "concrete", { name: "audio" });
     const melody = new Track(
         new Timeline([
@@ -291,7 +299,10 @@ test("a layered clip routes a curve edit to the member that carries it", () => {
     );
     const attached = new Aggregate(
         [
-            [0.0, new Clang(new SeqEvent({ instrument: "drone", dur: 4.0 }))],
+            // Eight beats of clang and four seconds of curve: the same stretch
+            // at 120 bpm, so the aggregate is simultaneous and draws as one
+            // layered clip.
+            [0.0, new Clang(new SeqEvent({ instrument: "drone", dur: 8.0 }))],
             [0.0, new Element(env, null, 4.0)],
         ],
         "concrete",
@@ -309,8 +320,8 @@ test("a layered clip routes a curve edit to the member that carries it", () => {
         ed.apply("/gui_event", [
             clip.id as number, SEQ, UNSTATED, "points",
             0.0, 300.0, 1, 0.0,
-            2 * BEAT, 500.0, 1, 0.0,
-            4 * BEAT, 100.0, 1, 0.0,
+            2 * SEC, 500.0, 1, 0.0,
+            4 * SEC, 100.0, 1, 0.0,
         ]),
         true,
     );
@@ -336,7 +347,10 @@ test("editing a curve does not move the axis it is drawn against", () => {
     );
     const attached = new Aggregate(
         [
-            [0.0, new Clang(new SeqEvent({ instrument: "drone", dur: 4.0 }))],
+            // Eight beats of clang and four seconds of curve: the same stretch
+            // at 120 bpm, so the aggregate is simultaneous and draws as one
+            // layered clip.
+            [0.0, new Clang(new SeqEvent({ instrument: "drone", dur: 8.0 }))],
             [0.0, new Element(env, null, 4.0)],
         ],
         "concrete",
@@ -353,8 +367,8 @@ test("editing a curve does not move the axis it is drawn against", () => {
             ed.apply("/gui_event", [
                 c.id as number, SEQ, UNSTATED, "points",
                 0.0, 200.0, 1, 0.0,
-                2 * BEAT, value, 2, 0.0,
-                4 * BEAT, 300.0, 1, 0.0,
+                2 * SEC, value, 2, 0.0,
+                4 * SEC, 300.0, 1, 0.0,
             ]),
             true,
         );
@@ -390,7 +404,10 @@ test("undoing a curve edit tells the host what to draw", async () => {
     );
     const attached = new Aggregate(
         [
-            [0.0, new Clang(new SeqEvent({ instrument: "drone", dur: 4.0 }))],
+            // Eight beats of clang and four seconds of curve: the same stretch
+            // at 120 bpm, so the aggregate is simultaneous and draws as one
+            // layered clip.
+            [0.0, new Clang(new SeqEvent({ instrument: "drone", dur: 8.0 }))],
             [0.0, new Element(env, null, 4.0)],
         ],
         "concrete",
@@ -405,8 +422,8 @@ test("undoing a curve edit tells the host what to draw", async () => {
         ed.apply("/gui_event", [
             clip.id as number, SEQ, UNSTATED, "points",
             0.0, 300.0, 1, 0.0,
-            2 * BEAT, 500.0, 1, 0.0,
-            4 * BEAT, 100.0, 1, 0.0,
+            2 * SEC, 500.0, 1, 0.0,
+            4 * SEC, 100.0, 1, 0.0,
         ]),
         true,
     );
@@ -651,7 +668,10 @@ test("unknown messages are ignored", () => {
 
 // ---- windows onto samples: trim, split, join ----
 
-/** A one-lane composition holding one four-beat take, and its element. */
+/**
+ * A one-lane composition holding one four-**second** take, and its element (a
+ * take's length is in seconds, whatever the tempo).
+ */
 function takeSong(): [Aggregate, Vector] {
     const take = new Vector(buffer(7), null, 4.0, { instrument: "take" });
     const audio = new Aggregate([[0.0, take]], "concrete", { name: "audio" });
@@ -809,29 +829,31 @@ test("a split gives two windows over one buffer", () => {
     const ed = editor(piece);
     const c = clipsOf(lanes(ed.draw())[0] as GuiNode)[0] as GuiNode;
     assert.equal(
-        ed.apply("/gui_event", [c.id, SEQ, UNSTATED, "split", 1.0 * BEAT]),
+        ed.apply("/gui_event", [c.id, SEQ, UNSTATED, "split", 1.0 * SEC]),
         true,
     );
 
     const [first, second] = clipsOf(lanes(ed.draw())[0] as GuiNode);
-    assert.equal(first?.dur, BEAT);
-    assert.equal(second?.offset, BEAT);
-    assert.equal(second?.dur, 3 * BEAT);
+    // A second of samples, cut a second in: the lengths are seconds and the
+    // onset the cut gives the tail is beats, which at 120 bpm is two of them.
+    assert.equal(first?.dur, SEC);
+    assert.equal(second?.offset, 2 * BEAT);
+    assert.equal(second?.dur, 3 * SEC);
     // The second reads on from where the first stops, over the same buffer.
-    assert.equal(second?.start, BEAT);
+    assert.equal(second?.start, SEC);
     assert.equal(second?.buffer, first?.buffer);
 
     assert.equal(ed.undo(), true);
     const whole = clipsOf(lanes(ed.draw())[0] as GuiNode);
     assert.equal(whole.length, 1);
-    assert.equal(whole[0]?.dur, 4 * BEAT);
+    assert.equal(whole[0]?.dur, 4 * SEC);
 });
 
 test("a join puts a split clip back together", () => {
     const [piece] = takeSong();
     const ed = editor(piece);
     const c = clipsOf(lanes(ed.draw())[0] as GuiNode)[0] as GuiNode;
-    ed.apply("/gui_event", [c.id, SEQ, UNSTATED, "split", 1.0 * BEAT]);
+    ed.apply("/gui_event", [c.id, SEQ, UNSTATED, "split", 1.0 * SEC]);
     const [first, second] = clipsOf(lanes(ed.draw())[0] as GuiNode);
 
     assert.equal(
@@ -840,7 +862,7 @@ test("a join puts a split clip back together", () => {
     );
     const joined = clipsOf(lanes(ed.draw())[0] as GuiNode);
     assert.equal(joined.length, 1);
-    assert.equal(joined[0]?.dur, 4 * BEAT);
+    assert.equal(joined[0]?.dur, 4 * SEC);
     assert.equal("start" in (joined[0] as GuiNode), false, "the window it was cut from");
 });
 

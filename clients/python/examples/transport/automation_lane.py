@@ -73,7 +73,10 @@ gliss.prepare(server)                               # alloc + fill the control b
 # then free the voice, and render the score to interleaved samples.
 def score():
     gliss.play(server)
-    yield gliss.duration()
+    # The curve's length is in seconds (an `Env`'s segment times are), and a
+    # routine yields beats -- so it crosses on the clock's tempo. Here that is
+    # 1.0 and the two numbers agree; at any other tempo they do not.
+    yield gliss.duration() * session.clock.tempo
     server.send_bundle(("/node_free", voice.id))
 
 

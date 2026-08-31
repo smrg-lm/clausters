@@ -32,12 +32,18 @@ UNSTATED = 0
 SR = 48_000.0
 TEMPO = 2.0          # beats per second (120 bpm)
 BEAT = SR / TEMPO    # 24000 timeline samples per beat
+#: Timeline samples per **second**, the other half of the bridge: an onset is in
+#: beats and a length is in the unit of its own data, so a take's and a curve's
+#: lengths are drawn against this one and no tempo enters them.
+SEC = SR
 
 
 def song() -> Aggregate:
     """A two-lane composition: a take on one lane, a melody on another."""
+    # 96 000 frames is two seconds at 48 kHz, and a take's duration is in
+    # seconds -- so this one is as long as its samples, whatever the tempo.
     take = Vector(ServerBuffer(bufnum=7, frames=int(4 * BEAT), channels=1,
-                               sample_rate=SR), duration=4.0)
+                               sample_rate=SR), duration=2.0)
     audio = Aggregate([(0.0, take)], name="audio")
     melody = Track(Timeline([(0.0, SeqEvent(midinote=60, dur=1.0)),
                              (1.0, SeqEvent(midinote=64, dur=1.0)),
@@ -124,7 +130,7 @@ def test_a_vector_clip_names_the_server_buffer_and_spans_its_frames():
     (take,) = clips(audio)
     assert take["type"] == "field" and "dur" in take
     assert take["buffer"] == 7                    # fetched over the host's leg
-    assert take["dur"] == pytest.approx(4 * BEAT)  # the take's own length, 1:1
+    assert take["dur"] == pytest.approx(2 * SEC)  # the take's own length, 1:1
     assert take["offset"] == 0.0
 
 
@@ -134,10 +140,10 @@ def test_a_vector_spans_its_frames_only_when_it_has_no_duration():
     unqueried = Vector(ServerBuffer(bufnum=3), duration=2.0)   # frames unknown (0)
     (lane,) = lanes(editor(Aggregate([(0.0, unqueried)], name="take")).draw())
     (c,) = clips(lane)
-    assert c["dur"] == pytest.approx(2 * BEAT)
+    assert c["dur"] == pytest.approx(2 * SEC)
 
     # With no duration either, the take's own frames are its length.
-    sized = Vector(ServerBuffer(bufnum=3, frames=int(1.5 * BEAT)))
+    sized = Vector(ServerBuffer(bufnum=3, frames=int(1.5 * BEAT), sample_rate=SR))
     (lane,) = lanes(editor(Aggregate([(0.0, sized)], name="take")).draw())
     assert clips(lane)[0]["dur"] == pytest.approx(1.5 * BEAT)
 
@@ -229,8 +235,10 @@ def test_the_bare_envelope_is_a_shorter_stack():
 
 
 def test_a_selection_swept_on_a_signal_view_is_of_that_element():
+    # 96 000 frames is two seconds at 48 kHz, and a take's duration is in
+    # seconds -- so this one is as long as its samples, whatever the tempo.
     take = Vector(ServerBuffer(bufnum=7, frames=int(4 * BEAT), channels=1,
-                               sample_rate=SR), duration=4.0)
+                               sample_rate=SR), duration=2.0)
     ed = Editor(take, sample_rate=SR, tempo=TEMPO)
     ed._mode, ed._signal_element = "signal", take
     wid = ed.draw()["children"][0]["id"]
@@ -348,8 +356,10 @@ def test_a_layered_clip_routes_a_note_edit_to_the_member_that_carries_it():
 
     env = Automation.from_points([(0, 200.0, 1, 0.0), (4, 900.0, 2, 0.0)],
                                  target=None, name="sweep")
-    tl = Timeline([(0.0, SeqEvent(midinote=60, dur=4.0))])
-    attached = Aggregate([(0.0, Track(tl, duration=4.0)),
+    # Four seconds of curve beside eight beats of notes: at 120 bpm those are
+    # the same stretch of time, which is what makes the two one clip.
+    tl = Timeline([(0.0, SeqEvent(midinote=60, dur=8.0))])
+    attached = Aggregate([(0.0, Track(tl, duration=8.0)),
                       (0.0, Element(env, duration=4.0))], name="sweep")
     ed = editor(Aggregate([(0.0, Aggregate([(0.0, attached)], name="sweep"))], name="song"))
     (lane,) = lanes(ed.draw())
@@ -373,7 +383,9 @@ def test_a_layered_clip_routes_a_curve_edit_to_the_member_that_carries_it():
     # The notes half is a `Clang` — a rendering, with no editable timeline —
     # which is what the composer's sweep lane holds and what made the whole clip
     # read as locked.
-    attached = Aggregate([(0.0, Clang(SeqEvent(instrument="drone", dur=4.0))),
+    # Eight beats of clang and four seconds of curve: the same stretch at 120
+    # bpm, so the aggregate is simultaneous and draws as one layered clip.
+    attached = Aggregate([(0.0, Clang(SeqEvent(instrument="drone", dur=8.0))),
                           (0.0, Element(env, duration=4.0))], name="sweep")
     ed = editor(Aggregate([(0.0, Aggregate([(0.0, attached)], name="sweep"))], name="song"))
     (lane,) = lanes(ed.draw())
@@ -385,8 +397,8 @@ def test_a_layered_clip_routes_a_curve_edit_to_the_member_that_carries_it():
 
     assert ed.apply("/gui_event", [c["id"], SEQ, UNSTATED, "points",
                                    0.0, 300.0, 1, 0.0,
-                                   2 * BEAT, 500.0, 1, 0.0,
-                                   4 * BEAT, 100.0, 1, 0.0]) is True
+                                   2 * SEC, 500.0, 1, 0.0,
+                                   4 * SEC, 100.0, 1, 0.0]) is True
     assert env.to_points()[0:2] == pytest.approx([0.0, 300.0])
     assert env.to_points()[4:6] == pytest.approx([2.0, 500.0])
     # ...and it is an edit like any other, so it is in the history.
@@ -405,7 +417,9 @@ def test_editing_a_curve_does_not_move_the_axis_it_is_drawn_against():
 
     env = Automation.from_points([(0, 200.0, 1, 0.0), (2, 900.0, 2, 0.0),
                                   (4, 300.0, 1, 0.0)], target=None, name="sweep")
-    attached = Aggregate([(0.0, Clang(SeqEvent(instrument="drone", dur=4.0))),
+    # Eight beats of clang and four seconds of curve: the same stretch at 120
+    # bpm, so the aggregate is simultaneous and draws as one layered clip.
+    attached = Aggregate([(0.0, Clang(SeqEvent(instrument="drone", dur=8.0))),
                           (0.0, Element(env, duration=4.0))], name="sweep")
     ed = editor(Aggregate([(0.0, Aggregate([(0.0, attached)], name="sweep"))], name="song"))
     first = _find(ed.draw(), lambda n: "points" in n)
@@ -416,8 +430,8 @@ def test_editing_a_curve_does_not_move_the_axis_it_is_drawn_against():
         (c,) = clips(lane)
         assert ed.apply("/gui_event", [c["id"], SEQ, UNSTATED, "points",
                                        0.0, 200.0, 1, 0.0,
-                                       2 * BEAT, value, 2, 0.0,
-                                       4 * BEAT, 300.0, 1, 0.0]) is True
+                                       2 * SEC, value, 2, 0.0,
+                                       4 * SEC, 300.0, 1, 0.0]) is True
         return _find(ed.draw(), lambda n: "points" in n)
 
     # Up to the ceiling the host clamps a drag to, and back down again.
@@ -447,7 +461,9 @@ def test_undoing_a_curve_edit_tells_the_host_what_to_draw():
 
     env = Automation.from_points([(0, 200.0, 1, 0.0), (2, 900.0, 2, 0.0),
                                   (4, 300.0, 1, 0.0)], target=None, name="sweep")
-    attached = Aggregate([(0.0, Clang(SeqEvent(instrument="drone", dur=4.0))),
+    # Eight beats of clang and four seconds of curve: the same stretch at 120
+    # bpm, so the aggregate is simultaneous and draws as one layered clip.
+    attached = Aggregate([(0.0, Clang(SeqEvent(instrument="drone", dur=8.0))),
                           (0.0, Element(env, duration=4.0))], name="sweep")
     ed = editor(Aggregate([(0.0, Aggregate([(0.0, attached)], name="sweep"))], name="song"))
     host = _FakeHost()
@@ -457,8 +473,8 @@ def test_undoing_a_curve_edit_tells_the_host_what_to_draw():
 
     assert ed.apply("/gui_event", [clip["id"], SEQ, UNSTATED, "points",
                                    0.0, 300.0, 1, 0.0,
-                                   2 * BEAT, 500.0, 1, 0.0,
-                                   4 * BEAT, 100.0, 1, 0.0]) is True
+                                   2 * SEC, 500.0, 1, 0.0,
+                                   4 * SEC, 100.0, 1, 0.0]) is True
     host.acks.clear()
 
     assert ed.undo() is True
@@ -900,11 +916,13 @@ def test_an_automation_draws_as_a_curve_clip_on_the_timeline():
     (curve,) = clips(lane)
 
     assert curve["offset"] == pytest.approx(2 * BEAT)   # placed at beat 2
-    assert curve["dur"] == pytest.approx(4 * BEAT)      # the curve's own length
+    # The curve's own length -- an `Env`'s segment times are seconds, so four
+    # of them are four seconds of picture and not four beats of one.
+    assert curve["dur"] == pytest.approx(4 * SEC)
     # The break-points ride as the bpf flat quads, their times in timeline units.
     assert curve["points"][0:2] == pytest.approx([0.0, 200.0])
-    assert curve["points"][4:6] == pytest.approx([2 * BEAT, 4000.0])
-    assert curve["points"][8:10] == pytest.approx([4 * BEAT, 800.0])
+    assert curve["points"][4:6] == pytest.approx([2 * SEC, 4000.0])
+    assert curve["points"][8:10] == pytest.approx([4 * SEC, 800.0])
     # The curve's *own* value axis covers it with headroom, so a point can be
     # dragged (a layered clip's `min`/`max` belong to the body underneath).
     assert curve["points_min"] < 200.0 and curve["points_max"] > 4000.0
@@ -939,16 +957,16 @@ def test_editing_the_curve_in_place_writes_it_back_onto_the_automation():
     # The host sends the same flat "points" payload the bpf view sends — here the
     # peak dragged down to 3000 Hz and a beat later.
     edited = [0.0, 200.0, 1, 0.0,
-              3 * BEAT, 3000.0, 2, 0.0,
-              4 * BEAT, 800.0, 1, 0.0]
+              3 * SEC, 3000.0, 2, 0.0,
+              4 * SEC, 800.0, 1, 0.0]
     assert ed.apply("/gui_event", [curve["id"], SEQ, UNSTATED, "points", *edited])
 
     # The automation's Env — its source of truth, what the next rendering plays.
-    assert auto.to_points()[4:6] == pytest.approx([3.0, 3000.0])  # in beats again
+    assert auto.to_points()[4:6] == pytest.approx([3.0, 3000.0])  # in seconds again
     assert auto.duration() == pytest.approx(4.0)
     # And the redraw shows what was dropped.
     assert clips(lanes(ed.draw())[0])[0]["points"][4:6] == pytest.approx(
-        [3 * BEAT, 3000.0])
+        [3 * SEC, 3000.0])
 
 
 def test_editing_the_curve_refills_the_control_buffer_it_is_played_from():
@@ -965,7 +983,7 @@ def test_editing_the_curve_refills_the_control_buffer_it_is_played_from():
     auto.refill = lambda **kw: refills.append(kw)
 
     ed.apply("/gui_event", [curve["id"], SEQ, UNSTATED, "points",
-                            0.0, 200.0, 1, 0.0, 4 * BEAT, 900.0, 1, 0.0])
+                            0.0, 200.0, 1, 0.0, 4 * SEC, 900.0, 1, 0.0])
     assert refills, "the buffer the curve is played from follows the curve"
 
 
@@ -979,9 +997,12 @@ def test_an_envelope_attached_to_its_event_is_one_clip_that_moves_as_one():
 
     env = Automation.from_points([(0, 200.0, 1, 0.0), (4, 900.0, 2, 0.0)],
                                  target=None, name="sweep")
-    voice = Clang(SeqEvent(midinote=60, dur=4.0))
+    voice = Clang(SeqEvent(midinote=60, dur=8.0))
     attached = Aggregate([(0.0, voice), (0.0, Element(env, duration=4.0))], name="sweep")
-    assert attached.temporal_relation() == "simultaneous"
+    # Eight beats and four seconds are one stretch at 120 bpm -- which the
+    # relation can only say once it is told the tempo, since the two members are
+    # measured in different units.
+    assert attached.temporal_relation(TEMPO) == "simultaneous"
 
     ed = editor(Aggregate([(2.0, attached)], name="song"))
     (lane,) = lanes(ed.draw())
@@ -1681,8 +1702,10 @@ def test_dragging_the_second_of_two_windows_moves_the_second():
     write two members carrying one id, so the crate applied the edit to the
     first match while the editor's index kept the last — two writes, two
     destinations, and the clip the hand moved came back to where it was."""
+    # 96 000 frames is two seconds at 48 kHz, and a take's duration is in
+    # seconds -- so this one is as long as its samples, whatever the tempo.
     take = Vector(ServerBuffer(bufnum=7, frames=int(4 * BEAT), channels=1,
-                               sample_rate=SR), duration=4.0)
+                               sample_rate=SR), duration=2.0)
     lane = Aggregate([(0.0, take), (4.0, take)], name="drums")
     ed = editor(Aggregate([(0.0, lane)], name="song"), quant=0.0)
     ed._history()
@@ -1742,7 +1765,8 @@ def _find(node, pred):
 # ---- a clip is a window onto a segment of its samples ----
 
 def _take_song(**window) -> tuple:
-    """A one-lane composition holding one four-beat take, and its element."""
+    """A one-lane composition holding one four-**second** take, and its element
+    (a take's length is in seconds, whatever the tempo)."""
     take = Vector(ServerBuffer(bufnum=7, frames=int(4 * BEAT), channels=1,
                                sample_rate=SR), duration=4.0, instrument="take",
                   **window)
@@ -1819,8 +1843,10 @@ def test_an_undone_trim_puts_the_window_back_on_a_take_that_configures_nothing()
     the wrong sound."""
     # A **bare** take: no window and no configuration at all, so the member the
     # inverse states carries no `config` key for the projection to find.
+    # 96 000 frames is two seconds at 48 kHz, and a take's duration is in
+    # seconds -- so this one is as long as its samples, whatever the tempo.
     take = Vector(ServerBuffer(bufnum=7, frames=int(4 * BEAT), channels=1,
-                               sample_rate=SR), duration=4.0)
+                               sample_rate=SR), duration=2.0)
     song = Aggregate([(0.0, Aggregate([(0.0, take)], name="audio"))], name="song")
     ed = editor(song)
     host = _FakeHost()
@@ -1921,21 +1947,23 @@ def test_a_split_gives_two_windows_over_one_buffer():
     ed = editor(song)
     (lane,) = lanes(ed.draw())
     (clip,) = clips(lane)
-    assert ed.apply("/gui_event", [clip["id"], SEQ, UNSTATED, "split", 1.0 * BEAT]) is True
+    assert ed.apply("/gui_event", [clip["id"], SEQ, UNSTATED, "split", 1.0 * SEC]) is True
 
     (lane,) = lanes(ed.draw())
     first, second = clips(lane)
-    assert first["dur"] == pytest.approx(BEAT)
-    assert second["offset"] == pytest.approx(BEAT)
-    assert second["dur"] == pytest.approx(3 * BEAT)
+    # A second of samples, cut a second in: the lengths are seconds and the
+    # onset the cut gives the tail is beats, which at 120 bpm is two of them.
+    assert first["dur"] == pytest.approx(SEC)
+    assert second["offset"] == pytest.approx(2 * BEAT)
+    assert second["dur"] == pytest.approx(3 * SEC)
     # The second reads on from where the first stops, over the same buffer.
-    assert second["start"] == pytest.approx(BEAT)
+    assert second["start"] == pytest.approx(SEC)
     assert second["buffer"] == first["buffer"] == 7
 
     assert ed.undo() is True
     (lane,) = lanes(ed.draw())
     (whole,) = clips(lane)
-    assert whole["dur"] == pytest.approx(4 * BEAT)
+    assert whole["dur"] == pytest.approx(4 * SEC)
 
 
 def test_a_join_puts_a_split_clip_back_together():
@@ -1946,7 +1974,7 @@ def test_a_join_puts_a_split_clip_back_together():
     ed = editor(song)
     (lane,) = lanes(ed.draw())
     (clip,) = clips(lane)
-    ed.apply("/gui_event", [clip["id"], SEQ, UNSTATED, "split", 1.0 * BEAT])
+    ed.apply("/gui_event", [clip["id"], SEQ, UNSTATED, "split", 1.0 * SEC])
     (lane,) = lanes(ed.draw())
     first, second = clips(lane)
 
@@ -1954,7 +1982,7 @@ def test_a_join_puts_a_split_clip_back_together():
                                    first["id"], second["id"]]) is True
     (lane,) = lanes(ed.draw())
     (joined,) = clips(lane)
-    assert joined["dur"] == pytest.approx(4 * BEAT)
+    assert joined["dur"] == pytest.approx(4 * SEC)
     assert "start" not in joined
 
 
@@ -1978,13 +2006,13 @@ def test_clips_over_different_buffers_join_into_one_element():
 
     (lane,) = lanes(ed.draw())
     (joined,) = clips(lane)
-    assert joined["dur"] == pytest.approx(2 * BEAT)
+    assert joined["dur"] == pytest.approx(2 * SEC)
     # One clip, one take per segment, each on its own half and reading its own
     # buffer from its own frame.
     takes = joined["children"]
     assert [t["buffer"] for t in takes] == [7, 8]
-    assert [t["at"] for t in takes] == pytest.approx([0.0, BEAT])
-    assert [t["dur"] for t in takes] == pytest.approx([BEAT, BEAT])
+    assert [t["at"] for t in takes] == pytest.approx([0.0, SEC])
+    assert [t["dur"] for t in takes] == pytest.approx([SEC, SEC])
     assert "start" not in takes[0] and takes[1]["start"] == pytest.approx(100.0)
 
     # ...and it plays as one thing: one event per segment, at its own offset.
@@ -2010,7 +2038,7 @@ def test_a_join_of_one_run_of_one_buffer_is_the_window_it_was_cut_from():
     ed = editor(song)
     (lane,) = lanes(ed.draw())
     (clip,) = clips(lane)
-    ed.apply("/gui_event", [clip["id"], SEQ, UNSTATED, "split", 1.0 * BEAT])
+    ed.apply("/gui_event", [clip["id"], SEQ, UNSTATED, "split", 1.0 * SEC])
     (lane,) = lanes(ed.draw())
     first, second = clips(lane)
     ed.apply("/gui_event", [first["id"], SEQ, UNSTATED, "join",
@@ -2019,7 +2047,7 @@ def test_a_join_of_one_run_of_one_buffer_is_the_window_it_was_cut_from():
     (joined,) = clips(lane)
     element = ed._clips[joined["id"]].member.element
     assert isinstance(element, Vector) and not isinstance(element, Segments)
-    assert joined["dur"] == pytest.approx(4 * BEAT)
+    assert joined["dur"] == pytest.approx(4 * SEC)
 
 
 def test_which_layer_a_hand_is_on_is_screen_state():
@@ -2054,7 +2082,7 @@ def test_a_joined_clip_cuts_apart_into_the_windows_it_was_made_of():
     # Cut it exactly where the two buffers meet.
     (lane,) = lanes(ed.draw())
     (joined,) = clips(lane)
-    assert ed.apply("/gui_event", [joined["id"], SEQ, UNSTATED, "split", BEAT]) is True
+    assert ed.apply("/gui_event", [joined["id"], SEQ, UNSTATED, "split", SEC]) is True
     (lane,) = lanes(ed.draw())
     left, right = clips(lane)
     # Each half reads one buffer again, from its own frame. The **tail** is a
@@ -2086,13 +2114,13 @@ def test_a_segments_clip_shows_and_plays_only_what_its_placement_covers():
     b = ServerBuffer(bufnum=8, frames=int(2 * BEAT), channels=1, sample_rate=SR)
     seg = Segments([(a, 0.0, 1.0), (b, 0.0, 1.0)], instrument="take")
     audio = Aggregate(name="audio")
-    audio.add(seg, 0.0, 1.5)                       # a placement of 1.5 beats
+    audio.add(seg, 0.0, 1.5)                     # a placement of 1.5 seconds
     ed = editor(Aggregate([(0.0, audio)], name="song"))
     (lane,) = lanes(ed.draw())
     (clip,) = clips(lane)
     takes = clip["children"]
     assert [t["buffer"] for t in takes] == [7, 8]
-    assert [t["dur"] for t in takes] == pytest.approx([BEAT, 0.5 * BEAT])
+    assert [t["dur"] for t in takes] == pytest.approx([SEC, 0.5 * SEC])
 
     # The whole buffer is still there: the placement is what was shortened.
     assert [s.duration for s in seg.segments] == pytest.approx([1.0, 1.0])

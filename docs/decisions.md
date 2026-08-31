@@ -635,6 +635,35 @@ of lines in one client module. Its dependency arrow is one-way — the editor
 imports the arrangement, never the reverse — the same call that moved the envelope
 point helpers out of the GUI submodule so `seq` would not depend on it.
 
+**Amended once the claim was read back: a length is not an onset, and only one
+of them is musical.** "The arrangement is in beats" was true of *placement* and
+false of *length*, and storing a length in beats is a claim about it — the number
+never changes, so what changes when the tempo does is the seconds it is worth.
+That is exactly right for a note and false for anything whose seconds were fixed
+before the model saw it: a take's length is `frames / sample_rate`, and at double
+tempo an event freed after that many beats cuts the recording in half. Measured
+before it was changed, on a 96 000-frame take at 48 kHz: `dur` 2.0 sounds its two
+seconds at tempo 1 and is freed after one second at tempo 2 — half the take.
+
+So the rule is two rules, and the body says which applies: **an onset is in the
+unit of what contains it** (beats, always, here) and **a duration is in the unit
+of the element's own data** — seconds for a `Vector`, a `Segments` and a curve,
+beats for a `Clang`, a `Sequence` and a `Track`. Nothing new is stored;
+`duration_unit` derives it from the body, in the document crate and in both
+clients alike.
+
+Two things follow, and both are where the old single-unit claim had put
+something. **The conversion belongs to the flattening**, not to the tree:
+`flatten` takes the clock's tempo and converts as it lays each item down, because
+a timeline is a list ordered by *one* number and cannot hold two bases — which
+leaves `TempoClock`, `Playhead`, `Event.dur`, patterns and the editor's ruler and
+snap exactly where they were, in beats. And **the converter holds two ratios
+rather than one**: `units_per_beat` (`sample_rate / tempo`) for an onset,
+`units_per_second` (the rate) for a length in seconds. A take is then drawn as
+wide as it sounds at any tempo, and the grid still catches only what is musical —
+which is also why the crate's `Place` snaps an offset and leaves a take's seconds
+alone.
+
 ## A buffer sounds through an instrument, not by itself
 
 Rendering a `Buffer` element was deferred with a note that it "needs an

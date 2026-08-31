@@ -19,6 +19,11 @@ The five primitives map one-to-one onto what the client already has:
   simultaneous), with its own onset/duration. Wraps `clausters.seq.Event`.
 - `Sequence`  — *List*: strict order with no concrete time, only sequence.
   Wraps a Python list or a `Pattern`.
+An element's ``onset`` is in **beats** and its ``duration`` is in the unit of
+what it is made of (`Element.duration_unit`) — seconds for samples, beats for
+events — because a placement is a musical decision and a recording's length is
+not. `clausters.form.render.flatten` is where the two meet.
+
 - `Vector`    — *Vector*: a list at constant time (audio or control samples).
   Wraps `clausters.defs.Buffer`. `Segments` is the same primitive assembled from
   **several** windows — which buffer, from which frame, for how long — read as
@@ -33,6 +38,24 @@ Grouping and rendering live in `clausters.form.aggregate` and
 `clausters.form.render`. This module is pure and transport-agnostic (factorable
 into ``clausters-core`` in a future port).
 """
+
+#: The unit a length is in. An **onset** is always in beats — a placement is a
+#: musical decision and takes the unit of what contains it — and a **duration**
+#: is in the unit of its own data: `SECONDS` for audio (a take's length is
+#: ``frames / sample_rate``, a wall-clock fact no tempo change moves), `BEATS`
+#: for a succession of events (a note is musical, and a tempo change is supposed
+#: to shorten it). `Element.duration_unit` says which, derived from what the
+#: element wraps rather than stored, and `clausters.form.render.flatten`
+#: converts on the way to a timeline, which is ordered by one number and cannot
+#: hold two bases.
+BEATS = "beats"
+SECONDS = "seconds"
+
+
+def to_beats(length: float, unit: str, tempo: float) -> float:
+    """``length`` (in ``unit``) as beats at ``tempo`` beats per second."""
+    return float(length) * float(tempo) if unit == SECONDS else float(length)
+
 
 #: The temporal character of an element, derived from which of ``onset`` and
 #: ``duration`` are present. ``segment`` has both; ``punctual`` has an
@@ -61,8 +84,9 @@ def temporal_character(onset, duration) -> str:
 class Element:
     """Base of the arrangement: temporal metadata over a wrapped item.
 
-    An element carries an optional ``onset`` and ``duration`` (in beats, relative
-    to its context) and wraps an underlying client object it delegates to. The
+    An element carries an optional ``onset`` (in beats, relative to its context)
+    and ``duration`` (in the unit of what it wraps — see `duration_unit`) and
+    wraps an underlying client object it delegates to. The
     concrete onset of an element typically comes from its *placement* inside a
     `clausters.form.aggregate.Aggregate`, not from the element itself, so a standalone
     leaf commonly has a duration but no onset (a ``relative`` character).
@@ -71,7 +95,8 @@ class Element:
         wraps: the underlying object playing delegates to (or ``None`` for a
             pure container like an `Aggregate`).
         onset: start in beats relative to the context, or ``None``.
-        duration: length in beats, or ``None``.
+        duration: length in this element's own unit (`duration_unit`), or
+            ``None``.
         name: a label for this element — what a lane is called in the editor,
             and, for an element wrapping something the document cannot own (a
             pattern, a routine), the **key a reopened session finds it by**. It
@@ -112,6 +137,19 @@ class Element:
         return not self.resident
 
     @property
+    def duration_unit(self) -> str:
+        """The unit `duration` is in: `SECONDS` for the elements whose data
+        is samples (`Vector`, `Segments`), and for anything wrapped that
+        measures itself in seconds (a `clausters.seq.Automation`'s curve is an
+        envelope, and an envelope's segment times are real time); `BEATS`
+        otherwise.
+
+        Derived from what the element is made of rather than stored, so nothing
+        can write one unit and read the other. An object that wants to answer
+        for itself declares its own ``duration_unit``."""
+        return getattr(self.wraps, "duration_unit", None) or BEATS
+
+    @property
     def temporal_character(self) -> str:
         """This element's character (`SEGMENT`/`PUNCTUAL`/`RELATIVE`/`ABSTRACT`),
         derived from the presence of ``onset`` and ``duration``."""
@@ -135,13 +173,13 @@ class Element:
             )
         return play(destination)
 
-    def to_timeline(self, base: float = 0.0):
+    def to_timeline(self, base: float = 0.0, *, tempo: float = 1.0):
         """Flatten this element to a flat `clausters.seq.Timeline` in absolute
-        beats (accumulating nested placement offsets). See
-        `clausters.form.render`."""
+        beats (accumulating nested placement offsets), converting any length
+        measured in seconds at ``tempo``. See `clausters.form.render`."""
         from .render import to_timeline
 
-        return to_timeline(self, base)
+        return to_timeline(self, base, tempo=tempo)
 
     def render(self, destination, clock=None, *, at: float = 0.0, quant=None,
                ports=None):
@@ -207,8 +245,10 @@ class Vector(Element):
             number), or ``None`` for a buffer that is data only.
         controls: extra event parameters passed to that def (``amp``, ``rate``…).
         onset: start in beats relative to the context, or ``None``.
-        duration: length in beats — how long the clip sounds. Give it for a take
-            placed in time (an event's default length is used otherwise).
+        duration: length in **seconds** — how long the clip sounds. Give it for
+            a take placed in time (an event's default length is used
+            otherwise); it is seconds and not beats because a recording's length
+            is ``frames / sample_rate``, which a tempo change does not move.
         start: the first frame of the buffer this element reads. An element is a
             **window onto a segment** of its buffer, not the whole of it: a
             trimmed take reads from further in and the frames before it are
@@ -239,9 +279,20 @@ class Vector(Element):
         #: buffer means when a loop is what it is.
         self.loop = bool(loop)
 
-    def to_event(self):
+    @property
+    def duration_unit(self) -> str:
+        """`SECONDS`: this element's data is samples, and their seconds were
+        fixed when they were recorded — a tempo change does not shorten a take."""
+        return SECONDS
+
+    def to_event(self, tempo: float = 1.0):
         """The event that plays this buffer: the `instrument` def with the buffer
         number in its ``buf`` control, sounding for the element's ``duration``.
+
+        ``tempo`` (beats per second) is what the length crosses on: this
+        element's duration is in seconds and an event's ``dur`` is in beats,
+        because an event is played by a clock. It is the only conversion, and it
+        happens here rather than in the structure.
 
         ``legato`` is 1 so the take sounds its whole length (the note default of
         0.8 would cut it short — a sampled take is not a note with a gap), and
@@ -268,7 +319,7 @@ class Vector(Element):
         if self.loop:
             params["loop"] = 1.0
         if self.duration is not None:
-            params["dur"] = float(self.duration)
+            params["dur"] = float(self.duration) * float(tempo)
         params.update(self.controls)
         return SeqEvent(params)
 
@@ -280,7 +331,7 @@ class Segments(Element):
     A `Vector` is one window onto one buffer. This is what a **join** makes when
     the fragments do not come from one place: a list of
     ``(buffer, start, duration)`` — the buffer to read, the frame to read it
-    from, and how long that segment lasts in beats — read back to back. It is
+    from, and how long that segment lasts in seconds — read back to back. It is
     the same memory-view idea one level up: nothing is copied, and cutting one
     of these apart again gives back windows over the same buffers.
 
@@ -292,12 +343,14 @@ class Segments(Element):
     Args:
         segments: the runs, as ``(buffer, start, duration)`` triples (a
             plain ``(buffer, duration)`` reads that buffer from its first
-            frame). ``start`` is in frames, ``duration`` in beats.
+            frame). ``start`` is in frames and ``duration`` in **seconds** —
+            one base for both fields, and the one these samples are already in.
         instrument: the def that plays them — one def for all of them, since
             what this element *is* is one thing to play (see `Vector`).
         controls: extra event parameters passed to that def.
         onset: start in beats relative to the context, or ``None``.
-        duration: length in beats; the sum of the segments' when not given.
+        duration: length in **seconds**; the sum of the segments' when not
+            given.
     """
 
     def __init__(self, segments, onset=None, duration=None, *, instrument=None,
@@ -310,24 +363,33 @@ class Segments(Element):
         self.controls = dict(controls or {})
 
     @property
+    def duration_unit(self) -> str:
+        """`SECONDS`, like the `Vector` this is the several-windows form of."""
+        return SECONDS
+
+    @property
     def segments(self) -> list:
         """The segments, in reading order — the element's own data."""
         return list(self.wraps or ())
 
     def placed(self) -> list:
-        """The segments with the beat each one **starts at** inside this
+        """The segments with the second each one **starts at** inside this
         element: ``(offset, segment)`` pairs, which is what both rendering and
-        drawing lay out from."""
+        drawing lay out from. Seconds throughout, like the lengths they
+        accumulate."""
         out, cursor = [], 0.0
         for seg in self.segments:
             out.append((cursor, seg))
             cursor += seg.duration
         return out
 
-    def to_events(self) -> list:
+    def to_events(self, tempo: float = 1.0) -> list:
         """One ``(offset, event)`` per segment: the instrument playing that
         buffer, from that frame, for that long. The offsets are relative to the
-        element, exactly as an aggregate's members' are."""
+        element, exactly as an aggregate's members' are — and in **beats**,
+        converted here at ``tempo`` (beats per second) from the seconds the
+        windows are measured in, because what comes out of this is played by a
+        clock."""
         from ..seq.event import Event as SeqEvent
 
         if self.instrument is None:
@@ -339,17 +401,21 @@ class Segments(Element):
         out = []
         for offset, seg in self.placed():
             params = dict(instrument=self.instrument, buf=seg.buffer.bufnum,
-                          legato=1.0, amp=1.0, dur=float(seg.duration))
+                          legato=1.0, amp=1.0,
+                          dur=float(seg.duration) * float(tempo))
             if seg.start:
                 params["start"] = float(seg.start)
             params.update(self.controls)
-            out.append((offset, SeqEvent(params)))
+            out.append((offset * float(tempo), SeqEvent(params)))
         return out
 
 
 class Segment:
     """One segment of a `Segments`: which buffer, from which frame, for how
-    long. A window, named the same way a `Vector` element's is."""
+    long. A window, named the same way a `Vector` element's is.
+
+    ``start`` is in frames and ``duration`` in **seconds** — one base for both,
+    and the base these samples are already in."""
 
     __slots__ = ("buffer", "start", "duration")
 

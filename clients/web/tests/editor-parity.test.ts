@@ -50,10 +50,14 @@ const SR = vectors.sample_rate;
 const TEMPO = vectors.tempo;
 const BEAT = SR / TEMPO;
 
-/** A server buffer as the editor reads one: its number, shape and rate. */
-const buffer = (bufnum: number, beats = 4.0, channels = 1): SourceLike => ({
+/**
+ * A server buffer as the editor reads one: its number, shape and rate. Its size
+ * is in **seconds** -- seconds because that is what a take's length is measured
+ * in, whatever the tempo is.
+ */
+const buffer = (bufnum: number, secs = 2.0, channels = 1): SourceLike => ({
     bufnum,
-    frames: Math.trunc(beats * BEAT),
+    frames: Math.trunc(secs * SR),
     channels,
     sampleRate: SR,
 });
@@ -61,7 +65,7 @@ const buffer = (bufnum: number, beats = 4.0, channels = 1): SourceLike => ({
 /** The same compositions `gen-editor-vectors.py` builds, in this language. */
 const compositions: Record<string, () => Aggregate> = {
     a_song() {
-        const take = new Vector(buffer(7), null, 4.0);
+        const take = new Vector(buffer(7), null, 2.0); // two seconds of samples
         const audio = new Aggregate([[0.0, take]], "concrete", { name: "audio" });
         const melody = new Track(
             new Timeline([
@@ -75,14 +79,14 @@ const compositions: Record<string, () => Aggregate> = {
     },
 
     a_windowed_take() {
-        const take = new Vector(buffer(9), null, 2.0, { start: 12_000.0, loop: true });
+        const take = new Vector(buffer(9), null, 1.0, { start: 12_000.0, loop: true });
         return new Aggregate([[1.0, take]], "concrete", { name: "trimmed" });
     },
 
     a_joined_take() {
         const joined = new Segments([
-            [buffer(3), 0.0, 1.0],
-            [buffer(4), 6_000.0, 1.5],
+            [buffer(3), 0.0, 0.5],
+            [buffer(4), 6_000.0, 0.75],
         ]);
         return new Aggregate([[0.0, joined]], "concrete", { name: "joined" });
     },
@@ -91,15 +95,17 @@ const compositions: Record<string, () => Aggregate> = {
         const curve = new Automation(new Env([0.2, 0.9, 0.1], [1.0, 1.0]), null, {
             name: "cutoff",
         });
+        // Two seconds of curve and four beats of notes: the same stretch at 120
+        // bpm, which is what makes the aggregate simultaneous and the clip one.
         const notes = new Track(
-            new Timeline([[0.0, new SeqEvent({ midinote: 72, dur: 2.0 })]]),
+            new Timeline([[0.0, new SeqEvent({ midinote: 72, dur: 4.0 })]]),
             null,
-            2.0,
+            4.0,
         );
         const pair = new Aggregate(
             [
                 [0.0, 2.0, new Element(curve, null, 2.0)],
-                [0.0, 2.0, notes],
+                [0.0, 4.0, notes],
             ],
             "concrete",
             { name: "shaped" },
@@ -114,7 +120,7 @@ const compositions: Record<string, () => Aggregate> = {
             { name: "freq" },
         );
         const voice = new Clang(
-            new SeqEvent({ instrument: "drone", dur: 4.0, legato: 1.0, amp: 0.12 }),
+            new SeqEvent({ instrument: "drone", dur: 8.0, legato: 1.0, amp: 0.12 }),
         );
         const pair = new Aggregate(
             [[0.0, voice], [0.0, new Element(curve, null, 4.0)]],

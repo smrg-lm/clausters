@@ -130,11 +130,12 @@ has no offline drive.</div>
         auto?.free();
         auto = seq.Automation.fromPoints(points, [drone, "freq"]);
         await auto.prepare(session.server);
-        // Inside a routine this would emit at the routine's logical beat; here
-        // there is no clock in context, so the lane starts now and the curve's
-        // beats read as seconds.
+        // Inside a routine this would emit at the routine's logical beat, its
+        // seconds crossing to beats at that clock's tempo; here there is no
+        // clock in context, so the lane starts now and runs on wall time --
+        // which is what the curve's segment times are already in.
         auto.play(session.server);
-        log(`lane playing: ${auto.duration()} beats, buffer ${auto.buf.bufnum} `
+        log(`lane playing: ${auto.duration()} s, buffer ${auto.buf.bufnum} `
           + `onto control bus ${auto.bus.index}`);
         $("stop").disabled = false;
         setTimeout(() => {

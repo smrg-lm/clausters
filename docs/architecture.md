@@ -363,8 +363,27 @@ of the Python client's book; the reasoning behind it is in
 
 Two boundaries hold this together, and both are worth defending: `clausters.form`
 imports **nothing** from the GUI (it is pure and transport-agnostic), and the
-driver is the **only** converter between the arrangement's beats and the view's
+driver is the **only** converter between the arrangement's units and the view's
 timeline samples.
+
+**The arrangement has two units, and which one a number is in is derived, never
+stored.** An onset — a member's offset, an element's own — is in **beats**: a
+placement is a musical decision and takes the unit of what contains it. A
+duration is in the unit of the element's own data: **seconds** for what
+references samples (`Vector`, `Segments`, and a curve, whose times are an `Env`'s)
+and **beats** for what is made of events (`Clang`, `Sequence`, `Track`). The body
+says which — `Element.duration_unit` in Python, `Element.durationUnit` in the
+web client, `clausters_document::Body::duration_unit` in the crate — so a writer
+cannot
+disagree with a reader about the number it just wrote. Two consequences follow
+and are load-bearing: the conversion belongs to the **flattening**
+(`form.render.flatten`, which takes the clock's tempo), because a timeline is
+ordered by one number and cannot hold two bases; and the editor's bridge is
+**two ratios** rather than one — `units_per_beat` for an onset,
+`units_per_second` for a length in seconds — which is what makes a take drawn
+exactly as wide as it sounds at any tempo. The host draws by the same pair
+(`tree::Look`'s `units_per_beat`/`units_per_second`) and the crate's `Mapping`
+carries both for the same reason.
 
 The paths above are the Python client's, and the model now exists **twice**: the
 web client carries the same layer at mirrored paths (`clients/web/src/form/`

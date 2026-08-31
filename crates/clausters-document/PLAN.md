@@ -459,7 +459,7 @@ Every entry carries a checkbox, and one that converges into numbered milestones 
 
 Every entry is a checkbox, and a fixed one stays with the record of what was wrong.
 
-- ⬜ **The document measures two kinds of leaf with one unit, and for one of
+- ✅ **The document measures two kinds of leaf with one unit, and for one of
   them the unit is wrong** *(found 2026-08-30 by the user, arguing that concrete
   time is seconds or samples and that beats are a ruler and a snap the editor
   imposes)*. `Beats = f64` is the unit of `Node.onset`, `Node.duration` and
@@ -503,6 +503,21 @@ Every entry is a checkbox, and a fixed one stays with the record of what was wro
   places call beats what is measured in seconds") with the concrete symbols; this
   entry is the format's half. **It is a fix and not a design**: the rule is
   stated, nothing here is waiting on a decision.
+
+  **Fixed 2026-08-30, with the client half, in one commit.** `Beats` now names
+  only what an onset is in (`Node::onset`, `Member::offset`, `Rules::quant`);
+  `Seconds` names a length whose seconds were already fixed, and which of the
+  two a `Node::duration` / `Member::dur` / `SegmentRef::duration` is in is
+  **derived from the body** (`Body::duration_unit` → `TimeUnit`), so nothing new
+  is stored and no writer can disagree with a reader. Three readers learned it:
+  `Place` snaps an offset and leaves a length in seconds exactly as the hand
+  gave it (a musical grid is not a ruler a recording was measured against),
+  `resolve`'s `Mapping` carries `frames_per_second` beside `frames_per_beat`
+  (the C ABI and the wasm request with it, `CORE_ABI_VERSION` 28), and
+  `Body::relation` takes a tempo, since an aggregate can hold a lane of takes
+  beside a lane of notes and their ends are no longer on one axis.
+  `Member::length`/`duration_unit`/`end` are the accessors that keep the
+  conversion in one place.
 
 - ✅ **Material assembled from several windows had no body, so a joined clip was carried and not understood** *(found 2026-08-18 building the multitrack's join: the arrangement grew a `Segments` element — several windows onto several buffers, read as one — and wrote a `segments` node the crate could only keep as `Body::Unknown`)*. The forward-compatibility door did its job: the node round-tripped whole, so nothing was lost and the script-driven editor worked. What did not work is everything that *interprets* a document — the standalone host drew such a clip with no material, `Session::dangling` reported no missing source for its buffers, and a selection over it resolved to nothing.
 

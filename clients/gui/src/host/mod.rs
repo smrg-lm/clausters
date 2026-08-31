@@ -1959,6 +1959,7 @@ impl Host {
             return;
         };
         let units = owner.units_per_beat;
+        let look = owner.look();
         let moves: Vec<(i32, f64, f64)> = applied
             .iter()
             .filter(|a| a.applied)
@@ -1975,7 +1976,7 @@ impl Host {
                     // the drawing's own rule cannot disagree with the drawing.
                     let dur = owner
                         .member_of(*node)
-                        .map(|m| document::tree::clip_dur(m, Some(&owner.takes), units))?;
+                        .map(|m| document::tree::clip_units(m, Some(&owner.takes), &look))?;
                     owner.widget_of(*node).map(|w| (w, *offset, dur))
                 }
                 _ => None,
@@ -1988,7 +1989,9 @@ impl Host {
                 } = &mut w.kind
             {
                 *o = offset * units;
-                *d = dur * units;
+                // Already in units: the length rule converts from the clip's
+                // own unit, which the offset's single ratio cannot.
+                *d = dur;
             }
         }
     }

@@ -6,6 +6,9 @@ use crate::{Grouping, Lifetime, Opaque, SourceRef};
 
 /// A beat is a second at 48 kHz here, which keeps the arithmetic readable.
 const FPB: f64 = 48_000.0;
+/// The sample rate, which at that tempo is the same number -- the two ratios
+/// come apart in `a_takes_length_is_seconds_and_the_tempo_does_not_move_it`.
+const FPS: f64 = 48_000.0;
 
 fn take(id: u64, source: u64, trim: Option<Range>) -> Node {
     Node::new(
@@ -22,7 +25,7 @@ fn take(id: u64, source: u64, trim: Option<Range>) -> Node {
     )
 }
 
-fn placed(offset: Beats, dur: Option<Beats>, node: Node) -> Member {
+fn placed(offset: Beats, dur: Option<f64>, node: Node) -> Member {
     Member { offset, dur, node }
 }
 
@@ -62,7 +65,7 @@ fn a_selection_on_a_clips_body_resolves_through_its_trim_and_its_offset() {
     // matter and getting either wrong is silent.
     let document = one_clip();
     let selection = Selection::span(3.0 * FPB, 1.0 * FPB);
-    let resolved = resolve(&document, &selection, &Mapping::frames(FPB));
+    let resolved = resolve(&document, &selection, &Mapping::frames(FPB, FPS));
 
     assert_eq!(resolved.len(), 1);
     assert_eq!(
@@ -89,9 +92,13 @@ fn the_same_selection_in_beats_lands_in_the_same_place() {
     let in_frames = resolve(
         &document,
         &Selection::span(3.0 * FPB, 1.0 * FPB),
-        &Mapping::frames(FPB),
+        &Mapping::frames(FPB, FPS),
     );
-    let in_beats = resolve(&document, &Selection::span(3.0, 1.0), &Mapping::beats(FPB));
+    let in_beats = resolve(
+        &document,
+        &Selection::span(3.0, 1.0),
+        &Mapping::beats(FPB, FPS),
+    );
     assert_eq!(in_frames, in_beats);
 }
 
@@ -103,7 +110,7 @@ fn a_selection_dragged_past_the_end_of_a_clip_resolves_to_what_the_clip_covers()
     let resolved = resolve(
         &document,
         &Selection::span(5.0 * FPB, 100.0 * FPB),
-        &Mapping::frames(FPB),
+        &Mapping::frames(FPB, FPS),
     );
     assert_eq!(resolved.len(), 1);
     assert_eq!(
@@ -121,7 +128,7 @@ fn a_selection_that_starts_before_the_clip_resolves_from_the_clips_start() {
     let resolved = resolve(
         &document,
         &Selection::span(0.0, 3.0 * FPB),
-        &Mapping::frames(FPB),
+        &Mapping::frames(FPB, FPS),
     );
     assert_eq!(resolved.len(), 1);
     assert_eq!(resolved[0].range.start, 480_000, "the trim's own start");
@@ -140,7 +147,7 @@ fn a_selection_that_misses_the_clip_resolves_to_nothing() {
         resolve(
             &document,
             &Selection::span(20.0 * FPB, 1.0 * FPB),
-            &Mapping::frames(FPB)
+            &Mapping::frames(FPB, FPS)
         )
         .is_empty()
     );
@@ -148,7 +155,7 @@ fn a_selection_that_misses_the_clip_resolves_to_nothing() {
         resolve(
             &document,
             &Selection::cursor(3.0 * FPB),
-            &Mapping::frames(FPB)
+            &Mapping::frames(FPB, FPS)
         )
         .is_empty(),
         "a cursor selects nothing to operate on"
@@ -180,7 +187,7 @@ fn a_nested_placement_accumulates_its_base() {
     let resolved = resolve(
         &document,
         &Selection::span(11.0 * FPB, 2.0 * FPB),
-        &Mapping::frames(FPB),
+        &Mapping::frames(FPB, FPS),
     );
     assert_eq!(resolved.len(), 2, "the selection crosses both takes");
     assert_eq!(resolved[0].node, NodeId(11));
@@ -210,7 +217,7 @@ fn a_nested_placement_accumulates_its_base() {
 fn a_selection_that_named_its_elements_resolves_only_those() {
     let document = nested();
     let selection = Selection::span(11.0 * FPB, 2.0 * FPB).of([NodeId(12)]);
-    let resolved = resolve(&document, &selection, &Mapping::frames(FPB));
+    let resolved = resolve(&document, &selection, &Mapping::frames(FPB, FPS));
     assert_eq!(resolved.len(), 1);
     assert_eq!(resolved[0].node, NodeId(12));
 }
@@ -219,9 +226,22 @@ fn a_selection_that_named_its_elements_resolves_only_those() {
 fn asking_about_one_element_gives_that_elements_span() {
     let document = nested();
     let selection = Selection::span(11.0 * FPB, 2.0 * FPB);
-    let one = resolve_node(&document, NodeId(11), &selection, &Mapping::frames(FPB));
+    let one = resolve_node(
+        &document,
+        NodeId(11),
+        &selection,
+        &Mapping::frames(FPB, FPS),
+    );
     assert_eq!(one.unwrap().node, NodeId(11));
-    assert!(resolve_node(&document, NodeId(99), &selection, &Mapping::frames(FPB)).is_none());
+    assert!(
+        resolve_node(
+            &document,
+            NodeId(99),
+            &selection,
+            &Mapping::frames(FPB, FPS)
+        )
+        .is_none()
+    );
 }
 
 // ---- what has no span to give ----
@@ -247,7 +267,7 @@ fn an_element_with_no_source_is_skipped_rather_than_reported() {
     let resolved = resolve(
         &document,
         &Selection::span(0.0, 4.0 * FPB),
-        &Mapping::frames(FPB),
+        &Mapping::frames(FPB, FPS),
     );
     assert_eq!(resolved.len(), 1);
     assert_eq!(resolved[0].node, NodeId(3));
@@ -272,7 +292,7 @@ fn a_placement_with_no_length_takes_it_from_the_trim() {
     let resolved = resolve(
         &document,
         &Selection::span(0.0, 100.0 * FPB),
-        &Mapping::frames(FPB),
+        &Mapping::frames(FPB, FPS),
     );
     assert_eq!(
         resolved[0].range,
@@ -293,7 +313,7 @@ fn a_placement_with_neither_a_length_nor_a_trim_gives_no_span() {
         resolve(
             &document,
             &Selection::span(0.0, 4.0 * FPB),
-            &Mapping::frames(FPB)
+            &Mapping::frames(FPB, FPS)
         )
         .is_empty()
     );
@@ -308,7 +328,29 @@ fn the_generation_travels_with_the_span() {
     let resolved = resolve(
         &document,
         &Selection::span(2.0 * FPB, 1.0 * FPB),
-        &Mapping::frames(FPB),
+        &Mapping::frames(FPB, FPS),
     );
     assert_eq!(resolved[0].generation, 2);
+}
+
+#[test]
+fn a_takes_length_is_seconds_and_the_tempo_does_not_move_it() {
+    // The two ratios come apart: 24 000 frames per beat at 48 kHz is two beats
+    // a second. The clip is placed at beat 2 and lasts four *seconds*, so it
+    // covers beats 2..10 of the arrangement -- a selection on beat 9 is still
+    // inside it, which is what a length in beats would have got wrong (it would
+    // have ended the clip at beat 6, halfway through the recording).
+    let document = Document::new(aggregate(vec![placed(2.0, Some(4.0), take(2, 100, None))]));
+    let mapping = Mapping::beats(24_000.0, 48_000.0);
+    let resolved = resolve(&document, &Selection::span(9.0, 0.5), &mapping);
+
+    assert_eq!(resolved.len(), 1);
+    // Seven beats into the clip is three and a half seconds into the take.
+    assert_eq!(
+        resolved[0].range,
+        Range {
+            start: (3.5 * 48_000.0) as u64,
+            end: (3.75 * 48_000.0) as u64,
+        }
+    );
 }

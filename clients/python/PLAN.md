@@ -1305,7 +1305,34 @@ work, where a pending item reads as done.)*
   no correct way to do it, and the honest thing is that the second window is
   read-only. Both clients.
 
-- ⬜ **Three places call beats what is measured in seconds** *(found 2026-08-30
+- ⬜ **The editor's bridge freezes a tempo and drops the clock's anchor, so
+  the line and the sound disagree by whatever a `set_tempo` moved** *(found
+  2026-08-30 with the entry below; measured the same day, before touching it)*.
+  `Editor.beats_to_units` calls `_native.beats_to_secs(self.tempo, 0.0, 0.0,
+  beats)` — a straight line through the origin at a tempo **frozen at
+  construction** — while `TempoClock` calls the same function with
+  `self._base_beats, self._base_secs`, the anchor `set_tempo` moves so that a
+  tempo change has no discontinuity. `Transport.beats_to_samples` inherits the
+  same scalar, and the host's line sweeps by *engine samples* from the anchor's
+  origin, so the drawing is what has to agree with the clock.
+
+  **Measured**, at 48 kHz with the tempo doubled at beat 2 (1.0 → 2.0 beats per
+  second): a clip drawn at beat 8 sits at 384 000 units, which the line reaches
+  after **8.0 s** of wall clock, while the clock plays beat 8 at **5.0 s** —
+  **3.0 s** apart. The two halves are separable: re-reading the tempo live would
+  still leave 1.0 s (the discarded base), and the frozen scalar is the other
+  2.0 s.
+
+  What it is **not** is the unit question below: that one is fixed, and it took
+  the *length* of a take off this mapping entirely (a length in seconds crosses
+  on the rate now), so what is left here is the **onset** axis alone. The shape
+  of the fix is a decision this entry does not take — the editor holds a scalar
+  and the clock holds an anchor that moves, so either the editor reads the clock
+  (a surface change in both clients) or the drawing is redone on every
+  `set_tempo`; and a tempo that changed *twice* is a piecewise map, which one
+  affine bridge cannot be. **Both clients**, and the `Transport` with them.
+
+- ✅ **Three places call beats what is measured in seconds** *(found 2026-08-30
   by the user, from "el tiempo concreto o se mide en muestras o se mide en
   segundos, los beats son una abstracción impuesta")*. Beats are the
   `TempoClock`'s unit, and storing something in beats says *its seconds follow
@@ -1340,28 +1367,29 @@ work, where a pending item reads as done.)*
   for playback (`form.render.to_timeline`), never in the structure — a timeline
   is ordered by one number and cannot hold two bases.
 
-  **A finding on the editor's bridge, to be measured before it is fixed.**
-  `Editor.beats_to_units` calls `_native.beats_to_secs(self.tempo, 0.0, 0.0,
-  beats)` — a straight line through the origin at a tempo **frozen at
-  construction** — while `TempoClock` calls the same function with
-  `self._base_beats, self._base_secs`, the anchor `set_tempo` moves so that a
-  tempo change has no discontinuity. The two mappings agree only while the tempo
-  has never changed since beat zero: after any `set_tempo`, the editor's
-  conversion and the clock's differ by the accumulated offset, so what is drawn
-  and what sounds should drift apart. `Transport` takes the same scalar tempo
-  and should inherit it. The dimensional reading of `units_per_beat` is right
-  (`sample_rate / tempo` is samples-per-second over beats-per-second, and the
-  tempo comes from the clock at construction); what is suspect is the frozen
-  scalar and the discarded base. **Measure it before touching it** — a piece
-  drawn, a `set_tempo`, and the drawn position of a clip against the beat it
-  actually sounds on.
-
   **And the prose that follows the change**: the "in beats" lines of
   `form/element.py` and `form/aggregate.py` that stop being true, the crate's
   `Beats` alias and its doc lines, and wherever the books and
   `docs/architecture.md` explain the beats↔samples bridge. **Both clients**, and
   the format's half is `crates/clausters-document/PLAN.md` ("The document
   measures two kinds of leaf with one unit").
+
+  **Fixed 2026-08-30, in one pass over the four packages.** The unit is
+  **derived from what the element holds** and never stored: `duration_unit` on
+  `Element` (`SECONDS` for `Vector`/`Segments` and for anything wrapped that
+  measures itself in seconds — an `Automation`, whose times are an `Env`'s),
+  `Body::duration_unit` in the crate, `Member.duration_unit` on a placement.
+  The conversion moved to the **flattening** (`flatten(..., tempo=…)`, taken
+  from the clock by `render`), the editor grew the **second ratio**
+  (`units_per_second` beside `units_per_beat`, and `length_to_units` /
+  `units_to_length` deciding which a number crosses on), the crate's `Place`
+  stopped snapping a length that is not on the musical grid, `Mapping` carries
+  `frames_per_second` beside `frames_per_beat` (`CORE_ABI_VERSION` 28), and the
+  host draws a clip's `dur` through `clip_units`, which converts from the clip's
+  own unit. `temporal_relation`/`relation` take a tempo, since an aggregate can
+  now hold a lane of takes beside a lane of notes. Measured before the change,
+  on a 96 000-frame take at 48 kHz: a `dur` of 2.0 sounded its two seconds at
+  tempo 1 and was freed after **one** at tempo 2 — half the take.
 
 ## Future directions (a design that is not a fix)
 

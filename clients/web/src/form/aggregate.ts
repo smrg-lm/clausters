@@ -19,8 +19,8 @@
 
 import { GraphDef } from "../defs/graphdef.ts";
 import type { GraphBusRef, MemberControlValue } from "../defs/graphdef.ts";
-import { Element, Generator } from "./element.ts";
-import type { Beats } from "./element.ts";
+import { Element, Generator, toBeats } from "./element.ts";
+import type { Beats, TimeUnit } from "./element.ts";
 
 /** The kind of an {@link Aggregate}. */
 export const CONCRETE = "concrete";
@@ -83,6 +83,23 @@ export class Member {
      */
     get length(): number | null {
         return this.dur !== null ? this.dur : this.element.duration;
+    }
+
+    /** The unit {@link Member.length} is in — the placed element's. */
+    get durationUnit(): TimeUnit {
+        return this.element.durationUnit;
+    }
+
+    /**
+     * Where this placement ends, **in the aggregate's beats**: its offset plus
+     * its length converted at `tempo` (beats per second). `null` when it has no
+     * length to end at.
+     */
+    end(tempo = 1.0): number | null {
+        const length = this.length;
+        return length === null
+            ? null
+            : this.offset + toBeats(length, this.durationUnit, tempo);
     }
 }
 
@@ -259,13 +276,20 @@ export class Aggregate extends Element {
      * - `SUCCESSIVE`: members tile contiguously in time — sorted by start, each
      *   member begins exactly where the previous ends (requires known lengths).
      * - `MIXED`: anything else.
+     *
+     * `tempo` (beats per second) is what puts an end on the same axis as an
+     * offset: an offset is in beats and a length is in the unit of the data it
+     * measures, so a take beside a phrase cannot be compared without it. An
+     * aggregate whose members are all measured in beats ignores it.
      */
-    temporalRelation(): TemporalRelation | null {
+    temporalRelation(tempo = 1.0): TemporalRelation | null {
         const members = this.members_;
         if (members.length === 0) return null;
 
         const starts = members.map((m) => m.offset);
-        const lengths = members.map((m) => m.length);
+        const lengths = members.map((m) =>
+            m.length === null ? null : toBeats(m.length, m.durationUnit, tempo),
+        );
         const ends = starts.map((s, i) => {
             const length = lengths[i];
             return length === null ? null : s + length;

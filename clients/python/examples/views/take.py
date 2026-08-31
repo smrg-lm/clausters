@@ -102,12 +102,14 @@ folder = Path(tempfile.mkdtemp(prefix="clausters-take-"))
 # %%
 PHRASE = [48, 55, 60, 67, 64, 60, 55, 52, 60, 67, 72, 67]
 BEATS = float(len(PHRASE))          # one note per beat
+SECONDS = BEATS / TEMPO             # ...and how long that is, which is what a
+                                    # take's length is measured in
 wav = folder / "phrase.wav"
 offline = Session.nrt(tempo=TEMPO)
 offline.play(Pbind(midinote=Pseq(PHRASE, 1), dur=1.0, legato=0.9, amp=0.35))
 offline.render(sample_rate=SR, channels=1, path=str(wav))
 buf = ServerBuffer.read(str(wav), server=server)
-take = Vector(buf, duration=BEATS, instrument="take")
+take = Vector(buf, duration=SECONDS, instrument="take")
 print(f"bounced and loaded {wav.name}: buffer {buf.bufnum}, {buf.frames} frames")
 
 # %% [markdown]

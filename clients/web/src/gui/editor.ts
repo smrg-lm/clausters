@@ -45,6 +45,7 @@ import type { Server } from "../defs/server/index.ts";
 import {
     CONCRETE,
     LOGICAL,
+    SECONDS,
     SIMULTANEOUS,
     Aggregate,
     Clang,
@@ -59,6 +60,7 @@ import {
     nextNodeId,
     render as renderElement,
     setDocId,
+    toBeats,
     toDocument,
 } from "../form/index.ts";
 import type { Member } from "../form/index.ts";
@@ -341,6 +343,54 @@ export class Editor {
             0.0,
             samples_to_secs(Math.round(units), this.sampleRate),
         );
+    }
+
+    /**
+     * Timeline samples per second — the axis *is* samples, so this is the
+     * engine's sample rate. It is the other half of the bridge: a length in
+     * seconds (a take's) crosses on this one, and only an onset crosses on
+     * {@link Editor.unitsPerBeat}.
+     */
+    get unitsPerSecond(): number {
+        return this.sampleRate;
+    }
+
+    /**
+     * Seconds → timeline samples: what a length of recorded audio is drawn
+     * with, since its seconds were fixed before any tempo was.
+     */
+    secsToUnits(secs: number): number {
+        return secs_to_samples(Number(secs), this.sampleRate);
+    }
+
+    /**
+     * Timeline samples → seconds: the inverse, for an edit-back that resized
+     * data measured in seconds.
+     */
+    unitsToSecs(units: number): number {
+        return samples_to_secs(Math.round(units), this.sampleRate);
+    }
+
+    /**
+     * A length of `element`, in that element's own unit, as timeline samples —
+     * the one place the editor decides which of the two ratios a number crosses
+     * on.
+     */
+    lengthToUnits(length: number, element: Element): number {
+        return element.durationUnit === SECONDS
+            ? this.secsToUnits(length)
+            : this.beatsToUnits(length);
+    }
+
+    /**
+     * Timeline samples as a length of `element`, in that element's own unit —
+     * the inverse of {@link Editor.lengthToUnits}, and what an edit-back writes
+     * back onto the arrangement.
+     */
+    unitsToLength(units: number, element: Element): number {
+        return element.durationUnit === SECONDS
+            ? this.unitsToSecs(units)
+            : this.unitsToBeats(units);
     }
 
     // ---- the base level: collapse (a summary rectangle) vs expand (lanes) ----
@@ -749,9 +799,14 @@ export class Editor {
      * The composition's length in beats, **read from the arrangement** — the end
      * of its last placed element. It is not a constant: move a clip past the end
      * and the piece gets longer, which is exactly what a transport must ask.
+     *
+     * Beats whatever the element is measured in: a transport is on a clock, so
+     * an element that is its own length in seconds (a lone take opened as a
+     * composition) crosses here.
      */
     extent(element?: Element): number {
-        return this.extentOf(element ?? this.element);
+        const target = element ?? this.element;
+        return toBeats(this.extentOf(target), target.durationUnit, this.tempo);
     }
 
     /** The `Playhead` playing the composition, or `null` before the first render. */
@@ -964,7 +1019,11 @@ export class Editor {
         const askedOffset = moved
             ? this.unitsToBeats(offset) - placed.base
             : member.offset;
-        const askedDur = resized ? this.unitsToBeats(dur) : member.dur;
+        // **The length goes back in the unit of what it measures.** A placement
+        // is musical and crosses on the beat; a clip of samples is as long as
+        // its seconds, and dividing those by the beat would write a length the
+        // next tempo change moves.
+        const askedDur = resized ? this.unitsToLength(dur, member.element) : member.dur;
         const node = this.nodeId(member.element, member);
         if (node === null) return false;
         const intent: Intent =
@@ -985,7 +1044,9 @@ export class Editor {
         // acknowledgement carrying a value.
         const snappedOffset = this.beatsToUnits(Number(effective.offset) + placed.base);
         const snappedDur =
-            effective.dur === undefined ? dur : this.beatsToUnits(Number(effective.dur));
+            effective.dur === undefined
+                ? dur
+                : this.lengthToUnits(Number(effective.dur), member.element);
         if (Math.abs(snappedOffset - offset) >= 0.5 || Math.abs(snappedDur - dur) >= 0.5) {
             this.correct(id, { offset: snappedOffset, dur: snappedDur });
             offset = snappedOffset;
@@ -1056,13 +1117,14 @@ export class Editor {
             props.dur = placed.dur;
             const auto = automationOf(
                 placed.member !== null ? placed.member.element : this.element,
+                this.tempo,
             );
             if (auto !== null) {
                 // A curve is as much of "what this widget should be drawing" as a
                 // placement is, and an undone one is the case that needs it.
                 props.points = flatPoints(
                     quads(auto.toPoints()).flatMap(([t, v, shape, curve]) => [
-                        this.beatsToUnits(t),
+                        this.secsToUnits(t),
                         v,
                         shape,
                         curve,
@@ -1231,7 +1293,12 @@ export class Editor {
     resolveSelection(): Resolved[] {
         if (Object.keys(this.selection).length === 0) return [];
         const [, document] = this.history();
-        return document.resolve(this.selection as Selection, this.unitsPerBeat, true);
+        return document.resolve(
+            this.selection as Selection,
+            this.unitsPerBeat,
+            this.unitsPerSecond,
+            true,
+        );
     }
 
     /**
@@ -1264,7 +1331,7 @@ export class Editor {
         const edited = members[index];
         if (edited === undefined) return false;
         edited.offset = this.unitsToBeats(offset) - placed.base;
-        edited.dur = this.unitsToBeats(dur);
+        edited.dur = this.unitsToLength(dur, member.element);
         const holder = { ...(edited.node as Record<string, unknown>) };
         holder.config = { ...((holder.config as Record<string, unknown>) ?? {}), start: Number(start) };
         edited.node = holder;
@@ -1303,7 +1370,9 @@ export class Editor {
             return false;
         }
         const length = member.length ?? element.duration;
-        const at = this.unitsToBeats(atUnits);
+        // In the element's own unit -- seconds, for the only elements a split
+        // applies to -- because that is what the placement's length is in.
+        const at = this.unitsToLength(atUnits, element);
         if (length === null || !(at > 0.0 && at < Number(length))) return false;
         const node = this.nodeId(owner);
         if (node === null) return false;
@@ -1314,7 +1383,10 @@ export class Editor {
         // sees it, or the next one would renumber the tree around it.
         const wasDur = member.dur;
         member.dur = at;
-        const handle = owner.add(second, member.offset + at, Number(length) - at);
+        // The onset is the aggregate's, so it is in beats: the cut's own seconds
+        // cross here and nowhere else.
+        const onset = member.offset + toBeats(at, element.durationUnit, this.tempo);
+        const handle = owner.add(second, onset, Number(length) - at);
         setDocId(handle, this.mintId());
         const whole = toDocument(owner, { version: this.version }).root;
         const outcome = this.record(
@@ -1356,7 +1428,7 @@ export class Editor {
                     after.push(
                         new Segment(
                             seg.buffer,
-                            seg.start + this.beatsToUnits(head),
+                            seg.start + this.secsToUnits(head),
                             seg.duration - head,
                         ),
                     );
@@ -1367,7 +1439,7 @@ export class Editor {
         return new Vector(element.buffer, null, length - at, {
             instrument: element.instrument,
             controls: element.controls,
-            start: element.start + this.beatsToUnits(at),
+            start: element.start + this.secsToUnits(at),
             loop: element.loop,
             name: element.name,
         });
@@ -1493,7 +1565,7 @@ export class Editor {
                 contiguous = false;
                 break;
             }
-            expected += this.beatsToUnits(seg.duration);
+            expected += this.secsToUnits(seg.duration);
         }
         const total = segments.reduce((sum, seg) => sum + seg.duration, 0.0);
         if (contiguous) {
@@ -1522,12 +1594,12 @@ export class Editor {
         // addressed to the aggregate replaced an empty configuration with a
         // `points` the crate had nowhere to keep: the edit reported success,
         // changed nothing and left no undo behind.
-        const [element, member] = curveOwner(clip, placed.member);
-        const auto = automationOf(element);
+        const [element, member] = curveOwner(clip, placed.member, this.tempo);
+        const auto = automationOf(element, this.tempo);
         if (auto === null || values.length === 0) return false;
         const flat: number[] = [];
         for (const [t, v, shape, curve] of quads(values.map((x) => Number(x)))) {
-            flat.push(this.unitsToBeats(t), Number(v), Math.trunc(shape), Number(curve));
+            flat.push(this.unitsToSecs(t), Number(v), Math.trunc(shape), Number(curve));
         }
         const node = this.nodeId(element, member);
         if (node === null) return false;
@@ -1901,7 +1973,7 @@ export class Editor {
             element.loop = Boolean(config.loop ?? false);
             return true;
         }
-        const auto = automationOf(element);
+        const auto = automationOf(element, this.tempo);
         const flat = config.points as number[] | undefined;
         if (auto === null || flat === undefined) return false;
         auto.env = pointsToEnv([...flat]);
@@ -2312,7 +2384,7 @@ export class Editor {
             element instanceof Aggregate &&
             element.kind === CONCRETE &&
             element.length > 1 &&
-            element.temporalRelation() === SIMULTANEOUS &&
+            element.temporalRelation(this.tempo) === SIMULTANEOUS &&
             !this.isExpanded(element)
         ) {
             // Its members start and end together: they are *one* thing on the
@@ -2360,18 +2432,19 @@ export class Editor {
      * drew, which is what the edit-back path resolves against.
      */
     /**
-     * The length one clip is drawn at, **in beats** — the placement's when it
-     * overrides, else the element's own, else what the element extends to.
+     * The length one clip is drawn at, **in the element's own unit** — the
+     * placement's when it overrides, else the element's own, else what the
+     * element extends to.
      *
      * One rule, in one place, because two of them is how a picture and a model
      * come to disagree: the draw asks this, and so does every path that has to
      * put a placement back ({@link Editor.redrawn}, after an inverse or a redo).
      */
-    private drawnBeats(element: Element, member: Member | null): number {
-        let beats = member !== null && member.dur !== null ? member.dur : null;
-        if (beats === null && element instanceof Element) beats = element.duration;
-        if (beats === null) beats = this.extentOf(element);
-        return beats;
+    private drawnLength(element: Element, member: Member | null): number {
+        let length = member !== null && member.dur !== null ? member.dur : null;
+        if (length === null && element instanceof Element) length = element.duration;
+        if (length === null) length = this.extentOf(element);
+        return length;
     }
 
     /**
@@ -2383,11 +2456,11 @@ export class Editor {
         member: Member | null,
         body?: Record<string, unknown>,
     ): number {
-        const beats = this.drawnBeats(element, member);
-        const drawn = body ?? this.bodyFor(element, beats);
-        return "buffer" in drawn && beats <= 0.0
+        const length = this.drawnLength(element, member);
+        const drawn = body ?? this.bodyFor(element, length);
+        return "buffer" in drawn && length <= 0.0
             ? Number((element as Vector).buffer.frames ?? 0)
-            : this.beatsToUnits(beats);
+            : this.lengthToUnits(length, element);
     }
 
     private clipFor(
@@ -2398,8 +2471,8 @@ export class Editor {
     ): GuiNode {
         const wid = this.newId();
         const offset = this.beatsToUnits(base);
-        const durBeats = this.drawnBeats(element, member);
-        const body = this.bodyFor(element, durBeats);
+        const durLength = this.drawnLength(element, member);
+        const body = this.bodyFor(element, durLength);
         const dur = this.drawnDur(element, member, body);
 
         // The placement's own base: a clip's offset is absolute on the shared
@@ -2409,7 +2482,7 @@ export class Editor {
         // A roll body is the `notes` element itself, and it edits: a body carries
         // no id of its own, so a note dragged inside one arrives tagged with
         // *this clip's* id.
-        const roll = rollOwner(element);
+        const roll = rollOwner(element, this.tempo);
         if ("notes" in body && roll !== null) this.rolls.set(wid, roll);
         return clip({ id: wid, offset, dur, label: nameOf(element), ...body });
     }
@@ -2466,18 +2539,21 @@ export class Editor {
         if (
             element instanceof Aggregate &&
             element.length > 1 &&
-            element.temporalRelation() === SIMULTANEOUS
+            element.temporalRelation(this.tempo) === SIMULTANEOUS
         ) {
             const body: Record<string, unknown> = {};
             for (const m of element.handles) Object.assign(body, this.bodyFor(m.element, limit));
             return body;
         }
 
-        const auto = automationOf(element);
+        const auto = automationOf(element, this.tempo);
         if (auto !== null) {
             const points = quads(auto.toPoints()).map(
                 ([t, v, shape, curve]) =>
-                    [this.beatsToUnits(t), v, shape, curve] as [number, number, number, number],
+                    // A curve's times are an `Env`'s, so they are seconds and
+                    // cross on the rate: the shape is drawn where it sounds,
+                    // whatever the tempo.
+                    [this.secsToUnits(t), v, shape, curve] as [number, number, number, number],
             );
             const [lo, hi] = this.axisFor(auto, points);
             // The curve keeps its own value axis: an envelope's units are not
@@ -2509,8 +2585,8 @@ export class Editor {
                     view: "trace",
                     buffer: buf.bufnum,
                     channels: Math.max(1, buf.channels),
-                    at: this.beatsToUnits(offset),
-                    dur: this.beatsToUnits(seg.duration),
+                    at: this.secsToUnits(offset),
+                    dur: this.secsToUnits(seg.duration),
                 };
                 if (seg.start) take.start = Number(seg.start);
                 children.push(signal(take));
@@ -2606,15 +2682,30 @@ export class Editor {
      * anything else over its flattened events (a bounced pattern included).
      */
     private extentOf(element: Element): number {
+        // In the element's own unit: an aggregate spans beats (its members'
+        // offsets are), a take and a curve their own seconds.
         if (element instanceof Element && element.duration !== null) return Number(element.duration);
-        const auto = automationOf(element);
-        if (auto !== null) return auto.duration();
+        // **The aggregate rule comes first**, and the curve's own length second:
+        // a simultaneous aggregate holding a curve spans *beats*, like every
+        // aggregate, and answering with the envelope's seconds would hand a
+        // caller a number in one unit under a name that says the other.
         if (element instanceof Aggregate) {
             return element.handles.reduce(
-                (max, m) => Math.max(max, m.offset + (m.dur ?? this.extentOf(m.element))),
+                (max, m) =>
+                    Math.max(
+                        max,
+                        m.offset +
+                            toBeats(
+                                m.dur ?? this.extentOf(m.element),
+                                m.element.durationUnit,
+                                this.tempo,
+                            ),
+                    ),
                 0.0,
             );
         }
+        const auto = automationOf(element, this.tempo);
+        if (auto !== null) return auto.duration();
         if (element instanceof Segments) {
             // Its contents are a list, and its extent is the whole of it.
             return element.segments.reduce((sum, seg) => sum + seg.duration, 0.0);
@@ -2622,7 +2713,9 @@ export class Editor {
         if (element instanceof Vector) {
             const buf = element.buffer;
             const rate = buf.sampleRate || this.sampleRate;
-            return this.unitsToBeats(Number(buf.frames ?? 0) * (this.sampleRate / rate));
+            // Its own seconds: the frames it holds over the rate they were
+            // recorded at, which no tempo enters.
+            return Number(buf.frames ?? 0) / Number(rate);
         }
         let events: [number, unknown][];
         try {
@@ -2717,16 +2810,16 @@ function nameOf(element: Element | null): string {
  * A **simultaneous** aggregate is searched too: an envelope attached to the event
  * it shapes is one clip, and a curve edited on it must find the automation inside.
  */
-function automationOf(element: Element): Automation | null {
+function automationOf(element: Element, tempo = 1.0): Automation | null {
     const wraps = (element as { wraps?: unknown }).wraps;
     if (wraps instanceof Automation) return wraps;
     if (
         element instanceof Aggregate &&
         element.length > 1 &&
-        element.temporalRelation() === SIMULTANEOUS
+        element.temporalRelation(tempo) === SIMULTANEOUS
     ) {
         for (const [, , child] of element.members) {
-            const auto = automationOf(child);
+            const auto = automationOf(child, tempo);
             if (auto !== null) return auto;
         }
     }
@@ -2780,14 +2873,15 @@ function quintuples(flat: readonly number[]): [number, number, number, number, n
 function curveOwner(
     element: Element,
     member: Member | null = null,
+    tempo = 1.0,
 ): [Element, Member | null] {
     if (
         element instanceof Aggregate &&
         element.length > 1 &&
-        element.temporalRelation() === SIMULTANEOUS
+        element.temporalRelation(tempo) === SIMULTANEOUS
     ) {
         for (const h of element.handles) {
-            if (automationOf(h.element) !== null) return [h.element, h];
+            if (automationOf(h.element, tempo) !== null) return [h.element, h];
         }
     }
     return [element, member];
@@ -2802,11 +2896,11 @@ function curveOwner(
  * under the cursor belong to the member that carries them. `null` when no member
  * has an editable timeline.
  */
-function rollOwner(element: Element): Element | null {
+function rollOwner(element: Element, tempo = 1.0): Element | null {
     if (
         element instanceof Aggregate &&
         element.length > 1 &&
-        element.temporalRelation() === SIMULTANEOUS
+        element.temporalRelation(tempo) === SIMULTANEOUS
     ) {
         for (const m of element.handles) {
             if (editableTimeline(m.element) !== null) return m.element;

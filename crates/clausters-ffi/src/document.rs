@@ -345,8 +345,9 @@ fn outcome_bytes(outcome: &clausters_document::Outcome) -> Vec<u8> {
 
 /// Resolve a selection to the spans of samples underneath it.
 ///
-/// `selection` is JSON; `frames_per_beat` is the bridge between the
-/// arrangement's beats and the buffer's frames, supplied rather than derived
+/// `selection` is JSON; `frames_per_beat` and `frames_per_second` are the two
+/// bridges between the document's units and the buffer's frames — a placement
+/// is in beats and a take's length in seconds — supplied rather than derived
 /// because tempo is the caller's; `in_beats` says whether the selection's
 /// numbers are beats (non-zero) or frames on the shared axis (zero).
 ///
@@ -364,6 +365,7 @@ pub unsafe extern "C" fn clausters_document_resolve(
     selection: *const u8,
     selection_len: usize,
     frames_per_beat: f64,
+    frames_per_second: f64,
     in_beats: i32,
     out: *mut u8,
     out_cap: usize,
@@ -377,6 +379,7 @@ pub unsafe extern "C" fn clausters_document_resolve(
     };
     let mapping = Mapping {
         frames_per_beat,
+        frames_per_second,
         unit: if in_beats != 0 {
             Unit::Beats
         } else {
@@ -688,6 +691,7 @@ mod tests {
                 selection.as_ptr(),
                 selection.len(),
                 48_000.0,
+                48_000.0,
                 0,
                 out,
                 cap,
@@ -709,6 +713,7 @@ mod tests {
                 doc.0,
                 selection.as_ptr(),
                 selection.len(),
+                48_000.0,
                 48_000.0,
                 1,
                 std::ptr::null_mut(),

@@ -144,8 +144,12 @@ pub use time::*;
 /// document that has no model behind it. **v27 which item a page element is** —
 /// `clausters_core_item_id`: the step between a selection on the page and a
 /// model verb, answered by the emitter that spelled the element rather than by
-/// each client working the spelling out again.
-pub const CORE_ABI_VERSION: u32 = 27;
+/// each client working the spelling out again. **v28 a take's length is
+/// seconds** — `clausters_document_resolve` takes `frames_per_second` beside
+/// `frames_per_beat`, because the document now measures a placement in beats
+/// and what it places in the unit of that element's own data, so one ratio can no
+/// longer answer both questions.
+pub const CORE_ABI_VERSION: u32 = 28;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

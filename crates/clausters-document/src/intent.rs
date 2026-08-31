@@ -160,9 +160,11 @@ pub enum Intent {
         node: NodeId,
         /// Its offset within its parent, in beats.
         offset: Beats,
-        /// Its placement length, or the element's own when `None`.
+        /// Its placement length in the node's own unit
+        /// ([`crate::Node::duration_unit`]), or the element's own length when
+        /// `None`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        dur: Option<Beats>,
+        dur: Option<f64>,
     },
     /// What a leaf's configuration now is, whole.
     ///
@@ -428,11 +430,10 @@ fn place(
     document: &mut Document,
     id: NodeId,
     offset: Beats,
-    dur: Option<Beats>,
+    dur: Option<f64>,
     rules: &Rules,
 ) -> Outcome {
     let snapped = rules.snap(offset);
-    let snapped_dur = dur.map(|d| rules.snap(d));
     let Some(member) = find_member_mut(&mut document.root, id) else {
         // Nothing to place, and nothing to hand back either: the caller's own
         // value is the only description of a node the document does not hold.
@@ -444,6 +445,14 @@ fn place(
             },
             "no such node",
         );
+    };
+    // **The grid is musical, and only a musical length is on it.** An onset is
+    // in beats and always snaps; a length is in the unit of its own data, so a
+    // take's seconds are left exactly as the hand gave them — snapping them to
+    // a beat would trim the recording to fit a ruler it was never on.
+    let snapped_dur = match member.duration_unit() {
+        crate::TimeUnit::Beats => dur.map(|d| rules.snap(d)),
+        crate::TimeUnit::Seconds => dur,
     };
     let previous = Intent::Place {
         node: id,
@@ -646,7 +655,7 @@ fn close(a: Beats, b: Beats) -> bool {
     (a - b).abs() <= crate::EPSILON
 }
 
-fn same_dur(a: Option<Beats>, b: Option<Beats>) -> bool {
+fn same_dur(a: Option<f64>, b: Option<f64>) -> bool {
     match (a, b) {
         (Some(a), Some(b)) => close(a, b),
         (None, None) => true,

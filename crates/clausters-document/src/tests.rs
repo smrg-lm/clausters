@@ -21,7 +21,7 @@ fn clang(id: u64) -> Node {
     )
 }
 
-fn placed(offset: Beats, dur: Option<Beats>, node: Node) -> Member {
+fn placed(offset: Beats, dur: Option<f64>, node: Node) -> Member {
     Member { offset, dur, node }
 }
 
@@ -178,11 +178,14 @@ fn the_temporal_relation_reads_the_placements_and_nothing_else() {
             placed(0.0, Some(4.0), clang(3)),
         ],
     );
-    assert_eq!(simultaneous.body.relation(), Some(Relation::Simultaneous));
+    assert_eq!(
+        simultaneous.body.relation(1.0),
+        Some(Relation::Simultaneous)
+    );
 
     // A single member is simultaneous with itself.
     let one = aggregate(1, vec![placed(1.0, Some(2.0), clang(2))]);
-    assert_eq!(one.body.relation(), Some(Relation::Simultaneous));
+    assert_eq!(one.body.relation(1.0), Some(Relation::Simultaneous));
 
     // Successive: tiling contiguously, in any order of declaration.
     let successive = aggregate(
@@ -192,7 +195,7 @@ fn the_temporal_relation_reads_the_placements_and_nothing_else() {
             placed(0.0, Some(2.0), clang(2)),
         ],
     );
-    assert_eq!(successive.body.relation(), Some(Relation::Successive));
+    assert_eq!(successive.body.relation(1.0), Some(Relation::Successive));
 
     // A gap makes it mixed -- silence between two members is a relation, not a
     // rounding error.
@@ -203,11 +206,11 @@ fn the_temporal_relation_reads_the_placements_and_nothing_else() {
             placed(2.0, Some(1.0), clang(3)),
         ],
     );
-    assert_eq!(gap.body.relation(), Some(Relation::Mixed));
+    assert_eq!(gap.body.relation(1.0), Some(Relation::Mixed));
 
     // And a body that holds no members has no relation to report.
-    assert_eq!(clang(1).body.relation(), None);
-    assert_eq!(aggregate(1, vec![]).body.relation(), None);
+    assert_eq!(clang(1).body.relation(1.0), None);
+    assert_eq!(aggregate(1, vec![]).body.relation(1.0), None);
 }
 
 #[test]
@@ -219,7 +222,7 @@ fn a_members_duration_falls_back_to_the_elements_own() {
     let mut second = clang(3);
     second.duration = Some(2.0);
     let s = aggregate(1, vec![placed(0.0, None, first), placed(2.0, None, second)]);
-    assert_eq!(s.body.relation(), Some(Relation::Successive));
+    assert_eq!(s.body.relation(1.0), Some(Relation::Successive));
 }
 
 #[test]
@@ -235,7 +238,7 @@ fn placements_that_round_tripped_through_floats_still_read_as_simultaneous() {
             placed(drift, Some(4.0 - drift), clang(3)),
         ],
     );
-    assert_eq!(s.body.relation(), Some(Relation::Simultaneous));
+    assert_eq!(s.body.relation(1.0), Some(Relation::Simultaneous));
 }
 
 #[test]

@@ -29,7 +29,19 @@ backwards, sliced, scrubbed, edited in place. A generator is **forward-only**: i
 can be evaluated, in order, and that is all. An element carries two optional
 temporal properties — an `onset` (where it starts, in beats, relative to its
 context) and a `duration` — and delegates the actual playing to the object it
-wraps. The arrangement is a thin adornment over what the client already has, not
+wraps.
+
+**The two are not in the same unit, and each takes its own from what it answers
+to.** An onset is in **beats**, always: placing something is a musical decision,
+and it takes the unit of what contains it. A duration is in the unit of the
+element's own data — **seconds** for a `Vector`, a `Segments` or a curve, because
+a recording's length is `frames / sampleRate` and no tempo change makes it
+shorter; **beats** for a `Clang`, a `Sequence` or a `Track`, because a note *is*
+musical and a tempo change is supposed to shorten it. `Element.durationUnit` says
+which, derived from what the element holds rather than stored beside it. The
+conversion happens where the tree is flattened for playback (`render`, which
+reads the clock's tempo) and never in the tree, since a timeline is ordered by
+one number and cannot hold two bases. The arrangement is a thin adornment over what the client already has, not
 a second implementation of it.
 
 Which of the two properties are present gives an element its temporal
@@ -59,7 +71,7 @@ nothing is copied.
 ```ts
 import { form } from "clausters";
 
-// a def that plays a buffer, sounding two beats of it
+// a def that plays a buffer, sounding two seconds of it
 const take = new form.Vector(buf, null, 2.0, { instrument: "take" });
 ```
 
@@ -170,10 +182,12 @@ await editor.render(server, clock);  // play the composition as it now stands
 the editor as it arrives, where a script in the Python client drains a queue
 itself. `detach()` stops it.
 
-**Beats meet samples here, and only here.** The arrangement places elements in
-beats; the view places clips in timeline samples, because a clip's body is audio
-data. One beat is `sampleRate / tempo` units, so a take placed at its own length
-sits 1:1 on the axis.
+**Beats meet samples here, and only here — on two ratios.** The arrangement
+places elements in beats and measures each one's length in the unit of its own
+data; the view places clips in timeline samples, because a clip's body is audio
+data. An onset crosses on `unitsPerBeat` (`sampleRate / tempo`) and a length in
+seconds on `unitsPerSecond` (the rate itself), so a take is drawn exactly as wide
+as it sounds whatever the tempo is and only its placement follows the grid.
 
 **Where an edit is decided is not here either.** A drag leaves the host as an
 intent — where the hand put it, absolute — and the shared crate applies it: the

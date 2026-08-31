@@ -24,7 +24,8 @@ export class Document {
     /**
      * Resolve a selection to the spans of samples underneath it.
      * `resolve(requestJson) -> resolvedJson`, the request carrying
-     * `{ selection, framesPerBeat, inBeats? }`.
+     * `{ selection, framesPerBeat, framesPerSecond, inBeats? }` — two ratios
+     * because a placement is in beats and a take's length is in seconds.
      */
     resolve(request: string): string;
     /**

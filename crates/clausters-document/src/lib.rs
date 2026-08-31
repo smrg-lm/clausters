@@ -27,8 +27,11 @@
 //! # The shape
 //!
 //! A [`Document`] is a version and a root [`Node`]. A node is temporal metadata
-//! — an optional onset and duration in beats — plus a [`Body`] saying what it
-//! is. The five primitives are the arrangement's own and are documented on
+//! — an optional onset and duration — plus a [`Body`] saying what it is. The
+//! onset is in **beats** and the duration is in the unit of the data it measures
+//! ([`Body::duration_unit`]: seconds for a body that references samples, beats
+//! for one made of events), which is the one thing about the shape a reader has
+//! to know before reading a number off it. The five primitives are the arrangement's own and are documented on
 //! [`Body`]; the sixth variant, [`Body::Unknown`], is what a document written
 //! by a newer writer looks like to an older one, and it is preserved rather
 //! than dropped.
@@ -63,9 +66,40 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-/// Beats. The document's time unit throughout: the bridge to samples belongs to
-/// whoever renders, never to the tree.
+/// Beats. The unit of every **onset** here — a member's offset, a node's own
+/// onset, the grid an edit snaps to — because a placement is a musical decision
+/// and takes the unit of what contains it.
 pub type Beats = f64;
+
+/// Seconds. The unit of a **duration** whose seconds were fixed before the
+/// document saw them: a take's length is `frames / sample_rate`, a wall-clock
+/// fact, and storing it in beats would claim it must be rewritten at every
+/// tempo change, which nothing does.
+pub type Seconds = f64;
+
+/// Which unit a length is in.
+///
+/// Not a stored field: the body says it ([`Body::duration_unit`]), so no edit
+/// can leave it stale and no writer can disagree with the reader about the
+/// number it just wrote.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TimeUnit {
+    /// Beats: the length follows the tempo, which is what a note wants.
+    Beats,
+    /// Seconds: the length is a wall-clock fact the tempo does not move.
+    Seconds,
+}
+
+impl TimeUnit {
+    /// This length in beats, given how many beats a second is worth.
+    pub fn to_beats(self, length: f64, tempo: f64) -> Beats {
+        match self {
+            TimeUnit::Beats => length,
+            TimeUnit::Seconds => length * tempo,
+        }
+    }
+}
 
 /// A node's identity within a document. Client-allocated and stable across
 /// edits, so an intent and a log entry can both name the same node after the
@@ -165,12 +199,11 @@ pub struct SourceRef {
 /// One window of a [`Body::Segments`]: which samples, from which frame, for how
 /// long.
 ///
-/// The length is in **beats**, like every other length in this format, and the
-/// frame is the client's own coordinate — the two are bridged by whoever knows
-/// the rate, which is never this crate. [`SourceRef::range`] says the same
-/// thing in frames alone and is what a writer that knows the frame count uses
-/// instead; a segment states its length in beats because a length here is a
-/// placement length.
+/// The length is in **seconds**, because these are samples: their seconds were
+/// fixed when they were recorded and no tempo change moves them. The frame is
+/// the client's own coordinate — the two are bridged by whoever knows the rate,
+/// which is never this crate. [`SourceRef::range`] says the same thing in
+/// frames alone and is what a writer that knows the frame count uses instead.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SegmentRef {
     /// The samples this window is onto.
@@ -178,8 +211,8 @@ pub struct SegmentRef {
     /// The first frame it reads.
     #[serde(default)]
     pub start: f64,
-    /// How long it lasts, in beats.
-    pub duration: Beats,
+    /// How long it lasts, in seconds.
+    pub duration: Seconds,
 }
 
 /// How a [`Body::Aggregate`]'s members relate to each other.
@@ -206,11 +239,34 @@ pub enum Grouping {
 pub struct Member {
     /// Start, in beats, relative to the enclosing aggregate.
     pub offset: Beats,
-    /// Length in beats, or the element's own when `None`.
+    /// Length in the placed node's own unit ([`Node::duration_unit`]), or the
+    /// element's own length when `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub dur: Option<Beats>,
+    pub dur: Option<f64>,
     /// The placed element.
     pub node: Node,
+}
+
+impl Member {
+    /// The length this placement shows, in its own unit: what was written on
+    /// the placement, else the element's own. `None` when neither says.
+    pub fn length(&self) -> Option<f64> {
+        self.dur.or(self.node.duration)
+    }
+
+    /// The unit [`Member::length`] is in — the placed node's
+    /// ([`Node::duration_unit`]).
+    pub fn duration_unit(&self) -> TimeUnit {
+        self.node.duration_unit()
+    }
+
+    /// Where this placement ends, in the aggregate's beats: its offset plus its
+    /// length converted at `tempo` (beats per second). `None` when it has no
+    /// length to end at.
+    pub fn end(&self, tempo: f64) -> Option<Beats> {
+        self.length()
+            .map(|d| self.offset + self.duration_unit().to_beats(d, tempo))
+    }
 }
 
 /// What a node **is**.
@@ -388,9 +444,11 @@ pub struct Node {
     /// one. A placed element usually takes its onset from its [`Member`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub onset: Option<Beats>,
-    /// Length in beats, when known.
+    /// Length, when known, **in the unit of the body** — seconds for a body
+    /// that references samples, beats for one made of events. Read it
+    /// through [`Node::duration_unit`] rather than assuming one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub duration: Option<Beats>,
+    pub duration: Option<f64>,
     /// Whether the samples are produced by a def running **on the server**
     /// rather than by messages the arrangement flattens. Such an element has no
     /// index: its position *is* its internal state, so a transport can stop it
@@ -447,6 +505,12 @@ impl Node {
         self.body.members()
     }
 
+    /// The unit this node's `duration` — and the `dur` of any placement of it —
+    /// is in. See [`Body::duration_unit`].
+    pub fn duration_unit(&self) -> TimeUnit {
+        self.body.duration_unit()
+    }
+
     /// What a generator last produced, for the one body that has it.
     pub fn rendered(&self) -> Option<&Node> {
         match &self.body {
@@ -494,6 +558,22 @@ impl Body {
         }
     }
 
+    /// The unit a length of this body is in.
+    ///
+    /// **Seconds** for the bodies that reference samples ([`Body::Vector`],
+    /// [`Body::Segments`]): their seconds were fixed before the document saw
+    /// them, and a tempo change does not shorten a recording. **Beats** for
+    /// everything else, where the length is musical and is supposed to follow
+    /// the tempo. Derived from the body rather than stored, so a writer cannot
+    /// disagree with a reader about the number it just wrote; an unknown body
+    /// reads as beats, which is what the rest of the format defaults to.
+    pub fn duration_unit(&self) -> TimeUnit {
+        match self {
+            Body::Vector { .. } | Body::Segments { .. } => TimeUnit::Seconds,
+            _ => TimeUnit::Beats,
+        }
+    }
+
     /// The placed members, empty for the bodies that hold none.
     pub fn members(&self) -> &[Member] {
         match self {
@@ -510,7 +590,12 @@ impl Body {
     /// [`Relation::Simultaneous`]; members that tile contiguously with no gap
     /// read as [`Relation::Successive`]; anything else is
     /// [`Relation::Mixed`].
-    pub fn relation(&self) -> Option<Relation> {
+    ///
+    /// `tempo` (beats per second) is what puts a member's end on the same axis
+    /// as its offset: an offset is in beats and a length is in the unit of the
+    /// data it measures, so a lane of takes cannot be read against a lane of notes
+    /// without it. A body whose members are all measured in beats ignores it.
+    pub fn relation(&self, tempo: f64) -> Option<Relation> {
         let members = match self {
             Body::Aggregate { members, .. } | Body::Sequence { members, .. } => members,
             _ => return None,
@@ -519,10 +604,7 @@ impl Body {
             return None;
         }
         let starts: Vec<Beats> = members.iter().map(|m| m.offset).collect();
-        let ends: Vec<Option<Beats>> = members
-            .iter()
-            .map(|m| m.dur.or(m.node.duration).map(|d| m.offset + d))
-            .collect();
+        let ends: Vec<Option<Beats>> = members.iter().map(|m| m.end(tempo)).collect();
         if all_close(&starts) && ends.iter().all(Option::is_some) {
             let ends: Vec<Beats> = ends.iter().map(|e| e.unwrap()).collect();
             if all_close(&ends) {

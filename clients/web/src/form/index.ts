@@ -18,6 +18,8 @@
 
 export {
     ABSTRACT,
+    BEATS,
+    SECONDS,
     Clang,
     Element,
     Generator,
@@ -30,6 +32,7 @@ export {
     Track,
     Vector,
     temporalCharacter,
+    toBeats,
 } from "./element.ts";
 export type {
     Beats,
@@ -40,6 +43,7 @@ export type {
     SegmentsOptions,
     SourceLike,
     TemporalCharacter,
+    TimeUnit,
     VectorOptions,
 } from "./element.ts";
 export {

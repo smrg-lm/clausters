@@ -96,6 +96,12 @@ class Automation:
         timeline.add(0, auto)         # played by the Playhead as a Timeline item
     """
 
+    #: The unit this object's length is in — **seconds**, because the curve is
+    #: an `clausters.defs.ugens.Env` and an envelope's segment times are real
+    #: time. Read by `clausters.form.element.Element.duration_unit`, so an
+    #: element wrapping a curve is measured the way the curve is.
+    duration_unit = "seconds"
+
     def __init__(self, env, target, *, name=None, frames: int = DEFAULT_FRAMES):
         self.env = env
         self.targets = _norm_targets(target)
@@ -116,7 +122,12 @@ class Automation:
                     **env_kwargs) -> "Automation":
         """Build from a ``bpf`` breakpoint list ``[(time, value, shape, curve), …]``
         (or the flat ``[t, v, shape, curve, …]`` a ``"points"`` event carries).
-        Times are in beats; values in the target control's real units."""
+
+        Times are in **seconds** — they are an `clausters.defs.ugens.Env`'s
+        segment times, which is what the curve is stored as and what the
+        envelope math on the server reads — and values are in the target
+        control's real units. The conversion to the clock's beats happens where
+        the lane is scheduled (`play`), not in the curve."""
         flat = points if points and not isinstance(points[0], (list, tuple)) else [
             x for p in points for x in p
         ]
@@ -127,7 +138,8 @@ class Automation:
         return env_to_points(self.env)
 
     def duration(self) -> float:
-        """The curve's length in beats (the sum of its segment times)."""
+        """The curve's length in **seconds** (the sum of its segment times, which
+        is what an `clausters.defs.ugens.Env` measures them in)."""
         return float(sum(self.env.times))
 
     def prepare(self, server, *, wait: bool = True) -> "Automation":
@@ -179,8 +191,8 @@ class Automation:
             self.prepare(destination)
 
         clock = getattr(main.current_routine, "clock", None)
-        dur_beats = self.duration()
-        dur_secs = dur_beats if clock is None else dur_beats / clock.tempo
+        dur_secs = self.duration()
+        dur_beats = dur_secs if clock is None else dur_secs * clock.tempo
 
         node = destination.nodes.alloc()
         self.node, self._playing_on = node, destination

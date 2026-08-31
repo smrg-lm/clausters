@@ -43,14 +43,16 @@ TEMPO = 2.0          # beats per second (120 bpm)
 BEAT = SR / TEMPO    # 24000 timeline samples per beat
 
 
-def buffer(bufnum, beats=4.0, channels=1):
-    return ServerBuffer(bufnum=bufnum, frames=int(beats * BEAT), channels=channels,
+def buffer(bufnum, secs=2.0, channels=1):
+    """A server buffer of ``secs`` seconds -- seconds because that is what a
+    take's length is measured in, whatever the tempo is."""
+    return ServerBuffer(bufnum=bufnum, frames=int(secs * SR), channels=channels,
                         sample_rate=SR)
 
 
 def a_song():
     """Two lanes: a take on one, a melody on another — the ordinary case."""
-    take = Vector(buffer(7), duration=4.0)
+    take = Vector(buffer(7), duration=2.0)          # two seconds of samples
     audio = Aggregate([(0.0, take)], name="audio")
     melody = Track(Timeline([(0.0, SeqEvent(midinote=60, dur=1.0)),
                              (1.0, SeqEvent(midinote=64, dur=1.0)),
@@ -61,13 +63,13 @@ def a_song():
 
 def a_windowed_take():
     """A trimmed, looping take: the window travels as props of the clip."""
-    take = Vector(buffer(9), duration=2.0, start=12_000.0, loop=True)
+    take = Vector(buffer(9), duration=1.0, start=12_000.0, loop=True)
     return Aggregate([(1.0, take)], name="trimmed")
 
 
 def a_joined_take():
     """Several windows read as one: one clip, one body per segment."""
-    joined = Segments([(buffer(3), 0.0, 1.0), (buffer(4), 6_000.0, 1.5)])
+    joined = Segments([(buffer(3), 0.0, 0.5), (buffer(4), 6_000.0, 0.75)])
     return Aggregate([(0.0, joined)], name="joined")
 
 
@@ -75,9 +77,11 @@ def an_envelope_on_its_event():
     """A simultaneous aggregate: one clip, the members' bodies layered — the
     arrangement's answer to attaching an envelope to the event it shapes."""
     curve = Automation(Env([0.2, 0.9, 0.1], [1.0, 1.0]), None, name="cutoff")
-    notes = Track(Timeline([(0.0, SeqEvent(midinote=72, dur=2.0))]), duration=2.0)
+    # Two seconds of curve and four beats of notes: the same stretch at 120 bpm,
+    # which is what makes the aggregate simultaneous and the clip one clip.
+    notes = Track(Timeline([(0.0, SeqEvent(midinote=72, dur=4.0))]), duration=4.0)
     pair = Aggregate([(0.0, 2.0, Element(curve, duration=2.0)),
-                      (0.0, 2.0, notes)], name="shaped")
+                      (0.0, 4.0, notes)], name="shaped")
     return Aggregate([(0.0, pair)], name="song")
 
 
@@ -90,7 +94,7 @@ def a_curve_over_a_rendering():
     """
     curve = Automation.from_points([(0.0, 200.0, 1, 0.0), (2.0, 900.0, 2, 0.0),
                                     (4.0, 300.0, 1, 0.0)], None, name="freq")
-    voice = Clang(SeqEvent(instrument="drone", dur=4.0, legato=1.0, amp=0.12))
+    voice = Clang(SeqEvent(instrument="drone", dur=8.0, legato=1.0, amp=0.12))
     pair = Aggregate([(0.0, voice), (0.0, Element(curve, duration=4.0))],
                      name="sweep")
     return Aggregate([(0.0, pair)], name="song")

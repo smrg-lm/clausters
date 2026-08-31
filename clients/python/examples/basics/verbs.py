@@ -101,8 +101,10 @@ long_note.free()                              # ...cut now
 
 # %% An automation coupled to a sounding node: the curve is written to a
 # control bus and /node_map'd onto the control — the node follows it, then keeps
-# the last value. Outside a clock the curve's beats read as seconds; the
+# the last value. Outside a clock there is nothing to convert; the
 # returned automation stops the sweep early (the control holds where it was).
+# The curve's segment times are seconds -- an `Env`'s are -- so three of them
+# here means three seconds of sweep whatever any clock is doing.
 print("an automation sweeping a sounding node's freq, interrupted mid-sweep")
 node = play(sine(control("freq", 440.0)) * 0.15)
 sweep = play(Automation(Env([440.0, 1760.0, 440.0], [1.5, 1.5]),

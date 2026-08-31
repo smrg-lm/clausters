@@ -52,7 +52,7 @@ const rendering: Partial<Rendering> = {};
 
 /** The two entry points `render.ts` fills in. */
 interface Rendering {
-    toTimeline: (element: Element, base: number) => Timeline;
+    toTimeline: (element: Element, base: number, tempo: number) => Timeline;
     render: (
         element: Element,
         destination: unknown,
@@ -98,6 +98,27 @@ export type TemporalCharacter =
 export type Beats = number | null | undefined;
 
 /**
+ * The unit a length is in. An **onset** is always in beats — a placement is a
+ * musical decision and takes the unit of what contains it — and a **duration**
+ * is in the unit of its own data: `SECONDS` for audio (a take's length is
+ * `frames / sampleRate`, a wall-clock fact no tempo change moves), `BEATS` for
+ * a succession of events (a note is musical, and a tempo change is supposed to
+ * shorten it). {@link Element.durationUnit} says which, derived from what the
+ * element is made of rather than stored, and `flatten` converts on the way to a
+ * timeline, which is ordered by one number and cannot hold two bases.
+ */
+export const BEATS = "beats";
+export const SECONDS = "seconds";
+
+/** One of the two units above. */
+export type TimeUnit = typeof BEATS | typeof SECONDS;
+
+/** `length` (in `unit`) as beats at `tempo` beats per second. */
+export function toBeats(length: number, unit: TimeUnit, tempo: number): number {
+    return unit === SECONDS ? Number(length) * Number(tempo) : Number(length);
+}
+
+/**
  * What a `Vector` or a `Segment` reads: a server `Buffer`, or the frozen
  * reference a document carried when this process holds no buffer for it.
  */
@@ -141,8 +162,10 @@ export function temporalCharacter(onset: Beats, duration: Beats): TemporalCharac
 /**
  * Base of the arrangement: temporal metadata over a wrapped item.
  *
- * An element carries an optional `onset` and `duration` (in beats, relative to
- * its context) and wraps an underlying client object it delegates to. The
+ * An element carries an optional `onset` (in beats, relative to its context)
+ * and `duration` (in the unit of what it wraps — see
+ * {@link Element.durationUnit}) and wraps an underlying client object it
+ * delegates to. The
  * concrete onset of an element typically comes from its *placement* inside an
  * {@link Aggregate}, not from the element itself, so a standalone leaf commonly
  * has a duration but no onset (a `relative` character).
@@ -203,6 +226,21 @@ export class Element {
     }
 
     /**
+     * The unit `duration` is in: `SECONDS` for the elements whose data is
+     * samples ({@link Vector}, {@link Segments}), and for anything wrapped that
+     * measures itself in seconds (a `seq.Automation`'s curve is an envelope,
+     * and an envelope's segment times are real time); `BEATS` otherwise.
+     *
+     * Derived from what the element is made of rather than stored, so nothing
+     * can write one unit and read the other. An object that wants to answer for
+     * itself declares its own `durationUnit`.
+     */
+    get durationUnit(): TimeUnit {
+        const wraps = this.wraps as { durationUnit?: TimeUnit } | null;
+        return wraps?.durationUnit === SECONDS ? SECONDS : BEATS;
+    }
+
+    /**
      * This element's character (`SEGMENT`/`PUNCTUAL`/`RELATIVE`/`ABSTRACT`),
      * derived from the presence of `onset` and `duration`.
      */
@@ -232,10 +270,11 @@ export class Element {
 
     /**
      * Flattens this element to a flat `seq.Timeline` in absolute beats
-     * (accumulating nested placement offsets). See `./render.ts`.
+     * (accumulating nested placement offsets), converting any length measured
+     * in seconds at `tempo`. See `./render.ts`.
      */
-    toTimeline(base = 0.0): Timeline {
-        return dispatch().toTimeline(this, base);
+    toTimeline(base = 0.0, tempo = 1.0): Timeline {
+        return dispatch().toTimeline(this, base, tempo);
     }
 
     /**
@@ -369,8 +408,21 @@ export class Vector extends Element {
     }
 
     /**
+     * `SECONDS`: this element's data is samples, and their seconds were
+     * fixed when they were recorded — a tempo change does not shorten a take.
+     */
+    override get durationUnit(): TimeUnit {
+        return SECONDS;
+    }
+
+    /**
      * The event that plays this buffer: the `instrument` def with the buffer
      * number in its `buf` control, sounding for the element's `duration`.
+     *
+     * `tempo` (beats per second) is what the length crosses on: this element's
+     * duration is in seconds and an event's `dur` is in beats, because an event
+     * is played by a clock. It is the only conversion, and it happens here
+     * rather than in the structure.
      *
      * `legato` is 1 so the take sounds its whole length (the note default of 0.8
      * would cut it short — a sampled take is not a note with a gap), and `amp`
@@ -380,7 +432,7 @@ export class Vector extends Element {
      * recorded at; anything else is a mix decision, so it goes in `controls`
      * (which overrides both).
      */
-    toEvent(): SeqEvent {
+    toEvent(tempo = 1.0): SeqEvent {
         if (this.instrument === null) {
             throw new Error(
                 "a Vector needs an instrument to be rendered as an audio clip " +
@@ -399,7 +451,7 @@ export class Vector extends Element {
         // sent exactly what it was always sent.
         if (this.start) params.start = Number(this.start);
         if (this.loop) params.loop = 1.0;
-        if (this.duration !== null) params.dur = Number(this.duration);
+        if (this.duration !== null) params.dur = Number(this.duration) * Number(tempo);
         Object.assign(params, this.controls);
         return new SeqEvent(params);
     }
@@ -414,6 +466,9 @@ export type SegmentSpec =
 /**
  * One segment of a {@link Segments}: which buffer, from which frame, for how
  * long. A window, named the same way a {@link Vector} element's is.
+ *
+ * `start` is in frames and `duration` in **seconds** — one base for both, and
+ * the base these samples are already in.
  */
 export class Segment {
     readonly buffer: SourceLike;
@@ -472,7 +527,7 @@ export interface SegmentsOptions extends ElementOptions {
  * A {@link Vector} is one window onto one buffer. This is what a **join** makes
  * when the fragments do not come from one place: a list of
  * `[buffer, start, duration]` — the buffer to read, the frame to read it from,
- * and how long that segment lasts in beats — read back to back. It is the same
+ * and how long that segment lasts in seconds — read back to back. It is the same
  * memory-view idea one level up: nothing is copied, and cutting one of these
  * apart again gives back windows over the same buffers.
  *
@@ -482,8 +537,8 @@ export interface SegmentsOptions extends ElementOptions {
  * segment, each over its own stretch of the clip.
  *
  * `instrument` is one def for all of them, since what this element *is* is one
- * thing to play (see {@link Vector}). `duration` is the sum of the segments'
- * when not given.
+ * thing to play (see {@link Vector}). `duration` is in **seconds**, the sum of
+ * the segments' when not given.
  */
 export class Segments extends Element {
     instrument: string | null;
@@ -505,15 +560,20 @@ export class Segments extends Element {
         this.controls = { ...(controls ?? {}) };
     }
 
+    /** `SECONDS`, like the {@link Vector} this is the several-windows form of. */
+    override get durationUnit(): TimeUnit {
+        return SECONDS;
+    }
+
     /** The segments, in reading order — the element's own data. */
     get segments(): Segment[] {
         return [...((this.wraps as Segment[] | null) ?? [])];
     }
 
     /**
-     * The segments with the beat each one **starts at** inside this element:
+     * The segments with the second each one **starts at** inside this element:
      * `[offset, segment]` pairs, which is what both rendering and drawing lay
-     * out from.
+     * out from. Seconds throughout, like the lengths they accumulate.
      */
     placed(): [number, Segment][] {
         const out: [number, Segment][] = [];
@@ -528,9 +588,11 @@ export class Segments extends Element {
     /**
      * One `[offset, event]` per segment: the instrument playing that buffer,
      * from that frame, for that long. The offsets are relative to the element,
-     * exactly as an aggregate's members' are.
+     * exactly as an aggregate's members' are — and in **beats**, converted here
+     * at `tempo` (beats per second) from the seconds the windows are measured
+     * in, because what comes out of this is played by a clock.
      */
-    toEvents(): [number, SeqEvent][] {
+    toEvents(tempo = 1.0): [number, SeqEvent][] {
         if (this.instrument === null) {
             throw new Error(
                 "a Segments needs an instrument to be rendered as audio " +
@@ -546,11 +608,11 @@ export class Segments extends Element {
                 buf: seg.buffer.bufnum,
                 legato: 1.0,
                 amp: 1.0,
-                dur: Number(seg.duration),
+                dur: Number(seg.duration) * Number(tempo),
             };
             if (seg.start) params.start = Number(seg.start);
             Object.assign(params, this.controls);
-            out.push([offset, new SeqEvent(params)]);
+            out.push([offset * Number(tempo), new SeqEvent(params)]);
         }
         return out;
     }

@@ -28,7 +28,19 @@ compositional act, not an optimization — it is what turns something you can on
 *produce* into something you can *manipulate*, which is why a pattern is bounced to
 be drawn and edited on a lane. An element carries two optional temporal
 properties — an `onset` (where it starts, in beats, relative to its context) and a
-`duration` — and delegates the actual playing to the object it wraps. The
+`duration` — and delegates the actual playing to the object it wraps.
+
+**The two are not in the same unit, and each takes its own from what it
+answers to.** An onset is in **beats**, always: placing something is a musical
+decision, and it takes the unit of what contains it. A duration is in the unit
+of the element's own data — **seconds** for a `Vector`, a `Segments` or a curve,
+because a recording's length is `frames / sample_rate` and no tempo change makes
+it shorter; **beats** for a `Clang`, a `Sequence` or a `Track`, because a note
+*is* musical and a tempo change is supposed to shorten it. `Element.duration_unit`
+says which, derived from what the element holds rather than stored beside it.
+The conversion happens where the tree is flattened for playback (`render`, which
+reads the clock's tempo) and never in the tree, since a timeline is ordered by
+one number and cannot hold two bases. The
 arrangement is a thin adornment over what the client already has, not a second
 implementation of it.
 
@@ -59,7 +71,7 @@ when nothing is copied (see the editor's join, below).
 ```python
 from clausters.form import Aggregate, Sequence, Track, Vector
 
-take = Vector(buf, duration=2.0, instrument="take")   # a def that plays a buffer
+take = Vector(buf, duration=2.0, instrument="take")   # two seconds, a def plays it
 ```
 
 ## Grouping: the one new structure
@@ -215,7 +227,7 @@ programmable:
 ```python
 from clausters.form import Segments
 
-phrase = Segments([(take_a, 0, 2.0),          # two beats of one file...
+phrase = Segments([(take_a, 0, 2.0),          # two seconds of one file...
                    (take_b, 48_000, 1.0)],    # ...then one of another, from 1 s in
                   instrument="take")
 ```
@@ -303,12 +315,15 @@ cannot be invented.
 
 ### Beats and samples
 
-The arrangement places elements in **beats**; the view places clips in **timeline
-samples**, because a clip's body is audio data and its sample 0 sits at the clip's
-offset. The editor is the only converter between the two: one beat is
-`sample_rate / tempo` timeline units, so a take placed at its own frame count sits
-1:1 on the axis. Give it the engine's rate and the clock's tempo and the bridge is
-closed.
+The arrangement places elements in **beats** and measures each one's length in
+the unit of its own data (above); the view places clips in **timeline samples**,
+because a clip's body is audio data and its sample 0 sits at the clip's offset.
+The editor is the only converter between the two, and it holds **two ratios, not
+one**: an onset crosses on `units_per_beat` (`sample_rate / tempo`) and a length
+in seconds crosses on `units_per_second` (the rate itself). So a take is drawn
+exactly as wide as it sounds whatever the tempo is, and only its placement moves
+with the grid. Give the editor the engine's rate and the clock's tempo and the
+bridge is closed.
 
 The `quant` you pass is a *musical* grid (`0.5` = half a beat). It becomes the
 lane's drag grid, so the grid a clip is dropped on is the grid the arrangement

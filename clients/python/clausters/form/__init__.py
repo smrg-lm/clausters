@@ -17,6 +17,8 @@ See `clausters.form.element` for the primitives and the temporal *character*,
 
 from .element import (
     ABSTRACT,
+    BEATS,
+    SECONDS,
     PUNCTUAL,
     RELATIVE,
     SEGMENT,
@@ -29,6 +31,7 @@ from .element import (
     Track,
     Vector,
     temporal_character,
+    to_beats,
 )
 from .aggregate import (
     CONCRETE,
@@ -59,10 +62,14 @@ __all__ = [
     "Generator",
     "Aggregate",
     "temporal_character",
+    "to_beats",
     "flatten",
     "to_timeline",
     "render",
     "render_logical",
+    # the unit a length is in
+    "BEATS",
+    "SECONDS",
     # temporal character
     "SEGMENT",
     "PUNCTUAL",

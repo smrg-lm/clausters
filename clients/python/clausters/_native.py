@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 27
+CORE_ABI_VERSION = 28
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -425,7 +425,7 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     ]
     lib.clausters_document_resolve.restype = ctypes.c_size_t
     lib.clausters_document_resolve.argtypes = [
-        ctypes.c_void_p, u8p, ctypes.c_size_t, ctypes.c_double,
+        ctypes.c_void_p, u8p, ctypes.c_size_t, ctypes.c_double, ctypes.c_double,
         ctypes.c_int32, u8p, ctypes.c_size_t,
     ]
     # The undo log (ABI v16): a handle too, for its own reason -- a bulk inverse
@@ -896,7 +896,7 @@ class Document:
         return json.loads(ctypes.string_at(out, n))
 
     def resolve(self, selection: dict, *, frames_per_beat: float,
-                in_beats: bool = False) -> list:
+                frames_per_second: float, in_beats: bool = False) -> list:
         """Resolve a selection to the spans of samples underneath it.
 
         Args:
@@ -904,6 +904,10 @@ class Document:
             frames_per_beat: the bridge between the arrangement's beats and the
                 samples' frames. Supplied rather than derived: tempo is the
                 caller's, the arithmetic is the crate's.
+            frames_per_second: the same bridge for a length already measured in
+                seconds — a take's, which no tempo moves. Both are needed
+                because the document measures a placement in beats and what it
+                places in the unit of that element's own data.
             in_beats: whether the selection's numbers are beats rather than
                 frames on the shared axis.
 
@@ -917,7 +921,7 @@ class Document:
         sel_ptr, sel_len = _bytes(selection)
         fn = lib().clausters_document_resolve
         args = (self._handle, sel_ptr, sel_len, float(frames_per_beat),
-                int(bool(in_beats)))
+                float(frames_per_second), int(bool(in_beats)))
         need = fn(*args, None, 0)
         if need == 0:
             raise ValueError("the selection is not valid JSON for the crate")
@@ -945,12 +949,13 @@ def document_apply(document: dict, intent: dict, *, against=None, quant: float =
 
 
 def document_resolve(document: dict, selection: dict, *, frames_per_beat: float,
-                     in_beats: bool = False) -> list:
+                     frames_per_second: float, in_beats: bool = False) -> list:
     """Resolve a selection against a document given **by value** — the
     convenience form of `Document.resolve`, for a caller that has one in hand.
     """
     with Document(document) as doc:
         return doc.resolve(selection, frames_per_beat=frames_per_beat,
+                           frames_per_second=frames_per_second,
                            in_beats=in_beats)
 
 

@@ -1190,6 +1190,7 @@
       },
       "inBeats": true,
       "framesPerBeat": 48000.0,
+      "framesPerSecond": 48000.0,
       "spans": [
         {
           "at": 0,
@@ -1210,6 +1211,7 @@
       },
       "inBeats": true,
       "framesPerBeat": 48000.0,
+      "framesPerSecond": 48000.0,
       "spans": [
         {
           "at": 96000,
@@ -1230,6 +1232,7 @@
       },
       "inBeats": false,
       "framesPerBeat": 48000.0,
+      "framesPerSecond": 48000.0,
       "spans": [
         {
           "at": 0,
@@ -1250,6 +1253,7 @@
       },
       "inBeats": true,
       "framesPerBeat": 48000.0,
+      "framesPerSecond": 48000.0,
       "spans": []
     }
   ],

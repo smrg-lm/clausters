@@ -219,15 +219,26 @@ export class Document {
      * @param framesPerBeat - the bridge between the arrangement's beats and the
      *   samples' frames. Supplied rather than derived: tempo is the caller's,
      *   the arithmetic is the crate's.
+     * @param framesPerSecond - the same bridge for a length already measured in
+     *   seconds — a take's, which no tempo moves. Both are needed because the
+     *   document measures a placement in beats and what it places in the unit
+     *   of that element's own data.
      * @param inBeats - whether the selection's numbers are beats rather than
      *   frames on the shared axis.
      * @returns the spans, in tree order. Empty when nothing with samples was
      *   underneath — a group and a generator are in the way of a selection, not
      *   under it.
      */
-    resolve(selection: Selection, framesPerBeat: number, inBeats = false): Resolved[] {
+    resolve(
+        selection: Selection,
+        framesPerBeat: number,
+        framesPerSecond: number,
+        inBeats = false,
+    ): Resolved[] {
         return JSON.parse(
-            this.#inner.resolve(JSON.stringify({ selection, framesPerBeat, inBeats })),
+            this.#inner.resolve(
+                JSON.stringify({ selection, framesPerBeat, framesPerSecond, inBeats }),
+            ),
         ) as Resolved[];
     }
 
@@ -268,11 +279,12 @@ export async function resolveSelection(
     document: ClaustersDocument,
     selection: Selection,
     framesPerBeat: number,
+    framesPerSecond: number,
     inBeats = false,
 ): Promise<Resolved[]> {
     const doc = await Document.open(document);
     try {
-        return doc.resolve(selection, framesPerBeat, inBeats);
+        return doc.resolve(selection, framesPerBeat, framesPerSecond, inBeats);
     } finally {
         doc.free();
     }

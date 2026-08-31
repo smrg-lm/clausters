@@ -31,7 +31,7 @@ SUCCESSIVE = "successive"
 SIMULTANEOUS = "simultaneous"
 MIXED = "mixed"
 
-from .element import Element  # noqa: E402  (constants first for the docstring)
+from .element import BEATS, Element, to_beats  # noqa: E402  (constants first for the docstring)
 
 
 class _Member:
@@ -40,7 +40,10 @@ class _Member:
 
     ``offset`` is the member's start in beats relative to the aggregate's context;
     ``dur`` is an explicit placement length that overrides the element's own
-    ``duration`` when set.
+    ``duration`` when set, **in the element's own unit**
+    (`clausters.form.element.Element.duration_unit`: seconds for a take, beats
+    for a phrase of events) — trimming a recording states seconds, and placing
+    it states beats.
 
     **A handle is what carries the node id**, which is what makes one element
     placeable twice: a clip is a window onto an element, so the thing an edit
@@ -58,9 +61,24 @@ class _Member:
 
     @property
     def length(self):
-        """The effective length of this member: the placement ``dur`` if given,
-        else the element's own ``duration`` (may be ``None``)."""
+        """The effective length of this member, in the element's own unit: the
+        placement ``dur`` if given, else the element's own ``duration`` (may be
+        ``None``)."""
         return self.dur if self.dur is not None else self.element.duration
+
+    @property
+    def duration_unit(self) -> str:
+        """The unit `length` is in — the placed element's."""
+        return getattr(self.element, "duration_unit", BEATS)
+
+    def end(self, tempo: float = 1.0):
+        """Where this placement ends, **in the aggregate's beats**: its offset
+        plus its length converted at ``tempo`` (beats per second). ``None`` when
+        it has no length to end at."""
+        length = self.length
+        if length is None:
+            return None
+        return self.offset + to_beats(length, self.duration_unit, tempo)
 
 
 class Aggregate(Element):
@@ -125,7 +143,8 @@ class Aggregate(Element):
 
     def add(self, element, offset=0.0, dur=None):
         """Place ``element`` at ``offset`` (beats), optionally overriding its
-        length with ``dur``. Returns a member handle for `remove`/`move`."""
+        length with ``dur`` (in the element's own unit — see `_Member`).
+        Returns a member handle for `remove`/`move`."""
         member = _Member(offset, dur, element)
         self._members.append(member)
         return member
@@ -170,7 +189,7 @@ class Aggregate(Element):
 
     # ---- the derived temporal relation ----
 
-    def temporal_relation(self):
+    def temporal_relation(self, tempo: float = 1.0):
         """Derive this aggregate's temporal relation (`SUCCESSIVE`/`SIMULTANEOUS`/
         `MIXED`) from its members' placements, or ``None`` when empty.
 
@@ -179,13 +198,22 @@ class Aggregate(Element):
         - `SUCCESSIVE`: members tile contiguously in time — sorted by start, each
           member begins exactly where the previous ends (requires known lengths).
         - `MIXED`: anything else.
+
+        ``tempo`` (beats per second) is what puts an end on the same axis as an
+        offset: an offset is in beats and a length is in the unit of its
+        data it measures, so a take beside a phrase cannot be compared without it. An
+        aggregate whose members are all measured in beats ignores it.
         """
         members = self._members
         if not members:
             return None
 
         starts = [m.offset for m in members]
-        lengths = [m.length for m in members]
+        lengths = [
+            None if m.length is None
+            else to_beats(m.length, m.duration_unit, tempo)
+            for m in members
+        ]
         ends = [
             s + length if length is not None else None
             for s, length in zip(starts, lengths)

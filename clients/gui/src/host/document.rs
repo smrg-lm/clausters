@@ -39,7 +39,7 @@ use std::collections::HashMap;
 use clausters_core::osc::OscType;
 use clausters_document::clipboard::decode_samples;
 use clausters_document::{
-    Against, Document, Intent, NodeId, Outcome, Rules, Session, apply_logged, log::Log,
+    Against, Document, Intent, NodeId, Outcome, Rules, Session, TimeUnit, apply_logged, log::Log,
 };
 
 /// An OSC argument that may have been sent as a float or as an int.
@@ -91,6 +91,11 @@ pub struct Owner {
     /// used. Getting it from anywhere else would put the clip somewhere the
     /// ruler does not agree with.
     pub units_per_beat: f64,
+    /// Samples per second, as the tree was drawn with: the length of data
+    /// measured in seconds (a take's) meets the axis through the rate rather
+    /// than through the tempo, so an edit-back that divided it by the beat
+    /// would stretch every take by the tempo.
+    pub units_per_second: f64,
     /// Where a save writes, when the caller named a file.
     ///
     /// `None` is a session opened read-only, or one built in memory: **saving
@@ -138,6 +143,7 @@ impl Owner {
             session: None,
             rules: Rules::none(),
             units_per_beat: 48_000.0,
+            units_per_second: 48_000.0,
             save_path: None,
             takes: sources::Takes::default(),
             nodes: HashMap::new(),
@@ -156,6 +162,24 @@ impl Owner {
     pub fn with_units_per_beat(mut self, units: f64) -> Self {
         self.units_per_beat = units;
         self
+    }
+
+    /// The rate the picture was drawn at (samples per second), for the lengths
+    /// that are in seconds.
+    pub fn with_units_per_second(mut self, units: f64) -> Self {
+        self.units_per_second = units;
+        self
+    }
+
+    /// The scales the drawing used, as the tree's own `Look` — the one place
+    /// that turns a length in its own data's unit into units on the axis.
+    pub(crate) fn look(&self) -> tree::Look<'_> {
+        tree::Look {
+            units_per_beat: self.units_per_beat,
+            units_per_second: self.units_per_second,
+            takes: Some(&self.takes),
+            ..tree::Look::default()
+        }
     }
 
     /// The samples this document's sources resolved to, for the length rule.
@@ -286,8 +310,15 @@ impl Owner {
             "clip" => {
                 let units = self.units_per_beat.max(f64::MIN_POSITIVE);
                 let offset = float_at(args, 1)? as f64 / units;
+                // **And the length leaves by the unit of its own data.** A
+                // take's seconds are a wall-clock fact; dividing them by the
+                // beat would write a length that the next tempo change moves.
+                let per_length = match self.document.find(node).map(|n| n.duration_unit()) {
+                    Some(TimeUnit::Seconds) => self.units_per_second.max(f64::MIN_POSITIVE),
+                    _ => units,
+                };
                 let dur = float_at(args, 2)
-                    .map(|d| d as f64 / units)
+                    .map(|d| d as f64 / per_length)
                     .filter(|d| *d > 0.0);
                 Some((Intent::Place { node, offset, dur }, "move a clip"))
             }

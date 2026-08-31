@@ -49,6 +49,7 @@ interface Vectors {
         selection: { start: number; len: number };
         inBeats: boolean;
         framesPerBeat: number;
+        framesPerSecond: number;
         spans: Resolved[];
     }[];
     logged: {
@@ -134,6 +135,7 @@ test("a selection resolves to the same spans", async () => {
             vectors.start,
             expected.selection,
             expected.framesPerBeat,
+            expected.framesPerSecond,
             expected.inBeats,
         );
         assert.deepEqual(

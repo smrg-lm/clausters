@@ -358,7 +358,8 @@ def test_a_selection_resolves_to_the_span_underneath_it_through_the_crate():
         },
     }
     spans = _native.document_resolve(
-        doc, {"start": 3.0 * 48000, "len": 48000}, frames_per_beat=48000.0
+        doc, {"start": 3.0 * 48000, "len": 48000}, frames_per_beat=48000.0,
+        frames_per_second=48000.0,
     )
     assert len(spans) == 1
     assert spans[0]["source"] == 100
@@ -371,7 +372,7 @@ def test_nothing_underneath_is_an_empty_list_and_not_a_failure():
 
     spans = _native.document_resolve(
         to_document(an_aggregate()), {"start": 0.0, "len": 1.0},
-        frames_per_beat=48000.0, in_beats=True,
+        frames_per_beat=48000.0, frames_per_second=48000.0, in_beats=True,
     )
     assert spans == []
 
