@@ -34,6 +34,7 @@
 // Grouping and rendering live in `./aggregate.ts` and `./render.ts`. This module
 // is pure and transport-agnostic.
 
+import { TempoMap } from "../core/clausters_core_web.js";
 import { Event as SeqEvent } from "../seq/event.ts";
 import { Timeline } from "../seq/timeline.ts";
 import type { PlayDestination } from "../seq/timeline.ts";
@@ -116,6 +117,29 @@ export type TimeUnit = typeof BEATS | typeof SECONDS;
 /** `length` (in `unit`) as beats at `tempo` beats per second. */
 export function toBeats(length: number, unit: TimeUnit, tempo: number): number {
     return unit === SECONDS ? Number(length) * Number(tempo) : Number(length);
+}
+
+
+/**
+ * The map to measure with: the one given, or `tempo` as a single constant
+ * segment — which is the affine ratio every one of these conversions used to
+ * be, so a caller that names no map gets exactly what it always got.
+ */
+export function tempoMapOf(tempoMap?: TempoMap | null, tempo = 1.0): TempoMap {
+    return tempoMap ?? new TempoMap(tempo);
+}
+
+/**
+ * The beat that `length` (in `unit`) reaches, starting at beat `at`.
+ *
+ * Two positions, never a length and a ratio. A length in **beats** is already
+ * on the axis and simply lands at `at + length`; a length in **seconds** is a
+ * wall-clock fact whose end depends on how the tempo runs across it, which is
+ * what the piece's map ({@link TempoMap}) answers.
+ */
+export function endBeat(at: number, length: number, unit: string, tempoMap: TempoMap): number {
+    if (unit !== SECONDS) return at + length;
+    return tempoMap.beatsAt(tempoMap.secsAt(at) + length);
 }
 
 /**
@@ -419,10 +443,12 @@ export class Vector extends Element {
      * The event that plays this buffer: the `instrument` def with the buffer
      * number in its `buf` control, sounding for the element's `duration`.
      *
-     * `tempo` (beats per second) is what the length crosses on: this element's
-     * duration is in seconds and an event's `dur` is in beats, because an event
-     * is played by a clock. It is the only conversion, and it happens here
-     * rather than in the structure.
+     * `tempoMap` is what the length crosses on: this element's duration is in
+     * seconds and an event's `dur` is in beats, because an event is played by a
+     * clock. It is the only conversion, and it happens here rather than in the
+     * structure. `at` is the beat the take starts on, which the crossing needs:
+     * the same stretch of seconds is a different number of beats depending on
+     * where the tempo has got to.
      *
      * `legato` is 1 so the take sounds its whole length (the note default of 0.8
      * would cut it short — a sampled take is not a note with a gap), and `amp`
@@ -432,7 +458,7 @@ export class Vector extends Element {
      * recorded at; anything else is a mix decision, so it goes in `controls`
      * (which overrides both).
      */
-    toEvent(tempo = 1.0): SeqEvent {
+    toEvent(tempoMap?: TempoMap | null, at = 0.0): SeqEvent {
         if (this.instrument === null) {
             throw new Error(
                 "a Vector needs an instrument to be rendered as an audio clip " +
@@ -451,7 +477,12 @@ export class Vector extends Element {
         // sent exactly what it was always sent.
         if (this.start) params.start = Number(this.start);
         if (this.loop) params.loop = 1.0;
-        if (this.duration !== null) params.dur = Number(this.duration) * Number(tempo);
+        if (this.duration !== null) {
+            // Two positions, not a length times a ratio: the take's seconds are
+            // fixed, and how many beats they cover depends on where it starts.
+            const map = tempoMapOf(tempoMap);
+            params.dur = endBeat(at, Number(this.duration), SECONDS, map) - at;
+        }
         Object.assign(params, this.controls);
         return new SeqEvent(params);
     }
@@ -589,10 +620,14 @@ export class Segments extends Element {
      * One `[offset, event]` per segment: the instrument playing that buffer,
      * from that frame, for that long. The offsets are relative to the element,
      * exactly as an aggregate's members' are — and in **beats**, converted here
-     * at `tempo` (beats per second) from the seconds the windows are measured
-     * in, because what comes out of this is played by a clock.
+     * from the seconds the windows are measured in, because what comes out of
+     * this is played by a clock.
+     *
+     * `tempoMap` is the piece's, and `at` the beat this element starts on: each
+     * window is placed and sized from where it actually falls, so a tempo change
+     * inside the element moves the segments after it and not the ones before.
      */
-    toEvents(tempo = 1.0): [number, SeqEvent][] {
+    toEvents(tempoMap?: TempoMap | null, at = 0.0): [number, SeqEvent][] {
         if (this.instrument === null) {
             throw new Error(
                 "a Segments needs an instrument to be rendered as audio " +
@@ -601,18 +636,24 @@ export class Segments extends Element {
                     "window)",
             );
         }
+        const map = tempoMapOf(tempoMap);
         const out: [number, SeqEvent][] = [];
         for (const [offset, seg] of this.placed()) {
+            // Both numbers are seconds and both are placed, not scaled: the
+            // window opens at the beat those seconds reach from `at`, and lasts
+            // to the beat its own seconds reach from there.
+            const onset = endBeat(at, offset, SECONDS, map);
+            const end = endBeat(onset, Number(seg.duration), SECONDS, map);
             const params: Record<string, unknown> = {
                 instrument: this.instrument,
                 buf: seg.buffer.bufnum,
                 legato: 1.0,
                 amp: 1.0,
-                dur: Number(seg.duration) * Number(tempo),
+                dur: end - onset,
             };
             if (seg.start) params.start = Number(seg.start);
             Object.assign(params, this.controls);
-            out.push([offset * Number(tempo), new SeqEvent(params)]);
+            out.push([onset - at, new SeqEvent(params)]);
         }
         return out;
     }

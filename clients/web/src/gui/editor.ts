@@ -34,7 +34,7 @@
 // loop already, so `open` subscribes and every `/gui_event` reaches `apply` as it
 // arrives. `detach()` unsubscribes.
 
-import { beats_to_secs, samples_to_secs, secs_to_beats, secs_to_samples } from "../core/clausters_core_web.js";
+import { samples_to_secs, secs_to_samples, TempoMap } from "../core/clausters_core_web.js";
 import { Document, Log } from "../document.ts";
 import type { Against, Intent, Outcome, Resolved, Selection } from "../document.ts";
 import { GraphPatch, synthdefPorts } from "../defs/patch.ts";
@@ -141,8 +141,14 @@ class Placed {
 export interface EditorOptions {
     /** The engine's sample rate; with `tempo` it fixes the beats↔samples axis. */
     sampleRate: number;
-    /** The clock's tempo in **beats per second** (2.0 is 120 bpm). */
+    /** The piece's starting tempo in **beats per second** (2.0 is 120 bpm). */
     tempo?: number;
+    /**
+     * The piece's {@link TempoMap}, when its tempo changes along the way — pass
+     * the clock's (`TempoClock.map`) so the view and the sound read one
+     * function. Ignored fields: given this, `tempo` is not read.
+     */
+    tempoMap?: TempoMap;
     /** The musical drag grid in beats (`0.25` = a sixteenth); 0 snaps to samples. */
     quant?: number;
     /** Re-render on every edit (the live editor). */
@@ -184,7 +190,14 @@ async function resolveEditorHost(host?: GuiHost): Promise<GuiHost> {
 export class Editor {
     element: Element;
     sampleRate: number;
-    tempo: number;
+    /**
+     * The piece's beat→second map — the whole of the beat side of the unit
+     * bridge. Given one, the editor draws against the same function the clock
+     * plays by, which is what makes the line and the sound agree across a tempo
+     * change; given only a `tempo`, it is that tempo as a single segment, which
+     * is exactly the affine ratio this bridge always was.
+     */
+    tempoMap: TempoMap;
     quant: number;
     /**
      * Re-render on every edit (the *live editor*: drag a clip and hear it where
@@ -289,6 +302,7 @@ export class Editor {
         {
             sampleRate,
             tempo = 1.0,
+            tempoMap,
             quant = 0.0,
             follow = false,
             extra = [],
@@ -300,7 +314,7 @@ export class Editor {
     ) {
         this.element = element;
         this.sampleRate = Number(sampleRate);
-        this.tempo = Number(tempo);
+        this.tempoMap = tempoMap?.copy() ?? new TempoMap(Number(tempo));
         this.quant = Number(quant);
         this.follow = Boolean(follow);
         this.extra = [...extra];
@@ -310,7 +324,7 @@ export class Editor {
         this.fallbackId = this.baseId;
         this.transport = new Transport(null, () => [...this.lanes.keys()], {
             source: (at) => this.renderPass(at),
-            tempo: this.tempo,
+            tempoMap: this.tempoMap,
             sampleRate: this.sampleRate,
             extent: () => this.extent(),
         });
@@ -319,17 +333,44 @@ export class Editor {
     // ---- the unit bridge: beats (the data) ↔ timeline samples (the view) ----
 
     /**
-     * Timeline samples per beat — the whole of the data↔view unit bridge. One
-     * timeline unit is one audio sample, so a take placed at its own frame count
-     * sits 1:1 on the axis.
+     * The tempo the piece **starts** at, in beats per second.
+     *
+     * A reading of {@link Editor.tempoMap}, not a second copy of it: under one
+     * tempo it is the tempo, and under a tempo that changes it is the first
+     * segment's. Assigning it replaces the map with that single tempo, which is
+     * what setting a grid does.
      */
-    get unitsPerBeat(): number {
-        return this.beatsToUnits(1.0);
+    get tempo(): number {
+        return this.tempoMap.tempoAt(0.0);
     }
 
-    /** Beats → timeline samples, through the core's own time arithmetic. */
+    set tempo(tempo: number) {
+        this.tempoMap = new TempoMap(tempo);
+    }
+
+    /**
+     * Timeline samples in the **first** beat — the nominal ratio of the data↔view
+     * bridge. One timeline unit is one audio sample, so a take placed at its own
+     * frame count sits 1:1 on the axis.
+     *
+     * It is a ratio at a position, not a constant: under a tempo that changes, a
+     * later beat is a different number of samples wide, which is why
+     * {@link Editor.beatsToUnits} takes a position and this only names the origin.
+     */
+    get unitsPerBeat(): number {
+        return this.beatsToUnits(1.0) - this.beatsToUnits(0.0);
+    }
+
+    /**
+     * Beats → timeline samples, through the piece's time map (and the core's
+     * seconds→samples rounding every client shares).
+     *
+     * The axis is real time, so this is where a beat stops being a logical
+     * coordinate: a beat after a tempo change lands on the second it actually
+     * falls on, which is the second the clock will play it at.
+     */
     beatsToUnits(beats: number): number {
-        return secs_to_samples(beats_to_secs(this.tempo, 0.0, 0.0, Number(beats)), this.sampleRate);
+        return secs_to_samples(this.tempoMap.secsAt(Number(beats)), this.sampleRate);
     }
 
     /**
@@ -337,12 +378,7 @@ export class Editor {
      * dragged clip back into a placement.
      */
     unitsToBeats(units: number): number {
-        return secs_to_beats(
-            this.tempo,
-            0.0,
-            0.0,
-            samples_to_secs(Math.round(units), this.sampleRate),
-        );
+        return this.tempoMap.beatsAt(samples_to_secs(Math.round(units), this.sampleRate));
     }
 
     /**
@@ -375,22 +411,29 @@ export class Editor {
      * A length of `element`, in that element's own unit, as timeline samples —
      * the one place the editor decides which of the two ratios a number crosses
      * on.
+     *
+     * `at` is where the length **starts**, in beats. A length in seconds does
+     * not need it (its seconds are already fixed), but a length in beats does:
+     * beats are a logical coordinate, so the same count of them is a different
+     * stretch of time depending on where it sits, and only two positions can say
+     * how long it is.
      */
-    lengthToUnits(length: number, element: Element): number {
+    lengthToUnits(length: number, element: Element, at = 0.0): number {
         return element.durationUnit === SECONDS
             ? this.secsToUnits(length)
-            : this.beatsToUnits(length);
+            : this.beatsToUnits(at + length) - this.beatsToUnits(at);
     }
 
     /**
      * Timeline samples as a length of `element`, in that element's own unit —
      * the inverse of {@link Editor.lengthToUnits}, and what an edit-back writes
-     * back onto the arrangement.
+     * back onto the arrangement. `at` is the length's start in beats, for the
+     * same reason.
      */
-    unitsToLength(units: number, element: Element): number {
+    unitsToLength(units: number, element: Element, at = 0.0): number {
         return element.durationUnit === SECONDS
             ? this.unitsToSecs(units)
-            : this.unitsToBeats(units);
+            : this.unitsToBeats(this.beatsToUnits(at) + units) - at;
     }
 
     // ---- the base level: collapse (a summary rectangle) vs expand (lanes) ----
@@ -1023,7 +1066,9 @@ export class Editor {
         // is musical and crosses on the beat; a clip of samples is as long as
         // its seconds, and dividing those by the beat would write a length the
         // next tempo change moves.
-        const askedDur = resized ? this.unitsToLength(dur, member.element) : member.dur;
+        const askedDur = resized
+            ? this.unitsToLength(dur, member.element, this.unitsToBeats(offset))
+            : member.dur;
         const node = this.nodeId(member.element, member);
         if (node === null) return false;
         const intent: Intent =
@@ -1046,7 +1091,11 @@ export class Editor {
         const snappedDur =
             effective.dur === undefined
                 ? dur
-                : this.lengthToUnits(Number(effective.dur), member.element);
+                : this.lengthToUnits(
+                      Number(effective.dur),
+                      member.element,
+                      Number(effective.offset) + placed.base,
+                  );
         if (Math.abs(snappedOffset - offset) >= 0.5 || Math.abs(snappedDur - dur) >= 0.5) {
             this.correct(id, { offset: snappedOffset, dur: snappedDur });
             offset = snappedOffset;
@@ -1331,7 +1380,7 @@ export class Editor {
         const edited = members[index];
         if (edited === undefined) return false;
         edited.offset = this.unitsToBeats(offset) - placed.base;
-        edited.dur = this.unitsToLength(dur, member.element);
+        edited.dur = this.unitsToLength(dur, member.element, this.unitsToBeats(offset));
         const holder = { ...(edited.node as Record<string, unknown>) };
         holder.config = { ...((holder.config as Record<string, unknown>) ?? {}), start: Number(start) };
         edited.node = holder;
@@ -1372,7 +1421,7 @@ export class Editor {
         const length = member.length ?? element.duration;
         // In the element's own unit -- seconds, for the only elements a split
         // applies to -- because that is what the placement's length is in.
-        const at = this.unitsToLength(atUnits, element);
+        const at = this.unitsToLength(atUnits, element, placed.base + (member.offset ?? 0.0));
         if (length === null || !(at > 0.0 && at < Number(length))) return false;
         const node = this.nodeId(owner);
         if (node === null) return false;
@@ -2065,7 +2114,7 @@ export class Editor {
             // the element's own length, and a member with neither reaches the
             // element's extent — which `member.length` alone cannot say, so the
             // record kept the size the gesture left.
-            placed.dur = this.drawnDur(element, member);
+            placed.dur = this.drawnDur(element, member, undefined, member.offset + placed.base);
         }
         return wid;
     }
@@ -2285,6 +2334,12 @@ export class Editor {
      * This is the arrangement's own `render` (flatten to absolute beats, play
      * through a playhead): the editor adds no rendering path of its own, it only
      * remembers the destination so `rerender` can re-schedule after an edit.
+     *
+     * **The clock's tempo map wins.** A view of a piece and the clock playing it
+     * cannot hold two answers for when a beat falls, so handing a clock here
+     * adopts its map and redraws whatever moved. Without a clock the editor
+     * keeps its own, which is what lets a composition be laid out before
+     * anything plays.
      */
     async render(
         destination: unknown,
@@ -2293,9 +2348,38 @@ export class Editor {
     ): Promise<Playhead | null> {
         this.destination = destination;
         this.clock = clock ?? null;
+        this.adoptMap(clock?.map);
         const playhead = await this.transport.play(destination as Server, { at });
         this.dirty = false; // what plays now *is* the arrangement
         return playhead;
+    }
+
+    /**
+     * Take `tempoMap` as the editor's, redrawing if it says anything different
+     * from the one held. Answers whether it moved.
+     *
+     * The one place the view's time and the clock's are reconciled: a line drawn
+     * by one function and a sound played by another disagree by whatever a tempo
+     * change moved, and no amount of redrawing the *lanes* fixes that — it is
+     * the axis underneath them.
+     */
+    private adoptMap(tempoMap?: TempoMap | null): boolean {
+        if (!tempoMap) return false;
+        const held = this.tempoMap;
+        const same =
+            held.len === tempoMap.len &&
+            Array.from({ length: held.len }, (_, i) => i).every((i) => {
+                const a = held.segment(i);
+                const b = tempoMap.segment(i);
+                return a !== undefined && b !== undefined && a.every((v, j) => v === b[j]);
+            });
+        if (same) return false;
+        this.tempoMap = tempoMap.copy();
+        this.transport.tempoMap = this.tempoMap;
+        if (this.host !== null && this.windowId !== null) {
+            this.host.define(this.windowId, this.draw());
+        }
+        return true;
     }
 
     /**
@@ -2496,17 +2580,22 @@ export class Editor {
     /**
      * The same length in **timeline units**, which needs the body: a take with no
      * duration given is as long as it is (1 unit = 1 sample).
+     *
+     * `at` is the clip's own onset in beats, which a length **in beats** needs to
+     * have a length at all — the same two-position rule
+     * {@link Editor.lengthToUnits} states.
      */
     private drawnDur(
         element: Element,
         member: Member | null,
         body?: Record<string, unknown>,
+        at = 0.0,
     ): number {
         const length = this.drawnLength(element, member);
         const drawn = body ?? this.bodyFor(element, length);
         return "buffer" in drawn && length <= 0.0
             ? Number((element as Vector).buffer.frames ?? 0)
-            : this.lengthToUnits(length, element);
+            : this.lengthToUnits(length, element, at);
     }
 
     private clipFor(
@@ -2519,7 +2608,7 @@ export class Editor {
         const offset = this.beatsToUnits(base);
         const durLength = this.drawnLength(element, member);
         const body = this.bodyFor(element, durLength);
-        const dur = this.drawnDur(element, member, body);
+        const dur = this.drawnDur(element, member, body, base);
 
         // The placement's own base: a clip's offset is absolute on the shared
         // axis, a member's offset is relative to its aggregate.

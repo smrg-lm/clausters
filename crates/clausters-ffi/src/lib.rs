@@ -43,6 +43,7 @@ mod rng;
 mod scale;
 mod sched;
 pub mod shm;
+mod tempomap;
 mod time;
 pub mod ws;
 
@@ -148,8 +149,12 @@ pub use time::*;
 /// seconds** — `clausters_document_resolve` takes `frames_per_second` beside
 /// `frames_per_beat`, because the document now measures a placement in beats
 /// and what it places in the unit of that element's own data, so one ratio can no
-/// longer answer both questions.
-pub const CORE_ABI_VERSION: u32 = 28;
+/// longer answer both questions. **v29 the piece's time map** —
+/// `clausters_tempomap_*`: a beat is a logical coordinate and the tempo that
+/// turns it into a second can change along the piece, so the conversion stops
+/// being a scalar and becomes an integral. Additive: the affine functions stay
+/// exactly as they were, and a one-segment map computes their expression.
+pub const CORE_ABI_VERSION: u32 = 29;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

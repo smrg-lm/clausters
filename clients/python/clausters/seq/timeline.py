@@ -355,7 +355,8 @@ class Playhead:
 
     # ---- follow a server's shared transport (DAW conductor) ----
 
-    def follow_transport(self, server, recv=None, quant=None):
+    def follow_transport(self, server, recv=None, quant=None, tempo_map=None,
+                         sample_rate: float = 0.0):
         """Make this playhead obey a ``server``'s shared transport: when a
         conductor calls `transport_play` / `transport_stop` /
         `transport_locate` on the server, the server broadcasts the new state and
@@ -371,7 +372,18 @@ class Playhead:
         land together. Release with `unfollow_transport`. Returns ``self``.
 
         Beat-aligned in plain wall-clock mode; sample-exact when the clock is
-        also `lock_to` the server (see the timing docs)."""
+        also `lock_to` the server (see the timing docs).
+
+        ``tempo_map``: the piece's `clausters.base.TempoMap`, for a piece whose
+        tempo changes along the way. The shared grid is a contract between
+        clients and can only state **one** tempo (`/transport_set` is an origin
+        and a scalar), so the beat position the server broadcasts is a reading
+        of that nominal grid, not of this piece. Given a map, the position is
+        taken from the transport's **sample** spelling and converted here — the
+        same seam an editor drives the transport through — and the broadcast
+        beat is ignored. It needs ``sample_rate`` (the engine's) to read that
+        axis; without either, nothing changes.
+        """
         from ..base import OscReceiver
         from ..responders import OscFunc
 
@@ -380,11 +392,26 @@ class Playhead:
             recv = OscReceiver().start()
         recv.send(server.target, "/server_notify", 1)
 
+        rate = float(sample_rate or 0.0)
+
+        def beat_of(msg):
+            """The song position as a beat **of this piece**.
+
+            The broadcast field (index 5) reads the shared grid, which is one
+            tempo by construction. When the piece has a map, the truthful
+            spelling is the sample position (index 7) put through it; the two
+            agree exactly whenever the piece is affine.
+            """
+            if tempo_map is None or rate <= 0.0 or len(msg) < 8:
+                return float(msg[5])
+            return tempo_map.beats_at(float(msg[7]) / rate)
+
         def on_transport(msg, time, src):
-            # msg == ["/transport_query.reply", origin, tempo, defined, playing, position]
+            # msg == ["/transport_query.reply", origin, tempo, defined, playing,
+            #         position, group, transport_sample, position_sample, ...]
             if len(msg) < 6 or not int(msg[3]):
                 return
-            playing, position = int(msg[4]), float(msg[5])
+            playing, position = int(msg[4]), beat_of(msg)
             if playing:
                 self.play(at=position, quant=quant)
             else:
@@ -400,10 +427,13 @@ class Playhead:
         # says what a beat is. Applying that would locate to 0 on a server
         # whose transport is being driven in samples.
         if state["tempo"] is not None:
+            at = state["position"]
+            if tempo_map is not None and rate > 0.0:
+                at = tempo_map.beats_at(float(state["position_sample"]) / rate)
             if state["playing"]:
-                self.play(at=state["position"], quant=quant)
+                self.play(at=at, quant=quant)
             else:
-                self.locate(state["position"])
+                self.locate(at)
         return self
 
     def unfollow_transport(self):

@@ -182,12 +182,33 @@ await editor.render(server, clock);  // play the composition as it now stands
 the editor as it arrives, where a script in the Python client drains a queue
 itself. `detach()` stops it.
 
-**Beats meet samples here, and only here — on two ratios.** The arrangement
-places elements in beats and measures each one's length in the unit of its own
-data; the view places clips in timeline samples, because a clip's body is audio
-data. An onset crosses on `unitsPerBeat` (`sampleRate / tempo`) and a length in
-seconds on `unitsPerSecond` (the rate itself), so a take is drawn exactly as wide
-as it sounds whatever the tempo is and only its placement follows the grid.
+**Beats meet samples here, and only here.** The arrangement places elements in
+beats and measures each one's length in the unit of its own data; the view places
+clips in timeline samples, because a clip's body is audio data. A length in
+seconds crosses on `unitsPerSecond` (the rate itself) and an onset crosses on the
+piece's **time map**, so a take is drawn exactly as wide as it sounds whatever the
+tempo is and only its placement follows the grid.
+
+The map is what makes the placement side right when the tempo changes. A beat is
+a logical coordinate: what second it falls on depends on the whole tempo history
+before it, not on the tempo in force now, so the same four beats are a different
+stretch of the axis at the start of the piece and after an accelerando. That is
+why the editor holds a `TempoMap` rather than a number, why `beatsToUnits` takes
+a position, and why `lengthToUnits` takes the onset a length starts at. Under a
+single tempo it is the plain ratio `sampleRate / tempo`, which is what
+`unitsPerBeat` still names.
+
+Hand the editor the clock's map when the piece changes tempo, so the line and the
+sound are one function rather than two readings of it:
+
+```js
+clock.setTempo(2.0);                       // or clock.rampTempo(2.0, 8)
+const editor = new Editor(song, { sampleRate, tempoMap: clock.map });
+```
+
+`editor.render(server, clock)` adopts the clock's map anyway and redraws if it
+moved, so the two cannot silently disagree — but passing it up front means the
+first draw is already right.
 
 **Where an edit is decided is not here either.** A drag leaves the host as an
 intent — where the hand put it, absolute — and the shared crate applies it: the

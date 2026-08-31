@@ -40,35 +40,41 @@ and raises a clear `NotImplementedError` here.
 from ..defs.node import Group as NodeGroup
 from .aggregate import CONCRETE, LOGICAL, Aggregate
 from .element import (Element, Generator, Clang, Segments, Sequence, Track,
-                      Vector, to_beats)
+                      Vector, end_beat, tempo_map_of)
 
 
-def flatten(element, base: float = 0.0, *, tempo: float = 1.0) -> list:
+def flatten(element, base: float = 0.0, *, tempo: float = 1.0, tempo_map=None) -> list:
     """Flatten ``element`` into ``(absolute_beat, item)`` pairs, sorted by beat,
     accumulating nested placement offsets onto ``base``. The items are playable
     (they follow the ``play(destination)`` protocol).
 
-    ``tempo`` (beats per second) is where the tree's two units meet. An onset is
-    in beats and a length is in the unit of its own data
+    The piece's tempo is where the tree's two units meet. An onset is in beats
+    and a length is in the unit of its own data
     (`clausters.form.element.Element.duration_unit`: a take's is seconds), and a
     timeline is ordered by **one** number — so the conversion belongs to the
     flattening and never to the structure. At the default tempo of one beat a
     second the two coincide, which is what a script that never set a tempo has
-    always been running under."""
+    always been running under.
+
+    ``tempo_map`` (the piece's `clausters.base.TempoMap`, the clock's when
+    there is one) is what the crossing goes through, so a length in seconds
+    lands where it actually ends rather than where a single tempo would put it;
+    ``tempo`` alone is that tempo as one segment."""
     out: list = []
-    _emit(element, float(base), out, tempo=float(tempo))
+    _emit(element, float(base), out, tempo_map=tempo_map_of(tempo_map, tempo))
     out.sort(key=lambda pair: pair[0])
     return out
 
 
-def to_timeline(element, base: float = 0.0, *, tempo: float = 1.0):
+def to_timeline(element, base: float = 0.0, *, tempo: float = 1.0, tempo_map=None):
     """Flatten ``element`` into a flat `clausters.seq.Timeline` in absolute
     beats — the structure a `Playhead` plays and a transport seeks. ``tempo``
-    is the clock's, in beats per second (see `flatten`)."""
+    is the clock's, in beats per second, and ``tempo_map`` its map when the
+    tempo changes along the piece (see `flatten`)."""
     from ..seq.timeline import Timeline
 
     timeline = Timeline()
-    for beat, item in flatten(element, base, tempo=tempo):
+    for beat, item in flatten(element, base, tempo=tempo, tempo_map=tempo_map):
         timeline.add(beat, item)
     return timeline
 
@@ -96,8 +102,11 @@ def render(element, destination, clock=None, *, at: float = 0.0, quant=None,
         raise ValueError(
             "an abstract element (no content) is pure context; it has nothing to render"
         )
+    # The clock's own map, so what sounds and what an editor draws are measured
+    # by one function rather than by two readings of it.
     tempo = float(getattr(clock, "tempo", 1.0) or 1.0)
-    timeline = to_timeline(element, float(element.onset or 0.0), tempo=tempo)
+    timeline = to_timeline(element, float(element.onset or 0.0), tempo=tempo,
+                           tempo_map=getattr(clock, "map", None))
     playhead = Playhead(timeline, clock, destination)
     playhead.play(at=at, quant=quant)
     return playhead
@@ -114,7 +123,7 @@ def render_logical(aggregate, server, *, ports=None):
 
 # ---- the flatten dispatch ----
 
-def _emit(element, base: float, out: list, dur=None, *, tempo: float = 1.0):
+def _emit(element, base: float, out: list, dur=None, *, tempo_map):
     """Flatten ``element`` at ``base``, honouring the **placement length** its
     aggregate gave it: a placement ``dur`` *trims* what the element plays (the DAW
     rule — a clip's length is what you hear of it), so events past the placement's
@@ -125,10 +134,13 @@ def _emit(element, base: float, out: list, dur=None, *, tempo: float = 1.0):
     is trimmed in seconds — so it crosses to beats here, once, against the
     element it was written for."""
     placed: list = []
-    _emit_element(element, base, placed, tempo)
+    _emit_element(element, base, placed, tempo_map)
     if dur is not None:
-        dur = to_beats(dur, element.duration_unit, tempo)
-        end = base + float(dur)
+        # The placement's end, not its length turned into one: under a tempo
+        # that changes, a length in seconds reaches a different beat depending
+        # on where it starts, so the two positions are what say where it ends.
+        end = end_beat(base, dur, element.duration_unit, tempo_map)
+        dur = end - base
         placed = [(beat, _sized(item, min(dur, end - beat)))
                   for beat, item in placed if beat < end - 1e-9]
     out.extend(placed)
@@ -145,7 +157,7 @@ def _sized(item, dur: float):
     return item
 
 
-def _emit_element(element, base: float, out: list, tempo: float):
+def _emit_element(element, base: float, out: list, tempo_map):
     if isinstance(element, Aggregate):
         if element.kind != CONCRETE:
             raise NotImplementedError(
@@ -153,28 +165,28 @@ def _emit_element(element, base: float, out: list, tempo: float):
             )
         for member in element.handles:
             _emit(member.element, base + member.offset, out, member.dur,
-                  tempo=tempo)
+                  tempo_map=tempo_map)
     elif isinstance(element, Track):
         for beat, item in element.wraps:
             out.append((base + beat, item))
     elif isinstance(element, Clang):
         out.append((base, element.wraps))
     elif isinstance(element, (Sequence, Generator)):
-        _emit_sequence(element.wraps, base, out, tempo)
+        _emit_sequence(element.wraps, base, out, tempo_map)
     elif isinstance(element, Segments):
         # Several windows read as one thing: one event per segment, each at its
         # own offset inside the element and each carrying its own window, so
         # what sounds is continuous even though the source is not one buffer.
         # Without an instrument it is structure, exactly as a `Vector` is.
         if element.instrument is not None:
-            for offset, event in element.to_events(tempo):
+            for offset, event in element.to_events(tempo_map, base):
                 out.append((base + offset, event))
     elif isinstance(element, Vector):
         # A buffer is data; the instrument is what makes it sound (a def whose
         # `buf` control plays it). Without one it is structure only — it draws in
         # the editor and contributes its extent, but emits no event.
         if element.instrument is not None:
-            out.append((base, element.to_event(tempo)))
+            out.append((base, element.to_event(tempo_map, base)))
     elif isinstance(element, Element):
         if element.wraps is None:
             return  # an abstract context element yields no event
@@ -188,7 +200,7 @@ def _emit_element(element, base: float, out: list, tempo: float):
         raise TypeError(f"not an Element: {element!r}")
 
 
-def _emit_sequence(wrapped, base: float, out: list, tempo: float = 1.0):
+def _emit_sequence(wrapped, base: float, out: list, tempo_map):
     """A List/Function backed by an event pattern is bounced; a list of elements
     is laid out successively by their durations."""
     from ..seq.pattern import Pattern
@@ -233,7 +245,8 @@ def _emit_sequence(wrapped, base: float, out: list, tempo: float = 1.0):
                 raise NotImplementedError(
                     "a Sequence of raw values is data (a parameter), not events"
                 )
-            _emit(item, cursor, out, tempo=tempo)
+            _emit(item, cursor, out, tempo_map=tempo_map)
             # Laid out successively on the beat axis, so each length crosses
             # from whatever unit its own data is in.
-            cursor += to_beats(item.duration or 0.0, item.duration_unit, tempo)
+            cursor = end_beat(cursor, item.duration or 0.0,
+                              item.duration_unit, tempo_map)

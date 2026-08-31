@@ -23,6 +23,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
+import { TempoMap } from "../src/base/time.ts";
 import {
     bar,
     beatInBar,
@@ -43,6 +44,15 @@ interface Vectors {
     secsToBeats: { tempo: number; baseBeats: number; baseSecs: number; secs: number; beats: number }[];
     secsToSamples: { secs: number; rate: number; samples: number }[];
     samplesToSecs: { samples: number; rate: number; secs: number }[];
+    tempoMap: {
+        build: (string | number)[][];
+        segments: (number | string | null)[][];
+        secsAt: { beats: number; secs: number }[];
+        beatsAt: { secs: number; beats: number }[];
+        tempoAt: { beats: number; tempo: number }[];
+        spanSecs: { from: number; to: number; secs: number }[];
+        spanBeats: { from: number; secs: number; beats: number }[];
+    };
     quantDelay: { pos: number; quant: number; delay: number }[];
     bar: { beats: number; quant: number; bar: number; beatInBar: number }[];
     unixToNtp: { unix: number; ntp: string }[];
@@ -73,6 +83,37 @@ test("beat arithmetic matches the Python client", () => {
     }
     for (const c of v.secsToBeats) {
         assert.equal(secsToBeats(c.tempo, c.baseBeats, c.baseSecs, c.secs), c.beats);
+    }
+});
+
+test("the piece's time map matches the Python client", () => {
+    // The same map, built by the same calls in the same order — a step and a
+    // ramp, which is the shape where a scalar tempo and the integral part
+    // company. Equality, not approximation: there is one implementation of the
+    // integral and both clients call it.
+    const map = new TempoMap(1.0);
+    assert.ok(map.push(2.0, 2.0));
+    assert.ok(map.ramp(8.0, 16.0, 2.0, 4.0));
+
+    assert.equal(map.len, v.tempoMap.segments.length);
+    for (const [i, seg] of v.tempoMap.segments.entries()) {
+        const got = map.segment(i);
+        assert.ok(got);
+        // The Python side reads a step's two ramp fields back as `null`; the
+        // wasm side answers 0 for both, and the curve tag beside them is what
+        // says which. Compare the four that always mean something, plus the
+        // ramp's own ends when it has them.
+        const curve = seg[3] === "linear" ? 1 : 0;
+        assert.deepEqual([got[0], got[1], got[2], got[3]],
+                         [seg[0], seg[1], seg[2], curve]);
+        if (curve === 1) assert.deepEqual([got[4], got[5]], [seg[4], seg[5]]);
+    }
+    for (const c of v.tempoMap.secsAt) assert.equal(map.secsAt(c.beats), c.secs);
+    for (const c of v.tempoMap.beatsAt) assert.equal(map.beatsAt(c.secs), c.beats);
+    for (const c of v.tempoMap.tempoAt) assert.equal(map.tempoAt(c.beats), c.tempo);
+    for (const c of v.tempoMap.spanSecs) assert.equal(map.spanSecs(c.from, c.to), c.secs);
+    for (const c of v.tempoMap.spanBeats) {
+        assert.equal(map.spanBeats(c.from, c.secs), c.beats);
     }
 });
 

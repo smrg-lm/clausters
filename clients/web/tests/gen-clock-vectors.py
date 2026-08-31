@@ -118,6 +118,32 @@ def rng_run(seed):
     }
 
 
+#: The map both clients build: one beat a second, doubled at beat 2, then
+#: accelerating to 4 beats a second across beats 8 to 16.
+TEMPO_MAP = [("push", 2.0, 2.0), ("ramp", 8.0, 16.0, 2.0, 4.0)]
+#: Where it is asked: before the step, on it, inside the ramp, at its end and
+#: past everything.
+TEMPO_BEATS = [0.0, 1.0, 2.0, 5.0, 8.0, 12.0, 16.0, 24.0]
+
+
+def _tempo_map_vectors():
+    tempo = _native.TempoMap(1.0)
+    tempo.push(2.0, 2.0)
+    tempo.ramp(8.0, 16.0, 2.0, 4.0)
+    return {
+        "build": TEMPO_MAP,
+        "segments": tempo.segments(),
+        "secsAt": [{"beats": b, "secs": tempo.secs_at(b)} for b in TEMPO_BEATS],
+        "beatsAt": [{"secs": tempo.secs_at(b), "beats": tempo.beats_at(tempo.secs_at(b))}
+                    for b in TEMPO_BEATS],
+        "tempoAt": [{"beats": b, "tempo": tempo.tempo_at(b)} for b in TEMPO_BEATS],
+        "spanSecs": [{"from": a, "to": b, "secs": tempo.span_secs(a, b)}
+                     for (a, b) in [(0.0, 8.0), (8.0, 16.0), (2.0, 4.0), (0.0, 24.0)]],
+        "spanBeats": [{"from": a, "secs": s, "beats": tempo.span_beats(a, s)}
+                      for (a, s) in [(0.0, 30.0), (8.0, 1.0), (16.0, 2.0)]],
+    }
+
+
 def main():
     vectors = {
         "beatsToSecs": [
@@ -139,6 +165,10 @@ def main():
             for (n, r) in [(48000, 48000.0), (22050, 44100.0), (1, 48000.0),
                            (0, 48000.0), (-48000, 48000.0)]
         ],
+        # The piece's time map: the same three questions every caller asks, over
+        # a map with a step and a ramp in it -- the shape where a scalar tempo
+        # and the integral part company.
+        "tempoMap": _tempo_map_vectors(),
         "quantDelay": [
             {"pos": p, "quant": q, "delay": _native.quant_delay(p, q)}
             for (p, q) in QUANTS

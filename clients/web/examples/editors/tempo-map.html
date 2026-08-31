@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: a tempo that changes</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 76rem; }
+      #note, #log { max-width: 52rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+      .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      #stage { align-self: stretch; height: min(70vh, 620px); }
+      #stage canvas { display: block; width: 100%; height: 100%; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">The web port of the Python client's
+<code>tempo_map.py</code>: <b>a piece whose tempo changes, drawn where it is
+actually heard</b> — the same piece, bar for bar.
+
+A beat is not a unit of time. It is a <b>logical coordinate</b>, and what turns
+one into a second is the tempo — which can change along the piece. So "when does
+beat 8 happen?" has no answer from the tempo in force <i>now</i>: it depends on
+the whole tempo history before it. That function is the piece's <b>time map</b>
+(<code>TempoMap</code>), and this example is about the one thing that goes wrong
+when a view does not read it.
+
+Set the tempo once, in the middle, and watch the line. With a tempo doubled at
+beat 2 in a piece at 48 kHz, beat 8 falls at <b>5.0 s</b> of wall clock — but a
+view that held the starting tempo as a number would draw it at 8.0 s, and the
+sweeping line would cross the clip three seconds after you heard it. The clip
+here is drawn from the map, so the line crosses it when it sounds.
+
+<b>The two tempo gestures, and they are different acts.</b>
+<code>clock.setTempo(bps)</code> is a <b>step from now on</b> — a new tempo,
+pinned at the instant you call it, so nothing already scheduled jumps.
+<code>clock.rampTempo(bps, over)</code> is a <b>shape written over a
+stretch</b> — an accelerando or a ritardando. Its length in seconds is a
+logarithm of the tempo ratio, not the span divided by an average of the two
+tempos, and the printed comparison below is the difference the two answers make.
+
+Both write on <code>clock.map</code>, and a change is <b>recorded</b> rather than
+replacing what came before — which is why the beats <i>before</i> it still
+convert correctly afterwards. A single anchor cannot do that: it would
+extrapolate its current slope backwards and report that beat 1 happened at a
+second it did not.
+
+<b>The map is also a question you can ask with nothing playing.</b> It is a pure
+function of a beat, so the first lines of the log below use it as an analysis of
+the piece: when bar 5 arrives, how long the accelerando lasts, how many beats fit
+in the first thirty seconds. A piece can hold a map no clock ever read.
+
+<b>What to look at.</b> Handing the editor the clock's map
+(<code>tempoMap: clock.map</code>) makes the drawing and the sound one function.
+<code>editor.render</code> adopts the clock's map anyway and redraws if it moved
+— the two cannot silently disagree — but passing it up front means the first draw
+is already right.
+
+Everything runs on the <b>in-page engine</b>: no server process, no socket.
+Build first (<code>./build.sh</code> from <code>clients/web</code>), then serve
+this directory and open the page.</div>
+
+      <div class="row">
+        <button id="start">start</button>
+      </div>
+
+      <div id="stage"></div>
+      <pre id="log"></pre>
+    </main>
+
+    <script type="module">
+      import {
+        Session, Event, TempoMap, gui, form,
+      } from "../../dist/index.js";
+
+      const el = (id) => document.getElementById(id);
+      const log = (line) => { el("log").textContent += line + "\n"; };
+
+      const TEMPO = 1.0;   // beats per second, before any change
+      const QUANT = 0.5;   // the drag grid: half a beat
+
+      let session, server, SR, editor = null, win = null;
+
+      // ---- a map, before there is a clock ----
+      // `TempoMap` is a plain function: it answers about a piece nobody is
+      // playing. Build the tempo of a piece here and ask it questions — that is
+      // the whole of the "composition" half of this example, and none of it
+      // needs a server.
+      const tempo = new TempoMap(TEMPO);
+      tempo.push(2.0, 2.0);                   // doubled at beat 2
+      tempo.ramp(8.0, 16.0, 2.0, 4.0);        // then accelerating over bars 3-4
+
+      // ---- the piece ----
+      // Four bars of one note a beat, so the accelerando is something you can
+      // hear rather than something the numbers assert. The lane is a `Sequence`
+      // of clangs — each one an event with its own length — placed on the shared
+      // beat axis.
+      const bar = (pitch) =>
+        new form.Sequence(
+          Array.from({ length: 4 }, () =>
+            new form.Clang(new Event({ freq: pitch, dur: 1.0, sustain: 0.9 }))),
+        );
+
+      function compose() {
+        const song = new form.Aggregate(null, null, { name: "tempo" });
+        song.add(
+          new form.Sequence([bar(220.0), bar(277.2), bar(330.0), bar(440.0)],
+                            null, null, { name: "lead" }),
+          0.0,
+        );
+        return song;
+      }
+
+      async function run() {
+        el("start").disabled = true;
+
+        log(`beat 2 falls at  ${tempo.secsAt(2.0)} s`);
+        log(`beat 8 falls at  ${tempo.secsAt(8.0)} s`);
+        log(`beat 16 falls at ${tempo.secsAt(16.0)} s`);
+
+        // A length in beats is not a duration: the same eight beats are eight
+        // seconds at the start of this piece and rather less after the tempo has
+        // doubled. So seconds come from **two positions**, never from a beat
+        // count and a tempo — which is what `spanSecs` is, and why every
+        // conversion in the client takes a position.
+        log(`beats 0-8 last   ${tempo.spanSecs(0.0, 8.0)} s`);
+        log(`beats 8-16 last  ${tempo.spanSecs(8.0, 16.0)} s`);
+        log(`30 s from beat 0 reaches beat ${tempo.spanBeats(0.0, 30.0)}`);
+
+        // The accelerando is a logarithm. Averaging the two tempos is the
+        // plausible wrong answer: over beats 8 to 16, from 2 to 4 beats per
+        // second, the true length is `ln(T1/T0) / k` — and the average would be
+        // out by a tenth of a second, which is audible and, drawn, visible.
+        const ramp = tempo.spanSecs(8.0, 16.0);
+        const average = 8.0 / 3.0;            // 8 beats at the mean of 2 and 4 bps
+        log(`the ramp lasts    ${ramp} s`);
+        log(`the average says  ${average} s   (wrong by ${(average - ramp).toFixed(4)} s)`);
+        log(`closed form       ${Math.log(4.0 / 2.0) / ((4.0 - 2.0) / (16.0 - 8.0))}`);
+
+        // One session, as the Python example opens one: it owns the server, the
+        // clock and the GUI host. `embed` is this client's `live` — the engine
+        // is the tab's own rather than a process this line started.
+        session = await Session.embed({ tempo: TEMPO, latency: 0.1, channels: 2 });
+        server = session.server;
+        SR = (await server.queryInfo()).nominalSampleRate;
+
+        // The map above **is** the piece's tempo, written before any clock
+        // existed. Give it to the clock and there is one function: the same one
+        // this page asked its questions of, the same one the editor is about to
+        // draw with.
+        //
+        // The clock also writes on it live, and those are the two gestures — a
+        // step and a shape — the same acts, spelled from the other side:
+        //
+        //   clock.setTempo(4.0);            // a step, pinned where you call it
+        //   clock.rampTempo(4.0, 8.0);      // a shape, over the eight beats from here
+        //
+        // Do that while it runs and the piece accelerates under your hand; the
+        // map keeps both, and every beat already played stays convertible.
+        const clock = session.clock;
+        clock.map = tempo;                    // the piece's tempo is the clock's
+        log(`the clock's map: ${JSON.stringify(
+          Array.from({ length: clock.map.len }, (_, i) => clock.map.segment(i)))}`);
+
+        const host = await session.gui();
+        editor = new gui.Editor(compose(), {
+          sampleRate: SR,
+          tempoMap: clock.map,               // drawn from the map
+          quant: QUANT,
+          follow: true,
+          title: "A tempo that changes",
+        });
+        // The one argument a script has no counterpart for: `stage` is where
+        // this page draws — the editor's canvas is made inside that element and
+        // follows its box. Everything else is the call the script makes.
+        win = await editor.open(host, { stage: el("stage") });
+
+        // The clip for beat 8 lands on the sample the clock plays beat 8 at, and
+        // the sweeping line — which the host moves by engine samples — crosses it
+        // exactly then.
+        log(`beat 8 is drawn at sample ${editor.beatsToUnits(8.0)} = ${
+          editor.beatsToUnits(8.0) / SR} s`);
+        log(`a frozen tempo would have said ${(8.0 / TEMPO) * SR}`);
+
+        session.start();                      // the clock runs the routines
+
+        // Play it, and watch the line. It sweeps by the engine's own clock, so if
+        // the drawing and the sound disagreed you would see it: the line would
+        // reach a clip early or late by whatever the tempo change moved. Here it
+        // crosses each note as it sounds, and the notes visibly crowd together
+        // over the last two bars.
+        await editor.render(server, clock);
+
+        // A pass ends by itself; this is the one loop that has to notice. Where
+        // the Python example polls the window's stream, the editor here
+        // subscribes to it (`open` listens), so this is the transport's half of
+        // that loop and nothing else.
+        setInterval(() => editor.transport.update(), 100);
+      }
+
+      el("start").addEventListener("click", () => {
+        run().catch((err) => log(`failed: ${err.message ?? err}`));
+      });
+    </script>
+  </body>
+</html>

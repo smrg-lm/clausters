@@ -10,6 +10,9 @@ The base layer:
   ``yield`` coroutine layer).
 - `clock` — `TempoClock` (native-backed, RT + NRT
   drives).
+- `time` — the piece's beat<->second map (`TempoMap`) and the beat-grid and
+  sample-axis conversions: the questions about time a clock is not needed to
+  answer.
 - `environment` — `Environment`, an isolated place to make sound (server +
   random context); the base of both the default session and `Session`.
 - `main` — the default session (`main`), the ambient `Environment` and the
@@ -28,6 +31,7 @@ The base layer:
 
 from .absobject import AbstractObject
 from .clock import TempoClock
+from .time import TempoMap
 from .destination import Destination, OscDestination
 from .environment import Environment, RandomContext
 from .ids import IdShare, WHOLE as WHOLE_SHARE, share_of
@@ -59,6 +63,7 @@ from ._oscinterface import (
 __all__ = [
     "AbstractObject",
     "TempoClock",
+    "TempoMap",
     "Timebase",
     "MonotonicTimebase",
     "ManualTimebase",

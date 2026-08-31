@@ -98,6 +98,31 @@ thought about the other side", write `gap` — that is what it is for.
 | `clausters_sched_clear` | `JsScheduler.clear` | |
 | — | `JsScheduler.is_empty` | `idiom` — `len == 0`, spelled the way a JS collection is read |
 
+## The piece's time map
+
+The beat↔second map under a tempo that changes along the piece — the integral
+of `1/tempo`, which is what makes a length in beats meaningless without a
+position. One implementation, every client bound to it.
+
+| C ABI | wasm | Note |
+|---|---|---|
+| `clausters_tempomap_new` | `JsTempoMap.new` | |
+| `clausters_tempomap_anchored` | `JsTempoMap.anchored` | |
+| `clausters_tempomap_free` | — | `idiom` — wasm frees by `Drop` |
+| `clausters_tempomap_clone` | `JsTempoMap.copy` | `idiom` — `clone` is taken by JS object semantics, so the method says `copy` |
+| `clausters_tempomap_secs_at` | `JsTempoMap.secs_at` | |
+| `clausters_tempomap_beats_at` | `JsTempoMap.beats_at` | |
+| `clausters_tempomap_tempo_at` | `JsTempoMap.tempo_at` | |
+| `clausters_tempomap_span_secs` | `JsTempoMap.span_secs` | |
+| `clausters_tempomap_span_beats` | `JsTempoMap.span_beats` | |
+| `clausters_tempomap_push` | `JsTempoMap.push` | |
+| `clausters_tempomap_ramp` | `JsTempoMap.ramp` | |
+| `clausters_tempomap_truncate_from` | `JsTempoMap.truncate_from` | |
+| `clausters_tempomap_len` | `JsTempoMap.len` | |
+| `clausters_tempomap_segment` | `JsTempoMap.segment` | `idiom` — C writes six `f64`s into a caller buffer, wasm returns the array |
+| `clausters_tempomap_last` | `JsTempoMap.last` | `idiom` — as above, three `f64`s |
+| — | `JsTempoMap.is_empty` | `idiom` — always false (a map holds a segment), spelled as `JsScheduler` does |
+
 ## The sample-clock model
 
 | C ABI | wasm | Note |

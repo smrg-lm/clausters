@@ -1326,32 +1326,120 @@ work, where a pending item reads as done.)*
   that is the same question as "what a leaf's config is *of*", so it wants
   reading against `O14` before it is written. **Both clients.**
 
-- ⬜ **The editor's bridge freezes a tempo and drops the clock's anchor, so
+- ✅ **The editor's bridge freezes a tempo and drops the clock's anchor, so
   the line and the sound disagree by whatever a `set_tempo` moved** *(found
   2026-08-30 with the entry below; measured the same day, before touching it)*.
-  `Editor.beats_to_units` calls `_native.beats_to_secs(self.tempo, 0.0, 0.0,
+  `Editor.beats_to_units` called `_native.beats_to_secs(self.tempo, 0.0, 0.0,
   beats)` — a straight line through the origin at a tempo **frozen at
-  construction** — while `TempoClock` calls the same function with
+  construction** — while `TempoClock` called the same function with
   `self._base_beats, self._base_secs`, the anchor `set_tempo` moves so that a
-  tempo change has no discontinuity. `Transport.beats_to_samples` inherits the
+  tempo change has no discontinuity. `Transport.beats_to_samples` inherited the
   same scalar, and the host's line sweeps by *engine samples* from the anchor's
   origin, so the drawing is what has to agree with the clock.
 
   **Measured**, at 48 kHz with the tempo doubled at beat 2 (1.0 → 2.0 beats per
-  second): a clip drawn at beat 8 sits at 384 000 units, which the line reaches
-  after **8.0 s** of wall clock, while the clock plays beat 8 at **5.0 s** —
-  **3.0 s** apart. The two halves are separable: re-reading the tempo live would
-  still leave 1.0 s (the discarded base), and the frozen scalar is the other
-  2.0 s.
+  second): a clip drawn at beat 8 sat at 384 000 units, which the line reached
+  after **8.0 s** of wall clock, while the clock played beat 8 at **5.0 s** —
+  **3.0 s** apart. The two halves were separable: re-reading the tempo live
+  would still have left 1.0 s (the discarded base), and the frozen scalar was
+  the other 2.0 s.
 
-  What it is **not** is the unit question below: that one is fixed, and it took
-  the *length* of a take off this mapping entirely (a length in seconds crosses
-  on the rate now), so what is left here is the **onset** axis alone. The shape
-  of the fix is a decision this entry does not take — the editor holds a scalar
-  and the clock holds an anchor that moves, so either the editor reads the clock
-  (a surface change in both clients) or the drawing is redone on every
-  `set_tempo`; and a tempo that changed *twice* is a piecewise map, which one
-  affine bridge cannot be. **Both clients**, and the `Transport` with them.
+  **Three things the first reading of this entry got wrong**, found by auditing
+  the call sites before writing anything:
+
+  1. **The page had a third frozen bridge, and it did not go through the core.**
+     `gui/notation/view.transport` converted with `beats * 1000.0 / tempo`, a
+     division of its own where everything else calls `beats_to_secs`.
+  2. **The host draws from a second copy of the scalar.** `ruler.rs`'s
+     `beat_ticks` takes `tempo`/`beat_at` as props the editor sends on every
+     draw, so the bar:beat labels came from their own frozen reading. That pair
+     is an anchor at half strength — `beat_at` is a `base_beats` with no
+     `base_secs` — so the wire could not express a moved anchor at all.
+  3. **"The onset axis alone" was not true: the sound was frozen too.**
+     `form/render.py` crossed a seconds length to beats with one scalar
+     (`to_beats`), so in a `Sequence` a take's length decided the onset of the
+     *next* member — every element after a tempo change shifted, audibly. The
+     unit pass took a take's length off the *drawing*'s mapping, not off the
+     timeline's.
+
+  **Fixed 2026-08-31, as an addition rather than a change**, which is the shape
+  the user set: a tempo curve and the functions that relate beats to seconds are
+  new surface, and nothing that already worked in real time was to move.
+
+  - **`clausters_core::tempomap::TempoMap`** — the piece's beat↔second map, the
+    integral of `1/tempo` over the beat axis (Jaffe 1985's *time map*; the
+    closed forms follow BPMTimeline, WAC 2016). Ordered segments, `Step` and
+    `Linear`, with the seconds cached at every breakpoint, so a query is a
+    binary search plus one closed-form evaluation — `Δb/T` for a constant tempo,
+    `ln(T₁/T₀)/k` for a ramp. `T > 0` is checked at every edit, because that is
+    what makes the map strictly increasing and therefore invertible. One
+    implementation, bound by both clients (`clausters_tempomap_*` /
+    `JsTempoMap`, `CORE_ABI_VERSION` 29) and reachable from the host, which
+    already links the core.
+  - **`TempoClock` gained the map and changed nothing else.** Two method
+    bodies (`beats2secs`/`secs2beats`, same signature) and the *effect* of
+    `set_tempo`, which appends a breakpoint instead of overwriting the one
+    anchor. `beats()`, `start`, `stop`, `_run_rt`, `freeze`/`thaw`, `render`,
+    `Moment` and all three stamping paths are untouched — they all go through
+    those two methods, and a one-segment map computes the identical expression
+    term for term. The three old fields stay as the last segment's cache, so
+    the hot path is the same three float operations with no search: a running
+    clock only ever reads its own *now*, which is always inside the last
+    segment.
+  - **New verbs, both clients**: `TempoClock.ramp_tempo(tempo, over)` /
+    `rampTempo`, assignable `clock.map`, and a **time module**
+    (`clausters.base.time` / `src/base/time.ts`) exposing the map and the beat
+    grid — the same map read as a question about the piece, with nothing
+    playing.
+  - **The four frozen bridges now read the map**: the editor's onset axis, the
+    transport's line origin, the page's milliseconds, and the flattening. Every
+    length conversion that could take a position now does — `length_to_units`,
+    `units_to_length`, `Vector.to_event`, `Segments.to_events` and the new
+    `end_beat` — because a length in beats is not a duration and has none until
+    it is told where it sits.
+  - **`Editor.render(destination, clock)` adopts the clock's map** and redraws
+    if it moved, so a view and the clock playing it cannot hold two answers.
+  - **The server was not touched.** Verified: the Rust `TempoClock` struct is
+    used nowhere outside the core, and the engine receives absolute samples and
+    timetags. The one place a tempo scalar lives server-side is the shared grid
+    (`/transport_set`, `beats_to_piece_samples`), and it stays scalar — a curve
+    there would be tempo logic on the real-time side. The consequence is named
+    rather than fixed: **the shared grid can only express an affine tempo**, so
+    `join_transport` replaces the map with that one segment (joining a transport
+    *declares the piece affine*), and a curved piece phase-aligns by sample —
+    `follow_transport` takes a `tempo_map` and a `sample_rate` and reads
+    `position_sample`, the seam `/transport_locateSample` already exists for.
+
+  **The acceptance was that the suites pass with no test edited**, and they did:
+  741 Python, the whole web suite, the Rust workspace, `npx pyright` at zero,
+  clippy clean, the 14-configuration feature matrix, all three books. The tests
+  added are the regression itself — the measured 3.0 s case, that the beats
+  before a change stay convertible, that one tempo computes the affine
+  expression, that a ramp is a logarithm and not an average — plus a Python↔wasm
+  parity vector for the map. **One behaviour did change and is worth naming**:
+  the web client's `flatten` now needs the core loaded, because it measures time
+  with the shared map rather than arithmetic of its own.
+
+  **What is still open, and it is the ownership question this did not take.**
+  The map can be held by the clock (execution: lost on save) or by the document
+  (the piece: saved with it). Both work today — `clock.map` is assignable and a
+  map outlives any clock — but nothing *decides*, so a piece's tempo is not yet
+  persisted: `clausters-document` has no tempo field and `to_session` does not
+  carry one. See the entry below, which is the same question from the
+  document's side.
+
+- ⬜ **`TimeUnit::to_beats` takes a length and a scalar, and no position**
+  *(found 2026-08-31, auditing the call sites of the entry above)*.
+  `crates/clausters-document/src/lib.rs`'s `TimeUnit::to_beats(length, tempo)`
+  converts a length in seconds to beats with one number. Under a tempo that
+  changes that operation is not imprecise, it is **undefined**: the same
+  seconds reach a different beat depending on where they start. Its caller
+  `Node::end(tempo)` already has the onset in hand (`self.offset + ...`) and
+  simply does not pass it, so the fix is local — take the position, or return
+  the end beat rather than a "length in beats". The crate would then need the
+  map across the FFI, which is the same decision as who owns it. **The
+  document's half is where a piece's tempo would be stored at all**, so this
+  and the ownership question above are one piece of work.
 
 - ✅ **Three places call beats what is measured in seconds** *(found 2026-08-30
   by the user, from "el tiempo concreto o se mide en muestras o se mide en

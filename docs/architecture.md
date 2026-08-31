@@ -377,13 +377,40 @@ web client, `clausters_document::Body::duration_unit` in the crate — so a writ
 cannot
 disagree with a reader about the number it just wrote. Two consequences follow
 and are load-bearing: the conversion belongs to the **flattening**
-(`form.render.flatten`, which takes the clock's tempo), because a timeline is
-ordered by one number and cannot hold two bases; and the editor's bridge is
-**two ratios** rather than one — `units_per_beat` for an onset,
+(`form.render.flatten`, which takes the piece's tempo map), because a timeline is
+ordered by one number and cannot hold two bases; and the editor's bridge crosses
+on **two different things** rather than one ratio — the time map for an onset,
 `units_per_second` for a length in seconds — which is what makes a take drawn
-exactly as wide as it sounds at any tempo. The host draws by the same pair
+exactly as wide as it sounds at any tempo. The host draws by the ratio pair
 (`tree::Look`'s `units_per_beat`/`units_per_second`) and the crate's `Mapping`
 carries both for the same reason.
+
+**The onset side is a map, not a ratio** (`clausters_core::tempomap::TempoMap`).
+A beat is a logical coordinate, and the second it falls on is the integral of
+`1/tempo` over the beat axis — so under a tempo that changes, `Δbeats` has no
+length until it is told where it sits. The map holds the tempo as ordered
+segments with the seconds cached at each breakpoint, which makes a query a binary
+search plus one closed-form evaluation (a constant tempo divides; a ramp is
+`ln(T₁/T₀)/k`). One implementation in the core, bound by both clients through
+`clausters_tempomap_*` / `JsTempoMap`, so what an editor draws and what a clock
+plays come from the same function.
+
+Its relation to `TempoClock` is that the clock **is** one segment of it: the
+clock's `base_seconds + (beats − base_beats) / tempo` is the map's closed form
+for a single constant-tempo segment, term for term, so adopting a map changed no
+result. What changed is that `set_tempo` appends a breakpoint instead of
+overwriting the one anchor there was, which is what keeps the beats *before* a
+tempo change convertible — the clock never asks, but a view of the piece asks
+constantly. The clock reads its own *now*, always inside the last segment, and
+caches that segment's affine triple, so the hot path never searches.
+
+**The map does not reach the server.** `/transport_set` is an origin and one
+tempo — a grid clients phase-align on, affine by construction — so joining a
+server transport *declares the piece affine* (`TempoClock.join_transport`
+replaces the map with that single segment). A piece whose tempo changes aligns
+by **sample** instead: `follow_transport` reads the transport's
+`position_sample` and converts it through its own map, which is the same seam
+`/transport_locateSample` already exists for.
 
 The paths above are the Python client's, and the model now exists **twice**: the
 web client carries the same layer at mirrored paths (`clients/web/src/form/`

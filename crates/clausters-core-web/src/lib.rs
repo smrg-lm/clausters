@@ -35,6 +35,7 @@ use clausters_core::{
     registry::{self, NodeIdPartition, Registry},
     rng::Rng,
     tempoclock::{self, Scheduler},
+    tempomap::{Curve, TempoMap},
 };
 
 #[cfg(target_arch = "wasm32")]
@@ -477,6 +478,133 @@ impl JsScheduler {
 impl Default for JsScheduler {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// The piece's beat↔second time map, the JS face of
+/// [`clausters_core::tempomap::TempoMap`].
+///
+/// A beat is a logical coordinate, not a unit of time; this is the function
+/// that turns one into the other under a tempo that changes along the piece.
+/// It is pure — it knows nothing of *now* — so an editor, an offline render
+/// and a live clock share one, and there is a single implementation of the
+/// integral behind all of them.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = TempoMap)]
+pub struct JsTempoMap(TempoMap);
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_class = TempoMap)]
+impl JsTempoMap {
+    /// A map of one constant-tempo segment (beat 0 at second 0). A tempo that
+    /// is not finite and positive falls back to 1.0.
+    #[wasm_bindgen(constructor)]
+    pub fn new(tempo: f64) -> JsTempoMap {
+        JsTempoMap(TempoMap::new(tempo))
+    }
+
+    /// A map of one constant-tempo segment with `baseBeats` falling on
+    /// `baseSeconds` — the affine triple a running clock already holds, so
+    /// adopting a map changes no result. `undefined` on invalid arguments.
+    pub fn anchored(tempo: f64, base_beats: f64, base_seconds: f64) -> Option<JsTempoMap> {
+        TempoMap::anchored(tempo, base_beats, base_seconds)
+            .ok()
+            .map(JsTempoMap)
+    }
+
+    /// An independent copy — what handing a piece's map to a clock takes, so
+    /// neither one's edits reach the other.
+    #[wasm_bindgen(js_name = copy)]
+    pub fn copy(&self) -> JsTempoMap {
+        JsTempoMap(self.0.clone())
+    }
+
+    /// **The time map**: the second beat `b` falls on.
+    #[wasm_bindgen(js_name = secsAt)]
+    pub fn secs_at(&self, b: f64) -> f64 {
+        self.0.secs_at(b)
+    }
+
+    /// The inverse: the beat falling on second `s`.
+    #[wasm_bindgen(js_name = beatsAt)]
+    pub fn beats_at(&self, s: f64) -> f64 {
+        self.0.beats_at(s)
+    }
+
+    /// The tempo (beats per second) in effect at beat `b`.
+    #[wasm_bindgen(js_name = tempoAt)]
+    pub fn tempo_at(&self, b: f64) -> f64 {
+        self.0.tempo_at(b)
+    }
+
+    /// How long the stretch from `b0` to `b1` lasts, in seconds — the only
+    /// correct way to turn a length in beats into a length in time, since the
+    /// same span lasts differently depending on where it sits.
+    #[wasm_bindgen(js_name = spanSecs)]
+    pub fn span_secs(&self, b0: f64, b1: f64) -> f64 {
+        self.0.span_secs(b0, b1)
+    }
+
+    /// How many beats fit in `secs` seconds starting at beat `b0`.
+    #[wasm_bindgen(js_name = spanBeats)]
+    pub fn span_beats(&self, b0: f64, secs: f64) -> f64 {
+        self.0.span_beats(b0, secs)
+    }
+
+    /// Appends a constant-tempo change at beat `b`. Returns whether it was
+    /// taken; a refused change leaves the map as it was.
+    pub fn push(&mut self, b: f64, tempo: f64) -> bool {
+        self.0.push(b, tempo).is_ok()
+    }
+
+    /// Writes a tempo ramp over `[fromBeats, toBeats]` from `fromTempo` to
+    /// `toTempo`, holding `toTempo` after it.
+    pub fn ramp(&mut self, from_beats: f64, to_beats: f64, from_tempo: f64, to_tempo: f64) -> bool {
+        self.0
+            .ramp(from_beats, to_beats, from_tempo, to_tempo)
+            .is_ok()
+    }
+
+    /// Drops every breakpoint at or after beat `b` (never the first).
+    #[wasm_bindgen(js_name = truncateFrom)]
+    pub fn truncate_from(&mut self, b: f64) {
+        self.0.truncate_from(b);
+    }
+
+    /// How many segments the map holds (always at least 1).
+    #[wasm_bindgen(getter)]
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Always false — a map holds at least one segment by construction.
+    #[wasm_bindgen(getter, js_name = isEmpty)]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Segment `i` as `[beats, secs, tempo, curve, endBeats, endTempo]` —
+    /// `curve` is 0 for a constant tempo and 1 for a ramp, whose two trailing
+    /// fields are 0 when it is not one. `undefined` past the end.
+    pub fn segment(&self, i: usize) -> Option<Vec<f64>> {
+        self.0.segments().get(i).map(|seg| {
+            let (curve, end_beats, end_tempo) = match seg.curve {
+                Curve::Step => (0.0, 0.0, 0.0),
+                Curve::Linear {
+                    end_beats,
+                    end_tempo,
+                } => (1.0, end_beats, end_tempo),
+            };
+            vec![seg.beats, seg.secs, seg.tempo, curve, end_beats, end_tempo]
+        })
+    }
+
+    /// The last segment's affine triple, `[baseBeats, baseSeconds, tempo]` —
+    /// what a clock caches so reading *now* stays three float operations with
+    /// no search.
+    pub fn last(&self) -> Vec<f64> {
+        let last = self.0.last();
+        vec![last.beats, last.secs, last.tempo]
     }
 }
 

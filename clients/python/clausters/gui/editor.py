@@ -37,6 +37,7 @@ import itertools
 import weakref
 
 from .. import _native
+from ..base.time import TempoMap
 from .handle import WindowHandle
 from ..form.document import (FIRST_VERSION, ID_ATTR, leaf_config, leaf_node,
                              next_node_id, to_document)
@@ -124,12 +125,21 @@ class Editor:
     """
 
     def __init__(self, element, *, sample_rate: float, tempo: float = 1.0,
+                 tempo_map=None,
                  quant: float = 0.0, follow: bool = False, extra=(),
                  title: str = "Composition",
                  width: int = 1000, height: int = 520, base_id: int = 10_000):
         self.element = element
         self.sample_rate = float(sample_rate)
-        self.tempo = float(tempo)
+        #: The piece's beat->second map (`clausters.base.TempoMap`) — the whole
+        #: of the beat side of the unit bridge. Given one, the editor draws
+        #: against the same function the clock plays by, which is what makes the
+        #: line and the sound agree across a tempo change; given only a
+        #: ``tempo``, it is that tempo as a single segment, which is exactly the
+        #: affine ratio this bridge always was.
+        self.tempo_map = (
+            tempo_map.copy() if tempo_map is not None else TempoMap(float(tempo))
+        )
         self.quant = float(quant)
         #: Re-render on every edit (the *live editor*: drag a clip and hear it
         #: where you dropped it). Off by default — an edit then only changes the
@@ -267,7 +277,8 @@ class Editor:
         #: Its lanes are read on each use, so a redraw's new widgets get the line.
         self.transport = Transport(
             None, lambda: self._lanes, source=self._render_pass,
-            tempo=self.tempo, sample_rate=self.sample_rate, extent=self.extent)
+            tempo_map=self.tempo_map, sample_rate=self.sample_rate,
+            extent=self.extent)
         #: Whether the arrangement changed since the last render — an edit does not
         #: interrupt what is playing, so a transport (play, a resume after pause, a
         #: seek) reads this to know it must re-read the composition.
@@ -276,23 +287,48 @@ class Editor:
     # ---- the unit bridge: beats (the data) ↔ timeline samples (the view) ----
 
     @property
+    def tempo(self) -> float:
+        """The tempo the piece **starts** at, in beats per second.
+
+        A reading of `tempo_map`, not a second copy of it: under one tempo it is
+        the tempo, and under a tempo that changes it is the first segment's.
+        Assigning it replaces the map with that single tempo, which is what
+        setting a grid does.
+        """
+        return self.tempo_map.tempo_at(0.0)
+
+    @tempo.setter
+    def tempo(self, tempo: float):
+        self.tempo_map = TempoMap(float(tempo))
+
+    @property
     def units_per_beat(self) -> float:
-        """Timeline samples per beat — the whole of the data↔view unit bridge.
-        One timeline unit is one audio sample, so a take placed at its own frame
-        count sits 1:1 on the axis."""
-        return self.beats_to_units(1.0)
+        """Timeline samples in the **first** beat — the nominal ratio of the
+        data↔view bridge. One timeline unit is one audio sample, so a take
+        placed at its own frame count sits 1:1 on the axis.
+
+        It is a ratio at a position, not a constant: under a tempo that changes,
+        a later beat is a different number of samples wide, which is why
+        `beats_to_units` takes a position and this only names the origin.
+        """
+        return self.beats_to_units(1.0) - self.beats_to_units(0.0)
 
     def beats_to_units(self, beats: float) -> float:
-        """Beats → timeline samples, through the core's own time arithmetic (the
-        seconds→samples rounding every client shares)."""
-        secs = _native.beats_to_secs(self.tempo, 0.0, 0.0, float(beats))
+        """Beats → timeline samples, through the piece's time map (and the
+        core's seconds→samples rounding every client shares).
+
+        The axis is real time, so this is where a beat stops being a logical
+        coordinate: a beat after a tempo change lands on the second it actually
+        falls on, which is the second the clock will play it at.
+        """
+        secs = self.tempo_map.secs_at(float(beats))
         return float(_native.secs_to_samples(secs, self.sample_rate))
 
     def units_to_beats(self, units: float) -> float:
         """Timeline samples → beats: the inverse the edit-back path takes to turn
         a dragged clip back into a placement."""
         secs = _native.samples_to_secs(int(round(units)), self.sample_rate)
-        return _native.secs_to_beats(self.tempo, 0.0, 0.0, secs)
+        return self.tempo_map.beats_at(secs)
 
     @property
     def units_per_second(self) -> float:
@@ -312,21 +348,29 @@ class Editor:
         resized something measured in seconds."""
         return _native.samples_to_secs(int(round(units)), self.sample_rate)
 
-    def length_to_units(self, length: float, element) -> float:
+    def length_to_units(self, length: float, element, at: float = 0.0) -> float:
         """A length of ``element``, in that element's own unit, as timeline
         samples — the one place the editor decides which of the two ratios a
-        number crosses on."""
+        number crosses on.
+
+        ``at`` is where the length **starts**, in beats. A length in seconds
+        does not need it (its seconds are already fixed), but a length in beats
+        does: beats are a logical coordinate, so the same count of them is a
+        different stretch of time depending on where it sits, and only two
+        positions can say how long it is.
+        """
         if getattr(element, "duration_unit", BEATS) == SECONDS:
             return self.secs_to_units(length)
-        return self.beats_to_units(length)
+        return self.beats_to_units(at + length) - self.beats_to_units(at)
 
-    def units_to_length(self, units: float, element) -> float:
+    def units_to_length(self, units: float, element, at: float = 0.0) -> float:
         """Timeline samples as a length of ``element``, in that element's own
         unit — the inverse of `length_to_units`, and what an edit-back writes
-        back onto the arrangement."""
+        back onto the arrangement. ``at`` is the length's start in beats, for
+        the same reason."""
         if getattr(element, "duration_unit", BEATS) == SECONDS:
             return self.units_to_secs(units)
-        return self.units_to_beats(units)
+        return self.units_to_beats(self.beats_to_units(at) + units) - at
 
     # ---- the base level: collapse (a summary rectangle) vs expand (lanes) ----
 
@@ -943,7 +987,8 @@ class Editor:
         # is musical and crosses on the beat; a clip of samples is as long as
         # its seconds, and dividing those by the beat would write a length the
         # next tempo change moves.
-        asked_dur = (self.units_to_length(dur, member.element) if resized
+        asked_dur = (self.units_to_length(dur, member.element,
+                                          self.units_to_beats(offset)) if resized
                      else member.dur)
         node = self._node_id(member.element, member)
         if node is None:
@@ -966,7 +1011,8 @@ class Editor:
         new_dur = effective.get("dur")
         snapped_offset = self.beats_to_units(float(effective["offset"]) + placed.base)
         snapped_dur = (dur if new_dur is None
-                       else self.length_to_units(float(new_dur), member.element))
+                       else self.length_to_units(float(new_dur), member.element,
+                                                 float(effective["offset"]) + placed.base))
         if abs(snapped_offset - offset) >= 0.5 or abs(snapped_dur - dur) >= 0.5:
             self._correct(int(args[0]), offset=snapped_offset, dur=snapped_dur)
             offset, dur = snapped_offset, snapped_dur
@@ -1253,7 +1299,8 @@ class Editor:
             return False
         edited = members[index]
         edited["offset"] = self.units_to_beats(offset) - placed.base
-        edited["dur"] = self.units_to_length(dur, member.element)
+        edited["dur"] = self.units_to_length(dur, member.element,
+                                             self.units_to_beats(offset))
         edited["node"] = dict(edited["node"])
         config = dict(edited["node"].get("config") or {})
         config["start"] = float(start)
@@ -1295,7 +1342,8 @@ class Editor:
         length = member.length if member.length is not None else element.duration
         # In the element's own unit -- seconds, for the only elements a split
         # applies to -- because that is what the placement's length is in.
-        at = self.units_to_length(at_units, element)
+        at = self.units_to_length(at_units, element,
+                                  placed.base + (member.offset or 0.0))
         if length is None or not (0.0 < at < float(length)):
             return False
         node = self._node_id(owner)
@@ -1951,7 +1999,8 @@ class Editor:
             # element's own length, and a member with neither reaches the
             # element's extent -- which `member.length` alone cannot say, so the
             # record kept the size the gesture left.
-            placed.dur = self._drawn_dur(element, member)
+            placed.dur = self._drawn_dur(element, member,
+                                         at=member.offset + placed.base)
         return wid
 
     def _set_placements(self, aggregate, members: list) -> bool:
@@ -2187,11 +2236,37 @@ class Editor:
         This is the arrangement's own `render` (flatten to absolute beats, play
         through a playhead): the editor adds no rendering path of its own, it only
         remembers the destination so `rerender` can re-schedule after an edit.
+
+        **The clock's tempo map wins.** A view of a piece and the clock playing
+        it cannot hold two answers for when a beat falls, so handing a clock
+        here adopts its map and redraws whatever moved. Without a clock the
+        editor keeps its own, which is what lets a composition be laid out
+        before anything plays.
         """
         self._destination, self._clock = destination, clock
+        self._adopt_map(getattr(clock, "map", None))
         playhead = self.transport.play(destination, at=at, quant=quant)
         self.dirty = False            # what plays now *is* the arrangement
         return playhead
+
+    def _adopt_map(self, tempo_map) -> bool:
+        """Take ``tempo_map`` as the editor's, redrawing if it says anything
+        different from the one held. Returns whether it moved.
+
+        The one place the view's time and the clock's are reconciled: a line
+        drawn by one function and a sound played by another disagree by whatever
+        a tempo change moved, and no amount of redrawing the *lanes* fixes that
+        — it is the axis underneath them.
+        """
+        if tempo_map is None:
+            return False
+        if self.tempo_map.segments() == tempo_map.segments():
+            return False
+        self.tempo_map = tempo_map.copy()
+        self.transport.tempo_map = self.tempo_map
+        if self._host is not None and self._window is not None:
+            self._host.define(self._window, self.draw())
+        return True
 
     def _render_pass(self, at: float, quant=None):
         """One pass for the `transport`: the arrangement, flattened and played
@@ -2353,15 +2428,19 @@ class Editor:
             length = self._extent(element)
         return length
 
-    def _drawn_dur(self, element, member, body=None) -> float:
+    def _drawn_dur(self, element, member, body=None, at: float = 0.0) -> float:
         """The same length in **timeline units**, which needs the body: a take
-        with no duration given is as long as it is (1 unit = 1 sample)."""
+        with no duration given is as long as it is (1 unit = 1 sample).
+
+        ``at`` is the clip's own onset in beats, which a length **in beats**
+        needs to have a length at all — the same two-position rule
+        `length_to_units` states."""
         length = self._drawn_length(element, member)
         if body is None:
             body = self._body_for(element, length)
         if "buffer" in body and length <= 0.0:
             return float(element.wraps.frames)
-        return self.length_to_units(length, element)
+        return self.length_to_units(length, element, at)
 
     def _clip_for(self, element, base: float, owner, member) -> dict:
         """One `clip`: the element placed at ``base`` beats (absolute on the shared
@@ -2371,7 +2450,7 @@ class Editor:
         offset = self.beats_to_units(base)
         dur_length = self._drawn_length(element, member)
         body = self._body_for(element, dur_length)
-        dur = self._drawn_dur(element, member, body)
+        dur = self._drawn_dur(element, member, body, at=base)
 
         # The placement's own base: a clip's offset is absolute on the shared axis,
         # a member's offset is relative to its aggregate.

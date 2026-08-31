@@ -22,7 +22,7 @@
 // **A pass ends by itself.** `seq.Playhead` reports the end of its scan, so
 // `update` parks the cursor at the piece's end without the script timing it.
 
-import { beats_to_secs, secs_to_samples } from "../core/clausters_core_web.js";
+import { secs_to_samples, TempoMap } from "../core/clausters_core_web.js";
 import type { TempoClock } from "../base/clock.ts";
 import { ReplyTimeout } from "../errors.ts";
 import type { GuiHost } from "./host.ts";
@@ -40,9 +40,18 @@ export interface TransportOptions {
      * every play, so what sounds is always the piece as it now stands.
      */
     source: (at: number) => Playhead | null;
-    /** The clock's tempo in beats per second (2.0 is 120 bpm). */
-    tempo: number;
-    /** The engine's sample rate; with `tempo` it fixes the beats→samples axis. */
+    /**
+     * The piece's starting tempo in beats per second (2.0 is 120 bpm). Ignored
+     * when `tempoMap` is given.
+     */
+    tempo?: number;
+    /**
+     * The piece's {@link TempoMap}, when its tempo changes along the way — pass
+     * the clock's (`TempoClock.map`) so the line and the sound read one
+     * function.
+     */
+    tempoMap?: TempoMap;
+    /** The engine's sample rate; with the tempo it fixes the beats→samples axis. */
     sampleRate: number;
     /**
      * `toUnits(beats)` → the view's own units, for the static cursor. Defaults
@@ -84,7 +93,13 @@ export class Transport {
     host: GuiHost | null;
     ids: TransportTargets;
     source: (at: number) => Playhead | null;
-    tempo: number;
+    /**
+     * The piece's beat→second map. The line sweeps by engine samples from an
+     * origin this places, so the origin has to come from the same function the
+     * clock plays by: given only a `tempo` it is that tempo as one segment,
+     * which is the affine ratio this always used.
+     */
+    tempoMap: TempoMap;
     sampleRate: number;
     toUnits: (beats: number) => number;
     extent: (() => number) | null;
@@ -114,7 +129,8 @@ export class Transport {
         ids: TransportTargets,
         {
             source,
-            tempo,
+            tempo = 1.0,
+            tempoMap,
             sampleRate,
             toUnits,
             extent,
@@ -125,7 +141,7 @@ export class Transport {
         this.host = host;
         this.ids = ids;
         this.source = source;
-        this.tempo = Number(tempo);
+        this.tempoMap = tempoMap?.copy() ?? new TempoMap(Number(tempo));
         this.sampleRate = Number(sampleRate);
         this.toUnits = toUnits ?? ((beats) => this.beatsToSamples(beats));
         this.extent = extent ?? null;
@@ -136,14 +152,28 @@ export class Transport {
     // ---- the unit bridge ----
 
     /**
-     * Beats → samples of the engine clock, through the core's own time
-     * arithmetic (the seconds→samples rounding every client shares).
+     * The tempo the piece **starts** at, in beats per second — a reading of
+     * {@link Transport.tempoMap}. Assigning it replaces the map with that single
+     * tempo.
+     */
+    get tempo(): number {
+        return this.tempoMap.tempoAt(0.0);
+    }
+
+    set tempo(tempo: number) {
+        this.tempoMap = new TempoMap(tempo);
+    }
+
+    /**
+     * Beats → samples of the engine clock, through the piece's time map (and the
+     * core's seconds→samples rounding every client shares).
+     *
+     * Where the line's origin comes from, so it must be the map and not a ratio:
+     * the host sweeps the playhead by engine samples, and a beat placed by a
+     * frozen tempo would be crossed at a time the clock never plays it at.
      */
     beatsToSamples(beats: number): number {
-        return secs_to_samples(
-            beats_to_secs(this.tempo, 0.0, 0.0, Number(beats)),
-            this.sampleRate,
-        );
+        return secs_to_samples(this.tempoMap.secsAt(Number(beats)), this.sampleRate);
     }
 
     private targets(): number[] {

@@ -13,6 +13,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { loadCore } from "../src/base/core.ts";
 import { Event as SeqEvent } from "../src/seq/event.ts";
 import { Timeline } from "../src/seq/timeline.ts";
 import {
@@ -42,6 +43,12 @@ import {
     toTimeline,
 } from "../src/form/index.ts";
 import type { SourceLike } from "../src/form/index.ts";
+
+// The flattening crosses beats to seconds through the shared core's time map
+// (`TempoMap`), so the wasm has to be up before any of it runs — the same
+// requirement the clock has always had, now that the arrangement measures time
+// with the same one function rather than a ratio of its own.
+await loadCore();
 
 const buffer = (bufnum: number): SourceLike => ({ bufnum });
 const note = (midinote: number, dur = 1.0): SeqEvent => new SeqEvent({ midinote, dur });

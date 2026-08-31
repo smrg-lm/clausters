@@ -72,6 +72,7 @@ from . import _native
 from . import base, data, defs, errors, form, gui, ipc, launch, seq
 from .errors import ClaustersError
 from .base.clock import TempoClock
+from .base.time import TempoMap
 from .base.main import default_session, main
 from .base.rand import choice, uniform
 from .base.stream import Routine
@@ -129,6 +130,7 @@ __all__ = [
     "Buffer",
     # time
     "TempoClock",
+    "TempoMap",
     "Routine",
     "Event",
     "rest",

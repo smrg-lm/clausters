@@ -431,6 +431,93 @@ export class Score {
 }
 
 /**
+ * The piece's beat↔second time map, the JS face of
+ * [`clausters_core::tempomap::TempoMap`].
+ *
+ * A beat is a logical coordinate, not a unit of time; this is the function
+ * that turns one into the other under a tempo that changes along the piece.
+ * It is pure — it knows nothing of *now* — so an editor, an offline render
+ * and a live clock share one, and there is a single implementation of the
+ * integral behind all of them.
+ */
+export class TempoMap {
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * A map of one constant-tempo segment with `baseBeats` falling on
+     * `baseSeconds` — the affine triple a running clock already holds, so
+     * adopting a map changes no result. `undefined` on invalid arguments.
+     */
+    static anchored(tempo: number, base_beats: number, base_seconds: number): TempoMap | undefined;
+    /**
+     * The inverse: the beat falling on second `s`.
+     */
+    beatsAt(s: number): number;
+    /**
+     * An independent copy — what handing a piece's map to a clock takes, so
+     * neither one's edits reach the other.
+     */
+    copy(): TempoMap;
+    /**
+     * The last segment's affine triple, `[baseBeats, baseSeconds, tempo]` —
+     * what a clock caches so reading *now* stays three float operations with
+     * no search.
+     */
+    last(): Float64Array;
+    /**
+     * A map of one constant-tempo segment (beat 0 at second 0). A tempo that
+     * is not finite and positive falls back to 1.0.
+     */
+    constructor(tempo: number);
+    /**
+     * Appends a constant-tempo change at beat `b`. Returns whether it was
+     * taken; a refused change leaves the map as it was.
+     */
+    push(b: number, tempo: number): boolean;
+    /**
+     * Writes a tempo ramp over `[fromBeats, toBeats]` from `fromTempo` to
+     * `toTempo`, holding `toTempo` after it.
+     */
+    ramp(from_beats: number, to_beats: number, from_tempo: number, to_tempo: number): boolean;
+    /**
+     * **The time map**: the second beat `b` falls on.
+     */
+    secsAt(b: number): number;
+    /**
+     * Segment `i` as `[beats, secs, tempo, curve, endBeats, endTempo]` —
+     * `curve` is 0 for a constant tempo and 1 for a ramp, whose two trailing
+     * fields are 0 when it is not one. `undefined` past the end.
+     */
+    segment(i: number): Float64Array | undefined;
+    /**
+     * How many beats fit in `secs` seconds starting at beat `b0`.
+     */
+    spanBeats(b0: number, secs: number): number;
+    /**
+     * How long the stretch from `b0` to `b1` lasts, in seconds — the only
+     * correct way to turn a length in beats into a length in time, since the
+     * same span lasts differently depending on where it sits.
+     */
+    spanSecs(b0: number, b1: number): number;
+    /**
+     * The tempo (beats per second) in effect at beat `b`.
+     */
+    tempoAt(b: number): number;
+    /**
+     * Drops every breakpoint at or after beat `b` (never the first).
+     */
+    truncateFrom(b: number): void;
+    /**
+     * Always false — a map holds at least one segment by construction.
+     */
+    readonly isEmpty: boolean;
+    /**
+     * How many segments the map holds (always at least 1).
+     */
+    readonly len: number;
+}
+
+/**
  * The 0-based bar index `beats` falls in on a grid of `quant` beats per bar.
  */
 export function bar(beats: number, quant: number): number;
@@ -777,6 +864,7 @@ export interface InitOutput {
     readonly __wbg_sampleclockmodel_free: (a: number, b: number) => void;
     readonly __wbg_scheduler_free: (a: number, b: number) => void;
     readonly __wbg_score_free: (a: number, b: number) => void;
+    readonly __wbg_tempomap_free: (a: number, b: number) => void;
     readonly bar: (a: number, b: number) => number;
     readonly beat_in_bar: (a: number, b: number) => number;
     readonly beats_to_secs: (a: number, b: number, c: number, d: number) => number;
@@ -884,6 +972,21 @@ export interface InitOutput {
     readonly sheetPerform: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly sheetToMei: (a: number, b: number) => [number, number, number, number];
     readonly svgToDisplayList: (a: number, b: number) => [number, number, number, number];
+    readonly tempomap_anchored: (a: number, b: number, c: number) => number;
+    readonly tempomap_beatsAt: (a: number, b: number) => number;
+    readonly tempomap_copy: (a: number) => number;
+    readonly tempomap_isEmpty: (a: number) => number;
+    readonly tempomap_last: (a: number) => [number, number];
+    readonly tempomap_len: (a: number) => number;
+    readonly tempomap_new: (a: number) => number;
+    readonly tempomap_push: (a: number, b: number, c: number) => number;
+    readonly tempomap_ramp: (a: number, b: number, c: number, d: number, e: number) => number;
+    readonly tempomap_secsAt: (a: number, b: number) => number;
+    readonly tempomap_segment: (a: number, b: number) => [number, number];
+    readonly tempomap_spanBeats: (a: number, b: number, c: number) => number;
+    readonly tempomap_spanSecs: (a: number, b: number, c: number) => number;
+    readonly tempomap_tempoAt: (a: number, b: number) => number;
+    readonly tempomap_truncateFrom: (a: number, b: number) => void;
     readonly unary: (a: number, b: number, c: number) => [number, number, number];
     readonly unix_to_ntp: (a: number) => bigint;
     readonly unix_to_sample: (a: number, b: number, c: number, d: number) => number;

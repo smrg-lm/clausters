@@ -105,6 +105,45 @@ def test_one_beat_is_sample_rate_over_tempo_timeline_units():
     assert ed.units_to_beats(ed.beats_to_units(3.25)) == pytest.approx(3.25)
 
 
+def test_a_clip_is_drawn_where_the_clock_plays_it_across_a_tempo_change():
+    """The measured defect: at 48 kHz with the tempo doubled at beat 2, beat 8
+    used to be drawn at 384 000 units — the line reaching it after 8.0 s of wall
+    clock while the clock played it at 5.0 s, three seconds apart.
+
+    The axis is real time, so the only right answer is the second the clock
+    plays that beat at. Drawing it needs the whole tempo history, not the tempo
+    in force now, which is why an editor holds a map and not a ratio.
+    """
+    from clausters.base import TempoMap
+
+    tempo = TempoMap(1.0)
+    tempo.push(2.0, 2.0)                       # doubled at beat 2 (second 2.0)
+    ed = editor(tempo_map=tempo)
+    assert ed.beats_to_units(8.0) == pytest.approx(5.0 * SR)
+    # The beats before the change keep the seconds they actually fell on: it is
+    # the tempo *history* that is drawn, not an extrapolation of the last slope.
+    assert ed.beats_to_units(1.0) == pytest.approx(1.0 * SR)
+    # And the edit-back inverts it, so a drag still round-trips.
+    assert ed.units_to_beats(ed.beats_to_units(8.0)) == pytest.approx(8.0)
+    # The transport places the sweeping line from the same function, which is
+    # what makes the line and the sound agree rather than merely be close.
+    assert ed.transport.beats_to_samples(8.0) == pytest.approx(5.0 * SR)
+
+
+def test_a_length_in_beats_is_measured_where_it_sits():
+    """A length in beats is not a duration: the same two beats are two seconds
+    at the start and one after the tempo doubles, so the bridge takes the onset
+    and never a beat count alone."""
+    from clausters.base import TempoMap
+
+    tempo = TempoMap(1.0)
+    tempo.push(4.0, 2.0)
+    ed = editor(tempo_map=tempo)
+    beats_element = Element(Clang(SeqEvent({"freq": 440})).wraps)
+    assert ed.length_to_units(2.0, beats_element, at=0.0) == pytest.approx(2.0 * SR)
+    assert ed.length_to_units(2.0, beats_element, at=4.0) == pytest.approx(1.0 * SR)
+
+
 def test_a_musical_quant_becomes_the_lanes_drag_grid():
     tree = editor(quant=0.25).draw()
     assert all(lane["snap"] == pytest.approx(BEAT / 4) for lane in lanes(tree))

@@ -53,8 +53,39 @@ SECONDS = "seconds"
 
 
 def to_beats(length: float, unit: str, tempo: float) -> float:
-    """``length`` (in ``unit``) as beats at ``tempo`` beats per second."""
+    """``length`` (in ``unit``) as beats at ``tempo`` beats per second.
+
+    The affine spelling, correct only while one tempo governs the whole stretch.
+    `end_beat` is the one that holds under a tempo that changes, and every
+    caller that knows where the length *starts* should use that instead: a
+    length in beats has no length until it is told where it sits.
+    """
     return float(length) * float(tempo) if unit == SECONDS else float(length)
+
+
+def tempo_map_of(tempo_map=None, tempo: float = 1.0):
+    """The map to measure with: the one given, or ``tempo`` as a single
+    constant segment — which is the affine ratio every one of these
+    conversions used to be, so a caller that names no map gets exactly what it
+    always got."""
+    if tempo_map is not None:
+        return tempo_map
+    from ..base.time import TempoMap
+
+    return TempoMap(float(tempo))
+
+
+def end_beat(at: float, length: float, unit: str, tempo_map) -> float:
+    """The beat that ``length`` (in ``unit``) reaches, starting at beat ``at``.
+
+    Two positions, never a length and a ratio. A length in **beats** is already
+    on the axis and simply lands at ``at + length``; a length in **seconds** is a
+    wall-clock fact whose end depends on how the tempo runs across it, which is
+    what the piece's map (`clausters.base.TempoMap`) answers.
+    """
+    if unit != SECONDS:
+        return float(at) + float(length)
+    return tempo_map.beats_at(tempo_map.secs_at(float(at)) + float(length))
 
 
 #: The temporal character of an element, derived from which of ``onset`` and
@@ -285,14 +316,16 @@ class Vector(Element):
         fixed when they were recorded — a tempo change does not shorten a take."""
         return SECONDS
 
-    def to_event(self, tempo: float = 1.0):
+    def to_event(self, tempo_map=None, at: float = 0.0):
         """The event that plays this buffer: the `instrument` def with the buffer
         number in its ``buf`` control, sounding for the element's ``duration``.
 
-        ``tempo`` (beats per second) is what the length crosses on: this
-        element's duration is in seconds and an event's ``dur`` is in beats,
-        because an event is played by a clock. It is the only conversion, and it
-        happens here rather than in the structure.
+        ``tempo_map`` is what the length crosses on: this element's duration is
+        in seconds and an event's ``dur`` is in beats, because an event is
+        played by a clock. It is the only conversion, and it happens here rather
+        than in the structure. ``at`` is the beat the take starts on, which the
+        crossing needs: the same stretch of seconds is a different number of
+        beats depending on where the tempo has got to.
 
         ``legato`` is 1 so the take sounds its whole length (the note default of
         0.8 would cut it short — a sampled take is not a note with a gap), and
@@ -319,7 +352,10 @@ class Vector(Element):
         if self.loop:
             params["loop"] = 1.0
         if self.duration is not None:
-            params["dur"] = float(self.duration) * float(tempo)
+            # Two positions, not a length times a ratio: the take's seconds are
+            # fixed, and how many beats they cover depends on where it starts.
+            tempo_map = tempo_map_of(tempo_map)
+            params["dur"] = end_beat(at, self.duration, SECONDS, tempo_map) - at
         params.update(self.controls)
         return SeqEvent(params)
 
@@ -383,13 +419,17 @@ class Segments(Element):
             cursor += seg.duration
         return out
 
-    def to_events(self, tempo: float = 1.0) -> list:
+    def to_events(self, tempo_map=None, at: float = 0.0) -> list:
         """One ``(offset, event)`` per segment: the instrument playing that
         buffer, from that frame, for that long. The offsets are relative to the
         element, exactly as an aggregate's members' are — and in **beats**,
-        converted here at ``tempo`` (beats per second) from the seconds the
-        windows are measured in, because what comes out of this is played by a
-        clock."""
+        converted here from the seconds the windows are measured in, because
+        what comes out of this is played by a clock.
+
+        ``tempo_map`` is the piece's, and ``at`` the beat this element starts
+        on: each window is placed and sized from where it actually falls, so a
+        tempo change inside the element moves the segments after it and not the
+        ones before."""
         from ..seq.event import Event as SeqEvent
 
         if self.instrument is None:
@@ -398,15 +438,20 @@ class Segments(Element):
                 "(Segments(..., instrument='take'): a def whose `buf` control "
                 "plays a buffer, reading `start` for the window)"
             )
+        tempo_map = tempo_map_of(tempo_map)
         out = []
         for offset, seg in self.placed():
+            # Both numbers are seconds and both are placed, not scaled: the
+            # window opens at the beat those seconds reach from `at`, and lasts
+            # to the beat its own seconds reach from there.
+            onset = end_beat(at, offset, SECONDS, tempo_map)
+            end = end_beat(onset, seg.duration, SECONDS, tempo_map)
             params = dict(instrument=self.instrument, buf=seg.buffer.bufnum,
-                          legato=1.0, amp=1.0,
-                          dur=float(seg.duration) * float(tempo))
+                          legato=1.0, amp=1.0, dur=end - onset)
             if seg.start:
                 params["start"] = float(seg.start)
             params.update(self.controls)
-            out.append((offset * float(tempo), SeqEvent(params)))
+            out.append((onset - at, SeqEvent(params)))
         return out
 
 

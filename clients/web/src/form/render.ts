@@ -50,8 +50,10 @@ import {
     Track,
     Vector,
     registerRendering,
-    toBeats,
+    endBeat,
+    tempoMapOf,
 } from "./element.ts";
+import type { TempoMap } from "../core/clausters_core_web.js";
 
 /** One flattened item: what plays, and the absolute beat it plays at. */
 export type Flat = [beat: number, item: unknown];
@@ -86,9 +88,14 @@ export type RenderResult = Playhead | Promise<Group>;
  * default tempo of one beat a second the two coincide, which is what a script
  * that never set a tempo has always been running under.
  */
-export function flatten(element: Element, base = 0.0, tempo = 1.0): Flat[] {
+export function flatten(
+    element: Element,
+    base = 0.0,
+    tempo = 1.0,
+    tempoMap?: TempoMap | null,
+): Flat[] {
     const out: Flat[] = [];
-    emit(element, Number(base), out, null, Number(tempo));
+    emit(element, Number(base), out, null, tempoMapOf(tempoMap, Number(tempo)));
     // A stable sort (the language guarantees one), which is what keeps a
     // note-off before the re-trigger placed at the same beat.
     out.sort((a, b) => a[0] - b[0]);
@@ -100,9 +107,14 @@ export function flatten(element: Element, base = 0.0, tempo = 1.0): Flat[] {
  * structure a `Playhead` plays and a transport seeks. `tempo` is the clock's,
  * in beats per second (see {@link flatten}).
  */
-export function toTimeline(element: Element, base = 0.0, tempo = 1.0): Timeline {
+export function toTimeline(
+    element: Element,
+    base = 0.0,
+    tempo = 1.0,
+    tempoMap?: TempoMap | null,
+): Timeline {
     const timeline = new Timeline();
-    for (const [beat, item] of flatten(element, base, tempo)) timeline.add(beat, item);
+    for (const [beat, item] of flatten(element, base, tempo, tempoMap)) timeline.add(beat, item);
     return timeline;
 }
 
@@ -134,7 +146,14 @@ export function render(
         );
     }
     const tempo = Number((clock as { tempo?: number } | undefined)?.tempo ?? 1.0) || 1.0;
-    const timeline = toTimeline(element, Number(element.onset ?? 0.0), tempo);
+    // The clock's own map, so what sounds and what an editor draws are measured
+    // by one function rather than by two readings of it.
+    const timeline = toTimeline(
+        element,
+        Number(element.onset ?? 0.0),
+        tempo,
+        (clock as { map?: TempoMap } | undefined)?.map,
+    );
     const playhead = new Playhead(
         timeline,
         clock as TempoClock,
@@ -181,13 +200,16 @@ function emit(
     base: number,
     out: Flat[],
     dur: number | null = null,
-    tempo = 1.0,
+    tempoMap: TempoMap,
 ): void {
     let placed: Flat[] = [];
-    emitElement(element, base, placed, tempo);
+    emitElement(element, base, placed, tempoMap);
     if (dur !== null) {
-        const length = toBeats(dur, element.durationUnit, tempo);
-        const end = base + length;
+        // The placement's end, not its length turned into one: under a tempo
+        // that changes, a length in seconds reaches a different beat depending
+        // on where it starts, so the two positions are what say where it ends.
+        const end = endBeat(base, dur, element.durationUnit, tempoMap);
+        const length = end - base;
         placed = placed
             .filter(([beat]) => beat < end - 1e-9)
             .map(([beat, item]) => [beat, sized(item, Math.min(length, end - beat))]);
@@ -207,7 +229,7 @@ function sized(item: unknown, dur: number): unknown {
     return item;
 }
 
-function emitElement(element: Element, base: number, out: Flat[], tempo: number): void {
+function emitElement(element: Element, base: number, out: Flat[], tempoMap: TempoMap): void {
     if (element instanceof Aggregate) {
         if (element.kind !== CONCRETE) {
             throw new Error(
@@ -215,21 +237,21 @@ function emitElement(element: Element, base: number, out: Flat[], tempo: number)
             );
         }
         for (const member of element.handles) {
-            emit(member.element, base + member.offset, out, member.dur, tempo);
+            emit(member.element, base + member.offset, out, member.dur, tempoMap);
         }
     } else if (element instanceof Track) {
         for (const [beat, item] of element.timeline) out.push([base + beat, item]);
     } else if (element instanceof Clang) {
         out.push([base, element.wraps]);
     } else if (element instanceof Sequence || element instanceof Generator) {
-        emitSequence(element.wraps, base, out, tempo);
+        emitSequence(element.wraps, base, out, tempoMap);
     } else if (element instanceof Segments) {
         // Several windows read as one thing: one event per segment, each at its
         // own offset inside the element and each carrying its own window, so
         // what sounds is continuous even though the source is not one buffer.
         // Without an instrument it is structure, exactly as a `Vector` is.
         if (element.instrument !== null) {
-            for (const [offset, event] of element.toEvents(tempo)) {
+            for (const [offset, event] of element.toEvents(tempoMap, base)) {
                 out.push([base + offset, event]);
             }
         }
@@ -237,7 +259,7 @@ function emitElement(element: Element, base: number, out: Flat[], tempo: number)
         // A buffer is data; the instrument is what makes it sound (a def whose
         // `buf` control plays it). Without one it is structure only — it draws
         // in the editor and contributes its extent, but emits no event.
-        if (element.instrument !== null) out.push([base, element.toEvent(tempo)]);
+        if (element.instrument !== null) out.push([base, element.toEvent(tempoMap, base)]);
     } else if (element instanceof Element) {
         // An abstract context element yields no event.
         if (element.wraps === null) return;
@@ -258,7 +280,7 @@ function emitElement(element: Element, base: number, out: Flat[], tempo: number)
  * A List/Function backed by an event pattern is bounced; a list of elements is
  * laid out successively by their durations.
  */
-function emitSequence(wrapped: unknown, base: number, out: Flat[], tempo = 1.0): void {
+function emitSequence(wrapped: unknown, base: number, out: Flat[], tempoMap: TempoMap): void {
     if (wrapped === null || wrapped === undefined || typeof wrapped === "string") {
         // A **frozen** generator: the document named an algorithm and nothing in
         // this process supplied one, so what came back is the reference itself
@@ -298,10 +320,10 @@ function emitSequence(wrapped: unknown, base: number, out: Flat[], tempo = 1.0):
                     "a Sequence of raw values is data (a parameter), not events",
                 );
             }
-            emit(item, cursor, out, null, tempo);
+            emit(item, cursor, out, null, tempoMap);
             // Laid out successively on the beat axis, so each length crosses
             // from whatever unit its own data is in.
-            cursor += toBeats(item.duration ?? 0.0, item.durationUnit, tempo);
+            cursor = endBeat(cursor, item.duration ?? 0.0, item.durationUnit, tempoMap);
         }
     }
 }

@@ -321,12 +321,33 @@ cannot be invented.
 The arrangement places elements in **beats** and measures each one's length in
 the unit of its own data (above); the view places clips in **timeline samples**,
 because a clip's body is audio data and its sample 0 sits at the clip's offset.
-The editor is the only converter between the two, and it holds **two ratios, not
-one**: an onset crosses on `units_per_beat` (`sample_rate / tempo`) and a length
-in seconds crosses on `units_per_second` (the rate itself). So a take is drawn
+The editor is the only converter between the two, and it crosses on **two
+different things**: a length in seconds crosses on `units_per_second` (the rate
+itself), and an onset crosses on the piece's **time map**. So a take is drawn
 exactly as wide as it sounds whatever the tempo is, and only its placement moves
 with the grid. Give the editor the engine's rate and the clock's tempo and the
 bridge is closed.
+
+The map is what makes the placement side right when the tempo changes. A beat is
+a logical coordinate: what second it falls on depends on the whole tempo history
+before it, not on the tempo in force now, so the same four beats are a different
+stretch of the axis at the start of the piece and after an accelerando. That is
+why the editor holds a `TempoMap` rather than a number, why `beats_to_units`
+takes a position, and why `length_to_units` takes the onset a length starts at.
+Under a single tempo it is the plain ratio `sample_rate / tempo`, which is what
+`units_per_beat` still names.
+
+**Hand the editor the clock's map** when the piece changes tempo, so the line and
+the sound are one function rather than two readings of it:
+
+```python
+clock.set_tempo(2.0)                       # or clock.ramp_tempo(2.0, over=8)
+editor = Editor(song, sample_rate=server.sample_rate, tempo_map=clock.map)
+```
+
+`editor.render(server, clock)` adopts the clock's map anyway and redraws if it
+moved, so the two cannot silently disagree — but passing it up front means the
+first draw is already right.
 
 The `quant` you pass is a *musical* grid (`0.5` = half a beat). It becomes the
 lane's drag grid, so the grid a clip is dropped on is the grid the arrangement

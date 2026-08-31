@@ -99,6 +99,15 @@ export {
     workerTicker } from "./base/clock.ts";
 export type { ManualTicker, Schedulable, TempoClockOptions, Ticker } from "./base/clock.ts";
 export {
+    LINEAR,
+    STEP,
+    TempoMap,
+    bar,
+    beatInBar,
+    quantDelay,
+    samplesToSecs,
+    secsToSamples } from "./base/time.ts";
+export {
     ManualTimebase,
     MonotonicTimebase,
     SampleClockTimebase } from "./base/timebase.ts";

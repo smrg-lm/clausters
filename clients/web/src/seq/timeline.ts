@@ -21,6 +21,7 @@
 // driving every client — the same local transport, driven from outside.
 
 import { TempoClock } from "../base/clock.ts";
+import type { TempoMap } from "../core/clausters_core_web.js";
 import { ManualTimebase } from "../base/timebase.ts";
 import { currentRoutine } from "../base/context.ts";
 import { Routine } from "../base/stream.ts";
@@ -30,6 +31,7 @@ import type { Pattern } from "./pattern.ts";
 import type { Server, TimedMessage } from "../defs/server/index.ts";
 import type { MsgArg } from "../base/osc.ts";
 import { OscFunc } from "../responders.ts";
+import type { ResponderMessage } from "../responders.ts";
 
 /** What a timeline can hold: anything that renders itself on a destination. */
 export interface TimelineItem {
@@ -419,6 +421,16 @@ export class Playhead {
      * Beat-aligned in plain wall-clock mode; sample-exact when the clock is
      * also locked to the server (`Session.lockToServer`).
      *
+     * `tempoMap`: the piece's {@link TempoMap}, for a piece whose tempo changes
+     * along the way. The shared grid is a contract between clients and can only
+     * state **one** tempo (`/transport_set` is an origin and a scalar), so the
+     * beat position the server broadcasts is a reading of that nominal grid, not
+     * of this piece. Given a map, the position is taken from the transport's
+     * **sample** spelling and converted here — the same seam an editor drives
+     * the transport through — and the broadcast beat is ignored. It needs
+     * `sampleRate` (the engine's) to read that axis; without either, nothing
+     * changes.
+     *
      * The responder is an `OscFunc` on the server's receiver, as in the
      * reference client — with the receiver the page already has (the server's
      * connection) rather than a socket opened for the purpose, which a browser
@@ -426,15 +438,39 @@ export class Playhead {
      */
     async followTransport(
         server: Server,
-        { quant, timeout }: { quant?: number; timeout?: number } = {},
+        {
+            quant,
+            timeout,
+            tempoMap,
+            sampleRate = 0,
+        }: {
+            quant?: number;
+            timeout?: number;
+            tempoMap?: TempoMap | null;
+            sampleRate?: number;
+        } = {},
     ): Promise<this> {
         this.unfollowTransport();
         await server.notify(true, timeout);
+        const rate = Number(sampleRate) || 0;
+        /**
+         * The song position as a beat **of this piece**.
+         *
+         * The broadcast field (index 5) reads the shared grid, which is one
+         * tempo by construction. When the piece has a map, the truthful spelling
+         * is the sample position (index 7) put through it; the two agree exactly
+         * whenever the piece is affine.
+         */
+        const beatOf = (msg: ResponderMessage): number =>
+            tempoMap && rate > 0 && msg.length >= 8
+                ? tempoMap.beatsAt(Number(msg[7]) / rate)
+                : Number(msg[5]);
         this.following = new OscFunc(
             (msg) => {
-                // /transport_query.reply originSample tempo defined playing position ...
+                // /transport_query.reply originSample tempo defined playing
+                // position group transportSample positionSample ...
                 if (msg.length < 7 || !Number(msg[3])) return;
-                const position = Number(msg[5]);
+                const position = beatOf(msg);
                 if (Number(msg[4])) {
                     this.play({ at: position, quant });
                 } else {
@@ -451,8 +487,12 @@ export class Playhead {
         // says what a beat is. Applying that would locate to 0 on a server
         // whose transport is being driven in samples.
         if (state.tempo !== null) {
-            if (state.playing) this.play({ at: state.position, quant });
-            else this.locate(state.position);
+            const at =
+                tempoMap && rate > 0
+                    ? tempoMap.beatsAt(Number(state.positionSample) / rate)
+                    : state.position;
+            if (state.playing) this.play({ at, quant });
+            else this.locate(at);
         }
         return this;
     }

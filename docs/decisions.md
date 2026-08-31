@@ -7704,3 +7704,54 @@ page, because what comes back on the event is what was **written** — the
 articulation verbatim — and not what the interpreter computed from it. The
 interpreter's note carries both for that reason: `sustain`, which is the
 performance, and `marks`, which is the page.
+
+## The piece's tempo is a stored integral, and the clock is one segment of it
+
+A beat is not a unit of time. It is a logical coordinate, and the tempo that
+turns one into a second can change along a piece — so "when does beat 8
+happen?" cannot be answered from the tempo in force now. The two things the
+word "tempo" covers are kept apart: the **tempo function** `T(b)` is what a
+user writes (a step, a ramp), and the **time map** `M(b) = ∫₀ᵇ db'/T(b')` is
+what everything queries.
+
+**We store the integral, not the tempo function.** That is Jaffe's 1985
+proposal (*Ensemble Timing in Computer Music*), and the reason is that the map
+is what gets asked, constantly, while the tempo function is only what gets
+edited — integrating on every query is both expensive and the kind of thing two
+callers end up doing differently. `TempoMap` keeps ordered segments with the
+seconds cached at each breakpoint, so a query is a binary search plus one
+closed-form evaluation: `Δb/T` at a constant tempo, `ln(T₁/T₀)/k` across a ramp
+(the analytical route BPMTimeline, WAC 2016, takes). The invariant that makes
+all of it work is `T > 0`: it is what makes `M` strictly increasing and
+therefore invertible, so it is checked at every edit rather than assumed.
+
+**The consequence that reaches every caller**: a length in beats is not a
+duration. `Δbeats` has no length until it is told where it sits, so seconds
+come from two *positions* and never from a beat count times a ratio. That is
+why `length_to_units`, `Vector.to_event` and the flattening all take an onset,
+and why `to_beats(length, tempo)` is the shape to be suspicious of.
+
+**A `TempoClock` did not change; it adopted one segment.** Its
+`base_seconds + (beats − base_beats) / tempo` *is* the map's closed form for a
+single constant-tempo segment, term for term, so a one-segment map answers with
+the identical float — not a close one. What changed is that `set_tempo`
+appends a breakpoint instead of overwriting the one anchor it had. The clock
+itself never needed the history: it reads its own *now* and moves forward. A
+**view** of the piece needs it constantly, and a clock that kept one anchor
+would extrapolate its current slope backwards and report that beat 1 happened
+at a second it did not. The clock keeps the last segment as an affine cache, so
+the real-time path is the same three float operations with no search.
+
+**The map does not reach the server.** `/transport_set` is an origin and one
+tempo — a grid several clients phase-align on by reading two numbers — and it
+stays that way, because a curve there would be tempo logic on the real-time
+side for no gain. The consequence is named rather than papered over: the shared
+grid can only express an affine tempo, so joining a server transport *declares
+the piece affine*, and a piece whose tempo changes phase-aligns by **sample**
+instead (`position_sample`, the axis `/transport_locateSample` already
+addresses). Each side speaks its own unit, which is the same rule that keeps a
+beat→frame conversion off the wire.
+
+**What is still open** is who owns the map: the clock (execution, lost on save)
+or the document (the piece, saved with it). Both are possible today and nothing
+decides, so a piece's tempo is not yet persisted.

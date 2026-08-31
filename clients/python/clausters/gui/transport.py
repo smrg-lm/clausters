@@ -22,6 +22,7 @@ so `update` parks the cursor at the piece's end without the script timing it.
 """
 
 from .. import _native
+from ..base.time import TempoMap
 
 __all__ = ["Transport"]
 
@@ -39,8 +40,12 @@ class Transport:
             playing `clausters.seq.Playhead` (``None`` when there is nothing to
             play). It is called afresh on every play, so what sounds is always
             the samples as it now stands.
-        tempo: the clock's tempo in beats per second (the `TempoClock`
-            convention — 2.0 is 120 bpm).
+        tempo: the piece's starting tempo in beats per second (the
+            `TempoClock` convention — 2.0 is 120 bpm). Ignored when
+            ``tempo_map`` is given.
+        tempo_map: the piece's `clausters.base.TempoMap`, when its tempo changes
+            along the way — pass the clock's (`clausters.base.TempoClock.map`)
+            so the line and the sound read one function.
         sample_rate: the engine's sample rate. With ``tempo`` it fixes the
             beats→samples conversion the anchor is expressed in.
         to_units: ``to_units(beats)`` → the view's own units, for the static
@@ -51,12 +56,20 @@ class Transport:
             (a clip dragged past the end) ends where it now ends.
     """
 
-    def __init__(self, host, ids, *, source, tempo: float, sample_rate: float,
-                 to_units=None, extent=None, clock=None, governed: bool = False):
+    def __init__(self, host, ids, *, source, tempo: float = 1.0, tempo_map=None,
+                 sample_rate: float, to_units=None, extent=None, clock=None,
+                 governed: bool = False):
         self.host = host
         self.ids = ids
         self.source = source
-        self.tempo = float(tempo)
+        #: The piece's beat->second map (`clausters.base.TempoMap`). The line
+        #: sweeps by engine samples from an origin this places, so the origin
+        #: has to come from the same function the clock plays by: given only a
+        #: ``tempo`` it is that tempo as one segment, which is the affine ratio
+        #: this always used.
+        self.tempo_map = (
+            tempo_map.copy() if tempo_map is not None else TempoMap(float(tempo))
+        )
         self.sample_rate = float(sample_rate)
         self.to_units = self.beats_to_samples if to_units is None else to_units
         self.extent = extent
@@ -83,10 +96,26 @@ class Transport:
 
     # ---- the unit bridge ----
 
+    @property
+    def tempo(self) -> float:
+        """The tempo the piece **starts** at, in beats per second — a reading of
+        `tempo_map`. Assigning it replaces the map with that single tempo."""
+        return self.tempo_map.tempo_at(0.0)
+
+    @tempo.setter
+    def tempo(self, tempo: float):
+        self.tempo_map = TempoMap(float(tempo))
+
     def beats_to_samples(self, beats: float) -> float:
-        """Beats → samples of the engine clock, through the core's own time
-        arithmetic (the seconds→samples rounding every client shares)."""
-        secs = _native.beats_to_secs(self.tempo, 0.0, 0.0, float(beats))
+        """Beats → samples of the engine clock, through the piece's time map
+        (and the core's seconds→samples rounding every client shares).
+
+        Where the line's origin comes from, so it must be the map and not a
+        ratio: the host sweeps the playhead by engine samples, and a beat placed
+        by a frozen tempo would be crossed at a time the clock never plays it
+        at.
+        """
+        secs = self.tempo_map.secs_at(float(beats))
         return float(_native.secs_to_samples(secs, self.sample_rate))
 
     def _targets(self) -> tuple:

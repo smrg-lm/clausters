@@ -83,17 +83,21 @@ commit already carry it.
 Same size of work, except the shape depends on an answer. The decision is named
 on each one; none of them is being taken by this file.
 
-- ⬜ **The editor's bridge freezes a tempo and drops the clock's anchor**
-  *(`clients/python/PLAN.md`, Found by use)*. Measured, not suspected: with the
-  tempo doubled at beat 2, a clip drawn at beat 8 is reached by the line at 8.0 s
-  of wall clock and played by the clock at 5.0 s — 3.0 s apart, of which 1.0 s is
-  the discarded anchor and 2.0 s the tempo frozen at construction. The unit pass
-  that shipped beside it took a take's *length* off this mapping (a length in
-  seconds crosses on the rate now), so what is left is the onset axis alone.
-  **The decision:** the editor holds a scalar and the clock holds an anchor that
-  moves, so either the editor reads the clock — a surface change in both clients
-  — or the drawing is redone on every `set_tempo`; and a tempo that changed
-  twice is a piecewise map, which no single affine bridge can be.
+- ⬜ **Who owns a piece's tempo map, and `TimeUnit::to_beats` with no
+  position** *(`clients/python/PLAN.md` and
+  `crates/clausters-document/PLAN.md`, Found by use)*. What is left of the
+  editor's frozen-tempo bridge, which shipped: the map exists in the core, both
+  clients bind it and the clock holds one, but **nothing decides whether it
+  belongs to the clock or to the document**, so a piece's tempo is not
+  persisted — the document has no tempo field. The same decision is what
+  unblocks the concrete defect beside it: `TimeUnit::to_beats(length, tempo)`
+  converts a length in seconds with one scalar and no onset, which under a
+  changing tempo is undefined rather than imprecise. Its caller already holds
+  the position; passing the *map* instead is what needs the answer.
+  **The decision:** a tempo map is notation (the piece saves it, the clock
+  reads it) or execution (the clock builds it, a save loses it). The type is
+  the same either way, so this blocks only who calls the constructor — and
+  whether the format grows a field.
 
 - ⬜ **Two views of one arrangement keep two histories, so an undo writes a
   state nobody was in** *(`clients/python/PLAN.md`, Found by use)*. Measured, in

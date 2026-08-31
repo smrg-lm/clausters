@@ -66,10 +66,20 @@ class TempoClock:
     """
 
     def __init__(self, tempo: float = 1.0, timebase=None):
-        #: beats per second
-        self.tempo = tempo
+        #: The piece's beat->second map (`clausters._native.TempoMap`), and the
+        #: clock's whole relation to time. It starts as one constant-tempo
+        #: segment, which computes exactly the affine expression this clock
+        #: always used; `set_tempo` records a breakpoint on it instead of
+        #: overwriting the one anchor there used to be, so what a tempo change
+        #: moved stays knowable afterwards.
+        self._map = _native.TempoMap(float(tempo))
+        # The last segment as an affine triple, refreshed on every edit. A
+        # running clock only ever reads its own *now*, which is always inside
+        # that segment, so the hot path stays three float operations and never
+        # searches the map.
         self._base_beats = 0.0
         self._base_secs = 0.0
+        self._tempo = float(tempo)
 
         #: pacing source — *only* used to decide how long to sleep between
         #: events. The default is the OS monotonic clock; pass a
@@ -110,15 +120,63 @@ class TempoClock:
 
     # ---- beat/second math (native) ----
 
+    @property
+    def tempo(self) -> float:
+        """Beats per second — the tempo governing from the last change on.
+
+        Assigning it changes the slope without pinning the instant, which is
+        what setting the grid does; `set_tempo` is the musical gesture (it keeps
+        the current beat on the second it already fell on).
+        """
+        return self._tempo
+
+    @tempo.setter
+    def tempo(self, tempo: float):
+        self._map = _native.TempoMap.anchored(
+            float(tempo), self._base_beats, self._base_secs
+        )
+        self._sync_map()
+
+    @property
+    def map(self):
+        """The clock's `clausters._native.TempoMap` — the piece's beat<->second
+        function, readable without a clock running and shared with whatever
+        draws the piece, so a line and the sound come from one map.
+
+        Assigning it hands the clock a piece's own tempo: the map is **copied**,
+        so later edits on either side stay apart, and the pacing picks it up from
+        the next wait. Do it before `start` — replacing the map under a running
+        clock moves every beat that has not fired yet, which is a seek and not a
+        tempo change.
+        """
+        return self._map
+
+    @map.setter
+    def map(self, tempo_map):
+        self._map = tempo_map.copy()
+        self._sync_map(wake=True)
+
+    def _sync_map(self, wake: bool = False):
+        """Re-reads the map's last segment into the affine cache, and (for an
+        edit) wakes the driver, which may be asleep on a wait the edit just
+        moved."""
+        self._base_beats, self._base_secs, self._tempo = self._map.last()
+        if wake:
+            with self._cond:
+                self._cond.notify_all()
+
     def beats2secs(self, beats: float) -> float:
-        """Convert a beat position to seconds under the current tempo (computed
-        in the native core, so it matches the server's own arithmetic)."""
-        return _native.beats_to_secs(self.tempo, self._base_beats, self._base_secs, beats)
+        """Convert a beat position to seconds through the piece's time map
+        (computed in the native core, so it matches the server's own
+        arithmetic). Under one tempo this is the affine conversion it has always
+        been; across a tempo change it is the integral, so a beat before the
+        change still reports the second it actually fell on."""
+        return self._map.secs_at(beats)
 
     def secs2beats(self, secs: float) -> float:
-        """Convert seconds to a beat position under the current tempo (native
-        core, server-matching)."""
-        return _native.secs_to_beats(self.tempo, self._base_beats, self._base_secs, secs)
+        """Convert seconds to a beat position through the piece's time map (the
+        inverse of `beats2secs`; native core, server-matching)."""
+        return self._map.beats_at(secs)
 
     def beats(self) -> float:
         """The clock's current beat: the monotonic-paced elapsed beat while
@@ -217,13 +275,27 @@ class TempoClock:
         beat the clock is on keeps mapping to the second it already mapped to,
         and the new tempo governs from there."""
         at = self.beats()
-        # Read the seconds of that beat under the *old* mapping, before the
-        # base moves: computing it afterwards would return the old base_secs
-        # (the beat difference having just been zeroed) and slide the whole
-        # timeline by however far the clock had run.
-        self._base_secs = self.beats2secs(at)
-        self._base_beats = at
-        self.tempo = tempo
+        # A breakpoint, not an overwrite. The map keeps the second `at` already
+        # fell on, which is what makes the change free of a discontinuity --
+        # and, unlike the single anchor this used to be, it also keeps every
+        # earlier tempo, so the beats before the change stay convertible.
+        self._map.push(at, float(tempo))
+        self._sync_map(wake=True)
+
+    def ramp_tempo(self, tempo: float, over: float):
+        """Ramp the tempo from where it is now to ``tempo`` across ``over``
+        beats, then hold it — an accelerando or a ritardando.
+
+        The other tempo gesture, and a different one from `set_tempo`: that one
+        is a step *from now on*, this one is a shape written over a stretch of
+        the piece. Its length in seconds is a logarithm of the tempo ratio, not
+        the span divided by an average, so a ramp written here and a ramp drawn
+        by an editor agree by construction.
+        """
+        at = self.beats()
+        self._map.ramp(at, at + float(over), self.tempo, float(tempo))
+        self._sync_map(wake=True)
+        return self
 
     def bar(self, quant: float, beats: float | None = None) -> float:
         """The bar index the clock's current beat (or an explicit ``beats``
@@ -319,7 +391,12 @@ class TempoClock:
         if info is None:
             return self
         origin_sample, tempo = info
-        self.tempo = tempo
+        # The shared grid is affine by construction (`/transport_set` is an
+        # origin and one tempo), so joining one *declares the piece affine*: the
+        # map is replaced by that single segment rather than gaining a
+        # breakpoint. A piece with a tempo curve phase-aligns by sample instead.
+        self._map = _native.TempoMap(float(tempo))
+        self._sync_map(wake=True)
         if isinstance(self.timebase, SampleClockTimebase):
             self._transport = ("sample", float(origin_sample), tempo)
         else:

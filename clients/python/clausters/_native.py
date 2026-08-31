@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 28
+CORE_ABI_VERSION = 29
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -337,6 +337,37 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_sched_len.argtypes = [ctypes.c_void_p]
     lib.clausters_sched_clear.restype = None
     lib.clausters_sched_clear.argtypes = [ctypes.c_void_p]
+    # The piece's time map: beats <-> seconds under a tempo that changes along
+    # it. An opaque handle like the queue above -- only beats, seconds and
+    # tempos cross, and the integral is computed once, in Rust.
+    lib.clausters_tempomap_new.restype = ctypes.c_void_p
+    lib.clausters_tempomap_new.argtypes = [ctypes.c_double]
+    lib.clausters_tempomap_anchored.restype = ctypes.c_void_p
+    lib.clausters_tempomap_anchored.argtypes = [ctypes.c_double] * 3
+    lib.clausters_tempomap_free.restype = None
+    lib.clausters_tempomap_free.argtypes = [ctypes.c_void_p]
+    lib.clausters_tempomap_clone.restype = ctypes.c_void_p
+    lib.clausters_tempomap_clone.argtypes = [ctypes.c_void_p]
+    for name in ("secs_at", "beats_at", "tempo_at"):
+        fn = getattr(lib, f"clausters_tempomap_{name}")
+        fn.restype = ctypes.c_double
+        fn.argtypes = [ctypes.c_void_p, ctypes.c_double]
+    for name in ("span_secs", "span_beats"):
+        fn = getattr(lib, f"clausters_tempomap_{name}")
+        fn.restype = ctypes.c_double
+        fn.argtypes = [ctypes.c_void_p, ctypes.c_double, ctypes.c_double]
+    lib.clausters_tempomap_push.restype = ctypes.c_int32
+    lib.clausters_tempomap_push.argtypes = [ctypes.c_void_p, ctypes.c_double, ctypes.c_double]
+    lib.clausters_tempomap_ramp.restype = ctypes.c_int32
+    lib.clausters_tempomap_ramp.argtypes = [ctypes.c_void_p] + [ctypes.c_double] * 4
+    lib.clausters_tempomap_truncate_from.restype = None
+    lib.clausters_tempomap_truncate_from.argtypes = [ctypes.c_void_p, ctypes.c_double]
+    lib.clausters_tempomap_len.restype = ctypes.c_uint32
+    lib.clausters_tempomap_len.argtypes = [ctypes.c_void_p]
+    lib.clausters_tempomap_segment.restype = ctypes.c_int32
+    lib.clausters_tempomap_segment.argtypes = [ctypes.c_void_p, ctypes.c_uint32, f64p]
+    lib.clausters_tempomap_last.restype = ctypes.c_int32
+    lib.clausters_tempomap_last.argtypes = [ctypes.c_void_p, f64p]
     lib.clausters_clocksync_new.restype = ctypes.c_void_p
     lib.clausters_clocksync_new.argtypes = [ctypes.c_double, ctypes.c_size_t]
     lib.clausters_clocksync_free.restype = None
@@ -1429,6 +1460,166 @@ class Scheduler:
         handle = getattr(self, "_handle", None)
         if handle:
             self._lib.clausters_sched_free(handle)
+            self._handle = None
+
+    def __del__(self):
+        try:
+            self.close()
+        except Exception:
+            pass
+
+
+# ---- the piece's time map ----
+
+
+#: A segment's tempo is constant.
+STEP = "step"
+#: A segment's tempo ramps linearly (in beats) to the next breakpoint.
+LINEAR = "linear"
+
+
+class TempoMap:
+    """The piece's **beat -> second map** under a tempo that changes along it.
+
+    A beat is a logical coordinate, not a unit of time; this is the function
+    that turns one into the other. It is the integral of ``1 / tempo`` over the
+    beat axis, computed once in the native core and bound by every client, so
+    what an editor draws and what a clock plays come from one implementation.
+
+    It is **pure**: it knows nothing of *now*, answers the same for the same
+    beat forever, and is meaningful for a piece that has never been played.
+    A `clausters.base.TempoClock` holds one; so can a piece that no clock ever
+    read.
+
+    The rule it exists to enforce: a length in beats is **not** a duration.
+    The same four beats last different seconds depending on where they sit, so
+    seconds always come from `span_secs` (two positions) and never from
+    dividing a beat count by a tempo.
+
+    Free with `close` (``__del__`` is the backstop).
+    """
+
+    def __init__(self, tempo: float = 1.0, *, _handle=None):
+        self._lib = lib()
+        self._handle = (
+            _handle if _handle is not None else self._lib.clausters_tempomap_new(float(tempo))
+        )
+
+    @classmethod
+    def anchored(cls, tempo: float, base_beats: float, base_seconds: float) -> "TempoMap":
+        """A one-segment map with ``base_beats`` falling on ``base_seconds``.
+
+        The affine triple a running clock already holds, so a clock that adopts
+        the map it builds answers every conversion with the identical
+        expression it did before.
+        """
+        handle = lib().clausters_tempomap_anchored(
+            float(tempo), float(base_beats), float(base_seconds)
+        )
+        if not handle:
+            raise ValueError("tempo must be finite and > 0, and the anchor finite")
+        return cls(_handle=handle)
+
+    def copy(self) -> "TempoMap":
+        """An independent copy — what handing a piece's map to a clock takes, so
+        neither one's edits reach the other."""
+        return TempoMap(_handle=self._lib.clausters_tempomap_clone(self._handle))
+
+    # ---- the map, and its inverse ----
+
+    def secs_at(self, beats: float) -> float:
+        """The second beat ``beats`` falls on."""
+        return self._lib.clausters_tempomap_secs_at(self._handle, float(beats))
+
+    def beats_at(self, secs: float) -> float:
+        """The beat falling on second ``secs`` — the inverse."""
+        return self._lib.clausters_tempomap_beats_at(self._handle, float(secs))
+
+    def tempo_at(self, beats: float) -> float:
+        """The tempo (beats per second) in effect at ``beats``."""
+        return self._lib.clausters_tempomap_tempo_at(self._handle, float(beats))
+
+    def span_secs(self, b0: float, b1: float) -> float:
+        """How long the stretch from beat ``b0`` to beat ``b1`` lasts, in
+        seconds.
+
+        The only correct way to turn a length in beats into a length in time: it
+        takes both ends, because the same ``b1 - b0`` lasts differently
+        depending on where it sits.
+        """
+        return self._lib.clausters_tempomap_span_secs(self._handle, float(b0), float(b1))
+
+    def span_beats(self, b0: float, secs: float) -> float:
+        """How many beats fit in ``secs`` seconds starting at beat ``b0``."""
+        return self._lib.clausters_tempomap_span_beats(self._handle, float(b0), float(secs))
+
+    # ---- writing the tempo ----
+
+    def push(self, beats: float, tempo: float):
+        """Changes the tempo at ``beats``, keeping the second that beat already
+        fell on (no discontinuity). Raises on a tempo that is not positive, or a
+        breakpoint before the last one."""
+        if self._lib.clausters_tempomap_push(self._handle, float(beats), float(tempo)) != 0:
+            raise ValueError("tempo must be finite and > 0, at a beat >= the last breakpoint")
+        return self
+
+    def ramp(self, from_beats: float, to_beats: float, from_tempo: float, to_tempo: float):
+        """Writes a tempo ramp over ``[from_beats, to_beats]``, and holds
+        ``to_tempo`` after it — an accelerando or a ritardando.
+
+        Its length in seconds is a logarithm, not the average of the two tempos:
+        that is what `span_secs` computes and what a hand-rolled division gets
+        wrong.
+        """
+        rc = self._lib.clausters_tempomap_ramp(
+            self._handle,
+            float(from_beats),
+            float(to_beats),
+            float(from_tempo),
+            float(to_tempo),
+        )
+        if rc != 0:
+            raise ValueError("a ramp needs to_beats > from_beats and both tempos finite and > 0")
+        return self
+
+    def truncate_from(self, beats: float):
+        """Drops every breakpoint at or after ``beats`` (never the first) — what
+        rewriting a stretch of the tempo takes."""
+        self._lib.clausters_tempomap_truncate_from(self._handle, float(beats))
+        return self
+
+    # ---- reading the shape ----
+
+    def __len__(self):
+        return self._lib.clausters_tempomap_len(self._handle)
+
+    def segment(self, i: int):
+        """Segment ``i`` as ``(beats, secs, tempo, curve, end_beats,
+        end_tempo)``, where ``curve`` is `STEP` or `LINEAR` and the two trailing
+        fields are ``None`` for a step."""
+        out = (ctypes.c_double * 6)()
+        if self._lib.clausters_tempomap_segment(self._handle, int(i), out) != 0:
+            raise IndexError(i)
+        curve = LINEAR if out[3] == 1.0 else STEP
+        end = (out[4], out[5]) if curve == LINEAR else (None, None)
+        return (out[0], out[1], out[2], curve, end[0], end[1])
+
+    def segments(self) -> list:
+        """Every segment, in order (see `segment`)."""
+        return [self.segment(i) for i in range(len(self))]
+
+    def last(self):
+        """The last segment's affine triple ``(base_beats, base_seconds,
+        tempo)`` — what a clock caches so reading *now* stays three float
+        operations with no search."""
+        out = (ctypes.c_double * 3)()
+        self._lib.clausters_tempomap_last(self._handle, out)
+        return (out[0], out[1], out[2])
+
+    def close(self):
+        handle = getattr(self, "_handle", None)
+        if handle:
+            self._lib.clausters_tempomap_free(handle)
             self._handle = None
 
     def __del__(self):

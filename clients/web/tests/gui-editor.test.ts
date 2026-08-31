@@ -25,6 +25,7 @@ import {
 } from "../src/form/index.ts";
 import type { SourceLike } from "../src/form/index.ts";
 import { Editor } from "../src/gui/editor.ts";
+import { TempoMap } from "../src/base/time.ts";
 import type { GuiHost, PropValue } from "../src/gui/host.ts";
 import { Event as SeqEvent } from "../src/seq/event.ts";
 import { pointsToEnv } from "../src/defs/ugens/index.ts";
@@ -157,6 +158,40 @@ test("one beat is sampleRate over tempo timeline units", () => {
     assert.equal(ed.unitsPerBeat, BEAT);
     assert.equal(ed.beatsToUnits(2.5), 2.5 * BEAT);
     assert.equal(ed.unitsToBeats(3 * BEAT), 3.0);
+});
+
+test("a clip is drawn where the clock plays it across a tempo change", () => {
+    // The measured defect: at 48 kHz with the tempo doubled at beat 2, beat 8
+    // used to be drawn at 384 000 units — the line reaching it after 8.0 s of
+    // wall clock while the clock played it at 5.0 s, three seconds apart.
+    //
+    // The axis is real time, so the only right answer is the second the clock
+    // plays that beat at. Drawing it needs the whole tempo history, not the
+    // tempo in force now, which is why an editor holds a map and not a ratio.
+    const tempoMap = new TempoMap(1.0);
+    tempoMap.push(2.0, 2.0); // doubled at beat 2 (second 2.0)
+    const ed = editor(undefined, { tempoMap });
+    assert.equal(ed.beatsToUnits(8.0), 5.0 * SR);
+    // The beats before the change keep the seconds they actually fell on: it is
+    // the tempo *history* that is drawn, not an extrapolation of the last slope.
+    assert.equal(ed.beatsToUnits(1.0), 1.0 * SR);
+    // And the edit-back inverts it, so a drag still round-trips.
+    assert.equal(ed.unitsToBeats(ed.beatsToUnits(8.0)), 8.0);
+    // The transport places the sweeping line from the same function, which is
+    // what makes the line and the sound agree rather than merely be close.
+    assert.equal(ed.transport.beatsToSamples(8.0), 5.0 * SR);
+});
+
+test("a length in beats is measured where it sits", () => {
+    // A length in beats is not a duration: the same two beats are two seconds at
+    // the start and one after the tempo doubles, so the bridge takes the onset
+    // and never a beat count alone.
+    const tempoMap = new TempoMap(1.0);
+    tempoMap.push(4.0, 2.0);
+    const ed = editor(undefined, { tempoMap });
+    const beatsElement = new Element(new SeqEvent({ freq: 440 }));
+    assert.equal(ed.lengthToUnits(2.0, beatsElement, 0.0), 2.0 * SR);
+    assert.equal(ed.lengthToUnits(2.0, beatsElement, 4.0), 1.0 * SR);
 });
 
 // ---- the forward draw's registries ----

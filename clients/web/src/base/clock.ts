@@ -23,7 +23,7 @@
 // server's shared grid **once**, at the join, keeping three numbers: after it
 // the clock is as offline as before.
 
-import { Scheduler } from "../core/clausters_core_web.js";
+import { Scheduler, TempoMap } from "../core/clausters_core_web.js";
 import { setCurrentRoutine } from "./context.ts";
 import { Routine, Stream, StopStream } from "./stream.ts";
 import {
@@ -31,10 +31,8 @@ import {
     SampleClockTimebase,
     bar,
     beatInBar,
-    beatsToSecs,
     quantDelay,
     samplesToSecs,
-    secsToBeats,
 } from "./timebase.ts";
 import type { SessionLike } from "./main.ts";
 import type { Server } from "../defs/server/index.ts";
@@ -199,8 +197,32 @@ export interface TempoClockOptions {
 
 /** A scheduler that keeps musical time in beats and resumes routines on it. */
 export class TempoClock {
-    /** Beats per second. */
-    tempo: number;
+    /**
+     * The piece's beat→second map, and the clock's whole relation to time. It
+     * starts as one constant-tempo segment, which computes exactly the affine
+     * expression this clock always used; {@link TempoClock.setTempo} records a
+     * breakpoint on it instead of overwriting the one anchor there used to be,
+     * so what a tempo change moved stays knowable afterwards.
+     *
+     * It is a pure function of a beat — it knows nothing of *now* — which is
+     * what lets an editor draw the piece from the same one the clock plays by.
+     *
+     * Assigning it hands the clock a piece's own tempo: the map is **copied**,
+     * so later edits on either side stay apart, and the pacing picks it up from
+     * the next wait. Do it before `start` — replacing the map under a running
+     * clock moves every beat that has not fired yet, which is a seek and not a
+     * tempo change.
+     */
+    get map(): TempoMap {
+        return this.tempoMapHeld;
+    }
+
+    set map(tempoMap: TempoMap) {
+        this.tempoMapHeld = tempoMap.copy();
+        this.syncMap(true);
+    }
+
+    private tempoMapHeld: TempoMap;
     /**
      * The pacing source — *only* used to decide how long to sleep between
      * items, and read by `Server` to choose how to stamp what it emits.
@@ -218,8 +240,12 @@ export class TempoClock {
      */
     session: SessionLike | null = null;
 
+    // The last segment as an affine triple, refreshed on every edit. A running
+    // clock only ever reads its own *now*, which is always inside that segment,
+    // so the hot path stays three float operations and never searches the map.
     private baseBeats = 0;
     private baseSecs = 0;
+    private tempoCache = 1.0;
     /** The joined `/transport_set` grid, or `null` on this clock's own beats. */
     private transport: { kind: "sample" | "wall"; origin: number; tempo: number } | null = null;
     private readonly queue = new Scheduler();
@@ -238,21 +264,55 @@ export class TempoClock {
     private pumping = false;
 
     constructor(tempo = 1.0, { timebase, ticker }: TempoClockOptions = {}) {
-        this.tempo = tempo;
+        this.tempoMapHeld = new TempoMap(tempo);
         this.timebase = timebase ?? new MonotonicTimebase();
         this.ticker = ticker ?? defaultTicker();
     }
 
     // ---- beat/second math (through the core) ----
 
-    /** A beat position in seconds under the current tempo. */
-    beats2secs(beats: number): number {
-        return beatsToSecs(this.tempo, this.baseBeats, this.baseSecs, beats);
+    /**
+     * Beats per second — the tempo governing from the last change on.
+     *
+     * Assigning it changes the slope without pinning the instant, which is what
+     * setting the grid does; {@link TempoClock.setTempo} is the musical gesture
+     * (it keeps the current beat on the second it already fell on).
+     */
+    get tempo(): number {
+        return this.tempoCache;
     }
 
-    /** Seconds as a beat position under the current tempo. */
+    set tempo(tempo: number) {
+        this.tempoMapHeld = TempoMap.anchored(tempo, this.baseBeats, this.baseSecs)
+            ?? new TempoMap(tempo);
+        this.syncMap();
+    }
+
+    /**
+     * Re-reads the map's last segment into the affine cache, and (for an edit)
+     * wakes the driver, which may be asleep on a wait the edit just moved.
+     */
+    private syncMap(wake = false): void {
+        const [beats, secs, tempo] = this.tempoMapHeld.last();
+        this.baseBeats = beats;
+        this.baseSecs = secs;
+        this.tempoCache = tempo;
+        if (wake) this.wakeSoon();
+    }
+
+    /**
+     * A beat position in seconds, through the piece's time map. Under one tempo
+     * this is the affine conversion it has always been; across a tempo change it
+     * is the integral, so a beat before the change still reports the second it
+     * actually fell on.
+     */
+    beats2secs(beats: number): number {
+        return this.tempoMapHeld.secsAt(beats);
+    }
+
+    /** Seconds as a beat position — the inverse of {@link TempoClock.beats2secs}. */
     secs2beats(secs: number): number {
-        return secsToBeats(this.tempo, this.baseBeats, this.baseSecs, secs);
+        return this.tempoMapHeld.beatsAt(secs);
     }
 
     /**
@@ -363,11 +423,29 @@ export class TempoClock {
      */
     setTempo(tempo: number): void {
         const at = this.beats();
-        // The seconds of that beat under the *old* tempo — read before the
-        // base moves, which is what keeps the timeline from jumping.
-        this.baseSecs = this.beats2secs(at);
-        this.baseBeats = at;
-        this.tempo = tempo;
+        // A breakpoint, not an overwrite. The map keeps the second `at` already
+        // fell on, which is what makes the change free of a discontinuity — and,
+        // unlike the single anchor this used to be, it also keeps every earlier
+        // tempo, so the beats before the change stay convertible.
+        this.tempoMapHeld.push(at, tempo);
+        this.syncMap(true);
+    }
+
+    /**
+     * Ramp the tempo from where it is now to `tempo` across `over` beats, then
+     * hold it — an accelerando or a ritardando.
+     *
+     * The other tempo gesture, and a different one from
+     * {@link TempoClock.setTempo}: that one is a step *from now on*, this one is
+     * a shape written over a stretch of the piece. Its length in seconds is a
+     * logarithm of the tempo ratio, not the span divided by an average, so a
+     * ramp written here and a ramp drawn by an editor agree by construction.
+     */
+    rampTempo(tempo: number, over: number): this {
+        const at = this.beats();
+        this.tempoMapHeld.ramp(at, at + over, this.tempo, tempo);
+        this.syncMap(true);
+        return this;
     }
 
     /**
@@ -447,7 +525,12 @@ export class TempoClock {
     async joinTransport(server: Server, timeout?: number): Promise<this> {
         const grid = await server.transport(timeout);
         if (grid === null) return this;
-        this.tempo = grid.tempo;
+        // The shared grid is affine by construction (`/transport_set` is an
+        // origin and one tempo), so joining one *declares the piece affine*: the
+        // map is replaced by that single segment rather than gaining a
+        // breakpoint. A piece with a tempo curve phase-aligns by sample instead.
+        this.tempoMapHeld = new TempoMap(grid.tempo);
+        this.syncMap(true);
         if (this.timebase instanceof SampleClockTimebase) {
             this.transport = { kind: "sample", origin: grid.originSample, tempo: grid.tempo };
             return this;

@@ -195,6 +195,59 @@ def test_set_tempo_pins_the_instant():
     assert clk.beats2secs(9.0) == pytest.approx(5.0)
 
 
+def test_a_tempo_change_leaves_the_beats_before_it_convertible():
+    """The other half of pinning the instant, and what a single anchor could not
+    do: after the change, the beats **before** it still report the seconds they
+    actually fell on.
+
+    The clock never asks — it only reads its own now — but a view of the piece
+    asks constantly, and a clock that extrapolated its current slope backwards
+    would answer that beat 4 happened at a second it did not.
+    """
+    _ffi_or_skip()
+    clk = TempoClock(tempo=1.0)
+
+    def change():
+        clk.set_tempo(2.0)
+
+    clk.sched_abs(8.0, change)
+    clk.render()
+    assert clk.beats2secs(8.0) == pytest.approx(8.0)   # the pinned instant
+    assert clk.beats2secs(4.0) == pytest.approx(4.0)   # before it: unchanged
+    assert clk.beats2secs(12.0) == pytest.approx(10.0)  # after it: the new tempo
+    # And the inverse holds across the breakpoint, both sides.
+    assert clk.secs2beats(4.0) == pytest.approx(4.0)
+    assert clk.secs2beats(10.0) == pytest.approx(12.0)
+
+
+def test_the_conversions_are_the_affine_ones_while_one_tempo_governs():
+    """The map is an addition, not a replacement: with a single tempo it
+    computes the expression this clock always computed, term for term — not a
+    close number."""
+    _ffi_or_skip()
+    from clausters import _native
+
+    for tempo in (1.0, 2.0, 0.75):
+        clk = TempoClock(tempo=tempo)
+        for b in (0.0, 1.0, 7.25, 100.0):
+            assert clk.beats2secs(b) == _native.beats_to_secs(tempo, 0.0, 0.0, b)
+            assert clk.secs2beats(b) == _native.secs_to_beats(tempo, 0.0, 0.0, b)
+
+
+def test_a_tempo_ramp_lasts_the_integral_and_not_an_average():
+    """An accelerando's length is a logarithm of the tempo ratio. Averaging the
+    two tempos is the plausible wrong answer, and it is wrong by seconds."""
+    _ffi_or_skip()
+    import math
+
+    clk = TempoClock(tempo=1.0)
+    clk.ramp_tempo(2.0, over=4.0)                  # 1 -> 2 beats/s over 4 beats
+    assert clk.beats2secs(4.0) == pytest.approx(math.log(2.0) / 0.25)
+    assert clk.beats2secs(4.0) != pytest.approx(4.0 / 1.5)
+    # After the ramp the tempo it reached governs.
+    assert clk.map.tempo_at(6.0) == pytest.approx(2.0)
+
+
 def test_stop_holds_the_beat_and_start_resumes_it():
     """`stop`/`start` is a transport, not a reset: the beat is held while
     stopped and picked up on restart, so what is still queued keeps its place

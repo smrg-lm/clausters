@@ -21,6 +21,9 @@
 //!   computes natively, not against Faust's own LLVM codegen.
 //! - [`rng`] — the seeded white-noise generator, identical to the server's
 //!   `dsp::noise`, so a client can reproduce a noise stream sample for sample.
+//! - [`tempomap`] — the piece's beat↔second time map under a tempo that
+//!   changes along it (the integral of `1/tempo`), which every client and the
+//!   editor query and a clock adopts as its single segment.
 //! - [`tempoclock`] — beat/second/sample arithmetic, quantization and a
 //!   beat-ordered event queue: the timing math a `TempoClock` is built on.
 //! - [`clocksync`] — the least-squares sample-clock tracking model
@@ -95,5 +98,6 @@ pub mod scale;
 pub mod shm;
 pub mod spectrum;
 pub mod tempoclock;
+pub mod tempomap;
 pub mod warp;
 pub mod window;

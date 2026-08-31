@@ -74,22 +74,29 @@ def score_view(display_list, *, scroll_id: int | None = None,
     )
 
 
-def transport(host, score_id: int, *, source, tempo: float, sample_rate: float,
-              extent=None):
+def transport(host, score_id: int, *, source, tempo: float = 1.0, tempo_map=None,
+              sample_rate: float, extent=None):
     """A `clausters.gui.transport.Transport` driving a ``score`` widget's
     playback cursor — play, pause, stop and locate, with the cursor following
     the sound.
 
     The same transport the timeline views use; what a page needs on top is only
     its unit: a ``score`` widget places its static cursor in **score
-    milliseconds**, not samples, so this fills in that conversion (a beat is
-    ``1000 / tempo`` ms) and leaves the rest of the arguments as they are —
-    ``source(at)`` starts a pass at beat ``at`` and returns the playing
-    `clausters.seq.Playhead`, ``extent()`` gives the piece's length in beats.
+    milliseconds**, not samples, so this fills in that conversion and leaves the
+    rest of the arguments as they are — ``source(at)`` starts a pass at beat
+    ``at`` and returns the playing `clausters.seq.Playhead`, ``extent()`` gives
+    the piece's length in beats.
+
+    The conversion goes through the piece's time map like every other one, not
+    through a division of its own: a page is engraved on the beat axis, and the
+    millisecond a beat is drawn at is the second it falls on. Pass ``tempo_map``
+    (the clock's, `clausters.base.TempoClock.map`) when the tempo changes along
+    the piece; ``tempo`` alone is that tempo as a single segment.
 
     The engraving is what makes both easy to write: `Score.display_list` hands
     back the notes with their onsets and lengths, so the timeline a pass plays
     and the end it stops at are read off the page itself."""
-    return Transport(host, score_id, source=source, tempo=tempo,
-                     sample_rate=sample_rate, extent=extent,
-                     to_units=lambda beats: beats * 1000.0 / float(tempo))
+    tr = Transport(host, score_id, source=source, tempo=tempo,
+                   tempo_map=tempo_map, sample_rate=sample_rate, extent=extent)
+    tr.to_units = lambda beats: tr.tempo_map.secs_at(float(beats)) * 1000.0
+    return tr

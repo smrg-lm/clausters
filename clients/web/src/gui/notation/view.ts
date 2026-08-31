@@ -124,10 +124,15 @@ export function scoreView(
  *
  * The same transport the timeline views use; what a page needs on top is only
  * its unit: a `score` widget places its static cursor in **score
- * milliseconds**, not samples, so this fills in that conversion (a beat is
- * `1000 / tempo` ms) and leaves the rest as it is — `source(at)` starts a pass
- * at beat `at` and answers the playing `Playhead`, `extent()` gives the piece's
- * length in beats.
+ * milliseconds**, not samples, so this fills in that conversion and leaves the
+ * rest as it is — `source(at)` starts a pass at beat `at` and answers the
+ * playing `Playhead`, `extent()` gives the piece's length in beats.
+ *
+ * The conversion goes through the piece's time map like every other one, not
+ * through a division of its own: a page is engraved on the beat axis, and the
+ * millisecond a beat is drawn at is the second it falls on. Pass `tempoMap`
+ * (the clock's, `TempoClock.map`) when the tempo changes along the piece;
+ * `tempo` alone is that tempo as a single segment.
  *
  * The engraving is what makes both easy to write: a page hands back the notes
  * with their onsets and lengths, so the timeline a pass plays and the end it
@@ -138,9 +143,7 @@ export function transport(
     scoreId: number,
     options: Omit<TransportOptions, "toUnits">,
 ): Transport {
-    const tempo = Number(options.tempo);
-    return new Transport(host, scoreId, {
-        ...options,
-        toUnits: (beats) => (beats * 1000.0) / tempo,
-    });
+    const tr = new Transport(host, scoreId, options);
+    tr.toUnits = (beats) => tr.tempoMap.secsAt(Number(beats)) * 1000.0;
+    return tr;
 }
