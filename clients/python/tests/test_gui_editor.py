@@ -15,7 +15,7 @@ from clausters.defs.buffer import Buffer as ServerBuffer
 from clausters.form import (Aggregate, Element, Generator, Clang, Sequence,
                             Track, Vector)
 from clausters.form.aggregate import LOGICAL
-from clausters.form.document import FIRST_VERSION
+from clausters.form.document import FIRST_VERSION, to_document
 from clausters.gui.editor import Editor, _logical_patch
 from clausters.seq.event import Event as SeqEvent
 from clausters.seq.timeline import Timeline
@@ -334,6 +334,39 @@ def test_a_note_edit_keeps_what_the_roll_cannot_say_and_moves_only_the_sustain()
     # ...and the picture round-trips: what is redrawn is what was sent.
     again = _find(ed.draw(), lambda n: "notes" in n)["notes"]
     assert again == pytest.approx(edited)
+
+
+def test_a_note_edit_survives_an_event_that_is_not_plain_data():
+    """Found by crash, editing a note in a piece that had been played: an
+    `Event` that has sounded carries its `server`, the intent travels to the
+    crate as JSON, and handing the event over raw is a `TypeError` in the middle
+    of a drag. The config goes through the conversion's own door, which writes a
+    reference for what it cannot serialize."""
+    import json
+
+    from clausters.seq.timeline import Timeline
+
+    class _Sounded:
+        """Stands in for what `Event.play` leaves on an event — an object."""
+
+    played = SeqEvent(midinote=60, dur=1.0, server=_Sounded())
+    track = Track(Timeline([(0.0, played)]))
+    ed = Editor(track, sample_rate=SR, tempo=TEMPO)
+    ed._mode, ed._roll_element = "pianoroll", track
+    tree = ed.draw()
+    wid = next(iter(ed._rolls))
+    notes = _find(tree, lambda n: "notes" in n)["notes"]
+
+    assert ed.apply("/gui_event", [wid, SEQ, UNSTATED, "notes", *notes]) is True
+    (item,) = [it for _b, it in track.wraps]
+    # What the document can hold, it keeps -- the instrument is the one the old
+    # rebuild-from-five-numbers dropped.
+    assert item.get("instrument") == "default"
+    assert item.sustain() == pytest.approx(0.8)
+    # And what it holds is JSON, which is what broke: the object that is not
+    # plain data comes back as the reference the conversion writes for it (see
+    # "an edit round-trips a note through the document" in the plan).
+    json.dumps(to_document(track))
 
 
 def test_a_generator_element_is_read_only_in_the_piano_roll():

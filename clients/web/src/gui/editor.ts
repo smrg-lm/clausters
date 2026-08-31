@@ -1692,7 +1692,16 @@ export class Editor {
             const nid = kept[i] ?? this.mintId();
             return {
                 offset: Number(beat),
-                node: { id: Math.trunc(nid ?? this.mintId()), kind: "clang", config: { ...event.props } },
+                // **Through the conversion's own door.** A note's event is not
+                // plain data — a played one carries its `server`, and the intent
+                // travels as JSON — so the config is written the way
+                // `toDocument` writes a clang's, which turns what is not
+                // JSON-able into the reference the document keeps for it.
+                node: {
+                    id: Math.trunc(nid ?? this.mintId()),
+                    kind: "clang",
+                    config: leafConfig(new Clang(event)) as Record<string, unknown>,
+                },
             };
         });
         const outcome = this.record({ intent: "setmembers", node, members }, "edit the notes");

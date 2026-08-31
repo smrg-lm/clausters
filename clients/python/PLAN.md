@@ -1305,6 +1305,27 @@ work, where a pending item reads as done.)*
   no correct way to do it, and the honest thing is that the second window is
   read-only. Both clients.
 
+- ⬜ **An edit round-trips a note through the document, so a key the document
+  cannot hold does not survive it** *(found 2026-08-31, by a crash while
+  editing a note in a piece that had already played)*. A note's `Event` is not
+  plain data once it has sounded: `Event.play` writes resolved values onto it,
+  including its `server`. A roll edit states the lane as a `SetMembers`, whose
+  member configs travel to the crate **as JSON**, so an event handed over raw is
+  a `TypeError` in the middle of a drag. That part is fixed — the config is
+  written through `leaf_config`, the same door `to_document` uses, which turns
+  what it cannot serialize into a reference.
+
+  **What stays open is what comes back.** `_project` writes the crate's
+  effective config onto the element, so the key that left as a reference returns
+  as one (`server` becomes `None`): the edit succeeds and silently replaces an
+  object the author had put on that event. It is **better than it was** — the
+  old rebuild-from-five-numbers dropped every key, the instrument included — and
+  it is still a loss nobody asked for. The shape of the answer is that a
+  projection should **merge** onto the event it already holds rather than
+  rebuild it from the config, keeping what the document never claimed to carry;
+  that is the same question as "what a leaf's config is *of*", so it wants
+  reading against `O14` before it is written. **Both clients.**
+
 - ⬜ **The editor's bridge freezes a tempo and drops the clock's anchor, so
   the line and the sound disagree by whatever a `set_tempo` moved** *(found
   2026-08-30 with the entry below; measured the same day, before touching it)*.

@@ -1590,9 +1590,15 @@ class Editor:
         members = []
         for i, (beat, event) in enumerate(new):
             nid = kept[i] if i < len(kept) and kept[i] is not None else self._mint_id()
+            # **Through the conversion's own door.** A note's event is not
+            # plain data — a played one carries its `server`, and the intent
+            # travels as JSON — so the config is written the way `to_document`
+            # writes a clang's, which turns what is not JSON-able into the
+            # reference the document keeps for it. Handing `dict(event)` over
+            # raw is a `TypeError` in the middle of a drag.
             members.append({"offset": float(beat),
                             "node": {"id": int(nid), "kind": "clang",
-                                     "config": dict(event)}})
+                                     "config": leaf_config(Clang(event))}})
         outcome = self._record({"intent": "setmembers", "node": node,
                                 "members": members}, "edit the notes")
         if outcome is None:
