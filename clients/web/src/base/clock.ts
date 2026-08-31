@@ -240,9 +240,11 @@ export class TempoClock {
      */
     session: SessionLike | null = null;
 
-    // The last segment as an affine triple, refreshed on every edit. A running
-    // clock only ever reads its own *now*, which is always inside that segment,
-    // so the hot path stays three float operations and never searches the map.
+    // The last segment as an affine triple, refreshed on every edit: the anchor
+    // `tempo = x` re-hangs the map from, so assigning a tempo keeps the beat the
+    // clock is on where it already was. `tempoCache` is that segment's tempo --
+    // the *destination* while a ramp is running; the tempo actually sounding is
+    // the `tempo` getter, read from the map.
     private baseBeats = 0;
     private baseSecs = 0;
     private tempoCache = 1.0;
@@ -272,14 +274,20 @@ export class TempoClock {
     // ---- beat/second math (through the core) ----
 
     /**
-     * Beats per second — the tempo governing from the last change on.
+     * Beats per second **at the beat the clock is on** — the tempo that is
+     * sounding, read from the map (`map.tempoAt(beats())`).
+     *
+     * Under a constant tempo, and after a ramp has finished, this is the last
+     * change's tempo. *Inside* a ramp it is the tempo reached so far, not the
+     * one being ramped to: the destination is `map.last()`, and a piece whose
+     * map has changes still ahead of the playhead has not reached them.
      *
      * Assigning it changes the slope without pinning the instant, which is what
      * setting the grid does; {@link TempoClock.setTempo} is the musical gesture
      * (it keeps the current beat on the second it already fell on).
      */
     get tempo(): number {
-        return this.tempoCache;
+        return this.tempoMapHeld.tempoAt(this.beats());
     }
 
     set tempo(tempo: number) {
@@ -443,7 +451,11 @@ export class TempoClock {
      */
     rampTempo(tempo: number, over: number): this {
         const at = this.beats();
-        this.tempoMapHeld.ramp(at, at + over, this.tempo, tempo);
+        // The starting tempo is the one sounding *at* `at` -- not the affine
+        // cache's, which is the last segment's and would be a ramp's
+        // destination. That is what lets one ramp start inside another without
+        // stepping.
+        this.tempoMapHeld.ramp(at, at + over, this.tempoMapHeld.tempoAt(at), tempo);
         this.syncMap(true);
         return this;
     }

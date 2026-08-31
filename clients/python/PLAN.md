@@ -1441,6 +1441,46 @@ work, where a pending item reads as done.)*
   document's half is where a piece's tempo would be stored at all**, so this
   and the ownership question above are one piece of work.
 
+- ✅ **The clock's tempo read the ramp's destination instead of the tempo
+  sounding** *(found 2026-08-31, writing the `ramp_tempo` example)*.
+  `TempoClock.tempo` returned the affine cache's `_tempo`, which is the *last*
+  segment's — so in the middle of a ramp from 1 to 2 over 8 beats it reported
+  2.0 while 1.5 was sounding, and a map holding changes still ahead of the
+  playhead reported one the piece had not reached. **Fixed in both clients**:
+  the property is `map.tempo_at(beats())`, and `ramp_tempo` takes its starting
+  tempo from the same read rather than from the cache. The cache stays exactly
+  what it was — the anchor `tempo = x` re-hangs the map from — and its comment,
+  which claimed it was a hot path that never searches the map, was corrected:
+  `beats2secs`/`secs2beats` have always gone through the map, and the triple is
+  read only by that setter. Nothing else moved: under a constant tempo the
+  property answers what it always did, which is what the added test pins.
+
+- ⬜ **The map is append-only, so a tempo gesture cannot be written before a
+  change already planned** *(found 2026-08-31, testing the fix above)*.
+  `TempoMap.push`/`ramp` refuse a breakpoint at a beat below the last one, and
+  `TempoClock.set_tempo`/`ramp_tempo` anchor at `beats()` — so **a second ramp
+  called while the first is still running raises `ValueError`**, and so does a
+  `set_tempo` on a clock holding a piece's map with changes ahead of the
+  playhead. Live tempo gestures are exactly the case where the map has a future,
+  and they are the case that fails.
+
+  The mechanism for it already exists (`truncate_from`), so the fix is small;
+  what has to be decided first is **what a live gesture means against a written
+  tempo**. Truncating says a gesture discards whatever was planned after it,
+  which is right for a performer and wrong for a rehearsal against a fixed
+  score. That is the ownership question again (`clock.map` as execution vs the
+  document's tempo), so it is decided with it, not before. Both clients, and
+  `ramp_at(beat, tempo, over)` below is the same surface.
+
+- ⬜ **A ramp can only be written at "now"** *(found 2026-08-31, writing the
+  `ramp_tempo` example)*. `set_tempo`/`ramp_tempo` anchor at `beats()`, so a
+  ramp asked for at beat 3 from inside a routine was written at 3.00034 — the
+  real-time beat, not the routine's logical one. Inaudible, but a map that is
+  going to be *saved as the piece's tempo* then has breakpoints off the grid.
+  There is no `ramp_at(beat, tempo, over)` / `set_tempo_at` to write one
+  exactly, and `TempoMap.ramp` (which does take both beats) is not reachable
+  through the clock. Both clients.
+
 - ✅ **Three places call beats what is measured in seconds** *(found 2026-08-30
   by the user, from "el tiempo concreto o se mide en muestras o se mide en
   segundos, los beats son una abstracción impuesta")*. Beats are the
@@ -1505,6 +1545,24 @@ work, where a pending item reads as done.)*
 Every entry carries a checkbox, like "Found by use" above: an open direction has
 to read as open, and one that converges into a milestone leaves this list rather
 than being ticked here.
+
+- ⬜ **A tempo ramp has one shape, and a piece may want others** *(found
+  2026-08-31, from the user's "¿se puede cambiar la curva de cambio?")*.
+  `Curve` has two variants: `Step` and `Linear`, the latter linear **in beats**
+  (`T(b) = T₀ + k·(b - b₀)`) — which, read against the wall clock, is exactly
+  `T(t) = T₀·e^{kt}`. It is one shape under two descriptions, and it is the only
+  ramp there is. A shaped rubato is written today as a polyline of linear
+  ramps.
+
+  What a new shape costs is not the mathematics — an exponential in beats and a
+  power `b^n` both have a closed integral and a closed inverse, which is the
+  only bar `Curve` sets — but the seam: a variant crosses the C ABI (`segment`
+  writes a fixed six `f64`), the wasm binding, both clients' spellings and
+  `docs/bindings.md`, and moves `CORE_ABI_VERSION`. So the question to settle
+  first is **which shapes a piece actually needs**, once, rather than adding
+  them one at a time: an `Env`-style `curve` scalar (one knob, the vocabulary
+  the client already has for automation) is a different answer from a set of
+  named variants, and the payload width should be decided for whichever wins.
 
 - ⬜ **The mapping exists and is private to the `Editor`, so every example that
   plays writes a worse one** *(named 2026-08-30 by the user, from

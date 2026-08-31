@@ -73,10 +73,11 @@ class TempoClock:
         #: overwriting the one anchor there used to be, so what a tempo change
         #: moved stays knowable afterwards.
         self._map = _native.TempoMap(float(tempo))
-        # The last segment as an affine triple, refreshed on every edit. A
-        # running clock only ever reads its own *now*, which is always inside
-        # that segment, so the hot path stays three float operations and never
-        # searches the map.
+        # The last segment as an affine triple, refreshed on every edit: the
+        # anchor `tempo = x` re-hangs the map from, so assigning a tempo keeps
+        # the beat the clock is on where it already was. `_tempo` is that
+        # segment's tempo -- the *destination* while a ramp is running; the
+        # tempo actually sounding is the `tempo` property, read from the map.
         self._base_beats = 0.0
         self._base_secs = 0.0
         self._tempo = float(tempo)
@@ -122,13 +123,19 @@ class TempoClock:
 
     @property
     def tempo(self) -> float:
-        """Beats per second — the tempo governing from the last change on.
+        """Beats per second **at the beat the clock is on** — the tempo that is
+        sounding, read from the map (`map.tempo_at(beats())`).
+
+        Under a constant tempo, and after a ramp has finished, this is the last
+        change's tempo. *Inside* a ramp it is the tempo reached so far, not the
+        one being ramped to: the destination is `map.last()`, and a piece whose
+        map has changes still ahead of the playhead has not reached them.
 
         Assigning it changes the slope without pinning the instant, which is
         what setting the grid does; `set_tempo` is the musical gesture (it keeps
         the current beat on the second it already fell on).
         """
-        return self._tempo
+        return self._map.tempo_at(self.beats())
 
     @tempo.setter
     def tempo(self, tempo: float):
@@ -293,7 +300,11 @@ class TempoClock:
         by an editor agree by construction.
         """
         at = self.beats()
-        self._map.ramp(at, at + float(over), self.tempo, float(tempo))
+        # The starting tempo is the one sounding *at* `at` -- not the affine
+        # cache's, which is the last segment's and would be a ramp's
+        # destination. That is what lets one ramp start inside another without
+        # stepping.
+        self._map.ramp(at, at + float(over), self._map.tempo_at(at), float(tempo))
         self._sync_map(wake=True)
         return self
 

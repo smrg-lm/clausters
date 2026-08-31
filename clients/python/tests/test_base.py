@@ -248,6 +248,25 @@ def test_a_tempo_ramp_lasts_the_integral_and_not_an_average():
     assert clk.map.tempo_at(6.0) == pytest.approx(2.0)
 
 
+def test_the_tempo_is_the_one_sounding_and_not_the_ramps_destination():
+    """`clock.tempo` reads the map at the current beat, so inside a ramp it is
+    the tempo reached so far -- not the one being ramped to, which is what the
+    affine cache holds and what this used to report."""
+    _ffi_or_skip()
+    clk = TempoClock(tempo=1.0)
+    clk.ramp_tempo(2.0, over=8.0)              # 1 -> 2 bps over beats 0..8
+    assert clk.tempo == pytest.approx(1.0), "at beat 0 the ramp has not moved"
+    assert clk.map.tempo_at(4.0) == pytest.approx(1.5), "half way is half way"
+    assert clk.map.last()[2] == pytest.approx(2.0), "the destination is the map's"
+
+    # A constant tempo is unchanged, which is the whole of the non-regression:
+    # with no ramp anywhere the property answers exactly what it always did.
+    clk = TempoClock(tempo=2.5)
+    assert clk.tempo == pytest.approx(2.5)
+    clk.set_tempo(4.0)
+    assert clk.tempo == pytest.approx(4.0)
+
+
 def test_stop_holds_the_beat_and_start_resumes_it():
     """`stop`/`start` is a transport, not a reset: the beat is held while
     stopped and picked up on restart, so what is still queued keeps its place
