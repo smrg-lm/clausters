@@ -293,6 +293,49 @@ def test_a_note_edit_rewrites_the_editable_timeline():
     assert any(isinstance(it, OscItem) for _b, it in items)
 
 
+def test_a_note_edit_keeps_what_the_roll_cannot_say_and_moves_only_the_sustain():
+    """Found by ear, editing the composer's melody: one dragged note and the
+    whole lane came back fully legato with its notes running together.
+
+    A roll draws what a note **sounds** (its ``sustain``, ``dur * legato``) and
+    the edit-back wrote that number into ``dur`` with a ``legato`` of 1 — for
+    *every* note in the payload, since the payload is the whole lane. So a note
+    nobody touched had its grid length quietly shortened to what it had been
+    sounding and its articulation replaced, and anything the roll cannot say
+    (the instrument, the author's own keys) was dropped with the event it was
+    rebuilt from."""
+    from clausters.seq.timeline import Timeline
+
+    track = Track(Timeline([
+        (0.0, SeqEvent(instrument="reed", midinote=60, dur=1.0, legato=0.8, amp=0.4)),
+        (1.0, SeqEvent(instrument="reed", midinote=64, dur=1.0, legato=0.8, amp=0.4)),
+    ]))
+    ed = Editor(track, sample_rate=SR, tempo=TEMPO)
+    ed._mode, ed._roll_element = "pianoroll", track
+    tree = ed.draw()
+    wid = next(iter(ed._rolls))
+    drawn = _find(tree, lambda n: "notes" in n)["notes"]
+    assert drawn[1] == pytest.approx(0.8 * BEAT), "a note is drawn as it sounds"
+
+    # The second note is dragged out to two beats; the first is left alone.
+    edited = list(drawn)
+    edited[6] = 2.0 * BEAT
+    assert ed.apply("/gui_event", [wid, SEQ, UNSTATED, "notes", *edited]) is True
+
+    first, second = [it for _b, it in track.wraps]
+    # The note nobody touched is the note it was, in every key.
+    assert (first.get("dur"), first.get("legato")) == (1.0, 0.8)
+    assert first.sustain() == pytest.approx(0.8)
+    # The edited one sounds what the hand drew, and keeps the rest.
+    assert second.sustain() == pytest.approx(2.0)
+    assert (second.get("dur"), second.get("legato")) == (1.0, 0.8)
+    assert [it.get("instrument") for it in (first, second)] == ["reed", "reed"]
+    assert [it.get("amp") for it in (first, second)] == [0.4, 0.4]
+    # ...and the picture round-trips: what is redrawn is what was sent.
+    again = _find(ed.draw(), lambda n: "notes" in n)["notes"]
+    assert again == pytest.approx(edited)
+
+
 def test_a_generator_element_is_read_only_in_the_piano_roll():
     from clausters.seq.pattern import Pbind, Pseq
 

@@ -213,6 +213,11 @@ plays. That is what an undo of the first resize of a clip hands back — before 
 there was no length to restore — and the same holds one level down, where a
 member with no configuration is a leaf configured as it was made.
 
+A note edited in a roll is **updated, not rebuilt**: the event keeps its
+instrument and everything else the roll cannot show, and the length a drag on
+its edge sets is the note's `sustain` — which is what the bar draws — so its
+`dur` and `legato` stay as they were written.
+
 Two dedicated views open on one element instead of the multitrack:
 `openPianoroll(host, element)` for an editable note grid, and
 `openSignal(host, element)` for the editor-grade waveform of a rendered element

@@ -273,9 +273,12 @@ roll.open_pianoroll(gui)      # keyboard, note grid, velocity + OSC lanes
 ```
 
 Edits flow back through `poll` exactly as the multitrack's do, **when the
-element is editable**: a dragged, added or removed note rebuilds a `Track`'s
-timeline (times converted to beats, any OSC/MIDI items on the same timeline
-preserved). A generator — a `Pbind`, a `Routine` — is forward-only, so its
+element is editable**: a dragged, added or removed note is written onto a
+`Track`'s timeline (times converted to beats, any OSC/MIDI items on the same
+timeline preserved). A note is *updated*, not rebuilt — the event keeps its
+instrument and everything else the roll cannot show — and the length a drag on
+its edge sets is the note's `sustain`, which is what the bar draws, so its `dur`
+and `legato` stay as they were written. A generator — a `Pbind`, a `Routine` — is forward-only, so its
 bounced notes are shown *read-only*; bounce it to a `Track` (the change of state)
 and the same view becomes an editor. OSC items are shown in their lane but not
 written back: their marker carries a time and a label, not the full message.

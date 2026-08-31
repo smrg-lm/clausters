@@ -1621,24 +1621,61 @@ export class Editor {
 
     /**
      * Notes edited in a roll — a clip's body or the dedicated piano-roll alike:
-     * rebuilt onto the element's editable `Timeline` as `Event`s, times converted
+     * written onto the element's editable `Timeline` as `Event`s, times converted
      * to beats, preserving any OSC items already on it. Answers `false` for a
      * forward-only generator element (read-only), so the edit is a no-op.
+     *
+     * **An edit updates the note it names; it does not rebuild it.** The i-th
+     * note of the payload is the i-th note the roll drew (order is the only
+     * identity the payload carries), so its event is *copied* and the edited
+     * fields written onto the copy — which keeps everything the roll cannot say:
+     * the instrument, and whatever else the author put on that event.
+     *
+     * **And the length it carries is the note's `sustain`.** A roll draws what a
+     * note *sounds* (`Event.sustain`, which is `dur * legato` when nothing says
+     * otherwise), so that is what a drag on its edge sets — the key that says how
+     * long it sounds, leaving `dur` (its length on the grid) and `legato` (the
+     * articulation) as the author wrote them. Writing the drawn length into `dur`
+     * with a `legato` of 1 was a round trip that lost both: every note in the
+     * lane, edited or not, came back fully legato with its grid length quietly
+     * shortened to what it had been sounding.
      */
     private applyNotes(element: Element, values: readonly unknown[]): boolean {
         const timeline = editableTimeline(element);
         if (timeline === null) return false;
         const node = this.nodeId(element);
         if (node === null) return false;
+        // The notes as they stand, in the order the roll drew them — what the
+        // i-th note of the payload is an edit *of*.
+        const held = [...timeline]
+            .filter(([, item]) => pitchOf(item) !== null)
+            .map(([, item]) => item as SeqEvent);
         const fresh: [number, SeqEvent][] = [];
+        let index = 0;
         for (const [start, dur, pitch, vel, channel] of quintuples(values.map((x) => Number(x)))) {
-            const params: Record<string, unknown> = {
-                midinote: Math.trunc(pitch),
-                dur: this.unitsToBeats(dur),
-                amp: Math.max(0.0, Math.min(1.0, Math.trunc(vel) / 127.0)),
-                velocity: Math.trunc(vel),
-                legato: 1.0,
-            };
+            const length = this.unitsToBeats(dur);
+            const was = held[index++];
+            let params: Record<string, unknown>;
+            if (was !== undefined) {
+                params = { ...was.props, midinote: Math.trunc(pitch), sustain: length };
+                // The velocity round-trips through the drawing, so writing it
+                // back unconditionally would re-quantize an `amp` nobody
+                // touched. It is written only when the hand actually moved it.
+                if (Math.trunc(vel) !== velocityOf(was)) {
+                    params.velocity = Math.trunc(vel);
+                    params.amp = Math.max(0.0, Math.min(1.0, Math.trunc(vel) / 127.0));
+                }
+            } else {
+                // A note the lane did not hold: there is nothing to keep, so it
+                // is built from what the payload says, sounding its full length.
+                params = {
+                    midinote: Math.trunc(pitch),
+                    dur: length,
+                    legato: 1.0,
+                    amp: Math.max(0.0, Math.min(1.0, Math.trunc(vel) / 127.0)),
+                    velocity: Math.trunc(vel),
+                };
+            }
             if (Math.trunc(channel)) params.channel = Math.trunc(channel);
             fresh.push([this.unitsToBeats(start), new SeqEvent(params)]);
         }

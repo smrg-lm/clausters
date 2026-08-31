@@ -269,6 +269,46 @@ test("a note edit rewrites the editable timeline", () => {
     assert.equal((items[0]?.[1] as SeqEvent).get("midinote"), 62);
 });
 
+test("a note edit keeps what the roll cannot say and moves only the sustain", () => {
+    // Found by ear in the Python client, editing the composer's melody: one
+    // dragged note and the whole lane came back fully legato with its notes
+    // running together. A roll draws what a note *sounds* (its `sustain`,
+    // `dur * legato`) and the edit-back wrote that number into `dur` with a
+    // `legato` of 1 -- for every note in the payload, since the payload is the
+    // whole lane.
+    const timeline = new Timeline([
+        [0.0, new SeqEvent({ instrument: "reed", midinote: 60, dur: 1.0, legato: 0.8, amp: 0.4 })],
+        [1.0, new SeqEvent({ instrument: "reed", midinote: 64, dur: 1.0, legato: 0.8, amp: 0.4 })],
+    ]);
+    const piece = new Aggregate([[0.0, new Track(timeline)]], "concrete", { name: "song" });
+    const ed = editor(piece);
+    const clip = clipsOf(lanes(ed.draw())[0] as GuiNode)[0] as GuiNode;
+    const drawn = clip.notes as number[];
+    assert.equal(drawn[1], 0.8 * BEAT, "a note is drawn as it sounds");
+
+    // The second note is dragged out to two beats; the first is left alone.
+    const edited = [...drawn];
+    edited[6] = 2.0 * BEAT;
+    assert.equal(
+        ed.apply("/gui_event", [clip.id as number, SEQ, UNSTATED, "notes", ...edited]),
+        true,
+    );
+
+    const [first, second] = [...timeline].map(([, item]) => item as SeqEvent);
+    // The note nobody touched is the note it was, in every key.
+    assert.equal(first?.get("dur"), 1.0);
+    assert.equal(first?.get("legato"), 0.8);
+    assert.equal(first?.sustain(), 0.8);
+    // The edited one sounds what the hand drew, and keeps the rest.
+    assert.equal(second?.sustain(), 2.0);
+    assert.equal(second?.get("dur"), 1.0);
+    assert.equal(second?.get("instrument"), "reed");
+    assert.equal(second?.get("amp"), 0.4);
+    // ...and the picture round-trips: what is redrawn is what was sent.
+    const again = (clipsOf(lanes(ed.draw())[0] as GuiNode)[0] as GuiNode).notes as number[];
+    assert.deepEqual(again, edited);
+});
+
 test("a clip over a generator refuses a note edit, and says why", async () => {
     // A pattern's notes are a *rendering* of a forward-only algorithm.
     const piece = new Aggregate([[0.0, new Clang(new SeqEvent({ midinote: 60, dur: 1.0 }))]],

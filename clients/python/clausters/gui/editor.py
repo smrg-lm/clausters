@@ -1523,21 +1523,55 @@ class Editor:
     def _apply_notes(self, element, values) -> bool:
         """Notes edited in a roll — a clip's body or the dedicated piano-roll
         alike, since both send it (the flat ``"notes"`` payload,
-        `start dur pitch velocity channel` quintuples): rebuilt onto the element's
+        `start dur pitch velocity channel` quintuples): written onto the element's
         editable `clausters.seq.Timeline` as `clausters.seq.Event`s, times converted to beats,
         preserving any OSC/MIDI items already on it. Returns ``False`` for a
-        forward-only generator element (read-only), so the edit is a no-op."""
+        forward-only generator element (read-only), so the edit is a no-op.
+
+        **An edit updates the note it names; it does not rebuild it.** The i-th
+        note of the payload is the i-th note the roll drew (order is the only
+        identity the payload carries), so its event is *copied* and the edited
+        fields written onto the copy — which keeps everything the roll cannot
+        say: the instrument, and whatever else the author put on that event.
+        Rebuilding one from the five numbers instead dropped all of it.
+
+        **And the length it carries is the note's `sustain`.** A roll draws what
+        a note *sounds* (`Event.sustain`, which is ``dur * legato`` when nothing
+        says otherwise), so that is what a drag on its edge sets — the key that
+        says how long it sounds, leaving `dur` (its length on the grid) and
+        `legato` (the articulation) as the author wrote them. Writing the drawn
+        length into `dur` with a `legato` of 1 was a round trip that lost both:
+        every note in the lane, edited or not, came back fully legato with its
+        grid length quietly shortened to what it had been sounding, so a melody
+        that had been articulated started running its notes together."""
         timeline = _editable_timeline(element)
         if timeline is None:
             return False
         node = self._node_id(element)
         if node is None:
             return False
+        # The notes as they stand, in the order the roll drew them — what the
+        # i-th note of the payload is an edit *of*.
+        held = [item for _, item in timeline if _pitch(item) is not None]
         new = []
-        for start, dur, pitch, vel, channel in _quintuples(list(values)):
-            params = dict(midinote=int(pitch), dur=self.units_to_beats(dur),
-                          amp=max(0.0, min(1.0, int(vel) / 127.0)),
-                          velocity=int(vel), legato=1.0)
+        for i, (start, dur, pitch, vel, channel) in enumerate(_quintuples(list(values))):
+            length = self.units_to_beats(dur)
+            was = held[i] if i < len(held) else None
+            if was is not None:
+                params = dict(was)
+                params.update(midinote=int(pitch), sustain=length)
+                # The velocity round-trips through the drawing, so writing it
+                # back unconditionally would re-quantize an `amp` nobody
+                # touched. It is written only when the hand actually moved it.
+                if int(vel) != _velocity(was):
+                    params.update(velocity=int(vel),
+                                  amp=max(0.0, min(1.0, int(vel) / 127.0)))
+            else:
+                # A note the lane did not hold: there is nothing to keep, so it
+                # is built from what the payload says, sounding its full length.
+                params = dict(midinote=int(pitch), dur=length, legato=1.0,
+                              amp=max(0.0, min(1.0, int(vel) / 127.0)),
+                              velocity=int(vel))
             if int(channel):
                 params["channel"] = int(channel)
             new.append((self.units_to_beats(start), SeqEvent(params)))
