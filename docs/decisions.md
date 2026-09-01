@@ -7808,3 +7808,56 @@ costs nothing to avoid. And the shape parity test compares within 4 ulp instead
 of exactly, saying so and saying why: the contract is one formula, not one
 libm. Equality stays the assertion everywhere it still holds, so a real
 divergence would still be caught.
+
+## Who owns a piece's tempo map is the wrong question
+
+The question stood open for a while in this shape: does a piece's tempo belong
+to the **clock** (execution — the clock builds it, a save loses it) or to the
+**document** (notation — the piece saves it, the clock reads it)? Both worked,
+neither was decided, and a piece's tempo was not persisted at all.
+
+It has no answer because it assumes the map is a *part* of something. It is
+not. A `TempoMap` is a **value** on the beat axis, the peer of a `Timeline`,
+and a `TempoClock` is the *process* that moves over one (`docs/architecture.md`,
+"The client's time structures"). A `Timeline` holds `(beat, item)` and knows
+nothing of tempo; a `TempoMap` holds tempo and knows nothing of items. Nobody
+asks who owns a `Timeline`.
+
+Three things follow, and each of them shipped:
+
+**A value is shared, not copied.** Assigning `clock.map` used to clone, so two
+clocks could not read one piece. It adopts now, and the default is unchanged on
+purpose — every clock builds its own, so the ordinary case passes nothing. What
+a shared map costs is exactly one thing: the driver recomputes every wait from
+the map on each pass, so an edit anywhere is *read* correctly with nothing to
+invalidate, but a clock asleep on a wait computed before an edit made through
+another holder sees it only on waking. `TempoClock.resync` is that call and
+`map.version` is what it compares.
+
+**A value is written down.** The map serializes as its **breakpoints** and never
+its seconds — those are the cached integral `M(beats)`, and writing a cache out
+would let a file assert a second its own tempi do not produce. Loading replays
+the breakpoints through the ordinary writers, so a stored map that loads is one
+the client could have written, and the door that reads a file is the door that
+checks it.
+
+**What an arrangement names is the clock, not the map.** A `Timeline` does not
+run by itself: it is played *on* a clock, and several timelines on one clock is
+the grouping that means something. So the saved unit is a named clock, and of a
+clock exactly two things belong to the piece — its **name** and its **map**.
+Its position is transport, its queue is whatever happens to be scheduled, and
+its timebase is a choice of the run: pacing against the OS clock or a server's
+sample counter says nothing about the music. Polytempo falls out of that and is
+the reason it matters — a canon at three tempi is three named clocks, and "the"
+tempo of a document could never have expressed it.
+
+What the answer left open is not an owner but a **reference**: a lane naming the
+clock it runs on, and a table of clocks in whatever holds a saved piece. Where
+that table lives is the open question of what the second document is, since the
+arrangement's `Session` holds the source table today and a score has a tempo
+too.
+
+**The rule this generalizes to**, which is why it is written down rather than
+just fixed: when "who owns X" has no comfortable answer, check whether X is a
+value. A value has no owner — it has holders, an identity so a save can name
+it, and a serialized form. Only a process has an owner.

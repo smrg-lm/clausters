@@ -333,6 +333,50 @@ The lifecycle is factory (compiler thread, `ffi_lock`, `-single -ftz 2`, stdlib 
 
 **Why Faust UI labels are the control names** (a deliberate decision, not a leftover): a def's parameters are named by whoever writes the def — exactly like the `controls` array in the UGen JSON format. Inventing a second naming layer (renaming, indices-only, a Clausters-side mapping table) would add a translation step for zero expressiveness: the label *is* the parameter's name in both def families, and `/synth_new`/`/node_set` address both identically. Group paths (`hgroup`/`vgroup`) are ignored on purpose — bare labels, first declaration wins on collision. The two reserved names `out`/`in` (first output/input bus) come *after* the def's own params, and a def that declares its own `out`/`in` control wins over the reserved meaning. UI elements are plain values written by `/node_set` (zone stores, RT-safe) and can also be **bound to a bus** with `/node_map`/`/node_mapAudio` — the same mechanism unifies UGen controls and Faust zones (see *Control/bus mapping* above). The two reserved `out`/`in` routing controls are not mappable.
 
+## The client's time structures: what is a value, and what is a process
+
+Everything below is **client-side** and lives in `clausters.base` (mirrored in
+`clients/web/src/base`). It is here because "where does this belong" keeps
+being asked of new work, and the answer is almost always visible from this
+table rather than derived again. The arrangement layer in the next section is
+**one particular organization on top of these**, not a peer of them.
+
+| Relation | Structure | Kind |
+|---|---|---|
+| machine ↔ seconds | `Timebase`, and `SampleClockModel` behind the sample one | a value (the fit) plus a reader |
+| seconds ↔ beats | `TempoMap` | a value |
+| the shape of one segment | `clausters_core::warp` and `envshape` | a value, *below* the map |
+| beats → items, random access | `Timeline` | a value |
+| beats → items, forward only | `Stream` / a pattern | a value |
+| a position that advances | `TempoClock` | a **process** over the others |
+| a position that does not | `Moment` | a value |
+
+Three things this makes visible that no single type does:
+
+**The axis is a chain**, machine ↔ seconds ↔ beats, and `TempoMap` owns only
+its right half. `SampleClockModel` — the least-squares fit behind
+`SampleClockTimebase` — is a value of the *same shape* as the map: an affine
+relation with a slope and an anchor, fitted rather than written. Everything
+`lock_to` does is that left arrow.
+
+**The beat axis has two structures, not one**, and the difference is random
+access against forward-only. The project vocabulary already names it — a
+*generated* element against a *generator* element — and the consequence is
+concrete: a `Playhead` over a `Timeline` has a position a transport can follow,
+and a pattern player has none.
+
+**`TempoClock` is the only process here.** Everything else is a value: shared,
+saved, compared, and read with nothing running. A `TempoMap` answers the same
+for the same beat forever and is meaningful for a piece that has never been
+played; a `Timeline` holds `(beat, item)` and knows nothing of tempo; a
+`TempoMap` holds tempo and knows nothing of items. They are peers, and the
+clock is the machine that moves over them.
+
+That last sentence is load-bearing rather than descriptive — it is what
+answered where a piece's tempo belongs (`docs/decisions.md`, "Who owns a
+piece's tempo map is the wrong question"), and it is the first thing to apply
+to the next question of the same shape.
+
 ## The arrangement layer: where it lives
 
 The arrangement model and its multitrack editor are **client-side** — the server

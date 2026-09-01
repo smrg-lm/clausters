@@ -2020,39 +2020,6 @@ than being ticked here.
   is a `Playhead`" (`clients/gui/PLAN.md`, Future directions) is the same
   question seen from the view.
 
-- ⬜ **The structures the client is actually built on, and which of them the
-  code does not name** *(written down 2026-09-01 after the tempo-map work,
-  because it is what every decision above was read against and it lived only in
-  a conversation)*. Not work: a map of the ground, so the next "where does this
-  belong" question is answered by looking rather than by re-deriving. `form` is
-  **one particular organization on top of these**, not a peer of them.
-
-  | Relation | Structure | Kind |
-  |---|---|---|
-  | machine ↔ seconds | `Timebase`, and `SampleClockModel` behind the sample one | a value (the fit) plus a reader |
-  | seconds ↔ beats | `TempoMap` | a value |
-  | the shape of one segment | `envshape`, and the four spellings above it | a value, *below* the map |
-  | beats → items, random access | `Timeline` | a value |
-  | beats → items, forward only | `Stream` / a pattern | a value |
-  | a position that advances | `TempoClock` | a **process** over the others |
-  | a position that does not | `Moment` | a value |
-
-  Three things this makes visible that no single entry did:
-
-  - **The axis is a chain**, machine ↔ seconds ↔ beats, and `TempoMap` owns
-    only its right half. `SampleClockModel` is a value of the *same shape* as
-    the map — an affine relation with a slope and an anchor — fitted rather
-    than written. Everything `lock_to` does is that left arrow.
-  - **The beat axis has two structures, not one**, and the difference is
-    random access against forward-only. The vocabulary already names it
-    (generated element against generator element) and the open entry about a
-    roll that sounds showing no cursor is its consequence: a `Playhead` has a
-    position and a pattern player does not.
-  - **`TempoClock` is the only process here.** Everything else is a value, and
-    values are shared, saved, compared and read with nothing running. That is
-    the sentence that dissolved the tempo-ownership question, and it is the one
-    worth applying first to the next one.
-
 - ✅ **A tempo map and an automation are one structure read two ways** *(a
   design, worked out with the user on 2026-09-01 while settling where a tempo
   map lives; read with the entry below, which is the same question from the
