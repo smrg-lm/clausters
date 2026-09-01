@@ -1521,7 +1521,7 @@ work, where a pending item reads as done.)*
   The internal modules that import the glue directly are left alone — they are
   reached after a session exists, which awaits the core.
 
-- ⬜ **A hand-made clock cannot find the ambient session, because `activate` is
+- ✅ **A hand-made clock cannot find the ambient session, because `activate` is
   thread-local** *(found 2026-08-31 by the user, running a ten-clock example)*.
   `Session.activate()` sets `main.current_session` on the **calling** thread. A
   routine runs on its own clock's thread, so the ambient lookup there falls
@@ -1531,19 +1531,23 @@ work, where a pending item reads as done.)*
   thread while the clock goes on counting beats correctly, so what looks broken
   is the playing, not the wiring.
 
-  `clock.session = session` fixes it and is documented on the field, but nothing
-  points there from `activate`, whose docstring says "anything created with no
-  session named resolves to *this* session's server, clock and random root" —
-  true on the calling thread and not inside a routine. Three candidate fixes,
-  and they are not the same: say the limit in `activate`'s docstring; have
-  `TempoClock` fall back to `main.current_session` captured at construction;
-  or make the ambient session a process-wide default with the thread-local as an
-  override. The middle one is probably right — a clock built while a session is
-  ambient belongs to it — but it changes resolution, so it wants deciding rather
-  than patching. Both clients, and the same trap exists wherever a client runs
-  user code off the calling thread.
+  `clock.session = session` fixed it by hand and was documented on the field, but
+  nothing pointed there from `activate`, whose docstring says "anything created
+  with no session named resolves to *this* session's server, clock and random
+  root" — true on the calling thread and not inside a routine. Of the three
+  candidates the middle one was taken, in both clients: **a `TempoClock` adopts
+  the ambient session at construction**, so a clock built while a session is
+  active belongs to it and nothing has to be assigned. What that pulled with it
+  is the rest of the shape the user asked for — **a session holds many clocks**,
+  one of which is the default: `Session.adopt` / `release` keep the list,
+  `start`/`stop` reach all of them and `close` closes all of them, and `release`
+  refuses the default. The thread-local is unchanged and still the resolution
+  authority; what changed is that a hand-made clock no longer arrives at it with
+  nothing to say. The trap itself survives wherever a client runs user code off
+  the calling thread and the object was **not** built under the session — a
+  narrower case, and the one `activate`'s docstring now names.
 
-- ⬜ **A repo example called a `Server` attribute that never existed**
+- ✅ **A repo example called a `Server` attribute that never existed**
   *(found 2026-08-31 by the user, running the example)*.
   `examples/editors/tempo_map.py` used `session.server.sample_rate`, which is not
   a thing — the spellings are `server.options.sample_rate` (the launch config)
