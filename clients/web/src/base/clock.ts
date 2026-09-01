@@ -23,9 +23,9 @@
 // server's shared grid **once**, at the join, keeping three numbers: after it
 // the clock is as offline as before.
 
-import { Scheduler, TempoMap } from "../core/clausters_core_web.js";
+import { Scheduler } from "../core/clausters_core_web.js";
 import { setCurrentRoutine } from "./context.ts";
-import { BEATS, LINEAR, tempoEnv } from "./time.ts";
+import { TempoMap, tempoEnv } from "./time.ts";
 import type { CurveSpec, TempoEnvelope, TimeUnit } from "./time.ts";
 import { Routine, Stream, StopStream } from "./stream.ts";
 import {
@@ -456,11 +456,11 @@ export class TempoClock {
      * the whole shape is written in one call and `over` is not needed: its own
      * times are the extents.
      *
-     * `unit` says what `over` (or an envelope's times) measures — `BEATS` or
-     * `SECONDS`. In seconds the width in beats is solved exactly, so an
-     * accelerando can be asked for by how long it lasts rather than by how many
-     * beats it covers. `curve` is the shape: `LINEAR`, `EXPONENTIAL` or a
-     * numeric curvature (0 is linear, positive starts slow, negative starts
+     * `unit` says what `over` (or an envelope's times) measures — `"beats"`,
+     * or `"seconds"` (`"secs"`). In seconds the width in beats is solved
+     * exactly, so an accelerando can be asked for by how long it lasts rather
+     * than by how many beats it covers. `curve` is the shape: `"linear"`
+     * (`"lin"`), `"exponential"` (`"exp"`) or a numeric curvature (0 is linear, positive starts slow, negative starts
      * fast); an envelope carries its own and this is ignored.
      *
      * A tempo envelope is of **finite duration** — after its last segment the
@@ -472,7 +472,7 @@ export class TempoClock {
      */
     setTempo(
         tempo: number | TempoEnvelope,
-        { over, unit = BEATS, curve = LINEAR }: SetTempoOptions = {},
+        { over, unit = "beats", curve = "linear" }: SetTempoOptions = {},
     ): this {
         const at = this.beats();
         if (typeof tempo === "number") {

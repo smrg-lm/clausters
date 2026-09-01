@@ -22,6 +22,7 @@
 // locally by playing inside its own routine instead.
 
 import { Rng as CoreRng } from "../core/clausters_core_web.js";
+import { requireCore } from "./core.ts";
 import { currentRoutine } from "./context.ts";
 // The default session, for the root a draw falls back to. `environment.ts`
 // imports `Rng` back from here, so the two modules form a cycle — a harmless
@@ -49,6 +50,9 @@ export class Rng {
      */
     constructor(inner: CoreRng);
     constructor(source: number | CoreRng) {
+        // The one door every random draw goes through, so an unloaded core says
+        // so here rather than as an unreadable read of an uninitialised binding.
+        if (typeof source === "number") requireCore("a random draw");
         this.inner = typeof source === "number" ? new CoreRng(source) : source;
     }
 

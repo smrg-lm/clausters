@@ -34,7 +34,8 @@
 // loop already, so `open` subscribes and every `/gui_event` reaches `apply` as it
 // arrives. `detach()` unsubscribes.
 
-import { samples_to_secs, secs_to_samples, TempoMap } from "../core/clausters_core_web.js";
+import { samples_to_secs, secs_to_samples } from "../core/clausters_core_web.js";
+import { TempoMap } from "../base/time.ts";
 import { Document, Log } from "../document.ts";
 import type { Against, Intent, Outcome, Resolved, Selection } from "../document.ts";
 import { GraphPatch, synthdefPorts } from "../defs/patch.ts";

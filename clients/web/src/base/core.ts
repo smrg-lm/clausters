@@ -31,6 +31,36 @@ export { Registry };
 export { midiWriteClip, midiWriteSmf };
 
 let loaded: Promise<void> | null = null;
+let ready = false;
+
+/**
+ * Whether the core wasm is in memory — `false` until a {@link loadCore} has
+ * resolved.
+ */
+export function coreLoaded(): boolean {
+    return ready;
+}
+
+/**
+ * Throws unless the core is loaded, naming what was being called.
+ *
+ * The reason this exists rather than letting the call fall through: the
+ * generated glue reads an uninitialised binding, so an unloaded core surfaces
+ * as `Cannot read properties of undefined (reading 'rng_new')`, and a call at
+ * a module's top level takes the whole module down with **no message at all**
+ * — a page that renders nothing and logs nothing. That failure shipped a
+ * broken example once; this is what it says instead.
+ */
+export function requireCore(what: string): void {
+    if (!ready) {
+        throw new Error(
+            `clausters: ${what} is computed by the shared core, which is not `
+            + "loaded yet -- `await loadCore()` before the first call. (The core "
+            + "is wasm here and has to be fetched; the Python client's is "
+            + "already in the process, which is why a script has no such line.)",
+        );
+    }
+}
 
 /**
  * Loads the core wasm once (later calls reuse it). `source` overrides the
@@ -41,7 +71,9 @@ let loaded: Promise<void> | null = null;
  */
 export function loadCore(source?: BufferSource): Promise<void> {
     loaded ??= (source === undefined ? initHere() : initCore({ module_or_path: source })).then(
-        () => undefined,
+        () => {
+            ready = true;
+        },
     );
     return loaded;
 }

@@ -37,24 +37,28 @@ rest of this work. Writing ``T0`` and ``T1`` for the tempos at the two ends:
 
 | shape | tempo ``T(u)`` |
 | --- | --- |
-| `STEP` | ``T0`` |
-| `LINEAR` | ``T0 + (T1 - T0)*u`` |
-| `EXPONENTIAL` | ``T0 * (T1/T0)**u`` |
+| ``"step"`` | ``T0`` |
+| ``"linear"`` | ``T0 + (T1 - T0)*u`` |
+| ``"exponential"`` | ``T0 * (T1/T0)**u`` |
 | a curvature ``c`` | ``A + B*exp(c*u)``, with ``B = -(T1-T0)/(1-exp(c))`` and ``A = T0 + (T1-T0)/(1-exp(c))`` |
 
 A curvature of 0 **is** linear — the knob is continuous through its middle
 rather than a shape apart — positive starts slow and negative starts fast.
 That is `Env`'s own convention, and these are `Env`'s own shape numbers, so one
-vocabulary spells a tempo curve and an amplitude curve.
+vocabulary spells a tempo curve and an amplitude curve. A shape is named by the
+plain string a caller writes (``"lin"`` and ``"exp"`` are accepted too), and a
+unit the same way: ``"beats"``, or ``"seconds"`` (``"secs"``). They are options,
+not constants to import — an unknown spelling is refused rather than quietly
+taken for beats.
 
 **The seconds** are the integral of ``1/T`` over the beat axis. Per unit of
 beat, ``K`` is that integral from ``u = 0`` to ``u = 1``:
 
 | shape | ``K`` |
 | --- | --- |
-| `STEP` | ``1/T0`` |
-| `LINEAR` | ``log(T1/T0) / (T1 - T0)`` |
-| `EXPONENTIAL` | ``(1/T0 - 1/T1) / log(T1/T0)`` |
+| ``"step"`` | ``1/T0`` |
+| ``"linear"`` | ``log(T1/T0) / (T1 - T0)`` |
+| ``"exponential"`` | ``(1/T0 - 1/T1) / log(T1/T0)`` |
 | a curvature ``c`` | ``(1 - log((A + B*exp(c))/(A + B))/c) / A`` |
 
 so a stretch ``db`` beats wide lasts ``db * K`` seconds. **This is where an
@@ -70,8 +74,8 @@ straight ramp that makes ``db`` the logarithmic mean of the two tempos times the
 seconds.
 
 **The inverse** — the beat falling on a second, which a running clock reads on
-every `TempoClock.beats` — is closed for `LINEAR` (``u = T0*(exp(k*s) - 1)/k``,
-``k = T1 - T0``) and for `EXPONENTIAL`
+every `TempoClock.beats` — is closed for ``"linear"``
+(``u = T0*(exp(k*s) - 1)/k``, ``k = T1 - T0``) and for ``"exponential"``
 (``u = -log(1 - s*T0*log(T1/T0))/log(T1/T0)``). A curvature mixes ``u`` and
 ``exp(c*u)`` and has **no** closed inverse, so the core solves it with a
 safeguarded Newton iteration — one implementation, so every client inverts to
@@ -86,15 +90,10 @@ axis (`secs_to_samples`, `samples_to_secs`) — re-exported here so the whole of
 """
 
 from .. import _native
-from .._native import BEATS, EXPONENTIAL, LINEAR, SECONDS, STEP, TempoMap
+from .._native import TempoMap
 
 __all__ = [
     "TempoMap",
-    "BEATS",
-    "SECONDS",
-    "EXPONENTIAL",
-    "STEP",
-    "LINEAR",
     "bar",
     "beat_in_bar",
     "quant_delay",

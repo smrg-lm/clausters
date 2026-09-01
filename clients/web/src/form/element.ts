@@ -34,7 +34,7 @@
 // Grouping and rendering live in `./aggregate.ts` and `./render.ts`. This module
 // is pure and transport-agnostic.
 
-import { TempoMap } from "../core/clausters_core_web.js";
+import { TempoMap } from "../base/time.ts";
 import { Event as SeqEvent } from "../seq/event.ts";
 import { Timeline } from "../seq/timeline.ts";
 import type { PlayDestination } from "../seq/timeline.ts";

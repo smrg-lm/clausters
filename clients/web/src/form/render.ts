@@ -53,7 +53,7 @@ import {
     endBeat,
     tempoMapOf,
 } from "./element.ts";
-import type { TempoMap } from "../core/clausters_core_web.js";
+import type { TempoMap } from "../base/time.ts";
 
 /** One flattened item: what plays, and the absolute beat it plays at. */
 export type Flat = [beat: number, item: unknown];

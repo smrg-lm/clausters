@@ -13,8 +13,6 @@ import pytest
 
 from clausters.base import builtins as B
 from clausters.base import (
-    EXPONENTIAL,
-    SECONDS,
     AbstractObject,
     OscNrtInterface,
     OscTcpInterface,
@@ -284,16 +282,24 @@ def test_one_tempo_verb_spells_a_step_a_ramp_a_shape_and_an_envelope():
     # An extent in seconds lands on the second it asked for -- solved, not
     # searched: db = dt / K, exact for every shape.
     clk = TempoClock(tempo=1.0)
-    clk.set_tempo(4.0, over=3.0, unit=SECONDS)
+    clk.set_tempo(4.0, over=3.0, unit="seconds")
     end = clk.map.segment(1)[0]
     assert clk.map.secs_at(end) == pytest.approx(3.0)
     assert end == pytest.approx(3.0 * (4.0 - 1.0) / math.log(4.0))
 
     # A geometric ramp is a different curve, not a different spelling of one.
     clk = TempoClock(tempo=1.0)
-    clk.set_tempo(4.0, over=8.0, curve=EXPONENTIAL)
+    clk.set_tempo(4.0, over=8.0, curve="exp")
     assert clk.map.secs_at(8.0) == pytest.approx(4.328085122667)
     assert clk.map.secs_at(8.0) != pytest.approx(3.6967849629863747)  # the straight one
+
+    # "secs" is the same unit said another way, and a typo is refused rather
+    # than quietly measured on the other axis.
+    short = TempoClock(tempo=1.0)
+    short.set_tempo(4.0, over=3.0, unit="secs")
+    assert short.map.segment(1)[0] == pytest.approx(end)
+    with pytest.raises(ValueError, match="unknown time unit"):
+        short.set_tempo(2.0, over=1.0, unit="second")
 
     # A curvature of zero is the straight ramp, so the knob is continuous.
     a, b = TempoClock(tempo=1.0), TempoClock(tempo=1.0)

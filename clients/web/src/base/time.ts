@@ -36,24 +36,27 @@
  *
  * | shape | tempo `T(u)` |
  * | --- | --- |
- * | {@link STEP} | `T0` |
- * | {@link LINEAR} | `T0 + (T1 - T0)*u` |
- * | {@link EXPONENTIAL} | `T0 * (T1/T0)**u` |
+ * | `"step"` | `T0` |
+ * | `"linear"` | `T0 + (T1 - T0)*u` |
+ * | `"exponential"` | `T0 * (T1/T0)**u` |
  * | a curvature `c` | `A + B*exp(c*u)`, with `B = -(T1-T0)/(1-exp(c))` and `A = T0 + (T1-T0)/(1-exp(c))` |
  *
  * A curvature of 0 **is** linear — the knob is continuous through its middle
  * rather than a shape apart — positive starts slow and negative starts fast.
  * That is `Env`'s own convention, and these are `Env`'s own shape numbers, so
- * one vocabulary spells a tempo curve and an amplitude curve.
+ * one vocabulary spells a tempo curve and an amplitude curve. A shape is named
+ * by the plain string a caller writes (`"lin"` and `"exp"` are accepted too),
+ * and a unit the same way: `"beats"`, or `"seconds"` (`"secs"`). They are
+ * options, not constants to import.
  *
  * **The seconds** are the integral of `1/T` over the beat axis. Per unit of
  * beat, `K` is that integral from `u = 0` to `u = 1`:
  *
  * | shape | `K` |
  * | --- | --- |
- * | {@link STEP} | `1/T0` |
- * | {@link LINEAR} | `log(T1/T0) / (T1 - T0)` |
- * | {@link EXPONENTIAL} | `(1/T0 - 1/T1) / log(T1/T0)` |
+ * | `"step"` | `1/T0` |
+ * | `"linear"` | `log(T1/T0) / (T1 - T0)` |
+ * | `"exponential"` | `(1/T0 - 1/T1) / log(T1/T0)` |
  * | a curvature `c` | `(1 - log((A + B*exp(c))/(A + B))/c) / A` |
  *
  * so a stretch `db` beats wide lasts `db * K` seconds. **This is where an
@@ -69,8 +72,8 @@
  * the seconds.
  *
  * **The inverse** — the beat falling on a second, which a running clock reads
- * on every `TempoClock.beats` — is closed for {@link LINEAR}
- * (`u = T0*(exp(k*s) - 1)/k`, `k = T1 - T0`) and for {@link EXPONENTIAL}
+ * on every `TempoClock.beats` — is closed for `"linear"`
+ * (`u = T0*(exp(k*s) - 1)/k`, `k = T1 - T0`) and for `"exponential"`
  * (`u = -log(1 - s*T0*log(T1/T0))/log(T1/T0)`). A curvature mixes `u` and
  * `exp(c*u)` and has **no** closed inverse, so the core solves it with a
  * safeguarded Newton iteration — one implementation, so every client inverts to
@@ -84,24 +87,79 @@
  * time is it, in which unit" reads from one import.
  */
 
+import { requireCore } from "./core.ts";
 import {
     bar as coreBar,
     beat_in_bar as coreBeatInBar,
     quant_delay as coreQuantDelay,
     samples_to_secs as coreSamplesToSecs,
     secs_to_samples as coreSecsToSamples,
-    TempoMap,
+    TempoMap as CoreTempoMap,
 } from "../core/clausters_core_web.js";
 
-export { TempoMap };
+/**
+ * The piece's beat↔second map (see the module comment).
+ *
+ * The core's own class, behind a guard: constructing one before `loadCore` has
+ * resolved says so, rather than failing as an unreadable read of an
+ * uninitialised binding — or, at a module's top level, taking the whole module
+ * down with no message at all.
+ */
+export class TempoMap extends CoreTempoMap {
+    constructor(tempo = 1.0) {
+        requireCore("a TempoMap");
+        super(tempo);
+    }
 
-/** An extent is a stretch of the **beat** axis. */
+    /**
+     * One constant-tempo segment with `baseBeats` falling on `baseSeconds` —
+     * the affine triple a running clock already holds, so adopting a map
+     * changes no result.
+     */
+    static anchored(
+        tempo: number, baseBeats: number, baseSeconds: number,
+    ): TempoMap | undefined {
+        requireCore("TempoMap.anchored");
+        return CoreTempoMap.anchored(tempo, baseBeats, baseSeconds) as TempoMap | undefined;
+    }
+
+    /** An independent copy: later edits on either side stay apart. */
+    copy(): TempoMap {
+        return super.copy() as TempoMap;
+    }
+}
+
+
+/** The canonical value for a length measured on the **beat** axis. */
 export const BEATS = "beats";
-/** An extent is a stretch of wall clock. */
+/** The canonical value for a length measured in wall clock. */
 export const SECONDS = "seconds";
-/** What an extent measures — a stretch of beats and a stretch of seconds are
- * different stretches under any tempo but a constant one. */
-export type TimeUnit = typeof BEATS | typeof SECONDS;
+
+/**
+ * What a length is measured in, as an **option**: a plain string, the way a
+ * shape or a ruler is, rather than a constant to import from somewhere.
+ * `"secs"` is `"seconds"` said shorter. A stretch of beats and a stretch of
+ * seconds are different stretches under any tempo but a constant one, so which
+ * one a number is has to be said — and an unknown spelling is refused rather
+ * than quietly taken for beats.
+ */
+export type TimeUnit = "beats" | "seconds" | "secs";
+
+const UNITS: Record<string, string> = {
+    beats: BEATS, seconds: SECONDS, secs: SECONDS,
+};
+
+/** A unit option as its canonical value. Throws on anything else. */
+export function timeUnit(spec: TimeUnit): string {
+    const unit = UNITS[spec];
+    if (unit === undefined) {
+        throw new Error(
+            `unknown time unit ${JSON.stringify(spec)}; use one of `
+            + `${Object.keys(UNITS).sort().join(", ")}`,
+        );
+    }
+    return unit;
+}
 
 /** A segment's tempo is constant. */
 export const STEP = "step";
@@ -165,7 +223,7 @@ export function tempoShape(spec: CurveSpec): [number, number] {
  * taking the map. Same arguments, same order, same result.
  *
  * The envelope is of **finite duration**: after its last segment the tempo it
- * reached holds. `unit` says what the extents measure — in `SECONDS` each
+ * reached holds. `unit` says what the extents measure — in `"seconds"` each
  * segment's width in beats is solved exactly rather than searched for.
  */
 export function tempoEnv(
@@ -173,8 +231,8 @@ export function tempoEnv(
     at: number,
     tempos: number[],
     extents: number[],
-    curves: CurveSpec[] | CurveSpec = LINEAR,
-    unit: TimeUnit = BEATS,
+    curves: CurveSpec[] | CurveSpec = "linear",
+    unit: TimeUnit = "beats",
 ): void {
     const list = Array.isArray(curves) ? curves : extents.map(() => curves);
     if (list.length !== extents.length) {
@@ -189,7 +247,7 @@ export function tempoEnv(
         new Float64Array(extents),
         new Uint32Array(pairs.map((p) => p[0])),
         new Float64Array(pairs.map((p) => p[1])),
-        unit === SECONDS,
+        timeUnit(unit) === SECONDS,
     );
     if (!ok) {
         throw new Error(
@@ -207,6 +265,7 @@ export function tempoEnv(
  * beats grouped, not seconds grouped.
  */
 export function bar(beats: number, quant: number): number {
+    requireCore("bar");
     return coreBar(beats, quant);
 }
 
@@ -215,6 +274,7 @@ export function bar(beats: number, quant: number): number {
  * other half of {@link bar}.
  */
 export function beatInBar(beats: number, quant: number): number {
+    requireCore("beatInBar");
     return coreBeatInBar(beats, quant);
 }
 
@@ -226,6 +286,7 @@ export function beatInBar(beats: number, quant: number): number {
  * argument is computed with.
  */
 export function quantDelay(pos: number, quant: number): number {
+    requireCore("quantDelay");
     return coreQuantDelay(pos, quant);
 }
 
@@ -235,6 +296,7 @@ export function quantDelay(pos: number, quant: number): number {
  * fixed before any tempo was.
  */
 export function secsToSamples(secs: number, sampleRate: number): number {
+    requireCore("secsToSamples");
     return coreSecsToSamples(secs, sampleRate);
 }
 
@@ -243,5 +305,6 @@ export function secsToSamples(secs: number, sampleRate: number): number {
  * {@link secsToSamples}.
  */
 export function samplesToSecs(samples: number, sampleRate: number): number {
+    requireCore("samplesToSecs");
     return coreSamplesToSecs(samples, sampleRate);
 }

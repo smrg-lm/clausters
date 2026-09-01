@@ -1479,6 +1479,48 @@ work, where a pending item reads as done.)*
   and replaced it on every call — so a second clock left the first holding a
   timebase over a **closed** reader. Same fix, same rule.
 
+- ✅ **A unit or a shape is a string, not a constant to import** *(found
+  2026-08-31 by the user: "no se sabe dónde viven esas constantes y son simples
+  opciones")*. `set_tempo(unit=…, curve=…)` and `TempoMap.env` took `BEATS` /
+  `SECONDS` / `LINEAR` / `EXPONENTIAL`, which meant importing a name to pass an
+  option — and the web client's entry point did not export them at all, so the
+  same call could not be written the same way in both. **Fixed**: they are
+  plain strings, the way `Env`'s `curve="lin"` and the editor's
+  `ruler="beats"` already were. `"beats"`, `"seconds"` (`"secs"`), `"linear"`
+  (`"lin"`), `"exponential"` (`"exp"`), or a numeric curvature. The constants
+  stay as the canonical *values* `duration_unit` answers with, and left both
+  clients' public exports. An unknown spelling is now **refused** rather than
+  falling through to beats, which is what a silent `unit="second"` used to do.
+
+- ✅ **Nothing in the web client says the core has to be loaded first, and the
+  failure says nothing either** *(found 2026-08-31, porting the ten-clock
+  example)*. Every core-backed call — `uniform`, `new TempoMap`, the beat grid
+  — reads an uninitialised binding until `loadCore()` has resolved, surfacing
+  as `Cannot read properties of undefined (reading 'rng_new')`. At a module's
+  **top level** it is worse than unreadable: the module dies, and the page
+  renders nothing and logs nothing. That is how `examples/editors/tempo-map.html`
+  shipped in a state where it had never once run.
+
+  **Fixed at the public entry points**: `core.ts` grew `coreLoaded` and
+  `requireCore`, and the `Rng` constructor, the time module's free functions and
+  a `TempoMap` **subclass** (its constructor, `anchored` and `copy`) call it.
+  The message names the call and the fix, and says why a script needs no such
+  line.
+
+  The subclass rather than a `Proxy`, and that is a documentation constraint
+  rather than a taste: TypeDoc documents a class and cannot document a `const`
+  whose type points at the generated `.d.ts`, so a proxy silently cost the book
+  `TempoMap`'s whole page. It also means every **public signature** naming a map
+  has to name the exported one, not the glue's — `TempoClock.map`,
+  `Editor.tempoMap`, `Transport.tempoMap`, `flatten`, `tempoEnv` — which
+  `treatWarningsAsErrors` catches one at a time. The two are structurally
+  identical (the subclass adds no member), so nothing else moved.
+
+  Deliberately *not* fixed by loading the core inside `import`: the wasm is
+  **3.2 MB**, and a page that only sends OSC over a socket should not fetch it.
+  The internal modules that import the glue directly are left alone — they are
+  reached after a session exists, which awaits the core.
+
 - ⬜ **A hand-made clock cannot find the ambient session, because `activate` is
   thread-local** *(found 2026-08-31 by the user, running a ten-clock example)*.
   `Session.activate()` sets `main.current_session` on the **calling** thread. A

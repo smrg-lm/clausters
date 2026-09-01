@@ -10,9 +10,9 @@ the thing that is awkward to arrange any other way.
 **Why they arrive together.** Each voice is a `TempoClock` of its own, and the
 gesture is one call::
 
-    clock.set_tempo(destination, over=30.0, unit=SECONDS)
+    clock.set_tempo(destination, over=30.0, unit="seconds")
 
-``unit=SECONDS`` is what makes the ten ramps the same length: a stretch of
+``unit="seconds"`` is what makes the ten ramps the same length: a stretch of
 **wall clock**, not of beats. The same request in beats would not do it. A beat
 is a logical coordinate, so thirty beats of a voice rushing to 10 is a far
 shorter *time* than thirty beats of one rising to 2 — the ten would finish
@@ -49,7 +49,7 @@ import time
 from functools import partial
 
 from clausters import Session
-from clausters.base import SECONDS, Routine, TempoClock, TempoMap, uniform
+from clausters.base import Routine, TempoClock, TempoMap, uniform
 from clausters.seq.event import Event
 
 #: How long the fan takes to open, in seconds of wall clock. Every voice
@@ -85,7 +85,7 @@ SECONDS_TO_PLAY = float(sys.argv[1]) if len(sys.argv) > 1 else SPREAD + 8.0
 print(f"{'from':>6} {'to (bps)':>9}  {'over 30 s':>21}  {'over 30 beats':>21}")
 for start, target in zip(STARTS, TARGETS):
     by_secs = TempoMap(start)
-    by_secs.env(0.0, [start, target], [SPREAD], unit=SECONDS)
+    by_secs.env(0.0, [start, target], [SPREAD], unit="seconds")
     end_beat = by_secs.segment(1)[0]
 
     by_beats = TempoMap(start)
@@ -139,7 +139,7 @@ clocks = []
 for start, target, pitch in zip(STARTS, TARGETS, PITCHES):
     clock = TempoClock(tempo=start)
     clock.lock_to(server)                  # schedule on the server's samples
-    clock.set_tempo(target, over=SPREAD, unit=SECONDS)
+    clock.set_tempo(target, over=SPREAD, unit="seconds")
     Routine(partial(line, pitch)).play(clock)   # a hand-made clock is named
     clocks.append(clock)
 

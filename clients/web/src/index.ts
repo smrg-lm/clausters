@@ -100,17 +100,13 @@ export {
 export type {
     ManualTicker, Schedulable, SetTempoOptions, TempoClockOptions, Ticker } from "./base/clock.ts";
 export {
-    EXPONENTIAL,
-    LINEAR,
-    STEP,
     TempoMap,
     bar,
     beatInBar,
     quantDelay,
     samplesToSecs,
     secsToSamples,
-    tempoEnv,
-    tempoShape } from "./base/time.ts";
+    tempoEnv } from "./base/time.ts";
 export type { CurveSpec, TempoEnvelope, TimeUnit } from "./base/time.ts";
 export {
     ManualTimebase,

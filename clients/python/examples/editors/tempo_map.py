@@ -20,7 +20,7 @@ so nothing already scheduled jumps. Add `over=` and it is a **shape written over
 a stretch**: an accelerando or a ritardando, whose length in seconds is a
 logarithm of the tempo ratio rather than the span divided by an average of the
 two tempos, and the printed comparison below is the difference the two answers
-make. Add `unit=SECONDS` and the stretch is wall clock instead of beats — solved
+make. Add `unit="seconds"` and the stretch is wall clock instead of beats — solved
 exactly, not searched for. Add `curve=` and it is a different shape.
 
 Hand it an `Env` of tempos and the whole thing is written in **one call**: the
@@ -53,7 +53,6 @@ import math
 import sys
 
 from clausters import Session, TempoMap
-from clausters.base import EXPONENTIAL, SECONDS  # noqa: F401  (named in the prose above)
 from clausters.defs.ugens.env import Env  # noqa: F401
 from clausters.form import Aggregate, Clang, Sequence
 from clausters.gui import Editor
@@ -132,8 +131,8 @@ song.add(Sequence([bar(220.0), bar(277.2), bar(330.0), bar(440.0)],
 # ```python
 # clock.set_tempo(4.0)                            # a step, pinned where you call it
 # clock.set_tempo(4.0, over=8.0)                  # a shape, over eight beats
-# clock.set_tempo(4.0, over=3.0, unit=SECONDS)    # the same, over three seconds
-# clock.set_tempo(4.0, over=8.0, curve=EXPONENTIAL)   # equal ratios, not equal steps
+# clock.set_tempo(4.0, over=3.0, unit="seconds")  # the same, over three seconds
+# clock.set_tempo(4.0, over=8.0, curve="exp")    # equal ratios, not equal steps
 # clock.set_tempo(Env([1.0, 4.0, 2.0], [8.0, 4.0]))   # the whole shape at once
 # ```
 #

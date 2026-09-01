@@ -31,7 +31,6 @@ import time
 import traceback
 
 from .. import _native
-from .._native import BEATS, EXPONENTIAL, LINEAR, SECONDS, STEP  # noqa: F401
 from .stream import Stream, StopStream
 from .timebase import MonotonicTimebase, SampleClockTimebase
 
@@ -288,7 +287,7 @@ class TempoClock:
         absolute sample for ``/sched_at``."""
         return self._mono_start
 
-    def set_tempo(self, tempo, over=None, unit=BEATS, curve=LINEAR):
+    def set_tempo(self, tempo, over=None, unit="beats", curve="linear"):
         """**The tempo gesture**, from the beat the clock is on.
 
         With no ``over`` it is a **step**: the tempo changes from here, pinning
@@ -307,13 +306,14 @@ class TempoClock:
                 loop: those are a gate's ideas, and a piece's tempo has no
                 gate).
             over: how far the change is spread. ``None`` is the step.
-            unit: what ``over`` (or an envelope's times) measures — `BEATS` or
-                `SECONDS`. In seconds the width in beats is solved exactly, so
-                an accelerando can be asked for by how long it lasts rather
-                than by how many beats it covers.
-            curve: the shape — `LINEAR`, `EXPONENTIAL` or a numeric curvature
-                (0 is linear, positive starts slow, negative starts fast). An
-                envelope carries its own and this is ignored.
+            unit: what ``over`` (or an envelope's times) measures —
+                ``"beats"``, or ``"seconds"`` (``"secs"``). In seconds the width
+                in beats is solved exactly, so an accelerando can be asked for
+                by how long it lasts rather than by how many beats it covers.
+            curve: the shape — ``"linear"`` (``"lin"``), ``"exponential"``
+                (``"exp"``) or a numeric curvature (0 is linear, positive starts
+                slow, negative starts fast). An envelope carries its own and
+                this is ignored.
 
         A change is **recorded** rather than overwriting what came before, so
         the beats before it stay convertible afterwards.

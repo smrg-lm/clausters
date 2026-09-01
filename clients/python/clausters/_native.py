@@ -1481,15 +1481,29 @@ class Scheduler:
 # ---- the piece's time map ----
 
 
-#: An extent is a stretch of the **beat** axis.
-#:
-#: The unit vocabulary lives here, at the layer the map reads it, and
-#: `clausters.form.element` re-exports it: a stretch of beats and a stretch of
-#: seconds are different stretches under any tempo but a constant one, so which
-#: one a number is has to be said rather than assumed.
+#: The canonical value for a length measured on the **beat** axis — what
+#: ``duration_unit`` answers, not something a caller has to import: an option
+#: that takes a unit takes the plain string (see `_unit`).
 BEATS = "beats"
-#: An extent is a stretch of wall clock.
+#: The canonical value for a length measured in wall clock.
 SECONDS = "seconds"
+
+#: The spellings an option accepts for a unit. A stretch of beats and a stretch
+#: of seconds are different stretches under any tempo but a constant one, so
+#: which one a number is has to be *said* — and saying it is a string, the way
+#: a shape or a ruler is, rather than a constant whose home has to be found.
+_UNITS = {"beats": BEATS, "seconds": SECONDS, "secs": SECONDS}
+
+
+def _unit(spec: str) -> str:
+    """A unit option -> `BEATS` or `SECONDS`. Raises on anything else, rather
+    than falling back to beats and quietly measuring the wrong axis."""
+    try:
+        return _UNITS[spec]
+    except (KeyError, TypeError):
+        raise ValueError(
+            f"unknown time unit {spec!r}; use one of {sorted(_UNITS)}"
+        ) from None
 
 #: A segment's tempo is constant.
 STEP = "step"
@@ -1634,9 +1648,10 @@ class TempoMap:
         return self
 
     def shaped(self, from_beats: float, to_beats: float, from_tempo: float,
-               to_tempo: float, curve=LINEAR):
-        """`ramp` in an explicit shape — `LINEAR`, `EXPONENTIAL` or a numeric
-        curvature (0 is linear, positive starts slow, negative starts fast)."""
+               to_tempo: float, curve="linear"):
+        """`ramp` in an explicit shape — ``"linear"`` (``"lin"``),
+        ``"exponential"`` (``"exp"``) or a numeric curvature (0 is linear,
+        positive starts slow, negative starts fast)."""
         number, curvature = _shape(curve)
         rc = self._lib.clausters_tempomap_shaped(
             self._handle, float(from_beats), float(to_beats),
@@ -1649,7 +1664,7 @@ class TempoMap:
             )
         return self
 
-    def env(self, at: float, tempos, extents, curves=LINEAR, unit=BEATS):
+    def env(self, at: float, tempos, extents, curves="linear", unit="beats"):
         """**Writes a whole tempo envelope from beat ``at``** — one more tempo
         than extents, one shape per segment (one shape for all of them, or a
         list).
@@ -1681,7 +1696,7 @@ class TempoMap:
             (ctypes.c_double * n)(*extents),
             (ctypes.c_uint32 * n)(*[p[0] for p in pairs]),
             (ctypes.c_double * n)(*[p[1] for p in pairs]),
-            n, 1 if unit == SECONDS else 0,
+            n, 1 if _unit(unit) == SECONDS else 0,
         )
         if rc != 0:
             raise ValueError(

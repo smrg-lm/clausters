@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: ten clocks, one arrival</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 52rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre; align-self: stretch; overflow-x: auto; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">The web port of the Python client's
+<code>tempo_canon.py</code>: <b>ten clocks accelerating to ten different tempos,
+and arriving together</b> — the same piece, voice for voice.
+
+A <b>tempo canon</b>: one line, played by ten voices at once, each on a tempo of
+its own. Every voice starts slow — a beat every one to four seconds — and rushes
+to somewhere between 8 and 10 beats a second, both drawn afresh every run. They
+begin as ten unrelated drips, thicken over half a minute into a single band of
+sound, and every voice reaches its final tempo at the <i>same instant</i> —
+which is the whole point, and the thing that is awkward to arrange any other
+way.
+
+<b>Why they arrive together.</b> Each voice is a <code>TempoClock</code> of its
+own, and the gesture is one call:
+<code>clock.setTempo(target, { over: 30.0, unit: "seconds" })</code>.
+
+<code>unit: "seconds"</code> is what makes the ten ramps the same length: a
+stretch of <b>wall clock</b>, not of beats. The same request in beats would not
+do it. A beat is a logical coordinate, so thirty beats of a voice rushing to 10
+is a far shorter <i>time</i> than thirty beats of one rising to 2 — the ten
+would finish accelerating at ten different moments, and the piece would dissolve
+instead of landing. With ten different starting tempos as well, the beat each
+voice reaches is nowhere near the others; the <b>seconds</b> are the only thing
+they share, and that is exactly what the call asks for. Nothing about it is
+approximate either: the width in beats a request in seconds implies is solved in
+closed form, so a ramp ends on the second it was asked for.
+
+<b>Ten clocks, one server.</b> A <code>Session</code> owns a server and as many
+clocks as the piece has tempos, so this page makes ten. Each is
+<code>lockTo</code> the server, which puts its scheduling on the engine's own
+sample counter — and there is <b>one</b> reader of that counter, built by the
+first clock and shared by the rest.
+
+Each also <b>adopts the session</b>, because it is built while the session is
+ambient: they are in <code>session.clocks</code>, <code>session.start()</code>
+starts them together, and <code>session.close()</code> closes them.
+
+<b>What is different from the script</b>, and it is only the platform: the
+numeric core is wasm and has to be fetched before anything calls into it
+(<code>await loadCore()</code>, which a script does not need because the same
+code is already in the process), writing an envelope on a map is
+<code>tempoEnv(map, …)</code> rather than <code>map.env(…)</code> because the map
+is a generated wasm class that cannot grow a method, the engine is the tab's own
+(<code>Session.embed</code> is this client's <code>live</code>), the calls that
+reach it are awaited, and the watching loop is a timer rather than a sleeping
+main thread — a page has no thread to block.
+Every other line is the call the script makes, in the order it makes it.
+
+Build first (<code>./build.sh</code> from <code>clients/web</code>), then serve
+this directory and open the page.</div>
+
+      <div><button id="start">start</button></div>
+      <pre id="log"></pre>
+    </main>
+
+    <script type="module">
+      import {
+        Event, Routine, Session, TempoClock, TempoMap, loadCore, tempoEnv, uniform,
+      } from "../../dist/index.js";
+
+      // **The one line the script has no counterpart for.** The numeric core is
+      // wasm here, and it has to be fetched before anything calls into it —
+      // `uniform` and `TempoMap` below are both core functions, so this comes
+      // first or they throw. In Python the same code is already in the process.
+      await loadCore();
+
+      const el = (id) => document.getElementById(id);
+      const log = (line) => { el("log").textContent += line + "\n"; };
+
+      // How long the fan takes to open, in seconds of wall clock. Every voice
+      // accelerates over exactly this, whatever tempo it is heading for.
+      const SPREAD = 30.0;
+
+      // Where each voice starts: a slow draw, a beat every one to four seconds.
+      const STARTS = Array.from({ length: 10 }, () => uniform(0.25, 2.0));
+
+      // Where each voice ends up: a fast draw. Both are drawn afresh every run,
+      // so the fan is a different shape each time. `uniform` is the client's
+      // own generator rather than the platform's, so `seed` replays a canon you
+      // liked.
+      const TARGETS = Array.from({ length: 10 }, () => uniform(8.0, 10.0));
+
+      // One partial each, so the fan is heard as one instrument coming apart
+      // rather than as ten unrelated players.
+      const PITCHES = Array.from({ length: 10 }, (_, i) => 110.0 * (i + 2));
+
+      // How long the whole run lasts: the fan, and a while at the far end.
+      const SECONDS_TO_PLAY = SPREAD + 8.0;
+
+      // ---- the two units, before anything sounds ----
+      // A `TempoMap` is a pure function of a beat: it answers about a piece
+      // nobody is playing. So the choice of unit can be *read* rather than
+      // argued about. Asked for over 30 seconds, every voice takes 30 seconds
+      // and arrives at a different beat; asked for over 30 beats, every voice
+      // takes a different time — which is ten voices landing at ten different
+      // moments.
+      const pad = (x, n, d = 2) => x.toFixed(d).padStart(n);
+
+      function compare() {
+        log(`${"from".padStart(6)} ${"to (bps)".padStart(9)}  `
+          + `${"over 30 s".padStart(21)}  ${"over 30 beats".padStart(21)}`);
+        for (const [i, start] of STARTS.entries()) {
+          const target = TARGETS[i];
+          const bySecs = new TempoMap(start);
+          // `tempoEnv(map, ...)` is the Python client's `map.env(...)`: the map
+          // is a generated wasm class here and cannot grow a method, so the
+          // wrapper takes it. Same arguments, same order.
+          tempoEnv(bySecs, 0.0, [start, target], [SPREAD], "linear", "seconds");
+          const endBeat = bySecs.segment(1)[0];
+
+          const byBeats = new TempoMap(start);
+          byBeats.ramp(0.0, 30.0, start, target);
+
+          log(`${pad(start, 6)} ${pad(target, 9)}  `
+            + `${pad(bySecs.secsAt(endBeat), 8, 3)} s at beat ${pad(endBeat, 6)}  `
+            + `${pad(byBeats.secsAt(30.0), 8, 3)} s at beat ${pad(30.0, 6)}`);
+        }
+      }
+
+      // ---- one voice's line ----
+      // A note a beat, and nothing about the tempo. Each `yield 1.0` is one
+      // beat, always; what changes is how long that beat lasts, and this
+      // generator never finds out. It is the only function that makes sound —
+      // a routine *is* one.
+      function* line(pitch) {
+        for (let i = 0; i < 400; i++) {
+          // No explicit `sustain`: it would pin the sounding length, and the
+          // notes would stop shortening as the tempo rises -- which is the
+          // thing this example exists to let you hear. Left alone a note
+          // sounds `dur * legato` beats and follows the tempo.
+          new Event({ freq: pitch, legato: 0.1, amp: 0.06 }).play();
+          yield 1.0;
+        }
+      }
+
+      async function run() {
+        el("start").disabled = true;
+        compare();
+
+        // The session. `embed` is this client's `live` — the engine is the
+        // tab's own rather than a process this line started. Activating it
+        // makes it ambient, so a note played from inside a routine finds this
+        // server without being handed it, and every clock built below adopts
+        // this session.
+        const session = (await Session.embed({ tempo: 1.0, channels: 2 })).activate();
+        const server = session.server;
+
+        // The ten clocks: a clock, its ramp, its routine. Each adopts the
+        // ambient session as it is constructed, so by the end of this loop
+        // `session.clocks` holds all eleven — the session's own default clock,
+        // which this piece does not use, and these ten.
+        const clocks = [];
+        for (const [i, start] of STARTS.entries()) {
+          const clock = new TempoClock(start);
+          await clock.lockTo(server);          // the engine's own sample counter
+          clock.setTempo(TARGETS[i], { over: SPREAD, unit: "seconds" });
+          new Routine(() => line(PITCHES[i])).play(clock);   // a hand-made clock is named
+          clocks.push(clock);
+        }
+        log(`clocks in the session: ${session.clocks.length}`);
+
+        // Ten slow pulses, none of them agreeing with another. From there each
+        // pulls away at its own rate, and at SPREAD seconds they all stop
+        // accelerating at once and hold what they reached. `session.start`
+        // starts them together — a loop over ten `start` calls staggers them by
+        // whatever the loop costs.
+        session.start();
+
+        // Where the script sleeps on its main thread, a page cannot: this is a
+        // timer, and it is the one line that differs.
+        const started = performance.now();
+        const tick = setInterval(() => {
+          const elapsed = (performance.now() - started) / 1000.0;
+          log(`${pad(elapsed, 5, 1)} s  beats `
+            + clocks.map((c) => pad(c.beats(), 6, 1)).join("  "));
+          if (elapsed >= SECONDS_TO_PLAY) {
+            clearInterval(tick);
+            log("tempos reached: "
+              + clocks.map((c) => c.tempo.toFixed(2)).join("  "));
+            // `stop` is a transport: the beats are held and a later
+            // `session.start()` picks the canon up where it was.
+            session.stop();
+          }
+        }, 5000);
+      }
+
+      el("start").addEventListener("click", () => {
+        run().catch((err) => log(`failed: ${err.message ?? err}`));
+      });
+    </script>
+  </body>
+</html>

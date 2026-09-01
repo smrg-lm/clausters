@@ -45,7 +45,7 @@ instant you call it, so nothing already scheduled jumps. Add <code>over</code>
 and it is a <b>shape written over a stretch</b>: an accelerando or a ritardando,
 whose length in seconds is a logarithm of the tempo ratio rather than the span
 divided by an average of the two tempos, and the printed comparison below is the
-difference the two answers make. Add <code>unit: SECONDS</code> and the stretch
+difference the two answers make. Add <code>unit: "seconds"</code> and the stretch
 is wall clock instead of beats — solved exactly, not searched for. Add
 <code>curve</code> and it is a different shape.
 
@@ -70,7 +70,10 @@ in the first thirty seconds. A piece can hold a map no clock ever read.
 — the two cannot silently disagree — but passing it up front means the first draw
 is already right.
 
-Everything runs on the <b>in-page engine</b>: no server process, no socket.
+The one line the script has no counterpart for is <code>await loadCore()</code>:
+the numeric core is wasm here and has to be fetched before anything calls into
+it. Everything else runs on the <b>in-page engine</b>: no server process, no
+socket.
 Build first (<code>./build.sh</code> from <code>clients/web</code>), then serve
 this directory and open the page.</div>
 
@@ -84,8 +87,14 @@ this directory and open the page.</div>
 
     <script type="module">
       import {
-        Session, Event, TempoMap, gui, form,
+        Session, Event, TempoMap, gui, form, loadCore,
       } from "../../dist/index.js";
+
+      // **The one line the script has no counterpart for.** The numeric core is
+      // wasm here and has to be fetched before anything calls into it — the
+      // `TempoMap` below is a core function, so this comes first or it throws.
+      // In Python the same code is already in the process.
+      await loadCore();
 
       const el = (id) => document.getElementById(id);
       const log = (line) => { el("log").textContent += line + "\n"; };
@@ -168,8 +177,8 @@ this directory and open the page.</div>
         //
         //   clock.setTempo(4.0);                                  // a step, pinned where you call it
         //   clock.setTempo(4.0, { over: 8.0 });                  // a shape, over eight beats
-        //   clock.setTempo(4.0, { over: 3.0, unit: SECONDS });    // the same, over three seconds
-        //   clock.setTempo(4.0, { over: 8.0, curve: EXPONENTIAL });  // equal ratios, not equal steps
+        //   clock.setTempo(4.0, { over: 3.0, unit: "seconds" });  // the same, over three seconds
+        //   clock.setTempo(4.0, { over: 8.0, curve: "exp" });     // equal ratios, not equal steps
         //   clock.setTempo({ levels: [1.0, 4.0, 2.0], times: [8.0, 4.0] });  // the whole shape at once
         //
         // Do that while it runs and the piece accelerates under your hand; the

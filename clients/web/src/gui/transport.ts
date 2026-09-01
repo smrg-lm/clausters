@@ -22,7 +22,8 @@
 // **A pass ends by itself.** `seq.Playhead` reports the end of its scan, so
 // `update` parks the cursor at the piece's end without the script timing it.
 
-import { secs_to_samples, TempoMap } from "../core/clausters_core_web.js";
+import { secs_to_samples } from "../core/clausters_core_web.js";
+import { TempoMap } from "../base/time.ts";
 import type { TempoClock } from "../base/clock.ts";
 import { ReplyTimeout } from "../errors.ts";
 import type { GuiHost } from "./host.ts";

@@ -21,7 +21,7 @@
 // driving every client — the same local transport, driven from outside.
 
 import { TempoClock } from "../base/clock.ts";
-import type { TempoMap } from "../core/clausters_core_web.js";
+import type { TempoMap } from "../base/time.ts";
 import { ManualTimebase } from "../base/timebase.ts";
 import { currentRoutine } from "../base/context.ts";
 import { Routine } from "../base/stream.ts";
