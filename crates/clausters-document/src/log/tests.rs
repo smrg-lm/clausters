@@ -72,8 +72,8 @@ fn a_run_of_gestures_inverts_back_to_where_it_started() {
     assert_ne!(d.root, start);
     assert_eq!(log.len(), 4);
 
-    while let Some(inverse) = log.undo() {
-        run(&mut d, inverse);
+    while let Some(undone) = log.undo() {
+        run(&mut d, undone.intents);
     }
     assert_eq!(d.root, start, "exactly, not approximately");
     assert!(!log.can_undo() && log.can_redo());
@@ -93,9 +93,9 @@ fn a_redo_re_emits_the_intent_the_gesture_first_sent() {
     );
     let applied = outcome.effective.clone();
 
-    run(&mut d, log.undo().unwrap());
+    run(&mut d, log.undo().unwrap().intents);
     let redone = log.redo().unwrap();
-    assert_eq!(redone, vec![Step::Edit(applied)]);
+    assert_eq!(redone.intents, vec![applied]);
 }
 
 #[test]
@@ -113,8 +113,8 @@ fn what_the_owner_transformed_is_what_gets_replayed() {
         &mut log,
         "move",
     );
-    run(&mut d, log.undo().unwrap());
-    let Some(Step::Edit(Intent::Place { offset, .. })) = log.redo().unwrap().pop() else {
+    run(&mut d, log.undo().unwrap().intents);
+    let Some(Intent::Place { offset, .. }) = log.redo().unwrap().intents.pop() else {
         panic!("a placement");
     };
     assert_eq!(offset, 4.0);
@@ -200,8 +200,8 @@ fn a_new_edit_after_an_undo_drops_what_was_waiting_to_be_redone() {
             "move",
         );
     }
-    run(&mut d, log.undo().unwrap());
-    run(&mut d, log.undo().unwrap());
+    run(&mut d, log.undo().unwrap().intents);
+    run(&mut d, log.undo().unwrap().intents);
     assert!(log.can_redo());
 
     apply_logged(
@@ -242,7 +242,7 @@ fn a_continuing_run_of_adjustments_is_one_undo() {
         log.record(entry);
     }
     assert_eq!(log.len(), 1);
-    run(&mut d, log.undo().unwrap());
+    run(&mut d, log.undo().unwrap().intents);
     assert_eq!(d.root, start);
 }
 
@@ -282,11 +282,11 @@ fn the_labels_say_what_undo_and_redo_would_do() {
         &mut log,
         "move the clip",
     );
-    assert_eq!(log.undo_label(), Some("move the clip"));
+    assert_eq!(log.undo_label().as_deref(), Some("move the clip"));
     assert_eq!(log.redo_label(), None);
-    run(&mut d, log.undo().unwrap());
+    run(&mut d, log.undo().unwrap().intents);
     assert_eq!(log.undo_label(), None);
-    assert_eq!(log.redo_label(), Some("move the clip"));
+    assert_eq!(log.redo_label().as_deref(), Some("move the clip"));
 }
 
 // ---- the spill store ----
@@ -312,9 +312,13 @@ fn a_big_sample_payload_leaves_the_log_and_comes_back_whole() {
     ));
 
     let undone = log.undo().unwrap();
-    assert_eq!(undone, vec![write(0, previous)], "the span, put back whole");
+    assert_eq!(
+        undone.intents,
+        vec![write(0, previous)],
+        "the span, put back whole"
+    );
     let redone = log.redo().unwrap();
-    assert_eq!(redone, vec![Step::Edit(write(0, written))]);
+    assert_eq!(redone.intents, vec![write(0, written)]);
 }
 
 #[test]
@@ -340,7 +344,7 @@ fn an_undo_redo_pair_naming_the_same_bytes_holds_one_copy() {
         Step::Edit(write(0, same.clone())),
         write(0, same),
     ));
-    assert_eq!(log.undo().unwrap().len(), 1);
+    assert_eq!(log.undo().unwrap().intents.len(), 1);
 }
 
 #[test]
@@ -353,7 +357,7 @@ fn a_small_payload_stays_in_the_log() {
         Step::Edit(write(10, vec![0.1, 0.2])),
         write(10, vec![0.3, 0.4]),
     ));
-    assert_eq!(log.undo().unwrap(), vec![write(10, vec![0.3, 0.4])]);
+    assert_eq!(log.undo().unwrap().intents, vec![write(10, vec![0.3, 0.4])]);
 }
 
 #[test]
@@ -370,10 +374,10 @@ fn a_deterministic_operation_stores_its_parameters_and_not_its_result() {
         write(0, previous.clone()),
     ));
 
-    assert_eq!(log.undo().unwrap(), vec![write(0, previous)]);
+    assert_eq!(log.undo().unwrap().intents, vec![write(0, previous)]);
     let redone = log.redo().unwrap();
     assert!(
-        matches!(redone.as_slice(), [Step::Recompute(_)]),
+        matches!(redone.remaining.as_slice(), [Step::Recompute(_)]),
         "the owner re-runs it rather than replaying four megabytes"
     );
 }
@@ -397,7 +401,7 @@ fn a_transaction_unwinds_in_the_order_it_was_laid_down() {
     log.record(entry);
     assert_eq!(log.len(), 1, "one transaction, whatever it holds");
 
-    run(&mut d, log.undo().unwrap());
+    run(&mut d, log.undo().unwrap().intents);
     assert_eq!(d.root, start);
 }
 
@@ -416,7 +420,7 @@ fn the_oldest_entries_fall_off_and_take_their_spilled_bytes_with_them() {
     assert_eq!(log.len(), 2, "the budget holds");
     // The two that survived are the last two, and they still invert.
     let undone = log.undo().unwrap();
-    assert_eq!(undone, vec![write(4, vec![-4.0; 1024])]);
+    assert_eq!(undone.intents, vec![write(4, vec![-4.0; 1024])]);
 }
 
 #[test]
@@ -485,7 +489,7 @@ fn a_history_holding_a_document_and_a_curve_undoes_them_in_one_order() {
     // Undoing walks that one order, and each leg says which structure it is
     // for -- which is all a caller needs to route it.
     for expected in [tree, points, tree] {
-        let undone = history.undo().expect("something to undo");
+        let undone = history.undo().expect("something to undo").legs;
         for (structure, load) in undone {
             assert_eq!(structure, expected);
             if structure == tree {

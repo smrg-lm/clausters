@@ -1,5 +1,5 @@
 use super::*;
-use crate::history::{History, Step};
+use crate::history::History;
 
 fn at(at: f64, value: f64) -> Point {
     Point { at, value }
@@ -24,7 +24,7 @@ fn a_curve_edited_through_a_history_inverts_to_the_points_it_started_from() {
     assert!(applied.applied);
     assert_eq!(points.0.len(), 3);
 
-    for (structure, payload) in history.undo().expect("something to undo") {
+    for (structure, payload) in history.undo().expect("something to undo").legs {
         assert_eq!(structure, curve);
         points.apply(&payload);
     }
@@ -84,14 +84,11 @@ fn a_redo_hands_the_curve_back_the_points_it_had() {
     let mut points = Points::new(vec![at(0.0, 0.0)]);
     history.apply(curve, &mut points, &set(vec![at(0.0, 1.0)]), "draw");
 
-    for (_, payload) in history.undo().unwrap() {
+    for (_, payload) in history.undo().unwrap().legs {
         points.apply(&payload);
     }
     assert_eq!(points.0, vec![at(0.0, 0.0)]);
-    for (_, step) in history.redo().unwrap() {
-        let Step::Edit(payload) = step else {
-            unreachable!("an ordinary edit")
-        };
+    for (_, payload) in history.redo().unwrap().edits {
         points.apply(&payload);
     }
     assert_eq!(points.0, vec![at(0.0, 1.0)]);

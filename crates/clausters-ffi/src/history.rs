@@ -345,7 +345,11 @@ struct Request {
 struct Leg {
     structure: u64,
     forward: Step,
-    backward: Opaque,
+    /// How to put this leg back, or absent when nothing can — an act whose
+    /// inverse the owner cannot write. The entry is still recorded, marked, and
+    /// walked past in both directions.
+    #[serde(default)]
+    backward: Option<Opaque>,
     #[serde(default)]
     key: String,
 }
@@ -360,17 +364,23 @@ impl Request {
     fn entry(self) -> Option<Entry> {
         let mut legs = self.legs.into_iter();
         let first = legs.next()?;
-        let mut entry = Entry::new(
-            self.label,
-            StructureId(first.structure),
-            first.forward,
-            first.backward,
-        );
+        let mut entry = match first.backward {
+            Some(backward) => Entry::new(
+                self.label,
+                StructureId(first.structure),
+                first.forward,
+                backward,
+            ),
+            None => Entry::uninvertible(self.label, StructureId(first.structure), first.forward),
+        };
         if !first.key.is_empty() {
             entry = entry.keyed(first.key);
         }
         for leg in legs {
-            entry = entry.and(StructureId(leg.structure), leg.forward, leg.backward);
+            entry = match leg.backward {
+                Some(backward) => entry.and(StructureId(leg.structure), leg.forward, backward),
+                None => entry.and_uninvertible(StructureId(leg.structure), leg.forward),
+            };
             if !leg.key.is_empty() {
                 entry = entry.keyed(leg.key);
             }
@@ -382,12 +392,17 @@ impl Request {
     }
 }
 
-/// Undo the last transaction: the inverses of the entry before the cursor, each
+/// Undo the last thing done: the inverses of the entry the walk lands on, each
 /// with the structure it belongs to, **in the order they must be applied**.
 ///
-/// Writes `{"inverses": [{"structure": <id>, "payload": <payload>}, …]}`.
-/// Returns the byte count it needs, `0` when the handle is null, and `2` (`{}`)
-/// when there was nothing to undo, which a caller distinguishes from a failure.
+/// Writes
+/// `{"label": …, "inverses": [{"structure": <id>, "payload": <payload>}, …], "skipped": [<label>, …]}`.
+/// `skipped` names the entries the walk had to pass over because nothing can
+/// invert them — a hole in the history that announces itself, which is what
+/// lets a person understand why an undo did not go where they expected.
+/// Returns the byte count it needs, `0` when the handle is null, and `2`
+/// (`{}`) when there was nothing to undo, which a caller distinguishes from a
+/// failure.
 ///
 /// It applies nothing: a history holds structures this surface cannot reach, so
 /// applying the legs it *could* would leave the rest to the caller out of
@@ -403,16 +418,19 @@ pub unsafe extern "C" fn clausters_history_undo(
     out: *mut u8,
     out_cap: usize,
 ) -> usize {
-    let inverses = with_history(h, None, |history| history.peek_undo());
-    let payload = match inverses {
+    let undone = with_history(h, None, |history| history.peek_undo());
+    let payload = match &undone {
         // Nothing to undo. `{}` rather than an empty list, so a caller can tell
         // "the history is at its start" from "the call failed" (0).
         None => serde_json::json!({}),
-        Some(ref legs) => serde_json::json!({
-            "inverses": legs
+        Some(undone) => serde_json::json!({
+            "label": undone.label,
+            "inverses": undone
+                .legs
                 .iter()
                 .map(|(structure, load)| leg(*structure, "payload", &load.0))
-                .collect::<Vec<_>>()
+                .collect::<Vec<_>>(),
+            "skipped": undone.skipped,
         }),
     };
     // SAFETY: forwarded from this function's own contract.
@@ -422,7 +440,7 @@ pub unsafe extern "C" fn clausters_history_undo(
             out,
             out_cap,
             || {
-                if inverses.is_some() {
+                if undone.is_some() {
                     with_history(h, false, |history| history.step_back());
                 }
             },
@@ -430,17 +448,18 @@ pub unsafe extern "C" fn clausters_history_undo(
     }
 }
 
-/// Redo what was last undone: the steps of the entry at the cursor, each with
-/// the structure it belongs to, in order.
+/// Redo what was last undone: the steps of the entry the walk lands on, each
+/// with the structure it belongs to, in order.
 ///
-/// Writes `{"edits": [{"structure": <id>, "payload": <payload>}, …],
-/// "remaining": [{"structure": <id>, "step": <step>}, …]}`. `edits` is the
-/// leading run of ordinary edits, for the caller to apply in order;
-/// `remaining` holds the steps from the first one the crate cannot describe as
-/// an edit onward — a deterministic operation stored as its parameters, which
-/// the **owner** re-runs, because the crate holds no algorithms. It stops at
-/// the first rather than skipping it, so a later edit is never applied over a
-/// state the operation before it was meant to produce.
+/// Writes `{"label": …, "edits": [{"structure": <id>, "payload": <payload>}, …],
+/// "remaining": [{"structure": <id>, "step": <step>}, …], "skipped": [<label>, …]}`.
+/// `edits` is the leading run of ordinary edits, for the caller to apply in
+/// order; `remaining` holds the steps from the first one the crate cannot
+/// describe as an edit onward — a deterministic operation stored as its
+/// parameters, which the **owner** re-runs, because the crate holds no
+/// algorithms. It stops at the first rather than skipping it, so a later edit is
+/// never applied over a state the operation before it was meant to produce.
+/// `skipped` is [`clausters_history_undo`]'s.
 ///
 /// Returns the byte count needed, `0` when the handle is null, and `2` (`{}`)
 /// when there was nothing to redo.
@@ -453,25 +472,29 @@ pub unsafe extern "C" fn clausters_history_redo(
     out: *mut u8,
     out_cap: usize,
 ) -> usize {
-    let steps = with_history(h, None, |history| history.peek_redo());
-    let had_steps = steps.is_some();
-    let payload = match steps {
+    let redone = with_history(h, None, |history| history.peek_redo());
+    let payload = match &redone {
         None => serde_json::json!({}),
-        Some(steps) => {
-            let mut edits = Vec::new();
-            let mut remaining = Vec::new();
-            for (structure, step) in steps {
-                match (&step, remaining.is_empty()) {
-                    (Step::Edit(load), true) => edits.push(leg(structure, "payload", &load.0)),
-                    _ => remaining.push(leg(
-                        structure,
+        Some(redone) => serde_json::json!({
+            "label": redone.label,
+            "edits": redone
+                .edits
+                .iter()
+                .map(|(structure, load)| leg(*structure, "payload", &load.0))
+                .collect::<Vec<_>>(),
+            "remaining": redone
+                .remaining
+                .iter()
+                .map(|(structure, step)| {
+                    leg(
+                        *structure,
                         "step",
-                        &serde_json::to_value(&step).unwrap_or_default(),
-                    )),
-                }
-            }
-            serde_json::json!({ "edits": edits, "remaining": remaining })
-        }
+                        &serde_json::to_value(step).unwrap_or_default(),
+                    )
+                })
+                .collect::<Vec<_>>(),
+            "skipped": redone.skipped,
+        }),
     };
     // SAFETY: forwarded from this function's own contract.
     unsafe {
@@ -480,7 +503,7 @@ pub unsafe extern "C" fn clausters_history_redo(
             out,
             out_cap,
             || {
-                if had_steps {
+                if redone.is_some() {
                     with_history(h, false, |history| history.step_forward());
                 }
             },
@@ -488,6 +511,109 @@ pub unsafe extern "C" fn clausters_history_redo(
     }
 }
 
+/// The data behind a structure is gone: drop it from the registry, and say
+/// whether its memory may go now.
+///
+/// Returns 1 when nothing in the pile names it any more and the caller may free
+/// at once, and 0 when it must wait for
+/// [`clausters_history_released`] — because undoing a deletion has to be able to
+/// give the data back, so a structure that is out of the tree stays alive while
+/// an entry can still restore what referred to it.
+///
+/// It also **invalidates the entries that name it**: they cannot be applied to
+/// data that is gone, so they become non-invertible — kept, marked, and walked
+/// past with the walk saying so. Undoing a deletion returns the data, not its
+/// history.
+///
+/// # Safety
+/// `h` must be a live history handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_history_forget(h: *mut FfiHistory, structure: u64) -> i32 {
+    with_history(h, 0, |history| {
+        i32::from(history.forget(StructureId(structure)))
+    })
+}
+
+/// The forgotten structures no entry names any more, as a JSON array of ids —
+/// the caller may free their data now. Drains: each is reported once.
+///
+/// Returns the byte count it needs, or `0` when the handle is null. The drain
+/// happens only when the bytes are written, so a sizing pass is free of
+/// consequence.
+///
+/// # Safety
+/// `h` must be a live history handle and `out` null or writable for `out_cap`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_history_released(
+    h: *mut FfiHistory,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    let ids = with_history(h, Vec::new(), |history| {
+        history
+            .pending_release()
+            .iter()
+            .map(|structure| structure.0)
+            .collect::<Vec<_>>()
+    });
+    // SAFETY: forwarded from this function's own contract. The drain is the
+    // commit, so a sizing pass hands back the same answer as the fill.
+    unsafe {
+        fill(
+            &serde_json::to_vec(&ids).unwrap_or_default(),
+            out,
+            out_cap,
+            || {
+                with_history(h, (), |history| {
+                    history.released();
+                });
+            },
+        )
+    }
+}
+
+/// Stamps the pile where it stands: this is what is on disk.
+///
+/// A save is an event of the whole editing context and the mark is the pile's,
+/// so one save stamps one mark, and a structure registered later starts behind
+/// it.
+///
+/// # Safety
+/// `h` must be a live history handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_history_mark_saved(h: *mut FfiHistory) {
+    with_history(h, (), |history| history.mark_saved())
+}
+
+/// Whether the work differs from what was last saved (1) or not (0).
+///
+/// Crossing the mark backwards is allowed, and this is the announcement — which
+/// has to be accurate: nothing on disk changed, and the file still holds those
+/// edits until the next save. Crossing forward again returns to clean.
+///
+/// # Safety
+/// `h` must be a live history handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_history_dirty(h: *mut FfiHistory) -> i32 {
+    with_history(h, 0, |history| i32::from(history.dirty()))
+}
+
+/// Whether the saved state can still be reached by walking this history (1) or
+/// not (0).
+///
+/// `0` after the case the warning earns its place for: undo past the mark and
+/// then edit, and the redo is truncated — so the saved state stops being
+/// reachable, and [`clausters_history_dirty`] will never go quiet again on its
+/// own.
+///
+/// # Safety
+/// `h` must be a live history handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_history_saved_reachable(h: *mut FfiHistory) -> i32 {
+    with_history(h, 0, |history| i32::from(history.saved_reachable()))
+}
+
+/// Whether there is anything to undo (1) or not (0).
 /// Whether there is anything to undo (1) or not (0).
 ///
 /// # Safety
@@ -519,7 +645,7 @@ pub unsafe extern "C" fn clausters_history_undo_label(
     out: *mut u8,
     out_cap: usize,
 ) -> usize {
-    let label = with_history(h, None, |history| history.undo_label().map(str::to_string));
+    let label = with_history(h, None, |history| history.undo_label());
     // SAFETY: caller guarantees `out` is null or writable for `out_cap`.
     unsafe { fill(label.unwrap_or_default().as_bytes(), out, out_cap, || {}) }
 }
@@ -534,7 +660,7 @@ pub unsafe extern "C" fn clausters_history_redo_label(
     out: *mut u8,
     out_cap: usize,
 ) -> usize {
-    let label = with_history(h, None, |history| history.redo_label().map(str::to_string));
+    let label = with_history(h, None, |history| history.redo_label());
     // SAFETY: caller guarantees `out` is null or writable for `out_cap`.
     unsafe { fill(label.unwrap_or_default().as_bytes(), out, out_cap, || {}) }
 }

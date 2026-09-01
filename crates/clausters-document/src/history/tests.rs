@@ -67,15 +67,15 @@ fn a_structure_with_no_document_behind_it_has_a_working_history() {
     history.record(edit(roll, "move a note", notes.now(), before));
     assert_eq!(notes.0, vec![60, 65]);
 
-    for (structure, payload) in history.undo().expect("something to undo") {
+    for (structure, payload) in history.undo().expect("something to undo").legs {
         assert_eq!(structure, roll);
         notes.adopt(&payload);
     }
     assert_eq!(notes.0, vec![60, 64], "back where it started");
 
-    for (structure, step) in history.redo().expect("something to redo") {
+    for (structure, payload) in history.redo().expect("something to redo").edits {
         assert_eq!(structure, roll);
-        notes.adopt(step.payload().expect("an ordinary edit"));
+        notes.adopt(&payload);
     }
     assert_eq!(notes.0, vec![60, 65]);
 }
@@ -100,13 +100,13 @@ fn two_views_of_one_structure_walk_one_order() {
     // B's edit is undoable from A -- which is the half that used to be false:
     // `b.can_undo` was true and `a` could not see B's edit at all.
     assert!(history.can_undo());
-    assert_eq!(history.undo_label(), Some("B moves the first"));
+    assert_eq!(history.undo_label().as_deref(), Some("B moves the first"));
 
-    for (_, payload) in history.undo().unwrap() {
+    for (_, payload) in history.undo().unwrap().legs {
         notes.adopt(&payload);
     }
     assert_eq!(notes.0, vec![60, 65], "the latest edit, whoever made it");
-    for (_, payload) in history.undo().unwrap() {
+    for (_, payload) in history.undo().unwrap().legs {
         notes.adopt(&payload);
     }
     assert_eq!(notes.0, vec![60, 64], "and then the one before it");
@@ -130,7 +130,7 @@ fn one_pile_over_several_structures_undoes_in_the_order_the_edits_were_made() {
     history.record(edit(melody, "melody again", a.now(), before));
 
     let walk = |history: &mut History, a: &mut Notes, b: &mut Notes| {
-        for (structure, payload) in history.undo().expect("something to undo") {
+        for (structure, payload) in history.undo().expect("something to undo").legs {
             let target = if structure == melody {
                 &mut *a
             } else {
@@ -215,7 +215,7 @@ fn a_transaction_unwinds_in_the_order_it_was_laid_down() {
 
     let undone = history.undo().unwrap();
     assert_eq!(
-        undone.iter().map(|(s, _)| *s).collect::<Vec<_>>(),
+        undone.legs.iter().map(|(s, _)| *s).collect::<Vec<_>>(),
         vec![curve, clip],
         "in reverse order, the way it was laid down"
     );
@@ -253,7 +253,7 @@ fn a_run_over_one_structure_coalesces_and_a_run_over_two_does_not() {
     }
     assert_eq!(history.len(), 1, "one gesture, one undo");
     assert_eq!(
-        history.peek_undo().unwrap(),
+        history.peek_undo().unwrap().legs,
         vec![(a, Opaque(json!([0])))],
         "the oldest inverse: an undo lands where the run started"
     );
@@ -305,7 +305,7 @@ fn a_new_edit_after_an_undo_truncates_the_redo() {
     assert!(!history.can_redo(), "linear: the branch is not kept");
     assert_eq!(history.len(), 2);
     assert_eq!(history.redo_label(), None);
-    assert_eq!(history.undo_label(), Some("three"));
+    assert_eq!(history.undo_label().as_deref(), Some("three"));
 }
 
 #[test]
@@ -319,10 +319,10 @@ fn a_big_payload_leaves_the_pile_and_comes_back_whole() {
     let buffer = history.register("samples");
     history.record(edit(buffer, "draw", written.clone(), previous.clone()));
 
-    assert_eq!(history.undo().unwrap(), vec![(buffer, previous)]);
+    assert_eq!(history.undo().unwrap().legs, vec![(buffer, previous)]);
     assert_eq!(
-        history.redo().unwrap(),
-        vec![(buffer, Step::Edit(written))],
+        history.redo().unwrap().edits,
+        vec![(buffer, written)],
         "and forward again, out of the store"
     );
 }
@@ -332,7 +332,7 @@ fn a_small_payload_stays_in_the_pile() {
     let mut history = History::new().spill_above(1 << 20);
     let a = history.register("notes");
     history.record(edit(a, "nudge", Opaque(json!([1])), Opaque(json!([0]))));
-    assert_eq!(history.undo().unwrap(), vec![(a, Opaque(json!([0])))]);
+    assert_eq!(history.undo().unwrap().legs, vec![(a, Opaque(json!([0])))]);
 }
 
 #[test]
@@ -349,7 +349,7 @@ fn the_oldest_entries_fall_off_and_take_their_spilled_bytes_with_them() {
     }
     assert_eq!(history.len(), 2, "the budget holds");
     assert_eq!(
-        history.undo().unwrap(),
+        history.undo().unwrap().legs,
         vec![(a, Opaque(json!(vec![-4.0f32; 1024])))],
         "and the survivors still invert"
     );
@@ -392,19 +392,19 @@ fn a_composite_gesture_undoes_and_redoes_in_one_step() {
 
     let undone = history.undo().expect("something to undo");
     assert_eq!(
-        undone.iter().map(|(s, _)| *s).collect::<Vec<_>>(),
+        undone.legs.iter().map(|(s, _)| *s).collect::<Vec<_>>(),
         vec![curve, clip],
         "in reverse order, the way it was laid down"
     );
-    for (structure, payload) in undone {
+    for (structure, payload) in undone.legs {
         let target = if structure == clip { &mut a } else { &mut b };
         target.adopt(&payload);
     }
     assert_eq!((&a.0[..], &b.0[..]), (&[0i64][..], &[10i64][..]));
 
-    for (structure, step) in history.redo().expect("something to redo") {
+    for (structure, payload) in history.redo().expect("something to redo").edits {
         let target = if structure == clip { &mut a } else { &mut b };
-        target.adopt(step.payload().expect("an ordinary edit"));
+        target.adopt(&payload);
     }
     assert_eq!((&a.0[..], &b.0[..]), (&[4i64][..], &[14i64][..]));
     assert!(!history.can_redo());
@@ -479,4 +479,225 @@ fn a_transaction_and_a_merge_are_kept_apart() {
             .continuing(),
     );
     assert_eq!(history.len(), 2, "different shapes never merge");
+}
+
+// ---- what the history refuses to promise ----
+
+#[test]
+fn an_entry_with_no_inverse_is_walked_past_once_and_the_walk_says_so() {
+    // Recording it beats dropping it: a hole in the history that announces
+    // itself is what lets a person understand why an undo did not go where they
+    // expected.
+    let mut history = History::new();
+    let a = history.register("notes");
+    let mut notes = Notes(vec![0]);
+
+    history.record(edit(a, "first", Opaque(json!([1])), Opaque(json!([0]))));
+    history.record(Entry::uninvertible(
+        "normalize",
+        a,
+        Step::Recompute(Opaque(json!({"op": "normalize"}))),
+    ));
+    history.record(edit(a, "third", Opaque(json!([3])), Opaque(json!([2]))));
+    notes.0 = vec![3];
+
+    // The entry on top inverts as usual.
+    let undone = history.undo().unwrap();
+    assert_eq!(undone.label, "third");
+    assert!(undone.skipped.is_empty());
+    for (_, payload) in undone.legs {
+        notes.adopt(&payload);
+    }
+    assert_eq!(notes.0, vec![2]);
+
+    // The next one cannot, so the walk goes past it and names it.
+    let undone = history.undo().unwrap();
+    assert_eq!(undone.skipped, vec!["normalize".to_string()]);
+    assert_eq!(undone.label, "first");
+    for (_, payload) in undone.legs {
+        notes.adopt(&payload);
+    }
+    assert_eq!(notes.0, vec![0], "back to before the first edit");
+    assert!(!history.can_undo());
+
+    // And forward it is skipped too: a state that was never reverted must not
+    // be applied twice.
+    let redone = history.redo().unwrap();
+    assert_eq!(redone.label, "first");
+    assert!(redone.skipped.is_empty());
+    let redone = history.redo().unwrap();
+    assert_eq!(redone.skipped, vec!["normalize".to_string()]);
+    assert_eq!(redone.label, "third");
+}
+
+#[test]
+fn a_history_of_nothing_but_the_non_invertible_still_answers() {
+    let mut history = History::new();
+    let a = history.register("notes");
+    history.record(Entry::uninvertible(
+        "normalize",
+        a,
+        Step::Recompute(Opaque(json!({"op": "normalize"}))),
+    ));
+    let undone = history.undo().expect("it answers rather than refusing");
+    assert!(undone.legs.is_empty());
+    assert_eq!(undone.skipped, vec!["normalize".to_string()]);
+    assert!(!history.can_undo(), "and the walk still moved");
+}
+
+#[test]
+fn a_transaction_with_one_uninvertible_leg_is_non_invertible_whole() {
+    // Half a transaction that unwinds is the failure atomicity exists to
+    // prevent, so one leg with no inverse marks the entry.
+    let mut history = History::new();
+    let a = history.register("notes");
+    let b = history.register("notes");
+    let entry = Entry::new(
+        "drag",
+        a,
+        Step::Edit(Opaque(json!([1]))),
+        Opaque(json!([0])),
+    )
+    .and_uninvertible(b, Step::Recompute(Opaque(json!({"op": "normalize"}))));
+    assert!(!entry.invertible());
+    history.record(entry);
+
+    let undone = history.undo().unwrap();
+    assert!(undone.legs.is_empty());
+    assert_eq!(undone.skipped, vec!["drag".to_string()]);
+}
+
+#[test]
+fn deleting_a_structure_invalidates_the_entries_that_name_it() {
+    // The case that makes the first rule pay for itself: those entries cannot
+    // be applied to data that is gone, so they become non-invertible rather
+    // than failing at apply time.
+    let mut history = History::new();
+    let kept = history.register("notes");
+    let gone = history.register("notes");
+    history.record(edit(kept, "keep", Opaque(json!([1])), Opaque(json!([0]))));
+    history.record(edit(gone, "doomed", Opaque(json!([1])), Opaque(json!([0]))));
+
+    assert!(
+        !history.forget(gone),
+        "an entry still names it, so its data has to stay alive"
+    );
+    assert!(
+        !history.holds(gone),
+        "and nothing new may be recorded there"
+    );
+    assert!(!history.record(edit(gone, "after", Opaque(json!([2])), Opaque(json!([1])))));
+
+    let undone = history.undo().unwrap();
+    assert_eq!(undone.skipped, vec!["doomed".to_string()]);
+    assert_eq!(undone.label, "keep");
+}
+
+#[test]
+fn the_data_of_a_deleted_structure_is_freed_when_its_last_entry_retires() {
+    // The budget already decides when an entry stops existing; this is the hook
+    // that says the last one holding a deleted structure has gone.
+    let mut history = History::new().budget(2);
+    let a = history.register("notes");
+    let gone = history.register("notes");
+    history.record(edit(gone, "doomed", Opaque(json!([1])), Opaque(json!([0]))));
+    assert!(!history.forget(gone));
+    assert!(history.released().is_empty(), "not yet");
+
+    for i in 0..2 {
+        history.record(edit(a, "later", Opaque(json!([i])), Opaque(json!([i - 1]))));
+    }
+    assert_eq!(
+        history.released(),
+        vec![gone],
+        "the entry fell off the budget, so the data may go"
+    );
+    assert!(history.released().is_empty(), "reported once");
+}
+
+#[test]
+fn forgetting_a_structure_nothing_names_frees_it_at_once() {
+    let mut history = History::new();
+    let a = history.register("notes");
+    assert!(history.forget(a), "nothing to wait for");
+    assert!(history.released().is_empty());
+}
+
+#[test]
+fn crossing_the_save_mark_backwards_is_allowed_and_announced() {
+    let mut history = History::new();
+    let a = history.register("notes");
+    assert!(
+        !history.dirty(),
+        "a history that has done nothing is at rest"
+    );
+
+    history.record(edit(a, "one", Opaque(json!([1])), Opaque(json!([0]))));
+    assert!(history.dirty());
+    history.mark_saved();
+    assert!(!history.dirty(), "this is what is on disk");
+
+    history.record(edit(a, "two", Opaque(json!([2])), Opaque(json!([1]))));
+    assert!(history.dirty());
+    history.undo();
+    assert!(!history.dirty(), "back at the mark");
+
+    history.undo();
+    assert!(
+        history.dirty(),
+        "past it: nothing on disk changed, and the file still holds that edit"
+    );
+    assert!(history.saved_reachable());
+    history.redo();
+    assert!(!history.dirty(), "and forward again returns to clean");
+}
+
+#[test]
+fn editing_from_before_the_mark_makes_the_saved_state_unreachable() {
+    // The third case, and the reason the warning earns its place: undo past the
+    // mark and then edit, and the redo is truncated -- so the saved state stops
+    // being reachable through the history at all.
+    let mut history = History::new();
+    let a = history.register("notes");
+    history.record(edit(a, "one", Opaque(json!([1])), Opaque(json!([0]))));
+    history.mark_saved();
+    history.undo();
+    assert!(history.dirty() && history.saved_reachable());
+
+    history.record(edit(a, "another", Opaque(json!([9])), Opaque(json!([0]))));
+    assert!(
+        !history.saved_reachable(),
+        "the mark was in what was truncated"
+    );
+    assert!(history.dirty());
+    history.undo();
+    assert!(history.dirty(), "and it will not go quiet on its own again");
+}
+
+#[test]
+fn the_mark_falls_off_with_the_entry_it_stood_behind() {
+    let mut history = History::new().budget(2);
+    let a = history.register("notes");
+    history.record(edit(a, "one", Opaque(json!([1])), Opaque(json!([0]))));
+    history.mark_saved();
+    for i in 2..5 {
+        history.record(edit(a, "more", Opaque(json!([i])), Opaque(json!([i - 1]))));
+    }
+    assert!(
+        !history.saved_reachable(),
+        "the history no longer reaches what was saved"
+    );
+}
+
+#[test]
+fn clearing_releases_what_was_waiting_rather_than_losing_it() {
+    // Clearing is exactly what makes a forgotten structure releasable: nothing
+    // names it any more. Dropping the pending list here would lose the one
+    // report the caller frees on.
+    let mut history = History::new();
+    let gone = history.register("notes");
+    history.record(edit(gone, "doomed", Opaque(json!([1])), Opaque(json!([0]))));
+    assert!(!history.forget(gone));
+    history.clear();
+    assert_eq!(history.released(), vec![gone]);
 }

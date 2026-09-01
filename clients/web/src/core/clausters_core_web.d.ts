@@ -98,6 +98,30 @@ export class History {
      */
     clear(): void;
     /**
+     * The data behind a structure is gone: drop it from the registry, and say
+     * whether its memory may go now.
+     *
+     * `true` when nothing in the pile names it any more, `false` when the
+     * caller must wait for {@link History.released} — because undoing a
+     * deletion has to be able to give the data back, so a structure that is
+     * out of the tree stays alive while an entry can still restore what
+     * referred to it.
+     *
+     * It also **invalidates the entries that name it**: they cannot be applied
+     * to data that is gone, so they become non-invertible — kept, marked, and
+     * walked past with the walk saying so. Undoing a deletion returns the
+     * data, not its history.
+     */
+    forget(structure: bigint): boolean;
+    /**
+     * Stamps the pile where it stands: this is what is on disk.
+     *
+     * A save is an event of the whole editing context and the mark is the
+     * pile's, so one save stamps one mark, and a structure registered later
+     * starts behind it.
+     */
+    markSaved(): void;
+    /**
      * A new, empty history. `budget` is how many entries it keeps before the
      * oldest falls off and `spillAbove` how many **bytes** a payload must
      * reach, serialized, before it leaves the pile; either as 0 takes the
@@ -129,14 +153,14 @@ export class History {
      */
     record(request: string): boolean;
     /**
-     * Redo what was last undone: the steps of the entry at the cursor, each
-     * with the structure it belongs to, in order. Returns
-     * `{ edits, remaining }` — `edits` is the leading run of ordinary edits for
-     * the caller to apply, and `remaining` holds the steps from the first one
-     * the crate cannot describe as an edit onward, for the owner to re-run. It
-     * stops at the first rather than skipping it, so a later edit is never
-     * applied over a state the operation before it was meant to produce.
-     * `undefined` when there was nothing to redo.
+     * Redo what was last undone: the steps of the entry the walk lands on,
+     * each with the structure it belongs to, in order. Returns
+     * `{ label, edits, remaining, skipped }` — `edits` is the leading run of
+     * ordinary edits for the caller to apply, and `remaining` holds the steps
+     * from the first one the crate cannot describe as an edit onward, for the
+     * owner to re-run. It stops at the first rather than skipping it, so a
+     * later edit is never applied over a state the operation before it was
+     * meant to produce. `undefined` when there was nothing to redo.
      */
     redo(): string | undefined;
     /**
@@ -149,10 +173,20 @@ export class History {
      */
     register(domain: string): bigint;
     /**
-     * Undo the last transaction: the inverses of the entry before the cursor,
-     * each with the structure it belongs to, **in the order they must be
-     * applied**. Returns `{ inverses }`, or `undefined` when there was nothing
-     * to undo.
+     * The forgotten structures no entry names any more — the caller may free
+     * their data now. Drains: each is reported once.
+     */
+    released(): BigUint64Array;
+    /**
+     * Undo the last thing done: the inverses of the entry the walk lands on,
+     * each with the structure it belongs to and **in the order they must be
+     * applied**. Returns `{ label, inverses, skipped }`, or `undefined` when
+     * there was nothing to undo.
+     *
+     * `skipped` names the entries the walk had to pass over because nothing
+     * can invert them — a hole in the history that announces itself, which is
+     * what lets a person understand why an undo did not go where they
+     * expected.
      *
      * It applies nothing: a history holds structures this surface cannot
      * reach, so applying the legs it *could* would leave the rest to the
@@ -168,6 +202,15 @@ export class History {
      */
     readonly canUndo: boolean;
     /**
+     * Whether the work differs from what was last saved.
+     *
+     * Crossing the mark backwards is allowed, and this is the announcement —
+     * which has to be accurate: nothing on disk changed, and the file still
+     * holds those edits until the next save. Crossing forward again returns to
+     * clean.
+     */
+    readonly dirty: boolean;
+    /**
      * Whether the history holds nothing — `len == 0`, spelled the way a JS
      * collection is read, as `JsScheduler` and `JsRegistry` already spell it.
      */
@@ -180,6 +223,15 @@ export class History {
      * What a redo would be called.
      */
     readonly redoLabel: string | undefined;
+    /**
+     * Whether the saved state can still be reached by walking this history.
+     *
+     * `false` after the case the warning earns its place for: undo past the
+     * mark and then edit, and the redo is truncated — so the saved state stops
+     * being reachable, and {@link History.dirty} will never go quiet again on
+     * its own.
+     */
+    readonly savedReachable: boolean;
     /**
      * What an undo would be called, for a menu item — and what a person needs
      * when one pile holds several structures, since the label is the only
@@ -1025,13 +1077,18 @@ export interface InitOutput {
     readonly history_canRedo: (a: number) => number;
     readonly history_canUndo: (a: number) => number;
     readonly history_clear: (a: number) => void;
+    readonly history_dirty: (a: number) => number;
+    readonly history_forget: (a: number, b: bigint) => number;
     readonly history_isEmpty: (a: number) => number;
     readonly history_len: (a: number) => number;
+    readonly history_markSaved: (a: number) => void;
     readonly history_new: (a: number, b: number) => number;
     readonly history_record: (a: number, b: number, c: number) => [number, number, number];
     readonly history_redo: (a: number) => [number, number, number, number];
     readonly history_redoLabel: (a: number) => [number, number];
     readonly history_register: (a: number, b: number, c: number) => bigint;
+    readonly history_released: (a: number) => [number, number];
+    readonly history_savedReachable: (a: number) => number;
     readonly history_undo: (a: number) => [number, number, number, number];
     readonly history_undoLabel: (a: number) => [number, number];
     readonly hz_to_bark: (a: number) => number;

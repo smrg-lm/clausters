@@ -190,7 +190,17 @@ pub use time::*;
 /// transaction land. `clausters_document_inverse` came with it: a caller
 /// recording its own entry needs the inverse read *before* the edit lands, and
 /// only the arrangement can state one for the arrangement.
-pub const CORE_ABI_VERSION: u32 = 33;
+///
+/// **v34 what a history refuses to promise.** A leg may carry no `backward`:
+/// an act with no inverse is recorded, marked, and walked past in both
+/// directions, so `clausters_history_undo`/`_redo` now answer with the entry's
+/// `label` and the `skipped` labels beside the payloads. Deleting a structure
+/// is `clausters_history_forget`, which invalidates the entries naming it and
+/// defers the free — undoing a deletion has to be able to give the data back —
+/// with `clausters_history_released` saying when the last entry holding it has
+/// retired. And the save mark is the pile's: `clausters_history_mark_saved`,
+/// `_dirty` and `_saved_reachable`.
+pub const CORE_ABI_VERSION: u32 = 34;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

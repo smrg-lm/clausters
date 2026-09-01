@@ -633,3 +633,92 @@ fn an_inverse_the_document_cannot_describe_is_answered_with_zero() {
     };
     assert_eq!(n, 0);
 }
+
+#[test]
+fn the_non_invertible_the_deleted_and_the_saved_cross_too() {
+    // O18's three, over the ABI. A leg with no `backward` is recorded, marked
+    // and walked past in both directions, with the walk naming it.
+    let log = Held::new();
+    let domain = "points";
+    let curve = unsafe { clausters_history_register(log.handle, domain.as_ptr(), domain.len()) };
+
+    assert_eq!(unsafe { clausters_history_dirty(log.handle) }, 0, "at rest");
+    record(
+        &log,
+        &format!(
+            r#"{{"label":"draw","legs":[{{"structure":{curve},
+               "forward":{{"edit":{{"intent":"setpoints","points":[]}}}},
+               "backward":{{"intent":"setpoints","points":[{{"at":0.0,"value":1.0}}]}}}}]}}"#
+        ),
+    );
+    assert_eq!(unsafe { clausters_history_dirty(log.handle) }, 1);
+    unsafe { clausters_history_mark_saved(log.handle) };
+    assert_eq!(unsafe { clausters_history_dirty(log.handle) }, 0);
+
+    // No `backward` at all: the owner cannot write one.
+    record(
+        &log,
+        &format!(
+            r#"{{"label":"normalize","legs":[{{"structure":{curve},
+               "forward":{{"recompute":{{"op":"normalize"}}}}}}]}}"#
+        ),
+    );
+    let undone = undo(&log);
+    assert_eq!(undone["skipped"][0], "normalize");
+    assert_eq!(undone["label"], "draw", "the walk went past it");
+    assert_eq!(undone["inverses"][0]["structure"], curve);
+    assert_eq!(
+        unsafe { clausters_history_dirty(log.handle) },
+        1,
+        "past the mark: announced, and nothing on disk changed"
+    );
+
+    // Deleting the data invalidates what named it, and defers the free.
+    assert_eq!(
+        unsafe { clausters_history_forget(log.handle, curve) },
+        0,
+        "entries still name it, so its data has to stay alive"
+    );
+    let waiting = sized(|out, cap| unsafe { clausters_history_released(log.handle, out, cap) });
+    assert_eq!(waiting, "[]", "not yet");
+    unsafe { clausters_history_clear(log.handle) };
+    let freed = sized(|out, cap| unsafe { clausters_history_released(log.handle, out, cap) });
+    assert_eq!(
+        serde_json::from_str::<Vec<u64>>(&freed).unwrap(),
+        vec![curve],
+        "nothing names it now, so the data may go"
+    );
+}
+
+#[test]
+fn editing_from_before_the_mark_makes_the_saved_state_unreachable() {
+    let log = Held::new();
+    let doc = Doc::new(DOC);
+    apply(&log, &doc, &place(2, 1.0), 0.0);
+    unsafe { clausters_history_mark_saved(log.handle) };
+    assert_eq!(unsafe { clausters_history_saved_reachable(log.handle) }, 1);
+
+    undo_into(&log, &doc);
+    apply(&log, &doc, &place(2, 9.0), 0.0);
+    assert_eq!(
+        unsafe { clausters_history_saved_reachable(log.handle) },
+        0,
+        "the mark was in what the new edit truncated"
+    );
+    assert_eq!(unsafe { clausters_history_dirty(log.handle) }, 1);
+}
+
+#[test]
+fn sizing_the_released_list_does_not_drain_it() {
+    // The rule the whole module is built around, met once more: the drain is
+    // the commit, so a sizing pass hands back the same answer as the fill.
+    let log = Held::new();
+    let domain = "points";
+    let curve = unsafe { clausters_history_register(log.handle, domain.as_ptr(), domain.len()) };
+    assert_eq!(unsafe { clausters_history_forget(log.handle, curve) }, 1);
+    // Nothing named it, so it was freed at once and never went pending.
+    assert_eq!(
+        sized(|out, cap| unsafe { clausters_history_released(log.handle, out, cap) }),
+        "[]"
+    );
+}

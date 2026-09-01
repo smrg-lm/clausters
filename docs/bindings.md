@@ -245,6 +245,15 @@ one ordered pile over them — so what a caller decides by choosing a handle is
 what shares an undo order. `register` mints a structure's identity and every
 call that names one takes it.
 
+Three things the pile refuses to promise, and says so rather than pretending:
+an act with **no inverse** is recorded with no `backward`, kept, marked, and
+walked past in both directions with the walk naming it in `skipped`; deleting a
+structure (`forget`) invalidates the entries that name it and **defers the
+free**, since undoing a deletion has to be able to give the data back —
+`released` is what says the last entry holding it has retired; and the **save
+mark** (`mark_saved`, `dirty`, `saved_reachable`) is the pile's, because a save
+is an event of the whole editing context.
+
 `apply` is the arrangement's door alone, and takes the document handle: it is
 the one state this surface can reach, and applying and recording are one call
 because the inverse has to be read before the edit lands. Everything else —
@@ -268,6 +277,11 @@ to, in the order they must be applied.
 | `clausters_history_redo_label` | `JsHistory.redo_label` | `idiom` — as above |
 | `clausters_history_len` | `JsHistory.len` | `idiom` — a getter |
 | — | `JsHistory.is_empty` | `idiom` — `len == 0`, as `JsScheduler` and `JsRegistry` already spell it |
+| `clausters_history_forget` | `JsHistory.forget` | the data behind a structure is gone; the answer says whether its memory may go now |
+| `clausters_history_released` | `JsHistory.released` | `idiom` — C sizes and fills a JSON array, wasm returns one. Drains: each is reported once |
+| `clausters_history_mark_saved` | `JsHistory.mark_saved` | |
+| `clausters_history_dirty` | `JsHistory.dirty` | `idiom` — a getter |
+| `clausters_history_saved_reachable` | `JsHistory.saved_reachable` | `idiom` — a getter |
 | `clausters_history_clear` | `JsHistory.clear` | |
 
 ## OSC

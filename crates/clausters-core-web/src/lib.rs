@@ -1576,7 +1576,11 @@ impl JsHistory {
         struct Leg {
             structure: u64,
             forward: clausters_document::history::Step,
-            backward: clausters_document::Opaque,
+            /// How to put this leg back, or absent when nothing can — an act
+            /// whose inverse the owner cannot write. The entry is still
+            /// recorded, marked, and walked past in both directions.
+            #[serde(default)]
+            backward: Option<clausters_document::Opaque>,
             #[serde(default)]
             key: String,
         }
@@ -1594,21 +1598,25 @@ impl JsHistory {
         let Some(first) = legs.next() else {
             return Ok(false);
         };
-        let mut entry = clausters_document::history::Entry::new(
-            request.label.unwrap_or_else(|| "edit".into()),
-            clausters_document::StructureId(first.structure),
-            first.forward,
-            first.backward,
-        );
+        let label = request.label.unwrap_or_else(|| "edit".into());
+        let structure = clausters_document::StructureId(first.structure);
+        let mut entry = match first.backward {
+            Some(backward) => {
+                clausters_document::history::Entry::new(label, structure, first.forward, backward)
+            }
+            None => {
+                clausters_document::history::Entry::uninvertible(label, structure, first.forward)
+            }
+        };
         if !first.key.is_empty() {
             entry = entry.keyed(first.key);
         }
         for leg in legs {
-            entry = entry.and(
-                clausters_document::StructureId(leg.structure),
-                leg.forward,
-                leg.backward,
-            );
+            let structure = clausters_document::StructureId(leg.structure);
+            entry = match leg.backward {
+                Some(backward) => entry.and(structure, leg.forward, backward),
+                None => entry.and_uninvertible(structure, leg.forward),
+            };
             if !leg.key.is_empty() {
                 entry = entry.keyed(leg.key);
             }
@@ -1619,52 +1627,126 @@ impl JsHistory {
         Ok(self.0.record(entry))
     }
 
-    /// Undo the last transaction: the inverses of the entry before the cursor,
-    /// each with the structure it belongs to, **in the order they must be
-    /// applied**. Returns `{ inverses }`, or `undefined` when there was nothing
-    /// to undo.
+    /// Undo the last thing done: the inverses of the entry the walk lands on,
+    /// each with the structure it belongs to and **in the order they must be
+    /// applied**. Returns `{ label, inverses, skipped }`, or `undefined` when
+    /// there was nothing to undo.
+    ///
+    /// `skipped` names the entries the walk had to pass over because nothing
+    /// can invert them — a hole in the history that announces itself, which is
+    /// what lets a person understand why an undo did not go where they
+    /// expected.
     ///
     /// It applies nothing: a history holds structures this surface cannot
     /// reach, so applying the legs it *could* would leave the rest to the
     /// caller out of order, which is how a transaction half-happens.
     pub fn undo(&mut self) -> Result<Option<String>, JsError> {
-        let Some(inverses) = self.0.undo() else {
+        let Some(undone) = self.0.undo() else {
             return Ok(None);
         };
-        let legs: Vec<_> = inverses
+        let legs: Vec<_> = undone
+            .legs
             .into_iter()
             .map(|(structure, load)| serde_json::json!({"structure": structure.0, "payload": load}))
             .collect();
-        serde_json::to_string(&serde_json::json!({ "inverses": legs }))
-            .map(Some)
-            .map_err(|e| JsError::new(&e.to_string()))
+        serde_json::to_string(&serde_json::json!({
+            "label": undone.label,
+            "inverses": legs,
+            "skipped": undone.skipped,
+        }))
+        .map(Some)
+        .map_err(|e| JsError::new(&e.to_string()))
     }
 
-    /// Redo what was last undone: the steps of the entry at the cursor, each
-    /// with the structure it belongs to, in order. Returns
-    /// `{ edits, remaining }` — `edits` is the leading run of ordinary edits for
-    /// the caller to apply, and `remaining` holds the steps from the first one
-    /// the crate cannot describe as an edit onward, for the owner to re-run. It
-    /// stops at the first rather than skipping it, so a later edit is never
-    /// applied over a state the operation before it was meant to produce.
-    /// `undefined` when there was nothing to redo.
+    /// Redo what was last undone: the steps of the entry the walk lands on,
+    /// each with the structure it belongs to, in order. Returns
+    /// `{ label, edits, remaining, skipped }` — `edits` is the leading run of
+    /// ordinary edits for the caller to apply, and `remaining` holds the steps
+    /// from the first one the crate cannot describe as an edit onward, for the
+    /// owner to re-run. It stops at the first rather than skipping it, so a
+    /// later edit is never applied over a state the operation before it was
+    /// meant to produce. `undefined` when there was nothing to redo.
     pub fn redo(&mut self) -> Result<Option<String>, JsError> {
-        let Some(steps) = self.0.redo() else {
+        let Some(redone) = self.0.redo() else {
             return Ok(None);
         };
-        let mut edits = Vec::new();
-        let mut remaining = Vec::new();
-        for (structure, step) in steps {
-            match (&step, remaining.is_empty()) {
-                (clausters_document::history::Step::Edit(load), true) => {
-                    edits.push(serde_json::json!({"structure": structure.0, "payload": load}));
-                }
-                _ => remaining.push(serde_json::json!({"structure": structure.0, "step": step})),
-            }
-        }
-        serde_json::to_string(&serde_json::json!({ "edits": edits, "remaining": remaining }))
-            .map(Some)
-            .map_err(|e| JsError::new(&e.to_string()))
+        let edits: Vec<_> = redone
+            .edits
+            .into_iter()
+            .map(|(structure, load)| serde_json::json!({"structure": structure.0, "payload": load}))
+            .collect();
+        let remaining: Vec<_> = redone
+            .remaining
+            .into_iter()
+            .map(|(structure, step)| serde_json::json!({"structure": structure.0, "step": step}))
+            .collect();
+        serde_json::to_string(&serde_json::json!({
+            "label": redone.label,
+            "edits": edits,
+            "remaining": remaining,
+            "skipped": redone.skipped,
+        }))
+        .map(Some)
+        .map_err(|e| JsError::new(&e.to_string()))
+    }
+
+    /// The data behind a structure is gone: drop it from the registry, and say
+    /// whether its memory may go now.
+    ///
+    /// `true` when nothing in the pile names it any more, `false` when the
+    /// caller must wait for {@link History.released} — because undoing a
+    /// deletion has to be able to give the data back, so a structure that is
+    /// out of the tree stays alive while an entry can still restore what
+    /// referred to it.
+    ///
+    /// It also **invalidates the entries that name it**: they cannot be applied
+    /// to data that is gone, so they become non-invertible — kept, marked, and
+    /// walked past with the walk saying so. Undoing a deletion returns the
+    /// data, not its history.
+    pub fn forget(&mut self, structure: u64) -> bool {
+        self.0.forget(clausters_document::StructureId(structure))
+    }
+
+    /// The forgotten structures no entry names any more — the caller may free
+    /// their data now. Drains: each is reported once.
+    pub fn released(&mut self) -> Vec<u64> {
+        self.0
+            .released()
+            .into_iter()
+            .map(|structure| structure.0)
+            .collect()
+    }
+
+    /// Stamps the pile where it stands: this is what is on disk.
+    ///
+    /// A save is an event of the whole editing context and the mark is the
+    /// pile's, so one save stamps one mark, and a structure registered later
+    /// starts behind it.
+    #[wasm_bindgen(js_name = markSaved)]
+    pub fn mark_saved(&mut self) {
+        self.0.mark_saved();
+    }
+
+    /// Whether the work differs from what was last saved.
+    ///
+    /// Crossing the mark backwards is allowed, and this is the announcement —
+    /// which has to be accurate: nothing on disk changed, and the file still
+    /// holds those edits until the next save. Crossing forward again returns to
+    /// clean.
+    #[wasm_bindgen(getter)]
+    pub fn dirty(&self) -> bool {
+        self.0.dirty()
+    }
+
+    /// Whether the saved state can still be reached by walking this history.
+    ///
+    /// `false` after the case the warning earns its place for: undo past the
+    /// mark and then edit, and the redo is truncated — so the saved state stops
+    /// being reachable, and {@link History.dirty} will never go quiet again on
+    /// its own.
+    #[wasm_bindgen(getter, js_name = savedReachable)]
+    pub fn saved_reachable(&self) -> bool {
+        self.0.saved_reachable()
     }
 
     /// Whether there is anything to undo.
@@ -1684,13 +1766,13 @@ impl JsHistory {
     /// thing saying which one a keystroke is about to move.
     #[wasm_bindgen(getter, js_name = undoLabel)]
     pub fn undo_label(&self) -> Option<String> {
-        self.0.undo_label().map(str::to_string)
+        self.0.undo_label()
     }
 
     /// What a redo would be called.
     #[wasm_bindgen(getter, js_name = redoLabel)]
     pub fn redo_label(&self) -> Option<String> {
-        self.0.redo_label().map(str::to_string)
+        self.0.redo_label()
     }
 
     /// How many entries the history holds.

@@ -211,6 +211,7 @@ export type {
     Applied,
     ClaustersDocument,
     Intent,
+    Inverses,
     Leg,
     NodeId,
     Outcome,

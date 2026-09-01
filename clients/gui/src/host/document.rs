@@ -446,19 +446,21 @@ impl Owner {
     /// the log and not a new entry in it, which is what makes redo the other
     /// direction of one stack rather than a second one.
     pub fn undo(&mut self) -> Vec<Applied> {
-        let Some(intents) = self.log.undo() else {
+        let Some(undone) = self.log.undo() else {
             return Vec::new();
         };
-        self.replay(&intents)
+        self.replay(&undone.intents)
     }
 
     /// Redoes the last undone edit, in the direction it was made.
     pub fn redo(&mut self) -> Vec<Applied> {
-        let Some(steps) = self.log.redo() else {
+        let Some(redone) = self.log.redo() else {
             return Vec::new();
         };
-        let intents: Vec<Intent> = steps.iter().filter_map(|s| s.intent().cloned()).collect();
-        self.replay(&intents)
+        // `remaining` is what only its owner can re-run, and the host holds no
+        // algorithms -- so a redo here applies the ordinary edits and stops
+        // where the crate stopped.
+        self.replay(&redone.intents)
     }
 
     pub fn can_undo(&self) -> bool {

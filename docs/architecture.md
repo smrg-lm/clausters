@@ -550,6 +550,23 @@ an entry naming an identity it did not mint.
 The alternative — a pile per structure, and a view filtering one shared order
 down to what it shows — is *selective undo*, and it writes states nobody was in.
 
+**One gesture may be one entry over several structures**, applied in order and
+inverted in reverse, atomically: a leg that refuses puts back the legs that
+already landed and records nothing, because a transaction that half unwinds is
+the failure atomicity exists to prevent. And three things a history says rather
+than pretends. An act with **no inverse** — a normalize whose old samples nobody
+kept — is recorded, marked, and walked past in *both* directions, with the walk
+naming it: a hole that announces itself is what lets a person understand why an
+undo did not go where they expected. **Deleting** a structure invalidates the
+entries that name it and defers the free, since undoing a deletion has to be able
+to give the data back; the history says when the last entry holding it has
+retired, and the rule a person meets is that undoing a deletion returns the data,
+not its history. And the **save mark** is the pile's, because a save is an event
+of the whole editing context: crossing it backwards is allowed and announced,
+crossing forward returns to clean, and editing from before it truncates the redo
+— at which point the saved state stops being reachable at all, which is the case
+the warning earns its place for.
+
 **`log` is that pile's arrangement-shaped face**: a `Log` is a `History` with one
 structure in it, stating its halves as `Intent`s. It sits here rather than in the
 host for the reason the host kept fighting: a view's log sees only the gestures

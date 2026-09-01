@@ -197,6 +197,65 @@ impl Editable for Tree<'_> {
     }
 }
 
+/// What an undo hands back, in the arrangement's vocabulary.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Undone {
+    /// What the entry that inverted was called.
+    pub label: String,
+    /// The inverses, in the order they must be applied.
+    pub intents: Vec<Intent>,
+    /// The labels of the entries the walk passed over because nothing can
+    /// invert them. See [`history::Undone::skipped`].
+    pub skipped: Vec<String>,
+}
+
+impl Undone {
+    fn typed(undone: history::Undone) -> Self {
+        Self {
+            label: undone.label,
+            intents: undone
+                .legs
+                .iter()
+                .filter_map(|(_, payload)| intent_of(payload))
+                .collect(),
+            skipped: undone.skipped,
+        }
+    }
+}
+
+/// What a redo hands back, in the arrangement's vocabulary.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Redone {
+    /// What the entry being redone was called.
+    pub label: String,
+    /// The leading run of ordinary edits, for the caller to apply in order.
+    pub intents: Vec<Intent>,
+    /// The steps from the first one only its owner can run. See
+    /// [`history::Redone::remaining`].
+    pub remaining: Vec<Step>,
+    /// The labels of the entries the walk passed over.
+    pub skipped: Vec<String>,
+}
+
+impl Redone {
+    fn typed(redone: history::Redone) -> Self {
+        Self {
+            label: redone.label,
+            intents: redone
+                .edits
+                .iter()
+                .filter_map(|(_, payload)| intent_of(payload))
+                .collect(),
+            remaining: redone
+                .remaining
+                .into_iter()
+                .filter_map(|(_, step)| Step::typed(step))
+                .collect(),
+            skipped: redone.skipped,
+        }
+    }
+}
+
 /// A single reversible edit: how to redo it, and how to undo it.
 ///
 /// The unit is the **gesture**, not the intent, because that is what a person
@@ -369,26 +428,14 @@ impl Log {
     /// protocol sizes a buffer and then fills it, where doing the work on the
     /// sizing call would undo twice and hand back the second answer. Inside
     /// Rust, [`Log::undo`] is the two together and is what you want.
-    pub fn peek_undo(&self) -> Option<Vec<Intent>> {
-        Some(
-            self.history
-                .peek_undo()?
-                .iter()
-                .filter_map(|(_, payload)| intent_of(payload))
-                .collect(),
-        )
+    pub fn peek_undo(&self) -> Option<Undone> {
+        self.history.peek_undo().map(Undone::typed)
     }
 
     /// What a redo *would* hand back, without moving the cursor. See
     /// [`Log::peek_undo`].
-    pub fn peek_redo(&self) -> Option<Vec<Step>> {
-        Some(
-            self.history
-                .peek_redo()?
-                .into_iter()
-                .filter_map(|(_, step)| Step::typed(step))
-                .collect(),
-        )
+    pub fn peek_redo(&self) -> Option<Redone> {
+        self.history.peek_redo().map(Redone::typed)
     }
 
     /// Moves the cursor back one entry, if it can. The commit half of
@@ -410,31 +457,43 @@ impl Log {
     /// The caller applies them. The log does not touch the document, because
     /// applying is [`crate::intent::apply`]'s job and having two things that
     /// edit is exactly what this crate exists to prevent.
-    pub fn undo(&mut self) -> Option<Vec<Intent>> {
-        let out = self.peek_undo()?;
-        self.step_back();
-        Some(out)
+    pub fn undo(&mut self) -> Option<Undone> {
+        self.history.undo().map(Undone::typed)
     }
 
     /// Redoes what was last undone, in order, or `None` when there is nothing.
     ///
-    /// Returns [`Step`]s rather than intents: a deterministic operation stores
-    /// its parameters instead of its result, and re-running it is the owner's
-    /// to do.
-    pub fn redo(&mut self) -> Option<Vec<Step>> {
-        let out = self.peek_redo()?;
-        self.step_forward();
-        Some(out)
+    /// [`Redone::remaining`] holds [`Step`]s rather than intents: a
+    /// deterministic operation stores its parameters instead of its result, and
+    /// re-running it is the owner's to do.
+    pub fn redo(&mut self) -> Option<Redone> {
+        self.history.redo().map(Redone::typed)
     }
 
     /// What an undo would be called, for a menu.
-    pub fn undo_label(&self) -> Option<&str> {
+    pub fn undo_label(&self) -> Option<String> {
         self.history.undo_label()
     }
 
     /// What a redo would be called.
-    pub fn redo_label(&self) -> Option<&str> {
+    pub fn redo_label(&self) -> Option<String> {
         self.history.redo_label()
+    }
+
+    /// Stamps the pile where it stands: this is what is on disk. See
+    /// [`History::mark_saved`].
+    pub fn mark_saved(&mut self) {
+        self.history.mark_saved();
+    }
+
+    /// Whether the document differs from what was last saved.
+    pub fn dirty(&self) -> bool {
+        self.history.dirty()
+    }
+
+    /// Whether the saved state can still be reached by walking this history.
+    pub fn saved_reachable(&self) -> bool {
+        self.history.saved_reachable()
     }
 
     /// Whether there is anything to undo.

@@ -330,8 +330,15 @@ export type Step = { edit: Intent } | { recompute: unknown };
 
 /** What an undo did. The document changed in place. */
 export interface Undone {
+    /** What the entry that inverted was called. */
+    label: string;
     /** The inverses, in the order they were applied. */
     undone: Intent[];
+    /**
+     * The entries the walk passed over because nothing can invert them, by
+     * label. See {@link Inverses.skipped}.
+     */
+    skipped: string[];
 }
 
 /** What a redo did, and what it could not. The document changed in place. */
@@ -350,6 +357,13 @@ export interface Redone {
      * was meant to produce. Usually empty.
      */
     remaining: Step[];
+    /** What the entry being redone was called. */
+    label: string;
+    /**
+     * The entries the walk passed over because nothing can invert them, by
+     * label. See {@link Inverses.skipped}.
+     */
+    skipped: string[];
 }
 
 /** One leg of an entry being recorded: what was done there, and how to undo it. */
@@ -365,8 +379,14 @@ export interface RecordedLeg {
     /**
      * The inverse, a payload in that structure's own vocabulary — for the
      * arrangement, {@link Document.inverse} read before the edit landed.
+     *
+     * Omit it when nothing can put this leg back: an act with no inverse is
+     * still recorded, marked, and walked past in both directions, with the walk
+     * naming it in `skipped`. Recording it beats dropping it — a hole in the
+     * history that announces itself is what lets a person understand why an
+     * undo did not go where they expected.
      */
-    backward: unknown;
+    backward?: unknown;
     /**
      * What makes two edits *the same thing done the same way*:
      * {@link Document.coalesceKey} for the arrangement, one verb and one key
@@ -391,8 +411,27 @@ export interface RemainingLeg {
     step: Step;
 }
 
+/** What an undo hands back, applied by nobody. */
+export interface Inverses {
+    /** What the entry that inverted was called. */
+    label: string;
+    /**
+     * The inverses, each with the structure it belongs to, **in the order they
+     * must be applied**.
+     */
+    inverses: Leg[];
+    /**
+     * The entries the walk passed over because nothing can invert them, by
+     * label. A hole in the history that announces itself is what lets a person
+     * understand why an undo did not go where they expected.
+     */
+    skipped: string[];
+}
+
 /** What a redo hands back, applied by nobody. */
 export interface Steps {
+    /** What the entry being redone was called. */
+    label: string;
     /**
      * The leading run of ordinary edits, for you to apply **in order**.
      */
@@ -405,6 +444,8 @@ export interface Steps {
      * before it was meant to produce. Usually empty.
      */
     remaining: RemainingLeg[];
+    /** The entries the walk passed over. See {@link Inverses.skipped}. */
+    skipped: string[];
 }
 
 /**
@@ -534,7 +575,7 @@ export class History {
     }
 
     /**
-     * Undo the last transaction: the inverses of the entry before the cursor,
+     * Undo the last thing done: the inverses of the entry the walk lands on,
      * each with the structure it belongs to and **in the order they must be
      * applied**, or `undefined` when there is nothing to undo.
      *
@@ -542,11 +583,9 @@ export class History {
      * applying the legs it *could* would leave the rest to you out of order,
      * which is how a transaction half-happens.
      */
-    undo(): Leg[] | undefined {
+    undo(): Inverses | undefined {
         const result = this.#inner.undo();
-        return result === undefined
-            ? undefined
-            : (JSON.parse(result) as { inverses: Leg[] }).inverses;
+        return result === undefined ? undefined : (JSON.parse(result) as Inverses);
     }
 
     /** Redo what was last undone, or `undefined` when there is nothing. */
@@ -582,6 +621,67 @@ export class History {
     /** How many entries the history holds. */
     get length(): number {
         return this.#inner.len;
+    }
+
+    /**
+     * The data behind a structure is gone: drop it from the registry, and say
+     * whether its memory may go now.
+     *
+     * `true` when nothing in the pile names it any more, `false` when you must
+     * wait for {@link History.released} — because undoing a deletion has to be
+     * able to give the data back, so a structure that is out of the tree stays
+     * alive while an entry can still restore what referred to it.
+     *
+     * It also **invalidates the entries that name it**: they cannot be applied
+     * to data that is gone, so they become non-invertible — kept, marked, and
+     * walked past with the walk saying so. Undoing a deletion returns the data,
+     * not its history.
+     */
+    forget(structure: number): boolean {
+        return this.#inner.forget(BigInt(structure));
+    }
+
+    /**
+     * The forgotten structures no entry names any more — you may free their
+     * data now. Drains: each is reported once.
+     */
+    released(): number[] {
+        return Array.from(this.#inner.released(), Number);
+    }
+
+    /**
+     * Stamp the pile where it stands: this is what is on disk.
+     *
+     * A save is an event of the whole editing context and the mark is the
+     * pile's, so one save stamps one mark, and a structure registered later
+     * starts behind it.
+     */
+    markSaved(): void {
+        this.#inner.markSaved();
+    }
+
+    /**
+     * Whether the work differs from what was last saved.
+     *
+     * Crossing the mark backwards is allowed, and this is the announcement —
+     * which has to be accurate: nothing on disk changed, and the file still
+     * holds those edits until the next save. Crossing forward again returns to
+     * clean.
+     */
+    get dirty(): boolean {
+        return this.#inner.dirty;
+    }
+
+    /**
+     * Whether the saved state can still be reached by walking this history.
+     *
+     * `false` after the case the warning earns its place for: undo past the
+     * mark and then edit, and the redo is truncated — so the saved state stops
+     * being reachable, and {@link History.dirty} will never go quiet again on
+     * its own.
+     */
+    get savedReachable(): boolean {
+        return this.#inner.savedReachable;
     }
 
     /**
@@ -692,9 +792,13 @@ export class Log {
      * `undefined` when there is nothing to undo.
      */
     undo(document: Document): Undone | undefined {
-        const legs = this.history.undo();
-        if (legs === undefined) return undefined;
-        return { undone: this.#walk(legs, document) };
+        const reply = this.history.undo();
+        if (reply === undefined) return undefined;
+        return {
+            label: reply.label,
+            undone: this.#walk(reply.inverses, document),
+            skipped: reply.skipped,
+        };
     }
 
     /**
@@ -705,10 +809,12 @@ export class Log {
         const steps = this.history.redo();
         if (steps === undefined) return undefined;
         return {
+            label: steps.label,
             redone: this.#walk(steps.edits, document),
             remaining: steps.remaining
                 .filter((leg) => leg.structure === this.structure)
                 .map((leg) => leg.step),
+            skipped: steps.skipped,
         };
     }
 
@@ -748,6 +854,24 @@ export class Log {
     /** How many entries the history holds. */
     get length(): number {
         return this.history.length;
+    }
+
+    /**
+     * Stamp the pile where it stands: this is what is on disk. See
+     * {@link History.markSaved}.
+     */
+    markSaved(): void {
+        this.history.markSaved();
+    }
+
+    /** Whether the document differs from what was last saved. */
+    get dirty(): boolean {
+        return this.history.dirty;
+    }
+
+    /** Whether the saved state can still be reached by walking this history. */
+    get savedReachable(): boolean {
+        return this.history.savedReachable;
     }
 
     /** Forget everything, releasing what was spilled. */

@@ -279,7 +279,10 @@ struct Change {
     structure: StructureId,
     key: Option<String>,
     forward: Half,
-    backward: Half,
+    /// How to put this leg back, or `None` when nothing can — a normalize whose
+    /// old samples nobody kept, an edit to data that has since been deleted.
+    /// The entry is still recorded; see [`Entry::invertible`].
+    backward: Option<Half>,
 }
 
 /// One transaction in the pile: a gesture, and what it takes to reverse it.
@@ -316,15 +319,45 @@ impl Entry {
         Self {
             label: label.into(),
             coalesce: false,
-            changes: vec![change(structure, forward, backward)],
+            changes: vec![change(structure, forward, Some(backward))],
         }
     }
 
     /// Adds a leg over another structure — or the same one — to the same
     /// transaction. Applied in order forward, in reverse order backward.
     pub fn and(mut self, structure: StructureId, forward: Step, backward: Opaque) -> Self {
-        self.changes.push(change(structure, forward, backward));
+        self.changes
+            .push(change(structure, forward, Some(backward)));
         self
+    }
+
+    /// One act with **no inverse**, and its label.
+    ///
+    /// Not every act has one the owner can write, and recording it beats
+    /// dropping it: a hole in the history that announces itself is what lets a
+    /// person understand why an undo did not go where they expected. An entry
+    /// like this is kept, marked, and **skipped in both directions** — skipped
+    /// going back because nothing can revert it, and going forward for the same
+    /// reason, since a state that was never reverted must not be applied twice.
+    pub fn uninvertible(label: impl Into<String>, structure: StructureId, forward: Step) -> Self {
+        Self {
+            label: label.into(),
+            coalesce: false,
+            changes: vec![change(structure, forward, None)],
+        }
+    }
+
+    /// Adds a leg with no inverse. One such leg makes the whole entry
+    /// non-invertible: a transaction that half unwinds is the failure atomicity
+    /// exists to prevent.
+    pub fn and_uninvertible(mut self, structure: StructureId, forward: Step) -> Self {
+        self.changes.push(change(structure, forward, None));
+        self
+    }
+
+    /// Whether every leg can state how to put itself back.
+    pub fn invertible(&self) -> bool {
+        self.changes.iter().all(|c| c.backward.is_some())
     }
 
     /// Marks this entry as continuing the one before it (see
@@ -376,7 +409,7 @@ impl Entry {
     }
 }
 
-fn change(structure: StructureId, forward: Step, backward: Opaque) -> Change {
+fn change(structure: StructureId, forward: Step, backward: Option<Opaque>) -> Change {
     Change {
         structure,
         key: None,
@@ -384,11 +417,50 @@ fn change(structure: StructureId, forward: Step, backward: Opaque) -> Change {
             step: forward,
             blob: None,
         },
-        backward: Half {
-            step: Step::Edit(backward),
+        backward: backward.map(|payload| Half {
+            step: Step::Edit(payload),
             blob: None,
-        },
+        }),
     }
+}
+
+/// What an undo hands back: the legs to apply, and what it had to pass over.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Undone {
+    /// What the entry that inverted was called. Empty when the walk found
+    /// nothing to invert and only passed things over.
+    pub label: String,
+    /// The inverses, each with the structure it belongs to, **in the order they
+    /// must be applied** — a transaction unwinds the way it was laid down.
+    pub legs: Vec<(StructureId, Opaque)>,
+    /// The labels of the entries the walk passed over because nothing can
+    /// invert them, oldest last. A hole in a history that announces itself is
+    /// what lets a person understand why an undo did not go where they
+    /// expected.
+    pub skipped: Vec<String>,
+    /// Where the cursor lands.
+    to: usize,
+}
+
+/// What a redo hands back: the edits to apply, what only their owner can run,
+/// and what it had to pass over.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Redone {
+    /// What the entry being redone was called. See [`Undone::label`].
+    pub label: String,
+    /// The leading run of ordinary edits, each with its structure, for the
+    /// caller to apply **in order**.
+    pub edits: Vec<(StructureId, Opaque)>,
+    /// The steps from the first one the crate cannot describe as an edit
+    /// onward — a deterministic operation kept as its parameters, which the
+    /// **owner** re-runs, because the crate holds no algorithms. It stops at
+    /// the first rather than skipping it, so a later edit is never applied over
+    /// a state the operation before it was meant to produce.
+    pub remaining: Vec<(StructureId, Step)>,
+    /// The labels of the entries the walk passed over. See [`Undone::skipped`].
+    pub skipped: Vec<String>,
+    /// Where the cursor lands.
+    to: usize,
 }
 
 /// What a structure is, to a history: an identity and the name of the
@@ -415,8 +487,14 @@ pub const DEFAULT_SPILL_ABOVE: usize = 1024;
 /// corruption.
 pub struct History {
     structures: HashMap<StructureId, Structure>,
+    /// Structures the caller has deleted, still named by an entry. Their data
+    /// must stay alive until [`History::released`] hands the identity back.
+    forgotten: Vec<StructureId>,
     entries: Vec<Entry>,
     cursor: usize,
+    /// Where the cursor stood when the work was last saved, or `None` when that
+    /// state is no longer reachable from here.
+    saved: Option<usize>,
     budget: usize,
     spill_above: usize,
     spill: Box<dyn Spill>,
@@ -449,8 +527,10 @@ impl History {
     pub fn with_spill(spill: Box<dyn Spill>) -> Self {
         Self {
             structures: HashMap::new(),
+            forgotten: Vec::new(),
             entries: Vec::new(),
             cursor: 0,
+            saved: Some(0),
             budget: DEFAULT_BUDGET,
             spill_above: DEFAULT_SPILL_ABOVE,
             spill,
@@ -503,6 +583,107 @@ impl History {
         ids
     }
 
+    /// The data behind a structure is gone: drop it from the registry, and say
+    /// when its memory may actually go.
+    ///
+    /// Deleting has to be **deferred**, because undoing the deletion must be
+    /// able to give the data back: a structure that is out of the tree stays
+    /// alive while an entry can still restore what referred to it, and is
+    /// really freed when that entry retires. So this hands back `true` when
+    /// nothing in the pile names it any more and the caller may free now, and
+    /// `false` when it must wait for [`History::released`].
+    ///
+    /// It also **invalidates the entries that name it**: they cannot be applied
+    /// to data that is gone, so they become non-invertible by the rule
+    /// [`Entry::uninvertible`] states — kept, marked, and walked past with the
+    /// walk saying so. And it is written down as a rule a person will meet:
+    /// *undoing a deletion returns the data, not its history*. A history is
+    /// transient and history is not data.
+    pub fn forget(&mut self, structure: StructureId) -> bool {
+        if self.structures.remove(&structure).is_none() {
+            return !self.names(structure);
+        }
+        let mut orphaned = Vec::new();
+        for entry in &mut self.entries {
+            for change in &mut entry.changes {
+                if change.structure == structure
+                    && let Some(half) = change.backward.take()
+                    && let Some(blob) = half.blob
+                {
+                    orphaned.push(blob);
+                }
+            }
+        }
+        for blob in orphaned {
+            self.spill.release(blob);
+        }
+        if self.names(structure) {
+            self.forgotten.push(structure);
+            return false;
+        }
+        true
+    }
+
+    /// The forgotten structures no entry names any more, without draining —
+    /// what a binding whose protocol sizes a buffer before filling it needs, so
+    /// the sizing pass does not consume the answer.
+    pub fn pending_release(&self) -> Vec<StructureId> {
+        self.forgotten
+            .iter()
+            .copied()
+            .filter(|structure| !self.names(*structure))
+            .collect()
+    }
+
+    /// The forgotten structures no entry names any more — the caller may free
+    /// their data now. Drains: each is reported once.
+    ///
+    /// What the budget decides is *when* an entry stops existing; this is the
+    /// hook that says the last one holding a deleted structure has gone.
+    pub fn released(&mut self) -> Vec<StructureId> {
+        let (free, held): (Vec<_>, Vec<_>) = std::mem::take(&mut self.forgotten)
+            .into_iter()
+            .partition(|structure| !self.names(*structure));
+        self.forgotten = held;
+        free
+    }
+
+    /// Whether any entry names this structure.
+    fn names(&self, structure: StructureId) -> bool {
+        self.entries
+            .iter()
+            .any(|entry| entry.changes.iter().any(|c| c.structure == structure))
+    }
+
+    /// Stamps the pile where it stands: this is what is on disk.
+    ///
+    /// A save is an event of the whole editing context and the mark is the
+    /// pile's, so one save stamps one mark, and a structure registered later
+    /// starts behind it.
+    pub fn mark_saved(&mut self) {
+        self.saved = Some(self.cursor);
+    }
+
+    /// Whether the work differs from what was last saved.
+    ///
+    /// Crossing the mark **backwards** is allowed, and this is the
+    /// announcement — which has to be accurate: nothing on disk changed, and
+    /// the file still holds those edits until the next save. Crossing forward
+    /// again returns to clean.
+    pub fn dirty(&self) -> bool {
+        self.saved != Some(self.cursor)
+    }
+
+    /// Whether the saved state can still be reached by walking this history.
+    ///
+    /// `false` after the case the warning earns its place for: undo past the
+    /// mark and then edit, and the redo is truncated — so the saved state stops
+    /// being reachable, and [`History::dirty`] will never go quiet again on its
+    /// own.
+    pub fn saved_reachable(&self) -> bool {
+        self.saved.is_some()
+    }
+
     /// Records a transaction, dropping anything waiting to be redone.
     ///
     /// `false` when a leg names a structure this history did not mint — which
@@ -519,7 +700,9 @@ impl History {
         self.forget_redo();
         for change in &mut entry.changes {
             lift(&mut change.forward, self.spill_above, self.spill.as_mut());
-            lift(&mut change.backward, self.spill_above, self.spill.as_mut());
+            if let Some(backward) = &mut change.backward {
+                lift(backward, self.spill_above, self.spill.as_mut());
+            }
         }
         if entry.coalesce && self.merge(&entry) {
             return true;
@@ -661,89 +844,151 @@ impl History {
     /// protocol sizes a buffer and then fills it, where doing the work on the
     /// sizing call would undo twice and hand back the second answer. Inside
     /// Rust, [`History::undo`] is the two together and is what you want.
-    pub fn peek_undo(&self) -> Option<Vec<(StructureId, Opaque)>> {
-        let entry = self.entries.get(self.cursor.checked_sub(1)?)?;
-        let mut out = Vec::with_capacity(entry.changes.len());
-        for change in entry.changes.iter().rev() {
-            // A backward half is always an edit -- `Entry`'s constructors take
-            // a payload for it, so `Recompute` cannot get in here.
-            if let Step::Edit(payload) = restore(&change.backward, self.spill.as_ref()) {
-                out.push((change.structure, payload));
+    pub fn peek_undo(&self) -> Option<Undone> {
+        let mut at = self.cursor;
+        let mut skipped = Vec::new();
+        while at > 0 {
+            let entry = &self.entries[at - 1];
+            if !entry.invertible() {
+                skipped.push(entry.label.clone());
+                at -= 1;
+                continue;
             }
+            let mut legs = Vec::with_capacity(entry.changes.len());
+            for change in entry.changes.iter().rev() {
+                // A backward half is always an edit -- `Entry`'s constructors
+                // take a payload for it, so `Recompute` cannot get in here.
+                let Some(backward) = &change.backward else {
+                    continue;
+                };
+                if let Step::Edit(payload) = restore(backward, self.spill.as_ref()) {
+                    legs.push((change.structure, payload));
+                }
+            }
+            return Some(Undone {
+                label: entry.label.clone(),
+                legs,
+                skipped,
+                to: at - 1,
+            });
         }
-        Some(out)
+        if skipped.is_empty() {
+            return None;
+        }
+        // Everything left behind the cursor announces itself and inverts
+        // nothing. The walk still moves, because a history that refused to
+        // budge would say the same thing by saying nothing.
+        Some(Undone {
+            label: String::new(),
+            legs: Vec::new(),
+            skipped,
+            to: 0,
+        })
     }
 
     /// What a redo *would* hand back, without moving the cursor. See
     /// [`History::peek_undo`].
-    pub fn peek_redo(&self) -> Option<Vec<(StructureId, Step)>> {
-        let entry = self.entries.get(self.cursor)?;
-        Some(
-            entry
-                .changes
-                .iter()
-                .map(|change| {
-                    (
-                        change.structure,
-                        restore(&change.forward, self.spill.as_ref()),
-                    )
-                })
-                .collect(),
-        )
+    pub fn peek_redo(&self) -> Option<Redone> {
+        let mut at = self.cursor;
+        let mut skipped = Vec::new();
+        while at < self.entries.len() {
+            let entry = &self.entries[at];
+            if !entry.invertible() {
+                skipped.push(entry.label.clone());
+                at += 1;
+                continue;
+            }
+            let mut edits = Vec::new();
+            let mut remaining = Vec::new();
+            for change in &entry.changes {
+                let step = restore(&change.forward, self.spill.as_ref());
+                match (&step, remaining.is_empty()) {
+                    // The leading run of ordinary edits is the caller's to
+                    // apply; from the first step only its owner can run, the
+                    // rest is handed over untouched. It stops at the first
+                    // rather than skipping it, so a later edit is never applied
+                    // over a state the operation before it was meant to
+                    // produce.
+                    (Step::Edit(payload), true) => edits.push((change.structure, payload.clone())),
+                    _ => remaining.push((change.structure, step)),
+                }
+            }
+            return Some(Redone {
+                label: entry.label.clone(),
+                edits,
+                remaining,
+                skipped,
+                to: at + 1,
+            });
+        }
+        if skipped.is_empty() {
+            return None;
+        }
+        Some(Redone {
+            label: String::new(),
+            edits: Vec::new(),
+            remaining: Vec::new(),
+            skipped,
+            to: self.entries.len(),
+        })
     }
 
     /// Moves the cursor back one entry, if it can. The commit half of
     /// [`History::peek_undo`].
     pub fn step_back(&mut self) -> bool {
-        let can = self.can_undo();
-        if can {
-            self.cursor -= 1;
+        match self.peek_undo() {
+            Some(undone) => {
+                self.cursor = undone.to;
+                true
+            }
+            None => false,
         }
-        can
     }
 
-    /// Moves the cursor forward one entry, if it can. The commit half of
-    /// [`History::peek_redo`].
+    /// Moves the cursor forward past the next entry, if it can. The commit half
+    /// of [`History::peek_redo`].
     pub fn step_forward(&mut self) -> bool {
-        let can = self.can_redo();
-        if can {
-            self.cursor += 1;
+        match self.peek_redo() {
+            Some(redone) => {
+                self.cursor = redone.to;
+                true
+            }
+            None => false,
         }
-        can
     }
 
     /// Undoes the last thing done, in any structure: the inverses of the entry
-    /// before the cursor, each with the structure it belongs to, or `None` when
-    /// there is nothing to undo.
+    /// before the cursor, each with the structure it belongs to, plus whatever
+    /// the walk had to pass over. `None` when there is nothing to undo.
     ///
     /// The caller applies them, through whatever door the domain has.
-    pub fn undo(&mut self) -> Option<Vec<(StructureId, Opaque)>> {
+    pub fn undo(&mut self) -> Option<Undone> {
         let out = self.peek_undo()?;
-        self.step_back();
+        self.cursor = out.to;
         Some(out)
     }
 
-    /// Redoes what was last undone, in order, or `None` when there is nothing.
+    /// Redoes what was last undone, or `None` when there is nothing.
     ///
-    /// Returns [`Step`]s rather than payloads: a deterministic operation stores
-    /// its parameters instead of its result, and re-running it is the owner's
-    /// to do.
-    pub fn redo(&mut self) -> Option<Vec<(StructureId, Step)>> {
+    /// [`Redone::remaining`] holds [`Step`]s rather than payloads: a
+    /// deterministic operation stores its parameters instead of its result, and
+    /// re-running it is the owner's to do.
+    pub fn redo(&mut self) -> Option<Redone> {
         let out = self.peek_redo()?;
-        self.step_forward();
+        self.cursor = out.to;
         Some(out)
     }
 
-    /// What an undo would be called, for a menu.
-    pub fn undo_label(&self) -> Option<&str> {
-        self.entries
-            .get(self.cursor.checked_sub(1)?)
-            .map(|e| e.label.as_str())
+    /// What an undo would be called, for a menu — the entry the walk would
+    /// actually land on, not the one next to the cursor, since a run of
+    /// non-invertible entries is passed over.
+    pub fn undo_label(&self) -> Option<String> {
+        self.peek_undo().map(|undone| undone.label)
     }
 
-    /// What a redo would be called.
-    pub fn redo_label(&self) -> Option<&str> {
-        self.entries.get(self.cursor).map(|e| e.label.as_str())
+    /// What a redo would be called. See [`History::undo_label`].
+    pub fn redo_label(&self) -> Option<String> {
+        self.peek_redo().map(|redone| redone.label)
     }
 
     /// Whether there is anything to undo.
@@ -775,6 +1020,12 @@ impl History {
             self.release(&entry);
         }
         self.cursor = 0;
+        // Nothing is left to walk, so the mark is where the cursor is: an empty
+        // history is at the state it holds, whatever that is.
+        self.saved = Some(0);
+        // The forgotten stay forgotten, and clearing is exactly what makes them
+        // releasable: nothing names them any more. Dropping them here would
+        // lose the one report the caller frees on.
     }
 
     fn merge(&mut self, entry: &Entry) -> bool {
@@ -793,7 +1044,7 @@ impl History {
                 released.push(id);
             }
             old.forward.step = new.forward.step.clone();
-            if let Some(id) = new.backward.blob {
+            if let Some(id) = new.backward.as_ref().and_then(|half| half.blob) {
                 released.push(id);
             }
         }
@@ -808,6 +1059,13 @@ impl History {
         if self.cursor >= self.entries.len() {
             return;
         }
+        // The saved state was in what is about to go: it stops being reachable
+        // by walking, which is the third case the save mark exists to say out
+        // loud -- undo past the mark, then edit, and the file's state is no
+        // longer anywhere in this history.
+        if self.saved.is_some_and(|at| at > self.cursor) {
+            self.saved = None;
+        }
         let dropped: Vec<Entry> = self.entries.drain(self.cursor..).collect();
         for entry in dropped {
             self.release(&entry);
@@ -819,14 +1077,23 @@ impl History {
             let oldest = self.entries.remove(0);
             self.release(&oldest);
             self.cursor = self.cursor.saturating_sub(1);
+            // The mark falls off with the entry it stood behind: past that
+            // point the history can no longer walk back to what was saved.
+            self.saved = match self.saved {
+                Some(0) | None => None,
+                Some(at) => Some(at - 1),
+            };
         }
     }
 
     fn release(&mut self, entry: &Entry) {
         for change in &entry.changes {
-            for blob in [change.forward.blob, change.backward.blob]
-                .into_iter()
-                .flatten()
+            for blob in [
+                change.forward.blob,
+                change.backward.as_ref().and_then(|half| half.blob),
+            ]
+            .into_iter()
+            .flatten()
             {
                 self.spill.release(blob);
             }

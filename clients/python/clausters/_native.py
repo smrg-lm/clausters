@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 33
+CORE_ABI_VERSION = 34
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -509,6 +509,15 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     for _log_fn in ("clausters_history_undo_label", "clausters_history_redo_label"):
         getattr(lib, _log_fn).restype = ctypes.c_size_t
         getattr(lib, _log_fn).argtypes = [ctypes.c_void_p, u8p, ctypes.c_size_t]
+    lib.clausters_history_forget.restype = ctypes.c_int32
+    lib.clausters_history_forget.argtypes = [ctypes.c_void_p, ctypes.c_uint64]
+    lib.clausters_history_released.restype = ctypes.c_size_t
+    lib.clausters_history_released.argtypes = [ctypes.c_void_p, u8p, ctypes.c_size_t]
+    lib.clausters_history_mark_saved.restype = None
+    lib.clausters_history_mark_saved.argtypes = [ctypes.c_void_p]
+    for _log_fn in ("clausters_history_dirty", "clausters_history_saved_reachable"):
+        getattr(lib, _log_fn).restype = ctypes.c_int32
+        getattr(lib, _log_fn).argtypes = [ctypes.c_void_p]
     lib.clausters_history_len.restype = ctypes.c_size_t
     lib.clausters_history_len.argtypes = [ctypes.c_void_p]
     lib.clausters_history_clear.restype = None
@@ -1205,32 +1214,90 @@ class History:
                 "the entry holds no leg, a payload is not valid JSON for the crate, "
                 "or it names a structure this history did not mint")
 
-    def undo(self) -> "list | None":
-        """Undo the last transaction: the inverses of the entry before the
-        cursor, each as ``{"structure": <id>, "payload": <payload>}`` and **in
-        the order they must be applied**. ``None`` when there was nothing.
+    def undo(self) -> "dict | None":
+        """Undo the last thing done, or ``None`` when there was nothing.
+
+        Returns ``{"label": …, "inverses": [...], "skipped": [...]}``: each
+        inverse is ``{"structure": <id>, "payload": <payload>}`` and they come
+        **in the order they must be applied**. ``skipped`` names the entries the
+        walk had to pass over because nothing can invert them — a hole in the
+        history that announces itself is what lets a person understand why an
+        undo did not go where they expected.
 
         It applies nothing: a history holds structures the crate cannot reach,
         so applying the legs it *could* would leave the rest to you out of
         order, which is how a transaction half-happens.
         """
-        reply = self._sized(self._lib.clausters_history_undo, (),
-                            "the history handle is not usable")
-        return reply["inverses"] if reply else None
+        return self._sized(self._lib.clausters_history_undo, (),
+                           "the history handle is not usable") or None
 
     def redo(self) -> "dict | None":
-        """Redo what was last undone: ``{"edits": [...], "remaining": [...]}``,
-        or ``None`` when there was nothing.
+        """Redo what was last undone, or ``None`` when there was nothing.
 
-        ``edits`` is the leading run of ordinary edits, for you to apply in
-        order; ``remaining`` holds the steps from the first one the crate cannot
-        describe as an edit onward — a deterministic operation kept as its
-        parameters, which you re-run, because the crate holds no algorithms. It
-        stops at the first rather than skipping it, so a later edit is never
-        applied over a state the operation before it was meant to produce.
+        Returns ``{"label": …, "edits": [...], "remaining": [...],
+        "skipped": [...]}``. ``edits`` is the leading run of ordinary edits, for
+        you to apply in order; ``remaining`` holds the steps from the first one
+        the crate cannot describe as an edit onward — a deterministic operation
+        kept as its parameters, which you re-run, because the crate holds no
+        algorithms. It stops at the first rather than skipping it, so a later
+        edit is never applied over a state the operation before it was meant to
+        produce. ``skipped`` is `undo`'s.
         """
         return self._sized(self._lib.clausters_history_redo, (),
                            "the history handle is not usable") or None
+
+    def forget(self, structure: int) -> bool:
+        """The data behind a structure is gone: drop it from the registry, and
+        say whether its memory may go now.
+
+        ``True`` when nothing in the pile names it any more, ``False`` when you
+        must wait for `released` — because undoing a deletion has to be able to
+        give the data back, so a structure that is out of the tree stays alive
+        while an entry can still restore what referred to it.
+
+        It also **invalidates the entries that name it**: they cannot be applied
+        to data that is gone, so they become non-invertible — kept, marked, and
+        walked past with the walk saying so. Undoing a deletion returns the
+        data, not its history.
+        """
+        return bool(self._lib.clausters_history_forget(
+            self._handle, ctypes.c_uint64(structure)))
+
+    def released(self) -> list:
+        """The forgotten structures no entry names any more — you may free
+        their data now. Drains: each is reported once."""
+        return self._sized(self._lib.clausters_history_released, (),
+                           "the history handle is not usable")
+
+    def mark_saved(self):
+        """Stamp the pile where it stands: this is what is on disk.
+
+        A save is an event of the whole editing context and the mark is the
+        pile's, so one save stamps one mark, and a structure registered later
+        starts behind it.
+        """
+        self._lib.clausters_history_mark_saved(self._handle)
+
+    @property
+    def dirty(self) -> bool:
+        """Whether the work differs from what was last saved.
+
+        Crossing the mark backwards is allowed, and this is the announcement —
+        which has to be accurate: nothing on disk changed, and the file still
+        holds those edits until the next save. Crossing forward again returns to
+        clean.
+        """
+        return bool(self._lib.clausters_history_dirty(self._handle))
+
+    @property
+    def saved_reachable(self) -> bool:
+        """Whether the saved state can still be reached by walking this history.
+
+        ``False`` after the case the warning earns its place for: undo past the
+        mark and then edit, and the redo is truncated — so the saved state stops
+        being reachable, and `dirty` will never go quiet again on its own.
+        """
+        return bool(self._lib.clausters_history_saved_reachable(self._handle))
 
     @property
     def can_undo(self) -> bool:
@@ -1288,7 +1355,7 @@ class History:
     # consequence. That is what makes calling twice correct rather than an edit
     # applied twice.
 
-    def _sized(self, fn, args, error: str) -> dict:
+    def _sized(self, fn, args, error: str):
         need = fn(self._handle, *args, None, 0)
         if need == 0:
             raise ValueError(error)
@@ -1410,21 +1477,25 @@ class Log:
             label=label, coalesce=coalesce)
 
     def undo(self, document: "Document") -> "dict | None":
-        """Undo the last transaction, applying its inverses to ``document``.
+        """Undo the last thing done, applying its inverses to ``document``.
 
-        Returns ``{"undone": [<intent>, …]}``, or ``None`` when there was
-        nothing to undo; the document changed behind its handle. A leg of the
-        underlying history that belongs to another structure is left alone and
-        reported in ``others`` — which a `Log` never sees unless somebody else
-        registered a structure in the same history.
+        Returns ``{"undone": [<intent>, …], "label": …, "skipped": […],
+        "others": […]}``, or ``None`` when there was nothing to undo; the
+        document changed behind its handle. ``skipped`` names the entries the
+        walk passed over because nothing can invert them. A leg that belongs to
+        another structure is left alone and reported in ``others`` — which a
+        `Log` never sees unless somebody else registered a structure in the same
+        history.
         """
-        return self._walk(self._history.undo(), document, "undone")
+        reply = self._history.undo()
+        return None if reply is None else self._walk(reply, document, "undone")
 
     def redo(self, document: "Document") -> "dict | None":
         """Redo what was last undone, applying what it can.
 
-        Returns ``{"redone": [<intent>, …], "remaining": [<step>, …]}``, or
-        ``None`` when there was nothing to redo. The ordinary edits are applied
+        Returns ``{"redone": [<intent>, …], "remaining": [<step>, …]}`` plus
+        ``label``, ``skipped`` and ``others`` as `undo` has them, or ``None``
+        when there was nothing to redo. The ordinary edits are applied
         to the document and reported, so a redo is the same shape as an undo;
         ``remaining`` holds the steps from the first one the crate **cannot
         perform** onward — a deterministic operation kept as its parameters,
@@ -1433,19 +1504,18 @@ class Log:
         reply = self._history.redo()
         if reply is None:
             return None
-        walked = self._walk(reply["edits"], document, "redone")
+        walked = self._walk(reply, document, "redone", source="edits")
         walked["remaining"] = [leg["step"] for leg in reply["remaining"]
                                if leg["structure"] == self._structure]
         walked["others"] += [leg for leg in reply["remaining"]
                              if leg["structure"] != self._structure]
         return walked
 
-    def _walk(self, legs, document: "Document", key: str) -> "dict | None":
+    def _walk(self, reply: dict, document: "Document", key: str,
+              *, source: str = "inverses") -> dict:
         """Apply the legs addressed to this document and report the rest."""
-        if legs is None:
-            return None
         mine, others = [], []
-        for leg in legs:
+        for leg in reply[source]:
             if leg["structure"] == self._structure:
                 # An undo is authoritative: it states what the document was, so
                 # it is not checked against a version it predates.
@@ -1453,7 +1523,8 @@ class Log:
                 mine.append(leg["payload"])
             else:
                 others.append(leg)
-        return {key: mine, "others": others}
+        return {key: mine, "others": others, "label": reply["label"],
+                "skipped": reply["skipped"]}
 
     @property
     def can_undo(self) -> bool:
@@ -1474,6 +1545,22 @@ class Log:
     def redo_label(self) -> "str | None":
         """What a redo would be called."""
         return self._history.redo_label
+
+    def mark_saved(self):
+        """Stamp the pile where it stands: this is what is on disk. See
+        `History.mark_saved`."""
+        self._history.mark_saved()
+
+    @property
+    def dirty(self) -> bool:
+        """Whether the document differs from what was last saved."""
+        return self._history.dirty
+
+    @property
+    def saved_reachable(self) -> bool:
+        """Whether the saved state can still be reached by walking this
+        history."""
+        return self._history.saved_reachable
 
     def clear(self):
         """Forget everything, releasing what was spilled — what closing a
