@@ -392,32 +392,45 @@ class TempoClock:
         # An offline (score) destination has no live clock to lock to.
         if getattr(getattr(server, "interface", None), "time_mode", "unix") == "score":
             return self
+        # The server owns one reader and hands the same one to every clock: a
+        # second model of one counter is another socket and another thread
+        # re-anchoring the same number, not a second opinion.
         sc = server.sample_clock(timeout=timeout)
-        try:
-            sc.anchor()           # one round trip: detect a reachable master
-        except (TimeoutError, OSError, RuntimeError):
-            sc.close()
-            return self           # graceful: no master -> stay on wall clock
-        if warmup:
-            sc.warmup(n=4)        # firm up the model before scheduling
-        sc.track()
+        if not sc.tracking:
+            # Fresh reader: probe it, firm it up, and start its loop. Already
+            # tracking means another clock paid for all three.
+            try:
+                sc.anchor()       # one round trip: detect a reachable master
+            except (TimeoutError, OSError, RuntimeError):
+                # Graceful: no master -> stay on wall clock, and take the dead
+                # reader off the server so the next clock probes a fresh one.
+                server.release_sample_clock()
+                return self
+            if warmup:
+                sc.warmup(n=4)    # firm up the model before scheduling
+            sc.track()
         self._sample_clock = sc
         self.timebase = sc.timebase()
         self._now = self.timebase
         return self
 
     def unlock(self):
-        """Undo a `lock_to`: close the tracker and return to wall-clock OSC
-        time. Returns ``self``."""
+        """Undo a `lock_to`: let go of the server's sample-clock reader and
+        return to wall-clock OSC time. Returns ``self``.
+
+        It lets go rather than closes. The reader belongs to the **server** and
+        is shared by every clock locked to it, so closing it here would stop
+        the others dead; `Server.close` is what releases it."""
         if self._sample_clock is not None:
-            self._sample_clock.close()
             self._sample_clock = None
         self.timebase = MonotonicTimebase()
         self._now = self.timebase
         return self
 
     def close(self):
-        """Stop the clock and release a `lock_to` tracker, if any."""
+        """Stop the clock and let go of the server's sample-clock reader, if it
+        was locked to one (the reader itself is the server's, and outlives
+        this)."""
         self.stop()
         self.unlock()
 

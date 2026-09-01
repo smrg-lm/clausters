@@ -543,6 +543,8 @@ export class TempoClock {
         { warmup = true, timeout }: { warmup?: boolean; timeout?: number } = {},
     ): Promise<this> {
         if (this.timebase instanceof SampleClockTimebase) return this;
+        // The server owns one reader and hands the same one to every clock, so
+        // this is a lookup after the first clock has paid for the warmup.
         this.timebase = await server.sampleTimebase({
             ...(timeout === undefined ? {} : { timeout }),
             warmup,
@@ -551,8 +553,12 @@ export class TempoClock {
     }
 
     /**
-     * Undo a {@link TempoClock.lockTo}: back to wall-clock time. Returns
-     * `this`.
+     * Undo a {@link TempoClock.lockTo}: let go of the server's sample-clock
+     * reader and go back to wall-clock time. Returns `this`.
+     *
+     * It lets go rather than closes. The reader belongs to the **server** and
+     * is shared by every clock locked to it, so closing it here would stop the
+     * others dead; `Server.close` is what releases it.
      */
     unlock(): this {
         this.timebase = new MonotonicTimebase();

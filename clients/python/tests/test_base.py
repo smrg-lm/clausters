@@ -348,6 +348,31 @@ def test_a_clock_built_under_a_session_belongs_to_it():
     assert TempoClock(tempo=1.0).session is None
 
 
+def test_one_sample_clock_reader_serves_every_clock_on_a_server():
+    """There is one sample counter, so there is one model of it. Ten clocks
+    locked to a server share the server's reader -- one socket, one tracking
+    thread, one warmup -- and `unlock` lets go of it rather than closing it out
+    from under the others."""
+    _ffi_or_skip()
+    from clausters.defs import Server
+
+    server = Server()
+    reader = server.sample_clock()
+    assert server.sample_clock() is reader, "one reader, built once"
+
+    clocks = [TempoClock(tempo=1.0) for _ in range(4)]
+    for clock in clocks:
+        clock._sample_clock = reader          # what `lock_to` leaves behind
+    clocks[0].unlock()
+    assert clocks[0]._sample_clock is None
+    assert clocks[1]._sample_clock is reader, "unlock let go, it did not close"
+
+    server.release_sample_clock()
+    assert server._sample_clock is None
+    assert server.sample_clock() is not reader, "released, so the next is fresh"
+    server.release_sample_clock()
+
+
 def test_stop_holds_the_beat_and_start_resumes_it():
     """`stop`/`start` is a transport, not a reset: the beat is held while
     stopped and picked up on restart, so what is still queued keeps its place

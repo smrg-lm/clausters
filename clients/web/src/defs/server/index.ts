@@ -1100,6 +1100,14 @@ export class Server {
         gap?: number;
         trackEvery?: number;
     } = {}): Promise<Timebase> {
+        // **One reader per server**, built on the first call and reused by
+        // every one after it. There is a single sample counter to model, so a
+        // second model of it is not a second opinion -- it is another carrier,
+        // another loop re-anchoring the same number, and another warmup. It
+        // also used to be wrong: building a second one closed the first, and
+        // every clock already holding that timebase was left reading a closed
+        // reader.
+        if (this.clock !== null) return this.clock.timebase();
         const clock = await sampleClockFor(this, options);
         if (clock === null) {
             console.warn(
@@ -1107,12 +1115,28 @@ export class Server {
             );
             return new MonotonicTimebase();
         }
-        this.clock?.close();
         this.clock = clock;
         return clock.timebase();
     }
 
-    /** The sample clock this server is tracked by, once one is built. */
+    /**
+     * Closes this server's shared sample-clock reader, if it built one, and
+     * forgets it — the next {@link Server.sampleTimebase} builds a fresh one.
+     *
+     * Called by {@link Server.close}. A clock does **not** call it on
+     * {@link TempoClock.unlock}: the reader belongs to the server and other
+     * clocks may still be reading it.
+     */
+    releaseSampleClock(): void {
+        this.clock?.close();
+        this.clock = null;
+    }
+
+    /**
+     * The one sample clock this server is tracked by, once one is built, and
+     * shared by every clock locked to it. Released by
+     * {@link Server.releaseSampleClock}.
+     */
     private clock: ServerSampleClock | null = null;
 
     /**
@@ -1161,8 +1185,7 @@ export class Server {
      * any shared in-page engine, keep running). Pending requests reject.
      */
     close(): void {
-        this.clock?.close();
-        this.clock = null;
+        this.releaseSampleClock();   // the reader every locked clock shared
         this.recycling?.free();
         this.recycling = null;
         this.recv?.remove(this.listener);

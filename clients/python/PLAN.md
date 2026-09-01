@@ -1455,25 +1455,29 @@ work, where a pending item reads as done.)*
   read only by that setter. Nothing else moved: under a constant tempo the
   property answers what it always did, which is what the added test pins.
 
-- ⬜ **Every clock locked to one server builds its own tracker of that
-  server's clock** *(found 2026-08-31 by the user, asking why a ten-clock
-  example takes a few seconds to start)*. `Server.sample_clock` returns a **new**
-  reader on every call, so `TempoClock.lock_to` gives each clock its own UDP
-  socket, its own model and its own background thread re-anchoring every 0.5 s
-  — ten clocks against one server, ten trackers of the same counter. Measured:
-  locking ten clocks takes **2.038 s**, all of it `warmup(n=4)`'s four anchors
-  at a 50 ms gap, ten times over (`warmup=False` brings the same ten to
-  0.004 s); thread count goes 2 → 12 and stays there.
+- ✅ **Every clock locked to one server built its own tracker of that server's
+  clock** *(found 2026-08-31 by the user, asking why a ten-clock example takes a
+  few seconds to start)*. `Server.sample_clock` returned a **new** reader on
+  every call, so `TempoClock.lock_to` gave each clock its own UDP socket, its
+  own model and its own background thread re-anchoring every 0.5 s — ten clocks
+  against one server, ten trackers of the same counter. Measured before:
+  locking ten clocks took **2.038 s**, all of it `warmup(n=4)`'s four anchors at
+  a 50 ms gap ten times over, and the thread count went 2 → 12 and stayed there.
 
-  The delay is the visible half and the cheaper one to fix — the standing cost
-  is ten sockets and ten threads modelling one clock, forever. **One tracker per
-  server, shared by every clock locked to it**, pays the warmup once and runs
-  one thread. What it needs decided is the lifetime: `unlock` and `close` must
-  not tear down a tracker another clock is still reading, so the shared one is
-  refcounted and released with the last clock (or with the `Server`, which is
-  the simpler rule and probably the right one). Both clients. Until then, a
-  piece with many clocks can pass `lock_to(server, warmup=False)` and let the
-  tracking loop firm the model up as it plays.
+  **Fixed: one reader per server, released with the `Server`.** `sample_clock`
+  builds it on first use and returns that one after; `lock_to` anchors and warms
+  it up only when it is not already tracking; `unlock` **lets go rather than
+  closes**, since another clock may still be reading it; `Server.close` releases
+  it, and `release_sample_clock` also takes a dead reader off the server when the
+  probe finds no master, so a failed lock does not leave one for the next clock
+  to adopt. After: the first `lock_to` costs 0.203 s and the other nine
+  0.0002 s together, one tracker, one thread — and against a `Session`, which
+  anchors its own clock at construction, all ten cost nothing.
+
+  **The web client had the same shape as a defect rather than as waste.** Its
+  `Server` already held the reader, but `sampleTimebase` closed the previous one
+  and replaced it on every call — so a second clock left the first holding a
+  timebase over a **closed** reader. Same fix, same rule.
 
 - ⬜ **A hand-made clock cannot find the ambient session, because `activate` is
   thread-local** *(found 2026-08-31 by the user, running a ten-clock example)*.

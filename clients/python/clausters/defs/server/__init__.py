@@ -166,6 +166,10 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
         #: the `/node_end` side-channel that returns node ids to the registry
         #: (an `OscReceiver` + `/server_notify`), started lazily by `_ensure_recycler`.
         self._recycler = None
+        #: the one sample-clock reader every clock locked to this server shares
+        #: (`sample_clock`), built on first use and released by `close`. There
+        #: is a single counter to model, so there is a single model of it.
+        self._sample_clock = None
         self._sync_counter = 0      # ids for /server_sync -> /server_sync.reply round-trips
         #: the server's stream-frame ceiling, queried lazily by `_bulk_chunk`.
         self._max_frame: "int | None" = None
@@ -652,22 +656,52 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
         self.send_msg("/server_quit")
 
     def sample_clock(self, window: int = 64, timeout: float = 2.0):
-        """A sample-clock reader for this server: an `EmbedSampleClock` when the
+        """**This server's** sample-clock reader: an `EmbedSampleClock` when the
         server is in-process (the embed interface exposes the counter directly —
         no socket, no round trips), otherwise a `UdpSampleClock` tracking it
-        over UDP. Pass its ``.timebase()`` to a ``TempoClock`` to anchor timing
-        to the server and schedule by ``/sched_at``."""
+        over UDP. Pass its ``.timebase()`` to a `clausters.base.TempoClock` to
+        anchor timing to the server and schedule by ``/sched_at``.
+
+        **One reader per server, built on the first call and returned by every
+        one after it.** There is a single sample counter to model, so a second
+        model of it is not a second opinion — it is another socket, another
+        thread re-anchoring the same number, and another warmup. Ten clocks
+        locked to one server used to cost ten of each and two seconds of
+        warmup; they now share this one.
+
+        It belongs to the server and is released by `close`. Do not close it
+        yourself: `clausters.base.TempoClock.unlock` deliberately does not,
+        because other clocks may still be reading it. ``window`` and ``timeout``
+        configure the reader the **first** call builds; later calls return that
+        one and ignore them.
+        """
         from ...base._oscinterface import OscEmbedInterface
         from ..clocksync import EmbedSampleClock, UdpSampleClock
 
-        if isinstance(self.interface, OscEmbedInterface):
-            return EmbedSampleClock(self.interface.server)
-        return UdpSampleClock(self, window=window, timeout=timeout)
+        if self._sample_clock is None:
+            self._sample_clock = (
+                EmbedSampleClock(self.interface.server)
+                if isinstance(self.interface, OscEmbedInterface)
+                else UdpSampleClock(self, window=window, timeout=timeout)
+            )
+        return self._sample_clock
+
+    def release_sample_clock(self):
+        """Close this server's shared sample-clock reader, if it built one, and
+        forget it — the next `sample_clock` builds a fresh one.
+
+        Called by `close`, and by `clausters.base.TempoClock.lock_to` when the
+        reader turns out to have no master to anchor against, so a failed probe
+        does not leave a dead reader for the next clock to adopt."""
+        if self._sample_clock is not None:
+            self._sample_clock.close()
+            self._sample_clock = None
 
     def close(self):
         """Close the communication interface (and the ``/node_end`` recycling
-        listener) and, if this handle `boot`-ed a server process, stop it
-        too."""
+        listener), release the shared sample-clock reader every locked clock was
+        using, and, if this handle `boot`-ed a server process, stop it too."""
+        self.release_sample_clock()
         if self._recycler is not None:
             self._recycler.close()
             self._recycler = None

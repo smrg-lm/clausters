@@ -158,6 +158,13 @@ class UdpSampleClock:
         self._thread.start()
         return self
 
+    @property
+    def tracking(self) -> bool:
+        """Whether the background re-anchoring loop is running — which is also
+        what says this reader has a model already, so a second clock locking to
+        the same server does not anchor and warm it up again."""
+        return self._tracking
+
     def untrack(self):
         self._tracking = False
         if self._thread is not None:
@@ -208,6 +215,13 @@ class EmbedSampleClock:
 
     def track(self, interval: float = 0.5):
         return self
+
+    @property
+    def tracking(self) -> bool:
+        """Always true: shared memory needs no model, so there is never a
+        warmup for a second clock to repeat. The surface matches
+        `UdpSampleClock.tracking` so `lock_to` asks one question."""
+        return True
 
     def untrack(self):
         pass
