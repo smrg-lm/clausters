@@ -1776,11 +1776,32 @@ work, where a pending item reads as done.)*
   before an edit made through another holder only sees it on waking.
   `TempoClock.resync` is that call, and `map.version` is what it compares.
 
-  **What is still open** is what this makes possible rather than what it
-  broke: `TimeUnit::to_beats` should stop converting with a scalar, and the map
-  needs an **identity** to be named across a save (a `TempoId` and a table, peer
-  of `sources`). Runtime sharing needs no id — objects are references — so that
-  half waits on what a document is, and nothing else waits on it.
+  What this made possible rather than what it broke: `TimeUnit::to_beats`
+  stopped converting with a scalar (closed the same day, in the crate's plan),
+  and the map still needs an **identity** — its own entry below, since a
+  pending item filed inside a closed one reads as done.
+
+- ⬜ **A tempo map has no identity, so a save cannot name one** *(found
+  2026-09-01, with the user, when the ownership question dissolved into this
+  one)*. The map serializes (`dumps`/`loads`, its breakpoints) and it is shared
+  by reference at run time, which is all a clock needs. What is missing is a
+  way for a **stored** thing to say *which* map it is written against: an id
+  and a table, the peer of `SourceId` and `sources` — the tree names material
+  by id and a table says where it is; the tree places in beats and a table
+  would say what a beat is.
+
+  Two things fall out of it and are the reason it is worth doing rather than
+  embedding a map wherever one is needed. **Sharing across a save**: two lanes
+  written against one tempo stay one after a round trip instead of becoming two
+  copies that drift. And **polytempo**: a canon at three tempi is three maps,
+  each named — unrepresentable while a piece can only have "the" map.
+
+  **The decision it waits on** is not ownership, which is settled (a map is a
+  value; nobody owns it). It is **where the table lives**, and that is the
+  open "what the *second* document is" question in
+  `crates/clausters-document/PLAN.md` — `Session` holds `sources` today, and
+  `Session` is the arrangement's. A tempo is not the arrangement's: a score has
+  one too. Nothing else waits on this.
 
 - ✅ **A tempo gesture can only be written at "now"** *(found 2026-08-31,
   writing the ten-clock example)*. `set_tempo` anchors at `beats()`, so a ramp
@@ -1979,6 +2000,80 @@ than being ticked here.
   **Related:** "A roll that sounds shows no cursor, and what can drive the line
   is a `Playhead`" (`clients/gui/PLAN.md`, Future directions) is the same
   question seen from the view.
+
+- ⬜ **The structures the client is actually built on, and which of them the
+  code does not name** *(written down 2026-09-01 after the tempo-map work,
+  because it is what every decision above was read against and it lived only in
+  a conversation)*. Not work: a map of the ground, so the next "where does this
+  belong" question is answered by looking rather than by re-deriving. `form` is
+  **one particular organization on top of these**, not a peer of them.
+
+  | Relation | Structure | Kind |
+  |---|---|---|
+  | machine ↔ seconds | `Timebase`, and `SampleClockModel` behind the sample one | a value (the fit) plus a reader |
+  | seconds ↔ beats | `TempoMap` | a value |
+  | the shape of one segment | `envshape`, and the four spellings above it | a value, *below* the map |
+  | beats → items, random access | `Timeline` | a value |
+  | beats → items, forward only | `Stream` / a pattern | a value |
+  | a position that advances | `TempoClock` | a **process** over the others |
+  | a position that does not | `Moment` | a value |
+
+  Three things this makes visible that no single entry did:
+
+  - **The axis is a chain**, machine ↔ seconds ↔ beats, and `TempoMap` owns
+    only its right half. `SampleClockModel` is a value of the *same shape* as
+    the map — an affine relation with a slope and an anchor — fitted rather
+    than written. Everything `lock_to` does is that left arrow.
+  - **The beat axis has two structures, not one**, and the difference is
+    random access against forward-only. The vocabulary already names it
+    (generated element against generator element) and the open entry about a
+    roll that sounds showing no cursor is its consequence: a `Playhead` has a
+    position and a pattern player does not.
+  - **`TempoClock` is the only process here.** Everything else is a value, and
+    values are shared, saved, compared and read with nothing running. That is
+    the sentence that dissolved the tempo-ownership question, and it is the one
+    worth applying first to the next one.
+
+- ⬜ **A tempo map and an automation are one structure read two ways** *(a
+  design, worked out with the user on 2026-09-01 while settling where a tempo
+  map lives; read with the entry below, which is the same question from the
+  drawing side)*. Tempo is a **parameter** of a composition, and this system
+  now has four representations of "a value over time": `Env` (segment durations
+  with a release node, what `EnvGen` consumes), the drawn `(t, v, shape,
+  curve)` points the wire speaks, `Automation` (an `Env` plus a placement,
+  discretized into a control buffer), and `TempoMap` (breakpoints with a shape
+  and an end tempo). Four spellings of one shape.
+
+  **What makes tempo look special is not its data.** Every other parameter is
+  `value(t)`, read *against* the time axis; tempo is `T(b)` where `b` is
+  defined *by* `T`. That self-reference is where all three of its peculiarities
+  come from — it caches the integral `M(b)`, which no other parameter needs; it
+  must **invert**, since `beats_at` is on a running clock's read path, which is
+  why `sin` and `wel` are refused though they integrate in closed form; and it
+  cannot be a placed node, since placing is in beats. None of that is in the
+  breakpoints.
+
+  So the shape: **one structure — breakpoints with shapes — and two readings**.
+  Read as a *value* it is sampled into a control buffer (an `Automation`); read
+  as the *axis* it is integrated and inverted (a `TempoMap`). The restricted
+  shape alphabet then sits where it belongs, on the reading rather than on the
+  data: the same curve is legal for a filter sweep and refused for a tempo, and
+  `Shape::from_parts` already refuses exactly that way. `envshape` is the
+  segment math both would share and already exists.
+
+  What it would buy, in order of weight: a score's tempo marking and an
+  arrangement's tempo lane become one type (a *rit.* over four bars **is**
+  breakpoints with a shape), so the notation track does not reimplement it;
+  the entry below closes, since `Env` stops being asked to be a storage format
+  and goes back to being what the server consumes; and one editor draws and
+  edits both.
+
+  Two things to measure rather than assume. `beats_at` is on the read path, so
+  if the stored form is breakpoints and the integral is derived, every edit
+  rebuilds it — a prefix sum of closed forms, cheap, but it wants a number. And
+  the name `Curve` is **taken** inside `tempomap.rs` for the shape *between*
+  two breakpoints; the whole-list type needs its own, which is the kind of
+  decision that ends up in three books, so it is not made here.
 
 - ⬜ **A drawn curve is a list of points, and `Env` is an envelope for `EnvGen`**
   *(named 2026-08-30 by the user, sizing what a general curve editor would need)*.
