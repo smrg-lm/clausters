@@ -353,8 +353,9 @@ export class Log {
 
     /**
      * Opens a log. `budget` is how many entries it keeps before the oldest
-     * falls off and `spillAbove` how many `f32` values a sample payload must
-     * reach before it leaves the log; either as 0 takes the crate's default.
+     * falls off and `spillAbove` how many bytes a payload must reach,
+     * serialized, before it leaves the log; either as 0 takes the crate's
+     * default.
      */
     static async open(budget = 0, spillAbove = 0): Promise<Log> {
         await loadCore();

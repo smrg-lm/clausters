@@ -104,9 +104,10 @@ fn with_log<T>(h: *mut FfiLog, default: T, f: impl FnOnce(&mut Log) -> T) -> T {
 }
 
 /// A new log. `budget` is how many entries it keeps before the oldest falls off
-/// (0 takes the default), `spill_above` how many `f32` values a sample payload
-/// must reach before it leaves the log for the spill store (0 takes the
-/// default).
+/// (0 takes the default), `spill_above` how many **bytes** a payload must
+/// reach, serialized, before it leaves the log for the spill store (0 takes the
+/// default). It is a byte count rather than a sample count because the pile
+/// holds payloads it does not read: the size it can measure is the payload's.
 ///
 /// The store is **memory**. A file-backed one is a caller's to supply in Rust
 /// (the `Spill` trait) and is not reachable from here yet — see the crate's

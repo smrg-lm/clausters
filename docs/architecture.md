@@ -531,17 +531,37 @@ reasoning:
   an edit-back payload is absolute *and* whole, so applying a stale one drops
   whatever arrived in between.
 
-`log` is undo, and it sits here rather than in the host for the reason the host
-kept fighting: a view's log sees only the gestures that view made, so a script,
-a second editor or a re-render leaves it describing a document that moved on.
-Its one asymmetry is worth knowing before you read it — **going back is always
-data** (undoing a normalize is the old samples, and no algorithm reconstructs
-them) while **going forward need not be**, since a deterministic operation can
-store its parameters and be re-run. That is only possible with the log beside
-the document, because the owner has the algorithm and the host never did. Bulk
-inverses leave through a `Spill` store behind a trait (memory in a page, a
-temporary directory natively), content-addressed so an undo/redo pair naming the
-same span holds one copy.
+Undo is two modules, and the split is the interesting part. **`history` is the
+pile, and it knows no vocabulary at all** — not even the arrangement's. One
+`History` is one *editing context*: the structures registered in it, one ordered
+list of entries over them, and one cursor. That is what lets it serve the three
+shapes an editor actually has — a structure the client built with no composition
+behind it (a curve, a buffer, a roll) has a working undo with no `Document`
+anywhere; an application composing several editable views registers them all in
+one history, and the interleaved order its undo walks *is* the list; and two
+views of one structure are two views of one history, which is the arrangement
+the whole module exists to make the only expressible one. An entry's payload is
+therefore an `Opaque` and each of its legs names its structure, so a caller
+routes what comes back to whatever reads that vocabulary. What decides what
+shares a history is which history a structure was registered in, never which
+view is looking at it: a structure belongs to exactly one, and a history refuses
+an entry naming an identity it did not mint.
+
+The alternative — a pile per structure, and a view filtering one shared order
+down to what it shows — is *selective undo*, and it writes states nobody was in.
+
+**`log` is that pile's arrangement-shaped face**: a `Log` is a `History` with one
+structure in it, stating its halves as `Intent`s. It sits here rather than in the
+host for the reason the host kept fighting: a view's log sees only the gestures
+that view made, so a script, a second editor or a re-render leaves it describing
+a document that moved on. Its one asymmetry is worth knowing before you read it —
+**going back is always data** (undoing a normalize is the old samples, and no
+algorithm reconstructs them) while **going forward need not be**, since a
+deterministic operation can store its parameters and be re-run. That is only
+possible with the log beside the document, because the owner has the algorithm
+and the host never did. Bulk payloads leave through a `Spill` store behind a
+trait (memory in a page, a temporary directory natively), content-addressed so an
+undo/redo pair naming the same span holds one copy.
 
 The wire the crate never touches is `docs/gui-protocol.md`: the host produces
 intents from gestures and draws what comes back, and the crate knows no widget.

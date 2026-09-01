@@ -7861,3 +7861,53 @@ too.
 just fixed: when "who owns X" has no comfortable answer, check whether X is a
 value. A value has no owner — it has holders, an identity so a save can name
 it, and a serialized form. Only a process has an owner.
+
+## An undo history belongs to an editing context, and the context is one pile
+
+An undo stack belongs to the data, not to the view: two windows over one
+composition must share a history, or stepping one of them reverts across the
+other's edits and writes a state nobody was in. That much was never in question
+— the crate placed its log beside the document for exactly that reason. What was
+open is the shape one level up, once the requirement stopped being the
+arrangement's alone: a client builds a structure of its own (a curve, a buffer, a
+roll), edits it in a view and reads it back; and an application composes several
+editable views whose history is the interleaving of what was done in each.
+
+Two shapes answer that, and they are not equivalent.
+
+**A pile per structure, plus a counter to merge them.** Each structure keeps its
+own linearity, and a view holding several walks them interleaved by a
+session-wide sequence number. It is the obvious generalization and it is the one
+we rejected. A view that filters one shared order down to the structures *it*
+shows is doing **selective undo**: inverting an entry that touched A and B while
+a later entry over B still stands. That is precisely the failure the whole
+mechanism exists to remove, reintroduced by the mechanism itself. A history is
+one order or it is not a history.
+
+**One pile per editing context**, which is what shipped. A `History` holds the
+structures registered in it, one ordered list of entries over them, and one
+cursor. An independent structure is a history with one structure in it; a
+composed application is a history with several, and the interleaved order *is*
+the list, with no counter and no merge; two views of one structure are two views
+of one history. What decides what shares a history is which history a structure
+was registered in — never which window is looking at it — so a structure belongs
+to exactly one, and a history refuses an entry naming an identity it did not
+mint.
+
+Two consequences worth stating, because both were argued and neither is free:
+
+- **The identity is minted by the history, not carried by the data.** The
+  arrangement has node ids only because the client stamps them; a curve a script
+  built has none, and inventing a stable one for it would be a second identity
+  system for a value that lives as long as a window. The minted handle is also
+  the read-back path: the identity that opened an editable view is the one its
+  edited state is read out through. It is process-wide rather than per-history,
+  because a per-history counter hands the second history's first structure the
+  same number as the first's, and the refusal above would then pass on exactly
+  the case it exists to catch.
+- **An entry's payload is opaque.** One pile over several domains cannot hold
+  any domain's type, so a payload is the same JSON the crate already carries a
+  leaf's configuration in, and each leg names its structure so a caller can route
+  it. The price is that an edit whose bulk follows the audio is held as JSON;
+  the ABI boundary already pays that, and it is what buys one pile instead of a
+  vocabulary the pile has to know.

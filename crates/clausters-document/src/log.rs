@@ -1,11 +1,17 @@
-//! Undo, beside the data it inverts.
+//! Undo for the arrangement, beside the data it inverts.
 //!
-//! The log lives with the document and not with the view, and that placement is
-//! the whole of this module's design. A GUI host holding its own log knows only
-//! the gestures *it* made — so a script editing the arrangement, a second
-//! editor, or a re-render would leave that log describing a document that had
-//! moved on, and undo would write a state nobody was ever in. Here the log sees
-//! every edit, because every edit comes through [`crate::intent::apply`].
+//! The pile itself is [`history`](crate::history), which knows no vocabulary at
+//! all. This module is its arrangement-shaped face: a [`Log`] is a
+//! [`History`](crate::history::History) with one structure registered in it, and
+//! an [`Entry`] states its halves as [`Intent`]s rather than as opaque payloads.
+//! There is one implementation of the pile, and this is not a second one.
+//!
+//! The placement is the whole of the design. A GUI host holding its own log
+//! knows only the gestures *it* made — so a script editing the arrangement, a
+//! second editor, or a re-render would leave that log describing a document
+//! that had moved on, and undo would write a state nobody was ever in. Here the
+//! log sees every edit, because every edit comes through
+//! [`crate::intent::apply`].
 //!
 //! # An entry is a transaction, and its inverse is an ordinary intent
 //!
@@ -41,113 +47,29 @@
 //! A sample write's inverse is the span it overwrote, which is the one thing
 //! here whose size follows the audio rather than the parameters. Above a
 //! threshold it goes to a [`Spill`] store — content-addressed, so an undo/redo
-//! pair that names the same bytes holds one copy — and the intent kept in the
-//! log carries an empty payload until [`Log::undo`] puts it back. The store is
-//! a trait because where it belongs follows the deployment (a temporary
-//! directory natively, memory in a page), and [`MemorySpill`] is the one the
-//! crate ships.
+//! pair that names the same bytes holds one copy. See
+//! [`history`](crate::history) for the mechanism; what is arrangement-specific
+//! is only which edit gets big.
 
-use std::collections::HashMap;
-
+use crate::history::{self, History, StructureId};
 use crate::intent::{Against, Intent, Outcome, Rules, current};
 use crate::{Document, Opaque};
 
-/// A blob in a [`Spill`] store, named by its content.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct SpillId(pub u64);
+pub use crate::history::{DEFAULT_BUDGET, DEFAULT_SPILL_ABOVE, MemorySpill, Spill, SpillId};
 
-/// Somewhere to put an inverse whose content is data rather than parameters.
+/// The domain name a document's structure is registered under.
 ///
-/// Content-addressed: [`Spill::put`] of the same bytes twice returns the same
-/// id and holds one copy, which is what keeps an undo/redo pair — the same span
-/// named from both sides — from doubling. Each `put` takes a reference and each
-/// [`Spill::release`] drops one, so a store is free to discard a blob once the
-/// log has forgotten it.
-pub trait Spill {
-    /// Store these bytes and take a reference to them.
-    fn put(&mut self, bytes: &[u8]) -> SpillId;
-    /// Read them back, or `None` if the store has lost them.
-    fn get(&self, id: SpillId) -> Option<Vec<u8>>;
-    /// Drop one reference.
-    fn release(&mut self, id: SpillId);
-}
+/// The arrangement's vocabulary is [`Intent`], and this is what a caller
+/// routing a history's payloads matches on to know it is holding one.
+pub const TREE: &str = "tree";
 
-/// The store the crate ships: blobs in memory, refcounted.
+/// One move in the forward direction, in the arrangement's vocabulary.
 ///
-/// What a page uses, and what a test uses. A native deployment that wants a
-/// temporary directory implements [`Spill`] over one — the trait exists so that
-/// choice is not the crate's, which has no business picking a directory policy.
-#[derive(Debug, Default)]
-pub struct MemorySpill {
-    blobs: HashMap<u64, (Vec<u8>, u32)>,
-}
-
-impl MemorySpill {
-    /// An empty store.
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// How many distinct blobs are held — what a budget test watches.
-    pub fn len(&self) -> usize {
-        self.blobs.len()
-    }
-
-    /// Whether nothing is held.
-    pub fn is_empty(&self) -> bool {
-        self.blobs.is_empty()
-    }
-}
-
-impl Spill for MemorySpill {
-    fn put(&mut self, bytes: &[u8]) -> SpillId {
-        // FNV-1a, so the crate carries no hash dependency for something whose
-        // only job is to make identical payloads land on the same slot.
-        let mut key = 0xcbf2_9ce4_8422_2325u64;
-        for byte in bytes {
-            key ^= u64::from(*byte);
-            key = key.wrapping_mul(0x1000_0000_01b3);
-        }
-        // Probe rather than trust the hash: a collision would silently hand
-        // back somebody else's samples, which is a corrupted undo.
-        loop {
-            match self.blobs.get_mut(&key) {
-                Some((held, refs)) if held == bytes => {
-                    *refs += 1;
-                    return SpillId(key);
-                }
-                Some(_) => key = key.wrapping_add(1),
-                None => {
-                    self.blobs.insert(key, (bytes.to_vec(), 1));
-                    return SpillId(key);
-                }
-            }
-        }
-    }
-
-    fn get(&self, id: SpillId) -> Option<Vec<u8>> {
-        self.blobs.get(&id.0).map(|(bytes, _)| bytes.clone())
-    }
-
-    fn release(&mut self, id: SpillId) {
-        if let Some((_, refs)) = self.blobs.get_mut(&id.0) {
-            *refs -= 1;
-            if *refs == 0 {
-                self.blobs.remove(&id.0);
-            }
-        }
-    }
-}
-
-/// One move in the forward direction.
-///
-/// Only the forward direction has two shapes: see the module docs on why going
-/// back is always data.
-///
-/// On the wire it is externally tagged — `{"edit": <intent>}`,
-/// `{"recompute": <params>}` — rather than internally, because [`Intent`] is
-/// already internally tagged on `"intent"` and two tags in one object is how a
-/// format grows a bug nobody can read.
+/// [`history::Step`] with an [`Intent`] in place of the opaque payload, and the
+/// same wire shape: externally tagged — `{"edit": <intent>}`,
+/// `{"recompute": <params>}` — because [`Intent`] is already internally tagged
+/// on `"intent"` and two tags in one object is how a format grows a bug nobody
+/// can read.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Step {
@@ -169,23 +91,48 @@ impl Step {
             Step::Recompute(_) => None,
         }
     }
+
+    fn generic(&self) -> history::Step {
+        match self {
+            Step::Edit(intent) => history::Step::Edit(payload(intent)),
+            Step::Recompute(params) => history::Step::Recompute(params.clone()),
+        }
+    }
+
+    fn typed(step: history::Step) -> Option<Step> {
+        match step {
+            history::Step::Edit(payload) => intent_of(&payload).map(Step::Edit),
+            history::Step::Recompute(params) => Some(Step::Recompute(params)),
+        }
+    }
 }
 
-/// One half of a change, with any bulk payload lifted out of it.
-#[derive(Debug, Clone, PartialEq)]
-struct Half {
-    step: Step,
-    blob: Option<SpillId>,
+/// An intent as the pile carries it. Total: every [`Intent`] is serde data.
+fn payload(intent: &Intent) -> Opaque {
+    Opaque(serde_json::to_value(intent).unwrap_or(serde_json::Value::Null))
+}
+
+/// The intent a payload holds, or `None` if it will not read as one — which
+/// only a payload some other domain wrote can be.
+fn intent_of(payload: &Opaque) -> Option<Intent> {
+    serde_json::from_value(payload.0.clone()).ok()
+}
+
+/// What makes two edits *the same thing done the same way*: the kind of edit
+/// and the node it names. The pile cannot compute it — that is a sentence in
+/// this vocabulary — so an entry carries it.
+fn coalesce_key(step: &Step) -> Option<String> {
+    let intent = step.intent()?;
+    let kind = match intent {
+        Intent::Place { .. } => "place",
+        Intent::Configure { .. } => "configure",
+        Intent::SetMembers { .. } => "setmembers",
+        Intent::WriteSamples { .. } => "writesamples",
+    };
+    Some(format!("{kind}:{}", intent.node().0))
 }
 
 /// A single reversible edit: how to redo it, and how to undo it.
-#[derive(Debug, Clone, PartialEq)]
-struct Change {
-    forward: Half,
-    backward: Half,
-}
-
-/// One transaction in the log: a gesture, and what it takes to reverse it.
 ///
 /// The unit is the **gesture**, not the intent, because that is what a person
 /// means by "the last thing I did" — and because one gesture already produces
@@ -200,7 +147,7 @@ pub struct Entry {
     /// instead of two hundred. The caller decides when a run is continuous,
     /// because only the caller knows where the hand stopped.
     pub coalesce: bool,
-    changes: Vec<Change>,
+    changes: Vec<(Step, Intent)>,
 }
 
 impl Entry {
@@ -209,16 +156,7 @@ impl Entry {
         Self {
             label: label.into(),
             coalesce: false,
-            changes: vec![Change {
-                forward: Half {
-                    step: forward,
-                    blob: None,
-                },
-                backward: Half {
-                    step: Step::Edit(backward),
-                    blob: None,
-                },
-            }],
+            changes: vec![(forward, backward)],
         }
     }
 
@@ -232,16 +170,7 @@ impl Entry {
     /// Adds another edit to the same transaction. Applied in order forward, in
     /// reverse order backward.
     pub fn and(mut self, forward: Step, backward: Intent) -> Self {
-        self.changes.push(Change {
-            forward: Half {
-                step: forward,
-                blob: None,
-            },
-            backward: Half {
-                step: Step::Edit(backward),
-                blob: None,
-            },
-        });
+        self.changes.push((forward, backward));
         self
     }
 
@@ -255,58 +184,54 @@ impl Entry {
         self.changes.is_empty()
     }
 
-    /// Whether this entry and `other` touch the same nodes the same way — the
-    /// test for merging a continuing entry into the one before it.
-    fn matches(&self, other: &Entry) -> bool {
-        self.changes.len() == other.changes.len()
-            && self
-                .changes
-                .iter()
-                .zip(&other.changes)
-                .all(|(a, b)| same_shape(&a.forward.step, &b.forward.step))
-    }
-}
-
-fn same_shape(a: &Step, b: &Step) -> bool {
-    match (a, b) {
-        (Step::Edit(a), Step::Edit(b)) => {
-            a.node() == b.node() && std::mem::discriminant(a) == std::mem::discriminant(b)
+    /// This entry as the pile holds it: every leg over the one structure a
+    /// [`Log`] has, each carrying the key that decides a merge.
+    fn generic(&self, structure: StructureId) -> history::Entry {
+        let mut legs = self.changes.iter();
+        // An empty entry is refused by `History::record`, so the fold below
+        // needs a first leg and this is where that is decided.
+        let Some((forward, backward)) = legs.next() else {
+            return history::Entry::new(
+                self.label.clone(),
+                structure,
+                history::Step::Edit(Opaque::none()),
+                Opaque::none(),
+            );
+        };
+        let mut entry =
+            history::Entry::new(&self.label, structure, forward.generic(), payload(backward));
+        if let Some(key) = coalesce_key(forward) {
+            entry = entry.keyed(key);
         }
-        // A recompute carries an opaque payload the crate cannot compare
-        // meaningfully, and merging two operations into one is the caller's
-        // decision anyway. So it never coalesces.
-        _ => false,
+        for (forward, backward) in legs {
+            entry = entry.and(structure, forward.generic(), payload(backward));
+            if let Some(key) = coalesce_key(forward) {
+                entry = entry.keyed(key);
+            }
+        }
+        if self.coalesce {
+            entry.continuing()
+        } else {
+            entry
+        }
     }
 }
 
 /// The undo history of one document.
 ///
-/// Entries in the order they happened, plus a cursor: everything before it has
-/// been applied, everything at or after it has been undone and is waiting to be
-/// redone. Recording a new entry drops whatever the cursor was standing in
-/// front of, which is what makes a new edit after an undo a fork rather than a
-/// corruption.
+/// A [`History`] with one structure registered in it, read in the arrangement's
+/// vocabulary. Two views of one document share a `Log`; a context holding
+/// *several* editable structures registers them in a `History` directly, which
+/// is where the general shape is.
 pub struct Log {
-    entries: Vec<Entry>,
-    cursor: usize,
-    budget: usize,
-    spill_above: usize,
-    spill: Box<dyn Spill>,
+    history: History,
+    structure: StructureId,
 }
-
-/// How many entries a log keeps before the oldest starts falling off.
-pub const DEFAULT_BUDGET: usize = 256;
-
-/// Sample payloads at or above this many values go to the spill store rather
-/// than staying in the log. One kibibyte of `f32`.
-pub const DEFAULT_SPILL_ABOVE: usize = 256;
 
 impl std::fmt::Debug for Log {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Log")
-            .field("entries", &self.entries.len())
-            .field("cursor", &self.cursor)
-            .field("budget", &self.budget)
+            .field("entries", &self.history.len())
             .finish_non_exhaustive()
     }
 }
@@ -320,48 +245,56 @@ impl Default for Log {
 impl Log {
     /// An empty log spilling to memory.
     pub fn new() -> Self {
-        Self::with_spill(Box::new(MemorySpill::new()))
+        Self::over(History::new())
     }
 
     /// An empty log over a store of the caller's own.
     pub fn with_spill(spill: Box<dyn Spill>) -> Self {
-        Self {
-            entries: Vec::new(),
-            cursor: 0,
-            budget: DEFAULT_BUDGET,
-            spill_above: DEFAULT_SPILL_ABOVE,
-            spill,
-        }
+        Self::over(History::with_spill(spill))
+    }
+
+    /// A log over a history of the caller's own, registering the document in
+    /// it.
+    pub fn over(mut history: History) -> Self {
+        let structure = history.register(TREE);
+        Self { history, structure }
     }
 
     /// Keeps at most `budget` entries, dropping the oldest past that.
     pub fn budget(mut self, budget: usize) -> Self {
-        self.budget = budget.max(1);
+        self.history = self.history.budget(budget);
         self
     }
 
-    /// Spills sample payloads of at least this many values.
-    pub fn spill_above(mut self, values: usize) -> Self {
-        self.spill_above = values;
+    /// Spills a payload of at least this many serialized **bytes**.
+    pub fn spill_above(mut self, bytes: usize) -> Self {
+        self.history = self.history.spill_above(bytes);
         self
+    }
+
+    /// The pile this log is a face of, and the structure the document is
+    /// registered as — what a caller composing several editable structures in
+    /// one context reaches for.
+    pub fn history(&self) -> &History {
+        &self.history
+    }
+
+    /// The pile, to record over more than the document. See [`Log::history`].
+    pub fn history_mut(&mut self) -> &mut History {
+        &mut self.history
+    }
+
+    /// The document's identity within this history.
+    pub fn structure(&self) -> StructureId {
+        self.structure
     }
 
     /// Records a transaction, dropping anything waiting to be redone.
-    pub fn record(&mut self, mut entry: Entry) {
+    pub fn record(&mut self, entry: Entry) {
         if entry.is_empty() {
             return;
         }
-        self.forget_redo();
-        for change in &mut entry.changes {
-            lift(&mut change.forward, self.spill_above, self.spill.as_mut());
-            lift(&mut change.backward, self.spill_above, self.spill.as_mut());
-        }
-        if entry.coalesce && self.merge(&entry) {
-            return;
-        }
-        self.entries.push(entry);
-        self.cursor = self.entries.len();
-        self.enforce_budget();
+        self.history.record(entry.generic(self.structure));
     }
 
     /// What an undo *would* hand back, without moving the cursor.
@@ -372,27 +305,23 @@ impl Log {
     /// sizing call would undo twice and hand back the second answer. Inside
     /// Rust, [`Log::undo`] is the two together and is what you want.
     pub fn peek_undo(&self) -> Option<Vec<Intent>> {
-        let entry = self.entries.get(self.cursor.checked_sub(1)?)?;
-        let mut out = Vec::with_capacity(entry.changes.len());
-        for change in entry.changes.iter().rev() {
-            // A backward half is always an edit -- `Entry`'s constructors take
-            // an `Intent` for it, so `Recompute` cannot get in here.
-            if let Step::Edit(intent) = restore(&change.backward, self.spill.as_ref()) {
-                out.push(intent);
-            }
-        }
-        Some(out)
+        Some(
+            self.history
+                .peek_undo()?
+                .iter()
+                .filter_map(|(_, payload)| intent_of(payload))
+                .collect(),
+        )
     }
 
     /// What a redo *would* hand back, without moving the cursor. See
     /// [`Log::peek_undo`].
     pub fn peek_redo(&self) -> Option<Vec<Step>> {
-        let entry = self.entries.get(self.cursor)?;
         Some(
-            entry
-                .changes
-                .iter()
-                .map(|change| restore(&change.forward, self.spill.as_ref()))
+            self.history
+                .peek_redo()?
+                .into_iter()
+                .filter_map(|(_, step)| Step::typed(step))
                 .collect(),
         )
     }
@@ -400,21 +329,13 @@ impl Log {
     /// Moves the cursor back one entry, if it can. The commit half of
     /// [`Log::peek_undo`].
     pub fn step_back(&mut self) -> bool {
-        let can = self.can_undo();
-        if can {
-            self.cursor -= 1;
-        }
-        can
+        self.history.step_back()
     }
 
     /// Moves the cursor forward one entry, if it can. The commit half of
     /// [`Log::peek_redo`].
     pub fn step_forward(&mut self) -> bool {
-        let can = self.can_redo();
-        if can {
-            self.cursor += 1;
-        }
-        can
+        self.history.step_forward()
     }
 
     /// Undoes the last thing done: the inverses of the entry before the cursor,
@@ -443,150 +364,40 @@ impl Log {
 
     /// What an undo would be called, for a menu.
     pub fn undo_label(&self) -> Option<&str> {
-        self.entries
-            .get(self.cursor.checked_sub(1)?)
-            .map(|e| e.label.as_str())
+        self.history.undo_label()
     }
 
     /// What a redo would be called.
     pub fn redo_label(&self) -> Option<&str> {
-        self.entries.get(self.cursor).map(|e| e.label.as_str())
+        self.history.redo_label()
     }
 
     /// Whether there is anything to undo.
     pub fn can_undo(&self) -> bool {
-        self.cursor > 0
+        self.history.can_undo()
     }
 
     /// Whether there is anything to redo.
     pub fn can_redo(&self) -> bool {
-        self.cursor < self.entries.len()
+        self.history.can_redo()
     }
 
     /// How many entries are held.
     pub fn len(&self) -> usize {
-        self.entries.len()
+        self.history.len()
     }
 
     /// Whether the history is empty.
     pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
+        self.history.is_empty()
     }
 
     /// Forgets everything, releasing what was spilled — what closing a document
     /// or loading another one leaves behind. A history of edits to a document
     /// that is no longer open inverts nothing.
     pub fn clear(&mut self) {
-        let entries = std::mem::take(&mut self.entries);
-        for entry in entries {
-            self.release(&entry);
-        }
-        self.cursor = 0;
+        self.history.clear();
     }
-
-    fn merge(&mut self, entry: &Entry) -> bool {
-        let Some(last) = self.entries.last_mut() else {
-            return false;
-        };
-        if !last.matches(entry) {
-            return false;
-        }
-        // The merged entry keeps the **oldest** inverse and the **newest**
-        // forward, which is what makes one undo of a hundred small adjustments
-        // land where the run started rather than one step back into it.
-        let mut released = Vec::new();
-        for (old, new) in last.changes.iter_mut().zip(&entry.changes) {
-            if let Some(id) = old.forward.blob.replace_with(new.forward.blob) {
-                released.push(id);
-            }
-            old.forward.step = new.forward.step.clone();
-            if let Some(id) = new.backward.blob {
-                released.push(id);
-            }
-        }
-        last.label = entry.label.clone();
-        for id in released {
-            self.spill.release(id);
-        }
-        true
-    }
-
-    fn forget_redo(&mut self) {
-        if self.cursor >= self.entries.len() {
-            return;
-        }
-        let dropped: Vec<Entry> = self.entries.drain(self.cursor..).collect();
-        for entry in dropped {
-            self.release(&entry);
-        }
-    }
-
-    fn enforce_budget(&mut self) {
-        while self.entries.len() > self.budget {
-            let oldest = self.entries.remove(0);
-            self.release(&oldest);
-            self.cursor = self.cursor.saturating_sub(1);
-        }
-    }
-
-    fn release(&mut self, entry: &Entry) {
-        for change in &entry.changes {
-            for blob in [change.forward.blob, change.backward.blob]
-                .into_iter()
-                .flatten()
-            {
-                self.spill.release(blob);
-            }
-        }
-    }
-}
-
-/// Swaps an `Option<SpillId>` in place, handing back what was there.
-trait ReplaceWith {
-    fn replace_with(&mut self, value: Option<SpillId>) -> Option<SpillId>;
-}
-
-impl ReplaceWith for Option<SpillId> {
-    fn replace_with(&mut self, value: Option<SpillId>) -> Option<SpillId> {
-        std::mem::replace(self, value)
-    }
-}
-
-/// Moves a sample payload out of a half and into the store, when it is big
-/// enough to be worth it.
-fn lift(half: &mut Half, threshold: usize, spill: &mut dyn Spill) {
-    let Step::Edit(Intent::WriteSamples { values, .. }) = &mut half.step else {
-        return;
-    };
-    if values.len() < threshold {
-        return;
-    }
-    let mut bytes = Vec::with_capacity(values.len() * 4);
-    for value in values.iter() {
-        bytes.extend_from_slice(&value.to_le_bytes());
-    }
-    half.blob = Some(spill.put(&bytes));
-    values.clear();
-}
-
-/// Puts a spilled payload back, giving the caller a step it can act on.
-fn restore(half: &Half, spill: &dyn Spill) -> Step {
-    let mut step = half.step.clone();
-    let Some(id) = half.blob else {
-        return step;
-    };
-    let Step::Edit(Intent::WriteSamples { values, .. }) = &mut step else {
-        return step;
-    };
-    if let Some(bytes) = spill.get(id) {
-        *values = bytes
-            .as_chunks::<4>()
-            .0
-            .iter()
-            .map(|c| f32::from_le_bytes(*c))
-            .collect();
-    }
-    step
 }
 
 /// The edit that would put this node back the way it is — the inverse of

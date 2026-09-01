@@ -11,4 +11,10 @@ description = "The Clausters document: the single authoritative model of a compo
 # what carries a leaf's configuration, which the document transports and never
 # interprets -- see the crate docs on why a leaf is opaque.
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+# `float_roundtrip`, and it is not optional: a payload that leaves the pile for
+# the spill store is written as JSON and read back, and serde_json's default
+# parser is a fast approximation -- so a span of samples came back a few ulps
+# from where it went, and an undo wrote values nobody had ever had. The same
+# parser reads every document a session saved, so exactness is the format's
+# concern before it is the history's.
+serde_json = { version = "1", features = ["float_roundtrip"] }

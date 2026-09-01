@@ -1428,7 +1428,7 @@ pub struct JsLog(clausters_document::Log);
 #[wasm_bindgen(js_class = Log)]
 impl JsLog {
     /// A new log. `budget` is how many entries it keeps before the oldest falls
-    /// off and `spillAbove` how many `f32` values a sample payload must reach
+    /// off and `spillAbove` how many **bytes** a payload must reach, serialized,
     /// before it leaves the log; either as 0 takes the crate's default.
     #[wasm_bindgen(constructor)]
     pub fn new(budget: usize, spill_above: usize) -> JsLog {

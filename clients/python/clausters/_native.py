@@ -1022,8 +1022,9 @@ class Log:
     Args:
         budget: how many entries to keep before the oldest falls off. ``None``
             takes the crate's default.
-        spill_above: how many ``f32`` values a sample payload must reach before
-            it leaves the log for the spill store. ``None`` takes the default.
+        spill_above: how many **bytes** a payload must reach, serialized,
+            before it leaves the log for the spill store. ``None`` takes the
+            default.
 
     Usage::
 

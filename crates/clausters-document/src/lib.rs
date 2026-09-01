@@ -49,6 +49,7 @@
 //! client, so no edit can leave them stale.
 
 pub mod clipboard;
+pub mod history;
 pub mod intent;
 pub mod log;
 pub mod resolve;
@@ -56,6 +57,7 @@ pub mod selection;
 pub mod session;
 
 pub use clipboard::{Clipboard, Content};
+pub use history::{History, StructureId};
 pub use intent::{Against, Intent, Outcome, Rules, apply};
 pub use log::{Entry, Log, MemorySpill, Spill, Step, apply_logged, inverse_of};
 pub use resolve::{Mapping, Resolved, Unit, resolve, resolve_node};
