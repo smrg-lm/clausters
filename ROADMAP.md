@@ -85,10 +85,9 @@ leaves no line here, because its plan's checkbox and the commit already carry it
   what a naive checker costs (it reports 59 of the 61, nearly all platform
   noise) and what a usable one needs: the ordered call sequence plus a declared
   table of idiom pairs, which is what `docs/bindings.md` already does for the
-  ABI. **Related:** the same entry names a missing surface it turned up —
-  `hz_to_mel`/`hz_to_bark` are in the core and reach no public name in either
-  client, which is why one example goes through `_native`. That half is a fix
-  of its own and blocked by nothing.
+  ABI. *(The missing surface the same entry named is closed: `cpsmel`/`melcps`
+  and `cpsbark`/`barkcps` are public in both clients. The audit is what is
+  left.)*
 
 ## 2. Fixes that need a decision first
 

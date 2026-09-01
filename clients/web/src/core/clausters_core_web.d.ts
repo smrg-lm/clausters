@@ -538,6 +538,12 @@ export class TempoMap {
 export function bar(beats: number, quant: number): number;
 
 /**
+ * JS face: bark -> hertz, the analytic inverse of [`hz_to_bark`]. Spelled
+ * `barkcps`.
+ */
+export function bark_to_hz(bark: number): number;
+
+/**
  * The beat within its bar, in `[0, quant)`.
  */
 export function beat_in_bar(beats: number, quant: number): number;
@@ -619,6 +625,19 @@ export function engraveOptions(scale: number, page_width: number, extra?: string
 export function graph_bus_reserved(): Uint32Array;
 
 /**
+ * JS face: hertz -> **bark** (Traunmuller), the critical-band scale. Spelled
+ * `cpsbark`.
+ */
+export function hz_to_bark(hz: number): number;
+
+/**
+ * JS face: hertz -> **mel** (O'Shaughnessy), the perceptual frequency scale a
+ * spectrogram axis is labeled in. The client spells it `cpsmel`, following
+ * SuperCollider's `<from><to>` conversions.
+ */
+export function hz_to_mel(hz: number): number;
+
+/**
  * The default interpretation, as JSON — every number the reading depends on,
  * and the value an override starts from.
  *
@@ -665,6 +684,11 @@ export function map(op: string, clip: string, x: number, in_lo: number, in_hi: n
  * four, because the engraver normalizes whatever it loaded to MEI.
  */
 export function meiToSheet(mei: string): string;
+
+/**
+ * JS face: mel -> hertz, the exact inverse of [`hz_to_mel`]. Spelled `melcps`.
+ */
+export function mel_to_hz(mel: number): number;
 
 /**
  * MIDI 2.0 Clip File (SMF2CLIP) bytes from the same arguments, carrying note
@@ -881,6 +905,7 @@ export interface InitOutput {
     readonly __wbg_score_free: (a: number, b: number) => void;
     readonly __wbg_tempomap_free: (a: number, b: number) => void;
     readonly bar: (a: number, b: number) => number;
+    readonly bark_to_hz: (a: number) => number;
     readonly beat_in_bar: (a: number, b: number) => number;
     readonly beats_to_secs: (a: number, b: number, c: number, d: number) => number;
     readonly binary: (a: number, b: number, c: number, d: number) => [number, number, number];
@@ -897,6 +922,8 @@ export interface InitOutput {
     readonly document_version: (a: number) => bigint;
     readonly engraveOptions: (a: number, b: number, c: number, d: number) => [number, number];
     readonly graph_bus_reserved: () => [number, number];
+    readonly hz_to_bark: (a: number) => number;
+    readonly hz_to_mel: (a: number) => number;
     readonly interpretation: () => [number, number, number, number];
     readonly itemId: (a: number, b: number) => number;
     readonly lissajous: (a: number, b: number, c: number, d: number) => [number, number];
@@ -914,6 +941,7 @@ export interface InitOutput {
     readonly log_undoLabel: (a: number) => [number, number];
     readonly map: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => [number, number, number];
     readonly meiToSheet: (a: number, b: number) => [number, number, number, number];
+    readonly mel_to_hz: (a: number) => number;
     readonly midiWriteClip: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
     readonly midiWriteSmf: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
     readonly node_id_partition: (a: number) => [number, number, number];

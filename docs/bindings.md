@@ -52,10 +52,10 @@ thought about the other side", write `gap` — that is what it is for.
 | `clausters_core_stats` | `channel_stats` | `idiom` — the peak and RMS of one channel of an interleaved buffer; C writes the pair through an out pointer, wasm returns it as a two-element array |
 | `clausters_core_correlation` | `correlation` | |
 | `clausters_core_lissajous` | `lissajous` | |
-| `clausters_core_hz_to_mel` | — | **gap** — the perceptual axes a spectrogram labels |
-| `clausters_core_mel_to_hz` | — | **gap** — as above |
-| `clausters_core_hz_to_bark` | — | **gap** — as above |
-| `clausters_core_bark_to_hz` | — | **gap** — as above |
+| `clausters_core_hz_to_mel` | `hz_to_mel` | the perceptual axes a spectrogram labels. Both clients spell the pair `cpsmel`/`melcps`, following SuperCollider's `<from><to>` conversions (`midicps`, `cpsoct`) — the core keeps the `hz_to_*` names because that is what the GUI host's ruler calls |
+| `clausters_core_mel_to_hz` | `mel_to_hz` | |
+| `clausters_core_hz_to_bark` | `hz_to_bark` | as above, spelled `cpsbark`/`barkcps` |
+| `clausters_core_bark_to_hz` | `bark_to_hz` | |
 
 ## Time and the beat grid
 

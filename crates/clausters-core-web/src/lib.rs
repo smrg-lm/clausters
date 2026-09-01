@@ -34,6 +34,7 @@ use clausters_core::{
     peaks::MultiPyramid,
     registry::{self, NodeIdPartition, Registry},
     rng::Rng,
+    scale,
     tempoclock::{self, Scheduler},
     tempomap::{Curve, Extent, Shape, TempoMap},
 };
@@ -1005,6 +1006,38 @@ pub fn lissajous(left: &[f32], right: &[f32]) -> Vec<f32> {
         return Vec::new();
     }
     out.into_iter().flatten().collect()
+}
+
+/// JS face: hertz -> **mel** (O'Shaughnessy), the perceptual frequency scale a
+/// spectrogram axis is labeled in. The client spells it `cpsmel`, following
+/// SuperCollider's `<from><to>` conversions.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn hz_to_mel(hz: f64) -> f64 {
+    scale::hz_to_mel(hz)
+}
+
+/// JS face: mel -> hertz, the exact inverse of [`hz_to_mel`]. Spelled `melcps`.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn mel_to_hz(mel: f64) -> f64 {
+    scale::mel_to_hz(mel)
+}
+
+/// JS face: hertz -> **bark** (Traunmuller), the critical-band scale. Spelled
+/// `cpsbark`.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn hz_to_bark(hz: f64) -> f64 {
+    scale::hz_to_bark(hz)
+}
+
+/// JS face: bark -> hertz, the analytic inverse of [`hz_to_bark`]. Spelled
+/// `barkcps`.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn bark_to_hz(bark: f64) -> f64 {
+    scale::bark_to_hz(bark)
 }
 
 /// A built min/max peak pyramid, the JS face of

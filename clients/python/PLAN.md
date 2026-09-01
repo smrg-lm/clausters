@@ -1595,7 +1595,14 @@ work, where a pending item reads as done.)*
   grid, which both clients export; the mel/bark half exposed a **missing
   surface** — `hz_to_mel`/`hz_to_bark` are in the core but reach no public name
   in either client, which is why the script was going through `_native`. Written
-  down rather than improvised into the page.
+  down rather than improvised into the page. **That half is done**
+  *(2026-09-01)*: the four are `cpsmel`/`melcps` and `cpsbark`/`barkcps` in both
+  clients, following SuperCollider's `<from><to>` conversions rather than the
+  core's `hz_to_*`, which stays because it is what the host's ruler calls. They
+  are the one builtin family in **f64** — no UGen computes a mel, so there is no
+  f32 result to match — and the wasm binding grew the four exports the C ABI
+  already had, which closes four `gap` rows in `docs/bindings.md`. The pair
+  audit itself is what stays open.
 
 - ⬜ **The map is append-only, so a tempo gesture cannot be written before a
   change already planned** *(found 2026-08-31, testing the fix above)*.

@@ -46,6 +46,17 @@ def _unop(op, x):
     return _native.unary(op, float(x))
 
 
+def _scale(fn, x):
+    """One f64 core conversion over a scalar or a sequence.
+
+    Not `_unop`: these are plain core functions rather than entries in the
+    unary-op table, so there is no batched call to make and the loop is here.
+    """
+    if _is_seq(x):
+        return [fn(float(v)) for v in x]
+    return fn(float(x))
+
+
 def _binop(op, a, b):
     a_seq, b_seq = _is_seq(a), _is_seq(b)
     if not a_seq and not b_seq:
@@ -146,6 +157,39 @@ def dbamp(x): return _unop(UnaryOp.DBAMP, x)
 def ampdb(x): return _unop(UnaryOp.AMPDB, x)
 def octcps(x): return _unop(UnaryOp.OCTCPS, x)
 def cpsoct(x): return _unop(UnaryOp.CPSOCT, x)
+
+
+# ---- perceptual frequency scales (native, f64 -- not UnaryOps) ----
+#
+# The two scales a spectrogram's frequency axis is labeled in, named the way
+# SuperCollider names a conversion (``<from><to>``, hertz spelled ``cps``), so
+# they read beside ``midicps`` and ``cpsoct`` above. They are **not** members of
+# the server's unary-op table -- no UGen computes a mel -- so they come from
+# ``clausters_core::scale`` in **f64**, which is also what the GUI host's ruler
+# and the spectrogram shader read: a headless script gets the number the window
+# is drawing.
+
+def cpsmel(x):
+    """Hertz to **mel** (O'Shaughnessy): the perceptual pitch scale, ~1000 mel
+    at 1 kHz by construction and increasingly compressed above it."""
+    return _scale(_native.hz_to_mel, x)
+
+
+def melcps(x):
+    """Mel to hertz, the exact inverse of `cpsmel`. Negative input maps to 0."""
+    return _scale(_native.mel_to_hz, x)
+
+
+def cpsbark(x):
+    """Hertz to **bark** (Traunmuller): the critical-band scale, ~8.5 bark at
+    1 kHz. Zero hertz sits at ``-0.53``, which is the formula and not an error
+    -- the scale is invertible across it."""
+    return _scale(_native.hz_to_bark, x)
+
+
+def barkcps(x):
+    """Bark to hertz, the analytic inverse of `cpsbark`."""
+    return _scale(_native.bark_to_hz, x)
 
 
 # ---- range maps (native, f32 — SuperCollider's warp family) ----

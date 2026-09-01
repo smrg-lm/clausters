@@ -13,9 +13,13 @@
 // boundary stays flat: numbers in, numbers (or an array of them) out.
 
 import {
+    bark_to_hz as coreBarkToHz,
     binary as coreBinary,
     degree_to_midinote as coreDegreeToMidinote,
+    hz_to_bark as coreHzToBark,
+    hz_to_mel as coreHzToMel,
     map as coreMap,
+    mel_to_hz as coreMelToHz,
     unary as coreUnary,
 } from "../core/clausters_core_web.js";
 
@@ -156,6 +160,39 @@ export const dbamp = un("dbamp");
 export const ampdb = un("ampdb");
 export const octcps = un("octcps");
 export const cpsoct = un("cpsoct");
+
+// ---- perceptual frequency scales ----
+//
+// The two scales a spectrogram's frequency axis is labeled in, named the way
+// SuperCollider names a conversion (`<from><to>`, hertz spelled `cps`), so they
+// read beside `midicps` and `cpsoct` above. They are **not** members of the
+// server's unary-op table -- no UGen computes a mel -- so they come from
+// `clausters_core::scale` in **f64**, which is also what the GUI host's ruler
+// and the spectrogram shader read: a headless script gets the number the window
+// is drawing.
+
+const scaleFn =
+    (fn: (v: number) => number): UnaryFn =>
+    ((x: Num) => (isSeq(x) ? x.map(fn) : fn(x))) as UnaryFn;
+
+/**
+ * Hertz to **mel** (O'Shaughnessy): the perceptual pitch scale, ~1000 mel at
+ * 1 kHz by construction and increasingly compressed above it.
+ */
+export const cpsmel = scaleFn(coreHzToMel);
+
+/** Mel to hertz, the exact inverse of {@link cpsmel}. Negative input maps to 0. */
+export const melcps = scaleFn(coreMelToHz);
+
+/**
+ * Hertz to **bark** (Traunmuller): the critical-band scale, ~8.5 bark at 1 kHz.
+ * Zero hertz sits at `-0.53`, which is the formula and not an error -- the
+ * scale is invertible across it.
+ */
+export const cpsbark = scaleFn(coreHzToBark);
+
+/** Bark to hertz, the analytic inverse of {@link cpsbark}. */
+export const barkcps = scaleFn(coreBarkToHz);
 
 // ---- range maps (SuperCollider's warp family) ----
 //

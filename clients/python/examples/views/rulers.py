@@ -162,19 +162,20 @@ win.on_closed(lambda: globals().__setitem__("_closed", True))
 
 # %% [markdown]
 # ## The same math from the client
-# The grid the beats ruler draws and the perceptual scales the frequency ruler
-# uses are the same native-core functions the client exposes — a headless
-# script reads the identical numbers the GUI shows.
+# The grid the beats ruler draws (`bar`/`beat_in_bar`) and the perceptual
+# scales the frequency ruler uses (`cpsmel`/`cpsbark`, named the way
+# SuperCollider names a conversion) are the same native-core functions the
+# client exposes — a headless script reads the identical numbers the GUI
+# shows.
 
 # %%
-from clausters import _native  # noqa: E402  (mel/bark have no public spelling yet)
+from clausters.base.builtins import cpsbark, cpsmel  # noqa: E402
 from clausters.base.time import bar, beat_in_bar  # noqa: E402
 
 pos = 9.5  # beats
 print(f"beat {pos} on a {QUANT:.0f}-beat grid is bar "
       f"{int(bar(pos, QUANT)) + 1}, beat {beat_in_bar(pos, QUANT) + 1:g}")
-print(f"1 kHz is {_native.hz_to_mel(1000.0):.0f} mel, "
-      f"{_native.hz_to_bark(1000.0):.2f} bark")
+print(f"1 kHz is {cpsmel(1000.0):.0f} mel, {cpsbark(1000.0):.2f} bark")
 
 # %% [markdown]
 # ## Everything is also settable directly

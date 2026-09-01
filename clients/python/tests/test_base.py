@@ -58,6 +58,21 @@ def test_music_helpers():
     assert B.cpsoct(B.octcps(5.0)) == pytest.approx(5.0, abs=1e-4)
 
 
+def test_perceptual_scales_round_trip_and_take_a_sequence():
+    # `cpsmel`/`cpsbark` and their inverses: not unary ops, so f64 out of
+    # `clausters_core::scale` -- which is why the round trip is exact rather
+    # than approximate to f32.
+    _ffi_or_skip()
+    assert B.cpsmel(1000.0) == pytest.approx(1000.0, abs=0.1)
+    assert B.cpsbark(1000.0) == pytest.approx(8.53, abs=0.05)
+    assert B.melcps(B.cpsmel(440.0)) == pytest.approx(440.0)
+    assert B.barkcps(B.cpsbark(440.0)) == pytest.approx(440.0)
+    # zero hertz is -0.53 bark, the formula and not an error
+    assert B.cpsbark(0.0) == pytest.approx(-0.53, abs=1e-2)
+    # a sequence in, a sequence out, like every other builtin
+    assert B.cpsmel([100.0, 1000.0]) == pytest.approx([B.cpsmel(100.0), 1000.0], abs=0.1)
+
+
 def test_extended_ops_s3():
     # S3: the new opcodes reach the core and compute the expected values.
     _ffi_or_skip()
