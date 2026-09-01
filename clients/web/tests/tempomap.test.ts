@@ -10,6 +10,7 @@ import test from "node:test";
 
 import { TempoClock } from "../src/base/clock.ts";
 import { loadCore } from "../src/base/core.ts";
+import { Routine } from "../src/base/stream.ts";
 import { TempoMap } from "../src/base/time.ts";
 
 await loadCore();
@@ -74,4 +75,34 @@ test("a stored map is checked by the door that reads it", () => {
     for (const json of ["[]", '[{"beats":0.0,"tempo":0.0}]', "not json"]) {
         assert.equal(TempoMap.load(json), undefined, json);
     }
+});
+
+test("a gesture says where it is written", () => {
+    // A piece's tempo, written before any clock has run: `at` is the whole of
+    // what makes that possible from the clock's own verb.
+    const clock = new TempoClock(1.0);
+    clock.setTempo(2.0, { at: 8.0 });
+    clock.setTempo(4.0, { over: 4.0, at: 16.0, curve: "exponential" });
+    assert.equal(clock.beats2secs(8.0), 8.0);
+    assert.equal(clock.beats2secs(12.0), 10.0);
+    const beats = (JSON.parse(clock.map.dump()) as { beats: number }[]).map((p) => p.beats);
+    assert.deepEqual(beats, [0.0, 8.0, 16.0, 20.0]);
+});
+
+test("a gesture inside a routine is written at the routine's own beat", async () => {
+    // `beats()` is the paced beat and the routine's is the yield-exact one; a
+    // breakpoint at 3.00034 is inaudible and stays in the map forever. So a
+    // gesture made from inside a routine on this clock is written where the
+    // routine is -- exactly where its notes are.
+    const clock = new TempoClock(100.0); // fast, so the run is short
+    const written: number[] = [];
+    new Routine(function* () {
+        yield 3.0;
+        clock.setTempo(200.0);
+        const points = JSON.parse(clock.map.dump()) as { beats: number }[];
+        written.push(points[points.length - 1]!.beats);
+        yield 1.0;
+    }).play(clock);
+    await clock.run(0.2);
+    assert.deepEqual(written, [3.0]); // not 3.02, which is where beats() would be
 });

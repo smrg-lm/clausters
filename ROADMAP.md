@@ -77,15 +77,6 @@ Each is small, owned by its plan, and blocked by nothing.
 The section fills from section 3's review and empties again; a fix that lands
 leaves no line here, because its plan's checkbox and the commit already carry it.
 
-- ⬜ **A tempo gesture can only be written at "now"** *(`clients/python/PLAN.md`,
-  Found by use)*. `set_tempo` anchors at `beats()` and cannot be told where to
-  write, so a gesture asked for at beat 3 from inside a routine lands at
-  3.00034 — inaudible, and wrong for a map that is going to be saved. The
-  missing thing is an `at=` argument, not a second verb. **No longer waits on
-  anything**: what an explicit position *means* was settled with the truncating
-  rule that shipped on 2026-09-01 (a gesture says "from here on"), so the
-  argument is the mechanical half of a rule that already exists.
-
 - ⬜ **Nothing checks that a pair of examples makes the same calls, and a hand
   audit does not scale** *(`clients/python/PLAN.md`, Found by use)*. 61 Python
   examples have a page twin and the non-divergence rule says each pair is one

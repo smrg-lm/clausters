@@ -6,10 +6,13 @@ three facts that follow, and `clients/web/tests/tempomap.test.ts` asserts the
 same ones in the same order.
 """
 
+import json
+
 import pytest
 
 from clausters._native import TempoMap
 from clausters.base.clock import TempoClock
+from clausters.base.stream import Routine
 
 
 def test_every_clock_builds_its_own_map():
@@ -70,3 +73,33 @@ def test_a_stored_map_is_checked_by_the_door_that_reads_it():
     for json in ("[]", '[{"beats":0.0,"tempo":0.0}]', "not json"):
         with pytest.raises(ValueError):
             TempoMap.loads(json)
+
+
+def test_a_gesture_says_where_it_is_written():
+    # A piece's tempo, written before any clock has run: `at` is the whole of
+    # what makes that possible from the clock's own verb.
+    clock = TempoClock(1.0)
+    clock.set_tempo(2.0, at=8.0)
+    clock.set_tempo(4.0, over=4.0, at=16.0, curve="exponential")
+    assert clock.beats2secs(8.0) == 8.0
+    assert clock.beats2secs(12.0) == 10.0
+    assert [p["beats"] for p in json.loads(clock.map.dumps())] == [0.0, 8.0, 16.0, 20.0]
+
+
+def test_a_gesture_inside_a_routine_is_written_at_the_routines_own_beat():
+    # `beats()` is the paced beat and the routine's is the yield-exact one; a
+    # breakpoint at 3.00034 is inaudible and stays in the map forever. So a
+    # gesture made from inside a routine on this clock is written where the
+    # routine is -- exactly where its notes are.
+    clock = TempoClock(100.0)  # fast, so the run is short and the pacing drifts
+    written = []
+
+    def melody():
+        yield 3.0
+        clock.set_tempo(200.0)
+        written.append(json.loads(clock.map.dumps())[-1]["beats"])
+        yield 1.0
+
+    Routine(melody).play(clock)
+    clock.run(0.2)
+    assert written == [3.0]  # not 3.0004, which is where `beats()` would be

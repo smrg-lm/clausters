@@ -314,7 +314,24 @@ class TempoClock:
         absolute sample for ``/sched_at``."""
         return self._mono_start
 
-    def set_tempo(self, tempo, over=None, unit="beats", curve="linear"):
+    def _gesture_at(self):
+        """The beat a tempo gesture with no ``at`` is written at.
+
+        Inside a routine **on this clock**, the routine's own logical beat: the
+        yield-exact instant `Moment` already stamps on everything that wake
+        emits, so a tempo change made beside a note is written where the note
+        is. Anywhere else -- from the main thread, from another clock's routine
+        -- the clock's current beat, which is what "now" means there.
+        """
+        from .main import main
+
+        routine = main.current_routine
+        beat = getattr(routine, "_logical_beat", None)
+        if beat is not None and getattr(routine, "clock", None) is self:
+            return float(beat)
+        return self.beats()
+
+    def set_tempo(self, tempo, over=None, unit="beats", curve="linear", at=None):
         """**The tempo gesture**, from the beat the clock is on.
 
         With no ``over`` it is a **step**: the tempo changes from here, pinning
@@ -341,9 +358,21 @@ class TempoClock:
                 (``"exp"``) or a numeric curvature (0 is linear, positive starts
                 slow, negative starts fast). An envelope carries its own and
                 this is ignored.
+            at: the beat to write at. ``None`` is *here* — see below, which is
+                not quite the same as `beats`.
 
         A change is **recorded** rather than overwriting what came before, so
         the beats before it stay convertible afterwards.
+
+        **Where "here" is.** With no ``at``, a gesture made from inside a
+        routine on this clock is written at the routine's own **logical** beat —
+        the yield-exact instant every event of that wake already shares — and
+        anywhere else at `beats`. The two differ by however far the driver has
+        paced past the wake, which is inaudible and is not nothing: it is what
+        writes a breakpoint at 3.00034 instead of 3, and a map that will be
+        **saved as the piece's tempo** carries that forever. Pass ``at`` to say
+        where explicitly, in beats, which is also how a tempo is written for a
+        piece before any clock has run.
 
         **Against a map that was written ahead of the clock** — a piece's tempo
         track, a shared map, anything with breakpoints still in front of the
@@ -354,12 +383,12 @@ class TempoClock:
         ``clock.map = piece.map.copy()`` — adopting is authoring, forking is
         performing.
         """
-        at = self.beats()
-        # A gesture is anchored at "now", so anything the map still holds past
-        # this beat is a plan this gesture replaces. The map itself stays
-        # append-only -- refusing to go backwards is right for a value; saying
-        # "from here on" is the *gesture's* job, and it is the one thing that
-        # lets an RT change land on an NRT-written map.
+        at = self._gesture_at() if at is None else float(at)
+        # A gesture is anchored where it is written, so anything the map still
+        # holds past that beat is a plan this gesture replaces. The map itself
+        # stays append-only -- refusing to go backwards is right for a value;
+        # saying "from here on" is the *gesture's* job, and it is the one thing
+        # that lets an RT change land on an NRT-written map.
         self._map.truncate_from(at)
         levels = getattr(tempo, "levels", None)
         if levels is not None:

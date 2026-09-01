@@ -1782,7 +1782,7 @@ work, where a pending item reads as done.)*
   of `sources`). Runtime sharing needs no id — objects are references — so that
   half waits on what a document is, and nothing else waits on it.
 
-- ⬜ **A tempo gesture can only be written at "now"** *(found 2026-08-31,
+- ✅ **A tempo gesture can only be written at "now"** *(found 2026-08-31,
   writing the ten-clock example)*. `set_tempo` anchors at `beats()`, so a ramp
   asked for at beat 3 from inside a routine was written at 3.00034 — the
   real-time beat, not the routine's logical one. Inaudible, but a map that is
@@ -1791,6 +1791,22 @@ work, where a pending item reads as done.)*
   beat, and the clock's verb does not pass one on. The missing thing is an
   argument — `set_tempo(..., at=beat)` — and **not** a second verb: `set_tempo`
   absorbed `ramp_tempo` precisely so there would be one. Both clients.
+
+  **Fixed** *(2026-09-01)*, in both, and it turned out to be two things rather
+  than one. The argument is there: `at=` / `{ at }`, in beats, which is also
+  how a piece's tempo is written before any clock has run — and what the
+  gesture *means* at an explicit beat was already settled by the truncating
+  rule, so nothing had to be decided here.
+
+  The other half is the default, and it is the one that fixes the 3.00034 the
+  entry was actually about. With no `at`, a gesture made **from inside a
+  routine on this clock** is now written at the routine's own logical beat —
+  the yield-exact instant `Moment` already stamps on everything that wake emits
+  — rather than at the paced `beats()`. So a tempo change written beside a note
+  lands where the note is, which is the rule the rest of the client has always
+  followed. Anywhere else (the main thread, another clock's routine) it is
+  still `beats()`, which is what "now" means there. Measured in the test: at
+  100 bps, `beats()` at that wake reads 3.0214 and the routine reads 3.
 
 - ✅ **Three places call beats what is measured in seconds** *(found 2026-08-30
   by the user, from "el tiempo concreto o se mide en muestras o se mide en
