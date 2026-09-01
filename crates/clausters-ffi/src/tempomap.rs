@@ -4,7 +4,7 @@
 //! crosses: beats, seconds and tempos as `f64`, a curve as a small integer.
 //! There is one implementation of the integral, and every client calls it.
 
-use clausters_core::tempomap::{Curve, TempoMap};
+use clausters_core::tempomap::{Curve, Extent, Shape, TempoMap};
 
 /// A new map of one constant-tempo segment (beat 0 at second 0). A tempo that
 /// is not finite and positive falls back to 1.0. Free with
@@ -144,6 +144,90 @@ pub unsafe extern "C" fn clausters_tempomap_ramp(
     }
 }
 
+/// [`clausters_tempomap_ramp`] in an explicit shape: `shape` is the envelope
+/// shape number (1 linear, 2 exponential, 5 a numeric curvature) and
+/// `curvature` is read only by shape 5. Returns 0, or -1 when refused —
+/// including for a shape number no tempo curve has.
+///
+/// # Safety
+/// `h` must be a live map handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_tempomap_shaped(
+    h: *mut TempoMap,
+    from_beats: f64,
+    to_beats: f64,
+    from_tempo: f64,
+    to_tempo: f64,
+    shape: u32,
+    curvature: f64,
+) -> i32 {
+    let (Some(m), Some(shape)) = (unsafe { h.as_mut() }, Shape::from_parts(shape, curvature))
+    else {
+        return -1;
+    };
+    match m.shaped(from_beats, to_beats, from_tempo, to_tempo, shape) {
+        Ok(()) => 0,
+        Err(_) => -1,
+    }
+}
+
+/// Writes a whole tempo envelope from beat `at`: `n` segments, so `tempos`
+/// holds `n + 1` values and `extents`, `shapes` and `curvatures` hold `n` each.
+/// `seconds` reads the extents as wall clock rather than as beats. Returns 0,
+/// or -1 when refused — and a refused envelope writes nothing.
+///
+/// # Safety
+/// `h` must be a live map handle, and the four arrays must hold the lengths
+/// above.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_tempomap_env(
+    h: *mut TempoMap,
+    at: f64,
+    tempos: *const f64,
+    extents: *const f64,
+    shapes: *const u32,
+    curvatures: *const f64,
+    n: u32,
+    seconds: i32,
+) -> i32 {
+    let Some(m) = (unsafe { h.as_mut() }) else {
+        return -1;
+    };
+    let count = n as usize;
+    if count == 0
+        || tempos.is_null()
+        || extents.is_null()
+        || shapes.is_null()
+        || curvatures.is_null()
+    {
+        return -1;
+    }
+    // SAFETY: the caller guarantees the lengths documented above.
+    let (tempos, extents, shapes, curvatures) = unsafe {
+        (
+            std::slice::from_raw_parts(tempos, count + 1),
+            std::slice::from_raw_parts(extents, count),
+            std::slice::from_raw_parts(shapes, count),
+            std::slice::from_raw_parts(curvatures, count),
+        )
+    };
+    let mut resolved = Vec::with_capacity(count);
+    for i in 0..count {
+        match Shape::from_parts(shapes[i], curvatures[i]) {
+            Some(shape) => resolved.push(shape),
+            None => return -1,
+        }
+    }
+    let unit = match seconds != 0 {
+        true => Extent::Seconds,
+        false => Extent::Beats,
+    };
+    match m.write_env(at, tempos, extents, &resolved, unit) {
+        Ok(()) => 0,
+        Err(_) => -1,
+    }
+}
+
 /// Drops every breakpoint at or after beat `b` (never the first).
 ///
 /// # Safety
@@ -170,7 +254,7 @@ pub unsafe extern "C" fn clausters_tempomap_len(h: *const TempoMap) -> u32 {
 /// is out of range.
 ///
 /// # Safety
-/// `h` must be a live map handle and `out` must point to 6 writable `f64`s.
+/// `h` must be a live map handle and `out` must point to 7 writable `f64`s.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn clausters_tempomap_segment(
     h: *const TempoMap,
@@ -186,16 +270,24 @@ pub unsafe extern "C" fn clausters_tempomap_segment(
     if out.is_null() {
         return -1;
     }
-    let (curve, end_beats, end_tempo) = match seg.curve {
-        Curve::Step => (0.0, 0.0, 0.0),
-        Curve::Linear {
+    let (shape, end_beats, end_tempo, curvature) = match seg.curve {
+        Curve::Step => (0.0, 0.0, 0.0, 0.0),
+        Curve::Shaped {
+            shape,
             end_beats,
             end_tempo,
-        } => (1.0, end_beats, end_tempo),
+        } => (
+            f64::from(shape.number()),
+            end_beats,
+            end_tempo,
+            shape.curvature(),
+        ),
     };
-    // SAFETY: caller guarantees `out` has room for 6 f64s.
-    let dst = unsafe { std::slice::from_raw_parts_mut(out, 6) };
-    dst.copy_from_slice(&[seg.beats, seg.secs, seg.tempo, curve, end_beats, end_tempo]);
+    // SAFETY: caller guarantees `out` has room for 7 f64s.
+    let dst = unsafe { std::slice::from_raw_parts_mut(out, 7) };
+    dst.copy_from_slice(&[
+        seg.beats, seg.secs, seg.tempo, shape, end_beats, end_tempo, curvature,
+    ]);
     0
 }
 
@@ -240,7 +332,7 @@ mod tests {
             let mut last = [0.0; 3];
             assert_eq!(clausters_tempomap_last(h, last.as_mut_ptr()), 0);
             assert_eq!(last, [2.0, 2.0, 2.0]);
-            let mut seg = [0.0; 6];
+            let mut seg = [0.0; 7];
             assert_eq!(clausters_tempomap_segment(h, 0, seg.as_mut_ptr()), 0);
             assert_eq!(seg[..4], [0.0, 0.0, 1.0, 0.0]);
             assert_eq!(clausters_tempomap_segment(h, 9, seg.as_mut_ptr()), -1);
@@ -260,9 +352,54 @@ mod tests {
             let secs = clausters_tempomap_secs_at(h, 4.0);
             assert!((secs - (2.0f64).ln() / 0.25).abs() < 1e-12);
             assert!((clausters_tempomap_tempo_at(h, 2.0) - 1.5).abs() < 1e-12);
-            let mut seg = [0.0; 6];
+            let mut seg = [0.0; 7];
             assert_eq!(clausters_tempomap_segment(h, 0, seg.as_mut_ptr()), 0);
-            assert_eq!((seg[3], seg[4], seg[5]), (1.0, 4.0, 2.0));
+            assert_eq!((seg[3], seg[4], seg[5], seg[6]), (1.0, 4.0, 2.0, 0.0));
+            clausters_tempomap_free(h);
+        }
+    }
+
+    #[test]
+    fn a_shape_and_an_envelope_cross_as_seven_numbers() {
+        let h = clausters_tempomap_new(1.0);
+        unsafe {
+            // A curvature is the seventh number, and the only one that reads it.
+            assert_eq!(clausters_tempomap_shaped(h, 0.0, 8.0, 1.0, 4.0, 5, -4.0), 0);
+            let mut seg = [0.0; 7];
+            assert_eq!(clausters_tempomap_segment(h, 0, seg.as_mut_ptr()), 0);
+            assert_eq!((seg[3], seg[4], seg[5], seg[6]), (5.0, 8.0, 4.0, -4.0));
+            // A shape number no tempo curve has is refused, not silently linear.
+            assert_eq!(
+                clausters_tempomap_shaped(h, 9.0, 10.0, 4.0, 1.0, 3, 0.0),
+                -1
+            );
+            clausters_tempomap_free(h);
+
+            // An envelope of three segments, extents in seconds.
+            let h = clausters_tempomap_new(1.0);
+            let tempos = [1.0, 2.0, 2.0, 0.5];
+            let extents = [3.0, 4.0, 2.0];
+            let shapes = [1u32, 1, 2];
+            let curvatures = [0.0, 0.0, 0.0];
+            assert_eq!(
+                clausters_tempomap_env(
+                    h,
+                    0.0,
+                    tempos.as_ptr(),
+                    extents.as_ptr(),
+                    shapes.as_ptr(),
+                    curvatures.as_ptr(),
+                    3,
+                    1,
+                ),
+                0
+            );
+            assert_eq!(clausters_tempomap_len(h), 4);
+            let mut last = [0.0; 3];
+            assert_eq!(clausters_tempomap_last(h, last.as_mut_ptr()), 0);
+            // Nine seconds of extents land the envelope's end on second nine.
+            assert!((last[1] - 9.0).abs() < 1e-9);
+            assert!((last[2] - 0.5).abs() < 1e-12);
             clausters_tempomap_free(h);
         }
     }

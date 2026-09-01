@@ -31,7 +31,7 @@ The base layer:
 
 from .absobject import AbstractObject
 from .clock import TempoClock
-from .time import TempoMap
+from .time import BEATS, EXPONENTIAL, LINEAR, SECONDS, STEP, TempoMap
 from .destination import Destination, OscDestination
 from .environment import Environment, RandomContext
 from .ids import IdShare, WHOLE as WHOLE_SHARE, share_of
@@ -61,6 +61,11 @@ from ._oscinterface import (
 )
 
 __all__ = [
+    "BEATS",
+    "SECONDS",
+    "STEP",
+    "LINEAR",
+    "EXPONENTIAL",
     "AbstractObject",
     "TempoClock",
     "TempoMap",

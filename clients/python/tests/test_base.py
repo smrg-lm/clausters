@@ -13,6 +13,8 @@ import pytest
 
 from clausters.base import builtins as B
 from clausters.base import (
+    EXPONENTIAL,
+    SECONDS,
     AbstractObject,
     OscNrtInterface,
     OscTcpInterface,
@@ -241,7 +243,7 @@ def test_a_tempo_ramp_lasts_the_integral_and_not_an_average():
     import math
 
     clk = TempoClock(tempo=1.0)
-    clk.ramp_tempo(2.0, over=4.0)                  # 1 -> 2 beats/s over 4 beats
+    clk.set_tempo(2.0, over=4.0)                   # 1 -> 2 beats/s over 4 beats
     assert clk.beats2secs(4.0) == pytest.approx(math.log(2.0) / 0.25)
     assert clk.beats2secs(4.0) != pytest.approx(4.0 / 1.5)
     # After the ramp the tempo it reached governs.
@@ -254,7 +256,7 @@ def test_the_tempo_is_the_one_sounding_and_not_the_ramps_destination():
     affine cache holds and what this used to report."""
     _ffi_or_skip()
     clk = TempoClock(tempo=1.0)
-    clk.ramp_tempo(2.0, over=8.0)              # 1 -> 2 bps over beats 0..8
+    clk.set_tempo(2.0, over=8.0)               # 1 -> 2 bps over beats 0..8
     assert clk.tempo == pytest.approx(1.0), "at beat 0 the ramp has not moved"
     assert clk.map.tempo_at(4.0) == pytest.approx(1.5), "half way is half way"
     assert clk.map.last()[2] == pytest.approx(2.0), "the destination is the map's"
@@ -265,6 +267,50 @@ def test_the_tempo_is_the_one_sounding_and_not_the_ramps_destination():
     assert clk.tempo == pytest.approx(2.5)
     clk.set_tempo(4.0)
     assert clk.tempo == pytest.approx(4.0)
+
+
+def test_one_tempo_verb_spells_a_step_a_ramp_a_shape_and_an_envelope():
+    """`set_tempo` is the whole gesture: no `over` is a step, `over` is a shape
+    over a stretch, `unit` says what that stretch measures, and an envelope
+    writes the lot in one call."""
+    _ffi_or_skip()
+    import math
+    from clausters.defs.ugens.env import Env
+
+    clk = TempoClock(tempo=1.0)
+    clk.set_tempo(2.0)
+    assert len(clk.map) == 1 and clk.tempo == pytest.approx(2.0)
+
+    # An extent in seconds lands on the second it asked for -- solved, not
+    # searched: db = dt / K, exact for every shape.
+    clk = TempoClock(tempo=1.0)
+    clk.set_tempo(4.0, over=3.0, unit=SECONDS)
+    end = clk.map.segment(1)[0]
+    assert clk.map.secs_at(end) == pytest.approx(3.0)
+    assert end == pytest.approx(3.0 * (4.0 - 1.0) / math.log(4.0))
+
+    # A geometric ramp is a different curve, not a different spelling of one.
+    clk = TempoClock(tempo=1.0)
+    clk.set_tempo(4.0, over=8.0, curve=EXPONENTIAL)
+    assert clk.map.secs_at(8.0) == pytest.approx(4.328085122667)
+    assert clk.map.secs_at(8.0) != pytest.approx(3.6967849629863747)  # the straight one
+
+    # A curvature of zero is the straight ramp, so the knob is continuous.
+    a, b = TempoClock(tempo=1.0), TempoClock(tempo=1.0)
+    a.set_tempo(4.0, over=8.0, curve=0.0)
+    b.set_tempo(4.0, over=8.0)
+    assert a.map.secs_at(8.0) == b.map.secs_at(8.0)
+
+    # An envelope: finite duration, and what it reached simply holds.
+    clk = TempoClock(tempo=1.0)
+    clk.set_tempo(Env([1.0, 2.0, 2.0, 0.5], [4.0, 8.0, 2.0], curve="lin"))
+    assert len(clk.map) == 4
+    assert clk.map.segment(3)[0] == pytest.approx(14.0)
+    assert clk.map.tempo_at(1_000.0) == pytest.approx(0.5)
+
+    # A gate has nothing to mean for a tempo, so it is refused, not ignored.
+    with pytest.raises(ValueError, match="finite duration"):
+        clk.set_tempo(Env.adsr())
 
 
 def test_stop_holds_the_beat_and_start_resumes_it():

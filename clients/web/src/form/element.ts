@@ -108,11 +108,11 @@ export type Beats = number | null | undefined;
  * element is made of rather than stored, and `flatten` converts on the way to a
  * timeline, which is ordered by one number and cannot hold two bases.
  */
-export const BEATS = "beats";
-export const SECONDS = "seconds";
+export { BEATS, SECONDS } from "../base/time.ts";
+export type { TimeUnit } from "../base/time.ts";
 
-/** One of the two units above. */
-export type TimeUnit = typeof BEATS | typeof SECONDS;
+import { BEATS, SECONDS } from "../base/time.ts";
+import type { TimeUnit } from "../base/time.ts";
 
 /** `length` (in `unit`) as beats at `tempo` beats per second. */
 export function toBeats(length: number, unit: TimeUnit, tempo: number): number {

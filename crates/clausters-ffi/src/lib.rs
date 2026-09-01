@@ -154,7 +154,13 @@ pub use time::*;
 /// turns it into a second can change along the piece, so the conversion stops
 /// being a scalar and becomes an integral. Additive: the affine functions stay
 /// exactly as they were, and a one-segment map computes their expression.
-pub const CORE_ABI_VERSION: u32 = 29;
+/// **v30 a tempo curve has a shape** — `clausters_tempomap_segment` writes
+/// **seven** `f64` instead of six (the seventh is the curvature), and
+/// `clausters_tempomap_shaped`/`_env` write a shaped ramp and a whole finite
+/// envelope. Breaking rather than additive: the segment payload widened, and
+/// its fourth number is now an envelope shape number rather than a flag, so a
+/// reader that does not know shape 2 or 5 misreads a segment it can see.
+pub const CORE_ABI_VERSION: u32 = 30;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

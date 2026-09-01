@@ -1546,23 +1546,61 @@ Every entry carries a checkbox, like "Found by use" above: an open direction has
 to read as open, and one that converges into a milestone leaves this list rather
 than being ticked here.
 
-- ⬜ **A tempo ramp has one shape, and a piece may want others** *(found
-  2026-08-31, from the user's "¿se puede cambiar la curva de cambio?")*.
-  `Curve` has two variants: `Step` and `Linear`, the latter linear **in beats**
-  (`T(b) = T₀ + k·(b - b₀)`) — which, read against the wall clock, is exactly
-  `T(t) = T₀·e^{kt}`. It is one shape under two descriptions, and it is the only
-  ramp there is. A shaped rubato is written today as a polyline of linear
-  ramps.
+- ✅ **One tempo verb: an extent in either unit, and a shape written in one
+  call** *(designed and shipped 2026-08-31, from the user's "calcular el tempo
+  en segundos y beats" and "agregar una envolvente en vez de encadenar
+  llamadas")*.
 
-  What a new shape costs is not the mathematics — an exponential in beats and a
-  power `b^n` both have a closed integral and a closed inverse, which is the
-  only bar `Curve` sets — but the seam: a variant crosses the C ABI (`segment`
-  writes a fixed six `f64`), the wasm binding, both clients' spellings and
-  `docs/bindings.md`, and moves `CORE_ABI_VERSION`. So the question to settle
-  first is **which shapes a piece actually needs**, once, rather than adding
-  them one at a time: an `Env`-style `curve` scalar (one knob, the vocabulary
-  the client already has for automation) is a different answer from a set of
-  named variants, and the payload width should be decided for whichever wins.
+  **`set_tempo` absorbed `ramp_tempo`**, which is gone with no alias: a step is
+  its one-point case and a ramp its two-point case. `set_tempo(2.0)`,
+  `set_tempo(2.0, over=8.0)`, `set_tempo(2.0, over=3.0, unit=SECONDS)`,
+  `set_tempo(2.0, over=8.0, curve=EXPONENTIAL)`, and an `Env` for the whole
+  shape in one call. Same verb, same arguments, same order in the web client.
+
+  **The extent in seconds is closed-form, and generally so.** Every shape is
+  written over the segment's normalised position, so `Δt = Δb·K` with `K` a pure
+  function of the two tempos and the shape — therefore `Δb = Δt/K`, one
+  division, for any shape whose integral is closed. No iteration, no per-shape
+  case. Verified: `over = 3 s` gives end beat 6.4921276840, which `secs_at`
+  answers as 3.0000000000 s.
+
+  **The shapes are step, linear, exponential and a numeric curvature**, and the
+  choice is made by whether a shape *inverts*, not whether it integrates —
+  `beats_at` is what a running clock calls on every read. `sin` and `wel`
+  integrate in closed form and invert transcendentally, so they are refused by
+  name rather than approximated; the curvature knob covers the family they
+  belong to and passes through linear at `c = 0`. The curvature's own inverse is
+  a safeguarded Newton in the core, affordable because a clock's *now* is
+  almost always in the step an envelope ends with. The numbers and the reasoning
+  are in `docs/decisions.md`.
+
+  **The envelope is of finite duration**: as many segments as extents, and after
+  the last one the tempo it reached holds. A `release_node` or a `loop_node` is
+  **refused, not ignored** — those are a gate's ideas and a piece's tempo has no
+  gate. Writing N segments in one ordered call also sidesteps the append-only
+  blocker for the common case, so a tempo shape no longer waits on the ownership
+  decision below.
+
+  **The payload widened once, to seven `f64`** (`CORE_ABI_VERSION` 30):
+  `[beats, secs, tempo, shape, end_beats, end_tempo, curvature]`, with `shape`
+  now an `Env` shape number rather than a flag. Breaking rather than additive —
+  a reader that does not know shape 2 or 5 misreads a segment it can see — and
+  seven was chosen over six precisely so it would not widen twice. The unit
+  vocabulary (`BEATS`/`SECONDS`) moved down to the binding layer, which is where
+  the map reads it; `form.element` re-exports it in both clients rather than
+  keeping a second definition.
+
+  **What the parity check turned up, and it is worth keeping**: the bindings
+  share a formula, not a libm. `exp`/`ln` are not bit-identical between a native
+  libm and wasm's, and the shapes exercise them far more widely than a straight
+  ramp — 4 of 189 shape values differ by at most 3 ulp, against 0 of 16 for the
+  straight-ramp map. `powf` was removed from the core for it (the geometric ramp
+  is `exp(u·ln r)`, the same function for `r > 0`), and the shape parity test
+  compares within 4 ulp while every other parity assertion stays exact.
+
+  **The formulas are documented in both clients**, in `clausters.base.time` and
+  `src/base/time.ts`: the tempo per shape, `K` per shape, `Δb = Δt/K`, and which
+  inverses are closed.
 
 - ⬜ **The mapping exists and is private to the `Editor`, so every example that
   plays writes a worse one** *(named 2026-08-30 by the user, from

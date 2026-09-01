@@ -141,7 +141,44 @@ def _tempo_map_vectors():
                      for (a, b) in [(0.0, 8.0), (8.0, 16.0), (2.0, 4.0), (0.0, 24.0)]],
         "spanBeats": [{"from": a, "secs": s, "beats": tempo.span_beats(a, s)}
                       for (a, s) in [(0.0, 30.0), (8.0, 1.0), (16.0, 2.0)]],
+        "shapes": _shape_vectors(),
     }
+
+
+# One envelope per shape, plus the same envelope asked for in seconds -- the
+# closed forms and the Newton inversion have to land on the same numbers in
+# both clients, and a curvature is the one that could drift if either side
+# iterated on its own.
+SHAPE_ENVELOPES = [
+    {"curve": "linear", "unit": "beats"},
+    {"curve": "exponential", "unit": "beats"},
+    {"curve": -4.0, "unit": "beats"},
+    {"curve": 3.0, "unit": "beats"},
+    {"curve": "linear", "unit": "seconds"},
+    {"curve": "exponential", "unit": "seconds"},
+    {"curve": -4.0, "unit": "seconds"},
+]
+
+
+def _shape_vectors():
+    out = []
+    for spec in SHAPE_ENVELOPES:
+        m = _native.TempoMap(1.0)
+        m.env(0.0, [1.0, 4.0, 2.0], [8.0, 4.0], spec["curve"], spec["unit"])
+        out.append({
+            "curve": spec["curve"],
+            "unit": spec["unit"],
+            "segments": m.segments(),
+            "secsAt": [{"beats": b, "secs": m.secs_at(b)}
+                       for b in [0.0, 1.5, 4.0, 8.0, 10.0, 12.0, 20.0]],
+            # The inverse is what a running clock reads, and the curvature's is
+            # iterated -- so it is round-tripped rather than merely evaluated.
+            "beatsAt": [{"secs": m.secs_at(b), "beats": m.beats_at(m.secs_at(b))}
+                        for b in [0.0, 1.5, 4.0, 8.0, 10.0, 12.0, 20.0]],
+            "tempoAt": [{"beats": b, "tempo": m.tempo_at(b)}
+                        for b in [0.0, 1.5, 4.0, 8.0, 10.0, 20.0]],
+        })
+    return out
 
 
 def main():

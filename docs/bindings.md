@@ -117,9 +117,11 @@ position. One implementation, every client bound to it.
 | `clausters_tempomap_span_beats` | `JsTempoMap.span_beats` | |
 | `clausters_tempomap_push` | `JsTempoMap.push` | |
 | `clausters_tempomap_ramp` | `JsTempoMap.ramp` | |
+| `clausters_tempomap_shaped` | `JsTempoMap.shaped` | |
+| `clausters_tempomap_env` | `JsTempoMap.env` | `idiom` — C takes four parallel arrays and a length, wasm takes four `Vec`s |
 | `clausters_tempomap_truncate_from` | `JsTempoMap.truncate_from` | |
 | `clausters_tempomap_len` | `JsTempoMap.len` | |
-| `clausters_tempomap_segment` | `JsTempoMap.segment` | `idiom` — C writes six `f64`s into a caller buffer, wasm returns the array |
+| `clausters_tempomap_segment` | `JsTempoMap.segment` | `idiom` — C writes seven `f64`s into a caller buffer, wasm returns the array |
 | `clausters_tempomap_last` | `JsTempoMap.last` | `idiom` — as above, three `f64`s |
 | — | `JsTempoMap.is_empty` | `idiom` — always false (a map holds a segment), spelled as `JsScheduler` does |
 

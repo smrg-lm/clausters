@@ -35,7 +35,7 @@ use clausters_core::{
     registry::{self, NodeIdPartition, Registry},
     rng::Rng,
     tempoclock::{self, Scheduler},
-    tempomap::{Curve, TempoMap},
+    tempomap::{Curve, Extent, Shape, TempoMap},
 };
 
 #[cfg(target_arch = "wasm32")]
@@ -565,6 +565,60 @@ impl JsTempoMap {
             .is_ok()
     }
 
+    /// {@link TempoMap.ramp} in an explicit shape: `shape` is the envelope
+    /// shape number (1 linear, 2 exponential, 5 a numeric curvature) and
+    /// `curvature` is read only by shape 5. False for a shape number no tempo
+    /// curve has, and for a ramp the map refuses.
+    pub fn shaped(
+        &mut self,
+        from_beats: f64,
+        to_beats: f64,
+        from_tempo: f64,
+        to_tempo: f64,
+        shape: u32,
+        curvature: f64,
+    ) -> bool {
+        match Shape::from_parts(shape, curvature) {
+            Some(shape) => self
+                .0
+                .shaped(from_beats, to_beats, from_tempo, to_tempo, shape)
+                .is_ok(),
+            None => false,
+        }
+    }
+
+    /// Writes a whole tempo envelope from beat `at`: `tempos` holds one more
+    /// value than `extents`, and `shapes`/`curvatures` one each. `seconds`
+    /// reads the extents as wall clock rather than as beats. A refused
+    /// envelope writes nothing.
+    pub fn env(
+        &mut self,
+        at: f64,
+        tempos: Vec<f64>,
+        extents: Vec<f64>,
+        shapes: Vec<u32>,
+        curvatures: Vec<f64>,
+        seconds: bool,
+    ) -> bool {
+        if shapes.len() != extents.len() || curvatures.len() != extents.len() {
+            return false;
+        }
+        let mut resolved = Vec::with_capacity(shapes.len());
+        for (shape, curvature) in shapes.iter().zip(&curvatures) {
+            match Shape::from_parts(*shape, *curvature) {
+                Some(shape) => resolved.push(shape),
+                None => return false,
+            }
+        }
+        let unit = match seconds {
+            true => Extent::Seconds,
+            false => Extent::Beats,
+        };
+        self.0
+            .write_env(at, &tempos, &extents, &resolved, unit)
+            .is_ok()
+    }
+
     /// Drops every breakpoint at or after beat `b` (never the first).
     #[wasm_bindgen(js_name = truncateFrom)]
     pub fn truncate_from(&mut self, b: f64) {
@@ -583,19 +637,28 @@ impl JsTempoMap {
         self.0.is_empty()
     }
 
-    /// Segment `i` as `[beats, secs, tempo, curve, endBeats, endTempo]` —
-    /// `curve` is 0 for a constant tempo and 1 for a ramp, whose two trailing
-    /// fields are 0 when it is not one. `undefined` past the end.
+    /// Segment `i` as `[beats, secs, tempo, shape, endBeats, endTempo,
+    /// curvature]` — `shape` is 0 for a constant tempo and otherwise the
+    /// envelope shape number, and the three trailing fields are 0 when there is
+    /// no curve. `undefined` past the end.
     pub fn segment(&self, i: usize) -> Option<Vec<f64>> {
         self.0.segments().get(i).map(|seg| {
-            let (curve, end_beats, end_tempo) = match seg.curve {
-                Curve::Step => (0.0, 0.0, 0.0),
-                Curve::Linear {
+            let (shape, end_beats, end_tempo, curvature) = match seg.curve {
+                Curve::Step => (0.0, 0.0, 0.0, 0.0),
+                Curve::Shaped {
+                    shape,
                     end_beats,
                     end_tempo,
-                } => (1.0, end_beats, end_tempo),
+                } => (
+                    f64::from(shape.number()),
+                    end_beats,
+                    end_tempo,
+                    shape.curvature(),
+                ),
             };
-            vec![seg.beats, seg.secs, seg.tempo, curve, end_beats, end_tempo]
+            vec![
+                seg.beats, seg.secs, seg.tempo, shape, end_beats, end_tempo, curvature,
+            ]
         })
     }
 

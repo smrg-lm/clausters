@@ -48,8 +48,7 @@ into ``clausters-core`` in a future port).
 #: element wraps rather than stored, and `clausters.form.render.flatten`
 #: converts on the way to a timeline, which is ordered by one number and cannot
 #: hold two bases.
-BEATS = "beats"
-SECONDS = "seconds"
+from .._native import BEATS, SECONDS  # noqa: E402  (the vocabulary's one home)
 
 
 def to_beats(length: float, unit: str, tempo: float) -> float:

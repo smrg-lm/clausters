@@ -7755,3 +7755,56 @@ beat→frame conversion off the wire.
 **What is still open** is who owns the map: the clock (execution, lost on save)
 or the document (the piece, saved with it). Both are possible today and nothing
 decides, so a piece's tempo is not yet persisted.
+
+## A tempo shape is chosen by whether it inverts, not by whether it integrates
+
+The tempo map grew shapes beyond the straight ramp, and the obvious move was to
+adopt the whole `Env` family — a piece's tempo and a piece's amplitudes would
+then be written with one vocabulary. Most of that family is available and one
+part of it is not, and the line between them is not where it looks.
+
+**Integrating is the easy half.** The seconds a segment takes are `∫du/T(u)`,
+and every `Env` shape has that in closed form: the straight ramp is a logarithm,
+the geometric ramp a difference of reciprocals over a logarithm, the numeric
+curvature `(1 - ln((A + B·e^c)/(A + B))/c)/A`, and `sin`, `wel`, `sqr` and `cub`
+all integrate too. Each was checked against a 2·10⁶-point numeric integration
+before any of it was written.
+
+**Inverting is the half that decides.** `beats_at` — the beat falling on a
+second — is not a convenience: it is what `secs2beats` calls, which is what a
+running clock calls on every read of `beats()`. The straight and the geometric
+ramp invert in closed form. The numeric curvature does not: its integral mixes
+`u` and `e^{cu}`, so it is solved by a safeguarded Newton iteration in the core,
+which is affordable because a clock's *now* is almost always in the last
+segment, and that segment is the step an envelope ends with. `sin` and `wel`
+would need the same iteration with none of the same payoff, since the curvature
+knob already covers "starts slow" and "starts fast" continuously — and it passes
+through linear at `c = 0`, so it is one knob rather than a menu. So the tempo
+shapes are **step, linear, exponential and a curvature**, and the rest are
+refused by name rather than silently approximated.
+
+The related choice: **the shapes are written over the segment's normalised
+position `u`, not over beats.** That is not a formatting preference. It makes
+`K = ∫₀¹du/T(u)` independent of how wide the segment is, so a segment `Δb` beats
+wide lasts `Δb·K` seconds — and asking for a change that lasts `Δt` *seconds*
+inverts to `Δb = Δt/K`, one division, exact for every shape and with no
+per-shape special case. Writing the shapes over beats would have made an extent
+in seconds a root-find per shape.
+
+### The bindings share a formula, not a libm
+
+The parity tests between the Python client and the wasm one assert **equality**,
+and for everything else they can: there is one implementation of each formula
+and both clients call it. Tempo shapes are the one place that does not hold.
+`exp` and `ln` are not bit-identical between a native libm and the one wasm is
+built with, and the shapes evaluate them over a far wider range of arguments
+than a straight ramp does. Measured over the shape vectors: **4 of 189 values
+differ, by at most 3 ulp**, while the straight-ramp map is still 0 of 16.
+
+Two things follow. `powf` was removed from the core — the geometric ramp is
+`exp(u·ln r)` rather than `powf(r, u)`, the same function for `r > 0`, which the
+map's `T > 0` invariant guarantees — because `powf` was the worst offender and
+costs nothing to avoid. And the shape parity test compares within 4 ulp instead
+of exactly, saying so and saying why: the contract is one formula, not one
+libm. Equality stays the assertion everywhere it still holds, so a real
+divergence would still be caught.

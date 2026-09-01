@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 29
+CORE_ABI_VERSION = 30
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -360,6 +360,15 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_tempomap_push.argtypes = [ctypes.c_void_p, ctypes.c_double, ctypes.c_double]
     lib.clausters_tempomap_ramp.restype = ctypes.c_int32
     lib.clausters_tempomap_ramp.argtypes = [ctypes.c_void_p] + [ctypes.c_double] * 4
+    lib.clausters_tempomap_shaped.restype = ctypes.c_int32
+    lib.clausters_tempomap_shaped.argtypes = (
+        [ctypes.c_void_p] + [ctypes.c_double] * 4 + [ctypes.c_uint32, ctypes.c_double]
+    )
+    lib.clausters_tempomap_env.restype = ctypes.c_int32
+    lib.clausters_tempomap_env.argtypes = [
+        ctypes.c_void_p, ctypes.c_double, f64p, f64p,
+        ctypes.POINTER(ctypes.c_uint32), f64p, ctypes.c_uint32, ctypes.c_int32,
+    ]
     lib.clausters_tempomap_truncate_from.restype = None
     lib.clausters_tempomap_truncate_from.argtypes = [ctypes.c_void_p, ctypes.c_double]
     lib.clausters_tempomap_len.restype = ctypes.c_uint32
@@ -1472,10 +1481,52 @@ class Scheduler:
 # ---- the piece's time map ----
 
 
+#: An extent is a stretch of the **beat** axis.
+#:
+#: The unit vocabulary lives here, at the layer the map reads it, and
+#: `clausters.form.element` re-exports it: a stretch of beats and a stretch of
+#: seconds are different stretches under any tempo but a constant one, so which
+#: one a number is has to be said rather than assumed.
+BEATS = "beats"
+#: An extent is a stretch of wall clock.
+SECONDS = "seconds"
+
 #: A segment's tempo is constant.
 STEP = "step"
 #: A segment's tempo ramps linearly (in beats) to the next breakpoint.
 LINEAR = "linear"
+#: A segment's tempo ramps geometrically -- equal *ratios* over equal stretches
+#: of beat, so 60->120 and 120->240 are the same move.
+EXPONENTIAL = "exponential"
+
+#: The shapes a tempo curve can take, as the envelope shape numbers the core
+#: reads. They are `Env`'s own numbers, so one vocabulary spells a tempo curve
+#: and an amplitude curve -- but only these three, plus a numeric curvature,
+#: are tempo shapes: `sin` and `wel` integrate in closed form and invert
+#: transcendentally, and inverting is what a running clock does on every read.
+_SHAPES = {"step": 0, "lin": 1, "linear": 1, "exp": 2, "exponential": 2}
+
+
+def _shape(spec):
+    """A shape name or a numeric curvature -> ``(number, curvature)``. A number
+    selects the curvature shape, where 0 is linear, positive starts slow and
+    negative starts fast."""
+    if isinstance(spec, str):
+        try:
+            return (_SHAPES[spec], 0.0)
+        except KeyError:
+            raise ValueError(
+                f"unknown tempo shape {spec!r}; use one of {sorted(set(_SHAPES))} "
+                "or a numeric curvature"
+            ) from None
+    return (5, float(spec))
+
+
+def _unshape(number: float, curvature: float):
+    """The inverse of `_shape`, for reading a segment back."""
+    if number == 5.0:
+        return curvature
+    return {0.0: STEP, 1.0: LINEAR, 2.0: EXPONENTIAL}[number]
 
 
 class TempoMap:
@@ -1582,6 +1633,63 @@ class TempoMap:
             raise ValueError("a ramp needs to_beats > from_beats and both tempos finite and > 0")
         return self
 
+    def shaped(self, from_beats: float, to_beats: float, from_tempo: float,
+               to_tempo: float, curve=LINEAR):
+        """`ramp` in an explicit shape — `LINEAR`, `EXPONENTIAL` or a numeric
+        curvature (0 is linear, positive starts slow, negative starts fast)."""
+        number, curvature = _shape(curve)
+        rc = self._lib.clausters_tempomap_shaped(
+            self._handle, float(from_beats), float(to_beats),
+            float(from_tempo), float(to_tempo), number, curvature,
+        )
+        if rc != 0:
+            raise ValueError(
+                "a shaped ramp needs to_beats > from_beats, both tempos finite "
+                "and > 0, and a shape a tempo curve has"
+            )
+        return self
+
+    def env(self, at: float, tempos, extents, curves=LINEAR, unit=BEATS):
+        """**Writes a whole tempo envelope from beat ``at``** — one more tempo
+        than extents, one shape per segment (one shape for all of them, or a
+        list).
+
+        The envelope is of **finite duration**: after its last segment the
+        tempo it reached holds. There is no sustain and no loop, which are a
+        gate's ideas and a piece's tempo has no gate.
+
+        ``unit`` says what the extents measure — `BEATS` or `SECONDS`. In
+        seconds each segment's width in beats is solved exactly rather than
+        searched for, so an accelerando can be asked for by how long it lasts.
+
+        One call rather than a chain of them, and the map is appended to, so
+        a shape written in one call cannot get its own order wrong.
+        """
+        tempos = [float(t) for t in tempos]
+        extents = [float(x) for x in extents]
+        if not isinstance(curves, (list, tuple)):
+            curves = [curves] * len(extents)
+        if len(curves) != len(extents):
+            raise ValueError(
+                f"curves ({len(curves)}) must be one per extent ({len(extents)})"
+            )
+        pairs = [_shape(c) for c in curves]
+        n = len(extents)
+        rc = self._lib.clausters_tempomap_env(
+            self._handle, float(at),
+            (ctypes.c_double * (n + 1))(*tempos),
+            (ctypes.c_double * n)(*extents),
+            (ctypes.c_uint32 * n)(*[p[0] for p in pairs]),
+            (ctypes.c_double * n)(*[p[1] for p in pairs]),
+            n, 1 if unit == SECONDS else 0,
+        )
+        if rc != 0:
+            raise ValueError(
+                "an envelope needs one more tempo than extents, every tempo "
+                "finite and > 0, every extent > 0, and shapes a tempo curve has"
+            )
+        return self
+
     def truncate_from(self, beats: float):
         """Drops every breakpoint at or after ``beats`` (never the first) — what
         rewriting a stretch of the tempo takes."""
@@ -1595,13 +1703,14 @@ class TempoMap:
 
     def segment(self, i: int):
         """Segment ``i`` as ``(beats, secs, tempo, curve, end_beats,
-        end_tempo)``, where ``curve`` is `STEP` or `LINEAR` and the two trailing
-        fields are ``None`` for a step."""
-        out = (ctypes.c_double * 6)()
+        end_tempo)``, where ``curve`` is `STEP`, `LINEAR`, `EXPONENTIAL` or a
+        numeric curvature, and the two trailing fields are ``None`` for a
+        step."""
+        out = (ctypes.c_double * 7)()
         if self._lib.clausters_tempomap_segment(self._handle, int(i), out) != 0:
             raise IndexError(i)
-        curve = LINEAR if out[3] == 1.0 else STEP
-        end = (out[4], out[5]) if curve == LINEAR else (None, None)
+        curve = _unshape(out[3], out[6])
+        end = (None, None) if curve == STEP else (out[4], out[5])
         return (out[0], out[1], out[2], curve, end[0], end[1])
 
     def segments(self) -> list:

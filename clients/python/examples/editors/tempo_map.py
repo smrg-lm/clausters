@@ -14,16 +14,20 @@ view that held the starting tempo as a number would draw it at 8.0 s, and the
 sweeping line would cross the clip three seconds after you heard it. The clip
 here is drawn from the map, so the line crosses it when it sounds.
 
-The two tempo gestures, and they are different acts:
+**One verb, and what its arguments say.** `clock.set_tempo(bps)` with nothing
+else is a **step from now on** — a new tempo, pinned at the instant you call it,
+so nothing already scheduled jumps. Add `over=` and it is a **shape written over
+a stretch**: an accelerando or a ritardando, whose length in seconds is a
+logarithm of the tempo ratio rather than the span divided by an average of the
+two tempos, and the printed comparison below is the difference the two answers
+make. Add `unit=SECONDS` and the stretch is wall clock instead of beats — solved
+exactly, not searched for. Add `curve=` and it is a different shape.
 
-1. `clock.set_tempo(bps)` is a **step from now on** — a new tempo, pinned at the
-   instant you call it, so nothing already scheduled jumps.
-2. `clock.ramp_tempo(bps, over=beats)` is a **shape written over a stretch** — an
-   accelerando or a ritardando. Its length in seconds is a logarithm of the tempo
-   ratio, not the span divided by an average of the two tempos, and the printed
-   comparison below is the difference the two answers make.
+Hand it an `Env` of tempos and the whole thing is written in **one call**: the
+envelope's levels are tempos and its times are the extents. It has to be of
+finite duration — no sustain, no loop — because a piece's tempo has no gate.
 
-Both write on `clock.map`, and a change is **recorded** rather than replacing
+Every form writes on `clock.map`, and a change is **recorded** rather than replacing
 what came before — which is why the beats *before* it still convert correctly
 afterwards. A single anchor cannot do that: it would extrapolate its current
 slope backwards and report that beat 1 happened at a second it did not.
@@ -49,6 +53,8 @@ import math
 import sys
 
 from clausters import Session, TempoMap
+from clausters.base import EXPONENTIAL, SECONDS  # noqa: F401  (named in the prose above)
+from clausters.defs.ugens.env import Env  # noqa: F401
 from clausters.form import Aggregate, Clang, Sequence
 from clausters.gui import Editor
 from clausters.seq.event import Event as SeqEvent
@@ -124,8 +130,11 @@ song.add(Sequence([bar(220.0), bar(277.2), bar(330.0), bar(440.0)],
 # shape — the same acts, spelled from the other side:
 #
 # ```python
-# clock.set_tempo(4.0)                  # a step, pinned at the beat you call it
-# clock.ramp_tempo(4.0, over=8.0)       # a shape, over the eight beats from here
+# clock.set_tempo(4.0)                            # a step, pinned where you call it
+# clock.set_tempo(4.0, over=8.0)                  # a shape, over eight beats
+# clock.set_tempo(4.0, over=3.0, unit=SECONDS)    # the same, over three seconds
+# clock.set_tempo(4.0, over=8.0, curve=EXPONENTIAL)   # equal ratios, not equal steps
+# clock.set_tempo(Env([1.0, 4.0, 2.0], [8.0, 4.0]))   # the whole shape at once
 # ```
 #
 # Do that while it runs and the piece accelerates under your hand; the map keeps

@@ -25,6 +25,8 @@
 
 import { Scheduler, TempoMap } from "../core/clausters_core_web.js";
 import { setCurrentRoutine } from "./context.ts";
+import { BEATS, LINEAR, tempoEnv } from "./time.ts";
+import type { CurveSpec, TempoEnvelope, TimeUnit } from "./time.ts";
 import { Routine, Stream, StopStream } from "./stream.ts";
 import {
     MonotonicTimebase,
@@ -193,6 +195,16 @@ export interface TempoClockOptions {
     timebase?: Timebase;
     /** How the clock is woken. Defaults to `defaultTicker()`. */
     ticker?: Ticker;
+}
+
+/** What {@link TempoClock.setTempo} takes beside the tempo. */
+export interface SetTempoOptions {
+    /** How far the change is spread; omitted, the change is a step. */
+    over?: number;
+    /** What `over` (or an envelope's times) measures. */
+    unit?: TimeUnit;
+    /** The shape of the change. An envelope carries its own. */
+    curve?: CurveSpec;
 }
 
 /** A scheduler that keeps musical time in beats and resumes routines on it. */
@@ -426,36 +438,62 @@ export class TempoClock {
     }
 
     /**
-     * Changes tempo, pinning the current instant so the beat→second mapping
-     * stays continuous across the change.
-     */
-    setTempo(tempo: number): void {
-        const at = this.beats();
-        // A breakpoint, not an overwrite. The map keeps the second `at` already
-        // fell on, which is what makes the change free of a discontinuity — and,
-        // unlike the single anchor this used to be, it also keeps every earlier
-        // tempo, so the beats before the change stay convertible.
-        this.tempoMapHeld.push(at, tempo);
-        this.syncMap(true);
-    }
-
-    /**
-     * Ramp the tempo from where it is now to `tempo` across `over` beats, then
-     * hold it — an accelerando or a ritardando.
+     * **The tempo gesture**, from the beat the clock is on.
      *
-     * The other tempo gesture, and a different one from
-     * {@link TempoClock.setTempo}: that one is a step *from now on*, this one is
-     * a shape written over a stretch of the piece. Its length in seconds is a
-     * logarithm of the tempo ratio, not the span divided by an average, so a
-     * ramp written here and a ramp drawn by an editor agree by construction.
+     * With no `over` it is a **step**: the tempo changes from here, pinning the
+     * current instant, so the beat the clock is on keeps mapping to the second
+     * it already mapped to and nothing already scheduled jumps.
+     *
+     * With `over` it is a **shape written over a stretch** — an accelerando or
+     * a ritardando reaching `tempo` and holding it. And `tempo` may be an
+     * envelope (anything with `levels`, `times` and `curves`), in which case
+     * the whole shape is written in one call and `over` is not needed: its own
+     * times are the extents.
+     *
+     * `unit` says what `over` (or an envelope's times) measures — `BEATS` or
+     * `SECONDS`. In seconds the width in beats is solved exactly, so an
+     * accelerando can be asked for by how long it lasts rather than by how many
+     * beats it covers. `curve` is the shape: `LINEAR`, `EXPONENTIAL` or a
+     * numeric curvature (0 is linear, positive starts slow, negative starts
+     * fast); an envelope carries its own and this is ignored.
+     *
+     * A tempo envelope is of **finite duration** — after its last segment the
+     * tempo it reached holds. A sustain or a loop point is refused rather than
+     * ignored: those are a gate's ideas, and a piece's tempo has no gate.
+     *
+     * A change is **recorded** rather than overwriting what came before, so the
+     * beats before it stay convertible afterwards.
      */
-    rampTempo(tempo: number, over: number): this {
+    setTempo(
+        tempo: number | TempoEnvelope,
+        { over, unit = BEATS, curve = LINEAR }: SetTempoOptions = {},
+    ): this {
         const at = this.beats();
-        // The starting tempo is the one sounding *at* `at` -- not the affine
-        // cache's, which is the last segment's and would be a ramp's
-        // destination. That is what lets one ramp start inside another without
-        // stepping.
-        this.tempoMapHeld.ramp(at, at + over, this.tempoMapHeld.tempoAt(at), tempo);
+        if (typeof tempo === "number") {
+            if (over === undefined) {
+                // A breakpoint, not an overwrite. The map keeps the second `at`
+                // already fell on, which is what makes the change free of a
+                // discontinuity — and, unlike the single anchor this used to
+                // be, it also keeps every earlier tempo, so the beats before
+                // the change stay convertible.
+                this.tempoMapHeld.push(at, tempo);
+            } else {
+                // The tempo the shape departs from is the one sounding at `at`,
+                // not the affine cache's, which is the last segment's and would
+                // be a shape's destination.
+                tempoEnv(this.tempoMapHeld, at,
+                         [this.tempoMapHeld.tempoAt(at), tempo], [over], curve, unit);
+            }
+        } else {
+            if (tempo.releaseNode != null || tempo.loopNode != null) {
+                throw new Error(
+                    "a tempo envelope is of finite duration: it has no gate, so a "
+                    + "releaseNode or a loopNode has nothing to mean",
+                );
+            }
+            tempoEnv(this.tempoMapHeld, at, tempo.levels, tempo.times,
+                     tempo.curves ?? curve, unit);
+        }
         this.syncMap(true);
         return this;
     }

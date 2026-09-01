@@ -35,21 +35,235 @@
 
 use std::fmt;
 
+/// The shape a segment's tempo takes on its way to the next breakpoint.
+///
+/// The numbers are the envelope shape numbers the clients already use for
+/// `Env`, so one vocabulary spells a tempo curve and an amplitude curve — a
+/// tempo envelope is written with the same words as any other.
+///
+/// **Every shape here has a closed integral and a closed inverse**, which is
+/// not true of the whole `Env` family: `sin` and `wel` integrate in closed form
+/// but invert transcendentally, and `beats_at` is what a running clock calls on
+/// every read. The knob that survives is [`Shape::Curvature`], which is
+/// continuous through linear at `c = 0` and covers "starts slow" and "starts
+/// fast" — the family the excluded shapes belong to.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Shape {
+    /// Tempo linear in beats: `T(u) = T₀ + (T₁ - T₀)·u`. The straight
+    /// accelerando, and the shape a plain ramp writes.
+    Linear,
+    /// Tempo geometric in beats: `T(u) = T₀·(T₁/T₀)^u`. Equal *ratios* of
+    /// tempo over equal stretches of beat — the musician's accelerando, where
+    /// 60→120 and 120→240 feel like the same move.
+    Exponential,
+    /// `Env`'s curvature knob: `T(u) = A + B·e^{cu}`, linear at `c = 0`,
+    /// starting slow for `c > 0` and fast for `c < 0`.
+    Curvature(f64),
+}
+
+impl Shape {
+    /// The envelope shape number, as the clients' `Env` numbers them
+    /// (`lin` 1, `exp` 2, a numeric curvature 5).
+    pub fn number(self) -> u32 {
+        match self {
+            Self::Linear => 1,
+            Self::Exponential => 2,
+            Self::Curvature(_) => 5,
+        }
+    }
+
+    /// The curvature carried by [`Shape::Curvature`], and zero for the rest —
+    /// the seventh number a segment crosses a binding as.
+    pub fn curvature(self) -> f64 {
+        match self {
+            Self::Curvature(c) => c,
+            _ => 0.0,
+        }
+    }
+
+    /// A shape from the pair a binding carries, or `None` for a number no
+    /// shape has. A curvature that rounds to zero **is** linear, which is what
+    /// makes the knob continuous rather than a special case at its middle.
+    pub fn from_parts(number: u32, curvature: f64) -> Option<Self> {
+        match number {
+            1 => Some(Self::Linear),
+            2 => Some(Self::Exponential),
+            5 => match curvature.is_finite() {
+                true if curvature.abs() < CURVATURE_EPSILON => Some(Self::Linear),
+                true => Some(Self::Curvature(curvature)),
+                false => None,
+            },
+            _ => None,
+        }
+    }
+
+    /// The tempo at normalised position `u` in `[0, 1]` between `t0` and `t1`.
+    ///
+    /// Every shape is written over `u` rather than over beats, which is what
+    /// makes [`Shape::unit_secs`] independent of how wide the segment is — and
+    /// that is what lets an extent be given in seconds (see
+    /// [`Shape::beats_for_secs`]).
+    fn tempo_at(self, t0: f64, t1: f64, u: f64) -> f64 {
+        match self {
+            Self::Linear => t0 + (t1 - t0) * u,
+            // `exp(u·ln r)` rather than `powf(r, u)`: the two are the same
+            // function for `r > 0` (which `T > 0` guarantees), but `powf`'s
+            // last bit differs between a native libm and wasm's, and these
+            // numbers are compared for **equality** across the bindings.
+            Self::Exponential => t0 * (u * (t1 / t0).ln()).exp(),
+            Self::Curvature(c) => match u {
+                // The ends are given, not computed: `A + B·e^{cu}` reconstructs
+                // them to within a rounding, and a gesture written at a
+                // breakpoint departs from the tempo *stated* there.
+                u if u <= 0.0 => t0,
+                u if u >= 1.0 => t1,
+                u => {
+                    let (a, b) = curvature_terms(t0, t1, c);
+                    a + b * (c * u).exp()
+                }
+            },
+        }
+    }
+
+    /// `∫₀^u du'/T(u')` — the seconds a segment one beat wide would take to
+    /// reach `u`. The real segment's seconds are this times its width.
+    fn secs_at(self, t0: f64, t1: f64, u: f64) -> f64 {
+        match self {
+            Self::Linear => match t1 == t0 {
+                true => u / t0,
+                false => (self.tempo_at(t0, t1, u) / t0).ln() / (t1 - t0),
+            },
+            Self::Exponential => match t1 == t0 {
+                true => u / t0,
+                false => {
+                    // `exp(-u·ln r)`, for the reason `tempo_at` gives.
+                    let ln_r = (t1 / t0).ln();
+                    (1.0 - (-u * ln_r).exp()) / (t0 * ln_r)
+                }
+            },
+            Self::Curvature(c) => {
+                let (a, b) = curvature_terms(t0, t1, c);
+                (u - (((a + b * (c * u).exp()) / (a + b)).ln()) / c) / a
+            }
+        }
+    }
+
+    /// The inverse of [`Shape::secs_at`]: the `u` reached after `s` seconds of
+    /// a segment one beat wide.
+    ///
+    /// Closed for the two ramps. [`Shape::Curvature`] mixes `u` and `e^{cu}`
+    /// and has no closed inverse, so it is solved by a safeguarded Newton
+    /// iteration — which is exact to the last bit in practice, deterministic,
+    /// and lives here **once**, so every client inverts identically.
+    fn u_at_secs(self, t0: f64, t1: f64, s: f64) -> f64 {
+        match self {
+            Self::Linear => match t1 == t0 {
+                true => s * t0,
+                false => {
+                    let k = t1 - t0;
+                    ((k * s).exp() - 1.0) * t0 / k
+                }
+            },
+            Self::Exponential => match t1 == t0 {
+                true => s * t0,
+                false => {
+                    let ln_r = (t1 / t0).ln();
+                    -(1.0 - s * t0 * ln_r).ln() / ln_r
+                }
+            },
+            Self::Curvature(_) => self.newton_u(t0, t1, s),
+        }
+    }
+
+    /// Newton on `secs_at`, whose derivative is `1/T(u) > 0`, safeguarded by a
+    /// bracket so a step that leaves `[lo, hi]` bisects instead. `secs_at` is
+    /// strictly increasing (the map's `T > 0` invariant), so the bracket only
+    /// ever narrows and the iteration cannot wander.
+    fn newton_u(self, t0: f64, t1: f64, s: f64) -> f64 {
+        let full = self.secs_at(t0, t1, 1.0);
+        // NaN spelled out rather than folded into a negated comparison: a
+        // second that is not a number lands at the segment's start, like one
+        // that is not yet past it.
+        if s.is_nan() || s <= 0.0 {
+            return 0.0;
+        }
+        if s >= full {
+            return 1.0;
+        }
+        let (mut lo, mut hi) = (0.0_f64, 1.0_f64);
+        let mut u = s / full;
+        for _ in 0..40 {
+            let f = self.secs_at(t0, t1, u) - s;
+            if f > 0.0 {
+                hi = u;
+            } else {
+                lo = u;
+            }
+            let step = f * self.tempo_at(t0, t1, u); // f / (ds/du)
+            let next = u - step;
+            let next = match next > lo && next < hi {
+                true => next,
+                false => 0.5 * (lo + hi),
+            };
+            if (next - u).abs() <= f64::EPSILON * u.abs() {
+                return next;
+            }
+            u = next;
+        }
+        u
+    }
+
+    /// **The seconds one beat of this shape takes**, `K = ∫₀¹du/T(u)`.
+    ///
+    /// The whole reason the shapes are written over `u`: `K` does not depend on
+    /// how wide the segment is, so a stretch `Δb` beats wide lasts `Δb·K`
+    /// seconds — and an extent given in *seconds* inverts by a single division.
+    pub fn unit_secs(self, t0: f64, t1: f64) -> f64 {
+        self.secs_at(t0, t1, 1.0)
+    }
+
+    /// **How many beats wide a stretch must be to last `secs` seconds**, going
+    /// from `t0` to `t1` in this shape: `Δb = Δt/K`.
+    ///
+    /// This is what lets a tempo change be written with its extent in seconds
+    /// rather than in beats, and it is exact for every shape rather than
+    /// searched for. For a straight ramp `K` is the reciprocal of the
+    /// logarithmic mean of the two tempos, so `Δb` is that mean times the
+    /// seconds.
+    pub fn beats_for_secs(self, t0: f64, t1: f64, secs: f64) -> f64 {
+        secs / self.unit_secs(t0, t1)
+    }
+}
+
+/// Below this a curvature is linear. `Env`'s own threshold, so the knob reads
+/// the same in a tempo curve and in an amplitude curve.
+const CURVATURE_EPSILON: f64 = 0.001;
+
+/// `T(u) = A + B·e^{cu}` for a curvature `c`, as the two constants.
+fn curvature_terms(t0: f64, t1: f64, c: f64) -> (f64, f64) {
+    let d = (t1 - t0) / (1.0 - c.exp());
+    (t0 + d, -d)
+}
+
 /// How the tempo behaves across one segment.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Curve {
     /// Constant tempo: `T(b) = tempo`. What a plain tempo change produces, and
     /// the only shape a clock creates on its own.
     Step,
-    /// Tempo linear **in beats** from this segment's `tempo` to `end_tempo`,
-    /// reached at `end_beats`: `T(b) = T₀ + k·(b - b₀)`. The real accelerando
-    /// — its integral is a logarithm, not an average of the two tempos.
+    /// The tempo moves in [`Shape`] from this segment's `tempo` to `end_tempo`,
+    /// reached at `end_beats`. The real accelerando — its integral is a
+    /// logarithm, not an average of the two tempos.
     ///
-    /// The ramp carries its own end rather than reading the next breakpoint,
-    /// so a segment answers on its own: a map is built by appending, and a
-    /// ramp that had to look forward would be evaluated before the breakpoint
+    /// The segment carries its own end rather than reading the next
+    /// breakpoint, so it answers on its own: a map is built by appending, and a
+    /// curve that had to look forward would be evaluated before the breakpoint
     /// it depends on exists. Past `end_beats` the tempo holds at `end_tempo`.
-    Linear { end_beats: f64, end_tempo: f64 },
+    Shaped {
+        shape: Shape,
+        end_beats: f64,
+        end_tempo: f64,
+    },
 }
 
 /// One segment of a [`TempoMap`], starting at `beats` (and at the second
@@ -67,83 +281,113 @@ pub struct Segment {
 }
 
 impl Segment {
-    /// The tempo slope `k`, in beats per second per beat. Zero for a step and
-    /// for a degenerate ramp (no width), which is what makes the constant-tempo
-    /// formula the correct fallback in every branch below.
-    fn slope(&self) -> f64 {
+    /// The shape and the end this segment curves to, or `None` for a constant
+    /// tempo — and also for a degenerate curve with no width or no tempo
+    /// change, which is what makes the constant-tempo formula the correct
+    /// fallback in every branch below.
+    fn curving(&self) -> Option<(Shape, f64, f64, f64)> {
         match self.curve {
-            Curve::Step => 0.0,
-            Curve::Linear {
+            Curve::Step => None,
+            Curve::Shaped {
+                shape,
                 end_beats,
                 end_tempo,
-            } => match end_beats > self.beats {
-                true => (end_tempo - self.tempo) / (end_beats - self.beats),
-                false => 0.0,
+            } => match end_beats > self.beats && end_tempo != self.tempo {
+                true => Some((shape, end_beats, end_tempo, end_beats - self.beats)),
+                false => None,
             },
         }
     }
 
-    /// Where this segment's ramp ends, as `(end_beats, end_tempo, seconds into
+    /// The tempo slope `k` of a straight ramp, in beats per second per beat.
+    /// Zero for everything else, which sends [`Self::secs_into`] and
+    /// [`Self::beats_into`] down the affine branch — the one a clock's own
+    /// segment always takes.
+    fn slope(&self) -> f64 {
+        match self.curving() {
+            Some((Shape::Linear, _, end_tempo, width)) => (end_tempo - self.tempo) / width,
+            _ => 0.0,
+        }
+    }
+
+    /// Where this segment's curve ends, as `(end_beats, end_tempo, seconds into
     /// the segment at that beat)`. `None` for a constant tempo.
     fn ramp_end(&self) -> Option<(f64, f64, f64)> {
-        match self.curve {
-            Curve::Step => None,
-            Curve::Linear {
-                end_beats,
-                end_tempo,
-            } => {
-                let k = self.slope();
-                if k == 0.0 {
-                    return None;
-                }
-                Some((end_beats, end_tempo, (end_tempo / self.tempo).ln() / k))
-            }
-        }
+        let (shape, end_beats, end_tempo, width) = self.curving()?;
+        let secs = match shape {
+            // The straight ramp keeps its own spelling, which is the clock's:
+            // `ln(T₁/T₀)/k` term for term, unchanged since before shapes.
+            Shape::Linear => (end_tempo / self.tempo).ln() / self.slope(),
+            _ => width * shape.unit_secs(self.tempo, end_tempo),
+        };
+        Some((end_beats, end_tempo, secs))
     }
 
     /// Seconds elapsed from this segment's start to beat `b` within it.
     ///
-    /// `∫ db/T(b)`: `Δb/T` at a constant tempo, and `ln(T(b)/T₀)/k` across a
-    /// ramp — the closed form, so a long accelerando costs what a short one
-    /// does. Past the ramp's end the tempo holds, so the tail is affine again.
+    /// `∫ db/T(b)`: `Δb/T` at a constant tempo, and the shape's closed form
+    /// across a curve — so a long accelerando costs what a short one does. Past
+    /// the curve's end the tempo holds, so the tail is affine again.
     fn secs_into(&self, b: f64) -> f64 {
-        let k = self.slope();
-        if k == 0.0 {
+        let Some((shape, end_beats, end_tempo, width)) = self.curving() else {
             return (b - self.beats) / self.tempo;
+        };
+        let (_, _, end_secs) = self.ramp_end().expect("a curve implies an end");
+        if b > end_beats {
+            return end_secs + (b - end_beats) / end_tempo;
         }
-        let (end_beats, end_tempo, end_secs) = self.ramp_end().expect("a slope implies a ramp");
-        if b <= end_beats {
-            return (1.0 + k * (b - self.beats) / self.tempo).ln() / k;
+        match shape {
+            Shape::Linear => {
+                let k = self.slope();
+                (1.0 + k * (b - self.beats) / self.tempo).ln() / k
+            }
+            _ => width * shape.secs_at(self.tempo, end_tempo, (b - self.beats) / width),
         }
-        end_secs + (b - end_beats) / end_tempo
     }
 
     /// The inverse of [`Self::secs_into`]: beats reached `ds` seconds after
     /// this segment's start.
     fn beats_into(&self, ds: f64) -> f64 {
-        let k = self.slope();
-        if k == 0.0 {
+        let Some((shape, end_beats, end_tempo, width)) = self.curving() else {
             return ds * self.tempo;
+        };
+        let (_, _, end_secs) = self.ramp_end().expect("a curve implies an end");
+        if ds > end_secs {
+            return (end_beats - self.beats) + (ds - end_secs) * end_tempo;
         }
-        let (end_beats, end_tempo, end_secs) = self.ramp_end().expect("a slope implies a ramp");
-        if ds <= end_secs {
-            return self.tempo * ((k * ds).exp() - 1.0) / k;
+        match shape {
+            Shape::Linear => {
+                let k = self.slope();
+                self.tempo * ((k * ds).exp() - 1.0) / k
+            }
+            _ => width * shape.u_at_secs(self.tempo, end_tempo, ds / width),
         }
-        (end_beats - self.beats) + (ds - end_secs) * end_tempo
     }
 
     /// The tempo at beat `b` within this segment.
     fn tempo_into(&self, b: f64) -> f64 {
-        let k = self.slope();
-        if k == 0.0 {
+        let Some((shape, end_beats, end_tempo, width)) = self.curving() else {
             return self.tempo;
-        }
-        let (end_beats, end_tempo, _) = self.ramp_end().expect("a slope implies a ramp");
+        };
         match b >= end_beats {
             true => end_tempo,
-            false => self.tempo + k * (b - self.beats),
+            false => shape.tempo_at(self.tempo, end_tempo, (b - self.beats) / width),
         }
     }
+}
+
+/// The unit an envelope's extents are measured in.
+///
+/// The two are not two spellings of one number: a stretch of beats and a
+/// stretch of seconds are different stretches under any tempo but a constant
+/// one, which is the whole reason this enum exists rather than a conversion at
+/// the call site.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Extent {
+    /// Extents are stretches of the beat axis.
+    Beats,
+    /// Extents are stretches of wall clock.
+    Seconds,
 }
 
 /// What a map refuses to be built out of.
@@ -159,6 +403,9 @@ pub enum TempoError {
     /// A breakpoint beat that is not finite, or does not come after the last
     /// one. Segments are ordered and non-overlapping by construction.
     Beats,
+    /// An envelope whose three lists do not agree: one tempo more than extents,
+    /// one shape per extent, and at least one segment.
+    Envelope,
 }
 
 impl fmt::Display for TempoError {
@@ -166,6 +413,10 @@ impl fmt::Display for TempoError {
         match self {
             Self::Tempo => write!(f, "tempo must be finite and greater than zero"),
             Self::Beats => write!(f, "a breakpoint must be finite and after the previous one"),
+            Self::Envelope => write!(
+                f,
+                "an envelope needs one more tempo than extents, one shape each, and a segment"
+            ),
         }
     }
 }
@@ -276,16 +527,17 @@ impl TempoMap {
 
     /// Appends a segment with an explicit [`Curve`]. The curve governs from `b`
     /// until the next breakpoint (or forever, for the last segment — where a
-    /// [`Curve::Linear`] has no end and behaves as a step).
+    /// [`Curve::Shaped`] has no end and behaves as a step).
     pub fn push_curve(&mut self, b: f64, tempo: f64, curve: Curve) -> Result<(), TempoError> {
         check_tempo(tempo)?;
-        if let Curve::Linear {
+        if let Curve::Shaped {
+            shape,
             end_beats,
             end_tempo,
         } = curve
         {
             check_tempo(end_tempo)?;
-            if !end_beats.is_finite() || end_beats <= b {
+            if !end_beats.is_finite() || end_beats <= b || !shape.curvature().is_finite() {
                 return Err(TempoError::Beats);
             }
         }
@@ -312,7 +564,7 @@ impl TempoMap {
         Ok(())
     }
 
-    /// Writes a tempo ramp over `[from_beats, to_beats]`, going from
+    /// Writes a straight tempo ramp over `[from_beats, to_beats]`, going from
     /// `from_tempo` to `to_tempo`, and keeps `to_tempo` after it.
     ///
     /// The composer's spelling of an accelerando or a ritardando: one call
@@ -325,18 +577,95 @@ impl TempoMap {
         from_tempo: f64,
         to_tempo: f64,
     ) -> Result<(), TempoError> {
+        self.shaped(from_beats, to_beats, from_tempo, to_tempo, Shape::Linear)
+    }
+
+    /// [`TempoMap::ramp`] in an explicit [`Shape`].
+    pub fn shaped(
+        &mut self,
+        from_beats: f64,
+        to_beats: f64,
+        from_tempo: f64,
+        to_tempo: f64,
+        shape: Shape,
+    ) -> Result<(), TempoError> {
         if !to_beats.is_finite() || to_beats <= from_beats {
             return Err(TempoError::Beats);
         }
         self.push_curve(
             from_beats,
             from_tempo,
-            Curve::Linear {
+            Curve::Shaped {
+                shape,
                 end_beats: to_beats,
                 end_tempo: to_tempo,
             },
         )?;
         self.push_curve(to_beats, to_tempo, Curve::Step)
+    }
+
+    /// **Writes a whole tempo envelope from beat `at`**: `tempos` (one more
+    /// than the rest), one `extent` and one `shape` per segment.
+    ///
+    /// The envelope is of **finite duration** — it has as many segments as it
+    /// has extents, and after the last one the tempo it reached simply holds.
+    /// There is no sustain and no loop: those make sense for a gate, and a
+    /// piece's tempo has no gate to hold.
+    ///
+    /// `unit` says what the extents measure. In [`Extent::Beats`] each one is a
+    /// stretch of the beat axis; in [`Extent::Seconds`] it is a stretch of wall
+    /// clock, and each segment's width in beats is solved exactly by
+    /// [`Shape::beats_for_secs`] — no iteration, no approximation, and no
+    /// per-shape special case.
+    ///
+    /// One call rather than a chain of them, and that is not only convenience:
+    /// the map is appended to, so a chain has to write every segment in order
+    /// anyway, and a shape written as one call cannot get that order wrong.
+    pub fn write_env(
+        &mut self,
+        at: f64,
+        tempos: &[f64],
+        extents: &[f64],
+        shapes: &[Shape],
+        unit: Extent,
+    ) -> Result<(), TempoError> {
+        if tempos.len() != extents.len() + 1 || shapes.len() != extents.len() || extents.is_empty()
+        {
+            return Err(TempoError::Envelope);
+        }
+        for t in tempos {
+            check_tempo(*t)?;
+        }
+        // Solve the beat width of every segment *before* writing any of them,
+        // so an envelope that is refused leaves the map untouched rather than
+        // half-written.
+        let mut edges = Vec::with_capacity(extents.len() + 1);
+        edges.push(at);
+        for (i, extent) in extents.iter().enumerate() {
+            if !extent.is_finite() || *extent <= 0.0 {
+                return Err(TempoError::Beats);
+            }
+            let width = match unit {
+                Extent::Beats => *extent,
+                Extent::Seconds => shapes[i].beats_for_secs(tempos[i], tempos[i + 1], *extent),
+            };
+            if !width.is_finite() || width <= 0.0 {
+                return Err(TempoError::Beats);
+            }
+            edges.push(edges[i] + width);
+        }
+        for i in 0..extents.len() {
+            self.push_curve(
+                edges[i],
+                tempos[i],
+                Curve::Shaped {
+                    shape: shapes[i],
+                    end_beats: edges[i + 1],
+                    end_tempo: tempos[i + 1],
+                },
+            )?;
+        }
+        self.push_curve(edges[extents.len()], tempos[extents.len()], Curve::Step)
     }
 
     /// Drops every breakpoint at or after beat `b`, so the segment covering `b`
@@ -529,6 +858,108 @@ mod tests {
         map.truncate_from(0.0);
         assert_eq!(map.len(), 1);
         close(map.secs_at(4.0), 4.0);
+    }
+
+    #[test]
+    fn every_shape_integrates_to_its_closed_form() {
+        // Checked against a 2e6-point midpoint integration of `db/T(b)` when
+        // this was designed; the constants are those results.
+        let cases = [
+            (Shape::Exponential, 4.328_085_122_667),
+            (Shape::Curvature(-4.0), 2.655_981_971_0),
+        ];
+        for (shape, want) in cases {
+            let mut m = TempoMap::new(1.0);
+            m.shaped(0.0, 8.0, 1.0, 4.0, shape).unwrap();
+            close(m.secs_at(8.0), want);
+            // and the tempo it holds after the curve is the one it reached
+            close(m.tempo_at(20.0), 4.0);
+        }
+    }
+
+    #[test]
+    fn a_curvature_of_zero_is_the_straight_ramp() {
+        // The knob is continuous through its middle rather than a shape apart,
+        // which is what lets a client hand a curvature straight through.
+        assert_eq!(Shape::from_parts(5, 0.0), Some(Shape::Linear));
+        assert_eq!(Shape::from_parts(5, 0.000_1), Some(Shape::Linear));
+        assert_eq!(Shape::from_parts(5, -4.0), Some(Shape::Curvature(-4.0)));
+        assert_eq!(Shape::from_parts(3, 0.0), None); // `sin` is not a tempo shape
+    }
+
+    #[test]
+    fn the_inverse_round_trips_through_every_shape() {
+        // `beats_at` is what a running clock calls on every read, so each shape
+        // has to invert -- the curvature by iteration, and to the same place.
+        for shape in [Shape::Linear, Shape::Exponential, Shape::Curvature(3.0)] {
+            let mut m = TempoMap::new(1.0);
+            m.shaped(2.0, 10.0, 1.0, 3.0, shape).unwrap();
+            for b in [0.5, 2.0, 3.7, 6.0, 9.99, 10.0, 14.0] {
+                close(m.beats_at(m.secs_at(b)), b);
+            }
+        }
+    }
+
+    #[test]
+    fn an_extent_in_seconds_lands_on_the_second_it_asked_for() {
+        // Delta-b = Delta-t / K, exact for every shape and not searched for.
+        for shape in [Shape::Linear, Shape::Exponential, Shape::Curvature(-2.0)] {
+            let mut m = TempoMap::new(1.0);
+            m.write_env(0.0, &[1.0, 4.0], &[3.0], &[shape], Extent::Seconds)
+                .unwrap();
+            let end = m.segments()[1].beats;
+            close(m.secs_at(end), 3.0);
+            close(m.tempo_at(end), 4.0);
+        }
+    }
+
+    #[test]
+    fn an_envelope_is_finite_and_holds_what_it_reached() {
+        let mut m = TempoMap::new(1.0);
+        m.write_env(
+            0.0,
+            &[1.0, 2.0, 2.0, 0.5],
+            &[4.0, 8.0, 2.0],
+            &[Shape::Linear, Shape::Linear, Shape::Exponential],
+            Extent::Beats,
+        )
+        .unwrap();
+        assert_eq!(m.len(), 4); // three segments plus the step that holds
+        close(m.segments()[3].beats, 14.0);
+        close(m.tempo_at(14.0), 0.5);
+        close(m.tempo_at(1_000.0), 0.5); // finite duration: it holds, it does not loop
+        // The flat middle is a ramp between equal tempos, which is a constant.
+        close(m.span_secs(4.0, 12.0), 4.0);
+    }
+
+    #[test]
+    fn a_malformed_envelope_leaves_the_map_untouched() {
+        let mut m = TempoMap::new(1.0);
+        m.push(4.0, 2.0).unwrap();
+        let before = m.segments().to_vec();
+        assert_eq!(
+            m.write_env(8.0, &[1.0, 2.0], &[], &[], Extent::Beats),
+            Err(TempoError::Envelope)
+        );
+        assert_eq!(
+            m.write_env(
+                8.0,
+                &[1.0, 2.0, 3.0],
+                &[1.0],
+                &[Shape::Linear],
+                Extent::Beats
+            ),
+            Err(TempoError::Envelope)
+        );
+        assert_eq!(
+            m.write_env(8.0, &[1.0, -2.0], &[1.0], &[Shape::Linear], Extent::Beats),
+            Err(TempoError::Tempo)
+        );
+        assert_eq!(
+            m.segments(),
+            &before[..],
+            "a refused envelope writes nothing"
+        );
     }
 
     #[test]

@@ -202,7 +202,7 @@ Hand the editor the clock's map when the piece changes tempo, so the line and th
 sound are one function rather than two readings of it:
 
 ```js
-clock.setTempo(2.0);                       // or clock.rampTempo(2.0, 8)
+clock.setTempo(2.0);                       // or clock.setTempo(2.0, { over: 8 })
 const editor = new Editor(song, { sampleRate, tempoMap: clock.map });
 ```
 

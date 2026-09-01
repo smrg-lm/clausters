@@ -459,6 +459,13 @@ export class TempoMap {
      */
     copy(): TempoMap;
     /**
+     * Writes a whole tempo envelope from beat `at`: `tempos` holds one more
+     * value than `extents`, and `shapes`/`curvatures` one each. `seconds`
+     * reads the extents as wall clock rather than as beats. A refused
+     * envelope writes nothing.
+     */
+    env(at: number, tempos: Float64Array, extents: Float64Array, shapes: Uint32Array, curvatures: Float64Array, seconds: boolean): boolean;
+    /**
      * The last segment's affine triple, `[baseBeats, baseSeconds, tempo]` —
      * what a clock caches so reading *now* stays three float operations with
      * no search.
@@ -484,11 +491,19 @@ export class TempoMap {
      */
     secsAt(b: number): number;
     /**
-     * Segment `i` as `[beats, secs, tempo, curve, endBeats, endTempo]` —
-     * `curve` is 0 for a constant tempo and 1 for a ramp, whose two trailing
-     * fields are 0 when it is not one. `undefined` past the end.
+     * Segment `i` as `[beats, secs, tempo, shape, endBeats, endTempo,
+     * curvature]` — `shape` is 0 for a constant tempo and otherwise the
+     * envelope shape number, and the three trailing fields are 0 when there is
+     * no curve. `undefined` past the end.
      */
     segment(i: number): Float64Array | undefined;
+    /**
+     * {@link TempoMap.ramp} in an explicit shape: `shape` is the envelope
+     * shape number (1 linear, 2 exponential, 5 a numeric curvature) and
+     * `curvature` is read only by shape 5. False for a shape number no tempo
+     * curve has, and for a ramp the map refuses.
+     */
+    shaped(from_beats: number, to_beats: number, from_tempo: number, to_tempo: number, shape: number, curvature: number): boolean;
     /**
      * How many beats fit in `secs` seconds starting at beat `b0`.
      */
@@ -975,6 +990,7 @@ export interface InitOutput {
     readonly tempomap_anchored: (a: number, b: number, c: number) => number;
     readonly tempomap_beatsAt: (a: number, b: number) => number;
     readonly tempomap_copy: (a: number) => number;
+    readonly tempomap_env: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => number;
     readonly tempomap_isEmpty: (a: number) => number;
     readonly tempomap_last: (a: number) => [number, number];
     readonly tempomap_len: (a: number) => number;
@@ -983,6 +999,7 @@ export interface InitOutput {
     readonly tempomap_ramp: (a: number, b: number, c: number, d: number, e: number) => number;
     readonly tempomap_secsAt: (a: number, b: number) => number;
     readonly tempomap_segment: (a: number, b: number) => [number, number];
+    readonly tempomap_shaped: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
     readonly tempomap_spanBeats: (a: number, b: number, c: number) => number;
     readonly tempomap_spanSecs: (a: number, b: number, c: number) => number;
     readonly tempomap_tempoAt: (a: number, b: number) => number;

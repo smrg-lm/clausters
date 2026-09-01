@@ -341,7 +341,7 @@ Under a single tempo it is the plain ratio `sample_rate / tempo`, which is what
 the sound are one function rather than two readings of it:
 
 ```python
-clock.set_tempo(2.0)                       # or clock.ramp_tempo(2.0, over=8)
+clock.set_tempo(2.0)                       # or clock.set_tempo(2.0, over=8)
 editor = Editor(song, sample_rate=server.sample_rate, tempo_map=clock.map)
 ```
 

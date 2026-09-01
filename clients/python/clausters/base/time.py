@@ -31,6 +31,54 @@ piece**, with no clock running and nothing playing:
     >>> tempo.span_beats(0.0, 30.0)        # what fits in the first 30 seconds?
     48.909...
 
+**The shapes, and their closed forms.** Every shape is written over the
+segment's *normalised position* ``u = (b - b0) / db``, which is what makes the
+rest of this work. Writing ``T0`` and ``T1`` for the tempos at the two ends:
+
+| shape | tempo ``T(u)`` |
+| --- | --- |
+| `STEP` | ``T0`` |
+| `LINEAR` | ``T0 + (T1 - T0)*u`` |
+| `EXPONENTIAL` | ``T0 * (T1/T0)**u`` |
+| a curvature ``c`` | ``A + B*exp(c*u)``, with ``B = -(T1-T0)/(1-exp(c))`` and ``A = T0 + (T1-T0)/(1-exp(c))`` |
+
+A curvature of 0 **is** linear — the knob is continuous through its middle
+rather than a shape apart — positive starts slow and negative starts fast.
+That is `Env`'s own convention, and these are `Env`'s own shape numbers, so one
+vocabulary spells a tempo curve and an amplitude curve.
+
+**The seconds** are the integral of ``1/T`` over the beat axis. Per unit of
+beat, ``K`` is that integral from ``u = 0`` to ``u = 1``:
+
+| shape | ``K`` |
+| --- | --- |
+| `STEP` | ``1/T0`` |
+| `LINEAR` | ``log(T1/T0) / (T1 - T0)`` |
+| `EXPONENTIAL` | ``(1/T0 - 1/T1) / log(T1/T0)`` |
+| a curvature ``c`` | ``(1 - log((A + B*exp(c))/(A + B))/c) / A`` |
+
+so a stretch ``db`` beats wide lasts ``db * K`` seconds. **This is where an
+average of the two tempos goes wrong**: over eight beats from 1 to 2 beats a
+second the true length is ``log(2)/0.125 = 5.545`` s and the average says
+``8/1.5 = 5.333`` s — a fifth of a second, audible and, drawn, visible.
+
+**The extent in seconds** follows from the same ``K``, and it is why the shapes
+are written over ``u`` rather than over beats: ``K`` does not depend on how wide
+the segment is, so asking for a change that lasts ``dt`` seconds is one
+division — ``db = dt / K`` — exact for every shape and never a search. For a
+straight ramp that makes ``db`` the logarithmic mean of the two tempos times the
+seconds.
+
+**The inverse** — the beat falling on a second, which a running clock reads on
+every `TempoClock.beats` — is closed for `LINEAR` (``u = T0*(exp(k*s) - 1)/k``,
+``k = T1 - T0``) and for `EXPONENTIAL`
+(``u = -log(1 - s*T0*log(T1/T0))/log(T1/T0)``). A curvature mixes ``u`` and
+``exp(c*u)`` and has **no** closed inverse, so the core solves it with a
+safeguarded Newton iteration — one implementation, so every client inverts to
+the same place. It is also why `Env`'s ``sin`` and ``wel`` are **not** tempo
+shapes: they integrate in closed form but invert transcendentally, and
+inverting is the operation a clock cannot pay for on every read.
+
 The free conversions beside it are the rest of the time seam every client
 shares — the beat grid (`bar`, `beat_in_bar`, `quant_delay`) and the sample
 axis (`secs_to_samples`, `samples_to_secs`) — re-exported here so the whole of
@@ -38,10 +86,13 @@ axis (`secs_to_samples`, `samples_to_secs`) — re-exported here so the whole of
 """
 
 from .. import _native
-from .._native import LINEAR, STEP, TempoMap
+from .._native import BEATS, EXPONENTIAL, LINEAR, SECONDS, STEP, TempoMap
 
 __all__ = [
     "TempoMap",
+    "BEATS",
+    "SECONDS",
+    "EXPONENTIAL",
     "STEP",
     "LINEAR",
     "bar",

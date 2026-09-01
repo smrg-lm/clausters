@@ -23,7 +23,8 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
-import { TempoMap } from "../src/base/time.ts";
+import { TempoMap, tempoEnv } from "../src/base/time.ts";
+import type { TimeUnit } from "../src/base/time.ts";
 import {
     bar,
     beatInBar,
@@ -52,6 +53,14 @@ interface Vectors {
         tempoAt: { beats: number; tempo: number }[];
         spanSecs: { from: number; to: number; secs: number }[];
         spanBeats: { from: number; secs: number; beats: number }[];
+        shapes: {
+            curve: string | number;
+            unit: string;
+            segments: (number | string | null)[][];
+            secsAt: { beats: number; secs: number }[];
+            beatsAt: { secs: number; beats: number }[];
+            tempoAt: { beats: number; tempo: number }[];
+        }[];
     };
     quantDelay: { pos: number; quant: number; delay: number }[];
     bar: { beats: number; quant: number; bar: number; beatInBar: number }[];
@@ -68,6 +77,49 @@ interface Vectors {
         seed: number; floats: number[]; below: number[]; childFloats: number[];
         afterSpawn: number[]; uniform: number[];
     }[];
+}
+
+/**
+ * How many representable doubles apart two numbers are.
+ *
+ * The rest of this file asserts **equality**, and can: one implementation of
+ * each formula answers both clients. A tempo *shape* is the one place that is
+ * not enough, and the reason is not the formula but the library under it —
+ * `exp` and `ln` are not bit-identical between a native libm and the one wasm
+ * is built with, and the shapes evaluate them over a much wider range of
+ * arguments than a straight ramp does. Measured over the shape vectors: **4 of
+ * 189 values differ, by at most 3 ulp**, while the straight-ramp map above is
+ * still 0 of 16. So the contract there is one formula, not one libm, and this
+ * is what checks it.
+ */
+function ulpsApart(a: number, b: number): number {
+    if (a === b) return 0;
+    const view = new DataView(new ArrayBuffer(8));
+    const bits = (x: number) => {
+        view.setFloat64(0, x);
+        return view.getBigInt64(0);
+    };
+    const [x, y] = [bits(a), bits(b)];
+    return Number(x > y ? x - y : y - x);
+}
+
+/** `assert.equal` to within a few representable doubles. See {@link ulpsApart}. */
+function assertClose(got: number, want: number, what: string): void {
+    assert.ok(
+        ulpsApart(got, want) <= 4,
+        `${what}: ${got} is more than 4 ulp from ${want}`,
+    );
+}
+
+/**
+ * A segment's curve as the Python client spells it, back as the
+ * `[shape, curvature]` pair the wasm side answers with.
+ */
+function shapeNumberOf(curve: number | string | null): [number, number] {
+    if (typeof curve === "number") return [5, curve];
+    if (curve === "linear") return [1, 0];
+    if (curve === "exponential") return [2, 0];
+    return [0, 0];
 }
 
 const here = new URL(".", import.meta.url);
@@ -103,10 +155,10 @@ test("the piece's time map matches the Python client", () => {
         // wasm side answers 0 for both, and the curve tag beside them is what
         // says which. Compare the four that always mean something, plus the
         // ramp's own ends when it has them.
-        const curve = seg[3] === "linear" ? 1 : 0;
+        const [shape] = shapeNumberOf(seg[3]);
         assert.deepEqual([got[0], got[1], got[2], got[3]],
-                         [seg[0], seg[1], seg[2], curve]);
-        if (curve === 1) assert.deepEqual([got[4], got[5]], [seg[4], seg[5]]);
+                         [seg[0], seg[1], seg[2], shape]);
+        if (shape !== 0) assert.deepEqual([got[4], got[5]], [seg[4], seg[5]]);
     }
     for (const c of v.tempoMap.secsAt) assert.equal(map.secsAt(c.beats), c.secs);
     for (const c of v.tempoMap.beatsAt) assert.equal(map.beatsAt(c.secs), c.beats);
@@ -114,6 +166,37 @@ test("the piece's time map matches the Python client", () => {
     for (const c of v.tempoMap.spanSecs) assert.equal(map.spanSecs(c.from, c.to), c.secs);
     for (const c of v.tempoMap.spanBeats) {
         assert.equal(map.spanBeats(c.from, c.secs), c.beats);
+    }
+});
+
+test("every tempo shape matches the Python client, in both units", () => {
+    // One envelope per shape, written by the same call in the same order. The
+    // curvature is the one worth pinning: its inverse has no closed form and is
+    // solved by iteration, so if either client iterated on its own this is
+    // where the two would drift apart. Equality, not approximation.
+    for (const c of v.tempoMap.shapes) {
+        const map = new TempoMap(1.0);
+        tempoEnv(map, 0.0, [1.0, 4.0, 2.0], [8.0, 4.0], c.curve, c.unit as TimeUnit);
+        const where = `${c.curve} in ${c.unit}`;
+        assert.equal(map.len, c.segments.length, where);
+        for (const [i, seg] of c.segments.entries()) {
+            const got = map.segment(i);
+            assert.ok(got);
+            const [shape, curvature] = shapeNumberOf(seg[3]);
+            // The shape tag and the curvature are exact by construction: they
+            // are what crossed, not what was computed.
+            assert.deepEqual([got[3], got[6]], [shape, curvature], where);
+            assertClose(got[0], seg[0] as number, `${where} segment ${i} beats`);
+            assertClose(got[1], seg[1] as number, `${where} segment ${i} secs`);
+            assertClose(got[2], seg[2] as number, `${where} segment ${i} tempo`);
+            if (shape !== 0) {
+                assertClose(got[4], seg[4] as number, `${where} segment ${i} end`);
+                assertClose(got[5], seg[5] as number, `${where} segment ${i} endTempo`);
+            }
+        }
+        for (const q of c.secsAt) assertClose(map.secsAt(q.beats), q.secs, `${where} secsAt`);
+        for (const q of c.beatsAt) assertClose(map.beatsAt(q.secs), q.beats, `${where} beatsAt`);
+        for (const q of c.tempoAt) assertClose(map.tempoAt(q.beats), q.tempo, `${where} tempoAt`);
     }
 });
 

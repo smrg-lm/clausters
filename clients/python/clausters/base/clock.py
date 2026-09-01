@@ -31,6 +31,7 @@ import time
 import traceback
 
 from .. import _native
+from .._native import BEATS, EXPONENTIAL, LINEAR, SECONDS, STEP  # noqa: F401
 from .stream import Stream, StopStream
 from .timebase import MonotonicTimebase, SampleClockTimebase
 
@@ -277,36 +278,62 @@ class TempoClock:
         absolute sample for ``/sched_at``."""
         return self._mono_start
 
-    def set_tempo(self, tempo: float):
-        """Change tempo, pinning the current instant (no discontinuity): the
-        beat the clock is on keeps mapping to the second it already mapped to,
-        and the new tempo governs from there."""
-        at = self.beats()
-        # A breakpoint, not an overwrite. The map keeps the second `at` already
-        # fell on, which is what makes the change free of a discontinuity --
-        # and, unlike the single anchor this used to be, it also keeps every
-        # earlier tempo, so the beats before the change stay convertible.
-        self._map.push(at, float(tempo))
-        self._sync_map(wake=True)
+    def set_tempo(self, tempo, over=None, unit=BEATS, curve=LINEAR):
+        """**The tempo gesture**, from the beat the clock is on.
 
-    def ramp_tempo(self, tempo: float, over: float):
-        """Ramp the tempo from where it is now to ``tempo`` across ``over``
-        beats, then hold it — an accelerando or a ritardando.
+        With no ``over`` it is a **step**: the tempo changes from here, pinning
+        the current instant, so the beat the clock is on keeps mapping to the
+        second it already mapped to and nothing already scheduled jumps.
 
-        The other tempo gesture, and a different one from `set_tempo`: that one
-        is a step *from now on*, this one is a shape written over a stretch of
-        the piece. Its length in seconds is a logarithm of the tempo ratio, not
-        the span divided by an average, so a ramp written here and a ramp drawn
-        by an editor agree by construction.
+        With ``over`` it is a **shape written over a stretch** — an accelerando
+        or a ritardando reaching ``tempo`` and holding it. And ``tempo`` may be
+        an `Env` (or any object with ``levels``, ``times`` and ``curves``), in
+        which case the whole envelope is written in one call and ``over`` is
+        not needed: its own times are the extents.
+
+        Args:
+            tempo: the tempo to reach, in beats per second — or an envelope of
+                them, which must be of **finite duration** (no sustain and no
+                loop: those are a gate's ideas, and a piece's tempo has no
+                gate).
+            over: how far the change is spread. ``None`` is the step.
+            unit: what ``over`` (or an envelope's times) measures — `BEATS` or
+                `SECONDS`. In seconds the width in beats is solved exactly, so
+                an accelerando can be asked for by how long it lasts rather
+                than by how many beats it covers.
+            curve: the shape — `LINEAR`, `EXPONENTIAL` or a numeric curvature
+                (0 is linear, positive starts slow, negative starts fast). An
+                envelope carries its own and this is ignored.
+
+        A change is **recorded** rather than overwriting what came before, so
+        the beats before it stay convertible afterwards.
         """
         at = self.beats()
-        # The starting tempo is the one sounding *at* `at` -- not the affine
-        # cache's, which is the last segment's and would be a ramp's
-        # destination. That is what lets one ramp start inside another without
-        # stepping.
-        self._map.ramp(at, at + float(over), self._map.tempo_at(at), float(tempo))
+        levels = getattr(tempo, "levels", None)
+        if levels is not None:
+            self._write_env(at, tempo, unit)
+        elif over is None:
+            self._map.push(at, float(tempo))
+        else:
+            # The tempo the shape departs from is the one sounding at `at`, not
+            # the affine cache's, which is the last segment's and would be a
+            # shape's destination.
+            self._map.env(at, [self._map.tempo_at(at), float(tempo)],
+                          [float(over)], curve, unit)
         self._sync_map(wake=True)
         return self
+
+    def _write_env(self, at: float, env, unit):
+        """An `Env` as a tempo envelope. Its levels are tempos and its times are
+        extents in ``unit``; a sustain or a loop point is refused rather than
+        ignored, because an envelope of tempo has no gate to hold."""
+        if getattr(env, "release_node", None) is not None or \
+                getattr(env, "loop_node", None) is not None:
+            raise ValueError(
+                "a tempo envelope is of finite duration: it has no gate, so a "
+                "release_node or a loop_node has nothing to mean"
+            )
+        self._map.env(at, env.levels, env.times, list(env.curves), unit)
 
     def bar(self, quant: float, beats: float | None = None) -> float:
         """The bar index the clock's current beat (or an explicit ``beats``

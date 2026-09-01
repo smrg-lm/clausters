@@ -39,15 +39,21 @@ view that held the starting tempo as a number would draw it at 8.0 s, and the
 sweeping line would cross the clip three seconds after you heard it. The clip
 here is drawn from the map, so the line crosses it when it sounds.
 
-<b>The two tempo gestures, and they are different acts.</b>
-<code>clock.setTempo(bps)</code> is a <b>step from now on</b> — a new tempo,
-pinned at the instant you call it, so nothing already scheduled jumps.
-<code>clock.rampTempo(bps, over)</code> is a <b>shape written over a
-stretch</b> — an accelerando or a ritardando. Its length in seconds is a
-logarithm of the tempo ratio, not the span divided by an average of the two
-tempos, and the printed comparison below is the difference the two answers make.
+<b>One verb, and what its arguments say.</b> <code>clock.setTempo(bps)</code>
+with nothing else is a <b>step from now on</b> — a new tempo, pinned at the
+instant you call it, so nothing already scheduled jumps. Add <code>over</code>
+and it is a <b>shape written over a stretch</b>: an accelerando or a ritardando,
+whose length in seconds is a logarithm of the tempo ratio rather than the span
+divided by an average of the two tempos, and the printed comparison below is the
+difference the two answers make. Add <code>unit: SECONDS</code> and the stretch
+is wall clock instead of beats — solved exactly, not searched for. Add
+<code>curve</code> and it is a different shape.
 
-Both write on <code>clock.map</code>, and a change is <b>recorded</b> rather than
+Hand it an envelope of tempos and the whole thing is written in <b>one call</b>:
+the envelope's levels are tempos and its times are the extents. It has to be of
+finite duration — no sustain, no loop — because a piece's tempo has no gate.
+
+Every form writes on <code>clock.map</code>, and a change is <b>recorded</b> rather than
 replacing what came before — which is why the beats <i>before</i> it still
 convert correctly afterwards. A single anchor cannot do that: it would
 extrapolate its current slope backwards and report that beat 1 happened at a
@@ -160,8 +166,11 @@ this directory and open the page.</div>
         // The clock also writes on it live, and those are the two gestures — a
         // step and a shape — the same acts, spelled from the other side:
         //
-        //   clock.setTempo(4.0);            // a step, pinned where you call it
-        //   clock.rampTempo(4.0, 8.0);      // a shape, over the eight beats from here
+        //   clock.setTempo(4.0);                                  // a step, pinned where you call it
+        //   clock.setTempo(4.0, { over: 8.0 });                  // a shape, over eight beats
+        //   clock.setTempo(4.0, { over: 3.0, unit: SECONDS });    // the same, over three seconds
+        //   clock.setTempo(4.0, { over: 8.0, curve: EXPONENTIAL });  // equal ratios, not equal steps
+        //   clock.setTempo({ levels: [1.0, 4.0, 2.0], times: [8.0, 4.0] });  // the whole shape at once
         //
         // Do that while it runs and the piece accelerates under your hand; the
         // map keeps both, and every beat already played stays convertible.
