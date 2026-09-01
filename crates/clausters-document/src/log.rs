@@ -1,8 +1,8 @@
 //! Undo for the arrangement, beside the data it inverts.
 //!
-//! The pile itself is [`history`](crate::history), which knows no vocabulary at
+//! The pile itself is [`crate::history`], which knows no vocabulary at
 //! all. This module is its arrangement-shaped face: a [`Log`] is a
-//! [`History`](crate::history::History) with one structure registered in it, and
+//! [`History`] with one structure registered in it, and
 //! an [`Entry`] states its halves as [`Intent`]s rather than as opaque payloads.
 //! There is one implementation of the pile, and this is not a second one.
 //!
@@ -48,10 +48,10 @@
 //! here whose size follows the audio rather than the parameters. Above a
 //! threshold it goes to a [`Spill`] store — content-addressed, so an undo/redo
 //! pair that names the same bytes holds one copy. See
-//! [`history`](crate::history) for the mechanism; what is arrangement-specific
+//! [`crate::history`] for the mechanism; what is arrangement-specific
 //! is only which edit gets big.
 
-use crate::history::{self, History, StructureId};
+use crate::history::{self, Applied, Editable, History, StructureId};
 use crate::intent::{Against, Intent, Outcome, Rules, current};
 use crate::{Document, Opaque};
 
@@ -108,28 +108,93 @@ impl Step {
 }
 
 /// An intent as the pile carries it. Total: every [`Intent`] is serde data.
-fn payload(intent: &Intent) -> Opaque {
+///
+/// Public because a binding that builds its own entries has to write the
+/// payload the same way this does.
+pub fn payload(intent: &Intent) -> Opaque {
     Opaque(serde_json::to_value(intent).unwrap_or(serde_json::Value::Null))
 }
 
 /// The intent a payload holds, or `None` if it will not read as one — which
 /// only a payload some other domain wrote can be.
-fn intent_of(payload: &Opaque) -> Option<Intent> {
+///
+/// Public for the same reason [`payload`] is: a binding reading a leg addressed
+/// to the arrangement needs exactly this.
+pub fn intent_of(payload: &Opaque) -> Option<Intent> {
     serde_json::from_value(payload.0.clone()).ok()
 }
 
 /// What makes two edits *the same thing done the same way*: the kind of edit
 /// and the node it names. The pile cannot compute it — that is a sentence in
 /// this vocabulary — so an entry carries it.
-fn coalesce_key(step: &Step) -> Option<String> {
-    let intent = step.intent()?;
+///
+/// Public because a binding that records its own entries has to state the same
+/// thing, and a second spelling of it is how a run of adjustments comes to
+/// coalesce through one door and not through another.
+pub fn coalesce_key(intent: &Intent) -> String {
     let kind = match intent {
         Intent::Place { .. } => "place",
         Intent::Configure { .. } => "configure",
         Intent::SetMembers { .. } => "setmembers",
         Intent::WriteSamples { .. } => "writesamples",
     };
-    Some(format!("{kind}:{}", intent.node().0))
+    format!("{kind}:{}", intent.node().0)
+}
+
+/// The arrangement as an [`Editable`]: a document, plus the two things an edit
+/// to *this* domain needs and no other does.
+///
+/// It is built for one call, because that is the lifetime of what it carries —
+/// `against` is the state the editor believed it was editing and `rules` the
+/// grid this gesture snaps to, and neither is a property of the document. That
+/// is why [`Editable`] has no room for them: a curve has no version to check
+/// and no grid to snap to, and a trait sized for the arrangement's needs would
+/// make every other domain carry them empty.
+pub struct Tree<'a> {
+    /// The document being edited.
+    pub document: &'a mut Document,
+    /// The state the edit was made against. See [`Against`].
+    pub against: Against,
+    /// How the owner transforms the edit as it applies it. See [`Rules`].
+    pub rules: Rules,
+}
+
+impl<'a> Tree<'a> {
+    /// The document, edited against whatever it currently says and snapping to
+    /// nothing — what a script that just read it wants.
+    pub fn new(document: &'a mut Document) -> Self {
+        Self {
+            document,
+            against: Against::unstated(),
+            rules: Rules::none(),
+        }
+    }
+}
+
+impl Editable for Tree<'_> {
+    fn apply(&mut self, load: &Opaque) -> Applied {
+        let Some(intent) = intent_of(load) else {
+            return Applied::refused(
+                load.clone(),
+                "not an edit written in the arrangement's vocabulary",
+            );
+        };
+        let outcome = crate::intent::apply(self.document, &intent, &self.against, &self.rules);
+        Applied {
+            effective: payload(&outcome.effective),
+            applied: outcome.applied,
+            reason: outcome.reason,
+            stale: outcome.stale,
+        }
+    }
+
+    fn current(&self, load: &Opaque) -> Option<Opaque> {
+        current(self.document, &intent_of(load)?).map(|intent| payload(&intent))
+    }
+
+    fn coalesce_key(&self, load: &Opaque) -> Option<String> {
+        Some(coalesce_key(&intent_of(load)?))
+    }
 }
 
 /// A single reversible edit: how to redo it, and how to undo it.
@@ -200,13 +265,13 @@ impl Entry {
         };
         let mut entry =
             history::Entry::new(&self.label, structure, forward.generic(), payload(backward));
-        if let Some(key) = coalesce_key(forward) {
-            entry = entry.keyed(key);
+        if let Some(intent) = forward.intent() {
+            entry = entry.keyed(coalesce_key(intent));
         }
         for (forward, backward) in legs {
             entry = entry.and(structure, forward.generic(), payload(backward));
-            if let Some(key) = coalesce_key(forward) {
-                entry = entry.keyed(key);
+            if let Some(intent) = forward.intent() {
+                entry = entry.keyed(coalesce_key(intent));
             }
         }
         if self.coalesce {
@@ -438,19 +503,25 @@ pub fn apply_logged(
     log: &mut Log,
     label: impl Into<String>,
 ) -> Outcome {
-    let before = current(document, intent);
-    let outcome = crate::intent::apply(document, intent, against, rules);
-    if !outcome.applied {
-        return outcome;
+    let structure = log.structure();
+    let mut tree = Tree {
+        document,
+        against: *against,
+        rules: *rules,
+    };
+    let applied = log
+        .history_mut()
+        .apply(structure, &mut tree, &payload(intent), label);
+    Outcome {
+        // The effective payload is whatever the arrangement's own `apply` put
+        // there, so it reads back as an intent unless the edit was refused for
+        // not being one -- and then the intent as given is the honest answer,
+        // since a refusal hands back what holds.
+        effective: intent_of(&applied.effective).unwrap_or_else(|| intent.clone()),
+        applied: applied.applied,
+        reason: applied.reason,
+        stale: applied.stale,
     }
-    if let Some(before) = before {
-        log.record(Entry::new(
-            label,
-            Step::Edit(outcome.effective.clone()),
-            before,
-        ));
-    }
-    outcome
 }
 
 #[cfg(test)]

@@ -76,7 +76,7 @@ impl Held {
 ///
 /// # Safety
 /// `ptr` must be null or readable for `len` bytes.
-unsafe fn text<'a>(ptr: *const u8, len: usize) -> Option<std::borrow::Cow<'a, str>> {
+pub(crate) unsafe fn text<'a>(ptr: *const u8, len: usize) -> Option<std::borrow::Cow<'a, str>> {
     if ptr.is_null() {
         return None;
     }
@@ -110,10 +110,10 @@ pub(crate) unsafe fn fill(
 
 /// Run `f` with the handle's contents locked.
 ///
-/// `log` reaches the document through this: an edit that is also *recorded*
+/// `history` reaches the document through this: an edit that is also *recorded*
 /// still has to land on the one held tree. The lock order is always
-/// **document, then log** — a commit closure may take the log's lock while this
-/// one is held, and nothing takes them the other way round.
+/// **document, then history** — a commit closure may take the history's lock
+/// while this one is held, and nothing takes them the other way round.
 pub(crate) fn with_document<T>(
     h: *mut FfiDocument,
     default: T,
@@ -167,6 +167,41 @@ pub unsafe extern "C" fn clausters_document_free(h: *mut FfiDocument) {
         // SAFETY: caller guarantees `h` came from Box::into_raw above.
         drop(unsafe { Box::from_raw(h) });
     }
+}
+
+/// What makes two edits over the arrangement *the same thing done the same way*
+/// — the key a history coalesces on, written to `out`; the byte count it needs,
+/// or `0` when the intent will not parse.
+///
+/// It is here rather than on the history's surface because it is a sentence in
+/// **this** vocabulary: the kind of edit and the node it names. The pile reads
+/// no vocabulary, so a caller recording its own entries asks the domain, which
+/// is what keeps a second spelling of the rule out of every binding.
+///
+/// # Safety
+/// `intent` must be null or readable for `intent_len` bytes, and `out` null or
+/// writable for `out_cap` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_document_coalesce_key(
+    intent: *const u8,
+    intent_len: usize,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    // SAFETY: forwarded from this function's own contract.
+    let Some(raw) = (unsafe { text(intent, intent_len) }) else {
+        return 0;
+    };
+    let Ok(intent) = serde_json::from_str::<Intent>(&raw) else {
+        return 0;
+    };
+    let key = clausters_document::log::coalesce_key(&intent);
+    let bytes = key.as_bytes();
+    if !out.is_null() && out_cap >= bytes.len() {
+        // SAFETY: out is writable for out_cap >= bytes.len() bytes.
+        unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), out, bytes.len()) };
+    }
+    bytes.len()
 }
 
 /// The document's current version — monotonic, bumped by every applied edit,

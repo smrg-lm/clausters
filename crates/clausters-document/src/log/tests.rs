@@ -434,3 +434,112 @@ fn clearing_forgets_everything_and_releases_what_was_spilled() {
     assert!(!log.can_undo() && !log.can_redo() && log.is_empty());
     assert_eq!(log.undo(), None);
 }
+
+// ---- two domains, one pile ----
+
+#[test]
+fn a_history_holding_a_document_and_a_curve_undoes_them_in_one_order() {
+    // O16's acceptance, and the whole reason the pile carries no vocabulary: an
+    // application composing a multitrack and a curve has one history, and the
+    // interleaved order is the pile. Nothing here routes by anything but the
+    // structure each leg names.
+    use crate::history::{Editable, History};
+    use crate::points::{POINTS, Point, Points, PointsIntent, payload as points_payload};
+
+    let mut d = doc();
+    let start = d.root.clone();
+    let mut curve = Points::new(vec![Point {
+        at: 0.0,
+        value: 0.0,
+    }]);
+
+    let mut history = History::new();
+    let tree = history.register(TREE);
+    let points = history.register(POINTS);
+
+    history.apply(
+        tree,
+        &mut Tree::new(&mut d),
+        &super::payload(&place(2, 5.0)),
+        "move the clip",
+    );
+    history.apply(
+        points,
+        &mut curve,
+        &points_payload(&PointsIntent::SetPoints {
+            points: vec![Point {
+                at: 0.0,
+                value: 1.0,
+            }],
+        }),
+        "draw",
+    );
+    history.apply(
+        tree,
+        &mut Tree::new(&mut d),
+        &super::payload(&place(3, 7.0)),
+        "move the other",
+    );
+    assert_eq!(history.len(), 3, "one pile over both");
+
+    // Undoing walks that one order, and each leg says which structure it is
+    // for -- which is all a caller needs to route it.
+    for expected in [tree, points, tree] {
+        let undone = history.undo().expect("something to undo");
+        for (structure, load) in undone {
+            assert_eq!(structure, expected);
+            if structure == tree {
+                let mut state = Tree::new(&mut d);
+                state.apply(&load);
+            } else {
+                curve.apply(&load);
+            }
+        }
+    }
+    assert_eq!(d.root, start, "the document, back where it started");
+    assert_eq!(
+        curve.0,
+        vec![Point {
+            at: 0.0,
+            value: 0.0
+        }],
+        "and the curve with it"
+    );
+    assert!(!history.can_undo());
+}
+
+#[test]
+fn the_arrangements_own_door_still_records_through_the_generic_one() {
+    // `apply_logged` is `History::apply` wearing the arrangement's vocabulary.
+    // What this checks is that nothing about the refusal rules moved: a stale
+    // edit is refused and leaves no entry, and the outcome still reads as an
+    // intent.
+    let mut d = doc();
+    let mut log = Log::new();
+    let stale = Against {
+        version: 99,
+        generation: None,
+    };
+    let outcome = apply_logged(
+        &mut d,
+        &place(2, 5.0),
+        &stale,
+        &Rules::none(),
+        &mut log,
+        "move",
+    );
+    assert!(!outcome.applied && outcome.stale);
+    assert!(log.is_empty(), "a refusal is not an edit");
+
+    let outcome = apply_logged(
+        &mut d,
+        &place(2, 5.0),
+        &Against::unstated(),
+        &Rules::none(),
+        &mut log,
+        "move",
+    );
+    assert!(outcome.applied);
+    assert_eq!(outcome.effective, place(2, 5.0));
+    assert_eq!(log.len(), 1);
+}

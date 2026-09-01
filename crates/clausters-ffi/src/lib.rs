@@ -33,7 +33,7 @@ mod builtins;
 mod bundle;
 mod clocksync;
 mod document;
-mod log;
+mod history;
 mod measure;
 #[cfg(feature = "notation")]
 pub mod notation;
@@ -55,7 +55,7 @@ pub use builtins::*;
 pub use bundle::*;
 pub use clocksync::*;
 pub use document::*;
-pub use log::*;
+pub use history::*;
 pub use measure::*;
 pub use patch::*;
 pub use registry::*;
@@ -105,7 +105,8 @@ pub use time::*;
 /// (`clausters_log_*`), which crosses as a **handle** where the document
 /// crosses by value — a bulk inverse leaves the log on purpose, so sending one
 /// by value would carry every spilled span on every call, which is the cost
-/// spilling exists to avoid. **v19 is a format rather than a symbol**: the peak
+/// spilling exists to avoid. (v32 renamed these `clausters_history_*`; see
+/// below.) **v19 is a format rather than a symbol**: the peak
 /// cache the `clausters_core_peaks_*` builders emit is CLPK v3, which carries a
 /// mean square beside each bucket's min/max, so a cache built by this surface is
 /// longer than a v18 one and a reader that predates it cannot parse it (the
@@ -168,7 +169,20 @@ pub use time::*;
 /// symbol eagerly, so a staged library missing these fails at load — with
 /// *"speaks ABI v30, this binding v31"* rather than an `AttributeError` on a
 /// name nobody was looking at.
-pub const CORE_ABI_VERSION: u32 = 31;
+///
+/// **v32 the log became a history**, and the rename is the honest part of a
+/// breaking change: the handle no longer holds one document's undo but one
+/// *editing context* — the structures registered in it and one ordered pile
+/// over them — so `clausters_log_*` became `clausters_history_*`, with
+/// `clausters_history_register` minting a structure's identity and every call
+/// that names one taking it. `undo` and `redo` lost their document argument and
+/// apply nothing: a history holds structures this surface cannot reach, so they
+/// hand back each payload with the structure it belongs to (`{"inverses": …}`,
+/// `{"edits": …, "remaining": …}`) and the caller applies them through whatever
+/// door each domain has. `record` gained the coalesce **key**, because "the
+/// same thing done the same way" is a sentence in a vocabulary the pile does
+/// not read.
+pub const CORE_ABI_VERSION: u32 = 32;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

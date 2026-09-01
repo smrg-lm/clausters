@@ -22,7 +22,7 @@
  * @module
  */
 
-import { Document as CoreDocument, Log as CoreLog } from "./core/clausters_core_web.js";
+import { Document as CoreDocument, History as CoreHistory } from "./core/clausters_core_web.js";
 import { loadCore } from "./base/core.ts";
 
 /**
@@ -190,6 +190,21 @@ export class Document {
     }
 
     /**
+     * What makes two edits over the arrangement *the same thing done the same
+     * way* — the key a {@link History} coalesces on, or `""` when the intent
+     * will not parse.
+     *
+     * It belongs to the document and not to the history because it is a
+     * sentence in **this** vocabulary: the kind of edit and the node it names.
+     * The pile reads no vocabulary, so a caller recording its own entries asks
+     * the domain, which is what keeps a second spelling of the rule out of
+     * every client.
+     */
+    static coalesceKey(intent: Intent): string {
+        return CoreDocument.coalesceKey(JSON.stringify(intent));
+    }
+
+    /**
      * Apply one edit.
      *
      * @param intent - the edit, stating the resulting value.
@@ -319,18 +334,242 @@ export interface Redone {
     remaining: Step[];
 }
 
+/** One leg of an entry: the structure it belongs to, and the payload. */
+export interface Leg {
+    /** The identity {@link History.register} handed back. */
+    structure: number;
+    /** The edit, in that structure's own vocabulary. */
+    payload: unknown;
+}
+
+/** One leg of a redo the crate could not describe as an edit. */
+export interface RemainingLeg {
+    /** The identity {@link History.register} handed back. */
+    structure: number;
+    /** The step, for the owner to re-run. */
+    step: Step;
+}
+
+/** What a redo hands back, applied by nobody. */
+export interface Steps {
+    /**
+     * The leading run of ordinary edits, for you to apply **in order**.
+     */
+    edits: Leg[];
+    /**
+     * The steps from the first one the crate cannot describe as an edit onward
+     * — a deterministic operation kept as its parameters, which you re-run
+     * because the crate holds no algorithms. It stops at the first rather than
+     * skipping it, so a later edit is never applied over a state the operation
+     * before it was meant to produce. Usually empty.
+     */
+    remaining: RemainingLeg[];
+}
+
 /**
- * The undo history of one document.
+ * One editing context's history.
+ *
+ * A history holds the structures registered in it and **one ordered pile** over
+ * them, so what you decide by choosing a history is *what shares an undo
+ * order*: a structure you built with no composition behind it is a history with
+ * one structure in it; an application composing several editable views
+ * registers them all in one, and the interleaved order its undo walks **is**
+ * the pile; two views of one structure hold one history between them, which is
+ * what keeps an undo in either from writing a state nobody was in.
+ *
+ * What decides what shares a history is which history a structure was
+ * registered in, never which view is looking at it. A structure belongs to
+ * exactly one, and {@link History.record} refuses an entry naming an identity
+ * this history did not mint.
+ *
+ * It is an object for its own reason, beyond the one {@link Document} has: the
+ * spill store. A bulk payload leaves the pile on purpose, so passing one by
+ * value would carry every spilled span on every call, which is the cost
+ * spilling exists to avoid.
+ */
+export class History {
+    #inner: CoreHistory;
+
+    /**
+     * A history, **with the core already loaded** — the synchronous door, for
+     * the same reason {@link Document}'s constructor is one.
+     * {@link History.open} is the awaiting form.
+     */
+    constructor(budget = 0, spillAbove = 0) {
+        this.#inner = new CoreHistory(budget, spillAbove);
+    }
+
+    /**
+     * Opens a history. `budget` is how many entries it keeps before the oldest
+     * falls off and `spillAbove` how many bytes a payload must reach,
+     * serialized, before it leaves the pile; either as 0 takes the crate's
+     * default.
+     */
+    static async open(budget = 0, spillAbove = 0): Promise<History> {
+        await loadCore();
+        return new History(budget, spillAbove);
+    }
+
+    /**
+     * Takes a structure into this history and returns its identity.
+     *
+     * `domain` names the vocabulary its payloads are written in — `"tree"` for
+     * the arrangement, `"points"` for a break-point curve — and the history
+     * carries it so a caller routing what comes back knows which reader a leg
+     * belongs to. Nothing in the crate reads it.
+     *
+     * The identity is minted here rather than carried by the data, because a
+     * structure you built has no id and is not going to be given a stable one
+     * for this. It is also the read-back path: the identity that opened an
+     * editable view is the one its edited state is read out through.
+     */
+    register(domain: string): number {
+        return Number(this.#inner.register(domain));
+    }
+
+    /**
+     * Apply an edit to `document` **and record it** against `structure`, in one
+     * call — the inverse has to be read out of the document before the edit
+     * lands, so applying first and recording second would record the wrong
+     * thing. Nothing is recorded unless the document changed, so a refusal
+     * leaves no entry and neither does a resend.
+     *
+     * The arrangement's door alone, because the document is the one state the
+     * crate can reach; for anything else you apply the edit yourself and hand
+     * the pair to {@link History.record}.
+     */
+    apply(
+        structure: number,
+        document: Document,
+        intent: Intent,
+        options: { against?: Against; quant?: number; label?: string } = {},
+    ): Outcome {
+        return JSON.parse(
+            this.#inner.apply(
+                BigInt(structure),
+                document[coreOf],
+                JSON.stringify({
+                    intent,
+                    against: options.against ?? null,
+                    quant: options.quant ?? 0,
+                    label: options.label ?? "edit",
+                }),
+            ),
+        ) as Outcome;
+    }
+
+    /**
+     * Record an entry against `structure` — the door for everything
+     * {@link History.apply} cannot do: a destructive write, whose overwritten
+     * samples are not in the tree, and every domain that is not the
+     * arrangement, whose state the crate cannot reach. This applies nothing:
+     * the edit has happened, and what is recorded is how to put it back.
+     *
+     * `key` is what makes two edits *the same thing done the same way* — the
+     * arrangement spells it `"place:7"` ({@link Document.coalesceKey}), a curve
+     * has one verb and one key — and an empty one never coalesces. `coalesce`
+     * merges into the entry before it when both keys match, so a run of small
+     * adjustments is one undo. You decide, because only you know where the hand
+     * stopped.
+     *
+     * Returns whether it was recorded: a structure this history did not mint is
+     * refused rather than opening a second order over data that already has one.
+     */
+    record(
+        structure: number,
+        forward: Step,
+        backward: unknown,
+        options: { label?: string; key?: string; coalesce?: boolean } = {},
+    ): boolean {
+        return this.#inner.record(
+            BigInt(structure),
+            JSON.stringify({
+                forward,
+                backward,
+                label: options.label ?? "edit",
+                key: options.key ?? "",
+                coalesce: options.coalesce ?? false,
+            }),
+        );
+    }
+
+    /**
+     * Undo the last transaction: the inverses of the entry before the cursor,
+     * each with the structure it belongs to and **in the order they must be
+     * applied**, or `undefined` when there is nothing to undo.
+     *
+     * It applies nothing: a history holds structures the crate cannot reach, so
+     * applying the legs it *could* would leave the rest to you out of order,
+     * which is how a transaction half-happens.
+     */
+    undo(): Leg[] | undefined {
+        const result = this.#inner.undo();
+        return result === undefined
+            ? undefined
+            : (JSON.parse(result) as { inverses: Leg[] }).inverses;
+    }
+
+    /** Redo what was last undone, or `undefined` when there is nothing. */
+    redo(): Steps | undefined {
+        const result = this.#inner.redo();
+        return result === undefined ? undefined : (JSON.parse(result) as Steps);
+    }
+
+    /** Whether there is anything to undo. */
+    get canUndo(): boolean {
+        return this.#inner.canUndo;
+    }
+
+    /** Whether there is anything to redo. */
+    get canRedo(): boolean {
+        return this.#inner.canRedo;
+    }
+
+    /**
+     * What an undo would be called, for a menu item — and what a person needs
+     * when one pile holds several structures, since the label is the only thing
+     * saying which one a keystroke is about to move.
+     */
+    get undoLabel(): string | undefined {
+        return this.#inner.undoLabel;
+    }
+
+    /** What a redo would be called. */
+    get redoLabel(): string | undefined {
+        return this.#inner.redoLabel;
+    }
+
+    /** How many entries the history holds. */
+    get length(): number {
+        return this.#inner.len;
+    }
+
+    /**
+     * Forget every entry, releasing what was spilled. The structures stay
+     * registered: it is the order that is gone, not the identities you hold.
+     */
+    clear(): void {
+        this.#inner.clear();
+    }
+
+    /** Release the history. Idempotent. */
+    free(): void {
+        this.#inner.free();
+    }
+}
+
+/**
+ * The undo history of one document: a {@link History} with one structure in it.
  *
  * Undo belongs with the document and not with a view: a view's log sees only
  * the gestures *it* made, so a script editing the arrangement, a second editor
  * or a re-render leaves it describing a document that has moved on — and undo
- * then writes a state nobody was ever in.
+ * then writes a state nobody was ever in. This is that history read in the
+ * arrangement's own terms, so there is one order however many surfaces edit.
  *
- * It is an object for its own reason, beyond the one {@link Document} has: the
- * spill store. A bulk inverse leaves the log on purpose, so passing one by
- * value would carry every spilled span on every call, which is the cost
- * spilling exists to avoid.
+ * It is a **face**, not a second pile: {@link Log.history} is the one
+ * underneath, and a caller composing several editable structures registers them
+ * there rather than opening a second `Log`.
  *
  * ```ts
  * const doc = await Document.open(json);
@@ -340,26 +579,34 @@ export interface Redone {
  * ```
  */
 export class Log {
-    #inner: CoreLog;
+    /** The domain name a document's structure is registered under. */
+    static readonly TREE = "tree";
+
+    /**
+     * The pile this log is a face of — what a caller composing several editable
+     * structures in one context reaches for.
+     */
+    readonly history: History;
+    /** The document's identity within that history. */
+    readonly structure: number;
+    #owned: boolean;
 
     /**
      * A log, **with the core already loaded** — the synchronous door, for the
      * same reason {@link Document}'s constructor is one. {@link Log.open} is
-     * the awaiting form.
+     * the awaiting form. Pass a `history` to register the document in one that
+     * already exists; freeing this log then leaves that history alone.
      */
-    constructor(budget = 0, spillAbove = 0) {
-        this.#inner = new CoreLog(budget, spillAbove);
+    constructor(budget = 0, spillAbove = 0, history?: History) {
+        this.#owned = history === undefined;
+        this.history = history ?? new History(budget, spillAbove);
+        this.structure = this.history.register(Log.TREE);
     }
 
-    /**
-     * Opens a log. `budget` is how many entries it keeps before the oldest
-     * falls off and `spillAbove` how many bytes a payload must reach,
-     * serialized, before it leaves the log; either as 0 takes the crate's
-     * default.
-     */
-    static async open(budget = 0, spillAbove = 0): Promise<Log> {
+    /** Opens a log. Arguments are {@link History.open}'s. */
+    static async open(budget = 0, spillAbove = 0, history?: History): Promise<Log> {
         await loadCore();
-        return new Log(budget, spillAbove);
+        return new Log(budget, spillAbove, history);
     }
 
     /**
@@ -374,17 +621,7 @@ export class Log {
         intent: Intent,
         options: { against?: Against; quant?: number; label?: string } = {},
     ): Outcome {
-        return JSON.parse(
-            this.#inner.apply(
-                document[coreOf],
-                JSON.stringify({
-                    intent,
-                    against: options.against ?? null,
-                    quant: options.quant ?? 0,
-                    label: options.label ?? "edit",
-                }),
-            ),
-        ) as Outcome;
+        return this.history.apply(this.structure, document, intent, options);
     }
 
     /**
@@ -402,60 +639,84 @@ export class Log {
         backward: Intent,
         options: { label?: string; coalesce?: boolean } = {},
     ): void {
-        this.#inner.record(
-            JSON.stringify({
-                forward,
-                backward,
-                label: options.label ?? "edit",
-                coalesce: options.coalesce ?? false,
-            }),
-        );
+        // The key is the arrangement's own sentence, so it is asked of the
+        // arrangement rather than spelled again here: a second spelling is how
+        // a run coalesces through one door and not through another.
+        const edit = "edit" in forward ? forward.edit : undefined;
+        const key = edit === undefined ? "" : Document.coalesceKey(edit);
+        this.history.record(this.structure, forward, backward, { ...options, key });
     }
 
-    /** Undo the last transaction, or `undefined` when there is nothing to undo. */
+    /**
+     * Undo the last transaction, applying its inverses to `document`, or
+     * `undefined` when there is nothing to undo.
+     */
     undo(document: Document): Undone | undefined {
-        const result = this.#inner.undo(document[coreOf]);
-        return result === undefined ? undefined : (JSON.parse(result) as Undone);
+        const legs = this.history.undo();
+        if (legs === undefined) return undefined;
+        return { undone: this.#walk(legs, document) };
     }
 
-    /** Redo what was last undone, or `undefined` when there is nothing. */
+    /**
+     * Redo what was last undone, applying what it can to `document`, or
+     * `undefined` when there is nothing.
+     */
     redo(document: Document): Redone | undefined {
-        const result = this.#inner.redo(document[coreOf]);
-        return result === undefined ? undefined : (JSON.parse(result) as Redone);
+        const steps = this.history.redo();
+        if (steps === undefined) return undefined;
+        return {
+            redone: this.#walk(steps.edits, document),
+            remaining: steps.remaining
+                .filter((leg) => leg.structure === this.structure)
+                .map((leg) => leg.step),
+        };
+    }
+
+    /** Applies the legs addressed to this document, and reports them. */
+    #walk(legs: Leg[], document: Document): Intent[] {
+        const mine: Intent[] = [];
+        for (const leg of legs) {
+            if (leg.structure !== this.structure) continue;
+            // An undo is authoritative: it states what the document was, so it
+            // is not checked against a version it predates.
+            document.apply(leg.payload as Intent);
+            mine.push(leg.payload as Intent);
+        }
+        return mine;
     }
 
     /** Whether there is anything to undo. */
     get canUndo(): boolean {
-        return this.#inner.canUndo;
+        return this.history.canUndo;
     }
 
     /** Whether there is anything to redo. */
     get canRedo(): boolean {
-        return this.#inner.canRedo;
+        return this.history.canRedo;
     }
 
     /** What an undo would be called, for a menu item. */
     get undoLabel(): string | undefined {
-        return this.#inner.undoLabel;
+        return this.history.undoLabel;
     }
 
     /** What a redo would be called. */
     get redoLabel(): string | undefined {
-        return this.#inner.redoLabel;
+        return this.history.redoLabel;
     }
 
-    /** How many entries the log holds. */
+    /** How many entries the history holds. */
     get length(): number {
-        return this.#inner.len;
+        return this.history.length;
     }
 
     /** Forget everything, releasing what was spilled. */
     clear(): void {
-        this.#inner.clear();
+        this.history.clear();
     }
 
-    /** Release the log. Idempotent. */
+    /** Release the history, unless it came from elsewhere. Idempotent. */
     free(): void {
-        this.#inner.free();
+        if (this.#owned) this.history.free();
     }
 }

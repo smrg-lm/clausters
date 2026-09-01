@@ -224,6 +224,7 @@ apply → snapshot → free, and pays the serialization where it asked for it.
 | `clausters_document_resolve` | `JsDocument.resolve` | |
 | `clausters_document_snapshot` | `JsDocument.snapshot` | the one call still the size of the composition, and asked for rather than paid per edit |
 | `clausters_document_version` | `JsDocument.version` | `idiom` — a getter |
+| `clausters_document_coalesce_key` | `JsDocument.coalesce_key` | `idiom` — a free function in C, a static on the class in JS; it is the *arrangement's* sentence for "the same thing done the same way", so it lives with the document and not with the history |
 
 **Size-then-fill needs two rules here**, because the surface mutates. A mutating
 call commits **only when the bytes are written**, so a sizing pass changes
@@ -235,26 +236,38 @@ twice. Caching a mutating call that way would be wrong — the mutation would la
 on the sizing pass, and a caller that sized and then gave up would have edited
 without knowing.
 
-The **log** crosses as a handle too, for its own reason: a bulk inverse *leaves*
-the log for its spill store on purpose, so passing one by value would carry
-every spilled span on every call, which is the cost spilling exists to avoid.
-Its document-carrying calls take the document handle.
+The **history** crosses as a handle too, for its own reason: a bulk payload
+*leaves* the pile for its spill store on purpose, so passing one by value would
+carry every spilled span on every call, which is the cost spilling exists to
+avoid. One handle is one editing context — the structures registered in it and
+one ordered pile over them — so what a caller decides by choosing a handle is
+what shares an undo order. `register` mints a structure's identity and every
+call that names one takes it.
+
+`apply` is the arrangement's door alone, and takes the document handle: it is
+the one state this surface can reach, and applying and recording are one call
+because the inverse has to be read before the edit lands. Everything else —
+a destructive write, and every domain that is not the arrangement — is applied
+by the caller and recorded through `record`. `undo` and `redo` apply nothing and
+take no document: they hand back the payloads with the structure each belongs
+to, in the order they must be applied.
 
 | C ABI | wasm | Note |
 |---|---|---|
-| `clausters_log_new` | `JsLog.new` | `idiom` — a constructor where C mints a handle |
-| `clausters_log_free` | — | `n/a` — wasm frees by `Drop` |
-| `clausters_log_apply` | `JsLog.apply` | |
-| `clausters_log_record` | `JsLog.record` | |
-| `clausters_log_undo` | `JsLog.undo` | |
-| `clausters_log_redo` | `JsLog.redo` | |
-| `clausters_log_can_undo` | `JsLog.can_undo` | `idiom` — a getter |
-| `clausters_log_can_redo` | `JsLog.can_redo` | `idiom` — a getter |
-| `clausters_log_undo_label` | `JsLog.undo_label` | `idiom` — a getter returning a string, where C sizes and fills |
-| `clausters_log_redo_label` | `JsLog.redo_label` | `idiom` — as above |
-| `clausters_log_len` | `JsLog.len` | `idiom` — a getter |
-| — | `JsLog.is_empty` | `idiom` — `len == 0`, as `JsScheduler` and `JsRegistry` already spell it |
-| `clausters_log_clear` | `JsLog.clear` | |
+| `clausters_history_new` | `JsHistory.new` | `idiom` — a constructor where C mints a handle |
+| `clausters_history_free` | — | `n/a` — wasm frees by `Drop` |
+| `clausters_history_register` | `JsHistory.register` | |
+| `clausters_history_apply` | `JsHistory.apply` | |
+| `clausters_history_record` | `JsHistory.record` | `idiom` — C returns 0/-1, wasm a boolean |
+| `clausters_history_undo` | `JsHistory.undo` | |
+| `clausters_history_redo` | `JsHistory.redo` | |
+| `clausters_history_can_undo` | `JsHistory.can_undo` | `idiom` — a getter |
+| `clausters_history_can_redo` | `JsHistory.can_redo` | `idiom` — a getter |
+| `clausters_history_undo_label` | `JsHistory.undo_label` | `idiom` — a getter returning a string, where C sizes and fills |
+| `clausters_history_redo_label` | `JsHistory.redo_label` | `idiom` — as above |
+| `clausters_history_len` | `JsHistory.len` | `idiom` — a getter |
+| — | `JsHistory.is_empty` | `idiom` — `len == 0`, as `JsScheduler` and `JsRegistry` already spell it |
+| `clausters_history_clear` | `JsHistory.clear` | |
 
 ## OSC
 

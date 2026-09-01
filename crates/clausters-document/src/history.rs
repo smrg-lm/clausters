@@ -200,6 +200,71 @@ impl Step {
     }
 }
 
+/// What applying a payload did, and what the structure now says.
+///
+/// [`Outcome`](crate::intent::Outcome) with the vocabulary taken out of it:
+/// there is no success-or-error split, and a refusal is simply the previous
+/// value handed back. Only [`History::apply`] reads [`Applied::applied`],
+/// because only a history cares whether there is something to invert.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Applied {
+    /// The edit describing the structure as it now stands — the payload as
+    /// given when it applied verbatim, the transformed one when the owner
+    /// snapped or clamped it, and the **previous** value when it was refused.
+    pub effective: Opaque,
+    /// Whether the structure changed.
+    pub applied: bool,
+    /// Why it was refused, or why it was transformed.
+    pub reason: Option<String>,
+    /// Whether the refusal was **staleness** rather than a rule.
+    pub stale: bool,
+}
+
+impl Applied {
+    /// A refusal that changed nothing, with a reason.
+    pub fn refused(effective: Opaque, reason: impl Into<String>) -> Self {
+        Self {
+            effective,
+            applied: false,
+            reason: Some(reason.into()),
+            stale: false,
+        }
+    }
+}
+
+/// A structure a history can log edits to: something that applies a payload in
+/// its own vocabulary, and can say what that payload's inverse would be.
+///
+/// The whole of what a domain has to bring, and the seam the pile is generic
+/// across. The two methods are one rule read in two directions: `current` is
+/// the inverse of `payload`, read **before** anything is applied, which is what
+/// makes an absolute vocabulary invertible for nothing — an edit states the
+/// resulting value, so the edit stating the *previous* value is its inverse and
+/// the owner already knows it.
+///
+/// What is deliberately *not* here is anything the arrangement needs and a
+/// curve does not: a version to check against, a grid to snap to. Those are the
+/// implementor's own state, carried by whatever it is that implements this
+/// (`log::Tree` carries both, for one call), so the trait stays the size of the
+/// idea.
+pub trait Editable {
+    /// Applies a payload written in this structure's vocabulary.
+    fn apply(&mut self, payload: &Opaque) -> Applied;
+
+    /// The payload that would put this structure back the way it is — read
+    /// before `payload` is applied. `None` when the structure cannot describe
+    /// it, which is what makes an edit unloggable rather than uninvertible.
+    fn current(&self, payload: &Opaque) -> Option<Opaque>;
+
+    /// What makes two of this domain's edits *the same thing done the same
+    /// way* — see [`Entry::keyed`]. `None`, the default, never coalesces, which
+    /// is right for a domain whose edits are not comparable.
+    fn coalesce_key(&self, payload: &Opaque) -> Option<String> {
+        let _ = payload;
+        None
+    }
+}
+
 /// One half of a change, with a bulk payload lifted out of it.
 #[derive(Debug, Clone, PartialEq)]
 struct Half {
@@ -463,6 +528,48 @@ impl History {
         self.cursor = self.entries.len();
         self.enforce_budget();
         true
+    }
+
+    /// Applies an edit to `state` and records it, in one call — the only way an
+    /// entry gets into a history by itself.
+    ///
+    /// That is what makes the rule mechanical rather than a habit: the inverse
+    /// is read out of the structure *before* the edit lands, and nothing is
+    /// recorded unless the structure actually changed. A refusal leaves no
+    /// entry, for the same reason it does not move a version.
+    ///
+    /// An edit whose inverse the structure cannot describe is applied and
+    /// **not** recorded — a destructive write, whose overwritten data is not in
+    /// the structure to be read. A caller doing those reads what it is about to
+    /// overwrite, applies, and records the pair itself with [`History::record`].
+    pub fn apply(
+        &mut self,
+        structure: StructureId,
+        state: &mut dyn Editable,
+        payload: &Opaque,
+        label: impl Into<String>,
+    ) -> Applied {
+        if !self.holds(structure) {
+            return Applied::refused(payload.clone(), "this history did not mint that structure");
+        }
+        let before = state.current(payload);
+        let applied = state.apply(payload);
+        if !applied.applied {
+            return applied;
+        }
+        if let Some(before) = before {
+            let mut entry = Entry::new(
+                label,
+                structure,
+                Step::Edit(applied.effective.clone()),
+                before,
+            );
+            if let Some(key) = state.coalesce_key(payload) {
+                entry = entry.keyed(key);
+            }
+            self.record(entry);
+        }
+        applied
     }
 
     /// What an undo *would* hand back, without moving the cursor: each leg's

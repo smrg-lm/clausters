@@ -18,6 +18,17 @@ export class Document {
      */
     apply(request: string): string;
     /**
+     * What makes two edits over the arrangement *the same thing done the same
+     * way* — the key a {@link History} coalesces on, or an empty string when
+     * the intent will not parse.
+     *
+     * It is here rather than on the history because it is a sentence in **this**
+     * vocabulary: the kind of edit and the node it names. The pile reads no
+     * vocabulary, so a caller recording its own entries asks the domain, which
+     * is what keeps a second spelling of the rule out of every binding.
+     */
+    static coalesceKey(intent: string): string;
+    /**
      * Open a document from its JSON, or an empty composition from `undefined`.
      */
     constructor(json?: string | null);
@@ -41,50 +52,88 @@ export class Document {
 }
 
 /**
- * The undo history of one document, the JS face of
- * [`clausters_document::Log`].
+ * One editing context's history, the JS face of
+ * [`clausters_document::History`].
+ *
+ * A history holds the structures registered in it and one ordered pile over
+ * them, so what a caller decides by choosing an instance is *what shares an
+ * undo order*: a structure it built with no composition behind it is a history
+ * with one structure in it, an application composing several editable views
+ * registers them all in one, and two views of one structure hold one history
+ * between them.
  */
-export class Log {
+export class History {
     free(): void;
     [Symbol.dispose](): void;
     /**
-     * Apply an edit to `document` **and record it**, in one call: the inverse
-     * has to be read out of the document before the edit lands, so applying
-     * first and recording second would record the wrong thing.
-     * `apply(document, requestJson) -> outcomeJson`, the request carrying
-     * `{ intent, against?, quant?, label? }`.
+     * Apply an edit to `document` **and record it** against `structure`, in
+     * one call: the inverse has to be read out of the document before the edit
+     * lands, so applying first and recording second would record the wrong
+     * thing. `apply(structure, document, requestJson) -> outcomeJson`, the
+     * request carrying `{ intent, against?, quant?, label? }`.
+     *
+     * The arrangement's door alone, because the document is the one state this
+     * surface can reach; a caller editing anything else applies the edit
+     * itself and hands the pair to {@link History.record}.
      */
-    apply(document: Document, request: string): string;
+    apply(structure: bigint, document: Document, request: string): string;
     /**
-     * Forget everything, releasing what was spilled.
+     * Forget every entry, releasing what was spilled. The structures stay
+     * registered: it is the order that is gone, not the identities the caller
+     * still holds.
      */
     clear(): void;
     /**
-     * A new log. `budget` is how many entries it keeps before the oldest falls
-     * off and `spillAbove` how many `f32` values a sample payload must reach
-     * before it leaves the log; either as 0 takes the crate's default.
+     * A new, empty history. `budget` is how many entries it keeps before the
+     * oldest falls off and `spillAbove` how many **bytes** a payload must
+     * reach, serialized, before it leaves the pile; either as 0 takes the
+     * crate's default.
      */
     constructor(budget: number, spill_above: number);
     /**
-     * Record an entry the document cannot supply the inverse for — the
-     * destructive case, whose overwritten samples are not in the tree. Applies
-     * nothing. `record(requestJson)` with
-     * `{ forward, backward, label?, coalesce? }`.
+     * Record an entry against `structure` — the door for everything
+     * {@link History.apply} cannot do: a destructive write, whose overwritten
+     * samples are not in the tree, and every domain that is not the
+     * arrangement, whose state this surface cannot reach. Applies nothing.
+     * `record(structure, requestJson)` with
+     * `{ forward, backward, label?, key?, coalesce? }`.
+     *
+     * Returns whether it was recorded: a structure this history did not mint
+     * is refused rather than opening a second order over data that already
+     * has one.
      */
-    record(request: string): void;
+    record(structure: bigint, request: string): boolean;
     /**
-     * Redo what was last undone, applying what it can to `document`. Returns
-     * `{ remaining }` — the ordinary edits at the front are already applied,
-     * and `remaining` holds the steps from the first one the crate cannot
-     * perform onward, for the owner to re-run. `undefined` when there was
-     * nothing to redo.
+     * Redo what was last undone: the steps of the entry at the cursor, each
+     * with the structure it belongs to, in order. Returns
+     * `{ edits, remaining }` — `edits` is the leading run of ordinary edits for
+     * the caller to apply, and `remaining` holds the steps from the first one
+     * the crate cannot describe as an edit onward, for the owner to re-run. It
+     * stops at the first rather than skipping it, so a later edit is never
+     * applied over a state the operation before it was meant to produce.
+     * `undefined` when there was nothing to redo.
      */
-    redo(document: Document): string | undefined;
+    redo(): string | undefined;
     /**
-     * Undo the last transaction, applying its inverses to `document`.
-     * Returns `{ undone }`, or `undefined` when there was nothing to undo.
+     * Takes a structure into this history and returns its identity.
+     *
+     * `domain` names the vocabulary its payloads are written in — `"tree"` for
+     * the arrangement — and the history carries it so a caller routing what
+     * comes back knows which reader a leg belongs to. The identity is minted
+     * here rather than carried by the data, and it is also the read-back path.
      */
-    undo(document: Document): string | undefined;
+    register(domain: string): bigint;
+    /**
+     * Undo the last transaction: the inverses of the entry before the cursor,
+     * each with the structure it belongs to, **in the order they must be
+     * applied**. Returns `{ inverses }`, or `undefined` when there was nothing
+     * to undo.
+     *
+     * It applies nothing: a history holds structures this surface cannot
+     * reach, so applying the legs it *could* would leave the rest to the
+     * caller out of order, which is how a transaction half-happens.
+     */
+    undo(): string | undefined;
     /**
      * Whether there is anything to redo.
      */
@@ -94,12 +143,12 @@ export class Log {
      */
     readonly canUndo: boolean;
     /**
-     * Whether the log holds nothing — `len == 0`, spelled the way a JS
+     * Whether the history holds nothing — `len == 0`, spelled the way a JS
      * collection is read, as `JsScheduler` and `JsRegistry` already spell it.
      */
     readonly isEmpty: boolean;
     /**
-     * How many entries the log holds.
+     * How many entries the history holds.
      */
     readonly len: number;
     /**
@@ -107,7 +156,9 @@ export class Log {
      */
     readonly redoLabel: string | undefined;
     /**
-     * What an undo would be called, for a menu item.
+     * What an undo would be called, for a menu item — and what a person needs
+     * when one pile holds several structures, since the label is the only
+     * thing saying which one a keystroke is about to move.
      */
     readonly undoLabel: string | undefined;
 }
@@ -917,7 +968,7 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_document_free: (a: number, b: number) => void;
-    readonly __wbg_log_free: (a: number, b: number) => void;
+    readonly __wbg_history_free: (a: number, b: number) => void;
     readonly __wbg_pyramid_free: (a: number, b: number) => void;
     readonly __wbg_registry_free: (a: number, b: number) => void;
     readonly __wbg_rng_free: (a: number, b: number) => void;
@@ -937,29 +988,31 @@ export interface InitOutput {
     readonly correlation: (a: number, b: number, c: number, d: number) => number;
     readonly degree_to_midinote: (a: number, b: number, c: number, d: number, e: number) => number;
     readonly document_apply: (a: number, b: number, c: number) => [number, number, number, number];
+    readonly document_coalesceKey: (a: number, b: number) => [number, number];
     readonly document_new: (a: number, b: number) => [number, number, number];
     readonly document_resolve: (a: number, b: number, c: number) => [number, number, number, number];
     readonly document_snapshot: (a: number) => [number, number, number, number];
     readonly document_version: (a: number) => bigint;
     readonly engraveOptions: (a: number, b: number, c: number, d: number) => [number, number];
     readonly graph_bus_reserved: () => [number, number];
+    readonly history_apply: (a: number, b: bigint, c: number, d: number, e: number) => [number, number, number, number];
+    readonly history_canRedo: (a: number) => number;
+    readonly history_canUndo: (a: number) => number;
+    readonly history_clear: (a: number) => void;
+    readonly history_isEmpty: (a: number) => number;
+    readonly history_len: (a: number) => number;
+    readonly history_new: (a: number, b: number) => number;
+    readonly history_record: (a: number, b: bigint, c: number, d: number) => [number, number, number];
+    readonly history_redo: (a: number) => [number, number, number, number];
+    readonly history_redoLabel: (a: number) => [number, number];
+    readonly history_register: (a: number, b: number, c: number) => bigint;
+    readonly history_undo: (a: number) => [number, number, number, number];
+    readonly history_undoLabel: (a: number) => [number, number];
     readonly hz_to_bark: (a: number) => number;
     readonly hz_to_mel: (a: number) => number;
     readonly interpretation: () => [number, number, number, number];
     readonly itemId: (a: number, b: number) => number;
     readonly lissajous: (a: number, b: number, c: number, d: number) => [number, number];
-    readonly log_apply: (a: number, b: number, c: number, d: number) => [number, number, number, number];
-    readonly log_canRedo: (a: number) => number;
-    readonly log_canUndo: (a: number) => number;
-    readonly log_clear: (a: number) => void;
-    readonly log_isEmpty: (a: number) => number;
-    readonly log_len: (a: number) => number;
-    readonly log_new: (a: number, b: number) => number;
-    readonly log_record: (a: number, b: number, c: number) => [number, number];
-    readonly log_redo: (a: number, b: number) => [number, number, number, number];
-    readonly log_redoLabel: (a: number) => [number, number];
-    readonly log_undo: (a: number, b: number) => [number, number, number, number];
-    readonly log_undoLabel: (a: number) => [number, number];
     readonly map: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => [number, number, number];
     readonly meiToSheet: (a: number, b: number) => [number, number, number, number];
     readonly mel_to_hz: (a: number) => number;

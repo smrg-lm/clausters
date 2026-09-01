@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 31
+CORE_ABI_VERSION = 32
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -474,39 +474,44 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
         ctypes.c_void_p, u8p, ctypes.c_size_t, ctypes.c_double, ctypes.c_double,
         ctypes.c_int32, u8p, ctypes.c_size_t,
     ]
-    # The undo log (ABI v16): a handle too, for its own reason -- a bulk inverse
-    # leaves the log on purpose, so a by-value log would carry every spilled
-    # span on every call, the cost spilling exists to avoid.
-    lib.clausters_log_new.restype = ctypes.c_void_p
-    lib.clausters_log_new.argtypes = [ctypes.c_size_t, ctypes.c_size_t]
-    lib.clausters_log_free.restype = None
-    lib.clausters_log_free.argtypes = [ctypes.c_void_p]
-    lib.clausters_log_apply.restype = ctypes.c_size_t
-    lib.clausters_log_apply.argtypes = [
-        ctypes.c_void_p, ctypes.c_void_p, u8p, ctypes.c_size_t,
+    # The edit history (ABI v16, renamed at v32): a handle too, for its own
+    # reason -- a bulk payload leaves the pile on purpose, so a by-value history
+    # would carry every spilled span on every call, the cost spilling exists to
+    # avoid. One handle is one editing context.
+    lib.clausters_document_coalesce_key.restype = ctypes.c_size_t
+    lib.clausters_document_coalesce_key.argtypes = [
+        u8p, ctypes.c_size_t, u8p, ctypes.c_size_t,
+    ]
+    lib.clausters_history_new.restype = ctypes.c_void_p
+    lib.clausters_history_new.argtypes = [ctypes.c_size_t, ctypes.c_size_t]
+    lib.clausters_history_free.restype = None
+    lib.clausters_history_free.argtypes = [ctypes.c_void_p]
+    lib.clausters_history_register.restype = ctypes.c_uint64
+    lib.clausters_history_register.argtypes = [ctypes.c_void_p, u8p, ctypes.c_size_t]
+    lib.clausters_history_apply.restype = ctypes.c_size_t
+    lib.clausters_history_apply.argtypes = [
+        ctypes.c_void_p, ctypes.c_uint64, ctypes.c_void_p, u8p, ctypes.c_size_t,
         u8p, ctypes.c_size_t, ctypes.c_double, u8p, ctypes.c_size_t,
         u8p, ctypes.c_size_t,
     ]
-    lib.clausters_log_record.restype = ctypes.c_int32
-    lib.clausters_log_record.argtypes = [
-        ctypes.c_void_p, u8p, ctypes.c_size_t, u8p, ctypes.c_size_t,
-        u8p, ctypes.c_size_t, ctypes.c_int32,
+    lib.clausters_history_record.restype = ctypes.c_int32
+    lib.clausters_history_record.argtypes = [
+        ctypes.c_void_p, ctypes.c_uint64, u8p, ctypes.c_size_t, u8p, ctypes.c_size_t,
+        u8p, ctypes.c_size_t, u8p, ctypes.c_size_t, ctypes.c_int32,
     ]
-    for _log_fn in ("clausters_log_undo", "clausters_log_redo"):
-        getattr(lib, _log_fn).restype = ctypes.c_size_t
-        getattr(lib, _log_fn).argtypes = [
-            ctypes.c_void_p, ctypes.c_void_p, u8p, ctypes.c_size_t,
-        ]
-    for _log_fn in ("clausters_log_can_undo", "clausters_log_can_redo"):
-        getattr(lib, _log_fn).restype = ctypes.c_int32
-        getattr(lib, _log_fn).argtypes = [ctypes.c_void_p]
-    for _log_fn in ("clausters_log_undo_label", "clausters_log_redo_label"):
+    for _log_fn in ("clausters_history_undo", "clausters_history_redo"):
         getattr(lib, _log_fn).restype = ctypes.c_size_t
         getattr(lib, _log_fn).argtypes = [ctypes.c_void_p, u8p, ctypes.c_size_t]
-    lib.clausters_log_len.restype = ctypes.c_size_t
-    lib.clausters_log_len.argtypes = [ctypes.c_void_p]
-    lib.clausters_log_clear.restype = None
-    lib.clausters_log_clear.argtypes = [ctypes.c_void_p]
+    for _log_fn in ("clausters_history_can_undo", "clausters_history_can_redo"):
+        getattr(lib, _log_fn).restype = ctypes.c_int32
+        getattr(lib, _log_fn).argtypes = [ctypes.c_void_p]
+    for _log_fn in ("clausters_history_undo_label", "clausters_history_redo_label"):
+        getattr(lib, _log_fn).restype = ctypes.c_size_t
+        getattr(lib, _log_fn).argtypes = [ctypes.c_void_p, u8p, ctypes.c_size_t]
+    lib.clausters_history_len.restype = ctypes.c_size_t
+    lib.clausters_history_len.argtypes = [ctypes.c_void_p]
+    lib.clausters_history_clear.restype = None
+    lib.clausters_history_clear.argtypes = [ctypes.c_void_p]
     # The component bundle (ABI v13): what an instance needs allocated, one
     # instance resolved, and the writers' pre-flight — the same three the
     # browser gets over wasm, on the same JSON-in/JSON-out shape.
@@ -994,6 +999,29 @@ def document_apply(document: dict, intent: dict, *, against=None, quant: float =
         return {"document": doc.snapshot(), "outcome": outcome}
 
 
+def document_coalesce_key(intent: dict) -> str:
+    """What makes two edits over the arrangement *the same thing done the same
+    way* — the key a `History` coalesces on, or ``""`` when the intent will not
+    parse.
+
+    It belongs to the document and not to the history because it is a sentence
+    in **this** vocabulary: the kind of edit and the node it names. The pile
+    reads no vocabulary, so a caller recording its own entries asks the domain,
+    which is what keeps a second spelling of the rule out of every client.
+    """
+    _lib = lib()
+    data = json.dumps(intent).encode("utf-8")
+    u8p = ctypes.POINTER(ctypes.c_ubyte)
+    buf = (ctypes.c_ubyte * len(data)).from_buffer_copy(data)
+    ptr = ctypes.cast(buf, u8p)
+    need = _lib.clausters_document_coalesce_key(ptr, len(data), None, 0)
+    if need == 0:
+        return ""
+    out = (ctypes.c_ubyte * need)()
+    n = _lib.clausters_document_coalesce_key(ptr, len(data), out, need)
+    return ctypes.string_at(out, n).decode("utf-8")
+
+
 def document_resolve(document: dict, selection: dict, *, frames_per_beat: float,
                      frames_per_second: float, in_beats: bool = False) -> list:
     """Resolve a selection against a document given **by value** — the
@@ -1005,17 +1033,28 @@ def document_resolve(document: dict, selection: dict, *, frames_per_beat: float,
                            in_beats=in_beats)
 
 
-class Log:
-    """The undo history of one document, living in the shared crate.
+class History:
+    """One editing context's history, living in the shared crate.
 
-    Undo belongs with the document and not with a view: a view's log sees only
-    the gestures *it* made, so a script editing the arrangement, a second editor
-    or a re-render leaves it describing a document that has moved on — and undo
-    then writes a state nobody was ever in. This is a handle onto the crate's
-    log, so there is one history however many surfaces edit.
+    A history holds the structures registered in it and **one ordered pile**
+    over them, so what you decide by choosing a history is *what shares an undo
+    order*:
+
+    - a structure you built with no composition behind it — a curve, a buffer, a
+      roll — is a history with one structure in it, and has a working undo with
+      no document anywhere;
+    - an application composing several editable views registers them all in one,
+      and the interleaved order its undo walks **is** the pile;
+    - two views of one structure hold one history between them, which is what
+      keeps an undo in either from writing a state nobody was in.
+
+    What decides what shares a history is which history a structure was
+    registered in, never which view is looking at it. A structure belongs to
+    exactly one, and `record` refuses an entry naming an identity this history
+    did not mint.
 
     It is a handle for its own reason, beyond the one `Document` has: the spill
-    store. A bulk inverse *leaves* the log on purpose, so passing one by value
+    store. A bulk payload *leaves* the pile on purpose, so passing one by value
     would carry every spilled span on every call — which is the cost spilling
     exists to avoid.
 
@@ -1023,16 +1062,16 @@ class Log:
         budget: how many entries to keep before the oldest falls off. ``None``
             takes the crate's default.
         spill_above: how many **bytes** a payload must reach, serialized,
-            before it leaves the log for the spill store. ``None`` takes the
+            before it leaves the pile for the spill store. ``None`` takes the
             default.
 
     Usage::
 
-        log = Log()
-        with Document(to_document(song)) as doc:
-            log.apply(doc, {"intent": "place", "node": 3, "offset": 4.0},
-                      label="move the clip")
-            log.undo(doc)                    # exactly where it was
+        history = History()
+        curve = history.register("points")
+        history.record(curve, {"edit": now}, before, label="draw")
+        for leg in history.undo():
+            ...                          # leg["structure"], leg["payload"]
 
     Free with `close` (``__del__`` is the backstop), or use it as a context
     manager.
@@ -1041,13 +1080,29 @@ class Log:
     def __init__(self, *, budget: "int | None" = None,
                  spill_above: "int | None" = None):
         self._lib = lib()
-        self._handle = self._lib.clausters_log_new(
+        self._handle = self._lib.clausters_history_new(
             0 if budget is None else int(budget),
             0 if spill_above is None else int(spill_above),
         )
 
-    def apply(self, document: "Document", intent: dict, *, against=None,
-              quant: float = 0.0, label: str = "edit") -> dict:
+    def register(self, domain: str) -> int:
+        """Take a structure into this history and get its identity.
+
+        `domain` names the vocabulary its payloads are written in — ``"tree"``
+        for the arrangement, ``"points"`` for a break-point curve — and the
+        history carries it so a caller routing what comes back knows which
+        reader a leg belongs to. Nothing in the crate reads it.
+
+        The identity is minted here rather than carried by the data, because a
+        structure you built has no id and is not going to be given a stable one
+        for this. It is also the read-back path: the identity that opened an
+        editable view is the one its edited state is read out through.
+        """
+        d_ptr, d_len = _text(domain)
+        return int(self._lib.clausters_history_register(self._handle, d_ptr, d_len))
+
+    def apply(self, structure: int, document: "Document", intent: dict, *,
+              against=None, quant: float = 0.0, label: str = "edit") -> dict:
         """Apply an edit to ``document`` **and record it**, in one call.
 
         One call rather than two because the inverse has to be read out of the
@@ -1056,108 +1111,131 @@ class Log:
         unless the document actually changed, so a refusal — stale or otherwise
         — leaves no entry, and neither does a resend.
 
-        Arguments are `Document.apply`'s, plus the document and ``label``: what
-        an undo menu calls this. Returns the same outcome object; the document
-        changed behind its handle.
+        The arrangement's door alone, because the document is the one state this
+        surface can reach; for anything else you apply the edit yourself and
+        hand the pair to `record`.
+
+        Arguments are `Document.apply`'s, plus the structure the document is
+        registered as and ``label``: what an undo menu calls this. Returns the
+        same outcome object; the document changed behind its handle.
         """
         int_ptr, int_len = _bytes(intent)
         ag_ptr, ag_len = _bytes(against) if against is not None else (None, 0)
         lb_ptr, lb_len = _text(label)
         return self._sized(
-            self._lib.clausters_log_apply,
-            (document._handle, int_ptr, int_len, ag_ptr, ag_len,
-             float(quant), lb_ptr, lb_len),
+            self._lib.clausters_history_apply,
+            (ctypes.c_uint64(structure), document._handle, int_ptr, int_len,
+             ag_ptr, ag_len, float(quant), lb_ptr, lb_len),
             "the intent is not valid JSON for the crate",
         )
 
-    def record(self, forward: dict, backward: dict, *, label: str = "edit",
-               coalesce: bool = False):
-        """Record an entry the document cannot supply the inverse for.
+    def record(self, structure: int, forward: dict, backward: dict, *,
+               label: str = "edit", key: str = "", coalesce: bool = False):
+        """Record an entry against ``structure``.
 
-        The destructive case: a write's overwritten samples are not in the tree,
-        so the caller reads the span it is about to write and hands the pair
-        over. This **applies nothing** — the write has already happened; what is
-        recorded is how to put it back.
+        The door for everything `apply` cannot do: a destructive write, whose
+        overwritten samples are not in the tree, and every domain that is not
+        the arrangement, whose state the crate cannot reach. This **applies
+        nothing** — you have already made the edit; what is recorded is how to
+        put it back.
 
         Args:
-            forward: a step — ``{"edit": <intent>}``, or
+            structure: the identity `register` handed back.
+            forward: a step — ``{"edit": <payload>}``, or
                 ``{"recompute": <params>}`` for a deterministic operation the
                 owner re-runs rather than replays. The second is what makes a
                 redo of a million-sample operation cost a few bytes.
-            backward: the inverse, an ordinary intent.
+            backward: the inverse, a payload in the structure's own vocabulary.
             label: what an undo menu calls this.
-            coalesce: merge into the entry before it when both touch the same
-                node the same way — a run of small adjustments becoming one
-                undo. You decide, because only you know where the hand stopped.
+            key: what makes two edits *the same thing done the same way* — the
+                arrangement spells it ``"place:7"``
+                (`document_coalesce_key`), a curve has one verb and one key.
+                Empty never coalesces.
+            coalesce: merge into the entry before it when both keys match — a
+                run of small adjustments becoming one undo. You decide, because
+                only you know where the hand stopped.
+
+        Raises:
+            ValueError: the step or its inverse will not parse, or ``structure``
+                is one this history did not mint.
         """
         f_ptr, f_len = _bytes(forward)
         b_ptr, b_len = _bytes(backward)
         lb_ptr, lb_len = _text(label)
-        code = self._lib.clausters_log_record(
-            self._handle, f_ptr, f_len, b_ptr, b_len, lb_ptr, lb_len,
-            int(bool(coalesce)))
+        k_ptr, k_len = _text(key)
+        code = self._lib.clausters_history_record(
+            self._handle, ctypes.c_uint64(structure), f_ptr, f_len, b_ptr, b_len,
+            lb_ptr, lb_len, k_ptr, k_len, int(bool(coalesce)))
         if code != 0:
-            raise ValueError("the step or its inverse is not valid JSON for the crate")
+            raise ValueError(
+                "the step or its inverse is not valid JSON for the crate, or the "
+                "structure is one this history did not mint")
 
-    def undo(self, document: "Document") -> "dict | None":
-        """Undo the last transaction, applying its inverses to ``document``.
+    def undo(self) -> "list | None":
+        """Undo the last transaction: the inverses of the entry before the
+        cursor, each as ``{"structure": <id>, "payload": <payload>}`` and **in
+        the order they must be applied**. ``None`` when there was nothing.
 
-        Returns ``{"undone": [<intent>, …]}``, or ``None`` when there was
-        nothing to undo; the document changed behind its handle. It applies
-        rather than handing the inverses back, because the cursor moves with it:
-        two steps could half-happen, and a log that disagrees with its document
-        is worse than no log.
+        It applies nothing: a history holds structures the crate cannot reach,
+        so applying the legs it *could* would leave the rest to you out of
+        order, which is how a transaction half-happens.
         """
-        return self._step(self._lib.clausters_log_undo, document)
+        reply = self._sized(self._lib.clausters_history_undo, (),
+                            "the history handle is not usable")
+        return reply["inverses"] if reply else None
 
-    def redo(self, document: "Document") -> "dict | None":
-        """Redo what was last undone, applying what it can.
+    def redo(self) -> "dict | None":
+        """Redo what was last undone: ``{"edits": [...], "remaining": [...]}``,
+        or ``None`` when there was nothing.
 
-        Returns ``{"remaining": [<step>, …]}``, or ``None`` when there was
-        nothing to redo. The ordinary edits at the front are already applied to
-        the document; ``remaining`` holds the steps from the first one the crate
-        **cannot perform** onward — a deterministic operation kept as its
+        ``edits`` is the leading run of ordinary edits, for you to apply in
+        order; ``remaining`` holds the steps from the first one the crate cannot
+        describe as an edit onward — a deterministic operation kept as its
         parameters, which you re-run, because the crate holds no algorithms. It
         stops at the first rather than skipping it, so a later edit is never
         applied over a state the operation before it was meant to produce.
         """
-        return self._step(self._lib.clausters_log_redo, document)
+        return self._sized(self._lib.clausters_history_redo, (),
+                           "the history handle is not usable") or None
 
     @property
     def can_undo(self) -> bool:
         """Whether there is anything to undo."""
-        return bool(self._lib.clausters_log_can_undo(self._handle))
+        return bool(self._lib.clausters_history_can_undo(self._handle))
 
     @property
     def can_redo(self) -> bool:
         """Whether there is anything to redo."""
-        return bool(self._lib.clausters_log_can_redo(self._handle))
+        return bool(self._lib.clausters_history_can_redo(self._handle))
 
     @property
     def undo_label(self) -> "str | None":
-        """What an undo would be called, for a menu item."""
-        return self._label(self._lib.clausters_log_undo_label)
+        """What an undo would be called, for a menu item — and what a person
+        needs when one pile holds several structures, since the label is the
+        only thing saying which one a keystroke is about to move."""
+        return self._label(self._lib.clausters_history_undo_label)
 
     @property
     def redo_label(self) -> "str | None":
         """What a redo would be called."""
-        return self._label(self._lib.clausters_log_redo_label)
+        return self._label(self._lib.clausters_history_redo_label)
 
     def clear(self):
-        """Forget everything, releasing what was spilled — what closing a
-        document or loading another one leaves behind."""
-        self._lib.clausters_log_clear(self._handle)
+        """Forget every entry, releasing what was spilled — what closing an
+        editing context leaves behind. The structures stay registered: it is the
+        order that is gone, not the identities you still hold."""
+        self._lib.clausters_history_clear(self._handle)
 
     def close(self):
         """Free the handle (idempotent)."""
         if getattr(self, "_handle", None):
-            self._lib.clausters_log_free(self._handle)
+            self._lib.clausters_history_free(self._handle)
             self._handle = None
 
     def __len__(self) -> int:
-        return self._lib.clausters_log_len(self._handle)
+        return self._lib.clausters_history_len(self._handle)
 
-    def __enter__(self) -> "Log":
+    def __enter__(self) -> "History":
         return self
 
     def __exit__(self, *_):
@@ -1184,13 +1262,6 @@ class Log:
         n = fn(self._handle, *args, out, need)
         return json.loads(ctypes.string_at(out, n))
 
-    def _step(self, fn, document: "Document") -> "dict | None":
-        result = self._sized(
-            fn, (document._handle,), "the document handle is not usable")
-        # `{}` is "there was nothing to do", which the crate keeps distinct from
-        # a parse failure (0 bytes) and from a step that changed nothing.
-        return result or None
-
     def _label(self, fn) -> "str | None":
         need = fn(self._handle, None, 0)
         if need == 0:
@@ -1198,6 +1269,195 @@ class Log:
         out = (ctypes.c_ubyte * need)()
         n = fn(self._handle, out, need)
         return ctypes.string_at(out, n).decode("utf-8")
+
+
+class Log:
+    """The undo history of one document: a `History` with one structure in it.
+
+    Undo belongs with the document and not with a view: a view's log sees only
+    the gestures *it* made, so a script editing the arrangement, a second editor
+    or a re-render leaves it describing a document that has moved on — and undo
+    then writes a state nobody was ever in. This is that history read in the
+    arrangement's own terms, so there is one order however many surfaces edit.
+
+    It is a **face**, not a second pile: `history` is the one underneath, and a
+    caller composing several editable structures registers them there rather
+    than opening a second `Log`.
+
+    Args:
+        budget: how many entries to keep before the oldest falls off. ``None``
+            takes the crate's default.
+        spill_above: how many **bytes** a payload must reach, serialized,
+            before it leaves the pile for the spill store. ``None`` takes the
+            default.
+        history: an existing `History` to register the document in, for a
+            context that already holds one. A fresh one otherwise.
+
+    Usage::
+
+        log = Log()
+        with Document(to_document(song)) as doc:
+            log.apply(doc, {"intent": "place", "node": 3, "offset": 4.0},
+                      label="move the clip")
+            log.undo(doc)                    # exactly where it was
+
+    Free with `close` (``__del__`` is the backstop), or use it as a context
+    manager. Closing a `Log` built over somebody else's `History` leaves that
+    history alone.
+    """
+
+    #: The domain name a document's structure is registered under.
+    TREE = "tree"
+
+    def __init__(self, *, budget: "int | None" = None,
+                 spill_above: "int | None" = None,
+                 history: "History | None" = None):
+        self._owned = history is None
+        self._history = history if history is not None else History(
+            budget=budget, spill_above=spill_above)
+        self._structure = self._history.register(Log.TREE)
+
+    @property
+    def history(self) -> "History":
+        """The pile this log is a face of — what a caller composing several
+        editable structures in one context reaches for."""
+        return self._history
+
+    @property
+    def structure(self) -> int:
+        """The document's identity within that history."""
+        return self._structure
+
+    def apply(self, document: "Document", intent: dict, *, against=None,
+              quant: float = 0.0, label: str = "edit") -> dict:
+        """Apply an edit to ``document`` **and record it**, in one call.
+
+        One call rather than two because the inverse has to be read out of the
+        document *before* the edit lands: a surface that let you apply first and
+        record second would let you record the wrong thing. Nothing is recorded
+        unless the document actually changed, so a refusal — stale or otherwise
+        — leaves no entry, and neither does a resend.
+
+        Arguments are `Document.apply`'s, plus the document and ``label``: what
+        an undo menu calls this. Returns the same outcome object; the document
+        changed behind its handle.
+        """
+        return self._history.apply(self._structure, document, intent,
+                                   against=against, quant=quant, label=label)
+
+    def record(self, forward: dict, backward: dict, *, label: str = "edit",
+               coalesce: bool = False):
+        """Record an entry the document cannot supply the inverse for.
+
+        The destructive case: a write's overwritten samples are not in the tree,
+        so the caller reads the span it is about to write and hands the pair
+        over. This **applies nothing** — the write has already happened; what is
+        recorded is how to put it back.
+
+        Args:
+            forward: a step — ``{"edit": <intent>}``, or
+                ``{"recompute": <params>}`` for a deterministic operation the
+                owner re-runs rather than replays. The second is what makes a
+                redo of a million-sample operation cost a few bytes.
+            backward: the inverse, an ordinary intent.
+            label: what an undo menu calls this.
+            coalesce: merge into the entry before it when both touch the same
+                node the same way — a run of small adjustments becoming one
+                undo. You decide, because only you know where the hand stopped.
+        """
+        # The key is the arrangement's own sentence, so it is asked of the
+        # arrangement rather than spelled again here: a second spelling is how
+        # a run coalesces through one door and not through another.
+        edit = forward.get("edit") if isinstance(forward, dict) else None
+        key = document_coalesce_key(edit) if edit is not None else ""
+        self._history.record(self._structure, forward, backward,
+                             label=label, key=key, coalesce=coalesce)
+
+    def undo(self, document: "Document") -> "dict | None":
+        """Undo the last transaction, applying its inverses to ``document``.
+
+        Returns ``{"undone": [<intent>, …]}``, or ``None`` when there was
+        nothing to undo; the document changed behind its handle. A leg of the
+        underlying history that belongs to another structure is left alone and
+        reported in ``others`` — which a `Log` never sees unless somebody else
+        registered a structure in the same history.
+        """
+        return self._walk(self._history.undo(), document, "undone")
+
+    def redo(self, document: "Document") -> "dict | None":
+        """Redo what was last undone, applying what it can.
+
+        Returns ``{"redone": [<intent>, …], "remaining": [<step>, …]}``, or
+        ``None`` when there was nothing to redo. The ordinary edits are applied
+        to the document and reported, so a redo is the same shape as an undo;
+        ``remaining`` holds the steps from the first one the crate **cannot
+        perform** onward — a deterministic operation kept as its parameters,
+        which you re-run, because the crate holds no algorithms.
+        """
+        reply = self._history.redo()
+        if reply is None:
+            return None
+        walked = self._walk(reply["edits"], document, "redone")
+        walked["remaining"] = [leg["step"] for leg in reply["remaining"]
+                               if leg["structure"] == self._structure]
+        walked["others"] += [leg for leg in reply["remaining"]
+                             if leg["structure"] != self._structure]
+        return walked
+
+    def _walk(self, legs, document: "Document", key: str) -> "dict | None":
+        """Apply the legs addressed to this document and report the rest."""
+        if legs is None:
+            return None
+        mine, others = [], []
+        for leg in legs:
+            if leg["structure"] == self._structure:
+                # An undo is authoritative: it states what the document was, so
+                # it is not checked against a version it predates.
+                document.apply(leg["payload"])
+                mine.append(leg["payload"])
+            else:
+                others.append(leg)
+        return {key: mine, "others": others}
+
+    @property
+    def can_undo(self) -> bool:
+        """Whether there is anything to undo."""
+        return self._history.can_undo
+
+    @property
+    def can_redo(self) -> bool:
+        """Whether there is anything to redo."""
+        return self._history.can_redo
+
+    @property
+    def undo_label(self) -> "str | None":
+        """What an undo would be called, for a menu item."""
+        return self._history.undo_label
+
+    @property
+    def redo_label(self) -> "str | None":
+        """What a redo would be called."""
+        return self._history.redo_label
+
+    def clear(self):
+        """Forget everything, releasing what was spilled — what closing a
+        document or loading another one leaves behind."""
+        self._history.clear()
+
+    def close(self):
+        """Free the handle (idempotent), unless the history came from
+        elsewhere."""
+        if self._owned:
+            self._history.close()
+
+    def __len__(self) -> int:
+        return len(self._history)
+
+    def __enter__(self) -> "Log":
+        return self
+
+    def __exit__(self, *_):
+        self.close()
 
 
 def _text(value: str) -> tuple:

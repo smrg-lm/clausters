@@ -205,18 +205,21 @@ export * as form from "./form/index.ts";
  * crate rather than by any client. See `./document.ts`.
  */
 export * as document from "./document.ts";
-export { Log, applyIntent, resolveSelection } from "./document.ts";
+export { History, Log, applyIntent, resolveSelection } from "./document.ts";
 export type {
     Against,
     Applied,
     ClaustersDocument,
     Intent,
+    Leg,
     NodeId,
     Outcome,
     Redone,
+    RemainingLeg,
     Resolved,
     Selection,
     Step,
+    Steps,
     Undone } from "./document.ts";
 
 /**

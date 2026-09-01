@@ -1284,7 +1284,7 @@ mod tests {
 // document in and took the whole new one back: 205 ms for one placement on a
 // 10240-event composition, linear in the document and independent of the edit.
 // The tree now stays in Rust and only the intent and the outcome cross, which
-// is the same shape `Log` already had and for the same reason.
+// is the same shape `History` already had and for the same reason.
 //
 // What has *not* changed is the discipline: the crate is the only thing that
 // applies an intent. This is not an accessor handle -- there is no call per
@@ -1330,6 +1330,21 @@ impl JsDocument {
     #[wasm_bindgen(getter)]
     pub fn version(&self) -> u64 {
         self.0.version
+    }
+
+    /// What makes two edits over the arrangement *the same thing done the same
+    /// way* — the key a {@link History} coalesces on, or an empty string when
+    /// the intent will not parse.
+    ///
+    /// It is here rather than on the history because it is a sentence in **this**
+    /// vocabulary: the kind of edit and the node it names. The pile reads no
+    /// vocabulary, so a caller recording its own entries asks the domain, which
+    /// is what keeps a second spelling of the rule out of every binding.
+    #[wasm_bindgen(js_name = coalesceKey)]
+    pub fn coalesce_key(intent: &str) -> String {
+        serde_json::from_str::<clausters_document::Intent>(intent)
+            .map(|intent| clausters_document::log::coalesce_key(&intent))
+            .unwrap_or_default()
     }
 
     /// Apply an edit. `apply(requestJson) -> outcomeJson`, the request carrying
@@ -1410,44 +1425,71 @@ impl JsDocument {
     }
 }
 
-// ---- the undo log ----
+// ---- the edit history ----
 //
 // A `Drop`-backed object, like `Document` beside it and for a related reason:
-// a log is state, and the state is the point. The spill store is why — a bulk
-// inverse leaves the log deliberately, so passing one by value would carry
-// every spilled span on every call, which is the cost spilling exists to
+// a history is state, and the state is the point. The spill store is why — a
+// bulk payload leaves the pile deliberately, so passing one by value would
+// carry every spilled span on every call, which is the cost spilling exists to
 // avoid.
 
-/// The undo history of one document, the JS face of
-/// [`clausters_document::Log`].
+/// One editing context's history, the JS face of
+/// [`clausters_document::History`].
+///
+/// A history holds the structures registered in it and one ordered pile over
+/// them, so what a caller decides by choosing an instance is *what shares an
+/// undo order*: a structure it built with no composition behind it is a history
+/// with one structure in it, an application composing several editable views
+/// registers them all in one, and two views of one structure hold one history
+/// between them.
 #[cfg(target_arch = "wasm32")]
-#[wasm_bindgen(js_name = Log)]
-pub struct JsLog(clausters_document::Log);
+#[wasm_bindgen(js_name = History)]
+pub struct JsHistory(clausters_document::History);
 
 #[cfg(target_arch = "wasm32")]
-#[wasm_bindgen(js_class = Log)]
-impl JsLog {
-    /// A new log. `budget` is how many entries it keeps before the oldest falls
-    /// off and `spillAbove` how many **bytes** a payload must reach, serialized,
-    /// before it leaves the log; either as 0 takes the crate's default.
+#[wasm_bindgen(js_class = History)]
+impl JsHistory {
+    /// A new, empty history. `budget` is how many entries it keeps before the
+    /// oldest falls off and `spillAbove` how many **bytes** a payload must
+    /// reach, serialized, before it leaves the pile; either as 0 takes the
+    /// crate's default.
     #[wasm_bindgen(constructor)]
-    pub fn new(budget: usize, spill_above: usize) -> JsLog {
-        let mut log = clausters_document::Log::new();
+    pub fn new(budget: usize, spill_above: usize) -> JsHistory {
+        let mut history = clausters_document::History::new();
         if budget > 0 {
-            log = log.budget(budget);
+            history = history.budget(budget);
         }
         if spill_above > 0 {
-            log = log.spill_above(spill_above);
+            history = history.spill_above(spill_above);
         }
-        JsLog(log)
+        JsHistory(history)
     }
 
-    /// Apply an edit to `document` **and record it**, in one call: the inverse
-    /// has to be read out of the document before the edit lands, so applying
-    /// first and recording second would record the wrong thing.
-    /// `apply(document, requestJson) -> outcomeJson`, the request carrying
-    /// `{ intent, against?, quant?, label? }`.
-    pub fn apply(&mut self, document: &mut JsDocument, request: &str) -> Result<String, JsError> {
+    /// Takes a structure into this history and returns its identity.
+    ///
+    /// `domain` names the vocabulary its payloads are written in — `"tree"` for
+    /// the arrangement — and the history carries it so a caller routing what
+    /// comes back knows which reader a leg belongs to. The identity is minted
+    /// here rather than carried by the data, and it is also the read-back path.
+    pub fn register(&mut self, domain: &str) -> u64 {
+        self.0.register(domain).0
+    }
+
+    /// Apply an edit to `document` **and record it** against `structure`, in
+    /// one call: the inverse has to be read out of the document before the edit
+    /// lands, so applying first and recording second would record the wrong
+    /// thing. `apply(structure, document, requestJson) -> outcomeJson`, the
+    /// request carrying `{ intent, against?, quant?, label? }`.
+    ///
+    /// The arrangement's door alone, because the document is the one state this
+    /// surface can reach; a caller editing anything else applies the edit
+    /// itself and hands the pair to {@link History.record}.
+    pub fn apply(
+        &mut self,
+        structure: u64,
+        document: &mut JsDocument,
+        request: &str,
+    ) -> Result<String, JsError> {
         #[derive(serde::Deserialize)]
         struct Request {
             intent: clausters_document::Intent,
@@ -1458,111 +1500,117 @@ impl JsLog {
             #[serde(default)]
             label: Option<String>,
         }
-        let request: Request =
-            serde_json::from_str(request).map_err(|e| JsError::new(&format!("log.apply: {e}")))?;
+        let request: Request = serde_json::from_str(request)
+            .map_err(|e| JsError::new(&format!("history.apply: {e}")))?;
         let against = request
             .against
             .unwrap_or_else(clausters_document::Against::unstated);
-        let outcome = clausters_document::apply_logged(
-            &mut document.0,
-            &request.intent,
-            &against,
-            &clausters_document::Rules {
+        let mut tree = clausters_document::Tree {
+            document: &mut document.0,
+            against,
+            rules: clausters_document::Rules {
                 quant: request.quant,
             },
-            &mut self.0,
+        };
+        let applied = self.0.apply(
+            clausters_document::StructureId(structure),
+            &mut tree,
+            &clausters_document::log::payload(&request.intent),
             request.label.unwrap_or_else(|| "edit".into()),
         );
         serde_json::to_string(&serde_json::json!({
-            "effective": outcome.effective,
-            "applied": outcome.applied,
-            "reason": outcome.reason,
-            "stale": outcome.stale,
+            "effective": clausters_document::log::intent_of(&applied.effective)
+                .unwrap_or(request.intent),
+            "applied": applied.applied,
+            "reason": applied.reason,
+            "stale": applied.stale,
         }))
         .map_err(|e| JsError::new(&e.to_string()))
     }
 
-    /// Record an entry the document cannot supply the inverse for — the
-    /// destructive case, whose overwritten samples are not in the tree. Applies
-    /// nothing. `record(requestJson)` with
-    /// `{ forward, backward, label?, coalesce? }`.
-    pub fn record(&mut self, request: &str) -> Result<(), JsError> {
+    /// Record an entry against `structure` — the door for everything
+    /// {@link History.apply} cannot do: a destructive write, whose overwritten
+    /// samples are not in the tree, and every domain that is not the
+    /// arrangement, whose state this surface cannot reach. Applies nothing.
+    /// `record(structure, requestJson)` with
+    /// `{ forward, backward, label?, key?, coalesce? }`.
+    ///
+    /// Returns whether it was recorded: a structure this history did not mint
+    /// is refused rather than opening a second order over data that already
+    /// has one.
+    pub fn record(&mut self, structure: u64, request: &str) -> Result<bool, JsError> {
         #[derive(serde::Deserialize)]
         struct Request {
-            forward: clausters_document::Step,
-            backward: clausters_document::Intent,
+            forward: clausters_document::history::Step,
+            backward: clausters_document::Opaque,
             #[serde(default)]
             label: Option<String>,
             #[serde(default)]
+            key: Option<String>,
+            #[serde(default)]
             coalesce: bool,
         }
-        let request: Request =
-            serde_json::from_str(request).map_err(|e| JsError::new(&format!("log.record: {e}")))?;
-        let mut entry = clausters_document::Entry::new(
+        let request: Request = serde_json::from_str(request)
+            .map_err(|e| JsError::new(&format!("history.record: {e}")))?;
+        let mut entry = clausters_document::history::Entry::new(
             request.label.unwrap_or_else(|| "edit".into()),
+            clausters_document::StructureId(structure),
             request.forward,
             request.backward,
         );
+        if let Some(key) = request.key.filter(|k| !k.is_empty()) {
+            entry = entry.keyed(key);
+        }
         if request.coalesce {
             entry = entry.continuing();
         }
-        self.0.record(entry);
-        Ok(())
+        Ok(self.0.record(entry))
     }
 
-    /// Undo the last transaction, applying its inverses to `document`.
-    /// Returns `{ undone }`, or `undefined` when there was nothing to undo.
-    pub fn undo(&mut self, document: &mut JsDocument) -> Result<Option<String>, JsError> {
-        let Some(undone) = self.0.undo() else {
+    /// Undo the last transaction: the inverses of the entry before the cursor,
+    /// each with the structure it belongs to, **in the order they must be
+    /// applied**. Returns `{ inverses }`, or `undefined` when there was nothing
+    /// to undo.
+    ///
+    /// It applies nothing: a history holds structures this surface cannot
+    /// reach, so applying the legs it *could* would leave the rest to the
+    /// caller out of order, which is how a transaction half-happens.
+    pub fn undo(&mut self) -> Result<Option<String>, JsError> {
+        let Some(inverses) = self.0.undo() else {
             return Ok(None);
         };
-        for intent in &undone {
-            // An undo is authoritative: it states what the document was, so it
-            // is not checked against a version it predates.
-            clausters_document::apply(
-                &mut document.0,
-                intent,
-                &clausters_document::Against::unstated(),
-                &clausters_document::Rules::default(),
-            );
-        }
-        serde_json::to_string(&serde_json::json!({ "undone": undone }))
+        let legs: Vec<_> = inverses
+            .into_iter()
+            .map(|(structure, load)| serde_json::json!({"structure": structure.0, "payload": load}))
+            .collect();
+        serde_json::to_string(&serde_json::json!({ "inverses": legs }))
             .map(Some)
             .map_err(|e| JsError::new(&e.to_string()))
     }
 
-    /// Redo what was last undone, applying what it can to `document`. Returns
-    /// `{ remaining }` — the ordinary edits at the front are already applied,
-    /// and `remaining` holds the steps from the first one the crate cannot
-    /// perform onward, for the owner to re-run. `undefined` when there was
-    /// nothing to redo.
-    pub fn redo(&mut self, document: &mut JsDocument) -> Result<Option<String>, JsError> {
+    /// Redo what was last undone: the steps of the entry at the cursor, each
+    /// with the structure it belongs to, in order. Returns
+    /// `{ edits, remaining }` — `edits` is the leading run of ordinary edits for
+    /// the caller to apply, and `remaining` holds the steps from the first one
+    /// the crate cannot describe as an edit onward, for the owner to re-run. It
+    /// stops at the first rather than skipping it, so a later edit is never
+    /// applied over a state the operation before it was meant to produce.
+    /// `undefined` when there was nothing to redo.
+    pub fn redo(&mut self) -> Result<Option<String>, JsError> {
         let Some(steps) = self.0.redo() else {
             return Ok(None);
         };
+        let mut edits = Vec::new();
         let mut remaining = Vec::new();
-        let mut redone = Vec::new();
-        let mut stopped = false;
-        for step in steps {
-            match (&step, stopped) {
-                (clausters_document::Step::Edit(intent), false) => {
-                    clausters_document::apply(
-                        &mut document.0,
-                        intent,
-                        &clausters_document::Against::unstated(),
-                        &clausters_document::Rules::default(),
-                    );
-                    // Reported as well as applied: a redo is the same shape as
-                    // an undo, a list of intents the caller projects.
-                    redone.push(intent.clone());
+        for (structure, step) in steps {
+            match (&step, remaining.is_empty()) {
+                (clausters_document::history::Step::Edit(load), true) => {
+                    edits.push(serde_json::json!({"structure": structure.0, "payload": load}));
                 }
-                _ => {
-                    stopped = true;
-                    remaining.push(step);
-                }
+                _ => remaining.push(serde_json::json!({"structure": structure.0, "step": step})),
             }
         }
-        serde_json::to_string(&serde_json::json!({ "redone": redone, "remaining": remaining }))
+        serde_json::to_string(&serde_json::json!({ "edits": edits, "remaining": remaining }))
             .map(Some)
             .map_err(|e| JsError::new(&e.to_string()))
     }
@@ -1579,7 +1627,9 @@ impl JsLog {
         self.0.can_redo()
     }
 
-    /// What an undo would be called, for a menu item.
+    /// What an undo would be called, for a menu item — and what a person needs
+    /// when one pile holds several structures, since the label is the only
+    /// thing saying which one a keystroke is about to move.
     #[wasm_bindgen(getter, js_name = undoLabel)]
     pub fn undo_label(&self) -> Option<String> {
         self.0.undo_label().map(str::to_string)
@@ -1591,20 +1641,22 @@ impl JsLog {
         self.0.redo_label().map(str::to_string)
     }
 
-    /// How many entries the log holds.
+    /// How many entries the history holds.
     #[wasm_bindgen(getter)]
     pub fn len(&self) -> usize {
         self.0.len()
     }
 
-    /// Whether the log holds nothing — `len == 0`, spelled the way a JS
+    /// Whether the history holds nothing — `len == 0`, spelled the way a JS
     /// collection is read, as `JsScheduler` and `JsRegistry` already spell it.
     #[wasm_bindgen(getter, js_name = isEmpty)]
     pub fn is_empty(&self) -> bool {
         self.0.len() == 0
     }
 
-    /// Forget everything, releasing what was spilled.
+    /// Forget every entry, releasing what was spilled. The structures stay
+    /// registered: it is the order that is gone, not the identities the caller
+    /// still holds.
     pub fn clear(&mut self) {
         self.0.clear();
     }

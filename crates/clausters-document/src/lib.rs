@@ -52,14 +52,16 @@ pub mod clipboard;
 pub mod history;
 pub mod intent;
 pub mod log;
+pub mod points;
 pub mod resolve;
 pub mod selection;
 pub mod session;
 
 pub use clipboard::{Clipboard, Content};
-pub use history::{History, StructureId};
+pub use history::{Applied, Editable, History, StructureId};
 pub use intent::{Against, Intent, Outcome, Rules, apply};
-pub use log::{Entry, Log, MemorySpill, Spill, Step, apply_logged, inverse_of};
+pub use log::{Entry, Log, MemorySpill, Spill, Step, Tree, apply_logged, inverse_of};
+pub use points::{Point, Points, PointsIntent};
 pub use resolve::{Mapping, Resolved, Unit, resolve, resolve_node};
 pub use selection::{BinRange, Mask, Selection, ValueRange};
 pub use session::{Location, OpenEdit, Session, Source};
