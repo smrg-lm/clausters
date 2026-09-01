@@ -1420,13 +1420,15 @@ work, where a pending item reads as done.)*
   the web client's `flatten` now needs the core loaded, because it measures time
   with the shared map rather than arithmetic of its own.
 
-  **What is still open, and it is the ownership question this did not take.**
-  The map can be held by the clock (execution: lost on save) or by the document
-  (the piece: saved with it). Both work today — `clock.map` is assignable and a
-  map outlives any clock — but nothing *decides*, so a piece's tempo is not yet
-  persisted: `clausters-document` has no tempo field and `to_session` does not
-  carry one. See the entry below, which is the same question from the
-  document's side.
+  **The ownership question this did not take was answered on 2026-09-01 by
+  being dissolved**, and the record of what it asked is worth keeping. It asked
+  whether the map belongs to the clock (execution: lost on save) or to the
+  document (the piece: saved with it). Neither: a `TempoMap` is a **value** on
+  the beat axis, the peer of a `Timeline`, and a clock is the process that moves
+  over one — see "A tempo map is a value, and nothing said so" below, which is
+  where what shipped is written. What that leaves is not an owner but an
+  **identity**, so a save can name one; the map serializes today and nothing
+  references it yet.
 
 - ⬜ **`TimeUnit::to_beats` takes a length and a scalar, and no position**
   *(found 2026-08-31, auditing the call sites of the entry above)*.

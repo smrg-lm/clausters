@@ -77,6 +77,26 @@ Each is small, owned by its plan, and blocked by nothing.
 The section fills from section 3's review and empties again; a fix that lands
 leaves no line here, because its plan's checkbox and the commit already carry it.
 
+- ⬜ **`TimeUnit::to_beats` takes a length and a scalar, and no position**
+  *(`clients/python/PLAN.md` and `crates/clausters-document/PLAN.md`, Found by
+  use — one entry with a half in each)*. `TimeUnit::to_beats(length, tempo)`
+  converts seconds to beats with one number, which under a changing tempo is
+  undefined rather than imprecise: the same stretch reaches a different beat
+  depending on where it starts. **The decision it waited on is taken** — a
+  tempo map is a value, not a field of anything — so the fix is the local one
+  the entry already names: `Node::end` stops converting and hands back the
+  length with its unit, for whoever holds the map to resolve. That also keeps
+  `clausters-document` a serde tree with no dependencies.
+
+- ⬜ **A tempo gesture can only be written at "now"** *(`clients/python/PLAN.md`,
+  Found by use)*. `set_tempo` anchors at `beats()` and cannot be told where to
+  write, so a gesture asked for at beat 3 from inside a routine lands at
+  3.00034 — inaudible, and wrong for a map that is going to be saved. The
+  missing thing is an `at=` argument, not a second verb. **No longer waits on
+  anything**: what an explicit position *means* was settled with the truncating
+  rule that shipped on 2026-09-01 (a gesture says "from here on"), so the
+  argument is the mechanical half of a rule that already exists.
+
 - ⬜ **Nothing checks that a pair of examples makes the same calls, and a hand
   audit does not scale** *(`clients/python/PLAN.md`, Found by use)*. 61 Python
   examples have a page twin and the non-divergence rule says each pair is one
@@ -94,37 +114,6 @@ leaves no line here, because its plan's checkbox and the commit already carry it
 Same size of work, except the shape depends on an answer. The decision is named
 on each one; none of them is being taken by this file.
 
-- ⬜ **Who owns a piece's tempo map, and `TimeUnit::to_beats` with no
-  position** *(`clients/python/PLAN.md` and
-  `crates/clausters-document/PLAN.md`, Found by use)*. What is left of the
-  editor's frozen-tempo bridge, which shipped: the map exists in the core, both
-  clients bind it and the clock holds one, but **nothing decides whether it
-  belongs to the clock or to the document**, so a piece's tempo is not
-  persisted — the document has no tempo field. The same decision is what
-  unblocks the concrete defect beside it: `TimeUnit::to_beats(length, tempo)`
-  converts a length in seconds with one scalar and no onset, which under a
-  changing tempo is undefined rather than imprecise. Its caller already holds
-  the position; passing the *map* instead is what needs the answer.
-  **The decision:** a tempo map is notation (the piece saves it, the clock
-  reads it) or execution (the clock builds it, a save loses it). The type is
-  the same either way, so this blocks only who calls the constructor — and
-  whether the format grows a field.
-
-- ⬜ **The map is append-only, so a tempo gesture cannot be written before a
-  change already planned**, and **A tempo gesture can only be written at "now"**
-  *(`clients/python/PLAN.md`, Found by use)*. Two entries, one surface. A tempo
-  gesture is anchored at `beats()` and refuses a breakpoint below the last one,
-  so a second ramp during the first raises, and so does a `set_tempo` on a clock
-  holding a piece's map with changes still ahead of the playhead — which is
-  exactly the case a live gesture is. Nor can it be told *where* to write: the
-  missing thing is an `at=` argument on `set_tempo`, not a second verb — that
-  verb already absorbed `ramp_tempo`.
-  **The decision:** what a live gesture means against a written tempo —
-  truncating says it discards whatever was planned after it, which is right for
-  a performer and wrong for rehearsing against a fixed score. That is the
-  ownership question above, so the two are taken together. The mechanism is
-  already there (`truncate_from`); only the rule is missing.
-
 - ⬜ **Two views of one arrangement keep two histories, so an undo writes a
   state nobody was in** *(`clients/python/PLAN.md`, Found by use)*. Measured, in
   both clients: the log is minted per `Editor` while the tree is shared, so a
@@ -140,8 +129,14 @@ on each one; none of them is being taken by this file.
   read against `O14`. The containment until then is in the entry: one editor is
   one history, so a second window over one composition is read-only.
 
-**The three that came before are closed.** They were taken on
-2026-08-27 and shipped with their answers: the page's missing *real* constant,
+**The four that came before are closed.** Three were taken on 2026-08-27 and
+one on 2026-09-01. The last is worth naming because it did not get an answer,
+it stopped being a question: **who owns a piece's tempo map** — neither the
+clock nor the document, since a `TempoMap` is a *value* on the beat axis, the
+peer of a `Timeline`, and a clock is the process that moves over one. What that
+left is an identity, so a save can name a map, and that half waits on what a
+document is rather than on this. The two fixes it was blocking moved to
+section 1. The other three: the page's missing *real* constant,
 measured to cost nothing and answered by a verb both clients already have; who
 builds `libfaust-wasm`, answered by the release; and where a node example lives
 — a web example is a page for what a page can do and a node script (`.mjs`)
