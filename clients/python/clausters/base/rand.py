@@ -7,7 +7,7 @@ beginning to end:
 
 - ``main.seed(n)`` seeds the **root** generator (`clausters.base.main.Main.seed`).
 - Every `Routine` (any `Stream`) derives its **own** generator from the context
-  that creates it, at creation time (`RngStream.spawn` — the child's seed is the
+  that creates it, at creation time (`Rng.spawn` — the child's seed is the
   parent's next word). Deterministic: same root seed + same creation order =
   same streams, and concurrent routines (several clocks, RT next to NRT) stay
   reproducible **per routine** regardless of how their wakes interleave.
@@ -25,7 +25,24 @@ seeds: independent seeds would break whole-script consistency — override
 *locally* by playing inside its own routine instead.
 """
 
+from .. import _native
 from .main import main
+
+#: The value stream itself — one ``u64`` of state over the shared core, the
+#: same type in every client (`clausters._native.Rng`). You rarely build one:
+#: the context hands you the right stream through `current_rng`.
+Rng = _native.Rng
+
+
+def seed(value: int) -> None:
+    """Seed the **default** session's root generator (``main.seed``).
+
+    The free spelling of the verb, for a script that names no session. A named
+    `clausters.Session` is its own random context: ``session.seed(n)``
+    reproduces *that* session's own sound without touching another's, which is
+    what lets two sessions in one script stay reproducible independently.
+    """
+    main.seed(value)
 
 
 def current_rng():
@@ -43,7 +60,7 @@ def current_rng():
 
 
 def spawn_rng():
-    """A new generator derived from the current context (`RngStream.spawn`):
+    """A new generator derived from the current context (`Rng.spawn`):
     how a `Routine` gets its own stream at creation, seeded by its parent."""
     return current_rng().spawn()
 

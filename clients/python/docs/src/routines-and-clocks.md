@@ -94,7 +94,8 @@ and `next_below(n)` under `clausters.base.rand`) — draws from **one seedable c
 
 - `session.seed(n)` seeds *that* session's root. Called before you build and
   play, it makes every random value in the session reproducible, end to end;
-  `main.seed(n)` does the same for the **default session** (free-standing
+  `clausters.seed(n)` — or `main.seed(n)`, the same verb spelled on the
+  session it seeds — does that for the **default session** (free-standing
   draws and anything played without a `Session`). Seeding one session never
   perturbs another.
 - Every routine gets its **own** generator when it is created, seeded from the

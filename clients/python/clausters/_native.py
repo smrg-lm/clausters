@@ -1377,7 +1377,7 @@ def rng_seed(seed: int) -> int:
     return lib().clausters_rng_seed(ctypes.c_uint64(seed).value)
 
 
-class RngStream:
+class Rng:
     """A resumable seeded value stream over the core generator: uniform
     ``f64`` in [0, 1) and bounded integers. The state is one ``u64`` word (flat
     data), so the same seed replays the same values in every client language —
@@ -1406,8 +1406,12 @@ class RngStream:
         with self._lock:
             return lib().clausters_rng_next_below(ctypes.byref(self._state), n)
 
-    def next_u64(self) -> int:
-        """The full-width random word (advances the stream one step)."""
+    def _next_u64(self) -> int:
+        """The full-width random word (advances the stream one step).
+
+        Private, and the web client's `Rng` has no counterpart: `spawn` is the
+        supported way to derive a stream, and it is the only caller.
+        """
         with self._lock:
             return lib().clausters_rng_next_u64(ctypes.byref(self._state))
 
@@ -1415,11 +1419,11 @@ class RngStream:
         """A uniformly chosen element of ``items``."""
         return items[self.next_below(len(items))]
 
-    def spawn(self) -> "RngStream":
+    def spawn(self) -> "Rng":
         """A child stream seeded from this one's next word — deterministic
         derivation, so seeding a root context reproduces every stream created
         under it, in creation order."""
-        return RngStream(self.next_u64())
+        return Rng(self._next_u64())
 
 
 # ---- beat-ordered scheduler queue ----

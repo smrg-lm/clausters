@@ -1567,7 +1567,7 @@ work, where a pending item reads as done.)*
   a page's engine is not a process anyone launched with flags, so the web
   `Server` has no `options` at all.
 
-- ⬜ **The random stream is `Rng` in one client and `_native.RngStream` in the
+- ✅ **The random stream is `Rng` in one client and `_native.RngStream` in the
   other, and three of its verbs reach only one** *(found 2026-09-01, next door
   to the conversion audit — the same question asked of `base/rand`)*. The draws
   agree and the streams are the same core; what differs is everything around
@@ -1587,6 +1587,21 @@ work, where a pending item reads as done.)*
   defect: publishing `RngStream` under that name would settle the reach and
   leave the two clients calling one type two things. Whichever name wins, both
   say it.
+
+  **Fixed** *(2026-09-01)*. `Rng` won, and not by preference: the Rust type is
+  `clausters_core::rng::Rng` and the wasm binding already spells it that way, so
+  `RngStream` was the odd one of three. Renamed with no alias, and published —
+  `clausters.Rng`, `seed`, `current_rng`, `spawn_rng` at the top level, matching
+  the web index name for name; `next_f64`/`next_below` stay in
+  `clausters.base.rand`, which is where the web keeps `nextF64`/`nextBelow` too.
+  The free `seed(n)` is the default session's, the same verb `main.seed`/
+  `session.seed` already were.
+
+  One method went the other way in the same pass: `Rng.next_u64` is now
+  `_next_u64`. It had no web counterpart, and once the class is public that is
+  a one-sided surface — `spawn` is the supported way to derive a stream and was
+  its only caller. Same rule as the two conversions above, applied to a method
+  rather than a module.
 
 - ✅ **Three conversions are public on one side and private on the other**
   *(found 2026-09-01, auditing every conversion name after the mel/bark pair

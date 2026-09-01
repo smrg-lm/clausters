@@ -102,7 +102,7 @@ def jnum(value):
 def rng_run(seed):
     """The first draws of a seeded stream, and of a stream spawned from it --
     the derivation a routine's own generator is built by."""
-    stream = _native.RngStream(seed)
+    stream = _native.Rng(seed)
     floats = [stream.next_f64() for _ in range(6)]
     below = [stream.next_below(n) for n in (2, 7, 16, 1, 0)]
     child = stream.spawn()

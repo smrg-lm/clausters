@@ -19,7 +19,7 @@ import os
 
 
 class RandomContext:
-    """One seedable RNG root (the shared native ``RngStream``).
+    """One seedable RNG root (the shared native `clausters._native.Rng`).
 
     Each environment is its own random context, so each reproduces
     **independently**: ``seed(n)`` on one never touches another's stream. A
@@ -40,12 +40,12 @@ class RandomContext:
         if value is None:
             value = int.from_bytes(os.urandom(8), "little")
         self._seed = value
-        self._rng = _native.RngStream(value)
+        self._rng = _native.Rng(value)
         return value
 
     @property
     def rng(self):
-        """The context value stream (`clausters._native.RngStream`, the shared
+        """The context value stream (`clausters._native.Rng`, the shared
         core generator — reproducible across client languages). Created lazily,
         seeded from entropy unless `seed` was called."""
         if self._rng is None:

@@ -38,7 +38,7 @@ from .ids import IdShare, WHOLE as WHOLE_SHARE, share_of
 from .main import Main, main
 from .moment import Moment
 from .netaddr import NetAddr
-from .rand import choice, current_rng, next_below, next_f64, spawn_rng, uniform
+from .rand import Rng, choice, current_rng, next_below, next_f64, seed, spawn_rng, uniform
 from .stream import FunctionStream, Routine, Stream, StopStream, YieldAndReset
 from .timebase import ManualTimebase, MonotonicTimebase, SampleClockTimebase, Timebase
 from ._midiinterface import (
@@ -77,6 +77,17 @@ __all__ = [
     "main",
     "Moment",
     "NetAddr",
+    # the random context: the stream type, the root seeding verb, the two
+    # context readers, and the draws (the raw ones included, which is what
+    # `base` is for)
+    "Rng",
+    "seed",
+    "current_rng",
+    "spawn_rng",
+    "uniform",
+    "choice",
+    "next_f64",
+    "next_below",
     "Destination",
     "OscDestination",
     "Stream",

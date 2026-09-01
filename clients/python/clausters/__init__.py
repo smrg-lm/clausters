@@ -87,7 +87,7 @@ from .base.time import (
     secs_to_samples,
 )
 from .base.main import default_session, main
-from .base.rand import choice, uniform
+from .base.rand import Rng, choice, current_rng, seed, spawn_rng, uniform
 from .base.stream import Routine
 from .responders import MidiFunc, OscFunc, midifunc, oscfunc
 from .seq.event import Event, rest
@@ -166,8 +166,14 @@ __all__ = [
     "MidiFunc",
     "oscfunc",
     "midifunc",
-    # the random context (one seedable source: main.seed(n) + these draws;
-    # the raw ones, next_f64 and next_below, stay in `base.rand`)
+    # the random context (one seedable source: `seed(n)` on the default
+    # session, or `session.seed(n)` on a named one, and these draws from
+    # whichever stream the context says; the raw ones, next_f64 and
+    # next_below, stay in `base.rand`)
+    "Rng",
+    "seed",
+    "current_rng",
+    "spawn_rng",
     "uniform",
     "choice",
     # the root of every error this package raises; the leaves are in `errors`
