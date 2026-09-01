@@ -1455,6 +1455,47 @@ work, where a pending item reads as done.)*
   read only by that setter. Nothing else moved: under a constant tempo the
   property answers what it always did, which is what the added test pins.
 
+- ⬜ **A hand-made clock cannot find the ambient session, because `activate` is
+  thread-local** *(found 2026-08-31 by the user, running a ten-clock example)*.
+  `Session.activate()` sets `main.current_session` on the **calling** thread. A
+  routine runs on its own clock's thread, so the ambient lookup there falls
+  through to `current_routine.clock.session` — which `Session` sets on the clock
+  it owns and which is `None` on any clock a user built. The failure is loud but
+  misplaced: every note raises "no server to play on" from inside the clock
+  thread while the clock goes on counting beats correctly, so what looks broken
+  is the playing, not the wiring.
+
+  `clock.session = session` fixes it and is documented on the field, but nothing
+  points there from `activate`, whose docstring says "anything created with no
+  session named resolves to *this* session's server, clock and random root" —
+  true on the calling thread and not inside a routine. Three candidate fixes,
+  and they are not the same: say the limit in `activate`'s docstring; have
+  `TempoClock` fall back to `main.current_session` captured at construction;
+  or make the ambient session a process-wide default with the thread-local as an
+  override. The middle one is probably right — a clock built while a session is
+  ambient belongs to it — but it changes resolution, so it wants deciding rather
+  than patching. Both clients, and the same trap exists wherever a client runs
+  user code off the calling thread.
+
+- ⬜ **A repo example called a `Server` attribute that never existed**
+  *(found 2026-08-31 by the user, running the example)*.
+  `examples/editors/tempo_map.py` used `session.server.sample_rate`, which is not
+  a thing — the spellings are `server.options.sample_rate` (the launch config)
+  and `server.query_info().nominal_sample_rate` (what the running server
+  reports). It crashed on the line that builds the `Editor`, past every printed
+  number, which is why writing the example and running only its analytic half
+  did not catch it. **Fixed** by taking `query_info().nominal_sample_rate`,
+  which is the one spelling the page twin also has.
+
+  What it exposes is smaller than it looks and worth keeping: the web `Server`
+  has **no `options`** at all — a page's engine is not a process someone
+  launched with flags — so `server.options.sample_rate` is a Python-only
+  spelling, and `composer.py` / `composer.html` are already split across it
+  (`options.sample_rate` against `queryInfo().nominalSampleRate`). Either the
+  web grows the equivalent reading or the pair moves to `query_info` as this one
+  now has; leaving two examples asking one question two ways is the divergence
+  the rule is about.
+
 - ⬜ **The map is append-only, so a tempo gesture cannot be written before a
   change already planned** *(found 2026-08-31, testing the fix above)*.
   `TempoMap.push`/`ramp` refuse a breakpoint at a beat below the last one, and

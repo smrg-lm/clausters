@@ -143,6 +143,9 @@ song.add(Sequence([bar(220.0), bar(277.2), bar(330.0), bar(440.0)],
 # %%
 session = Session.live(tempo=TEMPO, latency=0.1)
 clock = session.clock
+# `query_info` rather than the launch options: it is the one spelling both
+# clients have, so this file and its page twin ask the same question.
+SR = session.server.query_info().nominal_sample_rate
 clock.map = tempo                       # the piece's tempo is the clock's
 
 print("the clock's map:", clock.map.segments())
@@ -154,15 +157,15 @@ print("the clock's map:", clock.map.segments())
 # by engine samples — crosses it exactly then.
 
 # %%
-editor = Editor(song, sample_rate=session.server.sample_rate,
+editor = Editor(song, sample_rate=SR,
                 tempo_map=clock.map, quant=QUANT, follow=True,
                 title="A tempo that changes")
 editor.open()
 
 print("beat 8 is drawn at sample", editor.beats_to_units(8.0),
-      "=", editor.beats_to_units(8.0) / session.server.sample_rate, "s")
+      "=", editor.beats_to_units(8.0) / SR, "s")
 print("a frozen tempo would have said",
-      8.0 / TEMPO * session.server.sample_rate)
+      8.0 / TEMPO * SR)
 
 # %% [markdown]
 # ## Play it, and watch the line
