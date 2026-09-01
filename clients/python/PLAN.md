@@ -1567,6 +1567,41 @@ work, where a pending item reads as done.)*
   a page's engine is not a process anyone launched with flags, so the web
   `Server` has no `options` at all.
 
+- ⬜ **Three conversions are public on one side and private on the other**
+  *(found 2026-09-01, auditing every conversion name after the mel/bark pair
+  was added — the user asking whether any had been left in an `a2b`/`b2a`
+  shape)*. The naming came back clean and the audit turned up something else.
+
+  **On names there is nothing to fix**, and it is worth writing down so nobody
+  re-opens it: the client uses three forms and each is the right one where it
+  sits. `<from><to>` with no separator is SuperCollider's for value conversions
+  (`midicps`, `cpsoct`, and now `cpsmel`/`cpsbark`); `a2b` appears exactly twice,
+  as `TempoClock.beats2secs`/`secs2beats`, which are sclang's own method names
+  for those two; everything else is `a_to_b`/`aToB`, which is ours and is applied
+  consistently (`beats_to_units`/`units_to_beats`, `env_to_points`/
+  `points_to_env`, `samples_to_blob`/`blob_to_samples`). The one thing a reader
+  pays for is that sclang itself has two conventions, so one line can hold
+  `clock.beats2secs(b)` beside `secs_to_samples(s, sr)`.
+
+  **What is actually wrong is reach, not spelling**, and it is the same class as
+  the mel/bark entry below — a capability that exists in both clients and is
+  reachable in one:
+
+  - `beats_to_secs`/`secs_to_beats` are exported from `base/timebase.ts` and
+    exist in Python only as `_native.beats_to_secs`, behind the underscore.
+  - `patch_to_widget` is `patchToWidget`, exported, in TS and `_patch_to_widget`,
+    private, in Python.
+  - Export **depth** differs for what both do have: `bar`, `beat_in_bar`,
+    `quant_delay`, `secs_to_samples`, `samples_to_secs` and the whole `builtins`
+    module are top-level in the web index and sub-module-only in Python. That is
+    why the two halves of `views/rulers` import the same calls from different
+    places — a divergence a pair checker would report and a reader reads as
+    idiom.
+
+  Each is decided the same way: whichever side has less is the gap, and the
+  answer is either to publish it in both or to say in `docs/bindings.md` why not.
+  Not done here because the user asked for the audit and not the change.
+
 - ⬜ **Nothing checks that a pair of examples makes the same calls, and a hand
   audit does not scale** *(found 2026-08-31, trying to answer "corregilos
   todos")*. 61 Python examples have a page twin and the non-divergence rule says
