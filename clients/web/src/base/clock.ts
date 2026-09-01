@@ -202,6 +202,12 @@ export interface TempoClockOptions {
      * clocks come to be reading one piece.
      */
     tempoMap?: TempoMap;
+    /**
+     * A label. Says *what* this clock is (`"lead"`, `"canon 3"`), never which
+     * one it is — the same rule a document node's name follows. It is what a
+     * saved clock is recognised by when an arrangement is written against it.
+     */
+    name?: string;
 }
 
 /** What {@link TempoClock.setTempo} takes beside the tempo. */
@@ -259,6 +265,46 @@ export class TempoClock {
     }
 
     /**
+     * The clock as JSON: its name and its tempo map.
+     *
+     * **What of a clock belongs to the piece, and it is only these two.** Its
+     * position is transport, its queue is what happens to be scheduled, and
+     * its timebase is a choice of the *run* — whether it paces against the
+     * page's clock or a server's sample counter says nothing about the music.
+     * What the piece owns is the tempo, and the name a lane refers to it by.
+     *
+     * This is what an arrangement written at a tempo saves: not "the" tempo,
+     * which would make polytempo unwritable, but a named clock per tempo, with
+     * lanes naming which one they run on.
+     */
+    dump(): string {
+        return JSON.stringify({
+            name: this.name,
+            map: JSON.parse(this.tempoMapHeld.dump()) as unknown,
+        });
+    }
+
+    /**
+     * A clock rebuilt from what {@link TempoClock.dump} wrote: the same name,
+     * the same tempo map, and a timebase that is this run's rather than the
+     * saved one's (there is no saved one — see `dump`). `undefined` on
+     * anything this client could not have written.
+     */
+    static load(json: string, options: TempoClockOptions = {}): TempoClock | undefined {
+        let name: unknown;
+        let points: unknown;
+        try {
+            ({ name, map: points } = JSON.parse(json) as { name: unknown; map: unknown });
+        } catch {
+            return undefined;
+        }
+        if (name !== null && typeof name !== "string") return undefined;
+        const map = TempoMap.load(JSON.stringify(points));
+        if (map === undefined) return undefined;
+        return new TempoClock(1.0, { ...options, tempoMap: map, name: name ?? undefined });
+    }
+
+    /**
      * Re-read the map and wake the driver — after an edit written through
      * another holder of a **shared** map.
      *
@@ -270,6 +316,9 @@ export class TempoClock {
         this.syncMap(true);
         return this;
     }
+
+    /** What this clock is called, or `null`. A label, not an identity. */
+    name: string | null;
 
     private tempoMapHeld: TempoMap;
     /**
@@ -318,7 +367,8 @@ export class TempoClock {
     private frozenAt: number | null = null;
     private pumping = false;
 
-    constructor(tempo = 1.0, { timebase, ticker, tempoMap }: TempoClockOptions = {}) {
+    constructor(tempo = 1.0, { timebase, ticker, tempoMap, name }: TempoClockOptions = {}) {
+        this.name = name ?? null;
         this.tempoMapHeld = tempoMap ?? new TempoMap(tempo);
         this.timebase = timebase ?? new MonotonicTimebase();
         this.ticker = ticker ?? defaultTicker();

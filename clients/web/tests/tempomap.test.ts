@@ -106,3 +106,26 @@ test("a gesture inside a routine is written at the routine's own beat", async ()
     await clock.run(0.2);
     assert.deepEqual(written, [3.0]); // not 3.02, which is where beats() would be
 });
+
+test("a clock is saved as a name and a map", () => {
+    // What of a clock belongs to the piece: the tempo, and the name a lane
+    // refers to it by. Not its position, not its queue, not its timebase.
+    const clock = new TempoClock(2.0, { name: "lead" });
+    clock.setTempo(4.0, { over: 8.0, at: 4.0, curve: "exponential" });
+    const back = TempoClock.load(clock.dump());
+    assert.ok(back !== undefined);
+    assert.equal(back.name, "lead");
+    assert.equal(back.beats2secs(12.0), clock.beats2secs(12.0));
+    assert.ok(!clock.dump().includes("timebase"));
+    assert.equal(TempoClock.load("{}"), undefined);
+});
+
+test("polytempo is several named clocks", () => {
+    // The reason the saved unit is a clock and not "the" tempo: a canon at
+    // three tempi is three of them, and a lane says which one it runs on.
+    const canon = [1.0, 1.5, 2.0].map((t, i) => new TempoClock(t, { name: `voice ${i}` }));
+    const written = canon.map((c) => c.dump());
+    const read = written.map((j) => TempoClock.load(j)!);
+    assert.deepEqual(read.map((c) => c.name), ["voice 0", "voice 1", "voice 2"]);
+    assert.deepEqual(read.map((c) => c.tempo), [1.0, 1.5, 2.0]);
+});

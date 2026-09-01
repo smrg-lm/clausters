@@ -1781,7 +1781,7 @@ work, where a pending item reads as done.)*
   and the map still needs an **identity** — its own entry below, since a
   pending item filed inside a closed one reads as done.
 
-- ⬜ **A tempo map has no identity, so a save cannot name one** *(found
+- ✅ **A tempo map has no identity, so a save cannot name one** *(found
   2026-09-01, with the user, when the ownership question dissolved into this
   one)*. The map serializes (`dumps`/`loads`, its breakpoints) and it is shared
   by reference at run time, which is all a clock needs. What is missing is a
@@ -1796,12 +1796,31 @@ work, where a pending item reads as done.)*
   copies that drift. And **polytempo**: a canon at three tempi is three maps,
   each named — unrepresentable while a piece can only have "the" map.
 
-  **The decision it waits on** is not ownership, which is settled (a map is a
-  value; nobody owns it). It is **where the table lives**, and that is the
-  open "what the *second* document is" question in
-  `crates/clausters-document/PLAN.md` — `Session` holds `sources` today, and
-  `Session` is the arrangement's. A tempo is not the arrangement's: a score has
-  one too. Nothing else waits on this.
+  **Corrected and shipped** *(2026-09-01, by the user: "una Timeline necesita
+  de un reloj para ejecutarse y un reloj tiene un TimeMap; se debería poder
+  guardar el reloj con su timemap")*. The entry named the wrong object. A
+  `Timeline` does not run by itself — it is played **on a clock** — and several
+  timelines on one clock is the grouping that means something. So what an
+  arrangement refers to is the **clock**, and a `TempoId` was a name for the
+  wrong thing.
+
+  What persists of a clock is exactly two things, which is what makes it a
+  sane unit: its **name** and its **map**. Its position is transport, its queue
+  is whatever happens to be scheduled, and its `timebase` is a choice of the
+  *run* — pacing against the OS clock or a server's sample counter says nothing
+  about the music, so a loaded clock takes this run's. `TempoClock.dumps`/
+  `loads` and `dump`/`load`, plus a `name` that follows the document node's own
+  rule: it says what the clock is, never which one it is.
+
+  Polytempo falls out and is tested: a canon at three tempi is three named
+  clocks, not "the" tempo of a piece.
+
+  **What is left is not this entry's**: the arrangement has to grow the
+  reference itself — a lane naming the clock it runs on, and a table of them in
+  whatever holds a saved piece. Where that table lives is the open "what the
+  *second* document is" question in `crates/clausters-document/PLAN.md`, since
+  `Session` holds `sources` today and `Session` is the arrangement's, while a
+  score has a tempo too.
 
 - ✅ **A tempo gesture can only be written at "now"** *(found 2026-08-31,
   writing the ten-clock example)*. `set_tempo` anchors at `beats()`, so a ramp

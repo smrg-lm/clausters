@@ -25,6 +25,7 @@ the seam — and it lives on the Server, not here.
 """
 
 import atexit
+import json as _json
 import sys
 import threading
 import time
@@ -63,9 +64,18 @@ class TempoClock:
         timebase: the pacing source -- the default monotonic clock, or a
             `SampleClockTimebase` to anchor pacing and scheduling to the
             server's own sample clock.
+        tempo_map: a `clausters._native.TempoMap` to **read** instead of
+            building one. Every clock builds its own, so this is only for the
+            case where two clocks are reading one piece.
+        name: a label. Says *what* this clock is (``"lead"``, ``"canon 3"``),
+            never which one it is -- the same rule a document node's name
+            follows. It is what a saved clock is recognised by when an
+            arrangement is written against it.
     """
 
-    def __init__(self, tempo: float = 1.0, timebase=None, tempo_map=None):
+    def __init__(self, tempo: float = 1.0, timebase=None, tempo_map=None, name=None):
+        #: What this clock is called, or ``None``. A label, not an identity.
+        self.name = name
         #: The piece's beat->second map (`clausters._native.TempoMap`), and the
         #: clock's whole relation to time. It starts as one constant-tempo
         #: segment, which computes exactly the affine expression this clock
@@ -188,6 +198,37 @@ class TempoClock:
     def map(self, tempo_map):
         self._map = tempo_map
         self._sync_map(wake=True)
+
+    def dumps(self) -> str:
+        """The clock as JSON: its name and its tempo map.
+
+        **What of a clock belongs to the piece, and it is only these two.** Its
+        position is transport, its queue is what happens to be scheduled, and
+        its `timebase` is a choice of the *run* -- whether it paces against the
+        OS clock or the server's sample counter says nothing about the music.
+        What the piece owns is the tempo, and the name a lane refers to it by.
+
+        This is what an arrangement written at a tempo saves: not "the" tempo,
+        which would make polytempo unwritable, but a named clock per tempo,
+        with lanes naming which one they run on.
+        """
+        return _json.dumps({"name": self.name, "map": _json.loads(self._map.dumps())})
+
+    @classmethod
+    def loads(cls, json: str, timebase=None) -> "TempoClock":
+        """A clock rebuilt from what `dumps` wrote: the same name, the same
+        tempo map, and a `timebase` that is this run's rather than the saved
+        one's (there is no saved one -- see `dumps`). Raises `ValueError` on
+        anything this client could not have written.
+        """
+        try:
+            data = _json.loads(json)
+            name, points = data["name"], data["map"]
+        except (TypeError, KeyError, ValueError) as exc:
+            raise ValueError(f"not a saved clock: {exc}") from exc
+        clock = cls(timebase=timebase, tempo_map=_native.TempoMap.loads(_json.dumps(points)))
+        clock.name = name
+        return clock
 
     def resync(self):
         """Re-read the map and wake the driver — after an edit written through

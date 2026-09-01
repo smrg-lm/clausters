@@ -103,3 +103,26 @@ def test_a_gesture_inside_a_routine_is_written_at_the_routines_own_beat():
     Routine(melody).play(clock)
     clock.run(0.2)
     assert written == [3.0]  # not 3.0004, which is where `beats()` would be
+
+
+def test_a_clock_is_saved_as_a_name_and_a_map():
+    # What of a clock belongs to the piece: the tempo, and the name a lane
+    # refers to it by. Not its position, not its queue, not its timebase.
+    clock = TempoClock(2.0, name="lead")
+    clock.set_tempo(4.0, over=8.0, at=4.0, curve="exponential")
+    back = TempoClock.loads(clock.dumps())
+    assert back.name == "lead"
+    assert back.beats2secs(12.0) == clock.beats2secs(12.0)
+    assert "timebase" not in clock.dumps()
+    with pytest.raises(ValueError):
+        TempoClock.loads("{}")
+
+
+def test_polytempo_is_several_named_clocks():
+    # The reason the saved unit is a clock and not "the" tempo: a canon at
+    # three tempi is three of them, and a lane says which one it runs on.
+    canon = [TempoClock(t, name=f"voice {i}") for i, t in enumerate((1.0, 1.5, 2.0))]
+    written = [c.dumps() for c in canon]
+    read = [TempoClock.loads(j) for j in written]
+    assert [c.name for c in read] == ["voice 0", "voice 1", "voice 2"]
+    assert [c.tempo for c in read] == [1.0, 1.5, 2.0]
