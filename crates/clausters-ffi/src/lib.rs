@@ -160,7 +160,15 @@ pub use time::*;
 /// envelope. Breaking rather than additive: the segment payload widened, and
 /// its fourth number is now an envelope shape number rather than a flag, so a
 /// reader that does not know shape 2 or 5 misreads a segment it can see.
-pub const CORE_ABI_VERSION: u32 = 30;
+///
+/// **v31 the map is a value** — `clausters_tempomap_version`, `_dump` and
+/// `_load`: the edit counter a holder of a *shared* map compares, and the map
+/// written out as its breakpoints and read back through the ordinary writers.
+/// Additive, and the counter still moves: the ctypes binding declares every
+/// symbol eagerly, so a staged library missing these fails at load — with
+/// *"speaks ABI v30, this binding v31"* rather than an `AttributeError` on a
+/// name nobody was looking at.
+pub const CORE_ABI_VERSION: u32 = 31;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

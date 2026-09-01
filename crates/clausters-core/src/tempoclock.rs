@@ -4,69 +4,19 @@
 //! coroutine driver that resumes `yield`s stays in the host language). Two
 //! pieces:
 //!
-//! - [`TempoClock`] — the affine beat↔second mapping (`tempo`, plus a
-//!   reference point so a tempo change can rebase without a discontinuity),
-//!   and free [`secs_to_samples`]/[`samples_to_secs`] helpers to reach the
-//!   server's sample clock.
+//! - the free conversions a clock reaches the server's sample clock through
+//!   ([`secs_to_samples`]/[`samples_to_secs`]) and the grid it reads a
+//!   position off ([`quant_delay`], [`bar`], [`beat_in_bar`]);
 //! - [`Scheduler`] — a min-heap keyed by beat time with stable insertion
 //!   order, the structure a clock pops due events from.
+//!
+//! **Beats↔seconds is not here.** It is [`crate::tempomap::TempoMap`], and
+//! there is one of it: an affine clock is a one-segment map, so a struct
+//! holding `(tempo, base_beats, base_seconds)` beside it would be a second
+//! implementation of the same relation.
 
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
-
-/// An affine map between beats and seconds: `secs = base_seconds + (beats -
-/// base_beats) / tempo`. Holding a reference point (rather than assuming beat
-/// 0 at second 0) lets [`set_tempo`](TempoClock::set_tempo) change the slope
-/// while keeping the current instant fixed.
-#[derive(Clone, Copy, Debug)]
-pub struct TempoClock {
-    tempo: f64,
-    base_beats: f64,
-    base_seconds: f64,
-}
-
-impl TempoClock {
-    /// A clock at `tempo` beats per second with beat 0 at second 0.
-    pub fn new(tempo: f64) -> Self {
-        Self {
-            tempo,
-            base_beats: 0.0,
-            base_seconds: 0.0,
-        }
-    }
-
-    /// Tempo in beats per second.
-    #[inline]
-    pub fn tempo(&self) -> f64 {
-        self.tempo
-    }
-
-    /// Beats per second from a beats-per-minute value.
-    pub fn from_bpm(bpm: f64) -> Self {
-        Self::new(bpm / 60.0)
-    }
-
-    /// Changes the tempo while pinning the instant `at_seconds`: the beat at
-    /// that second is unchanged, only the future slope differs.
-    pub fn set_tempo(&mut self, tempo: f64, at_seconds: f64) {
-        let beats = self.secs_to_beats(at_seconds);
-        self.base_beats = beats;
-        self.base_seconds = at_seconds;
-        self.tempo = tempo;
-    }
-
-    /// Seconds at a given beat.
-    #[inline]
-    pub fn beats_to_secs(&self, beats: f64) -> f64 {
-        self.base_seconds + (beats - self.base_beats) / self.tempo
-    }
-
-    /// Beats at a given second.
-    #[inline]
-    pub fn secs_to_beats(&self, secs: f64) -> f64 {
-        self.base_beats + (secs - self.base_seconds) * self.tempo
-    }
-}
 
 /// Seconds → sample count at `sample_rate`, rounded to the nearest sample
 /// (ties to even, matching the builtins' `rint`).
@@ -208,22 +158,9 @@ impl Scheduler {
 mod tests {
     use super::*;
 
-    #[test]
-    fn beat_second_round_trip() {
-        let clk = TempoClock::from_bpm(120.0); // 2 beats per second
-        assert!((clk.beats_to_secs(2.0) - 1.0).abs() < 1e-12);
-        assert!((clk.secs_to_beats(1.0) - 2.0).abs() < 1e-12);
-    }
-
-    #[test]
-    fn tempo_change_pins_the_instant() {
-        let mut clk = TempoClock::from_bpm(60.0); // 1 bps: beat 4 at second 4
-        clk.set_tempo(2.0, 4.0);
-        // The beat at second 4 is unchanged...
-        assert!((clk.secs_to_beats(4.0) - 4.0).abs() < 1e-12);
-        // ...and one second later we have advanced 2 beats, not 1.
-        assert!((clk.secs_to_beats(5.0) - 6.0).abs() < 1e-12);
-    }
+    // The beats<->seconds round trip and the pinned instant are the tempo
+    // map's tests (`tempomap::tests`), where the one implementation of that
+    // relation lives.
 
     #[test]
     fn sample_conversion() {

@@ -65,14 +65,18 @@ class TempoClock:
             server's own sample clock.
     """
 
-    def __init__(self, tempo: float = 1.0, timebase=None):
+    def __init__(self, tempo: float = 1.0, timebase=None, tempo_map=None):
         #: The piece's beat->second map (`clausters._native.TempoMap`), and the
         #: clock's whole relation to time. It starts as one constant-tempo
         #: segment, which computes exactly the affine expression this clock
         #: always used; `set_tempo` records a breakpoint on it instead of
         #: overwriting the one anchor there used to be, so what a tempo change
         #: moved stays knowable afterwards.
-        self._map = _native.TempoMap(float(tempo))
+        #:
+        #: Every clock builds its own, so nothing has to be passed for the
+        #: ordinary case; `tempo_map=` hands it one to **read** instead, which
+        #: is how two clocks come to be reading one piece.
+        self._map = tempo_map if tempo_map is not None else _native.TempoMap(float(tempo))
         # The last segment as an affine triple, refreshed on every edit: the
         # anchor `tempo = x` re-hangs the map from, so assigning a tempo keeps
         # the beat the clock is on where it already was. `_tempo` is that
@@ -160,18 +164,41 @@ class TempoClock:
         function, readable without a clock running and shared with whatever
         draws the piece, so a line and the sound come from one map.
 
-        Assigning it hands the clock a piece's own tempo: the map is **copied**,
-        so later edits on either side stay apart, and the pacing picks it up from
-        the next wait. Do it before `start` — replacing the map under a running
-        clock moves every beat that has not fired yet, which is a seek and not a
-        tempo change.
+        Assigning it hands the clock a piece's own tempo, and the map is
+        **adopted, not copied**: a second clock assigned the same map is reading
+        the same piece, and a gesture written on either is written on both. Pass
+        ``m.copy()`` to fork instead.
+
+        Do it before `start` — replacing the map under a running clock moves
+        every beat that has not fired yet, which is a seek and not a tempo
+        change.
+
+        **What a shared map costs, and it is one thing.** The driver recomputes
+        every wait from the map on each pass, so an edit made anywhere is
+        *read* correctly with nothing to invalidate. What a clock cannot see is
+        an edit made through another holder while it sleeps: it wakes on the
+        wait it had already computed, and only then reads the new map. Its own
+        gestures (`set_tempo`, `tempo`) wake it at once; for an edit written
+        from elsewhere, call `resync` on the clocks reading it — or compare
+        `map.version`, which is what it is there for.
         """
         return self._map
 
     @map.setter
     def map(self, tempo_map):
-        self._map = tempo_map.copy()
+        self._map = tempo_map
         self._sync_map(wake=True)
+
+    def resync(self):
+        """Re-read the map and wake the driver — after an edit written through
+        another holder of a **shared** map.
+
+        A clock's own gestures do this for you. This is the call for the other
+        direction: a piece's map edited by an editor, or by a second clock, and
+        this one still asleep on a wait computed before the edit.
+        """
+        self._sync_map(wake=True)
+        return self
 
     def _sync_map(self, wake: bool = False):
         """Re-reads the map's last segment into the affine cache, and (for an
@@ -317,8 +344,23 @@ class TempoClock:
 
         A change is **recorded** rather than overwriting what came before, so
         the beats before it stay convertible afterwards.
+
+        **Against a map that was written ahead of the clock** — a piece's tempo
+        track, a shared map, anything with breakpoints still in front of the
+        playhead — the gesture says *from here on*, and what was planned after
+        this beat is dropped. That is what a live change means: the past is
+        untouched and stays convertible, and the future is the one being played
+        now. A rehearsal that must not rewrite the piece runs on
+        ``clock.map = piece.map.copy()`` — adopting is authoring, forking is
+        performing.
         """
         at = self.beats()
+        # A gesture is anchored at "now", so anything the map still holds past
+        # this beat is a plan this gesture replaces. The map itself stays
+        # append-only -- refusing to go backwards is right for a value; saying
+        # "from here on" is the *gesture's* job, and it is the one thing that
+        # lets an RT change land on an NRT-written map.
+        self._map.truncate_from(at)
         levels = getattr(tempo, "levels", None)
         if levels is not None:
             self._write_env(at, tempo, unit)

@@ -35,6 +35,8 @@
 
 use std::fmt;
 
+use serde::{Deserialize, Serialize};
+
 /// The shape a segment's tempo takes on its way to the next breakpoint.
 ///
 /// The numbers are the envelope shape numbers the clients already use for
@@ -47,7 +49,8 @@ use std::fmt;
 /// every read. The knob that survives is [`Shape::Curvature`], which is
 /// continuous through linear at `c = 0` and covers "starts slow" and "starts
 /// fast" — the family the excluded shapes belong to.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Shape {
     /// Tempo linear in beats: `T(u) = T₀ + (T₁ - T₀)·u`. The straight
     /// accelerando, and the shape a plain ramp writes.
@@ -246,7 +249,8 @@ fn curvature_terms(t0: f64, t1: f64, c: f64) -> (f64, f64) {
 }
 
 /// How the tempo behaves across one segment.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Curve {
     /// Constant tempo: `T(b) = tempo`. What a plain tempo change produces, and
     /// the only shape a clock creates on its own.
@@ -264,6 +268,39 @@ pub enum Curve {
         end_beats: f64,
         end_tempo: f64,
     },
+}
+
+impl Curve {
+    /// Whether this is the constant-tempo curve — the one a stored breakpoint
+    /// leaves out.
+    pub fn is_step(&self) -> bool {
+        matches!(self, Self::Step)
+    }
+}
+
+/// One breakpoint as a map is **written and read back** — the segment without
+/// its `secs`.
+///
+/// `secs` is `M(beats)`, the integral evaluated there: derived, never authored.
+/// Writing it out would be writing a cache, and reading one back would let a
+/// file assert a second that its own tempi do not produce. So a stored map is
+/// its breakpoints, and loading replays them through the same writers a live
+/// gesture uses — which is what makes a loaded map one the client could have
+/// built, and refuses at the door anything it could not.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Breakpoint {
+    /// The beat this breakpoint sits at.
+    pub beats: f64,
+    /// Beats per second there.
+    pub tempo: f64,
+    /// How the tempo moves from here to the next one.
+    #[serde(default = "step_curve", skip_serializing_if = "Curve::is_step")]
+    pub curve: Curve,
+}
+
+/// The default a breakpoint with no curve written on it takes.
+fn step_curve() -> Curve {
+    Curve::Step
 }
 
 /// One segment of a [`TempoMap`], starting at `beats` (and at the second
@@ -430,9 +467,38 @@ impl std::error::Error for TempoError {}
 /// answers the same for the same beat forever, and is meaningful for a piece
 /// that has never been played. That is what lets an editor, an offline render
 /// and a live clock share one.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(try_from = "Vec<Breakpoint>", into = "Vec<Breakpoint>")]
 pub struct TempoMap {
     segments: Vec<Segment>,
+    /// Bumped by every write. A holder that cached anything derived from this
+    /// map compares it and re-reads when it moved.
+    ///
+    /// It is **not** stored: a version counts edits made in this process, and a
+    /// loaded map has had none. Two maps that hold the same breakpoints are
+    /// equal whatever their versions, which is why `PartialEq` is written out
+    /// below rather than derived.
+    version: u64,
+}
+
+impl PartialEq for TempoMap {
+    fn eq(&self, other: &Self) -> bool {
+        self.segments == other.segments
+    }
+}
+
+impl From<TempoMap> for Vec<Breakpoint> {
+    fn from(map: TempoMap) -> Self {
+        map.breakpoints()
+    }
+}
+
+impl TryFrom<Vec<Breakpoint>> for TempoMap {
+    type Error = TempoError;
+
+    fn try_from(points: Vec<Breakpoint>) -> Result<Self, TempoError> {
+        Self::from_breakpoints(&points)
+    }
 }
 
 impl TempoMap {
@@ -457,6 +523,7 @@ impl TempoMap {
                 tempo,
                 curve: Curve::Step,
             }],
+            version: 1,
         })
     }
 
@@ -478,12 +545,55 @@ impl TempoMap {
                 tempo,
                 curve: Curve::Step,
             }],
+            version: 1,
         })
     }
 
     /// The segments, in order.
     pub fn segments(&self) -> &[Segment] {
         &self.segments
+    }
+
+    /// The breakpoints, in order — the map without its derived seconds, which
+    /// is what a save writes and what [`Self::from_breakpoints`] reads back.
+    pub fn breakpoints(&self) -> Vec<Breakpoint> {
+        self.segments
+            .iter()
+            .map(|s| Breakpoint {
+                beats: s.beats,
+                tempo: s.tempo,
+                curve: s.curve,
+            })
+            .collect()
+    }
+
+    /// A map rebuilt from breakpoints, **replayed through the ordinary
+    /// writers**.
+    ///
+    /// The integral is recomputed rather than trusted, and every rule a live
+    /// gesture obeys applies here: an unusable tempo, a breakpoint below the
+    /// one before it, a curve that ends where it starts. So a stored map that
+    /// loads is one this client could have written, and the door that reads a
+    /// file is the door that checks it.
+    ///
+    /// An empty list is refused: a map always maps.
+    pub fn from_breakpoints(points: &[Breakpoint]) -> Result<Self, TempoError> {
+        let first = points.first().ok_or(TempoError::Beats)?;
+        let mut map = Self::anchored(first.tempo, first.beats, 0.0)?;
+        check_curve(first.beats, first.curve)?;
+        map.segments[0].curve = first.curve;
+        for point in &points[1..] {
+            map.push_curve(point.beats, point.tempo, point.curve)?;
+        }
+        map.version = 1;
+        Ok(map)
+    }
+
+    /// The edit count. A holder that cached anything derived from this map
+    /// compares this and re-reads when it moved — which is the whole of what a
+    /// shared map needs, since every reader re-evaluates from the map itself.
+    pub fn version(&self) -> u64 {
+        self.version
     }
 
     /// How many segments the map holds (always at least one).
@@ -530,17 +640,7 @@ impl TempoMap {
     /// [`Curve::Shaped`] has no end and behaves as a step).
     pub fn push_curve(&mut self, b: f64, tempo: f64, curve: Curve) -> Result<(), TempoError> {
         check_tempo(tempo)?;
-        if let Curve::Shaped {
-            shape,
-            end_beats,
-            end_tempo,
-        } = curve
-        {
-            check_tempo(end_tempo)?;
-            if !end_beats.is_finite() || end_beats <= b || !shape.curvature().is_finite() {
-                return Err(TempoError::Beats);
-            }
-        }
+        check_curve(b, curve)?;
         let last = self.last();
         if !b.is_finite() || b < last.beats {
             return Err(TempoError::Beats);
@@ -552,6 +652,7 @@ impl TempoMap {
             let seg = self.segments.last_mut().expect("a map holds a segment");
             seg.tempo = tempo;
             seg.curve = curve;
+            self.version += 1;
             return Ok(());
         }
         let secs = self.secs_at(b);
@@ -561,6 +662,7 @@ impl TempoMap {
             tempo,
             curve,
         });
+        self.version += 1;
         Ok(())
     }
 
@@ -681,6 +783,7 @@ impl TempoMap {
             .count()
             .max(1);
         self.segments.truncate(keep);
+        self.version += 1;
     }
 
     /// The index of the segment governing beat `b` (the first one for a beat
@@ -737,6 +840,24 @@ impl TempoMap {
 }
 
 /// `T > 0` and finite: the condition that makes the map invertible.
+/// The rules a [`Curve`] obeys wherever it is written: a usable end tempo, an
+/// end strictly after its start, a finite curvature. One function, so a live
+/// gesture and a loaded file are checked by the same code.
+fn check_curve(b: f64, curve: Curve) -> Result<(), TempoError> {
+    if let Curve::Shaped {
+        shape,
+        end_beats,
+        end_tempo,
+    } = curve
+    {
+        check_tempo(end_tempo)?;
+        if !end_beats.is_finite() || end_beats <= b || !shape.curvature().is_finite() {
+            return Err(TempoError::Beats);
+        }
+    }
+    Ok(())
+}
+
 fn check_tempo(tempo: f64) -> Result<(), TempoError> {
     match tempo.is_finite() && tempo > 0.0 {
         true => Ok(()),
@@ -747,7 +868,6 @@ fn check_tempo(tempo: f64) -> Result<(), TempoError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tempoclock::TempoClock;
 
     fn close(a: f64, b: f64) {
         assert!((a - b).abs() < 1e-9, "{a} != {b}");
@@ -756,22 +876,88 @@ mod tests {
     #[test]
     fn one_segment_is_the_affine_clock_bit_for_bit() {
         // The property the whole adoption rests on: a one-segment map computes
-        // the same expression a TempoClock does, not merely a close number.
+        // the affine expression itself, not merely a close number. The oracle
+        // is the formula, written out here -- there is no second implementation
+        // of it to compare against, which is the point.
         for (tempo, base_b, base_s) in [(1.0, 0.0, 0.0), (2.0, 3.0, 1.5), (0.75, -2.0, 4.0)] {
             let map = TempoMap::anchored(tempo, base_b, base_s).unwrap();
-            // The clock's own anchoring: set_tempo pins the instant it is
-            // called at, which is the same (beats, secs) pair the map holds.
-            let mut clk = TempoClock::new(tempo);
-            clk.set_tempo(tempo, base_s);
             for b in [-1.0, 0.0, 0.5, 7.25, 100.0] {
                 assert_eq!(map.secs_at(b), base_s + (b - base_b) / tempo);
-                // And the clock's expression, offset by its own base.
-                assert_eq!(
-                    map.secs_at(b) - base_s,
-                    clk.beats_to_secs(clk.secs_to_beats(base_s) + (b - base_b)) - base_s
-                );
+                assert_eq!(map.beats_at(base_s), base_b);
             }
         }
+    }
+
+    #[test]
+    fn a_map_round_trips_through_its_breakpoints() {
+        // Every shape, written and read back: the breakpoints come back
+        // identical and so does every second the map answers, because the
+        // integral is recomputed from the same writers rather than stored.
+        let mut map = TempoMap::new(1.0);
+        map.shaped(2.0, 6.0, 1.0, 2.0, Shape::Linear).unwrap();
+        map.shaped(8.0, 12.0, 2.0, 0.5, Shape::Exponential).unwrap();
+        map.shaped(14.0, 20.0, 0.5, 3.0, Shape::Curvature(-2.5))
+            .unwrap();
+        let json = serde_json::to_string(&map).unwrap();
+        let back: TempoMap = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.breakpoints(), map.breakpoints());
+        assert_eq!(back, map);
+        for b in [-1.0, 0.0, 2.0, 4.5, 9.0, 15.5, 30.0] {
+            assert_eq!(back.secs_at(b), map.secs_at(b));
+            assert_eq!(back.beats_at(map.secs_at(b)), map.beats_at(map.secs_at(b)));
+        }
+    }
+
+    #[test]
+    fn a_stored_map_is_checked_by_the_door_that_reads_it() {
+        // Breakpoints out of order, an unusable tempo, a curve that ends where
+        // it starts, and an empty map: each is refused on load by the same
+        // rule that refuses it on a live write.
+        let out_of_order = r#"[{"beats":0.0,"tempo":1.0},{"beats":-2.0,"tempo":2.0}]"#;
+        let bad_tempo = r#"[{"beats":0.0,"tempo":0.0}]"#;
+        let bad_curve = r#"[{"beats":0.0,"tempo":1.0,"curve":{"shaped":
+            {"shape":"linear","end_beats":0.0,"end_tempo":2.0}}}]"#;
+        for json in [out_of_order, bad_tempo, bad_curve, "[]"] {
+            assert!(
+                serde_json::from_str::<TempoMap>(json).is_err(),
+                "accepted {json}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_stored_map_holds_no_seconds_and_no_version() {
+        // The seconds are the cache and the version counts this process's
+        // edits; neither is authored, so neither is written.
+        let mut map = TempoMap::new(2.0);
+        map.push(4.0, 3.0).unwrap();
+        let json = serde_json::to_string(&map).unwrap();
+        assert!(!json.contains("secs"), "{json}");
+        assert!(!json.contains("version"), "{json}");
+        // A constant-tempo breakpoint leaves its curve out entirely.
+        assert!(!json.contains("curve"), "{json}");
+        assert_eq!(
+            serde_json::from_str::<TempoMap>(&json).unwrap().version(),
+            1
+        );
+    }
+
+    #[test]
+    fn every_write_moves_the_version_and_a_read_does_not() {
+        // What a shared map gives a holder: something to compare. Every reader
+        // re-evaluates from the map itself, so this is the whole of the
+        // machinery a second clock needs.
+        let mut map = TempoMap::new(1.0);
+        let start = map.version();
+        assert_eq!(map.secs_at(4.0), 4.0);
+        assert_eq!(map.version(), start);
+        map.push(2.0, 2.0).unwrap();
+        assert!(map.version() > start);
+        let after = map.version();
+        assert!(map.push(1.0, 2.0).is_err());
+        assert_eq!(map.version(), after, "a refused write moves nothing");
+        map.truncate_from(1.0);
+        assert!(map.version() > after);
     }
 
     #[test]

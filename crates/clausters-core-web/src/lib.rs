@@ -513,11 +513,41 @@ impl JsTempoMap {
             .map(JsTempoMap)
     }
 
-    /// An independent copy — what handing a piece's map to a clock takes, so
-    /// neither one's edits reach the other.
+    /// An independent copy — a fork, for when two tempi should stop being one.
+    /// Handing a map to a clock does **not** copy: a clock adopts what it is
+    /// given, which is what lets two clocks read one piece.
     #[wasm_bindgen(js_name = copy)]
     pub fn copy(&self) -> JsTempoMap {
         JsTempoMap(self.0.clone())
+    }
+
+    /// The map's edit count, bumped by every write that lands.
+    ///
+    /// What a holder of a **shared** map compares to learn that something
+    /// moved: every reader re-evaluates from the map itself, so this is all
+    /// the machinery a second clock on one map needs.
+    #[wasm_bindgen(getter)]
+    pub fn version(&self) -> f64 {
+        // f64 rather than u64: a JS number holds every edit count anyone will
+        // reach, and a BigInt at this boundary would make a plain `!==`
+        // comparison the caller's problem.
+        self.0.version() as f64
+    }
+
+    /// The map written out as JSON — its breakpoints, without the derived
+    /// seconds.
+    #[wasm_bindgen(js_name = dump)]
+    pub fn dump(&self) -> String {
+        serde_json::to_string(&self.0).unwrap_or_default()
+    }
+
+    /// A map read back from the JSON [`Self::dump`] writes. `undefined` when
+    /// the text is not a map this client could have written — the breakpoints
+    /// are replayed through the ordinary writers, so every rule a live gesture
+    /// obeys is checked here.
+    #[wasm_bindgen(js_name = load)]
+    pub fn load(json: &str) -> Option<JsTempoMap> {
+        serde_json::from_str::<TempoMap>(json).ok().map(JsTempoMap)
     }
 
     /// **The time map**: the second beat `b` falls on.

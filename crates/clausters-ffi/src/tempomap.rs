@@ -14,6 +14,70 @@ pub extern "C" fn clausters_tempomap_new(tempo: f64) -> *mut TempoMap {
     Box::into_raw(Box::new(TempoMap::new(tempo)))
 }
 
+/// The map's edit count, bumped by every write that lands (`0` for a null
+/// handle, and a live map never reads 0).
+///
+/// What a holder of a **shared** map compares to learn that something moved:
+/// every reader re-evaluates from the map itself, so this is all the
+/// machinery a second clock on one map needs.
+///
+/// # Safety
+/// `h` must be a live handle from `clausters_tempomap_new` (or null).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_tempomap_version(h: *const TempoMap) -> u64 {
+    // SAFETY: caller guarantees `h` is live or null.
+    match unsafe { h.as_ref() } {
+        Some(m) => m.version(),
+        None => 0,
+    }
+}
+
+/// The map written out as JSON — its breakpoints, without the derived seconds.
+/// Follows the `clausters_core_bundle_*` convention: JSON out into a caller
+/// buffer, returning the size it needs (`0` for a null handle).
+///
+/// # Safety
+/// `h` must be live or null, and `out` writable for `out_cap` bytes (or null,
+/// to size only).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_tempomap_dump(
+    h: *const TempoMap,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    // SAFETY: caller guarantees `h` is live or null.
+    let Some(map) = (unsafe { h.as_ref() }) else {
+        return 0;
+    };
+    let json = serde_json::to_vec(map).unwrap_or_default();
+    let n = json.len();
+    if !out.is_null() && out_cap >= n {
+        // SAFETY: out is non-null and writable for out_cap >= n bytes.
+        unsafe { std::ptr::copy_nonoverlapping(json.as_ptr(), out, n) };
+    }
+    n
+}
+
+/// A map read back from the JSON [`clausters_tempomap_dump`] writes. Null when
+/// the bytes are not a map this client could have written — the breakpoints
+/// are replayed through the ordinary writers, so every rule a live gesture
+/// obeys is checked here.
+///
+/// # Safety
+/// `json` must be readable for `len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_tempomap_load(json: *const u8, len: usize) -> *mut TempoMap {
+    if json.is_null() {
+        return std::ptr::null_mut();
+    }
+    // SAFETY: caller guarantees `json` is readable for `len` bytes.
+    let bytes = unsafe { std::slice::from_raw_parts(json, len) };
+    match serde_json::from_slice::<TempoMap>(bytes) {
+        Ok(m) => Box::into_raw(Box::new(m)),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
 /// A new map of one constant-tempo segment with `base_beats` falling on
 /// `base_seconds` — the affine triple a running clock already holds, so
 /// adopting a map changes no result. Null on invalid arguments.

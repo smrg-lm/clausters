@@ -454,10 +454,16 @@ export class TempoMap {
      */
     beatsAt(s: number): number;
     /**
-     * An independent copy — what handing a piece's map to a clock takes, so
-     * neither one's edits reach the other.
+     * An independent copy — a fork, for when two tempi should stop being one.
+     * Handing a map to a clock does **not** copy: a clock adopts what it is
+     * given, which is what lets two clocks read one piece.
      */
     copy(): TempoMap;
+    /**
+     * The map written out as JSON — its breakpoints, without the derived
+     * seconds.
+     */
+    dump(): string;
     /**
      * Writes a whole tempo envelope from beat `at`: `tempos` holds one more
      * value than `extents`, and `shapes`/`curvatures` one each. `seconds`
@@ -471,6 +477,13 @@ export class TempoMap {
      * no search.
      */
     last(): Float64Array;
+    /**
+     * A map read back from the JSON [`Self::dump`] writes. `undefined` when
+     * the text is not a map this client could have written — the breakpoints
+     * are replayed through the ordinary writers, so every rule a live gesture
+     * obeys is checked here.
+     */
+    static load(json: string): TempoMap | undefined;
     /**
      * A map of one constant-tempo segment (beat 0 at second 0). A tempo that
      * is not finite and positive falls back to 1.0.
@@ -530,6 +543,14 @@ export class TempoMap {
      * How many segments the map holds (always at least 1).
      */
     readonly len: number;
+    /**
+     * The map's edit count, bumped by every write that lands.
+     *
+     * What a holder of a **shared** map compares to learn that something
+     * moved: every reader re-evaluates from the map itself, so this is all
+     * the machinery a second clock on one map needs.
+     */
+    readonly version: number;
 }
 
 /**
@@ -1018,10 +1039,12 @@ export interface InitOutput {
     readonly tempomap_anchored: (a: number, b: number, c: number) => number;
     readonly tempomap_beatsAt: (a: number, b: number) => number;
     readonly tempomap_copy: (a: number) => number;
+    readonly tempomap_dump: (a: number) => [number, number];
     readonly tempomap_env: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => number;
     readonly tempomap_isEmpty: (a: number) => number;
     readonly tempomap_last: (a: number) => [number, number];
     readonly tempomap_len: (a: number) => number;
+    readonly tempomap_load: (a: number, b: number) => number;
     readonly tempomap_new: (a: number) => number;
     readonly tempomap_push: (a: number, b: number, c: number) => number;
     readonly tempomap_ramp: (a: number, b: number, c: number, d: number, e: number) => number;
@@ -1032,6 +1055,7 @@ export interface InitOutput {
     readonly tempomap_spanSecs: (a: number, b: number, c: number) => number;
     readonly tempomap_tempoAt: (a: number, b: number) => number;
     readonly tempomap_truncateFrom: (a: number, b: number) => void;
+    readonly tempomap_version: (a: number) => number;
     readonly unary: (a: number, b: number, c: number) => [number, number, number];
     readonly unix_to_ntp: (a: number) => bigint;
     readonly unix_to_sample: (a: number, b: number, c: number, d: number) => number;

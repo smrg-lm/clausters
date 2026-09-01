@@ -123,6 +123,9 @@ position. One implementation, every client bound to it.
 | `clausters_tempomap_len` | `JsTempoMap.len` | |
 | `clausters_tempomap_segment` | `JsTempoMap.segment` | `idiom` — C writes seven `f64`s into a caller buffer, wasm returns the array |
 | `clausters_tempomap_last` | `JsTempoMap.last` | `idiom` — as above, three `f64`s |
+| `clausters_tempomap_version` | `JsTempoMap.version` | `idiom` — a getter in JS; `f64` there rather than `u64`, so a caller compares with `!==` instead of carrying a BigInt across the boundary |
+| `clausters_tempomap_dump` | `JsTempoMap.dump` | `idiom` — the map's breakpoints as JSON. C writes into a caller buffer and returns the size it needs (the `clausters_core_bundle_*` convention); wasm returns the string |
+| `clausters_tempomap_load` | `JsTempoMap.load` | `idiom` — C takes pointer and length and answers null; wasm takes the string and answers `undefined` |
 | — | `JsTempoMap.is_empty` | `idiom` — always false (a map holds a segment), spelled as `JsScheduler` does |
 
 ## The sample-clock model

@@ -196,6 +196,12 @@ export interface TempoClockOptions {
     timebase?: Timebase;
     /** How the clock is woken. Defaults to `defaultTicker()`. */
     ticker?: Ticker;
+    /**
+     * A map to **read** instead of building one. Every clock builds its own,
+     * so nothing has to be passed for the ordinary case; this is how two
+     * clocks come to be reading one piece.
+     */
+    tempoMap?: TempoMap;
 }
 
 /** What {@link TempoClock.setTempo} takes beside the tempo. */
@@ -220,19 +226,44 @@ export class TempoClock {
      * It is a pure function of a beat — it knows nothing of *now* — which is
      * what lets an editor draw the piece from the same one the clock plays by.
      *
-     * Assigning it hands the clock a piece's own tempo: the map is **copied**,
-     * so later edits on either side stay apart, and the pacing picks it up from
-     * the next wait. Do it before `start` — replacing the map under a running
-     * clock moves every beat that has not fired yet, which is a seek and not a
-     * tempo change.
+     * Assigning it hands the clock a piece's own tempo, and the map is
+     * **adopted, not copied**: a second clock assigned the same map is reading
+     * the same piece, and a gesture written on either is written on both. Pass
+     * `m.copy()` to fork instead.
+     *
+     * Do it before `start` — replacing the map under a running clock moves
+     * every beat that has not fired yet, which is a seek and not a tempo
+     * change.
+     *
+     * **What a shared map costs, and it is one thing.** The driver recomputes
+     * every wait from the map on each pass, so an edit made anywhere is *read*
+     * correctly with nothing to invalidate. What a clock cannot see is an edit
+     * made through another holder while it sleeps: it wakes on the wait it had
+     * already computed, and only then reads the new map. Its own gestures
+     * ({@link TempoClock.setTempo}, `tempo`) wake it at once; for an edit
+     * written from elsewhere, call {@link TempoClock.resync} on the clocks
+     * reading it — or compare `map.version`, which is what it is there for.
      */
     get map(): TempoMap {
         return this.tempoMapHeld;
     }
 
     set map(tempoMap: TempoMap) {
-        this.tempoMapHeld = tempoMap.copy();
+        this.tempoMapHeld = tempoMap;
         this.syncMap(true);
+    }
+
+    /**
+     * Re-read the map and wake the driver — after an edit written through
+     * another holder of a **shared** map.
+     *
+     * A clock's own gestures do this for you. This is the call for the other
+     * direction: a piece's map edited by an editor, or by a second clock, and
+     * this one still asleep on a wait computed before the edit.
+     */
+    resync(): this {
+        this.syncMap(true);
+        return this;
     }
 
     private tempoMapHeld: TempoMap;
@@ -282,8 +313,8 @@ export class TempoClock {
     private frozenAt: number | null = null;
     private pumping = false;
 
-    constructor(tempo = 1.0, { timebase, ticker }: TempoClockOptions = {}) {
-        this.tempoMapHeld = new TempoMap(tempo);
+    constructor(tempo = 1.0, { timebase, ticker, tempoMap }: TempoClockOptions = {}) {
+        this.tempoMapHeld = tempoMap ?? new TempoMap(tempo);
         this.timebase = timebase ?? new MonotonicTimebase();
         this.ticker = ticker ?? defaultTicker();
         main.currentSession?.adopt?.(this);
@@ -469,12 +500,27 @@ export class TempoClock {
      *
      * A change is **recorded** rather than overwriting what came before, so the
      * beats before it stay convertible afterwards.
+     *
+     * **Against a map that was written ahead of the clock** — a piece's tempo
+     * track, a shared map, anything with breakpoints still in front of the
+     * playhead — the gesture says *from here on*, and what was planned after
+     * this beat is dropped. That is what a live change means: the past is
+     * untouched and stays convertible, and the future is the one being played
+     * now. A rehearsal that must not rewrite the piece runs on
+     * `clock.map = piece.map.copy()` — adopting is authoring, forking is
+     * performing.
      */
     setTempo(
         tempo: number | TempoEnvelope,
         { over, unit = "beats", curve = "linear" }: SetTempoOptions = {},
     ): this {
         const at = this.beats();
+        // A gesture is anchored at "now", so anything the map still holds past
+        // this beat is a plan this gesture replaces. The map itself stays
+        // append-only -- refusing to go backwards is right for a value; saying
+        // "from here on" is the *gesture's* job, and it is the one thing that
+        // lets a live change land on a map written ahead of time.
+        this.tempoMapHeld.truncateFrom(at);
         if (typeof tempo === "number") {
             if (over === undefined) {
                 // A breakpoint, not an overwrite. The map keeps the second `at`

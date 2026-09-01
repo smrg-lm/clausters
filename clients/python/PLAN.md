@@ -1697,7 +1697,7 @@ work, where a pending item reads as done.)*
   already had, which closes four `gap` rows in `docs/bindings.md`. The pair
   audit itself is what stays open.
 
-- ⬜ **The map is append-only, so a tempo gesture cannot be written before a
+- ✅ **The map is append-only, so a tempo gesture cannot be written before a
   change already planned** *(found 2026-08-31, testing the fix above)*.
   `TempoMap.push`/`ramp` refuse a breakpoint at a beat below the last one, and
   `TempoClock.set_tempo` anchors at `beats()` — so **a second ramp
@@ -1713,6 +1713,64 @@ work, where a pending item reads as done.)*
   score. That is the ownership question again (`clock.map` as execution vs the
   document's tempo), so it is decided with it, not before. Both clients, and
   the "written at now" entry below is the same surface.
+
+  **Fixed** *(2026-09-01)*, and the ownership question settled it by
+  dissolving. A tempo map is not owned: it is a **value on the beat axis**, the
+  peer of a `Timeline`, and a clock is the *process* that moves over one. So
+  the rule falls out of which of the two is speaking. **The map stays
+  append-only** — refusing to go backwards is right for a value, and `push`
+  still refuses. **The gesture truncates**: `set_tempo` says *from here on*, so
+  it drops whatever the map still held past `beats()` before writing. The past
+  is untouched and stays convertible; what is discarded is an unplayed plan,
+  which is what a live tempo change means.
+
+  What makes that safe rather than destructive is the same distinction, spelled
+  in the API: **adopting is authoring, forking is performing**.
+  `clock.map = piece.map` reads the piece and edits it;
+  `clock.map = piece.map.copy()` rehearses without rewriting it.
+
+- ✅ **A tempo map is a value, and nothing said so** *(found 2026-09-01, with
+  the user, working out who owns a piece's tempo — the question turned out to
+  be malformed)*. The ownership question assumed the map is a *part* of
+  something: a field of the document, or the clock's private state. It is
+  neither. Three structures are fundamental here and `form` is one particular
+  organization on top of them:
+
+  | | what it is | kind |
+  |---|---|---|
+  | `TempoMap` | beats ↔ seconds | a value |
+  | `Timeline` | beats → items | a value |
+  | `TempoClock` | a position that advances | a process over both |
+
+  A `Timeline` holds `(beat, item)` and knows nothing of tempo; a `TempoMap`
+  holds tempo and knows nothing of items. They are **peers**, and nobody asks
+  who owns a `Timeline`. What was actually missing were the two things every
+  shared value in this system already has and the map did not: a way to be
+  **shared** and a way to be **written down**.
+
+  **Shipped, in both clients and all three bindings.** The map keeps a
+  `version` (bumped by every write that lands) and serializes as its
+  **breakpoints** — never its seconds, which are the cached integral `M(beats)`
+  and would let a file assert a second its own tempi do not produce. Loading
+  replays them through the ordinary writers, so a stored map that loads is one
+  the client could have written and the door that reads a file is the door that
+  checks it. `dumps`/`loads`, `dump`/`load`, `clausters_tempomap_dump`/`_load`;
+  `CORE_ABI_VERSION` 31.
+
+  And a clock **adopts** a map instead of copying it, which is what lets two
+  clocks read one piece. The default is unchanged and unchanged on purpose:
+  every clock builds its own, so the ordinary case passes nothing. What a
+  shared map costs is one thing, and it is documented on the property: the
+  driver recomputes every wait from the map on each pass, so an edit is *read*
+  correctly with nothing to invalidate — but a clock asleep on a wait computed
+  before an edit made through another holder only sees it on waking.
+  `TempoClock.resync` is that call, and `map.version` is what it compares.
+
+  **What is still open** is what this makes possible rather than what it
+  broke: `TimeUnit::to_beats` should stop converting with a scalar, and the map
+  needs an **identity** to be named across a save (a `TempoId` and a table, peer
+  of `sources`). Runtime sharing needs no id — objects are references — so that
+  half waits on what a document is, and nothing else waits on it.
 
 - ⬜ **A tempo gesture can only be written at "now"** *(found 2026-08-31,
   writing the ten-clock example)*. `set_tempo` anchors at `beats()`, so a ramp

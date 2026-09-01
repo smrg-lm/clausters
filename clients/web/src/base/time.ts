@@ -123,7 +123,23 @@ export class TempoMap extends CoreTempoMap {
         return CoreTempoMap.anchored(tempo, baseBeats, baseSeconds) as TempoMap | undefined;
     }
 
-    /** An independent copy: later edits on either side stay apart. */
+    /**
+     * A map read back from what {@link TempoMap.dump} wrote.
+     *
+     * The breakpoints are replayed through the ordinary writers, so a stored
+     * map that loads is one this client could have written and every rule a
+     * live gesture obeys is checked here. `undefined` otherwise.
+     */
+    static load(json: string): TempoMap | undefined {
+        requireCore("TempoMap.load");
+        return CoreTempoMap.load(json) as TempoMap | undefined;
+    }
+
+    /**
+     * An independent copy — a **fork**, for when two tempi should stop being
+     * one. Handing a map to a clock does not copy: a clock adopts what it is
+     * given, which is what lets two clocks read one piece.
+     */
     copy(): TempoMap {
         return super.copy() as TempoMap;
     }

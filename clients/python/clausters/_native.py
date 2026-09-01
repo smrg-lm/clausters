@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 30
+CORE_ABI_VERSION = 31
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -377,6 +377,12 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_tempomap_segment.argtypes = [ctypes.c_void_p, ctypes.c_uint32, f64p]
     lib.clausters_tempomap_last.restype = ctypes.c_int32
     lib.clausters_tempomap_last.argtypes = [ctypes.c_void_p, f64p]
+    lib.clausters_tempomap_version.restype = ctypes.c_uint64
+    lib.clausters_tempomap_version.argtypes = [ctypes.c_void_p]
+    lib.clausters_tempomap_dump.restype = ctypes.c_size_t
+    lib.clausters_tempomap_dump.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_size_t]
+    lib.clausters_tempomap_load.restype = ctypes.c_void_p
+    lib.clausters_tempomap_load.argtypes = [ctypes.c_char_p, ctypes.c_size_t]
     lib.clausters_clocksync_new.restype = ctypes.c_void_p
     lib.clausters_clocksync_new.argtypes = [ctypes.c_double, ctypes.c_size_t]
     lib.clausters_clocksync_free.restype = None
@@ -1590,9 +1596,48 @@ class TempoMap:
         return cls(_handle=handle)
 
     def copy(self) -> "TempoMap":
-        """An independent copy — what handing a piece's map to a clock takes, so
-        neither one's edits reach the other."""
+        """An independent copy — a **fork**, for when two tempi should stop
+        being one. Handing a map to a clock does not copy: a clock adopts what
+        it is given, which is what lets two clocks read one piece."""
         return TempoMap(_handle=self._lib.clausters_tempomap_clone(self._handle))
+
+    @property
+    def version(self) -> int:
+        """The map's edit count, moved by every write that lands.
+
+        What a holder of a **shared** map compares to learn that something
+        moved. Every reader re-evaluates from the map itself, so this is the
+        whole of what a second clock on one map needs — there is nothing to
+        invalidate, only a wait to recompute.
+        """
+        return self._lib.clausters_tempomap_version(self._handle)
+
+    def dumps(self) -> str:
+        """The map as JSON: its breakpoints, without the derived seconds.
+
+        A second is ``M(beats)``, the integral evaluated there — a cache, never
+        authored. Writing it out would let a file assert a second its own
+        tempi do not produce, so a stored map is its breakpoints and `loads`
+        replays them.
+        """
+        need = self._lib.clausters_tempomap_dump(self._handle, None, 0)
+        buf = ctypes.create_string_buffer(need)
+        self._lib.clausters_tempomap_dump(self._handle, buf, need)
+        return buf.raw[:need].decode("utf-8")
+
+    @classmethod
+    def loads(cls, json: str) -> "TempoMap":
+        """A map read back from what `dumps` wrote.
+
+        The breakpoints are replayed through the ordinary writers, so a stored
+        map that loads is one this client could have written and every rule a
+        live gesture obeys is checked here. Raises `ValueError` otherwise.
+        """
+        data = json.encode("utf-8")
+        handle = lib().clausters_tempomap_load(data, len(data))
+        if not handle:
+            raise ValueError("not a tempo map this client could have written")
+        return cls(_handle=handle)
 
     # ---- the map, and its inverse ----
 
