@@ -205,6 +205,24 @@ export class Document {
     }
 
     /**
+     * The edit that would put this node back the way it is — the inverse of
+     * `intent`, read **before** anything is applied, or `undefined` when the
+     * document cannot describe it (the node is gone, or its body holds nothing
+     * of that shape).
+     *
+     * {@link Log.apply} does this for you and is what an ordinary edit wants.
+     * This is for the caller that records its **own** entry — a leg of a
+     * transaction spanning several structures, which nothing but the caller can
+     * apply. For a `writesamples` it is the empty write rather than the span,
+     * which is why a destructive caller reads the samples it is about to
+     * overwrite instead of asking here.
+     */
+    inverse(intent: Intent): Intent | undefined {
+        const result = this.#inner.inverse(JSON.stringify(intent));
+        return result === undefined ? undefined : (JSON.parse(result) as Intent);
+    }
+
+    /**
      * Apply one edit.
      *
      * @param intent - the edit, stating the resulting value.
@@ -334,6 +352,29 @@ export interface Redone {
     remaining: Step[];
 }
 
+/** One leg of an entry being recorded: what was done there, and how to undo it. */
+export interface RecordedLeg {
+    /** The identity {@link History.register} handed back. */
+    structure: number;
+    /**
+     * A step — `{ edit }`, or `{ recompute }` for a deterministic operation the
+     * owner re-runs rather than replays, which is what makes a redo of a
+     * million-sample operation cost a few bytes.
+     */
+    forward: Step;
+    /**
+     * The inverse, a payload in that structure's own vocabulary — for the
+     * arrangement, {@link Document.inverse} read before the edit landed.
+     */
+    backward: unknown;
+    /**
+     * What makes two edits *the same thing done the same way*:
+     * {@link Document.coalesceKey} for the arrangement, one verb and one key
+     * for a curve. Absent never coalesces.
+     */
+    key?: string;
+}
+
 /** One leg of an entry: the structure it belongs to, and the payload. */
 export interface Leg {
     /** The identity {@link History.register} handed back. */
@@ -459,36 +500,35 @@ export class History {
     }
 
     /**
-     * Record an entry against `structure` — the door for everything
-     * {@link History.apply} cannot do: a destructive write, whose overwritten
-     * samples are not in the tree, and every domain that is not the
-     * arrangement, whose state the crate cannot reach. This applies nothing:
-     * the edit has happened, and what is recorded is how to put it back.
+     * Record one entry — one gesture, and what it takes to reverse it.
      *
-     * `key` is what makes two edits *the same thing done the same way* — the
-     * arrangement spells it `"place:7"` ({@link Document.coalesceKey}), a curve
-     * has one verb and one key — and an empty one never coalesces. `coalesce`
-     * merges into the entry before it when both keys match, so a run of small
-     * adjustments is one undo. You decide, because only you know where the hand
-     * stopped.
+     * The door for everything {@link History.apply} cannot do: a destructive
+     * write, whose overwritten samples are not in the tree, and every domain
+     * that is not the arrangement, whose state the crate cannot reach. This
+     * applies nothing: the edits have happened, and what is recorded is how to
+     * put them back.
      *
-     * Returns whether it was recorded: a structure this history did not mint is
-     * refused rather than opening a second order over data that already has one.
+     * **Several legs are one transaction**: applied in the order given,
+     * inverted in reverse, and undone in one step. That is what a gesture
+     * touching more than one structure needs — a drag that moves a clip and
+     * rewrites the curve it carries — and it is why the whole entry goes in one
+     * call: half a transaction is worse than none. It is not coalescing, which
+     * merges *successive* entries over one structure.
+     *
+     * `coalesce` merges into the entry before it when every leg's structure and
+     * `key` match, so a run of small adjustments is one undo. You decide,
+     * because only you know where the hand stopped.
+     *
+     * @returns whether it was recorded: an entry with no leg, or one naming a
+     *   structure this history did not mint, is refused rather than opening a
+     *   second order over data that already has one.
      */
-    record(
-        structure: number,
-        forward: Step,
-        backward: unknown,
-        options: { label?: string; key?: string; coalesce?: boolean } = {},
-    ): boolean {
+    record(legs: RecordedLeg[], options: { label?: string; coalesce?: boolean } = {}): boolean {
         return this.#inner.record(
-            BigInt(structure),
             JSON.stringify({
-                forward,
-                backward,
                 label: options.label ?? "edit",
-                key: options.key ?? "",
                 coalesce: options.coalesce ?? false,
+                legs,
             }),
         );
     }
@@ -644,7 +684,7 @@ export class Log {
         // a run coalesces through one door and not through another.
         const edit = "edit" in forward ? forward.edit : undefined;
         const key = edit === undefined ? "" : Document.coalesceKey(edit);
-        this.history.record(this.structure, forward, backward, { ...options, key });
+        this.history.record([{ structure: this.structure, forward, backward, key }], options);
     }
 
     /**

@@ -277,6 +277,7 @@ dependencies = [
  "clausters-core",
  "clausters-document",
  "clausters-notation",
+ "serde",
  "serde_json",
  "tungstenite",
 ]

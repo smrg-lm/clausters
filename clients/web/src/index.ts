@@ -214,6 +214,7 @@ export type {
     Leg,
     NodeId,
     Outcome,
+    RecordedLeg,
     Redone,
     RemainingLeg,
     Resolved,

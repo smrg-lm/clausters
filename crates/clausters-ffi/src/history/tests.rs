@@ -158,6 +158,16 @@ fn redo_into(log: &Held, doc: &Doc) -> serde_json::Value {
     reply
 }
 
+/// One entry as `record` takes it: a label, and legs.
+fn entry(legs: &str) -> String {
+    format!(r#"{{"label":"draw","legs":[{legs}]}}"#)
+}
+
+/// Records one entry, the way a binding does.
+fn record(log: &Held, request: &str) -> i32 {
+    unsafe { clausters_history_record(log.handle, request.as_ptr(), request.len()) }
+}
+
 fn place(node: u64, offset: f64) -> String {
     format!(r#"{{"intent":"place","node":{node},"offset":{offset}}}"#)
 }
@@ -250,22 +260,13 @@ fn a_destructive_inverse_is_recorded_by_the_caller_and_undone_here() {
     let log = Held::new();
     let forward = r#"{"edit":{"intent":"writesamples","node":1,"start":10,"values":[0.5,0.5]}}"#;
     let backward = r#"{"intent":"writesamples","node":1,"start":10,"values":[0.125,0.25]}"#;
-    let label = "draw";
-    let code = unsafe {
-        clausters_history_record(
-            log.handle,
-            log.tree,
-            forward.as_ptr(),
-            forward.len(),
-            backward.as_ptr(),
-            backward.len(),
-            label.as_ptr(),
-            label.len(),
-            std::ptr::null(),
-            0,
-            0,
-        )
-    };
+    let code = record(
+        &log,
+        &entry(&format!(
+            r#"{{"structure":{},"forward":{forward},"backward":{backward}}}"#,
+            log.tree
+        )),
+    );
     assert_eq!(code, 0);
     assert_eq!(unsafe { clausters_history_len(log.handle) }, 1);
 
@@ -289,22 +290,13 @@ fn a_deterministic_operation_comes_back_for_the_owner_to_re_run() {
     let log = Held::new();
     let forward = r#"{"recompute":{"op":"normalize","peak":1.0}}"#;
     let backward = r#"{"intent":"writesamples","node":1,"start":0,"values":[0.25]}"#;
-    let label = "normalize";
-    unsafe {
-        clausters_history_record(
-            log.handle,
-            log.tree,
-            forward.as_ptr(),
-            forward.len(),
-            backward.as_ptr(),
-            backward.len(),
-            label.as_ptr(),
-            label.len(),
-            std::ptr::null(),
-            0,
-            0,
-        )
-    };
+    record(
+        &log,
+        &entry(&format!(
+            r#"{{"structure":{},"forward":{forward},"backward":{backward}}}"#,
+            log.tree
+        )),
+    );
     let _ = document;
     undo(&log);
     let redone = redo(&log);
@@ -327,26 +319,16 @@ fn a_continuing_run_of_adjustments_is_one_undo() {
         let forward = format!(r#"{{"edit":{}}}"#, place(2, offset));
         let previous = if i == 0 { 0.0 } else { offset - 0.5 };
         let backward = place(2, previous);
-        let label = "move";
         // The key is the domain's sentence for "the same thing done the same
         // way", so it is the caller that states it -- the crate cannot read a
         // vocabulary it does not know.
-        let key = "place:2";
-        unsafe {
-            clausters_history_record(
-                log.handle,
-                log.tree,
-                forward.as_ptr(),
-                forward.len(),
-                backward.as_ptr(),
-                backward.len(),
-                label.as_ptr(),
-                label.len(),
-                key.as_ptr(),
-                key.len(),
-                i32::from(i > 0),
-            )
-        };
+        let request = format!(
+            r#"{{"label":"move","coalesce":{},"legs":[
+                {{"structure":{},"forward":{forward},"backward":{backward},"key":"place:2"}}]}}"#,
+            i > 0,
+            log.tree
+        );
+        record(&log, &request);
     }
     assert_eq!(
         unsafe { clausters_history_len(log.handle) },
@@ -526,23 +508,12 @@ fn a_second_domain_shares_the_pile_and_comes_back_addressed_to_itself() {
 
     let forward = r#"{"edit":{"intent":"setpoints","points":[{"at":0.0,"value":1.0}]}}"#;
     let backward = r#"{"intent":"setpoints","points":[{"at":0.0,"value":0.0}]}"#;
-    let label = "draw";
-    let key = "points";
-    let code = unsafe {
-        clausters_history_record(
-            log.handle,
-            curve,
-            forward.as_ptr(),
-            forward.len(),
-            backward.as_ptr(),
-            backward.len(),
-            label.as_ptr(),
-            label.len(),
-            key.as_ptr(),
-            key.len(),
-            0,
-        )
-    };
+    let code = record(
+        &log,
+        &entry(&format!(
+            r#"{{"structure":{curve},"forward":{forward},"backward":{backward},"key":"points"}}"#
+        )),
+    );
     assert_eq!(code, 0);
     assert_eq!(unsafe { clausters_history_len(log.handle) }, 2, "one pile");
 
@@ -569,22 +540,96 @@ fn a_structure_another_history_minted_is_refused() {
     let other = Held::new();
     let forward = r#"{"edit":{"intent":"setpoints","points":[]}}"#;
     let backward = r#"{"intent":"setpoints","points":[]}"#;
-    let label = "draw";
-    let code = unsafe {
-        clausters_history_record(
-            log.handle,
-            other.tree,
-            forward.as_ptr(),
-            forward.len(),
-            backward.as_ptr(),
-            backward.len(),
-            label.as_ptr(),
-            label.len(),
-            std::ptr::null(),
-            0,
+    let code = record(
+        &log,
+        &entry(&format!(
+            r#"{{"structure":{},"forward":{forward},"backward":{backward}}}"#,
+            other.tree
+        )),
+    );
+    assert_eq!(code, -1);
+    assert_eq!(unsafe { clausters_history_len(log.handle) }, 0);
+}
+
+#[test]
+fn a_transaction_crosses_as_one_entry_with_several_legs() {
+    // O17 across the ABI. The crate reaches one document and no curve, so a
+    // gesture over both is applied by the caller and recorded whole -- one
+    // call, because half a transaction is worse than none.
+    let log = Held::new();
+    let doc = Doc::new(DOC);
+    let domain = "points";
+    let curve = unsafe { clausters_history_register(log.handle, domain.as_ptr(), domain.len()) };
+
+    // The document leg is applied by the caller too, so its inverse is read
+    // *before* it lands -- which is what `clausters_document_inverse` is for.
+    let intent = place(2, 6.0);
+    let inverse = sized(|out, cap| unsafe {
+        crate::clausters_document_inverse(doc.0, intent.as_ptr(), intent.len(), out, cap)
+    });
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&inverse).unwrap()["offset"],
+        0.0,
+        "where the clip is now"
+    );
+    project(
+        &doc,
+        &serde_json::json!({ "payload": serde_json::json!({"intent":"place","node":2,"offset":6.0}) }),
+    );
+
+    let code = record(
+        &log,
+        &format!(
+            r#"{{"label":"drag the clip and its curve","legs":[
+                {{"structure":{},"forward":{{"edit":{intent}}},"backward":{inverse}}},
+                {{"structure":{curve},"forward":{{"edit":{{"intent":"setpoints","points":[]}}}},
+                  "backward":{{"intent":"setpoints","points":[{{"at":0.0,"value":1.0}}]}}}}]}}"#,
+            log.tree
+        ),
+    );
+    assert_eq!(code, 0);
+    assert_eq!(
+        unsafe { clausters_history_len(log.handle) },
+        1,
+        "one gesture"
+    );
+
+    // And it comes back as one step, inverted in reverse: the curve first.
+    let undone = undo(&log);
+    let legs = undone["inverses"].as_array().unwrap();
+    assert_eq!(legs.len(), 2);
+    assert_eq!(legs[0]["structure"], curve);
+    assert_eq!(legs[1]["structure"], log.tree);
+    assert_eq!(legs[1]["payload"]["offset"], 0.0);
+    assert_eq!(
+        unsafe { clausters_history_can_undo(log.handle) },
+        0,
+        "one step"
+    );
+}
+
+#[test]
+fn an_entry_with_no_leg_is_not_a_gesture() {
+    let log = Held::new();
+    assert_eq!(record(&log, r#"{"label":"nothing","legs":[]}"#), -1);
+    assert_eq!(record(&log, "not json"), -1);
+    assert_eq!(unsafe { clausters_history_len(log.handle) }, 0);
+}
+
+#[test]
+fn an_inverse_the_document_cannot_describe_is_answered_with_zero() {
+    // A node that is gone: there is nothing to state, and the caller learns it
+    // before it edits rather than by recording something wrong.
+    let doc = Doc::new(DOC);
+    let intent = place(99, 1.0);
+    let n = unsafe {
+        crate::clausters_document_inverse(
+            doc.0,
+            intent.as_ptr(),
+            intent.len(),
+            std::ptr::null_mut(),
             0,
         )
     };
-    assert_eq!(code, -1);
-    assert_eq!(unsafe { clausters_history_len(log.handle) }, 0);
+    assert_eq!(n, 0);
 }

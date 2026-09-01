@@ -29,6 +29,10 @@ clausters-core = { path = "../clausters-core" }
 clausters-document = { path = "../clausters-document" }
 # The native half of the notation layer (libverovio); `verovio` only.
 clausters-notation = { path = "../clausters-notation", optional = true }
+# `derive`, for the few request objects this surface parses itself -- an entry
+# with its legs, say. The types it can borrow from `clausters-document` it
+# borrows; these are the shapes that exist only at the boundary.
+serde = { version = "1", features = ["derive"] }
 # The patcher cord->bus pass crosses as JSON (the flat-data boundary): a Patch
 # in, its Compiled wiring out.
 serde_json = "1"

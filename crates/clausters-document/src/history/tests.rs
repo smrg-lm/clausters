@@ -7,6 +7,29 @@ use serde_json::json;
 #[derive(Debug, Default, PartialEq)]
 struct Notes(Vec<i64>);
 
+impl Editable for Notes {
+    fn apply(&mut self, payload: &Opaque) -> Applied {
+        let Ok(notes) = serde_json::from_value::<Vec<i64>>(payload.0.clone()) else {
+            return Applied::refused(self.now(), "not this roll's vocabulary");
+        };
+        self.0 = notes;
+        Applied {
+            effective: self.now(),
+            applied: true,
+            reason: None,
+            stale: false,
+        }
+    }
+
+    fn current(&self, _payload: &Opaque) -> Option<Opaque> {
+        Some(self.now())
+    }
+
+    fn coalesce_key(&self, _payload: &Opaque) -> Option<String> {
+        Some("notes".to_string())
+    }
+}
+
 impl Notes {
     /// Sets the notes and hands back the payload that would put them back —
     /// the inverse, read *before* the edit lands, which is the rule every
@@ -343,4 +366,117 @@ fn clearing_forgets_the_order_and_keeps_the_identities() {
     assert!(history.is_empty() && !history.can_undo() && !history.can_redo());
     assert!(history.holds(a), "the identity outlives the order");
     assert!(history.record(edit(a, "again", Opaque(json!([1])), Opaque(json!([0])))));
+}
+
+// ---- a transaction ----
+
+#[test]
+fn a_composite_gesture_undoes_and_redoes_in_one_step() {
+    // The drag that moves a clip and rewrites the curve it carries: two
+    // structures, one gesture, one undo.
+    let mut history = History::new();
+    let clip = history.register("notes");
+    let curve = history.register("notes");
+    let (mut a, mut b) = (Notes(vec![0]), Notes(vec![10]));
+
+    let outcomes = {
+        let mut legs: Vec<(StructureId, &mut dyn Editable, Opaque)> = vec![
+            (clip, &mut a, Opaque(json!([4]))),
+            (curve, &mut b, Opaque(json!([14]))),
+        ];
+        history.transact("drag the clip and its curve", &mut legs)
+    };
+    assert!(outcomes.iter().all(|o| o.applied));
+    assert_eq!((&a.0[..], &b.0[..]), (&[4i64][..], &[14i64][..]));
+    assert_eq!(history.len(), 1, "one gesture, one entry");
+
+    let undone = history.undo().expect("something to undo");
+    assert_eq!(
+        undone.iter().map(|(s, _)| *s).collect::<Vec<_>>(),
+        vec![curve, clip],
+        "in reverse order, the way it was laid down"
+    );
+    for (structure, payload) in undone {
+        let target = if structure == clip { &mut a } else { &mut b };
+        target.adopt(&payload);
+    }
+    assert_eq!((&a.0[..], &b.0[..]), (&[0i64][..], &[10i64][..]));
+
+    for (structure, step) in history.redo().expect("something to redo") {
+        let target = if structure == clip { &mut a } else { &mut b };
+        target.adopt(step.payload().expect("an ordinary edit"));
+    }
+    assert_eq!((&a.0[..], &b.0[..]), (&[4i64][..], &[14i64][..]));
+    assert!(!history.can_redo());
+}
+
+#[test]
+fn a_refused_leg_leaves_no_entry_and_no_half_applied_gesture() {
+    // Atomic in both directions: the leg that already landed is put back, so
+    // the two structures are consistent at every point a reader could look.
+    let mut history = History::new();
+    let clip = history.register("notes");
+    let elsewhere = History::new().register("notes");
+    let (mut a, mut b) = (Notes(vec![0]), Notes(vec![10]));
+
+    let outcomes = {
+        let mut legs: Vec<(StructureId, &mut dyn Editable, Opaque)> = vec![
+            (clip, &mut a, Opaque(json!([4]))),
+            (elsewhere, &mut b, Opaque(json!([14]))),
+        ];
+        history.transact("drag", &mut legs)
+    };
+    assert!(outcomes.iter().all(|o| !o.applied));
+    assert!(outcomes.iter().all(|o| o.reason.is_some()));
+    assert!(history.is_empty(), "no entry anywhere");
+    assert_eq!(
+        (&a.0[..], &b.0[..]),
+        (&[0i64][..], &[10i64][..]),
+        "and nothing was left applied"
+    );
+}
+
+#[test]
+fn a_leg_refused_after_one_landed_rolls_the_first_one_back() {
+    let mut history = History::new();
+    let one = history.register("notes");
+    let two = history.register("notes");
+    let (mut a, mut b) = (Notes(vec![0]), Notes(vec![10]));
+
+    let outcomes = {
+        let mut legs: Vec<(StructureId, &mut dyn Editable, Opaque)> = vec![
+            (one, &mut a, Opaque(json!([4]))),
+            // `Notes` refuses what it cannot read as its own vocabulary.
+            (two, &mut b, Opaque(json!({"intent": "place"}))),
+        ];
+        history.transact("drag", &mut legs)
+    };
+    assert!(outcomes.iter().all(|o| !o.applied));
+    assert_eq!(a.0, vec![0], "the leg that landed was put back");
+    assert_eq!(b.0, vec![10]);
+    assert!(history.is_empty());
+}
+
+#[test]
+fn a_transaction_and_a_merge_are_kept_apart() {
+    // Coalescing merges *successive* entries over one structure; a transaction
+    // is one entry with several legs. A continuing entry over one structure
+    // must not merge into a transaction that happens to start with it.
+    let mut history = History::new();
+    let one = history.register("notes");
+    let two = history.register("notes");
+    let (mut a, mut b) = (Notes(vec![0]), Notes(vec![10]));
+    {
+        let mut legs: Vec<(StructureId, &mut dyn Editable, Opaque)> = vec![
+            (one, &mut a, Opaque(json!([4]))),
+            (two, &mut b, Opaque(json!([14]))),
+        ];
+        history.transact("drag both", &mut legs);
+    }
+    history.record(
+        edit(one, "drag one", Opaque(json!([5])), Opaque(json!([4])))
+            .keyed("notes")
+            .continuing(),
+    );
+    assert_eq!(history.len(), 2, "different shapes never merge");
 }

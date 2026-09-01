@@ -182,7 +182,15 @@ pub use time::*;
 /// door each domain has. `record` gained the coalesce **key**, because "the
 /// same thing done the same way" is a sentence in a vocabulary the pile does
 /// not read.
-pub const CORE_ABI_VERSION: u32 = 32;
+///
+/// **v33 an entry is a transaction.** `clausters_history_record` takes the
+/// whole entry as one JSON request — a label, a coalesce flag and a list of
+/// legs, each naming its structure — because a gesture may touch more than one
+/// structure and has to undo as one step, and a leg at a time would let half a
+/// transaction land. `clausters_document_inverse` came with it: a caller
+/// recording its own entry needs the inverse read *before* the edit lands, and
+/// only the arrangement can state one for the arrangement.
+pub const CORE_ABI_VERSION: u32 = 33;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

@@ -572,6 +572,86 @@ impl History {
         applied
     }
 
+    /// Applies several edits as **one** entry — a gesture that touches more
+    /// than one structure, undone in one step.
+    ///
+    /// Each leg is `(structure, state, payload)`, applied in the order given
+    /// and inverted in reverse. It is atomic in both directions: if any leg
+    /// refuses, or names a structure this history did not mint, or cannot state
+    /// its own inverse, the legs already applied are put back and **nothing is
+    /// recorded**. Half a transaction is worse than none — it would undo one
+    /// structure and leave the other where the gesture put it.
+    ///
+    /// This is not coalescing, which merges *successive* entries over one
+    /// structure. It is a single entry with several legs, and the two are kept
+    /// apart so a merge cannot silently join two structures.
+    ///
+    /// Returns what each leg did, in the order given — the outcome the caller
+    /// adopts — with `applied` false on every one of them when the transaction
+    /// was rolled back.
+    pub fn transact(
+        &mut self,
+        label: impl Into<String>,
+        legs: &mut [(StructureId, &mut dyn Editable, Opaque)],
+    ) -> Vec<Applied> {
+        if legs.is_empty() {
+            return Vec::new();
+        }
+        if !legs.iter().all(|(structure, _, _)| self.holds(*structure)) {
+            return refuse(legs, "this history did not mint one of those structures");
+        }
+
+        // Each leg's inverse, read before it lands. A leg that cannot state one
+        // is not loggable, and an entry that could only be half inverted is the
+        // failure this is atomic to avoid -- so it stops the whole thing.
+        let mut done: Vec<(usize, Opaque)> = Vec::new();
+        let mut applied: Vec<Applied> = Vec::new();
+        let mut refused = None;
+        for (i, (_, state, payload)) in legs.iter_mut().enumerate() {
+            let Some(before) = state.current(payload) else {
+                refused = Some("this edit cannot state its own inverse".to_string());
+                break;
+            };
+            let outcome = state.apply(payload);
+            if !outcome.applied {
+                refused = Some(
+                    outcome
+                        .reason
+                        .clone()
+                        .unwrap_or_else(|| "a leg of the transaction was refused".to_string()),
+                );
+                applied.push(outcome);
+                break;
+            }
+            done.push((i, before));
+            applied.push(outcome);
+        }
+
+        if let Some(reason) = refused {
+            for (i, before) in done.into_iter().rev() {
+                legs[i].1.apply(&before);
+            }
+            return refuse(legs, &reason);
+        }
+
+        let label = label.into();
+        let mut entry: Option<Entry> = None;
+        for ((i, before), (structure, state, payload)) in done.into_iter().zip(legs.iter()) {
+            let forward = Step::Edit(applied[i].effective.clone());
+            entry = Some(match entry {
+                None => Entry::new(&label, *structure, forward, before),
+                Some(entry) => entry.and(*structure, forward, before),
+            });
+            if let Some(key) = state.coalesce_key(payload) {
+                entry = entry.map(|entry| entry.keyed(key));
+            }
+        }
+        if let Some(entry) = entry {
+            self.record(entry);
+        }
+        applied
+    }
+
     /// What an undo *would* hand back, without moving the cursor: each leg's
     /// inverse, **in reverse order** — a transaction unwinds the way it was
     /// laid down.
@@ -752,6 +832,14 @@ impl History {
             }
         }
     }
+}
+
+/// Every leg of a refused transaction, stating what still holds. The whole of
+/// what a caller adopts when nothing happened.
+fn refuse(legs: &[(StructureId, &mut dyn Editable, Opaque)], reason: &str) -> Vec<Applied> {
+    legs.iter()
+        .map(|(_, _, payload)| Applied::refused(payload.clone(), reason))
+        .collect()
 }
 
 /// Moves a payload out of a half and into the store, when it is big enough to

@@ -169,6 +169,50 @@ pub unsafe extern "C" fn clausters_document_free(h: *mut FfiDocument) {
     }
 }
 
+/// The edit that would put this node back the way it is — the inverse of
+/// `intent`, read out of the document **before** anything is applied. Written
+/// to `out`; the byte count it needs, or `0` when the handle is null, the
+/// intent will not parse, or the document cannot describe the inverse (the node
+/// is gone, or its body holds nothing of that shape).
+///
+/// [`crate::clausters_history_apply`] does this for you and is what an ordinary
+/// edit wants. This is for the caller that records its **own** entry — a leg of
+/// a transaction spanning several structures, which nothing but the caller can
+/// apply, since the crate reaches one document and no curve.
+///
+/// For a `writesamples` it is the empty write rather than the span, which is
+/// why a destructive caller reads the samples it is about to overwrite instead
+/// of asking here.
+///
+/// # Safety
+/// `h` must be a live document handle or null, `intent` null or readable for
+/// `intent_len` bytes, and `out` null or writable for `out_cap` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_document_inverse(
+    h: *mut FfiDocument,
+    intent: *const u8,
+    intent_len: usize,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    // SAFETY: forwarded from this function's own contract.
+    let Some(raw) = (unsafe { text(intent, intent_len) }) else {
+        return 0;
+    };
+    let Ok(intent) = serde_json::from_str::<Intent>(&raw) else {
+        return 0;
+    };
+    with_document(h, 0, |held| {
+        let Some(inverse) = clausters_document::inverse_of(&held.document, &intent) else {
+            return 0;
+        };
+        let bytes = serde_json::to_vec(&inverse).unwrap_or_default();
+        // SAFETY: forwarded from this function's own contract. A pure read, so
+        // there is nothing to commit.
+        unsafe { fill(&bytes, out, out_cap, || {}) }
+    })
+}
+
 /// What makes two edits over the arrangement *the same thing done the same way*
 /// — the key a history coalesces on, written to `out`; the byte count it needs,
 /// or `0` when the intent will not parse.

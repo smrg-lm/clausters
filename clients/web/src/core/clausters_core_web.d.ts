@@ -29,6 +29,20 @@ export class Document {
      */
     static coalesceKey(intent: string): string;
     /**
+     * The edit that would put this node back the way it is — the inverse of
+     * `intent`, read out of the document **before** anything is applied, or
+     * `undefined` when the document cannot describe it (the node is gone, or
+     * its body holds nothing of that shape).
+     *
+     * {@link History.apply} does this for you and is what an ordinary edit
+     * wants. This is for the caller that records its **own** entry — a leg of
+     * a transaction spanning several structures, which nothing but the caller
+     * can apply. For a `writesamples` it is the empty write rather than the
+     * span, which is why a destructive caller reads the samples it is about to
+     * overwrite instead of asking here.
+     */
+    inverse(intent: string): string | undefined;
+    /**
      * Open a document from its JSON, or an empty composition from `undefined`.
      */
     constructor(json?: string | null);
@@ -91,18 +105,29 @@ export class History {
      */
     constructor(budget: number, spill_above: number);
     /**
-     * Record an entry against `structure` — the door for everything
-     * {@link History.apply} cannot do: a destructive write, whose overwritten
-     * samples are not in the tree, and every domain that is not the
-     * arrangement, whose state this surface cannot reach. Applies nothing.
-     * `record(structure, requestJson)` with
-     * `{ forward, backward, label?, key?, coalesce? }`.
+     * Record one entry — the door for everything {@link History.apply} cannot
+     * do: a destructive write, whose overwritten samples are not in the tree,
+     * and every domain that is not the arrangement, whose state this surface
+     * cannot reach. Applies nothing.
      *
-     * Returns whether it was recorded: a structure this history did not mint
-     * is refused rather than opening a second order over data that already
-     * has one.
+     * `record(requestJson)` with
+     * `{ label?, coalesce?, legs: [{ structure, forward, backward, key? }] }`.
+     *
+     * **Several legs are one transaction**: applied in the order given,
+     * inverted in reverse, and undone in one step — what a gesture touching
+     * more than one structure needs, and why the whole entry crosses in one
+     * call. It is not coalescing, which merges *successive* entries over one
+     * structure. A leg's `key` is what makes two edits *the same thing done
+     * the same way* ({@link Document.coalesceKey} for the arrangement); an
+     * absent one never coalesces.
+     *
+     * Returns whether it was recorded: an entry with no leg, or one naming a
+     * structure this history did not mint, is refused rather than opening a
+     * second order over data that already has one. The inverse of an
+     * arrangement leg comes from {@link Document.inverse}, read before the
+     * edit lands.
      */
-    record(structure: bigint, request: string): boolean;
+    record(request: string): boolean;
     /**
      * Redo what was last undone: the steps of the entry at the cursor, each
      * with the structure it belongs to, in order. Returns
@@ -989,6 +1014,7 @@ export interface InitOutput {
     readonly degree_to_midinote: (a: number, b: number, c: number, d: number, e: number) => number;
     readonly document_apply: (a: number, b: number, c: number) => [number, number, number, number];
     readonly document_coalesceKey: (a: number, b: number) => [number, number];
+    readonly document_inverse: (a: number, b: number, c: number) => [number, number, number, number];
     readonly document_new: (a: number, b: number) => [number, number, number];
     readonly document_resolve: (a: number, b: number, c: number) => [number, number, number, number];
     readonly document_snapshot: (a: number) => [number, number, number, number];
@@ -1002,7 +1028,7 @@ export interface InitOutput {
     readonly history_isEmpty: (a: number) => number;
     readonly history_len: (a: number) => number;
     readonly history_new: (a: number, b: number) => number;
-    readonly history_record: (a: number, b: bigint, c: number, d: number) => [number, number, number];
+    readonly history_record: (a: number, b: number, c: number) => [number, number, number];
     readonly history_redo: (a: number) => [number, number, number, number];
     readonly history_redoLabel: (a: number) => [number, number];
     readonly history_register: (a: number, b: number, c: number) => bigint;

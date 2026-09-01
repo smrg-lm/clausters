@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 32
+CORE_ABI_VERSION = 33
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -478,6 +478,10 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     # reason -- a bulk payload leaves the pile on purpose, so a by-value history
     # would carry every spilled span on every call, the cost spilling exists to
     # avoid. One handle is one editing context.
+    lib.clausters_document_inverse.restype = ctypes.c_size_t
+    lib.clausters_document_inverse.argtypes = [
+        ctypes.c_void_p, u8p, ctypes.c_size_t, u8p, ctypes.c_size_t,
+    ]
     lib.clausters_document_coalesce_key.restype = ctypes.c_size_t
     lib.clausters_document_coalesce_key.argtypes = [
         u8p, ctypes.c_size_t, u8p, ctypes.c_size_t,
@@ -495,10 +499,7 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
         u8p, ctypes.c_size_t,
     ]
     lib.clausters_history_record.restype = ctypes.c_int32
-    lib.clausters_history_record.argtypes = [
-        ctypes.c_void_p, ctypes.c_uint64, u8p, ctypes.c_size_t, u8p, ctypes.c_size_t,
-        u8p, ctypes.c_size_t, u8p, ctypes.c_size_t, ctypes.c_int32,
-    ]
+    lib.clausters_history_record.argtypes = [ctypes.c_void_p, u8p, ctypes.c_size_t]
     for _log_fn in ("clausters_history_undo", "clausters_history_redo"):
         getattr(lib, _log_fn).restype = ctypes.c_size_t
         getattr(lib, _log_fn).argtypes = [ctypes.c_void_p, u8p, ctypes.c_size_t]
@@ -999,6 +1000,31 @@ def document_apply(document: dict, intent: dict, *, against=None, quant: float =
         return {"document": doc.snapshot(), "outcome": outcome}
 
 
+def document_inverse(document: "Document", intent: dict) -> "dict | None":
+    """The edit that would put this node back the way it is — the inverse of
+    ``intent``, read out of ``document`` **before** anything is applied, or
+    ``None`` when the document cannot describe it (the node is gone, or its body
+    holds nothing of that shape).
+
+    `Log.apply` does this for you and is what an ordinary edit wants. This is
+    for the caller that records its **own** entry — a leg of a transaction
+    spanning several structures, which nothing but the caller can apply, since
+    the crate reaches one document and no curve.
+
+    For a ``writesamples`` it is the empty write rather than the span, which is
+    why a destructive caller reads the samples it is about to overwrite instead
+    of asking here.
+    """
+    _lib = lib()
+    ptr, length = _bytes(intent)
+    need = _lib.clausters_document_inverse(document._handle, ptr, length, None, 0)
+    if need == 0:
+        return None
+    out = (ctypes.c_ubyte * need)()
+    n = _lib.clausters_document_inverse(document._handle, ptr, length, out, need)
+    return json.loads(ctypes.string_at(out, n))
+
+
 def document_coalesce_key(intent: dict) -> str:
     """What makes two edits over the arrangement *the same thing done the same
     way* — the key a `History` coalesces on, or ``""`` when the intent will not
@@ -1129,47 +1155,55 @@ class History:
             "the intent is not valid JSON for the crate",
         )
 
-    def record(self, structure: int, forward: dict, backward: dict, *,
-               label: str = "edit", key: str = "", coalesce: bool = False):
-        """Record an entry against ``structure``.
+    def record(self, legs: list, *, label: str = "edit", coalesce: bool = False):
+        """Record one entry — one gesture, and what it takes to reverse it.
 
         The door for everything `apply` cannot do: a destructive write, whose
         overwritten samples are not in the tree, and every domain that is not
         the arrangement, whose state the crate cannot reach. This **applies
-        nothing** — you have already made the edit; what is recorded is how to
-        put it back.
+        nothing** — you have already made the edits; what is recorded is how to
+        put them back.
+
+        **Several legs are one transaction**: applied in the order given,
+        inverted in reverse, and undone in one step. That is what a gesture
+        touching more than one structure needs — a drag that moves a clip and
+        rewrites the curve it carries — and it is why the whole entry goes in
+        one call: half a transaction is worse than none. It is not coalescing,
+        which merges *successive* entries over one structure; the two are kept
+        apart so a merge cannot silently join two structures.
 
         Args:
-            structure: the identity `register` handed back.
-            forward: a step — ``{"edit": <payload>}``, or
-                ``{"recompute": <params>}`` for a deterministic operation the
-                owner re-runs rather than replays. The second is what makes a
-                redo of a million-sample operation cost a few bytes.
-            backward: the inverse, a payload in the structure's own vocabulary.
+            legs: one dict per structure the gesture touched, in the order they
+                were applied, each carrying
+
+                - ``structure``: the identity `register` handed back;
+                - ``forward``: a step — ``{"edit": <payload>}``, or
+                  ``{"recompute": <params>}`` for a deterministic operation the
+                  owner re-runs rather than replays, which is what makes a redo
+                  of a million-sample operation cost a few bytes;
+                - ``backward``: the inverse, a payload in that structure's own
+                  vocabulary — for the arrangement, `document_inverse` read
+                  before the edit landed;
+                - ``key`` (optional): what makes two edits *the same thing done
+                  the same way*, ``"place:7"`` for the arrangement
+                  (`document_coalesce_key`), one verb and one key for a curve.
+                  Absent never coalesces.
             label: what an undo menu calls this.
-            key: what makes two edits *the same thing done the same way* — the
-                arrangement spells it ``"place:7"``
-                (`document_coalesce_key`), a curve has one verb and one key.
-                Empty never coalesces.
-            coalesce: merge into the entry before it when both keys match — a
-                run of small adjustments becoming one undo. You decide, because
-                only you know where the hand stopped.
+            coalesce: merge into the entry before it when every leg's structure
+                and key match — a run of small adjustments becoming one undo.
+                You decide, because only you know where the hand stopped.
 
         Raises:
-            ValueError: the step or its inverse will not parse, or ``structure``
-                is one this history did not mint.
+            ValueError: a payload will not parse, the entry holds no leg, or it
+                names a structure this history did not mint.
         """
-        f_ptr, f_len = _bytes(forward)
-        b_ptr, b_len = _bytes(backward)
-        lb_ptr, lb_len = _text(label)
-        k_ptr, k_len = _text(key)
-        code = self._lib.clausters_history_record(
-            self._handle, ctypes.c_uint64(structure), f_ptr, f_len, b_ptr, b_len,
-            lb_ptr, lb_len, k_ptr, k_len, int(bool(coalesce)))
+        r_ptr, r_len = _bytes({"label": label, "coalesce": bool(coalesce),
+                               "legs": list(legs)})
+        code = self._lib.clausters_history_record(self._handle, r_ptr, r_len)
         if code != 0:
             raise ValueError(
-                "the step or its inverse is not valid JSON for the crate, or the "
-                "structure is one this history did not mint")
+                "the entry holds no leg, a payload is not valid JSON for the crate, "
+                "or it names a structure this history did not mint")
 
     def undo(self) -> "list | None":
         """Undo the last transaction: the inverses of the entry before the
@@ -1370,8 +1404,10 @@ class Log:
         # a run coalesces through one door and not through another.
         edit = forward.get("edit") if isinstance(forward, dict) else None
         key = document_coalesce_key(edit) if edit is not None else ""
-        self._history.record(self._structure, forward, backward,
-                             label=label, key=key, coalesce=coalesce)
+        self._history.record(
+            [{"structure": self._structure, "forward": forward,
+              "backward": backward, "key": key}],
+            label=label, coalesce=coalesce)
 
     def undo(self, document: "Document") -> "dict | None":
         """Undo the last transaction, applying its inverses to ``document``.

@@ -267,65 +267,119 @@ fn outcome_bytes(outcome: &clausters_document::Outcome) -> Vec<u8> {
     .unwrap_or_default()
 }
 
-/// Record an entry against `structure` — the door for everything
-/// [`clausters_history_apply`] cannot do: a destructive write, whose
-/// overwritten samples are not in the tree, and every domain that is not the
-/// arrangement, whose state this surface cannot reach.
+/// Record one entry — the door for everything [`clausters_history_apply`]
+/// cannot do: a destructive write, whose overwritten samples are not in the
+/// tree, and every domain that is not the arrangement, whose state this surface
+/// cannot reach.
 ///
-/// `forward` is a step (`{"edit": <payload>}` or `{"recompute": <params>}`),
-/// `backward` a payload in the structure's own vocabulary. `key` is what makes
-/// two edits *the same thing done the same way* — the arrangement spells it
-/// `"place:7"`, a curve has one verb and one key — and an empty one never
-/// coalesces. `coalesce` non-zero merges this into the entry before it when
-/// both keys match, which is what makes a run of small adjustments one undo;
-/// the caller decides, because only the caller knows where the hand stopped.
+/// `request` is the whole entry as JSON:
 ///
-/// Returns 0 on success, -1 when a payload will not parse or when `structure`
-/// is one this history did not mint. **This does not apply anything** — the
-/// caller has already made the edit; what is recorded is how to put it back.
+/// ```json
+/// {"label": "drag the clip and its curve", "coalesce": false, "legs": [
+///   {"structure": 1, "forward": {"edit": {…}}, "backward": {…}, "key": "place:7"},
+///   {"structure": 2, "forward": {"edit": {…}}, "backward": {…}, "key": "points"}
+/// ]}
+/// ```
+///
+/// **Several legs are one transaction**: applied in the order given, inverted
+/// in reverse, and undone in one step. That is what a gesture touching more
+/// than one structure needs — a drag that moves a clip and rewrites the curve
+/// it carries — and it is why the whole entry crosses in one call rather than
+/// a leg at a time: half a transaction is worse than none. It is not
+/// coalescing, which merges *successive* entries over one structure; the two
+/// are kept apart so a merge cannot silently join two structures.
+///
+/// A leg's `forward` is a step (`{"edit": <payload>}` or
+/// `{"recompute": <params>}`), its `backward` a payload in that structure's own
+/// vocabulary, and its `key` what makes two edits *the same thing done the same
+/// way* — the arrangement spells it `"place:7"`
+/// ([`clausters_document_coalesce_key`](crate::clausters_document_coalesce_key)),
+/// a curve has one verb and one key — with an absent or empty key never
+/// coalescing. `coalesce` merges this entry into the one before it when every
+/// leg's structure and key match, which is what makes a run of small
+/// adjustments one undo; the caller decides, because only the caller knows
+/// where the hand stopped.
+///
+/// Returns 0 on success, -1 when the request will not parse, holds no leg, or
+/// names a structure this history did not mint. **This applies nothing** — the
+/// caller has already made the edits; what is recorded is how to put them back.
+/// The inverse of an arrangement leg comes from
+/// [`clausters_document_inverse`](crate::clausters_document_inverse), read
+/// before the edit lands.
 ///
 /// # Safety
-/// `h` must be a live history handle and the payloads null or readable for
-/// their lengths.
+/// `h` must be a live history handle and `request` null or readable for
+/// `request_len` bytes.
 #[unsafe(no_mangle)]
-#[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn clausters_history_record(
     h: *mut FfiHistory,
-    structure: u64,
-    forward: *const u8,
-    forward_len: usize,
-    backward: *const u8,
-    backward_len: usize,
-    label: *const u8,
-    label_len: usize,
-    key: *const u8,
-    key_len: usize,
-    coalesce: i32,
+    request: *const u8,
+    request_len: usize,
 ) -> i32 {
     // SAFETY: forwarded from this function's own contract.
-    let (Some(forward), Some(backward)) = (unsafe { text(forward, forward_len) }, unsafe {
-        text(backward, backward_len)
-    }) else {
+    let Some(raw) = (unsafe { text(request, request_len) }) else {
         return -1;
     };
-    let (Ok(forward), Ok(backward)) = (
-        serde_json::from_str::<Step>(&forward),
-        serde_json::from_str::<Opaque>(&backward),
-    ) else {
+    let Ok(request) = serde_json::from_str::<Request>(&raw) else {
         return -1;
     };
-    // SAFETY: as above.
-    let label = unsafe { text(label, label_len) }.unwrap_or(std::borrow::Cow::Borrowed("edit"));
-    // SAFETY: as above.
-    let key = unsafe { text(key, key_len) }.unwrap_or_default();
-    let mut entry = Entry::new(label.as_ref(), StructureId(structure), forward, backward);
-    if !key.is_empty() {
-        entry = entry.keyed(key.as_ref());
-    }
-    if coalesce != 0 {
-        entry = entry.continuing();
-    }
+    let Some(entry) = request.entry() else {
+        return -1;
+    };
     with_history(h, -1, |history| if history.record(entry) { 0 } else { -1 })
+}
+
+/// One entry as it crosses: what to call it, whether it continues the one
+/// before it, and its legs.
+#[derive(serde::Deserialize)]
+struct Request {
+    #[serde(default = "edit_label")]
+    label: String,
+    #[serde(default)]
+    coalesce: bool,
+    legs: Vec<Leg>,
+}
+
+/// One structure's share of a transaction.
+#[derive(serde::Deserialize)]
+struct Leg {
+    structure: u64,
+    forward: Step,
+    backward: Opaque,
+    #[serde(default)]
+    key: String,
+}
+
+fn edit_label() -> String {
+    "edit".to_string()
+}
+
+impl Request {
+    /// The entry, or `None` when it holds no leg — an empty transaction is not
+    /// a gesture.
+    fn entry(self) -> Option<Entry> {
+        let mut legs = self.legs.into_iter();
+        let first = legs.next()?;
+        let mut entry = Entry::new(
+            self.label,
+            StructureId(first.structure),
+            first.forward,
+            first.backward,
+        );
+        if !first.key.is_empty() {
+            entry = entry.keyed(first.key);
+        }
+        for leg in legs {
+            entry = entry.and(StructureId(leg.structure), leg.forward, leg.backward);
+            if !leg.key.is_empty() {
+                entry = entry.keyed(leg.key);
+            }
+        }
+        if self.coalesce {
+            entry = entry.continuing();
+        }
+        Some(entry)
+    }
 }
 
 /// Undo the last transaction: the inverses of the entry before the cursor, each

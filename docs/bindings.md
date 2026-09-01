@@ -224,6 +224,7 @@ apply → snapshot → free, and pays the serialization where it asked for it.
 | `clausters_document_resolve` | `JsDocument.resolve` | |
 | `clausters_document_snapshot` | `JsDocument.snapshot` | the one call still the size of the composition, and asked for rather than paid per edit |
 | `clausters_document_version` | `JsDocument.version` | `idiom` — a getter |
+| `clausters_document_inverse` | `JsDocument.inverse` | the edit that would put a node back, read before anything lands — what a caller recording its **own** entry needs |
 | `clausters_document_coalesce_key` | `JsDocument.coalesce_key` | `idiom` — a free function in C, a static on the class in JS; it is the *arrangement's* sentence for "the same thing done the same way", so it lives with the document and not with the history |
 
 **Size-then-fill needs two rules here**, because the surface mutates. A mutating
@@ -258,7 +259,7 @@ to, in the order they must be applied.
 | `clausters_history_free` | — | `n/a` — wasm frees by `Drop` |
 | `clausters_history_register` | `JsHistory.register` | |
 | `clausters_history_apply` | `JsHistory.apply` | |
-| `clausters_history_record` | `JsHistory.record` | `idiom` — C returns 0/-1, wasm a boolean |
+| `clausters_history_record` | `JsHistory.record` | `idiom` — C returns 0/-1, wasm a boolean. One call carries the whole entry, legs and all: several legs are one transaction, and half of one is worse than none |
 | `clausters_history_undo` | `JsHistory.undo` | |
 | `clausters_history_redo` | `JsHistory.redo` | |
 | `clausters_history_can_undo` | `JsHistory.can_undo` | `idiom` — a getter |

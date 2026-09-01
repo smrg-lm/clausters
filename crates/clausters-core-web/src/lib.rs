@@ -1347,6 +1347,28 @@ impl JsDocument {
             .unwrap_or_default()
     }
 
+    /// The edit that would put this node back the way it is — the inverse of
+    /// `intent`, read out of the document **before** anything is applied, or
+    /// `undefined` when the document cannot describe it (the node is gone, or
+    /// its body holds nothing of that shape).
+    ///
+    /// {@link History.apply} does this for you and is what an ordinary edit
+    /// wants. This is for the caller that records its **own** entry — a leg of
+    /// a transaction spanning several structures, which nothing but the caller
+    /// can apply. For a `writesamples` it is the empty write rather than the
+    /// span, which is why a destructive caller reads the samples it is about to
+    /// overwrite instead of asking here.
+    pub fn inverse(&self, intent: &str) -> Result<Option<String>, JsError> {
+        let intent = serde_json::from_str::<clausters_document::Intent>(intent)
+            .map_err(|e| JsError::new(&format!("document.inverse: {e}")))?;
+        let Some(inverse) = clausters_document::inverse_of(&self.0, &intent) else {
+            return Ok(None);
+        };
+        serde_json::to_string(&inverse)
+            .map(Some)
+            .map_err(|e| JsError::new(&e.to_string()))
+    }
+
     /// Apply an edit. `apply(requestJson) -> outcomeJson`, the request carrying
     /// `{ intent, against?, quant? }` and the result the outcome alone —
     /// the document stays here and `snapshot` is how it leaves.
@@ -1528,38 +1550,68 @@ impl JsHistory {
         .map_err(|e| JsError::new(&e.to_string()))
     }
 
-    /// Record an entry against `structure` — the door for everything
-    /// {@link History.apply} cannot do: a destructive write, whose overwritten
-    /// samples are not in the tree, and every domain that is not the
-    /// arrangement, whose state this surface cannot reach. Applies nothing.
-    /// `record(structure, requestJson)` with
-    /// `{ forward, backward, label?, key?, coalesce? }`.
+    /// Record one entry — the door for everything {@link History.apply} cannot
+    /// do: a destructive write, whose overwritten samples are not in the tree,
+    /// and every domain that is not the arrangement, whose state this surface
+    /// cannot reach. Applies nothing.
     ///
-    /// Returns whether it was recorded: a structure this history did not mint
-    /// is refused rather than opening a second order over data that already
-    /// has one.
-    pub fn record(&mut self, structure: u64, request: &str) -> Result<bool, JsError> {
+    /// `record(requestJson)` with
+    /// `{ label?, coalesce?, legs: [{ structure, forward, backward, key? }] }`.
+    ///
+    /// **Several legs are one transaction**: applied in the order given,
+    /// inverted in reverse, and undone in one step — what a gesture touching
+    /// more than one structure needs, and why the whole entry crosses in one
+    /// call. It is not coalescing, which merges *successive* entries over one
+    /// structure. A leg's `key` is what makes two edits *the same thing done
+    /// the same way* ({@link Document.coalesceKey} for the arrangement); an
+    /// absent one never coalesces.
+    ///
+    /// Returns whether it was recorded: an entry with no leg, or one naming a
+    /// structure this history did not mint, is refused rather than opening a
+    /// second order over data that already has one. The inverse of an
+    /// arrangement leg comes from {@link Document.inverse}, read before the
+    /// edit lands.
+    pub fn record(&mut self, request: &str) -> Result<bool, JsError> {
         #[derive(serde::Deserialize)]
-        struct Request {
+        struct Leg {
+            structure: u64,
             forward: clausters_document::history::Step,
             backward: clausters_document::Opaque,
             #[serde(default)]
+            key: String,
+        }
+        #[derive(serde::Deserialize)]
+        struct Request {
+            #[serde(default)]
             label: Option<String>,
             #[serde(default)]
-            key: Option<String>,
-            #[serde(default)]
             coalesce: bool,
+            legs: Vec<Leg>,
         }
         let request: Request = serde_json::from_str(request)
             .map_err(|e| JsError::new(&format!("history.record: {e}")))?;
+        let mut legs = request.legs.into_iter();
+        let Some(first) = legs.next() else {
+            return Ok(false);
+        };
         let mut entry = clausters_document::history::Entry::new(
             request.label.unwrap_or_else(|| "edit".into()),
-            clausters_document::StructureId(structure),
-            request.forward,
-            request.backward,
+            clausters_document::StructureId(first.structure),
+            first.forward,
+            first.backward,
         );
-        if let Some(key) = request.key.filter(|k| !k.is_empty()) {
-            entry = entry.keyed(key);
+        if !first.key.is_empty() {
+            entry = entry.keyed(first.key);
+        }
+        for leg in legs {
+            entry = entry.and(
+                clausters_document::StructureId(leg.structure),
+                leg.forward,
+                leg.backward,
+            );
+            if !leg.key.is_empty() {
+                entry = entry.keyed(leg.key);
+            }
         }
         if request.coalesce {
             entry = entry.continuing();
