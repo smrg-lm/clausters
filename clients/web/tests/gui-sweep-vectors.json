@@ -3237,6 +3237,15 @@
  },
  {
   "builder": "score",
+  "option": "entry",
+  "value": true,
+  "tree": {
+   "type": "score",
+   "entry": true
+  }
+ },
+ {
+  "builder": "score",
   "option": "color",
   "value": "q",
   "tree": {
