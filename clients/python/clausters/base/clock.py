@@ -114,11 +114,21 @@ class TempoClock:
         #: while the clock runs normally. See `freeze`.
         self._frozen_at = None
         #: the session this clock belongs to, so a play running on it resolves
-        #: that session's server/rng (``current_routine.clock.session``). A `Session`
-        #: (or the default session's `get_default_clock`) sets it; ``None`` for a
-        #: clock built standalone, which then resolves against the default
-        #: session.
+        #: that session's server/rng (``current_routine.clock.session``).
+        #:
+        #: **A clock built while a session is ambient adopts it**, and the
+        #: session keeps it and closes it. That is not a convenience: a routine
+        #: runs on its clock's thread, and `Session.activate` is thread-local,
+        #: so this back-reference is the *only* thing an ambient play can follow
+        #: from inside a routine. A clock built with no session ambient has
+        #: ``None`` here and resolves against the default session.
         self.session = None
+        # Deferred, like the one in `_wake`: `main` reaches back here through
+        # `get_default_clock`.
+        from .main import main as _main
+
+        if _main.current_session is not None:
+            _main.current_session.adopt(self)
 
     # ---- beat/second math (native) ----
 

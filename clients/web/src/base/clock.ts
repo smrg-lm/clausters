@@ -36,6 +36,7 @@ import {
     quantDelay,
     samplesToSecs,
 } from "./timebase.ts";
+import { main } from "./main.ts";
 import type { SessionLike } from "./main.ts";
 import type { Server } from "../defs/server/index.ts";
 import type { Timebase } from "./timebase.ts";
@@ -241,11 +242,15 @@ export class TempoClock {
      */
     timebase: Timebase;
     /**
-     * The environment this clock belongs to, set by whoever owns it (a
-     * `Session` on construction, `Main` for the default clock). It is the
-     * back-reference ambient resolution follows: a play running on this clock
-     * resolves *that* session's server and random root, which is what keeps
-     * several sessions on one page isolated from each other.
+     * The environment this clock belongs to.
+     *
+     * **A clock built while a session is ambient adopts it**, and the session
+     * keeps it and closes it. That is not a convenience: it is the
+     * back-reference ambient resolution follows, and a play running on this
+     * clock resolves *that* session's server and random root — which is what
+     * keeps several sessions on one page isolated from each other. A clock
+     * built with no session ambient has `null` here and resolves against the
+     * default session.
      *
      * The clock still never talks to a server — this is a field it is read
      * through, not a collaborator it calls.
@@ -281,6 +286,7 @@ export class TempoClock {
         this.tempoMapHeld = new TempoMap(tempo);
         this.timebase = timebase ?? new MonotonicTimebase();
         this.ticker = ticker ?? defaultTicker();
+        main.currentSession?.adopt?.(this);
     }
 
     // ---- beat/second math (through the core) ----

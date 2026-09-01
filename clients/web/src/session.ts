@@ -133,9 +133,66 @@ export class Session extends Environment {
     constructor(server: Server, clock?: TempoClock, gui?: GuiHost) {
         super();
         this.server = server;
-        this.clock = clock ?? new TempoClock();
-        this.clock.session = this;
+        this.clocks_ = [];
+        this.clock = this.adopt(clock ?? new TempoClock());
         this.gui_ = gui ?? null;
+    }
+
+    private clocks_!: TempoClock[];
+
+    /**
+     * Every clock this session owns, the default ({@link Session.clock})
+     * first.
+     *
+     * A session is one server and *as many clocks as the piece has tempos*.
+     * {@link Session.adopt} is what puts one here, and a clock built while this
+     * session is ambient adopts it by itself, so ten hand-made clocks are
+     * already the session's without a line saying so.
+     */
+    get clocks(): readonly TempoClock[] {
+        return this.clocks_;
+    }
+
+    /**
+     * Takes `clock` into this session and returns it.
+     *
+     * Sets the clock's `session` back-reference, which is what an ambient play
+     * follows from inside a routine. A clock already held by another session
+     * leaves that one first; a clock this session already holds is not taken
+     * twice.
+     *
+     * Called for you: a `TempoClock` adopts the ambient session at
+     * construction. Call it by hand for a clock built before the session
+     * existed, or to move one between sessions.
+     */
+    adopt(clock: TempoClock): TempoClock {
+        const previous = clock.session;
+        if (previous != null && previous !== this) {
+            (previous as Session).release(clock);
+        }
+        clock.session = this;
+        if (!this.clocks_.some((held) => held === clock)) this.clocks_.push(clock);
+        return clock;
+    }
+
+    /**
+     * Drops `clock` from this session: it is no longer closed with it and no
+     * longer answers an ambient play. Returns the clock.
+     *
+     * The **default clock cannot be released** — a session without one has no
+     * answer for `play` — so releasing it throws rather than leaving the
+     * session in a state nothing checks for.
+     */
+    release(clock: TempoClock): TempoClock {
+        if (clock === this.clock) {
+            throw new Error(
+                "the default clock belongs to its session: adopt another clock "
+                + "and stop this one, rather than releasing it",
+            );
+        }
+        this.clocks_ = this.clocks_.filter((held) => held !== clock);
+        if (clock.session === this) clock.session = null;
+        return clock;
     }
 
     // ---- the factories (the "defaults", explicit) ----
@@ -424,22 +481,27 @@ export class Session extends Environment {
     }
 
     /**
-     * Starts the clock so scheduled events fire in real time; returns `this`.
-     * A restart **resumes** at the beat `stop` left the clock on.
+     * Starts **every** clock the session owns, so scheduled events fire in real
+     * time; returns `this`. A restart **resumes** at the beat `stop` left each
+     * clock on.
+     *
+     * A piece with one clock reads exactly as it always did. A piece with
+     * several starts them together, which is what makes them start together —
+     * starting ten clocks in a loop staggers them by whatever the loop costs.
      */
     start(): this {
-        this.clock.start();
+        for (const clock of this.clocks_) clock.start();
         return this;
     }
 
     /**
-     * Stops the clock; returns `this`. Nothing further fires while it is
-     * stopped, but the schedule is kept and the beat is held: this is a
-     * transport, and a later `start` picks the music up where it was
-     * (`session.clock.clear()` is what drops what is queued).
+     * Stops **every** clock the session owns; returns `this`. Nothing further
+     * fires while they are stopped, but each schedule is kept and each beat is
+     * held: this is a transport, and a later `start` picks the music up where
+     * it was (`session.clock.clear()` is what drops what is queued).
      */
     stop(): this {
-        this.clock.stop();
+        for (const clock of this.clocks_) clock.stop();
         return this;
     }
 
@@ -513,7 +575,9 @@ export class Session extends Environment {
         // rule now rather than a list of sockets this session keeps beside it.
         for (const dest of this.destinations) dest.close();
         this.destinations.length = 0;
-        this.clock.close();
+        // Every clock the session owns, not just the default.
+        for (const clock of this.clocks_) clock.close();
+        this.clocks_.length = 0;
         this.server.close();
         void this.ownedEngine?.close();
         this.ownedEngine = null;

@@ -79,11 +79,15 @@ class Session(Environment):
     def __init__(self, server: Server, clock: TempoClock | None = None, gui=None):
         super().__init__()          # Environment: its own RNG root + server slot
         self.server = server
-        self.clock = clock if clock is not None else TempoClock()
-        #: back-reference so a play running on this clock resolves *this*
-        #: session's server/rng (``current_routine.clock.session``), keeping several
-        #: sessions isolated from each other and from the default session.
-        self.clock.session = self
+        #: every clock this session owns, in the order it took them. A piece
+        #: with several independent tempos has several clocks, and they belong
+        #: to the session the same way its server does: kept here, and closed
+        #: with it.
+        self._clocks = []
+        #: the session's **default clock** -- the one `play`, `start`, `run` and
+        #: the ambient `Routine.play` mean when no clock is named. The first of
+        #: `clocks`, and it stays the default however many others are adopted.
+        self.clock = self.adopt(clock if clock is not None else TempoClock())
         #: the session's GUI host: the one handed to the constructor, or the one
         #: `gui` boots lazily. Stopped with the session — and `GuiHost.stop`
         #: stops the ``clausters-gui`` process only if that host booted it, so a
@@ -94,6 +98,58 @@ class Session(Environment):
         #: external OSC destinations opened by `destination`, closed with the
         #: session.
         self._destinations = []
+
+    # ---- the session's clocks ----
+
+    @property
+    def clocks(self) -> tuple:
+        """Every clock this session owns, the default (`clock`) first.
+
+        A session is one server and *as many clocks as the piece has tempos*.
+        `adopt` is what puts one here, and a clock built while this session is
+        ambient adopts it by itself, so ten hand-made clocks are already the
+        session's without a line saying so.
+        """
+        return tuple(self._clocks)
+
+    def adopt(self, clock):
+        """Take ``clock`` into this session and return it.
+
+        Sets the clock's `session` back-reference, which is what an ambient
+        play follows from inside a routine — a routine runs on its clock's
+        thread, and `activate` is thread-local, so the thread-local answer is
+        not available there. A clock already held by another session leaves that
+        one first; a clock this session already holds is not taken twice.
+
+        Called for you: `TempoClock` adopts the ambient session at construction.
+        Call it by hand for a clock built before the session existed, or to move
+        one between sessions.
+        """
+        previous = getattr(clock, "session", None)
+        if previous is not None and previous is not self:
+            previous.release(clock)
+        clock.session = self
+        if not any(held is clock for held in self._clocks):
+            self._clocks.append(clock)
+        return clock
+
+    def release(self, clock):
+        """Drop ``clock`` from this session: it is no longer closed with it and
+        no longer answers an ambient play. Returns the clock.
+
+        The **default clock cannot be released** — a session without one has no
+        answer for `play` — so releasing it is refused rather than leaving the
+        session in a state nothing checks for.
+        """
+        if clock is getattr(self, "clock", None):
+            raise ValueError(
+                "the default clock belongs to its session: adopt another clock "
+                "and stop this one, rather than releasing it"
+            )
+        self._clocks = [held for held in self._clocks if held is not clock]
+        if clock.session is self:
+            clock.session = None
+        return clock
 
     # ---- factories (the "defaults", explicit) ----
 
@@ -466,18 +522,27 @@ class Session(Environment):
         return self
 
     def start(self):
-        """Start the clock so scheduled events fire in real time; returns
-        ``self``. Pair with `stop`, or use `run` to start, wait and stop in one
-        call. A restart **resumes** at the beat `stop` left the clock on."""
-        self.clock.start()
+        """Start **every** clock the session owns, so scheduled events fire in
+        real time; returns ``self``. Pair with `stop`, or use `run` to start,
+        wait and stop in one call. A restart **resumes** at the beat `stop` left
+        each clock on.
+
+        A piece with one clock reads exactly as it always did. A piece with
+        several starts them together, which is what makes them start together —
+        starting ten clocks in a Python loop staggers them by whatever the loop
+        costs."""
+        for clock in self._clocks:
+            clock.start()
         return self
 
     def stop(self):
-        """Stop the clock; returns ``self``. Nothing further fires while it is
-        stopped, but the schedule is kept and the beat is held: this is a
-        transport, and a later `start` picks the music up where it was
-        (``session.clock.clear()`` is what drops what is queued)."""
-        self.clock.stop()
+        """Stop **every** clock the session owns; returns ``self``. Nothing
+        further fires while they are stopped, but each schedule is kept and each
+        beat is held: this is a transport, and a later `start` picks the music
+        up where it was (``session.clock.clear()`` is what drops what is
+        queued)."""
+        for clock in self._clocks:
+            clock.stop()
         return self
 
     def destination(self, host: str = "127.0.0.1", port: int = 57120) -> OscDestination:
@@ -494,8 +559,9 @@ class Session(Environment):
         return dest
 
     def close(self):
-        """Close the underlying `Server` and release the clock's master-clock
-        tracker (from `lock_to_server`), if any. Also stops the GUI host and, if
+        """Close the underlying `Server` and every clock the session owns,
+        releasing each one's master-clock tracker (from `lock_to_server`), if
+        any. Also stops the GUI host and, if
         `live` launched a server, that process too — so nothing this session
         started is left running. What it did **not** start it leaves standing:
         `clausters.gui.GuiHost.stop` ends a ``clausters-gui`` process only when
@@ -509,7 +575,9 @@ class Session(Environment):
         for dest in self._destinations:
             dest.close()
         self._destinations.clear()
-        self.clock.close()
+        for clock in self._clocks:
+            clock.close()      # every clock the session owns, not just the default
+        self._clocks.clear()
         self.server.close()    # stops a launched server process too
 
     def __enter__(self):

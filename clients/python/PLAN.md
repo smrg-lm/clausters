@@ -1455,6 +1455,26 @@ work, where a pending item reads as done.)*
   read only by that setter. Nothing else moved: under a constant tempo the
   property answers what it always did, which is what the added test pins.
 
+- ⬜ **Every clock locked to one server builds its own tracker of that
+  server's clock** *(found 2026-08-31 by the user, asking why a ten-clock
+  example takes a few seconds to start)*. `Server.sample_clock` returns a **new**
+  reader on every call, so `TempoClock.lock_to` gives each clock its own UDP
+  socket, its own model and its own background thread re-anchoring every 0.5 s
+  — ten clocks against one server, ten trackers of the same counter. Measured:
+  locking ten clocks takes **2.038 s**, all of it `warmup(n=4)`'s four anchors
+  at a 50 ms gap, ten times over (`warmup=False` brings the same ten to
+  0.004 s); thread count goes 2 → 12 and stays there.
+
+  The delay is the visible half and the cheaper one to fix — the standing cost
+  is ten sockets and ten threads modelling one clock, forever. **One tracker per
+  server, shared by every clock locked to it**, pays the warmup once and runs
+  one thread. What it needs decided is the lifetime: `unlock` and `close` must
+  not tear down a tracker another clock is still reading, so the shared one is
+  refcounted and released with the last clock (or with the `Server`, which is
+  the simpler rule and probably the right one). Both clients. Until then, a
+  piece with many clocks can pass `lock_to(server, warmup=False)` and let the
+  tracking loop firm the model up as it plays.
+
 - ⬜ **A hand-made clock cannot find the ambient session, because `activate` is
   thread-local** *(found 2026-08-31 by the user, running a ten-clock example)*.
   `Session.activate()` sets `main.current_session` on the **calling** thread. A

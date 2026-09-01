@@ -37,6 +37,13 @@ export interface SessionLike {
     clock?: TempoClock;
     /** The environment's random root (see `./environment.ts`). */
     readonly rng?: Rng;
+    /**
+     * Takes a clock into this session, so it is answered for and closed with
+     * it. A `TempoClock` calls this on itself when one is ambient; the default
+     * session does not have it, and a clock built with no session ambient
+     * belongs to nobody.
+     */
+    adopt?(clock: TempoClock): TempoClock;
 }
 
 /**

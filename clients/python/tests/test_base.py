@@ -313,6 +313,41 @@ def test_one_tempo_verb_spells_a_step_a_ramp_a_shape_and_an_envelope():
         clk.set_tempo(Env.adsr())
 
 
+def test_a_clock_built_under_a_session_belongs_to_it():
+    """A clock adopts the ambient session at construction, and the session keeps
+    it and closes it. That back-reference is the only thing an ambient play can
+    follow from inside a routine: a routine runs on its clock's thread, and
+    `Session.activate` is thread-local."""
+    _ffi_or_skip()
+    from clausters import Session
+
+    session = Session.nrt(tempo=1.0).activate()
+    try:
+        extra = [TempoClock(tempo=2.0) for _ in range(3)]
+        assert [c.session for c in extra] == [session] * 3
+        assert session.clocks == (session.clock, *extra)
+        assert session.clocks[0] is session.clock, "the default is the first"
+
+        # Moving one between sessions leaves the first.
+        other = Session.nrt(tempo=1.0)
+        other.adopt(extra[0])
+        assert extra[0].session is other
+        assert all(held is not extra[0] for held in session.clocks)
+
+        # The default cannot be released -- a session without one has no answer
+        # for `play`.
+        with pytest.raises(ValueError, match="default clock"):
+            session.release(session.clock)
+        session.release(extra[1])
+        assert extra[1].session is None
+        assert all(held is not extra[1] for held in session.clocks)
+    finally:
+        session.deactivate()
+
+    # With no session ambient a clock belongs to nobody, as before.
+    assert TempoClock(tempo=1.0).session is None
+
+
 def test_stop_holds_the_beat_and_start_resumes_it():
     """`stop`/`start` is a transport, not a reset: the beat is held while
     stopped and picked up on restart, so what is still queued keeps its place
