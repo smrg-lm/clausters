@@ -7,10 +7,15 @@ formats as peers: FaustDefs and UGen-graph SynthDefs.
 What the top level holds is what you name while writing a piece: the free
 verbs (``play``, ``render``, ``plot``, ``scope``), the three hosts (`Session`,
 `Server`, `GuiHost`), the server's resources, the three def formats, the
-timing types, and the layer modules themselves. Everything enumerative — the
-UGen and signal callables, the value patterns, the GUI widgets — is named
-through its module (``defs.sine``, ``seq.Pbind``, ``gui.knob``): there are too
-many of them for a flat namespace to stay readable. The transports and the
+timing types, the handful of grid and unit conversions beside them (``bar``,
+``beat_in_bar``, ``quant_delay``, ``secs_to_samples``, ``samples_to_secs``),
+and the layer modules themselves. Everything enumerative — the UGen and
+signal callables, the value patterns, the GUI widgets, the sixty-odd numeric
+builtins — is named through its module (``defs.sine``, ``seq.Pbind``,
+``gui.knob``, ``builtins.midicps``): there are too many of them for a flat
+namespace to stay readable. ``builtins`` is one of those modules and is named
+at the top level for that reason — it is `clausters.builtins`, which shadows
+nothing, and not Python's own. The transports and the
 process launchers are named through theirs (`clausters.ipc`,
 `clausters.launch`), because you reach them as a return value or an argument
 of the layer above, not by instantiating them.
@@ -70,9 +75,17 @@ The layers:
 
 from . import _native
 from . import base, data, defs, errors, form, gui, ipc, launch, seq
+from .base import builtins
 from .errors import ClaustersError
 from .base.clock import TempoClock
-from .base.time import TempoMap
+from .base.time import (
+    TempoMap,
+    bar,
+    beat_in_bar,
+    quant_delay,
+    samples_to_secs,
+    secs_to_samples,
+)
 from .base.main import default_session, main
 from .base.rand import choice, uniform
 from .base.stream import Routine
@@ -104,6 +117,7 @@ __all__ = [
     # and the transports and process launchers (ipc, launch), which you reach
     # through Session and Server rather than by instantiating them.
     "base",
+    "builtins",
     "data",
     "defs",
     "errors",
@@ -131,6 +145,11 @@ __all__ = [
     # time
     "TempoClock",
     "TempoMap",
+    "bar",
+    "beat_in_bar",
+    "quant_delay",
+    "secs_to_samples",
+    "samples_to_secs",
     "Routine",
     "Event",
     "rest",

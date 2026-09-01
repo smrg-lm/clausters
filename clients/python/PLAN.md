@@ -1567,10 +1567,32 @@ work, where a pending item reads as done.)*
   a page's engine is not a process anyone launched with flags, so the web
   `Server` has no `options` at all.
 
-- ⬜ **Three conversions are public on one side and private on the other**
+- ⬜ **The random stream is `Rng` in one client and `_native.RngStream` in the
+  other, and three of its verbs reach only one** *(found 2026-09-01, next door
+  to the conversion audit — the same question asked of `base/rand`)*. The draws
+  agree and the streams are the same core; what differs is everything around
+  them.
+
+  - The **class** is `Rng`, exported from the web index, and `RngStream`, living
+    in `clausters._native`, behind the underscore. Two names for one type, and
+    only one of them can be typed.
+  - `seed(n)` is a free function in `base/rand.ts`; Python has no free spelling
+    and the verb is `main.seed(n)` / `session.seed(n)`. The methods exist in
+    both, so this is a convenience one client grew.
+  - `current_rng`/`spawn_rng` are in `clausters.base.rand` and `currentRng`/
+    `spawnRng` are at the web index — the export-depth question above, in the
+    module next to it, and it is decided the same way.
+
+  Not folded into the entry above because the class name is a different kind of
+  defect: publishing `RngStream` under that name would settle the reach and
+  leave the two clients calling one type two things. Whichever name wins, both
+  say it.
+
+- ✅ **Three conversions are public on one side and private on the other**
   *(found 2026-09-01, auditing every conversion name after the mel/bark pair
   was added — the user asking whether any had been left in an `a2b`/`b2a`
-  shape; two of the three closed the same day, the third is a decision)*. The naming came back clean and the audit turned up something else.
+  shape; all three closed the same day, two by cutting and one by lifting)*.
+  The naming came back clean and the audit turned up something else.
 
   **On names there is nothing to fix**, and it is worth writing down so nobody
   re-opens it: the client uses three forms and each is the right one where it
@@ -1591,16 +1613,24 @@ work, where a pending item reads as done.)*
     existed in Python only as `_native.beats_to_secs`, behind the underscore.
   - ✅ `patch_to_widget` was `patchToWidget`, exported, in TS and
     `_patch_to_widget`, private, in Python.
-  - ⬜ Export **depth** differs for what both do have: `bar`, `beat_in_bar`,
+  - ✅ Export **depth** differed for what both do have: `bar`, `beat_in_bar`,
     `quant_delay`, `secs_to_samples`, `samples_to_secs` and the whole `builtins`
-    module are top-level in the web index and sub-module-only in Python. That is
-    why the two halves of `views/rulers` import the same calls from different
-    places — a divergence a pair checker would report and a reader reads as
-    idiom. **Open**, and the one of the three that has to be decided upward:
-    which of the two depths is the client's.
+    module were top-level in the web index and sub-module-only in Python, which
+    is why the two halves of `views/rulers` imported the same calls from
+    different places. **Decided upward** *(2026-09-01)*: the web's depth is
+    right and Python lifts. The package's own docstring already carried the
+    rule — the top level holds what you name while writing a piece, and a
+    family too large for a flat namespace is named through its module — and
+    both halves of it point the same way here. Five grid conversions are named
+    while writing a piece; sixty numeric builtins are the enumerative case, so
+    `builtins` is lifted as a **module** (`clausters.builtins`, which shadows
+    nothing — the client's own `builtins.py` already imports Python's as
+    `_py`), exactly as the web index spells `export * as builtins`. Nothing
+    moved in the web client. The example's two halves now open with the same
+    import and make the same call.
 
-  **The first two closed downward, not upward** *(2026-09-01)*, and that is the
-  finding worth keeping. The reflex on a one-sided surface is to publish it on
+  **The first two closed downward and the third upward** *(2026-09-01)*, and
+  the first pair is the finding worth keeping. The reflex on a one-sided surface is to publish it on
   the other side; asking first whether it is of general use answered no twice.
   `patch_to_widget` takes the internal `{boxes, cords}` model, and its only
   callers in either client are the two `widget()` methods of `DefPatch`/

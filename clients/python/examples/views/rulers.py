@@ -169,13 +169,13 @@ win.on_closed(lambda: globals().__setitem__("_closed", True))
 # shows.
 
 # %%
-from clausters.base.builtins import cpsbark, cpsmel  # noqa: E402
-from clausters.base.time import bar, beat_in_bar  # noqa: E402
+from clausters import bar, beat_in_bar, builtins  # noqa: E402
 
 pos = 9.5  # beats
 print(f"beat {pos} on a {QUANT:.0f}-beat grid is bar "
       f"{int(bar(pos, QUANT)) + 1}, beat {beat_in_bar(pos, QUANT) + 1:g}")
-print(f"1 kHz is {cpsmel(1000.0):.0f} mel, {cpsbark(1000.0):.2f} bark")
+print(f"1 kHz is {builtins.cpsmel(1000.0):.0f} mel, "
+      f"{builtins.cpsbark(1000.0):.2f} bark")
 
 # %% [markdown]
 # ## Everything is also settable directly
