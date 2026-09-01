@@ -74,9 +74,21 @@ The five sections, and the line between them:
 
 Each is small, owned by its plan, and blocked by nothing.
 
-**Nothing open here.** The section fills from section 3's review and empties
-again; a fix that lands leaves no line here, because its plan's checkbox and the
-commit already carry it.
+The section fills from section 3's review and empties again; a fix that lands
+leaves no line here, because its plan's checkbox and the commit already carry it.
+
+- ⬜ **Nothing checks that a pair of examples makes the same calls, and a hand
+  audit does not scale** *(`clients/python/PLAN.md`, Found by use)*. 61 Python
+  examples have a page twin and the non-divergence rule says each pair is one
+  example in two languages, but the only thing enforcing it is somebody reading
+  both files — every divergence so far was found by accident. The entry records
+  what a naive checker costs (it reports 59 of the 61, nearly all platform
+  noise) and what a usable one needs: the ordered call sequence plus a declared
+  table of idiom pairs, which is what `docs/bindings.md` already does for the
+  ABI. **Related:** the same entry names a missing surface it turned up —
+  `hz_to_mel`/`hz_to_bark` are in the core and reach no public name in either
+  client, which is why one example goes through `_native`. That half is a fix
+  of its own and blocked by nothing.
 
 ## 2. Fixes that need a decision first
 
@@ -98,6 +110,21 @@ on each one; none of them is being taken by this file.
   reads it) or execution (the clock builds it, a save loses it). The type is
   the same either way, so this blocks only who calls the constructor — and
   whether the format grows a field.
+
+- ⬜ **The map is append-only, so a tempo gesture cannot be written before a
+  change already planned**, and **A tempo gesture can only be written at "now"**
+  *(`clients/python/PLAN.md`, Found by use)*. Two entries, one surface. A tempo
+  gesture is anchored at `beats()` and refuses a breakpoint below the last one,
+  so a second ramp during the first raises, and so does a `set_tempo` on a clock
+  holding a piece's map with changes still ahead of the playhead — which is
+  exactly the case a live gesture is. Nor can it be told *where* to write: the
+  missing thing is an `at=` argument on `set_tempo`, not a second verb — that
+  verb already absorbed `ramp_tempo`.
+  **The decision:** what a live gesture means against a written tempo —
+  truncating says it discards whatever was planned after it, which is right for
+  a performer and wrong for rehearsing against a fixed score. That is the
+  ownership question above, so the two are taken together. The mechanism is
+  already there (`truncate_from`); only the rule is missing.
 
 - ⬜ **Two views of one arrangement keep two histories, so an undo writes a
   state nobody was in** *(`clients/python/PLAN.md`, Found by use)*. Measured, in

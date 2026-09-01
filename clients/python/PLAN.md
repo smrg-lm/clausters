@@ -1596,7 +1596,7 @@ work, where a pending item reads as done.)*
 - ⬜ **The map is append-only, so a tempo gesture cannot be written before a
   change already planned** *(found 2026-08-31, testing the fix above)*.
   `TempoMap.push`/`ramp` refuse a breakpoint at a beat below the last one, and
-  `TempoClock.set_tempo`/`ramp_tempo` anchor at `beats()` — so **a second ramp
+  `TempoClock.set_tempo` anchors at `beats()` — so **a second ramp
   called while the first is still running raises `ValueError`**, and so does a
   `set_tempo` on a clock holding a piece's map with changes ahead of the
   playhead. Live tempo gestures are exactly the case where the map has a future,
@@ -1608,16 +1608,17 @@ work, where a pending item reads as done.)*
   which is right for a performer and wrong for a rehearsal against a fixed
   score. That is the ownership question again (`clock.map` as execution vs the
   document's tempo), so it is decided with it, not before. Both clients, and
-  `ramp_at(beat, tempo, over)` below is the same surface.
+  the "written at now" entry below is the same surface.
 
-- ⬜ **A ramp can only be written at "now"** *(found 2026-08-31, writing the
-  `ramp_tempo` example)*. `set_tempo`/`ramp_tempo` anchor at `beats()`, so a
-  ramp asked for at beat 3 from inside a routine was written at 3.00034 — the
+- ⬜ **A tempo gesture can only be written at "now"** *(found 2026-08-31,
+  writing the ten-clock example)*. `set_tempo` anchors at `beats()`, so a ramp
+  asked for at beat 3 from inside a routine was written at 3.00034 — the
   real-time beat, not the routine's logical one. Inaudible, but a map that is
   going to be *saved as the piece's tempo* then has breakpoints off the grid.
-  There is no `ramp_at(beat, tempo, over)` / `set_tempo_at` to write one
-  exactly, and `TempoMap.ramp` (which does take both beats) is not reachable
-  through the clock. Both clients.
+  There is no way to say **where**: the map's own `push`/`shaped`/`env` take the
+  beat, and the clock's verb does not pass one on. The missing thing is an
+  argument — `set_tempo(..., at=beat)` — and **not** a second verb: `set_tempo`
+  absorbed `ramp_tempo` precisely so there would be one. Both clients.
 
 - ✅ **Three places call beats what is measured in seconds** *(found 2026-08-30
   by the user, from "el tiempo concreto o se mide en muestras o se mide en
