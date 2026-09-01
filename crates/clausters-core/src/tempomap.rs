@@ -23,9 +23,9 @@
 //! [`TempoMap::span_secs`] is the only correct spelling and exists so no
 //! caller has to remember.
 //!
-//! # Relation to [`crate::tempoclock::TempoClock`]
+//! # Relation to a client's `TempoClock` ([`crate::tempoclock`])
 //!
-//! A [`TempoClock`](crate::tempoclock::TempoClock) is one affine segment: its
+//! A `TempoClock` is one affine segment: its
 //! `base_seconds + (beats - base_beats) / tempo` is exactly this map's closed
 //! form for a single [`Curve::Step`]. A map with one segment answers the
 //! identical expression, term for term, which is what lets a clock adopt one
