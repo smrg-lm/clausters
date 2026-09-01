@@ -78,7 +78,9 @@ session = Session.live(tempo=TEMPO, latency=0.1)
 server = session.server
 sampler().send(server)
 
-SR = float(server.options.sample_rate)
+# `query_info` rather than the launch options: it is the one spelling both
+# clients have, so this file and its page twin ask the same question.
+SR = server.query_info().nominal_sample_rate
 folder = Path(tempfile.mkdtemp(prefix="clausters-take-"))
 
 # %% [markdown]

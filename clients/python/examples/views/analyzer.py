@@ -137,7 +137,9 @@ def on_spectrum(tag, *vals):
     since the normalized pair is a display coordinate and the reader is
     looking at a frequency axis."""
     if tag == "view_x" and len(vals) >= 2:
-        nyquist = float(server.options.sample_rate) / 2.0
+        # `query_info` rather than the launch options: it is the one spelling both
+        # clients have, so this file and its page twin ask the same question.
+        nyquist = server.query_info().nominal_sample_rate / 2.0
         lo = 20.0 * (nyquist / 20.0) ** vals[0]
         hi = 20.0 * (nyquist / 20.0) ** min(vals[0] + vals[1], 1.0)
         print(f"  spectrum: {lo:.0f} Hz .. {hi:.0f} Hz")

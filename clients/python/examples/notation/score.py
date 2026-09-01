@@ -151,7 +151,9 @@ print(f"engraved: {len(dl['glyphs'])} glyph outlines, "
 # resolves to its server and clock
 session = Session.live(tempo=TEMPO)
 server = session.server
-sr = float(server.options.sample_rate)
+# `query_info` rather than the launch options: it is the one spelling both
+# clients have, so this file and its page twin ask the same question.
+sr = server.query_info().nominal_sample_rate
 gui = session.gui()
 engraved = source(display_list=dl)
 win = scene(engraved, sr).open()

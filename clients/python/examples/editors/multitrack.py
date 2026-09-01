@@ -72,7 +72,9 @@ session = Session.live(tempo=TEMPO, latency=0.1)
 server = session.server
 gui = session.gui()
 
-SR = float(server.options.sample_rate)
+# `query_info` rather than the launch options: it is the one spelling both
+# clients have, so this file and its page twin ask the same question.
+SR = server.query_info().nominal_sample_rate
 BEAT = int(SR / TEMPO)         # timeline samples per beat: the axis unit is the
                                # audio sample, so a take's frames place 1:1
 

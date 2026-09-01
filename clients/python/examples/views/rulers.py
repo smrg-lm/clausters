@@ -167,11 +167,12 @@ win.on_closed(lambda: globals().__setitem__("_closed", True))
 # script reads the identical numbers the GUI shows.
 
 # %%
-from clausters import _native  # noqa: E402
+from clausters import _native  # noqa: E402  (mel/bark have no public spelling yet)
+from clausters.base.time import bar, beat_in_bar  # noqa: E402
 
 pos = 9.5  # beats
 print(f"beat {pos} on a {QUANT:.0f}-beat grid is bar "
-      f"{int(_native.bar(pos, QUANT)) + 1}, beat {_native.beat_in_bar(pos, QUANT) + 1:g}")
+      f"{int(bar(pos, QUANT)) + 1}, beat {beat_in_bar(pos, QUANT) + 1:g}")
 print(f"1 kHz is {_native.hz_to_mel(1000.0):.0f} mel, "
       f"{_native.hz_to_bark(1000.0):.2f} bark")
 

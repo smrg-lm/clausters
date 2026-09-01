@@ -165,7 +165,11 @@ sampler().send(server)
 # and lets it name it by a **relative** path, so the pair of files moves together.
 
 # %%
-SR = float(server.options.sample_rate)
+# `query_info` rather than the launch options: it is the one spelling both
+# clients have -- a page's engine is not a process anyone launched with flags,
+# so the web `Server` has no `options` at all -- and this file and its page
+# twin ask the same question.
+SR = server.query_info().nominal_sample_rate
 BEAT = SR / TEMPO
 #: The bounce's length, twice: in **beats** of the clock that renders it, and in
 #: the **seconds** it therefore lasts. A take's length is the second one -- the

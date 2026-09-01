@@ -1553,14 +1553,45 @@ work, where a pending item reads as done.)*
   did not catch it. **Fixed** by taking `query_info().nominal_sample_rate`,
   which is the one spelling the page twin also has.
 
-  What it exposes is smaller than it looks and worth keeping: the web `Server`
-  has **no `options`** at all — a page's engine is not a process someone
-  launched with flags — so `server.options.sample_rate` is a Python-only
-  spelling, and `composer.py` / `composer.html` are already split across it
-  (`options.sample_rate` against `queryInfo().nominalSampleRate`). Either the
-  web grows the equivalent reading or the pair moves to `query_info` as this one
-  now has; leaving two examples asking one question two ways is the divergence
-  the rule is about.
+  **The whole class is closed now** *(2026-08-31, "corregilos todos, no
+  terminamos nunca con las divergencias")*. Nine files asked the sample rate two
+  ways: seven Python examples read `server.options.sample_rate` while their page
+  twins read `queryInfo().nominalSampleRate`, and the two `notation/score` pages
+  read the audio context's own `raw.context.sampleRate` — the same number by a
+  third door. All of them now ask `query_info().nominal_sample_rate` /
+  `queryInfo().nominalSampleRate`, which is the one spelling both clients have:
+  a page's engine is not a process anyone launched with flags, so the web
+  `Server` has no `options` at all.
+
+- ⬜ **Nothing checks that a pair of examples makes the same calls, and a hand
+  audit does not scale** *(found 2026-08-31, trying to answer "corregilos
+  todos")*. 61 Python examples have a page twin and the non-divergence rule says
+  each pair is one example in two languages — same calls, same order — but the
+  only thing enforcing it is someone reading both files. Every divergence so far
+  was found by accident, one at a time.
+
+  A naive checker does not work, and it is worth recording why before anyone
+  writes it again: comparing the method names each file calls reports **59 of
+  the 61 pairs**, nearly all of it platform noise — `Path`/`mkdir` against
+  `createElement`, `sleep` against a timer, `mul`/`div`/`neg` where TypeScript
+  has no operator overloading, `seq.Pbind(` against a bare `Pbind(`, and
+  `live`/`embed`. Filtering to names the two clients actually export helps and
+  is still not enough: `min`, `now`, `round`, `get` and `send` are both
+  platform verbs and client methods.
+
+  What a usable one needs is the pair's *ordered* sequence of calls on the
+  client surface, with a **declared table of idiom pairs** (`live`/`embed`,
+  `session.page`/`session.live`, `map.env`/`tempoEnv`) — the same table
+  `docs/bindings.md` keeps for the ABI, applied to the examples. Until it
+  exists, the honest statement is that only the sample-rate class above has
+  been swept; the rest of the 61 pairs are unaudited.
+
+  **One real one turned up while measuring**: `views/rulers.py` printed the beat
+  grid and the mel/bark conversions and its page printed neither. Fixed for the
+  grid, which both clients export; the mel/bark half exposed a **missing
+  surface** — `hz_to_mel`/`hz_to_bark` are in the core but reach no public name
+  in either client, which is why the script was going through `_native`. Written
+  down rather than improvised into the page.
 
 - ⬜ **The map is append-only, so a tempo gesture cannot be written before a
   change already planned** *(found 2026-08-31, testing the fix above)*.

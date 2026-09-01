@@ -133,7 +133,7 @@ B c d e | f2 e d | c B A B | G4 |
       // drawn size never changes under a hand that is editing.
       const PAGE_W = 900.0;
 
-      let server, host = null, raw = null, win = null;
+      let server, host = null, raw = null, win = null, SR = 0;
       let score = null, engraved = null, clock = null, transport = null;
       // What the page named, and the model item behind it.
       const selected = { element: null, item: null };
@@ -445,6 +445,12 @@ B c d e | f2 e d | c B A B | G4 |
         el("start").disabled = true;
         server = await new Server().boot();
         raw = server.engine;
+        // The rate the beats->samples conversion is expressed in, asked of the
+        // running engine -- the same call, in the same place, as the script's
+        // `query_info().nominal_sample_rate`. The audio context's own rate is
+        // the same number reached by a different door, which is how this pair
+        // came to ask one question two ways.
+        SR = (await server.queryInfo()).nominalSampleRate;
         host = await new GuiHost({ engine: raw }).boot();
 
         // Opening the score is the one asynchronous step of the layer, and only
@@ -482,12 +488,12 @@ B c d e | f2 e d | c B A B | G4 |
         score.apply({ op: "set_marks", id: top[8], marks: notation.marks({ dynamic: "f" }) });
 
         engraved = gui.source(undefined, { displayList: score.displayList() });
-        win = await scene(engraved, raw.context.sampleRate).open(el("stage"));
+        win = await scene(engraved, SR).open(el("stage"));
 
         clock = new TempoClock(TEMPO).start();
         transport = notation.transport(host, win.widget("score").id, {
           source: pass, tempo: TEMPO, extent,
-          sampleRate: raw.context.sampleRate,
+          sampleRate: SR,
         });
         transport.locate(0.0);
         setInterval(() => transport.update(), 100);

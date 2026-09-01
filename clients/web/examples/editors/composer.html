@@ -250,6 +250,9 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
         // the tab's own rather than a process this line started.
         session = await Session.embed({ tempo: TEMPO, latency: 0.1, channels: 2 });
         server = session.server;
+        // The same question the script asks, in the same place: a page's
+        // engine is not a process anyone launched with flags, so there are no
+        // launch options to read -- `queryInfo` is what both clients have.
         SR = (await server.queryInfo()).nominalSampleRate;
 
         await sampler().send(server);

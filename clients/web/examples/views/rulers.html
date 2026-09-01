@@ -58,7 +58,7 @@ labels, so zooming keeps revealing finer, non-colliding rungs.</div>
       Build it first: ./build.sh
     -->
     <script type="module">
-      import { Session, gui, seq } from "../../dist/index.js";
+      import { Session, bar, beatInBar, gui, seq } from "../../dist/index.js";
 
       const $ = (id) => document.getElementById(id);
       const log = (line) => {
@@ -141,6 +141,19 @@ labels, so zooming keeps revealing finer, non-colliding rungs.</div>
           win.widget("spect").set({ rulerY: on ? "hz" : "off" });
           log(`vertical rulers -> ${on ? "on" : "off"}`);
         });
+
+        // The same reading the script prints: the grid a ruler draws is
+        // `bar`/`beatInBar`, so a client can say bar:beat without asking the
+        // host what it drew.
+        //
+        // The script's second line -- 1 kHz in mel and in bark -- has no
+        // counterpart here: those conversions are in the core but reach no
+        // public name in either client, so the script gets at them through
+        // `_native` and a page has no such door. Written down rather than
+        // improvised.
+        const pos = 9.5;   // beats
+        log(`beat ${pos} on a ${QUANT.toFixed(0)}-beat grid is bar `
+          + `${Math.trunc(bar(pos, QUANT)) + 1}, beat ${beatInBar(pos, QUANT) + 1}`);
 
         const onViewY = (tag, ...vals) => {
           if (tag === "view_y" && vals.length >= 2) {

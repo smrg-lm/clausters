@@ -80,7 +80,7 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
       let engraved = null;   // the same page as a `source`, so an edit reaches
                              // the definition and every window at once
       let clock = null, transport = null, selected = null;
-      let host = null, raw = null;   // the page's GuiHost, and the engine it draws over
+      let host = null, raw = null, SR = 0;   // the page's GuiHost, the engine it draws over, its rate
 
       // The melody, written as the client's own events — the inverse
       // direction, data to score: `fromNotes` reduces them to a voice and the
@@ -193,6 +193,12 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
         // server brought up rather than one of its own.
         server = await new Server().boot();
         raw = server.engine;
+        // The rate the beats->samples conversion is expressed in, asked of the
+        // running engine -- the same call, in the same place, as the script's
+        // `query_info().nominal_sample_rate`. The audio context's own rate is
+        // the same number reached by a different door, which is how this pair
+        // came to ask one question two ways.
+        SR = (await server.queryInfo()).nominalSampleRate;
         // The page's host, and the ambient one from here on.
         host = await new GuiHost({ engine: raw }).boot();
 
@@ -215,7 +221,7 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
           // The rate the anchor's beats→samples conversion is expressed in
           // is the engine's own — in a page, its audio context's.
           source: pass, tempo: TEMPO, extent,
-          sampleRate: raw.context.sampleRate,
+          sampleRate: SR,
         });
         transport.locate(0.0);        // the cursor waits at the top
         // A pass ends by itself; this is the one loop that has to notice.

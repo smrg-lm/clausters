@@ -153,7 +153,9 @@ print(f"engraved {len(dl['notes'])} notes into {len(dl['prims'])} primitives")
 # %%
 session = Session.live(tempo=TEMPO)
 server = session.server
-sr = float(server.options.sample_rate)
+# `query_info` rather than the launch options: it is the one spelling both
+# clients have, so this file and its page twin ask the same question.
+sr = server.query_info().nominal_sample_rate
 gui = session.gui()
 win = scene(dl, sr).open()
 session.start()
