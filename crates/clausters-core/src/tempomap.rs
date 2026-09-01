@@ -92,7 +92,7 @@ impl Shape {
             1 => Some(Self::Linear),
             2 => Some(Self::Exponential),
             5 => match curvature.is_finite() {
-                true if curvature.abs() < CURVATURE_EPSILON => Some(Self::Linear),
+                true if curvature.abs() < crate::warp::CURVE_EPSILON => Some(Self::Linear),
                 true => Some(Self::Curvature(curvature)),
                 false => None,
             },
@@ -120,10 +120,13 @@ impl Shape {
                 // breakpoint departs from the tempo *stated* there.
                 u if u <= 0.0 => t0,
                 u if u >= 1.0 => t1,
-                u => {
-                    let (a, b) = curvature_terms(t0, t1, c);
-                    a + b * (c * u).exp()
-                }
+                u => match curvature_terms(t0, t1, c) {
+                    Some((a, b)) => a + b * (c * u).exp(),
+                    // A curvature this flat *is* linear -- the same rule
+                    // `Shape::from_parts` applies, held here too so a
+                    // hand-built `Curvature(0.0)` bends rather than diverges.
+                    None => t0 + (t1 - t0) * u,
+                },
             },
         }
     }
@@ -144,10 +147,13 @@ impl Shape {
                     (1.0 - (-u * ln_r).exp()) / (t0 * ln_r)
                 }
             },
-            Self::Curvature(c) => {
-                let (a, b) = curvature_terms(t0, t1, c);
-                (u - (((a + b * (c * u).exp()) / (a + b)).ln()) / c) / a
-            }
+            Self::Curvature(c) => match curvature_terms(t0, t1, c) {
+                Some((a, b)) => (u - (((a + b * (c * u).exp()) / (a + b)).ln()) / c) / a,
+                // Flat enough to be linear, and the integral has to agree with
+                // `tempo_at`'s fallback or the two would answer about
+                // different curves.
+                None => Self::Linear.secs_at(t0, t1, u),
+            },
         }
     }
 
@@ -240,12 +246,19 @@ impl Shape {
 
 /// Below this a curvature is linear. `Env`'s own threshold, so the knob reads
 /// the same in a tempo curve and in an amplitude curve.
-const CURVATURE_EPSILON: f64 = 0.001;
-
 /// `T(u) = A + B·e^{cu}` for a curvature `c`, as the two constants.
-fn curvature_terms(t0: f64, t1: f64, c: f64) -> (f64, f64) {
-    let d = (t1 - t0) / (1.0 - c.exp());
-    (t0 + d, -d)
+///
+/// The algebra is `warp`'s and is written once there
+/// ([`crate::warp::curve_terms_f64`]) — a bend is a bend whether it is a
+/// filter sweep or an accelerando, and this used to be a second copy of it,
+/// with a second copy of sclang's flatness threshold beside it.
+///
+/// `None` for a curvature flat enough to be the linear map, which is the case
+/// the old copy divided by zero on: `Shape::from_parts` folds a small
+/// curvature into [`Shape::Linear`], but nothing stopped a caller writing
+/// `Shape::Curvature(0.0)` by hand and getting an infinity.
+fn curvature_terms(t0: f64, t1: f64, c: f64) -> Option<(f64, f64)> {
+    crate::warp::curve_terms_f64(t0, t1, c).map(|(d, a, _grow)| (a, -d))
 }
 
 /// How the tempo behaves across one segment.
@@ -884,6 +897,29 @@ mod tests {
             for b in [-1.0, 0.0, 0.5, 7.25, 100.0] {
                 assert_eq!(map.secs_at(b), base_s + (b - base_b) / tempo);
                 assert_eq!(map.beats_at(base_s), base_b);
+            }
+        }
+    }
+
+    #[test]
+    fn a_curvature_flat_enough_to_be_linear_is_linear() {
+        // `Shape::from_parts` folds a small curvature into `Linear`, but
+        // nothing stops a caller building `Curvature(0.0)` in Rust, and the
+        // coefficients divide by `1 - e^c`. It used to give an infinity; the
+        // shared `warp` terms answer `None` there, and both the tempo and its
+        // integral fall back to the linear shape -- which they must do
+        // together, or the two would describe different curves.
+        for c in [0.0, 0.0005, -0.0009] {
+            let bent = Shape::Curvature(c);
+            for u in [0.0, 0.25, 0.5, 0.75, 1.0] {
+                assert_eq!(
+                    bent.tempo_at(1.0, 2.0, u),
+                    Shape::Linear.tempo_at(1.0, 2.0, u)
+                );
+                assert_eq!(
+                    bent.secs_at(1.0, 2.0, u),
+                    Shape::Linear.secs_at(1.0, 2.0, u)
+                );
             }
         }
     }

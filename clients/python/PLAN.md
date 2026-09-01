@@ -2053,7 +2053,7 @@ than being ticked here.
     the sentence that dissolved the tempo-ownership question, and it is the one
     worth applying first to the next one.
 
-- ⬜ **A tempo map and an automation are one structure read two ways** *(a
+- ✅ **A tempo map and an automation are one structure read two ways** *(a
   design, worked out with the user on 2026-09-01 while settling where a tempo
   map lives; read with the entry below, which is the same question from the
   drawing side)*. Tempo is a **parameter** of a composition, and this system
@@ -2093,6 +2093,33 @@ than being ticked here.
   the name `Curve` is **taken** inside `tempomap.rs` for the shape *between*
   two breakpoints; the whole-list type needs its own, which is the kind of
   decision that ends up in three books, so it is not made here.
+
+  **Narrowed and done** *(2026-09-01, by the user: "hay que unificar las
+  implementaciones de las operaciones iguales, partes, pero `Env` y `EnvGen` no
+  deben cambiar")*. The unified *type* above is more than the problem needs and
+  is not being built. What was actually duplicated is one function and one
+  number: `warp::curve_terms` and `tempomap::curvature_terms` computed the same
+  bend coefficients `(a, lo + a, e^c)` from the same algebra, each beside its
+  own copy of sclang's `0.001` flatness threshold. A bend is a bend whether it
+  bends a filter sweep or an accelerando.
+
+  It is one formula now, and **still two precisions**, which is the part that
+  had to be measured rather than assumed: `warp` computes in f32 because its
+  results equal the server's `RangeMapUGen` bit for bit, and the tempo map in
+  f64 because it inverts off the audio thread. Computing in f64 and rounding
+  does **not** reproduce the f32 answer — 751 thousand of 1.59 million triples
+  differ, by up to 6.1e-5 — so a shared f64 implementation would have moved
+  what the server plays. A macro generates the one formula at each width, and
+  the threshold comparison stays in the caller's own precision, since `0.001`
+  as an f32 is not `0.001` as an f64. `clock-vectors.json` regenerated
+  byte-identical, which is the proof nothing moved.
+
+  A bug rode along: `Shape::Curvature(0.0)` is constructible by hand and
+  divided by `1 - e^0`. The shared terms answer `None` there, and both the
+  tempo and its integral fall back to the linear shape — together, or they
+  would describe different curves.
+
+  `Env` and `EnvGen` were not touched and are not in the way of any of it.
 
 - ⬜ **A drawn curve is a list of points, and `Env` is an envelope for `EnvGen`**
   *(named 2026-08-30 by the user, sizing what a general curve editor would need)*.

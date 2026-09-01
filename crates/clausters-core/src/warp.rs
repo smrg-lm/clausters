@@ -299,19 +299,52 @@ pub fn curve_value(t: f32, lo: f32, hi: f32, curve: f32) -> f32 {
     Write::curve(lo, hi, curve).at(t)
 }
 
-/// The two coefficients a bend is written with, shared by both directions so
-/// the curve and its inverse cannot drift apart. `None` where the bend is flat
-/// enough to be the linear map — sclang's own 0.001 threshold, which is what
-/// keeps `curve = 0` from dividing by zero.
-#[inline]
-fn curve_terms(lo: f32, hi: f32, curve: f32) -> Option<(f32, f32, f32)> {
-    if curve.abs() < 0.001 {
-        return None;
-    }
-    let grow = curve.exp();
-    let a = (hi - lo) / (1.0 - grow);
-    Some((a, lo + a, grow))
+/// How flat a bend has to be to *be* the linear map — sclang's own threshold.
+///
+/// One number, named once. It is what keeps `curve = 0` from dividing by zero,
+/// and it is the same number the tempo map's shapes are read through, which is
+/// why it lives here rather than twice.
+pub const CURVE_EPSILON: f64 = 0.001;
+
+// The two coefficients a bend is written with, generated at **each precision
+// rather than shared through one**.
+//
+// The algebra is one thing and is written once, here. The precision is not
+// incidental on either side: `warp` computes in f32 because its results must
+// equal the server's `RangeMapUGen` bit for bit, and the tempo map computes in
+// f64 because it inverts off the audio thread and a beat has to come back
+// exactly. Computing in f64 and rounding does not reproduce the f32 answer --
+// measured over 1.59 million triples, 751 thousand of them differ, by up to
+// 6.1e-5 -- so a shared f64 implementation would silently move what the server
+// plays. A macro is what makes "one formula" true without making "one
+// precision" true with it.
+macro_rules! curve_terms_at {
+    ($name:ident, $float:ty) => {
+        /// The two coefficients a bend is written with, shared by every
+        /// direction so a curve and its inverse cannot drift apart: `(a, lo +
+        /// a, e^curve)`. `None` where the bend is flat enough to be the linear
+        /// map ([`CURVE_EPSILON`]).
+        #[inline]
+        pub(crate) fn $name(
+            lo: $float,
+            hi: $float,
+            curve: $float,
+        ) -> Option<($float, $float, $float)> {
+            // The comparison stays in the caller's precision: `0.001` as an
+            // f32 is not `0.001` as an f64, so casting up would move the
+            // threshold for a curvature sitting on it.
+            if curve.abs() < CURVE_EPSILON as $float {
+                return None;
+            }
+            let grow = curve.exp();
+            let a = (hi - lo) / (1.0 - grow);
+            Some((a, lo + a, grow))
+        }
+    };
 }
+
+curve_terms_at!(curve_terms, f32);
+curve_terms_at!(curve_terms_f64, f64);
 
 // ---- the eight named maps, each one pair of the primitives above ----
 //
