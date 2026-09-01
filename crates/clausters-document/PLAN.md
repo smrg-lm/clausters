@@ -562,7 +562,47 @@ Every entry is a checkbox, and a fixed one stays with the record of what was wro
 
   It is the cleanest possible demonstration of the hole this crate closes, and worth keeping as one: nobody wrote a bug. The client is right to refuse, the host is right to draw what the hand did, and there simply was no message in the protocol capable of carrying "no". The fix is O3 and nothing else - the refusal is the previous value, pushed back and stamped - and this case is its acceptance test.
 
-- ⬜ **`TimeUnit::to_beats` takes a length and a scalar, and no position — and the format has nowhere to put a tempo** *(found 2026-08-31, auditing the call sites of the client's frozen-tempo bridge; `clients/python/PLAN.md` holds the other half)*. `TimeUnit::to_beats(length, tempo)` (`src/lib.rs`) converts a length in seconds to beats by multiplying by one number. Under a tempo that changes along the piece that operation is not imprecise, it is **undefined**: a beat is a logical coordinate, so the same stretch of seconds reaches a different beat depending on where it starts. Its caller `Node::end(tempo)` already has the onset in hand (`self.offset + self.duration_unit().to_beats(d, tempo)`) and simply does not pass it, so the local fix is to take the position — or to return the end beat rather than a "length in beats", which is the honest shape.
+- ⬜ **A selection's mapping states one tempo, so a selection cannot cross a
+  tempo change** *(found 2026-09-01, taking the entry below — the one caller
+  that legitimately kept a multiplication)*. `resolve::Mapping` carries
+  `frames_per_beat` and `frames_per_second`, whose ratio is a tempo, and every
+  beats↔frames conversion in `resolve.rs` uses it. That is correct for what a
+  `Mapping` *says* — it declares a fixed relation between the two axes — and it
+  quietly makes the surrounding operation wrong wherever the piece's tempo
+  moves: a selection that starts before an accelerando and ends after it
+  resolves to the wrong frames at one of its two edges.
+
+  It is filed rather than fixed because it is a different shape of change from
+  the one beside it. `Member::end` needed the *caller's* answer for one length;
+  a `Mapping` is a value handed around and read many times, so replacing its
+  ratio with a map means deciding what a `Mapping` is — a stated constant that
+  a caller must not build across a tempo change, or a reference to the piece's
+  map. The second is the same identity question the tempo value already waits
+  on, so the two are read together.
+
+- ✅ **`TimeUnit::to_beats` takes a length and a scalar, and no position — and the format has nowhere to put a tempo** *(found 2026-08-31, auditing the call sites of the client's frozen-tempo bridge; `clients/python/PLAN.md` holds the other half)*. `TimeUnit::to_beats(length, tempo)` (`src/lib.rs`) converts a length in seconds to beats by multiplying by one number. Under a tempo that changes along the piece that operation is not imprecise, it is **undefined**: a beat is a logical coordinate, so the same stretch of seconds reaches a different beat depending on where it starts. Its caller `Node::end(tempo)` already has the onset in hand (`self.offset + self.duration_unit().to_beats(d, tempo)`) and simply does not pass it, so the local fix is to take the position — or to return the end beat rather than a "length in beats", which is the honest shape.
+
+  **Fixed** *(2026-09-01)*: `TimeUnit::to_beats` is gone and the crate stops
+  converting. `Member::end` and `Body::relation` take a `SecsToBeats` — a
+  closure from `(onset, seconds)` to beats — so the caller, who holds the
+  piece's map, answers the question the document cannot. A length already in
+  beats never reaches it. `at_tempo(bps)` is the constant-tempo converter,
+  written out so a caller that genuinely has one number **says so at the call
+  site** instead of a scalar assuming it everywhere. A test places two
+  identical takes at different beats under a piecewise tempo and reads two
+  different ends, which is the defect made visible.
+
+  The format still has nowhere to put a tempo, and that is no longer this
+  entry's problem: a tempo map is a **value**, not a field, so what the format
+  needs is an *identity* to reference one by — see "A tempo map is a value, and
+  nothing said so" in `clients/python/PLAN.md`. Nothing here waits on it.
+
+  One conversion stayed a multiplication and is worth naming: `resolve.rs`'s
+  `Mapping::length_in_beats`. A `Mapping` states its own `frames_per_beat`, so
+  its tempo is a constant *by construction* and the multiplication is correct
+  for what that struct expresses. What it cannot express is a selection
+  resolved across a tempo change — a wider question, filed below rather than
+  assumed away.
 
   What it actually needs is the piece's **time map** (`clausters_core::tempomap::TempoMap`, which shipped 2026-08-31 with the client fix): the beat→second function, the integral of `1/tempo`. Both clients bind it, the clock holds one, and `Node::end` would take one instead of a scalar. That crosses the FFI, which is the same decision as the one below.
 

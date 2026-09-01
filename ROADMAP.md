@@ -77,17 +77,6 @@ Each is small, owned by its plan, and blocked by nothing.
 The section fills from section 3's review and empties again; a fix that lands
 leaves no line here, because its plan's checkbox and the commit already carry it.
 
-- ⬜ **`TimeUnit::to_beats` takes a length and a scalar, and no position**
-  *(`clients/python/PLAN.md` and `crates/clausters-document/PLAN.md`, Found by
-  use — one entry with a half in each)*. `TimeUnit::to_beats(length, tempo)`
-  converts seconds to beats with one number, which under a changing tempo is
-  undefined rather than imprecise: the same stretch reaches a different beat
-  depending on where it starts. **The decision it waited on is taken** — a
-  tempo map is a value, not a field of anything — so the fix is the local one
-  the entry already names: `Node::end` stops converting and hands back the
-  length with its unit, for whoever holds the map to resolve. That also keeps
-  `clausters-document` a serde tree with no dependencies.
-
 - ⬜ **A tempo gesture can only be written at "now"** *(`clients/python/PLAN.md`,
   Found by use)*. `set_tempo` anchors at `beats()` and cannot be told where to
   write, so a gesture asked for at beat 3 from inside a routine lands at

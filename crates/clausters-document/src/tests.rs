@@ -179,13 +179,16 @@ fn the_temporal_relation_reads_the_placements_and_nothing_else() {
         ],
     );
     assert_eq!(
-        simultaneous.body.relation(1.0),
+        simultaneous.body.relation(&at_tempo(1.0)),
         Some(Relation::Simultaneous)
     );
 
     // A single member is simultaneous with itself.
     let one = aggregate(1, vec![placed(1.0, Some(2.0), clang(2))]);
-    assert_eq!(one.body.relation(1.0), Some(Relation::Simultaneous));
+    assert_eq!(
+        one.body.relation(&at_tempo(1.0)),
+        Some(Relation::Simultaneous)
+    );
 
     // Successive: tiling contiguously, in any order of declaration.
     let successive = aggregate(
@@ -195,7 +198,10 @@ fn the_temporal_relation_reads_the_placements_and_nothing_else() {
             placed(0.0, Some(2.0), clang(2)),
         ],
     );
-    assert_eq!(successive.body.relation(1.0), Some(Relation::Successive));
+    assert_eq!(
+        successive.body.relation(&at_tempo(1.0)),
+        Some(Relation::Successive)
+    );
 
     // A gap makes it mixed -- silence between two members is a relation, not a
     // rounding error.
@@ -206,11 +212,55 @@ fn the_temporal_relation_reads_the_placements_and_nothing_else() {
             placed(2.0, Some(1.0), clang(3)),
         ],
     );
-    assert_eq!(gap.body.relation(1.0), Some(Relation::Mixed));
+    assert_eq!(gap.body.relation(&at_tempo(1.0)), Some(Relation::Mixed));
 
     // And a body that holds no members has no relation to report.
-    assert_eq!(clang(1).body.relation(1.0), None);
-    assert_eq!(aggregate(1, vec![]).body.relation(1.0), None);
+    assert_eq!(clang(1).body.relation(&at_tempo(1.0)), None);
+    assert_eq!(aggregate(1, vec![]).body.relation(&at_tempo(1.0)), None);
+}
+
+#[test]
+fn a_length_in_seconds_ends_where_it_started_says_it_does() {
+    // Why the crate stopped converting with a scalar. Two identical takes --
+    // same body, same length in seconds -- placed at different beats. Under a
+    // tempo that changes, the same stretch of seconds covers a different number
+    // of beats depending on where it starts, so the two ends are not the same
+    // distance from their onsets. A single `tempo` argument cannot express
+    // that, which is why the caller supplies the conversion.
+    let take = |id| {
+        node(
+            id,
+            Body::Vector {
+                source: SourceRef {
+                    source: SourceId(1),
+                    lifetime: Lifetime::Session,
+                    generation: 1,
+                    range: None,
+                },
+                config: Opaque::none(),
+            },
+        )
+    };
+    let early = placed(0.0, Some(2.0), take(2)); // two seconds at beat 0
+    let late = placed(8.0, Some(2.0), take(3)); // two seconds at beat 8
+
+    // Tempo 1 bps until beat 4, 2 bps after: the same two seconds are two beats
+    // in the first stretch and four in the second.
+    let piecewise = |at: Beats, secs: f64| if at < 4.0 { secs } else { secs * 2.0 };
+    assert_eq!(early.end(&piecewise), Some(2.0));
+    assert_eq!(late.end(&piecewise), Some(12.0));
+
+    // At one constant tempo they agree, which is the case `at_tempo` is for --
+    // and the case the old scalar silently assumed everywhere.
+    assert_eq!(early.end(&at_tempo(1.0)), Some(2.0));
+    assert_eq!(late.end(&at_tempo(1.0)), Some(10.0));
+
+    // A length already in beats never reaches the converter at all.
+    let notes = placed(8.0, Some(2.0), clang(4));
+    assert_eq!(
+        notes.end(&|_, _| panic!("beats must not be converted")),
+        Some(10.0)
+    );
 }
 
 #[test]
@@ -222,7 +272,7 @@ fn a_members_duration_falls_back_to_the_elements_own() {
     let mut second = clang(3);
     second.duration = Some(2.0);
     let s = aggregate(1, vec![placed(0.0, None, first), placed(2.0, None, second)]);
-    assert_eq!(s.body.relation(1.0), Some(Relation::Successive));
+    assert_eq!(s.body.relation(&at_tempo(1.0)), Some(Relation::Successive));
 }
 
 #[test]
@@ -238,7 +288,10 @@ fn placements_that_round_tripped_through_floats_still_read_as_simultaneous() {
             placed(drift, Some(4.0 - drift), clang(3)),
         ],
     );
-    assert_eq!(s.body.relation(1.0), Some(Relation::Simultaneous));
+    assert_eq!(
+        s.body.relation(&at_tempo(1.0)),
+        Some(Relation::Simultaneous)
+    );
 }
 
 #[test]

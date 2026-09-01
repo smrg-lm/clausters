@@ -95,8 +95,18 @@ impl Mapping {
     }
 
     /// A length in its own unit, as beats of the arrangement.
+    ///
+    /// A `Mapping` states its own `frames_per_beat`, so its tempo is a
+    /// **constant by construction** and the multiplication is the right one
+    /// here — which is why this does not take the piece's converter. A
+    /// selection resolved across a tempo change is a wider question than this
+    /// mapping expresses, and it is written down in the plan rather than
+    /// assumed away.
     fn length_in_beats(self, length: f64, unit: TimeUnit) -> Beats {
-        unit.to_beats(length, self.tempo())
+        match unit {
+            TimeUnit::Beats => length,
+            TimeUnit::Seconds => length * self.tempo(),
+        }
     }
 
     /// A position in the selection's own unit, as beats.

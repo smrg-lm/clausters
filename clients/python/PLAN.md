@@ -1430,7 +1430,7 @@ work, where a pending item reads as done.)*
   **identity**, so a save can name one; the map serializes today and nothing
   references it yet.
 
-- ⬜ **`TimeUnit::to_beats` takes a length and a scalar, and no position**
+- ✅ **`TimeUnit::to_beats` takes a length and a scalar, and no position**
   *(found 2026-08-31, auditing the call sites of the entry above)*.
   `crates/clausters-document/src/lib.rs`'s `TimeUnit::to_beats(length, tempo)`
   converts a length in seconds to beats with one number. Under a tempo that
@@ -1442,6 +1442,14 @@ work, where a pending item reads as done.)*
   map across the FFI, which is the same decision as who owns it. **The
   document's half is where a piece's tempo would be stored at all**, so this
   and the ownership question above are one piece of work.
+
+  **Fixed** *(2026-09-01)*, and the FFI never came into it — which is what the
+  ownership answer bought. `TimeUnit::to_beats` is gone; `Member::end` and
+  `Body::relation` take a closure from `(onset, seconds)` to beats, so the
+  caller who holds the map answers, and the crate stays a serde tree with no
+  dependencies. `at_tempo(bps)` is the constant-tempo converter, so a caller
+  that has one number says so at the call site. The crate's half of this entry
+  carries the detail.
 
 - ✅ **The clock's tempo read the ramp's destination instead of the tempo
   sounding** *(found 2026-08-31, writing the `ramp_tempo` example)*.

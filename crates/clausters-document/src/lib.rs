@@ -91,14 +91,25 @@ pub enum TimeUnit {
     Seconds,
 }
 
-impl TimeUnit {
-    /// This length in beats, given how many beats a second is worth.
-    pub fn to_beats(self, length: f64, tempo: f64) -> Beats {
-        match self {
-            TimeUnit::Beats => length,
-            TimeUnit::Seconds => length * tempo,
-        }
-    }
+/// Converts a length in **seconds** starting at a given beat into beats.
+///
+/// The crate does not do this itself, and that is the point. A beat is a
+/// logical coordinate, so under a changing tempo the same stretch of seconds
+/// reaches a different beat depending on where it starts: the conversion needs
+/// the piece's tempo map and a position, and the document transports
+/// references without interpreting them. So it takes the onset and the length
+/// and hands back the answer.
+///
+/// A length already in beats never reaches one of these.
+pub type SecsToBeats<'a> = &'a dyn Fn(Beats, f64) -> Beats;
+
+/// The conversion for a piece at **one constant tempo** — the only case where
+/// a length in seconds is a multiplication.
+///
+/// Written out so a caller that genuinely has one number says so at the call
+/// site, instead of a general converter quietly assuming it.
+pub fn at_tempo(tempo: f64) -> impl Fn(Beats, f64) -> Beats {
+    move |_at, secs| secs * tempo
 }
 
 /// A node's identity within a document. Client-allocated and stable across
@@ -261,11 +272,17 @@ impl Member {
     }
 
     /// Where this placement ends, in the aggregate's beats: its offset plus its
-    /// length converted at `tempo` (beats per second). `None` when it has no
-    /// length to end at.
-    pub fn end(&self, tempo: f64) -> Option<Beats> {
-        self.length()
-            .map(|d| self.offset + self.duration_unit().to_beats(d, tempo))
+    /// length. `None` when it has no length to end at.
+    ///
+    /// A length in beats is added; a length in seconds goes through
+    /// `secs_to_beats` with **this placement's onset**, since that is what the
+    /// answer depends on. [`at_tempo`] is the constant-tempo converter for a
+    /// caller that has one.
+    pub fn end(&self, secs_to_beats: SecsToBeats) -> Option<Beats> {
+        self.length().map(|d| match self.duration_unit() {
+            TimeUnit::Beats => self.offset + d,
+            TimeUnit::Seconds => self.offset + secs_to_beats(self.offset, d),
+        })
     }
 }
 
@@ -591,11 +608,12 @@ impl Body {
     /// read as [`Relation::Successive`]; anything else is
     /// [`Relation::Mixed`].
     ///
-    /// `tempo` (beats per second) is what puts a member's end on the same axis
-    /// as its offset: an offset is in beats and a length is in the unit of the
-    /// data it measures, so a lane of takes cannot be read against a lane of notes
-    /// without it. A body whose members are all measured in beats ignores it.
-    pub fn relation(&self, tempo: f64) -> Option<Relation> {
+    /// `secs_to_beats` is what puts a member's end on the same axis as its
+    /// offset: an offset is in beats and a length is in the unit of the data it
+    /// measures, so a lane of takes cannot be read against a lane of notes
+    /// without it. A body whose members are all measured in beats never calls
+    /// it. [`at_tempo`] is the converter for a piece at one constant tempo.
+    pub fn relation(&self, secs_to_beats: SecsToBeats) -> Option<Relation> {
         let members = match self {
             Body::Aggregate { members, .. } | Body::Sequence { members, .. } => members,
             _ => return None,
@@ -604,7 +622,7 @@ impl Body {
             return None;
         }
         let starts: Vec<Beats> = members.iter().map(|m| m.offset).collect();
-        let ends: Vec<Option<Beats>> = members.iter().map(|m| m.end(tempo)).collect();
+        let ends: Vec<Option<Beats>> = members.iter().map(|m| m.end(secs_to_beats)).collect();
         if all_close(&starts) && ends.iter().all(Option::is_some) {
             let ends: Vec<Beats> = ends.iter().map(|e| e.unwrap()).collect();
             if all_close(&ends) {
