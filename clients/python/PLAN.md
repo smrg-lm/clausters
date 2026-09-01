@@ -1570,7 +1570,7 @@ work, where a pending item reads as done.)*
 - ⬜ **Three conversions are public on one side and private on the other**
   *(found 2026-09-01, auditing every conversion name after the mel/bark pair
   was added — the user asking whether any had been left in an `a2b`/`b2a`
-  shape)*. The naming came back clean and the audit turned up something else.
+  shape; two of the three closed the same day, the third is a decision)*. The naming came back clean and the audit turned up something else.
 
   **On names there is nothing to fix**, and it is worth writing down so nobody
   re-opens it: the client uses three forms and each is the right one where it
@@ -1587,20 +1587,33 @@ work, where a pending item reads as done.)*
   the mel/bark entry below — a capability that exists in both clients and is
   reachable in one:
 
-  - `beats_to_secs`/`secs_to_beats` are exported from `base/timebase.ts` and
-    exist in Python only as `_native.beats_to_secs`, behind the underscore.
-  - `patch_to_widget` is `patchToWidget`, exported, in TS and `_patch_to_widget`,
-    private, in Python.
-  - Export **depth** differs for what both do have: `bar`, `beat_in_bar`,
+  - ✅ `beats_to_secs`/`secs_to_beats` were exported from `base/timebase.ts` and
+    existed in Python only as `_native.beats_to_secs`, behind the underscore.
+  - ✅ `patch_to_widget` was `patchToWidget`, exported, in TS and
+    `_patch_to_widget`, private, in Python.
+  - ⬜ Export **depth** differs for what both do have: `bar`, `beat_in_bar`,
     `quant_delay`, `secs_to_samples`, `samples_to_secs` and the whole `builtins`
     module are top-level in the web index and sub-module-only in Python. That is
     why the two halves of `views/rulers` import the same calls from different
     places — a divergence a pair checker would report and a reader reads as
-    idiom.
+    idiom. **Open**, and the one of the three that has to be decided upward:
+    which of the two depths is the client's.
 
-  Each is decided the same way: whichever side has less is the gap, and the
-  answer is either to publish it in both or to say in `docs/bindings.md` why not.
-  Not done here because the user asked for the audit and not the change.
+  **The first two closed downward, not upward** *(2026-09-01)*, and that is the
+  finding worth keeping. The reflex on a one-sided surface is to publish it on
+  the other side; asking first whether it is of general use answered no twice.
+  `patch_to_widget` takes the internal `{boxes, cords}` model, and its only
+  callers in either client are the two `widget()` methods of `DefPatch`/
+  `GraphPatch` — a user holds the patch, not its parts. The affine pair takes
+  the anchor triple `(tempo, base_beats, base_secs)`, which is a clock's own
+  state, and **under a changing tempo the affine form is the wrong answer** —
+  the same stretch of seconds reaches a different beat depending on where it
+  starts, which is the defect the `to_beats` entry above is about. Publishing it
+  would have handed out the bug the map exists to prevent. Both are now private
+  in both clients; the parity test that used the affine pair calls the core
+  directly, which is what it was actually comparing. The contrast that settles
+  it: `secs_to_samples`/`samples_to_secs` **are** general — a caller holds a
+  sample rate — and both clients publish them.
 
 - ⬜ **Nothing checks that a pair of examples makes the same calls, and a hand
   audit does not scale** *(found 2026-08-31, trying to answer "corregilos

@@ -28,14 +28,21 @@ import type { TimeUnit } from "../src/base/time.ts";
 import {
     bar,
     beatInBar,
-    beatsToSecs,
     quantDelay,
     samplesToSecs,
-    secsToBeats,
     secsToSamples,
     unixToNtp,
     unixToSample,
 } from "../src/base/timebase.ts";
+// The affine pair is the core's and the package deliberately does not wrap it
+// (see `base/timebase.ts`): it takes a clock's own anchor triple, and under a
+// changing tempo the map is the right answer. The parity that matters is
+// against the core both clients call, so the test calls it directly rather
+// than asking the package for a door that exists for nobody else.
+import {
+    beats_to_secs as beatsToSecs,
+    secs_to_beats as secsToBeats,
+} from "../src/core/clausters_core_web.js";
 import { Rng } from "../src/base/rand.ts";
 import * as builtins from "../src/base/builtins.ts";
 import { degreeToMidinote } from "../src/base/builtins.ts";

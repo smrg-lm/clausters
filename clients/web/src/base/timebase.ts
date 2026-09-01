@@ -30,10 +30,8 @@
 import {
     bar as coreBar,
     beat_in_bar as coreBeatInBar,
-    beats_to_secs as coreBeatsToSecs,
     quant_delay as coreQuantDelay,
     samples_to_secs as coreSamplesToSecs,
-    secs_to_beats as coreSecsToBeats,
     secs_to_samples as coreSecsToSamples,
     unix_to_ntp as coreUnixToNtp,
     unix_to_sample as coreUnixToSample,
@@ -41,24 +39,15 @@ import {
 
 // ---- the conversions ----
 
-/**
- * Seconds at `beats` on the affine clock `(tempo, baseBeats, baseSecs)` —
- * the pair `(baseBeats, baseSecs)` is the instant a tempo change pinned.
- */
-export const beatsToSecs = (
-    tempo: number,
-    baseBeats: number,
-    baseSecs: number,
-    beats: number,
-): number => coreBeatsToSecs(tempo, baseBeats, baseSecs, beats);
-
-/** Beats at `secs` on the same affine clock. */
-export const secsToBeats = (
-    tempo: number,
-    baseBeats: number,
-    baseSecs: number,
-    secs: number,
-): number => coreSecsToBeats(tempo, baseBeats, baseSecs, secs);
+// The core's **affine** pair (`beats_to_secs`/`secs_to_beats`) is deliberately
+// not wrapped here. It takes the anchor triple `(tempo, baseBeats, baseSecs)`,
+// which is a clock's own internal state and not something a caller holds — and
+// under a changing tempo the affine form is the wrong answer, since the same
+// stretch of seconds reaches a different beat depending on where it starts.
+// A clock's owner wants `TempoClock.beats2secs`/`secs2beats` and a piece's
+// owner wants the map (`TempoMap.secsAt`/`beatsAt`); both of those already go
+// through the map. Python keeps them behind `_native` for the same reason.
+// What is below is the pair a caller *does* hold both arguments for.
 
 /** Seconds → sample count at `rate` (ties to even, the server's rounding). */
 export const secsToSamples = (secs: number, rate: number): number =>

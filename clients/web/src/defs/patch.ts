@@ -412,7 +412,7 @@ function splitIndex(boxes: PatchBox[], box: number, flat: number, dir: "in" | "o
  * with split inlet/outlet lists and cords as flat `[fromBox, outlet, toBox,
  * inlet]` quadruples.
  */
-export function patchToWidget(
+function patchToWidget(
     boxes: PatchBox[],
     cords: Cord[],
     geometry: Record<number, readonly [number, number]> = {},
@@ -741,7 +741,7 @@ export class DefPatch {
 
     /**
      * The patch as the `patch` widget draws it — boxes with split
-     * inlets/outlets and flat cord quadruples (see {@link patchToWidget}), the
+     * inlets/outlets and flat cord quadruples (see `patchToWidget`), the
      * same schema level 1 uses, with init cords dashed.
      */
     toWidget(geometry: Record<number, readonly [number, number]> = {}): PatchWidget {

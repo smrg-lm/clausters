@@ -11,7 +11,7 @@
 // `./server/` by what a call does (the handle itself, the configuration, the
 // queries, the subscriptions).
 
-export { DefPatch, GraphPatch, patchToWidget, synthdefPorts } from "./patch.ts";
+export { DefPatch, GraphPatch, synthdefPorts } from "./patch.ts";
 export type {
     PatchBox,
     BoxKind,
