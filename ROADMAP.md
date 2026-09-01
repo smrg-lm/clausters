@@ -94,25 +94,12 @@ leaves no line here, because its plan's checkbox and the commit already carry it
 Same size of work, except the shape depends on an answer. The decision is named
 on each one; none of them is being taken by this file.
 
-- ⬜ **Two views of one arrangement keep two histories, so an undo writes a
-  state nobody was in** *(`clients/python/PLAN.md`, Found by use)*. Measured, in
-  both clients: the log is minted per `Editor` while the tree is shared, so a
-  second window over one composition edits one dataset through two histories,
-  and stepping one of them reverts across the other's edits. The rule it breaks
-  is not in question — a stack belongs to the data, and an undo in one view
-  updates the others.
-  **It now has a plan**: the edit stack is `O15`-`O19` in
-  `crates/clausters-document/PLAN.md` — the registry of logs held by the session
-  (`O15`) is the milestone that closes this, and `O19` is the pass that takes
-  the log out of both clients. What is still a decision inside it, and named
-  there, is how an editable structure is identified across the seam, which is
-  read against `O14`. The containment until then is in the entry: one editor is
-  one history, so a second window over one composition is read-only.
-
-**The four that came before are closed.** Three were taken on 2026-08-27 and
-one on 2026-09-01. The last is worth naming because it did not get an answer,
-it stopped being a question: **who owns a piece's tempo map** — neither the
-clock nor the document, since a `TempoMap` is a *value* on the beat axis, the
+**Nothing open here.** The five that came before are closed: three on
+2026-08-27, and two on 2026-09-01 — the tempo map's owner, and how an editable
+structure is identified across the seam, whose answer (the registry mints it)
+moved the edit stack to section 4. The tempo one is worth naming because it did
+not get an answer, it stopped being a question: **who owns a piece's tempo map** —
+neither the clock nor the document, since a `TempoMap` is a *value* on the beat axis, the
 peer of a `Timeline`, and a clock is the process that moves over one. What that
 left is an identity, so a save can name a map, and that half waits on what a
 document is rather than on this. The two fixes it was blocking moved to
@@ -178,7 +165,20 @@ its plan; the plan is where its acceptance is read.
 
 ### Ready — no decision in front of them
 
-**Nothing open here.**
+- ⬜ **Two views of one arrangement keep two histories, so an undo writes a
+  state nobody was in**, `O15`-`O19` *(`crates/clausters-document/PLAN.md`, "The
+  stack belongs to the data: one registry per editing context")*. Measured, in
+  both clients: the log is minted per `Editor` while the tree is shared, so a
+  second window over one composition edits one dataset through two histories,
+  and stepping one of them reverts across the other's edits. The five milestones
+  are the edit stack — one registry per editing context holding one ordered
+  pile (`O15`), a generic pile with each domain's own verbs (`O16`), the
+  transaction (`O17`), what a history refuses to promise (`O18`), and the pass
+  that takes the log out of both clients (`O19`). The identity question that
+  used to sit in front of them was answered on 2026-09-01 (the registry mints
+  it), so nothing is. The containment until they land is in the defect's own
+  entry (`clients/python/PLAN.md`, Found by use): one editor is one history, so
+  a second window over one composition is read-only.
 
 ### Waiting on a decision
 

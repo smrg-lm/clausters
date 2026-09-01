@@ -1305,6 +1305,15 @@ work, where a pending item reads as done.)*
   no correct way to do it, and the honest thing is that the second window is
   read-only. Both clients.
 
+  **The shape it wants is decided and lives in the crate's plan**
+  (`crates/clausters-document/PLAN.md`, `O15`-`O19`, reshaped 2026-09-01): one
+  registry per editing context, holding one ordered pile, with the identity
+  minted on registration — so an independent structure the client built gets a
+  history with no composition behind it, and a `GuiDef` composing several
+  editable subviews gets one order over all of them without a second mechanism.
+  `O19` is the pass that lands it here: `Editor` stops constructing a `Log`, and
+  the read-only containment above goes away with it.
+
 - ⬜ **An edit round-trips a note through the document, so a key the document
   cannot hold does not survive it** *(found 2026-08-31, by a crash while
   editing a note in a piece that had already played)*. A note's `Event` is not
