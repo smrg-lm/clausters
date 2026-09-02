@@ -1256,7 +1256,7 @@ work, where a pending item reads as done.)*
   executable — left as it is, and named here so it is not rediscovered as a
   surprise.
 
-- ⬜ **Two views of one arrangement keep two histories, so an undo writes a state
+- ✅ **Two views of one arrangement keep two histories, so an undo writes a state
   nobody was in** *(found 2026-08-30 by the user, arguing that an undo stack
   belongs to the data and not to the view; measured the same day)*. `Editor`
   mints its own history — `self._log = _native.Log()` per instance, and its own
@@ -1305,14 +1305,20 @@ work, where a pending item reads as done.)*
   no correct way to do it, and the honest thing is that the second window is
   read-only. Both clients.
 
-  **The shape it wants is decided and lives in the crate's plan**
-  (`crates/clausters-document/PLAN.md`, `O15`-`O19`, reshaped 2026-09-01): one
+  **Fixed 2026-09-01 by `O15`-`O19`** (`crates/clausters-document/PLAN.md`): one
   registry per editing context, holding one ordered pile, with the identity
   minted on registration — so an independent structure the client built gets a
   history with no composition behind it, and a `GuiDef` composing several
   editable subviews gets one order over all of them without a second mechanism.
-  `O19` is the pass that lands it here: `Editor` stops constructing a `Log`, and
-  the read-only containment above goes away with it.
+  The containment above is gone: two windows over one composition are both
+  editable, and an undo in either updates both.
+
+  **What the fix had to include, and the measurement above did not say:** the log
+  was only half of what an editor was holding. Each also derived its own
+  `Document` from the same loose objects, so sharing a log alone would have
+  stepped one history over two documents. The whole editing context moved to the
+  arrangement (`clausters/gui/editing.py`), which is the "editable structure that
+  owns its model and its log" this entry asked for.
 
 - ⬜ **An edit round-trips a note through the document, so a key the document
   cannot hold does not survive it** *(found 2026-08-31, by a crash while

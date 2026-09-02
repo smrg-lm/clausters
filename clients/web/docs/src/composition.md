@@ -215,8 +215,29 @@ intent — where the hand put it, absolute — and the shared crate applies it: 
 `quant` grid snaps it *there*, and what comes back is the value that actually
 holds, which the editor projects onto the arrangement and answers the host with.
 So a clip lands on the grid although nothing in this client snapped anything, and
-`undo()`/`redo()` walk the crate's log rather than a history a view kept for
+`undo()`/`redo()` walk the crate's pile rather than a history a view kept for
 itself.
+
+That pile belongs to the **arrangement**, so two windows over one piece find the
+same one:
+
+```ts
+const multitrack = new Editor(piece, { sampleRate });
+const roll = new Editor(piece, { sampleRate });   // a second window, same piece
+
+multitrack.apply(...gui.poll());   // a clip is dragged here
+roll.canUndo;                      // true: it is showing the data that moved
+roll.undo();                       // and the clip springs back in both
+```
+
+A history an editor kept would see only the gestures *that* editor made, so a
+script editing the arrangement or a second view would leave it describing a
+composition that has moved on — and undoing then writes a state nobody was ever
+in. It holds for a window over a *part* of the piece too: a dedicated roll of
+one track edits through the composition's history rather than opening a second
+one over the same notes. What each window keeps for itself is what a window can
+see — its selection, its zoom, which layer the hand is on — and none of that is
+ever an entry in a history.
 
 A trim, a split and a join are the same round trip in the same one edit each: a
 placement is a **window onto** an element, so shortening a clip over its own

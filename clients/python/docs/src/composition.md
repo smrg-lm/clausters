@@ -491,8 +491,26 @@ under the cursor — and `Editor.apply` answers it like any other event.
 A log an editor keeps sees only the gestures *that editor* made — so a script
 that edits the arrangement, a second view on the same piece, or a re-render
 leaves it describing a composition that has moved on, and undoing then writes a
-state nobody was ever in. One history per document, wherever the edits come
+state nobody was ever in. One history per composition, wherever the edits come
 from, is the only version of this that stays true.
+
+So the history belongs to the **arrangement**, and two windows over one piece
+find the same one:
+
+```python
+multitrack = Editor(piece, sample_rate=sr)
+roll = Editor(piece, sample_rate=sr)      # a second window, same composition
+
+multitrack.apply(*gui.poll())             # a clip is dragged here
+roll.can_undo                             # True: it is showing the data that moved
+roll.undo()                               # and the clip springs back in both
+```
+
+That holds for a window over a *part* of the piece too — a dedicated roll of one
+track edits through the composition's history rather than opening a second one
+over the same notes. What each window keeps for itself is what a window can see:
+its selection, its zoom, which layer the hand is on. None of that is ever an
+entry in a history, which is the same line drawn twice.
 
 Two consequences follow, and both are the point rather than a limitation. The
 **grid is applied by the crate**, not by the editor: a drag states where the

@@ -24,6 +24,7 @@ import {
     Vector,
 } from "../src/form/index.ts";
 import type { SourceLike } from "../src/form/index.ts";
+import { Editing } from "../src/gui/editing.ts";
 import { Editor } from "../src/gui/editor.ts";
 import { TempoMap } from "../src/base/time.ts";
 import type { GuiHost, PropValue } from "../src/gui/host.ts";
@@ -1001,4 +1002,46 @@ test("a sample paste is refused because the audio has an owner", async () => {
         false,
     );
     assert.match(String(host.reasons.at(-1)), /samples are written by their owner/);
+});
+
+test("two editors over one composition keep one history", () => {
+    // O19's acceptance, and the inverse of the defect it was opened for. Two
+    // windows over one composition used to mint a history each, so stepping one
+    // of them reverted across the other's edits and wrote a state nobody was
+    // ever in. The history belongs to the arrangement now, so both windows
+    // reach the same one.
+    const piece = song();
+    const a = editor(piece, { quant: 0.25 });
+    const b = editor(piece, { quant: 0.25 });
+    assert.equal(Editing.of(piece), Editing.of(piece), "one context per element");
+
+    const roll = clipsOf(lanes(a.draw())[1] as GuiNode)[0] as GuiNode;
+    const member = (piece.handles[1]?.element as Aggregate).handles[0];
+    const start = member?.offset;
+    a.apply("/gui_event", clipEvent(roll.id as number, 5 * BEAT, 2 * BEAT));
+    const moved = member?.offset;
+    assert.notEqual(moved, start);
+
+    // The second window can undo what the first did -- which is the half that
+    // used to be false: `b.canUndo` was false, and b could not see the edit at
+    // all even though it was showing the data it changed.
+    assert.equal(b.canUndo, true);
+    assert.equal(b.undoLabel, a.undoLabel);
+    assert.equal(b.undo(), true);
+    assert.equal(member?.offset, start, "and the undo reached the arrangement");
+    assert.equal(a.canUndo, false, "one order, not two");
+});
+
+test("a view over a part of the composition reaches the same history", () => {
+    // A dedicated roll of one track is a view over data the multitrack is
+    // already showing, so it edits through the composition's history rather
+    // than minting a second one over the same dataset.
+    const piece = song();
+    const whole = editor(piece);
+    whole.draw();
+    const roll = clipsOf(lanes(whole.draw())[1] as GuiNode)[0] as GuiNode;
+    whole.apply("/gui_event", clipEvent(roll.id as number, 5 * BEAT, 2 * BEAT));
+
+    const lane = piece.handles[1]?.element as Element;
+    assert.equal(Editing.of(lane), Editing.of(piece));
 });

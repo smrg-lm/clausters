@@ -58,7 +58,6 @@ import {
     flatten,
     leafConfig,
     leafNode,
-    nextNodeId,
     render as renderElement,
     setDocId,
     toBeats,
@@ -66,6 +65,8 @@ import {
 } from "../form/index.ts";
 import type { Member } from "../form/index.ts";
 import { FIRST_VERSION } from "../form/document.ts";
+import { Editing } from "./editing.ts";
+import type { Indexed } from "./editing.ts";
 import { Automation } from "../seq/automation.ts";
 import { Event as SeqEvent } from "../seq/event.ts";
 import { MidiItem, OscItem, Timeline } from "../seq/timeline.ts";
@@ -284,14 +285,14 @@ export class Editor {
     private rollElement: Element | null = null;
     private signalElement: Element | null = null;
     private measures: Measure[] = ["peak", "rms"];
-    /** The composition's version — the document half of the two counters. */
-    private version = FIRST_VERSION;
-    private log: Log | null = null;
-    private doc: Document | null = null;
-    private rederive = false;
-    private nextNode: number | null = null;
-    /** node id → the arrangement object an intent naming it writes to. */
-    private byNode = new Map<number, [Aggregate | null, Member | null, Element]>();
+    // The composition's version, the held document, the history over it and the
+    // index between them are **not fields of this editor**: they belong to the
+    // arrangement, and a second window over one composition reaches the same
+    // {@link Editing} context through {@link Editor.editing}. A log kept here
+    // would see only the gestures this editor made, so a script editing the
+    // arrangement or a second view would leave it describing a composition that
+    // has moved on, and undo would then write a state nobody was ever in. The
+    // accessors below read that context.
     private host: GuiHost | null = null;
     private windowId: number | null = null;
     private unlisten: (() => void) | null = null;
@@ -636,13 +637,11 @@ export class Editor {
         this.element = element;
         this.expanded.clear();
         this.patchGeometry.clear();
-        this.log?.free();
-        this.log = null;
-        this.doc?.free();
-        this.doc = null;
-        this.rederive = false;
-        this.byNode = new Map();
-        this.version = FIRST_VERSION;
+        // The history is **not** dropped here, and that is the point of where
+        // it lives: it belongs to the composition, so pointing this window at
+        // another one simply reaches that composition's context. An undo can no
+        // more walk back into a piece this window is not showing than it could
+        // walk into one another window is.
         this.floor = FIRST_VERSION;
         this.applied = FIRST_VERSION;
         this.dirty = true;
@@ -1766,10 +1765,7 @@ export class Editor {
      * cannot collide.
      */
     private mintId(): number {
-        this.nextNode ??= nextNodeId(this.element);
-        const nid = this.nextNode;
-        this.nextNode += 1;
-        return nid;
+        return this.editing.mint(this.element);
     }
 
     /**
@@ -1900,45 +1896,56 @@ export class Editor {
      * itself. Held, a drag costs the edit.
      */
     private history(): [Log, Document] {
-        this.log ??= new Log();
-        if (this.doc === null || this.rederive) {
-            const document = toDocument(this.element, { version: this.version });
-            this.doc?.free();
-            this.doc = new Document(document);
-            // **The index is added to, not replaced.** An element that has left
-            // the tree — a clip a cut removed, the half a join swallowed — is
-            // still named by the inverses in the log, and putting it back is
-            // placing *that object* again rather than rebuilding one from a
-            // node (a rebuilt element is a different identity to every widget
-            // and every pending edit). Clearing here made an undo of a cut, and
-            // a redo of a split, quietly do nothing: the node came back in the
-            // document and there was nothing left to place. This is what the
-            // Python client does, and the two must be one program.
-            this.index(this.element, null, null);
-            this.nextNode = nextNodeId(this.element);
-            this.rederive = false;
-        }
-        return [this.log, this.doc];
+        return this.editing.held(this.element);
     }
 
     /**
-     * Walk the arrangement collecting node id → what an intent writes to.
+     * The composition's editing context — its held document, its history and
+     * the index between them.
      *
-     * A `place` needs the owning aggregate and the member handle (a placement is
-     * the aggregate's, not the element's); everything else needs the element. The
-     * walk mirrors `form/document.ts`'s own, which is what keeps the two agreeing
-     * about what has an id.
+     * Reached through the **element**, so a second window over one composition
+     * gets the same one. That is the whole of what makes an undo in either view
+     * update both, and it is why none of this is a field here: a history
+     * belongs to the data, never to a view.
      */
-    private index(element: Element, owner: Aggregate | null, member: Member | null): void {
-        // The id belongs to the **placement** when there is one: a clip is a
-        // window onto samples, so what an intent names is the window.
-        const node = docIdOf(member ?? element);
-        if (node !== null) this.byNode.set(node, [owner, member, element]);
-        if (element instanceof Aggregate) {
-            for (const handle of element.handles) {
-                this.index(handle.element, element, handle);
-            }
-        }
+    private get editing(): Editing {
+        return Editing.of(this.element);
+    }
+
+    /** The arrangement's face of the composition's history. */
+    private get log(): Log | null {
+        return this.editing.log;
+    }
+
+    /** The held document, or `null` before the first edit derived it. */
+    private get doc(): Document | null {
+        return this.editing.doc;
+    }
+
+    /** The composition's version — the document half of the two counters. */
+    private get version(): number {
+        return this.editing.version;
+    }
+
+    private set version(value: number) {
+        this.editing.version = value;
+    }
+
+    /**
+     * Whether the held document has to be derived from the arrangement again
+     * before the next edit.
+     */
+    private get rederive(): boolean {
+        return this.editing.rederive;
+    }
+
+    private set rederive(value: boolean) {
+        this.editing.rederive = value;
+    }
+
+    /** node id → the arrangement object an intent naming it writes to. */
+    private get byNode(): Map<number, Indexed> {
+        return this.editing.byNode;
     }
 
     /**

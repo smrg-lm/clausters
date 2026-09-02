@@ -49,6 +49,7 @@ from ..form.render import flatten
 from ..seq.automation import Automation
 from ..seq.event import Event as SeqEvent
 from ..seq.timeline import MidiItem, OscItem, Timeline
+from .editing import Editing
 from .guidef import (_flat_notes, _flat_points, clip, patch, pianoroll, signal,
                      scroll, timeruler, track, waveform, window)
 from .transport import Transport
@@ -202,32 +203,14 @@ class Editor:
         self._corrections: list = []
         #: Why the last routed event did not do what it asked, if it did not.
         self._reason: "str | None" = None
-        #: The composition's version — the document half of the two counters.
-        #: It moves on every edit this editor applies **and on every redefine**,
-        #: and it rides on each acknowledgement so the host can name it back on
-        #: the next gesture. One rather than zero, because zero is what an event
-        #: means by *unstated*.
-        self._version = FIRST_VERSION
-        #: The crate's undo log, and the document it inverts — created on the
-        #: first edit, because a composition that is only looked at needs
-        #: neither. **The history is the crate's, not this editor's**: a log
-        #: kept here would see only the gestures this editor made, so a script
-        #: editing the arrangement or a second view would leave it describing a
-        #: composition that has moved on, and undo would then write a state
-        #: nobody was ever in.
-        self._log = None
-        self._document = None
-        #: Whether the held document has to be derived from the arrangement
-        #: again before the next edit. Set wherever the tree moves by a route
-        #: that is not an intent — `refresh`, loading another composition, and
-        #: the gestures this editor still applies to the objects directly.
-        self._rederive = False
-        #: The next node id to mint for a node a gesture creates (a note added
-        #: in a roll). Taken from the arrangement when the document is derived.
-        self._next_node = None
-        #: node id -> the arrangement object an intent naming it writes to. Built
-        #: with the document, since `to_document` is what stamps the ids.
-        self._by_node: dict = {}
+        # The composition's version, the held document, the history over it and
+        # the index between them are **not fields of this editor**: they belong
+        # to the arrangement, and a second window over one composition reaches
+        # the same `Editing` context through `_editing`. A log kept here would
+        # see only the gestures this editor made, so a script editing the
+        # arrangement or a second view would leave it describing a composition
+        # that has moved on, and undo would then write a state nobody was ever
+        # in. The properties below read that context.
         #: Which **edit layer** of each clip the hand is on, by widget id -- the
         #: placement, a roll, a curve. Screen state like a selection: the
         #: composition does not change when it moves, and the document is
@@ -530,15 +513,11 @@ class Editor:
         self.element = element
         self._expanded.clear()
         self._patch_geometry.clear()
-        if self._log is not None:
-            self._log.close()
-            self._log = None
-        if self._document is not None:
-            self._document.close()
-            self._document = None
-        self._rederive = False
-        self._by_node = {}
-        self._version = FIRST_VERSION
+        # The history is **not** dropped here, and that is the point of where it
+        # lives: it belongs to the composition, so pointing this window at
+        # another one simply reaches that composition's context. An undo can no
+        # more walk back into a piece this window is not showing than it could
+        # walk into one another window is.
         self._floor = FIRST_VERSION
         self._applied = FIRST_VERSION
         self.dirty = True
@@ -1658,9 +1637,7 @@ class Editor:
         """A node id nothing in this arrangement holds, for a note a gesture
         added. Follows the conversion's own rule, so a minted id and a converted
         one cannot collide."""
-        if self._next_node is None:
-            self._next_node = next_node_id(self.element)
-        nid, self._next_node = self._next_node, self._next_node + 1
+        nid = self._editing.mint(self.element)
         return nid
 
     def _apply_patch(self, wid: int, tag, values) -> bool:
@@ -1761,11 +1738,23 @@ class Editor:
         self._follow_render()
         return True
 
-    # ---- the history: the crate's log, over the crate's document -----------
+    # ---- the history: the arrangement's, not this editor's ----------------
+
+    @property
+    def _editing(self) -> Editing:
+        """The composition's editing context — its held document, its history
+        and the index between them.
+
+        Reached through the **element**, so a second window over one composition
+        gets the same one. That is the whole of what makes an undo in either
+        view update both, and it is why none of this is a field here: a history
+        belongs to the data, never to a view.
+        """
+        return Editing.of(self.element)
 
     def _history(self):
-        """The log and the document — **one of each, held** for as long as this
-        editor is drawing this composition.
+        """The log and the document — **one of each, held** for as long as the
+        composition is open, in however many windows.
 
         It used to be rebuilt on every gesture, and that handed back the whole
         of what holding the tree in the crate had won: converting the
@@ -1773,39 +1762,53 @@ class Editor:
         10240-event composition, against 0.014 ms for the edit itself. Held, a
         drag costs the edit.
 
-        What a rebuild was quietly doing is now explicit. `to_document` stamps
-        each element with the id it keeps (`ID_ATTR`), so a re-derivation names
-        the same nodes and the history keeps its footing — that is what makes
-        `refresh` cheap and safe, and it is called wherever the arrangement
-        moves by a route no intent took (a script's edit, a new composition, a
-        gesture the editor still applies directly)."""
-        if self._log is None:
-            self._log = _native.Log()
-        if self._document is None or self._rederive:
-            document = to_document(self.element, version=self._version)
-            if self._document is not None:
-                self._document.close()
-            self._document = _native.Document(document)
-            self._index(self.element)
-            self._next_node = next_node_id(self.element)
-            self._rederive = False
-        return self._log, self._document
+        What a rebuild was quietly doing is explicit in `Editing.held`.
+        `to_document` stamps each element with the id it keeps (`ID_ATTR`), so a
+        re-derivation names the same nodes and the history keeps its footing —
+        that is what makes `refresh` cheap and safe, and it is called wherever
+        the arrangement moves by a route no intent took (a script's edit, a new
+        composition, a gesture the editor still applies directly)."""
+        return self._editing.held(self.element)
 
-    def _index(self, element, owner=None, member=None):
-        """Walk the arrangement collecting node id -> what an intent writes to.
+    @property
+    def _log(self):
+        """The arrangement's face of the composition's history."""
+        return self._editing.log
 
-        A `place` needs the owning aggregate and the member handle (a placement is
-        the aggregate's, not the element's); everything else needs the element. The
-        walk mirrors `clausters.form.document`'s own, which is what keeps the
-        two agreeing about what has an id."""
-        # The id belongs to the **placement** when there is one: a clip is a
-        # window onto samples, so what an intent names is the window.
-        node = getattr(member if member is not None else element, ID_ATTR, None)
-        if node is not None:
-            self._by_node[int(node)] = (owner, member, element)
-        if isinstance(element, Aggregate):
-            for handle in element.handles:
-                self._index(handle.element, element, handle)
+    @property
+    def _document(self):
+        """The held document, or ``None`` before the first edit derived it."""
+        return self._editing.document
+
+    @property
+    def _version(self) -> int:
+        """The composition's version — the document half of the two counters.
+
+        It moves on every edit applied to this composition **and on every
+        redefine**, and it rides on each acknowledgement so the host can name it
+        back on the next gesture."""
+        return self._editing.version
+
+    @_version.setter
+    def _version(self, value: int):
+        self._editing.version = int(value)
+
+    @property
+    def _rederive(self) -> bool:
+        """Whether the held document has to be derived from the arrangement
+        again before the next edit. Set wherever the tree moves by a route that
+        is not an intent — `refresh`, and the gestures this editor still applies
+        to the objects directly."""
+        return self._editing.rederive
+
+    @_rederive.setter
+    def _rederive(self, value: bool):
+        self._editing.rederive = bool(value)
+
+    @property
+    def _by_node(self) -> dict:
+        """node id -> the arrangement object an intent naming it writes to."""
+        return self._editing.by_node
 
     def _node_id(self, element, member=None) -> "int | None":
         """The document id of an arrangement element, building the document if

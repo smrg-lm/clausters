@@ -165,20 +165,8 @@ its plan; the plan is where its acceptance is read.
 
 ### Ready — no decision in front of them
 
-- ⬜ **Two views of one arrangement keep two histories, so an undo writes a
-  state nobody was in**, `O15`-`O19` *(`crates/clausters-document/PLAN.md`, "The
-  stack belongs to the data: one registry per editing context")*. Measured, in
-  both clients: the log is minted per `Editor` while the tree is shared, so a
-  second window over one composition edits one dataset through two histories,
-  and stepping one of them reverts across the other's edits. The five milestones
-  are the edit stack — one registry per editing context holding one ordered
-  pile (`O15`), a generic pile with each domain's own verbs (`O16`), the
-  transaction (`O17`), what a history refuses to promise (`O18`), and the pass
-  that takes the log out of both clients (`O19`). The identity question that
-  used to sit in front of them was answered on 2026-09-01 (the registry mints
-  it), so nothing is. The containment until they land is in the defect's own
-  entry (`clients/python/PLAN.md`, Found by use): one editor is one history, so
-  a second window over one composition is read-only.
+**Nothing open here.** The edit stack (`O15`-`O19`) closed on 2026-09-01 and
+leaves no line: the plan's checkboxes and the git history carry it.
 
 ### Waiting on a decision
 

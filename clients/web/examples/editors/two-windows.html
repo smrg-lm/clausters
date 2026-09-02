@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: two windows over one composition</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 52rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+      .stages { display: flex; flex-direction: column; gap: 10px; align-self: stretch; }
+      .stage { width: 760px; max-width: 100%; height: 380px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">Two windows over one composition, and <b>one</b> history
+between them.
+
+An undo stack belongs to the data, not to the view. Open the same piece in two
+windows, drag a clip in one, and press <b>Ctrl+Z</b> over the <i>other</i>: the
+clip springs back in both. That is the whole of what this example is for, and it
+is worth a page of its own because the arrangement it protects against is the one
+a person reaches for without thinking — a multitrack up here, a closer look at
+one lane over there.
+
+<b>What would happen without it.</b> A history an editor kept would see only the
+gestures <i>that</i> editor made. So window A's undo would revert across window
+B's edit, and window B's undo would then put back a value A had already replaced
+— a state nobody was ever in, reached by two buttons that both look right. The
+history lives with the arrangement instead, so both windows find the same one and
+step one order.
+
+Two consequences you can watch here: the <b>label</b> agrees, because it names
+the entry the next keystroke is about to move and there is one pile; and the
+<b>selection does not travel</b> — sweep in one window and the other keeps its
+own, because what a window can see is a window's and none of it is ever an entry
+in a history.
+
+The two windows are two <code>gui.Editor</code>s over one arrangement. Nothing
+wires them together — the sharing is not a feature of this page, it is where the
+history lives.</div>
+
+      <button id="run">open both windows</button>
+      <div class="stages">
+        <div id="left" class="stage"></div>
+        <div id="right" class="stage"></div>
+      </div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/editors/two_windows.py, call
+      for call: the same instrument, the same two lanes with the same names, two
+      editors over one arrangement, and the same read-out of what each says
+      about the history.
+
+      The platform's differences are the usual two: the host is the wasm one in
+      this tab and each editor draws into an element (`stage`), and nothing is
+      pumped — the page has no loop of its own, so the read-out is refreshed on a
+      timer where the script prints it from the pump.
+
+      Serve clients/web (the package root) and open
+      /examples/editors/two-windows.html. Build it first: ./build.sh
+    -->
+    <script type="module">
+      import { Session, form, gui, seq } from "../../dist/index.js";
+      import {
+        DoneAction, Env, SynthDef, control, envGen, out, sine,
+      } from "../../dist/defs/index.js";
+
+      const el = (id) => document.getElementById(id);
+      const log = (line) => { el("log").textContent += line + "\n"; };
+
+      const BPM = 110.0;
+      const SR = 48_000.0;
+      const TEMPO = BPM / 60.0;
+
+      /** One lane: a pattern, placed at the top of the piece. */
+      function lane(name, pitches, dur) {
+        const sequence = new form.Sequence(
+          new seq.Pbind({ instrument: "bell", freq: new seq.Pseq(pitches, 2), dur }),
+          null, null, { name },
+        );
+        return new form.Aggregate([[0.0, sequence]], "concrete", { name });
+      }
+
+      async function run() {
+        el("run").disabled = true;
+        const session = await Session.embed({ tempo: TEMPO, channels: 2 });
+        const server = session.server;
+        const host = await session.gui();
+
+        const bell = new SynthDef("bell", out(0.0,
+          sine(control("freq", 440.0))
+            .mul(envGen(Env.perc(0.005, 0.5), { doneAction: DoneAction.FREE_SELF }))
+            .mul(control("amp", 0.2))));
+        await bell.send(server);
+        await server.sync();
+
+        // Two lanes of patterned notes -- the material is beside the point here,
+        // so it is the smallest thing that draws as clips a hand can drag. Every
+        // fundamental is well clear of the bass register.
+        const piece = new form.Aggregate([
+          [0.0, lane("lead", [660.0, 880.0, 770.0, 990.0], 0.5)],
+          [0.0, lane("counter", [440.0, 550.0], 1.0)],
+        ], "concrete", { name: "two windows" });
+
+        // Two editors, one arrangement. Each opens its own window; neither is
+        // told about the other. They share a history because the history belongs
+        // to the composition -- `Editor` asks the arrangement for it rather than
+        // making one.
+        const options = {
+          sampleRate: SR, tempo: TEMPO, quant: 0.25, follow: true,
+          width: 760, height: 380,
+        };
+        const left = new gui.Editor(piece, { ...options, title: "Composition (left)" });
+        const right = new gui.Editor(piece, { ...options, title: "Composition (right)" });
+        await left.open(host, { stage: el("left") });
+        await right.open(host, { stage: el("right") });
+        session.start();
+        log("two windows up — drag a clip in one, then Ctrl+Z over the other");
+
+        // What each window says about the history after every event, so the
+        // agreement is legible without pressing anything twice.
+        let shown = null;
+        setInterval(() => {
+          const state = [left.canUndo, left.undoLabel, right.canUndo, right.undoLabel];
+          const line = `left: canUndo=${state[0]} label=${JSON.stringify(state[1])} | `
+            + `right: canUndo=${state[2]} label=${JSON.stringify(state[3])}`;
+          if (line !== shown) { log(line); shown = line; }
+        }, 200);
+      }
+
+      el("run").onclick = () => run().catch((e) => log(`error: ${e}`));
+    </script>
+  </body>
+</html>

@@ -2239,3 +2239,66 @@ def test_a_segments_clip_shows_and_plays_only_what_its_placement_covers():
 
     # The whole buffer is still there: the placement is what was shortened.
     assert [s.duration for s in seg.segments] == pytest.approx([1.0, 1.0])
+
+
+def test_two_editors_over_one_composition_keep_one_history():
+    """O19's acceptance, and the inverse of the defect it was opened for.
+
+    Two windows over one composition used to mint a history each, so stepping
+    one of them reverted across the other's edits and wrote a state nobody was
+    ever in. The history belongs to the arrangement now, so both windows reach
+    the same one."""
+    piece = song()
+    a, b = editor(piece), editor(piece)
+    a.open(_FakeHost())
+    b.open(_FakeHost())
+    assert a._editing is b._editing, "one context, reached through the element"
+    assert a._log is b._log
+
+    clip = next(iter(a._clips))
+    placed = a._clips[clip]
+    at = placed.base + placed.member.offset
+    a.apply("/gui_event", [clip, SEQ, UNSTATED, "clip",
+                           (at + 2.0) * BEAT, (placed.member.length or 1.0) * BEAT])
+    moved = placed.member.offset
+    assert moved != placed.base
+
+    # The second window can undo what the first did -- which is the half that
+    # used to be false: `b.can_undo` was False, and b could not see the edit at
+    # all even though it was showing the data it changed.
+    assert b.can_undo
+    assert b.undo() is True
+    assert placed.member.offset != moved, "and the undo reached the arrangement"
+    assert not a.can_undo, "one order, not two"
+
+
+def test_a_second_window_sees_the_first_windows_edit_in_its_label():
+    """The label is how a person knows what a keystroke is about to move, and
+    with one pile over one composition both windows read the same one."""
+    piece = song()
+    a, b = editor(piece), editor(piece)
+    a.open(_FakeHost())
+    b.open(_FakeHost())
+    clip = next(iter(a._clips))
+    placed = a._clips[clip]
+    at = placed.base + placed.member.offset
+    a.apply("/gui_event", [clip, SEQ, UNSTATED, "clip",
+                           (at + 1.0) * BEAT, (placed.member.length or 1.0) * BEAT])
+    assert a.undo_label == b.undo_label
+    assert b.undo_label
+
+
+def test_a_view_over_a_part_of_the_composition_reaches_the_same_history():
+    """A dedicated roll of one track is a view over data the multitrack is
+    already showing, so it edits through the composition's history rather than
+    minting a second one over the same dataset."""
+    from clausters.gui.editing import Editing
+
+    piece = song()
+    whole = editor(piece)
+    whole.open(_FakeHost())
+    whole._history()  # the derivation is what stamps the parts
+
+    lane = piece.handles[0].element
+    assert Editing.of(lane) is whole._editing
+    assert editor(lane)._editing is whole._editing
