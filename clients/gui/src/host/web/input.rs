@@ -9,7 +9,7 @@
 //! the whole reason a drag behaves identically on a desktop and in a tab.
 
 use super::*;
-use crate::host::gestures::{Wheel, WheelDelta};
+use crate::host::gestures::{ClipEdit, Wheel, WheelDelta};
 
 /// Translates a winit key into the platform-neutral [`HostKey`] the focus reads
 /// (the browser front's twin of the native `to_key`), or `None` for a key
@@ -176,9 +176,10 @@ impl WebApp {
     }
 
     /// Keyboard: the same two addressees the desktop front has — the window's
-    /// focus, then the element under the cursor — and the same window shortcut
-    /// after them (`r` resets every axis). Escape is missing on purpose: it
-    /// closes an OS window there and has no window to close here.
+    /// focus, then the element under the cursor — and the same window shortcuts
+    /// after them (`r` resets every axis, `e` and `j` split and join the clip
+    /// under the cursor). Escape is missing on purpose: it closes an OS window
+    /// there and has no window to close here.
     pub(super) fn on_key(&mut self, def: i32, key: &Key) {
         let Some((ctx, (cx, cy))) = self.gesture_ctx(def) else {
             return;
@@ -233,6 +234,29 @@ impl WebApp {
             }
             Key::Character(c) if c.eq_ignore_ascii_case("r") => {
                 slot.gestures.reset_timelines(&mut self.host, &ctx)
+            }
+            // A clip's own edit verbs, over the clip under the cursor: cut it at
+            // the time cursor, or read it and what touches it as one. They were
+            // the desktop front's alone, which made the same host answer a key
+            // in a window and not in a tab -- and a page had no way to split a
+            // clip at all, since neither is a menu or an affordance anywhere.
+            Key::Character(c) if c.eq_ignore_ascii_case("e") => {
+                match slot
+                    .gestures
+                    .clip_verb(&mut self.host, &ctx, ClipEdit::Split, cx, cy)
+                {
+                    Some(effects) => effects,
+                    None => return,
+                }
+            }
+            Key::Character(c) if c.eq_ignore_ascii_case("j") => {
+                match slot
+                    .gestures
+                    .clip_verb(&mut self.host, &ctx, ClipEdit::Join, cx, cy)
+                {
+                    Some(effects) => effects,
+                    None => return,
+                }
             }
             // The clipboard verbs over the view under the cursor, last, so a
             // focused field and a roll's own block keys answer first.

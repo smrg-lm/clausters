@@ -212,7 +212,9 @@ beginning.
 
 **Splitting and joining.** With the pointer over a clip, `e` cuts it in two at
 the time cursor (at the pointer when no cursor is inside it) and `j` joins it
-with the clips that touch it on its lane. A split gives each half a window over
+with the clips that touch it on its lane. Neither is a menu item or an
+affordance: they are the clip's own verbs, addressed by the pointer like every
+other verb over a view. A split gives each half a window over
 the same samples, which is why a join can put back exactly what the cut
 separated.
 
