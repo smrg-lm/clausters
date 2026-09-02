@@ -885,9 +885,17 @@ class Editor:
         # than routed, because a history step is not an edit to the tree -- it
         # is a walk through the one the crate keeps.
         if args[1] in ("undo", "redo") and int(args[0]) == self._window:
-            (self.redo if args[1] == "redo" else self.undo)()
+            # **What it answers is whether anything moved**, not whether the
+            # keystroke was understood. A history at its end is the ordinary
+            # case -- a person holds Ctrl+Z until it stops -- and reporting a
+            # change there told every other view of this composition to bring
+            # itself in step with an edit that never happened, which is a redraw
+            # for nothing and, before the axis learned to survive one, a zoom
+            # reset for nothing. The acknowledgement still goes out: the host
+            # asked, and the answer is the state that holds.
+            stepped = (self.redo if args[1] == "redo" else self.undo)()
             self._acknowledge(seq)
-            return True
+            return stepped
         # Only what this editor draws is this editor's to answer. A poll loop
         # may be shared with a second editor, and answering for its window would
         # retire a pending edit nobody applied -- the host would adopt a picture
@@ -1625,7 +1633,7 @@ class Editor:
         # the lane synth reads — so the envelope, the sound and the picture
         # cannot disagree about which of the three happened.
         self._project(outcome["effective"])
-        return self._changed()
+        return self._changed(outcome["applied"])
 
     def _apply_notes(self, element, values) -> bool:
         """Notes edited in a roll — a clip's body or the dedicated piano-roll
@@ -1711,7 +1719,7 @@ class Editor:
         if outcome is None:
             return False
         self._project(outcome["effective"])
-        return self._changed()
+        return self._changed(outcome["applied"])
 
     def _mint_id(self) -> int:
         """A node id nothing in this arrangement holds, for a note a gesture
@@ -1808,11 +1816,21 @@ class Editor:
                 out.append((self.beats_to_units(beat), "midi"))
         return out
 
-    def _changed(self) -> bool:
+    def _changed(self, applied: bool = True) -> bool:
         """The arrangement was edited: mark it, and re-render now when `follow` is
         on. Otherwise the edit simply waits — a render already in flight is not
         interrupted, and the next one (a play, a resume, a seek) plays the piece as
-        it now stands, because rendering always re-flattens the tree."""
+        it now stands, because rendering always re-flattens the tree.
+
+        ``applied`` is the crate's own answer, and passing it is not optional
+        bookkeeping: **a resend is not an edit**. The document says so — it
+        refuses one and leaves its version where it was — and an editor that
+        moved its own version anyway, and answered "the composition changed",
+        told every other view of it to come into step with nothing. The same
+        sentence the crate writes about a refusal: it does not move the
+        version."""
+        if not applied:
+            return False
         self.dirty = True
         self._version += 1
         self._follow_render()
@@ -2176,7 +2194,17 @@ class Editor:
             config = node.get("config") or {}
             if "midinote" not in config:
                 continue
-            new.append((float(placed.get("offset", 0.0)), SeqEvent(dict(config))))
+            event = SeqEvent(dict(config))
+            # **The note keeps the id the document gave it.** The payload a roll
+            # sends carries no ids, so the i-th note inherits the i-th note's --
+            # read off *these* objects. A note that came back unstamped is a new
+            # node to the next edit, which mints one: the same notes resent then
+            # arrive as different members, the document changes for nothing, and
+            # every other view of it redraws to come into step with an edit that
+            # was not one. It is the placement's rule (O14), one level down.
+            if node.get("id") is not None:
+                setattr(event, ID_ATTR, int(node["id"]))
+            new.append((float(placed.get("offset", 0.0)), event))
         _rewrite_timeline(timeline, lambda it: _pitch(it) is None, new)
         return True
 

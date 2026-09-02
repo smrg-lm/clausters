@@ -1117,3 +1117,47 @@ test("a closed window is not told about edits", async () => {
     assert.equal(hostB.defines.length, defines, "a closed window has no picture to keep");
     assert.equal(b.canUndo, true, "and it still shares the history");
 });
+
+test("a step with nothing to step tells nobody", async () => {
+    // **A no-op is not a change**, and answering that it is one is how a window
+    // nobody touched came to redraw. A history at its end is the ordinary case
+    // — a person holds Ctrl+Z until it stops — and `apply` used to answer true
+    // for every one of those, so every other view of the composition was told
+    // to bring itself in step with an edit that never happened.
+    const piece = song();
+    const host = new FakeHost();
+    const a = editor(piece);
+    const b = editor(piece);
+    const winA = await a.open(asHost(host));
+    await b.open(asHost(host));
+    host.defines.length = 0;
+
+    for (const tag of ["undo", "redo"]) {
+        assert.equal(a.apply("/gui_event", [winA.id, SEQ, UNSTATED, tag]), false);
+        assert.equal(b.apply("/gui_event", [winA.id, SEQ, UNSTATED, tag]), false);
+    }
+    assert.equal(host.defines.length, 0, "no window redrawn for a step that did not happen");
+});
+
+test("a resend is not an edit", async () => {
+    // The crate's own rule, honoured by the editor: an edit that states what
+    // already holds is refused and does not move the version — so the editor
+    // must not answer that the composition changed, or every other view redraws
+    // for a gesture that did nothing.
+    //
+    // The notes route got this wrong twice over: it answered true
+    // unconditionally, *and* it minted a fresh node id for every note on every
+    // edit, so the same notes resent really did arrive as different members.
+    const piece = song();
+    const ed = editor(piece, { quant: 0.25 });
+    await ed.open(asHost(new FakeHost()));
+
+    const roll = clipsOf(lanes(ed.draw())[1] as GuiNode)[0] as GuiNode;
+    const move = clipEvent(roll.id as number, 5 * BEAT, 2 * BEAT);
+    assert.equal(ed.apply("/gui_event", move), true);
+    assert.equal(ed.apply("/gui_event", move), false, "the same placement again");
+
+    const notes = [roll.id, SEQ, UNSTATED, "notes", 0, BEAT, 62, 100, 0];
+    assert.equal(ed.apply("/gui_event", notes), true);
+    assert.equal(ed.apply("/gui_event", notes), false, "the same notes again");
+});

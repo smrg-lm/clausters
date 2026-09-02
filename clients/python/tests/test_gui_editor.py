@@ -2376,3 +2376,77 @@ def test_a_closed_window_is_not_told_about_edits():
                            (at + 2.0) * BEAT, (placed.member.length or 1.0) * BEAT])
     assert len(host_b.defines) == defines, "a closed window has no picture to keep"
     assert b.can_undo, "and it still shares the history"
+
+
+def test_a_step_with_nothing_to_step_tells_nobody():
+    """**A no-op is not a change**, and answering that it is one is how a window
+    nobody touched came to redraw.
+
+    A history at its end is the ordinary case — a person holds Ctrl+Z until it
+    stops — and `apply` used to answer `True` for every one of those, so every
+    other view of the composition was told to bring itself in step with an edit
+    that never happened. One host and two windows, which is the arrangement the
+    defect showed up in."""
+    piece = song()
+    host = _FakeHost()
+    a, b = editor(piece), editor(piece)
+    win_a = a.open(host)
+    b.open(host)
+    host.defines.clear()
+
+    # The message the host sends for Ctrl+Z, fed to both editors the way one
+    # poll loop feeds every editor it opened.
+    for tag in ("undo", "redo"):
+        assert a.apply("/gui_event", [win_a, SEQ, UNSTATED, tag]) is False
+        assert b.apply("/gui_event", [win_a, SEQ, UNSTATED, tag]) is False
+    assert host.defines == [], "no window was redrawn for a step that did not happen"
+
+
+def test_a_resend_is_not_an_edit():
+    """The crate's own rule, honoured by the editor: an edit that states what
+    already holds is refused and does not move the version — so the editor must
+    not answer that the composition changed, or every other view redraws for a
+    gesture that did nothing.
+
+    The notes route is the one that got this wrong twice over: it answered
+    `True` unconditionally, *and* it minted a fresh node id for every note on
+    every edit, so the same notes resent really did arrive as different members
+    and the document changed for nothing."""
+    piece = song()
+    ed = editor(piece)
+    ed.open(_FakeHost())
+
+    clip = next(iter(ed._clips))
+    placed = ed._clips[clip]
+    at = placed.base + placed.member.offset
+    move = [clip, SEQ, UNSTATED, "clip",
+            (at + 2.0) * BEAT, (placed.member.length or 1.0) * BEAT]
+    assert ed.apply("/gui_event", move) is True
+    assert ed.apply("/gui_event", [*move[:1], SEQ + 1, *move[2:]]) is False
+
+    roll = next(iter(ed._rolls))
+    notes = [roll, SEQ, UNSTATED, "notes", 0, BEAT, 62, 100, 0]
+    version = ed._version
+    assert ed.apply("/gui_event", notes) is True
+    assert ed.apply("/gui_event", [*notes[:1], SEQ + 1, *notes[2:]]) is False
+    assert ed._version == version + 1, "one edit, one version"
+
+
+def test_a_note_keeps_the_id_the_document_gave_it():
+    """The reason the resend above used to be an edit: the payload a roll sends
+    carries no ids, so the i-th note inherits the i-th note's — read off the
+    events themselves. A note that came back unstamped was a new node to the
+    next edit."""
+    piece = song()
+    ed = editor(piece)
+    ed.open(_FakeHost())
+    roll = next(iter(ed._rolls))
+    ed.apply("/gui_event", [roll, SEQ, UNSTATED, "notes", 0, BEAT, 62, 100, 0])
+
+    element = ed._rolls[roll]
+    from clausters.form.document import ID_ATTR
+    from clausters.gui.editor import _editable_timeline, _pitch
+
+    ids = [getattr(item, ID_ATTR, None)
+           for _, item in _editable_timeline(element) if _pitch(item) is not None]
+    assert ids and all(i is not None for i in ids), "every note carries its node"

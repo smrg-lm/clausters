@@ -1006,10 +1006,16 @@ export class Editor {
         // at anything under the cursor. They are answered here rather than
         // routed, because a history step is not an edit to the tree.
         if ((args[1] === "undo" || args[1] === "redo") && id === this.windowId) {
-            if (args[1] === "redo") this.redo();
-            else this.undo();
+            // **What it answers is whether anything moved**, not whether the
+            // keystroke was understood. A history at its end is the ordinary
+            // case — a person holds Ctrl+Z until it stops — and reporting a
+            // change there told every other view of this composition to bring
+            // itself in step with an edit that never happened, which is a
+            // redraw for nothing. The acknowledgement still goes out: the host
+            // asked, and the answer is the state that holds.
+            const stepped = args[1] === "redo" ? this.redo() : this.undo();
             this.acknowledge(seq);
-            return true;
+            return stepped;
         }
         // Only what this editor draws is this editor's to answer.
         if (!this.owns(id)) return false;
@@ -1736,7 +1742,7 @@ export class Editor {
         // lane synth reads — so the envelope, the sound and the picture cannot
         // disagree about which of the three happened.
         this.project(outcome.effective);
-        return this.changed();
+        return this.changed(outcome.applied);
     }
 
     /**
@@ -1827,7 +1833,7 @@ export class Editor {
         const outcome = this.record({ intent: "setmembers", node, members }, "edit the notes");
         if (outcome === null) return false;
         this.project(outcome.effective);
-        return this.changed();
+        return this.changed(outcome.applied);
     }
 
     /**
@@ -1948,7 +1954,17 @@ export class Editor {
      * interrupted, and the next one plays the piece as it now stands, because
      * rendering always re-flattens the tree.
      */
-    private changed(): boolean {
+    /**
+     * The arrangement was edited: mark it, and re-render now when `follow` is on.
+     *
+     * `applied` is the crate's own answer, and passing it is not optional
+     * bookkeeping: **a resend is not an edit**. The document says so — it
+     * refuses one and leaves its version where it was — and an editor that moved
+     * its own version anyway, and answered "the composition changed", told every
+     * other view of it to come into step with nothing.
+     */
+    private changed(applied = true): boolean {
+        if (!applied) return false;
         this.dirty = true;
         this.version += 1;
         this.followRender();
@@ -2297,7 +2313,18 @@ export class Editor {
             const node = (placed.node ?? {}) as Record<string, unknown>;
             const config = (node.config ?? {}) as Record<string, unknown>;
             if (!("midinote" in config)) continue;
-            fresh.push([Number(placed.offset ?? 0.0), new SeqEvent({ ...config })]);
+            const event = new SeqEvent({ ...config });
+            // **The note keeps the id the document gave it.** The payload a roll
+            // sends carries no ids, so the i-th note inherits the i-th note's —
+            // read off *these* objects. A note that came back unstamped is a new
+            // node to the next edit, which mints one: the same notes resent then
+            // arrive as different members, the document changes for nothing, and
+            // every other view of it redraws to come into step with an edit that
+            // was not one. It is the placement's rule, one level down.
+            if (node.id !== undefined && node.id !== null) {
+                setDocId(event as object, Math.trunc(Number(node.id)));
+            }
+            fresh.push([Number(placed.offset ?? 0.0), event]);
         }
         rewriteTimeline(timeline, (item) => pitchOf(item) === null, fresh);
         return true;
