@@ -62,7 +62,13 @@ CASES = [
      {"intent": "place", "node": 4, "offset": 9.0}, None, 0.0),
     ("a destructive write moves the source's generation",
      {"intent": "writesamples", "node": 3, "start": 100, "values": [0.5, -0.5]}, 0, 0.0),
-    ("the same write again is idempotent on the document",
+    # The empty write is the **inverse** a document can state for a destructive
+    # edit -- the samples are not in it, so it can say *that* they went back and
+    # not *to what* -- which is why it moves the generation like any other
+    # write. It used to apply as a no-op, and an undo therefore left every
+    # reader holding a decimation of those samples drawing the picture the undo
+    # had just taken back.
+    ("the empty write is the inverse, and it says the samples moved",
      {"intent": "writesamples", "node": 3, "start": 100, "values": []}, 0, 0.0),
 ]
 
@@ -70,6 +76,23 @@ CASES = [
 #: there because the *effective* edit is what a redo must replay, and a run on
 #: one node because that is what coalescing would have to get right if the
 #: caller asked for it (it does not here: each is its own undo).
+#: One payload per vocabulary, plus the two answers that are not a key: a domain
+#: the crate does not speak, and a payload written in another one.
+DOMAIN_PAYLOADS = [
+    (_native.TREE, {"intent": "place", "node": 7, "offset": 1.0}),
+    (_native.TREE, {"intent": "configure", "node": 2, "config": {}}),
+    (_native.POINTS, {"intent": "setpoints",
+                      "points": [{"at": 0.0, "value": 1.0}]}),
+    (_native.SAMPLES, {"intent": "write", "channel": 1, "start": 40,
+                       "values": [0.5, 0.5]}),
+    (_native.SAMPLES, {"intent": "write", "channel": 0, "start": 40,
+                       "values": [0.25]}),
+    (_native.EVENTS, {"intent": "setevents",
+                      "events": [{"at": 2.0, "data": {"pitch": 60}}]}),
+    ("smaples", {"intent": "write", "channel": 0, "start": 0, "values": [0.0]}),
+    (_native.SAMPLES, {"intent": "setpoints", "points": []}),
+]
+
 LOGGED = [
     ("move the event", {"intent": "place", "node": 2, "offset": 1.0}, 0.0),
     ("move the take", {"intent": "place", "node": 3, "offset": 6.0}, 0.0),
@@ -146,6 +169,17 @@ if __name__ == "__main__":
             logged["redos"].append({**step, "document": doc.snapshot()})
         logged["redone"] = doc.snapshot()
 
+    # The coalesce sentence of every vocabulary the crate speaks. It is here
+    # because it is the one rule a caller recording its own entry has to state
+    # and the pile cannot compute -- so it is exactly what would end up spelled
+    # once in ctypes and again in TypeScript, drifting apart on the day a domain
+    # grows a second verb.
+    domains = [
+        {"domain": domain, "payload": payload,
+         "key": _native.domain_coalesce_key(domain, payload)}
+        for domain, payload in DOMAIN_PAYLOADS
+    ]
+
     out = pathlib.Path(__file__).with_name("document-vectors.json")
     out.write_text(json.dumps({
         "start": composition(),
@@ -153,5 +187,6 @@ if __name__ == "__main__":
         "final": document,
         "resolutions": resolutions,
         "logged": logged,
+        "domains": domains,
     }, indent=2) + "\n")
     print(f"wrote {out}")

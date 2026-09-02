@@ -580,6 +580,34 @@ and the host never did. Bulk payloads leave through a `Spill` store behind a
 trait (memory in a page, a temporary directory natively), content-addressed so an
 undo/redo pair naming the same span holds one copy.
 
+**A domain is a vocabulary plus how it inverts**, and there are four:
+`log::Tree` (the arrangement), `points` (a break-point curve), `samples` (a span
+of one channel) and `events` (a timeline). Each implements `history::Editable`
+— apply a payload, and state what the payload's inverse would be, read *before*
+anything lands — and each decides as little as it can: `points` fixes no
+interpolation shape, `samples` no rate, `events` nothing about what an event is,
+because the only thing a domain owes the seam is how an edit inverts. `samples`
+is the one that holds nothing: it is a **borrowed view** over whoever owns the
+memory, so the crate does the arithmetic of a strided span without ever carrying
+a second copy of a take.
+
+The two that came after the curve are what a destructive edit and a bare roll
+needed. `Intent::WriteSamples` names a *node*, so writing samples used to require
+a document to hold one, and what it applies is only a **generation bump** — the
+document describes where samples are and never what they hold — so the
+destructive edit had no inverse anywhere. A stroke over a placed take is now one
+entry with a leg in each: the tree's, saying the samples moved, and the samples'
+own, saying what they hold and what they held.
+
+What no vocabulary can be left to spell twice is the **coalesce key** — "the same
+thing done the same way" is a sentence *in* a vocabulary, so the pile cannot
+compute it and a caller recording its own entry has to state it. `domain` is that
+table: the domain names in one place and `domain::coalesce_key(domain, payload)`
+answering for any of them, reached across both seams
+(`clausters_domain_coalesce_key`, `domainCoalesceKey`) so neither client writes a
+rule of its own. A domain the crate does not speak answers nothing, which is also
+what catches a misspelled name that `register` would otherwise take in silence.
+
 The wire the crate never touches is `docs/gui-protocol.md`: the host produces
 intents from gestures and draws what comes back, and the crate knows no widget.
 What joins them is the intent vocabulary, which both depend on and neither owns.

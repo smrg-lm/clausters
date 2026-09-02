@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 34
+CORE_ABI_VERSION = 35
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -485,6 +485,10 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_document_coalesce_key.restype = ctypes.c_size_t
     lib.clausters_document_coalesce_key.argtypes = [
         u8p, ctypes.c_size_t, u8p, ctypes.c_size_t,
+    ]
+    lib.clausters_domain_coalesce_key.restype = ctypes.c_size_t
+    lib.clausters_domain_coalesce_key.argtypes = [
+        u8p, ctypes.c_size_t, u8p, ctypes.c_size_t, u8p, ctypes.c_size_t,
     ]
     lib.clausters_history_new.restype = ctypes.c_void_p
     lib.clausters_history_new.argtypes = [ctypes.c_size_t, ctypes.c_size_t]
@@ -1054,6 +1058,46 @@ def document_coalesce_key(intent: dict) -> str:
         return ""
     out = (ctypes.c_ubyte * need)()
     n = _lib.clausters_document_coalesce_key(ptr, len(data), out, need)
+    return ctypes.string_at(out, n).decode("utf-8")
+
+
+#: Every vocabulary the document crate speaks — what a structure is registered
+#: under, and what `domain_coalesce_key` dispatches on. Named here rather than
+#: spelled at each call site so a typo cannot quietly mint a structure in a
+#: domain nobody reads.
+TREE = "tree"
+POINTS = "points"
+SAMPLES = "samples"
+EVENTS = "events"
+
+
+def domain_coalesce_key(domain: str, payload: dict) -> str:
+    """What makes two of ``domain``'s edits *the same thing done the same way*
+    — the key a caller recording its own entry passes to `History.record`, or
+    ``""`` when the payload is not written in that vocabulary (or the domain is
+    one the crate does not speak).
+
+    A free function rather than a method because a caller here holds no
+    structure to ask: a curve, a span of samples and a timeline live in this
+    process's own memory, and only their *vocabulary* is the crate's.
+    `document_coalesce_key` stays as it is — the arrangement's own door — and
+    this is the same rule for the domains that have no handle.
+    """
+    _lib = lib()
+    u8p = ctypes.POINTER(ctypes.c_ubyte)
+    name = domain.encode("utf-8")
+    name_buf = (ctypes.c_ubyte * len(name)).from_buffer_copy(name)
+    name_ptr = ctypes.cast(name_buf, u8p)
+    data = json.dumps(payload).encode("utf-8")
+    buf = (ctypes.c_ubyte * len(data)).from_buffer_copy(data)
+    ptr = ctypes.cast(buf, u8p)
+    need = _lib.clausters_domain_coalesce_key(
+        name_ptr, len(name), ptr, len(data), None, 0)
+    if need == 0:
+        return ""
+    out = (ctypes.c_ubyte * need)()
+    n = _lib.clausters_domain_coalesce_key(
+        name_ptr, len(name), ptr, len(data), out, need)
     return ctypes.string_at(out, n).decode("utf-8")
 
 

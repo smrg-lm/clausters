@@ -49,6 +49,7 @@
 //! client, so no edit can leave them stale.
 
 pub mod clipboard;
+pub mod domain;
 pub mod events;
 pub mod history;
 pub mod intent;
@@ -60,6 +61,7 @@ pub mod selection;
 pub mod session;
 
 pub use clipboard::{Clipboard, Content};
+pub use domain::DOMAINS;
 pub use events::{Event, Events, EventsIntent};
 pub use history::{Applied, Editable, History, StructureId};
 pub use intent::{Against, Intent, Outcome, Rules, apply};

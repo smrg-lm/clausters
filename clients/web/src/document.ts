@@ -22,7 +22,11 @@
  * @module
  */
 
-import { Document as CoreDocument, History as CoreHistory } from "./core/clausters_core_web.js";
+import {
+    Document as CoreDocument,
+    History as CoreHistory,
+    domainCoalesceKey as coreDomainCoalesceKey,
+} from "./core/clausters_core_web.js";
 import { loadCore } from "./base/core.ts";
 
 /**
@@ -393,6 +397,37 @@ export interface RecordedLeg {
      * for a curve. Absent never coalesces.
      */
     key?: string;
+}
+
+/**
+ * Every vocabulary the document crate speaks — what a structure is registered
+ * under, and what {@link domainCoalesceKey} dispatches on.
+ *
+ * Named here rather than spelled at each call site so a typo cannot quietly
+ * mint a structure in a domain nobody reads.
+ */
+export const TREE = "tree";
+/** The break-point curve's vocabulary. See {@link TREE}. */
+export const POINTS = "points";
+/** A span of samples' vocabulary. See {@link TREE}. */
+export const SAMPLES = "samples";
+/** A timeline of events' vocabulary. See {@link TREE}. */
+export const EVENTS = "events";
+
+/**
+ * What makes two of a **domain's** edits *the same thing done the same way* —
+ * the key a caller recording its own entry passes to {@link History.record},
+ * or `""` when the payload is not written in that vocabulary (or the domain is
+ * one the crate does not speak).
+ *
+ * A free function rather than a method because a caller here holds no structure
+ * to ask: a curve, a span of samples and a timeline live in this page's own
+ * memory, and only their *vocabulary* is the crate's.
+ * {@link Document.coalesceKey} stays as it is — the arrangement's own door —
+ * and this is the same rule for the domains that have no handle.
+ */
+export function domainCoalesceKey(domain: string, payload: unknown): string {
+    return coreDomainCoalesceKey(domain, JSON.stringify(payload));
 }
 
 /** One leg of an entry: the structure it belongs to, and the payload. */

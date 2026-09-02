@@ -2110,6 +2110,27 @@ pub fn sheet_to_mei(sheet: &str) -> Result<String, JsError> {
     clausters_core::notation::sheet_to_mei(&sheet).map_err(|e| JsError::new(&e))
 }
 
+/// What makes two of a **domain's** edits *the same thing done the same way* —
+/// the key a caller recording its own entry passes to {@link History.record},
+/// or an empty string when the payload is not written in that vocabulary (or
+/// the domain is one the crate does not speak).
+///
+/// It is a free function rather than a method because a caller here holds no
+/// structure to ask: a curve, a span of samples and a timeline live in this
+/// page's own memory, and only their *vocabulary* is the crate's.
+/// {@link JsDocument.coalesceKey} stays as it is — the arrangement's own door,
+/// on the surface its sentence belongs to — and this is the same rule for the
+/// domains that have no handle here.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = domainCoalesceKey)]
+pub fn domain_coalesce_key(domain: &str, payload: &str) -> String {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(payload) else {
+        return String::new();
+    };
+    clausters_document::domain::coalesce_key(domain, &clausters_document::Opaque(value))
+        .unwrap_or_default()
+}
+
 /// Every operation this core knows, as JSON — the verb and the parameters each
 /// takes.
 ///

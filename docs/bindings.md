@@ -226,6 +226,7 @@ apply → snapshot → free, and pays the serialization where it asked for it.
 | `clausters_document_version` | `JsDocument.version` | `idiom` — a getter |
 | `clausters_document_inverse` | `JsDocument.inverse` | the edit that would put a node back, read before anything lands — what a caller recording its **own** entry needs |
 | `clausters_document_coalesce_key` | `JsDocument.coalesce_key` | `idiom` — a free function in C, a static on the class in JS; it is the *arrangement's* sentence for "the same thing done the same way", so it lives with the document and not with the history |
+| `clausters_domain_coalesce_key` | `domain_coalesce_key` | the same sentence for **any** vocabulary the crate speaks — the arrangement, a curve, a span of samples, a timeline. Free in both, since a caller across either seam holds no structure to ask: a curve, a span of samples and a timeline live in the caller's own memory and only their *vocabulary* is the crate's. An unknown domain, or a payload not written in that one, answers nothing (`0` in C, `""` in JS) |
 
 **Size-then-fill needs two rules here**, because the surface mutates. A mutating
 call commits **only when the bytes are written**, so a sizing pass changes

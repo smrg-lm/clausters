@@ -685,5 +685,51 @@ pub unsafe extern "C" fn clausters_history_clear(h: *mut FfiHistory) {
     with_history(h, (), |history| history.clear())
 }
 
+/// What makes two of a **domain's** edits *the same thing done the same way* —
+/// the key a caller recording its own entry passes to
+/// [`clausters_history_record`], or nothing when the payload is not written in
+/// that vocabulary (or the domain is one the crate does not speak).
+///
+/// It is here rather than beside a structure because a caller across this
+/// surface holds no structure to ask: a curve, a span of samples and a timeline
+/// live in the caller's own memory, and only their *vocabulary* is the crate's.
+/// [`clausters_document_coalesce_key`](crate::clausters_document_coalesce_key)
+/// stays as it is — the arrangement's own door, on the surface its sentence
+/// belongs to — and this is the same rule for the domains that have no handle
+/// here.
+///
+/// Sizes with a null `out` and fills with a second call, like the rest of the
+/// JSON surface. A pure read: nothing here mutates.
+///
+/// # Safety
+/// `domain` must be null or readable for `domain_len` bytes, `payload` null or
+/// readable for `payload_len` bytes, and `out` null or writable for `out_cap`
+/// bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_domain_coalesce_key(
+    domain: *const u8,
+    domain_len: usize,
+    payload: *const u8,
+    payload_len: usize,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    // SAFETY: forwarded from this function's own contract.
+    let (Some(domain), Some(raw)) = (unsafe { text(domain, domain_len) }, unsafe {
+        text(payload, payload_len)
+    }) else {
+        return 0;
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(&raw) else {
+        return 0;
+    };
+    let Some(key) = clausters_document::domain::coalesce_key(&domain, &Opaque(value)) else {
+        return 0;
+    };
+    // SAFETY: forwarded from this function's own contract. A pure read, so
+    // there is nothing to commit.
+    unsafe { fill(key.as_bytes(), out, out_cap, || {}) }
+}
+
 #[cfg(test)]
 mod tests;

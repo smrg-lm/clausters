@@ -756,6 +756,21 @@ export function correlation(left: Float32Array, right: Float32Array): number | u
 export function degree_to_midinote(degree: number, octave: number, root: number, scale: Float32Array): number;
 
 /**
+ * What makes two of a **domain's** edits *the same thing done the same way* —
+ * the key a caller recording its own entry passes to {@link History.record},
+ * or an empty string when the payload is not written in that vocabulary (or
+ * the domain is one the crate does not speak).
+ *
+ * It is a free function rather than a method because a caller here holds no
+ * structure to ask: a curve, a span of samples and a timeline live in this
+ * page's own memory, and only their *vocabulary* is the crate's.
+ * {@link JsDocument.coalesceKey} stays as it is — the arrangement's own door,
+ * on the surface its sentence belongs to — and this is the same rule for the
+ * domains that have no handle here.
+ */
+export function domainCoalesceKey(domain: string, payload: string): string;
+
+/**
  * The engraver's options for one page, as the JSON object it is configured
  * with: `scale` (staff size), `pageWidth` (the page units a score wraps into
  * systems at) and an optional JSON object merged over them.
@@ -1071,6 +1086,7 @@ export interface InitOutput {
     readonly document_resolve: (a: number, b: number, c: number) => [number, number, number, number];
     readonly document_snapshot: (a: number) => [number, number, number, number];
     readonly document_version: (a: number) => bigint;
+    readonly domainCoalesceKey: (a: number, b: number, c: number, d: number) => [number, number];
     readonly engraveOptions: (a: number, b: number, c: number, d: number) => [number, number];
     readonly graph_bus_reserved: () => [number, number];
     readonly history_apply: (a: number, b: bigint, c: number, d: number, e: number) => [number, number, number, number];

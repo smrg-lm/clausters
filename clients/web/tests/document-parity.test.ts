@@ -18,7 +18,13 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
-import { Document, Log, applyIntent, resolveSelection } from "../src/document.ts";
+import {
+    Document,
+    Log,
+    applyIntent,
+    domainCoalesceKey,
+    resolveSelection,
+} from "../src/document.ts";
 import type {
     Against,
     ClaustersDocument,
@@ -71,6 +77,8 @@ interface Vectors {
         inverted: ClaustersDocument;
         redone: ClaustersDocument;
     };
+    /** One payload per vocabulary, and the sentence the crate answers for it. */
+    domains: { domain: string; payload: unknown; key: string }[];
 }
 
 const here = import.meta.url;
@@ -243,5 +251,23 @@ test("a deterministic operation comes back for the owner to re-run", async () =>
     } finally {
         log.free();
         doc.free();
+    }
+});
+
+test("every vocabulary answers the same coalesce sentence in both languages", () => {
+    // The one rule a caller recording its own entry has to state and the pile
+    // cannot compute -- so it is exactly what would be spelled once in ctypes
+    // and again here, and drift apart the day a domain grows a second verb.
+    // The last two rows are the answers that are not a key: a domain the crate
+    // does not speak (a typo, which `register` would otherwise take in silence)
+    // and a payload written in another vocabulary.
+    const domains = vectors.domains;
+    assert.ok(domains.length > 0, "the generator emitted the table");
+    for (const { domain, payload, key } of domains) {
+        assert.equal(
+            domainCoalesceKey(domain, payload),
+            key,
+            `${domain}: ${JSON.stringify(payload)}`,
+        );
     }
 });

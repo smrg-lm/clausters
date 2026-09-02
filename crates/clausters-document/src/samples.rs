@@ -188,18 +188,28 @@ impl Editable for Samples<'_> {
     }
 
     fn coalesce_key(&self, payload: &Opaque) -> Option<String> {
-        let SamplesIntent::Write {
-            channel,
-            start,
-            values,
-        } = serde_json::from_value::<SamplesIntent>(payload.0.clone()).ok()?;
-        // **The span is part of the sentence**, unlike a curve's, where one verb
-        // over one structure says everything. A sample dragged up and then
-        // further up is the same thing done the same way and is one undo; two
-        // strokes over different runs are two, and merging them would make an
-        // undo take back a stroke the hand had already finished.
-        Some(format!("{SAMPLES}:{channel}:{start}:{}", values.len()))
+        coalesce_key(payload)
     }
+}
+
+/// What makes two edits to samples *the same thing done the same way*.
+///
+/// **The span is part of the sentence**, unlike a curve's, where one verb over
+/// one structure says everything. A sample dragged up and then further up is
+/// the same thing done the same way and is one undo; two strokes over different
+/// runs are two, and merging them would make an undo take back a stroke the
+/// hand had already finished.
+///
+/// Free, and reached through
+/// [`domain::coalesce_key`](crate::domain::coalesce_key), because a caller
+/// across the ABI asks this without handing over the samples.
+pub fn coalesce_key(payload: &Opaque) -> Option<String> {
+    let SamplesIntent::Write {
+        channel,
+        start,
+        values,
+    } = serde_json::from_value::<SamplesIntent>(payload.0.clone()).ok()?;
+    Some(format!("{SAMPLES}:{channel}:{start}:{}", values.len()))
 }
 
 /// The payload for a span stating these values.

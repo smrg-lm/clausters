@@ -120,14 +120,21 @@ impl Editable for Events {
         Some(crate::events::payload(&self.state()))
     }
 
-    fn coalesce_key(&self, _payload: &Opaque) -> Option<String> {
-        // One verb over one timeline, like a curve's: every edit here is the
-        // same thing done the same way, so a note dragged across the grid is one
-        // undo when the caller says the hand did not stop. The span that makes a
-        // samples key more than the domain name has no counterpart here -- a
-        // whole-list edit names no span.
-        Some(EVENTS.to_string())
+    fn coalesce_key(&self, payload: &Opaque) -> Option<String> {
+        coalesce_key(payload)
     }
+}
+
+/// What makes two edits to a timeline *the same thing done the same way*.
+///
+/// One verb over one timeline, like a curve's: every edit here is the same
+/// thing done the same way, so a note dragged across the grid is one undo when
+/// the caller says the hand did not stop. The span that makes a samples key
+/// more than the domain name has no counterpart here — a whole-list edit names
+/// no span.
+pub fn coalesce_key(payload: &Opaque) -> Option<String> {
+    serde_json::from_value::<EventsIntent>(payload.0.clone()).ok()?;
+    Some(EVENTS.to_string())
 }
 
 #[cfg(test)]

@@ -997,7 +997,7 @@
       }
     },
     {
-      "label": "the same write again is idempotent on the document",
+      "label": "the empty write is the inverse, and it says the samples moved",
       "intent": {
         "intent": "writesamples",
         "node": 3,
@@ -1009,7 +1009,7 @@
       },
       "quant": 0.0,
       "document": {
-        "version": 7,
+        "version": 8,
         "root": {
           "id": 1,
           "kind": "aggregate",
@@ -1036,7 +1036,7 @@
                 "source": {
                   "source": 100,
                   "lifetime": "session",
-                  "generation": 1
+                  "generation": 2
                 },
                 "config": {
                   "instrument": "take"
@@ -1089,7 +1089,7 @@
         }
       },
       "outcome": {
-        "applied": false,
+        "applied": true,
         "effective": {
           "channel": 0,
           "intent": "writesamples",
@@ -1103,7 +1103,7 @@
     }
   ],
   "final": {
-    "version": 7,
+    "version": 8,
     "root": {
       "id": 1,
       "kind": "aggregate",
@@ -1130,7 +1130,7 @@
             "source": {
               "source": 100,
               "lifetime": "session",
-              "generation": 1
+              "generation": 2
             },
             "config": {
               "instrument": "take"
@@ -1756,6 +1756,9 @@
             "node": 2
           }
         ],
+        "others": [],
+        "label": "retune it",
+        "skipped": [],
         "document": {
           "version": 6,
           "root": {
@@ -1864,6 +1867,9 @@
             "offset": 1.0
           }
         ],
+        "others": [],
+        "label": "drop it on the grid",
+        "skipped": [],
         "document": {
           "version": 7,
           "root": {
@@ -1973,6 +1979,9 @@
             "offset": 2.0
           }
         ],
+        "others": [],
+        "label": "move the take",
+        "skipped": [],
         "document": {
           "version": 8,
           "root": {
@@ -2083,6 +2092,9 @@
             "offset": 0.0
           }
         ],
+        "others": [],
+        "label": "move the event",
+        "skipped": [],
         "document": {
           "version": 9,
           "root": {
@@ -2195,6 +2207,9 @@
             "offset": 1.0
           }
         ],
+        "others": [],
+        "label": "move the event",
+        "skipped": [],
         "remaining": [],
         "document": {
           "version": 10,
@@ -2305,6 +2320,9 @@
             "offset": 6.0
           }
         ],
+        "others": [],
+        "label": "move the take",
+        "skipped": [],
         "remaining": [],
         "document": {
           "version": 11,
@@ -2414,6 +2432,9 @@
             "offset": 4.0
           }
         ],
+        "others": [],
+        "label": "drop it on the grid",
+        "skipped": [],
         "remaining": [],
         "document": {
           "version": 12,
@@ -2525,6 +2546,9 @@
             "node": 2
           }
         ],
+        "others": [],
+        "label": "retune it",
+        "skipped": [],
         "remaining": [],
         "document": {
           "version": 13,
@@ -2787,5 +2811,98 @@
         ]
       }
     }
-  }
+  },
+  "domains": [
+    {
+      "domain": "tree",
+      "payload": {
+        "intent": "place",
+        "node": 7,
+        "offset": 1.0
+      },
+      "key": "place:7"
+    },
+    {
+      "domain": "tree",
+      "payload": {
+        "intent": "configure",
+        "node": 2,
+        "config": {}
+      },
+      "key": "configure:2"
+    },
+    {
+      "domain": "points",
+      "payload": {
+        "intent": "setpoints",
+        "points": [
+          {
+            "at": 0.0,
+            "value": 1.0
+          }
+        ]
+      },
+      "key": "points"
+    },
+    {
+      "domain": "samples",
+      "payload": {
+        "intent": "write",
+        "channel": 1,
+        "start": 40,
+        "values": [
+          0.5,
+          0.5
+        ]
+      },
+      "key": "samples:1:40:2"
+    },
+    {
+      "domain": "samples",
+      "payload": {
+        "intent": "write",
+        "channel": 0,
+        "start": 40,
+        "values": [
+          0.25
+        ]
+      },
+      "key": "samples:0:40:1"
+    },
+    {
+      "domain": "events",
+      "payload": {
+        "intent": "setevents",
+        "events": [
+          {
+            "at": 2.0,
+            "data": {
+              "pitch": 60
+            }
+          }
+        ]
+      },
+      "key": "events"
+    },
+    {
+      "domain": "smaples",
+      "payload": {
+        "intent": "write",
+        "channel": 0,
+        "start": 0,
+        "values": [
+          0.0
+        ]
+      },
+      "key": ""
+    },
+    {
+      "domain": "samples",
+      "payload": {
+        "intent": "setpoints",
+        "points": []
+      },
+      "key": ""
+    }
+  ]
 }

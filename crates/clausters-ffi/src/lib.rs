@@ -200,7 +200,21 @@ pub use time::*;
 /// with `clausters_history_released` saying when the last entry holding it has
 /// retired. And the save mark is the pile's: `clausters_history_mark_saved`,
 /// `_dirty` and `_saved_reachable`.
-pub const CORE_ABI_VERSION: u32 = 34;
+/// **v35 the vocabularies are named once.** `clausters_domain_coalesce_key`
+/// answers the coalesce sentence for any domain the crate speaks — the
+/// arrangement, a curve, a span of samples, a timeline — because a caller
+/// recording its own entry has to state a key the pile cannot compute, and
+/// spelling four vocabularies' rules again in ctypes and again in TypeScript is
+/// the divergence `clausters_document_coalesce_key` was given a door to
+/// prevent. Additive, and the counter still moves for the reason v31 states:
+/// the ctypes binding declares every symbol eagerly, so a staged library
+/// missing this one fails at load with a version mismatch rather than an
+/// `AttributeError` on a name nobody was looking at. One behaviour moved with
+/// it and is not additive: an **empty** `writesamples` — the inverse the
+/// document can state for a destructive edit — now bumps the source's
+/// generation instead of applying as a no-op, so a reader's copy is marked
+/// stale by an undo as it is by the edit.
+pub const CORE_ABI_VERSION: u32 = 35;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

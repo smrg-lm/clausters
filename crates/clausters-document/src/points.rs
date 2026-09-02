@@ -115,12 +115,21 @@ impl Editable for Points {
         Some(crate::points::payload(&self.state()))
     }
 
-    fn coalesce_key(&self, _payload: &Opaque) -> Option<String> {
-        // One verb over one curve: every edit here is the same thing done the
-        // same way, so a stroke's hundred small adjustments are one undo when
-        // the caller says the hand did not stop.
-        Some(POINTS.to_string())
+    fn coalesce_key(&self, payload: &Opaque) -> Option<String> {
+        coalesce_key(payload)
     }
+}
+
+/// What makes two edits to a curve *the same thing done the same way*.
+///
+/// One verb over one curve: every edit here is the same thing done the same
+/// way, so a stroke's hundred small adjustments are one undo when the caller
+/// says the hand did not stop. Free, and reached through
+/// [`domain::coalesce_key`](crate::domain::coalesce_key), because a caller
+/// across the ABI has to be able to ask without holding the curve.
+pub fn coalesce_key(payload: &Opaque) -> Option<String> {
+    serde_json::from_value::<PointsIntent>(payload.0.clone()).ok()?;
+    Some(POINTS.to_string())
 }
 
 #[cfg(test)]
