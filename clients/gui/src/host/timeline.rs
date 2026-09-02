@@ -910,6 +910,14 @@ impl Host {
         // here, before the groups seed their windows from the totals.
         self.sync_track_totals();
         let members = self.timeline_members();
+        // **What the axis was showing survives a redefine.** A redefine is how a
+        // *content* change reaches a window -- a clip split, a lane rebuilt, a
+        // second view answering an edit made in the first -- and where a person
+        // put the axis is screen state, which no content change is entitled to
+        // move. Dropping it here reset the zoom on every structural edit, which
+        // reads as the window starting over; the rest of the group state is
+        // rebuilt exactly as before.
+        let mut carried: HashMap<GroupKey, View> = HashMap::new();
         if let Some(def) = redefined {
             let spans_other: Vec<GroupKey> = members
                 .iter()
@@ -917,8 +925,10 @@ impl Host {
                 .map(|m| m.key)
                 .collect();
             for m in members.iter().filter(|m| m.root == def) {
-                if !spans_other.contains(&m.key) {
-                    self.timelines.states.remove(&m.key);
+                if !spans_other.contains(&m.key)
+                    && let Some(state) = self.timelines.states.remove(&m.key)
+                {
+                    carried.insert(m.key, state.nav);
                 }
             }
         }
@@ -933,7 +943,20 @@ impl Host {
                     .and_then(|w| w.kind.editor())
                     .cloned();
                 if let Some(editor) = editor {
-                    let nav = View::full(self.timeline_total(m.key));
+                    let total = self.timeline_total(m.key);
+                    let span = self.timeline_span(m.key);
+                    let nav = match carried.get(&m.key) {
+                        // The same rule a growing extent follows: a view that
+                        // was showing the whole timeline goes on showing all of
+                        // it, and a zoomed one keeps its window and is only
+                        // re-clamped.
+                        Some(old) if old.len > 0.0 && old.len < total as f64 => {
+                            let mut nav = *old;
+                            nav.set_start(nav.start, span);
+                            nav
+                        }
+                        _ => View::full(total),
+                    };
                     self.timelines
                         .states
                         .insert(m.key, GroupState::seed(&editor, nav));
@@ -1486,12 +1509,18 @@ mod tests {
         assert_eq!(host.timelines().total_of(10), 0);
     }
 
+    /// A redefine rebuilds a group whose members are confined to the def, and
+    /// leaves one that spans another window alone — **and neither loses the
+    /// window a person navigated to**. What is rebuilt is the group's semantics;
+    /// the axis's position is screen state and belongs to nobody's tree.
     #[test]
-    fn redefine_reseeds_confined_groups_but_keeps_cross_window_ones() {
+    fn redefine_reseeds_confined_groups_and_keeps_every_window() {
         let mut host = linked_host();
         host.zoom_timeline(12, 0.5, 0.0); // solo group, confined to def 1
+        let (confined, _) = host.timeline_nav(12).unwrap();
         // A second window joins group 1, then def 1 is re-sent: group 1 spans
-        // the other window, so it survives; the solo group reseeds fresh.
+        // the other window, so its state is never touched; the solo group is
+        // rebuilt from the def, carrying its window across.
         host.handle_packet(
             def_msg(
                 2,
@@ -1508,7 +1537,11 @@ mod tests {
         let (nav, _) = host.timeline_nav(10).unwrap();
         assert!(nav.len < 4.0, "the cross-window group survived the re-def");
         let (nav, total) = host.timeline_nav(12).unwrap();
-        assert_eq!((nav.len, total), (4.0, 4), "the confined group reset");
+        assert_eq!(
+            (nav.start, nav.len, total),
+            (confined.start, confined.len, 4),
+            "and the confined one was rebuilt without moving the axis"
+        );
     }
 
     /// Two lanes of one window (the window root is id 1, so the lanes take ids
@@ -1763,6 +1796,82 @@ mod tests {
             (384_000.0, 384_000.0),
             "one window forward, same length"
         );
+    }
+
+    /// Where a person put the axis is **screen state**, and no content change is
+    /// entitled to move it — not a `/gui_set` that lengthens a lane, and not a
+    /// redefine.
+    ///
+    /// The redefine half is the one that was wrong, and it was wrong in the way
+    /// that is hardest to argue with: a structural edit (a split, a cut, an undo
+    /// of one) is delivered as a whole new tree, and rebuilding the group state
+    /// threw the window away with it. So every structural edit zoomed the axis
+    /// back out to the whole piece, which reads as the window starting over.
+    #[test]
+    fn a_content_change_does_not_move_the_window_a_person_chose() {
+        let tree = r#"{"type":"window","margin":0,"children":[
+                {"id":100,"type":"field","link":7,"children":[
+                    {"id":110,"type":"field","offset":0.0,"dur":400.0}
+                ]}
+            ]}"#;
+        let mut host = Host::new();
+        host.handle_packet(def_msg(1, tree), from());
+        host.sync_track_totals();
+        host.zoom_timeline(100, 0.25, 0.0);
+        let (chosen, _) = host.timeline_nav(100).unwrap();
+        assert_eq!((chosen.start, chosen.len), (0.0, 100.0), "a quarter of it");
+
+        // A clip that moved: the lane is longer, the window is not.
+        host.handle_packet(set_msg(110, &[("offset", OscType::Float(50.0))]), from());
+        let (after, total) = host.timeline_nav(100).unwrap();
+        assert_eq!((after.start, after.len), (chosen.start, chosen.len));
+        assert_eq!(total, 450, "and the axis knows it grew");
+
+        // ...and the same tree again, which is what a structural edit sends.
+        host.handle_packet(def_msg(1, tree), from());
+        let (after, _) = host.timeline_nav(100).unwrap();
+        assert_eq!(
+            (after.start, after.len),
+            (chosen.start, chosen.len),
+            "a redefine is a content change, not a navigation command"
+        );
+    }
+
+    /// The other half of the same rule: a view that was showing the **whole**
+    /// timeline goes on showing all of it, so a redefine of a piece that grew
+    /// does not leave a person looking at part of it for no reason they asked
+    /// for.
+    #[test]
+    fn a_window_showing_everything_goes_on_showing_everything() {
+        let mut host = Host::new();
+        host.handle_packet(
+            def_msg(
+                1,
+                r#"{"type":"window","margin":0,"children":[
+                {"id":100,"type":"field","link":7,"children":[
+                    {"id":110,"type":"field","offset":0.0,"dur":400.0}
+                ]}
+            ]}"#,
+            ),
+            from(),
+        );
+        host.sync_track_totals();
+        assert_eq!(host.timeline_nav(100).unwrap().0.len, 400.0);
+
+        host.handle_packet(
+            def_msg(
+                1,
+                r#"{"type":"window","margin":0,"children":[
+                {"id":100,"type":"field","link":7,"children":[
+                    {"id":110,"type":"field","offset":0.0,"dur":400.0},
+                    {"id":111,"type":"field","offset":400.0,"dur":400.0}
+                ]}
+            ]}"#,
+            ),
+            from(),
+        );
+        let (nav, total) = host.timeline_nav(100).unwrap();
+        assert_eq!((nav.start, nav.len, total), (0.0, 800.0, 800));
     }
 
     /// A free-standing `timeruler` joins the lanes' group and reads their

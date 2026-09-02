@@ -419,3 +419,46 @@ fn resolve_bulk(want: &Bulk) -> Option<Loaded> {
         Bulk::Buffer(_) | Bulk::Recording { .. } => None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    /// **A redefine must never destroy the window it is redefining**, and this
+    /// is the one place that could make it do so again.
+    ///
+    /// The rule cannot be checked by running the front — it needs an event loop
+    /// and a GPU adapter, so nothing in a test suite ever reaches
+    /// [`App::open_window`]. What *can* be checked is that the one call which
+    /// makes a window go away is not in it, which is exactly how the bug was
+    /// written the first time: `open_window` began with `drop_window(id)` and a
+    /// fresh `create_window`, so every structural edit closed the window and
+    /// opened another one. The browser front never did this (it keeps its
+    /// canvas and rebuilds the def's state), and two fronts of one host
+    /// behaving differently is a defect by the standing rule.
+    ///
+    /// A source check rather than a behavioural one is the same trade
+    /// `tests/bindings.rs` makes for the binding tables: what the compiler
+    /// cannot see, and a suite cannot run, is read out of the source and
+    /// asserted.
+    #[test]
+    fn opening_a_window_never_destroys_one() {
+        let source = include_str!("windows.rs");
+        let from = source
+            .find("pub(super) fn open_window")
+            .expect("open_window is in this file");
+        // Its body ends where the next item begins, at the same indentation.
+        let rest = &source[from..];
+        let to = rest[1..]
+            .find("\n    fn ")
+            .or_else(|| rest[1..].find("\n    pub(super) fn "))
+            .map(|at| at + 1)
+            .unwrap_or(rest.len());
+        let body = &rest[..to];
+        assert!(
+            !body.contains("drop_window("),
+            "open_window must bring an existing window up to the new tree, not \
+             replace it: a redefine is how a structural edit reaches a window, \
+             and a window that closes and reopens loses its place, its size and \
+             its focus. Only a close (CloseWindow, the user's own) drops one."
+        );
+    }
+}
