@@ -576,14 +576,18 @@ fn write_samples(
     let Body::Vector { source, .. } = &mut node.body else {
         return refuse("only samples can be written");
     };
-    if values.is_empty() {
-        return Outcome::unchanged(Intent::WriteSamples {
-            node: id,
-            channel,
-            start,
-            values: Vec::new(),
-        });
-    }
+    // **The empty write is not nothing.** It is the shape `inverse_of` hands
+    // back for a `WriteSamples` -- the samples are not in the document, so the
+    // inverse can say *that* they went back but not *to what* -- and it is
+    // therefore what an undo applies. Treating it as a no-op left the counter
+    // where the stroke had put it, so every reader holding a decimation of
+    // those samples went on drawing the picture the undo had just taken back,
+    // with nothing to tell it otherwise. So it bumps like any other write.
+    //
+    // Which makes the counter **monotonic**: an undo moves it forward, never
+    // back. That is what it is for -- it answers "is my copy still good", and
+    // after an undo it is not, exactly as after the edit.
+    //
     // The samples are not in the document -- the document describes where
     // samples are, never what they hold -- so what applying does here is bump the
     // source's generation, which is the signal every reader of those samples

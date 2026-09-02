@@ -547,3 +547,155 @@ fn the_arrangements_own_door_still_records_through_the_generic_one() {
     assert_eq!(outcome.effective, place(2, 5.0));
     assert_eq!(log.len(), 1);
 }
+
+/// The shape `O20` is for: a stroke over a *placed* take is one gesture with a
+/// leg in each domain — the tree's, which says the samples moved, and the
+/// samples' own, which says what they now hold and what they held. One entry,
+/// undone in one step, and consistent at every point in between.
+mod a_stroke_over_a_placed_take {
+    use super::*;
+    use crate::samples::{SAMPLES, Samples, SamplesIntent};
+    use crate::{Lifetime, SourceId, SourceRef};
+
+    fn take(id: u64) -> Node {
+        Node::new(
+            NodeId(id),
+            Body::Vector {
+                source: SourceRef {
+                    source: SourceId(1),
+                    lifetime: Lifetime::Session,
+                    generation: 0,
+                    range: None,
+                },
+                config: Opaque::none(),
+            },
+        )
+    }
+
+    fn document() -> Document {
+        Document::new(Node::new(
+            NodeId(1),
+            Body::Aggregate {
+                grouping: Grouping::Concrete,
+                members: vec![placed(0.0, take(2))],
+                config: Opaque::none(),
+            },
+        ))
+    }
+
+    fn write(start: u64, values: &[f32]) -> Opaque {
+        crate::samples::payload(&SamplesIntent::Write {
+            channel: 0,
+            start,
+            values: values.to_vec(),
+        })
+    }
+
+    fn generation(document: &Document) -> u64 {
+        let Body::Aggregate { members, .. } = &document.root.body else {
+            unreachable!("the root is an aggregate")
+        };
+        let Body::Vector { source, .. } = &members[0].node.body else {
+            unreachable!("the member is a take")
+        };
+        source.generation
+    }
+
+    #[test]
+    fn is_one_entry_with_a_leg_in_each_domain_and_one_undo() {
+        let mut history = History::new();
+        let tree_id = history.register("tree");
+        let samples_id = history.register(SAMPLES);
+
+        let mut document = document();
+        let mut data = vec![0.0, 0.1, 0.2, 0.3];
+
+        let outcomes = {
+            let mut tree = Tree::new(&mut document);
+            let mut samples = Samples::interleaved(&mut data, 1);
+            let stroke = crate::log::payload(&Intent::WriteSamples {
+                node: NodeId(2),
+                channel: 0,
+                start: 1,
+                values: vec![-1.0, -2.0],
+            });
+            history.transact(
+                "draw over the take",
+                &mut [
+                    (tree_id, &mut tree, stroke),
+                    (samples_id, &mut samples, write(1, &[-1.0, -2.0])),
+                ],
+            )
+        };
+        assert!(outcomes.iter().all(|o| o.applied), "both legs landed");
+        assert_eq!(
+            generation(&document),
+            1,
+            "readers are told the samples moved"
+        );
+        assert_eq!(data, vec![0.0, -1.0, -2.0, 0.3], "and the samples did move");
+        assert_eq!(history.len(), 1, "one gesture, one entry");
+
+        // One step, both structures, each leg routed to the domain it was
+        // registered under -- which is the whole of what the registry is for.
+        let undone = history.undo().expect("something to undo");
+        assert_eq!(undone.legs.len(), 2);
+        {
+            let mut tree = Tree::new(&mut document);
+            let mut samples = Samples::interleaved(&mut data, 1);
+            for (structure, payload) in undone.legs {
+                if structure == tree_id {
+                    tree.apply(&payload);
+                } else {
+                    samples.apply(&payload);
+                }
+            }
+        }
+        assert_eq!(data, vec![0.0, 0.1, 0.2, 0.3], "the samples came back");
+        assert_eq!(
+            generation(&document),
+            2,
+            "and the generation moved again rather than backwards: a reader's \
+             copy is stale either way, and a history is not a clock"
+        );
+    }
+
+    #[test]
+    fn a_refused_leg_leaves_neither_structure_moved() {
+        let mut history = History::new();
+        let tree_id = history.register("tree");
+        let samples_id = history.register(SAMPLES);
+
+        let mut document = document();
+        let mut data = vec![0.0, 0.1];
+
+        let outcomes = {
+            let mut tree = Tree::new(&mut document);
+            let mut samples = Samples::interleaved(&mut data, 1);
+            let stroke = crate::log::payload(&Intent::WriteSamples {
+                node: NodeId(2),
+                channel: 0,
+                start: 0,
+                values: vec![-1.0],
+            });
+            // The span runs off the end of the samples: the tree's leg is
+            // legal and the samples' is not.
+            history.transact(
+                "draw over the take",
+                &mut [
+                    (tree_id, &mut tree, stroke),
+                    (samples_id, &mut samples, write(5, &[-1.0])),
+                ],
+            )
+        };
+        assert!(outcomes.iter().all(|o| !o.applied));
+        assert_eq!(data, vec![0.0, 0.1], "the samples never moved");
+        assert_eq!(history.len(), 0, "and nothing was recorded");
+        // The tree's leg *was* put back -- its inverse was applied -- and the
+        // generation is 2 rather than 0 because the counter is monotonic: it
+        // answers "is my copy still good", and a reader that saw generation 1
+        // between the two has to be told it is not, whichever way the document
+        // then went.
+        assert_eq!(generation(&document), 2);
+    }
+}

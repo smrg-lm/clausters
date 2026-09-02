@@ -49,15 +49,18 @@
 //! client, so no edit can leave them stale.
 
 pub mod clipboard;
+pub mod events;
 pub mod history;
 pub mod intent;
 pub mod log;
 pub mod points;
 pub mod resolve;
+pub mod samples;
 pub mod selection;
 pub mod session;
 
 pub use clipboard::{Clipboard, Content};
+pub use events::{Event, Events, EventsIntent};
 pub use history::{Applied, Editable, History, StructureId};
 pub use intent::{Against, Intent, Outcome, Rules, apply};
 pub use log::{
@@ -65,6 +68,7 @@ pub use log::{
 };
 pub use points::{Point, Points, PointsIntent};
 pub use resolve::{Mapping, Resolved, Unit, resolve, resolve_node};
+pub use samples::{Samples, SamplesIntent};
 pub use selection::{BinRange, Mask, Selection, ValueRange};
 pub use session::{Location, OpenEdit, Session, Source};
 
