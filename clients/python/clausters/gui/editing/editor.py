@@ -70,6 +70,9 @@ class Editor:
             case — asks the structure for its own, which is what makes two
             windows over one thing share an undo order.
         title: the window title.
+        extra: widgets appended to the window after the picture — a transport
+            panel, a readout. They are the script's, so the editor never touches
+            their ids; keep them clear of ``base_id``.
         base_id: the first widget id a **host-less** draw counts from (tests and
             tree inspection). Once `open`ed, the ids come from the host's own
             recycling pool instead, so the two never collide and a redraw's ids
@@ -78,7 +81,7 @@ class Editor:
 
     def __init__(self, structure=None, *, sample_rate: float, tempo: float = 1.0,
                  tempo_map=None, domain=None, view=None, context=None,
-                 title: str = "Editor",
+                 title: str = "Editor", extra=(),
                  width: int = 1000, height: int = 520, base_id: int = 10_000):
         #: What is edited. `FormEditor` calls it `element`, which is the
         #: arrangement's word for the same slot.
@@ -95,6 +98,21 @@ class Editor:
         )
         self.title = title
         self.size = (int(width), int(height))
+        #: Widgets appended to the window after the picture. They are the
+        #: script's — the editor never touches their ids — so keep them clear of
+        #: ``base_id``.
+        self.extra = list(extra)
+        #: The editor this one was **composed inside**, when it was one.
+        #:
+        #: A structure is not a piece: it has no transport, so a click on a
+        #: ruler here is a seek of whatever this is part of. An editor composed
+        #: by nobody answers a transport gesture with nothing, which is the
+        #: honest answer for a curve opened on its own.
+        self.composed_in = None
+        #: What of the composing editor's model this one draws — the element a
+        #: dedicated roll or signal view was opened over. ``None`` when this
+        #: editor stands alone.
+        self.composed_over = None
         #: The vocabulary this structure's edits are written in, and the picture
         #: of it. Both are per-structure and neither is per-window: what a
         #: number means and what the thing looks like do not change because a
@@ -339,7 +357,11 @@ class Editor:
         """`apply`, without the turn around it: what the message actually
         does."""
         if addr == "/gui_closed":
-            if not args or self._window is None or int(args[0]) == self._window:
+            # **Only this editor's window.** One host carries several, and an
+            # editor with none of its own -- a multitrack that opened only a
+            # composed view -- would otherwise read every close as its own and
+            # take itself out of the context that is still drawing.
+            if self._window is not None and (not args or int(args[0]) == self._window):
                 self._window = None
                 # Closing a *view* is not an event of the history, so the
                 # context stays exactly as it is -- what goes is this window's
@@ -445,12 +467,40 @@ class Editor:
         The selection is still kept **typed**, because it is the value an
         operation is handed.
         """
+        if tag == "locate" and self.composed_in is not None and values:
+            # A click on the ruler: a seek of the piece this view is part of.
+            # A structure has no transport of its own, and a window inside a
+            # composition is not a second place to keep a position.
+            self.composed_in.locate(self.units_to_beats(float(values[0])))
+            return False
         if tag == "selection":
-            self.selection = {"widget": int(wid),
-                              "start": self.units_to_beats(float(values[0])) if values else 0.0,
-                              "len": (self.units_to_beats(float(values[1]))
-                                      if len(values) > 1 else 0.0)}
+            self.selection = {
+                "start": self.units_to_beats(float(values[0])) if values else 0.0,
+                "len": (self.units_to_beats(float(values[1]))
+                        if len(values) > 1 else 0.0)}
+            if len(values) >= 4:
+                # The sweep restricted the value axis too. Carried **as it
+                # came**: it is in the structure's own domain, and no unit of
+                # this editor's applies to it.
+                self.selection["value"] = {"min": float(values[2]),
+                                           "max": float(values[3])}
+            self.selected()
         return False
+
+    def selected(self) -> None:
+        """This editor's selection moved.
+
+        Nothing on its own — a structure's selection is that structure's. A view
+        **composed** inside a bigger editor hands it up instead, because the
+        range an operation is given must be the same value whichever of the
+        piece's windows it was swept in.
+        """
+        if self.composed_in is not None:
+            self.composed_in.adopt_selection(self)
+
+    def adopt_selection(self, editor: "Editor") -> None:
+        """A view composed inside this one swept a marquee. Nothing by default;
+        `clausters.gui.editing.FormEditor` names what it is a selection *of*."""
 
     def _edit(self, payload: dict, label: str, *, coalesce: bool = False) -> bool:
         """Apply one payload to the structure and record how to put it back.
@@ -535,13 +585,16 @@ class Editor:
             return stepped
 
     def _step(self, direction: str) -> bool:
-        """One step of the pile, projected leg by leg.
+        """One step of the pile, **handed round the context**.
 
         The history holds structures the crate cannot reach, so it applies
-        nothing: what comes back is an ordered list of legs, and it is the
-        editor that hands each to the domain that owns it. A leg naming a
-        structure this editor does not hold is left alone — another view of the
-        same context owns it, and one pile over several structures is the point.
+        nothing: what comes back is an ordered list of legs, each naming the
+        structure it belongs to. One entry can name several — a stroke over a
+        take and a bend of the curve over it are one order — so the step is
+        offered to **every editor in this context**, and each projects the legs
+        it owns. An editor that walked only its own legs would step the cursor
+        over somebody else's edit and undo nothing, which looks exactly like a
+        dead button.
         """
         history = self._editing.history
         if history is None:
@@ -551,24 +604,63 @@ class Editor:
             return False
         legs = (step.get("inverses") if direction == "undo"
                 else step.get("edits")) or []
+        stepped = False
+        for editor in self._walkers():
+            stepped |= editor.project_legs(legs)
+        if not stepped:
+            return False
+        # **Once for the walk, not once per window.** The version is the
+        # context's, and every view reports the same one — and only this one
+        # draws from here: the others are told on the way out of the turn, the
+        # way they are told about any edit, so a step is one answer per window
+        # rather than two.
+        self._version += 1
+        self.reflect_step()
+        return True
+
+    def _walkers(self) -> list:
+        """Everybody a history step is offered to: the views of this context,
+        and this editor whether or not it has a window (a host-less one still
+        holds a structure the step may name)."""
+        views = self._editing.views()
+        return views if any(view is self for view in views) else [self, *views]
+
+    def project_legs(self, legs: list) -> bool:
+        """Project the legs of a history step that name **this** editor's
+        structure, and say whether anything moved.
+
+        The other half of `_step`: what the walk hands round, so an editor that
+        holds one of the structures an entry touched writes it back through its
+        own domain — the same door an edit goes through, which is what keeps the
+        two from disagreeing about what a payload means.
+        """
+        if self.domain is None:
+            return False
         mine = self._registered()
         applied = False
         for leg in legs:
             if int(leg.get("structure", -1)) != mine:
                 continue
             payload = leg.get("payload")
-            if isinstance(payload, dict) and self.domain is not None:
+            if isinstance(payload, dict):
                 applied |= bool(self.domain.project(self.structure, payload))
-        if not applied:
-            return False
-        self._version += 1
+        return applied
+
+    def reflect_step(self) -> None:
+        """Draw what a history walk left behind: every widget resynced, and the
+        host told once.
+
+        Called on each view after the whole step has landed, so a window whose
+        structure the step did not touch still comes back in step — one entry
+        can move several structures, and a picture of one of them is a picture
+        of the walk.
+        """
         self.dirty = True
         self._corrections = []
         for wid in list(getattr(self.view, "widgets", {})):
             self._resync(wid)
         self._acknowledge(0)
         self._corrections = []
-        return True
 
     @property
     def can_undo(self) -> bool:

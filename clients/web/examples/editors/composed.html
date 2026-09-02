@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: a multitrack and a take's own editor, one undo order</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 66rem; }
+      #note { font-size: 13px; line-height: 1.5; max-width: 46rem; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; max-height: 12rem;
+            overflow-y: auto; }
+      .stage { width: 900px; max-width: 100%; height: 420px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">A multitrack and a take's own editor, over one piece and
+<b>one</b> undo order.
+
+The multitrack shows a take as a clip's body, at a clip's size.
+<code>FormEditor.openSignal</code> opens the same take by itself — the
+editor-grade view of its samples, big enough to draw on. What this page is for
+is what happens <i>between</i> the two windows: they are not two programs
+sharing a picture, they are two editors over one composition.
+
+<b>They are not the same kind of editor, and that is the point.</b> The
+multitrack edits a <b>tree</b>, and its edits are intents on a document. The
+signal window is a <code>SamplesEditor</code> — the same one <code>edit</code>
+opens over a bare buffer — and its edits are writes in the crate's
+<code>samples</code> vocabulary, whose state the crate deliberately does not
+hold. Neither knows what the other did. What they share is the composition's
+<b>editing context</b>, so the two are one order.
+
+<b>Draw</b> on the take (the button puts the drag into draw mode), <b>bend</b>
+the curve over it in the multitrack, then <b>Ctrl+Z over the multitrack</b>: the
+stroke comes back first, undone by a window that cannot read a samples edit at
+all — it hands that leg to the editor that can. Again, and the curve goes back;
+<b>Ctrl+Shift+Z over the signal window</b> replays both, in order.</div>
+
+      <button id="run">bounce and open</button>
+      <div id="multitrack" class="stage"></div>
+      <div id="signal" class="stage"></div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/editors/composed.py, call for
+      call: the sampler def, the bounced phrase, the `Vector` over the buffer,
+      the curve, the piece, `open` and `openSignal` on one editor, the draw-mode
+      button, the transport, and the history read-out.
+
+      The platform's one difference is the take's route into the buffer: the
+      script renders to a WAV and reads it back with `Buffer.read`, and a tab has
+      no file, so the samples go straight in with `Buffer.fromSamples`. And the
+      script's `run()` loop has no counterpart: the page's event loop is what
+      polls, so the read-out is printed from the host's own messages.
+
+      Serve clients/web (the package root) and open
+      /examples/editors/composed.html. Build it first: ./build.sh
+    -->
+    <script type="module">
+      import { Buffer, Session, form, gui, seq } from "../../dist/index.js";
+      import { SynthDef, control, out, playBuf } from "../../dist/defs/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => {
+        $("log").textContent += line + "\n";
+        $("log").scrollTop = $("log").scrollHeight;
+      };
+
+      const TEMPO = 2.0;   // beats per second (120 bpm)
+
+      /** Plays a buffer once, at the length its event gives it. */
+      function sampler(name = "take") {
+        const buf = control("buf", 0.0, { rate: "ir" });
+        const amp = control("amp", 0.8, { rate: "ir" });
+        const sig = playBuf(buf, 0.0, 1.0, 0.0).mul(amp);
+        return new SynthDef(name, out(0.0, sig), out(1.0, sig));
+      }
+
+      const PHRASE = [60, 67, 64, 72, 69, 76];
+      const BEATS = PHRASE.length;
+      const SECONDS = BEATS / TEMPO;
+
+      async function run() {
+        $("run").disabled = true;
+        const session = await Session.embed({ tempo: TEMPO, latency: 0.1 });
+        const server = session.server;
+        await sampler().send(server);
+        const SR = (await server.queryInfo()).actualSampleRate;
+
+        // The take, bounced offline and installed in the engine's pool.
+        const offline = await Session.nrt({ tempo: TEMPO });
+        offline.play(new seq.Pbind({
+          midinote: new seq.Pseq(PHRASE, 1), dur: 1.0, legato: 0.9, amp: 0.35,
+        }));
+        const bounced = await offline.render({ sampleRate: SR, channels: 1 });
+        const buf = await Buffer.fromSamples(bounced.samples, 1, SR, { server });
+        const take = new form.Vector(buf, null, SECONDS,
+                                     { instrument: "take", name: "phrase" });
+
+        // The curve over it: a break-point envelope placed in time, which is
+        // what the arrangement draws as a `bpf` body on its clip.
+        const sweep = seq.Automation.fromPoints(
+          [[0.0, 400.0, 1, 0.0], [SECONDS / 2, 3000.0, 2, 0.0], [SECONDS, 600.0, 1, 0.0]],
+          null, { name: "cutoff" });
+
+        const piece = new form.Aggregate([
+          [0.0, new form.Aggregate([[0.0, take]], "concrete", { name: "audio" })],
+          [0.0, new form.Aggregate([[0.0, new form.Element(sweep, null, SECONDS)]],
+                                   "concrete", { name: "filter" })],
+        ], "concrete", { name: "composed" });
+
+        const bar = gui.panel(
+          { layout: "row", h: 34.0 },
+          gui.button({ name: "play", label: "play" }),
+          gui.button({ name: "stop", label: "stop" }),
+          gui.button({ name: "draw", label: "drag: select" }),
+        );
+
+        const host = await session.gui();
+        // One `FormEditor`. `open` draws the multitrack; `openSignal`
+        // **composes** a `SamplesEditor` over the take and opens its window
+        // beside it. The composed editor is reachable as `editor.composed` — its
+        // own selection, its own undo, the buffer it holds — and it is joined to
+        // this piece's editing context, which is the whole of why the two step
+        // one history.
+        const editor = new gui.FormEditor(piece, {
+          sampleRate: SR, tempo: TEMPO, quant: 0.25, extra: [bar],
+          title: "Composed", width: 900, height: 420,
+        });
+        const multitrack = await editor.open(host, { stage: $("multitrack") });
+        const signal = await editor.openSignal(host, take, { stage: $("signal") });
+        session.start();
+
+        // What the drag does in the signal window. A stroke is a gesture the
+        // widget has to be put into: the same drag that sweeps a selection
+        // cannot also draw, so the mode is a prop and the button flips it.
+        let mode = "select";
+        const toggleMode = () => {
+          mode = mode === "select" ? "draw" : "select";
+          for (const wid of editor.composed[editor.composed.length - 1].view.widgets.keys()) {
+            host.set(wid, { gestures: { drag: mode } });
+          }
+          signal.widget("draw").set({ label: `drag: ${mode}` });
+        };
+
+        signal.widget("draw").onClick(toggleMode);
+        for (const win of [multitrack, signal]) {
+          win.widget("play").onClick(() => editor.play(server, session.clock));
+          win.widget("stop").onClick(() => editor.stop());
+        }
+        editor.locate(0.0);
+
+        // The history read-out: one label, whichever window is about to move it.
+        let shown = "";
+        host.onMessage(() => {
+          const state = `undo=${editor.canUndo} ${editor.undoLabel} ` +
+                        `redo=${editor.canRedo} ${editor.redoLabel}`;
+          if (state !== shown) {
+            shown = state;
+            log(state);
+          }
+        });
+        log("draw on the take, bend the curve, then Ctrl+Z over either window");
+      }
+
+      $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
+    </script>
+  </body>
+</html>

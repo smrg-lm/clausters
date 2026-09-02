@@ -28,6 +28,13 @@ to everything else in the piece. This opens the same element by itself, at the
 size of a window: <code>FormEditor.openSignal</code>, the sibling of the dedicated
 piano roll.
 
+<b>It is an editor of the take, not a picture of it.</b> <code>openSignal</code>
+composes a <code>SamplesEditor</code> — the same one <code>edit</code> opens over
+a bare buffer — joined to this piece's editing context, so a stroke drawn here
+writes the engine's buffer and undoes in the piece's own order. Drawing is a
+gesture the widget has to be put into (<code>examples/editors/composed.html</code>
+shows the toggle); this page stays on the picture and the measures.
+
 <b>The stack.</b> <code>layers: ["peak", "rms"]</code> draws two measures of one
 take: what the signal <i>reached</i> (the min/max envelope) and what it
 <i>held</i> (the level inside it). They are measures of <b>one</b> view — one

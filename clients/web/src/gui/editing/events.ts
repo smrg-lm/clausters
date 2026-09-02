@@ -18,7 +18,7 @@
 
 import { EVENTS, domainEdit } from "../../document.ts";
 import { Event as SeqEvent } from "../../seq/event.ts";
-import { Timeline } from "../../seq/timeline.ts";
+import { MidiItem, OscItem, Timeline } from "../../seq/timeline.ts";
 import { flatNotes, pianoroll, window as guiWindow } from "../guidef.ts";
 import type { GuiNode } from "../guidef.ts";
 import type { PropValue } from "../host.ts";
@@ -66,8 +66,17 @@ export class NotesDomain extends Domain<Timeline> {
      */
     unitsPerBeat = 1.0;
 
+    /**
+     * Whether a note may be written back onto this timeline. A roll over what a
+     * **generator** produced is a rendering of an algorithm, so there is
+     * nothing to write it onto — the view says so with the widget's own
+     * `notesEditable`, and this is the second half of it, for a host that does
+     * not read the prop.
+     */
+    editable = true;
+
     payload(structure: Timeline, tag: string, values: readonly unknown[]): unknown {
-        if (tag !== "notes") return null;
+        if (tag !== "notes" || !this.editable) return null;
         const held = [...structure]
             .map(([, item]) => item)
             .filter((item): item is SeqEvent => item instanceof SeqEvent);
@@ -144,22 +153,31 @@ export class NotesView extends View<Timeline> {
     build(editor: Editor<Timeline>): GuiNode {
         const wid = this.register(editor.newId(), editor.structure);
         const notes = drawn(editor);
-        const body: { min?: number; max?: number } = {};
+        const body: { min?: number; max?: number; notesEditable?: boolean } = {};
         if (notes.length > 0) {
             const pitches = notes.map((n) => n[2]);
             body.min = Math.min(Math.min(...pitches) - NotesView.PAD, NotesView.DEFAULT_PITCH[1]);
             body.max = Math.max(Math.max(...pitches) + NotesView.PAD, NotesView.DEFAULT_PITCH[0]);
         }
+        // **Say it before the hand tries.** A roll over what a generator
+        // produced has nothing to write onto, so the widget refuses the press
+        // instead of offering a drag it will unwind.
+        if (editor.domain instanceof NotesDomain && !editor.domain.editable) {
+            body.notesEditable = false;
+        }
+        const osc = markers(editor);
         return guiWindow(
             { title: editor.title, w: editor.size[0], h: editor.size[1], layout: "col" },
             pianoroll({
                 id: wid,
                 notes: notes.length > 0 ? notes : undefined,
+                osc: osc.length > 0 ? osc : undefined,
                 ruler: "beats",
                 tempo: editor.tempo,
                 sampleRate: editor.sampleRate,
                 ...body,
             }),
+            ...editor.extra,
         );
     }
 
@@ -173,13 +191,45 @@ export class NotesView extends View<Timeline> {
  * holds.
  */
 export class NotesEditor extends Editor<Timeline> {
-    constructor(timeline: Timeline, options: GenericEditorOptions<Timeline>) {
+    constructor(timeline: Timeline, options: NotesEditorOptions) {
         const domain = new NotesDomain();
+        domain.editable = options.editable ?? true;
         super(timeline, { title: "Notes", ...options, domain, view: new NotesView() });
         // The bridge is the editor's, so the domain reads it from here rather
         // than keeping a second one.
         domain.unitsPerBeat = this.unitsPerBeat;
     }
+}
+
+/** {@link NotesEditor}'s options: the generic ones plus whether it writes. */
+export interface NotesEditorOptions extends GenericEditorOptions<Timeline> {
+    /**
+     * Whether a note may be written back. `false` for a roll over what a
+     * forward-only generator produced.
+     */
+    editable?: boolean;
+}
+
+/**
+ * The timeline's OSC (and raw MIDI) items as `[timeUnits, label]` pairs — the
+ * roll's OSC lane. An `OscItem` labels with its address, a `MidiItem` with a
+ * short tag.
+ *
+ * Display only: a marker carries the time and a label, not the full message, so
+ * it is drawn and not edited back. The domain keeps them across an edit
+ * ({@link NotesDomain.project}), which is the half that matters — a lane nobody
+ * can move is still a lane nobody may lose.
+ */
+function markers(editor: Editor<Timeline>): [number, string][] {
+    const out: [number, string][] = [];
+    for (const [beat, item] of editor.structure) {
+        if (item instanceof OscItem) {
+            out.push([editor.beatsToUnits(Number(beat)), String(item.addr)]);
+        } else if (item instanceof MidiItem) {
+            out.push([editor.beatsToUnits(Number(beat)), "midi"]);
+        }
+    }
+    return out;
 }
 
 /**
@@ -205,15 +255,20 @@ function drawn(editor: Editor<Timeline>): Note[] {
 }
 
 /**
- * How long a note sounds, in beats: what it was drawn at (`sustain`) when
- * something set one, else its own length.
+ * How long a note **sounds**, in beats — `Event.sustain`, which is
+ * `dur * legato` when nothing set one outright.
+ *
+ * That is what a roll draws and what a drag on a note's edge sets, so reading
+ * the explicit key alone would draw an articulated note at its grid length and
+ * hand the edit-back a number the hand never saw.
  */
 function lengthOf(event: SeqEvent): number {
-    for (const key of ["sustain", "dur"]) {
-        const value = event.get(key);
-        if (value !== null && value !== undefined) return Number(value);
+    try {
+        return Number(event.sustain());
+    } catch {
+        const value = event.get("dur");
+        return value === null || value === undefined ? 1.0 : Number(value);
     }
-    return 1.0;
 }
 
 /**

@@ -89,7 +89,7 @@ export class Editing {
      * leave its undo walking legs that name somebody else.
      */
     protected readonly structures = new Map<object, number>();
-    protected readonly views = new Set<WeakRef<Adopting>>();
+    protected readonly attached = new Set<WeakRef<Adopting>>();
     /**
      * How deep the current turn is, and whether anything moved in it. One
      * gesture can reach here twice — {@link Editing.turn} around an `apply`
@@ -157,15 +157,26 @@ export class Editing {
      * the others.
      */
     attach(view: Adopting): void {
-        for (const held of this.views) if (held.deref() === view) return;
-        this.views.add(new WeakRef(view));
+        for (const held of this.attached) if (held.deref() === view) return;
+        this.attached.add(new WeakRef(view));
+    }
+
+    /** The views still alive, dropping the ones that are not. */
+    views(): Adopting[] {
+        const alive: Adopting[] = [];
+        for (const held of [...this.attached]) {
+            const view = held.deref();
+            if (view === undefined) this.attached.delete(held);
+            else alive.push(view);
+        }
+        return alive;
     }
 
     /** Drop a view whose window is gone. */
     detach(view: Adopting): void {
-        for (const held of this.views) {
+        for (const held of this.attached) {
             const alive = held.deref();
-            if (alive === undefined || alive === view) this.views.delete(held);
+            if (alive === undefined || alive === view) this.attached.delete(held);
         }
     }
 
@@ -231,9 +242,9 @@ export class Editing {
                     // gesture applied to the objects directly — so the honest
                     // answer for the other windows is the whole picture.
                     const whole = structural || intents.length === 0;
-                    for (const held of [...this.views]) {
+                    for (const held of [...this.attached]) {
                         const view = held.deref();
-                        if (view === undefined) this.views.delete(held);
+                        if (view === undefined) this.attached.delete(held);
                         else if (view !== source) view.adopt(intents, whole);
                     }
                 }

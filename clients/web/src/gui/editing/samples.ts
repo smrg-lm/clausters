@@ -16,6 +16,14 @@
  * undo: the edit and its inverse arrive together, and what the history records is
  * the second.
  *
+ * **What the picture measures is the view's.** A waveform is drawn as a stack of
+ * measures over one field — what the signal reached (`peak`) with what it held
+ * inside that (`rms`) — and that is a prop of the one widget rather than a pile
+ * of widgets: every view of a signal paints its own field before it draws, so
+ * two of them on one rectangle are not layers, the second hides the first.
+ * Measuring twice into one body is also what makes the rest of it one thing: one
+ * axis, one ruler, one selection, one playhead, one upload of the samples.
+ *
  * **A stroke lands on one channel.** The samples are interleaved, so writing one
  * channel of a stereo take is a strided write and `/buffer_setRange` is
  * contiguous: the span is read, the channel's frames are spliced into it and the
@@ -33,6 +41,34 @@ import { Domain } from "./domain.ts";
 import { Editor } from "./editor.ts";
 import type { GenericEditorOptions } from "./editor.ts";
 import { View } from "./view.ts";
+
+/**
+ * The measures a signal view can stack, in the order a reader thinks of them:
+ * what the signal reached, and what it held inside that.
+ */
+export const MEASURES = ["peak", "rms"] as const;
+
+/** One of the measures above. */
+export type Measure = (typeof MEASURES)[number];
+
+/**
+ * A measure stack as an array, or a `RangeError` naming what is wrong.
+ *
+ * A stack is written by hand, so a silent typo is a layer that quietly does not
+ * appear, and an empty one is a picture that measures nothing.
+ */
+export function measures(stack: Iterable<string>): Measure[] {
+    const out = [...stack].map(String);
+    for (const name of out) {
+        if (!(MEASURES as readonly string[]).includes(name)) {
+            throw new RangeError(`unknown measure ${name} (one of ${MEASURES.join(", ")})`);
+        }
+    }
+    if (out.length === 0) {
+        throw new RangeError(`a signal view measures something (one of ${MEASURES.join(", ")})`);
+    }
+    return out as Measure[];
+}
 
 /** One write in the crate's vocabulary. */
 interface Write {
@@ -174,6 +210,14 @@ export class SamplesDomain extends Domain<Buffer> {
  * server buffer.
  */
 export class SamplesView extends View<Buffer> {
+    /** What the picture measures, innermost last. */
+    layers: Measure[];
+
+    constructor(layers: Iterable<string> = MEASURES) {
+        super();
+        this.layers = measures(layers);
+    }
+
     build(editor: Editor<Buffer>): GuiNode {
         const take = editor.structure;
         const wid = this.register(editor.newId(), take);
@@ -183,11 +227,13 @@ export class SamplesView extends View<Buffer> {
                 id: wid,
                 buffer: Math.trunc(take.bufnum),
                 channels: Math.max(1, Math.trunc(take.channels || 1)),
+                measure: this.layers.join(" ") as "peak" | "rms" | "peak rms",
                 ruler: "time",
                 sampleRate: editor.sampleRate,
                 tempo: editor.tempo,
                 label: nameOf(take),
             }),
+            ...editor.extra,
         );
     }
 
@@ -207,15 +253,47 @@ export class SamplesView extends View<Buffer> {
  * what is seen, with no copy in between.
  */
 export class SamplesEditor extends Editor<Buffer> {
-    constructor(take: Buffer, options: GenericEditorOptions<Buffer>) {
+    constructor(take: Buffer, options: SamplesEditorOptions) {
         super(take, {
             title: "Samples",
             ...options,
             sampleRate: Number(options.sampleRate || take.sampleRate || 48_000),
             domain: new SamplesDomain(),
-            view: new SamplesView(),
+            view: new SamplesView(options.layers ?? MEASURES),
         });
     }
+
+    /**
+     * What the picture measures — `["peak", "rms"]` for the editor's view,
+     * `["peak"]` for the bare envelope.
+     *
+     * **Assigning it on an open view sends one message.** The measure is a live
+     * `/gui_set` prop, so the body appears and disappears over the peaks with
+     * the picture, the axis, the zoom, the selection and the playhead all
+     * exactly where they were. Redrawing for this would be the wrong tool twice
+     * over: a redefine rebuilds every widget (so a handler bound to one by name
+     * is left holding an id nobody answers to) and the window it redefines is
+     * reopened.
+     */
+    get layers(): Measure[] {
+        return [...(this.view as SamplesView).layers];
+    }
+
+    set layers(stack: Iterable<string>) {
+        const view = this.view as SamplesView;
+        view.layers = measures(stack);
+        if (this.host !== null && this.window !== null) {
+            for (const wid of view.widgets.keys()) {
+                void this.host.set(wid, { measure: view.layers.join(" ") });
+            }
+        }
+    }
+}
+
+/** {@link SamplesEditor}'s options: the generic ones plus the measure stack. */
+export interface SamplesEditorOptions extends GenericEditorOptions<Buffer> {
+    /** What the picture measures. Defaults to {@link MEASURES}. */
+    layers?: readonly string[];
 }
 
 function nameOf(take: Buffer): string {

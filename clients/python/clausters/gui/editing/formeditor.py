@@ -53,11 +53,13 @@ from ...form.render import flatten
 from ...seq.automation import Automation
 from ...seq.event import Event as SeqEvent
 from ...seq.timeline import MidiItem, OscItem, Timeline
-from ..guidef import (_flat_notes, _flat_points, clip, patch, pianoroll, signal,
-                      scroll, timeruler, track, waveform, window)
+from ..guidef import (_flat_notes, _flat_points, clip, patch, signal,
+                      scroll, timeruler, track, window)
 from ..transport import Transport
 from .context import ATTR, Editing
 from .editor import Editor, _resolve_host
+from .events import NotesEditor
+from .samples import MEASURES, SamplesEditor, is_samples, measures
 
 __all__ = ["FormEditing", "FormEditor"]
 
@@ -240,17 +242,13 @@ class FormEditor(Editor):
                  title: str = "Composition",
                  width: int = 1000, height: int = 520, base_id: int = 10_000):
         super().__init__(element, sample_rate=sample_rate, tempo=tempo,
-                         tempo_map=tempo_map, title=title, width=width,
-                         height=height, base_id=base_id)
+                         tempo_map=tempo_map, title=title, extra=extra,
+                         width=width, height=height, base_id=base_id)
         self.quant = float(quant)
         #: Re-render on every edit (the *live editor*: drag a clip and hear it
         #: where you dropped it). Off by default — an edit then only changes the
         #: arrangement, and `rerender` decides when it is heard.
         self.follow = bool(follow)
-        #: Widgets appended to the window after the lanes (a transport panel, a
-        #: readout). They are the script's — the editor never touches their ids,
-        #: so keep them clear of `base_id`.
-        self.extra = list(extra)
         #: The elements shown as lanes of their own instead of a summary clip
         #: (the base level: an aggregate resolved rather than collapsed).
         self._expanded: set[int] = set()
@@ -264,24 +262,25 @@ class FormEditor(Editor):
         #: window's node rather than the element's -- the rule every other
         #: edit-back follows.
         self._lane_members: dict = {}
-        #: The view: the multitrack (`open`), a dedicated piano-roll of one
-        #: events element (`open_pianoroll`) or a dedicated signal view of one
-        #: rendered element (`open_signal`). `render` dispatches on it.
-        self._mode = "multitrack"
-        #: The element the dedicated piano-roll draws (its notes editable when it
-        #: is a `Track`).
-        self._roll_element = None
-        #: The element the dedicated signal view draws.
-        self._signal_element = None
-        #: What the dedicated signal view measures (`open_signal`), as a tuple
-        #: of measure names. Assigning it on an open view is **live**: the
-        #: measure is a `/gui_set` prop, so showing or hiding the level body
-        #: costs one message and no rebuild (see the `layers` property).
-        self._layers: tuple = ("peak", "rms")
-        #: widget id -> the element whose samples that widget draws. The signal
-        #: view's own registry, the sibling of `_rolls`: a selection swept there
-        #: is a selection *of that element*, not of the shared axis.
-        self._signals: dict = {}
+        #: The editors this one opened over **parts** of the composition — a
+        #: dedicated roll of one track, the editor-grade waveform of one take.
+        #:
+        #: They are `clausters.gui.editing.Editor`s, not modes: each is the
+        #: generic editor with one domain and one view, joined to *this*
+        #: composition's editing context, so what it does lands in the same
+        #: order as a clip dragged here and an undo in either window walks that
+        #: one order. Held strongly, because the window is the script's and the
+        #: editor behind it is not something the script was handed.
+        self._composed: list = []
+        #: The widgets a history walk left drawing something else, collected by
+        #: `project_legs` and drained by `reflect_step` — the two halves of one
+        #: step, which the context runs separately so the version moves once.
+        self._stepped: set = set()
+        #: The composed signal editor, if one was opened — what `layers` reads
+        #: and writes.
+        self._signal = None
+        #: What a signal view opened from here measures, until one is open.
+        self._layers: tuple = MEASURES
         #: widget id -> the element whose notes that widget draws, for the note
         #: edit-back route: the dedicated roll, and every clip with a roll body
         #: (a body carries no id, so its notes arrive tagged with the clip's).
@@ -342,7 +341,7 @@ class FormEditor(Editor):
         #: transport methods delegate to it; a script's loop calls its `update`.
         #: Its lanes are read on each use, so a redraw's new widgets get the line.
         self.transport = Transport(
-            None, lambda: self._lanes, source=self._render_pass,
+            None, self._playline, source=self._render_pass,
             tempo_map=self.tempo_map, sample_rate=self.sample_rate,
             extent=self.extent)
 
@@ -412,17 +411,12 @@ class FormEditor(Editor):
         `SynthDef` the member wraps, cords from the members' shared internal-bus
         controls (`_logical_patch`). A member wrapping a bare def *name* draws
         port-less (its directions need the def object)."""
-        if self._mode == "pianoroll":
-            return self._draw_pianoroll()
-        if self._mode == "signal":
-            return self._draw_signal()
         self._reset_ids()
         self._clips = {}
         self._lanes = {}
         self._lane_members = {}
         self._rolls = {}
         self._patches = {}
-        self._signals = {}
 
         lanes: list = []
         root = self.element
@@ -477,7 +471,6 @@ class FormEditor(Editor):
         (``win["play"].on_event(...)``)."""
         host = _resolve_host(host)
         self._host = self.transport.host = host
-        self._mode = "multitrack"
         self._window = host.open(self.draw(), id=id)
         self._editing.attach(self)
         self._announce()
@@ -510,6 +503,19 @@ class FormEditor(Editor):
             self.update()
             return
         widgets = set()
+        if any("node" not in intent for intent in intents):
+            # An intent in **another structure's vocabulary** — a stroke on a
+            # take, a note moved in a composed roll. It names no node of this
+            # tree, and what it wrote are the objects this window draws, so the
+            # held document has to be derived again: it is the case `refresh`
+            # exists for, arriving from a view instead of from a script. What
+            # is redrawn is the clip over that part, not the window.
+            self.refresh()
+            widgets |= {wid for wid in
+                        (self._widget_of(editor.composed_over)
+                         for editor in self._composed
+                         if editor.composed_over is not None)
+                        if wid is not None}
         for intent in intents:
             widgets |= self._reflect(intent)
         if not widgets:
@@ -611,184 +617,199 @@ class FormEditor(Editor):
             self._host.define(self._window, self.draw())
             self._announce()
 
-    def _draw_pianoroll(self) -> dict:
-        """The dedicated piano-roll view: one `pianoroll` widget drawing a single
-        events element's MIDI notes (grid) and OSC markers (lane), instead of a
-        multitrack of clips. The notes ride the shared beats grid; the pitch
-        window frames them (falling back to `DEFAULT_PITCH`). Pure — it builds the
-        tree and the edit-back registry."""
-        self._reset_ids()
-        self._clips = {}
-        self._lanes = {}
-        self._lane_members = {}
-        self._rolls = {}
-        self._signals = {}
-        element = self._roll_element
-        wid = self._new_id()
-        notes = self._notes(element)
-        osc = self._osc(element)
-        body: dict = {}
-        if notes:
-            pitches = [n[2] for n in notes]
-            body["min"] = min(min(pitches) - PITCH_PAD, DEFAULT_PITCH[1])
-            body["max"] = max(max(pitches) + PITCH_PAD, DEFAULT_PITCH[0])
-        snap = self.beats_to_units(self.quant) if self.quant > 0 else None
-        # The roll is a lane (the playhead/cursor addresses these) and a roll (the
-        # note edit-back resolves through these).
-        self._lanes[wid] = element
-        self._rolls[wid] = element
-        roll = pianoroll(id=wid, notes=notes or None, osc=osc or None, ruler="beats",
-                         tempo=self.tempo, sample_rate=self.sample_rate, snap=snap,
-                         label=_name(element), **body)
-        return window(roll, *self.extra, title=self.title,
-                      w=self.size[0], h=self.size[1], layout="col")
+    # ---- the views this editor composes ----
+
+    @property
+    def composed(self) -> list:
+        """The editors this one opened over **parts** of the composition — a
+        dedicated roll (`open_pianoroll`), the editor-grade waveform of a take
+        (`open_signal`).
+
+        Each is a `clausters.gui.editing.Editor` of its own, joined to this
+        composition's editing context, so what it does lands in the same undo
+        order as a clip dragged here. Read it to reach the window's own editor:
+        its selection, its undo, the structure it holds.
+        """
+        return list(self._composed)
+
+    def _compose(self, editor: Editor, element) -> Editor:
+        """Take a composed editor into this one: it draws ``element``, part of
+        this composition, and a transport gesture in its window is this piece's.
+
+        Held so the pair survives the script letting go of the window handle,
+        and so a history step reaching a leg this editor cannot read has
+        somebody to hand it to.
+        """
+        editor.composed_in = self
+        editor.composed_over = element
+        self._composed.append(editor)
+        return editor
+
+    def _adopt_host(self, host) -> None:
+        """The host a composed view is opening on, taken as this editor's when
+        it has none of its own.
+
+        **Only when it has none.** A multitrack already open answers *its* host,
+        and overwriting that with the one a second window opened on left every
+        acknowledgement going to the wrong place — silently, because in the
+        ordinary case (one host, several windows) the two are the same object.
+        """
+        if self._host is None:
+            self._host = self.transport.host = host
+
+    def poll(self, timeout: float = 0.0) -> bool:
+        """Drain the host's pending messages into the composition **and into the
+        views composed over it**, then on to the window's own handlers. Returns
+        whether anything changed.
+
+        One loop, because one socket: the composed editors draw other windows on
+        the same host, and a second loop would race this one for the same
+        messages. Each is offered every message and answers only for the widgets
+        it drew, which is what `Editor.apply` is written to do.
+        """
+        if self._host is None:
+            raise RuntimeError("open(host) the editor first")
+        changed = False
+        while (msg := self._host.poll(timeout)) is not None:
+            changed |= self.apply(*msg)
+            for editor in list(self._composed):
+                changed |= editor.apply(*msg)
+            self._host.dispatch(*msg)
+            timeout = 0.0  # only the first wait blocks
+        return changed
+
+    @property
+    def windows(self) -> list:
+        """Every window this editor is on screen through — its own, and the
+        composed views'.
+
+        What a script's loop asks to know whether there is still anything to
+        drive: a `FormEditor` may be on screen through a composed view alone (a
+        take opened with `open_signal` and no multitrack), and `window` is
+        deliberately this editor's own rather than "one of the windows".
+        """
+        held = [] if self._window is None else [self._window]
+        return held + [editor.window for editor in self._composed
+                       if editor.window is not None]
+
+    def _playline(self) -> list:
+        """Every widget the playhead line is drawn on: this window's lanes, and
+        the composed views'.
+
+        Read on each use, so a redraw's new widgets get the line — and so does a
+        window opened after the transport was already running.
+        """
+        ids = list(self._lanes)
+        for editor in self._composed:
+            ids += [wid for wid in getattr(editor.view, "widgets", {})]
+        return ids
 
     @property
     def layers(self) -> tuple:
-        """What the dedicated signal view measures — `("peak", "rms")` for the
-        editor's picture, `("peak",)` for the bare envelope.
+        """What a signal view opened from here measures — `("peak", "rms")` for
+        the editor's picture, `("peak",)` for the bare envelope.
 
-        **Assigning it on an open view sends one message.** The measure is a
-        live `/gui_set` prop, so the body appears and disappears over the peaks
-        with the picture, the axis, the zoom, the selection and the playhead all
-        exactly where they were. Redrawing for this would be the wrong tool
-        twice over: a redefine rebuilds every widget (so a handler bound to one
-        by name is left holding an id nobody answers to) and the window it
-        redefines is reopened.
+        A reading of the composed `clausters.gui.editing.SamplesEditor` once one
+        is open, and the stack the next one will be opened with before that.
+        **Assigning it on an open view sends one message**, which is that
+        editor's own rule: the measure is a live `/gui_set` prop, so the body
+        appears and disappears over the peaks with the picture, the axis, the
+        zoom, the selection and the playhead all exactly where they were.
         """
-        return self._layers
+        return self._layers if self._signal is None else self._signal.layers
 
     @layers.setter
-    def layers(self, measures) -> None:
-        stack = tuple(_measure(m) for m in measures)
-        if not stack:
-            raise ValueError(f"a signal view measures something (one of "
-                             f"{', '.join(MEASURES)})")
-        self._layers = stack
-        if self._mode == "signal" and self._host is not None and self._window is not None:
-            for wid in self._signals:
-                self._host.set(wid, measure=" ".join(stack))
+    def layers(self, stack) -> None:
+        self._layers = measures(stack)
+        if self._signal is not None:
+            self._signal.layers = self._layers
 
-    def _draw_signal(self) -> dict:
-        """The dedicated signal view: the **editor-grade waveform** of a single
-        rendered element's samples, instead of a multitrack of clips.
-
-        It is one `clausters.gui.guidef.waveform` — the same heavy view a
-        standalone take is shown in — and the stack of measures is a prop of it
-        (``layers`` → ``measure``), not a pile of widgets. That is the shape the
-        picture forces: every view of a signal paints its own field before it
-        draws, so two of them on one rectangle are not layers — the second hides
-        the first. Measuring twice into *one* body is also what makes the rest
-        of it one thing: one axis, one ruler, one selection, one playhead, one
-        upload of the samples.
-
-        Pure — it builds the tree and the edit-back registry, and sends nothing.
-        """
-        self._reset_ids()
-        self._clips = {}
-        self._lanes = {}
-        self._lane_members = {}
-        self._rolls = {}
-        self._signals = {}
-        element = self._signal_element
-        body = self._source_of(element)
-        wid = self._new_id()
-        # The view is the editor's one target here: the playhead, the cursor
-        # readout and `locate` address it as they address a lane, and the signal
-        # registry is what makes a selection swept in it a selection *of this
-        # element*.
-        self._lanes[wid] = element
-        self._signals[wid] = element
-        view = waveform(**body, id=wid, label=_name(element),
-                        measure=" ".join(self._layers),
-                        ruler="time", sample_rate=self.sample_rate,
-                        tempo=self.tempo)
-        return window(view, *self.extra, title=self.title,
-                      w=self.size[0], h=self.size[1], layout="col")
-
-    def _source_of(self, element) -> dict:
-        """The source props a signal view draws ``element``'s samples from, or a
-        `ValueError` naming what is missing.
-
-        **This is the generated/generator distinction, asked at the door.** A
-        rendered element has samples a view can address — a buffer the host
-        fetches, decimates and navigates; a generator has none until it is
-        rendered, and a window drawn over nothing is worse than a refusal that
-        says what to do. It is the same question `open_pianoroll` answers by
-        showing a bounced generator read-only, and it has a sharper answer here:
-        notes can be bounced for a picture, samples cannot be invented.
-        """
-        body = self._body_for(element) if element is not None else {}
-        if "buffer" not in body:
-            raise ValueError(
-                f"{_name(element)} has no samples to draw: a signal view needs a "
-                "rendered element (render the composition, or bounce this one to "
-                "a buffer, and open that)")
-        return {k: v for k, v in body.items() if k in ("buffer", "channels")}
-
-    def open_signal(self, host=None, element=None, *, layers=("peak", "rms"),
+    def open_signal(self, host=None, element=None, *, layers=MEASURES,
                     id: int | None = None) -> "WindowHandle":
-        """`draw` a single **rendered** element as a dedicated signal view and
-        open it on ``host`` (or the ambient host, like `open`) — the
-        editor-grade view of one element's samples, as opposed to `open`, where
-        the same samples are only a clip's body.
+        """Open one **rendered** element's samples in an editor of their own,
+        joined to this composition — the editor-grade view of a take, as opposed
+        to `open`, where the same samples are only a clip's body.
+
+        It is `clausters.gui.editing.edit` over the take: a
+        `clausters.gui.editing.SamplesEditor`, one
+        `clausters.gui.guidef.waveform`, and a stroke that writes the server's
+        buffer through the samples domain. What makes it *this piece's* rather
+        than a window beside it is the editing context — the composition's, so a
+        stroke here and a clip dragged there are one undo order, and Ctrl+Z in
+        either window walks it.
 
         ``layers`` is what the picture measures, and the `layers` property
-        changes it **live** on the open view: ``("peak", "rms")`` is the
-        editor's picture — what the signal reached with the level it held drawn
-        inside it — and ``("peak",)`` is the bare envelope. They are measures of
-        **one** `clausters.gui.guidef.waveform`, not a pile of widgets: a view
-        of a signal paints its own field before it draws, so two of them on one
-        rectangle would not layer, and one view is also one axis, one ruler, one
-        selection, one playhead and one upload of the samples.
-
-        The element must have **samples**: a rendered take, not a generator
-        (see the error a generator raises). Returns the **window handle**, like
-        `open`.
+        changes it live on the open view. The element must have **samples**: a
+        rendered take, not a generator (see the error a generator raises).
+        Returns the **window handle**, like `open`.
         """
         element = self.element if element is None else element
         # Refused **before** a window exists: an unknown measure and an element
         # with no samples are both answers to the call that was made, and
         # finding out at the first repaint would leave an empty window behind.
-        stack = tuple(_measure(m) for m in layers)
-        self._source_of(element)
+        stack = measures(layers)
+        take = _take_of(element)
+        if take is None:
+            # **The generated/generator distinction, asked at the door.** A
+            # rendered element has samples a view can address; a generator has
+            # none until it is rendered, and a window drawn over nothing is
+            # worse than a refusal that says what to do. It is the same question
+            # `open_pianoroll` answers by showing a bounced generator read-only,
+            # and it has a sharper answer here: notes can be bounced for a
+            # picture, samples cannot be invented.
+            raise ValueError(
+                f"{_name(element)} has no samples to draw: a signal view needs a "
+                "rendered element (render the composition, or bounce this one to "
+                "a buffer, and open that)")
         host = _resolve_host(host)
-        self._host = self.transport.host = host
-        self._mode = "signal"
-        self._signal_element = element
-        # Straight to the field: there is no window yet, so this is what the
-        # first draw measures rather than something to push at one.
+        self._adopt_host(host)
         self._layers = stack
-        self._window = host.open(self.draw(), id=id)
-        self._editing.attach(self)
-        self._announce()
-        return self._window
+        editor = SamplesEditor(take, sample_rate=self.sample_rate,
+                               tempo_map=self.tempo_map, layers=stack,
+                               title=self.title, extra=self.extra,
+                               width=self.size[0], height=self.size[1],
+                               context=self._editing)
+        self._signal = self._compose(editor, element)
+        return editor.open(host, id=id)
 
     def open_pianoroll(self, host=None, element=None,
                        id: int | None = None) -> "WindowHandle":
-        """`draw` a single events element as a **dedicated piano-roll** window
-        and open it on ``host`` (or the ambient host, like `open`) — the
-        editor-grade note view (a keyboard, an
-        editable note grid, a velocity lane, an OSC lane) of one MIDI/OSC
-        element, as opposed to `open`, where the same notes are only a clip body.
+        """Open one events element's notes in a roll of their own, joined to
+        this composition — the editor-grade note view (a keyboard, an editable
+        note grid, a velocity lane, an OSC lane) of one element, as opposed to
+        `open`, where the same notes are only a clip body.
 
-        Edits write back through `poll` exactly as the multitrack does, **when the
-        element is editable** — a `clausters.form.Track` (a
-        `clausters.seq.Timeline`): a dragged, added or removed note is rebuilt onto
-        its timeline. A **generator** (a `Pbind`/`Routine`) is forward-only, so its
-        bounced notes are shown *read-only* (bounce it to a `Track` to edit). OSC
-        markers are shown but not edited back yet (one carries only its time and
-        address, not the full message).
+        It is `clausters.gui.editing.edit` over the element's timeline: a
+        `clausters.gui.editing.NotesEditor` on this composition's editing
+        context, so the roll and the multitrack over the same piece step **one**
+        history — and a note moved here reaches the clip drawing it there
+        without either window being redefined.
 
-        Returns the **window handle**, like `open`."""
+        A **generator** (a `Pbind`/`Routine`) is forward-only, so what it
+        produced is bounced onto a timeline of its own and the roll is opened
+        **read-only**: the notes are a rendering of an algorithm, and the widget
+        is told so rather than refusing each drag after the hand has made it
+        (bounce it to a `clausters.form.Track` to edit). OSC markers are shown
+        but not edited back yet — one carries only its time and address, not the
+        full message.
+
+        Returns the **window handle**, like `open`.
+        """
+        element = self.element if element is None else element
+        timeline = _editable_timeline(element)
+        editable = timeline is not None
+        if timeline is None:
+            timeline = _bounced(element)
         host = _resolve_host(host)
-        self._host = self.transport.host = host
-        self._mode = "pianoroll"
-        self._roll_element = self.element if element is None else element
-        self._window = host.open(self.draw(), id=id)
-        self._editing.attach(self)
-        self._announce()
-        return self._window
+        self._adopt_host(host)
+        editor = NotesEditor(timeline, sample_rate=self.sample_rate,
+                             tempo_map=self.tempo_map, editable=editable,
+                             title=self.title, extra=self.extra,
+                             width=self.size[0], height=self.size[1],
+                             context=self._editing)
+        self._compose(editor, element)
+        return editor.open(host, id=id)
+
 
     def extent(self, element=None) -> float:
         """The composition's length in beats, **read from the arrangement** — the
@@ -1015,8 +1036,7 @@ class FormEditor(Editor):
         """Whether this editor drew the widget an event names -- the same
         registries every route resolves through."""
         return (widget_id in self._clips or widget_id in self._rolls
-                or widget_id in self._patches or widget_id in self._lanes
-                or widget_id in self._signals)
+                or widget_id in self._patches or widget_id in self._lanes)
 
     def _resync(self, widget_id: int):
         """Hand back what the widget should be drawing, without applying
@@ -1081,12 +1101,29 @@ class FormEditor(Editor):
                            "len": self.units_to_beats(length)}
         if len(values) >= 4:
             selection["value"] = {"min": float(values[2]), "max": float(values[3])}
-        element = self._rolls.get(wid) or self._signals.get(wid)
+        element = self._rolls.get(wid)
         if element is None:
             placed = self._clips.get(wid)
             element = None if placed is None else (
                 placed.member.element if placed.member is not None else self.element)
         node = None if element is None else self._node_id(element)
+        if node is not None:
+            selection["nodes"] = [node]
+        self.selection = selection
+
+    def adopt_selection(self, editor: Editor) -> None:
+        """A marquee swept in a **composed** view is a selection of the element
+        that view draws.
+
+        The same value a sweep on that element's clip gives, so an operation
+        over the range is handed one thing whichever of the piece's windows it
+        was swept in — and it is the composed editor that knows the numbers were
+        its own axis's, which is why this takes the selection rather than the
+        event.
+        """
+        selection = dict(editor.selection)
+        node = (None if editor.composed_over is None
+                else self._node_id(editor.composed_over))
         if node is not None:
             selection["nodes"] = [node]
         self.selection = selection
@@ -2235,38 +2272,53 @@ class FormEditor(Editor):
                 return wid
         return None
 
-    def _step(self, direction: str) -> bool:
-        """One step of the pile, **through the arrangement's log**.
+    def project_legs(self, legs: list) -> bool:
+        """The **tree's** legs of a history step, onto the held document and the
+        arrangement.
 
-        The generic walk projects a payload per structure; the tree's is a
-        document, so its legs come back as intents the crate has already turned
-        into what the document now says — which is why this overrides rather
-        than extends.
+        The generic editor projects a payload through its domain; the tree's
+        domain is a document, so its legs are intents the crate turns into what
+        the document now says, and `_project` writes that onto the Python
+        objects. What the walk hands round is the whole entry, and one entry can
+        name several structures — a stroke over a take and a bend of the curve
+        over it are one order — so the legs this document cannot read are left
+        for whoever holds them.
+
+        An undo is authoritative: it states what the document was, so it is not
+        checked against a version it predates.
         """
-        walk = ((lambda log, doc: log.undo(doc)) if direction == "undo"
-                else (lambda log, doc: log.redo(doc)))
-        key = "undone" if direction == "undo" else "remaining"
-        if self._log is None:
-            return False
         log, document = self._history()
-        step = walk(log, document)
-        if step is None:
+        if log is None or document is None:
             return False
-        widgets = set()
-        if key == "undone":
-            for intent in step["undone"]:
-                widgets |= self._project(intent)
-        else:
-            # A redo now reports the intents it applied, so it is the *same
-            # shape* as an undo and takes the same path. It used to adopt the
-            # whole document instead, which cost O(document) per step and was a
-            # second implementation of what an edit means -- and it is what made
-            # a redo move the model while telling the host to keep drawing the
-            # old position, because only one of the two routes kept the drawn
-            # record.
-            for intent in step.get("redone") or []:
-                widgets |= self._project(intent)
-        self._version = document.version
+        # Drained here rather than at the end, because the editor that walked is
+        # the only one that draws from `reflect_step`; every other window is
+        # told on the way out of the turn.
+        self._stepped = set()
+        applied = False
+        for leg in legs:
+            if int(leg.get("structure", -1)) != log.structure:
+                continue
+            payload = leg.get("payload")
+            if not isinstance(payload, dict):
+                continue
+            document.apply(payload)
+            self._stepped |= self._project(payload)
+            applied = True
+        return applied
+
+    def reflect_step(self) -> None:
+        """Draw what a history walk left behind, and re-render if `follow` is
+        on.
+
+        The version comes back from the **document** when the walk moved it: a
+        step can apply several intents where the context counts one edit, and
+        the two have to be talking about the same picture on the next gesture.
+        It never goes backwards — a redefine moves the context's counter and no
+        document's — so what holds is the later of the two.
+        """
+        widgets, self._stepped = self._stepped, set()
+        if self._document is not None:
+            self._version = max(self._version, self._document.version)
         self.dirty = True
         self._follow_render()
         self._corrections = []
@@ -2275,12 +2327,12 @@ class FormEditor(Editor):
         # be rebuilt, and the clip an undone split takes away has no prop that
         # says so.
         if self._restructure():
-            return True
+            return
         for wid in widgets:
             self._resync(wid)
         self._acknowledge(0)
         self._corrections = []
-        return True
+
 
     def _follow_render(self):
         """Re-schedule after an edit when `follow` is on **and there is
@@ -2801,19 +2853,6 @@ def _named_bus(value):
 #: not one of them.
 MIXING_TAGS = tuple(MIXING)
 
-#: The measures a signal view can stack, in the order a reader thinks of them:
-#: what the signal reached, and what it held inside that.
-MEASURES = ("peak", "rms")
-
-
-def _measure(name: str) -> str:
-    """One layer's measure, or a `ValueError` naming it — a stack is written by
-    hand, and a silent typo is a layer that quietly does not appear."""
-    if name not in MEASURES:
-        raise ValueError(f"unknown measure {name!r} (one of {', '.join(MEASURES)})")
-    return name
-
-
 def _truthy(value) -> bool:
     """An OSC flag as a boolean. The wire carries ``0|1`` as a number, and an
     older host (or a hand-written test) may spell it as a string."""
@@ -2959,6 +2998,43 @@ def _curve_owner(element, member=None, tempo: float = 1.0):
             if _automation(handle.element, tempo) is not None:
                 return handle.element, handle
     return element, member
+
+
+def _take_of(element):
+    """The buffer an element's samples are in, or ``None`` — what a signal view
+    is opened over.
+
+    A `clausters.form.Vector` wraps one; a buffer handed straight to a
+    `FormEditor` **is** one. Anything else (a generator, an aggregate, a
+    `FrozenSource` a reopened session could not resolve) has no samples to
+    write, which is the refusal `open_signal` raises.
+    """
+    take = getattr(element, "wraps", None)
+    if take is None:
+        take = element
+    return take if is_samples(take) else None
+
+
+def _bounced(element) -> Timeline:
+    """What a forward-only element produced, on a timeline of its own — the
+    read-only roll's data.
+
+    The *change of state* happens right here: a pattern is bounced by
+    `clausters.form.render.flatten`, so the roll shows the notes the generator
+    will play. Nothing is edited back onto it, because writing this timeline
+    would write a copy nobody plays; the roll says so with the widget's own
+    ``notes_editable``, before the hand tries.
+    """
+    timeline = Timeline()
+    if isinstance(element, (Aggregate, Vector)):
+        return timeline
+    try:
+        events = flatten(element, 0.0, mixed=False)
+    except (NotImplementedError, TypeError):
+        return timeline
+    for beat, item in events:
+        timeline.add(float(beat), item)
+    return timeline
 
 
 def _editable_timeline(element):

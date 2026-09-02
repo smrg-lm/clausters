@@ -1555,7 +1555,7 @@ instances share the loop and nothing else.
 
 **Verified:** `tests/hosts.html` under the headless-Chrome harness — two hosts in one page both draw; widget `1003` holds `0.2` in one and `0.8` in the other at once; a gesture on one leaves the other's outbox empty and its widget unmoved; each bound knob reaches its own engine and not its sibling's (`220 → 984.7` while the other stays `220`); closing one leaves the other drawing, answering and driving its engine. Example: `examples/panels/two-hosts.html`.
 
-### ⬜ W28 - The generic editor: `edit(x)`, and `Editor` renamed to `FormEditor`
+### ✅ W28 - The generic editor: `edit(x)`, and `Editor` renamed to `FormEditor`
 
 The port of the Python client's phased track of the same name
 (`clients/python/PLAN.md`, "The generic editor: one editor per domain, and
@@ -1602,8 +1602,23 @@ a page's buffer calls are asynchronous, so a stroke's write is **queued in
 order** rather than awaited — two strokes over one span that raced would leave
 the buffer holding the first.
 
+**`C51` landed 2026-09-02**, here in the same commit and case for case:
+`openPianoroll` and `openSignal` compose a `NotesEditor` and a `SamplesEditor`
+joined to the piece's editing context (`FormEditor.composed`), `drawPianoroll`,
+`drawSignal` and the `mode` field are gone, a history step is handed round the
+context (`Editor.projectLegs`/`reflectStep`), `MEASURES`/`measures` moved to
+`samples.ts` with the measure stack as the `SamplesView`'s, and
+`examples/editors/composed.html` mirrors `composed.py`. Two spellings are this
+client's own and both are `idiom`: the composed editors are fed from the
+`FormEditor`'s **one** `onMessage` subscription (a page has no poll loop to
+share, so a second subscription would hand each of them every message twice),
+and `Editing.views()` was added as the public accessor the Python context
+already had, since the walk now asks the context who else holds a structure.
+
 The gaps this client carries are identical, which at least makes them shared
-holes rather than divergences: `"osc"` reaches no branch of `Editor.route`.
+holes rather than divergences: `"osc"` reaches no branch of `Editor.route`
+(a composed roll now **draws** the lane, in both clients — moving a marker by
+hand is still nobody's).
 The other two closed with `C50` on 2026-09-02 — the inversion is the crate's
 now (`domainEdit`), and `"sample"` and `"draw"` route through `SamplesDomain` in
 both clients. `mute`/`solo`/`level`/`height` **closed with `C48`**

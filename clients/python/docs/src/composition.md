@@ -334,9 +334,18 @@ a velocity lane, room to work — open the element in the editor-grade view
 instead:
 
 ```python
-roll = FormEditor(melody, sample_rate=SR, tempo=2.0, quant=0.25)
-roll.open_pianoroll(gui)      # keyboard, note grid, velocity + OSC lanes
+editor = FormEditor(piece, sample_rate=SR, tempo=2.0, quant=0.25)
+editor.open(gui)                      # the multitrack
+editor.open_pianoroll(gui, melody)    # keyboard, note grid, velocity + OSC lanes
 ```
+
+**It is a window beside the multitrack, not a mode of it.** `open_pianoroll`
+composes a `clausters.gui.editing.NotesEditor` over the element's timeline — the
+same editor `edit(timeline)` opens over a bare one — and joins it to *this*
+composition's editing context. So the roll and the multitrack step **one**
+history: a note moved in the roll reaches the clip drawing it, as props, without
+either window being redefined, and Ctrl+Z in either walks the one order. The
+editors this one composed are `FormEditor.composed`.
 
 Edits flow back through `poll` exactly as the multitrack's do, **when the
 element is editable**: a dragged, added or removed note is written onto a
@@ -345,8 +354,10 @@ timeline preserved). A note is *updated*, not rebuilt — the event keeps its
 instrument and everything else the roll cannot show — and the length a drag on
 its edge sets is the note's `sustain`, which is what the bar draws, so its `dur`
 and `legato` stay as they were written. A generator — a `Pbind`, a `Routine` — is forward-only, so its
-bounced notes are shown *read-only*; bounce it to a `Track` (the change of state)
-and the same view becomes an editor. OSC items are shown in their lane but not
+bounced notes are bounced onto a timeline of their own and the roll opens
+*read-only* — the widget is told so, rather than refusing each drag after the
+hand has made it; bounce it to a `Track` (the change of state) and the same view
+becomes an editor. OSC items are shown in their lane but not
 written back: their marker carries a time and a label, not the full message.
 
 Quantization exists on both surfaces, because the GUI also runs standalone:
@@ -362,10 +373,19 @@ zoom to them, sweep a range, hear where the playhead is — open the element on
 its own:
 
 ```python
-view = FormEditor(take, sample_rate=SR, tempo=2.0)
-view.open_signal(gui)               # the peak envelope with the RMS body in it
-view.open_signal(gui, layers=("peak",))       # or the bare envelope
+editor = FormEditor(piece, sample_rate=SR, tempo=2.0)
+editor.open(gui)                                   # the multitrack
+editor.open_signal(gui, take)                      # peaks with the RMS body in
+editor.open_signal(gui, take, layers=("peak",))    # or the bare envelope
 ```
+
+**And it is where a stroke lands.** `open_signal` composes a
+`clausters.gui.editing.SamplesEditor` — the same one `edit(buffer)` opens — so
+drawing on the take writes the server's buffer through the crate's `samples`
+vocabulary, and the write is *this piece's* edit: a stroke here and a clip
+dragged there are one undo order, walked from whichever window has focus. The
+multitrack cannot read a samples leg at all; it hands that leg to the editor
+that can, which is what one editing context over several structures is for.
 
 `layers` is what the picture measures: `"peak"` is what the signal reached (the
 min/max envelope) and `"rms"` the level it held, drawn inside it. It is one

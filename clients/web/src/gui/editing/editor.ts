@@ -71,6 +71,12 @@ export async function resolveEditorHost(host?: GuiHost): Promise<GuiHost> {
 }
 
 /** What {@link Editor} is built with. */
+/** One leg of a history step: the structure it names, and what to write. */
+export interface Leg {
+    structure?: number;
+    payload?: unknown;
+}
+
 export interface GenericEditorOptions<S> {
     sampleRate: number;
     tempo?: number;
@@ -79,6 +85,12 @@ export interface GenericEditorOptions<S> {
     view?: View<S> | null;
     context?: Editing | null;
     title?: string;
+    /**
+     * Widgets appended to the window after the picture — a transport panel, a
+     * readout. They are the script's, so the editor never touches their ids;
+     * keep them clear of `baseId`.
+     */
+    extra?: readonly GuiNode[];
     width?: number;
     height?: number;
     baseId?: number;
@@ -100,6 +112,26 @@ export class Editor<S = unknown> implements Adopting {
     tempoMap: TempoMap;
     title: string;
     size: [number, number];
+    /**
+     * Widgets appended to the window after the picture. They are the script's —
+     * the editor never touches their ids.
+     */
+    extra: GuiNode[];
+    /**
+     * The editor this one was **composed inside**, when it was one.
+     *
+     * A structure is not a piece: it has no transport, so a click on a ruler
+     * here is a seek of whatever this is part of. An editor composed by nobody
+     * answers a transport gesture with nothing, which is the honest answer for
+     * a curve opened on its own.
+     */
+    composedIn: Editor | null = null;
+    /**
+     * What of the composing editor's model this one draws — the element a
+     * dedicated roll or signal view was opened over. `null` when this editor
+     * stands alone.
+     */
+    composedOver: unknown = null;
     /**
      * The vocabulary this structure's edits are written in, and the picture of
      * it. Both are per-structure and neither is per-window.
@@ -152,6 +184,7 @@ export class Editor<S = unknown> implements Adopting {
             view = null,
             context = null,
             title = "Editor",
+            extra = [],
             width = 1000,
             height = 520,
             baseId = 10_000,
@@ -162,6 +195,7 @@ export class Editor<S = unknown> implements Adopting {
         this.tempoMap = tempoMap?.copy() ?? new TempoMap(Number(tempo));
         this.title = title;
         this.size = [Math.trunc(width), Math.trunc(height)];
+        this.extra = [...extra];
         this.domain = domain;
         this.view = view;
         this.baseId = Math.trunc(baseId);
@@ -393,16 +427,20 @@ export class Editor<S = unknown> implements Adopting {
     /** `apply`, without the turn around it: what the message actually does. */
     protected deliver(addr: string, rawArgs: readonly unknown[]): boolean {
         if (addr === "/gui_closed") {
+            // **Only this editor's window.** One host carries several, and an
+            // editor with none of its own -- a multitrack that opened only a
+            // composed view -- would otherwise read every close as its own and
+            // take itself out of the context that is still drawing.
             if (
-                rawArgs.length === 0 || this.windowId === null ||
-                Math.trunc(Number(rawArgs[0])) === this.windowId
+                this.windowId !== null &&
+                (rawArgs.length === 0 || Math.trunc(Number(rawArgs[0])) === this.windowId)
             ) {
                 this.windowId = null;
                 // Closing a *view* is not an event of the history, so the
                 // context stays exactly as it is -- what goes is this window's
                 // place in the list of who to tell.
                 this.editing.detach(this);
-                this.detach();
+                this.closed();
             }
             return false;
         }
@@ -490,14 +528,48 @@ export class Editor<S = unknown> implements Adopting {
      * handed.
      */
     protected observe(wid: number, tag: string, values: readonly unknown[]): boolean {
+        if (tag === "locate" && this.composedIn !== null && values.length > 0) {
+            // A click on the ruler: a seek of the piece this view is part of. A
+            // structure has no transport of its own, and a window inside a
+            // composition is not a second place to keep a position.
+            (this.composedIn as unknown as { locate(beat: number): void })
+                .locate(this.unitsToBeats(Number(values[0])));
+            return false;
+        }
         if (tag === "selection") {
-            this.selection = {
+            const selection: Record<string, unknown> = {
                 start: values.length > 0 ? this.unitsToBeats(Number(values[0])) : 0.0,
                 len: values.length > 1 ? this.unitsToBeats(Number(values[1])) : 0.0,
-            } as Selection;
+            };
+            if (values.length >= 4) {
+                // The sweep restricted the value axis too. Carried **as it
+                // came**: it is in the structure's own domain, and no unit of
+                // this editor's applies to it.
+                selection.value = { min: Number(values[2]), max: Number(values[3]) };
+            }
+            this.selection = selection as unknown as Selection;
+            this.selected();
         }
         return false;
     }
+
+    /**
+     * This editor's selection moved.
+     *
+     * Nothing on its own — a structure's selection is that structure's. A view
+     * **composed** inside a bigger editor hands it up instead, because the range
+     * an operation is given must be the same value whichever of the piece's
+     * windows it was swept in.
+     */
+    protected selected(): void {
+        this.composedIn?.adoptSelection(this as Editor);
+    }
+
+    /**
+     * A view composed inside this one swept a marquee. Nothing by default;
+     * {@link FormEditor} names what it is a selection *of*.
+     */
+    adoptSelection(_editor: Editor): void {}
 
     /**
      * Apply one payload to the structure and record how to put it back.
@@ -553,6 +625,16 @@ export class Editor<S = unknown> implements Adopting {
     detach(): void {}
 
     /**
+     * This editor's window went away: stop whatever it was driving.
+     *
+     * Nothing here. {@link FormEditor} unsubscribes — unless a view it composed
+     * is still on screen and being fed from the same subscription, which is why
+     * this is a hook of its own rather than a call to {@link Editor.detach}: the
+     * public door means "stop listening" and must go on meaning it.
+     */
+    protected closed(): void {}
+
+    /**
      * Another view of this structure edited it: bring this window in step. A
      * window that is not open has nothing to bring in step.
      */
@@ -601,25 +683,72 @@ export class Editor<S = unknown> implements Adopting {
         const history = this.editing.history;
         const walked = direction === "undo" ? history.undo() : history.redo();
         if (walked === undefined) return false;
-        const legs = (direction === "undo"
+        const legs = ((direction === "undo"
             ? (walked as { inverses?: unknown[] }).inverses
-            : (walked as { edits?: unknown[] }).edits) ?? [];
+            : (walked as { edits?: unknown[] }).edits) ?? []) as Leg[];
+        let stepped = false;
+        for (const editor of this.walkers()) {
+            stepped = editor.projectLegs(legs) || stepped;
+        }
+        if (!stepped) return false;
+        // **Once for the walk, not once per window.** The version is the
+        // context's, and every view reports the same one — and only this one
+        // draws from here: the others are told on the way out of the turn, the
+        // way they are told about any edit, so a step is one answer per window
+        // rather than two.
+        this.version += 1;
+        this.reflectStep();
+        return true;
+    }
+
+    /**
+     * Everybody a history step is offered to: the views of this context, and
+     * this editor whether or not it has a window (a host-less one still holds a
+     * structure the step may name).
+     */
+    protected walkers(): Editor[] {
+        const views = this.editing.views() as unknown as Editor[];
+        const me = this as Editor;
+        return views.includes(me) ? views : [me, ...views];
+    }
+
+    /**
+     * Project the legs of a history step that name **this** editor's structure,
+     * and say whether anything moved.
+     *
+     * The other half of {@link Editor.step}: what the walk hands round, so an
+     * editor that holds one of the structures an entry touched writes it back
+     * through its own domain — the same door an edit goes through, which is what
+     * keeps the two from disagreeing about what a payload means.
+     */
+    projectLegs(legs: readonly Leg[]): boolean {
+        if (this.domain === null) return false;
         const mine = this.registered();
         let applied = false;
-        for (const leg of legs as { structure?: number; payload?: unknown }[]) {
+        for (const leg of legs) {
             if (Math.trunc(Number(leg.structure ?? -1)) !== mine) continue;
-            if (leg.payload !== undefined && this.domain !== null) {
+            if (leg.payload !== undefined) {
                 applied = this.domain.project(this.structure, leg.payload) || applied;
             }
         }
-        if (!applied) return false;
-        this.version += 1;
+        return applied;
+    }
+
+    /**
+     * Draw what a history walk left behind: every widget resynced, and the host
+     * told once.
+     *
+     * Called on the editor that walked, after the whole step has landed, so a
+     * window whose structure the step did not touch still comes back in step —
+     * one entry can move several structures, and a picture of one of them is a
+     * picture of the walk.
+     */
+    reflectStep(): void {
         this.dirty = true;
         this.corrections = [];
         for (const wid of [...(this.view?.widgets.keys() ?? [])]) this.resync(wid);
         this.acknowledge(0);
         this.corrections = [];
-        return true;
     }
 
     /** Whether there is an edit to step back over. */

@@ -132,6 +132,7 @@ export class PointsView extends View<Automation> {
                 points: editor.structure.toPoints(),
                 label: nameOf(editor.structure),
             }),
+            ...editor.extra,
         );
     }
 

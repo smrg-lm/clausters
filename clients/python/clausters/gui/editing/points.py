@@ -98,6 +98,7 @@ class PointsView(View):
         wid = self.register(editor._new_id(), editor.structure)
         return window(bpf(id=wid, points=editor.structure.to_points(),
                           label=_name(editor.structure)),
+                      *editor.extra,
                       title=editor.title, w=editor.size[0], h=editor.size[1],
                       layout="col")
 

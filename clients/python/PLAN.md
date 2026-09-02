@@ -553,17 +553,47 @@ through once it is editable on its own).
   does not yet let a hand move. It is the events domain's second verb and it
   waits for one to exist.
 
-- ⬜ **C51 — `FormEditor` composes the views it used to contain.** The rename
-  happened in `C49`; what is left is the collapse it was for. `open_pianoroll`
-  and `open_signal` stop being modes with private draws and become `edit()` over
-  the part of the composition the window is pointed at, joined to the piece's
-  editing context — so a `FormEditor` holds `Editor`s rather than reimplementing
-  them, which is the claim the whole track is worth. A clip's bodies are then
-  views over structures, not props with a parallel edit path. *Acceptance:* a stroke over a placed take and a bend of the
-  curve over it undo in one order, through the same code path a standalone editor
-  uses; the dedicated roll of one track and the multitrack over the same piece
-  step one history; `_draw_pianoroll`/`_draw_signal` are gone rather than
-  wrapped.
+- ✅ **C51 — `FormEditor` composes the views it used to contain** *(done
+  2026-09-02, with `W28` in the same commit)*. The rename happened in `C49`;
+  this is the collapse it was for. `open_pianoroll` and `open_signal` stopped
+  being modes with private draws and became `edit()` over the part of the
+  composition the window is pointed at, joined to the piece's editing context —
+  so a `FormEditor` holds `Editor`s rather than reimplementing them, which is
+  the claim the whole track was worth. `_draw_pianoroll`, `_draw_signal`,
+  `_source_of`, the `_mode` field and the `_signals` registry are **gone**, not
+  wrapped; what replaces them is `_compose`, `FormEditor.composed` and two
+  constructors.
+
+  **What made one undo order possible, and it is the part worth reading.** A
+  history entry can name several structures, and the two editors write in
+  different vocabularies: the multitrack's legs are intents on a document, a
+  stroke's leg is the crate's `samples` — which the document's own face
+  (`Log.undo`) drops on the floor, because it filters to what it can read. So
+  the walk stopped being the walker's: `Editor._step` takes the step off the
+  shared `History` and hands the legs **round the context**, and every editor
+  projects the ones naming its own structure (`project_legs`), after which the
+  one that walked draws (`reflect_step`) and the rest are told on the way out of
+  the turn as they always were. `FormEditor` overrides the pair: its legs go to
+  the held document and through `_project`. Without this, Ctrl+Z over the
+  multitrack after a stroke stepped the cursor and moved nothing — a dead
+  button, and the exact failure the shared pile was placed to avoid, one level
+  up.
+
+  Four smaller things the work forced, each because something was wrong rather
+  than missing: a composed view has **no piece of its own**, so a ruler click
+  and a marquee are handed up through `composed_in` (a seek of the composition,
+  and a selection *of the element that view draws*); `extra` moved onto the
+  generic `Editor`, since the script's own panel belongs to whichever window it
+  was asked for; the measure stack moved to `samples` with `MEASURES`/`measures`
+  public in both clients, because it is the `SamplesView`'s and not the
+  arrangement's; and `open_signal`/`open_pianoroll` **stopped overwriting the
+  editor's host** — the multitrack already answers one, and taking the second
+  window's silently sent every acknowledgement to the wrong place, invisible in
+  the ordinary case where the two are the same object.
+
+  A generator's roll is now refused **before the hand tries**: what it produced
+  is bounced onto a timeline of its own and the widget is told `notes_editable`
+  is false, instead of unwinding each drag after the fact.
 
 ### The client API reform: the GUI element as an object (client arc, phased)
 
@@ -2411,6 +2441,28 @@ work, where a pending item reads as done.)*
 Every entry carries a checkbox, like "Found by use" above: an open direction has
 to read as open, and one that converges into a milestone leaves this list rather
 than being ticked here.
+
+- ⬜ **A clip's body and a composed view edit the same data by two roads**
+  *(named 2026-09-02, the half of `C51` that was deliberately not done)*. The
+  milestone said "a clip's bodies are then views over structures, not props with
+  a parallel edit path", and the dedicated views are — but a clip's own bodies
+  are not. Notes drawn on a clip's roll go through `_apply_notes` as a
+  `SetMembers` on the tree; the same notes drawn in the composed roll go through
+  `NotesDomain` onto the `Timeline`. A curve is the same story with `Configure`.
+  Both roads end at the same object and both are one undo order, so nothing is
+  broken — what is wrong is that the *rule* for what a note edit means is
+  written twice, which is the duplication this whole track exists to remove.
+
+  **Why it was not simply collapsed**, and this is the part that has to be
+  decided rather than typed: a leaf's notes and points **are the document's** —
+  they are what a save writes and what a reopened piece gets back — while a
+  domain writes the client object and leaves the document to be derived again.
+  Making the clip body use the domain would take the notes out of the tree's own
+  vocabulary, and making the composed roll use `SetMembers` would need a tree to
+  be a member of, which is exactly what `edit(timeline)` does not have. So the
+  question is which of the two is the arrangement's real model of a track's
+  notes — and it is the same question as "`Track` wraps a `Timeline`, so the
+  tree has two ways of placing things", below. It converges there, not here.
 
 - ✅ **One tempo verb: an extent in either unit, and a shape written in one
   call** *(designed and shipped 2026-08-31, from the user's "calcular el tempo

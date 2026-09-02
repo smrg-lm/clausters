@@ -73,6 +73,11 @@ import { FIRST_VERSION, MIXING, setMixing } from "../../form/document.ts";
 import { Editing, contexts } from "./context.ts";
 import type { Adopting } from "./context.ts";
 import { Editor } from "./editor.ts";
+import type { Leg } from "./editor.ts";
+import { NotesEditor } from "./events.ts";
+import { MEASURES, SamplesEditor, isSamples, measures } from "./samples.ts";
+import type { Measure } from "./samples.ts";
+import type { Buffer } from "../../defs/buffer.ts";
 import { Automation } from "../../seq/automation.ts";
 import { Event as SeqEvent } from "../../seq/event.ts";
 import { MidiItem, OscItem, Timeline } from "../../seq/timeline.ts";
@@ -83,12 +88,10 @@ import {
     flatNotes,
     flatPoints,
     patch,
-    pianoroll,
     scroll,
     signal,
     timeruler,
     track,
-    waveform,
     window as guiWindow,
 } from "../guidef.ts";
 import type { GuiNode } from "../guidef.ts";
@@ -103,14 +106,6 @@ import { Transport } from "../transport.ts";
 const DEFAULT_PITCH: [number, number] = [48.0, 72.0];
 /** Semitones of headroom above and below the notes of a piano-roll clip. */
 const PITCH_PAD = 2.0;
-
-/**
- * The measures a signal view can stack, in the order a reader thinks of them:
- * what the signal reached, and what it held inside that.
- */
-export const MEASURES = ["peak", "rms"] as const;
-/** One of the measures above. */
-export type Measure = (typeof MEASURES)[number];
 
 /** A note as the roll draws it: `[start, dur, pitch, velocity, channel]`. */
 type Note = [number, number, number, number, number];
@@ -329,8 +324,6 @@ export class FormEditor extends Editor<Element> implements Adopting {
      * node rather than the element's — the rule every other edit-back follows.
      */
     private laneMembers = new Map<number, Member | null>();
-    /** widget id → the element whose samples that widget draws. */
-    private signals = new Map<number, Element>();
     /** widget id → the element whose notes that widget draws. */
     private rolls = new Map<number, Element>();
     /** patch widget id → the logical aggregate and its box-order handles. */
@@ -360,10 +353,30 @@ export class FormEditor extends Editor<Element> implements Adopting {
      */
     private restructured = false;
     private curveAxis = new WeakMap<Automation, [number, number]>();
-    private mode: "multitrack" | "pianoroll" | "signal" = "multitrack";
-    private rollElement: Element | null = null;
-    private signalElement: Element | null = null;
-    private measures: Measure[] = ["peak", "rms"];
+    /**
+     * The editors this one opened over **parts** of the composition — a
+     * dedicated roll of one track, the editor-grade waveform of one take.
+     *
+     * They are {@link Editor}s, not modes: each is the generic editor with one
+     * domain and one view, joined to *this* composition's editing context, so
+     * what it does lands in the same order as a clip dragged here and an undo in
+     * either window walks that one order.
+     */
+    private composedEditors: Editor[] = [];
+    /**
+     * The composed signal editor, if one was opened — what {@link
+     * FormEditor.layers} reads and writes.
+     */
+    private signal: SamplesEditor | null = null;
+    /** What a signal view opened from here measures, until one is open. */
+    private stack: Measure[] = [...MEASURES];
+    /**
+     * The widgets a history walk left drawing something else, collected by
+     * {@link FormEditor.projectLegs} and drained by {@link
+     * FormEditor.reflectStep} — the two halves of one step, which the context
+     * runs separately so the version moves once.
+     */
+    private stepped = new Set<number>();
     // The composition's version, the held document, the history over it and the
     // index between them are **not fields of this editor**: they belong to the
     // arrangement, and a second window over one composition reaches the same
@@ -395,7 +408,7 @@ export class FormEditor extends Editor<Element> implements Adopting {
         this.quant = Number(quant);
         this.follow = Boolean(follow);
         this.extra = [...extra];
-        this.transport = new Transport(null, () => [...this.lanes.keys()], {
+        this.transport = new Transport(null, () => this.playline(), {
             source: (at) => this.renderPass(at),
             tempoMap: this.tempoMap,
             sampleRate: this.sampleRate,
@@ -485,15 +498,12 @@ export class FormEditor extends Editor<Element> implements Adopting {
      * controls. A member wrapping a bare def *name* draws port-less.
      */
     draw(): GuiNode {
-        if (this.mode === "pianoroll") return this.drawPianoroll();
-        if (this.mode === "signal") return this.drawSignal();
         this.resetIds();
         this.clips = new Map();
         this.lanes = new Map();
         this.laneMembers = new Map();
         this.rolls = new Map();
         this.patches = new Map();
-        this.signals = new Map();
 
         const lanes: GuiNode[] = [];
         const root = this.element;
@@ -566,7 +576,6 @@ export class FormEditor extends Editor<Element> implements Adopting {
         host = await resolveEditorHost(host);
         this.host = host;
         this.transport.host = host;
-        this.mode = "multitrack";
         const handle = host.open(this.draw(), { id, element: stage });
         this.windowId = handle.id;
         this.editing.attach(this);
@@ -584,6 +593,11 @@ export class FormEditor extends Editor<Element> implements Adopting {
         this.detach();
         this.unlisten = host.onMessage((msg) => {
             this.apply(msg.addr, msg.args);
+            // **One subscription, because one host.** The composed editors draw
+            // other windows on the same host, and a second subscription would
+            // hand each of them the same message twice. Each answers only for
+            // the widgets it drew, which is what `apply` is written to do.
+            for (const editor of [...this.composedEditors]) editor.apply(msg.addr, msg.args);
         });
         return () => this.detach();
     }
@@ -592,6 +606,15 @@ export class FormEditor extends Editor<Element> implements Adopting {
     detach(): void {
         this.unlisten?.();
         this.unlisten = null;
+    }
+
+    /**
+     * This window closed. The subscription goes with it — **unless a view this
+     * editor composed is still on screen**: there is one `onMessage` for all of
+     * them, and dropping it would leave a window open and dead.
+     */
+    protected override closed(): void {
+        if (this.windows.length === 0) this.detach();
     }
 
     /**
@@ -661,195 +684,221 @@ export class FormEditor extends Editor<Element> implements Adopting {
         }
     }
 
+    // ---- the views this editor composes ----
+
     /**
-     * The dedicated piano-roll view: one `pianoroll` widget drawing a single
-     * events element's MIDI notes (grid) and OSC markers (lane), instead of a
-     * multitrack of clips.
+     * The editors this one opened over **parts** of the composition — a
+     * dedicated roll ({@link FormEditor.openPianoroll}), the editor-grade
+     * waveform of a take ({@link FormEditor.openSignal}).
+     *
+     * Each is an {@link Editor} of its own, joined to this composition's editing
+     * context, so what it does lands in the same undo order as a clip dragged
+     * here. Read it to reach the window's own editor: its selection, its undo,
+     * the structure it holds.
      */
-    private drawPianoroll(): GuiNode {
-        this.resetIds();
-        this.clips = new Map();
-        this.lanes = new Map();
-        this.laneMembers = new Map();
-        this.rolls = new Map();
-        this.signals = new Map();
-        const element = this.rollElement as Element;
-        const wid = this.newId();
-        const notes = this.notesOf(element);
-        const osc = this.oscOf(element);
-        const body: Record<string, number> = {};
-        if (notes.length > 0) {
-            const pitches = notes.map((n) => n[2]);
-            body.min = Math.min(Math.min(...pitches) - PITCH_PAD, DEFAULT_PITCH[1]);
-            body.max = Math.max(Math.max(...pitches) + PITCH_PAD, DEFAULT_PITCH[0]);
-        }
-        const snap = this.quant > 0 ? this.beatsToUnits(this.quant) : undefined;
-        // The roll is a lane (the playhead addresses these) and a roll (the note
-        // edit-back resolves through these).
-        this.lanes.set(wid, element);
-        this.rolls.set(wid, element);
-        const roll = pianoroll({
-            id: wid,
-            notes: notes.length > 0 ? notes : undefined,
-            osc: osc.length > 0 ? osc : undefined,
-            ruler: "beats",
-            tempo: this.tempo,
-            sampleRate: this.sampleRate,
-            snap,
-            label: nameOf(element),
-            ...body,
-        });
-        return guiWindow(
-            { title: this.title, w: this.size[0], h: this.size[1], layout: "col" },
-            roll,
-            ...this.extra,
-        );
+    get composed(): Editor[] {
+        return [...this.composedEditors];
     }
 
     /**
-     * What the dedicated signal view measures — `["peak", "rms"]` for the
+     * Take a composed editor into this one: it draws `element`, part of this
+     * composition, and a transport gesture in its window is this piece's.
+     *
+     * Held so the pair survives the page letting go of the window handle, and so
+     * a history step reaching a leg this editor cannot read has somebody to hand
+     * it to.
+     */
+    private compose<E extends Editor>(editor: E, element: Element): E {
+        editor.composedIn = this as unknown as Editor;
+        editor.composedOver = element;
+        this.composedEditors.push(editor as unknown as Editor);
+        return editor;
+    }
+
+    /**
+     * The host a composed view is opening on, taken as this editor's when it has
+     * none of its own.
+     *
+     * **Only when it has none.** A multitrack already open answers *its* host,
+     * and overwriting that with the one a second window opened on left every
+     * acknowledgement going to the wrong place — silently, because in the
+     * ordinary case (one host, several windows) the two are the same object.
+     */
+    private adoptHost(host: GuiHost): void {
+        if (this.host === null) {
+            this.host = host;
+            this.transport.host = host;
+            this.listen(host);
+        }
+    }
+
+    /**
+     * Every widget the playhead line is drawn on: this window's lanes, and the
+     * composed views'. Read on each use, so a redraw's new widgets get the line
+     * — and so does a window opened after the transport was already running.
+     */
+    /**
+     * Every window this editor is on screen through — its own, and the composed
+     * views'.
+     *
+     * A `FormEditor` may be on screen through a composed view alone (a take
+     * opened with {@link FormEditor.openSignal} and no multitrack), and
+     * `window` is deliberately this editor's own rather than "one of the
+     * windows".
+     */
+    get windows(): number[] {
+        const held = this.window === null ? [] : [this.window];
+        for (const editor of this.composedEditors) {
+            if (editor.window !== null) held.push(editor.window);
+        }
+        return held;
+    }
+
+    private playline(): number[] {
+        const ids = [...this.lanes.keys()];
+        for (const editor of this.composedEditors) ids.push(...(editor.view?.widgets.keys() ?? []));
+        return ids;
+    }
+
+    /**
+     * What a signal view opened from here measures — `["peak", "rms"]` for the
      * editor's picture, `["peak"]` for the bare envelope.
      *
-     * **Assigning it on an open view sends one message.** The measure is a live
-     * prop, so the body appears and disappears over the peaks with the picture,
-     * the axis, the zoom, the selection and the playhead all exactly where they
-     * were. Redrawing for this would be the wrong tool twice over.
+     * A reading of the composed {@link SamplesEditor} once one is open, and the
+     * stack the next one will be opened with before that. **Assigning it on an
+     * open view sends one message**, which is that editor's own rule: the
+     * measure is a live prop, so the body appears and disappears over the peaks
+     * with the picture, the axis, the zoom, the selection and the playhead all
+     * exactly where they were.
      */
     get layers(): Measure[] {
-        return [...this.measures];
+        return this.signal === null ? [...this.stack] : (this.signal.layers as Measure[]);
     }
 
-    set layers(measures: readonly string[]) {
-        const stack = [...measures].map(measureName);
-        if (stack.length === 0) {
-            throw new Error(`a signal view measures something (one of ${MEASURES.join(", ")})`);
-        }
-        this.measures = stack;
-        if (this.mode === "signal" && this.host !== null && this.windowId !== null) {
-            for (const wid of this.signals.keys()) {
-                this.host.set(wid, { measure: stack.join(" ") });
-            }
-        }
+    set layers(stack: readonly string[]) {
+        this.stack = measures(stack);
+        if (this.signal !== null) this.signal.layers = this.stack;
     }
 
     /**
-     * The dedicated signal view: the **editor-grade waveform** of a single
-     * rendered element's samples, instead of a multitrack of clips.
-     *
-     * It is one `waveform` — the same heavy view a standalone take is shown in —
-     * and the stack of measures is a prop of it, not a pile of widgets. That is
-     * the shape the picture forces: every view of a signal paints its own field
-     * before it draws, so two of them on one rectangle are not layers — the
-     * second hides the first.
-     */
-    private drawSignal(): GuiNode {
-        this.resetIds();
-        this.clips = new Map();
-        this.lanes = new Map();
-        this.laneMembers = new Map();
-        this.rolls = new Map();
-        this.signals = new Map();
-        const element = this.signalElement as Element;
-        const body = this.sourceOf(element);
-        const wid = this.newId();
-        this.lanes.set(wid, element);
-        this.signals.set(wid, element);
-        const view = waveform({
-            ...body,
-            id: wid,
-            label: nameOf(element),
-            measure: this.measures.join(" ") as "peak" | "rms" | "peak rms",
-            ruler: "time",
-            sampleRate: this.sampleRate,
-            tempo: this.tempo,
-        });
-        return guiWindow(
-            { title: this.title, w: this.size[0], h: this.size[1], layout: "col" },
-            view,
-            ...this.extra,
-        );
-    }
-
-    /**
-     * The source props a signal view draws `element`'s samples from, or an error
-     * naming what is missing.
-     *
-     * **This is the generated/generator distinction, asked at the door.** A
-     * rendered element has samples a view can address; a generator has none until
-     * it is rendered, and a window drawn over nothing is worse than a refusal
-     * that says what to do.
-     */
-    private sourceOf(element: Element | null): { buffer?: number; channels?: number } {
-        const body = element === null ? {} : this.bodyFor(element);
-        if (!("buffer" in body)) {
-            throw new Error(
-                `${nameOf(element)} has no samples to draw: a signal view needs a ` +
-                    "rendered element (render the composition, or bounce this one to " +
-                    "a buffer, and open that)",
-            );
-        }
-        return { buffer: body.buffer as number, channels: body.channels as number };
-    }
-
-    /**
-     * `draw` a single **rendered** element as a dedicated signal view and open it
-     * on `host` — the editor-grade view of one element's samples, as opposed to
+     * Open one **rendered** element's samples in an editor of their own, joined
+     * to this composition — the editor-grade view of a take, as opposed to
      * `open`, where the same samples are only a clip's body.
+     *
+     * It is {@link edit} over the take: a {@link SamplesEditor}, one `waveform`,
+     * and a stroke that writes the server's buffer through the samples domain.
+     * What makes it *this piece's* rather than a window beside it is the editing
+     * context — the composition's, so a stroke here and a clip dragged there are
+     * one undo order, and an undo asked for in either window walks it.
+     *
+     * `layers` is what the picture measures, and {@link FormEditor.layers}
+     * changes it live on the open view. The element must have **samples**: a
+     * rendered take, not a generator (see the error a generator raises).
      */
     async openSignal(
         host?: GuiHost,
         element?: Element,
-        { layers = ["peak", "rms"], id, stage }: {
+        { layers = MEASURES, id, stage }: {
             layers?: readonly string[];
             id?: number;
             stage?: Stage | null;
         } = {},
     ): Promise<WindowHandle> {
-        host = await resolveEditorHost(host);
         const target = element ?? this.element;
         // Refused **before** a window exists: an unknown measure and an element
         // with no samples are both answers to the call that was made, and
         // finding out at the first repaint would leave an empty window behind.
-        const stack = [...layers].map(measureName);
-        this.sourceOf(target);
-        this.host = host;
-        this.transport.host = host;
-        this.mode = "signal";
-        this.signalElement = target;
-        this.measures = stack;
-        const handle = host.open(this.draw(), { id, element: stage });
-        this.windowId = handle.id;
-        this.editing.attach(this);
-        this.listen(host);
-        this.announce();
-        return handle;
+        const stack = measures(layers);
+        const take = takeOf(target);
+        if (take === null) {
+            // **The generated/generator distinction, asked at the door.** A
+            // rendered element has samples a view can address; a generator has
+            // none until it is rendered, and a window drawn over nothing is
+            // worse than a refusal that says what to do. It is the same question
+            // `openPianoroll` answers by showing a bounced generator read-only,
+            // and it has a sharper answer here: notes can be bounced for a
+            // picture, samples cannot be invented.
+            throw new Error(
+                `${nameOf(target)} has no samples to draw: a signal view needs a ` +
+                    "rendered element (render the composition, or bounce this one to " +
+                    "a buffer, and open that)",
+            );
+        }
+        const resolved = await resolveEditorHost(host);
+        this.adoptHost(resolved);
+        this.stack = stack;
+        const editor = new SamplesEditor(take, {
+            sampleRate: this.sampleRate,
+            tempoMap: this.tempoMap,
+            layers: stack,
+            title: this.title,
+            extra: this.extra,
+            width: this.size[0],
+            height: this.size[1],
+            context: this.editing,
+        });
+        this.signal = this.compose(editor, target);
+        return await editor.open(resolved, { id, stage });
     }
 
     /**
-     * `draw` a single events element as a **dedicated piano-roll** window and
-     * open it on `host` — the editor-grade note view of one MIDI/OSC element.
+     * Open one events element's notes in a roll of their own, joined to this
+     * composition — the editor-grade note view (a keyboard, an editable note
+     * grid, a velocity lane, an OSC lane) of one element, as opposed to `open`,
+     * where the same notes are only a clip body.
      *
-     * Edits write back exactly as the multitrack does, **when the element is
-     * editable** — a `Track` (a `Timeline`). A **generator** is forward-only, so
-     * its bounced notes are shown *read-only*.
+     * It is {@link edit} over the element's timeline: a {@link NotesEditor} on
+     * this composition's editing context, so the roll and the multitrack over the
+     * same piece step **one** history — and a note moved here reaches the clip
+     * drawing it there without either window being redefined.
+     *
+     * A **generator** (a pattern) is forward-only, so what it produced is bounced
+     * onto a timeline of its own and the roll is opened **read-only**: the notes
+     * are a rendering of an algorithm, and the widget is told so rather than
+     * refusing each drag after the hand has made it (bounce it to a `Track` to
+     * edit). OSC markers are shown but not edited back yet.
      */
     async openPianoroll(
         host?: GuiHost,
         element?: Element,
         { id, stage }: { id?: number; stage?: Stage | null } = {},
     ): Promise<WindowHandle> {
-        host = await resolveEditorHost(host);
-        this.host = host;
-        this.transport.host = host;
-        this.mode = "pianoroll";
-        this.rollElement = element ?? this.element;
-        const handle = host.open(this.draw(), { id, element: stage });
-        this.windowId = handle.id;
-        this.editing.attach(this);
-        this.listen(host);
-        this.announce();
-        return handle;
+        const target = element ?? this.element;
+        const held = editableTimeline(target);
+        const timeline = held ?? bounced(target);
+        const resolved = await resolveEditorHost(host);
+        this.adoptHost(resolved);
+        const editor = new NotesEditor(timeline, {
+            sampleRate: this.sampleRate,
+            tempoMap: this.tempoMap,
+            editable: held !== null,
+            title: this.title,
+            extra: this.extra,
+            width: this.size[0],
+            height: this.size[1],
+            context: this.editing,
+        });
+        this.compose(editor, target);
+        return await editor.open(resolved, { id, stage });
     }
+
+    /**
+     * A marquee swept in a **composed** view is a selection of the element that
+     * view draws.
+     *
+     * The same value a sweep on that element's clip gives, so an operation over
+     * the range is handed one thing whichever of the piece's windows it was swept
+     * in — and it is the composed editor that knows the numbers were its own
+     * axis's, which is why this takes the selection rather than the event.
+     */
+    override adoptSelection(editor: Editor): void {
+        const selection = { ...editor.selection } as Record<string, unknown>;
+        const over = editor.composedOver as Element | null;
+        const node = over === null || over === undefined ? null : this.nodeId(over);
+        if (node !== null) selection.nodes = [node];
+        this.selection = selection as unknown as Selection;
+    }
+
 
     /**
      * The composition's length in beats, **read from the arrangement** — the end
@@ -896,6 +945,21 @@ export class FormEditor extends Editor<Element> implements Adopting {
             return;
         }
         const widgets = new Set<number>();
+        if (intents.some((intent) => !("node" in (intent as object)))) {
+            // An intent in **another structure's vocabulary** — a stroke on a
+            // take, a note moved in a composed roll. It names no node of this
+            // tree, and what it wrote are the objects this window draws, so the
+            // held document has to be derived again: it is the case `refresh`
+            // exists for, arriving from a view instead of from a page. What is
+            // redrawn is the clip over that part, not the window.
+            this.refresh();
+            for (const editor of this.composedEditors) {
+                const over = editor.composedOver as Element | null;
+                if (over === null || over === undefined) continue;
+                const wid = this.widgetOf(over);
+                if (wid !== null) widgets.add(wid);
+            }
+        }
         for (const intent of intents) for (const wid of this.reflect(intent)) widgets.add(wid);
         if (widgets.size === 0) return;
         this.corrections = [];
@@ -1122,7 +1186,7 @@ export class FormEditor extends Editor<Element> implements Adopting {
             this.rolls.has(widgetId) ||
             this.patches.has(widgetId) ||
             this.lanes.has(widgetId) ||
-            this.signals.has(widgetId)
+            false
         );
     }
 
@@ -1194,7 +1258,7 @@ export class FormEditor extends Editor<Element> implements Adopting {
         if (values.length >= 4) {
             selection.value = { min: Number(values[2]), max: Number(values[3]) };
         }
-        let element = this.rolls.get(wid) ?? this.signals.get(wid) ?? null;
+        let element = this.rolls.get(wid) ?? null;
         if (element === null) {
             const placed = this.clips.get(wid);
             element =
@@ -2388,18 +2452,52 @@ export class FormEditor extends Editor<Element> implements Adopting {
      * into what the document now says — which is why this overrides rather than
      * extends.
      */
-    protected override step(direction: "undo" | "redo"): boolean {
-        const walk = (log: Log, doc: Document): Intent[] | undefined =>
-            direction === "undo" ? log.undo(doc)?.undone : log.redo(doc)?.redone;
-        if (this.log === null) return false;
+    /**
+     * The **tree's** legs of a history step, onto the held document and the
+     * arrangement.
+     *
+     * The generic editor projects a payload through its domain; the tree's
+     * domain is a document, so its legs are intents the crate turns into what the
+     * document now says, and `project` writes that onto the page's objects. What the walk hands round is the whole entry, and one entry
+     * can name several structures — a stroke over a take and a bend of the curve
+     * over it are one order — so the legs this document cannot read are left for
+     * whoever holds them.
+     *
+     * An undo is authoritative: it states what the document was, so it is not
+     * checked against a version it predates.
+     */
+    override projectLegs(legs: readonly Leg[]): boolean {
         const [log, document] = this.history();
-        const intents = walk(log, document);
-        if (intents === undefined) return false;
-        const widgets = new Set<number>();
-        for (const intent of intents) {
-            for (const wid of this.project(intent)) widgets.add(wid);
+        // Drained here rather than at the end, because the editor that walked is
+        // the only one that draws from `reflectStep`; every other window is told
+        // on the way out of the turn.
+        this.stepped = new Set();
+        let applied = false;
+        for (const leg of legs) {
+            if (Math.trunc(Number(leg.structure ?? -1)) !== log.structure) continue;
+            const payload = leg.payload as Intent | undefined;
+            if (payload === undefined) continue;
+            document.apply(payload);
+            for (const wid of this.project(payload)) this.stepped.add(wid);
+            applied = true;
         }
-        this.version = document.version;
+        return applied;
+    }
+
+    /**
+     * Draw what a history walk left behind, and re-render if `follow` is on.
+     *
+     * The version comes back from the **document** when the walk moved it: a step
+     * can apply several intents where the context counts one edit, and the two
+     * have to be talking about the same picture on the next gesture. It never
+     * goes backwards — a redefine moves the context's counter and no document's —
+     * so what holds is the later of the two.
+     */
+    override reflectStep(): void {
+        const widgets = this.stepped;
+        this.stepped = new Set();
+        const document = this.editing.doc;
+        if (document !== null) this.version = Math.max(this.version, document.version);
         this.dirty = true;
         this.followRender();
         this.corrections = [];
@@ -2407,11 +2505,10 @@ export class FormEditor extends Editor<Element> implements Adopting {
         // rather than with props: the widgets the corrections name are about to
         // be rebuilt, and the clip an undone split takes away has no prop that
         // says so.
-        if (this.restructure()) return true;
+        if (this.restructure()) return;
         for (const wid of widgets) this.resync(wid);
         this.acknowledge(0);
         this.corrections = [];
-        return true;
     }
 
     /**
@@ -3057,17 +3154,6 @@ function outletRate(member: Element, name: string): "audio" | "control" | null {
 }
 
 /**
- * One layer's measure, or an error naming it — a stack is written by hand, and a
- * silent typo is a layer that quietly does not appear.
- */
-function measureName(name: string): Measure {
-    if (!(MEASURES as readonly string[]).includes(name)) {
-        throw new Error(`unknown measure ${name} (one of ${MEASURES.join(", ")})`);
-    }
-    return name as Measure;
-}
-
-/**
  * An element's display name: its own `name` when it has one (an aggregate names
  * itself, an automation names the control it drives), else what it *is* — an
  * automation is an "envelope", not the `Element` that happens to wrap it.
@@ -3250,6 +3336,42 @@ function rollOwner(element: Element, tempo = 1.0): Element | null {
         return null;
     }
     return element;
+}
+
+/**
+ * The buffer an element's samples are in, or `null` — what a signal view is
+ * opened over.
+ *
+ * A `Vector` wraps one; a buffer handed straight to a {@link FormEditor} **is**
+ * one. Anything else (a generator, an aggregate, a frozen source a reopened
+ * session could not resolve) has no samples to write, which is the refusal
+ * `openSignal` throws.
+ */
+function takeOf(element: Element | null): Buffer | null {
+    const take = (element as { wraps?: unknown } | null)?.wraps ?? element;
+    return isSamples(take) ? take : null;
+}
+
+/**
+ * What a forward-only element produced, on a timeline of its own — the read-only
+ * roll's data.
+ *
+ * The *change of state* happens right here: a pattern is bounced by `flatten`,
+ * so the roll shows the notes the generator will play. Nothing is edited back
+ * onto it, because writing this timeline would write a copy nobody plays; the
+ * roll says so with the widget's own `notesEditable`, before the hand tries.
+ */
+function bounced(element: Element): Timeline {
+    const timeline = new Timeline();
+    if (element instanceof Aggregate || element instanceof Vector) return timeline;
+    let events: [number, unknown][];
+    try {
+        events = flatten(element, 0.0, 1.0, null, false) as unknown as [number, unknown][];
+    } catch {
+        return timeline;
+    }
+    for (const [beat, item] of events) timeline.add(Number(beat), item as never);
+    return timeline;
 }
 
 /**

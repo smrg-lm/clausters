@@ -15,6 +15,14 @@ without having remembered anything. So nothing is read back from the server to
 undo: the edit and its inverse arrive together, and what the history records is
 the second.
 
+**What the picture measures is the view's.** A waveform is drawn as a stack of
+measures over one field -- what the signal reached (``peak``) with what it held
+inside that (``rms``) -- and that is a prop of the one widget rather than a pile
+of widgets: every view of a signal paints its own field before it draws, so two
+of them on one rectangle are not layers, the second hides the first. Measuring
+twice into one body is also what makes the rest of it one thing: one axis, one
+ruler, one selection, one playhead, one upload of the samples.
+
 **A stroke lands on one channel.** The samples are interleaved, so writing one
 channel of a stereo take is a strided write and ``/buffer_setRange`` is
 contiguous: the span is read, the channel's frames are spliced into it and the
@@ -28,6 +36,28 @@ from ... import _native
 from .domain import Domain
 from .editor import Editor
 from .view import View
+
+
+#: The measures a signal view can stack, in the order a reader thinks of them:
+#: what the signal reached, and what it held inside that.
+MEASURES = ("peak", "rms")
+
+
+def measures(stack) -> tuple:
+    """A measure stack as a tuple, or a `ValueError` naming what is wrong.
+
+    A stack is written by hand, so a silent typo is a layer that quietly does
+    not appear, and an empty one is a picture that measures nothing.
+    """
+    out = tuple(str(name) for name in stack)
+    for name in out:
+        if name not in MEASURES:
+            raise ValueError(
+                f"unknown measure {name!r} (one of {', '.join(MEASURES)})")
+    if not out:
+        raise ValueError(f"a signal view measures something (one of "
+                         f"{', '.join(MEASURES)})")
+    return out
 
 
 def _floats(blob) -> list:
@@ -119,7 +149,13 @@ class SamplesDomain(Domain):
 
 class SamplesView(View):
     """One `clausters.gui.guidef.waveform`: the take on its own axis, drawn by
-    the host straight from the server buffer."""
+    the host straight from the server buffer, with the measures it stacks as a
+    prop of that one widget (see the module docstring)."""
+
+    def __init__(self, layers=MEASURES):
+        super().__init__()
+        #: What the picture measures, innermost last.
+        self.layers = measures(layers)
 
     def build(self, editor) -> dict:
         from ..guidef import waveform, window
@@ -128,8 +164,10 @@ class SamplesView(View):
         wid = self.register(editor._new_id(), take)
         return window(waveform(id=wid, buffer=int(take.bufnum),
                                channels=max(1, int(take.channels or 1)),
+                               measure=" ".join(self.layers),
                                ruler="time", sample_rate=editor.sample_rate,
                                tempo=editor.tempo, label=_name(take)),
+                      *editor.extra,
                       title=editor.title, w=editor.size[0], h=editor.size[1],
                       layout="col")
 
@@ -149,11 +187,33 @@ class SamplesEditor(Editor):
     """
 
     def __init__(self, take, *, sample_rate: float = 0.0, tempo: float = 1.0,
-                 title: str = "Samples", **options):
+                 title: str = "Samples", layers=MEASURES, **options):
         rate = float(sample_rate or getattr(take, "sample_rate", 0.0) or 48_000.0)
         super().__init__(take, sample_rate=rate, tempo=tempo,
-                         domain=SamplesDomain(), view=SamplesView(),
+                         domain=SamplesDomain(), view=SamplesView(layers),
                          title=title, **options)
+
+    @property
+    def layers(self) -> tuple:
+        """What the picture measures — `("peak", "rms")` for the editor's
+        view, `("peak",)` for the bare envelope.
+
+        **Assigning it on an open view sends one message.** The measure is a
+        live `/gui_set` prop, so the body appears and disappears over the peaks
+        with the picture, the axis, the zoom, the selection and the playhead all
+        exactly where they were. Redrawing for this would be the wrong tool
+        twice over: a redefine rebuilds every widget (so a handler bound to one
+        by name is left holding an id nobody answers to) and the window it
+        redefines is reopened.
+        """
+        return self.view.layers
+
+    @layers.setter
+    def layers(self, stack) -> None:
+        self.view.layers = measures(stack)
+        if self._host is not None and self._window is not None:
+            for wid in self.view.widgets:
+                self._host.set(wid, measure=" ".join(self.view.layers))
 
 
 def _name(take) -> str:

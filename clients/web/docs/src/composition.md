@@ -353,12 +353,28 @@ that placement, undoably; a cut running across one, and a paste of a block of
 *samples*, are refused with the reason — audio with neither a source nor a
 source's owner is not something an editor of placements may invent.
 
-Two dedicated views open on one element instead of the multitrack:
-`openPianoroll(host, element)` for an editable note grid, and
+Two dedicated views open on one element **beside** the multitrack, not instead
+of it: `openPianoroll(host, element)` for an editable note grid, and
 `openSignal(host, element)` for the editor-grade waveform of a rendered element
 (its `layers` — `["peak", "rms"]` — is a live prop, not a pile of widgets).
 
-The example is `examples/editors/composer.html`.
+Each **composes an editor of its own** — the `NotesEditor` `edit(timeline)`
+opens, the `SamplesEditor` `edit(buffer)` opens — joined to *this* composition's
+editing context, and reachable as `editor.composed`. So the windows step **one**
+history: a note moved in a roll reaches the clip drawing it as props, without
+either window being redefined, and a stroke drawn on a take is this piece's edit
+in the crate's `samples` vocabulary. The multitrack cannot read a samples leg at
+all; it hands that leg to the editor that can, which is what one editing context
+over several structures is for — so a stroke and a clip's move undo in the order
+your hand made them, from whichever window has focus.
+
+A generator has no samples until it is rendered, so `openSignal` refuses one and
+says what to do; `openPianoroll` bounces what it produced onto a timeline of its
+own and opens the roll **read-only**, telling the widget so rather than refusing
+each drag after the hand has made it.
+
+The examples are `examples/editors/composer.html` and
+`examples/editors/composed.html`.
 
 ## The document: what the composition *is*
 

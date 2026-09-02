@@ -4,7 +4,14 @@
 In the multitrack a take is a **clip's body** — drawn at a clip's size, next to
 everything else in the piece. This opens the same element by itself, at the size
 of a window: `clausters.gui.FormEditor.open_signal`, the sibling of the dedicated
-piano roll, and the view the sample-editing gestures will arrive in.
+piano roll.
+
+**It is an editor of the take, not a picture of it.** `open_signal` composes a
+`clausters.gui.editing.SamplesEditor` — the same one `clausters.gui.edit` opens
+over a bare buffer — joined to this piece's editing context, so a stroke drawn
+here writes the server's buffer and undoes in the piece's own order. Drawing is
+a gesture the widget has to be put into (`examples/editors/composed.py` shows
+the toggle); this file stays on the picture and the measures.
 
 What it shows:
 
@@ -170,7 +177,9 @@ def run():
     """Hold until the window is closed — a by-eye and by-ear test ends when the
     person looking at it says so, not on a timer."""
     last = None
-    while editor.window is not None:
+    # `windows` rather than `window`: this editor is on screen through the view
+    # it composed, and never opened one of its own.
+    while editor.windows:
         editor.transport.update()
         editor.poll(0.05)
         if editor.selection and editor.selection != last:

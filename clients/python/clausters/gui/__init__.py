@@ -51,7 +51,7 @@ oscilloscope, ``gui_analyzer`` for the phasescope and live spectrum,
 ``gui_oscsend`` for the editable ``text`` field typing an OSC message live).
 """
 
-from .editing import Editor, FormEditor, edit
+from .editing import MEASURES, Editor, FormEditor, edit, measures
 from .guidef import (
     Source,
     View,
@@ -148,7 +148,9 @@ __all__ = [
     "ambient_host",
     "Editor",
     "FormEditor",
+    "MEASURES",
     "edit",
+    "measures",
     "Transport",
     "WidgetHandle",
     "WindowHandle",

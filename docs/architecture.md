@@ -522,6 +522,24 @@ the crate: a `points::Point` grew a `data` field, because a client's curve
 carries a shape per segment and a vocabulary that dropped it made an undo put
 back a straight line.
 
+**And the arrangement's editor composes those same editors rather than
+reimplementing them.** `open_pianoroll` and `open_signal` are not modes with
+private draws: each builds the editor `edit(x)` would build over that part of the
+composition — a `NotesEditor` over the element's timeline, a `SamplesEditor` over
+the take's buffer — and joins it to the piece's `Editing` context, holding it in
+`FormEditor.composed`. What that buys is the thing a mode could not have: **one
+undo order across vocabularies**. A history step is handed round the context
+(`Editor.project_legs` / `reflect_step`), so an entry naming several structures
+is projected by whoever holds each — the multitrack applies the tree's legs to
+its document, the samples editor writes the buffer — and Ctrl+Z in any window
+walks the one order. The other direction is the same machine: an edit in a
+composed view reaches the multitrack as an intent in a vocabulary it cannot
+read, which is exactly the case `refresh` exists for (the held document is
+derived again and the clip over that part is resynced, without a redefine). A
+composed view also has no piece of its own, so a click on its ruler is the
+composition's seek and a marquee swept there is a selection *of the element it
+draws* — both handed up through `composed_in`.
+
 The paths above are the Python client's, and the model now exists **twice**: the
 web client carries the same layer at mirrored paths (`clients/web/src/form/`
 — `element.ts`, `aggregate.ts`, `render.ts`, `document.ts`), so a rule changed

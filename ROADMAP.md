@@ -238,35 +238,6 @@ Whole tracks, and one design the user has asked for that is a track's worth.
 milestones, their order and their acceptance are the plan's, and copying them
 into this file is exactly the migration the rules forbid.
 
-- ⬜ **The generic editor — `C51`, ported as `W28`** *(the clients' half,
-  in `clients/python/PLAN.md`, "The generic editor: one editor per domain, and
-  `edit(x)`", ported by `clients/web/PLAN.md`'s "W28"; the crate's floor is
-  `O20`, closed 2026-09-02 and leaving no line here)*. **Opened and ordered
-  2026-09-02 with the user.** `Editor` is a class written for the arrangement and
-  used as though it were general; the count that opened the track is in the
-  Python plan, and two of its rows are the substance — **sample editing exists in
-  the host and in no client**, and **`mute`/`solo` are not in the arrangement at
-  all**. `C48` closed both of those on 2026-09-02 — the session-file resolver,
-  the source table built from the arrangement, mixing in the node's
-  configuration, and `take` — and `C49` closed on the same day: the
-  `gui/editing/` subpackage, `Editor` generic over one structure with
-  `FormEditor` inheriting from it, and the open question taken (the editing
-  context hangs on the **data**, not on an ambient holder). So the remaining
-  sequence was `C50` (`edit(x)` over buffer, curve and timeline), which closed
-  the same day with its TypeScript half in the same commit — and with the
-  crate's other half of `O20`'s argument, `clausters_domain_edit`, since the
-  inverse was still being computed once per language. What is left is `C51`:
-  `FormEditor` composing the views it used to contain. The decision taken with
-  the track and worth reading before any of the phases: *the crate holds how an
-  edit inverts, the client holds the projection*.
-
-  **Related, and read with it rather than separately** — three entries of
-  `clients/python/PLAN.md`'s "Future directions" already below in this section:
-  "`Track` wraps a `Timeline`, so the tree has two ways of placing things", "A
-  drawn curve is a list of points, and `Env` is an envelope for `EnvGen`", and
-  "The mapping exists and is private to the `Editor`". Each is one of the three
-  domains seen from the model's side.
-
 - ⬜ **The A track — what a signal measures, and the layers that show it**
   *(`clients/gui/PLAN.md`, "A track")*. `A1`/`A2` shipped (mean square in the
   pyramid, the RMS layer and the `measure` prop); everything after them is open —
@@ -351,7 +322,11 @@ into this file is exactly the migration the rules forbid.
   that writes the document. The crate is already written for the other model (a
   lane is a projection; `SetMembers` is the roll's edit as a member list with
   ids), and as an aggregate a note — and an OSC marker — gains the id that today
-  it lacks.
+  it lacks. **Related, and it converges here rather than standing on its own:**
+  "A clip's body and a composed view edit the same data by two roads" in the
+  same list — the generic-editor track closed leaving a note's edit spelled
+  twice, once as the tree's `SetMembers` and once as the events domain, and
+  which of the two is the real model is this question.
 
 ### The larger questions, and the plans' own Future directions
 

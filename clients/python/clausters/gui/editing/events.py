@@ -16,7 +16,7 @@ more than that, and an edit that rebuilt one from the five would drop the rest.
 
 from ... import _native
 from ...seq.event import Event as SeqEvent
-from ...seq.timeline import Timeline
+from ...seq.timeline import MidiItem, OscItem, Timeline
 from .domain import Domain
 from .editor import Editor
 from .view import View
@@ -39,15 +39,21 @@ class NotesDomain(Domain):
 
     name = _native.EVENTS
 
-    def __init__(self, *, tempo: float = 1.0):
+    def __init__(self, *, tempo: float = 1.0, editable: bool = True):
         #: What a beat is worth on the view's axis. The roll draws in timeline
         #: samples and a timeline is in beats, so the crossing happens here —
         #: the editor's bridge is what supplies it.
         self.units_per_beat = 1.0
         self.tempo = float(tempo)
+        #: Whether a note may be written back onto this timeline. A roll over
+        #: what a **generator** produced is a rendering of an algorithm, so
+        #: there is nothing to write it onto — the view says so with the
+        #: widget's own ``notes_editable`` and this is the second half of it,
+        #: for a host that does not read the prop.
+        self.editable = bool(editable)
 
     def payload(self, structure, tag: str, values) -> "dict | None":
-        if tag != "notes":
+        if tag != "notes" or not self.editable:
             return None
         held = [event for _beat, event in structure if isinstance(event, SeqEvent)]
         events = []
@@ -123,9 +129,16 @@ class NotesView(View):
             pitches = [n[2] for n in notes]
             body["min"] = min(min(pitches) - self.PAD, self.DEFAULT_PITCH[1])
             body["max"] = max(max(pitches) + self.PAD, self.DEFAULT_PITCH[0])
-        return window(pianoroll(id=wid, notes=notes or None,
+        # **Say it before the hand tries.** A roll over what a generator
+        # produced has nothing to write onto, so the widget refuses the press
+        # instead of offering a drag it will unwind.
+        if not getattr(editor.domain, "editable", True):
+            body["notes_editable"] = False
+        osc = _osc(editor)
+        return window(pianoroll(id=wid, notes=notes or None, osc=osc or None,
                                 ruler="beats", tempo=editor.tempo,
                                 sample_rate=editor.sample_rate, **body),
+                      *editor.extra,
                       title=editor.title, w=editor.size[0], h=editor.size[1],
                       layout="col")
 
@@ -140,8 +153,8 @@ class NotesEditor(Editor):
     the caller already holds."""
 
     def __init__(self, timeline, *, sample_rate: float, tempo: float = 1.0,
-                 title: str = "Notes", **options):
-        domain = NotesDomain(tempo=tempo)
+                 title: str = "Notes", editable: bool = True, **options):
+        domain = NotesDomain(tempo=tempo, editable=editable)
         super().__init__(timeline, sample_rate=sample_rate, tempo=tempo,
                          domain=domain, view=NotesView(), title=title,
                          **options)
@@ -165,14 +178,38 @@ def _notes(editor) -> list:
     return out
 
 
+def _osc(editor) -> list:
+    """The timeline's OSC (and raw MIDI) items as ``(time_units, label)`` pairs
+    — the roll's OSC lane. An `OscItem` labels with its address, a `MidiItem`
+    with a short tag.
+
+    Display only: a marker carries the time and a label, not the full message,
+    so it is drawn and not edited back. The domain keeps them across an edit
+    (`NotesDomain.project`), which is the half that matters — a lane nobody can
+    move is still a lane nobody may lose.
+    """
+    out = []
+    for beat, item in editor.structure:
+        if isinstance(item, OscItem):
+            out.append((editor.beats_to_units(float(beat)), str(item.addr)))
+        elif isinstance(item, MidiItem):
+            out.append((editor.beats_to_units(float(beat)), "midi"))
+    return out
+
+
 def _length(event) -> float:
-    """How long a note sounds, in beats: what it was drawn at (`sustain`) when
-    something set one, else its own length."""
-    for key in ("sustain", "dur"):
-        value = event.get(key)
-        if value is not None:
-            return float(value)
-    return 1.0
+    """How long a note **sounds**, in beats — `clausters.seq.Event.sustain`,
+    which is ``dur * legato`` when nothing set one outright.
+
+    That is what a roll draws and what a drag on a note's edge sets, so reading
+    the explicit key alone would draw an articulated note at its grid length
+    and hand the edit-back a number the hand never saw.
+    """
+    try:
+        return float(event.sustain())
+    except (KeyError, TypeError, ValueError):
+        value = event.get("dur")
+        return 1.0 if value is None else float(value)
 
 
 def _pitch(event):

@@ -48,7 +48,8 @@ from .editor import NOT_AN_EDIT, Editor
 from .events import NotesDomain, NotesEditor, NotesView
 from .formeditor import FormEditing, FormEditor
 from .points import PointsDomain, PointsEditor, PointsView
-from .samples import SamplesDomain, SamplesEditor, SamplesView
+from .samples import (MEASURES, SamplesDomain, SamplesEditor, SamplesView,
+                      measures)
 from .view import View
 
 __all__ = [
@@ -60,6 +61,7 @@ __all__ = [
     "FIRST_VERSION",
     "FormEditing",
     "FormEditor",
+    "MEASURES",
     "NOT_AN_EDIT",
     "NotesDomain",
     "NotesEditor",
@@ -72,4 +74,5 @@ __all__ = [
     "SamplesView",
     "View",
     "edit",
+    "measures",
 ]

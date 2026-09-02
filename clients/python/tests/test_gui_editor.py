@@ -228,11 +228,25 @@ def _track_with_a_take():
     return Track(tl), tl
 
 
-def test_an_element_renders_as_a_dedicated_piano_roll():
+def _roll(ed, element=None, host=None):
+    """The dedicated roll `open_pianoroll` composes: the editor, its tree and
+    the widget that draws the notes.
+
+    It is a `NotesEditor` of its own -- the same one `edit(timeline)` opens --
+    joined to this composition's editing context, so what follows is read off
+    the composed editor and not off the multitrack.
+    """
+    ed.open_pianoroll(host or _FakeHost(), element)
+    roll = ed.composed[-1]
+    tree = roll.draw()
+    return roll, tree, next(iter(roll.view.widgets))
+
+
+def test_an_element_opens_as_a_dedicated_piano_roll():
     track, _tl = _track_with_a_take()
     ed = FormEditor(track, sample_rate=SR, tempo=TEMPO, quant=0.25)
-    ed._mode, ed._roll_element = "pianoroll", track
-    (roll,) = ed.draw()["children"][:1]
+    _editor, tree, _wid = _roll(ed, track)
+    (roll,) = tree["children"][:1]
     assert roll["type"] == "notes"
     # Notes as quintuples (pitch is the 3rd), the OSC item on its own lane.
     assert [roll["notes"][i] for i in (2, 7)] == [60.0, 64.0]
@@ -251,8 +265,8 @@ def test_a_rendered_element_opens_as_one_measured_waveform():
     take = Vector(ServerBuffer(bufnum=7, frames=int(4 * BEAT), channels=2,
                                sample_rate=SR), duration=4.0)
     ed = FormEditor(take, sample_rate=SR, tempo=TEMPO)
-    ed._mode, ed._signal_element = "signal", take
-    view = ed.draw()["children"][0]
+    ed.open_signal(_FakeHost(), take)
+    view = ed.composed[-1].draw()["children"][0]
     assert view["type"] == "signal"
     assert view["measure"] == "peak rms"
     # The heavy view the shipped waveform is: navigable, over the one source,
@@ -260,18 +274,26 @@ def test_a_rendered_element_opens_as_one_measured_waveform():
     assert "navigable" not in view or view["navigable"] == 1
     assert (view["buffer"], view["channels"]) == (7, 2)
     assert view["axes"]["x"]["unit"] == "time"
-    # It is the editor's target as a lane is (the playhead and `locate` address
-    # it) and a signal view (a selection swept in it is *of this element*).
-    wid = view["id"]
-    assert ed._lanes[wid] is take and ed._signals[wid] is take
+    # It is the editor's target as a lane is -- the playhead line is drawn on
+    # it -- and it is the composed editor that holds the take, which is what
+    # makes a stroke here an edit of this piece.
+    assert view["id"] in ed._playline()
+    assert ed.composed[-1].structure is take.wraps
+    assert ed.composed[-1].composed_over is take
 
 
 def test_the_bare_envelope_is_a_shorter_stack():
     take = Vector(ServerBuffer(bufnum=7, frames=1000, channels=1, sample_rate=SR))
     ed = FormEditor(take, sample_rate=SR, tempo=TEMPO)
-    ed._mode, ed._signal_element = "signal", take
-    ed.layers = ("peak",)
-    assert ed.draw()["children"][0]["measure"] == "peak"
+    host = _FakeHost()
+    ed.open_signal(host, take, layers=("peak",))
+    assert ed.composed[-1].draw()["children"][0]["measure"] == "peak"
+    # ...and assigning it on the open view is **one message**, not a redraw:
+    # the picture, the axis, the zoom and the playhead stay where they are.
+    ed.layers = ("peak", "rms")
+    assert ed.layers == ("peak", "rms")
+    assert host.sets[-1][1] == {"measure": "peak rms"}
+    assert host.defines == []
 
 
 def test_a_selection_swept_on_a_signal_view_is_of_that_element():
@@ -280,10 +302,10 @@ def test_a_selection_swept_on_a_signal_view_is_of_that_element():
     take = Vector(ServerBuffer(bufnum=7, frames=int(4 * BEAT), channels=1,
                                sample_rate=SR), duration=2.0)
     ed = FormEditor(take, sample_rate=SR, tempo=TEMPO)
-    ed._mode, ed._signal_element = "signal", take
-    wid = ed.draw()["children"][0]["id"]
-    assert ed.apply("/gui_event", [wid, SEQ, UNSTATED, "selection",
-                                   1.0 * BEAT, 2.0 * BEAT]) is False
+    ed.open_signal(_FakeHost(), take)
+    wid = ed.composed[-1].draw()["children"][0]["id"]
+    assert ed.composed[-1].apply("/gui_event", [wid, SEQ, UNSTATED, "selection",
+                                           1.0 * BEAT, 2.0 * BEAT]) is False
     assert ed.selection["start"] == pytest.approx(1.0)
     assert ed.selection["len"] == pytest.approx(2.0)
     # ...and it names the element, which is what an operation over the range
@@ -300,31 +322,26 @@ def test_a_generator_has_no_samples_and_the_refusal_says_so():
     gen = Sequence(Pbind(midinote=Pseq([60, 62], 1), dur=1.0))
     ed = FormEditor(gen, sample_rate=SR, tempo=TEMPO)
     with pytest.raises(ValueError, match="no samples"):
-        ed.open_signal(None, gen)
-    assert ed.window is None
-    # ...and the draw refuses too, since a mode set by hand must not build a
-    # tree with no element in it either.
-    ed._mode, ed._signal_element = "signal", gen
-    with pytest.raises(ValueError, match="no samples"):
-        ed.draw()
+        ed.open_signal(_FakeHost(), gen)
+    # Nothing was left open, and nothing was composed: the refusal is the
+    # answer to the call, not something the first repaint discovers.
+    assert ed.window is None and ed.composed == []
 
 
 def test_an_unknown_measure_is_refused_by_name():
     take = Vector(ServerBuffer(bufnum=7, frames=1000, channels=1, sample_rate=SR))
     ed = FormEditor(take, sample_rate=SR, tempo=TEMPO)
     with pytest.raises(ValueError, match="loudness"):
-        ed.open_signal(None, take, layers=("peak", "loudness"))
+        ed.open_signal(_FakeHost(), take, layers=("peak", "loudness"))
 
 
 def test_a_note_edit_rewrites_the_editable_timeline():
     track, tl = _track_with_a_take()
     ed = FormEditor(track, sample_rate=SR, tempo=TEMPO)
-    ed._mode, ed._roll_element = "pianoroll", track
-    ed.draw()  # builds the roll registry
-    wid = next(iter(ed._rolls))
+    roll, _tree, wid = _roll(ed, track)
     # Move pitch 60 -> 62 and add a note; times/durs in timeline units.
     edited = [0.0, BEAT, 62, 100, 0, 1.0 * BEAT, 0.5 * BEAT, 67, 90, 0]
-    assert ed.apply("/gui_event", [wid, SEQ, UNSTATED, "notes", *edited]) is True
+    assert roll.apply("/gui_event", [wid, SEQ, UNSTATED, "notes", *edited]) is True
     items = tl.range(0.0, float("inf"))
     pitches = [it.get("midinote") for _b, it in items if hasattr(it, "get")]
     assert pitches == [62, 67]                       # the notes were rewritten
@@ -351,16 +368,14 @@ def test_a_note_edit_keeps_what_the_roll_cannot_say_and_moves_only_the_sustain()
         (1.0, SeqEvent(instrument="reed", midinote=64, dur=1.0, legato=0.8, amp=0.4)),
     ]))
     ed = FormEditor(track, sample_rate=SR, tempo=TEMPO)
-    ed._mode, ed._roll_element = "pianoroll", track
-    tree = ed.draw()
-    wid = next(iter(ed._rolls))
+    roll, tree, wid = _roll(ed, track)
     drawn = _find(tree, lambda n: "notes" in n)["notes"]
     assert drawn[1] == pytest.approx(0.8 * BEAT), "a note is drawn as it sounds"
 
     # The second note is dragged out to two beats; the first is left alone.
     edited = list(drawn)
     edited[6] = 2.0 * BEAT
-    assert ed.apply("/gui_event", [wid, SEQ, UNSTATED, "notes", *edited]) is True
+    assert roll.apply("/gui_event", [wid, SEQ, UNSTATED, "notes", *edited]) is True
 
     first, second = [it for _b, it in track.wraps]
     # The note nobody touched is the note it was, in every key.
@@ -372,7 +387,7 @@ def test_a_note_edit_keeps_what_the_roll_cannot_say_and_moves_only_the_sustain()
     assert [it.get("instrument") for it in (first, second)] == ["reed", "reed"]
     assert [it.get("amp") for it in (first, second)] == [0.4, 0.4]
     # ...and the picture round-trips: what is redrawn is what was sent.
-    again = _find(ed.draw(), lambda n: "notes" in n)["notes"]
+    again = _find(roll.draw(), lambda n: "notes" in n)["notes"]
     assert again == pytest.approx(edited)
 
 
@@ -392,12 +407,10 @@ def test_a_note_edit_survives_an_event_that_is_not_plain_data():
     played = SeqEvent(midinote=60, dur=1.0, server=_Sounded())
     track = Track(Timeline([(0.0, played)]))
     ed = FormEditor(track, sample_rate=SR, tempo=TEMPO)
-    ed._mode, ed._roll_element = "pianoroll", track
-    tree = ed.draw()
-    wid = next(iter(ed._rolls))
+    roll, tree, wid = _roll(ed, track)
     notes = _find(tree, lambda n: "notes" in n)["notes"]
 
-    assert ed.apply("/gui_event", [wid, SEQ, UNSTATED, "notes", *notes]) is True
+    assert roll.apply("/gui_event", [wid, SEQ, UNSTATED, "notes", *notes]) is True
     (item,) = [it for _b, it in track.wraps]
     # What the document can hold, it keeps -- the instrument is the one the old
     # rebuild-from-five-numbers dropped.
@@ -414,12 +427,14 @@ def test_a_generator_element_is_read_only_in_the_piano_roll():
 
     gen = Sequence(Pbind(midinote=Pseq([60, 62], 1), dur=1.0))
     ed = FormEditor(gen, sample_rate=SR, tempo=TEMPO)
-    ed._mode, ed._roll_element = "pianoroll", gen
-    ed.draw()
-    wid = next(iter(ed._rolls))
-    # A generator is forward-only: the edit is ignored (no editable timeline).
-    assert ed.apply("/gui_event", [wid, SEQ, UNSTATED, "notes", 0.0, BEAT, 65, 100, 0]) is False
-    assert ed.dirty is False
+    roll, tree, wid = _roll(ed, gen)
+    # **Said before the hand tries**: the notes are a rendering of an
+    # algorithm, so the widget itself refuses the press.
+    assert _find(tree, lambda n: "notes" in n)["notes_editable"] == 0
+    # ...and the edit is ignored if one arrives anyway.
+    assert roll.apply("/gui_event",
+                      [wid, SEQ, UNSTATED, "notes", 0.0, BEAT, 65, 100, 0]) is False
+    assert roll.dirty is False
 
 
 def test_a_note_edited_in_a_clip_body_reaches_the_arrangement():
@@ -2605,3 +2620,152 @@ def test_a_muted_lane_still_draws_everything_it_had():
     after = clips(lanes(ed.draw())[0])
     assert len(after) == len(before) == 1
     assert after[0]["dur"] == before[0]["dur"]
+
+
+# ---- the views the multitrack composes ----
+
+class _FakeTake:
+    """A server buffer, as the samples domain touches one: a number, a shape,
+    and the two calls that read and write its frames."""
+
+    def __init__(self, frames=16, channels=1):
+        self.bufnum = 7
+        self.frames = frames
+        self.channels = channels
+        self.sample_rate = SR
+        self.name = "take"
+        self.data = [0.0] * (frames * channels)
+
+    def get_samples(self, start=0, count=-1, **kwargs):
+        end = len(self.data) if count < 0 else start + count
+        return list(self.data[start:end])
+
+    def set_samples(self, samples, start=0, **kwargs):
+        for i, value in enumerate(samples):
+            self.data[start + i] = float(value)
+
+
+def _blob(values) -> bytes:
+    import struct
+
+    return struct.pack(f"<{len(values)}f", *values)
+
+
+def test_a_stroke_over_a_take_and_a_bend_of_its_curve_undo_in_one_order():
+    """The whole claim of the composed editor, in one gesture each.
+
+    A stroke on a take's samples and a bend of the curve over it are written in
+    two different vocabularies — ``samples``, whose state the crate cannot hold,
+    and the tree's, which is a document — and neither editor knows what the
+    other did. What they share is the composition's editing context, so the two
+    edits are **one order**, and an undo asked for in either window walks it:
+    the stroke first, then the bend, because that is how they were made.
+    """
+    from clausters.seq import Automation
+
+    take = Vector(_FakeTake(frames=8), duration=1.0, instrument="take")
+    auto = Automation.from_points([(0, 200.0, 1, 0.0), (2, 900.0, 1, 0.0)],
+                                  target=None, name="cutoff")
+    song = Aggregate([(0.0, take), (0.0, Element(auto))], name="song")
+    ed = editor(song)
+    host = _FakeHost()
+    ed.open(host)
+    ed.open_signal(host, take)
+
+    # The bend: the curve's clip in the multitrack, the ordinary points route.
+    curve_clip = _find(ed.draw(), lambda n: "points" in n)["id"]
+    assert ed.apply("/gui_event", [curve_clip, SEQ, UNSTATED, "points",
+                                   0.0, 200.0, 1, 0.0,
+                                   2.0 * SEC, 300.0, 1, 0.0]) is True
+    assert auto.to_points()[5] == pytest.approx(300.0)
+
+    # The stroke: the composed signal window, the samples domain, and the
+    # inverse riding on the wire beside the run it replaced.
+    wid = next(iter(ed.composed[-1].view.widgets))
+    assert ed.composed[-1].apply("/gui_event", [wid, SEQ, UNSTATED, "draw", 0, 2,
+                                           _blob([0.5, 0.5]),
+                                           _blob([0.0, 0.0])]) is True
+    assert take.wraps.data[2:4] == [0.5, 0.5]
+
+    # One order, walked from the **multitrack** — the window that cannot read a
+    # samples leg and must hand it to the editor that can.
+    assert ed.undo_label == "draw the samples"
+    assert ed.undo() is True
+    assert take.wraps.data[2:4] == [0.0, 0.0]
+    assert auto.to_points()[5] == pytest.approx(300.0), "the bend still stands"
+    assert ed.undo() is True
+    assert auto.to_points()[5] == pytest.approx(900.0)
+    assert ed.can_undo is False
+
+    # ...and forward again, from the **signal** window this time: the same one
+    # order, read from the other end.
+    assert ed.composed[-1].redo() is True
+    assert auto.to_points()[5] == pytest.approx(300.0)
+    assert ed.composed[-1].redo() is True
+    assert take.wraps.data[2:4] == [0.5, 0.5]
+
+
+def test_a_dedicated_roll_and_the_multitrack_step_one_history():
+    """A roll of one track beside the multitrack over the same piece.
+
+    They are two editors and one editing context, so the roll's note edit is in
+    the same order as a clip dragged in the multitrack — and the multitrack is
+    told what moved without either window being redefined.
+    """
+    track, tl = _track_with_a_take()
+    song = Aggregate([(0.0, track)], name="song")
+    ed = editor(song)
+    # One host, two windows — which is what a script has.
+    host = _FakeHost()
+    ed.open(host)
+    ed.open_pianoroll(host, track)
+    roll = ed.composed[-1]
+
+    # The window as it stands: one draw, so the ids read here are the ids the
+    # registry holds (a second draw mints fresh ones from the host's pool).
+    (clip,) = clips(lanes(ed.draw())[0])
+    drawn = clip["notes"]
+    wid = next(iter(roll.view.widgets))
+
+    # Pitch 60 -> 62, in the roll.
+    edited = list(drawn)
+    edited[2] = 62.0
+    host.acks.clear()
+    assert roll.apply("/gui_event", [wid, SEQ, UNSTATED, "notes", *edited]) is True
+    assert [it.get("midinote") for _b, it in tl.range(0.0, float("inf"))
+            if hasattr(it, "get")] == [62, 64]
+
+    # The multitrack heard about it as **props**: no redefine, and the clip
+    # drawing that track was handed the notes it now shows.
+    assert host.defines == []
+    pushed = [props for _seq, sets in host.acks for wid_, props in sets
+              if wid_ == clip["id"]]
+    assert pushed and "notes" in pushed[0]
+
+    # One history: the multitrack's own undo walks the roll's edit.
+    assert ed.undo_label == "edit the notes"
+    assert ed.undo() is True
+    assert [it.get("midinote") for _b, it in tl.range(0.0, float("inf"))
+            if hasattr(it, "get")] == [60, 64]
+
+
+def test_a_composed_view_seeks_and_selects_for_the_piece_it_is_part_of():
+    """A structure has no transport and no piece: a click on the ruler of a
+    composed window is a seek of the composition, and a marquee swept there is a
+    selection **of the element that view draws** — the same value a sweep on its
+    clip would give."""
+    take = Vector(_FakeTake(frames=8), duration=1.0, instrument="take")
+    song = Aggregate([(0.0, take)], name="song")
+    ed = editor(song)
+    host = _FakeHost()
+    ed.open(host)
+    ed.open_signal(host, take)
+    wid = next(iter(ed.composed[-1].view.widgets))
+
+    ed.composed[-1].apply("/gui_event", [wid, SEQ, UNSTATED, "locate", 1.0 * BEAT])
+    assert ed.position == pytest.approx(1.0)
+
+    ed.composed[-1].apply("/gui_event", [wid, SEQ, UNSTATED, "selection",
+                                    0.5 * BEAT, 1.0 * BEAT])
+    assert ed.selection["start"] == pytest.approx(0.5)
+    assert ed.selection.get("nodes"), "it is a selection of that element"

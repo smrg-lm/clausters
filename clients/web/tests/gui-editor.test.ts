@@ -22,6 +22,7 @@ import {
     Clang,
     Element,
     Generator,
+    Sequence,
     Track,
     Vector,
     fromDocument,
@@ -111,7 +112,11 @@ class FakeHost {
         this.defines.push(tree);
         return { id: 999 };
     }
-    set(): void {}
+    /** Every `/gui_set` the editor sent: `[id, props]`. */
+    sets: [number, Record<string, PropValue>][] = [];
+    set(id: number, props: Record<string, PropValue>): void {
+        this.sets.push([id, props]);
+    }
     onMessage(): () => void {
         return () => {};
     }
@@ -1362,4 +1367,200 @@ test("a muted lane still draws everything it had", () => {
     const after = clipsOf(lanes(ed.draw())[0] as GuiNode);
     assert.equal(after.length, before.length);
     assert.equal(after[0]?.dur, before[0]?.dur);
+});
+
+
+// ---- the views the multitrack composes ----
+
+/** A server buffer, as the samples domain touches one. */
+class FakeTake {
+    bufnum = 7;
+    channels = 1;
+    sampleRate = SR;
+    name = "take";
+    data: number[];
+
+    constructor(frames = 16) {
+        this.frames = frames;
+        this.data = new Array<number>(frames * this.channels).fill(0.0);
+    }
+    frames: number;
+
+    getSamples({ start = 0, count = -1 }: { start?: number; count?: number } = {}): number[] {
+        const end = count < 0 ? this.data.length : start + count;
+        return this.data.slice(start, end);
+    }
+    setSamples(samples: readonly number[], { start = 0 }: { start?: number } = {}): void {
+        samples.forEach((value, i) => {
+            this.data[start + i] = Number(value);
+        });
+    }
+}
+
+const takeBlob = (values: number[]): Uint8Array =>
+    new Uint8Array(Float32Array.from(values).buffer);
+
+test("a stroke over a take and a bend of its curve undo in one order", async () => {
+    // The whole claim of the composed editor, in one gesture each. A stroke on a
+    // take's samples and a bend of the curve over it are written in two
+    // different vocabularies -- `samples`, whose state the crate cannot hold,
+    // and the tree's, which is a document -- and neither editor knows what the
+    // other did. What they share is the composition's editing context, so the
+    // two edits are **one order**, and an undo asked for in either window walks
+    // it: the stroke first, then the bend, because that is how they were made.
+    const source = new FakeTake(8);
+    const take = new Vector(source as unknown as SourceLike, null, 1.0);
+    const auto = Automation.fromPoints([[0, 200.0, 1, 0.0], [2, 900.0, 1, 0.0]], null, {
+        name: "cutoff",
+    });
+    const song = new Aggregate([[0.0, take], [0.0, new Element(auto)]], "concrete", {
+        name: "song",
+    });
+    const ed = editor(song);
+    const host = new FakeHost();
+    await ed.open(asHost(host));
+    await ed.openSignal(asHost(host), take);
+
+    // The bend: the curve's clip in the multitrack, the ordinary points route.
+    const curveClip = clipsOf(lanes(ed.draw())[1] as GuiNode)[0] as GuiNode;
+    assert.equal(
+        ed.apply("/gui_event", [
+            curveClip.id as number, SEQ, UNSTATED, "points",
+            0.0, 200.0, 1, 0.0,
+            2.0 * SEC, 300.0, 1, 0.0,
+        ]),
+        true,
+    );
+    assert.equal(auto.toPoints()[5], 300.0);
+
+    // The stroke: the composed signal window, the samples domain, and the
+    // inverse riding on the wire beside the run it replaced.
+    const signal = ed.composed[ed.composed.length - 1];
+    const wid = [...(signal?.view?.widgets.keys() ?? [])][0] as number;
+    assert.equal(
+        signal?.apply("/gui_event", [
+            wid, SEQ, UNSTATED, "draw", 0, 2,
+            takeBlob([0.5, 0.5]), takeBlob([0.0, 0.0]),
+        ]),
+        true,
+    );
+    // The write is queued, so a stroke lands in order rather than in the order
+    // the server happened to answer.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.deepEqual(source.data.slice(2, 4), [0.5, 0.5]);
+
+    // One order, walked from the **multitrack** -- the window that cannot read a
+    // samples leg and must hand it to the editor that can.
+    assert.equal(ed.undoLabel, "draw the samples");
+    assert.equal(ed.undo(), true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.deepEqual(source.data.slice(2, 4), [0.0, 0.0]);
+    assert.equal(auto.toPoints()[5], 300.0, "the bend still stands");
+    assert.equal(ed.undo(), true);
+    assert.equal(auto.toPoints()[5], 900.0);
+    assert.equal(ed.canUndo, false);
+
+    // ...and forward again, from the **signal** window this time: the same one
+    // order, read from the other end.
+    assert.equal(signal?.redo(), true);
+    assert.equal(auto.toPoints()[5], 300.0);
+    assert.equal(signal?.redo(), true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.deepEqual(source.data.slice(2, 4), [0.5, 0.5]);
+});
+
+test("a dedicated roll and the multitrack step one history", async () => {
+    // Two editors and one editing context, so the roll's note edit is in the
+    // same order as a clip dragged in the multitrack -- and the multitrack is
+    // told what moved without either window being redefined.
+    const timeline = new Timeline([
+        [0.0, new SeqEvent({ midinote: 60, dur: 1.0 })],
+        [1.0, new SeqEvent({ midinote: 64, dur: 1.0 })],
+    ]);
+    const track = new Track(timeline);
+    const song = new Aggregate([[0.0, track]], "concrete", { name: "song" });
+    const ed = editor(song);
+    // One host, two windows -- which is what a page has.
+    const host = new FakeHost();
+    await ed.open(asHost(host));
+    await ed.openPianoroll(asHost(host), track);
+    const roll = ed.composed[ed.composed.length - 1];
+
+    // The window as it stands: one draw, so the ids read here are the ids the
+    // registry holds (a second draw mints fresh ones from the host's pool).
+    const clip = clipsOf(lanes(ed.draw())[0] as GuiNode)[0] as GuiNode;
+    const drawn = [...(clip.notes as number[])];
+    const wid = [...(roll?.view?.widgets.keys() ?? [])][0] as number;
+
+    drawn[2] = 62.0;
+    host.acks.length = 0;
+    assert.equal(
+        roll?.apply("/gui_event", [wid, SEQ, UNSTATED, "notes", ...drawn]),
+        true,
+    );
+    assert.deepEqual(
+        [...timeline].map(([, item]) => (item as SeqEvent).get("midinote")),
+        [62, 64],
+    );
+
+    // The multitrack heard about it as **props**: no redefine, and the clip
+    // drawing that track was handed the notes it now shows.
+    assert.deepEqual(host.defines, []);
+    assert.ok("notes" in (host.corrections().get(clip.id as number) ?? {}));
+
+    // One history: the multitrack's own undo walks the roll's edit.
+    assert.equal(ed.undoLabel, "edit the notes");
+    assert.equal(ed.undo(), true);
+    assert.deepEqual(
+        [...timeline].map(([, item]) => (item as SeqEvent).get("midinote")),
+        [60, 64],
+    );
+});
+
+test("a composed view seeks and selects for the piece it is part of", async () => {
+    // A structure has no transport and no piece: a click on the ruler of a
+    // composed window is a seek of the composition, and a marquee swept there is
+    // a selection **of the element that view draws**.
+    const take = new Vector(new FakeTake(8) as unknown as SourceLike, null, 1.0);
+    const song = new Aggregate([[0.0, take]], "concrete", { name: "song" });
+    const ed = editor(song);
+    const host = new FakeHost();
+    await ed.open(asHost(host));
+    await ed.openSignal(asHost(host), take);
+    const signal = ed.composed[ed.composed.length - 1];
+    const wid = [...(signal?.view?.widgets.keys() ?? [])][0] as number;
+
+    signal?.apply("/gui_event", [wid, SEQ, UNSTATED, "locate", 1.0 * BEAT]);
+    assert.equal(ed.position, 1.0);
+
+    signal?.apply("/gui_event", [wid, SEQ, UNSTATED, "selection", 0.5 * BEAT, 1.0 * BEAT]);
+    const selection = ed.selection as Record<string, unknown>;
+    assert.equal(selection.start, 0.5);
+    assert.ok(selection.nodes, "it is a selection of that element");
+});
+
+test("the measure stack of a composed signal view is live", async () => {
+    const take = new Vector(new FakeTake(8) as unknown as SourceLike, null, 1.0);
+    const ed = editor(take);
+    const host = new FakeHost();
+    await ed.openSignal(asHost(host), take, { layers: ["peak"] });
+    assert.deepEqual(ed.layers, ["peak"]);
+    // ...and assigning it on the open view is **one message**, not a redraw: the
+    // picture, the axis, the zoom and the playhead stay where they are.
+    ed.layers = ["peak", "rms"];
+    assert.deepEqual(ed.layers, ["peak", "rms"]);
+    assert.deepEqual(host.sets[host.sets.length - 1]?.[1], { measure: "peak rms" });
+    assert.deepEqual(host.defines, []);
+});
+
+test("a generator has no samples and the refusal says so", async () => {
+    // The generated/generator distinction, asked at the door: notes can be
+    // bounced for a picture, samples cannot be invented. It is the *call* that
+    // refuses -- before a window exists, so nothing is left open.
+    const gen = new Sequence(new Timeline([[0.0, new SeqEvent({ midinote: 60, dur: 1.0 })]]));
+    const ed = editor(gen);
+    await assert.rejects(
+        () => ed.openSignal(asHost(new FakeHost()), gen),
+        /no samples/,
+    );
 });
