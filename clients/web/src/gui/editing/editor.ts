@@ -232,7 +232,12 @@ export class Editor<S = unknown> implements Adopting {
      * recycling pool; host-less (a test, or inspecting `draw`), it counts from
      * `baseId`.
      */
-    protected newId(): number {
+    /**
+     * A widget id for the tree being drawn. Public where the Python client's is
+     * `_new_id`: a {@link View} is a collaborator and builds the tree with these,
+     * which TypeScript's `protected` would refuse.
+     */
+    newId(): number {
         return this.host === null ? this.fallbackId++ : this.host.allocId();
     }
 
@@ -318,9 +323,18 @@ export class Editor<S = unknown> implements Adopting {
         this.editing.version = Math.trunc(value);
     }
 
-    /** This structure's identity in the history, minted on first use. */
+    /**
+     * This structure's identity in the history, minted on first use.
+     *
+     * Asked of the **context** rather than kept here, so two windows over one
+     * structure name one identity: the pile is one order over the data, not one
+     * per view.
+     */
     protected registered(): number {
-        this.structureId ??= this.editing.register(this.domain?.name ?? "");
+        this.structureId ??= this.editing.identity(
+            this.structure as object,
+            this.domain?.name ?? "",
+        );
         return this.structureId;
     }
 

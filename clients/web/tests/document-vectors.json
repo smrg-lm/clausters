@@ -2904,5 +2904,184 @@
       },
       "key": ""
     }
+  ],
+  "edited": [
+    {
+      "domain": "points",
+      "state": [
+        {
+          "at": 0.0,
+          "value": 1.0
+        },
+        {
+          "at": 1.0,
+          "value": 0.0
+        }
+      ],
+      "payload": {
+        "intent": "setpoints",
+        "points": [
+          {
+            "at": 0.0,
+            "value": 0.5
+          }
+        ]
+      },
+      "edited": {
+        "state": [
+          {
+            "at": 0.0,
+            "value": 0.5
+          }
+        ],
+        "applied": true,
+        "current": {
+          "intent": "setpoints",
+          "points": [
+            {
+              "at": 0.0,
+              "value": 1.0
+            },
+            {
+              "at": 1.0,
+              "value": 0.0
+            }
+          ]
+        }
+      }
+    },
+    {
+      "domain": "points",
+      "state": [
+        {
+          "at": 0.0,
+          "value": 1.0
+        }
+      ],
+      "payload": {
+        "intent": "setpoints",
+        "points": [
+          {
+            "at": 0.0,
+            "value": 1.0
+          }
+        ]
+      },
+      "edited": {
+        "state": [
+          {
+            "at": 0.0,
+            "value": 1.0
+          }
+        ],
+        "applied": false,
+        "current": {
+          "intent": "setpoints",
+          "points": [
+            {
+              "at": 0.0,
+              "value": 1.0
+            }
+          ]
+        }
+      }
+    },
+    {
+      "domain": "events",
+      "state": [
+        {
+          "at": 0.0,
+          "data": {
+            "pitch": 60
+          }
+        }
+      ],
+      "payload": {
+        "intent": "setevents",
+        "events": [
+          {
+            "at": 0.0,
+            "data": {
+              "pitch": 60
+            }
+          },
+          {
+            "at": 2.0
+          }
+        ]
+      },
+      "edited": {
+        "state": [
+          {
+            "at": 0.0,
+            "data": {
+              "pitch": 60
+            }
+          },
+          {
+            "at": 2.0
+          }
+        ],
+        "applied": true,
+        "current": {
+          "events": [
+            {
+              "at": 0.0,
+              "data": {
+                "pitch": 60
+              }
+            }
+          ],
+          "intent": "setevents"
+        }
+      }
+    },
+    {
+      "domain": "events",
+      "state": [],
+      "payload": {
+        "intent": "setevents",
+        "events": []
+      },
+      "edited": {
+        "state": [],
+        "applied": false,
+        "current": {
+          "events": [],
+          "intent": "setevents"
+        }
+      }
+    },
+    {
+      "domain": "tree",
+      "state": [],
+      "payload": {
+        "intent": "place",
+        "node": 1,
+        "offset": 0.0
+      },
+      "edited": null
+    },
+    {
+      "domain": "samples",
+      "state": [],
+      "payload": {
+        "intent": "write",
+        "start": 0,
+        "values": [
+          0.5
+        ]
+      },
+      "edited": null
+    },
+    {
+      "domain": "piotns",
+      "state": [],
+      "payload": {
+        "intent": "setpoints",
+        "points": []
+      },
+      "edited": null
+    }
   ]
 }

@@ -2110,6 +2110,38 @@ pub fn sheet_to_mei(sheet: &str) -> Result<String, JsError> {
     clausters_core::notation::sheet_to_mei(&sheet).map_err(|e| JsError::new(&e))
 }
 
+/// Apply one payload to a structure the crate can hold **as its own state**,
+/// and get back what it now is together with the payload that puts it back.
+///
+/// The other half of what a domain brings: an edit and its inverse are one
+/// vocabulary's rule, so a page that computed the inverse itself would be
+/// spelling that rule again in TypeScript. Both directions come back in one
+/// answer because the inverse has to be read *before* the edit lands.
+///
+/// `state` is the structure in its own vocabulary and the answer is
+/// `{"state": …, "applied": bool, "reason"?: …, "current"?: …}`, or an empty
+/// string for a vocabulary whose state is not a value a caller can hand over:
+/// the arrangement's tree (which has {@link JsDocument.apply} of its own) and a
+/// span of samples (a borrowed view whose frames are in a buffer).
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = domainEdit)]
+pub fn domain_edit(domain: &str, state: &str, payload: &str) -> String {
+    let (Ok(state), Ok(payload)) = (
+        serde_json::from_str::<serde_json::Value>(state),
+        serde_json::from_str::<serde_json::Value>(payload),
+    ) else {
+        return String::new();
+    };
+    let Some(edited) = clausters_document::domain::edit(
+        domain,
+        &clausters_document::Opaque(state),
+        &clausters_document::Opaque(payload),
+    ) else {
+        return String::new();
+    };
+    serde_json::to_string(&edited).unwrap_or_default()
+}
+
 /// What makes two of a **domain's** edits *the same thing done the same way* —
 /// the key a caller recording its own entry passes to {@link History.record},
 /// or an empty string when the payload is not written in that vocabulary (or

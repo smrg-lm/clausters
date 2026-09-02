@@ -455,6 +455,7 @@ fn a_history_holding_a_document_and_a_curve_undoes_them_in_one_order() {
     let mut curve = Points::new(vec![Point {
         at: 0.0,
         value: 0.0,
+        data: Opaque::default(),
     }]);
 
     let mut history = History::new();
@@ -474,6 +475,7 @@ fn a_history_holding_a_document_and_a_curve_undoes_them_in_one_order() {
             points: vec![Point {
                 at: 0.0,
                 value: 1.0,
+                data: Opaque::default(),
             }],
         }),
         "draw",
@@ -505,7 +507,8 @@ fn a_history_holding_a_document_and_a_curve_undoes_them_in_one_order() {
         curve.0,
         vec![Point {
             at: 0.0,
-            value: 0.0
+            value: 0.0,
+            data: Opaque::default(),
         }],
         "and the curve with it"
     );

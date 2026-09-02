@@ -26,6 +26,7 @@ import {
     Document as CoreDocument,
     History as CoreHistory,
     domainCoalesceKey as coreDomainCoalesceKey,
+    domainEdit as coreDomainEdit,
 } from "./core/clausters_core_web.js";
 import { loadCore } from "./base/core.ts";
 
@@ -428,6 +429,50 @@ export const EVENTS = "events";
  */
 export function domainCoalesceKey(domain: string, payload: unknown): string {
     return coreDomainCoalesceKey(domain, JSON.stringify(payload));
+}
+
+/** What {@link domainEdit} answers: both directions of one edit. */
+export interface Edited {
+    /** The structure as it now stands, in its own vocabulary. */
+    state: unknown;
+    /**
+     * Whether anything moved. A resend states what is already there and is
+     * applied by nobody and recorded by nobody.
+     */
+    applied: boolean;
+    /** Why not, when the payload was refused for a rule rather than a resend. */
+    reason?: string;
+    /**
+     * The payload that puts the structure back — read before the edit landed.
+     * Absent when the structure cannot describe it, which is what makes an edit
+     * unloggable rather than uninvertible.
+     */
+    current?: unknown;
+}
+
+/**
+ * Applies `payload` to a structure the crate holds **as its own state**, and
+ * answers what it now is together with the payload that puts it back.
+ *
+ * The other half of what a domain brings: an edit and its inverse are one
+ * vocabulary's rule, so a page computing the inverse itself would be spelling
+ * that rule again in TypeScript. Both directions come back in one answer because
+ * the inverse has to be read *before* the edit lands — a surface that let you
+ * apply first and read second would let you record the wrong thing.
+ *
+ * `undefined` for a vocabulary whose state is not a value a caller can hand
+ * over: {@link TREE} (it needs a version to check against and a grid to snap to,
+ * and {@link Document.apply} is its door) and {@link SAMPLES} (a borrowed view
+ * whose frames are in a server buffer, never in a string — reading a span back
+ * is what its inverse costs).
+ */
+export function domainEdit(
+    domain: string,
+    state: unknown,
+    payload: unknown,
+): Edited | undefined {
+    const answer = coreDomainEdit(domain, JSON.stringify(state), JSON.stringify(payload));
+    return answer ? (JSON.parse(answer) as Edited) : undefined;
 }
 
 /** One leg of an entry: the structure it belongs to, and the payload. */

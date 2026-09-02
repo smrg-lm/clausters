@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: edit(curve)</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 46rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+      #stage, #other { width: 640px; max-width: 100%; height: 320px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note"><code>edit(curve)</code>: a break-point curve in a window of
+its own.
+
+The smallest of the three structures <code>edit</code> opens, and the one that
+shows what the verb is for. There is <b>no composition here</b> — no
+arrangement, no document, no track. The page builds an <code>Automation</code>,
+hands it to <code>edit</code>, and reads the edited curve back out of the object
+it already holds.
+
+<b>Drag a point</b> to move it; <b>drag a segment</b> vertically to bend it;
+<b>Ctrl+click</b> adds or removes one; <b>Ctrl+Z</b> undoes. The second window
+below is the same curve: an undo stack belongs to the data, so a step in either
+window walks the one order both of them made.
+
+<b>How an edit inverts is the shared crate's.</b> The payload goes in with the
+curve as it stands and comes back as the curve it now is <i>plus</i> the payload
+that puts it back — one call, because the inverse has to be read before the edit
+lands.</div>
+
+      <button id="run">open the editors</button>
+      <div id="stage"></div>
+      <div id="other"></div>
+      <button id="read" disabled>read the curve back</button>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/editors/edit_curve.py, call for
+      call: the same four break points, the same `edit`, the same second window
+      over one curve, and the same read-back out of the object the page holds.
+
+      The platform's differences are the usual two: the host is the wasm one in
+      this tab and draws into an element, and nothing is pumped — `open`
+      subscribes here where the script polls.
+
+      Serve clients/web (the package root) and open
+      /examples/editors/edit-curve.html. Build it first: ./build.sh
+    -->
+    <script type="module">
+      import { Session, gui } from "../../dist/index.js";
+      import { Automation } from "../../dist/seq/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => { $("log").textContent += line + "\n"; };
+
+      // A curve, built the ordinary way: four break points in seconds, with the
+      // shape of each segment on the point that starts it. Nothing about this
+      // object knows it is going to be edited.
+      const curve = Automation.fromPoints(
+        [[0.0, 200.0, 1, 0.0],      // linear up
+         [0.5, 4000.0, 2, 0.0],     // exponential down
+         [2.0, 800.0, 1, 0.0],
+         [3.0, 200.0, 1, 0.0]],
+        null, { name: "cutoff" });
+
+      /** The curve as it now stands: the object passed in *is* the edited one. */
+      function readBack() {
+        const points = curve.toPoints();
+        for (let i = 0; i + 4 <= points.length; i += 4) {
+          log(`  ${points[i].toFixed(3)}s  ${points[i + 1].toFixed(2)}   ` +
+              `shape ${points[i + 2]}  curve ${points[i + 3].toFixed(2)}`);
+        }
+      }
+
+      async function run() {
+        $("run").disabled = true;
+        const session = await Session.embed({ boot: false });
+        await session.gui();
+
+        // One verb. `edit` dispatches on **what the structure is**: an
+        // `Automation` opens as a PointsEditor — one `bpf` widget, the `points`
+        // vocabulary, and the curve's own editing context.
+        const editor = gui.edit(curve, { sampleRate: 48_000, title: "cutoff" });
+        await editor.open(undefined, { stage: $("stage") });
+
+        // Calling `edit` again over the **same** curve gives a second window.
+        // It is not a copy and it does not get a history of its own.
+        const other = gui.edit(curve, { sampleRate: 48_000, title: "cutoff (again)" });
+        await other.open(undefined, { stage: $("other") });
+
+        log("draw in either window; Ctrl+Z undoes, in either one");
+        $("read").disabled = false;
+        $("read").onclick = () => readBack();
+      }
+
+      $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
+    </script>
+  </body>
+</html>

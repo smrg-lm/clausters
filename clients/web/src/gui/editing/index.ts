@@ -29,6 +29,12 @@
  * The two names are the point of the split: `Editor` is what a person calls to
  * edit a buffer, a curve or a timeline, and `FormEditor` is what edits a piece.
  *
+ * And {@link edit} is how a person calls it: one verb over the three fundamental
+ * structures, dispatching on what the structure is — {@link SamplesEditor} over
+ * a `Buffer`, {@link PointsEditor} over an `Automation`, {@link NotesEditor}
+ * over a `Timeline`. Each is `Editor` with its own domain and view in it and
+ * nothing else, which is what the split was for.
+ *
  * {@link View} here is **not** `gui/guidef.ts`'s `View`, and only this one is
  * reached through this module: the guidef one is a tree you can open, this one is
  * the picture of a structure plus the registry that resolves an event back to it.
@@ -41,6 +47,13 @@
 export { Editing, FIRST_VERSION, contexts } from "./context.ts";
 export type { Adopting } from "./context.ts";
 export { Domain } from "./domain.ts";
+export { edit } from "./edit.ts";
+export type { EditOptions } from "./edit.ts";
+export { NotesDomain, NotesEditor, NotesView, quintuples } from "./events.ts";
+export type { CrateEvent, Note } from "./events.ts";
+export { PointsDomain, PointsEditor, PointsView, quads } from "./points.ts";
+export type { CratePoint } from "./points.ts";
+export { SamplesDomain, SamplesEditor, SamplesView } from "./samples.ts";
 export { Echo } from "./echo.ts";
 export type { Correction } from "./echo.ts";
 export { Editor, NOT_AN_EDIT, resolveEditorHost } from "./editor.ts";

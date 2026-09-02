@@ -771,6 +771,23 @@ export function degree_to_midinote(degree: number, octave: number, root: number,
 export function domainCoalesceKey(domain: string, payload: string): string;
 
 /**
+ * Apply one payload to a structure the crate can hold **as its own state**,
+ * and get back what it now is together with the payload that puts it back.
+ *
+ * The other half of what a domain brings: an edit and its inverse are one
+ * vocabulary's rule, so a page that computed the inverse itself would be
+ * spelling that rule again in TypeScript. Both directions come back in one
+ * answer because the inverse has to be read *before* the edit lands.
+ *
+ * `state` is the structure in its own vocabulary and the answer is
+ * `{"state": …, "applied": bool, "reason"?: …, "current"?: …}`, or an empty
+ * string for a vocabulary whose state is not a value a caller can hand over:
+ * the arrangement's tree (which has {@link JsDocument.apply} of its own) and a
+ * span of samples (a borrowed view whose frames are in a buffer).
+ */
+export function domainEdit(domain: string, state: string, payload: string): string;
+
+/**
  * The engraver's options for one page, as the JSON object it is configured
  * with: `scale` (staff size), `pageWidth` (the page units a score wraps into
  * systems at) and an optional JSON object merged over them.
@@ -1087,6 +1104,7 @@ export interface InitOutput {
     readonly document_snapshot: (a: number) => [number, number, number, number];
     readonly document_version: (a: number) => bigint;
     readonly domainCoalesceKey: (a: number, b: number, c: number, d: number) => [number, number];
+    readonly domainEdit: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
     readonly engraveOptions: (a: number, b: number, c: number, d: number) => [number, number];
     readonly graph_bus_reserved: () => [number, number];
     readonly history_apply: (a: number, b: bigint, c: number, d: number, e: number) => [number, number, number, number];

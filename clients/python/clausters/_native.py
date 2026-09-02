@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 35
+CORE_ABI_VERSION = 36
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -489,6 +489,11 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_domain_coalesce_key.restype = ctypes.c_size_t
     lib.clausters_domain_coalesce_key.argtypes = [
         u8p, ctypes.c_size_t, u8p, ctypes.c_size_t, u8p, ctypes.c_size_t,
+    ]
+    lib.clausters_domain_edit.restype = ctypes.c_size_t
+    lib.clausters_domain_edit.argtypes = [
+        u8p, ctypes.c_size_t, u8p, ctypes.c_size_t, u8p, ctypes.c_size_t,
+        u8p, ctypes.c_size_t,
     ]
     lib.clausters_history_new.restype = ctypes.c_void_p
     lib.clausters_history_new.argtypes = [ctypes.c_size_t, ctypes.c_size_t]
@@ -1069,6 +1074,52 @@ TREE = "tree"
 POINTS = "points"
 SAMPLES = "samples"
 EVENTS = "events"
+
+
+def domain_edit(domain: str, state, payload: dict) -> "dict | None":
+    """Apply ``payload`` to a structure the crate holds **as its own state**,
+    and get back what it now is together with the payload that puts it back.
+
+    The other half of what a domain brings: an edit and its inverse are one
+    vocabulary's rule, so a client computing the inverse itself would be
+    spelling that rule again per language.  Both directions come back in one
+    answer because the inverse has to be read *before* the edit lands — a
+    surface that let you apply first and read second would let you record the
+    wrong thing.
+
+    Args:
+        domain: the vocabulary — `POINTS` or `EVENTS`.
+        state: the structure in that vocabulary (a curve's points, a timeline's
+            events), as plain JSON-able data.
+        payload: the edit.
+
+    Returns:
+        ``{"state": …, "applied": bool, "reason"?: …, "current"?: …}``, or
+        ``None`` for a vocabulary whose state is not a value a caller can hand
+        over: `TREE` (it needs a version to check against and a grid to snap to,
+        and `Document.apply` is its door) and `SAMPLES` (a borrowed view whose
+        frames are in a server buffer, never in a string — reading a span back
+        is what its inverse costs).
+    """
+    _lib = lib()
+    u8p = ctypes.POINTER(ctypes.c_ubyte)
+
+    def _as_bytes(value):
+        raw = value.encode("utf-8") if isinstance(value, str) else \
+            json.dumps(value).encode("utf-8")
+        buf = (ctypes.c_ubyte * len(raw)).from_buffer_copy(raw)
+        return ctypes.cast(buf, u8p), len(raw), buf
+
+    name_ptr, name_len, _n = _as_bytes(domain)
+    state_ptr, state_len, _s = _as_bytes(state)
+    edit_ptr, edit_len, _e = _as_bytes(payload)
+    args = (name_ptr, name_len, state_ptr, state_len, edit_ptr, edit_len)
+    need = _lib.clausters_domain_edit(*args, None, 0)
+    if need == 0:
+        return None
+    out = (ctypes.c_ubyte * need)()
+    n = _lib.clausters_domain_edit(*args, out, need)
+    return json.loads(ctypes.string_at(out, n).decode("utf-8"))
 
 
 def domain_coalesce_key(domain: str, payload: dict) -> str:

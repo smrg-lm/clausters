@@ -65,6 +65,14 @@ class Editing:
         self.version = FIRST_VERSION
         #: The views drawing this data, weakly: an editor that goes away takes
         #: its window with it, and a context does not keep one alive.
+        #: ``id(structure) -> (structure, identity)`` — what each structure was
+        #: registered in the pile as. One identity per structure and not per
+        #: view: two windows over one thing are one structure in the order, and
+        #: minting a second identity for the second window would leave its undo
+        #: walking legs that name somebody else. The object is held beside the
+        #: number so its ``id`` cannot be reused by something else while the
+        #: context is alive.
+        self._structures: dict = {}
         self._views: list = []
         #: How deep the current turn is, and whether anything moved in it. One
         #: gesture can reach here twice — an editor routing an ``"undo"`` calls
@@ -94,10 +102,25 @@ class Editing:
         return context
 
     def register(self, domain: str) -> int:
-        """Take a structure into this history and get its identity — the
-        crate's `History.register`, named here so an editor never reaches past
-        its context for it."""
+        """Take an unnamed structure into this history and get its identity —
+        the crate's `History.register`. `identity` is the door an editor uses;
+        this one is for a caller registering something it will route itself."""
         return self.history.register(domain)
+
+    def identity(self, structure, domain: str) -> int:
+        """This structure's identity in the pile, minted on first ask.
+
+        **Once per structure, not once per view.** Two windows over one thing
+        are one structure in the undo order, so a second identity for the
+        second window would leave its undo walking legs that name somebody
+        else — which looks exactly like a dead button.
+        """
+        key = id(structure)
+        found = self._structures.get(key)
+        if found is None:
+            found = (structure, self.history.register(domain))
+            self._structures[key] = found
+        return found[1]
 
     def attach(self, view):
         """Take a view into this data's list, so an edit made in one window can

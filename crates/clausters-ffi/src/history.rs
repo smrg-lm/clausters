@@ -731,5 +731,68 @@ pub unsafe extern "C" fn clausters_domain_coalesce_key(
     unsafe { fill(key.as_bytes(), out, out_cap, || {}) }
 }
 
+/// Apply one payload to a structure the crate can hold **as its own state**,
+/// and get back what it now is together with the payload that puts it back.
+///
+/// The other half of what a domain brings, across the same seam
+/// [`clausters_domain_coalesce_key`] crosses: an edit and its inverse are one
+/// vocabulary's rule, so a client that computed the inverse itself would be
+/// spelling that rule again per language — the divergence this surface exists
+/// to end. Both directions come back in one answer because the inverse has to
+/// be read *before* the edit lands.
+///
+/// `state` is the structure in its own vocabulary — a curve's points, a
+/// timeline's events — and the answer is
+/// `{"state": …, "applied": bool, "reason"?: …, "current"?: …}`. Nothing for a
+/// vocabulary whose state is not a value a caller can hand over: the
+/// arrangement's tree (which needs a version to check against and a grid to
+/// snap to, and has [`clausters_document_apply`](crate::clausters_document_apply)
+/// of its own) and a span of samples (a borrowed view whose frames are in a
+/// buffer, never in a string).
+///
+/// Sizes with a null `out` and fills with a second call, like the rest of the
+/// JSON surface. Nothing here mutates: the state goes in and comes back.
+///
+/// # Safety
+/// `domain` must be null or readable for `domain_len` bytes, `state` null or
+/// readable for `state_len` bytes, `payload` null or readable for
+/// `payload_len` bytes, and `out` null or writable for `out_cap` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_domain_edit(
+    domain: *const u8,
+    domain_len: usize,
+    state: *const u8,
+    state_len: usize,
+    payload: *const u8,
+    payload_len: usize,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    // SAFETY: forwarded from this function's own contract.
+    let (Some(domain), Some(raw_state), Some(raw_payload)) = (
+        unsafe { text(domain, domain_len) },
+        unsafe { text(state, state_len) },
+        unsafe { text(payload, payload_len) },
+    ) else {
+        return 0;
+    };
+    let (Ok(state), Ok(payload)) = (
+        serde_json::from_str::<serde_json::Value>(&raw_state),
+        serde_json::from_str::<serde_json::Value>(&raw_payload),
+    ) else {
+        return 0;
+    };
+    let Some(edited) = clausters_document::domain::edit(&domain, &Opaque(state), &Opaque(payload))
+    else {
+        return 0;
+    };
+    let Ok(answer) = serde_json::to_string(&edited) else {
+        return 0;
+    };
+    // SAFETY: forwarded from this function's own contract. A pure read, so
+    // there is nothing to commit.
+    unsafe { fill(answer.as_bytes(), out, out_cap, || {}) }
+}
+
 #[cfg(test)]
 mod tests;

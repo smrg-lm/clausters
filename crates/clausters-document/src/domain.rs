@@ -20,10 +20,13 @@
 //! sentence back; a domain the crate does not know answers `None`, which is
 //! also how a misspelled domain name stops being silent.
 
+use serde::Serialize;
+
 use crate::Opaque;
-use crate::events::EVENTS;
+use crate::events::{EVENTS, Events};
+use crate::history::Editable;
 use crate::log::TREE;
-use crate::points::POINTS;
+use crate::points::{POINTS, Points};
 use crate::samples::SAMPLES;
 
 /// Every vocabulary this crate speaks, in registration order.
@@ -53,6 +56,81 @@ pub fn coalesce_key(domain: &str, payload: &Opaque) -> Option<String> {
         EVENTS => crate::events::coalesce_key(payload),
         _ => None,
     }
+}
+
+/// One edit applied to a structure held **as its own state**: what the
+/// structure now is, whether anything changed, and the payload that would put
+/// it back.
+///
+/// Both directions in one answer, because the inverse has to be read *before*
+/// the edit lands — the trait's own argument
+/// ([`Editable`]'s own), and a door that let a caller apply
+/// first and read second would let it record the wrong thing. It is also what
+/// makes the seam worth crossing at all: an edit and its inverse are one
+/// vocabulary's rule, and a binding that had to compute the inverse itself
+/// would be spelling that rule again per language.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Edited {
+    /// The structure as it now stands, in its own vocabulary.
+    pub state: Opaque,
+    /// Whether anything moved. A resend states what is already there and is
+    /// applied by nobody and recorded by nobody.
+    pub applied: bool,
+    /// Why not, when the payload was refused for a rule rather than for being a
+    /// resend.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    /// The payload that puts the structure back — read before the edit landed.
+    /// `None` when the structure cannot describe it, which is what makes an
+    /// edit unloggable rather than uninvertible.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current: Option<Opaque>,
+}
+
+/// Apply `payload` to a structure this crate can hold as **JSON state**, and
+/// say what it now is and what would put it back.
+///
+/// `None` for a vocabulary whose state does not live in a caller's hand:
+///
+/// - [`TREE`] has a door of its own ([`apply`](crate::apply) over a
+///   [`Document`](crate::Document)), because a tree's edit needs a version to
+///   check against and a grid to snap to, and neither is state a caller can
+///   hand over in one value.
+/// - [`SAMPLES`] is a **borrowed view** by construction
+///   ([`Samples`](crate::Samples)): the frames are in a server buffer or in a
+///   host's own memory, never in a JSON value, and a door that took them here
+///   would be copying a take through a string per stroke. What that domain
+///   shares is its vocabulary and its coalesce key, which are here; where its
+///   state lives is the caller's, and reading a span back is what its inverse
+///   costs.
+///
+/// So this serves the two domains whose state *is* the data — a curve's points
+/// and a timeline's events — which is also every domain a client holds as an
+/// ordinary list.
+pub fn edit(domain: &str, state: &Opaque, payload: &Opaque) -> Option<Edited> {
+    match domain {
+        POINTS => {
+            let mut points: Points = serde_json::from_value(state.0.clone()).ok()?;
+            edited(&mut points, payload)
+        }
+        EVENTS => {
+            let mut events: Events = serde_json::from_value(state.0.clone()).ok()?;
+            edited(&mut events, payload)
+        }
+        _ => None,
+    }
+}
+
+/// The two directions, in the order that makes them true: the inverse first.
+fn edited<E: Editable + Serialize>(structure: &mut E, payload: &Opaque) -> Option<Edited> {
+    let current = structure.current(payload);
+    let applied = structure.apply(payload);
+    Some(Edited {
+        state: Opaque(serde_json::to_value(&*structure).ok()?),
+        applied: applied.applied,
+        reason: applied.reason,
+        current,
+    })
 }
 
 #[cfg(test)]

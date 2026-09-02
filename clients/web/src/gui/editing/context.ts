@@ -82,6 +82,13 @@ export class Editing {
      * The views drawing this composition, weakly: an editor that goes away
      * takes its window with it, and a context does not keep one alive.
      */
+    /**
+     * What each structure was registered in the pile as. One identity per
+     * structure and not per view: two windows over one thing are one structure
+     * in the order, and minting a second identity for the second window would
+     * leave its undo walking legs that name somebody else.
+     */
+    protected readonly structures = new Map<object, number>();
     protected readonly views = new Set<WeakRef<Adopting>>();
     /**
      * How deep the current turn is, and whether anything moved in it. One
@@ -120,12 +127,29 @@ export class Editing {
     }
 
     /**
-     * Take a structure into this history and get its identity — the crate's
-     * `History.register`, named here so an editor never reaches past its context
-     * for it.
+     * Take an unnamed structure into this history and get its identity — the
+     * crate's `History.register`. {@link Editing.identity} is the door an editor
+     * uses; this one is for a caller registering something it will route itself.
      */
     register(domain: string): number {
         return this.history.register(domain);
+    }
+
+    /**
+     * This structure's identity in the pile, minted on first ask.
+     *
+     * **Once per structure, not once per view.** Two windows over one thing are
+     * one structure in the undo order, so a second identity for the second
+     * window would leave its undo walking legs that name somebody else — which
+     * looks exactly like a dead button.
+     */
+    identity(structure: object, domain: string): number {
+        let found = this.structures.get(structure);
+        if (found === undefined) {
+            found = this.history.register(domain);
+            this.structures.set(structure, found);
+        }
+        return found;
     }
 
     /**

@@ -238,7 +238,7 @@ Whole tracks, and one design the user has asked for that is a track's worth.
 milestones, their order and their acceptance are the plan's, and copying them
 into this file is exactly the migration the rules forbid.
 
-- ⬜ **The generic editor — `C50`-`C51`, ported as `W28`** *(the clients' half,
+- ⬜ **The generic editor — `C51`, ported as `W28`** *(the clients' half,
   in `clients/python/PLAN.md`, "The generic editor: one editor per domain, and
   `edit(x)`", ported by `clients/web/PLAN.md`'s "W28"; the crate's floor is
   `O20`, closed 2026-09-02 and leaving no line here)*. **Opened and ordered
@@ -252,8 +252,11 @@ into this file is exactly the migration the rules forbid.
   `gui/editing/` subpackage, `Editor` generic over one structure with
   `FormEditor` inheriting from it, and the open question taken (the editing
   context hangs on the **data**, not on an ambient holder). So the remaining
-  sequence is `C50` (`edit(x)` over buffer, curve and timeline, with its
-  TypeScript half in the same commit), then `C51`. The decision taken with
+  sequence was `C50` (`edit(x)` over buffer, curve and timeline), which closed
+  the same day with its TypeScript half in the same commit — and with the
+  crate's other half of `O20`'s argument, `clausters_domain_edit`, since the
+  inverse was still being computed once per language. What is left is `C51`:
+  `FormEditor` composing the views it used to contain. The decision taken with
   the track and worth reading before any of the phases: *the crate holds how an
   edit inverts, the client holds the projection*.
 

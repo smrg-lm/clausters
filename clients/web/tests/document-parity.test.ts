@@ -23,11 +23,13 @@ import {
     Log,
     applyIntent,
     domainCoalesceKey,
+    domainEdit,
     resolveSelection,
 } from "../src/document.ts";
 import type {
     Against,
     ClaustersDocument,
+    Edited,
     Intent,
     Outcome,
     Redone,
@@ -79,6 +81,13 @@ interface Vectors {
     };
     /** One payload per vocabulary, and the sentence the crate answers for it. */
     domains: { domain: string; payload: unknown; key: string }[];
+    /** One edit per vocabulary, and both directions of it. */
+    edited: {
+        domain: string;
+        state: unknown;
+        payload: unknown;
+        edited: Edited | null;
+    }[];
 }
 
 const here = import.meta.url;
@@ -267,6 +276,24 @@ test("every vocabulary answers the same coalesce sentence in both languages", ()
         assert.equal(
             domainCoalesceKey(domain, payload),
             key,
+            `${domain}: ${JSON.stringify(payload)}`,
+        );
+    }
+});
+
+test("a domain inverts its own edits the same way in both languages", () => {
+    // The other direction of the same argument: an edit and its inverse are one
+    // vocabulary's rule, read in one call because the inverse has to be taken
+    // *before* the edit lands. The rows that answer nothing are as much of the
+    // contract as the ones that do -- the tree has a door of its own and a span
+    // of samples is a borrowed view, so neither is held here, and a misspelled
+    // domain stops being silent.
+    assert.ok(vectors.edited.length > 0, "the generator emitted the table");
+    for (const { domain, state, payload, edited } of vectors.edited) {
+        const mine = domainEdit(domain, state, payload);
+        assert.deepEqual(
+            mine ?? null,
+            edited ?? null,
             `${domain}: ${JSON.stringify(payload)}`,
         );
     }

@@ -214,7 +214,19 @@ pub use time::*;
 /// document can state for a destructive edit — now bumps the source's
 /// generation instead of applying as a no-op, so a reader's copy is marked
 /// stale by an undo as it is by the edit.
-pub const CORE_ABI_VERSION: u32 = 35;
+/// **v36 a domain inverts its own edits.** `clausters_domain_edit` applies a
+/// payload to a structure held as its own state — a curve's points, a
+/// timeline's events — and answers with what it now is *and* the payload that
+/// puts it back, both in one call because the inverse has to be read before the
+/// edit lands. It is the other half of v35's argument: the coalesce sentence
+/// and the inverse are the same vocabulary's rule, and a client computing the
+/// second itself is the divergence the first was given a door to prevent. Two
+/// domains are deliberately not served: the arrangement's tree, which needs a
+/// version to check against and a grid to snap to and has
+/// `clausters_document_apply` of its own, and a span of samples, whose frames
+/// live in a buffer rather than in a value. Additive, and the counter moves for
+/// v31's reason.
+pub const CORE_ABI_VERSION: u32 = 36;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

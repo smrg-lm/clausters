@@ -478,7 +478,7 @@ through once it is editable on its own).
   is new and drives a generic editor over a plain object with a test-local
   `Domain` and `View`, which is also the shape `C50`'s three domains take.
 
-- ⬜ **C50 — `edit(x)` over the three fundamental structures** *(waits on the
+- ✅ **C50 — `edit(x)` over the three fundamental structures** *(waits on the
   crate's `O20`; ported in the same commit as the web client's `W28`)*. The verb
   and the three editors under it: `edit(buffer)` → a `SamplesEditor` over a
   `waveform`, `edit(curve)` → a `PointsEditor` over a `bpf`, `edit(timeline)` →
@@ -510,6 +510,48 @@ through once it is editable on its own).
   plays, and `Ctrl+Z` puts it back; and — the clause `C48` is what makes
   writable — the same stroke over a take of a **reopened** session does the same.
   An example per structure, since nothing in CI runs one.
+
+  **Done 2026-09-02**, in both clients and in one commit, with an example per
+  structure in each (`editors/edit_curve.py`, `edit_notes.py`,
+  `edit_samples.py`, and the three pages beside them). What the doing decided:
+
+  - **The crate holds the inverse, and now there is a door for it.** `O20` named
+    the vocabularies and bound the coalesce key; the other half was still being
+    computed per language, which is the divergence the first door existed to
+    prevent. So `domain::edit` (crate) and `clausters_domain_edit` /
+    `domainEdit` (both seams, `CORE_ABI_VERSION` 35→36): the state goes in with
+    the payload and comes back as what the structure now is **plus** the payload
+    that puts it back, one call because the inverse has to be read before the
+    edit lands.
+  - **Two domains answer nothing there, and it is a finding rather than a
+    limit.** The tree needs a version to check against and a grid to snap to,
+    and has `clausters_document_apply`. A span of **samples** is a borrowed view
+    by construction — the frames are in a server buffer — so the crate holds no
+    state to invert, and the protocol had already solved it: `"draw"` and
+    `"sample"` carry what they replaced, so nothing is read back to undo a
+    stroke. What the domain shares is the payload's shape and its coalesce key,
+    and where the state lives is the client's. Written into both books.
+  - **A curve's segment shapes had nowhere to go.** `points::Point` was a
+    position and a value, so a curve edited through the vocabulary came back
+    **straight** — the shape of each segment silently dropped. `Point` grew the
+    `data` field `Event` already had: deciding what a shape *is* stays refused,
+    carrying one is not the same act.
+  - **An identity is per structure, not per view.** Found by the acceptance's
+    own first clause: `edit` twice over one curve minted two identities in one
+    pile, so the second window's undo walked legs naming somebody else — a dead
+    button. `Editing.identity` is now the door, and `Editing.register` stays for
+    a caller routing its own structure.
+  - **The web client queues a stroke's write.** A page's buffer calls are
+    asynchronous where Python's are not, and `Domain.project` answers *whether*
+    the edit lands rather than when — so the writes are chained in order, since
+    two strokes over one span that raced would leave the buffer holding the
+    first. Named in `docs/bindings.md`'s sense of `idiom` and written in both
+    books.
+
+  What is **not** here: `"osc"` still reaches no branch — a roll's OSC lane is
+  the timeline's non-note items, which `NotesDomain` keeps across an edit and
+  does not yet let a hand move. It is the events domain's second verb and it
+  waits for one to exist.
 
 - ⬜ **C51 — `FormEditor` composes the views it used to contain.** The rename
   happened in `C49`; what is left is the collapse it was for. `open_pianoroll`

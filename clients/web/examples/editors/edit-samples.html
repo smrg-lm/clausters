@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: edit(buffer)</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 46rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+      #stage { width: 720px; max-width: 100%; height: 420px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note"><code>edit(buffer)</code>: a take's samples, drawn over and
+written back.
+
+The third structure, and the one whose state is <b>not in this page</b>: the
+frames are in a server buffer, so what the picture draws and what a stroke
+writes are the same buffer, with no copy in between. Play the take after drawing
+on it and you hear the stroke.
+
+<b>Wheel</b> to zoom in until each sample is a disc, then <b>Alt+drag</b> to
+draw over them. <b>Ctrl+Z</b> puts the samples back — and nothing is read from
+the server to do it: a stroke's event carries the run it wrote <i>and</i> the run
+it replaced, which is what the protocol carries <code>previous</code> for.
+
+<b>The one domain the crate does not hold.</b> A curve's points and a timeline's
+events are values this page owns, so the shared crate can be handed one and
+asked what an edit makes of it. A span of samples is a borrowed view over frames
+somewhere else, so what is shared here is the payload's shape and its coalesce
+key, and where the state lives is the client's.</div>
+
+      <button id="run">open the take</button>
+      <div id="stage"></div>
+      <button id="play" disabled>play the take</button>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/editors/edit_samples.py, call
+      for call: the same generated take, the same `edit`, the same one-def
+      player, and the same claim — draw, then play, and hear the stroke.
+
+      The platform's differences are the usual two: the host is the wasm one in
+      this tab and draws into an element, and nothing is pumped.
+
+      Serve clients/web (the package root) and open
+      /examples/editors/edit-samples.html. Build it first: ./build.sh
+    -->
+    <script type="module">
+      import { Session, gui } from "../../dist/index.js";
+      import { Buffer } from "../../dist/defs/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => { $("log").textContent += line + "\n"; };
+
+      const SECONDS = 2.0;
+      let session = null, take = null;
+
+      async function run() {
+        $("run").disabled = true;
+        session = await Session.embed();
+        const server = session.server;
+        const rate = server.sampleRate;
+
+        // A take, made here: two seconds of a decaying tone. A shape worth
+        // recognizing, so a stroke over it is visibly a stroke over *this*.
+        const frames = Math.trunc(SECONDS * rate);
+        const samples = new Float32Array(frames);
+        for (let i = 0; i < frames; i += 1) {
+          samples[i] = Math.exp(-3.0 * i / frames) * 0.7 *
+            Math.sin(2 * Math.PI * 220.0 * i / rate);
+        }
+        take = await Buffer.fromSamples(samples, 1, rate, { server });
+
+        await session.gui();
+        // One verb. A `Buffer` opens as a SamplesEditor — one `waveform` widget
+        // the host draws straight from the server's buffer, and the crate's
+        // `samples` vocabulary.
+        const editor = gui.edit(take, { title: "take" });
+        await editor.open(undefined, { stage: $("stage") });
+
+        log("zoom in (wheel) until the samples are discs, then Alt+drag to draw");
+        $("play").disabled = false;
+        // A buffer is data: something has to read it, and `play` provides the
+        // stock reader — so playing after an edit is what makes the stroke
+        // audible rather than only visible.
+        $("play").onclick = () => session.play(take);
+      }
+
+      $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
+    </script>
+  </body>
+</html>

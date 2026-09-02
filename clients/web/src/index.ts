@@ -205,7 +205,14 @@ export * as form from "./form/index.ts";
  * crate rather than by any client. See `./document.ts`.
  */
 export * as document from "./document.ts";
-export { History, Log, applyIntent, domainCoalesceKey, resolveSelection } from "./document.ts";
+export {
+    History,
+    Log,
+    applyIntent,
+    domainCoalesceKey,
+    domainEdit,
+    resolveSelection,
+} from "./document.ts";
 export type {
     Against,
     Applied,

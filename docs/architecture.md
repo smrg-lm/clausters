@@ -505,6 +505,23 @@ editor **asks the data for and never builds**. `FormEditing` is the arrangement'
 context: the generic one plus the held document and the node index. The
 TypeScript side is the same six files at `clients/web/src/gui/editing/`.
 
+**`edit(x)` is the verb, and the three domains under it are where the seam pays
+for itself.** `clausters.gui.edit` dispatches on what the structure is —
+`SamplesEditor` over a `Buffer` and a `waveform`, `PointsEditor` over an
+`Automation` and a `bpf`, `NotesEditor` over a `Timeline` and a `pianoroll` —
+and each is the generic `Editor` with a `Domain` and a `View` in it and nothing
+else. The inverse is the crate's, through `clausters_domain_edit`: the state
+goes in with the payload and comes back as what the structure now is *plus* what
+puts it back, in one call because the inverse has to be read before the edit
+lands. Two domains answer nothing there and both for a stated reason — the
+arrangement's tree needs a version to check against and a grid to snap to (it
+has `clausters_document_apply`), and a span of samples is a **borrowed view**
+whose frames are in a server buffer, so its inverse rides on the wire instead
+(`"draw"` and `"sample"` carry what they replaced). One thing this forced into
+the crate: a `points::Point` grew a `data` field, because a client's curve
+carries a shape per segment and a vocabulary that dropped it made an undo put
+back a straight line.
+
 The paths above are the Python client's, and the model now exists **twice**: the
 web client carries the same layer at mirrored paths (`clients/web/src/form/`
 — `element.ts`, `aggregate.ts`, `render.ts`, `document.ts`), so a rule changed

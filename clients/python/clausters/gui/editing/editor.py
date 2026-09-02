@@ -281,10 +281,15 @@ class Editor:
         self._editing.version = int(value)
 
     def _registered(self) -> int:
-        """This structure's identity in the history, minted on first use."""
+        """This structure's identity in the history, minted on first use.
+
+        Asked of the **context** rather than kept here, so two windows over one
+        structure name one identity: the pile is one order over the data, not
+        one per view.
+        """
         if self._structure_id is None:
-            self._structure_id = self._editing.register(
-                getattr(self.domain, "name", "") or "")
+            self._structure_id = self._editing.identity(
+                self.structure, getattr(self.domain, "name", "") or "")
         return self._structure_id
 
     # ---- the forward draw ----

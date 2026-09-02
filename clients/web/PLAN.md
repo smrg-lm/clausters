@@ -1592,10 +1592,21 @@ flattened into `gui`, because `View` would collide with the guidef `View` the
 module already exports — the Python client reaches them at the same path
 (`clausters.gui.editing`), so the module tree is still one tree.
 
+**`C50` landed 2026-09-02**, here in the same commit and case for case:
+`gui.edit` over a `Buffer`, an `Automation` and a `Timeline`, the three domains
+and views beside it in `src/gui/editing/`, `domainEdit` bound in `document.ts`,
+`tests/gui-edit.test.ts` mirroring `test_gui_edit.py`, and three example pages
+mirroring the three scripts. `"osc"` still reaches no branch, in both clients
+alike. The one spelling of this client's own, `idiom` and written in both books:
+a page's buffer calls are asynchronous, so a stroke's write is **queued in
+order** rather than awaited — two strokes over one span that raced would leave
+the buffer holding the first.
+
 The gaps this client carries are identical, which at least makes them shared
-holes rather than divergences: `applyPoints` re-implements in TypeScript the
-inversion the crate already holds; `"sample"`, `"draw"` and `"osc"` reach no
-branch of `Editor.route`. `mute`/`solo`/`level`/`height` **closed with `C48`**
+holes rather than divergences: `"osc"` reaches no branch of `Editor.route`.
+The other two closed with `C50` on 2026-09-02 — the inversion is the crate's
+now (`domainEdit`), and `"sample"` and `"draw"` route through `SamplesDomain` in
+both clients. `mute`/`solo`/`level`/`height` **closed with `C48`**
 (2026-09-02), in this client in the same commit: `Element` carries the mixing,
 `sessionResolver`/`sourcesOf`/`take` are here under those names, `flatten` takes
 a fifth `mixed` argument (the positional shape this client's `flatten` already

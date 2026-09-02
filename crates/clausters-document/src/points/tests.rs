@@ -2,7 +2,11 @@ use super::*;
 use crate::history::History;
 
 fn at(at: f64, value: f64) -> Point {
-    Point { at, value }
+    Point {
+        at,
+        value,
+        data: Opaque::default(),
+    }
 }
 
 fn set(points: Vec<Point>) -> Opaque {
@@ -92,4 +96,43 @@ fn a_redo_hands_the_curve_back_the_points_it_had() {
         points.apply(&payload);
     }
     assert_eq!(points.0, vec![at(0.0, 1.0)]);
+}
+
+#[test]
+fn a_point_carries_what_the_client_says_about_it_and_the_crate_reads_none_of_it() {
+    // The segment between two points has a shape, and it belongs to the point
+    // that starts it. Deciding what a shape *is* stays refused; carrying one is
+    // not the same act, and dropping it made an undo straighten the curve it
+    // was putting back.
+    let shaped = Point {
+        at: 0.0,
+        value: 1.0,
+        data: Opaque(serde_json::json!({"shape": 5, "curve": -4.0})),
+    };
+    let mut curve = Points::new(vec![shaped.clone()]);
+    let before = curve
+        .current(&payload(&curve.state()))
+        .expect("a curve states itself");
+
+    let flat = payload(&PointsIntent::SetPoints {
+        points: vec![Point {
+            at: 0.0,
+            value: 0.0,
+            data: Opaque::default(),
+        }],
+    });
+    assert!(curve.apply(&flat).applied);
+    assert!(curve.apply(&before).applied, "and the inverse goes back on");
+    assert_eq!(curve.0, vec![shaped], "with the shape it was drawn with");
+}
+
+#[test]
+fn a_point_with_nothing_to_say_writes_no_field() {
+    let bare = serde_json::to_value(Point {
+        at: 1.0,
+        value: 0.5,
+        data: Opaque::default(),
+    })
+    .expect("serializes");
+    assert_eq!(bare, serde_json::json!({"at": 1.0, "value": 0.5}));
 }

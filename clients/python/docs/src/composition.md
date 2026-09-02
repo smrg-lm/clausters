@@ -152,6 +152,48 @@ An editor orchestrates rather than performs, and it is four collaborators
 The rule that fixes all four: an editor owns **neither the data nor the
 history**.
 
+## `edit(x)`: one verb over the three structures
+
+`clausters.gui.edit` opens whichever editor the structure asks for, and it
+dispatches on **what the structure is** — that being the question a caller has
+already answered by holding one:
+
+| `edit(x)` where x is | opens | over | its vocabulary |
+|---|---|---|---|
+| a `clausters.defs.Buffer` | `SamplesEditor` | a `waveform` | `samples` |
+| a `clausters.seq.Automation` | `PointsEditor` | a `bpf` | `points` |
+| a `clausters.seq.Timeline` | `NotesEditor` | a `pianoroll` | `events` |
+
+```python
+from clausters.gui import edit
+
+editor = edit(curve, sample_rate=48_000.0)
+editor.open(gui)
+while editor.window is not None:
+    editor.poll(0.05)
+
+curve.to_points()      # the edited curve, out of the object you already held
+```
+
+Nothing is handed back: the object passed in *is* the edited one. A composition
+is not one of the three — an arrangement is `FormEditor`'s, which knows a tree
+from a leaf and holds a document.
+
+**Two calls over one structure give two windows and one stack.** The editing
+context belongs to the data, so an undo in either window steps the one order
+both of them made. And a window composing several structures passes one context
+(`edit(x, context=…)`), which is what makes it undo across a curve and a roll in
+the order the edits happened.
+
+**How an edit inverts is the shared crate's.** For a curve and a timeline the
+state goes in with the payload and comes back as what the structure now is *plus*
+what puts it back — one call, because the inverse has to be read before the edit
+lands. A span of samples is the exception, and a real one rather than an
+omission: the frames are in a server buffer, so the crate holds no state to
+invert. What it shares there is the payload's shape and its coalesce key, and
+the inverse rides on the wire — a stroke's event carries the run it wrote *and*
+the run it replaced.
+
 ## The multitrack editor
 
 `FormEditor` draws that tree as the multitrack view and applies its edits back onto

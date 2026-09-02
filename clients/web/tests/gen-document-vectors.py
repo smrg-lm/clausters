@@ -93,6 +93,29 @@ DOMAIN_PAYLOADS = [
     (_native.SAMPLES, {"intent": "setpoints", "points": []}),
 ]
 
+#: ``(domain, state, payload)`` for the other half of what a vocabulary brings:
+#: the edit applied to a structure held as its own state, and the payload that
+#: puts it back. The rows cover the two domains that answer, a resend (which
+#: moves nothing and is still answered), and the three that answer nothing --
+#: the tree and a span of samples on purpose, a misspelling because a typo has
+#: to stop being silent.
+DOMAIN_EDITS = [
+    (_native.POINTS,
+     [{"at": 0.0, "value": 1.0}, {"at": 1.0, "value": 0.0}],
+     {"intent": "setpoints", "points": [{"at": 0.0, "value": 0.5}]}),
+    (_native.POINTS,
+     [{"at": 0.0, "value": 1.0}],
+     {"intent": "setpoints", "points": [{"at": 0.0, "value": 1.0}]}),
+    (_native.EVENTS,
+     [{"at": 0.0, "data": {"pitch": 60}}],
+     {"intent": "setevents", "events": [{"at": 0.0, "data": {"pitch": 60}},
+                                        {"at": 2.0}]}),
+    (_native.EVENTS, [], {"intent": "setevents", "events": []}),
+    (_native.TREE, [], {"intent": "place", "node": 1, "offset": 0.0}),
+    (_native.SAMPLES, [], {"intent": "write", "start": 0, "values": [0.5]}),
+    ("piotns", [], {"intent": "setpoints", "points": []}),
+]
+
 LOGGED = [
     ("move the event", {"intent": "place", "node": 2, "offset": 1.0}, 0.0),
     ("move the take", {"intent": "place", "node": 3, "offset": 6.0}, 0.0),
@@ -180,6 +203,15 @@ if __name__ == "__main__":
         for domain, payload in DOMAIN_PAYLOADS
     ]
 
+    # And the other direction of the same argument: an edit and its inverse are
+    # one vocabulary's rule, so a client computing the inverse itself is the
+    # divergence the door above exists to prevent.
+    edited = [
+        {"domain": domain, "state": state, "payload": payload,
+         "edited": _native.domain_edit(domain, state, payload)}
+        for domain, state, payload in DOMAIN_EDITS
+    ]
+
     out = pathlib.Path(__file__).with_name("document-vectors.json")
     out.write_text(json.dumps({
         "start": composition(),
@@ -188,5 +220,6 @@ if __name__ == "__main__":
         "resolutions": resolutions,
         "logged": logged,
         "domains": domains,
+        "edited": edited,
     }, indent=2) + "\n")
     print(f"wrote {out}")
