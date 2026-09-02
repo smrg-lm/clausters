@@ -725,6 +725,37 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
 
 ## Found by use: the running list of fixes and open questions
 
+- ⬜ **A redefine renumbers every widget, so anything a client keeps keyed by a
+  widget id is silently reset** *(found 2026-09-02, chasing why undo/redo reset
+  the zoom in `editors/two_windows.py`; the zoom itself is fixed in the host —
+  the axis is keyed by the **window**, which survives — and this is the general
+  case it uncovered)*. `Editor.draw()` builds its tree with `id=None`, so the
+  host allocates fresh ids on every `define`, and a redraw of "the same window"
+  names none of the same widgets: two consecutive `draw()`s over one composition
+  gave `[10000, 10002]` and then `[10004, 10006]`.
+
+  Everything *derived* survives that, because `draw` rebuilds it — `_clips`,
+  `_rolls`, `_lanes`, `_signals`, `_patches`. What does not is **screen state
+  the client holds by widget id**, and there is one today: `_edit_layer`
+  (`editLayer` in TypeScript), which layer of a clip the hand is on. A
+  structural edit puts it back to the default, and the code that reads it cannot
+  tell — a missing key and "the default layer" are the same answer.
+
+  It is worth an entry rather than a patch because the fix is a decision. Either
+  the client mints **stable** ids (and then two editors on one host must not
+  collide, which is why `base_id` exists and why leaving it to the host was the
+  safe call), or a redefine ends with the client re-establishing what it holds
+  by id, or that kind of state stops being keyed by an id at all. The host half
+  of the same question is already answered and is the model: a timeline group is
+  keyed by the **window**, not by a lane, which is exactly why the axis survives
+  a renumbering. Whatever is decided is decided for both clients.
+
+  **The class, since this is the third one:** a *content* change is not entitled
+  to move what a person set. The window that closed and reopened on a redefine,
+  the axis that zoomed back out, the sweep that vanished — all three were a
+  redraw throwing away screen state, and all three are fixed. This one is the
+  same shape with the client holding the state instead of the host.
+
 - ✅ **`button` takes no control, `toggle` takes no range, and behind both is
   the same unasked question: what kind of thing is a button?** *(named
   2026-08-23 by the user; answered and fixed 2026-08-24)*. Two concrete gaps

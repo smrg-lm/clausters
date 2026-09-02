@@ -917,7 +917,7 @@ impl Host {
         // move. Dropping it here reset the zoom on every structural edit, which
         // reads as the window starting over; the rest of the group state is
         // rebuilt exactly as before.
-        let mut carried: HashMap<GroupKey, View> = HashMap::new();
+        let mut carried: HashMap<GroupKey, GroupState> = HashMap::new();
         if let Some(def) = redefined {
             let spans_other: Vec<GroupKey> = members
                 .iter()
@@ -928,7 +928,7 @@ impl Host {
                 if !spans_other.contains(&m.key)
                     && let Some(state) = self.timelines.states.remove(&m.key)
                 {
-                    carried.insert(m.key, state.nav);
+                    carried.insert(m.key, state);
                 }
             }
         }
@@ -945,21 +945,31 @@ impl Host {
                 if let Some(editor) = editor {
                     let total = self.timeline_total(m.key);
                     let span = self.timeline_span(m.key);
-                    let nav = match carried.get(&m.key) {
+                    let held = carried.get(&m.key);
+                    let nav = match held.map(|state| state.nav) {
                         // The same rule a growing extent follows: a view that
                         // was showing the whole timeline goes on showing all of
                         // it, and a zoomed one keeps its window and is only
                         // re-clamped.
                         Some(old) if old.len > 0.0 && old.len < total as f64 => {
-                            let mut nav = *old;
+                            let mut nav = old;
                             nav.set_start(nav.start, span);
                             nav
                         }
                         _ => View::full(total),
                     };
-                    self.timelines
-                        .states
-                        .insert(m.key, GroupState::seed(&editor, nav));
+                    let mut state = GroupState::seed(&editor, nav);
+                    // The **sweep** is screen state by the same argument as the
+                    // window, and over the same axis: a selection is a span of
+                    // time, so it goes on meaning what it meant when the clips
+                    // under it were rebuilt. Reseeding it from the def's props
+                    // threw away a sweep on every structural edit, which is the
+                    // zoom's defect wearing a different name.
+                    if let Some(old) = held.filter(|old| old.sel_len > 0.0) {
+                        state.sel_start = old.sel_start;
+                        state.sel_len = old.sel_len;
+                    }
+                    self.timelines.states.insert(m.key, state);
                 }
             }
         }
@@ -1827,6 +1837,14 @@ mod tests {
         assert_eq!((after.start, after.len), (chosen.start, chosen.len));
         assert_eq!(total, 450, "and the axis knows it grew");
 
+        // A sweep is screen state over the same axis, so it is carried too.
+        host.select_timeline(100, 10.0, 30.0);
+        let swept = host
+            .timelines()
+            .state(host.timeline_key(100).unwrap())
+            .map(|s| (s.sel_start, s.sel_len))
+            .unwrap();
+
         // ...and the same tree again, which is what a structural edit sends.
         host.handle_packet(def_msg(1, tree), from());
         let (after, _) = host.timeline_nav(100).unwrap();
@@ -1834,6 +1852,13 @@ mod tests {
             (after.start, after.len),
             (chosen.start, chosen.len),
             "a redefine is a content change, not a navigation command"
+        );
+        assert_eq!(
+            host.timelines()
+                .state(host.timeline_key(100).unwrap())
+                .map(|s| (s.sel_start, s.sel_len)),
+            Some(swept),
+            "and the sweep is the same kind of thing as the window"
         );
     }
 
@@ -1872,6 +1897,53 @@ mod tests {
         );
         let (nav, total) = host.timeline_nav(100).unwrap();
         assert_eq!((nav.start, nav.len, total), (0.0, 800.0, 800));
+    }
+
+    /// The editor's case, end to end: its lanes carry no `link`, so they share
+    /// the group its **window** keys — and a window id is what a redefine keeps
+    /// while every widget id under it is allocated afresh.
+    ///
+    /// That is what makes the window survivable at all, and it is worth a test
+    /// of its own: if the axis were keyed by a lane's id, a structural edit
+    /// would reseed it under a new number no matter what the code above carried,
+    /// and the zoom would go on resetting for a reason nothing in that code
+    /// would show.
+    #[test]
+    fn a_redefine_with_new_widget_ids_keeps_the_axis_the_window_keys() {
+        let lanes = |a: i32, b: i32| {
+            format!(
+                r#"{{"type":"window","margin":0,"children":[
+                    {{"id":{a},"type":"field","children":[
+                        {{"id":{},"type":"field","offset":0.0,"dur":400.0}}]}},
+                    {{"id":{b},"type":"field","children":[
+                        {{"id":{},"type":"field","offset":0.0,"dur":800.0}}]}}
+                ]}}"#,
+                a + 1,
+                b + 1
+            )
+        };
+        let mut host = Host::new();
+        host.handle_packet(def_msg(1, &lanes(100, 200)), from());
+        host.sync_track_totals();
+        // One group, and it is the window's: the lanes and anything else drawn
+        // on the same axis read one window.
+        assert_eq!(host.timeline_key(100), Some(GroupKey::Link(1)));
+        assert_eq!(host.timeline_key(200), host.timeline_key(100));
+
+        host.set_timeline_view(100, Some(100.0), Some(200.0));
+        let (chosen, _) = host.timeline_nav(100).unwrap();
+        assert_eq!((chosen.start, chosen.len), (100.0, 200.0));
+
+        // A redefine, with every widget id different — which is what the host
+        // hands back for a tree drawn with `id=None`, and what a structural edit
+        // therefore looks like on the wire.
+        host.handle_packet(def_msg(1, &lanes(300, 400)), from());
+        let (after, _) = host.timeline_nav(300).unwrap();
+        assert_eq!(
+            (after.start, after.len),
+            (chosen.start, chosen.len),
+            "the axis is the window's, and the window did not move"
+        );
     }
 
     /// A free-standing `timeruler` joins the lanes' group and reads their
