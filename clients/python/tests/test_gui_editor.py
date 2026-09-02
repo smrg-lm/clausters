@@ -2558,3 +2558,49 @@ def test_a_pasted_block_is_refused_where_no_roll_can_hold_it():
     assert not ed.apply("/gui_event", [lane, SEQ, UNSTATED, "paste", 0.0, "text", block])
     _, _, reason = host.answers[-1]
     assert reason and "roll" in reason
+
+
+# ---- the lane header: what is the composition's, and what is the view's ----
+
+def test_a_lane_header_draws_the_compositions_mixing_and_writes_it_back():
+    lane_element = Aggregate([(0.0, Clang(SeqEvent(midinote=60, dur=1.0)))],
+                             name="drums")
+    song = Aggregate([(0.0, lane_element)], name="song")
+    ed = editor(song)
+    (lane,) = lanes(ed.draw())
+    assert (lane["mute"], lane["solo"], lane["level"]) == (False, False, 1.0), \
+        "a control nothing draws is a control nobody can press"
+
+    assert ed.apply("/gui_event", [lane["id"], SEQ, UNSTATED, "mute", 1]) is True
+    assert lane_element.mute is True
+    # It is an edit like any other, so it is in the history and it inverts.
+    assert ed.can_undo and ed.undo_label == "mute the lane"
+    ed.undo()
+    assert lane_element.mute is False
+
+    assert ed.apply("/gui_event", [lane["id"], SEQ, UNSTATED, "level", 0.25]) is True
+    assert lane_element.level == pytest.approx(0.25)
+    assert lanes(ed.draw())[0]["level"] == pytest.approx(0.25), \
+        "redrawn from the composition, not remembered by the view"
+
+
+def test_a_lane_resized_by_hand_changes_no_composition():
+    # `height` is the view's: the host already resized the lane it was made on,
+    # and no document carries it.
+    ed = editor(Aggregate([(0.0, Clang(SeqEvent(midinote=60, dur=1.0)))], name="song"))
+    (lane,) = lanes(ed.draw())
+    assert ed.apply("/gui_event", [lane["id"], SEQ, UNSTATED, "height", 90.0]) is False
+    assert ed.can_undo is False
+
+
+def test_a_muted_lane_still_draws_everything_it_had():
+    # A picture that emptied when the toggle was pressed would report silence as
+    # absence.
+    lane_element = Aggregate([(0.0, Clang(SeqEvent(midinote=60, dur=1.0)))],
+                             name="drums")
+    ed = editor(Aggregate([(0.0, lane_element)], name="song"))
+    before = clips(lanes(ed.draw())[0])
+    lane_element.mute = True
+    after = clips(lanes(ed.draw())[0])
+    assert len(after) == len(before) == 1
+    assert after[0]["dur"] == before[0]["dur"]

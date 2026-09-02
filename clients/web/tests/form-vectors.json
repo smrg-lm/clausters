@@ -834,6 +834,186 @@
     }
    ],
    "relation": "simultaneous"
+  },
+  "a_mixed_piece": {
+   "document": {
+    "version": 1,
+    "root": {
+     "id": 1,
+     "name": "mix",
+     "kind": "aggregate",
+     "grouping": "concrete",
+     "members": [
+      {
+       "offset": 0.0,
+       "node": {
+        "id": 2,
+        "name": "quiet",
+        "kind": "aggregate",
+        "grouping": "concrete",
+        "members": [
+         {
+          "offset": 0.0,
+          "node": {
+           "id": 3,
+           "kind": "clang",
+           "config": {
+            "type": "note",
+            "instrument": "default",
+            "dur": 1.0,
+            "legato": 0.8,
+            "stretch": 1.0,
+            "amp": 0.1,
+            "add_action": 1,
+            "target": 0,
+            "has_gate": false,
+            "octave": 5.0,
+            "root": 0.0,
+            "scale": [
+             0,
+             2,
+             4,
+             5,
+             7,
+             9,
+             11
+            ],
+            "midinote": 36
+           }
+          }
+         }
+        ],
+        "config": {
+         "form": "track",
+         "mute": true
+        }
+       }
+      },
+      {
+       "offset": 0.0,
+       "node": {
+        "id": 4,
+        "name": "lead",
+        "kind": "aggregate",
+        "grouping": "concrete",
+        "members": [
+         {
+          "offset": 0.0,
+          "node": {
+           "id": 5,
+           "kind": "clang",
+           "config": {
+            "type": "note",
+            "instrument": "default",
+            "dur": 1.0,
+            "legato": 0.8,
+            "stretch": 1.0,
+            "amp": 0.5,
+            "add_action": 1,
+            "target": 0,
+            "has_gate": false,
+            "octave": 5.0,
+            "root": 0.0,
+            "scale": [
+             0,
+             2,
+             4,
+             5,
+             7,
+             9,
+             11
+            ],
+            "midinote": 72
+           }
+          }
+         }
+        ],
+        "config": {
+         "form": "track",
+         "solo": true,
+         "level": 0.5
+        }
+       }
+      },
+      {
+       "offset": 0.0,
+       "node": {
+        "id": 6,
+        "name": "pad",
+        "kind": "aggregate",
+        "grouping": "concrete",
+        "members": [
+         {
+          "offset": 0.0,
+          "node": {
+           "id": 7,
+           "kind": "clang",
+           "config": {
+            "type": "note",
+            "instrument": "default",
+            "dur": 1.0,
+            "legato": 0.8,
+            "stretch": 1.0,
+            "amp": 0.1,
+            "add_action": 1,
+            "target": 0,
+            "has_gate": false,
+            "octave": 5.0,
+            "root": 0.0,
+            "scale": [
+             0,
+             2,
+             4,
+             5,
+             7,
+             9,
+             11
+            ],
+            "midinote": 60
+           }
+          }
+         }
+        ],
+        "config": {
+         "form": "track"
+        }
+       }
+      }
+     ],
+     "config": {
+      "level": 0.5
+     }
+    }
+   },
+   "flat": [
+    {
+     "beat": 0.0,
+     "event": {
+      "type": "note",
+      "instrument": "default",
+      "dur": 1.0,
+      "legato": 0.8,
+      "stretch": 1.0,
+      "amp": 0.125,
+      "add_action": 1,
+      "target": 0,
+      "has_gate": false,
+      "octave": 5.0,
+      "root": 0.0,
+      "scale": [
+       0,
+       2,
+       4,
+       5,
+       7,
+       9,
+       11
+      ],
+      "midinote": 72
+     }
+    }
+   ],
+   "relation": "simultaneous"
   }
  },
  "session": {
@@ -871,6 +1051,23 @@
     "lifetime": "session",
     "generation": 0
    }
+  }
+ },
+ "sources": {
+  "101": {
+   "location": {
+    "at": "file",
+    "path": "takes/two.wav"
+   },
+   "lifetime": "session",
+   "generation": 0
+  },
+  "100": {
+   "location": {
+    "at": "volatile"
+   },
+   "lifetime": "session",
+   "generation": 0
   }
  }
 }

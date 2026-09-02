@@ -238,7 +238,7 @@ Whole tracks, and one design the user has asked for that is a track's worth.
 milestones, their order and their acceptance are the plan's, and copying them
 into this file is exactly the migration the rules forbid.
 
-- ⬜ **The generic editor — `C48`-`C51`, ported as `W28`** *(the clients' half,
+- ⬜ **The generic editor — `C49`-`C51`, ported as `W28`** *(the clients' half,
   in `clients/python/PLAN.md`, "The generic editor: one editor per domain, and
   `edit(x)`", ported by `clients/web/PLAN.md`'s "W28"; the crate's floor is
   `O20`, closed 2026-09-02 and leaving no line here)*. **Opened and ordered
@@ -246,11 +246,14 @@ into this file is exactly the migration the rules forbid.
   used as though it were general; the count that opened the track is in the
   Python plan, and two of its rows are the substance — **sample editing exists in
   the host and in no client**, and **`mute`/`solo` are not in the arrangement at
-  all**. Among the phases `C48` leads — the session-file resolver — since
-  `edit(x)` over samples reaches nothing after a reopen until a take is a buffer
-  again. The decision taken with the track and worth reading before any of the
-  phases: *the crate holds how an edit inverts, the client holds the
-  projection*.
+  all**. `C48` closed both of those on 2026-09-02 — the session-file resolver,
+  the source table built from the arrangement, mixing in the node's
+  configuration, and `take` — so the remaining sequence is `C49` (the split and
+  the rename, which also takes the one open question: where the ambient editing
+  registry hangs), then `C50` (`edit(x)` over buffer, curve and timeline, with
+  its TypeScript half in the same commit), then `C51`. The decision taken with
+  the track and worth reading before any of the phases: *the crate holds how an
+  edit inverts, the client holds the projection*.
 
   **Related, and read with it rather than separately** — three entries of
   `clients/python/PLAN.md`'s "Future directions" already below in this section:

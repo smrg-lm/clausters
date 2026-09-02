@@ -456,6 +456,39 @@ by **sample** instead: `follow_transport` reads the transport's
 `position_sample` and converts it through its own map, which is the same seam
 `/transport_locateSample` already exists for.
 
+**Reopening a session gives back structures, not a description.** A document
+names a source by number and deliberately says nothing about where it is; the
+session's **source table** says that, so opening a piece into a running system
+is two steps. `form.document.session_resolver` (`sessionResolver` in the web
+client) is the second: a `resolve` built over the table, which reads each file
+onto the server **once per source id** — two clips over one take are two windows
+onto one buffer, and reading it twice gives them two buffers that drift apart on
+the first edit — leaves a *volatile* source frozen, because it existed only in
+the run that wrote it, and looks a generator's code up in whatever store the
+caller passes, leaving what nothing supplies frozen with its last `rendered` as
+the floor. It is the client's half of what
+`clients/gui/src/host/document/sources.rs` already did for the standalone host.
+The other direction is `sources_of`, which builds the table from the arrangement
+itself: each take's buffer is asked where it is (a `Buffer` read from a file
+knows its `path`; one allocated in this run is written volatile), and a
+`FrozenSource` reports what the document it came from said — which is what keeps
+a session opened with no resolver from being saved back with its own contents
+marked volatile.
+
+**Mixing is the composition's; height is the view's.** An element carries
+`mute`, `solo` and `level`, all three inherited down the tree, honoured by
+`form.render.flatten` (a muted branch contributes nothing; one soloed element
+anywhere silences every branch not on a soloed path; a level multiplies into the
+`amp` of the events below it) and carried in the node's **configuration**, which
+is the same opaque door a leaf's code and a track's restrictions use — so a
+piece reopens mixed the way it was left, and an editor's `Configure` starts from
+`leaf_config` and cannot silently unmute a lane. Drawing reads the composition
+**unmixed** (`flatten(..., mixed=False)`): a muted lane keeps its clips, its
+notes and its length, or the picture would report silence as absence. A lane's
+`height`, which the host emits on Ctrl+wheel, is deliberately in no document: it
+says nothing about what the piece is, and the editor answers it as the screen
+state it is.
+
 The paths above are the Python client's, and the model now exists **twice**: the
 web client carries the same layer at mirrored paths (`clients/web/src/form/`
 — `element.ts`, `aggregate.ts`, `render.ts`, `document.ts`), so a rule changed

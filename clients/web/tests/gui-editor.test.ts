@@ -1293,3 +1293,73 @@ test("a logical aggregate's buses survive the document", () => {
     assert.deepEqual(back.busNames, ["mix"]);
     assert.deepEqual(back.busSpecList, [{ name: "mix", rate: "audio", channels: 1 }]);
 });
+
+// ---- the lane header: what is the composition's, and what is the view's ----
+
+test("a lane header draws the composition's mixing and writes it back", () => {
+    const laneElement = new Aggregate(
+        [[0.0, new Clang(new SeqEvent({ midinote: 60, dur: 1.0 }))]],
+        "concrete",
+        { name: "drums" },
+    );
+    const ed = editor(new Aggregate([[0.0, laneElement]], "concrete", { name: "song" }));
+    const lane = lanes(ed.draw())[0] as GuiNode;
+    assert.deepEqual(
+        [lane.mute, lane.solo, lane.level],
+        [false, false, 1.0],
+        "a control nothing draws is a control nobody can press",
+    );
+
+    assert.equal(ed.apply("/gui_event", [lane.id as number, SEQ, UNSTATED, "mute", 1]), true);
+    assert.equal(laneElement.mute, true);
+    // It is an edit like any other, so it is in the history and it inverts.
+    assert.equal(ed.canUndo, true);
+    assert.equal(ed.undoLabel, "mute the lane");
+    ed.undo();
+    assert.equal(laneElement.mute, false);
+
+    assert.equal(
+        ed.apply("/gui_event", [lane.id as number, SEQ, UNSTATED, "level", 0.25]),
+        true,
+    );
+    assert.equal(laneElement.level, 0.25);
+    assert.equal(
+        (lanes(ed.draw())[0] as GuiNode).level,
+        0.25,
+        "redrawn from the composition, not remembered by the view",
+    );
+});
+
+test("a lane resized by hand changes no composition", () => {
+    // `height` is the view's: the host already resized the lane it was made on,
+    // and no document carries it.
+    const ed = editor(
+        new Aggregate(
+            [[0.0, new Clang(new SeqEvent({ midinote: 60, dur: 1.0 }))]],
+            "concrete",
+            { name: "song" },
+        ),
+    );
+    const lane = lanes(ed.draw())[0] as GuiNode;
+    assert.equal(
+        ed.apply("/gui_event", [lane.id as number, SEQ, UNSTATED, "height", 90.0]),
+        false,
+    );
+    assert.equal(ed.canUndo, false);
+});
+
+test("a muted lane still draws everything it had", () => {
+    // A picture that emptied when the toggle was pressed would report silence as
+    // absence.
+    const laneElement = new Aggregate(
+        [[0.0, new Clang(new SeqEvent({ midinote: 60, dur: 1.0 }))]],
+        "concrete",
+        { name: "drums" },
+    );
+    const ed = editor(new Aggregate([[0.0, laneElement]], "concrete", { name: "song" }));
+    const before = clipsOf(lanes(ed.draw())[0] as GuiNode);
+    laneElement.mute = true;
+    const after = clipsOf(lanes(ed.draw())[0] as GuiNode);
+    assert.equal(after.length, before.length);
+    assert.equal(after[0]?.dur, before[0]?.dur);
+});

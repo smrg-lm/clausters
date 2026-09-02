@@ -3129,6 +3129,23 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 
 ## Found by use: the running list of fixes
 
+- ⬜ **A session host draws no lane mixing, and its header controls reach
+  nothing** *(found 2026-09-02, closing the Python client's `C48`, which put
+  `mute`/`solo`/`level` in the node's configuration and made both clients draw
+  and route them)*. The host already emits the three tags from a lane header
+  (`host/gestures/effects.rs`) and already carries the configuration across a
+  save, because a node's config is opaque and it is round-tripped whole. What it
+  does not do is **read** it: `host/document/tree.rs` builds a lane with a label
+  and the time chrome and no `mute`/`solo`/`level`, and the lane widget is bound
+  to no node (only its clips are), so a press on a header it does not draw would
+  have nothing to name. So a piece muted in a client opens **audible** in
+  `clausters-gui --session`, and the toggle a person presses there changes
+  nothing that is saved. Two small pieces: draw the three props from the node's
+  config, and bind the lane widget to its member's node so `answer_own` can turn
+  the tag into a `Configure` — which is the same intent the clients emit, so the
+  undo comes out of the document exactly as theirs does. A lane's `height` stays
+  what it is: the view's, carried by nothing.
+
 - ✅ **A tie between two different pitches is accepted, written, and dropped by
   the engraver with a warning nobody reads** *(found 2026-08-29, round-tripping
   an emitted document through verovio while building the reader; fixed

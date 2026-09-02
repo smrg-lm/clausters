@@ -160,6 +160,13 @@ export interface SourceLike {
     readonly frames?: number;
     readonly channels?: number;
     readonly sampleRate?: number;
+    /**
+     * The **file these samples came from**, when they came from one. Carried and
+     * never acted on: what it is for is saying where the samples are when a
+     * piece is written down, which is exactly what a session's source table
+     * needs and the one thing a bare slot number cannot tell it.
+     */
+    readonly path?: string | null;
 }
 
 /** The optional label every element takes. */
@@ -215,6 +222,19 @@ export class Element {
      * element is a generator with no index (see {@link Element.locatable}).
      */
     resident: boolean;
+    /**
+     * **Mixing: the composition's, not the view's.** Whether this element is
+     * silenced (`mute`), whether it is one of the elements soloed (`solo`), and
+     * the gain its events sound at (`level`, a factor over an event's own
+     * `amp`). They are set by the editor's lane header and by hand, they are
+     * honoured by {@link flatten}, and they travel in the node's configuration —
+     * so a piece reopens muted the way it was left. A lane's *height* is the
+     * other kind of thing and is deliberately absent: it says nothing about what
+     * the piece is, so no document carries it.
+     */
+    mute = false;
+    solo = false;
+    level = 1.0;
 
     constructor(
         wraps: unknown = null,
@@ -571,6 +591,37 @@ export interface SegmentsOptions extends ElementOptions {
  * thing to play (see {@link Vector}). `duration` is in **seconds**, the sum of
  * the segments' when not given.
  */
+/**
+ * A recorded or loaded buffer **placed in the arrangement**: a {@link Vector}
+ * whose length is the samples' own.
+ *
+ * This is where recording lands. A `RecordingStream` follows takes as they are
+ * written and a `Buffer` holds them, but neither puts one in a piece — and the
+ * arithmetic that does (frames over the rate they were recorded at) was left to
+ * every caller, which is one conversion written once per script and wrong in the
+ * one that forgot the channel count is not in it.
+ *
+ * `duration` is in **seconds**, for a caller who knows better than the buffer
+ * does — a take still recording, whose buffer is as long as it will be rather
+ * than as long as it is. Without an `instrument` the take is structure (it draws
+ * and it extends the piece, and it emits no event), which is the `Vector` rule
+ * and not a special case here. `sampleRate` is the rate to measure the length
+ * at, for a source that does not know its own; when nothing knows it the
+ * duration is `null`, which is the honest answer — the length is then the
+ * placement's.
+ */
+export function take(
+    buffer: SourceLike,
+    onset: Beats = null,
+    duration: Beats = null,
+    { sampleRate = 0, ...options }: VectorOptions & { sampleRate?: number } = {},
+): Vector {
+    const rate = Number(sampleRate || buffer?.sampleRate || 0);
+    const frames = Number(buffer?.frames ?? 0);
+    const length = duration ?? (rate > 0 && frames > 0 ? frames / rate : null);
+    return new Vector(buffer, onset, length, options);
+}
+
 export class Segments extends Element {
     instrument: string | null;
     controls: EventControls;

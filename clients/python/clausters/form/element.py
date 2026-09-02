@@ -147,6 +147,18 @@ class Element:
         #: server** rather than by messages the arrangement flattens. Such an
         #: element is a generator with no index (see `locatable`).
         self.resident = bool(resident)
+        #: **Mixing: the composition's, not the view's.** Whether this element
+        #: is silenced (`mute`), whether it is one of the elements soloed
+        #: (`solo`), and the gain its events sound at (`level`, a factor over
+        #: an event's own ``amp``). They are set by the editor's lane header and
+        #: by hand, they are honoured by `clausters.form.render.flatten`, and
+        #: they travel in the node's configuration -- so a piece reopens muted
+        #: the way it was left. A lane's *height* is the other kind of thing and
+        #: is deliberately absent: it says nothing about what the piece is, so
+        #: no document carries it.
+        self.mute = False
+        self.solo = False
+        self.level = 1.0
 
     @property
     def locatable(self) -> bool:
@@ -357,6 +369,49 @@ class Vector(Element):
             params["dur"] = end_beat(at, self.duration, SECONDS, tempo_map) - at
         params.update(self.controls)
         return SeqEvent(params)
+
+
+def take(buffer, onset=None, duration=None, *, instrument=None, controls=None,
+         start: float = 0.0, loop: bool = False, name=None,
+         sample_rate: float = 0.0) -> "Vector":
+    """A recorded or loaded buffer **placed in the arrangement**: a `Vector`
+    whose length is the samples' own.
+
+    This is where recording lands. `clausters.data.RecordingStream` follows
+    takes as they are written and `clausters.defs.Buffer` holds them, but
+    neither puts one in a piece — and the arithmetic that does (frames over the
+    rate they were recorded at) was left to every caller, which is one
+    conversion written once per script and wrong in the one that forgot the
+    channel count is not in it.
+
+    Args:
+        buffer: the samples — a `clausters.defs.Buffer`, a
+            `clausters.data.TakeShape`, or the
+            `clausters.form.document.FrozenSource` a document hands back for a
+            source this process has not resolved.
+        onset: start in beats, or ``None`` (the placement usually says).
+        duration: the length in **seconds**, when the caller knows better than
+            the buffer does — a take still recording, whose buffer is as long
+            as it will be rather than as long as it is.
+        instrument: the def that plays it; without one the take is structure
+            (it draws and it extends the piece, and it emits no event), which
+            is the `Vector` rule and not a special case here.
+        controls: what that def is given.
+        start: the frame the window opens at, and ``loop`` whether it wraps.
+        name: the label a lane carries.
+        sample_rate: the rate to measure the length at, when the buffer does
+            not know its own (a `TakeShape` carries no rate).
+
+    Returns:
+        The `Vector`. Its ``duration`` is ``None`` when nothing knows the rate,
+        which is the honest answer: the length is then the placement's.
+    """
+    rate = float(sample_rate or getattr(buffer, "sample_rate", 0.0) or 0.0)
+    frames = float(getattr(buffer, "frames", 0) or 0)
+    if duration is None and rate > 0.0 and frames > 0.0:
+        duration = frames / rate
+    return Vector(buffer, onset=onset, duration=duration, instrument=instrument,
+                  controls=controls, start=start, loop=loop, name=name)
 
 
 class Segments(Element):

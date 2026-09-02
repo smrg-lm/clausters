@@ -40,8 +40,8 @@ import weakref
 from .. import _native
 from ..base.time import TempoMap
 from .handle import WindowHandle
-from ..form.document import (FIRST_VERSION, ID_ATTR, leaf_config, leaf_node,
-                             next_node_id, to_document)
+from ..form.document import (FIRST_VERSION, ID_ATTR, MIXING, leaf_config,
+                             leaf_node, next_node_id, set_mixing, to_document)
 from ..form.aggregate import CONCRETE, LOGICAL, SIMULTANEOUS, Aggregate
 from ..form.element import (BEATS, SECONDS, Element, Clang, Generator, Segment,
                             Segments, Vector, to_beats)
@@ -166,6 +166,10 @@ class Editor:
         #: widget id -> element, for every lane (a `/gui_set` of the lane chrome
         #: — the playhead — addresses these).
         self._lanes: dict = {}
+        #: The placement each lane draws, so an edit on its header names the
+        #: window's node rather than the element's -- the rule every other
+        #: edit-back follows.
+        self._lane_members: dict = {}
         #: The last selection swept in this editor's windows, as the crate's
         #: ``Selection`` — ``{"start", "len"}`` in **beats**, plus ``"value"``
         #: where the sweep restricted the value axis and ``"nodes"`` where it
@@ -417,6 +421,7 @@ class Editor:
         self._reset_ids()
         self._clips = {}
         self._lanes = {}
+        self._lane_members = {}
         self._rolls = {}
         self._patches = {}
         self._signals = {}
@@ -617,6 +622,7 @@ class Editor:
         self._reset_ids()
         self._clips = {}
         self._lanes = {}
+        self._lane_members = {}
         self._rolls = {}
         self._signals = {}
         element = self._roll_element
@@ -683,6 +689,7 @@ class Editor:
         self._reset_ids()
         self._clips = {}
         self._lanes = {}
+        self._lane_members = {}
         self._rolls = {}
         self._signals = {}
         element = self._signal_element
@@ -979,6 +986,17 @@ class Editor:
             # operation is handed, so it is kept typed and in the arrangement's
             # own unit, ready for `resolve_selection`.
             self._set_selection(int(args[0]), args[2:])
+            return False
+        if args[1] in MIXING_TAGS:
+            # A lane header's toggle or fader. **The composition's**, so it
+            # goes through the log like a clip's move and survives a save: what
+            # is muted is a fact about the piece, not about the window.
+            return self._apply_mixing(int(args[0]), args[1], args[2:])
+        if args[1] == "height":
+            # A lane's thickness, from Ctrl+wheel. **The view's** -- it says
+            # nothing about what the piece is, no document carries it, and the
+            # host has already resized the lane it was made on. Answered here
+            # so it is deliberately nothing rather than accidentally nothing.
             return False
         if args[1] == "cut":
             return self._apply_cut(int(args[0]), args[2:])
@@ -1660,6 +1678,32 @@ class Editor:
         return Segments(segments, instrument=instrument, controls=controls,
                         name=first.name)
 
+    def _apply_mixing(self, wid: int, tag: str, values) -> bool:
+        """One lane header control onto the element that lane draws.
+
+        Mixing is a leaf's configuration like any other, so it travels the same
+        road: `Configure` replaces the configuration **whole**, which is why it
+        starts from what the element already carries and writes one key over
+        it. That is also what makes it undoable — the inverse is the
+        configuration as it stood, read out of the document rather than
+        remembered here.
+        """
+        element = self._lanes.get(wid)
+        if element is None or not values:
+            return False
+        node = self._node_id(element, self._lane_members.get(wid))
+        if node is None:
+            return False
+        config = leaf_config(element)
+        config[tag] = (float(values[0]) if tag == "level"
+                       else bool(_truthy(values[0])))
+        outcome = self._record({"intent": "configure", "node": node,
+                                "config": config}, f"{tag} the lane")
+        if outcome is None:
+            return False
+        self._project(outcome["effective"])
+        return self._changed(outcome["applied"])
+
     def _apply_points(self, placed, values) -> bool:
         """A curve edited in place on an automation clip (the flat ``"points"``
         payload the `bpf` view also sends): the break-points go back onto the
@@ -1881,7 +1925,7 @@ class Editor:
         if isinstance(element, (Aggregate, Vector)):
             return []
         try:
-            events = flatten(element, 0.0)
+            events = flatten(element, 0.0, mixed=False)
         except (NotImplementedError, TypeError):
             return []
         out = []
@@ -2185,6 +2229,12 @@ class Editor:
         redone document and the edit itself all land here, so the envelope the
         script holds, the buffer it sounds through and the picture cannot
         disagree about which of the three happened."""
+        # **Mixing is every node's**, so it is written before asking what kind
+        # of node this is -- and written whole, like the rest of a
+        # configuration, which is what makes an undo of a mute a mute again
+        # rather than a lane that stays silent.
+        set_mixing(element, config)
+        mixed = bool(set(config) & set(MIXING))
         if isinstance(element, Aggregate):
             # An aggregate's configuration is the writer's own restrictions on
             # it, and for a logical one that is its **declared buses** — the
@@ -2208,7 +2258,9 @@ class Editor:
         auto = _automation(element, self.tempo)
         flat = config.get("points")
         if auto is None or flat is None:
-            return False
+            # Nothing else in the configuration was for this element -- but the
+            # mixing was, and an edit that only mutes a track is still an edit.
+            return mixed
         auto.env = points_to_env(list(flat))
         auto.refill()
         return True
@@ -2682,7 +2734,7 @@ class Editor:
             # timeline, so they are one clip with layered bodies — not a lane of
             # clips that must be dragged one by one.
             return [self._lane([self._clip_for(element, base, owner, member)],
-                               _name(element))]
+                               element, member)]
         if isinstance(element, Aggregate) and element.kind == CONCRETE:
             clips, extra = [], []
             for child in element.handles:
@@ -2691,17 +2743,25 @@ class Editor:
                     extra += self._lanes_for(child.element, child_base, element, child)
                 else:
                     clips.append(self._clip_for(child.element, child_base, element, child))
-            lane = [self._lane(clips, _name(element))] if clips else []
+            lane = [self._lane(clips, element, member)] if clips else []
             return lane + extra
-        return [self._lane([self._clip_for(element, base, owner, member)], _name(element))]
+        return [self._lane([self._clip_for(element, base, owner, member)],
+                           element, member)]
 
-    def _lane(self, clips: list, label: str) -> dict:
-        """One `track` lane holding ``clips``, with the shared time chrome."""
+    def _lane(self, clips: list, element, member=None) -> dict:
+        """One `track` lane holding ``clips``, with the shared time chrome and
+        the **mixing** the element carries.
+
+        The header's toggles and its fader are drawn from the composition, not
+        from the view: what the lane shows is what a reopened document says,
+        and pressing one writes back through the log like every other edit."""
         wid = self._new_id()
-        lane = track(*clips, id=wid, label=label, sample_rate=self.sample_rate,
-                     tempo=self.tempo,
-                     snap=self.beats_to_units(self.quant) if self.quant > 0 else None)
-        self._lanes[wid] = label
+        lane = track(*clips, id=wid, label=_name(element),
+                     sample_rate=self.sample_rate, tempo=self.tempo,
+                     snap=self.beats_to_units(self.quant) if self.quant > 0 else None,
+                     **_lane_mixing(element))
+        self._lanes[wid] = element
+        self._lane_members[wid] = member
         return lane
 
     def _drawn_length(self, element, member) -> float:
@@ -2914,7 +2974,7 @@ class Editor:
         if isinstance(element, (Aggregate, Vector)):
             return []
         try:
-            events = flatten(element, 0.0)
+            events = flatten(element, 0.0, mixed=False)
         except (NotImplementedError, TypeError):
             return []
         notes = []
@@ -2961,7 +3021,7 @@ class Editor:
             # recorded at, which no tempo enters.
             return float(buf.frames) / float(rate)
         try:
-            events = flatten(element, 0.0)
+            events = flatten(element, 0.0, mixed=False)
         except (NotImplementedError, TypeError):
             return 0.0
         return max((beat + _event_dur(item) for beat, item in events), default=0.0)
@@ -3004,6 +3064,11 @@ def _named_bus(value):
     return value if (isinstance(value, str) and value and value != "OUT") else None
 
 
+#: The lane-header edit-backs that are the **composition's**: what a document
+#: carries and a reopened piece gets back. A lane's ``height`` is deliberately
+#: not one of them.
+MIXING_TAGS = tuple(MIXING)
+
 #: The measures a signal view can stack, in the order a reader thinks of them:
 #: what the signal reached, and what it held inside that.
 MEASURES = ("peak", "rms")
@@ -3015,6 +3080,27 @@ def _measure(name: str) -> str:
     if name not in MEASURES:
         raise ValueError(f"unknown measure {name!r} (one of {', '.join(MEASURES)})")
     return name
+
+
+def _truthy(value) -> bool:
+    """An OSC flag as a boolean. The wire carries ``0|1`` as a number, and an
+    older host (or a hand-written test) may spell it as a string."""
+    if isinstance(value, str):
+        return value.strip().lower() not in ("", "0", "false", "off")
+    return bool(value)
+
+
+def _lane_mixing(element) -> dict:
+    """A lane header's controls, read off the composition.
+
+    All three are drawn on every lane rather than only where they differ from
+    the default: a control nothing draws is a control nobody can press, and
+    these are the composition's own — muting a lane has to be possible before
+    a document can remember that it is muted.
+    """
+    return {"mute": bool(getattr(element, "mute", False)),
+            "solo": bool(getattr(element, "solo", False)),
+            "level": float(getattr(element, "level", 1.0))}
 
 
 def _name(element) -> str:

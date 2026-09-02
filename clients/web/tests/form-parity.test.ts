@@ -32,6 +32,7 @@ import {
     Track,
     Vector,
     flatten,
+    sourcesOf,
     toDocument,
     toSession,
 } from "../src/form/index.ts";
@@ -53,7 +54,7 @@ interface Case {
 
 const vectors = JSON.parse(
     await readFile(new URL("./form-vectors.json", here), "utf8"),
-) as { cases: Record<string, Case>; session: unknown };
+) as { cases: Record<string, Case>; session: unknown; sources: Record<string, unknown> };
 
 /** A stand-in for a server buffer: the conversion reads a `bufnum`. */
 const buffer = (bufnum: number): SourceLike => ({ bufnum });
@@ -176,6 +177,37 @@ const cases: Record<string, () => Aggregate> = {
         );
         return piece;
     },
+
+    a_mixed_piece() {
+        const quiet = new Track(
+            new Timeline([[0.0, new SeqEvent({ midinote: 36, dur: 1.0 })]]),
+            null,
+            null,
+            { name: "quiet" },
+        );
+        quiet.mute = true;
+        const lead = new Track(
+            new Timeline([[0.0, new SeqEvent({ midinote: 72, dur: 1.0, amp: 0.5 })]]),
+            null,
+            null,
+            { name: "lead" },
+        );
+        lead.solo = true;
+        lead.level = 0.5;
+        const pad = new Track(
+            new Timeline([[0.0, new SeqEvent({ midinote: 60, dur: 1.0 })]]),
+            null,
+            null,
+            { name: "pad" },
+        );
+        const piece = new Aggregate(
+            [[0.0, quiet], [0.0, lead], [0.0, pad]],
+            "concrete",
+            { name: "mix" },
+        );
+        piece.level = 0.5;
+        return piece;
+    },
 };
 
 for (const [name, build] of Object.entries(cases)) {
@@ -205,4 +237,22 @@ test("a session carries the same document and table", () => {
         },
     });
     assert.deepEqual(session, vectors.session);
+});
+
+test("the source table is built from what the takes hold", () => {
+    // The other half of a session: a buffer read from a file says where it is,
+    // one allocated in this run says it is volatile, and a path inside the
+    // session's own folder is written relative so the pair of files moves
+    // together.
+    const fromFile: SourceLike = { bufnum: 101, path: "/pieces/one/takes/two.wav" };
+    const piece = new Aggregate();
+    piece.add(new Vector(buffer(100), null, 4.0, { instrument: "take" }), 0.0, 4.0);
+    piece.add(new Vector(fromFile, null, 2.0, { instrument: "take" }), 4.0);
+    const table = Object.fromEntries(
+        [...sourcesOf(piece, { folder: "/pieces/one" })].map(([id, entry]) => [
+            String(id),
+            entry,
+        ]),
+    );
+    assert.deepEqual(table, vectors.sources);
 });

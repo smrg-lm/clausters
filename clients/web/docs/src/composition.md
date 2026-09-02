@@ -359,3 +359,81 @@ take that draws nothing and nothing saying why.
 `provenance` is a reference to whatever produced something, carried and never
 interpreted. It is what makes re-generating possible without the format knowing
 how, which is the same rule the opaque generator follows one level down.
+
+The table is not something to keep by hand. `sourcesOf` builds it from the
+arrangement being saved — each take's buffer asked where it is — which is what
+keeps it covering the piece as the piece changes:
+
+```ts
+const session = form.toSession(song, {
+    sources: Object.fromEntries(form.sourcesOf(song, { folder: "pieces/one" })),
+});
+```
+
+A buffer read from a file knows its `path` and is written as that file; one
+allocated in this run is written **volatile** — it existed only while the page
+did, and a session that promised otherwise would reopen with silence where it
+promised samples. A path inside the session's own folder is written relative, so
+the pair of files moves together; one outside it stays absolute, because a
+session never claims to own the user's file.
+
+## Reopening: structures, not a description
+
+`fromSession` rebuilds the tree, and by itself that is half a verb: every take
+comes back as a bare source number and nothing loads it. A **resolver over the
+session's own table** is the other half:
+
+```ts
+const resolve = await form.sessionResolver(saved, { folder, defs });
+const { element, sources } = form.fromSession(saved, { resolve });
+```
+
+Each file the table names is read onto the server **once per source** — two clips
+over one take are two windows onto one buffer, and reading it twice gives them
+two buffers that drift apart on the first edit. A *volatile* source comes back
+frozen rather than as a lie. A file that has moved comes back frozen too, and the
+rest of the piece opens: half a session is worth opening. And a generator whose
+reference `defs` does not have keeps what it last **rendered** as its floor,
+which is the same thing a host with no language attached shows.
+
+Reading a file is asynchronous here and not in the Python client (a page's
+`Buffer.read` goes to the worker that owns the filesystem), so the takes are read
+while the resolver is built and the resolver itself is the same synchronous
+function on both sides — the `await` is the language's, not a different call.
+
+## Mixing is the composition's
+
+Every element carries `mute`, `solo` and `level`, and all three are inherited
+down the tree: muting an aggregate silences its members, one soloed element
+anywhere silences every branch that is not on a soloed path, and a level
+multiplies into the `amp` of the events under it.
+
+```ts
+bassLane.mute = true;
+leadLane.level = 0.5;
+```
+
+They ride in the node's **configuration**, so a piece reopens mixed the way it
+was left, and the editor's lane header is drawing the composition rather than
+remembering something of its own — pressing mute there goes through the log and
+undoes like any other edit. What is *drawn* is read unmixed: a muted lane keeps
+its clips, its notes and its length, because a picture that emptied when the
+toggle was pressed would report silence as absence.
+
+A lane's **height** is the other kind of thing and is in no document. It says
+nothing about what the piece is; resizing a lane (Ctrl+wheel) changes the view
+and no file.
+
+## Where a recording lands
+
+A `Buffer` holds a take and a `RecordingStream` follows one as it is written, and
+neither puts one in a piece. `take` does:
+
+```ts
+song.add(form.take(recorded, null, null, { instrument: "player" }), 8.0);
+```
+
+It is a `Vector` whose length is the samples' own — frames over the rate they
+were recorded at — which is the one line every script used to write by hand.
+Without an `instrument` it is structure: it draws and it extends the piece, and
+it emits no event, which is the `Vector` rule rather than a special case.

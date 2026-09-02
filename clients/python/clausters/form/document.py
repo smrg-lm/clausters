@@ -41,6 +41,8 @@ means. Give each appearance its own element over the same source — two
 `Vector` leaves over one server buffer — until the addressing settles.
 """
 
+import os
+
 from .element import (Vector, Element, Clang, Generator, Segments, Sequence,
                       Track)
 from .aggregate import CONCRETE, LOGICAL, Aggregate
@@ -183,7 +185,185 @@ def from_session(session: dict, *, resolve=None):
             f"({SESSION_FORMAT})"
         )
     sources = {int(k): v for k, v in (session.get("sources") or {}).items()}
-    return from_document(session["document"], resolve=resolve), sources
+    element = from_document(session["document"], resolve=resolve)
+    # A source nothing resolved comes back as a reference, and the table is what
+    # says where it is -- so the reference is given it. Otherwise opening a
+    # session and saving it again wrote every unresolved take as volatile, and
+    # the format lost its own contents on the second save.
+    for source in _source_objects(element):
+        if isinstance(source, FrozenSource):
+            source.locate(sources.get(int(source.bufnum)))
+    return element, sources
+
+
+def session_resolver(session: dict, *, server=None, folder=None, defs=None):
+    """A ``resolve`` for `from_session`, **over the session's own table**.
+
+    `from_session` rebuilds the tree; this is what makes the tree hold
+    something. A document names a source by number and says nothing about where
+    it is — the table says that — so reopening a piece into a running system is
+    two steps, and this is the second one:
+
+    - **A take** (a `Vector` or a `Segments` window) whose source the table
+      locates in a **file** is read onto the server, once per source id no
+      matter how many windows name it: two clips over one take are two windows
+      onto **one** buffer, and reading it twice would give them two buffers
+      that drift apart on the first edit. A source the table calls *volatile*
+      existed only in the run that wrote it, so it comes back as a
+      `FrozenSource` — drawn, placed, silent — rather than as a lie.
+    - **A generator** (or a pattern) is code, and a document carries a
+      *reference* to code and never the code. So it is looked up in ``defs``,
+      and a name nothing supplies is left frozen with whatever it last
+      **rendered** as its floor — which is already the format's contract and is
+      the whole of what a host with no language attached can show.
+
+    Args:
+        session: the session as read (`from_session` takes the same object).
+        server: the `clausters.defs.Server` the takes are read onto; ``None``
+            takes the ambient one, as every other buffer call does.
+        folder: the session file's own folder. A **relative** path in the table
+            is resolved against it, which is what makes a session directory
+            movable; an absolute one names the user's own file and is left
+            exactly as written.
+        defs: what supplies the code a leaf names — a mapping from reference to
+            object, or a callable ``defs(kind, reference)``. Anything it does
+            not have is frozen rather than an error.
+
+    Returns:
+        The resolver, to hand to `from_session`::
+
+            with open(path) as f:
+                data = json.load(f)
+            piece, sources = from_session(
+                data, resolve=session_resolver(data, folder=os.path.dirname(path)))
+    """
+    table = {int(k): v for k, v in (session.get("sources") or {}).items()}
+    # **Read once per source id, before the tree asks.** Two clips over one
+    # take are two windows onto *one* buffer, and resolving each window on its
+    # own would give them two buffers that drift apart on the first edit. The
+    # table covers exactly what the document names (`to_session` refuses one
+    # that does not), so there is nothing here that the piece does not use.
+    buffers = {}
+    for source_id, entry in table.items():
+        location = (entry or {}).get("location") or {}
+        path = location.get("path") if location.get("at") == "file" else None
+        buffers[source_id] = None if not path else _read_take(path, folder, server)
+
+    def resolve(kind, config):
+        config = config or {}
+        if kind == "vector":
+            return buffers.get(int(config.get("source", -1)))
+        reference = config.get(kind) or config.get("generator")
+        if defs is None or not isinstance(reference, str):
+            return None
+        if callable(defs):
+            return defs(kind, reference)
+        return defs.get(reference)
+
+    return resolve
+
+
+def _read_take(path: str, folder, server):
+    """One source's file onto the server, or ``None`` when it cannot be read.
+
+    A missing file is **not** an error here. Half a session is worth opening —
+    the piece still draws, the other lanes still sound, and the element that
+    could not be resolved comes back frozen the way an unresolved generator
+    does. Raising instead would make one moved file the difference between a
+    piece and nothing.
+    """
+    from ..defs.buffer import Buffer
+
+    if folder is not None and not os.path.isabs(path):
+        path = os.path.join(str(folder), path)
+    try:
+        return Buffer.read(path, server=server)
+    except Exception:
+        return None
+
+
+def sources_of(element, *, folder=None) -> dict:
+    """The **source table** for an arrangement, built from what its takes
+    actually hold — the table `to_session` demands and refuses to guess.
+
+    Its error message says to build the table "from the arrangement being
+    saved, each buffer element's current source", and this is that sentence as
+    a function, in one place rather than in every script. Each take's buffer is
+    asked where it is: a `clausters.defs.Buffer` read from a file knows its
+    ``path`` and is written as that file, and one allocated in this run is
+    written as **volatile** — it existed only while the process did, and a
+    session that claimed otherwise would reopen with silence where it promised
+    samples. A `FrozenSource` reports what the document it came from said, so a
+    session opened and saved again keeps every location it was given.
+
+    Args:
+        element: the root being saved.
+        folder: the session file's own folder. A path inside it is written
+            **relative**, which is what makes the pair of files movable
+            together; one outside it stays absolute, because a session must
+            never claim to own the user's own file.
+
+    Returns:
+        ``{source_id: dict}``, ready to hand to `to_session`.
+    """
+    table = {}
+    for source in _source_objects(element):
+        bufnum = int(getattr(source, "bufnum", 0) or 0)
+        entry = {
+            "location": _location_of(source, folder),
+            "lifetime": getattr(source, "lifetime", "session"),
+            "generation": int(getattr(source, "generation", 0) or 0),
+        }
+        for key, attr in (("channels", "channels"), ("frames", "frames"),
+                          ("sample_rate", "sample_rate")):
+            value = getattr(source, attr, None)
+            if value:
+                entry[key] = float(value) if key == "sample_rate" else int(value)
+        table[bufnum] = entry
+    return table
+
+
+def _location_of(source, folder) -> dict:
+    """Where one source's samples are, as the crate's `session::Location`."""
+    path = getattr(source, "path", None)
+    if not isinstance(path, str) or not path:
+        return {"at": "volatile"}
+    if folder:
+        try:
+            inside = os.path.relpath(path, str(folder))
+        except ValueError:
+            inside = None       # a different drive: nothing relative to say
+        if inside is not None and not inside.startswith(os.pardir):
+            path = inside
+    return {"at": "file", "path": path}
+
+
+def _source_objects(element) -> list:
+    """Every take's source in this arrangement, in the order the walk meets
+    them, one entry per source id — a take placed twice is one source."""
+    found: dict = {}
+    stack = [element]
+    while stack:
+        current = stack.pop()
+        for source in _sources_in(current):
+            found.setdefault(int(getattr(source, "bufnum", 0) or 0), source)
+        if isinstance(current, Aggregate):
+            stack += [handle.element for handle in current.handles]
+        elif isinstance(current, Sequence) and isinstance(current.wraps, (list, tuple)):
+            stack += [i for i in current.wraps if isinstance(i, Element)]
+        elif isinstance(current, Generator) and current.rendered is not None:
+            stack.append(current.rendered)
+    return list(found.values())
+
+
+def _sources_in(element) -> list:
+    """The sources one element names itself — a take's buffer, or one per
+    window of a `Segments`."""
+    if isinstance(element, Vector):
+        return [element.wraps] if element.wraps is not None else []
+    if isinstance(element, Segments):
+        return [seg.buffer for seg in element.segments if seg.buffer is not None]
+    return []
 
 
 def from_document(document: dict, *, resolve=None):
@@ -340,7 +520,7 @@ _TEMPORAL = ("id", "name", "onset", "duration", "resident")
 FORM_TRACK = "track"
 
 
-def _body(element, ids: _Ids) -> dict:
+def _kind_body(element, ids: _Ids) -> dict:
     preserved = _preserved(element)
     if preserved is not None:
         # A body this build does not know, on its way back out untouched.
@@ -464,6 +644,55 @@ def _body(element, ids: _Ids) -> dict:
                                 "points": _points_of(element.wraps)}))
 
 
+#: The mixing keys a node's configuration carries, and their defaults. A
+#: configuration is written **whole**, so a key that is not there is the
+#: default -- audible, unsoloed, at unit gain.
+MIXING = {"mute": False, "solo": False, "level": 1.0}
+
+
+def _body(element, ids: _Ids) -> dict:
+    """One element's body — what kind of thing it is — with the **mixing** the
+    composition holds over it laid into its configuration.
+
+    Mute, solo and level go through the same opaque door a leaf's code and a
+    track's restrictions use: the document carries them and never reads them,
+    because what a level *means* is the client's. They ride in the config
+    rather than beside the temporal keys so that `leaf_config` picks them up —
+    a `Configure` intent replaces a configuration whole, and one that started
+    from a config without them would silence-then-unsilence a lane on every
+    curve edit.
+    """
+    body = _kind_body(element, ids)
+    mixing = mixing_of(element)
+    if mixing:
+        config = dict(body.get("config") or {})
+        config.update(mixing)
+        body["config"] = config
+    return body
+
+
+def mixing_of(element) -> dict:
+    """What of `MIXING` this element states — only what differs from the
+    default, so an ordinary element writes no mixing at all and a file written
+    before mixing existed reads back identical."""
+    stated = {}
+    for key, default in MIXING.items():
+        value = getattr(element, key, default)
+        value = float(value) if key == "level" else bool(value)
+        if value != default:
+            stated[key] = value
+    return stated
+
+
+def set_mixing(element, config: dict) -> None:
+    """Write a node's mixing onto the element, **whole**: a key the
+    configuration does not carry is the default, which is the same rule every
+    other `Configure` follows."""
+    element.mute = bool(config.get("mute", False))
+    element.solo = bool(config.get("solo", False))
+    element.level = float(config.get("level", 1.0))
+
+
 def _preserved(element):
     """The raw node a `from_document` kept for a body this build cannot name, or
     ``None`` for an element it understands."""
@@ -540,10 +769,35 @@ class FrozenSource:
     generation the document carried, so a re-conversion is faithful and a caller
     that *can* resolve it does so through ``resolve``."""
 
-    def __init__(self, source: dict):
+    def __init__(self, source: dict, entry: "dict | None" = None):
         self.bufnum = int(source.get("source", 0))
         self.lifetime = source.get("lifetime", "session")
         self.generation = int(source.get("generation", 0))
+        #: What the **session's table** said about this source, when it was read
+        #: from one: where the samples are, and their shape. It is what makes
+        #: opening a session and saving it again keep every location it was
+        #: given -- without it, a piece opened with no resolver (or with one
+        #: that could not read a file) would be written back with every take
+        #: marked volatile, which is a format that loses its own contents on the
+        #: second save.
+        self.path = None
+        self.frames = 0
+        self.channels = 0
+        self.sample_rate = 0.0
+        self.locate(entry)
+
+    def locate(self, entry: "dict | None") -> None:
+        """Take where and what this source is from a session table entry."""
+        if not entry:
+            return
+        location = entry.get("location") or {}
+        if location.get("at") == "file" and location.get("path"):
+            self.path = str(location["path"])
+        self.lifetime = entry.get("lifetime", self.lifetime)
+        self.generation = int(entry.get("generation", self.generation) or 0)
+        self.frames = int(entry.get("frames", 0) or 0)
+        self.channels = int(entry.get("channels", 0) or 0)
+        self.sample_rate = float(entry.get("sample_rate", 0.0) or 0.0)
 
 
 def _source(buffer) -> dict:
@@ -789,6 +1043,9 @@ def _element(node: dict, resolve, *, placed: bool = False):
     built.duration = None if duration is None else float(duration)
     if node.get("resident"):
         built.resident = True
+    # The composition's mixing, restored the way it was written: whole, so a
+    # document that says nothing says the audible default.
+    set_mixing(built, config)
     name = node.get("name")
     if isinstance(name, str) and name:
         # A label, not an identity: it says what the node is and nothing

@@ -505,3 +505,68 @@ def test_an_aggregate_is_locatable_only_if_every_member_is():
     assert g.locatable
     g.add(Element(SeqEvent(instrument="default"), resident=True))
     assert not g.locatable
+
+
+# ---- mixing: what the composition says about being heard ----
+
+def _piece():
+    """Two lanes of one event each, so what is heard is countable."""
+    from clausters.form import Track
+    from clausters.seq import Timeline
+    from clausters.seq.event import Event as SeqEvent
+
+    a = Track(Timeline([(0.0, SeqEvent(midinote=60, dur=1.0, amp=0.5))]), name="a")
+    b = Track(Timeline([(0.0, SeqEvent(midinote=48, dur=1.0, amp=1.0))]), name="b")
+    return Aggregate([(0.0, a), (0.0, b)]), a, b
+
+
+def test_a_muted_branch_contributes_nothing_and_its_members_with_it():
+    from clausters.form import flatten
+
+    piece, a, _b = _piece()
+    assert len(flatten(piece)) == 2
+    a.mute = True
+    assert [item.get("midinote") for _, item in flatten(piece)] == [48]
+    piece.mute = True
+    assert flatten(piece) == [], "muting the piece mutes what is inside it"
+
+
+def test_one_soloed_lane_silences_every_branch_that_is_not_on_a_soloed_path():
+    from clausters.form import flatten
+
+    piece, a, b = _piece()
+    b.solo = True
+    assert [item.get("midinote") for _, item in flatten(piece)] == [48]
+    a.solo = True
+    assert len(flatten(piece)) == 2, "solo says *only these*, and there can be two"
+
+
+def test_a_level_multiplies_into_the_amp_of_what_is_under_it():
+    from clausters.form import flatten
+
+    piece, a, _b = _piece()
+    a.level = 0.5
+    piece.level = 0.5
+    heard = {item.get("midinote"): item.get("amp") for _, item in flatten(piece)}
+    assert heard[60] == pytest.approx(0.125), "0.5 * 0.5 over the event's own 0.5"
+    assert heard[48] == pytest.approx(0.5), "the piece's level alone"
+
+
+def test_a_mix_never_rewrites_the_event_it_measures():
+    from clausters.form import flatten
+
+    piece, a, _b = _piece()
+    a.level = 0.5
+    flatten(piece)
+    assert a.wraps[0][1].get("amp") == 0.5, "the element's own event is shared"
+
+
+def test_drawing_reads_the_composition_unmixed():
+    # A muted lane keeps its clips, its notes and its length: a picture that
+    # emptied when the toggle was pressed would report silence as absence.
+    from clausters.form import flatten
+
+    piece, a, _b = _piece()
+    a.mute = True
+    piece.handles[1].element.solo = True
+    assert len(flatten(piece, mixed=False)) == 2

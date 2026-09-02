@@ -27,6 +27,15 @@ Scope of this phase (the concrete path):
 - An **abstract** element (no onset/duration, no content) contributes context,
   not an event.
 
+**Mixing is part of the composition, and it is honoured here.** An element
+carries `clausters.form.element.Element.mute`, `solo` and `level`, all three
+inherited down the tree: a muted branch contributes nothing, one soloed element
+anywhere silences every branch that is not on a soloed path, and a level
+multiplies into the ``amp`` of the events below it. They travel in the
+document, so a piece reopens mixed the way it was left — unlike a lane's
+*height*, which says nothing about what the piece is and is carried by no
+document.
+
 A `Vector` is *data*: it sounds through the **instrument** that plays it (a def
 whose ``buf`` control takes the buffer number), so a `Vector` with an
 ``instrument`` emits one event playing it — the audio clip — and one without
@@ -43,7 +52,8 @@ from .element import (Element, Generator, Clang, Segments, Sequence, Track,
                       Vector, end_beat, tempo_map_of)
 
 
-def flatten(element, base: float = 0.0, *, tempo: float = 1.0, tempo_map=None) -> list:
+def flatten(element, base: float = 0.0, *, tempo: float = 1.0, tempo_map=None,
+            mixed: bool = True) -> list:
     """Flatten ``element`` into ``(absolute_beat, item)`` pairs, sorted by beat,
     accumulating nested placement offsets onto ``base``. The items are playable
     (they follow the ``play(destination)`` protocol).
@@ -59,14 +69,22 @@ def flatten(element, base: float = 0.0, *, tempo: float = 1.0, tempo_map=None) -
     ``tempo_map`` (the piece's `clausters.base.TempoMap`, the clock's when
     there is one) is what the crossing goes through, so a length in seconds
     lands where it actually ends rather than where a single tempo would put it;
-    ``tempo`` alone is that tempo as one segment."""
+    ``tempo`` alone is that tempo as one segment.
+
+    ``mixed`` is whether the composition's mixing is in force — mute, solo and
+    level, all inherited down the tree. It is on for what sounds and off for
+    what is **drawn**: a muted lane keeps its clips, its notes and its length,
+    and a picture that emptied when the toggle was pressed would be reporting
+    silence as absence."""
     out: list = []
-    _emit(element, float(base), out, tempo_map=tempo_map_of(tempo_map, tempo))
+    _emit(element, float(base), out, tempo_map=tempo_map_of(tempo_map, tempo),
+          mix=_Mix.over(element, mixed))
     out.sort(key=lambda pair: pair[0])
     return out
 
 
-def to_timeline(element, base: float = 0.0, *, tempo: float = 1.0, tempo_map=None):
+def to_timeline(element, base: float = 0.0, *, tempo: float = 1.0, tempo_map=None,
+                mixed: bool = True):
     """Flatten ``element`` into a flat `clausters.seq.Timeline` in absolute
     beats — the structure a `Playhead` plays and a transport seeks. ``tempo``
     is the clock's, in beats per second, and ``tempo_map`` its map when the
@@ -74,7 +92,8 @@ def to_timeline(element, base: float = 0.0, *, tempo: float = 1.0, tempo_map=Non
     from ..seq.timeline import Timeline
 
     timeline = Timeline()
-    for beat, item in flatten(element, base, tempo=tempo, tempo_map=tempo_map):
+    for beat, item in flatten(element, base, tempo=tempo, tempo_map=tempo_map,
+                              mixed=mixed):
         timeline.add(beat, item)
     return timeline
 
@@ -121,9 +140,100 @@ def render_logical(aggregate, server, *, ports=None):
     return NodeGroup.graph(gdef.name, ports, server=server)
 
 
+# ---- mixing: what the composition says about being heard ----
+
+class _Mix:
+    """The mixing in force at one point of the walk: whether anything in the
+    piece is soloed, whether this branch is, and the gain accumulated down to
+    it.
+
+    It is threaded through the walk rather than read off each element because
+    all three are **inherited**: muting an aggregate silences its members, a
+    lane's level multiplies its clips', and one soloed lane anywhere silences
+    every branch that is not on a soloed path. A mute is the one that does not
+    need threading -- it drops the branch where it is met.
+    """
+
+    __slots__ = ("soloing", "soloed", "gain", "honour")
+
+    def __init__(self, soloing: bool, soloed: bool, gain: float,
+                 honour: bool = True):
+        self.soloing = soloing
+        self.soloed = soloed
+        self.gain = gain
+        #: Whether the mix is in force at all. **Drawing reads the composition
+        #: unmixed**: a muted lane still has its clips, its notes and its
+        #: length, and a picture that vanished when the toggle was pressed
+        #: would be reporting silence as absence. So a view flattens with
+        #: ``mixed=False`` and what sounds flattens with the mix.
+        self.honour = honour
+
+    @classmethod
+    def over(cls, element, mixed: bool = True) -> "_Mix":
+        """The mix a whole piece starts under. Solo is piece-wide by
+        definition -- it says *only these* -- so whether anything is soloed is
+        a question about the tree and not about the element being walked."""
+        return cls(mixed and _any_solo(element), False, 1.0, mixed)
+
+    def silences(self, element) -> bool:
+        """Whether this element's branch is dropped outright."""
+        return self.honour and bool(getattr(element, "mute", False))
+
+    def under(self, element) -> "_Mix":
+        """The mix inside ``element``."""
+        if not self.honour:
+            return self
+        level = float(getattr(element, "level", 1.0) or 0.0)
+        soloed = self.soloed or bool(getattr(element, "solo", False))
+        if soloed == self.soloed and level == 1.0:
+            return self
+        return _Mix(self.soloing, soloed, self.gain * level)
+
+    def applied(self, item):
+        """``item`` as it sounds under this mix, or ``None`` when it does not.
+
+        The gain is written onto the event's ``amp`` — a **copy**, since the
+        element's own event is shared and a mix must not rewrite it (the same
+        rule `_sized` follows). Anything that is not an event carries no gain
+        and passes through: an automation curve is a control signal, and
+        scaling one is an edit of the curve rather than a mixer's business.
+        """
+        if not self.honour:
+            return item
+        if self.soloing and not self.soloed:
+            return None
+        if self.gain == 1.0:
+            return item
+        from ..seq.event import Event as SeqEvent
+
+        if not isinstance(item, SeqEvent):
+            return item
+        return SeqEvent({**item, "amp": self.gain * float(item.get("amp", 1.0))})
+
+
+def _any_solo(element) -> bool:
+    """Whether anything in this tree is soloed."""
+    if getattr(element, "solo", False):
+        return True
+    if isinstance(element, Aggregate):
+        return any(_any_solo(handle.element) for handle in element.handles)
+    if isinstance(element, Generator) and getattr(element, "rendered", None) is not None:
+        return _any_solo(element.rendered)
+    if isinstance(element, Sequence) and isinstance(element.wraps, (list, tuple)):
+        return any(_any_solo(i) for i in element.wraps if isinstance(i, Element))
+    return False
+
+
+def _heard(out: list, beat: float, item, mix: _Mix):
+    """Lay one item down at ``beat``, if this mix lets it be heard."""
+    item = mix.applied(item)
+    if item is not None:
+        out.append((beat, item))
+
+
 # ---- the flatten dispatch ----
 
-def _emit(element, base: float, out: list, dur=None, *, tempo_map):
+def _emit(element, base: float, out: list, dur=None, *, tempo_map, mix: _Mix):
     """Flatten ``element`` at ``base``, honouring the **placement length** its
     aggregate gave it: a placement ``dur`` *trims* what the element plays (the DAW
     rule — a clip's length is what you hear of it), so events past the placement's
@@ -133,8 +243,14 @@ def _emit(element, base: float, out: list, dur=None, *, tempo_map):
     The placement's length is in the placed element's own unit — a clip of audio
     is trimmed in seconds — so it crosses to beats here, once, against the
     element it was written for."""
+    if mix.silences(element):
+        # A muted branch contributes nothing -- not its own events and not its
+        # members'. It is the one part of the mix that needs no threading: it
+        # is answered where it is met.
+        return
+    mix = mix.under(element)
     placed: list = []
-    _emit_element(element, base, placed, tempo_map)
+    _emit_element(element, base, placed, tempo_map, mix)
     if dur is not None:
         # The placement's end, not its length turned into one: under a tempo
         # that changes, a length in seconds reaches a different beat depending
@@ -157,7 +273,7 @@ def _sized(item, dur: float):
     return item
 
 
-def _emit_element(element, base: float, out: list, tempo_map):
+def _emit_element(element, base: float, out: list, tempo_map, mix: _Mix):
     if isinstance(element, Aggregate):
         if element.kind != CONCRETE:
             raise NotImplementedError(
@@ -165,14 +281,14 @@ def _emit_element(element, base: float, out: list, tempo_map):
             )
         for member in element.handles:
             _emit(member.element, base + member.offset, out, member.dur,
-                  tempo_map=tempo_map)
+                  tempo_map=tempo_map, mix=mix)
     elif isinstance(element, Track):
         for beat, item in element.wraps:
-            out.append((base + beat, item))
+            _heard(out, base + beat, item, mix)
     elif isinstance(element, Clang):
-        out.append((base, element.wraps))
+        _heard(out, base, element.wraps, mix)
     elif isinstance(element, (Sequence, Generator)):
-        _emit_sequence(element.wraps, base, out, tempo_map)
+        _emit_sequence(element.wraps, base, out, tempo_map, mix)
     elif isinstance(element, Segments):
         # Several windows read as one thing: one event per segment, each at its
         # own offset inside the element and each carrying its own window, so
@@ -180,18 +296,18 @@ def _emit_element(element, base: float, out: list, tempo_map):
         # Without an instrument it is structure, exactly as a `Vector` is.
         if element.instrument is not None:
             for offset, event in element.to_events(tempo_map, base):
-                out.append((base + offset, event))
+                _heard(out, base + offset, event, mix)
     elif isinstance(element, Vector):
         # A buffer is data; the instrument is what makes it sound (a def whose
         # `buf` control plays it). Without one it is structure only — it draws in
         # the editor and contributes its extent, but emits no event.
         if element.instrument is not None:
-            out.append((base, element.to_event(tempo_map, base)))
+            _heard(out, base, element.to_event(tempo_map, base), mix)
     elif isinstance(element, Element):
         if element.wraps is None:
             return  # an abstract context element yields no event
         if hasattr(element.wraps, "play"):
-            out.append((base, element.wraps))
+            _heard(out, base, element.wraps, mix)
         else:
             raise NotImplementedError(
                 f"cannot render an element wrapping {type(element.wraps).__name__}"
@@ -200,7 +316,7 @@ def _emit_element(element, base: float, out: list, tempo_map):
         raise TypeError(f"not an Element: {element!r}")
 
 
-def _emit_sequence(wrapped, base: float, out: list, tempo_map):
+def _emit_sequence(wrapped, base: float, out: list, tempo_map, mix: _Mix):
     """A List/Function backed by an event pattern is bounced; a list of elements
     is laid out successively by their durations."""
     from ..seq.pattern import Pattern
@@ -216,10 +332,10 @@ def _emit_sequence(wrapped, base: float, out: list, tempo_map):
         return
     if isinstance(wrapped, Pattern):
         for beat, item in Timeline.from_pattern(wrapped):
-            out.append((base + beat, item))
+            _heard(out, base + beat, item, mix)
     elif isinstance(wrapped, Timeline):
         for beat, item in wrapped:
-            out.append((base + beat, item))
+            _heard(out, base + beat, item, mix)
     elif hasattr(wrapped, "play"):
         # Something that plays itself -- an automation curve, and whatever else a
         # script hands over. The conversion writes every element it has no body
@@ -227,7 +343,7 @@ def _emit_sequence(wrapped, base: float, out: list, tempo_map):
         # `Generator` where the author wrote a bare `Element`; the two must play
         # the same thing or a reopened piece would sound different from the one
         # that was saved.
-        out.append((base, wrapped))
+        _heard(out, base, wrapped, mix)
     elif not isinstance(wrapped, (list, tuple)):
         # **A def is not a list of elements.** A generator wrapping a `SynthDef`
         # is a *resident* one -- the server produces its audio, and there is
@@ -245,7 +361,7 @@ def _emit_sequence(wrapped, base: float, out: list, tempo_map):
                 raise NotImplementedError(
                     "a Sequence of raw values is data (a parameter), not events"
                 )
-            _emit(item, cursor, out, tempo_map=tempo_map)
+            _emit(item, cursor, out, tempo_map=tempo_map, mix=mix)
             # Laid out successively on the beat axis, so each length crosses
             # from whatever unit its own data is in.
             cursor = end_beat(cursor, item.duration or 0.0,

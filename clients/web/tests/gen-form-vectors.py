@@ -31,7 +31,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "python"))
 
 from clausters.form import (  # noqa: E402
     Aggregate, Clang, Element, Generator, Segments, Sequence, Track, Vector,
-    flatten, to_document, to_session,
+    flatten, sources_of, to_document, to_session,
 )
 from clausters.seq.automation import Automation  # noqa: E402
 from clausters.seq import Event as SeqEvent  # noqa: E402
@@ -128,6 +128,26 @@ def a_curve_on_its_event():
     return piece
 
 
+def a_mixed_piece():
+    """The composition's own mixing: a muted lane, a soloed one, and a level.
+
+    Both halves travel — the document (mixing rides in the node's configuration,
+    and what is at its default states nothing) and the flattened timeline (one
+    solo anywhere silences every branch that is not on a soloed path, and a
+    level multiplies into the event's `amp`). A lane's *height* appears in
+    neither, which is the other half of the same decision.
+    """
+    quiet = Track(Timeline([(0.0, SeqEvent(midinote=36, dur=1.0))]), name="quiet")
+    quiet.mute = True
+    lead = Track(Timeline([(0.0, SeqEvent(midinote=72, dur=1.0, amp=0.5))]), name="lead")
+    lead.solo = True
+    lead.level = 0.5
+    pad = Track(Timeline([(0.0, SeqEvent(midinote=60, dur=1.0))]), name="pad")
+    piece = Aggregate([(0.0, quiet), (0.0, lead), (0.0, pad)], name="mix")
+    piece.level = 0.5
+    return piece
+
+
 #: (name, builder). Each is built twice — once here, once in TypeScript.
 CASES = [
     ("a_piece", a_piece),
@@ -136,6 +156,7 @@ CASES = [
     ("a_window", a_window),
     ("a_frozen_generator", a_frozen_generator),
     ("a_curve_on_its_event", a_curve_on_its_event),
+    ("a_mixed_piece", a_mixed_piece),
 ]
 
 
@@ -170,8 +191,21 @@ def main():
         100: {"location": "takes/one.wav", "lifetime": "session", "generation": 0},
     })
 
+    # And the table built from what the takes hold, which is the other half of
+    # a session: a buffer read from a file says where it is, one allocated in
+    # this run says it is volatile, and a path inside the session's own folder
+    # is written relative so the pair of files moves together.
+    from_file = Buffer(101)
+    from_file.path = "/pieces/one/takes/two.wav"
+    table = Aggregate()
+    table.add(take, offset=0.0, dur=4.0)
+    table.add(Vector(from_file, duration=2.0, instrument="take"), offset=4.0)
+    sources = {str(k): v for k, v in
+               sources_of(table, folder="/pieces/one").items()}
+
     path = pathlib.Path(__file__).with_name("form-vectors.json")
-    path.write_text(json.dumps({"cases": cases, "session": session}, indent=1) + "\n")
+    path.write_text(json.dumps({"cases": cases, "session": session,
+                                "sources": sources}, indent=1) + "\n")
     print(f"wrote {path}")
 
 

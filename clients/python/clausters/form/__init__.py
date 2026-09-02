@@ -30,6 +30,7 @@ from .element import (
     Sequence,
     Track,
     Vector,
+    take,
     temporal_character,
     to_beats,
 )
@@ -41,8 +42,9 @@ from .aggregate import (
     SUCCESSIVE,
     Aggregate,
 )
-from .document import (FIRST_VERSION, SESSION_FORMAT, from_document,
-                       from_session, to_document, to_session)
+from .document import (FIRST_VERSION, MIXING, SESSION_FORMAT, from_document,
+                       from_session, session_resolver, sources_of, to_document,
+                       to_session)
 from .render import flatten, render, render_logical, to_timeline
 
 __all__ = [
@@ -53,9 +55,13 @@ __all__ = [
     "SESSION_FORMAT",
     "to_session",
     "from_session",
+    "session_resolver",
+    "sources_of",
+    "MIXING",
     "Clang",
     "Sequence",
     "Vector",
+    "take",
     "Segment",
     "Segments",
     "Track",

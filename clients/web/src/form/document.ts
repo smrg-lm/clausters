@@ -261,7 +261,210 @@ export function fromSession(
     for (const [key, value] of Object.entries(session.sources ?? {})) {
         sources.set(Number(key), value);
     }
-    return { element: fromDocument(session.document, { resolve }), sources };
+    const element = fromDocument(session.document, { resolve });
+    // A source nothing resolved comes back as a reference, and the table is what
+    // says where it is — so the reference is given it. Otherwise opening a
+    // session and saving it again wrote every unresolved take as volatile, and
+    // the format lost its own contents on the second save.
+    for (const src of sourceObjects(element)) {
+        if (src instanceof FrozenSource) {
+            src.locate((sources.get(src.bufnum) ?? null) as DocNode | null);
+        }
+    }
+    return { element, sources };
+}
+
+/**
+ * A `resolve` for {@link fromSession}, **over the session's own table**.
+ *
+ * {@link fromSession} rebuilds the tree; this is what makes the tree hold
+ * something. A document names a source by number and says nothing about where it
+ * is — the table says that — so reopening a piece into a running system is two
+ * steps, and this is the second one:
+ *
+ * - **A take** (a `Vector` or a `Segments` window) whose source the table
+ *   locates in a **file** is read onto the server, once per source id no matter
+ *   how many windows name it: two clips over one take are two windows onto
+ *   **one** buffer, and reading it twice would give them two buffers that drift
+ *   apart on the first edit. A source the table calls *volatile* existed only in
+ *   the run that wrote it, so it comes back as a {@link FrozenSource} — drawn,
+ *   placed, silent — rather than as a lie.
+ * - **A generator** (or a pattern) is code, and a document carries a *reference*
+ *   to code and never the code. So it is looked up in `defs`, and a name nothing
+ *   supplies is left frozen with whatever it last **rendered** as its floor —
+ *   which is already the format's contract and is the whole of what a host with
+ *   no language attached can show.
+ *
+ * `folder` is the session file's own folder: a **relative** path in the table is
+ * resolved against it, which is what makes a session directory movable, and an
+ * absolute one names the user's own file and is left exactly as written. `defs`
+ * is what supplies the code a leaf names — a record from reference to object, or
+ * a `defs(kind, reference)` — and anything it does not have is frozen rather
+ * than an error.
+ *
+ * Reading a file is asynchronous here and not in the Python client (a page's
+ * `Buffer.read` goes to the worker that owns the filesystem), so the *takes are
+ * read while the resolver is built* and the resolver itself is the same
+ * synchronous function on both sides — the `await` is the language's, not a
+ * different call:
+ *
+ * ```ts
+ * const resolve = await sessionResolver(data, { folder });
+ * const { element, sources } = fromSession(data, { resolve });
+ * ```
+ */
+export async function sessionResolver(
+    session: SessionJson,
+    { server = null, folder = null, defs = null }: SessionResolverOptions = {},
+): Promise<Resolver> {
+    const table = new Map<number, DocNode>();
+    for (const [key, value] of Object.entries(session.sources ?? {})) {
+        table.set(Number(key), (value ?? {}) as DocNode);
+    }
+    // **Read once per source id, before the tree asks.** The table covers
+    // exactly what the document names (`toSession` refuses one that does not),
+    // so there is nothing here that the piece does not use.
+    const buffers = new Map<number, SourceLike | null>();
+    for (const [sourceId, entry] of table) {
+        const location = (entry.location as DocNode) ?? {};
+        const path = location.at === "file" ? String(location.path ?? "") : "";
+        buffers.set(sourceId, path ? await readTake(path, folder, server) : null);
+    }
+    return (kind: string, config: unknown): unknown => {
+        const src = (config ?? {}) as DocNode;
+        if (kind === "vector") {
+            return buffers.get(Math.trunc(Number(src.source ?? -1))) ?? null;
+        }
+        const reference = src[kind] ?? src.generator;
+        if (defs === null || typeof reference !== "string") return null;
+        if (typeof defs === "function") return defs(kind, reference);
+        return defs[reference] ?? null;
+    };
+}
+
+/** What {@link sessionResolver} needs to turn a table into things. */
+export interface SessionResolverOptions {
+    /** The server the takes are read onto; `null` takes the ambient one. */
+    server?: unknown;
+    /** The session file's own folder, a relative path is resolved against it. */
+    folder?: string | null;
+    /** What supplies the code a leaf names. */
+    defs?: Record<string, unknown> | ((kind: string, reference: string) => unknown) | null;
+}
+
+/**
+ * One source's file onto the server, or `null` when it cannot be read.
+ *
+ * A missing file is **not** an error here. Half a session is worth opening — the
+ * piece still draws, the other lanes still sound, and the element that could not
+ * be resolved comes back frozen the way an unresolved generator does. Throwing
+ * instead would make one moved file the difference between a piece and nothing.
+ */
+async function readTake(
+    path: string,
+    folder: string | null,
+    server: unknown,
+): Promise<SourceLike | null> {
+    const { Buffer } = await import("../defs/buffer.ts");
+    const full = folder && !path.startsWith("/") ? `${folder}/${path}` : path;
+    try {
+        return await Buffer.read(full, { server: server as never });
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * The **source table** for an arrangement, built from what its takes actually
+ * hold — the table {@link toSession} demands and refuses to guess.
+ *
+ * Its error message says to build the table "from the arrangement being saved,
+ * each buffer element's current source", and this is that sentence as a
+ * function, in one place rather than in every script. Each take's buffer is
+ * asked where it is: a `Buffer` read from a file knows its `path` and is written
+ * as that file, and one allocated in this run is written as **volatile** — it
+ * existed only while the page did, and a session that claimed otherwise would
+ * reopen with silence where it promised samples. A {@link FrozenSource} reports
+ * what the document it came from said, so a session opened and saved again keeps
+ * every location it was given.
+ *
+ * `folder` is the session file's own folder: a path inside it is written
+ * **relative**, which is what makes the pair of files movable together, and one
+ * outside it stays absolute, because a session must never claim to own the
+ * user's own file.
+ */
+export function sourcesOf(
+    element: Element,
+    { folder = null }: { folder?: string | null } = {},
+): Map<number, DocNode> {
+    const table = new Map<number, DocNode>();
+    for (const src of sourceObjects(element)) {
+        const entry: DocNode = {
+            location: locationOf(src, folder),
+            lifetime: src.lifetime ?? "session",
+            generation: Math.trunc(Number(src.generation ?? 0)),
+        };
+        if (src.channels) entry.channels = Math.trunc(Number(src.channels));
+        if (src.frames) entry.frames = Math.trunc(Number(src.frames));
+        if (src.sampleRate) entry.sample_rate = Number(src.sampleRate);
+        table.set(Math.trunc(Number(src.bufnum ?? 0)) || 0, entry);
+    }
+    return table;
+}
+
+/** Where one source's samples are, as the crate's `session::Location`. */
+function locationOf(src: SourceLike, folder: string | null): DocNode {
+    const path = src.path;
+    if (typeof path !== "string" || !path) return { at: "volatile" };
+    if (folder) {
+        const base = folder.endsWith("/") ? folder : `${folder}/`;
+        if (path.startsWith(base)) return { at: "file", path: path.slice(base.length) };
+    }
+    return { at: "file", path };
+}
+
+/**
+ * Every take's source in this arrangement, in the order the walk meets them, one
+ * entry per source id — a take placed twice is one source.
+ */
+function sourceObjects(element: Element): SourceLike[] {
+    const found = new Map<number, SourceLike>();
+    const stack: Element[] = [element];
+    while (stack.length > 0) {
+        const current = stack.pop() as Element;
+        for (const src of sourcesIn(current)) {
+            const id = Math.trunc(Number(src.bufnum ?? 0)) || 0;
+            if (!found.has(id)) found.set(id, src);
+        }
+        if (current instanceof Aggregate) {
+            for (const handle of current.handles) stack.push(handle.element);
+        } else if (current instanceof Sequence && Array.isArray(current.wraps)) {
+            for (const item of current.wraps) {
+                if (item instanceof Element) stack.push(item);
+            }
+        } else if (current instanceof Generator && current.rendered !== null) {
+            stack.push(current.rendered);
+        }
+    }
+    return [...found.values()];
+}
+
+/**
+ * The sources one element names itself — a take's buffer, or one per window of a
+ * `Segments`.
+ */
+function sourcesIn(element: Element): SourceLike[] {
+    if (element instanceof Vector) {
+        return element.wraps === null || element.wraps === undefined
+            ? []
+            : [element.wraps as SourceLike];
+    }
+    if (element instanceof Segments) {
+        return element.segments
+            .filter((seg) => seg.buffer !== null && seg.buffer !== undefined)
+            .map((seg) => seg.buffer);
+    }
+    return [];
 }
 
 /**
@@ -430,7 +633,7 @@ const TEMPORAL = new Set(["id", "name", "onset", "duration", "resident"]);
  */
 export const FORM_TRACK = "track";
 
-function body(element: Element, ids: Ids): DocNode {
+function kindBody(element: Element, ids: Ids): DocNode {
     const kept = preserved(element);
     if (kept !== null) {
         // A body this build does not know, on its way back out untouched.
@@ -664,6 +867,61 @@ function timelineItems(timeline: unknown): [number, unknown][] {
 }
 
 /**
+ * The mixing keys a node's configuration carries, and their defaults. A
+ * configuration is written **whole**, so a key that is not there is the default
+ * — audible, unsoloed, at unit gain.
+ */
+export const MIXING: Record<string, boolean | number> = {
+    mute: false,
+    solo: false,
+    level: 1.0,
+};
+
+/**
+ * One element's body — what kind of thing it is — with the **mixing** the
+ * composition holds over it laid into its configuration.
+ *
+ * Mute, solo and level go through the same opaque door a leaf's code and a
+ * track's restrictions use: the document carries them and never reads them,
+ * because what a level *means* is the client's. They ride in the config rather
+ * than beside the temporal keys so that {@link leafConfig} picks them up — a
+ * `Configure` intent replaces a configuration whole, and one that started from a
+ * config without them would silence-then-unsilence a lane on every curve edit.
+ */
+function body(element: Element, ids: Ids): DocNode {
+    const out = kindBody(element, ids);
+    const mixing = mixingOf(element);
+    if (Object.keys(mixing).length > 0) {
+        out.config = { ...((out.config as DocNode) ?? {}), ...mixing };
+    }
+    return out;
+}
+
+/**
+ * What of {@link MIXING} this element states — only what differs from the
+ * default, so an ordinary element writes no mixing at all and a file written
+ * before mixing existed reads back identical.
+ */
+export function mixingOf(element: Element): DocNode {
+    const stated: DocNode = {};
+    if (element.mute) stated.mute = true;
+    if (element.solo) stated.solo = true;
+    if (Number(element.level) !== 1.0) stated.level = Number(element.level);
+    return stated;
+}
+
+/**
+ * Writes a node's mixing onto the element, **whole**: a key the configuration
+ * does not carry is the default, which is the same rule every other `Configure`
+ * follows.
+ */
+export function setMixing(element: Element, config: DocNode): void {
+    element.mute = Boolean(config?.mute ?? false);
+    element.solo = Boolean(config?.solo ?? false);
+    element.level = Number(config?.level ?? 1.0);
+}
+
+/**
  * A source a document names and this process does not hold.
  *
  * A `Vector` element wraps a `Buffer`; reading a document written elsewhere (or
@@ -675,13 +933,38 @@ function timelineItems(timeline: unknown): [number, unknown][] {
  */
 export class FrozenSource implements SourceLike {
     readonly bufnum: number;
-    readonly lifetime: string;
-    readonly generation: number;
+    lifetime: string;
+    generation: number;
+    /**
+     * What the **session's table** said about this source, when it was read from
+     * one: where the samples are, and their shape. It is what makes opening a
+     * session and saving it again keep every location it was given — without it,
+     * a piece opened with no resolver (or with one that could not read a file)
+     * would be written back with every take marked volatile, which is a format
+     * that loses its own contents on the second save.
+     */
+    path: string | null = null;
+    frames = 0;
+    channels = 0;
+    sampleRate = 0;
 
-    constructor(src: DocNode) {
+    constructor(src: DocNode, entry: DocNode | null = null) {
         this.bufnum = Math.trunc(Number(src?.source ?? 0));
         this.lifetime = String(src?.lifetime ?? "session");
         this.generation = Math.trunc(Number(src?.generation ?? 0));
+        this.locate(entry);
+    }
+
+    /** Takes where and what this source is from a session table entry. */
+    locate(entry: DocNode | null | undefined): void {
+        if (!entry) return;
+        const location = (entry.location as DocNode) ?? {};
+        if (location.at === "file" && location.path) this.path = String(location.path);
+        this.lifetime = String(entry.lifetime ?? this.lifetime);
+        this.generation = Math.trunc(Number(entry.generation ?? this.generation)) || 0;
+        this.frames = Math.trunc(Number(entry.frames ?? 0)) || 0;
+        this.channels = Math.trunc(Number(entry.channels ?? 0)) || 0;
+        this.sampleRate = Number(entry.sample_rate ?? 0) || 0;
     }
 }
 
@@ -987,6 +1270,9 @@ function fromNode(src: DocNode, resolve: Resolver | null, placed = false): Eleme
     built.onset = onset === null ? null : Number(onset);
     built.duration = duration === null ? null : Number(duration);
     if (src.resident) built.resident = true;
+    // The composition's mixing, restored the way it was written: whole, so a
+    // document that says nothing says the audible default.
+    setMixing(built, config);
     const name = src.name;
     if (typeof name === "string" && name) {
         // A label, not an identity: it says what the node is and nothing

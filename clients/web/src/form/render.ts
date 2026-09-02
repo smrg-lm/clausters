@@ -22,6 +22,14 @@
 // - An **abstract** element (no onset/duration, no content) contributes context,
 //   not an event.
 //
+// **Mixing is part of the composition, and it is honoured here.** An element
+// carries `mute`, `solo` and `level`, all three inherited down the tree: a muted
+// branch contributes nothing, one soloed element anywhere silences every branch
+// that is not on a soloed path, and a level multiplies into the `amp` of the
+// events below it. They travel in the document, so a piece reopens mixed the way
+// it was left — unlike a lane's *height*, which says nothing about what the
+// piece is and is carried by no document.
+//
 // A `Vector` is *data*: it sounds through the **instrument** that plays it (a
 // def whose `buf` control takes the buffer number), so a `Vector` with an
 // `instrument` emits one event playing it — the audio clip — and one without
@@ -87,15 +95,23 @@ export type RenderResult = Playhead | Promise<Group>;
  * conversion belongs to the flattening and never to the structure. At the
  * default tempo of one beat a second the two coincide, which is what a script
  * that never set a tempo has always been running under.
+ *
+ * `mixed` is whether the composition's mixing is in force — mute, solo and
+ * level, all inherited down the tree. It is on for what sounds and off for what
+ * is **drawn**: a muted lane keeps its clips, its notes and its length, and a
+ * picture that emptied when the toggle was pressed would be reporting silence as
+ * absence.
  */
 export function flatten(
     element: Element,
     base = 0.0,
     tempo = 1.0,
     tempoMap?: TempoMap | null,
+    mixed = true,
 ): Flat[] {
     const out: Flat[] = [];
-    emit(element, Number(base), out, null, tempoMapOf(tempoMap, Number(tempo)));
+    emit(element, Number(base), out, null, tempoMapOf(tempoMap, Number(tempo)),
+        Mix.over(element, mixed));
     // A stable sort (the language guarantees one), which is what keeps a
     // note-off before the re-trigger placed at the same beat.
     out.sort((a, b) => a[0] - b[0]);
@@ -112,9 +128,12 @@ export function toTimeline(
     base = 0.0,
     tempo = 1.0,
     tempoMap?: TempoMap | null,
+    mixed = true,
 ): Timeline {
     const timeline = new Timeline();
-    for (const [beat, item] of flatten(element, base, tempo, tempoMap)) timeline.add(beat, item);
+    for (const [beat, item] of flatten(element, base, tempo, tempoMap, mixed)) {
+        timeline.add(beat, item);
+    }
     return timeline;
 }
 
@@ -195,15 +214,118 @@ export async function renderLogical(
  * is trimmed in seconds — so it crosses to beats here, once, against the element
  * it was written for.
  */
+/**
+ * The mixing in force at one point of the walk: whether anything in the piece is
+ * soloed, whether this branch is, and the gain accumulated down to it.
+ *
+ * It is threaded through the walk rather than read off each element because all
+ * three are **inherited**: muting an aggregate silences its members, a lane's
+ * level multiplies its clips', and one soloed lane anywhere silences every
+ * branch that is not on a soloed path. A mute is the one that does not need
+ * threading — it drops the branch where it is met.
+ */
+class Mix {
+    readonly soloing: boolean;
+    readonly soloed: boolean;
+    readonly gain: number;
+    /**
+     * Whether the mix is in force at all. **Drawing reads the composition
+     * unmixed**: a muted lane still has its clips, its notes and its length, and
+     * a picture that vanished when the toggle was pressed would be reporting
+     * silence as absence.
+     */
+    readonly honour: boolean;
+
+    constructor(soloing: boolean, soloed: boolean, gain: number, honour: boolean) {
+        this.soloing = soloing;
+        this.soloed = soloed;
+        this.gain = gain;
+        this.honour = honour;
+    }
+
+    /**
+     * The mix a whole piece starts under. Solo is piece-wide by definition — it
+     * says *only these* — so whether anything is soloed is a question about the
+     * tree and not about the element being walked.
+     */
+    static over(element: Element, mixed: boolean): Mix {
+        return new Mix(mixed && anySolo(element), false, 1.0, mixed);
+    }
+
+    /** Whether this element's branch is dropped outright. */
+    silences(element: Element): boolean {
+        return this.honour && Boolean(element.mute);
+    }
+
+    /** The mix inside `element`. */
+    under(element: Element): Mix {
+        if (!this.honour) return this;
+        const level = Number(element.level ?? 1.0);
+        const soloed = this.soloed || Boolean(element.solo);
+        if (soloed === this.soloed && level === 1.0) return this;
+        return new Mix(this.soloing, soloed, this.gain * level, true);
+    }
+
+    /**
+     * `item` as it sounds under this mix, or `null` when it does not.
+     *
+     * The gain is written onto the event's `amp` — a **copy**, since the
+     * element's own event is shared and a mix must not rewrite it (the same rule
+     * {@link sized} follows). Anything that is not an event carries no gain and
+     * passes through: an automation curve is a control signal, and scaling one
+     * is an edit of the curve rather than a mixer's business.
+     */
+    applied(item: unknown): unknown {
+        if (!this.honour) return item;
+        if (this.soloing && !this.soloed) return null;
+        if (this.gain === 1.0) return item;
+        if (!(item instanceof SeqEvent)) return item;
+        const amp = item.get("amp");
+        return new SeqEvent({
+            ...item.props,
+            amp: this.gain * Number(amp ?? 1.0),
+        });
+    }
+}
+
+/** Whether anything in this tree is soloed. */
+function anySolo(element: Element): boolean {
+    if (element.solo) return true;
+    if (element instanceof Aggregate) {
+        return element.handles.some((handle) => anySolo(handle.element));
+    }
+    if (element instanceof Generator && element.rendered !== null) {
+        return anySolo(element.rendered);
+    }
+    if (element instanceof Sequence && Array.isArray(element.wraps)) {
+        return element.wraps.some((item) => item instanceof Element && anySolo(item));
+    }
+    return false;
+}
+
+/** Lays one item down at `beat`, if this mix lets it be heard. */
+function heard(out: Flat[], beat: number, item: unknown, mix: Mix): void {
+    const played = mix.applied(item);
+    if (played !== null) out.push([beat, played]);
+}
+
 function emit(
     element: Element,
     base: number,
     out: Flat[],
     dur: number | null = null,
     tempoMap: TempoMap,
+    mix: Mix,
 ): void {
+    if (mix.silences(element)) {
+        // A muted branch contributes nothing — not its own events and not its
+        // members'. It is the one part of the mix that needs no threading: it is
+        // answered where it is met.
+        return;
+    }
+    const inner = mix.under(element);
     let placed: Flat[] = [];
-    emitElement(element, base, placed, tempoMap);
+    emitElement(element, base, placed, tempoMap, inner);
     if (dur !== null) {
         // The placement's end, not its length turned into one: under a tempo
         // that changes, a length in seconds reaches a different beat depending
@@ -229,7 +351,13 @@ function sized(item: unknown, dur: number): unknown {
     return item;
 }
 
-function emitElement(element: Element, base: number, out: Flat[], tempoMap: TempoMap): void {
+function emitElement(
+    element: Element,
+    base: number,
+    out: Flat[],
+    tempoMap: TempoMap,
+    mix: Mix,
+): void {
     if (element instanceof Aggregate) {
         if (element.kind !== CONCRETE) {
             throw new Error(
@@ -237,14 +365,14 @@ function emitElement(element: Element, base: number, out: Flat[], tempoMap: Temp
             );
         }
         for (const member of element.handles) {
-            emit(member.element, base + member.offset, out, member.dur, tempoMap);
+            emit(member.element, base + member.offset, out, member.dur, tempoMap, mix);
         }
     } else if (element instanceof Track) {
-        for (const [beat, item] of element.timeline) out.push([base + beat, item]);
+        for (const [beat, item] of element.timeline) heard(out, base + beat, item, mix);
     } else if (element instanceof Clang) {
-        out.push([base, element.wraps]);
+        heard(out, base, element.wraps, mix);
     } else if (element instanceof Sequence || element instanceof Generator) {
-        emitSequence(element.wraps, base, out, tempoMap);
+        emitSequence(element.wraps, base, out, tempoMap, mix);
     } else if (element instanceof Segments) {
         // Several windows read as one thing: one event per segment, each at its
         // own offset inside the element and each carrying its own window, so
@@ -252,19 +380,21 @@ function emitElement(element: Element, base: number, out: Flat[], tempoMap: Temp
         // Without an instrument it is structure, exactly as a `Vector` is.
         if (element.instrument !== null) {
             for (const [offset, event] of element.toEvents(tempoMap, base)) {
-                out.push([base + offset, event]);
+                heard(out, base + offset, event, mix);
             }
         }
     } else if (element instanceof Vector) {
         // A buffer is data; the instrument is what makes it sound (a def whose
         // `buf` control plays it). Without one it is structure only — it draws
         // in the editor and contributes its extent, but emits no event.
-        if (element.instrument !== null) out.push([base, element.toEvent(tempoMap, base)]);
+        if (element.instrument !== null) {
+            heard(out, base, element.toEvent(tempoMap, base), mix);
+        }
     } else if (element instanceof Element) {
         // An abstract context element yields no event.
         if (element.wraps === null) return;
         if (typeof (element.wraps as { play?: unknown }).play === "function") {
-            out.push([base, element.wraps]);
+            heard(out, base, element.wraps, mix);
         } else {
             throw new Error(
                 "cannot render an element wrapping " +
@@ -280,7 +410,13 @@ function emitElement(element: Element, base: number, out: Flat[], tempoMap: Temp
  * A List/Function backed by an event pattern is bounced; a list of elements is
  * laid out successively by their durations.
  */
-function emitSequence(wrapped: unknown, base: number, out: Flat[], tempoMap: TempoMap): void {
+function emitSequence(
+    wrapped: unknown,
+    base: number,
+    out: Flat[],
+    tempoMap: TempoMap,
+    mix: Mix,
+): void {
     if (wrapped === null || wrapped === undefined || typeof wrapped === "string") {
         // A **frozen** generator: the document named an algorithm and nothing in
         // this process supplied one, so what came back is the reference itself
@@ -292,10 +428,10 @@ function emitSequence(wrapped: unknown, base: number, out: Flat[], tempoMap: Tem
     }
     if (wrapped instanceof Pattern) {
         for (const [beat, item] of Timeline.fromPattern(wrapped)) {
-            out.push([base + beat, item]);
+            heard(out, base + beat, item, mix);
         }
     } else if (wrapped instanceof Timeline) {
-        for (const [beat, item] of wrapped) out.push([base + beat, item]);
+        for (const [beat, item] of wrapped) heard(out, base + beat, item, mix);
     } else if (typeof (wrapped as { play?: unknown }).play === "function") {
         // Something that plays itself — an automation curve, and whatever else a
         // script hands over. The conversion writes every element it has no body
@@ -303,7 +439,7 @@ function emitSequence(wrapped: unknown, base: number, out: Flat[], tempoMap: Tem
         // `Generator` where the author wrote a bare `Element`; the two must play
         // the same thing or a reopened piece would sound different from the one
         // that was saved.
-        out.push([base, wrapped]);
+        heard(out, base, wrapped, mix);
     } else if (!Array.isArray(wrapped)) {
         // **A def is not a list of elements.** A generator wrapping a `SynthDef`
         // is a *resident* one — the server produces its audio, and there is
@@ -320,7 +456,7 @@ function emitSequence(wrapped: unknown, base: number, out: Flat[], tempoMap: Tem
                     "a Sequence of raw values is data (a parameter), not events",
                 );
             }
-            emit(item, cursor, out, null, tempoMap);
+            emit(item, cursor, out, null, tempoMap, mix);
             // Laid out successively on the beat axis, so each length crosses
             // from whatever unit its own data is in.
             cursor = endBeat(cursor, item.duration ?? 0.0, item.durationUnit, tempoMap);

@@ -49,6 +49,15 @@ export class Buffer {
      * its commands know where to go without being told.
      */
     readonly server?: Server;
+    /**
+     * The **file these samples came from**, when they came from one — `read` and
+     * `readChannels` set it, `alloc` leaves it `null`. It is carried and never
+     * acted on: nothing re-reads it behind your back. What it is for is saying
+     * where the samples are when a piece is written down, which is exactly what
+     * a session's source table needs and the one thing a bare slot number cannot
+     * tell it.
+     */
+    path: string | null = null;
 
     constructor(
         bufnum: number,
@@ -143,6 +152,7 @@ export class Buffer {
         // The shape is the file's, so the client cannot know it in advance:
         // read it back, and the returned handle carries it.
         const buffer = new Buffer(bufnum, 0, 1, 0.0, server);
+        buffer.path = path;
         await buffer.info(timeout);
         return buffer;
     }
@@ -187,6 +197,7 @@ export class Buffer {
             throw error;
         }
         const buffer = new Buffer(bufnum, 0, 1, 0.0, server);
+        buffer.path = path;
         await buffer.info(timeout);
         return buffer;
     }

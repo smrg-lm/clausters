@@ -31,6 +31,7 @@ export {
     Sequence,
     Track,
     Vector,
+    take,
     temporalCharacter,
     toBeats,
 } from "./element.ts";
@@ -69,17 +70,28 @@ export {
     FIRST_VERSION,
     FORM_TRACK,
     FrozenSource,
+    MIXING,
     SESSION_FORMAT,
     docIdOf,
     fromDocument,
     fromSession,
     leafConfig,
     leafNode,
+    mixingOf,
     nextNodeId,
+    sessionResolver,
     setDocId,
+    setMixing,
+    sourcesOf,
     toDocument,
     toSession,
 } from "./document.ts";
-export type { DocNode, DocumentJson, Resolver, SessionJson } from "./document.ts";
+export type {
+    DocNode,
+    DocumentJson,
+    Resolver,
+    SessionJson,
+    SessionResolverOptions,
+} from "./document.ts";
 export { flatten, render, renderLogical, toTimeline } from "./render.ts";
 export type { Flat, RenderOptions, RenderResult } from "./render.ts";

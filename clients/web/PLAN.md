@@ -1582,9 +1582,21 @@ their Python halves, books included.
 The gaps this client carries are identical, which at least makes them shared
 holes rather than divergences: `applyPoints` re-implements in TypeScript the
 inversion the crate already holds; `"sample"`, `"draw"` and `"osc"` reach no
-branch of `Editor.route`; `mute`/`solo`/`level`/`height` from a lane header
-reach nothing at all. All of them close on the crate's `O20`, like the Python
-ones.
+branch of `Editor.route`. `mute`/`solo`/`level`/`height` **closed with `C48`**
+(2026-09-02), in this client in the same commit: `Element` carries the mixing,
+`sessionResolver`/`sourcesOf`/`take` are here under those names, `flatten` takes
+a fifth `mixed` argument (the positional shape this client's `flatten` already
+had), and `Editor` draws the header from the composition and routes the three
+tags through the log — `"height"` is answered as the screen state it is. The one
+`idiom` (in `docs/bindings.md`'s sense of the word), written in both books'
+composition chapters rather than left to be re-derived: reading a file is
+asynchronous here, so the takes are read **while the resolver is built** —
+`sessionResolver` is `await`ed and the resolver it returns is the same
+synchronous function as the Python one, so the two programs make the same calls
+in the same order. The parity vectors
+grew a `a_mixed_piece` case and a `sources` section
+(`gen-form-vectors.py`/`form-parity.test.ts`), so a mixing rule that drifts into
+one client fails a test rather than reaching a piece.
 
 **What is genuinely this client's**, and it is the one thing the port decides on
 its own: `open` subscribes here where a script feeds one poll loop, so a

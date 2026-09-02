@@ -111,6 +111,13 @@ class Buffer:
         #: the `Server` this buffer lives on (set by `alloc` / `read`), so its
         #: commands know where to go without being told.
         self.server = server
+        #: The **file these samples came from**, when they came from one --
+        #: `read` and `read_channels` set it, `alloc` leaves it `None`. It is
+        #: carried and never acted on: nothing re-reads it behind your back.
+        #: What it is for is saying where the samples are when a piece is
+        #: written down, which is exactly what a session's source table needs
+        #: and the one thing a bare slot number cannot tell it.
+        self.path = None
 
     @property
     def bufnum(self) -> int:
@@ -167,6 +174,7 @@ class Buffer:
         srv = _resolve(server)
         bufnum = srv.buffers.alloc()
         buf = cls(bufnum, server=srv)
+        buf.path = str(path)
         extra = [int(file_start), int(num_frames)] if (file_start or num_frames) else []
         if buf._scored() or not wait:
             srv.send_msg("/buffer_allocRead", bufnum, str(path), *extra)
@@ -197,6 +205,7 @@ class Buffer:
         srv = _resolve(server)
         bufnum = srv.buffers.alloc()
         buf = cls(bufnum, server=srv)
+        buf.path = str(path)
         args = (bufnum, str(path), int(file_start), int(num_frames),
                 *(int(c) for c in channels))
         if buf._scored() or not wait:

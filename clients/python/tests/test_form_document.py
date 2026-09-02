@@ -760,3 +760,171 @@ def test_a_session_whose_table_does_not_cover_its_document_is_refused():
                                             "lifetime": "session", "generation": 0}})
     # A composition with no source needs no table at all.
     assert to_session(Aggregate([(0.0, Clang(SeqEvent(midinote=60)))]))["sources"] == {}
+
+
+# ---- the composition's mixing, and the view's height ----
+
+def test_mute_solo_and_level_travel_in_the_node_configuration():
+    # They are the *composition's*: a lane that was left silent reopens silent,
+    # which is what makes a saved piece the piece and not a description of one.
+    piece = Aggregate()
+    lane = Track(Timeline([(0.0, SeqEvent(midinote=60))]), name="drums")
+    piece.add(lane, offset=0.0)
+    lane.mute = True
+    lane.level = 0.25
+
+    document = to_document(piece)
+    config = document["root"]["members"][0]["node"]["config"]
+    assert config["mute"] is True and config["level"] == 0.25
+    assert "solo" not in config, "what is at its default states nothing"
+
+    back = from_document(document)
+    restored = back.handles[0].element
+    assert (restored.mute, restored.solo, restored.level) == (True, False, 0.25)
+
+
+def test_a_document_that_says_no_mixing_reads_back_audible():
+    # The rule every configuration follows -- written whole, so absent is the
+    # default -- read from the other side: a file written before mixing existed
+    # opens as the piece it was.
+    back = from_document(to_document(an_aggregate()))
+    for handle in back.handles:
+        assert (handle.element.mute, handle.element.solo) == (False, False)
+        assert handle.element.level == 1.0
+
+
+def test_a_configuration_edit_starts_from_the_mixing_already_there():
+    # `leaf_config` is what an editor builds a `Configure` from, and a
+    # configuration is replaced whole -- so a config that dropped the mixing
+    # would unmute a lane on every curve edit.
+    from clausters.form.document import leaf_config
+
+    lane = Track(Timeline([(0.0, SeqEvent(midinote=60))]))
+    lane.solo = True
+    assert leaf_config(lane)["solo"] is True
+
+
+# ---- the source table, and reopening into a running system ----
+
+class ReadBuffer(FakeBuffer):
+    """A buffer that came from a file, which is the one thing a bare slot
+    number cannot say and the whole of what a source table needs."""
+
+    def __init__(self, bufnum, path, frames=1000, channels=2, sample_rate=48000.0):
+        super().__init__(bufnum)
+        self.path = path
+        self.frames = frames
+        self.channels = channels
+        self.sample_rate = sample_rate
+
+
+def test_the_source_table_is_built_from_what_the_takes_hold(tmp_path):
+    from clausters.form.document import sources_of
+
+    inside = str(tmp_path / "take.wav")
+    piece = Aggregate([
+        (0.0, Vector(ReadBuffer(1, inside), duration=2.0)),
+        (2.0, Vector(FakeBuffer(2), duration=1.0)),      # allocated here, nowhere else
+    ])
+    table = sources_of(piece, folder=str(tmp_path))
+    assert table[1]["location"] == {"at": "file", "path": "take.wav"}, \
+        "a path inside the session's folder is written relative, so the pair moves"
+    assert table[1]["frames"] == 1000 and table[1]["sample_rate"] == 48000.0
+    assert table[2]["location"] == {"at": "volatile"}, \
+        "samples that existed only in this run say so rather than promising a file"
+    # And it is exactly what the session writer demands: no refusal.
+    assert set(to_session(piece, sources=table)["sources"]) == {"1", "2"}
+
+
+def test_one_take_placed_twice_is_one_source():
+    from clausters.form.document import sources_of
+
+    shared = ReadBuffer(7, "/elsewhere/take.wav")
+    piece = Aggregate([(0.0, Vector(shared, duration=1.0)),
+                       (4.0, Vector(shared, duration=1.0))])
+    table = sources_of(piece)
+    assert list(table) == [7]
+    assert table[7]["location"] == {"at": "file", "path": "/elsewhere/take.wav"}, \
+        "a file outside the session's folder stays absolute: it is the user's own"
+
+
+def test_reopening_reads_each_file_once_and_leaves_the_rest_frozen(tmp_path, monkeypatch):
+    from clausters.defs.buffer import Buffer
+    from clausters.form.document import FrozenSource, session_resolver, sources_of
+
+    reads = []
+
+    def fake_read(path, *, server=None, **kwargs):
+        reads.append(str(path))
+        return ReadBuffer(len(reads) + 100, str(path))
+
+    monkeypatch.setattr(Buffer, "read", staticmethod(fake_read))
+
+    (tmp_path / "take.wav").write_bytes(b"RIFF")
+    shared = ReadBuffer(1, str(tmp_path / "take.wav"))
+    piece = Aggregate([
+        (0.0, Vector(shared, duration=1.0)),
+        (4.0, Vector(shared, duration=1.0)),
+        (8.0, Vector(FakeBuffer(2), duration=1.0)),     # volatile: gone with its run
+    ])
+    written = to_session(piece, sources=sources_of(piece, folder=str(tmp_path)))
+
+    back, table = from_session(
+        written, resolve=session_resolver(written, folder=str(tmp_path)))
+    assert reads == [str(tmp_path / "take.wav")], \
+        "two windows onto one take are two windows onto one buffer"
+    first, second, volatile = [h.element for h in back.handles]
+    assert first.wraps is second.wraps
+    assert isinstance(first.wraps, ReadBuffer)
+    assert isinstance(volatile.wraps, FrozenSource), \
+        "a source that existed only in the run that wrote it comes back frozen"
+    assert set(table) == {1, 2}
+
+
+def test_a_take_whose_file_moved_opens_frozen_rather_than_failing(tmp_path):
+    from clausters.form.document import FrozenSource, session_resolver
+
+    written = to_session(
+        Aggregate([(0.0, Vector(FakeBuffer(1), duration=1.0))]),
+        sources={1: {"location": {"at": "file", "path": "gone.wav"},
+                     "lifetime": "session", "generation": 0}})
+    back, _ = from_session(written,
+                           resolve=session_resolver(written, folder=str(tmp_path)))
+    assert isinstance(back.handles[0].element.wraps, FrozenSource), \
+        "half a session is worth opening: one moved file is not the whole piece"
+
+
+def test_a_generator_with_no_def_keeps_what_it_last_rendered():
+    from clausters.form.document import session_resolver
+
+    rendered = Clang(SeqEvent(midinote=64, dur=1.0))
+    piece = Aggregate([(0.0, Generator("bassline", rendered=rendered, name="bassline"))])
+    written = to_session(piece)
+
+    back, _ = from_session(written, resolve=session_resolver(written))
+    leaf = back.handles[0].element
+    assert leaf.wraps == "bassline", "the reference survives, unresolved"
+    assert leaf.rendered is not None, "and what it last produced is the floor"
+
+    # And with the store that has it, it comes back as the thing itself.
+    supplied = object()
+    back, _ = from_session(
+        written, resolve=session_resolver(written, defs={"bassline": supplied}))
+    assert back.handles[0].element.wraps is supplied
+
+
+def test_opening_a_session_and_saving_it_again_keeps_every_location():
+    # The second save is where a format loses its own contents: nothing resolved
+    # the take, so it came back as a bare reference -- and a reference that had
+    # forgotten where its samples were was written back as volatile.
+    from clausters.form.document import sources_of
+
+    written = to_session(
+        Aggregate([(0.0, Vector(FakeBuffer(1), duration=1.0))]),
+        sources={1: {"location": {"at": "file", "path": "takes/one.wav"},
+                     "lifetime": "session", "generation": 3, "frames": 480,
+                     "channels": 2, "sample_rate": 48000.0}})
+    back, _ = from_session(written)
+    again = sources_of(back)
+    assert again[1]["location"] == {"at": "file", "path": "takes/one.wav"}
+    assert again[1]["generation"] == 3 and again[1]["frames"] == 480

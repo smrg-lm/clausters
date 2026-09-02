@@ -36,7 +36,16 @@ What it shows, in the order the cells run:
 - **Reading it back.** `from_session` on what the host wrote gives an
   arrangement again, and the cell prints where each element ended up — which is
   the whole claim: a file passed between two writers means the same thing to
-  both.
+  both. It is read with a **resolver over the session's own table**
+  (`session_resolver`), which is what makes reopening give back structures
+  rather than a description: each file the table names is read onto the server,
+  once per source however many clips draw it, and a generator nothing supplies
+  is left frozen with what it last rendered.
+- **What is mixed, and what is only looked at.** The bass lane is left
+  **muted**, and it reopens muted — mute, solo and level are the composition's
+  and ride in the node's configuration. A lane's *height* is the other kind of
+  thing: it says nothing about what the piece is, so no document carries it and
+  resizing one here changes no file.
 
 The three files it writes go to ``examples/out/`` (``session.json``,
 ``session-take.wav``, and ``session-edited.json`` once the host has saved) —
@@ -68,8 +77,9 @@ import subprocess
 import sys
 import wave
 
-from clausters.form import Aggregate, Track, Vector
-from clausters.form.document import FrozenSource, from_session, to_session
+from clausters.form import Aggregate, Track, take
+from clausters.form.document import (FrozenSource, from_session,
+                                     session_resolver, sources_of, to_session)
 from clausters.seq import Timeline
 from clausters.seq.event import Event as SeqEvent
 
@@ -141,31 +151,41 @@ def write_take(path: str, seconds: float = 2.0, freq: float = 440.0) -> int:
 
 take_frames = write_take(take_path)
 
-#: The element names **source 1** and nothing else: `FrozenSource` is what a
-#: document reader hands back for a source it has not resolved to a live server
-#: buffer, and it is exactly what writing one from a file needs — the id, and
-#: the table beside it.
-take = Vector(FrozenSource({"source": 1, "lifetime": "session"}),
-              duration=take_frames / SAMPLE_RATE)
+#: The source the element names: `FrozenSource` is what a document reader hands
+#: back for a source it has not resolved to a live server buffer, and it is
+#: exactly what writing one from a file needs — the id, and where the samples
+#: are. The path is **relative**, resolved against the session file's own
+#: folder, which is what makes the pair of files movable together.
+source = FrozenSource(
+    {"source": 1, "lifetime": "session"},
+    {"location": {"at": "file", "path": os.path.basename(take_path)},
+     "channels": 2, "frames": take_frames, "sample_rate": float(SAMPLE_RATE)},
+)
 
-#: Where source 1 is. A **relative** path, resolved against the session file's
-#: own folder, which is what makes the pair of files movable together.
-sources = {
-    1: {
-        "location": {"at": "file", "path": os.path.basename(take_path)},
-        "lifetime": "session",
-        "generation": 0,
-        "channels": 2,
-        "frames": take_frames,
-        "sample_rate": float(SAMPLE_RATE),
-    },
-}
+#: `take` is where a recording lands: a clip whose length is the samples' own,
+#: which is the one line every script used to write by hand (frames over the
+#: rate they were recorded at).
+clip = take(source)
+
+melody_lane = Aggregate([(0.0, melody)], name="melody")
+bass_lane = Aggregate([(0.0, bass)], name="bass")
+#: **Mixing is the composition's.** A lane left muted here reopens muted — in
+#: this client and in the host — because mute, solo and level ride in the node's
+#: configuration. A lane's *height* does not: it says nothing about what the
+#: piece is, so no document carries it.
+bass_lane.mute = True
 
 piece = Aggregate([
-    (0.0, Aggregate([(0.0, melody)], name="melody")),
-    (0.0, Aggregate([(0.0, bass)], name="bass")),
-    (1.0, Aggregate([(0.0, take)], name="take")),
+    (0.0, melody_lane),
+    (0.0, bass_lane),
+    (1.0, Aggregate([(0.0, clip)], name="take")),
 ], name="piece")
+
+#: And the table that says where each source is, built from the arrangement
+#: itself rather than by hand: `to_session` refuses a table that does not cover
+#: its own document, and a table built once at startup stops covering the piece
+#: the moment reopening resolves its takes into new buffers.
+sources = sources_of(piece, folder=OUT)
 
 # %% [markdown]
 # ## Written as a session
@@ -253,11 +273,20 @@ def read_back() -> None:
         return
     with open(saved) as f:
         session = json.load(f)
-    element, sources = from_session(session)
+    # **The resolver is what makes reopening give back structures rather than a
+    # description.** Without one the tree comes back and every take in it is a
+    # bare source number; with one, each file in the table is read onto the
+    # server (once per source, however many clips name it) and a generator
+    # nothing supplies is left frozen with what it last rendered. This run has
+    # no server up, so nothing is read and the takes stay frozen -- which is the
+    # same call, taking the same path, saying so.
+    element, sources = from_session(
+        session, resolve=session_resolver(session, folder=OUT))
     print(f"read {os.path.basename(saved)} back as {type(element).__name__} "
           f"({len(sources)} source(s)):")
     for offset, child, depth in _walk(element):
-        print(f"  {offset:7.3f}  {'  ' * depth}{type(child).__name__}")
+        mixed = " (muted)" if child.mute else ""
+        print(f"  {offset:7.3f}  {'  ' * depth}{type(child).__name__}{mixed}")
 
 
 def _walk(element, base: float = 0.0, depth: int = 0):

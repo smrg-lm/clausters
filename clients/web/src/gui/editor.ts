@@ -65,7 +65,7 @@ import {
     toDocument,
 } from "../form/index.ts";
 import type { Member } from "../form/index.ts";
-import { FIRST_VERSION } from "../form/document.ts";
+import { FIRST_VERSION, MIXING, setMixing } from "../form/document.ts";
 import { Editing } from "./editing.ts";
 import type { Indexed } from "./editing.ts";
 import { Automation } from "../seq/automation.ts";
@@ -242,6 +242,11 @@ export class Editor {
     private clips = new Map<number, Placed>();
     /** widget id → element, for every lane (the playhead addresses these). */
     private lanes = new Map<number, unknown>();
+    /**
+     * The placement each lane draws, so an edit on its header names the window's
+     * node rather than the element's — the rule every other edit-back follows.
+     */
+    private laneMembers = new Map<number, Member | null>();
     /** widget id → the element whose samples that widget draws. */
     private signals = new Map<number, Element>();
     /** widget id → the element whose notes that widget draws. */
@@ -512,6 +517,7 @@ export class Editor {
         this.resetIds();
         this.clips = new Map();
         this.lanes = new Map();
+        this.laneMembers = new Map();
         this.rolls = new Map();
         this.patches = new Map();
         this.signals = new Map();
@@ -691,6 +697,7 @@ export class Editor {
         this.resetIds();
         this.clips = new Map();
         this.lanes = new Map();
+        this.laneMembers = new Map();
         this.rolls = new Map();
         this.signals = new Map();
         const element = this.rollElement as Element;
@@ -766,6 +773,7 @@ export class Editor {
         this.resetIds();
         this.clips = new Map();
         this.lanes = new Map();
+        this.laneMembers = new Map();
         this.rolls = new Map();
         this.signals = new Map();
         const element = this.signalElement as Element;
@@ -1096,6 +1104,19 @@ export class Editor {
             // changed — a selection is screen state — but it is the *value* an
             // operation is handed, so it is kept typed and in beats.
             this.setSelection(id, rest);
+            return false;
+        }
+        if (MIXING_TAGS.includes(tag)) {
+            // A lane header's toggle or fader. **The composition's**, so it goes
+            // through the log like a clip's move and survives a save: what is
+            // muted is a fact about the piece, not about the window.
+            return this.applyMixing(id, tag, rest);
+        }
+        if (tag === "height") {
+            // A lane's thickness, from Ctrl+wheel. **The view's** — it says
+            // nothing about what the piece is, no document carries it, and the
+            // host has already resized the lane it was made on. Answered here so
+            // it is deliberately nothing rather than accidentally nothing.
             return false;
         }
         if (tag === "cut") return this.applyCut(id, rest);
@@ -2102,7 +2123,7 @@ export class Editor {
         if (element instanceof Aggregate || element instanceof Vector) return [];
         let events: [number, unknown][];
         try {
-            events = flatten(element, 0.0);
+            events = flatten(element, 0.0, 1.0, null, false);
         } catch {
             return [];
         }
@@ -2329,6 +2350,12 @@ export class Editor {
      * which of the three happened.
      */
     private configure(element: Element, config: Record<string, unknown>): boolean {
+        // **Mixing is every node's**, so it is written before asking what kind of
+        // node this is — and written whole, like the rest of a configuration,
+        // which is what makes an undo of a mute a mute again rather than a lane
+        // that stays silent.
+        setMixing(element, config);
+        const mixed = MIXING_TAGS.some((key) => key in config);
         if (element instanceof Aggregate) {
             // An aggregate's configuration is the writer's own restrictions on
             // it, and for a logical one that is its **declared buses** — the
@@ -2355,7 +2382,9 @@ export class Editor {
         }
         const auto = automationOf(element, this.tempo);
         const flat = config.points as number[] | undefined;
-        if (auto === null || flat === undefined) return false;
+        // Nothing else in the configuration was for this element — but the
+        // mixing was, and an edit that only mutes a track is still an edit.
+        if (auto === null || flat === undefined) return mixed;
         auto.env = pointsToEnv([...flat]);
         auto.refill();
         return true;
@@ -2839,7 +2868,7 @@ export class Editor {
             // Its members start and end together: they are *one* thing on the
             // timeline, so they are one clip with layered bodies — not a lane of
             // clips that must be dragged one by one.
-            return [this.lane([this.clipFor(element, base, owner, member)], nameOf(element))];
+            return [this.lane([this.clipFor(element, base, owner, member)], element, member)];
         }
         if (element instanceof Aggregate && element.kind === CONCRETE) {
             const clips: GuiNode[] = [];
@@ -2852,27 +2881,64 @@ export class Editor {
                     clips.push(this.clipFor(child.element, childBase, element, child));
                 }
             }
-            const lane = clips.length > 0 ? [this.lane(clips, nameOf(element))] : [];
+            const lane = clips.length > 0 ? [this.lane(clips, element, member)] : [];
             return [...lane, ...extra];
         }
-        return [this.lane([this.clipFor(element, base, owner, member)], nameOf(element))];
+        return [this.lane([this.clipFor(element, base, owner, member)], element, member)];
     }
 
     /** One `track` lane holding `clips`, with the shared time chrome. */
-    private lane(clips: GuiNode[], label: string): GuiNode {
+    /**
+     * One `track` lane holding `clips`, with the shared time chrome and the
+     * **mixing** the element carries.
+     *
+     * The header's toggles and its fader are drawn from the composition, not
+     * from the view: what the lane shows is what a reopened document says, and
+     * pressing one writes back through the log like every other edit.
+     */
+    private lane(clips: GuiNode[], element: Element, member: Member | null = null): GuiNode {
         const wid = this.newId();
         const lane = track(
             {
                 id: wid,
-                label,
+                label: nameOf(element),
                 sampleRate: this.sampleRate,
                 tempo: this.tempo,
                 snap: this.quant > 0 ? this.beatsToUnits(this.quant) : undefined,
+                mute: Boolean(element.mute),
+                solo: Boolean(element.solo),
+                level: Number(element.level ?? 1.0),
             },
             ...clips,
         );
-        this.lanes.set(wid, label);
+        this.lanes.set(wid, element);
+        this.laneMembers.set(wid, member);
         return lane;
+    }
+
+    /**
+     * One lane header control onto the element that lane draws.
+     *
+     * Mixing is a leaf's configuration like any other, so it travels the same
+     * road: `Configure` replaces the configuration **whole**, which is why it
+     * starts from what the element already carries and writes one key over it.
+     * That is also what makes it undoable — the inverse is the configuration as
+     * it stood, read out of the document rather than remembered here.
+     */
+    private applyMixing(wid: number, tag: string, values: readonly unknown[]): boolean {
+        const element = this.lanes.get(wid) as Element | undefined;
+        if (element === undefined || values.length === 0) return false;
+        const node = this.nodeId(element, this.laneMembers.get(wid) ?? null);
+        if (node === null) return false;
+        const config = leafConfig(element);
+        config[tag] = tag === "level" ? Number(values[0]) : truthy(values[0]);
+        const outcome = this.record(
+            { intent: "configure", node, config },
+            `${tag} the lane`,
+        );
+        if (outcome === null) return false;
+        this.project(outcome.effective as Intent);
+        return this.changed(Boolean(outcome.applied));
     }
 
     /**
@@ -3111,7 +3177,7 @@ export class Editor {
         if (element instanceof Aggregate || element instanceof Vector) return [];
         let events: [number, unknown][];
         try {
-            events = flatten(element, 0.0);
+            events = flatten(element, 0.0, 1.0, null, false);
         } catch {
             return [];
         }
@@ -3173,7 +3239,7 @@ export class Editor {
         }
         let events: [number, unknown][];
         try {
-            events = flatten(element, 0.0);
+            events = flatten(element, 0.0, 1.0, null, false);
         } catch {
             return 0.0;
         }
@@ -3248,6 +3314,24 @@ function measureName(name: string): Measure {
  * itself, an automation names the control it drives), else what it *is* — an
  * automation is an "envelope", not the `Element` that happens to wrap it.
  */
+/**
+ * The lane-header edit-backs that are the **composition's**: what a document
+ * carries and a reopened piece gets back. A lane's `height` is deliberately not
+ * one of them.
+ */
+const MIXING_TAGS = Object.keys(MIXING);
+
+/**
+ * An OSC flag as a boolean. The wire carries `0|1` as a number, and an older
+ * host (or a hand-written test) may spell it as a string.
+ */
+function truthy(value: unknown): boolean {
+    if (typeof value === "string") {
+        return !["", "0", "false", "off"].includes(value.trim().toLowerCase());
+    }
+    return Boolean(value);
+}
+
 function nameOf(element: Element | null): string {
     const name = element?.name;
     if (typeof name === "string" && name) return name;

@@ -298,7 +298,7 @@ is a list of points, and `Env` is an envelope for `EnvGen`" (the points domain's
 and "The mapping exists and is private to the `Editor`" (what a structure plays
 through once it is editable on its own).
 
-- ⬜ **C48 — Reopening a session gives back the structures, not a description.**
+- ✅ **C48 — Reopening a session gives back the structures, not a description.**
   First, because `edit(x)` over samples is only half a verb without it:
   `from_session` rebuilds the **tree**, but every leaf that is code comes back as
   a bare reference unless the caller passes `resolve=`, and the `sources` table is
@@ -316,6 +316,45 @@ through once it is editable on its own).
   session written here, reopened here, gives buffers that sound and lanes that
   are muted the way they were left; a generator with no resolver still draws and
   plays what it last rendered.
+
+  **Done 2026-09-02.** Four things, in both clients and in one commit
+  (`sessionResolver`/`sourcesOf`/`take`/`mixingOf` are the TypeScript spellings;
+  the calls and their order are the same).
+
+  - **`session_resolver(session, *, server, folder, defs)`** — a `resolve` over
+    the table, handed to `from_session`. Each file is read **once per source
+    id**, before the tree asks: two clips over one take are two windows onto one
+    buffer, and resolving each window on its own gives them two buffers that
+    drift apart on the first edit. A *volatile* source, and a file that has
+    moved, come back frozen — half a session is worth opening, and one moved
+    file is not the difference between a piece and nothing. Reading is
+    asynchronous in the web client and not here, so the takes are read *while
+    the resolver is built* and the resolver itself is the same synchronous
+    function on both sides; the `await` is the language's, not a different call.
+  - **`sources_of(element, *, folder)`** — the table built from the arrangement,
+    which is `to_session`'s own error message as a function. It needed one new
+    fact: **`Buffer.path`**, the file a buffer was read from, which is the one
+    thing a slot number cannot say. A buffer allocated in this run is written
+    *volatile*. And the second save turned out to be where the format lost its
+    own contents — a piece opened with no resolver came back holding
+    `FrozenSource`s that had forgotten where their samples were, so
+    `from_session` now **locates** each of them from the table it just read.
+  - **Mixing is the composition's, height is the view's.** `Element` grew
+    `mute`/`solo`/`level`; they ride in the node's **configuration** (the same
+    opaque door a leaf's code uses, which also puts them in `leaf_config` — a
+    `Configure` that started from a config without them would unmute a lane on
+    every curve edit) and they are honoured by `flatten`, all three inherited
+    down the tree. The editor draws them on every lane header and routes the
+    three tags through the log like any other edit, and answers `"height"` as
+    the screen state it is. One thing this forced, found by drawing: **a view
+    flattens unmixed** (`mixed=False`) — a muted lane keeps its clips, its notes
+    and its length, or the picture reports silence as absence.
+  - **`take(buffer, …)`** — where a recording lands: a `Vector` whose length is
+    the samples' own, which is the line every script wrote by hand.
+
+  What is **not** here, and is written where it is read: the standalone host
+  *carries* mixing across a save (its config is opaque) and does not draw it —
+  its lane header is not bound to a node. That is `clients/gui/PLAN.md`'s.
 
 - ⬜ **C49 — `Editor` is the generic one, and the arrangement's becomes
   `FormEditor`.** The split and the rename are **one milestone**, because the
