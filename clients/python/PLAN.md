@@ -194,6 +194,242 @@ everything is an element, in one of two modes — *generated* data, or the
 
   **Boundaries, recorded so the milestone does not grow:** the document is not the undo history (that is the host's, per session, never written — GUI H track), a save is not an undo boundary, and the document does not persist logical material even when it can point at it. Python: `form` reads and writes it, the `Editor` opens and saves one; `docs/decisions.md` for the plugin analogy and the preserve-what-you-do-not-understand rule; the client book's composition page for the user-facing half; an example that saves a composition, reopens it and re-renders.
 
+### The generic editor: one editor per domain, and `edit(x)` (client arc, phased)
+
+`Editor` was written for one model — the arrangement — and every view it has
+grown since is a **mode** of it (`open_pianoroll`, `open_signal`) rather than a
+view in its own right. What this track is pointed at is the verb the whole
+document arc was pointed at: **`edit(x)` opens an editable view over a bare
+structure the way `plot` opens a static one** — a `Timeline`, a buffer, a
+break-point curve — and returns the handle the edited data is read back through.
+*(It replaces the "Future directions" entry of the same name, which was owed by
+`crates/clausters-document/PLAN.md`'s `O19` — that milestone closed saying these
+"are written in their plans" and they were not. What it did leave is the floor:
+the history is not an editor's to hold, and `Editing` is what a standalone
+structure registers itself in.)*
+
+**What the views actually edit, counted rather than remembered.** The host emits
+edit-backs for six kinds of data and this client applies four of them:
+
+| The view | What it writes back | The structure | Applied by |
+|---|---|---|---|
+| `waveform`, a clip's take body | `sample`, `draw`, `cut`, `paste` | a buffer's samples | **nobody here** — only `clausters-gui --session` |
+| `pianoroll`, a clip's notes body | `notes`, `osc` | a `Timeline` of events | `Editor` (`osc` unrouted — see "Found by use") |
+| `bpf`, a clip's points body | `points` | a break-point curve | `Editor` |
+| `score` | `element`, `transpose`, `insert` | an engraved page | nobody — the examples do it by hand |
+| `clip`, `track` | `clip`, `split`, `join`, `layer`, `locate`, `mute`, `solo`, `level`, `height` | the tree | `Editor`, except the four header tags |
+| `patch` | `wire`, `move` | a logical aggregate | `Editor` |
+
+Two of those rows are why this is a track and not a rename. **Sample editing
+exists in the host and in no client**: `editors/session.py` draws over a take
+because the standalone host owns the document there, and the identical gesture
+from Python reaches nothing. And **`mute`/`solo` are not in the arrangement at
+all** — `Track` wraps a `Timeline` and has neither — so they are widget props
+whose edit-backs nobody receives, and what a person sets on a lane header lives
+on the screen and does not survive a save.
+
+**What of `Editor` is generic.** Five responsibilities are tangled in its ~3200
+lines: it draws a GuiDef from a model, routes a tag onto an edit, records that
+edit through the crate and projects the outcome onto Python objects, acknowledges
+(`seq`/`version`, `_correct`, `_resync`, `adopt` and the fan-out to the other
+views), and drives a transport. **The fourth is entirely generic** — it talks
+about versions and windows and never about what was edited — the second is a
+dispatch table, and only the rest is the arrangement's. So the base class is the
+window, the view registry, the version protocol, the undo walk and an abstract
+`route`; `FormEditor` is that plus the tree and the transport, and a roll, a
+curve or a waveform is that plus one widget and one domain.
+
+**Where a rule lives, decided 2026-09-02 with the user: the crate holds how an
+edit inverts, the client holds the projection.** `_apply_points` knows "the
+points are now these" in Python, `applyPoints` knows it again in TypeScript, and
+the crate already knows it — which is the duplication the non-divergence rule
+exists to stop, and the kind no compiler finds. So a domain is
+`history::Editable` in Rust (`crates/clausters-document/PLAN.md`, `O20`) and
+`edit(x)` needs three things per type and no more: the domain name, the
+serializer and the projector onto the client's own object.
+
+**And `Editing` is two layers wearing one name.** It is documented as one
+composition's context and cached on the root element, but what the crate calls
+`History` is a **registry** and what it calls `Log` is the arrangement's face of
+it. The arrangement's state (`document`, `by_node`, `next_node`, `rederive`)
+belongs to that face; the registry is one **editing context** over whatever is
+open, and a structure registers itself in it. A bare structure therefore has a
+`History` and **no `Document` at all** — the document exists only for the
+arrangement's leg (`log::Tree`), which is the confusion `Editing` carries today
+by holding both under one name.
+
+**"Session" is taken twice already and never names this.** `Session` is the
+client facade over a server, a clock and a host (`Session.live`/`nrt`/`embed`),
+and a *session file* is the format `to_session` writes (a document plus its
+`sources` table) — which is what `C48` below is about, and the only sense the
+word carries in this track. **What an editor holds is not a session in either
+sense and must not be called one**: it is the **editing context**, and it is
+*transient state of the run* — the thing that is never written to a file and
+goes when the data goes. The crate's own prose calls that "session state"; here
+it does not, because two of this project's own structures already answer to the
+word and a third meaning is how a reader ends up looking for it on disk.
+
+**Which leaves one thing genuinely undecided, and it is named rather than
+assumed: where the ambient registry hangs.** The direction said "the ambient
+session's, or one the caller passes", and the second half is settled — a
+`history=` argument, so a `GuiDef` composing a roll and a curve passes one and
+undoes across both in one order. The first half is not: `Session` is the obvious
+holder (it already owns the server, the clock and the GUI host, and a piece is
+edited inside one), but nothing on it holds an editing context today, and a
+process-wide ambient registry beside `ambient_host()` reaches the scripts that
+never build a `Session` at all. **The choice is `C49`'s to take**, with its own
+reason written down, and it must be the same choice in TypeScript.
+
+**Quarantine, and what it means here.** `form` and the multitrack are not
+removed: they are what three books, both example directories and the whole
+composed case stand on, and taking them out of the API would break all of that to
+prove a point. What is frozen is their **surface** — nothing new goes into `form`
+or `Editor` (mute and solo, recording, the score as an element, the OSC lane)
+until the domains below exist, because those are precisely the additions that
+would deepen the confusion this track is here to undo. **The rename comes with
+the split** (`C49`) rather than at the end: `Editor` is the name of the generic
+class, so the arrangement's cannot keep it while the generic one is being
+written under some placeholder — that is how a placeholder becomes the API.
+
+Three neighbouring "Future directions" entries are part of this design and are
+read with it rather than separately: "`Track` wraps a `Timeline`, so the tree has
+two ways of placing things" (the events domain's model question), "A drawn curve
+is a list of points, and `Env` is an envelope for `EnvGen`" (the points domain's),
+and "The mapping exists and is private to the `Editor`" (what a structure plays
+through once it is editable on its own).
+
+- ⬜ **C48 — Reopening a session gives back the structures, not a description.**
+  First, because `edit(x)` over samples is only half a verb without it:
+  `from_session` rebuilds the **tree**, but every leaf that is code comes back as
+  a bare reference unless the caller passes `resolve=`, and the `sources` table is
+  handed back as data — nothing loads the takes into buffers again. So: a
+  resolver over the session's own table (buffers read from `sources` onto the
+  server, defs looked up in the store, a generator left frozen with its
+  `rendered` as the floor, which is already the documented contract), which is
+  what makes "edit these samples" name a buffer that is on the server and a file
+  on disk. It settles the two things the header tags exposed:
+  **`mute`/`solo`/`level` are the composition's** and belong in a node's
+  configuration, so they survive a save and a reopen, while **`height` is the
+  view's** and belongs in no document. And it names where recording lands —
+  `RecordingStream` produces a buffer today and nothing places it as a take,
+  which is the other half of why the domain reads as confused. *Acceptance:* a
+  session written here, reopened here, gives buffers that sound and lanes that
+  are muted the way they were left; a generator with no resolver still draws and
+  plays what it last rendered.
+
+- ⬜ **C49 — `Editor` is the generic one, and the arrangement's becomes
+  `FormEditor`.** The split and the rename are **one milestone**, because the
+  name is the point: `Editor` is what a person calls to edit a buffer, a curve
+  or a timeline, and it **imports nothing from `clausters.form`**. What is named
+  `Editor` today was written for the arrangement and becomes `FormEditor`, no
+  alias, with both books and every example moving in the same commit. Doing the
+  extraction first under a placeholder name and renaming afterwards is how a
+  placeholder becomes the API.
+
+  **How the generic one is modularized, since it orchestrates rather than
+  performs.** Four collaborators, each testable without the others, and the rule
+  that fixes the boundaries is that an editor owns **neither the data nor the
+  history**:
+
+  - **`View`** — draws the `GuiDef` of *one* structure and keeps the registry
+    from widget id to what it shows. The only per-domain thing on the graphic
+    side, and what `_draw_signal`/`_draw_pianoroll` already are without being
+    separable.
+  - **`Domain`** — the data adapter: structure → payload, payload → the client
+    object (the projection), plus the entry's label and its coalesce key. It
+    does **not** know how an edit inverts — that is `history::Editable` in the
+    crate (`O20`) — and it does not draw.
+  - **`Echo`** — the acknowledgement protocol: `seq`/`version`, `_stale`,
+    `_correct`, `_resync`, `_acknowledge`. Entirely generic, and today
+    interleaved with the routing; on its own it is testable with no structure at
+    all.
+  - **The editing context** (what `Editing` is today) — the `History`, the list
+    of views, and the `turn` that answers the other windows. The editor **asks
+    for it and never builds one**, which is `O19`'s rule restated where it can
+    be enforced.
+
+  So `Editor` itself does three things: opens the window through its `View`;
+  dispatches an event — the tags that are **not** edits (`selection`, `view`,
+  `view_x`, `view_y`, `layer`, `focus`, `locate`) it answers generically, the
+  ones that are go to the `Domain` and from there to the `History` — and walks
+  undo/redo applying the legs the pile hands back. **Transport and render are
+  not here**: they are `FormEditor`'s, because a bare structure at most sounds,
+  it has no piece to move over.
+
+  **Where the files go: editing is a subdomain of the GUI, so it is a
+  subpackage**, the way `notation/` already is — `clausters/gui/editing/`, with
+  `editor.py` (the orchestrator), `view.py`, `domain.py`, `echo.py`,
+  `context.py` (today's `Editing`: the history, the views, the `turn`) and
+  `formeditor.py`. Today's `gui/editor.py` and `gui/editing.py` are what it
+  absorbs, and `gui/editing.py` **splits** on the way in: the registry half is
+  generic and stays in `context.py`, the arrangement half (`document`,
+  `by_node`, `next_node`, `rederive`) goes with `FormEditor`, which is whose it
+  is. `clausters.gui` keeps exporting `Editor` and `FormEditor`, so the import
+  path a script writes does not move; what moves is the module path four places
+  name (`gui/ids.py`, `gui/__init__.py`, `form/__init__.py`,
+  `docs/architecture.md`), and they move in this commit. The TypeScript side
+  mirrors it literally — `src/gui/editing/` with the same six files plus its
+  `index.ts` — since the module tree is one tree in two languages (`W21`).
+
+  **`FormEditor` is then `Editor` plus what only a tree has**: the held
+  `Document` and the node index, the several views of one composition, the
+  lanes/clips/patch registries, and the transport. **No new surface** in either
+  class beyond the rename — `edit(x)` is `C50`'s — which is what makes this safe
+  to do before the domains exist.
+
+  *Acceptance:* `Editor` and its four collaborators import nothing from
+  `clausters.form`, and a test drives one over a plain structure with no
+  arrangement anywhere; `FormEditor` keeps every public name today's `Editor`
+  has, so `editors/two_windows.py`, `editors/multitrack.py` and
+  `editors/composer.py` run unchanged by hand after the rename; `Echo` is
+  exercised by a test that never touches a structure; the suites pass with no
+  test edited to accommodate the split, only the rename.
+
+- ⬜ **C50 — `edit(x)` over the three fundamental structures** *(waits on the
+  crate's `O20`; ported in the same commit as the web client's `W28`)*. The verb
+  and the three editors under it: `edit(buffer)` → a `SamplesEditor` over a
+  `waveform`, `edit(curve)` → a `PointsEditor` over a `bpf`, `edit(timeline)` →
+  a `NotesEditor` over a `pianoroll`. Each registers **its structure** in the
+  ambient editing registry, draws one widget, routes its own domain's tags and hands
+  the edited data back through the object the caller already holds. This is where
+  `"sample"`, `"draw"` and `"osc"` are routed for the first time, and where a
+  sample edit finally has a client-side path: the payload's own inverse into the
+  history, the values onto the server's buffer (`/buffer_setRange`), the picture
+  acknowledged after the samples are pushed and not before.
+
+  **What of this waits on `C48`, stated so the order is not re-derived later.**
+  Everything here is buildable over a structure the calling process **holds** — a
+  buffer it loaded or generated, a curve it built, a timeline it filled — and
+  that covers the whole acceptance below, which is why the two are separable at
+  all. What it does not cover is the structure that came back from a **file**:
+  after a reopen the buffer is a row in the `sources` table and not an object, so
+  `edit(x)` has nothing to be handed and a sample edit has no server buffer to
+  write to. Taking `C48` first is therefore not a dependency of the code but of
+  the verb being worth having: without it `edit(x)` works for the run that built
+  the data and stops at the one that reopened it.
+
+  *Acceptance* (the direction's own, kept verbatim): `edit(x)` called twice over
+  one structure gives two windows and **one** stack, and an undo in either
+  updates both; a client builds a curve, edits it in a view and reads the edited
+  points back with no composition involved; a `GuiDef` composing a roll and a
+  curve undoes across both in the order the edits were made. Plus this track's
+  own: a stroke drawn over a buffer's samples from Python changes what the server
+  plays, and `Ctrl+Z` puts it back; and — the clause `C48` is what makes
+  writable — the same stroke over a take of a **reopened** session does the same.
+  An example per structure, since nothing in CI runs one.
+
+- ⬜ **C51 — `FormEditor` composes the views it used to contain.** The rename
+  happened in `C49`; what is left is the collapse it was for. `open_pianoroll`
+  and `open_signal` stop being modes with private draws and become `edit()` over
+  the part of the composition the window is pointed at, joined to the piece's
+  editing context — so a `FormEditor` holds `Editor`s rather than reimplementing
+  them, which is the claim the whole track is worth. A clip's bodies are then
+  views over structures, not props with a parallel edit path. *Acceptance:* a stroke over a placed take and a bend of the
+  curve over it undo in one order, through the same code path a standalone editor
+  uses; the dedicated roll of one track and the multitrack over the same piece
+  step one history; `_draw_pianoroll`/`_draw_signal` are gone rather than
+  wrapped.
+
 ### The client API reform: the GUI element as an object (client arc, phased)
 
 A reform of the client's GUI surface, in two parts: **first the shape of the
@@ -2040,36 +2276,6 @@ work, where a pending item reads as done.)*
 Every entry carries a checkbox, like "Found by use" above: an open direction has
 to read as open, and one that converges into a milestone leaves this list rather
 than being ticked here.
-
-- ⬜ **The generic editor: `edit(x)`, and `Editor` renamed to `FormEditor`**
-  *(owed by `crates/clausters-document/PLAN.md`'s `O19`, which closed on
-  2026-09-01 saying these "are written in their plans" — they were not, which is
-  what this entry fixes; the floor `O19` built for them is in place)*. The
-  history stopped being an editor's the moment it moved to the arrangement, and
-  what that opens is the verb the whole `O` track was pointed at: **`edit(x)`
-  opens an editable view over a bare structure the way `plot` opens a static
-  one** — a `Timeline`, a `Buffer`, a break-point curve — and returns a handle
-  the caller reads the edited data back through.
-
-  Three things it has to settle, and none of them is the history any more:
-
-  - **What class it returns**, and how it relates to the multitrack. `Editor`
-    becomes `FormEditor` — the one whose model is a *tree* and which composes
-    the others — and the roll, the curve and the samples views become editors in
-    their own right rather than modes (`open_pianoroll`, `open_signal`) that a
-    tree editor happens to carry.
-  - **How a structure with no composition behind it registers.** The crate's
-    answer is there: `History.register` mints the identity and the caller keeps
-    it, which is also the read-back path. What the client has to decide is
-    *which* history — the ambient session's, or one the caller passes — since
-    that is what decides what shares an undo order (`Editing` is the shape
-    today, keyed by the element).
-  - **What a composed view is.** A `GuiDef` holding a roll and a curve
-    registers both in one history and undoes across them in one order; that is
-    the case `O15` was reshaped for, and nothing exercises it yet.
-
-  The web client ports it (`clients/web/PLAN.md`, the same entry). Neither is
-  started, and the surface must not appear in one client before the other.
 
 - ✅ **One tempo verb: an extent in either unit, and a shape written in one
   call** *(designed and shipped 2026-08-31, from the user's "calcular el tempo

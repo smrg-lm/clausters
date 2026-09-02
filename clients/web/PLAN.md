@@ -1555,6 +1555,44 @@ instances share the loop and nothing else.
 
 **Verified:** `tests/hosts.html` under the headless-Chrome harness — two hosts in one page both draw; widget `1003` holds `0.2` in one and `0.8` in the other at once; a gesture on one leaves the other's outbox empty and its widget unmoved; each bound knob reaches its own engine and not its sibling's (`220 → 984.7` while the other stays `220`); closing one leaves the other drawing, answering and driving its engine. Example: `examples/panels/two-hosts.html`.
 
+### ⬜ W28 - The generic editor: `edit(x)`, and `Editor` renamed to `FormEditor`
+
+The port of the Python client's phased track of the same name
+(`clients/python/PLAN.md`, "The generic editor: one editor per domain, and
+`edit(x)`"), which is where the analysis, the map of what each view edits, the
+decisions and the acceptance are read. **Nothing here is decided separately** —
+same class names, same calls in the same order, `Editing` split the same way,
+and the same answer to where the ambient editing registry hangs (the one
+question `C49` leaves open) —
+and the surface must not appear in one client before the other, which is the
+whole of what this entry is here to prevent.
+
+The four phases land here as they land there, in the same order — `C48`'s
+session-file resolver first, since `edit(x)` over samples is only half a verb
+until a reopened take is a buffer again — and `C50` in particular (`edit(x)` and
+the three structure editors) closes with its TypeScript half in the **same
+commit**, because that phase is where the new surface appears. `C49` carries the
+**rename** (`Editor` becomes the generic class, the arrangement's becomes
+`FormEditor`) and the same four collaborators — `View`, `Domain`, `Echo` and the
+editing context — under the same names, in the same new `gui/editing/`
+subpackage; it is not an internal split this client may spell differently, since
+a class name and a module path are both surface. `C48` and `C51` move with
+their Python halves, books included.
+
+The gaps this client carries are identical, which at least makes them shared
+holes rather than divergences: `applyPoints` re-implements in TypeScript the
+inversion the crate already holds; `"sample"`, `"draw"` and `"osc"` reach no
+branch of `Editor.route`; `mute`/`solo`/`level`/`height` from a lane header
+reach nothing at all. All of them close on the crate's `O20`, like the Python
+ones.
+
+**What is genuinely this client's**, and it is the one thing the port decides on
+its own: `open` subscribes here where a script feeds one poll loop, so a
+composed view over several editable structures **wires itself** rather than
+being pumped. That is `idiom` in `docs/bindings.md`'s sense and is written there
+rather than being allowed to become a second shape.
+
+
 ## Parity gaps carried from the Python client
 
 - **`boot`/`attach`: ported as far as the browser has the concepts** (closed
@@ -1647,22 +1685,6 @@ this list rather than being ticked here.
   `Editor.route` has no branch for it: the event falls through, nothing
   corrects the picture, and the drawing and the timeline part company in
   silence. Fixed the same way in both clients, and only in both.
-
-- ⬜ **The generic editor: `edit(x)`, and `Editor` renamed to `FormEditor`**
-  *(the port of `clients/python/PLAN.md`'s entry of the same name, both owed by
-  `crates/clausters-document/PLAN.md`'s `O19`, which closed saying they were
-  already written in these plans — they were not)*. The verb that opens an
-  editable view over a bare structure the way `plot` opens a static one: a
-  `Timeline`, a `Buffer`, a break-point curve, with the handle it returns being
-  what the edited data is read back through.
-
-  Nothing here is decided separately from the Python client — same class names,
-  same calls in the same order, `Editing` keyed the same way — and **the surface
-  must not appear in one client before the other**, which is the whole of what
-  this entry is here to prevent. What is genuinely this client's is the shape
-  already recorded in `docs/bindings.md`'s sense: `open` subscribes here where a
-  script feeds one poll loop, so a composed view of several editable structures
-  wires itself rather than being pumped.
 
 - ✅ **Who builds `libfaust-wasm`** *(left over from **W7**/**B5**, decided and
   done 2026-08-27)*. The question was whether CI grows an **emsdk** leg or the
