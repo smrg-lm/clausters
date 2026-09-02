@@ -1640,6 +1640,22 @@ Every entry carries a checkbox, like the plan's "Found by use" below: an
 open direction has to read as open, and one that converges into a milestone leaves
 this list rather than being ticked here.
 
+- ⬜ **The generic editor: `edit(x)`, and `Editor` renamed to `FormEditor`**
+  *(the port of `clients/python/PLAN.md`'s entry of the same name, both owed by
+  `crates/clausters-document/PLAN.md`'s `O19`, which closed saying they were
+  already written in these plans — they were not)*. The verb that opens an
+  editable view over a bare structure the way `plot` opens a static one: a
+  `Timeline`, a `Buffer`, a break-point curve, with the handle it returns being
+  what the edited data is read back through.
+
+  Nothing here is decided separately from the Python client — same class names,
+  same calls in the same order, `Editing` keyed the same way — and **the surface
+  must not appear in one client before the other**, which is the whole of what
+  this entry is here to prevent. What is genuinely this client's is the shape
+  already recorded in `docs/bindings.md`'s sense: `open` subscribes here where a
+  script feeds one poll loop, so a composed view of several editable structures
+  wires itself rather than being pumped.
+
 - ✅ **Who builds `libfaust-wasm`** *(left over from **W7**/**B5**, decided and
   done 2026-08-27)*. The question was whether CI grows an **emsdk** leg or the
   artifact is **fetched** and pinned by digest, and fetching turned out never to

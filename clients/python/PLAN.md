@@ -725,6 +725,21 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
 
 ## Found by use: the running list of fixes and open questions
 
+- ⬜ **A patch cord reports a change even when the cord is the one already
+  there** *(found 2026-09-02, sweeping the "a no-op is not a change" class; the
+  other five routes are fixed, this one is the leftover)*. `_apply_wire` writes
+  the two members' controls directly and then calls `_changed()`
+  unconditionally, so drawing the cord that is already drawn moves the version
+  and tells every other view of the composition to come into step with nothing.
+
+  It is the last route that is **not** an intent — no verb describes a wire yet,
+  which is also why it is undoable by nothing (`O13`'s closing note) — so it has
+  no `applied` to pass on the way that the other five now do. The fix is either
+  to compare the controls before and after, which is small and local, or to give
+  a cord its own intent, which is what that route actually wants and would make
+  it undoable in the same move. The second is the reason this is written down
+  rather than patched.
+
 - ✅ **A redefine renumbers every widget, so anything a client keeps keyed by a
   widget id is silently reset** *(found 2026-09-02, chasing why undo/redo reset
   the zoom in `editors/two_windows.py`; the zoom itself is fixed in the host —
@@ -1978,6 +1993,36 @@ work, where a pending item reads as done.)*
 Every entry carries a checkbox, like "Found by use" above: an open direction has
 to read as open, and one that converges into a milestone leaves this list rather
 than being ticked here.
+
+- ⬜ **The generic editor: `edit(x)`, and `Editor` renamed to `FormEditor`**
+  *(owed by `crates/clausters-document/PLAN.md`'s `O19`, which closed on
+  2026-09-01 saying these "are written in their plans" — they were not, which is
+  what this entry fixes; the floor `O19` built for them is in place)*. The
+  history stopped being an editor's the moment it moved to the arrangement, and
+  what that opens is the verb the whole `O` track was pointed at: **`edit(x)`
+  opens an editable view over a bare structure the way `plot` opens a static
+  one** — a `Timeline`, a `Buffer`, a break-point curve — and returns a handle
+  the caller reads the edited data back through.
+
+  Three things it has to settle, and none of them is the history any more:
+
+  - **What class it returns**, and how it relates to the multitrack. `Editor`
+    becomes `FormEditor` — the one whose model is a *tree* and which composes
+    the others — and the roll, the curve and the samples views become editors in
+    their own right rather than modes (`open_pianoroll`, `open_signal`) that a
+    tree editor happens to carry.
+  - **How a structure with no composition behind it registers.** The crate's
+    answer is there: `History.register` mints the identity and the caller keeps
+    it, which is also the read-back path. What the client has to decide is
+    *which* history — the ambient session's, or one the caller passes — since
+    that is what decides what shares an undo order (`Editing` is the shape
+    today, keyed by the element).
+  - **What a composed view is.** A `GuiDef` holding a roll and a curve
+    registers both in one history and undoes across them in one order; that is
+    the case `O15` was reshaped for, and nothing exercises it yet.
+
+  The web client ports it (`clients/web/PLAN.md`, the same entry). Neither is
+  started, and the surface must not appear in one client before the other.
 
 - ✅ **One tempo verb: an extent in either unit, and a shape written in one
   call** *(designed and shipped 2026-08-31, from the user's "calcular el tempo
