@@ -280,6 +280,17 @@ instrument and everything else the roll cannot show, and the length a drag on
 its edge sets is the note's `sustain` — which is what the bar draws — so its
 `dur` and `legato` stay as they were written.
 
+**Cut, copy and paste are one mechanism.** A block of notes copied out of a roll
+(`Ctrl+C`) is written onto the roll a paste addresses as an ordinary edit of its
+notes — the same call a drag on a note goes through — so it is one entry on the
+pile, and one undo takes the whole block back. The position a paste names is on
+the *timeline's* axis while a roll's notes are in its clip's own time, so a clip
+placed at beat 2 holds its own note 0 there: the editor converts, and the block
+keeps the spread it was copied with. A cut whose selection covers a clip removes
+that placement, undoably; a cut running across one, and a paste of a block of
+*samples*, are refused with the reason — audio with neither a source nor a
+source's owner is not something an editor of placements may invent.
+
 Two dedicated views open on one element instead of the multitrack:
 `openPianoroll(host, element)` for an editable note grid, and
 `openSignal(host, element)` for the editor-grade waveform of a rendered element

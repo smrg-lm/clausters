@@ -598,11 +598,21 @@ editor.can_undo              # True: a cut is an edit, so it inverts
 
 A cut whose selection **covers a clip** removes that placement, through the
 document, undoably. A cut running **across** one implies a new length for the
-samples under it, and a paste of a block of samples is audio with neither a
-source nor a source's owner — both are refused, with the reason travelling back
-so the window can say why rather than appearing to ignore the key. Writing
-samples is the job of whoever owns them, against a working copy, which
-is a different thing from placing elements in time.
+samples under it, and that one is refused with the reason travelling back, so
+the window can say why rather than appearing to ignore the key.
+
+A paste places what the clipboard holds, and the three verbs are **one
+mechanism**: a block of notes copied out of a roll is written onto the roll the
+paste addresses as an ordinary edit of its notes — the same call a drag on a
+note goes through — so it is one entry on the pile and one undo takes the whole
+block back. Where the clipboard holds *samples* the answer is a refusal, because
+audio with neither a source nor a source's owner is not something an editor of
+placements may invent: writing samples is the job of whoever owns them, against
+a working copy, which is a different thing from placing elements in time.
+
+The position a paste names is on the **timeline's** axis, and a roll's notes are
+in its clip's own time, so a clip placed at beat 2 holds its own note 0 there —
+the editor converts, and the block keeps the spread it was copied with.
 
 ### Saving: the document plus where its sources are
 

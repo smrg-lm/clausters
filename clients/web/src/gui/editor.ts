@@ -1428,18 +1428,74 @@ export class Editor {
     /**
      * A paste asked for over a view, carrying the clipboard with it.
      *
-     * **What this editor can place is elements.** A block of *samples* is
-     * samples, and samples are written by whoever owns them against a working
-     * copy; an arrangement editor placing a nameless block of audio would be
-     * inventing both a source and a source's owner.
+     * The clipboard travels *with* the request — the host's, so that a block
+     * copied in one window pastes into another — and what arrives is the
+     * crate's typed document: its kind, its JSON, and its bulk beside it.
+     *
+     * **A paste is the same edit its own copy was.** A block of notes is
+     * written onto the addressed roll by `applyNotes`, the very call a drag on
+     * a note goes through: one `setmembers`, one entry on the pile, one undo.
+     * The three verbs are one mechanism, so a block that a roll's `Ctrl+C` put
+     * on the clipboard lands the same way whether the roll pasted it itself or
+     * the window asked this editor to.
+     *
+     * **What it cannot place is samples.** They are written by whoever owns
+     * them against a working copy, and an arrangement editor placing a nameless
+     * block of audio would be inventing both a source and a source's owner.
      */
     private applyPaste(wid: number, values: readonly unknown[]): boolean {
-        if (!this.clips.has(wid) && !this.lanes.has(wid)) return false;
+        const element = this.rolls.get(wid);
+        if (element === undefined && !this.clips.has(wid) && !this.lanes.has(wid)) return false;
+        const position = values.length > 0 ? Number(values[0]) : 0.0;
         const kind = values.length > 1 ? String(values[1]) : "";
+        const block = clipboardNotes(kind, values.length > 2 ? String(values[2]) : "");
+        if (block !== null) {
+            if (element === undefined) {
+                this.reason = "a block of notes is written onto a roll, and this view holds none";
+                return false;
+            }
+            return this.pasteNotes(wid, element, position, block);
+        }
         this.reason =
-            `this editor places elements; a ${kind || "clipboard"} block is ` +
-            "samples, and samples are written by their owner";
+            `this editor places elements and notes; a ${kind || "clipboard"} ` +
+            "block is samples, and samples are written by their owner";
         return false;
+    }
+
+    /**
+     * Place a copied block of notes on `element`'s timeline, its first onset at
+     * `position`.
+     *
+     * The block keeps the spread it was copied with — a paste places what was
+     * taken, not a re-quantized version of it — and the notes already there keep
+     * their identity, because what goes to the log is the whole resulting list
+     * and the ones that were held are held by index (`applyNotes`).
+     *
+     * `position` is the axis the host swept, so it is in the **timeline's**
+     * units while a roll's notes are in the clip's own: a clip placed late holds
+     * note 0 at its offset, which is the one conversion between the axis and the
+     * notes on it.
+     */
+    private pasteNotes(
+        wid: number,
+        element: Element,
+        position: number,
+        block: readonly Note[],
+    ): boolean {
+        if (editableTimeline(element) === null) {
+            this.reason =
+                "this clip draws what a generator produced; render it to a track " +
+                "to paste into it";
+            return false;
+        }
+        const placed = this.clips.get(wid);
+        const at = Math.max(0.0, position - (placed !== undefined ? placed.offset : 0.0));
+        const first = Math.min(...block.map((note) => note[0]));
+        const pasted: Note[] = block.map(
+            (note) => [note[0] - first + at, note[1], note[2], note[3], note[4]],
+        );
+        return this.applyNotes(element, flatNotes([...this.notesOf(element), ...pasted]),
+            "paste the notes");
     }
 
     /**
@@ -1800,7 +1856,11 @@ export class Editor {
      * lane, edited or not, came back fully legato with its grid length quietly
      * shortened to what it had been sounding.
      */
-    private applyNotes(element: Element, values: readonly unknown[]): boolean {
+    private applyNotes(
+        element: Element,
+        values: readonly unknown[],
+        label = "edit the notes",
+    ): boolean {
         const timeline = editableTimeline(element);
         if (timeline === null) return false;
         const node = this.nodeId(element);
@@ -1864,7 +1924,7 @@ export class Editor {
                 },
             };
         });
-        const outcome = this.record({ intent: "setmembers", node, members }, "edit the notes");
+        const outcome = this.record({ intent: "setmembers", node, members }, label);
         if (outcome === null) return false;
         this.project(outcome.effective);
         return this.changed(outcome.applied);
@@ -3235,6 +3295,52 @@ function quads(flat: readonly number[]): [number, number, number, number][] {
         ]);
     }
     return out;
+}
+
+/**
+ * The block of notes on the clipboard a paste carried, or `null` when what is on
+ * it is not one.
+ *
+ * The clipboard is one typed document and a note block is its `text` kind — the
+ * flat `start dur pitch velocity channel` array a `/gui_set notes` takes, which
+ * is the host's own vocabulary for a roll. Reading it here rather than inventing
+ * a shape is what keeps a block copied in a roll and a block pasted over a clip
+ * the same block.
+ *
+ * A three-number group is the older `start dur pitch` form, read the way the
+ * `notes` prop reads it: velocity 100, channel 0.
+ *
+ * **The dispatch is on the kind, so another one is another branch.** The text
+ * kind is deliberately the one a note block travels in: it is a string, which is
+ * the only thing that crosses a *system* clipboard on every platform, so a block
+ * copied here stays pasteable the day the host's own clipboard is bridged to the
+ * desktop's or to the browser's. A structured `elements` block — the tree's own
+ * placed members — is the kind that will arrive when an owner has a door to put
+ * one on the clipboard; it lands here, beside this, and every caller is
+ * unchanged.
+ */
+function clipboardNotes(kind: string, raw: string): Note[] | null {
+    if (kind !== "text") return null;
+    let flat: unknown;
+    try {
+        const document = JSON.parse(raw) as { content?: { text?: string } };
+        flat = JSON.parse(document?.content?.text ?? "");
+    } catch {
+        return null;
+    }
+    if (!Array.isArray(flat) || flat.length === 0) return null;
+    const values = flat.map((x) => Number(x));
+    if (values.some((x) => !Number.isFinite(x))) return null;
+    const stride = values.length % 5 === 0 ? 5 : 3;
+    const notes: Note[] = [];
+    for (let i = 0; i + stride <= values.length; i += stride) {
+        notes.push(
+            stride === 5
+                ? [values[i], values[i + 1], values[i + 2], values[i + 3], values[i + 4]]
+                : [values[i], values[i + 1], values[i + 2], 100, 0],
+        );
+    }
+    return notes.length > 0 ? notes : null;
 }
 
 /**

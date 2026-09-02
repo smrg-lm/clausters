@@ -3106,6 +3106,27 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   "only a seekable transport gets a cursor", and the roll, the waveform and the
   engraved page all say so the same way.
 
+- ⬜ **Copying an *element* needs a door the protocol does not have.** The typed
+  clipboard has an `elements` kind — a piece of the tree, placed members — and
+  nothing builds one, because neither side can. The **host** cannot: it owns no
+  composition, so it has no member to serialize, and writing one would mean
+  inventing a client's vocabulary for a node's configuration. The **owner**
+  cannot either: the clipboard is the host's (that is the whole point — a block
+  copied in one window pastes against an owner that never saw the copy) and
+  there is no command that puts something on it. So `Ctrl+C` over a clip copies
+  the *samples* under the selection, which is honest and is not what the gesture
+  usually means.
+
+  What closes it is one door, not a feature: a **copy request** the host emits
+  when what is under the pointer is a placement rather than a trace, and a way
+  for the owner to answer it by putting a typed document on the host's
+  clipboard. Then copying a clip and pasting it — the arrangement's own
+  cut/copy/paste, undoable like every other `setmembers` — falls out, and the
+  `elements` kind stops being a constructor with only tests behind it. **The
+  system clipboard is a separate question and stays out**: what crosses to the
+  desktop or to a page is a string, which is why a note block already travels in
+  the `text` kind, and bridging it is its own work with its own platform matrix.
+
 ## Found by use: the running list of fixes
 
 - ✅ **A tie between two different pitches is accepted, written, and dropped by
@@ -4533,3 +4554,32 @@ finished work, where a pending item reads as done.
   should still take a share of the layout at all or collapse to nothing so the
   window looks wrong in the direction of "something is missing" rather than
   "something is empty".
+
+- ✅ **A paste was refused everywhere, and the reason blamed samples for it**
+  *(found 2026-09-02, reading the three verbs against each other after a
+  question about where paste sits in the edit stack; fixed the same day)*. `G24h`
+  gave the roll its own trio inside the element (`elements/notes.rs`): all three
+  keys handled there, cut and paste emitting `notes_event()`, so a block pasted
+  in a roll was already one ordinary `setmembers` and one undo. `D4` then gave
+  the *window* a second trio (`gestures/keys.rs::clipboard_key`) against the
+  typed clipboard: copy is the host's read, cut and paste leave as intents. The
+  two never met at the far end — `Editor._apply_paste` refused **every** paste
+  it saw, with a sentence about samples, so a note block copied in a roll and
+  pasted over a clip on a lane was answered by a reason that described a
+  different payload.
+
+  **The fix is that a paste is the same edit its own copy was.** A `text` block
+  holding the flat quintuple array is read back and handed to `_apply_notes` /
+  `applyNotes`, the very call a drag on a note goes through: one `setmembers`,
+  one entry on the pile, one undo for the block. It also settles an offset the
+  two sides measured differently — the position the host sweeps is on the
+  timeline's axis and a roll's notes are in its clip's own time — and the
+  refusals now name what is missing (a view with no roll to write onto) instead
+  of naming samples for everything. The note block stays in the `text` kind
+  deliberately: a string is the one thing a *system* clipboard carries on every
+  platform, so the block stays pasteable the day the host's own clipboard is
+  bridged to the desktop's or the browser's.
+
+  What remains is `Clipboard::elements`, still a constructor nobody calls —
+  and it is not an oversight but a missing door, written up under "Future
+  directions" above.

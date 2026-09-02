@@ -34,6 +34,7 @@ aggregate or resolves it), so it needs no protocol of its own.
 
 import copy
 import itertools
+import json
 import weakref
 
 from .. import _native
@@ -1319,21 +1320,61 @@ class Editor:
         copied in one window pastes into another — and what arrives is the
         crate's typed document: its kind, its JSON, and its bulk beside it.
 
-        **What this editor can place is elements.** A block of *samples* is
-        samples, and samples are written by whoever owns them against a working
-        copy; an arrangement editor placing a nameless block of audio would be
-        inventing both a source and a source's owner. So a sample paste is
-        refused with the reason, which is the honest answer until the samples
-        half of the track lands.
+        **A paste is the same edit its own copy was.** A block of notes is
+        written onto the addressed roll by `_apply_notes`, the very call a
+        drag on a note goes through: one `setmembers`, one entry on the pile,
+        one undo. The three verbs are one mechanism, so a block that a roll's
+        `Ctrl+C` put on the clipboard lands the same way whether the roll
+        pasted it itself or the window asked this editor to.
+
+        **What it cannot place is samples.** They are written by whoever owns
+        them against a working copy, and an arrangement editor placing a
+        nameless block of audio would be inventing both a source and a source's
+        owner — so that one is refused with the reason, which is the honest
+        answer until the samples half of the track lands.
         """
-        if wid not in self._clips and wid not in self._lanes:
+        element = self._rolls.get(wid)
+        if element is None and wid not in self._clips and wid not in self._lanes:
             return False
+        position = float(values[0]) if values else 0.0
         kind = str(values[1]) if len(values) > 1 else ""
+        block = _clipboard_notes(kind, str(values[2]) if len(values) > 2 else "")
+        if block is not None:
+            if element is None:
+                self._reason = ("a block of notes is written onto a roll, and "
+                                "this view holds none")
+                return False
+            return self._paste_notes(wid, element, position, block)
         self._reason = (
-            f"this editor places elements; a {kind or 'clipboard'} block is "
-            "samples, and samples are written by their owner"
-        )
+            f"this editor places elements and notes; a {kind or 'clipboard'} "
+            "block is samples, and samples are written by their owner")
         return False
+
+    def _paste_notes(self, wid: int, element, position: float, block) -> bool:
+        """Place a copied block of notes on ``element``'s timeline, its first
+        onset at ``position``.
+
+        The block keeps the spread it was copied with — a paste places what was
+        taken, not a re-quantized version of it — and the notes already there
+        keep their identity, because what goes to the log is the whole resulting
+        list and the ones that were held are held by index (`_apply_notes`).
+
+        ``position`` is the axis the host swept, so it is in the **timeline's**
+        units while a roll's notes are in the clip's own: a clip placed late
+        holds note 0 at its offset, which is the one conversion between the
+        axis and the notes on it.
+        """
+        if _editable_timeline(element) is None:
+            self._reason = ("this clip draws what a generator produced; render "
+                            "it to a track to paste into it")
+            return False
+        placed = self._clips.get(wid)
+        at = max(0.0, position - (placed.offset if placed is not None else 0.0))
+        first = min(note[0] for note in block)
+        pasted = [(note[0] - first + at, *note[1:]) for note in block]
+        return self._apply_notes(element,
+                                 _flat_notes(list(self._notes(element)) + pasted),
+                                 label="paste the notes")
 
     def resolve_selection(self) -> list:
         """The **samples under the current selection**, through the crate.
@@ -1662,7 +1703,7 @@ class Editor:
         self._project(outcome["effective"])
         return self._changed(outcome["applied"])
 
-    def _apply_notes(self, element, values) -> bool:
+    def _apply_notes(self, element, values, label="edit the notes") -> bool:
         """Notes edited in a roll — a clip's body or the dedicated piano-roll
         alike, since both send it (the flat ``"notes"`` payload,
         `start dur pitch velocity channel` quintuples): written onto the element's
@@ -1742,7 +1783,7 @@ class Editor:
                             "node": {"id": int(nid), "kind": "clang",
                                      "config": leaf_config(Clang(event))}})
         outcome = self._record({"intent": "setmembers", "node": node,
-                                "members": members}, "edit the notes")
+                                "members": members}, label)
         if outcome is None:
             return False
         self._project(outcome["effective"])
@@ -3021,6 +3062,47 @@ def _quintuples(flat) -> list:
     piano-roll's `notes` wire form."""
     flat = list(flat)
     return [tuple(flat[i:i + 5]) for i in range(0, len(flat) - 4, 5)]
+
+
+def _clipboard_notes(kind: str, raw: str):
+    """The block of notes on the clipboard a paste carried, or ``None`` when
+    what is on it is not one.
+
+    The clipboard is one typed document and a note block is its ``text`` kind —
+    the flat ``start dur pitch velocity channel`` array a ``/gui_set notes``
+    takes, which is the host's own vocabulary for a roll. Reading it here rather
+    than inventing a shape is what keeps a block copied in a roll and a block
+    pasted over a clip the same block.
+
+    A three-number group is the older ``start dur pitch`` form, read the way the
+    ``notes`` prop reads it: velocity 100, channel 0.
+
+    **The dispatch is on the kind, so another one is another branch.** The text
+    kind is deliberately the one a note block travels in: it is a string, which
+    is the only thing that crosses a *system* clipboard on every platform, so a
+    block copied here stays pasteable the day the host's own clipboard is
+    bridged to the desktop's or to the browser's. A structured ``elements``
+    block — the tree's own placed members — is the kind that will arrive when
+    an owner has a door to put one on the clipboard; it lands here, beside
+    this, and every caller is unchanged.
+    """
+    if kind != "text":
+        return None
+    try:
+        document = json.loads(raw)
+        flat = json.loads((document.get("content") or {}).get("text", ""))
+    except (AttributeError, TypeError, ValueError):
+        return None
+    if not isinstance(flat, list) or not flat:
+        return None
+    stride = 5 if len(flat) % 5 == 0 else 3
+    try:
+        values = [float(x) for x in flat]
+    except (TypeError, ValueError):
+        return None
+    notes = [tuple(values[i:i + stride]) + ((100.0, 0.0) if stride == 3 else ())
+             for i in range(0, len(values) - stride + 1, stride)]
+    return notes or None
 
 
 def _roll_owner(element, tempo: float = 1.0):

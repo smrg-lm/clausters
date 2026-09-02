@@ -2511,3 +2511,50 @@ def test_a_logical_aggregates_buses_survive_the_document():
     back = from_document(to_document(g))
     assert back.bus_names == ["mix"]
     assert back.bus_specs == [{"name": "mix", "rate": "audio", "channels": 1}]
+
+
+def test_a_copied_block_of_notes_pastes_onto_a_roll_and_undoes_in_one_step():
+    """**Cut, copy and paste are one mechanism**, so a block a roll put on the
+    clipboard lands through the same call a drag on a note goes through: one
+    `setmembers`, one entry on the pile, one undo.
+
+    It also settles the offset the two sides measure differently: the position
+    the host swept is on the *timeline's* axis and a roll's notes are in the
+    clip's own, so a clip placed at beat 2 holds its note 0 at beat 2.
+    """
+    timeline = Timeline([(0.0, SeqEvent(midinote=60, dur=1.0))])
+    piece = Aggregate([(0.0, Aggregate([(2.0, Track(timeline))], name="lead"))],
+                      name="song")
+    ed = editor(piece)
+    host = _FakeHost()
+    ed.open(host)
+    wid = clips(lanes(ed.draw())[0])[0]["id"]
+
+    # What a roll's Ctrl+C puts on the clipboard: the typed document's text
+    # kind, holding the flat quintuple array a `/gui_set notes` takes. Pasted
+    # at beat 6 of the timeline, which is beat 4 of a clip placed at beat 2.
+    block = '{"content":{"kind":"text","text":"[0, %g, 72, 100, 0]"}}' % BEAT
+    changed = ed.apply("/gui_event", [wid, SEQ, UNSTATED, "paste",
+                                      6.0 * BEAT, "text", block])
+
+    assert changed, "a paste adds notes, so the composition moved"
+    placed = [(beat, item["midinote"]) for beat, item in timeline]
+    assert placed == [(0.0, 60), (4.0, 72)]
+
+    ed.undo()
+    assert [(beat, item["midinote"]) for beat, item in timeline] == [(0.0, 60)], \
+        "one undo takes the whole block back"
+
+
+def test_a_pasted_block_is_refused_where_no_roll_can_hold_it():
+    """The reason names what is missing rather than talking about samples: a
+    block of notes is written onto a roll, and a lane holds clips."""
+    ed = editor()
+    host = _FakeHost()
+    ed.open(host)
+
+    lane = next(iter(ed._lanes))
+    block = '{"content":{"kind":"text","text":"[0, 480, 72, 100, 0]"}}'
+    assert not ed.apply("/gui_event", [lane, SEQ, UNSTATED, "paste", 0.0, "text", block])
+    _, _, reason = host.answers[-1]
+    assert reason and "roll" in reason

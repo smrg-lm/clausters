@@ -1025,6 +1025,60 @@ test("a sample paste is refused because the audio has an owner", async () => {
     assert.match(String(host.reasons.at(-1)), /samples are written by their owner/);
 });
 
+test("a copied block of notes pastes onto a roll and undoes in one step", async () => {
+    // **Cut, copy and paste are one mechanism**, so a block a roll put on the
+    // clipboard lands through the same call a drag on a note goes through: one
+    // `setmembers`, one entry on the pile, one undo.
+    //
+    // It also settles the offset the two sides measure differently: the position
+    // the host swept is on the *timeline's* axis and a roll's notes are in the
+    // clip's own, so a clip placed at beat 2 holds its note 0 at beat 2.
+    const timeline = new Timeline([[0.0, new SeqEvent({ midinote: 60, dur: 1.0 })]]);
+    const piece = new Aggregate(
+        [[0.0, new Aggregate([[2.0, new Track(timeline)]], "concrete", { name: "lead" })]],
+        "concrete",
+        { name: "song" },
+    );
+    const ed = editor(piece);
+    const host = new FakeHost();
+    await ed.open(asHost(host));
+    const wid = (clipsOf(lanes(ed.draw())[0] as GuiNode)[0] as GuiNode).id as number;
+
+    // What a roll's Ctrl+C puts on the clipboard: the typed document's text
+    // kind, holding the flat quintuple array a `/gui_set notes` takes. Pasted
+    // at beat 6 of the timeline, which is beat 4 of a clip placed at beat 2.
+    const block = `{"content":{"kind":"text","text":"[0, ${BEAT}, 72, 100, 0]"}}`;
+    assert.equal(
+        ed.apply("/gui_event", [wid, SEQ, UNSTATED, "paste", 6.0 * BEAT, "text", block]),
+        true,
+        "a paste adds notes, so the composition moved",
+    );
+    const placed = [...timeline].map(([beat, item]) => [beat, (item as SeqEvent).get("midinote")]);
+    assert.deepEqual(placed, [[0.0, 60], [4.0, 72]]);
+
+    ed.undo();
+    assert.deepEqual(
+        [...timeline].map(([beat, item]) => [beat, (item as SeqEvent).get("midinote")]),
+        [[0.0, 60]],
+        "one undo takes the whole block back",
+    );
+});
+
+test("a pasted block is refused where no roll can hold it", async () => {
+    // The reason names what is missing rather than talking about samples: a
+    // block of notes is written onto a roll, and a lane holds clips.
+    const ed = editor();
+    const host = new FakeHost();
+    await ed.open(asHost(host));
+    const lane = (lanes(ed.draw())[0] as GuiNode).id as number;
+    const block = '{"content":{"kind":"text","text":"[0, 480, 72, 100, 0]"}}';
+    assert.equal(
+        ed.apply("/gui_event", [lane, SEQ, UNSTATED, "paste", 0.0, "text", block]),
+        false,
+    );
+    assert.match(String(host.reasons.at(-1)), /roll/);
+});
+
 test("two editors over one composition keep one history", () => {
     // O19's acceptance, and the inverse of the defect it was opened for. Two
     // windows over one composition used to mint a history each, so stepping one

@@ -194,7 +194,7 @@ The **edit-back payloads**:
 | `"sample"` | `channel frame value previous` — the frame as an OSC **long** (a float runs out of integers at 16.7 million, six minutes of audio, and a sample index is exact or it is the wrong sample) | one sample dragged on a navigable trace, under the `sample` gesture step. **Absolute and carrying its own inverse**, so the owner can apply it and undo it without having remembered anything. The host draws the held value over the picture, marked, and lets go when the edit is acknowledged — so an owner acknowledges *after* pushing the samples that now holds, or the old value blinks back |
 | `"draw"` | `channel start <values blob> <previous blob>` — the two runs as little-endian `f32` blobs, the bulk convention `/buffer_setRange` and the clipboard already follow | one **stroke** over a navigable trace, under the `draw` gesture step. **One intent per stroke**, not per sample: what the hand did on the way is the pending drawing's business, and the owner gets the run it ended with — plus what it replaced, so the edit is invertible |
 | `"cut"` | `start len` (samples) | Ctrl+X over a selection. The host owns no data, so this is a **request**: the owner cuts and answers with what the composition now is, and the length change a cut implies is the owner's to decide |
-| `"paste"` | `position kind json` plus one **blob** per bulk payload | Ctrl+V. The clipboard travels *with* the request — it is the host's, so a block copied in one window pastes against an owner that never saw it. `kind` is the clipboard's (`text`/`elements`/`samples`/`spectral`), `json` the whole typed document, and the blobs are the payloads it names, interleaved little-endian `f32` |
+| `"paste"` | `position kind json` plus one **blob** per bulk payload | Ctrl+V. The clipboard travels *with* the request — it is the host's, so a block copied in one window pastes against an owner that never saw it. `kind` is the clipboard's (`text`/`elements`/`samples`/`spectral`), `json` the whole typed document, and the blobs are the payloads it names, interleaved little-endian `f32`. `position` is on the **timeline's** axis (where the selection starts), so an owner writing onto a clip converts it into the clip's own time |
 | `"refused"` | `verb reason` | the host could not do its own half — a copy whose source it cannot read (a mapped overview, a live view), a paste whose payload did not travel, a **stroke where a pixel is more than one sample**. Said out loud, because a key or a pencil that silently does nothing teaches that it sometimes does not work |
 | `"view"` | `start len` (samples), or `x y zoom` on a `plane` | the navigation window zoomed or panned — the timeline group's shared window, or a 2D workspace's plane |
 | `"view_y"` | `start len` (0..1) | the vertical display window zoomed or panned |
@@ -243,6 +243,18 @@ The clipboard is one **typed document** — `text`, `elements`, `samples` or
 base64, which is the same rule every other large payload here follows. A
 `samples` block is never resampled in transit: resampling is an edit, and an
 edit is something an owner performs and logs.
+
+**A block of notes travels in the `text` kind**, holding the flat
+`start dur pitch velocity channel` array a `/gui_set notes` takes — the host's
+own vocabulary for a roll, so a block it copied is a block it can describe. That
+is also what keeps it portable: a string is the one thing that crosses a system
+clipboard on every platform. Pasted, it is written onto the addressed roll as an
+ordinary `setmembers` — the very edit a drag on a note makes — so a paste is one
+entry on the edit stack and one undo takes the whole block back. **The three
+verbs are one mechanism**: what a copy puts on the clipboard is what a paste
+places, whether the roll pasted it itself or the window asked the owner to. A
+paste onto a view that holds no notes is refused with the reason, as is a
+`samples` block, whose owner has to write it.
 
 ### Answering an event
 
