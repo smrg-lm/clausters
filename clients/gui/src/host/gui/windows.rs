@@ -28,10 +28,43 @@ use super::app::{App, WindowState};
 use super::serverleg::tree_has_node_tree;
 use super::{NODETREE_POLL, PLACEHOLDER_ORIGIN};
 
+/// What a `/gui_def` builds for a window that already exists: the bulk slots,
+/// the canvases, and the buffer references its fetches will fill. Named because
+/// the four travel together out of one call and a bare tuple of maps says
+/// nothing about which is which.
+type DefResources = (
+    HashMap<i32, WaveformSlot>,
+    HashMap<i32, SpectrogramSlot>,
+    HashMap<i32, CanvasView>,
+    Vec<(i32, i32, bool)>,
+);
+
 impl App {
+    /// Opens the window a window-rooted GuiDef asks for — **or brings the one
+    /// it already has up to the new tree**.
+    ///
+    /// Every `/gui_def` over a window root ends here, and most of them are
+    /// *re*-defines: a structural edit, an aggregate expanded, a second view
+    /// answering an edit made in the first. Destroying the OS window and
+    /// creating another one for those is not a redraw, it is a window that
+    /// closes and reopens — it loses its place on the desktop, its size, its
+    /// focus and a frame's worth of GPU bring-up, and it does it under a hand
+    /// that may be in another window entirely.
+    ///
+    /// So a redefine **keeps the shell**: the window, its surface, its
+    /// renderers and painters, where the pointer is and which modifiers are
+    /// down. What is rebuilt is what belongs to the *def* — the bulk slots, the
+    /// canvases, the pending fetches — which is exactly what the browser front
+    /// has always done with its canvas (`clear_def_state`, then build the
+    /// resources again). The two are one host compiled twice, so they do this
+    /// the same way.
+    ///
+    /// The title follows the new tree; the **size does not**. A declared size is
+    /// what a window opens at, and re-imposing it on every redefine would take
+    /// back a size the person had chosen with the mouse.
     pub(super) fn open_window(&mut self, event_loop: &ActiveEventLoop, id: i32, origin: ClientId) {
         // Read the window metadata, releasing the host borrow before mutating
-        // (drop_window) and before re-borrowing the tree for the waveforms.
+        // and before re-borrowing the tree for the waveforms.
         let Some(title) = self.host.window_def(id).and_then(|t| match &t.kind {
             WidgetKind::Window { title, .. } => Some(
                 title
@@ -47,86 +80,84 @@ impl App {
             return;
         };
 
-        self.drop_window(id); // rebuild semantics on a re-/gui_def
+        // Rebuild semantics either way: a fetch in flight would fill a tree
+        // that is no longer there.
+        self.fetches.drop_def(id);
 
-        let attrs = Window::default_attributes()
-            .with_title(title.clone())
-            .with_inner_size(LogicalSize::new(width as f64, height as f64));
-        let window = match event_loop.create_window(attrs) {
-            Ok(w) => Arc::new(w),
-            Err(e) => return warn!("gui_def {id}: cannot create window: {e}"),
+        let held = self.windows.remove(&id);
+        let opened = held.is_some();
+        let (gpu, renderers, painter, overlay, mut state) = match held {
+            Some(ws) => {
+                ws.gpu.window.set_title(&title);
+                ws.gpu.window.request_redraw();
+                let carried = (
+                    ws.origin,
+                    ws.cursor,
+                    ws.shift,
+                    ws.ctrl,
+                    ws.alt,
+                    ws.gestures,
+                    ws.histories,
+                );
+                (ws.gpu, ws.renderers, ws.painter, ws.overlay, Some(carried))
+            }
+            None => {
+                let attrs = Window::default_attributes()
+                    .with_title(title.clone())
+                    .with_inner_size(LogicalSize::new(width as f64, height as f64));
+                let window = match event_loop.create_window(attrs) {
+                    Ok(w) => Arc::new(w),
+                    Err(e) => return warn!("gui_def {id}: cannot create window: {e}"),
+                };
+                let winit_id = window.id();
+                // The window's UI scale, the one platform reading the host
+                // cannot make itself: the shell writes it, the core resolves its
+                // size table once and the wire's logical lengths land on this
+                // display's pixels.
+                let ui_scale = window.scale_factor();
+                self.host.set_ui_scale(id, ui_scale as f32);
+                // A hugging window was sized before it had a scale, and the
+                // resolved table snaps its roles to whole pixels — so on a
+                // fractional scale the estimate is a pixel or two under what the
+                // layout is about to draw. Ask again now that the table is the
+                // one the layout will use.
+                if let Some((w, h)) = self.host.window_size_px(id) {
+                    let _ = window.request_inner_size(PhysicalSize::new(w, h));
+                }
+                let gpu = match pollster::block_on(Gpu::new(window, self.host.msaa)) {
+                    Ok(gpu) => gpu,
+                    Err(e) => return warn!("gui_def {id}: cannot start the GPU: {e}"),
+                };
+                // The window's shared pipelines come first: a spectrogram slot
+                // binds its textures against their layout.
+                let renderers = Renderers::new(&gpu.device, gpu.target());
+                let painter = Painter::new(&gpu.device, gpu.target());
+                let overlay = Painter::new(&gpu.device, gpu.target());
+                self.by_winit.insert(winit_id, id);
+                // The scale is in the line because it is the one thing about a
+                // window nobody can read off a screenshot: a desktop that
+                // ignores what was asked of it (an X11-only override under
+                // Wayland, say) looks exactly like a host that ignored it.
+                info!("gui_def {id}: opened window \"{title}\" at scale {ui_scale}");
+                (gpu, renderers, painter, overlay, None)
+            }
         };
-        let winit_id = window.id();
-        // The window's UI scale, the one platform reading the host cannot make
-        // itself: the shell writes it, the core resolves its size table once and
-        // the wire's logical lengths land on this display's pixels.
-        let ui_scale = window.scale_factor();
-        self.host.set_ui_scale(id, ui_scale as f32);
-        // A hugging window was sized before it had a scale, and the resolved
-        // table snaps its roles to whole pixels — so on a fractional scale the
-        // estimate is a pixel or two under what the layout is about to draw.
-        // Ask again now that the table is the one the layout will use.
-        if let Some((w, h)) = self.host.window_size_px(id) {
-            let _ = window.request_inner_size(PhysicalSize::new(w, h));
-        }
-        let gpu = match pollster::block_on(Gpu::new(window, self.host.msaa)) {
-            Ok(gpu) => gpu,
-            Err(e) => return warn!("gui_def {id}: cannot start the GPU: {e}"),
-        };
 
-        let mut waveforms = HashMap::new();
-        let mut spectrograms = HashMap::new();
-        let mut buffer_refs = Vec::new();
-        let mut canvases = HashMap::new();
-        // The window's shared pipelines come first: a spectrogram slot binds its
-        // textures against their layout.
-        let renderers = Renderers::new(&gpu.device, gpu.target());
-        if let Some(tree) = self.host.window_def_mut(id) {
-            load_bulk(
-                tree,
-                None,
-                &gpu,
-                &renderers,
-                &mut waveforms,
-                &mut spectrograms,
-                &mut buffer_refs,
-            );
+        let (waveforms, spectrograms, canvases, buffer_refs) =
+            self.load_def_resources(id, &gpu, &renderers);
+        if opened {
+            info!("gui_def {id}: redefined window \"{title}\" in place");
         }
-        if let Some(tree) = self.host.window_def(id) {
-            collect_canvases(tree, &gpu, &mut canvases);
-        }
-        // ...and whatever the elements themselves hold goes up through the same
-        // door the tick uses: an element with inline samples fills its slot
-        // here, on the window's first frame rather than on its second. The
-        // device is new, so the tree is told that whatever it handed a previous
-        // one is gone with it.
-        let mut extents = Vec::new();
-        if let Some(tree) = self.host.window_def_mut(id) {
-            frame::slots_dropped(tree);
-            frame::fill_slots(
-                tree,
-                None,
-                &gpu,
-                &renderers,
-                &mut waveforms,
-                &mut spectrograms,
-                &mut extents,
-            );
-        }
-        self.apply_extents(extents);
-        // Register each loaded view's data extent with its navigation group
-        // (the group timeline spans the longest member).
-        for (wid, slot) in &waveforms {
-            self.host
-                .set_timeline_total(*wid, slot.view.total_samples());
-        }
-        for (wid, slot) in &spectrograms {
-            self.host.set_timeline_total(*wid, slot.total_samples());
-        }
-        let painter = Painter::new(&gpu.device, gpu.target());
-        let overlay = Painter::new(&gpu.device, gpu.target());
 
-        self.by_winit.insert(winit_id, id);
+        let (origin, cursor, shift, ctrl, alt, gestures, histories) = state.take().unwrap_or((
+            origin,
+            (0.0, 0.0),
+            false,
+            false,
+            false,
+            Default::default(),
+            HashMap::new(),
+        ));
         self.windows.insert(
             id,
             WindowState {
@@ -138,19 +169,14 @@ impl App {
                 painter,
                 overlay,
                 origin,
-                cursor: (0.0, 0.0),
-                shift: false,
-                ctrl: false,
-                alt: false,
-                gestures: Default::default(),
-                histories: HashMap::new(),
+                cursor,
+                shift,
+                ctrl,
+                alt,
+                gestures,
+                histories,
             },
         );
-        // The scale is in the line because it is the one thing about a window
-        // nobody can read off a screenshot: a desktop that ignores what was
-        // asked of it (an X11-only override under Wayland, say) looks exactly
-        // like a host that ignored it.
-        info!("gui_def {id}: opened window \"{title}\" at scale {ui_scale}");
         if let Some(ws) = self.windows.get(&id) {
             ws.gpu.window.request_redraw();
         }
@@ -171,6 +197,62 @@ impl App {
             self.requery_node_trees();
             self.next_query = Instant::now() + NODETREE_POLL;
         }
+    }
+
+    /// The **def's** own resources, built against a window's GPU: the bulk
+    /// slots, the canvases and the buffer references a fetch will fill.
+    ///
+    /// Separate from the shell because a redefine rebuilds exactly this and
+    /// keeps everything else — which is what makes a redefine a redraw rather
+    /// than a window closing and opening again.
+    fn load_def_resources(&mut self, id: i32, gpu: &Gpu, renderers: &Renderers) -> DefResources {
+        let mut waveforms = HashMap::new();
+        let mut spectrograms = HashMap::new();
+        let mut buffer_refs = Vec::new();
+        let mut canvases = HashMap::new();
+        if let Some(tree) = self.host.window_def_mut(id) {
+            load_bulk(
+                tree,
+                None,
+                gpu,
+                renderers,
+                &mut waveforms,
+                &mut spectrograms,
+                &mut buffer_refs,
+            );
+        }
+        if let Some(tree) = self.host.window_def(id) {
+            collect_canvases(tree, gpu, &mut canvases);
+        }
+        // ...and whatever the elements themselves hold goes up through the same
+        // door the tick uses: an element with inline samples fills its slot
+        // here, on the window's first frame rather than on its second. The
+        // device may be new, so the tree is told that whatever it handed a
+        // previous one is gone with it.
+        let mut extents = Vec::new();
+        if let Some(tree) = self.host.window_def_mut(id) {
+            frame::slots_dropped(tree);
+            frame::fill_slots(
+                tree,
+                None,
+                gpu,
+                renderers,
+                &mut waveforms,
+                &mut spectrograms,
+                &mut extents,
+            );
+        }
+        self.apply_extents(extents);
+        // Register each loaded view's data extent with its navigation group
+        // (the group timeline spans the longest member).
+        for (wid, slot) in &waveforms {
+            self.host
+                .set_timeline_total(*wid, slot.view.total_samples());
+        }
+        for (wid, slot) in &spectrograms {
+            self.host.set_timeline_total(*wid, slot.total_samples());
+        }
+        (waveforms, spectrograms, canvases, buffer_refs)
     }
 
     pub(super) fn drop_window(&mut self, id: i32) {

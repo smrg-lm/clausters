@@ -546,7 +546,11 @@ pub const GUI_CLOSED: &str = "/gui_closed";
 pub enum HostEffect {
     /// Send this message back to the requesting client.
     Reply(OscMessage),
-    /// Open (or rebuild) the window for the GuiDef rooted at this id.
+    /// Open the window for the GuiDef rooted at this id — **or bring the one it
+    /// already has up to this tree**, which is what most of these are: a
+    /// redefine is how a structural edit reaches a window, and destroying the
+    /// window to answer one is not a redraw. A front rebuilds the def's own
+    /// state and keeps the shell.
     OpenWindow(i32),
     /// Close the window for the GuiDef rooted at this id, if any.
     CloseWindow(i32),
