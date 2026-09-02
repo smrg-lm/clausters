@@ -249,7 +249,20 @@ export class Editor {
     private patches = new Map<number, [Aggregate, Member[]]>();
     /** aggregate → `{box index: [x, y]}`, presentation only. */
     private patchGeometry = new Map<Aggregate, Record<number, [number, number]>>();
-    /** Which **edit layer** of each clip the hand is on. Screen state. */
+    /**
+     * Which **edit layer** of each clip the hand is on — the placement, a roll,
+     * a curve. Screen state like a selection: the composition does not change
+     * when it moves.
+     *
+     * Keyed by the **placement's node**, not by the widget drawing it. A widget
+     * id is the *drawing's* name for something and is minted afresh every time
+     * the window is redefined, so anything keyed by one is silently emptied by a
+     * structural edit — and a missing key and "the default layer" are the same
+     * answer, which is why nothing noticed. A node id is the arrangement's own,
+     * stamped by `toDocument` and kept across a re-derivation, so it outlives
+     * the picture the way this state is supposed to. {@link Editor.editLayerOf}
+     * reads it.
+     */
     private editLayer = new Map<number, string>();
     /**
      * Whether the last edit changed **which members exist** — a split, a join, a
@@ -599,6 +612,21 @@ export class Editor {
     detach(): void {
         this.unlisten?.();
         this.unlisten = null;
+    }
+
+    /**
+     * Which layer of a clip the hand last worked on — the placement, a roll, a
+     * curve — or `undefined` where nothing has been touched.
+     *
+     * Screen state, so it is read rather than persisted or logged, and it is the
+     * answer to "what is this window currently editing". Takes what
+     * {@link Aggregate.add} handed back (the placement) the way every other
+     * route here does, since a clip is a window onto an element and the layer
+     * belongs to that window.
+     */
+    editLayerOf(element: Element, member: Member | null = null): string | undefined {
+        const node = this.nodeId(element, member);
+        return node === null ? undefined : this.editLayer.get(node);
     }
 
     /**
@@ -1100,8 +1128,13 @@ export class Editor {
         if (tag === "points") return this.applyPoints(placed, rest);
         if (tag === "layer") {
             // Which layer of a clip the hand is on is **screen state**, like a
-            // selection: the composition did not change.
-            this.editLayer.set(id, String(rest[0]));
+            // selection: the composition did not change. Kept under the
+            // *placement's* node rather than the widget's id, so it survives the
+            // window being redrawn (see the field).
+            const node = placed.member === null
+                ? null
+                : this.nodeId(placed.member.element, placed.member);
+            if (node !== null) this.editLayer.set(node, String(rest[0]));
             return false;
         }
         if (tag === "split") return this.applySplit(placed, Number(rest[0]));

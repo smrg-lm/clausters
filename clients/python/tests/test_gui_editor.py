@@ -2171,10 +2171,22 @@ def test_which_layer_a_hand_is_on_is_screen_state():
     and it is kept so a driver can ask."""
     song, _ = _take_song()
     ed = editor(song)
+    ed.open(_FakeHost())
     (lane,) = lanes(ed.draw())
     (clip,) = clips(lane)
     assert ed.apply("/gui_event", [clip["id"], SEQ, UNSTATED, "layer", "points"]) is False
     assert ed.dirty is False
+
+    # And it is asked for by the **placement**, not by the widget id it arrived
+    # under: a widget id is the drawing's name for something and is minted
+    # afresh every redefine, so state keyed by one is emptied by every
+    # structural edit -- silently, since a missing key and the default layer are
+    # the same answer.
+    placed = ed._clips[clip["id"]]
+    assert ed.edit_layer(placed.member.element, placed.member) == "points"
+    ed.update()
+    assert ed.edit_layer(placed.member.element, placed.member) == "points", \
+        "screen state outlives the picture it was set on"
 
 
 def test_a_joined_clip_cuts_apart_into_the_windows_it_was_made_of():

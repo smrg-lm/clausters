@@ -246,8 +246,11 @@ composition that has moved on — and undoing then writes a state nobody was eve
 in. It holds for a window over a *part* of the piece too: a dedicated roll of
 one track edits through the composition's history rather than opening a second
 one over the same notes. What each window keeps for itself is what a window can
-see — its selection, its zoom, which layer the hand is on — and none of that is
-ever an entry in a history.
+see — its selection, its zoom, which layer the hand is on (`editor.editLayerOf`)
+— and none of that is ever an entry in a history. What a view keeps is asked for
+by the **placement**, the way every other route is: a widget id is the picture's
+name for a widget and is minted afresh every time the window is redrawn, so
+nothing that has to outlive a redraw is keyed by one.
 
 A trim, a split and a join are the same round trip in the same one edit each: a
 placement is a **window onto** an element, so shortening a clip over its own

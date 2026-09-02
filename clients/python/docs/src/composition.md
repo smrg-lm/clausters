@@ -570,6 +570,19 @@ lies under a range of amplitudes is the same samples as what lies under the
 whole span. Reading *only* those samples is an operation over the range, not a
 resolution of it.
 
+The other piece of screen state a driver can ask for is **which layer of a clip
+the hand is on** — its placement, its notes, its curve:
+
+```python
+editor.edit_layer(element, member)   # "roll", say, or None
+```
+
+Both are asked for the way every other route here is: by the **placement**. A
+widget id is the picture's name for a widget and is minted afresh every time the
+window is redrawn, so nothing that has to outlive a redraw is keyed by one — the
+same rule the history follows, one level down: identity belongs to the data,
+never to the view.
+
 ### Cut and paste, and what an editor of placements may do
 
 The host's clipboard verbs reach the editor as two more events, and it answers

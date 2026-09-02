@@ -725,7 +725,7 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
 
 ## Found by use: the running list of fixes and open questions
 
-- ⬜ **A redefine renumbers every widget, so anything a client keeps keyed by a
+- ✅ **A redefine renumbers every widget, so anything a client keeps keyed by a
   widget id is silently reset** *(found 2026-09-02, chasing why undo/redo reset
   the zoom in `editors/two_windows.py`; the zoom itself is fixed in the host —
   the axis is keyed by the **window**, which survives — and this is the general
@@ -755,6 +755,26 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   the axis that zoomed back out, the sweep that vanished — all three were a
   redraw throwing away screen state, and all three are fixed. This one is the
   same shape with the client holding the state instead of the host.
+
+  **Fixed 2026-09-02, and the decision is the third option: nothing outlives a
+  drawing by holding the drawing's name for it.** Stable client ids were the
+  obvious answer and are the wrong one — a widget id *is* the picture's name for
+  a widget, and re-minting it when the picture is rebuilt is correct; making it
+  stable would also mean the client allocating out of a namespace it shares with
+  every other window on the host, which is why leaving it to the host was safe in
+  the first place. So `_edit_layer` / `editLayer` is keyed by the **placement's
+  node** — the arrangement's own identity, stamped by `to_document` and kept
+  across a re-derivation — and the layer is asked for by the placement, through
+  `Editor.edit_layer` / `Editor.editLayerOf`, which is a surface it did not have
+  before (it was written and never readable, so nothing could notice it was
+  being emptied).
+
+  It is the same rule as the history one level down: **identity belongs to the
+  data, never to the view.** Everything the editor *derives* — its clips, lanes,
+  rolls, signals and patches — is rebuilt from the new tree and is right to be
+  keyed by a widget id; anything that has to survive a redraw is keyed by what it
+  is about. That is the sentence a future author needs, and it is now on both
+  fields.
 
 - ✅ **`button` takes no control, `toggle` takes no range, and behind both is
   the same unasked question: what kind of thing is a button?** *(named

@@ -23,7 +23,7 @@ import {
     Track,
     Vector,
 } from "../src/form/index.ts";
-import type { SourceLike } from "../src/form/index.ts";
+import type { Member, SourceLike } from "../src/form/index.ts";
 import { Editing } from "../src/gui/editing.ts";
 import { Editor } from "../src/gui/editor.ts";
 import { TempoMap } from "../src/base/time.ts";
@@ -971,12 +971,28 @@ test("an edit marks the arrangement changed until it is rendered", () => {
 
 // ---- screen state that is not the composition ----
 
-test("which layer a hand is on is screen state", () => {
-    const ed = editor();
+test("which layer a hand is on is screen state", async () => {
+    const piece = song();
+    const ed = editor(piece);
+    await ed.open(asHost(new FakeHost()));
     const c = clipsOf(lanes(ed.draw())[0] as GuiNode)[0] as GuiNode;
     // The composition did not change, and the document is explicit that what a
     // view is currently editing is never part of it.
     assert.equal(ed.apply("/gui_event", [c.id, SEQ, UNSTATED, "layer", "roll"]), false);
+
+    // And it is asked for by the **placement**, not by the widget id it arrived
+    // under: a widget id is the drawing's name for something and is minted
+    // afresh every redefine, so state keyed by one is emptied by every
+    // structural edit — silently, since a missing key and the default layer are
+    // the same answer.
+    const member = (piece.handles[0]?.element as Aggregate).handles[0] as Member;
+    assert.equal(ed.editLayerOf(member.element, member), "roll");
+    ed.update();
+    assert.equal(
+        ed.editLayerOf(member.element, member),
+        "roll",
+        "screen state outlives the picture it was set on",
+    );
 });
 
 test("a sweep becomes the crate's typed selection, in beats", () => {

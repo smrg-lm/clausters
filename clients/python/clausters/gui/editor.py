@@ -211,10 +211,19 @@ class Editor:
         # arrangement or a second view would leave it describing a composition
         # that has moved on, and undo would then write a state nobody was ever
         # in. The properties below read that context.
-        #: Which **edit layer** of each clip the hand is on, by widget id -- the
-        #: placement, a roll, a curve. Screen state like a selection: the
-        #: composition does not change when it moves, and the document is
-        #: explicit that what a view is currently editing is never part of it.
+        #: Which **edit layer** of each clip the hand is on -- the placement, a
+        #: roll, a curve. Screen state like a selection: the composition does
+        #: not change when it moves, and the document is explicit that what a
+        #: view is currently editing is never part of it.
+        #:
+        #: Keyed by the **placement's node**, not by the widget drawing it. A
+        #: widget id is the *drawing's* name for something and is minted afresh
+        #: every time the window is redefined, so anything keyed by one is
+        #: silently emptied by a structural edit -- and a missing key and "the
+        #: default layer" are the same answer, which is why nothing noticed. A
+        #: node id is the arrangement's own, stamped by `to_document` and kept
+        #: across a re-derivation, so it outlives the picture the way this state
+        #: is supposed to. `edit_layer` reads it.
         self._edit_layer: dict = {}
         #: Whether the last edit changed **which members exist** -- a split, a
         #: join, a cord. A placement is a prop the host can be told about; a
@@ -527,6 +536,19 @@ class Editor:
         else:
             wid = self._widget_of(element, member)
         return set() if wid is None else {wid}
+
+    def edit_layer(self, element, member=None) -> "str | None":
+        """Which layer of a clip the hand last worked on — the placement, a
+        roll, a curve — or ``None`` where nothing has been touched.
+
+        Screen state, so it is read rather than persisted or logged, and it is
+        the answer to "what is this window currently editing". Takes what
+        `Aggregate.add` handed back (the placement) the way every other route
+        here does, since a clip is a window onto an element and the layer
+        belongs to that window.
+        """
+        node = self._node_id(element, member)
+        return None if node is None else self._edit_layer.get(int(node))
 
     def refresh(self) -> None:
         """Tell this editor that the arrangement moved by a route it did not
@@ -1007,8 +1029,13 @@ class Editor:
             # Which layer of a clip the hand is on is **screen state**, like a
             # selection: the composition did not change, and the document is
             # explicit that what a view is currently editing is never part of
-            # it. It is kept so a driver can ask.
-            self._edit_layer[int(args[0])] = str(args[2])
+            # it. It is kept so a driver can ask -- under the *placement's* node
+            # rather than the widget's id, so it survives the window being
+            # redrawn (see the field).
+            node = self._node_id(placed.member.element, placed.member) \
+                if placed.member is not None else None
+            if node is not None:
+                self._edit_layer[int(node)] = str(args[2])
             return False
         if args[1] == "split":
             return self._apply_split(placed, float(args[2]))
