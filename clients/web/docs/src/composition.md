@@ -225,10 +225,17 @@ same one:
 const multitrack = new Editor(piece, { sampleRate });
 const roll = new Editor(piece, { sampleRate });   // a second window, same piece
 
-multitrack.apply(...gui.poll());   // a clip is dragged here
-roll.canUndo;                      // true: it is showing the data that moved
+await multitrack.open(host);
+await roll.open(host);             // `open` listens, so nothing is pumped here
+
+roll.canUndo;                      // true after a drag in the other window
 roll.undo();                       // and the clip springs back in both
 ```
+
+An edit in one window **redraws** the others, which nothing else would do: an
+acknowledgement goes to the window whose gesture it answered. (This is where the
+two clients differ in shape and not in surface: `open` subscribes here, while a
+script feeds one poll loop to every editor it opened.)
 
 A history an editor kept would see only the gestures *that* editor made, so a
 script editing the arrangement or a second view would leave it describing a

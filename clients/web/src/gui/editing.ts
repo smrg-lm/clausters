@@ -31,6 +31,15 @@ import { Aggregate, Element, docIdOf, nextNodeId, toDocument } from "../form/ind
 import type { Member } from "../form/index.ts";
 import { FIRST_VERSION } from "../form/document.ts";
 
+/**
+ * What a context needs of a view: something with a window it can bring back in
+ * step. {@link gui.Editor} is the one that implements it.
+ */
+export interface View {
+    /** Another view of this composition edited it: redraw this window. */
+    adopt(): void;
+}
+
 /** What an index entry says an intent naming that node writes to. */
 export type Indexed = [Aggregate | null, Member | null, Element];
 
@@ -70,6 +79,19 @@ export class Editing {
     nextNode: number | null = null;
     /** The composition's version — the document half of the two counters. */
     version = FIRST_VERSION;
+    /**
+     * The views drawing this composition, weakly: an editor that goes away
+     * takes its window with it, and a context does not keep one alive.
+     */
+    private readonly views = new Set<WeakRef<View>>();
+    /**
+     * How deep the current turn is, and whether anything moved in it. One
+     * gesture can reach here twice — {@link Editing.turn} around an `apply`
+     * that routes an `"undo"` into `undo`, which changes the composition on its
+     * own — and the other windows want *one* redraw, not two.
+     */
+    private depth = 0;
+    private movedInTurn = false;
 
     private constructor() {
         this.history = new History();
@@ -143,6 +165,60 @@ export class Editing {
         if (element instanceof Aggregate) {
             for (const handle of element.handles) {
                 this.index(handle.element, element, handle);
+            }
+        }
+    }
+
+    /**
+     * Take a view into this composition's list, so an edit made in one window
+     * can reach the others.
+     */
+    attach(view: View): void {
+        for (const held of this.views) if (held.deref() === view) return;
+        this.views.add(new WeakRef(view));
+    }
+
+    /** Drop a view whose window is gone. */
+    detach(view: View): void {
+        for (const held of this.views) {
+            const alive = held.deref();
+            if (alive === undefined || alive === view) this.views.delete(held);
+        }
+    }
+
+    /**
+     * Say that the composition changed in the turn being run.
+     *
+     * Not the notification: a turn can reach here more than once, and what the
+     * other windows want is one redraw at the end of the gesture rather than
+     * one per leg of it.
+     */
+    moved(): void {
+        this.movedInTurn = true;
+    }
+
+    /**
+     * One gesture, from whichever view made it.
+     *
+     * On the way out, every **other** view of this composition is told the data
+     * it is drawing has moved — which nothing else would do: an acknowledgement
+     * goes to the window whose gesture it answered, so a second window would go
+     * on drawing a piece that had changed under it. Nested turns collapse into
+     * one, because a gesture that reaches here twice is still one gesture.
+     */
+    turn<T>(source: View, run: () => T): T {
+        this.depth += 1;
+        try {
+            return run();
+        } finally {
+            this.depth -= 1;
+            if (this.depth === 0 && this.movedInTurn) {
+                this.movedInTurn = false;
+                for (const held of [...this.views]) {
+                    const view = held.deref();
+                    if (view === undefined) this.views.delete(held);
+                    else if (view !== source) view.adopt();
+                }
             }
         }
     }

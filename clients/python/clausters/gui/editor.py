@@ -466,8 +466,27 @@ class Editor:
         self._host = self.transport.host = host
         self._mode = "multitrack"
         self._window = host.open(self.draw(), id=id)
+        self._editing.attach(self)
         self._announce()
         return self._window
+
+    def adopt(self) -> None:
+        """Another view of this composition edited it: redraw this window.
+
+        A **redefine**, not a prop push, and deliberately: what the other view
+        did may have changed which members exist, and a widget that was not
+        there a moment ago cannot travel as a property. It is the case
+        `update` was written for — *the route a change the editor did not apply
+        arrives by* — met from the one direction that was missing, which is a
+        second window over one composition.
+
+        A window that is not open has nothing to redraw, and says so by doing
+        nothing: an editor that was never opened still shares the history, it
+        just has no picture to bring in step.
+        """
+        if self._host is None or self._window is None:
+            return
+        self.update()
 
     def refresh(self) -> None:
         """Tell this editor that the arrangement moved by a route it did not
@@ -673,6 +692,7 @@ class Editor:
         # first draw measures rather than something to push at one.
         self._layers = stack
         self._window = host.open(self.draw(), id=id)
+        self._editing.attach(self)
         self._announce()
         return self._window
 
@@ -698,6 +718,7 @@ class Editor:
         self._mode = "pianoroll"
         self._roll_element = self.element if element is None else element
         self._window = host.open(self.draw(), id=id)
+        self._editing.attach(self)
         self._announce()
         return self._window
 
@@ -780,10 +801,29 @@ class Editor:
         A logical aggregate's directed patch routes here too: a ``"wire"`` rewrites the
         two members' controls onto a shared bus (`_apply_patch`), a ``"move"``
         persists a box's canvas position.
+
+        **Every other window over this composition is told**, on the way out.
+        Nothing else would do it: an acknowledgement goes to the window whose
+        gesture it answered, so a second view would go on drawing a piece that
+        moved under it — and the shared history would then step an order one of
+        its windows could not see.
         """
+        with self._editing.turn(self):
+            changed = self._deliver(addr, args)
+            if changed:
+                self._editing.moved()
+            return changed
+
+    def _deliver(self, addr: str, args) -> bool:
+        """`apply`, without the turn around it: what the message actually
+        does."""
         if addr == "/gui_closed":
             if not args or self._window is None or int(args[0]) == self._window:
                 self._window = None
+                # Closing a *view* is not an event of the history, so the
+                # context stays exactly as it is -- what goes is this window's
+                # place in the list of who to tell.
+                self._editing.detach(self)
             return False
         if addr != "/gui_event" or len(args) < 3:
             return False
@@ -2123,8 +2163,15 @@ class Editor:
 
         The inverse is an ordinary intent, so undoing needs no second path: it
         is `_project` again, on what the crate hands back. Returns whether
-        anything was undone."""
-        return self._step(lambda log, doc: log.undo(doc), "undone")
+        anything was undone.
+
+        Every **other** window over this composition is told, the way it is told
+        about an edit: one history, and an undo in either view updates both."""
+        with self._editing.turn(self):
+            stepped = self._step(lambda log, doc: log.undo(doc), "undone")
+            if stepped:
+                self._editing.moved()
+            return stepped
 
     def redo(self) -> bool:
         """Step forward again after `undo`. Returns whether anything was
@@ -2134,7 +2181,11 @@ class Editor:
         its parameters rather than as a span — comes back in ``remaining`` for
         its owner to re-run. Nothing in the multitrack editor produces one yet,
         so this reports it rather than acting on it."""
-        return self._step(lambda log, doc: log.redo(doc), "remaining")
+        with self._editing.turn(self):
+            stepped = self._step(lambda log, doc: log.redo(doc), "remaining")
+            if stepped:
+                self._editing.moved()
+            return stepped
 
     def _step(self, walk, key: str) -> bool:
         if self._log is None:

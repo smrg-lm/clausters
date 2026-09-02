@@ -1045,3 +1045,41 @@ test("a view over a part of the composition reaches the same history", () => {
     const lane = piece.handles[1]?.element as Element;
     assert.equal(Editing.of(lane), Editing.of(piece));
 });
+
+test("an edit in one window redraws the other", async () => {
+    // One history is only half of it: the second window has to be *told*. An
+    // acknowledgement goes to the window whose gesture it answered, so without
+    // this a second view goes on drawing a piece that moved under it — and then
+    // its undo steps an order it cannot see, which looks exactly like a dead
+    // button.
+    const piece = song();
+    const a = editor(piece, { quant: 0.25 });
+    const b = editor(piece, { quant: 0.25 });
+    const hostA = new FakeHost();
+    const hostB = new FakeHost();
+    await a.open(asHost(hostA));
+    await b.open(asHost(hostB));
+    const defines = hostB.defines.length;
+
+    const roll = clipsOf(lanes(a.draw())[1] as GuiNode)[0] as GuiNode;
+    a.apply("/gui_event", clipEvent(roll.id as number, 5 * BEAT, 2 * BEAT));
+    assert.equal(hostB.defines.length, defines + 1, "the other window was redrawn");
+});
+
+test("a closed window is not told about edits", async () => {
+    // Closing a view is not an event of the history — what goes is this
+    // window's place in the list of who to tell.
+    const piece = song();
+    const a = editor(piece, { quant: 0.25 });
+    const b = editor(piece, { quant: 0.25 });
+    await a.open(asHost(new FakeHost()));
+    const hostB = new FakeHost();
+    const win = await b.open(asHost(hostB));
+    b.apply("/gui_closed", [win.id]);
+    const defines = hostB.defines.length;
+
+    const roll = clipsOf(lanes(a.draw())[1] as GuiNode)[0] as GuiNode;
+    a.apply("/gui_event", clipEvent(roll.id as number, 5 * BEAT, 2 * BEAT));
+    assert.equal(hostB.defines.length, defines, "a closed window has no picture to keep");
+    assert.equal(b.canUndo, true, "and it still shares the history");
+});

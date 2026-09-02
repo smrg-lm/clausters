@@ -21,6 +21,9 @@ does and dies with it, which is what the crate's own rule asks for — a history
 is session state, never serialized, and it goes when the data goes.
 """
 
+import weakref
+from contextlib import contextmanager
+
 from .. import _native
 from ..form.aggregate import Aggregate
 from ..form.document import FIRST_VERSION, ID_ATTR, next_node_id, to_document
@@ -59,6 +62,15 @@ class Editing:
         self.next_node = None
         #: The composition's version — the document half of the two counters.
         self.version = FIRST_VERSION
+        #: The views drawing this composition, weakly: an editor that goes away
+        #: takes its window with it, and a context does not keep one alive.
+        self._views: list = []
+        #: How deep the current turn is, and whether anything moved in it. One
+        #: gesture can reach here twice — `Editor.apply` routing an ``"undo"``
+        #: calls `Editor.undo`, which changes the composition on its own — and
+        #: the other windows want *one* redraw, not two.
+        self._depth = 0
+        self._moved = False
 
     @classmethod
     def of(cls, element) -> "Editing":
@@ -131,6 +143,52 @@ class Editing:
             self.next_node = next_node_id(element)
         node, self.next_node = self.next_node, self.next_node + 1
         return node
+
+    def attach(self, view):
+        """Take a view into this composition's list, so an edit made in one
+        window can reach the others."""
+        if not any(held() is view for held in self._views):
+            self._views.append(weakref.ref(view))
+
+    def detach(self, view):
+        """Drop a view whose window is gone."""
+        self._views = [held for held in self._views
+                       if held() is not None and held() is not view]
+
+    def views(self) -> list:
+        """The views still alive, dropping the ones that are not."""
+        self._views = [held for held in self._views if held() is not None]
+        return [held() for held in self._views]
+
+    def moved(self):
+        """Say that the composition changed in the turn being run.
+
+        It is not the notification: a turn can reach here more than once, and
+        what the other windows want is one redraw at the end of the gesture
+        rather than one per leg of it."""
+        self._moved = True
+
+    @contextmanager
+    def turn(self, source):
+        """One gesture, from whichever view made it.
+
+        On the way out, every **other** view of this composition is told the
+        data it is drawing has moved — which nothing else would do: an
+        acknowledgement goes to the window whose gesture it answered, so a
+        second window would go on drawing a piece that had changed under it.
+        Nested turns collapse into one, because a gesture that reaches here
+        twice is still one gesture.
+        """
+        self._depth += 1
+        try:
+            yield self
+        finally:
+            self._depth -= 1
+            if self._depth == 0 and self._moved:
+                self._moved = False
+                for view in self.views():
+                    if view is not source:
+                        view.adopt()
 
     def close(self):
         """Release the crate's handles. What the composition going away leaves

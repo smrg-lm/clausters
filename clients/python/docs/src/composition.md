@@ -500,11 +500,25 @@ find the same one:
 ```python
 multitrack = Editor(piece, sample_rate=sr)
 roll = Editor(piece, sample_rate=sr)      # a second window, same composition
+multitrack.open(gui)
+roll.open(gui)
 
-multitrack.apply(*gui.poll())             # a clip is dragged here
+message = gui.poll(timeout=0.05)          # one loop feeds both editors
+multitrack.apply(*message)                # a clip is dragged here
+roll.apply(*message)                      # the other window's events fall through
 roll.can_undo                             # True: it is showing the data that moved
 roll.undo()                               # and the clip springs back in both
 ```
+
+**Feed every message to every editor.** An editor is driven by `apply`, not by
+`pump`: `pump` dispatches to the widget handles a script registered and consumes
+the message, so an editor that is pumped and never applied hears no drag and no
+Ctrl+Z. Handing one loop to both is the supported shape — every route resolves
+through an editor's own registries, so another window's events fall through
+untouched.
+
+An edit in one window **redraws** the others, which nothing else would do: an
+acknowledgement goes to the window whose gesture it answered.
 
 That holds for a window over a *part* of the piece too — a dedicated roll of one
 track edits through the composition's history rather than opening a second one

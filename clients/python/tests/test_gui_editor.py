@@ -2302,3 +2302,52 @@ def test_a_view_over_a_part_of_the_composition_reaches_the_same_history():
     lane = piece.handles[0].element
     assert Editing.of(lane) is whole._editing
     assert editor(lane)._editing is whole._editing
+
+
+def test_an_edit_in_one_window_redraws_the_other():
+    """One history is only half of it: the second window has to be *told*.
+
+    An acknowledgement goes to the window whose gesture it answered, so without
+    this a second view goes on drawing a piece that moved under it — and then
+    its undo steps an order it cannot see, which looks exactly like a dead
+    button."""
+    piece = song()
+    a, b = editor(piece), editor(piece)
+    a.open(_FakeHost())
+    host_b = _FakeHost()
+    b.open(host_b)
+    defines = len(host_b.defines)
+
+    clip = next(iter(a._clips))
+    placed = a._clips[clip]
+    at = placed.base + placed.member.offset
+    a.apply("/gui_event", [clip, SEQ, UNSTATED, "clip",
+                           (at + 2.0) * BEAT, (placed.member.length or 1.0) * BEAT])
+    assert len(host_b.defines) == defines + 1, "the other window was redrawn"
+
+    # And an undo from either reaches both, once: a turn that goes through
+    # `apply` into `undo` is still one gesture.
+    defines = len(host_b.defines)
+    assert b.undo() is True
+    assert len(a._clips), "the acting window keeps its own registry"
+    assert len(host_b.defines) == defines, "b redrew itself, not through adopt"
+
+
+def test_a_closed_window_is_not_told_about_edits():
+    """Closing a view is not an event of the history — what goes is this
+    window's place in the list of who to tell."""
+    piece = song()
+    a, b = editor(piece), editor(piece)
+    a.open(_FakeHost())
+    host_b = _FakeHost()
+    win = b.open(host_b)
+    b.apply("/gui_closed", [win])
+    defines = len(host_b.defines)
+
+    clip = next(iter(a._clips))
+    placed = a._clips[clip]
+    at = placed.base + placed.member.offset
+    a.apply("/gui_event", [clip, SEQ, UNSTATED, "clip",
+                           (at + 2.0) * BEAT, (placed.member.length or 1.0) * BEAT])
+    assert len(host_b.defines) == defines, "a closed window has no picture to keep"
+    assert b.can_undo, "and it still shares the history"

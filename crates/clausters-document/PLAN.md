@@ -478,6 +478,8 @@ The eight that opened with this file were taken one at a time and are in the sec
 
   **The example pair is `editors/two_windows.py` and `editors/two-windows.html`** — two windows over one piece, drag in one and Ctrl+Z over the other — which is the manual test for the whole track, since nothing in CI runs either.
 
+  **And it is what found the half that was missing.** Run by hand, the example did nothing: dragging in one window moved neither, and Ctrl+Z over the other moved nothing either. Two causes, both worth the record. **One history is not one picture** — an acknowledgement goes to the window whose gesture it answered, so the second view went on drawing a piece that had moved under it, and then its undo stepped an order it could not see, which looks exactly like a dead button. A view now takes its place in the context's list on `open`, and one turn per gesture redraws every *other* view on the way out (nested turns collapse, since an `apply` that routes an `"undo"` into `undo` is still one gesture). **And the example drove the host wrongly**: it called `pump`, which dispatches to the widget handles a script registered and *consumes* the message, so neither editor ever saw a drag — an editor is driven by `apply`. Both books' composition chapters now say so, because the shape is easy to get wrong in exactly this way.
+
 ## What stays out of the crate
 
 **The gesture**, in every form - the drag machine, the draw stroke, the lasso, the marquee, hit-testing, the pending overlay's drawing, the visible refusal when a zoom cannot express an edit. Those are the GUI host's and stay in `clients/gui/PLAN.md`'s D and H tracks, which are reformulated as the view halves they always were.

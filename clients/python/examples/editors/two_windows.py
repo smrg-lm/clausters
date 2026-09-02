@@ -120,7 +120,14 @@ b.on_closed(lambda: globals().__setitem__("_closed", True))
 
 # %%
 def run(seconds=None):
-    """Pump both windows until one is closed.
+    """Feed the host's events to **both** editors until a window is closed.
+
+    An editor is driven by `Editor.apply`, not by `pump`: `pump` dispatches to
+    the widget handles a script registered and consumes the message, so an
+    editor pumped and never applied never hears a drag or a Ctrl+Z. And each
+    message goes to *both* editors, which is exactly what a shared poll loop is
+    for -- every route resolves through an editor's own registries, so the
+    other window's events fall through untouched.
 
     Script-run there is no bound and the windows are what end it; the
     ``seconds`` argument is for a cell run, where a notebook wants the loop to
@@ -129,7 +136,11 @@ def run(seconds=None):
     start = time.monotonic()
     shown = None
     while not _closed and (seconds is None or time.monotonic() - start < seconds):
-        gui.pump(timeout=0.05)
+        message = gui.poll(timeout=0.05)
+        if message is not None:
+            gui.dispatch(*message)      # the window handles: `on_closed`
+            left.apply(*message)
+            right.apply(*message)
         state = (left.can_undo, left.undo_label, right.can_undo, right.undo_label)
         if state != shown:
             print(f"left: can_undo={state[0]} label={state[1]!r} | "

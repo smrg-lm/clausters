@@ -576,6 +576,7 @@ export class Editor {
         this.mode = "multitrack";
         const handle = host.open(this.draw(), { id, element: stage });
         this.windowId = handle.id;
+        this.editing.attach(this);
         this.listen(host);
         this.announce();
         return handle;
@@ -808,6 +809,7 @@ export class Editor {
         this.measures = stack;
         const handle = host.open(this.draw(), { id, element: stage });
         this.windowId = handle.id;
+        this.editing.attach(this);
         this.listen(host);
         this.announce();
         return handle;
@@ -833,6 +835,7 @@ export class Editor {
         this.rollElement = element ?? this.element;
         const handle = host.open(this.draw(), { id, element: stage });
         this.windowId = handle.id;
+        this.editing.attach(this);
         this.listen(host);
         this.announce();
         return handle;
@@ -877,6 +880,24 @@ export class Editor {
      * gesture still in flight was made against a picture that no longer exists;
      * the bump is what makes that edit come back as stale.
      */
+    /**
+     * Another view of this composition edited it: redraw this window.
+     *
+     * A **redefine**, not a prop push, and deliberately: what the other view did
+     * may have changed which members exist, and a widget that was not there a
+     * moment ago cannot travel as a property. It is the case {@link
+     * Editor.update} was written for — *the route a change the editor did not
+     * apply arrives by* — met from the one direction that was missing, which is
+     * a second window over one composition.
+     *
+     * A window that is not open has nothing to redraw, and says so by doing
+     * nothing.
+     */
+    adopt(): void {
+        if (this.host === null || this.windowId === null) return;
+        this.update();
+    }
+
     update(): void {
         if (this.host === null || this.windowId === null) {
             throw new Error("open(host) the editor first");
@@ -911,10 +932,23 @@ export class Editor {
      * shared with a second editor.
      */
     apply(addr: string, rawArgs: readonly unknown[]): boolean {
+        return this.editing.turn(this, () => {
+            const changed = this.deliver(addr, rawArgs);
+            if (changed) this.editing.moved();
+            return changed;
+        });
+    }
+
+    /** `apply`, without the turn around it: what the message actually does. */
+    private deliver(addr: string, rawArgs: readonly unknown[]): boolean {
         if (addr === "/gui_closed") {
             if (rawArgs.length === 0 || this.windowId === null ||
                 Math.trunc(Number(rawArgs[0])) === this.windowId) {
                 this.windowId = null;
+                // Closing a *view* is not an event of the history, so the
+                // context stays exactly as it is -- what goes is this window's
+                // place in the list of who to tell.
+                this.editing.detach(this);
                 this.detach();
             }
             return false;
@@ -2260,7 +2294,11 @@ export class Editor {
      * an ordinary intent, so undoing needs no second path.
      */
     undo(): boolean {
-        return this.step((log, doc) => log.undo(doc)?.undone, "undone");
+        return this.editing.turn(this, () => {
+            const stepped = this.step((log, doc) => log.undo(doc)?.undone, "undone");
+            if (stepped) this.editing.moved();
+            return stepped;
+        });
     }
 
     /**
@@ -2271,7 +2309,11 @@ export class Editor {
      * Nothing in the multitrack editor produces one yet.
      */
     redo(): boolean {
-        return this.step((log, doc) => log.redo(doc)?.redone, "redone");
+        return this.editing.turn(this, () => {
+            const stepped = this.step((log, doc) => log.redo(doc)?.redone, "redone");
+            if (stepped) this.editing.moved();
+            return stepped;
+        });
     }
 
     private step(
