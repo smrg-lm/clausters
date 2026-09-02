@@ -881,21 +881,58 @@ export class Editor {
      * the bump is what makes that edit come back as stale.
      */
     /**
-     * Another view of this composition edited it: redraw this window.
+     * Another view of this composition edited it: bring this window in step.
      *
-     * A **redefine**, not a prop push, and deliberately: what the other view did
-     * may have changed which members exist, and a widget that was not there a
-     * moment ago cannot travel as a property. It is the case {@link
-     * Editor.update} was written for — *the route a change the editor did not
-     * apply arrives by* — met from the one direction that was missing, which is
-     * a second window over one composition.
+     * **Props where props can carry it.** A placement, a length, a curve and a
+     * note list are values, so a foreign edit reaches this window the way its
+     * own edits do — the drawn record is brought back in step and the widgets
+     * are resynced. A redefine here would rebuild every widget and drop what the
+     * host had in flight, which makes a window flicker under a hand that is not
+     * even in it.
      *
-     * A window that is not open has nothing to redraw, and says so by doing
-     * nothing.
+     * `whole` is the case no prop can carry: a widget that was not there a
+     * moment ago — a cut, a split, a join, an undo of one — or a turn that
+     * changed something and projected no intent at all. Then it is
+     * {@link Editor.update}, which is exactly what that method was written for.
+     *
+     * A window that is not open has nothing to bring in step, and says so by
+     * doing nothing. So does one that draws none of what moved.
      */
-    adopt(): void {
+    adopt(intents: readonly Intent[], whole: boolean): void {
         if (this.host === null || this.windowId === null) return;
-        this.update();
+        if (whole) {
+            this.update();
+            return;
+        }
+        const widgets = new Set<number>();
+        for (const intent of intents) for (const wid of this.reflect(intent)) widgets.add(wid);
+        if (widgets.size === 0) return;
+        this.corrections = [];
+        for (const wid of widgets) this.resync(wid);
+        // A stamp of zero retires nothing, which is what an unasked push needs:
+        // this window answered no gesture.
+        this.acknowledge(0);
+        this.corrections = [];
+    }
+
+    /**
+     * The drawn half of {@link Editor.project}, for an edit **another view
+     * applied**.
+     *
+     * The arrangement is already written — the two views hold the same objects —
+     * so what is left is this window's own record of what it drew, and which of
+     * its widgets is now drawing something else. A view that does not draw the
+     * node an intent names answers with nothing, which is the ordinary case for
+     * a dedicated roll beside a multitrack.
+     */
+    private reflect(intent: Intent): number[] {
+        const found = this.byNode.get(Math.trunc(Number((intent as { node?: unknown }).node ?? -1)));
+        if (found === undefined) return [];
+        const [, member, element] = found;
+        const wid = (intent as { intent?: string }).intent === "place" && member !== null
+            ? this.redrawn(element, member)
+            : this.widgetOf(element, member);
+        return wid === null ? [] : [wid];
     }
 
     update(): void {
@@ -934,7 +971,7 @@ export class Editor {
     apply(addr: string, rawArgs: readonly unknown[]): boolean {
         return this.editing.turn(this, () => {
             const changed = this.deliver(addr, rawArgs);
-            if (changed) this.editing.moved();
+            if (changed) this.editing.changed();
             return changed;
         });
     }
@@ -2090,6 +2127,11 @@ export class Editor {
         }
         const wid = this.redrawn(element, member);
         if (wid !== null) moved.add(wid);
+        // Every other window over this composition draws the same data, and this
+        // is the one place that knows *what* moved -- so the intent is reported
+        // here rather than reduced to "something changed", which would cost them
+        // a redefine per edit.
+        this.editing.moved(intent);
         return moved;
     }
 
@@ -2141,6 +2183,9 @@ export class Editor {
     private restructure(): boolean {
         if (!this.restructured) return false;
         this.restructured = false;
+        // The case no prop can carry, for the other windows as much as for this
+        // one: a widget that was not there a moment ago is not a value.
+        this.editing.restructured();
         if (this.host === null || this.windowId === null) return false;
         this.update();
         return true;
@@ -2296,7 +2341,7 @@ export class Editor {
     undo(): boolean {
         return this.editing.turn(this, () => {
             const stepped = this.step((log, doc) => log.undo(doc)?.undone, "undone");
-            if (stepped) this.editing.moved();
+            if (stepped) this.editing.changed();
             return stepped;
         });
     }
@@ -2311,7 +2356,7 @@ export class Editor {
     redo(): boolean {
         return this.editing.turn(this, () => {
             const stepped = this.step((log, doc) => log.redo(doc)?.redone, "redone");
-            if (stepped) this.editing.moved();
+            if (stepped) this.editing.changed();
             return stepped;
         });
     }

@@ -27,6 +27,7 @@
  */
 
 import { Document, History, Log } from "../document.ts";
+import type { Intent } from "../document.ts";
 import { Aggregate, Element, docIdOf, nextNodeId, toDocument } from "../form/index.ts";
 import type { Member } from "../form/index.ts";
 import { FIRST_VERSION } from "../form/document.ts";
@@ -36,8 +37,11 @@ import { FIRST_VERSION } from "../form/document.ts";
  * step. {@link gui.Editor} is the one that implements it.
  */
 export interface View {
-    /** Another view of this composition edited it: redraw this window. */
-    adopt(): void;
+    /**
+     * Another view of this composition edited it: bring this window in step —
+     * as props, or as a whole redraw when `whole`.
+     */
+    adopt(intents: readonly Intent[], whole: boolean): void;
 }
 
 /** What an index entry says an intent naming that node writes to. */
@@ -91,7 +95,15 @@ export class Editing {
      * own — and the other windows want *one* redraw, not two.
      */
     private depth = 0;
-    private movedInTurn = false;
+    /**
+     * What the turn being run did: the intents it projected, and whether it
+     * changed **which widgets exist**. The two are answered differently by the
+     * other windows, which is the whole reason they are collected rather than
+     * reduced to a bit.
+     */
+    private intents: Intent[] = [];
+    private structural = false;
+    private changedInTurn = false;
 
     private constructor() {
         this.history = new History();
@@ -190,11 +202,36 @@ export class Editing {
      * Say that the composition changed in the turn being run.
      *
      * Not the notification: a turn can reach here more than once, and what the
-     * other windows want is one redraw at the end of the gesture rather than
+     * other windows want is one answer at the end of the gesture rather than
      * one per leg of it.
      */
-    moved(): void {
-        this.movedInTurn = true;
+    changed(): void {
+        this.changedInTurn = true;
+    }
+
+    /**
+     * One intent this turn wrote onto the arrangement.
+     *
+     * The other windows adopt these as **props** — the placement, the length,
+     * the notes — which is what keeps a foreign edit from costing a redefine. A
+     * redefine rebuilds every widget and drops what the host had in flight, so
+     * doing it per edit makes a window flicker under a hand that is not even in
+     * it.
+     */
+    moved(intent: Intent): void {
+        this.intents.push(intent);
+        this.changedInTurn = true;
+    }
+
+    /**
+     * Say that the turn changed **which widgets exist** — a cut, a split, a
+     * join, an undo of one. This is the case no prop can carry: a widget that
+     * was not there a moment ago is not a value, so the other windows have to
+     * be redrawn whole.
+     */
+    restructured(): void {
+        this.structural = true;
+        this.changedInTurn = true;
     }
 
     /**
@@ -212,12 +249,22 @@ export class Editing {
             return run();
         } finally {
             this.depth -= 1;
-            if (this.depth === 0 && this.movedInTurn) {
-                this.movedInTurn = false;
-                for (const held of [...this.views]) {
-                    const view = held.deref();
-                    if (view === undefined) this.views.delete(held);
-                    else if (view !== source) view.adopt();
+            if (this.depth === 0) {
+                const { intents, structural, changedInTurn: changed } = this;
+                this.intents = [];
+                this.structural = false;
+                this.changedInTurn = false;
+                if (changed) {
+                    // A turn that changed something and projected no intent is
+                    // one nothing here can describe — a trim, a patch cord, a
+                    // gesture applied to the objects directly — so the honest
+                    // answer for the other windows is the whole picture.
+                    const whole = structural || intents.length === 0;
+                    for (const held of [...this.views]) {
+                        const view = held.deref();
+                        if (view === undefined) this.views.delete(held);
+                        else if (view !== source) view.adopt(intents, whole);
+                    }
                 }
             }
         }

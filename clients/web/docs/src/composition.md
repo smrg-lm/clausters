@@ -232,8 +232,11 @@ roll.canUndo;                      // true after a drag in the other window
 roll.undo();                       // and the clip springs back in both
 ```
 
-An edit in one window **redraws** the others, which nothing else would do: an
-acknowledgement goes to the window whose gesture it answered. (This is where the
+An edit in one window **reaches** the others, which nothing else would do: an
+acknowledgement goes to the window whose gesture it answered. It arrives as
+props — the placement, the length, the notes — and only a structural edit (a
+split, a cut, an undo of one) redraws them whole, for the same reason a redefine
+is not what answers a drag. (This is where the
 two clients differ in shape and not in surface: `open` subscribes here, while a
 script feeds one poll loop to every editor it opened.)
 

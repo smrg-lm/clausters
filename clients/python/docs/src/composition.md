@@ -517,8 +517,11 @@ Ctrl+Z. Handing one loop to both is the supported shape — every route resolves
 through an editor's own registries, so another window's events fall through
 untouched.
 
-An edit in one window **redraws** the others, which nothing else would do: an
-acknowledgement goes to the window whose gesture it answered.
+An edit in one window **reaches** the others, which nothing else would do: an
+acknowledgement goes to the window whose gesture it answered. It arrives as
+props — the placement, the length, the notes — and only a structural edit (a
+split, a cut, an undo of one) redraws them whole, for the same reason a redefine
+is not what answers a drag.
 
 That holds for a window over a *part* of the piece too — a dedicated roll of one
 track edits through the composition's history rather than opening a second one

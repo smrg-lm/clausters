@@ -70,7 +70,13 @@ class Editing:
         #: calls `Editor.undo`, which changes the composition on its own — and
         #: the other windows want *one* redraw, not two.
         self._depth = 0
-        self._moved = False
+        #: What the turn being run did: the intents it projected, and whether it
+        #: changed **which widgets exist**. The two are answered differently by
+        #: the other windows, which is the whole reason they are collected
+        #: rather than reduced to a bit.
+        self._intents: list = []
+        self._structural = False
+        self._changed = False
 
     @classmethod
     def of(cls, element) -> "Editing":
@@ -160,13 +166,33 @@ class Editing:
         self._views = [held for held in self._views if held() is not None]
         return [held() for held in self._views]
 
-    def moved(self):
+    def changed(self):
         """Say that the composition changed in the turn being run.
 
         It is not the notification: a turn can reach here more than once, and
-        what the other windows want is one redraw at the end of the gesture
+        what the other windows want is one answer at the end of the gesture
         rather than one per leg of it."""
-        self._moved = True
+        self._changed = True
+
+    def moved(self, intent: dict):
+        """One intent this turn wrote onto the arrangement.
+
+        The other windows adopt these as **props** — the placement, the length,
+        the notes — which is what keeps a foreign edit from costing a redefine.
+        A redefine rebuilds every widget and drops what the host had in flight,
+        so doing it per edit makes a window flicker under a hand that is not
+        even in it."""
+        self._intents.append(intent)
+        self._changed = True
+
+    def restructured(self):
+        """Say that the turn changed **which widgets exist** — a cut, a split, a
+        join, an undo of one.
+
+        This is the case no prop can carry: a widget that was not there a moment
+        ago is not a value, so the other windows have to be redrawn whole."""
+        self._structural = True
+        self._changed = True
 
     @contextmanager
     def turn(self, source):
@@ -184,11 +210,19 @@ class Editing:
             yield self
         finally:
             self._depth -= 1
-            if self._depth == 0 and self._moved:
-                self._moved = False
-                for view in self.views():
-                    if view is not source:
-                        view.adopt()
+            if self._depth == 0:
+                intents, structural, changed = (
+                    self._intents, self._structural, self._changed)
+                self._intents, self._structural, self._changed = [], False, False
+                if changed:
+                    # A turn that changed something and projected no intent is
+                    # one nothing here can describe -- a trim, a patch cord, a
+                    # gesture applied to the objects directly -- so the honest
+                    # answer for the other windows is the whole picture.
+                    whole = structural or not intents
+                    for view in self.views():
+                        if view is not source:
+                            view.adopt(intents, whole)
 
     def close(self):
         """Release the crate's handles. What the composition going away leaves

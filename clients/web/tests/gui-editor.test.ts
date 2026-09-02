@@ -1046,24 +1046,58 @@ test("a view over a part of the composition reaches the same history", () => {
     assert.equal(Editing.of(lane), Editing.of(piece));
 });
 
-test("an edit in one window redraws the other", async () => {
+test("an edit in one window reaches the other as props", async () => {
     // One history is only half of it: the second window has to be *told*. An
     // acknowledgement goes to the window whose gesture it answered, so without
     // this a second view goes on drawing a piece that moved under it — and then
     // its undo steps an order it cannot see, which looks exactly like a dead
     // button.
+    //
+    // It arrives as **props**, not as a redefine: a placement is a value, and
+    // rebuilding every widget under a hand that is not even in that window is
+    // what made the second one flicker on every step.
     const piece = song();
     const a = editor(piece, { quant: 0.25 });
     const b = editor(piece, { quant: 0.25 });
-    const hostA = new FakeHost();
     const hostB = new FakeHost();
-    await a.open(asHost(hostA));
+    await a.open(asHost(new FakeHost()));
     await b.open(asHost(hostB));
-    const defines = hostB.defines.length;
+    hostB.defines.length = 0;
+    hostB.acks.length = 0;
 
     const roll = clipsOf(lanes(a.draw())[1] as GuiNode)[0] as GuiNode;
     a.apply("/gui_event", clipEvent(roll.id as number, 5 * BEAT, 2 * BEAT));
-    assert.equal(hostB.defines.length, defines + 1, "the other window was redrawn");
+    assert.equal(hostB.defines.length, 0, "no redefine for a placement");
+    assert.ok(hostB.acks.length > 0, "but the other window was told what to draw");
+    assert.ok(hostB.acks[0]?.[1].length, "and the correction carries what moved");
+
+    // And an undo from either reaches both the same way, once: a turn that goes
+    // through `apply` into `undo` is still one gesture.
+    hostB.acks.length = 0;
+    assert.equal(a.undo(), true);
+    assert.equal(hostB.defines.length, 0);
+    assert.equal(hostB.acks.length, 1, "one gesture, one answer");
+});
+
+test("a structural edit in one window redefines the other", async () => {
+    // The case no prop can carry, from the other side: a widget that was not
+    // there a moment ago is not a value, so the second window is redrawn whole.
+    const [piece] = takeSong();
+    const a = editor(piece);
+    const b = editor(piece);
+    const hostB = new FakeHost();
+    await a.open(asHost(new FakeHost()));
+    await b.open(asHost(hostB));
+    const c = clipsOf(lanes(a.draw())[0] as GuiNode)[0] as GuiNode;
+    hostB.defines.length = 0;
+
+    assert.equal(a.apply("/gui_event", [c.id, SEQ, UNSTATED, "split", 1.0 * SEC]), true);
+    assert.equal(hostB.defines.length, 1, "the split redrew the other window too");
+    assert.equal(
+        clipsOf(lanes(hostB.defines[0] as GuiNode)[0] as GuiNode).length,
+        2,
+        "with both halves in it",
+    );
 });
 
 test("a closed window is not told about edits", async () => {

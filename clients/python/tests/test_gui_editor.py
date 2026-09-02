@@ -2304,33 +2304,58 @@ def test_a_view_over_a_part_of_the_composition_reaches_the_same_history():
     assert editor(lane)._editing is whole._editing
 
 
-def test_an_edit_in_one_window_redraws_the_other():
+def test_an_edit_in_one_window_reaches_the_other_as_props():
     """One history is only half of it: the second window has to be *told*.
 
     An acknowledgement goes to the window whose gesture it answered, so without
     this a second view goes on drawing a piece that moved under it — and then
     its undo steps an order it cannot see, which looks exactly like a dead
-    button."""
+    button.
+
+    It arrives as **props**, not as a redefine: a placement is a value, and
+    rebuilding every widget under a hand that is not even in that window is what
+    made the second one flicker on every step."""
     piece = song()
     a, b = editor(piece), editor(piece)
     a.open(_FakeHost())
     host_b = _FakeHost()
     b.open(host_b)
-    defines = len(host_b.defines)
+    host_b.defines.clear()
+    host_b.acks.clear()
 
     clip = next(iter(a._clips))
     placed = a._clips[clip]
     at = placed.base + placed.member.offset
     a.apply("/gui_event", [clip, SEQ, UNSTATED, "clip",
                            (at + 2.0) * BEAT, (placed.member.length or 1.0) * BEAT])
-    assert len(host_b.defines) == defines + 1, "the other window was redrawn"
+    assert host_b.defines == [], "no redefine for a placement"
+    assert host_b.acks, "but the other window was told what to draw"
+    (_seq, corrections), = host_b.acks
+    assert corrections, "and the correction carries the placement that moved"
 
-    # And an undo from either reaches both, once: a turn that goes through
-    # `apply` into `undo` is still one gesture.
-    defines = len(host_b.defines)
-    assert b.undo() is True
-    assert len(a._clips), "the acting window keeps its own registry"
-    assert len(host_b.defines) == defines, "b redrew itself, not through adopt"
+    # And an undo from either reaches both the same way, once: a turn that goes
+    # through `apply` into `undo` is still one gesture.
+    host_b.acks.clear()
+    assert a.undo() is True
+    assert host_b.defines == []
+    assert len(host_b.acks) == 1, "one gesture, one answer"
+
+
+def test_a_structural_edit_in_one_window_redefines_the_other():
+    """The case no prop can carry, from the other side: a widget that was not
+    there a moment ago is not a value, so the second window is redrawn whole."""
+    piece, _take = _take_song()
+    a, b = editor(piece), editor(piece)
+    a.open(_FakeHost())
+    host_b = _FakeHost()
+    b.open(host_b)
+    (lane,) = lanes(a.draw())
+    (clip,) = clips(lane)
+    host_b.defines.clear()
+
+    assert a.apply("/gui_event", [clip["id"], SEQ, UNSTATED, "split", 1.0 * BEAT]) is True
+    assert len(host_b.defines) == 1, "the split redrew the other window too"
+    assert len(clips(lanes(host_b.defines[-1][1])[0])) == 2, "with both halves in it"
 
 
 def test_a_closed_window_is_not_told_about_edits():

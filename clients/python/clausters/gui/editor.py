@@ -470,23 +470,63 @@ class Editor:
         self._announce()
         return self._window
 
-    def adopt(self) -> None:
-        """Another view of this composition edited it: redraw this window.
+    def adopt(self, intents: list, whole: bool) -> None:
+        """Another view of this composition edited it: bring this window in step.
 
-        A **redefine**, not a prop push, and deliberately: what the other view
-        did may have changed which members exist, and a widget that was not
-        there a moment ago cannot travel as a property. It is the case
-        `update` was written for — *the route a change the editor did not apply
-        arrives by* — met from the one direction that was missing, which is a
-        second window over one composition.
+        **Props where props can carry it.** A placement, a length, a curve and a
+        note list are values, so a foreign edit reaches this window the way its
+        own edits do — the drawn record is brought back in step and the widgets
+        are resynced. A redefine here would rebuild every widget and drop what
+        the host had in flight, which makes a window flicker under a hand that
+        is not even in it; it is the same reason `_restructure` is deliberately
+        not a redraw after every edit.
 
-        A window that is not open has nothing to redraw, and says so by doing
-        nothing: an editor that was never opened still shares the history, it
-        just has no picture to bring in step.
+        ``whole`` is the case no prop can carry: a widget that was not there a
+        moment ago — a cut, a split, a join, an undo of one — or a turn that
+        changed something and projected no intent at all. Then it is `update`,
+        which is exactly what that method was written for: *the route a change
+        the editor did not apply arrives by*.
+
+        A window that is not open has nothing to bring in step, and says so by
+        doing nothing: an editor that was never opened still shares the history,
+        it just has no picture. So does one that draws none of what moved.
         """
         if self._host is None or self._window is None:
             return
-        self.update()
+        if whole:
+            self.update()
+            return
+        widgets = set()
+        for intent in intents:
+            widgets |= self._reflect(intent)
+        if not widgets:
+            return
+        self._corrections = []
+        for wid in widgets:
+            self._resync(wid)
+        # A stamp of zero retires nothing, which is what an unasked push needs:
+        # this window answered no gesture.
+        self._acknowledge(0)
+        self._corrections = []
+
+    def _reflect(self, intent: dict) -> set:
+        """The drawn half of `_project`, for an edit **another view applied**.
+
+        The arrangement is already written — the two views hold the same
+        objects — so what is left is this window's own record of what it drew,
+        and which of its widgets is now drawing something else. A view that does
+        not draw the node an intent names answers with nothing, which is the
+        ordinary case for a dedicated roll beside a multitrack.
+        """
+        found = self._by_node.get(int(intent.get("node", -1)))
+        if found is None:
+            return set()
+        _owner, member, element = found
+        if intent.get("intent") == "place" and member is not None:
+            wid = self._redrawn(element, member)
+        else:
+            wid = self._widget_of(element, member)
+        return set() if wid is None else {wid}
 
     def refresh(self) -> None:
         """Tell this editor that the arrangement moved by a route it did not
@@ -811,7 +851,7 @@ class Editor:
         with self._editing.turn(self):
             changed = self._deliver(addr, args)
             if changed:
-                self._editing.moved()
+                self._editing.changed()
             return changed
 
     def _deliver(self, addr: str, args) -> bool:
@@ -1975,6 +2015,11 @@ class Editor:
         wid = self._redrawn(element, member)
         if wid is not None:
             moved.add(wid)
+        # Every other window over this composition draws the same data, and this
+        # is the one place that knows *what* moved -- so the intent is reported
+        # here rather than reduced to "something changed", which would cost them
+        # a redefine per edit.
+        self._editing.moved(intent)
         return moved
 
     def _configure(self, element, config: dict) -> bool:
@@ -2018,6 +2063,9 @@ class Editor:
         if not self._restructured:
             return False
         self._restructured = False
+        # The case no prop can carry, for the other windows as much as for this
+        # one: a widget that was not there a moment ago is not a value.
+        self._editing.restructured()
         if self._host is None or self._window is None:
             return False
         self.update()
@@ -2170,7 +2218,7 @@ class Editor:
         with self._editing.turn(self):
             stepped = self._step(lambda log, doc: log.undo(doc), "undone")
             if stepped:
-                self._editing.moved()
+                self._editing.changed()
             return stepped
 
     def redo(self) -> bool:
@@ -2184,7 +2232,7 @@ class Editor:
         with self._editing.turn(self):
             stepped = self._step(lambda log, doc: log.redo(doc), "remaining")
             if stepped:
-                self._editing.moved()
+                self._editing.changed()
             return stepped
 
     def _step(self, walk, key: str) -> bool:
