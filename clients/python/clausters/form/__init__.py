@@ -8,7 +8,7 @@ placing elements recursively with an offset and deriving their temporal
 relation. An element is *generated* (the rendered thing: random-access, editable)
 or a *generator* (the algorithm that renders it: forward-only), and evaluating the
 second into the first is the **change of state** rendering performs. Pure and
-transport-agnostic; the multitrack view of it lives in `clausters.gui.editor`.
+transport-agnostic; the multitrack view of it lives in `clausters.gui.editing`.
 
 See `clausters.form.element` for the primitives and the temporal *character*,
 `clausters.form.aggregate` for grouping and the temporal *relation*, and

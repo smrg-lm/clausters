@@ -148,7 +148,7 @@ def test_a_redraw_keeps_named_handlers_and_refreshes_the_handle():
     `composer.py` now): pressing *open* left every button in the
     window dead.
 
-    An editor redrawing its window (`Editor.load`) re-defines the same root.
+    An editor redrawing its window (`FormEditor.load`) re-defines the same root.
     That returns the old subtree's ids to the pool and takes fresh ones, so a
     callback registered under an old id is orphaned -- and a handle captured
     before the redraw resolves every name to an id that no longer means it.

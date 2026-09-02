@@ -23,7 +23,7 @@ Two consequences you can watch here:
   own: what a window can see is a window's, and none of it is ever an entry in a
   history. That is the same line drawn from the other side.
 
-The two windows are two `clausters.gui.Editor`s over one arrangement. Nothing
+The two windows are two `clausters.gui.FormEditor`s over one arrangement. Nothing
 wires them together — the sharing is not a feature of this script, it is where
 the history lives.
 
@@ -45,7 +45,7 @@ import time
 from clausters import Session
 from clausters.defs import DoneAction, Env, SynthDef, control, env_gen, out, sine
 from clausters.form import Aggregate, Sequence
-from clausters.gui import Editor
+from clausters.gui import FormEditor
 from clausters.seq import Pbind, Pseq
 
 # %% [markdown]
@@ -90,12 +90,12 @@ piece = Aggregate([
 # ## Two windows over it
 # Two editors, one arrangement. Each opens its own window; neither is told about
 # the other. They share a history because the history belongs to the
-# composition — `Editor` asks the arrangement for it rather than making one.
+# composition — `FormEditor` asks the arrangement for it rather than making one.
 
 # %%
-left = Editor(piece, sample_rate=SR, tempo=BPM / 60.0, quant=0.25, follow=True,
+left = FormEditor(piece, sample_rate=SR, tempo=BPM / 60.0, quant=0.25, follow=True,
               title="Composition (left)", width=760, height=380)
-right = Editor(piece, sample_rate=SR, tempo=BPM / 60.0, quant=0.25, follow=True,
+right = FormEditor(piece, sample_rate=SR, tempo=BPM / 60.0, quant=0.25, follow=True,
                title="Composition (right)", width=760, height=380)
 
 a = left.open(gui)
@@ -125,7 +125,7 @@ b.on_closed(lambda: globals().__setitem__("_closed", True))
 def run(seconds=None):
     """Feed the host's events to **both** editors until a window is closed.
 
-    An editor is driven by `Editor.apply`, not by `pump`: `pump` dispatches to
+    An editor is driven by `FormEditor.apply`, not by `pump`: `pump` dispatches to
     the widget handles a script registered and consumes the message, so an
     editor pumped and never applied never hears a drag or a Ctrl+Z. And each
     message goes to *both* editors, which is exactly what a shared poll loop is

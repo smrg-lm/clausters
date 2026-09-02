@@ -32,7 +32,7 @@ from clausters.form import (  # noqa: E402
     Aggregate, Clang, Element, Generator, Segments, Track, Vector,
 )
 from clausters.form.aggregate import LOGICAL  # noqa: E402
-from clausters.gui.editor import Editor  # noqa: E402
+from clausters.gui.editing import FormEditor  # noqa: E402
 from clausters.seq.automation import Automation  # noqa: E402
 from clausters.seq.event import Event as SeqEvent  # noqa: E402
 from clausters.seq.timeline import Timeline  # noqa: E402
@@ -136,7 +136,7 @@ def main():
     cases = {}
     for name, build, kwargs, expand in CASES:
         element = build()
-        ed = Editor(element, sample_rate=SR, tempo=TEMPO, **kwargs)
+        ed = FormEditor(element, sample_rate=SR, tempo=TEMPO, **kwargs)
         if expand:
             # The base level: resolve the nested aggregate into lanes.
             ed.expand(element.members[0][2])

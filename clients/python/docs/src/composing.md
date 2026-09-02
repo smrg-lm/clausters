@@ -1,7 +1,7 @@
 # Composing a piece, step by step
 
 This section builds one short piece from nothing, using the **arrangement**
-(`clausters.form`) and its **multitrack editor** (`clausters.gui.Editor`), and it
+(`clausters.form`) and its **multitrack editor** (`clausters.gui.FormEditor`), and it
 builds it the way the pair is meant to be used: **interactively**. You keep one Python interpreter open from the first
 page to the last — IPython, or an editor that evaluates `# %%` cells — and
 every block below assumes the names defined by the blocks before it. Evaluate

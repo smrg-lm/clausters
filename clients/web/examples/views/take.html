@@ -25,7 +25,7 @@ view.
 
 In the multitrack a take is a <b>clip's body</b> — drawn at a clip's size, next
 to everything else in the piece. This opens the same element by itself, at the
-size of a window: <code>Editor.openSignal</code>, the sibling of the dedicated
+size of a window: <code>FormEditor.openSignal</code>, the sibling of the dedicated
 piano roll.
 
 <b>The stack.</b> <code>layers: ["peak", "rms"]</code> draws two measures of one
@@ -115,7 +115,7 @@ exists.</div>
         );
 
         await session.gui();
-        const editor = new gui.Editor(take, {
+        const editor = new gui.FormEditor(take, {
           sampleRate: SR, tempo: TEMPO, extra: [bar], title: "Clausters take",
         });
         const win = await editor.openSignal(undefined, undefined, {
@@ -141,7 +141,7 @@ exists.</div>
         const generator = new form.Sequence(
           new seq.Pbind({ midinote: new seq.Pseq([60, 62], 1), dur: 1.0 }));
         try {
-          await new gui.Editor(generator, { sampleRate: SR, tempo: TEMPO }).openSignal();
+          await new gui.FormEditor(generator, { sampleRate: SR, tempo: TEMPO }).openSignal();
           log("no refusal — which would be the bug");
         } catch (err) {
           log(`a generator asked for a signal view: ${err.message}`);

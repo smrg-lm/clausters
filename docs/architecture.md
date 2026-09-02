@@ -400,9 +400,9 @@ of the Python client's book; the reasoning behind it is in
 | Automation (a curve) | an `Env` discretized into a control buffer, read onto a bus | `seq/automation.py`, `/buffer_gen "env"`, `src/dsp/io.rs` (`OutCtl`) |
 | Change of state (generator → generated) | evaluating a def or bouncing a pattern | `Timeline.from_pattern`, `session.py`, `src/server/render.rs` |
 | Rendering (in time) | timetagged bundles (RT) or a `Score` (NRT) — one flattening, two destinations | `form/render.py`, `seq/timeline.py` (`Playhead`), `src/server/render.rs` |
-| The editor driver (data ↔ view) | — the one piece that is new, and the only one that knows both | `clients/python/clausters/gui/editor.py`, `clients/web/src/gui/editor.ts` |
+| The editor driver (data ↔ view) | — the one piece that is new, and the only one that knows both | `clients/python/clausters/gui/editing/`, `clients/web/src/gui/editing/` |
 | Graphic unit (a clip: length = duration) | the placed rectangle, and its bodies as the child elements they are | `clients/gui/src/host/graphics/track.rs` |
-| Base level (coarser or finer) | the LOD rule, and a group collapsed to a summary or resolved into lanes | `clients/gui/src/{waveform,spectrogram}.rs`, `gui/editor.py` |
+| Base level (coarser or finer) | the LOD rule, and a group collapsed to a summary or resolved into lanes | `clients/gui/src/{waveform,spectrogram}.rs`, `gui/editing/formeditor.py` |
 | Shared time axis, playhead, cursor | the navigation groups (linked views), grown to hold lanes | `clients/gui/src/host/timeline.rs` |
 
 Two boundaries hold this together, and both are worth defending: `clausters.form`
@@ -488,6 +488,22 @@ notes and its length, or the picture would report silence as absence. A lane's
 `height`, which the host emits on Ctrl+wheel, is deliberately in no document: it
 says nothing about what the piece is, and the editor answers it as the screen
 state it is.
+
+**The editor is four collaborators, and the split is what the names say.**
+`clausters.gui.editing` holds `Editor` — the generic one, over a single
+structure, importing nothing from the arrangement — and `FormEditor`, which is
+that class plus what only a tree has (a held document and the node index,
+several views of one composition, the lanes and clips, and the transport).
+Around them: `View` (the `GuiDef` of one structure, and the registry from widget
+id to what it shows — the only per-domain thing on the graphic side), `Domain`
+(gesture → payload, payload → the client object, the label and the coalesce key
+— it does not know how an edit inverts, which is `history::Editable` in the
+crate, and it does not draw), `Echo` (the acknowledgement protocol: the stamp,
+the version, the floor, the corrections and the reason — generic enough to be
+tested with no structure at all) and `Editing`, the editing context, which the
+editor **asks the data for and never builds**. `FormEditing` is the arrangement's
+context: the generic one plus the held document and the node index. The
+TypeScript side is the same six files at `clients/web/src/gui/editing/`.
 
 The paths above are the Python client's, and the model now exists **twice**: the
 web client carries the same layer at mirrored paths (`clients/web/src/form/`
@@ -1025,8 +1041,9 @@ The builder **does not mirror the widget catalog**, and that is the decision rat
 A **new element kind** (a new primitive of the arrangement) is the client's
 business, not the host's: it lands in `clients/python/clausters/form/` **and in
 `clients/web/src/form/`**, which are one layer in two languages, and it reaches
-the screen through the editor driver (`clausters/gui/editor.py` and
-`clients/web/src/gui/editor.ts`, one driver in two languages likewise), which is
+the screen through the editor driver (`clausters/gui/editing/formeditor.py` and
+`clients/web/src/gui/editing/formeditor.ts`, one driver in two languages
+likewise), which is
 the only module that knows both the arrangement and the widget tree. Its user
 documentation is the composition chapter of each client's book.
 

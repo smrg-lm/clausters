@@ -33,8 +33,12 @@ export type { EventArgs } from "./handle.ts";
 
 export { BASE_ID, CAPACITY, GuiIdAllocator } from "./ids.ts";
 
-export { Editor, MEASURES } from "./editor.ts";
-export type { EditorOptions, Measure } from "./editor.ts";
+export { Editor, FormEditor, MEASURES } from "./editing/index.ts";
+export type { EditorOptions, Measure } from "./editing/index.ts";
+// The collaborators live under their own name, which is also how the Python
+// client reaches them (`clausters.gui.editing`): `View` here is the picture of a
+// structure and would collide with the guidef `View` this module exports.
+export * as editing from "./editing/index.ts";
 export { Transport } from "./transport.ts";
 export type { TransportOptions, TransportTargets } from "./transport.ts";
 

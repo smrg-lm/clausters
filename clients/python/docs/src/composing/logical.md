@@ -82,7 +82,7 @@ time.
 Open an editor on the chain itself:
 
 ```python
-patcher = Editor(chain, sample_rate=SR, tempo=TEMPO, title="chain")
+patcher = FormEditor(chain, sample_rate=SR, tempo=TEMPO, title="chain")
 pwin = patcher.open(gui)
 ```
 

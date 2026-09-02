@@ -1562,8 +1562,10 @@ The port of the Python client's phased track of the same name
 `edit(x)`"), which is where the analysis, the map of what each view edits, the
 decisions and the acceptance are read. **Nothing here is decided separately** —
 same class names, same calls in the same order, `Editing` split the same way,
-and the same answer to where the ambient editing registry hangs (the one
-question `C49` leaves open) —
+and the same answer to where the editing registry hangs (`C49` took it: on the
+**data**, through `Editing.of` over a `WeakMap`, plus the `context` option — no
+ambient holder, because a second way to answer one question is how two
+histories over one curve happen) —
 and the surface must not appear in one client before the other, which is the
 whole of what this entry is here to prevent.
 
@@ -1578,6 +1580,17 @@ editing context — under the same names, in the same new `gui/editing/`
 subpackage; it is not an internal split this client may spell differently, since
 a class name and a module path are both surface. `C48` and `C51` move with
 their Python halves, books included.
+
+**`C49` landed 2026-09-02**, here in the same commit: `src/gui/editing/` with
+`context.ts`, `domain.ts`, `echo.ts`, `editor.ts`, `formeditor.ts`, `view.ts` and
+`index.ts`; `Editor` is the generic class and `FormEditor extends Editor`;
+`Editing`/`FormEditing` split the same way. Two spellings are this client's own
+and both are `idiom` rather than divergence: `Editor.open` is **async** (the
+ambient host may have to boot, which `View.open` already had), and the
+collaborators are re-exported as the `gui.editing` **namespace** rather than
+flattened into `gui`, because `View` would collide with the guidef `View` the
+module already exports — the Python client reaches them at the same path
+(`clausters.gui.editing`), so the module tree is still one tree.
 
 The gaps this client carries are identical, which at least makes them shared
 holes rather than divergences: `applyPoints` re-implements in TypeScript the

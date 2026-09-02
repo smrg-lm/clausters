@@ -1,10 +1,15 @@
-"""`Editor`: the bridge between the arrangement and the multitrack GUI.
+"""`FormEditor`: the bridge between the arrangement and the multitrack GUI.
 
 The driver of the DAW-style view. It draws a `clausters.form` tree as a
 multitrack `GuiDef` (tracks of clips on one shared time axis), applies the clip
 edit-backs the host sends straight onto the arrangement, and re-renders it — the
 loop **data ↔ graphic ↔ sound**, which is what makes the composition editable at
 any granularity rather than merely displayable.
+
+It is `clausters.gui.editing.Editor` — the generic one, over any single
+structure — plus what only a tree has, and the name says which: `Editor` is what
+a person calls to edit a buffer, a curve or a timeline, and it imports nothing
+from here.
 
 Three things are worth knowing about how it is built.
 
@@ -33,29 +38,28 @@ aggregate or resolves it), so it needs no protocol of its own.
 """
 
 import copy
-import itertools
 import json
 import weakref
 
-from .. import _native
-from ..base.time import TempoMap
-from .handle import WindowHandle
-from ..form.document import (FIRST_VERSION, ID_ATTR, MIXING, leaf_config,
-                             leaf_node, next_node_id, set_mixing, to_document)
-from ..form.aggregate import CONCRETE, LOGICAL, SIMULTANEOUS, Aggregate
-from ..form.element import (BEATS, SECONDS, Element, Clang, Generator, Segment,
-                            Segments, Vector, to_beats)
-from ..defs.ugens import points_to_env
-from ..form.render import flatten
-from ..seq.automation import Automation
-from ..seq.event import Event as SeqEvent
-from ..seq.timeline import MidiItem, OscItem, Timeline
-from .editing import Editing
-from .guidef import (_flat_notes, _flat_points, clip, patch, pianoroll, signal,
-                     scroll, timeruler, track, waveform, window)
-from .transport import Transport
+from ... import _native
+from ..handle import WindowHandle
+from ...form.document import (FIRST_VERSION, ID_ATTR, MIXING, leaf_config,
+                              leaf_node, next_node_id, set_mixing, to_document)
+from ...form.aggregate import CONCRETE, LOGICAL, SIMULTANEOUS, Aggregate
+from ...form.element import (BEATS, SECONDS, Element, Clang, Generator, Segment,
+                             Segments, Vector, to_beats)
+from ...defs.ugens import points_to_env
+from ...form.render import flatten
+from ...seq.automation import Automation
+from ...seq.event import Event as SeqEvent
+from ...seq.timeline import MidiItem, OscItem, Timeline
+from ..guidef import (_flat_notes, _flat_points, clip, patch, pianoroll, signal,
+                      scroll, timeruler, track, waveform, window)
+from ..transport import Transport
+from .context import ATTR, Editing
+from .editor import Editor, _resolve_host
 
-__all__ = ["Editor"]
+__all__ = ["FormEditing", "FormEditor"]
 
 #: The pitch range a piano-roll lane falls back to when its notes give none
 #: (C3..C6 — the span a melodic line usually lives in).
@@ -82,21 +86,125 @@ class _Placed:
         self.dur = float(dur)
 
 
-def _resolve_host(host):
-    """The host an ``open`` acts on: the one named, else the ambient one — the
-    same resolution `clausters.gui.guidef.View.open`, `clausters.plot` and
-    `clausters.scope` share, so an editor is not the one resource that has to be
-    handed a host."""
-    if host is not None:
-        return host
-    from ..plot import _ambient_host
+class FormEditing(Editing):
+    """The **arrangement's** editing context: a generic one plus the held
+    document, the index between it and the tree, and the id to mint next.
 
-    return _ambient_host()
+    They are here rather than in `clausters.gui.editing.context` because they
+    are the tree's: a curve or a buffer has a history and no document, and a
+    generic context that carried one would be carrying the arrangement's
+    vocabulary into every other structure's editing.
+    """
+
+    def __init__(self):
+        super().__init__()
+        #: The arrangement's face of the pile.
+        self.log = _native.Log(history=self.history)
+        #: The crate's held document — opened once and kept, so a gesture costs
+        #: the edit rather than the composition.
+        self.document = None
+        #: Whether the held document has to be derived from the arrangement
+        #: again before the next edit. Set wherever the tree moves by a route
+        #: that is not an intent.
+        self.rederive = False
+        #: node id -> ``(owner, member, element)``: the arrangement object an
+        #: intent naming that node writes to. Built with the document, since
+        #: `to_document` is what stamps the ids.
+        self.by_node: dict = {}
+        #: The next node id to mint for a node a gesture creates.
+        self.next_node = None
+
+    def held(self, element) -> tuple:
+        """The log and the document, deriving the document if that is what it
+        takes.
+
+        The document is opened once and kept: rebuilding it per gesture handed
+        back the whole of what holding the tree in the crate had won (36 ms and
+        71 ms on a 10240-event composition, against 0.014 ms for the edit
+        itself). What a rebuild was quietly doing is explicit here —
+        `to_document` stamps each element with the id it keeps, so a
+        re-derivation names the same nodes and the history keeps its footing.
+        """
+        if self.document is None or self.rederive:
+            document = to_document(element, version=self.version)
+            if self.document is not None:
+                self.document.close()
+            self.document = _native.Document(document)
+            # The index is added to rather than rebuilt, and that is deliberate:
+            # an element a gesture took out of the tree keeps its entry, which is
+            # what lets the inverse of a cut put the placement back. A
+            # re-derivation names the same nodes, so nothing here goes stale --
+            # it only keeps what the tree no longer reaches.
+            self.index(element)
+            self.next_node = next_node_id(element)
+            self.rederive = False
+        return self.log, self.document
+
+    def index(self, element, owner=None, member=None):
+        """Walk the arrangement collecting node id -> what an intent writes to.
+
+        A `place` needs the owning aggregate and the member handle (a placement
+        is the aggregate's, not the element's); everything else needs the
+        element. The walk mirrors `clausters.form.document`'s own, which is what
+        keeps the two agreeing about what has an id.
+        """
+        # The id belongs to the **placement** when there is one: a clip is a
+        # window onto samples, so what an intent names is the window.
+        node = getattr(member if member is not None else element, ID_ATTR, None)
+        if node is not None:
+            self.by_node[int(node)] = (owner, member, element)
+        # A view opened over a *part* of this composition -- a dedicated roll of
+        # one track -- must reach this context and not mint a second one, so the
+        # walk stamps what it passes. Only where there is none: a part that
+        # already had a context of its own was being edited on its own terms,
+        # and taking its history away without being asked is not this walk's
+        # to do.
+        if getattr(element, ATTR, None) is None:
+            setattr(element, ATTR, self)
+        if isinstance(element, Aggregate):
+            for handle in element.handles:
+                self.index(handle.element, element, handle)
+
+    def mint(self, element) -> int:
+        """The next id for a node a gesture creates — a note added in a roll."""
+        if self.next_node is None:
+            self.next_node = next_node_id(element)
+        node, self.next_node = self.next_node, self.next_node + 1
+        return node
+
+    def close(self):
+        """Release the crate's handles. What the composition going away leaves
+        behind; a view closing is not an event of a history."""
+        if getattr(self, "log", None) is not None:
+            self.log.close()
+            self.log = None
+        if getattr(self, "document", None) is not None:
+            self.document.close()
+            self.document = None
+        super().close()
 
 
-class Editor:
+class FormEditor(Editor):
     """A composition on screen: the arrangement tree drawn as a multitrack view,
     editable back into the tree.
+
+    `clausters.gui.editing.Editor` over one structure, plus what only a tree
+    has: the held document and the node index, several views of one
+    composition, the lanes and clips, and the transport.
+
+    **What `apply` does here.** The clip edit-back (``/gui_event <id> "clip"
+    <offset> <dur>``, the payload a drag or a resize sends) is resolved through
+    the widget registry to the placement it came from and written with
+    `clausters.form.aggregate.Aggregate.move`. The clip's offset is **absolute**
+    on the shared axis while a placement is relative to its aggregate, so the
+    position converts back through the base the clip was drawn at; and only what
+    actually moved is written — a drag carries the clip's unchanged ``dur``
+    along, and snapping *that* to the grid would silently shorten the element.
+    Anything this editor did not draw is ignored, so a whole poll loop can be fed
+    straight in — even one shared with a second editor (a dedicated piano-roll
+    beside the multitrack, say). A logical aggregate's directed patch routes here
+    too: a ``"wire"`` rewrites the two members' controls onto a shared bus, a
+    ``"move"`` persists a box's canvas position.
 
     Args:
         element: the composition — a `clausters.form.aggregate.Aggregate` (its members
@@ -119,8 +227,8 @@ class Editor:
 
     Usage::
 
-        editor = Editor(song, sample_rate=server.sample_rate, tempo=clock.tempo,
-                        quant=0.25)
+        editor = FormEditor(song, sample_rate=server.sample_rate,
+                            tempo=clock.tempo, quant=0.25)
         editor.open(gui)              # draw and open the window
         editor.apply(*gui.poll())     # a dragged clip moves the element
         editor.render(server, clock)  # play the edited composition
@@ -131,17 +239,9 @@ class Editor:
                  quant: float = 0.0, follow: bool = False, extra=(),
                  title: str = "Composition",
                  width: int = 1000, height: int = 520, base_id: int = 10_000):
-        self.element = element
-        self.sample_rate = float(sample_rate)
-        #: The piece's beat->second map (`clausters.base.TempoMap`) — the whole
-        #: of the beat side of the unit bridge. Given one, the editor draws
-        #: against the same function the clock plays by, which is what makes the
-        #: line and the sound agree across a tempo change; given only a
-        #: ``tempo``, it is that tempo as a single segment, which is exactly the
-        #: affine ratio this bridge always was.
-        self.tempo_map = (
-            tempo_map.copy() if tempo_map is not None else TempoMap(float(tempo))
-        )
+        super().__init__(element, sample_rate=sample_rate, tempo=tempo,
+                         tempo_map=tempo_map, title=title, width=width,
+                         height=height, base_id=base_id)
         self.quant = float(quant)
         #: Re-render on every edit (the *live editor*: drag a clip and hear it
         #: where you dropped it). Off by default — an edit then only changes the
@@ -151,12 +251,6 @@ class Editor:
         #: readout). They are the script's — the editor never touches their ids,
         #: so keep them clear of `base_id`.
         self.extra = list(extra)
-        self.title = title
-        self.size = (int(width), int(height))
-        #: The base a host-less draw counts ids from; once `open`ed the ids come
-        #: from the host's recycling pool instead (`_new_id`).
-        self._base_id = int(base_id)
-        self._fallback_ids = itertools.count(self._base_id)
         #: The elements shown as lanes of their own instead of a summary clip
         #: (the base level: an aggregate resolved rather than collapsed).
         self._expanded: set[int] = set()
@@ -170,17 +264,6 @@ class Editor:
         #: window's node rather than the element's -- the rule every other
         #: edit-back follows.
         self._lane_members: dict = {}
-        #: The last selection swept in this editor's windows, as the crate's
-        #: ``Selection`` — ``{"start", "len"}`` in **beats**, plus ``"value"``
-        #: where the sweep restricted the value axis and ``"nodes"`` where it
-        #: named an element rather than the shared time axis. Empty until one is
-        #: swept; `resolve_selection` says what is under it.
-        #:
-        #: It is a plain value and not part of the composition, which is the
-        #: crate's own line: a selection is screen state, never persisted and
-        #: never logged, and what this holds is the *reading* of it that can be
-        #: handed to an operation.
-        self.selection: dict = {}
         #: The view: the multitrack (`open`), a dedicated piano-roll of one
         #: events element (`open_pianoroll`) or a dedicated signal view of one
         #: rendered element (`open_signal`). `render` dispatches on it.
@@ -203,11 +286,6 @@ class Editor:
         #: edit-back route: the dedicated roll, and every clip with a roll body
         #: (a body carries no id, so its notes arrive tagged with the clip's).
         self._rolls: dict = {}
-        #: What the host should be drawing instead of what it drew, collected
-        #: while one event is routed and sent with its acknowledgement.
-        self._corrections: list = []
-        #: Why the last routed event did not do what it asked, if it did not.
-        self._reason: "str | None" = None
         # The composition's version, the held document, the history over it and
         # the index between them are **not fields of this editor**: they belong
         # to the arrangement, and a second window over one composition reaches
@@ -235,13 +313,6 @@ class Editor:
         #: widget that was not there is not, so this is what says a redefine is
         #: owed. Read and cleared by `_restructure`.
         self._restructured = False
-        #: The **oldest version an incoming edit may name**: raised whenever
-        #: the composition moves by a route that is not a host event, and by
-        #: nothing else. See `_stale`, the only thing that reads it.
-        self._floor: int = FIRST_VERSION
-        #: The version this editor was at when it last answered a host event --
-        #: what turns "the version moved" into "it moved *by someone else*".
-        self._applied: int = FIRST_VERSION
         #: The **value axis** each curve is drawn against, by `Automation` —
         #: remembered rather than recomputed, which is screen state for the same
         #: reason the edit layer is.
@@ -262,8 +333,6 @@ class Editor:
         #: only (a logical aggregate is a signal graph, so positions live here, not in
         #: the arrangement). Keyed by aggregate identity, so they survive a redraw.
         self._patch_geometry: dict = {}
-        self._host = None
-        self._window = None
         #: The rendering in flight: where it went and on what clock — what
         #: `rerender` re-schedules after an edit.
         self._destination = None
@@ -276,74 +345,19 @@ class Editor:
             None, lambda: self._lanes, source=self._render_pass,
             tempo_map=self.tempo_map, sample_rate=self.sample_rate,
             extent=self.extent)
-        #: Whether the arrangement changed since the last render — an edit does not
-        #: interrupt what is playing, so a transport (play, a resume after pause, a
-        #: seek) reads this to know it must re-read the composition.
-        self.dirty = False
 
-    # ---- the unit bridge: beats (the data) ↔ timeline samples (the view) ----
+    # ---- the arrangement's word for what is edited ----
 
     @property
-    def tempo(self) -> float:
-        """The tempo the piece **starts** at, in beats per second.
+    def element(self):
+        """The composition. `clausters.gui.editing.Editor` calls the same slot
+        `structure`, which is the general word; here it is an `Element` and the
+        arrangement's own word is what a reader of this class expects."""
+        return self.structure
 
-        A reading of `tempo_map`, not a second copy of it: under one tempo it is
-        the tempo, and under a tempo that changes it is the first segment's.
-        Assigning it replaces the map with that single tempo, which is what
-        setting a grid does.
-        """
-        return self.tempo_map.tempo_at(0.0)
-
-    @tempo.setter
-    def tempo(self, tempo: float):
-        self.tempo_map = TempoMap(float(tempo))
-
-    @property
-    def units_per_beat(self) -> float:
-        """Timeline samples in the **first** beat — the nominal ratio of the
-        data↔view bridge. One timeline unit is one audio sample, so a take
-        placed at its own frame count sits 1:1 on the axis.
-
-        It is a ratio at a position, not a constant: under a tempo that changes,
-        a later beat is a different number of samples wide, which is why
-        `beats_to_units` takes a position and this only names the origin.
-        """
-        return self.beats_to_units(1.0) - self.beats_to_units(0.0)
-
-    def beats_to_units(self, beats: float) -> float:
-        """Beats → timeline samples, through the piece's time map (and the
-        core's seconds→samples rounding every client shares).
-
-        The axis is real time, so this is where a beat stops being a logical
-        coordinate: a beat after a tempo change lands on the second it actually
-        falls on, which is the second the clock will play it at.
-        """
-        secs = self.tempo_map.secs_at(float(beats))
-        return float(_native.secs_to_samples(secs, self.sample_rate))
-
-    def units_to_beats(self, units: float) -> float:
-        """Timeline samples → beats: the inverse the edit-back path takes to turn
-        a dragged clip back into a placement."""
-        secs = _native.samples_to_secs(int(round(units)), self.sample_rate)
-        return self.tempo_map.beats_at(secs)
-
-    @property
-    def units_per_second(self) -> float:
-        """Timeline samples per second — the axis *is* samples, so this is the
-        engine's sample rate. It is the other half of the bridge: a length in
-        seconds (a take's) crosses on this one, and only an onset crosses on
-        `units_per_beat`."""
-        return self.sample_rate
-
-    def secs_to_units(self, secs: float) -> float:
-        """Seconds → timeline samples: what a length of recorded audio is
-        drawn with, since its seconds were fixed before any tempo was."""
-        return float(_native.secs_to_samples(float(secs), self.sample_rate))
-
-    def units_to_secs(self, units: float) -> float:
-        """Timeline samples → seconds: the inverse, for an edit-back that
-        resized something measured in seconds."""
-        return _native.samples_to_secs(int(round(units)), self.sample_rate)
+    @element.setter
+    def element(self, element):
+        self.structure = element
 
     def length_to_units(self, length: float, element, at: float = 0.0) -> float:
         """A length of ``element``, in that element's own unit, as timeline
@@ -371,35 +385,19 @@ class Editor:
 
     # ---- the base level: collapse (a summary rectangle) vs expand (lanes) ----
 
-    def expand(self, element) -> "Editor":
+    def expand(self, element) -> "FormEditor":
         """Resolve a nested `Aggregate` into lanes of its own (instead of the labeled
         rectangle that summarizes it). The arrangement's *base level*, made an edit."""
         self._expanded.add(id(element))
         return self
 
-    def collapse(self, element) -> "Editor":
+    def collapse(self, element) -> "FormEditor":
         """Summarize a nested `Aggregate` back into one labeled rectangle."""
         self._expanded.discard(id(element))
         return self
 
     def is_expanded(self, element) -> bool:
         return id(element) in self._expanded
-
-    # ---- widget ids: the host's recycling pool, or a host-less fallback ----
-
-    def _new_id(self) -> int:
-        """A widget id for the tree being drawn. Once `open`ed, it comes from the
-        host's recycling pool (`clausters.gui.host.GuiHost.alloc_id`); host-less
-        (a test, or inspecting `draw`), it counts from ``base_id``."""
-        return self._host.alloc_id() if self._host is not None else next(self._fallback_ids)
-
-    def _reset_ids(self):
-        """Start a fresh draw's id numbering. Host-less, the fallback counter
-        restarts at ``base_id``; on a host nothing resets — the ids come from its
-        pool, and re-defining the window returns the previous tree's ids there
-        (`GuiHost.define`), so the churn recycles instead of climbing."""
-        if self._host is None:
-            self._fallback_ids = itertools.count(self._base_id)
 
     # ---- the forward draw: the arrangement -> GuiDef ----
 
@@ -811,12 +809,6 @@ class Editor:
         the first `render` — what the `transport` (play/pause/stop/locate) drives."""
         return self.transport.playhead
 
-    @property
-    def window(self):
-        """The open window's id, or ``None`` once it is closed (a `/gui_closed`
-        seen by `apply`/`poll`) — what a script's loop checks to stop."""
-        return self._window
-
     def update(self):
         """Push the current arrangement back to the open window — a whole-tree
         redefine (`GuiHost.define`), the honest way to show a structural edit (an
@@ -849,124 +841,6 @@ class Editor:
         self._announce()
 
     # ---- the edit-back: a dragged clip becomes a placement ----
-
-    def apply(self, addr: str, args) -> bool:
-        """Apply one message from the host to the **arrangement**, and **answer
-        it**. Returns whether the composition changed.
-
-        The clip edit-back (``/gui_event <id> "clip" <offset> <dur>``, the payload
-        a drag or a resize sends) is resolved through the widget registry to the
-        placement it came from and written with `Aggregate.move`. The clip's offset is
-        **absolute** on the shared axis while a placement is relative to its
-        aggregate, so the position converts back through the base the clip was drawn
-        at; and only what actually moved is written — a drag carries the clip's
-        unchanged ``dur`` along, and snapping *that* to the grid would silently
-        shorten the element. ``/gui_closed`` drops the window (its own — the
-        payload names the window id); anything else is ignored, so a whole poll
-        loop can be fed straight in — even one shared with a second editor
-        (a dedicated piano-roll beside the multitrack, say): every route resolves
-        through this editor's own registries, so another window's events fall
-        through untouched.
-
-        A logical aggregate's directed patch routes here too: a ``"wire"`` rewrites the
-        two members' controls onto a shared bus (`_apply_patch`), a ``"move"``
-        persists a box's canvas position.
-
-        **Every other window over this composition is told**, on the way out.
-        Nothing else would do it: an acknowledgement goes to the window whose
-        gesture it answered, so a second view would go on drawing a piece that
-        moved under it — and the shared history would then step an order one of
-        its windows could not see.
-        """
-        with self._editing.turn(self):
-            changed = self._deliver(addr, args)
-            if changed:
-                self._editing.changed()
-            return changed
-
-    def _deliver(self, addr: str, args) -> bool:
-        """`apply`, without the turn around it: what the message actually
-        does."""
-        if addr == "/gui_closed":
-            if not args or self._window is None or int(args[0]) == self._window:
-                self._window = None
-                # Closing a *view* is not an event of the history, so the
-                # context stays exactly as it is -- what goes is this window's
-                # place in the list of who to tell.
-                self._editing.detach(self)
-            return False
-        if addr != "/gui_event" or len(args) < 3:
-            return False
-        # ``<id> <seq> <version> <tag> <payload…>``: the stamp and the version
-        # the gesture was made against are the second and third arguments of
-        # every event. The stamp is what an acknowledgement names, so it is read
-        # here and answered below -- an owner that applies an edit and says
-        # nothing leaves the host drawing what the hand did.
-        seq, against = int(args[1]), int(args[2]) if len(args) > 2 else 0
-        args = (args[0], *args[3:])
-        self._corrections = []
-        # Why an edit did not do what it asked, when there is something to say.
-        # It rides with the acknowledgement, because a refusal with no reason
-        # teaches "sometimes it does not work" -- the one answer worse than no.
-        self._reason = None
-        # The window's own shortcuts (Ctrl+Z / Ctrl+Shift+Z), which the host
-        # addresses to the **window** rather than to a widget: undo is not
-        # aimed at anything under the cursor. They are answered here rather
-        # than routed, because a history step is not an edit to the tree -- it
-        # is a walk through the one the crate keeps.
-        if args[1] in ("undo", "redo") and int(args[0]) == self._window:
-            # **What it answers is whether anything moved**, not whether the
-            # keystroke was understood. A history at its end is the ordinary
-            # case -- a person holds Ctrl+Z until it stops -- and reporting a
-            # change there told every other view of this composition to bring
-            # itself in step with an edit that never happened, which is a redraw
-            # for nothing and, before the axis learned to survive one, a zoom
-            # reset for nothing. The acknowledgement still goes out: the host
-            # asked, and the answer is the state that holds.
-            stepped = (self.redo if args[1] == "redo" else self.undo)()
-            self._acknowledge(seq)
-            return stepped
-        # Only what this editor draws is this editor's to answer. A poll loop
-        # may be shared with a second editor, and answering for its window would
-        # retire a pending edit nobody applied -- the host would adopt a picture
-        # the real owner never saw.
-        if not self._owns(int(args[0])):
-            return False
-        # **The answers lag, and that is not a conflict.** A host stamps every
-        # event with the version it was last told, and it is told only when an
-        # acknowledgement reaches it -- a round trip a hand outruns, so an edit
-        # naming a version this editor has already moved past is the ordinary
-        # case, not a collision: a drag reporting as it goes, or a second
-        # gesture begun inside one round trip. Refusing those refuses the hand,
-        # and answers each with a resync that snaps the picture back. So only a
-        # route the host knows nothing about raises the floor: the version moved
-        # since the last event was answered, and no event is what moved it.
-        if self._version != self._applied:
-            self._floor = self._version
-        if self._stale(against):
-            # The composition moved under the gesture, by a route no gesture
-            # produced. The edit is not applied and not merged: an edit-back
-            # payload is absolute *and* whole (a roll's notes are the list, not
-            # a diff), so applying one made against an older picture would
-            # silently drop whatever arrived in between. What goes back is the
-            # state as it stands, which the host adopts exactly as it adopts a
-            # snap -- no new path, and the reason is what distinguishes "someone
-            # else changed this" from "not here".
-            self._resync(int(args[0]))
-            self._acknowledge(seq, reason="the composition changed since this edit")
-            return False
-        changed = self._route(args)
-        self._applied = self._version
-        # Answered whatever happened, and answered with a *value*. There is no
-        # success flag: the state this editor decided rides as the corrections
-        # `_route` collected, and a refusal is simply the previous value among
-        # them. Applied, transformed and refused are one message.
-        self._acknowledge(seq, reason=self._reason)
-        # ...and *then* the redefine, when the gesture added or removed a
-        # member: the answer retires what the host had in flight, and the new
-        # tree is what shows a clip that was not there.
-        self._restructure()
-        return changed
 
     def _route(self, args) -> bool:
         """One `/gui_event` payload onto the arrangement, with the stamp already
@@ -1144,34 +1018,6 @@ class Editor:
                 or widget_id in self._patches or widget_id in self._lanes
                 or widget_id in self._signals)
 
-    def _announce(self):
-        """Tell the host which version it is drawing, before any edit.
-
-        A stamp of zero retires nothing -- the host's own numbering starts at
-        one -- so this is purely the version, and it is what keeps the *first*
-        gesture checked like every later one. Without it the host would name
-        zero until the first acknowledgement came back, and the opening edit
-        would be the one edit nobody could tell was stale."""
-        if self._host is not None:
-            self._host.ack(0, doc_version=self._version)
-
-    def _stale(self, against: int) -> bool:
-        """Whether an edit made against document version ``against`` has been
-        overtaken.
-
-        Zero is *unstated* rather than a version -- an older host, or one no
-        owner has reported a version to -- and unstated applies unchecked, which
-        is the behavior there was before there were versions at all.
-
-        Overtaken means *by a route the host never saw*. Every version this
-        editor made while answering the host's own events is one the host is
-        either about to be told or has been told already, so an edit naming one
-        of them is an answer that had not arrived yet -- a drag's later frames,
-        a second gesture begun inside one round trip. What raises the floor is a
-        script's edit, a second editor's, a redefine, an undo: the cases where
-        the picture the gesture was made against is gone."""
-        return against != 0 and against < self._floor
-
     def _resync(self, widget_id: int):
         """Hand back what the widget should be drawing, without applying
         anything: the answer to an edit that arrived too late.
@@ -1213,40 +1059,6 @@ class Editor:
         if props:
             self._correct(widget_id, **props)
 
-    def _correct(self, widget_id: int, **props):
-        """What the host should be drawing instead of what it drew.
-
-        Called by `_route` when this editor did not do what the gesture asked --
-        snapped it to the grid, or refused it outright. The value travels with
-        the acknowledgement in one bundle, which is what lets the host adopt it
-        without a redefine."""
-        self._corrections.append((int(widget_id), props))
-
-    def _acknowledge(self, seq: int, reason: "str | None" = None):
-        """Answer the host for everything up to ``seq``.
-
-        The half that was missing until now: this editor snaps a placement to
-        the musical grid and refuses an edit to a generator, and the host could
-        learn neither -- so a note dragged onto read-only samples stayed drawn
-        where the hand put it, and a clip landed half a grid step from where it
-        was released. The stamp closes both, because it lets the host retire
-        what it drew and adopt what actually happened.
-
-        Every acknowledgement carries the composition's version, which is what
-        the host names back on its next gesture -- that round trip is the whole
-        of the staleness check, and it costs one integer."""
-        if self._host is None:
-            return
-        if not seq and not self._corrections:
-            return
-        # A stamp of zero retires nothing, which is exactly what an **unasked**
-        # push needs: an undo answers no gesture, so it carries values and a
-        # version and takes no pending edit with it.
-        if self._corrections:
-            self._host.push(seq, *self._corrections,
-                            doc_version=self._version, reason=reason)
-        else:
-            self._host.ack(seq, doc_version=self._version, reason=reason)
     def _set_selection(self, wid: int, values) -> None:
         """Keep the swept selection as the crate's `Selection`, in beats.
 
@@ -1397,7 +1209,7 @@ class Editor:
     def resolve_selection(self) -> list:
         """The **samples under the current selection**, through the crate.
 
-        The other half of what a selection is for: `Editor.selection` says what
+        The other half of what a selection is for: `FormEditor.selection` says what
         was swept, and this says what is underneath it — one entry per leaf,
         with the placement's base, the element's trim and the clamp at both ends
         already applied (`clausters._native.Document.resolve`). Empty when
@@ -1895,8 +1707,8 @@ class Editor:
         """The rate (``"audio"``/``"control"``) of ``member``'s outlet ``name``,
         derived from the `SynthDef` it wraps — or ``None`` when the member wraps a
         bare def name or has no such outlet."""
-        from ..defs import synthdef_ports
-        from ..defs.synthdef import SynthDef
+        from ...defs import synthdef_ports
+        from ...defs.synthdef import SynthDef
 
         wraps = getattr(member, "wraps", None)
         if not isinstance(wraps, SynthDef):
@@ -1959,7 +1771,7 @@ class Editor:
     # ---- the history: the arrangement's, not this editor's ----------------
 
     @property
-    def _editing(self) -> Editing:
+    def _editing(self) -> FormEditing:
         """The composition's editing context — its held document, its history
         and the index between them.
 
@@ -1968,7 +1780,7 @@ class Editor:
         view update both, and it is why none of this is a field here: a history
         belongs to the data, never to a view.
         """
-        return Editing.of(self.element)
+        return FormEditing.of(self.element)
 
     def _history(self):
         """The log and the document — **one of each, held** for as long as the
@@ -1997,19 +1809,6 @@ class Editor:
     def _document(self):
         """The held document, or ``None`` before the first edit derived it."""
         return self._editing.document
-
-    @property
-    def _version(self) -> int:
-        """The composition's version — the document half of the two counters.
-
-        It moves on every edit applied to this composition **and on every
-        redefine**, and it rides on each acknowledgement so the host can name it
-        back on the next gesture."""
-        return self._editing.version
-
-    @_version.setter
-    def _version(self, value: int):
-        self._editing.version = int(value)
 
     @property
     def _rederive(self) -> bool:
@@ -2436,36 +2235,17 @@ class Editor:
                 return wid
         return None
 
-    def undo(self) -> bool:
-        """Step back one edit, and tell the host what to draw instead.
+    def _step(self, direction: str) -> bool:
+        """One step of the pile, **through the arrangement's log**.
 
-        The inverse is an ordinary intent, so undoing needs no second path: it
-        is `_project` again, on what the crate hands back. Returns whether
-        anything was undone.
-
-        Every **other** window over this composition is told, the way it is told
-        about an edit: one history, and an undo in either view updates both."""
-        with self._editing.turn(self):
-            stepped = self._step(lambda log, doc: log.undo(doc), "undone")
-            if stepped:
-                self._editing.changed()
-            return stepped
-
-    def redo(self) -> bool:
-        """Step forward again after `undo`. Returns whether anything was
-        redone.
-
-        A step the crate **cannot perform** — a deterministic operation kept as
-        its parameters rather than as a span — comes back in ``remaining`` for
-        its owner to re-run. Nothing in the multitrack editor produces one yet,
-        so this reports it rather than acting on it."""
-        with self._editing.turn(self):
-            stepped = self._step(lambda log, doc: log.redo(doc), "remaining")
-            if stepped:
-                self._editing.changed()
-            return stepped
-
-    def _step(self, walk, key: str) -> bool:
+        The generic walk projects a payload per structure; the tree's is a
+        document, so its legs come back as intents the crate has already turned
+        into what the document now says — which is why this overrides rather
+        than extends.
+        """
+        walk = ((lambda log, doc: log.undo(doc)) if direction == "undo"
+                else (lambda log, doc: log.redo(doc)))
+        key = "undone" if direction == "undo" else "remaining"
         if self._log is None:
             return False
         log, document = self._history()
@@ -2502,32 +2282,6 @@ class Editor:
         self._corrections = []
         return True
 
-    @property
-    def can_undo(self) -> bool:
-        """Whether there is an edit to step back over."""
-        return self._log is not None and self._log.can_undo
-
-    @property
-    def can_redo(self) -> bool:
-        """Whether there is an undone edit to step forward into."""
-        return self._log is not None and self._log.can_redo
-
-    @property
-    def undo_label(self) -> "str | None":
-        """What an undo would be called, for a menu item."""
-        return None if self._log is None else self._log.undo_label
-
-    @property
-    def redo_label(self) -> "str | None":
-        """What a redo would be called, for a menu item.
-
-        The pair of `undo_label`, and it stops being decoration the moment a
-        second window is open on the composition: with one pile over all of
-        them, a label is how a person knows which edit a keystroke is about to
-        move — and both windows read the same one.
-        """
-        return None if self._log is None else self._log.redo_label
-
     def _follow_render(self):
         """Re-schedule after an edit when `follow` is on **and there is
         something to re-schedule**.
@@ -2546,28 +2300,6 @@ class Editor:
         re-flattens the tree."""
         if self.follow and self._destination is not None and self.transport.playing:
             self.rerender()
-
-    def poll(self, timeout: float = 0.0) -> bool:
-        """Drain the host's pending messages into the arrangement (`apply` each)
-        **and on to the window's own handlers**. Returns whether the composition
-        changed. Call it from the script's loop — **never** from the clock
-        thread, which a routine must never block.
-
-        The second half is why a window may carry both: a transport bar beside
-        the editor is the script's, addressed to widgets this editor never drew,
-        and its `clausters.gui.handle.WidgetHandle.on_event` callbacks run here
-        because this is the loop that took its message off the socket. A drain
-        that only fed the arrangement swallowed them — the button was pressed,
-        the host reported it, and nothing happened.
-        """
-        if self._host is None:
-            raise RuntimeError("open(host) the editor first")
-        changed = False
-        while (msg := self._host.poll(timeout)) is not None:
-            changed |= self.apply(*msg)
-            self._host.dispatch(*msg)
-            timeout = 0.0  # only the first wait blocks
-        return changed
 
     # ---- rendering: the edited arrangement back to sound ----
 
@@ -2615,7 +2347,7 @@ class Editor:
         """One pass for the `transport`: the arrangement, flattened and played
         from beat ``at``. Called afresh on every play, which is what makes a
         play — or a resume, or a seek — read the composition as it now stands."""
-        from ..form.render import render as render_element
+        from ...form.render import render as render_element
 
         return render_element(self.element, self._destination, self._clock,
                               at=at, quant=quant)
@@ -3039,8 +2771,8 @@ def _logical_patch(aggregate):
     its directions are unknowable without the def. Returns the patch and the member
     handles in box order (box index == member order), so an edit-back maps a box
     index back to the member whose controls it rewrites."""
-    from ..defs import GraphPatch
-    from ..defs.synthdef import SynthDef
+    from ...defs import GraphPatch
+    from ...defs.synthdef import SynthDef
 
     handles = list(aggregate.handles)
     gdef = aggregate.to_graphdef(name=getattr(aggregate, "name", None) or "_patch")

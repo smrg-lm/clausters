@@ -238,7 +238,7 @@ Whole tracks, and one design the user has asked for that is a track's worth.
 milestones, their order and their acceptance are the plan's, and copying them
 into this file is exactly the migration the rules forbid.
 
-- ⬜ **The generic editor — `C49`-`C51`, ported as `W28`** *(the clients' half,
+- ⬜ **The generic editor — `C50`-`C51`, ported as `W28`** *(the clients' half,
   in `clients/python/PLAN.md`, "The generic editor: one editor per domain, and
   `edit(x)`", ported by `clients/web/PLAN.md`'s "W28"; the crate's floor is
   `O20`, closed 2026-09-02 and leaving no line here)*. **Opened and ordered
@@ -248,10 +248,12 @@ into this file is exactly the migration the rules forbid.
   the host and in no client**, and **`mute`/`solo` are not in the arrangement at
   all**. `C48` closed both of those on 2026-09-02 — the session-file resolver,
   the source table built from the arrangement, mixing in the node's
-  configuration, and `take` — so the remaining sequence is `C49` (the split and
-  the rename, which also takes the one open question: where the ambient editing
-  registry hangs), then `C50` (`edit(x)` over buffer, curve and timeline, with
-  its TypeScript half in the same commit), then `C51`. The decision taken with
+  configuration, and `take` — and `C49` closed on the same day: the
+  `gui/editing/` subpackage, `Editor` generic over one structure with
+  `FormEditor` inheriting from it, and the open question taken (the editing
+  context hangs on the **data**, not on an ambient holder). So the remaining
+  sequence is `C50` (`edit(x)` over buffer, curve and timeline, with its
+  TypeScript half in the same commit), then `C51`. The decision taken with
   the track and worth reading before any of the phases: *the crate holds how an
   edit inverts, the client holds the projection*.
 

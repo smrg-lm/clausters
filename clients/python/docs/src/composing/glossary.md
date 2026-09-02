@@ -25,7 +25,7 @@ that drives controls: `clausters.seq.Automation`. Stored as an
 [control bus](#control-bus). ([Automation](automation.md))
 
 **base level** — the zoom at which a nested aggregate is *summarized* (one
-labeled rectangle) or *resolved* (lanes of its own): `Editor.expand` /
+labeled rectangle) or *resolved* (lanes of its own): `FormEditor.expand` /
 `collapse`. The same structure, seen coarser or finer — a view state, not data.
 ([The editor](editor.md))
 
@@ -72,7 +72,7 @@ is what is heard). ([Automation](automation.md))
 sits, and where the next `play` starts. Set by `locate` or a ruler click.
 Compare [playhead](#playhead-sweeping). ([Editing](editing.md))
 
-**dirty** — `Editor.dirty`: the arrangement changed since the last render. An
+**dirty** — `FormEditor.dirty`: the arrangement changed since the last render. An
 edit never interrupts what is sounding; the next transport action re-reads the
 composition. ([Editing](editing.md))
 
@@ -82,7 +82,7 @@ optional. Distinct from a [placement](#placement)'s `dur`, which overrides and
 
 **edit-back** — the GUI-to-data direction of the loop: the window's gestures
 (`"clip"` move/resize, `"points"` curve edits, `"wire"` rewiring, `"locate"`)
-applied onto the arrangement by `Editor.apply` / `Editor.poll`.
+applied onto the arrangement by `FormEditor.apply` / `FormEditor.poll`.
 ([Editing](editing.md))
 
 **element** — the arrangement's unit: any bounded thing that produces a unit of
@@ -97,7 +97,7 @@ break-points by `env_to_points` / `points_to_env` — the picture, the data and
 the server buffer all read the same object. ([Automation](automation.md))
 
 **extent** — the composition's length in beats, *read from the arrangement* (the
-end of its last placed element): `Editor.extent()`. Not a constant — move a clip
+end of its last placed element): `FormEditor.extent()`. Not a constant — move a clip
 past the end and the piece is longer. ([The editor](editor.md))
 
 **five primitives** — the five element kinds, each a thin adornment over an
@@ -110,7 +110,7 @@ absolute beats, producing a flat timeline of playable items; contained
 patterns are bounced in the same pass. `clausters.form.flatten` /
 `to_timeline` — also available as pure inspection. ([Grouping](grouping.md))
 
-**follow** — `Editor.follow`: re-render on every applied edit (the *live
+**follow** — `FormEditor.follow`: re-render on every applied edit (the *live
 editor*). Off, an edit marks [dirty](#dirty) and waits for the next transport
 action. ([Editing](editing.md))
 
@@ -155,7 +155,7 @@ in time. It does not flatten; it renders to a [GraphDef](#graphdef), and it
 draws as a [patch](#patch--patcher). ([The logical side](logical.md))
 
 **multitrack editor** — the arrangement's DAW-style view and driver:
-`clausters.gui.Editor` plus the `track`/`clip`/`patch` widgets. Draws the
+`clausters.gui.FormEditor` plus the `track`/`clip`/`patch` widgets. Draws the
 tree, applies edits back onto it, owns the transport, and is the *only*
 converter between [beats](#beats) and [timeline samples](#timeline-samples).
 ([The editor](editor.md))
@@ -184,11 +184,11 @@ event is shortened — on a copy; the element is never rewritten. The DAW rule:
 a clip's length is what you hear of it. ([Grouping](grouping.md))
 
 **playhead (sweeping)** — the moving transport line, anchored to the engine's
-sample clock so it tracks the audio (`Editor.anchor`). Also the
+sample clock so it tracks the audio (`FormEditor.anchor`). Also the
 `clausters.seq.Playhead` object itself: what a render returns. Compare
 [cursor](#cursor). ([Rendering](render.md), [Editing](editing.md))
 
-**poll** — `Editor.poll()`: drain the window's pending events into the
+**poll** — `FormEditor.poll()`: drain the window's pending events into the
 arrangement (apply each), returning whether the composition changed. One call,
 no loop; never from the clock thread. ([Editing](editing.md))
 
@@ -204,7 +204,7 @@ aggregate (a relation in time): flatten to a timeline and play it through a
 relation of processing): translate to a [GraphDef](#graphdef), send it, instance
 it. RT or NRT purely by destination. ([Rendering](render.md))
 
-**rerender** — `Editor.rerender()`: re-schedule the (edited) composition from
+**rerender** — `FormEditor.rerender()`: re-schedule the (edited) composition from
 the playhead's position, reusing the destination and clock the last `render`
 remembered — stop, re-flatten, play. Honest semantics: *re-schedule from here*,
 not a sample-exact splice; a synth already sounding keeps sounding.

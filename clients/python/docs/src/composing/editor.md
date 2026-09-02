@@ -1,6 +1,6 @@
 # The multitrack editor: the arrangement on screen
 
-`Editor` draws the song tree as a multitrack window — one lane per member of
+`FormEditor` draws the song tree as a multitrack window — one lane per member of
 the root aggregate, each holding its members as clips on one shared time axis —
 and, on the next page, applies the window's edits back onto that tree. It is
 the one module that knows both worlds: `clausters.form` never imports the GUI.
@@ -8,10 +8,10 @@ the one module that knows both worlds: `clausters.form` never imports the GUI.
 ## Open the piece
 
 ```python
-from clausters.gui import Editor
+from clausters.gui import FormEditor
 
 gui = session.gui()      # boot (once) the visual server, wired to this session
-editor = Editor(song, sample_rate=SR, tempo=TEMPO, quant=QUANT,
+editor = FormEditor(song, sample_rate=SR, tempo=TEMPO, quant=QUANT,
                 title="Composer")
 win = editor.open(gui)
 print(f"opened window {win}")

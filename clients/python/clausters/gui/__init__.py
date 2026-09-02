@@ -24,7 +24,7 @@ time axis — the DAW-style track editor, whose clip bodies are a take, a
 piano-roll or an editable automation curve) and a ``patch`` **patcher** of a
 directed, typed signal graph (drag an outlet onto an inlet to wire it);
 live updates flow through ``/gui_set`` and interactions come back as
-``/gui_event``/``/gui_closed``. `clausters.gui.editor.Editor` drives that
+``/gui_event``/``/gui_closed``. `clausters.gui.editing.FormEditor` drives that
 multitrack view from a `clausters.form` composition — drawing the arrangement
 tree as a GuiDef, applying the clip edit-backs onto it, and re-rendering it.
 `clausters.gui.transport.Transport` is the play/pause/stop/locate machinery
@@ -51,7 +51,7 @@ oscilloscope, ``gui_analyzer`` for the phasescope and live spectrum,
 ``gui_oscsend`` for the editable ``text`` field typing an OSC message live).
 """
 
-from .editor import Editor
+from .editing import Editor, FormEditor
 from .guidef import (
     Source,
     View,
@@ -147,6 +147,7 @@ __all__ = [
     "set_ambient_host",
     "ambient_host",
     "Editor",
+    "FormEditor",
     "Transport",
     "WidgetHandle",
     "WindowHandle",

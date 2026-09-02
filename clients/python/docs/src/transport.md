@@ -181,7 +181,7 @@ That asymmetry runs through the whole feature:
 - **Pause and resume work on anything.** They are a freeze, so they do not care
   what produced the sound.
 - **Locate does not.** `transport_locate(beat)` moves the position and never a
-  node's state, and `Editor.locate` refuses over a composition holding a
+  node's state, and `FormEditor.locate` refuses over a composition holding a
   resident generator instead of moving a cursor the sound will not follow.
   Render the element first and it becomes samples like any other — the change
   of state the [composition](composition.md) chapter is built around.

@@ -1,4 +1,4 @@
-"""The multitrack editor driver (`clausters.gui.editor`) — the arrangement↔GuiDef bridge.
+"""The multitrack editor driver (`clausters.gui.editing`) — the arrangement↔GuiDef bridge.
 
 No server and no GUI host: the forward draw is a pure function of the arrangement
 tree, so these check the mapping rule (lanes, clips, bodies), the beats↔timeline-
@@ -16,7 +16,8 @@ from clausters.form import (Aggregate, Element, Generator, Clang, Sequence,
                             Track, Vector)
 from clausters.form.aggregate import LOGICAL
 from clausters.form.document import FIRST_VERSION, to_document
-from clausters.gui.editor import Editor, _logical_patch
+from clausters.gui.editing import FormEditor
+from clausters.gui.editing.formeditor import _logical_patch
 from clausters.seq.event import Event as SeqEvent
 from clausters.seq.timeline import Timeline
 
@@ -52,8 +53,8 @@ def song() -> Aggregate:
     return Aggregate([(0.0, audio), (0.0, lead)], name="song")
 
 
-def editor(element=None, **kwargs) -> Editor:
-    return Editor(element or song(), sample_rate=SR, tempo=TEMPO, **kwargs)
+def editor(element=None, **kwargs) -> FormEditor:
+    return FormEditor(element or song(), sample_rate=SR, tempo=TEMPO, **kwargs)
 
 
 def fx_chain() -> Aggregate:
@@ -229,7 +230,7 @@ def _track_with_a_take():
 
 def test_an_element_renders_as_a_dedicated_piano_roll():
     track, _tl = _track_with_a_take()
-    ed = Editor(track, sample_rate=SR, tempo=TEMPO, quant=0.25)
+    ed = FormEditor(track, sample_rate=SR, tempo=TEMPO, quant=0.25)
     ed._mode, ed._roll_element = "pianoroll", track
     (roll,) = ed.draw()["children"][:1]
     assert roll["type"] == "notes"
@@ -249,7 +250,7 @@ def test_a_rendered_element_opens_as_one_measured_waveform():
     """
     take = Vector(ServerBuffer(bufnum=7, frames=int(4 * BEAT), channels=2,
                                sample_rate=SR), duration=4.0)
-    ed = Editor(take, sample_rate=SR, tempo=TEMPO)
+    ed = FormEditor(take, sample_rate=SR, tempo=TEMPO)
     ed._mode, ed._signal_element = "signal", take
     view = ed.draw()["children"][0]
     assert view["type"] == "signal"
@@ -267,7 +268,7 @@ def test_a_rendered_element_opens_as_one_measured_waveform():
 
 def test_the_bare_envelope_is_a_shorter_stack():
     take = Vector(ServerBuffer(bufnum=7, frames=1000, channels=1, sample_rate=SR))
-    ed = Editor(take, sample_rate=SR, tempo=TEMPO)
+    ed = FormEditor(take, sample_rate=SR, tempo=TEMPO)
     ed._mode, ed._signal_element = "signal", take
     ed.layers = ("peak",)
     assert ed.draw()["children"][0]["measure"] == "peak"
@@ -278,7 +279,7 @@ def test_a_selection_swept_on_a_signal_view_is_of_that_element():
     # seconds -- so this one is as long as its samples, whatever the tempo.
     take = Vector(ServerBuffer(bufnum=7, frames=int(4 * BEAT), channels=1,
                                sample_rate=SR), duration=2.0)
-    ed = Editor(take, sample_rate=SR, tempo=TEMPO)
+    ed = FormEditor(take, sample_rate=SR, tempo=TEMPO)
     ed._mode, ed._signal_element = "signal", take
     wid = ed.draw()["children"][0]["id"]
     assert ed.apply("/gui_event", [wid, SEQ, UNSTATED, "selection",
@@ -297,7 +298,7 @@ def test_a_generator_has_no_samples_and_the_refusal_says_so():
     from clausters.seq.pattern import Pbind, Pseq
 
     gen = Sequence(Pbind(midinote=Pseq([60, 62], 1), dur=1.0))
-    ed = Editor(gen, sample_rate=SR, tempo=TEMPO)
+    ed = FormEditor(gen, sample_rate=SR, tempo=TEMPO)
     with pytest.raises(ValueError, match="no samples"):
         ed.open_signal(None, gen)
     assert ed.window is None
@@ -310,14 +311,14 @@ def test_a_generator_has_no_samples_and_the_refusal_says_so():
 
 def test_an_unknown_measure_is_refused_by_name():
     take = Vector(ServerBuffer(bufnum=7, frames=1000, channels=1, sample_rate=SR))
-    ed = Editor(take, sample_rate=SR, tempo=TEMPO)
+    ed = FormEditor(take, sample_rate=SR, tempo=TEMPO)
     with pytest.raises(ValueError, match="loudness"):
         ed.open_signal(None, take, layers=("peak", "loudness"))
 
 
 def test_a_note_edit_rewrites_the_editable_timeline():
     track, tl = _track_with_a_take()
-    ed = Editor(track, sample_rate=SR, tempo=TEMPO)
+    ed = FormEditor(track, sample_rate=SR, tempo=TEMPO)
     ed._mode, ed._roll_element = "pianoroll", track
     ed.draw()  # builds the roll registry
     wid = next(iter(ed._rolls))
@@ -349,7 +350,7 @@ def test_a_note_edit_keeps_what_the_roll_cannot_say_and_moves_only_the_sustain()
         (0.0, SeqEvent(instrument="reed", midinote=60, dur=1.0, legato=0.8, amp=0.4)),
         (1.0, SeqEvent(instrument="reed", midinote=64, dur=1.0, legato=0.8, amp=0.4)),
     ]))
-    ed = Editor(track, sample_rate=SR, tempo=TEMPO)
+    ed = FormEditor(track, sample_rate=SR, tempo=TEMPO)
     ed._mode, ed._roll_element = "pianoroll", track
     tree = ed.draw()
     wid = next(iter(ed._rolls))
@@ -390,7 +391,7 @@ def test_a_note_edit_survives_an_event_that_is_not_plain_data():
 
     played = SeqEvent(midinote=60, dur=1.0, server=_Sounded())
     track = Track(Timeline([(0.0, played)]))
-    ed = Editor(track, sample_rate=SR, tempo=TEMPO)
+    ed = FormEditor(track, sample_rate=SR, tempo=TEMPO)
     ed._mode, ed._roll_element = "pianoroll", track
     tree = ed.draw()
     wid = next(iter(ed._rolls))
@@ -412,7 +413,7 @@ def test_a_generator_element_is_read_only_in_the_piano_roll():
     from clausters.seq.pattern import Pbind, Pseq
 
     gen = Sequence(Pbind(midinote=Pseq([60, 62], 1), dur=1.0))
-    ed = Editor(gen, sample_rate=SR, tempo=TEMPO)
+    ed = FormEditor(gen, sample_rate=SR, tempo=TEMPO)
     ed._mode, ed._roll_element = "pianoroll", gen
     ed.draw()
     wid = next(iter(ed._rolls))
@@ -1142,7 +1143,7 @@ def test_an_envelope_attached_to_its_event_is_one_clip_that_moves_as_one():
 def test_a_logical_aggregate_is_skipped_until_the_directed_driver():
     """A logical aggregate draws as a directed `graph` patch, which needs the members'
     port directions from their defs — the directed patcher's Python driver (P3).
-    Until then the Editor skips it rather than draw the old bus-as-node view; a
+    Until then the FormEditor skips it rather than draw the old bus-as-node view; a
     directed patch is built directly with `clausters.defs.GraphPatch` (see
     `examples/editors/patch1.py`)."""
     from clausters.form import Generator
@@ -1198,7 +1199,7 @@ def test_the_edited_composition_renders_where_it_was_dropped():
     def edited(server, clock):
         note = Clang(SeqEvent(instrument="default", freq=440.0, dur=1.0))
         song = Aggregate([(0.0, Aggregate([(0.0, note)], name="lead"))], name="song")
-        ed = Editor(song, sample_rate=SR, tempo=TEMPO, quant=1.0)
+        ed = FormEditor(song, sample_rate=SR, tempo=TEMPO, quant=1.0)
         lane = lanes(ed.draw())[0]
         (c,) = clips(lane)
         ed.apply(*clip_event(c["id"], 3 * BEAT, 1 * BEAT))  # dragged to beat 3
@@ -1223,7 +1224,7 @@ def test_logical_patch_derives_boxes_and_cords_from_the_defs():
 
 
 def test_editor_draws_a_root_logical_aggregate_as_a_graph():
-    ed = Editor(fx_chain(), sample_rate=SR, tempo=TEMPO)
+    ed = FormEditor(fx_chain(), sample_rate=SR, tempo=TEMPO)
     tree = ed.draw()
     scrolls = [c for c in tree["children"] if is_plane(c)]
     assert len(scrolls) == 1, "the logical aggregate is a pan/zoom graph workspace"
@@ -1240,13 +1241,13 @@ def test_a_logical_aggregate_among_concrete_lanes_draws_as_a_patch_lane():
     melody = Track(Timeline([(0.0, SeqEvent(midinote=60, dur=1.0))]))
     root = Aggregate([(0.0, Aggregate([(0.0, melody)], name="lead")),
                   (0.0, fx_chain())], name="song")
-    tree = Editor(root, sample_rate=SR, tempo=TEMPO).draw()
+    tree = FormEditor(root, sample_rate=SR, tempo=TEMPO).draw()
     kids = tree["children"]
     assert any(is_lane(c) for c in kids) and any(is_plane(c) for c in kids)
     # The ruler is its own strip under the stack; a patch lane has no time axis,
     # so a window that drew *only* one gets no ruler at all.
     assert is_ruler(kids[-1])
-    only_patch = Editor(fx_chain(), sample_rate=SR).draw()["children"]
+    only_patch = FormEditor(fx_chain(), sample_rate=SR).draw()["children"]
     assert len(only_patch) == 1 and is_plane(only_patch[0])
     assert is_patch(only_patch[0]["children"][0])
 
@@ -1258,7 +1259,7 @@ def test_a_wire_edit_rewrites_the_members_controls_onto_a_shared_bus():
     g = Aggregate(kind=LOGICAL, name="chain")
     hs = g.add(Generator(src))
     hk = g.add(Generator(sink))
-    ed = Editor(g, sample_rate=SR, tempo=TEMPO)
+    ed = FormEditor(g, sample_rate=SR, tempo=TEMPO)
     tree = ed.draw()
     wid = [c for c in tree["children"] if is_plane(c)][0]["children"][0]["id"]
 
@@ -1280,7 +1281,7 @@ def test_a_wire_reuses_an_existing_bus_for_fan_out():
     g = Aggregate(kind=LOGICAL, name="chain", buses=[("mix", "audio")])
     g.add(Generator(src, controls={"out": "mix"}))   # already writes "mix"
     hk = g.add(Generator(sink))                       # unwired sink
-    ed = Editor(g, sample_rate=SR, tempo=TEMPO)
+    ed = FormEditor(g, sample_rate=SR, tempo=TEMPO)
     tree = ed.draw()
     wid = [c for c in tree["children"] if is_plane(c)][0]["children"][0]["id"]
     ed.apply("/gui_event", [wid, SEQ, UNSTATED, "wire", 0, "out", 1, "in"])
@@ -1290,7 +1291,7 @@ def test_a_wire_reuses_an_existing_bus_for_fan_out():
 
 
 def test_a_graph_box_move_persists_its_position_across_a_redraw():
-    ed = Editor(fx_chain(), sample_rate=SR, tempo=TEMPO)
+    ed = FormEditor(fx_chain(), sample_rate=SR, tempo=TEMPO)
     tree = ed.draw()
     wid = [c for c in tree["children"] if is_plane(c)][0]["children"][0]["id"]
     # A move is presentation only: the composition did not change.
@@ -1387,7 +1388,7 @@ def test_an_event_from_another_editors_window_is_not_answered():
 
 # ---- the version, and staleness ----
 
-def two_clips() -> Editor:
+def two_clips() -> FormEditor:
     """Two lanes, one clip each -- the smallest composition in which one edit
     can supersede another."""
     return editor(
@@ -1711,7 +1712,7 @@ def test_another_windows_shortcut_is_not_this_editors_to_answer():
 def test_a_poll_feeds_the_arrangement_and_the_windows_own_handlers():
     """A window carries both: the editor's widgets and the script's own strip.
 
-    `Editor.poll` is the loop that takes the message off the socket, so a
+    `FormEditor.poll` is the loop that takes the message off the socket, so a
     transport button beside the editor -- a widget this editor never drew --
     gets its handler run here. A drain that only fed the arrangement swallowed
     those: the button was pressed, the host reported it, nothing happened.
@@ -2457,7 +2458,7 @@ def test_a_note_keeps_the_id_the_document_gave_it():
 
     element = ed._rolls[roll]
     from clausters.form.document import ID_ATTR
-    from clausters.gui.editor import _editable_timeline, _pitch
+    from clausters.gui.editing.formeditor import _editable_timeline, _pitch
 
     ids = [getattr(item, ID_ATTR, None)
            for _, item in _editable_timeline(element) if _pitch(item) is not None]

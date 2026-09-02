@@ -38,7 +38,7 @@ bar 5 arrives, how long the accelerando lasts, how many beats fit in the first
 thirty seconds. A piece can hold a map no clock ever read.
 
 **What to look at.** Hand the editor the clock's map (``tempo_map=clock.map``)
-and the drawing and the sound are one function. `Editor.render` adopts the
+and the drawing and the sound are one function. `FormEditor.render` adopts the
 clock's map anyway and redraws if it moved — the two cannot silently disagree —
 but passing it up front means the first draw is already right.
 
@@ -55,7 +55,7 @@ import sys
 from clausters import Session, TempoMap
 from clausters.defs.ugens.env import Env  # noqa: F401
 from clausters.form import Aggregate, Clang, Sequence
-from clausters.gui import Editor
+from clausters.gui import FormEditor
 from clausters.seq.event import Event as SeqEvent
 
 TEMPO = 1.0          # beats per second, before any change
@@ -156,7 +156,7 @@ print("the clock's map:", clock.map.segments())
 # by engine samples — crosses it exactly then.
 
 # %%
-editor = Editor(song, sample_rate=SR,
+editor = FormEditor(song, sample_rate=SR,
                 tempo_map=clock.map, quant=QUANT, follow=True,
                 title="A tempo that changes")
 editor.open()

@@ -10,7 +10,7 @@ sibling of `clausters.defs.node.NodeIdAllocator`, built on the same core
   fixed window ``[base, base + capacity)`` and, once the high-water mark reaches
   the top, reuses the ones `free` has returned. So the numeric id space never
   climbs without bound over a live session — which matters because the multitrack
-  `clausters.gui.editor.Editor` re-allocates its whole widget range on every
+  `clausters.gui.editing.FormEditor` re-allocates its whole widget range on every
   redraw. The capacity is generous (`CAPACITY`): exhaustion means that many
   widgets are live *at once*, a client bug, and is raised loudly.
 - **The client drives the recycle.** A node id returns to the pool when the

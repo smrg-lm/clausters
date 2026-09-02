@@ -43,7 +43,7 @@ the entry the next keystroke is about to move and there is one pile; and the
 own, because what a window can see is a window's and none of it is ever an entry
 in a history.
 
-The two windows are two <code>gui.Editor</code>s over one arrangement. Nothing
+The two windows are two <code>gui.FormEditor</code>s over one arrangement. Nothing
 wires them together — the sharing is not a feature of this page, it is where the
 history lives.
 
@@ -118,14 +118,14 @@ and at the end of the history both stay false and nothing redraws.</div>
 
         // Two editors, one arrangement. Each opens its own window; neither is
         // told about the other. They share a history because the history belongs
-        // to the composition -- `Editor` asks the arrangement for it rather than
+        // to the composition -- `FormEditor` asks the arrangement for it rather than
         // making one.
         const options = {
           sampleRate: SR, tempo: TEMPO, quant: 0.25, follow: true,
           width: 760, height: 380,
         };
-        const left = new gui.Editor(piece, { ...options, title: "Composition (left)" });
-        const right = new gui.Editor(piece, { ...options, title: "Composition (right)" });
+        const left = new gui.FormEditor(piece, { ...options, title: "Composition (left)" });
+        const right = new gui.FormEditor(piece, { ...options, title: "Composition (right)" });
         await left.open(host, { stage: el("left") });
         await right.open(host, { stage: el("right") });
         session.start();

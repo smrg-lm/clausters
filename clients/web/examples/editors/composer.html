@@ -26,7 +26,7 @@
 <code>composer.py</code>: <b>compose the arrangement, edit it on screen,
 hear it, undo it</b> — the same composition, lane for lane.
 
-<code>gui.Editor</code> is the bridge between the arrangement
+<code>gui.FormEditor</code> is the bridge between the arrangement
 (<code>form</code> — elements placed recursively by offset) and the multitrack
 view (tracks of clips on one shared time axis). It draws the arrangement tree as
 a GuiDef, applies the clip edit-backs the host sends <i>onto the arrangement</i>,
@@ -261,7 +261,7 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
         await server.sync();
 
         const host = await session.gui();
-        editor = new gui.Editor(await compose(buf, other), {
+        editor = new gui.FormEditor(await compose(buf, other), {
           sampleRate: SR,
           tempo: TEMPO,
           quant: QUANT,

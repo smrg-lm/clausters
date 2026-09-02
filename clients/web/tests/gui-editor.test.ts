@@ -1,4 +1,4 @@
-// The multitrack editor driver (`gui/editor.ts`) — the arrangement↔GuiDef
+// The multitrack editor driver (`gui/editing/formeditor.ts`) — the arrangement↔GuiDef
 // bridge, from the edit-back side.
 //
 // No server and no real host: a fake host records what the editor answers with,
@@ -29,8 +29,8 @@ import {
 } from "../src/form/index.ts";
 import { SynthDef, control, in_ as inBus, out, sine } from "../src/defs/index.ts";
 import type { Member, SourceLike } from "../src/form/index.ts";
-import { Editing } from "../src/gui/editing.ts";
-import { Editor } from "../src/gui/editor.ts";
+import { Editing } from "../src/gui/editing/index.ts";
+import { FormEditor } from "../src/gui/editing/index.ts";
 import { TempoMap } from "../src/base/time.ts";
 import type { GuiHost, PropValue } from "../src/gui/host.ts";
 import { Event as SeqEvent } from "../src/seq/event.ts";
@@ -87,8 +87,8 @@ function song(): Aggregate {
     return new Aggregate([[0.0, audio], [0.0, lead]], "concrete", { name: "song" });
 }
 
-const editor = (element?: Element, options: Record<string, unknown> = {}): Editor =>
-    new Editor(element ?? song(), { sampleRate: SR, tempo: TEMPO, ...options });
+const editor = (element?: Element, options: Record<string, unknown> = {}): FormEditor =>
+    new FormEditor(element ?? song(), { sampleRate: SR, tempo: TEMPO, ...options });
 
 /** Records what the editor pushes back, so an answer can be read. */
 class FakeHost {

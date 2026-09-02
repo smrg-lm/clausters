@@ -9,7 +9,7 @@ The `form` namespace is that layer — the **arrangement model**. It is the same
 layer the Python client has, in this language: the two write the same document
 and flatten to the same timeline, and a parity suite holds them to it.
 
-`gui.Editor` puts it on screen as a multitrack view you can edit. The point of
+`gui.FormEditor` puts it on screen as a multitrack view you can edit. The point of
 the pair is that the graphic is not a picture of the music: dragging a clip moves
 the *element*, and the sound follows.
 
@@ -134,9 +134,31 @@ client awaits one rather than blocking the page's single thread.
 An element is *rendered*, never played: `play` is for what already sounds
 directly, and a flat `Timeline`, being already generated, is playable.
 
+## Two editors, and which one is which
+
+`gui.Editor` edits **one structure** — a buffer's samples, a break-point curve, a
+timeline of events — and it knows nothing about the arrangement.
+`gui.FormEditor` is that class plus what only a tree has: a held document,
+several views of one composition, the lanes and clips, and a transport. The names
+say which is which, and the general one has the plain name because editing a
+curve is the plain case.
+
+An editor orchestrates rather than performs, and it is four collaborators
+(`gui/editing/`):
+
+| | what it is | what it deliberately is not |
+|---|---|---|
+| `View` | the picture of one structure, and the registry from widget id to what it shows | not the vocabulary: one structure is drawn several ways |
+| `Domain` | gesture → payload, payload → the client object, the label, the coalesce key | not **how an edit inverts** — that is the shared crate's, so it is not written once per language — and it does not draw |
+| `Echo` | the acknowledgement: the stamp, the version, the corrections, the reason | not anything about what was edited |
+| `Editing` | the editing context: the history, and the views to tell | **not the editor's** — it is asked for, never built, which is what makes two windows walk one undo order |
+
+The rule that fixes all four: an editor owns **neither the data nor the
+history**. `View` here is not `guidef`'s `View`, which is a tree you can open.
+
 ## The multitrack editor
 
-`Editor` draws that tree as the multitrack view and applies its edits back onto
+`FormEditor` draws that tree as the multitrack view and applies its edits back onto
 the tree. The mapping is one rule, not a heuristic per case:
 
 - the root aggregate's members are the **lanes**; a lane's members are its
@@ -168,7 +190,7 @@ what the def is (`DefPatch.fromSynthdef(sdef).toSynthdef(name)` reproduces the
 original spec); it needs no audio server.
 
 ```ts
-const editor = new gui.Editor(song, {
+const editor = new gui.FormEditor(song, {
     sampleRate: engine.context.sampleRate,
     tempo: clock.tempo,
     quant: 0.5,              // the musical drag grid
@@ -203,7 +225,7 @@ sound are one function rather than two readings of it:
 
 ```js
 clock.setTempo(2.0);                       // or clock.setTempo(2.0, { over: 8 })
-const editor = new Editor(song, { sampleRate, tempoMap: clock.map });
+const editor = new FormEditor(song, { sampleRate, tempoMap: clock.map });
 ```
 
 `editor.render(server, clock)` adopts the clock's map anyway and redraws if it
@@ -222,8 +244,8 @@ That pile belongs to the **arrangement**, so two windows over one piece find the
 same one:
 
 ```ts
-const multitrack = new Editor(piece, { sampleRate });
-const roll = new Editor(piece, { sampleRate });   // a second window, same piece
+const multitrack = new FormEditor(piece, { sampleRate });
+const roll = new FormEditor(piece, { sampleRate });   // a second window, same piece
 
 await multitrack.open(host);
 await roll.open(host);             // `open` listens, so nothing is pumped here

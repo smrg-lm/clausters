@@ -1,11 +1,15 @@
-// `Editor`: the bridge between the arrangement and the multitrack GUI (mirrors
-// `clausters/gui/editor.py`).
+// `FormEditor`: the bridge between the arrangement and the multitrack GUI
+// (mirrors `clausters/gui/editing/formeditor.py`).
 //
 // The driver of the DAW-style view. It draws a `form` tree as a multitrack
 // `GuiDef` (tracks of clips on one shared time axis), applies the clip
 // edit-backs the host sends straight onto the arrangement, and re-renders it —
 // the loop **data ↔ graphic ↔ sound**, which is what makes the composition
 // editable at any granularity rather than merely displayable.
+//
+// It is {@link Editor} — the generic one, over any single structure — plus what
+// only a tree has, and the name says which: `Editor` is what a person calls to
+// edit a buffer, a curve or a timeline, and it imports nothing from here.
 //
 // Three things are worth knowing about how it is built.
 //
@@ -34,15 +38,14 @@
 // loop already, so `open` subscribes and every `/gui_event` reaches `apply` as it
 // arrives. `detach()` unsubscribes.
 
-import { samples_to_secs, secs_to_samples } from "../core/clausters_core_web.js";
-import { TempoMap } from "../base/time.ts";
-import { Document, Log } from "../document.ts";
-import type { Against, Intent, Outcome, Resolved, Selection, Step } from "../document.ts";
-import { GraphPatch, synthdefPorts } from "../defs/patch.ts";
-import type { PortSpec } from "../defs/patch.ts";
-import { SynthDef } from "../defs/synthdef.ts";
-import { pointsToEnv } from "../defs/ugens/index.ts";
-import type { Server } from "../defs/server/index.ts";
+import { TempoMap } from "../../base/time.ts";
+import { Document, Log } from "../../document.ts";
+import type { Against, Intent, Outcome, Resolved, Selection, Step } from "../../document.ts";
+import { GraphPatch, synthdefPorts } from "../../defs/patch.ts";
+import type { PortSpec } from "../../defs/patch.ts";
+import { SynthDef } from "../../defs/synthdef.ts";
+import { pointsToEnv } from "../../defs/ugens/index.ts";
+import type { Server } from "../../defs/server/index.ts";
 import {
     CONCRETE,
     LOGICAL,
@@ -59,20 +62,22 @@ import {
     flatten,
     leafConfig,
     leafNode,
+    nextNodeId,
     render as renderElement,
     setDocId,
     toBeats,
     toDocument,
-} from "../form/index.ts";
-import type { Member } from "../form/index.ts";
-import { FIRST_VERSION, MIXING, setMixing } from "../form/document.ts";
-import { Editing } from "./editing.ts";
-import type { Indexed } from "./editing.ts";
-import { Automation } from "../seq/automation.ts";
-import { Event as SeqEvent } from "../seq/event.ts";
-import { MidiItem, OscItem, Timeline } from "../seq/timeline.ts";
-import type { Playhead } from "../seq/timeline.ts";
-import type { TempoClock } from "../base/clock.ts";
+} from "../../form/index.ts";
+import type { Member } from "../../form/index.ts";
+import { FIRST_VERSION, MIXING, setMixing } from "../../form/document.ts";
+import { Editing, contexts } from "./context.ts";
+import type { Adopting } from "./context.ts";
+import { Editor } from "./editor.ts";
+import { Automation } from "../../seq/automation.ts";
+import { Event as SeqEvent } from "../../seq/event.ts";
+import { MidiItem, OscItem, Timeline } from "../../seq/timeline.ts";
+import type { Playhead } from "../../seq/timeline.ts";
+import type { TempoClock } from "../../base/clock.ts";
 import {
     clip,
     flatNotes,
@@ -85,11 +90,11 @@ import {
     track,
     waveform,
     window as guiWindow,
-} from "./guidef.ts";
-import type { GuiNode } from "./guidef.ts";
-import type { GuiHost, PropValue, Stage } from "./host.ts";
-import type { WindowHandle } from "./handle.ts";
-import { Transport } from "./transport.ts";
+} from "../guidef.ts";
+import type { GuiNode } from "../guidef.ts";
+import type { GuiHost, PropValue, Stage } from "../host.ts";
+import type { WindowHandle } from "../handle.ts";
+import { Transport } from "../transport.ts";
 
 /**
  * The pitch range a piano-roll lane falls back to when its notes give none
@@ -187,20 +192,117 @@ export interface EditorOptions {
  */
 async function resolveEditorHost(host?: GuiHost): Promise<GuiHost> {
     if (host !== undefined) return host;
-    return (await import("../plot.ts")).resolveHost();
+    return (await import("../../plot.ts")).resolveHost();
 }
 
-export class Editor {
-    element: Element;
-    sampleRate: number;
+/**
+ * The **arrangement's** editing context: a generic one plus the held document,
+ * the index between it and the tree, and the id to mint next.
+ *
+ * They are here rather than in `editing/context.ts` because they are the tree's:
+ * a curve or a buffer has a history and no document, and a generic context that
+ * carried one would be carrying the arrangement's vocabulary into every other
+ * structure's editing.
+ */
+export class FormEditing extends Editing {
+    /** The arrangement's face of the pile. */
+    log: Log | null = null;
     /**
-     * The piece's beat→second map — the whole of the beat side of the unit
-     * bridge. Given one, the editor draws against the same function the clock
-     * plays by, which is what makes the line and the sound agree across a tempo
-     * change; given only a `tempo`, it is that tempo as a single segment, which
-     * is exactly the affine ratio this bridge always was.
+     * The crate's held document — opened once and kept, so a gesture costs the
+     * edit rather than the composition.
      */
-    tempoMap: TempoMap;
+    doc: Document | null = null;
+    /**
+     * Whether the held document has to be derived from the arrangement again
+     * before the next edit. Set wherever the tree moves by a route that is not
+     * an intent.
+     */
+    rederive = false;
+    /** node id → the arrangement object an intent naming that node writes to. */
+    byNode = new Map<number, Indexed>();
+    /** The next node id to mint for a node a gesture creates. */
+    nextNode: number | null = null;
+
+    /**
+     * The log and the document, deriving the document if that is what it takes.
+     *
+     * The document is opened once and kept: rebuilding it per gesture handed
+     * back the whole of what holding the tree in the crate had won. What a
+     * rebuild was quietly doing is explicit here — `toDocument` stamps each
+     * element with the id it keeps, so a re-derivation names the same nodes and
+     * the history keeps its footing.
+     */
+    held(element: Element): [Log, Document] {
+        this.log ??= new Log(0, 0, this.history);
+        if (this.doc === null || this.rederive) {
+            const document = toDocument(element, { version: this.version });
+            this.doc?.free();
+            this.doc = new Document(document);
+            // **The index is added to, not replaced.** An element that has left
+            // the tree — a clip a cut removed, the half a join swallowed — is
+            // still named by the inverses in the pile, and putting it back is
+            // placing *that object* again rather than rebuilding one from a
+            // node (a rebuilt element is a different identity to every widget
+            // and every pending edit). Clearing here made an undo of a cut, and
+            // a redo of a split, quietly do nothing.
+            this.index(element, null, null);
+            this.nextNode = nextNodeId(element);
+            this.rederive = false;
+        }
+        return [this.log, this.doc];
+    }
+
+    /**
+     * Walk the arrangement collecting node id → what an intent writes to.
+     *
+     * A `place` needs the owning aggregate and the member handle (a placement is
+     * the aggregate's, not the element's); everything else needs the element.
+     * The walk mirrors `form/document.ts`'s own, which is what keeps the two
+     * agreeing about what has an id.
+     */
+    index(element: Element, owner: Aggregate | null, member: Member | null): void {
+        // The id belongs to the **placement** when there is one: a clip is a
+        // window onto samples, so what an intent names is the window.
+        const node = docIdOf(member ?? element);
+        if (node !== null) this.byNode.set(node, [owner, member, element]);
+        // A view opened over a *part* of this composition — a dedicated roll of
+        // one track — must reach this context and not mint a second one, so the
+        // walk claims what it passes. Only where there is none: a part that
+        // already had a context of its own was being edited on its own terms,
+        // and taking its history away without being asked is not this walk's to
+        // do.
+        if (!contexts.has(element)) contexts.set(element, this);
+        if (element instanceof Aggregate) {
+            for (const handle of element.handles) {
+                this.index(handle.element, element, handle);
+            }
+        }
+    }
+
+    /** The next id for a node a gesture creates — a note added in a roll. */
+    mint(element: Element): number {
+        const next = this.nextNode ?? nextNodeId(element);
+        this.nextNode = next + 1;
+        return next;
+    }
+
+    /**
+     * Release the crate's handles. What the composition going away leaves
+     * behind; a view closing is not an event of a history.
+     */
+    override free(): void {
+        this.log?.free();
+        this.log = null;
+        this.doc?.free();
+        this.doc = null;
+        super.free();
+    }
+}
+
+/** What an index entry says an intent naming that node writes to. */
+export type Indexed = [Aggregate | null, Member | null, Element];
+
+export class FormEditor extends Editor<Element> implements Adopting {
     quant: number;
     /**
      * Re-render on every edit (the *live editor*: drag a clip and hear it where
@@ -210,32 +312,12 @@ export class Editor {
     follow: boolean;
     /** Widgets appended to the window after the lanes. They are the script's. */
     extra: GuiNode[];
-    title: string;
-    size: [number, number];
-    /**
-     * The last selection swept in this editor's windows, as the crate's
-     * `Selection` — `{start, len}` in **beats**, plus `value` where the sweep
-     * restricted the value axis and `nodes` where it named an element rather
-     * than the shared time axis.
-     *
-     * It is a plain value and not part of the composition, which is the crate's
-     * own line: a selection is screen state, never persisted and never logged.
-     */
-    selection: Selection | Record<string, never> = {};
     /**
      * The transport driving the lanes' playhead. Its lanes are read on each use,
      * so a redraw's new widgets get the line.
      */
     readonly transport: Transport;
-    /**
-     * Whether the arrangement changed since the last render — an edit does not
-     * interrupt what is playing, so a transport (play, a resume after pause, a
-     * seek) reads this to know it must re-read the composition.
-     */
-    dirty = false;
 
-    private readonly baseId: number;
-    private fallbackId: number;
     /** The elements shown as lanes of their own instead of a summary clip. */
     private expanded = new Set<Element>();
     /** widget id → where the clip came from, and what was drawn for it. */
@@ -266,7 +348,7 @@ export class Editor {
      * structural edit — and a missing key and "the default layer" are the same
      * answer, which is why nothing noticed. A node id is the arrangement's own,
      * stamped by `toDocument` and kept across a re-derivation, so it outlives
-     * the picture the way this state is supposed to. {@link Editor.editLayerOf}
+     * the picture the way this state is supposed to. {@link FormEditor.editLayerOf}
      * reads it.
      */
     private editLayer = new Map<number, string>();
@@ -274,32 +356,10 @@ export class Editor {
      * Whether the last edit changed **which members exist** — a split, a join, a
      * cord. A placement is a prop the host can be told about; a widget that was
      * not there is not, so this is what says a redefine is owed. Read and
-     * cleared by {@link Editor.restructure}.
+     * cleared by {@link FormEditor.restructure}.
      */
     private restructured = false;
-    /**
-     * The **oldest version an incoming edit may name**: raised whenever the
-     * composition moves by a route that is not a host event, and by nothing
-     * else. See {@link Editor.stale}, which is the only thing that reads it.
-     */
-    private floor: number = FIRST_VERSION;
-    /**
-     * The version this editor was at when it last answered a host event — what
-     * turns "the version moved" into "the version moved *by someone else*".
-     */
-    private applied: number = FIRST_VERSION;
-    /**
-     * The **value axis** each curve is drawn against — remembered rather than
-     * recomputed, which is screen state for the same reason the edit layer is.
-     *
-     * A break-point's position on screen is its value *against this axis*, so an
-     * axis derived from the break-points moves every point whenever any one of
-     * them is dragged: the curve jumps under the hand editing it, and the point
-     * being dragged is the only one that appears not to move.
-     */
     private curveAxis = new WeakMap<Automation, [number, number]>();
-    private corrections: [number, Record<string, PropValue>][] = [];
-    private reason: string | undefined = undefined;
     private mode: "multitrack" | "pianoroll" | "signal" = "multitrack";
     private rollElement: Element | null = null;
     private signalElement: Element | null = null;
@@ -307,13 +367,11 @@ export class Editor {
     // The composition's version, the held document, the history over it and the
     // index between them are **not fields of this editor**: they belong to the
     // arrangement, and a second window over one composition reaches the same
-    // {@link Editing} context through {@link Editor.editing}. A log kept here
+    // {@link Editing} context through {@link FormEditor.editing}. A log kept here
     // would see only the gestures this editor made, so a script editing the
     // arrangement or a second view would leave it describing a composition that
     // has moved on, and undo would then write a state nobody was ever in. The
     // accessors below read that context.
-    private host: GuiHost | null = null;
-    private windowId: number | null = null;
     private unlisten: (() => void) | null = null;
     private destination: unknown = null;
     private clock: TempoClock | null = null;
@@ -333,16 +391,10 @@ export class Editor {
             baseId = 10_000,
         }: EditorOptions,
     ) {
-        this.element = element;
-        this.sampleRate = Number(sampleRate);
-        this.tempoMap = tempoMap?.copy() ?? new TempoMap(Number(tempo));
+        super(element, { sampleRate, tempo, tempoMap, title, width, height, baseId });
         this.quant = Number(quant);
         this.follow = Boolean(follow);
         this.extra = [...extra];
-        this.title = title;
-        this.size = [Math.trunc(width), Math.trunc(height)];
-        this.baseId = Math.trunc(baseId);
-        this.fallbackId = this.baseId;
         this.transport = new Transport(null, () => [...this.lanes.keys()], {
             source: (at) => this.renderPass(at),
             tempoMap: this.tempoMap,
@@ -351,82 +403,22 @@ export class Editor {
         });
     }
 
+    // ---- the arrangement's word for what is edited ----
+
+    /**
+     * The composition. {@link Editor} calls the same slot `structure`, which is
+     * the general word; here it is an `Element` and the arrangement's own word is
+     * what a reader of this class expects.
+     */
+    get element(): Element {
+        return this.structure;
+    }
+
+    set element(element: Element) {
+        this.structure = element;
+    }
+
     // ---- the unit bridge: beats (the data) ↔ timeline samples (the view) ----
-
-    /**
-     * The tempo the piece **starts** at, in beats per second.
-     *
-     * A reading of {@link Editor.tempoMap}, not a second copy of it: under one
-     * tempo it is the tempo, and under a tempo that changes it is the first
-     * segment's. Assigning it replaces the map with that single tempo, which is
-     * what setting a grid does.
-     */
-    get tempo(): number {
-        return this.tempoMap.tempoAt(0.0);
-    }
-
-    set tempo(tempo: number) {
-        this.tempoMap = new TempoMap(tempo);
-    }
-
-    /**
-     * Timeline samples in the **first** beat — the nominal ratio of the data↔view
-     * bridge. One timeline unit is one audio sample, so a take placed at its own
-     * frame count sits 1:1 on the axis.
-     *
-     * It is a ratio at a position, not a constant: under a tempo that changes, a
-     * later beat is a different number of samples wide, which is why
-     * {@link Editor.beatsToUnits} takes a position and this only names the origin.
-     */
-    get unitsPerBeat(): number {
-        return this.beatsToUnits(1.0) - this.beatsToUnits(0.0);
-    }
-
-    /**
-     * Beats → timeline samples, through the piece's time map (and the core's
-     * seconds→samples rounding every client shares).
-     *
-     * The axis is real time, so this is where a beat stops being a logical
-     * coordinate: a beat after a tempo change lands on the second it actually
-     * falls on, which is the second the clock will play it at.
-     */
-    beatsToUnits(beats: number): number {
-        return secs_to_samples(this.tempoMap.secsAt(Number(beats)), this.sampleRate);
-    }
-
-    /**
-     * Timeline samples → beats: the inverse the edit-back path takes to turn a
-     * dragged clip back into a placement.
-     */
-    unitsToBeats(units: number): number {
-        return this.tempoMap.beatsAt(samples_to_secs(Math.round(units), this.sampleRate));
-    }
-
-    /**
-     * Timeline samples per second — the axis *is* samples, so this is the
-     * engine's sample rate. It is the other half of the bridge: a length in
-     * seconds (a take's) crosses on this one, and only an onset crosses on
-     * {@link Editor.unitsPerBeat}.
-     */
-    get unitsPerSecond(): number {
-        return this.sampleRate;
-    }
-
-    /**
-     * Seconds → timeline samples: what a length of recorded audio is drawn
-     * with, since its seconds were fixed before any tempo was.
-     */
-    secsToUnits(secs: number): number {
-        return secs_to_samples(Number(secs), this.sampleRate);
-    }
-
-    /**
-     * Timeline samples → seconds: the inverse, for an edit-back that resized
-     * data measured in seconds.
-     */
-    unitsToSecs(units: number): number {
-        return samples_to_secs(Math.round(units), this.sampleRate);
-    }
 
     /**
      * A length of `element`, in that element's own unit, as timeline samples —
@@ -447,7 +439,7 @@ export class Editor {
 
     /**
      * Timeline samples as a length of `element`, in that element's own unit —
-     * the inverse of {@link Editor.lengthToUnits}, and what an edit-back writes
+     * the inverse of {@link FormEditor.lengthToUnits}, and what an edit-back writes
      * back onto the arrangement. `at` is the length's start in beats, for the
      * same reason.
      */
@@ -479,25 +471,6 @@ export class Editor {
     }
 
     // ---- widget ids: the host's recycling pool, or a host-less fallback ----
-
-    /**
-     * A widget id for the tree being drawn. Once `open`ed it comes from the
-     * host's recycling pool; host-less (a test, or inspecting `draw`), it counts
-     * from `baseId`.
-     */
-    private newId(): number {
-        return this.host !== null ? this.host.allocId() : this.fallbackId++;
-    }
-
-    /**
-     * Start a fresh draw's id numbering. Host-less, the fallback counter restarts
-     * at `baseId`; on a host nothing resets — the ids come from its pool, and
-     * re-defining the window returns the previous tree's ids there, so the churn
-     * recycles instead of climbing.
-     */
-    private resetIds(): void {
-        if (this.host === null) this.fallbackId = this.baseId;
-    }
 
     // ---- the forward draw: the arrangement -> GuiDef ----
 
@@ -898,26 +871,6 @@ export class Editor {
     }
 
     /**
-     * The open window's id, or `null` once it is closed (a `/gui_closed` seen by
-     * `apply`) — what a script checks to stop.
-     */
-    get window(): number | null {
-        return this.windowId;
-    }
-
-    /**
-     * Push the current arrangement back to the open window — a whole-tree
-     * redefine, the honest way to show a structural edit (an element added, an
-     * aggregate expanded). A mere placement change needs no redefine: the host
-     * already moved the clip that was dragged.
-     *
-     * A redefine **moves the version**, and that is the point rather than a side
-     * effect: this is the route a change the editor did not apply arrives by, and
-     * it is the case an edit log cannot see. It also rebuilds the widgets, so a
-     * gesture still in flight was made against a picture that no longer exists;
-     * the bump is what makes that edit come back as stale.
-     */
-    /**
      * Another view of this composition edited it: bring this window in step.
      *
      * **Props where props can carry it.** A placement, a length, a curve and a
@@ -930,12 +883,13 @@ export class Editor {
      * `whole` is the case no prop can carry: a widget that was not there a
      * moment ago — a cut, a split, a join, an undo of one — or a turn that
      * changed something and projected no intent at all. Then it is
-     * {@link Editor.update}, which is exactly what that method was written for.
+     * {@link FormEditor.update}, which is exactly what that method was written
+     * for.
      *
      * A window that is not open has nothing to bring in step, and says so by
      * doing nothing. So does one that draws none of what moved.
      */
-    adopt(intents: readonly Intent[], whole: boolean): void {
+    override adopt(intents: readonly Intent[], whole: boolean): void {
         if (this.host === null || this.windowId === null) return;
         if (whole) {
             this.update();
@@ -953,7 +907,7 @@ export class Editor {
     }
 
     /**
-     * The drawn half of {@link Editor.project}, for an edit **another view
+     * The drawn half of {@link FormEditor.project}, for an edit **another view
      * applied**.
      *
      * The arrangement is already written — the two views hold the same objects —
@@ -972,6 +926,18 @@ export class Editor {
         return wid === null ? [] : [wid];
     }
 
+    /**
+     * Push the current arrangement back to the open window — a whole-tree
+     * redefine, the honest way to show a structural edit (an element added, an
+     * aggregate expanded). A mere placement change needs no redefine: the host
+     * already moved the clip that was dragged.
+     *
+     * A redefine **moves the version**, and that is the point rather than a side
+     * effect: this is the route a change the editor did not apply arrives by, and
+     * it is the case an edit log cannot see. It also rebuilds the widgets, so a
+     * gesture still in flight was made against a picture that no longer exists;
+     * the bump is what makes that edit come back as stale.
+     */
     update(): void {
         if (this.host === null || this.windowId === null) {
             throw new Error("open(host) the editor first");
@@ -992,104 +958,10 @@ export class Editor {
     // ---- the edit-back: a dragged clip becomes a placement ----
 
     /**
-     * Apply one message from the host to the **arrangement**, and **answer it**.
-     * Answers whether the composition changed.
-     *
-     * The clip edit-back (`/gui_event <id> "clip" <offset> <dur>`) is resolved
-     * through the widget registry to the placement it came from. The clip's
-     * offset is **absolute** on the shared axis while a placement is relative to
-     * its aggregate, so the position converts back through the base the clip was
-     * drawn at; and only what actually moved is written — a drag carries the
-     * clip's unchanged `dur` along, and snapping *that* to the grid would
-     * silently shorten the element. `/gui_closed` drops the window; anything else
-     * is ignored, so a whole message stream can be fed straight in — even one
-     * shared with a second editor.
-     */
-    apply(addr: string, rawArgs: readonly unknown[]): boolean {
-        return this.editing.turn(this, () => {
-            const changed = this.deliver(addr, rawArgs);
-            if (changed) this.editing.changed();
-            return changed;
-        });
-    }
-
-    /** `apply`, without the turn around it: what the message actually does. */
-    private deliver(addr: string, rawArgs: readonly unknown[]): boolean {
-        if (addr === "/gui_closed") {
-            if (rawArgs.length === 0 || this.windowId === null ||
-                Math.trunc(Number(rawArgs[0])) === this.windowId) {
-                this.windowId = null;
-                // Closing a *view* is not an event of the history, so the
-                // context stays exactly as it is -- what goes is this window's
-                // place in the list of who to tell.
-                this.editing.detach(this);
-                this.detach();
-            }
-            return false;
-        }
-        if (addr !== "/gui_event" || rawArgs.length < 3) return false;
-        // `<id> <seq> <version> <tag> <payload…>`: the stamp and the version the
-        // gesture was made against are the second and third arguments of every
-        // event. The stamp is what an acknowledgement names.
-        const seq = Math.trunc(Number(rawArgs[1]));
-        const against = Math.trunc(Number(rawArgs[2] ?? 0));
-        const args = [rawArgs[0], ...rawArgs.slice(3)];
-        this.corrections = [];
-        // Why an edit did not do what it asked, when there is something to say.
-        this.reason = undefined;
-        const id = Math.trunc(Number(args[0]));
-        // The window's own shortcuts (Ctrl+Z / Ctrl+Shift+Z), which the host
-        // addresses to the **window** rather than to a widget: undo is not aimed
-        // at anything under the cursor. They are answered here rather than
-        // routed, because a history step is not an edit to the tree.
-        if ((args[1] === "undo" || args[1] === "redo") && id === this.windowId) {
-            // **What it answers is whether anything moved**, not whether the
-            // keystroke was understood. A history at its end is the ordinary
-            // case — a person holds Ctrl+Z until it stops — and reporting a
-            // change there told every other view of this composition to bring
-            // itself in step with an edit that never happened, which is a
-            // redraw for nothing. The acknowledgement still goes out: the host
-            // asked, and the answer is the state that holds.
-            const stepped = args[1] === "redo" ? this.redo() : this.undo();
-            this.acknowledge(seq);
-            return stepped;
-        }
-        // Only what this editor draws is this editor's to answer.
-        if (!this.owns(id)) return false;
-        // **The answers lag, and that is not a conflict.** A host stamps every
-        // event with the version it was last told, and it is told only when an
-        // acknowledgement reaches it — a round trip a hand outruns, so an edit
-        // naming a version this editor has moved past is the ordinary case. What
-        // the check is for is the composition moving by a route the host knows
-        // nothing about, so only *that* raises the floor: the version moved
-        // since the last event was answered, and no event is what moved it.
-        if (this.version !== this.applied) this.floor = this.version;
-        if (this.stale(against)) {
-            // The composition moved under the gesture, by a route no gesture
-            // produced. The edit is not applied and not merged: an edit-back
-            // payload is absolute *and* whole, so applying one made against an
-            // older picture would silently drop whatever arrived in between.
-            this.resync(id);
-            this.acknowledge(seq, "the composition changed since this edit");
-            return false;
-        }
-        const changed = this.route(args);
-        this.applied = this.version;
-        // Answered whatever happened, and answered with a *value*: applied,
-        // transformed and refused are one message.
-        this.acknowledge(seq, this.reason);
-        // ...and *then* the redefine, when the gesture added or removed a
-        // member: the answer retires what the host had in flight, and the new
-        // tree is what shows a clip that was not there.
-        this.restructure();
-        return changed;
-    }
-
-    /**
      * One `/gui_event` payload onto the arrangement, with the stamp already taken
      * off. Answers whether the composition changed; `apply` answers the host.
      */
-    private route(args: readonly unknown[]): boolean {
+    protected override route(args: readonly unknown[]): boolean {
         const id = Math.trunc(Number(args[0]));
         const tag = String(args[1]);
         const rest = args.slice(2);
@@ -1244,7 +1116,7 @@ export class Editor {
     }
 
     /** Whether this editor drew the widget an event names. */
-    private owns(widgetId: number): boolean {
+    protected override owns(widgetId: number): boolean {
         return (
             this.clips.has(widgetId) ||
             this.rolls.has(widgetId) ||
@@ -1252,33 +1124,6 @@ export class Editor {
             this.lanes.has(widgetId) ||
             this.signals.has(widgetId)
         );
-    }
-
-    /**
-     * Tell the host which version it is drawing, before any edit.
-     *
-     * A stamp of zero retires nothing — the host's own numbering starts at one —
-     * so this is purely the version, and it is what keeps the *first* gesture
-     * checked like every later one.
-     */
-    private announce(): void {
-        this.host?.ack(0, this.version);
-    }
-
-    /**
-     * Whether an edit made against document version `against` has been overtaken.
-     * Zero is *unstated* rather than a version, and unstated applies unchecked.
-     *
-     * Overtaken means *by a route the host never saw*. Every version this
-     * editor made while answering the host's own events is one the host is
-     * either about to be told or has been told already, so an edit naming one
-     * of them is simply an answer that had not arrived yet — a drag's later
-     * frames, a second gesture begun inside one round trip. What raises the
-     * floor is a script's edit, a second editor's, a redefine, an undo: the
-     * cases where the picture the gesture was made against is gone.
-     */
-    private stale(against: number): boolean {
-        return against !== 0 && against < this.floor;
     }
 
     /**
@@ -1290,7 +1135,7 @@ export class Editor {
      * list), and the stale edit is the one case where the host's whole picture of
      * it is in doubt.
      */
-    private resync(widgetId: number): void {
+    protected override resync(widgetId: number): void {
         const props: Record<string, PropValue> = {};
         const placed = this.clips.get(widgetId);
         if (placed !== undefined) {
@@ -1326,37 +1171,6 @@ export class Editor {
         const element = this.rolls.get(widgetId);
         if (element !== undefined) props.notes = flatNotes(this.notesOf(element));
         if (Object.keys(props).length > 0) this.correct(widgetId, props);
-    }
-
-    /**
-     * What the host should be drawing instead of what it drew — a snap, or a
-     * refusal. The value travels with the acknowledgement in one bundle, which is
-     * what lets the host adopt it without a redefine.
-     */
-    private correct(widgetId: number, props: Record<string, PropValue>): void {
-        this.corrections.push([Math.trunc(widgetId), props]);
-    }
-
-    /**
-     * Answer the host for everything up to `seq`.
-     *
-     * This editor snaps a placement to the musical grid and refuses an edit to a
-     * generator, and the host can learn neither on its own — so the stamp is what
-     * lets it retire what it drew and adopt what actually happened. Every
-     * acknowledgement carries the composition's version, which the host names
-     * back on its next gesture: that round trip is the whole of the staleness
-     * check, and it costs one integer.
-     */
-    private acknowledge(seq: number, reason?: string): void {
-        if (this.host === null) return;
-        if (!seq && this.corrections.length === 0) return;
-        // A stamp of zero retires nothing, which is what an **unasked** push
-        // needs: an undo answers no gesture.
-        if (this.corrections.length > 0) {
-            this.host.push(seq, this.corrections, this.version, [], reason);
-        } else {
-            this.host.ack(seq, this.version, [], reason);
-        }
     }
 
     /**
@@ -2185,8 +1999,8 @@ export class Editor {
      * update both, and it is why none of this is a field here: a history
      * belongs to the data, never to a view.
      */
-    private get editing(): Editing {
-        return Editing.of(this.element);
+    protected override get editing(): FormEditing {
+        return FormEditing.of(this.element);
     }
 
     /** The arrangement's face of the composition's history. */
@@ -2197,15 +2011,6 @@ export class Editor {
     /** The held document, or `null` before the first edit derived it. */
     private get doc(): Document | null {
         return this.editing.doc;
-    }
-
-    /** The composition's version — the document half of the two counters. */
-    private get version(): number {
-        return this.editing.version;
-    }
-
-    private set version(value: number) {
-        this.editing.version = value;
     }
 
     /**
@@ -2410,7 +2215,7 @@ export class Editor {
      * widget and drops what the host had in flight, which is exactly wrong for a
      * drag and exactly right for a structural edit.
      */
-    private restructure(): boolean {
+    protected override restructure(): boolean {
         if (!this.restructured) return false;
         this.restructured = false;
         // The case no prop can carry, for the other windows as much as for this
@@ -2576,36 +2381,16 @@ export class Editor {
     }
 
     /**
-     * Step back one edit, and tell the host what to draw instead. The inverse is
-     * an ordinary intent, so undoing needs no second path.
-     */
-    undo(): boolean {
-        return this.editing.turn(this, () => {
-            const stepped = this.step((log, doc) => log.undo(doc)?.undone, "undone");
-            if (stepped) this.editing.changed();
-            return stepped;
-        });
-    }
-
-    /**
-     * Step forward again after `undo`.
+     * One step of the pile, **through the arrangement's log**.
      *
-     * A step the crate **cannot perform** — a deterministic operation kept as its
-     * parameters rather than as a span — comes back for its owner to re-run.
-     * Nothing in the multitrack editor produces one yet.
+     * The generic walk projects a payload per structure; the tree's is a
+     * document, so its legs come back as intents the crate has already turned
+     * into what the document now says — which is why this overrides rather than
+     * extends.
      */
-    redo(): boolean {
-        return this.editing.turn(this, () => {
-            const stepped = this.step((log, doc) => log.redo(doc)?.redone, "redone");
-            if (stepped) this.editing.changed();
-            return stepped;
-        });
-    }
-
-    private step(
-        walk: (log: Log, doc: Document) => Intent[] | undefined,
-        _key: string,
-    ): boolean {
+    protected override step(direction: "undo" | "redo"): boolean {
+        const walk = (log: Log, doc: Document): Intent[] | undefined =>
+            direction === "undo" ? log.undo(doc)?.undone : log.redo(doc)?.redone;
         if (this.log === null) return false;
         const [log, document] = this.history();
         const intents = walk(log, document);
@@ -2627,33 +2412,6 @@ export class Editor {
         this.acknowledge(0);
         this.corrections = [];
         return true;
-    }
-
-    /** Whether there is an edit to step back over. */
-    get canUndo(): boolean {
-        return this.log !== null && this.log.canUndo;
-    }
-
-    /** Whether there is an undone edit to step forward into. */
-    get canRedo(): boolean {
-        return this.log !== null && this.log.canRedo;
-    }
-
-    /** What an undo would be called, for a menu item. */
-    get undoLabel(): string | undefined {
-        return this.log?.undoLabel;
-    }
-
-    /**
-     * What a redo would be called, for a menu item.
-     *
-     * The pair of {@link Editor.undoLabel}, and it stops being decoration the
-     * moment a second window is open on the composition: with one pile over all
-     * of them, a label is how a person knows which edit a keystroke is about to
-     * move — and both windows read the same one.
-     */
-    get redoLabel(): string | undefined {
-        return this.log?.redoLabel;
     }
 
     /**
@@ -2968,7 +2726,7 @@ export class Editor {
      *
      * `at` is the clip's own onset in beats, which a length **in beats** needs to
      * have a length at all — the same two-position rule
-     * {@link Editor.lengthToUnits} states.
+     * {@link FormEditor.lengthToUnits} states.
      */
     private drawnDur(
         element: Element,

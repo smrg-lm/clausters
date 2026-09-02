@@ -6,7 +6,7 @@ it is an element inside an element — a phrase inside a section inside a piece,
 take placed against a melody, a generator that has not been evaluated yet.
 
 `clausters.form` is that layer — the **arrangement model** — and
-`clausters.gui.Editor` puts it on screen as a multitrack view you can edit. The
+`clausters.gui.FormEditor` puts it on screen as a multitrack view you can edit. The
 point of the pair is that the graphic is not a picture of the music: dragging a
 clip moves the *element*, and the score follows.
 
@@ -130,9 +130,31 @@ writes them out). Note the division of verbs it implies: an element is
 flat `Timeline`, being already generated, is playable
 (`play(timeline)` drives it through a playhead on the ambient clock).
 
+## Two editors, and which one is which
+
+`clausters.gui.Editor` edits **one structure** — a buffer's samples, a
+break-point curve, a timeline of events — and it knows nothing about the
+arrangement. `clausters.gui.FormEditor` is that class plus what only a tree has:
+a held document, several views of one composition, the lanes and clips, and a
+transport. The names say which is which, and the general one has the plain name
+because editing a curve is the plain case.
+
+An editor orchestrates rather than performs, and it is four collaborators
+(`clausters.gui.editing`):
+
+| | what it is | what it deliberately is not |
+|---|---|---|
+| `View` | the picture of one structure, and the registry from widget id to what it shows | not the vocabulary: one structure is drawn several ways |
+| `Domain` | gesture → payload, payload → the client object, the label, the coalesce key | not **how an edit inverts** — that is the shared crate's, so it is not written once per language — and it does not draw |
+| `Echo` | the acknowledgement: the stamp, the version, the corrections, the reason | not anything about what was edited |
+| `Editing` | the editing context: the history, and the views to tell | **not the editor's** — it is asked for, never built, which is what makes two windows walk one undo order |
+
+The rule that fixes all four: an editor owns **neither the data nor the
+history**.
+
 ## The multitrack editor
 
-`Editor` draws that tree as the multitrack view and applies its edits back onto
+`FormEditor` draws that tree as the multitrack view and applies its edits back onto
 the tree. The mapping is one rule, not a heuristic per case:
 
 - the root aggregate's members are the **lanes**;
@@ -155,9 +177,9 @@ the tree. The mapping is one rule, not a heuristic per case:
   *base level*: the same structure, seen coarser or finer.
 
 ```python
-from clausters.gui import Editor
+from clausters.gui import FormEditor
 
-editor = Editor(song, sample_rate=SR, tempo=2.0, quant=0.5, follow=True)
+editor = FormEditor(song, sample_rate=SR, tempo=2.0, quant=0.5, follow=True)
 editor.open()                       # the arrangement, as a multitrack window
 editor.render(server, clock)        # play it; the playhead sweeps the clips
 
@@ -270,7 +292,7 @@ a velocity lane, room to work — open the element in the editor-grade view
 instead:
 
 ```python
-roll = Editor(melody, sample_rate=SR, tempo=2.0, quant=0.25)
+roll = FormEditor(melody, sample_rate=SR, tempo=2.0, quant=0.25)
 roll.open_pianoroll(gui)      # keyboard, note grid, velocity + OSC lanes
 ```
 
@@ -298,7 +320,7 @@ zoom to them, sweep a range, hear where the playhead is — open the element on
 its own:
 
 ```python
-view = Editor(take, sample_rate=SR, tempo=2.0)
+view = FormEditor(take, sample_rate=SR, tempo=2.0)
 view.open_signal(gui)               # the peak envelope with the RMS body in it
 view.open_signal(gui, layers=("peak",))       # or the bare envelope
 ```
@@ -344,7 +366,7 @@ the sound are one function rather than two readings of it:
 
 ```python
 clock.set_tempo(2.0)                       # or clock.set_tempo(2.0, over=8)
-editor = Editor(song, sample_rate=server.sample_rate, tempo_map=clock.map)
+editor = FormEditor(song, sample_rate=server.sample_rate, tempo_map=clock.map)
 ```
 
 `editor.render(server, clock)` adopts the clock's map anyway and redraws if it
@@ -467,7 +489,7 @@ it travels with the acknowledgement.
 ### Undo: the history belongs with the document
 
 The editor's undo is not the editor's. The history lives in the same crate as
-the document, beside the data it inverts, and `Editor.undo` / `Editor.redo` step
+the document, beside the data it inverts, and `FormEditor.undo` / `FormEditor.redo` step
 through it:
 
 ```python
@@ -487,7 +509,7 @@ win["undo"].on_event(lambda v: editor.undo() if v == 1 else None)
 The keyboard needs no wiring at all: **Ctrl+Z** and **Ctrl+Shift+Z** over the
 window reach the same history, because the host sends them as an `"undo"`
 addressed to the *window* rather than to a widget — undo is aimed at no place
-under the cursor — and `Editor.apply` answers it like any other event.
+under the cursor — and `FormEditor.apply` answers it like any other event.
 
 **Why the history is not kept here** is the whole reason it is worth explaining.
 A log an editor keeps sees only the gestures *that editor* made — so a script
@@ -500,8 +522,8 @@ So the history belongs to the **arrangement**, and two windows over one piece
 find the same one:
 
 ```python
-multitrack = Editor(piece, sample_rate=sr)
-roll = Editor(piece, sample_rate=sr)      # a second window, same composition
+multitrack = FormEditor(piece, sample_rate=sr)
+roll = FormEditor(piece, sample_rate=sr)      # a second window, same composition
 multitrack.open(gui)
 roll.open(gui)
 

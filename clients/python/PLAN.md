@@ -356,7 +356,7 @@ through once it is editable on its own).
   *carries* mixing across a save (its config is opaque) and does not draw it —
   its lane header is not bound to a node. That is `clients/gui/PLAN.md`'s.
 
-- ⬜ **C49 — `Editor` is the generic one, and the arrangement's becomes
+- ✅ **C49 — `Editor` is the generic one, and the arrangement's becomes
   `FormEditor`.** The split and the rename are **one milestone**, because the
   name is the point: `Editor` is what a person calls to edit a buffer, a curve
   or a timeline, and it **imports nothing from `clausters.form`**. What is named
@@ -423,6 +423,60 @@ through once it is editable on its own).
   `editors/composer.py` run unchanged by hand after the rename; `Echo` is
   exercised by a test that never touches a structure; the suites pass with no
   test edited to accommodate the split, only the rename.
+
+  **Done 2026-09-02**, as written, in both clients and in one commit.
+
+  **The open question, taken: the registry hangs on the data, and there is no
+  ambient one.** The two candidates named above were `Session` and a
+  process-wide registry beside `ambient_host()`; the answer is neither, and the
+  reason is the rule the whole design rests on — *a history belongs to the data,
+  never to a view*. A structure carries its own context (`Editing.of` caches it
+  on the object), so two editors over one thing find one history with no
+  registry to consult, and a composed view over several structures passes one
+  (`context=`), which is the half that was already settled. An ambient holder
+  would be a **second way to answer one question**, and the two would disagree
+  the first time a script edits a curve outside the `Session` that made it — or
+  in no `Session` at all, which is most scripts. It also keeps the lifetime
+  right for free: the context dies with the data, which is what "never
+  serialized" asks for, where an ambient one outlives every piece it ever held.
+  The same choice in TypeScript, by the same route (`Editing.of` over a
+  `WeakMap`, plus the `context` option).
+
+  What else the doing decided beyond the plan:
+
+  - **`FormEditor` inherits.** "`Editor` plus what only a tree has" is a
+    subclass, so `apply`/`_deliver`, the unit bridge, the ids, the echo
+    delegation, `undo`/`redo` and the labels are written **once** and the
+    arrangement overrides five hooks (`draw`, `_route`, `_owns`, `_resync`,
+    `_restructure`) plus `_step` — the tree walks its history through the `Log`
+    over a document, the generic one projects a payload per structure. The base
+    calls what it edits `structure`; `FormEditor` keeps `element` as the
+    arrangement's word for the same slot, so its 3 000 lines were not touched to
+    rename a field.
+  - **`Editing` splits by subclass, not by copy.** `FormEditing` (in
+    `formeditor.py`) is the generic context plus the held document, the node
+    index and the id to mint next, and `Editing.of` is a classmethod so
+    `FormEditing.of` mints the right kind.
+  - **`_resync` is the view's answer, sent by the `Echo`.** The plan listed it
+    under `Echo`; what a widget *should be drawing* is per-domain, so the
+    protocol asks the view (`View.props`) and `Echo` owns only when and how it
+    goes out. That keeps `Echo` testable with nothing behind it, which was the
+    point of naming it.
+  - **`FIRST_VERSION` is defined twice on purpose**, in `context.py` and in
+    `form/document.py`. One is what a *file* says its version is, the other what
+    an editing context counts from; they are the same number, and a generic
+    module importing the arrangement's would be the dependency this subpackage
+    exists to refuse. Written down where both are.
+  - **Two `View`s, one package.** `clausters.gui.guidef.View` is a tree you can
+    open; `clausters.gui.editing.View` is the picture of a structure. Only the
+    first is exported from `clausters.gui`, and the web client mirrors it by
+    exporting the collaborators as the `gui.editing` namespace rather than
+    flattening them.
+
+  What the split cost in tests: **nothing was edited to accommodate it** — only
+  the rename, plus two import paths that named the module. `tests/test_gui_editing.py`
+  is new and drives a generic editor over a plain object with a test-local
+  `Domain` and `View`, which is also the shape `C50`'s three domains take.
 
 - ⬜ **C50 — `edit(x)` over the three fundamental structures** *(waits on the
   crate's `O20`; ported in the same commit as the web client's `W28`)*. The verb

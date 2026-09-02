@@ -71,7 +71,13 @@ loaders:
       - clausters.form.render
       - clausters.gui
       - clausters.gui.guidef
-      - clausters.gui.editor
+      - clausters.gui.editing
+      - clausters.gui.editing.context
+      - clausters.gui.editing.domain
+      - clausters.gui.editing.echo
+      - clausters.gui.editing.editor
+      - clausters.gui.editing.formeditor
+      - clausters.gui.editing.view
       - clausters.gui.host
       - clausters.gui.notation
       - clausters.gui.notation.engraver

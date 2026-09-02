@@ -3,7 +3,7 @@
 
 In the multitrack a take is a **clip's body** — drawn at a clip's size, next to
 everything else in the piece. This opens the same element by itself, at the size
-of a window: `clausters.gui.Editor.open_signal`, the sibling of the dedicated
+of a window: `clausters.gui.FormEditor.open_signal`, the sibling of the dedicated
 piano roll, and the view the sample-editing gestures will arrive in.
 
 What it shows:
@@ -21,7 +21,7 @@ What it shows:
   max, at every resolution level, so zooming cross-fades both pictures together.
 - **A selection is of the element.** Sweep a range and the editor keeps it in
   **beats**, naming the element it was swept on — the value an operation is
-  handed (`clausters.gui.Editor.resolve_selection`), not screen state.
+  handed (`clausters.gui.FormEditor.resolve_selection`), not screen state.
 - **What a signal view will not open.** A generator has no samples until it is
   rendered, so the last cell asks for one and prints the refusal rather than
   opening a window over nothing.
@@ -53,7 +53,7 @@ from clausters.defs import (
     play_buf,
 )
 from clausters.form import Sequence, Vector
-from clausters.gui import Editor, button, panel, toggle
+from clausters.gui import FormEditor, button, panel, toggle
 from clausters.seq.pattern import Pbind, Pseq
 
 TEMPO = 2.0          # beats per second (120 bpm)
@@ -131,7 +131,7 @@ bar = panel(button(name="play", label="play"),
             layout="row", h=34.0)
 
 gui = session.gui()
-editor = Editor(take, sample_rate=SR, tempo=TEMPO, extra=[bar],
+editor = FormEditor(take, sample_rate=SR, tempo=TEMPO, extra=[bar],
                 title="Clausters take")
 win = editor.open_signal(gui, layers=WITH_BODY)
 session.start()
@@ -140,7 +140,7 @@ session.start()
 def show_body(on):
     """Show or hide the level body over the peaks — **one message, no redraw**.
 
-    The measure is a live prop, so assigning `clausters.gui.Editor.layers` on an
+    The measure is a live prop, so assigning `clausters.gui.FormEditor.layers` on an
     open view sends a single `/gui_set` and the picture changes where it stands:
     the zoom, the selection and the playhead do not move, and the buttons keep
     working. Redrawing would be the wrong tool twice over — a redefine rebuilds
@@ -161,7 +161,7 @@ print("press play to hear it — the playhead is where the audio is")
 
 # %% [markdown]
 # ## The loop
-# `Editor.poll` drains the window's events into the editor. A selection is not an
+# `FormEditor.poll` drains the window's events into the editor. A selection is not an
 # edit — nothing in the composition changes — so it is read off the editor rather
 # than waited for, and printed as it moves.
 
@@ -190,12 +190,12 @@ def run():
 
 # %%
 def refusal() -> str:
-    """The message a generator gets from `Editor.open_signal` — raised by the
+    """The message a generator gets from `FormEditor.open_signal` — raised by the
     call itself, before any window exists, which is why asking for one here
     leaves nothing open."""
     generator = Sequence(Pbind(midinote=Pseq([60, 62], 1), dur=1.0))
     try:
-        Editor(generator, sample_rate=SR, tempo=TEMPO).open_signal(gui)
+        FormEditor(generator, sample_rate=SR, tempo=TEMPO).open_signal(gui)
     except ValueError as err:
         return str(err)
     return "no refusal — which would be the bug"

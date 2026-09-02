@@ -2,7 +2,7 @@
 """The whole loop: compose the arrangement, edit it on screen, hear it, undo it,
 save it, open it again.
 
-The multitrack **editor**: `clausters.gui.Editor` is the bridge between the
+The multitrack **editor**: `clausters.gui.FormEditor` is the bridge between the
 arrangement (`clausters.form` — elements placed recursively by offset) and the
 multitrack view (tracks of clips on one shared time axis). It draws the
 arrangement tree as a GuiDef, applies the clip edit-backs the host sends *onto
@@ -109,7 +109,7 @@ from clausters.defs import (
     play_buf,
     sine,
 )
-from clausters.gui import Editor, button, label, panel
+from clausters.gui import FormEditor, button, label, panel
 from clausters.form import Aggregate, Element, Clang, Sequence, Track, Vector
 from clausters.form.document import from_session, to_session
 from clausters.seq import Automation, Timeline
@@ -309,7 +309,7 @@ song = Aggregate([
 # rendered result, and the tree has no business knowing which — so the table is
 # the half that lets the thing be closed and opened.
 #
-# `Editor.load` points the open window at the reopened tree. The node ids survive
+# `FormEditor.load` points the open window at the reopened tree. The node ids survive
 # the file, so it is the same composition by identity; the **history is dropped**,
 # because its inverses describe a session that is over.
 
@@ -419,9 +419,9 @@ def reopen():
 # The model tree becomes a multitrack window: a lane per member, its takes as
 # clips on one shared axis. ``extra`` places widgets of the script's own under the
 # lanes — here the transport, the history and the file, whose buttons are *named*.
-# `Editor.open` hands back a window handle (like `GuiHost.open`), so the script
+# `FormEditor.open` hands back a window handle (like `GuiHost.open`), so the script
 # resolves each button with ``win["play"]`` and never picks an id; their events
-# are the script's too (`Editor.apply` ignores them).
+# are the script's too (`FormEditor.apply` ignores them).
 #
 # The transport is **chrome**, so it takes a fixed `h` and the lanes take the rest:
 # a container's size on the main axis is `h`/`w` or a `weight`, and a strip left
@@ -455,7 +455,7 @@ def say(message: str):
 
 
 gui = session.gui()
-editor = Editor(song, sample_rate=SR, tempo=TEMPO, quant=QUANT,
+editor = FormEditor(song, sample_rate=SR, tempo=TEMPO, quant=QUANT,
                 follow=True, extra=[bar], title="Composer")
 win = editor.open()
 print(f"opened window {win} — drag a clip to move it, an edge to resize it")
@@ -510,7 +510,7 @@ win["save"].on_click(save)
 win["open"].on_click(reopen)
 # The keyboard reaches the same history without either button: the host sends
 # Ctrl+Z as an ``"undo"`` addressed to the *window* -- undo is aimed at no
-# place under the cursor -- and `Editor.apply` answers it in the loop below.
+# place under the cursor -- and `FormEditor.apply` answers it in the loop below.
 editor.locate(0.0)                              # the cursor waits at the top
 print("press play — click a lane's ruler (or its empty space) to move the cursor")
 print("undo/redo: the buttons, or Ctrl+Z / Ctrl+Shift+Z over the window")
@@ -518,11 +518,11 @@ print("undo/redo: the buttons, or Ctrl+Z / Ctrl+Shift+Z over the window")
 
 # %% [markdown]
 # ## Edit it
-# `Editor.apply` takes the host's events into the **model**: a dragged clip becomes
+# `FormEditor.apply` takes the host's events into the **model**: a dragged clip becomes
 # a placement — its **offset** *and* its **length**, and the length trims how much of the
 # take plays — and a dragged break-point becomes the automation's new curve.
 # Anything it does not recognize is the script's: here, the buttons above.
-# `Editor.poll` drains the window's whole stream into it, so one call is the loop.
+# `FormEditor.poll` drains the window's whole stream into it, so one call is the loop.
 #
 # With ``follow=True`` an edit re-schedules the composition from the playhead, so
 # what you dropped is what you hear; rendering always re-flattens the tree, so a

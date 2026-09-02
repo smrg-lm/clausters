@@ -189,7 +189,7 @@ this directory and open the page.</div>
           Array.from({ length: clock.map.len }, (_, i) => clock.map.segment(i)))}`);
 
         const host = await session.gui();
-        editor = new gui.Editor(compose(), {
+        editor = new gui.FormEditor(compose(), {
           sampleRate: SR,
           tempoMap: clock.map,               // drawn from the map
           quant: QUANT,

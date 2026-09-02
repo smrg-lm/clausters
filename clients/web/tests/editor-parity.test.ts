@@ -30,7 +30,7 @@ import {
     Vector,
 } from "../src/form/index.ts";
 import type { SourceLike } from "../src/form/index.ts";
-import { Editor } from "../src/gui/editor.ts";
+import { FormEditor } from "../src/gui/editing/index.ts";
 import { Automation } from "../src/seq/automation.ts";
 import { Event as SeqEvent } from "../src/seq/event.ts";
 import { Timeline } from "../src/seq/timeline.ts";
@@ -164,7 +164,7 @@ for (const [name, vector] of Object.entries(vectors.cases)) {
 
     test(`'${name}' draws the same tree`, () => {
         const element = build();
-        const editor = new Editor(element, {
+        const editor = new FormEditor(element, {
             sampleRate: SR,
             tempo: TEMPO,
             quant: vector.quant,
@@ -178,7 +178,7 @@ for (const [name, vector] of Object.entries(vectors.cases)) {
 
     test(`'${name}' spans the same extent`, () => {
         const element = build();
-        const editor = new Editor(element, { sampleRate: SR, tempo: TEMPO });
+        const editor = new FormEditor(element, { sampleRate: SR, tempo: TEMPO });
         assert.equal(editor.extent(), vector.extent);
     });
 }

@@ -965,7 +965,7 @@ def on_clip(tag, *vals):
 The rate travels with the block and nothing converts it: resampling is an edit,
 and an edit is something you perform and log, never a side effect of a paste.
 
-`Editor` answers both verbs for the arrangement it holds: a cut whose selection
+`FormEditor` answers both verbs for the arrangement it holds: a cut whose selection
 covers a clip removes that placement (undoably, through the document), and a cut
 across a clip — or a paste of samples — is refused with its reason, because
 that is a new length for the samples under it and samples belong to whoever
