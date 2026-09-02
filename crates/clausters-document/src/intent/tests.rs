@@ -751,3 +751,31 @@ fn the_grid_snaps_a_takes_onset_and_leaves_its_seconds_alone() {
         }
     );
 }
+
+#[test]
+fn an_aggregates_own_restrictions_are_configured_like_any_other_config() {
+    // The format has always had the field -- a writer's own restrictions on an
+    // aggregate, carried and never interpreted -- and no verb reached it, so a
+    // client editing them (a patcher's declared buses, a track's view rules)
+    // wrote its objects directly. An edit nothing can describe is an edit
+    // nothing can invert, which is why a cord was undoable by nothing.
+    let mut d = doc();
+    let buses = Opaque(serde_json::json!({"buses": [{"name": "mix", "rate": "audio"}]}));
+    let intent = Intent::Configure {
+        node: NodeId(1),
+        config: buses.clone(),
+    };
+    let before = current(&d, &intent).expect("an aggregate states its config");
+
+    let outcome = apply(&mut d, &intent, &Against::unstated(), &Rules::none());
+    assert!(outcome.applied);
+    assert_eq!(current(&d, &intent), Some(intent.clone()));
+
+    // ...and it inverts like every other configure: the previous value, whole.
+    apply(&mut d, &before, &Against::unstated(), &Rules::none());
+    assert_eq!(current(&d, &intent), Some(before));
+
+    // A resend is not an edit, here as everywhere.
+    apply(&mut d, &intent, &Against::unstated(), &Rules::none());
+    assert!(!apply(&mut d, &intent, &Against::unstated(), &Rules::none()).applied);
+}

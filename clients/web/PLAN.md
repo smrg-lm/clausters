@@ -1640,6 +1640,14 @@ Every entry carries a checkbox, like the plan's "Found by use" below: an
 open direction has to read as open, and one that converges into a milestone leaves
 this list rather than being ticked here.
 
+- ⬜ **An OSC marker dragged in a roll changes the picture and nothing else**
+  *(the port of `clients/python/PLAN.md`'s entry of the same name — the gap is
+  identical here, which at least makes it a shared hole and not a divergence)*.
+  The roll draws a lane of OSC markers and the host emits `"osc"`, and
+  `Editor.route` has no branch for it: the event falls through, nothing
+  corrects the picture, and the drawing and the timeline part company in
+  silence. Fixed the same way in both clients, and only in both.
+
 - ⬜ **The generic editor: `edit(x)`, and `Editor` renamed to `FormEditor`**
   *(the port of `clients/python/PLAN.md`'s entry of the same name, both owed by
   `crates/clausters-document/PLAN.md`'s `O19`, which closed saying they were

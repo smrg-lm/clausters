@@ -51,6 +51,7 @@ import { Event as SeqEvent } from "../seq/event.ts";
 import { Timeline } from "../seq/timeline.ts";
 import { pointsToEnv } from "../defs/ugens/index.ts";
 import { CONCRETE, LOGICAL, Aggregate, Member } from "./aggregate.ts";
+import type { BusSpec } from "./aggregate.ts";
 import {
     Clang,
     Element,
@@ -455,11 +456,20 @@ function body(element: Element, ids: Ids): DocNode {
         );
     }
     if (element instanceof Aggregate) {
-        return {
+        const body = {
             kind: "aggregate",
             grouping: element.kind === LOGICAL ? LOGICAL : CONCRETE,
             members: element.handles.map((handle) => placement(handle, ids)),
         };
+        // A logical aggregate's **declared buses** ride in the body's opaque
+        // config, the same door a `Track`'s restrictions use: they are the
+        // writer's own wiring, carried and never read. Without this a patch lost
+        // its buses on every round trip — the cords survived (a member's
+        // controls are in its own config) while the buses they name did not, so
+        // a reopened patcher drew the connections and could render none of them.
+        // And an edit no format carries is an edit no history can invert.
+        const buses = element.busSpecList;
+        return buses.length > 0 ? withConfig(body, { buses }) : body;
     }
     if (element instanceof Clang) {
         return withConfig({ kind: "clang" }, plain(element.wraps) as DocNode);
@@ -888,6 +898,7 @@ function fromNode(src: DocNode, resolve: Resolver | null, placed = false): Eleme
         const aggregate = new Aggregate(null, src.grouping === LOGICAL ? LOGICAL : CONCRETE, {
             onset,
             duration,
+            buses: (config.buses as BusSpec[] | undefined) ?? undefined,
         });
         for (const member of (src.members as DocNode[]) ?? []) {
             const child = member.node as DocNode;

@@ -239,6 +239,27 @@ class Aggregate(Element):
         """The names of the internal buses this (logical) aggregate declares."""
         return [spec["name"] for spec in self._bus_specs]
 
+    @property
+    def bus_specs(self) -> list:
+        """The bus declarations themselves — ``name``, ``rate``, ``channels``.
+
+        What `to_document` carries in the body's opaque config, and what a cord
+        drawn in the patcher edits: the wiring is the aggregate's, so it is the
+        aggregate's configuration that states it.
+        """
+        return [dict(spec) for spec in self._bus_specs]
+
+    def set_buses(self, buses) -> "Aggregate":
+        """Replace the bus declarations, whole.
+
+        The absolute form of `declare_bus`, and what a configuration written
+        onto this aggregate means: what the list does not carry is not declared.
+        A cord undone takes its bus with it that way, without anyone tracking
+        which declaration a gesture happened to add.
+        """
+        self._bus_specs = [_bus_spec(b) for b in (buses or [])]
+        return self
+
     def declare_bus(self, name, rate: str = "audio", channels: int = 1):
         """Declare an internal bus — a logical aggregate's private wire between
         members. Idempotent by name: re-declaring an existing bus updates its
@@ -294,9 +315,17 @@ class Aggregate(Element):
 
 
 def _bus_spec(bus) -> dict:
-    """Normalize an `Aggregate` bus declaration (a name, or a ``(name, rate[,
-    channels])`` tuple) into the dict `to_graphdef` consumes."""
-    if isinstance(bus, str):
+    """Normalize an `Aggregate` bus declaration into the dict `to_graphdef`
+    consumes.
+
+    Takes a bare name, a ``(name, rate[, channels])`` tuple, or **a spec that is
+    already one** — which is what comes back out of a document, since that is
+    the form the body's config carries.
+    """
+    if isinstance(bus, dict):
+        name = bus.get("name")
+        rate, channels = bus.get("rate", "audio"), bus.get("channels", 1)
+    elif isinstance(bus, str):
         name, rate, channels = bus, "audio", 1
     elif len(bus) == 2:
         (name, rate), channels = bus, 1

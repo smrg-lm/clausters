@@ -17,12 +17,17 @@ import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
 import {
+    LOGICAL,
     Aggregate,
     Clang,
     Element,
+    Generator,
     Track,
     Vector,
+    fromDocument,
+    toDocument,
 } from "../src/form/index.ts";
+import { SynthDef, control, in_ as inBus, out, sine } from "../src/defs/index.ts";
 import type { Member, SourceLike } from "../src/form/index.ts";
 import { Editing } from "../src/gui/editing.ts";
 import { Editor } from "../src/gui/editor.ts";
@@ -1176,4 +1181,61 @@ test("a resend is not an edit", async () => {
     const notes = [roll.id, SEQ, UNSTATED, "notes", 0, BEAT, 62, 100, 0];
     assert.equal(ed.apply("/gui_event", notes), true);
     assert.equal(ed.apply("/gui_event", notes), false, "the same notes again");
+});
+
+test("a cord is an edit and undoes in one step", async () => {
+    // A cord was the last gesture that wrote the arrangement directly, on the
+    // grounds that no intent described it — and the vocabulary had said what to
+    // do all along. An edit states the resulting value, and what a cord results
+    // in is the two members' controls and the aggregate's declared buses: three
+    // `configure`s, one entry, one undo.
+    const src = new SynthDef("gsrc", out(control("out"), sine(control("freq", 220.0))));
+    const sink = new SynthDef("gsink", out(0.0, inBus(control("in")).mul(control("amp", 0.3))));
+    const g = new Aggregate(null, LOGICAL, { name: "chain" });
+    const hs = g.add(new Generator(src));
+    const hk = g.add(new Generator(sink));
+    const ed = editor(g);
+    await ed.open(asHost(new FakeHost()));
+    // The workspace `plane` wraps the patch `plane` — the one carrying boxes,
+    // which is what a cord is addressed to.
+    const workspace = (ed.draw().children as GuiNode[]).find(
+        (c) => c.type === "plane" && !("boxes" in c),
+    ) as GuiNode;
+    const wid = ((workspace.children as GuiNode[])[0] as GuiNode).id as number;
+
+    assert.equal(
+        ed.apply("/gui_event", [wid, SEQ, UNSTATED, "wire", 0, "out", 1, "in"]),
+        true,
+    );
+    const controls = (m: Member) =>
+        (m.element as Element & { controls?: Record<string, unknown> }).controls ?? {};
+    const bus = controls(hs).out;
+    assert.equal(controls(hk).in, bus);
+    assert.deepEqual(g.busNames, [bus], "and the aggregate declares the bus it names");
+
+    assert.equal(ed.canUndo, true, "a cord is an edit like any other");
+    assert.equal(ed.undoLabel, "draw a cord");
+    assert.equal(ed.undo(), true);
+    assert.deepEqual(controls(hs), {}, "both ends come back");
+    assert.deepEqual(controls(hk), {});
+    assert.deepEqual(g.busNames, [], "and the bus goes with them");
+    assert.equal(ed.canUndo, false, "one gesture, one step");
+
+    assert.equal(ed.redo(), true);
+    assert.equal(controls(hk).in, bus);
+    assert.deepEqual(g.busNames, [bus]);
+});
+
+test("a logical aggregate's buses survive the document", () => {
+    // The other half, and the reason the cord could not be logged: a patch's
+    // buses were in no format at all. The cords survived a round trip — a
+    // member's controls are in its own config — while the buses they name did
+    // not, so a reopened patcher drew connections it could render none of.
+    const g = new Aggregate(null, LOGICAL, { name: "chain", buses: [["mix", "audio"]] });
+    g.add(new Generator(new SynthDef("gsrc", out(control("out"), sine(220.0))), null, null, {
+        controls: { out: "mix" },
+    }));
+    const back = fromDocument(toDocument(g)) as Aggregate;
+    assert.deepEqual(back.busNames, ["mix"]);
+    assert.deepEqual(back.busSpecList, [{ name: "mix", rate: "audio", channels: 1 }]);
 });

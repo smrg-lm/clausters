@@ -42,8 +42,8 @@ from .handle import WindowHandle
 from ..form.document import (FIRST_VERSION, ID_ATTR, leaf_config, leaf_node,
                              next_node_id, to_document)
 from ..form.aggregate import CONCRETE, LOGICAL, SIMULTANEOUS, Aggregate
-from ..form.element import (BEATS, SECONDS, Element, Clang, Segment, Segments,
-                            Vector, to_beats)
+from ..form.element import (BEATS, SECONDS, Element, Clang, Generator, Segment,
+                            Segments, Vector, to_beats)
 from ..defs.ugens import points_to_env
 from ..form.render import flatten
 from ..seq.automation import Automation
@@ -1788,14 +1788,22 @@ class Editor:
         bus = _named_bus(src_ctls.get(outlet)) or _named_bus(dst_ctls.get(inlet)) \
             or self._fresh_bus(aggregate)
         src_ctls[outlet], dst_ctls[inlet] = bus, bus
-        src.controls, dst.controls = src_ctls, dst_ctls
-        aggregate.declare_bus(bus, rate=rate)
-        # The one gesture left that writes the arrangement *directly*: a cord is
-        # a pair of controls naming a bus, which no intent describes yet. The
-        # held document is behind after it, and says so.
-        self._rederive = True
-        self._restructured = True
-        self._changed()
+        buses = aggregate.bus_specs
+        if not any(spec["name"] == bus for spec in buses):
+            buses.append({"name": bus, "rate": rate, "channels": 1})
+        # **A cord is three configurations, in one transaction.** It was the
+        # last gesture that wrote the arrangement directly, on the grounds that
+        # no intent described it -- and the vocabulary had said what to do all
+        # along: an edit states the resulting value, and what a cord results in
+        # is the two members' controls and the aggregate's buses. Three
+        # `configure`s, recorded as one entry, so it undoes in one step and
+        # leaves the three consistent at every point.
+        self._restructured = True   # a cord is not a prop: the patch redraws
+        return self._transact("draw a cord", [
+            (src, handles[src_box], {"controls": src_ctls}),
+            (dst, handles[dst_box], {"controls": dst_ctls}),
+            (aggregate, None, {"buses": buses}),
+        ])
         return True
 
     def _outlet_rate(self, member, name: str):
@@ -1973,6 +1981,68 @@ class Editor:
             node = getattr(element, ID_ATTR, None)
         return None if node is None else int(node)
 
+    def _transact(self, label: str, legs: list) -> bool:
+        """Apply several configurations as **one** entry.
+
+        A gesture that changes more than one node still has to undo in one step,
+        so the legs go in as one transaction rather than as an edit each: the
+        inverses are read *before* anything lands, the whole run is applied, and
+        a leg that refuses puts back the ones already applied and records
+        nothing. Half a transaction would undo one node and leave the other
+        where the gesture put it.
+
+        Each leg is ``(element, member, overrides)`` — the overrides merged onto
+        that node's **current** configuration, since a `configure` states the
+        whole of it and a key nobody mentioned is not a key to drop. A leg the
+        document was already at is applied by nobody and recorded by nobody: a
+        resend is not an edit.
+        """
+        log, document = self._history()
+        prepared = []
+        for element, member, overrides in legs:
+            node = self._node_id(element, member)
+            if node is None:
+                return False
+            # The inverse of *any* configure on a node is its current
+            # configuration, which is also the base the overrides go onto.
+            inverse = _native.document_inverse(
+                document, {"intent": "configure", "node": int(node), "config": {}})
+            if inverse is None:
+                return False
+            config = {**(inverse.get("config") or {}), **overrides}
+            prepared.append(({"intent": "configure", "node": int(node),
+                              "config": config}, inverse))
+
+        applied = []
+        for index, (intent, inverse) in enumerate(prepared):
+            # **The staleness check is the gesture's, not each leg's.** One
+            # gesture was made against one picture, and the first leg applied is
+            # what moves the version -- so checking the rest against the version
+            # the hand saw would refuse the transaction's own consequences as
+            # somebody else's edit.
+            against = {"version": self._version} if index == 0 else None
+            outcome = document.apply(intent, against=against)
+            if outcome["applied"]:
+                applied.append((outcome["effective"], inverse))
+            elif outcome.get("reason"):
+                # Refused for a rule rather than for being a resend: put back
+                # what landed and record nothing.
+                for _effective, undo in reversed(applied):
+                    document.apply(undo)
+                return False
+        if not applied:
+            return False
+
+        log.history.record(
+            [{"structure": log.structure, "forward": {"edit": effective},
+              "backward": inverse,
+              "key": _native.document_coalesce_key(effective)}
+             for effective, inverse in applied],
+            label=label)
+        for effective, _inverse in applied:
+            self._project(effective)
+        return self._changed()
+
     def _record(self, intent: dict, label: str) -> "dict | None":
         """Apply one edit **through the crate**, recording its inverse.
 
@@ -2068,12 +2138,24 @@ class Editor:
         return moved
 
     def _configure(self, element, config: dict) -> bool:
-        """Write a leaf's configuration onto what the arrangement holds.
+        """Write a node's configuration onto what the arrangement holds.
 
         One curve, one door: the projection of an inverse, the adoption of a
         redone document and the edit itself all land here, so the envelope the
         script holds, the buffer it sounds through and the picture cannot
         disagree about which of the three happened."""
+        if isinstance(element, Aggregate):
+            # An aggregate's configuration is the writer's own restrictions on
+            # it, and for a logical one that is its **declared buses** — the
+            # private wiring a patcher cord names. Written whole, like every
+            # other configuration: what the intent does not carry is not there.
+            element.set_buses(config.get("buses") or [])
+            return True
+        if isinstance(element, Generator):
+            # A member's configuration is what it passes to the instrument, and
+            # a cord is two of those naming one bus.
+            element.controls = dict(config.get("controls") or {})
+            return True
         if isinstance(element, Vector):
             # A take's configuration is the **window** it reads: which frame of
             # its samples it begins at, and whether that window wraps. The

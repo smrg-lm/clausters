@@ -725,20 +725,67 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
 
 ## Found by use: the running list of fixes and open questions
 
-- ⬜ **A patch cord reports a change even when the cord is the one already
-  there** *(found 2026-09-02, sweeping the "a no-op is not a change" class; the
-  other five routes are fixed, this one is the leftover)*. `_apply_wire` writes
-  the two members' controls directly and then calls `_changed()`
-  unconditionally, so drawing the cord that is already drawn moves the version
-  and tells every other view of the composition to come into step with nothing.
+- ⬜ **An OSC marker dragged in a roll changes the picture and nothing else**
+  *(found 2026-09-02, auditing which data edits reach the history now that the
+  edit stack is in)*. `open_pianoroll` draws a lane of OSC markers
+  (`pianoroll(osc=…)`) and the host emits `"osc" <time label …>` when one is
+  dragged, added or removed — and `Editor._route` has no branch for it. The
+  event falls through, the acknowledgement carries no correction, and the host
+  goes on drawing where the hand left the marker: the picture and the timeline
+  disagree, silently, which is the one failure mode the whole edit-back rule is
+  built to make impossible.
 
-  It is the last route that is **not** an intent — no verb describes a wire yet,
-  which is also why it is undoable by nothing (`O13`'s closing note) — so it has
-  no `applied` to pass on the way that the other five now do. The fix is either
-  to compare the controls before and after, which is small and local, or to give
-  a cord its own intent, which is what that route actually wants and would make
-  it undoable in the same move. The second is the reason this is written down
-  rather than patched.
+  It is the last edit-back the editor draws and does not answer. The fix is the
+  `"notes"` route one lane down — the markers as the resulting list, written
+  onto the same `Timeline` through a `setmembers` — and it lands with undo for
+  free, since that is what the vocabulary already does. What has to be decided
+  first is small but real: a marker is an `OscItem`, not a `Clang`, so what the
+  member's node *is* has to be settled the way `_timeline_member` settled it for
+  notes.
+
+  The dedicated example wires it by hand (`examples/editors/pianoroll.py`), which
+  is why nothing noticed: the example works and the editor does not.
+
+- ⬜ **The score keeps a second history, and nothing joins the two**
+  *(found 2026-09-02, in the same audit)*. An engraved page is edited through
+  `Score.undo`/`redo`, which walk a stack of **MEI snapshots** the engraver holds
+  in Rust (`clausters_score_undo`) — a real history, and not the document's. So a
+  window showing a lane and a page has two orders, and Ctrl+Z over it means one
+  of two different things depending on what the pointer was over.
+
+  This is exactly the case `O16` was written for: *the pile is generic, the
+  verbs are the domain's*. A score is a third data domain and it predates the
+  seam, so what it needs is to register in the composition's `History` like any
+  other structure and record its own verbs as opaque payloads — after which
+  `O15`'s rule holds for it too and the two orders become one.
+
+  What is not obvious, and is why this is an entry rather than a patch: a
+  snapshot stack and an inverse-per-entry pile are not the same shape. Either the
+  score's operations learn their inverses (the model's verbs are data, so they
+  can), or a snapshot is recorded as a non-invertible entry that restores whole
+  — which `O18` already has a marked slot for.
+
+- ✅ **A patch cord reports a change even when the cord is the one already
+  there** *(found 2026-09-02, sweeping the "a no-op is not a change" class;
+  fixed the same day, the other way round)*. `_apply_wire` wrote the two
+  members' controls directly and then called `_changed()` unconditionally, so
+  drawing the cord that is already drawn moved the version and told every other
+  view to come into step with nothing.
+
+  The entry asked whether to compare the controls before and after, or to give a
+  cord its own intent. **Neither: the verb already existed and could not reach.**
+  A cord's result is the two members' controls and the aggregate's declared
+  buses — three `configure`s — and `configure` was a leaf's alone, so the one
+  field the format has for an aggregate's own restrictions was editable by
+  nothing. Widening `config`/`config_mut` to `Body::Aggregate` is the whole
+  crate-side change, and the cord became an ordinary transaction: it undoes in
+  one step, and a resend comes back refused like every other resend.
+
+  It also uncovered the reason it *could* not be logged: **an aggregate's buses
+  were in no format at all.** The cords survived a round trip (a member's
+  controls are in its own config) while the buses they name did not, so a
+  reopened patcher drew connections it could render none of. They ride in the
+  body's opaque config now, the same door a `Track`'s restrictions use.
 
 - ✅ **A redefine renumbers every widget, so anything a client keeps keyed by a
   widget id is silently reset** *(found 2026-09-02, chasing why undo/redo reset

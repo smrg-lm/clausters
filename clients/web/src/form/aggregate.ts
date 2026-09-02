@@ -116,13 +116,18 @@ export type ChildSpec =
 export type BusSpec =
     | string
     | readonly [name: string, rate: BusRate]
-    | readonly [name: string, rate: BusRate, channels: number];
+    | readonly [name: string, rate: BusRate, channels: number]
+    /** Already normalized — the form a document's config carries. */
+    | Bus;
 
 /** The rate an internal bus runs at. */
 export type BusRate = "audio" | "control";
 
-/** The normalized form of a bus declaration. */
-interface Bus {
+/**
+ * The normalized form of a bus declaration — what {@link Aggregate.busSpecList}
+ * hands back and what a document's config carries.
+ */
+export interface Bus {
     name: string;
     rate: BusRate;
     channels: number;
@@ -320,6 +325,30 @@ export class Aggregate extends Element {
     }
 
     /**
+     * The bus declarations themselves — `name`, `rate`, `channels`.
+     *
+     * What `toDocument` carries in the body's opaque config, and what a cord
+     * drawn in the patcher edits: the wiring is the aggregate's, so it is the
+     * aggregate's configuration that states it.
+     */
+    get busSpecList(): Bus[] {
+        return this.busSpecs.map((spec) => ({ ...spec }));
+    }
+
+    /**
+     * Replace the bus declarations, whole.
+     *
+     * The absolute form of {@link Aggregate.declareBus}, and what a
+     * configuration written onto this aggregate means: what the list does not
+     * carry is not declared. A cord undone takes its bus with it that way,
+     * without anyone tracking which declaration a gesture happened to add.
+     */
+    setBuses(buses: readonly unknown[]): this {
+        this.busSpecs = [...(buses ?? [])].map((b) => busSpec(b as BusSpec));
+        return this;
+    }
+
+    /**
      * Declares an internal bus — a logical aggregate's private wire between
      * members. Idempotent by name: re-declaring an existing bus updates its
      * `rate`/`channels`. This is what a patcher edit (a cord drawn between two
@@ -385,6 +414,16 @@ export class Aggregate extends Element {
  */
 function busSpec(bus: BusSpec): Bus {
     if (typeof bus === "string") return { name: bus, rate: "audio", channels: 1 };
+    // A spec that is already one — which is what comes back out of a document,
+    // since that is the form the body's config carries.
+    if (bus !== null && typeof bus === "object" && !Array.isArray(bus)) {
+        const held = bus as Partial<Bus>;
+        return {
+            name: String(held.name),
+            rate: (held.rate ?? "audio") as BusRate,
+            channels: Math.trunc(Number(held.channels ?? 1)),
+        };
+    }
     const spec = bus as readonly unknown[];
     if (spec.length === 2) {
         return { name: String(spec[0]), rate: spec[1] as BusRate, channels: 1 };

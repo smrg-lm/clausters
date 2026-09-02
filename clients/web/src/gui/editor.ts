@@ -37,7 +37,7 @@
 import { samples_to_secs, secs_to_samples } from "../core/clausters_core_web.js";
 import { TempoMap } from "../base/time.ts";
 import { Document, Log } from "../document.ts";
-import type { Against, Intent, Outcome, Resolved, Selection } from "../document.ts";
+import type { Against, Intent, Outcome, Resolved, Selection, Step } from "../document.ts";
 import { GraphPatch, synthdefPorts } from "../defs/patch.ts";
 import type { PortSpec } from "../defs/patch.ts";
 import { SynthDef } from "../defs/synthdef.ts";
@@ -51,6 +51,7 @@ import {
     Aggregate,
     Clang,
     Element,
+    Generator,
     Segment,
     Segments,
     Vector,
@@ -1933,16 +1934,91 @@ export class Editor {
             namedBus(srcCtls[outlet]) ?? namedBus(dstCtls[inlet]) ?? this.freshBus(aggregate);
         srcCtls[outlet] = bus;
         dstCtls[inlet] = bus;
-        src.controls = srcCtls;
-        dst.controls = dstCtls;
-        aggregate.declareBus(bus, rate);
-        // The one gesture left that writes the arrangement *directly*: a cord is
-        // a pair of controls naming a bus, which no intent describes yet. The
-        // held document is behind after it, and says so.
-        this.rederive = true;
-        this.restructured = true;
-        this.changed();
-        return true;
+        const buses = aggregate.busSpecList;
+        if (!buses.some((spec) => spec.name === bus)) {
+            buses.push({ name: bus, rate, channels: 1 });
+        }
+        // **A cord is three configurations, in one transaction.** It was the
+        // last gesture that wrote the arrangement directly, on the grounds that
+        // no intent described it — and the vocabulary had said what to do all
+        // along: an edit states the resulting value, and what a cord results in
+        // is the two members' controls and the aggregate's buses. Three
+        // `configure`s, recorded as one entry, so it undoes in one step and
+        // leaves the three consistent at every point.
+        this.restructured = true; // a cord is not a prop: the patch redraws
+        return this.transact("draw a cord", [
+            [src, handles[srcBox] ?? null, { controls: srcCtls }],
+            [dst, handles[dstBox] ?? null, { controls: dstCtls }],
+            [aggregate, null, { buses }],
+        ]);
+    }
+
+    /**
+     * Apply several configurations as **one** entry.
+     *
+     * A gesture that changes more than one node still has to undo in one step,
+     * so the legs go in as one transaction rather than as an edit each: the
+     * inverses are read *before* anything lands, the whole run is applied, and a
+     * leg that refuses puts back the ones already applied and records nothing.
+     * Half a transaction would undo one node and leave the other where the
+     * gesture put it.
+     *
+     * Each leg is `[element, member, overrides]` — the overrides merged onto
+     * that node's **current** configuration, since a `configure` states the
+     * whole of it and a key nobody mentioned is not a key to drop. A leg the
+     * document was already at is applied by nobody and recorded by nobody: a
+     * resend is not an edit.
+     */
+    private transact(
+        label: string,
+        legs: readonly [Element, Member | null, Record<string, unknown>][],
+    ): boolean {
+        const [log, document] = this.history();
+        const prepared: [Intent, Intent][] = [];
+        for (const [element, member, overrides] of legs) {
+            const node = this.nodeId(element, member);
+            if (node === null) return false;
+            // The inverse of *any* configure on a node is its current
+            // configuration, which is also the base the overrides go onto.
+            const probe = { intent: "configure", node, config: {} } as unknown as Intent;
+            const inverse = document.inverse(probe);
+            if (inverse === undefined) return false;
+            const held = (inverse as unknown as { config?: Record<string, unknown> }).config ?? {};
+            prepared.push([
+                { intent: "configure", node, config: { ...held, ...overrides } } as unknown as Intent,
+                inverse,
+            ]);
+        }
+
+        const applied: [Intent, Intent][] = [];
+        prepared.forEach(([intent, inverse], index) => {
+            // **The staleness check is the gesture's, not each leg's.** One
+            // gesture was made against one picture, and the first leg applied is
+            // what moves the version — so checking the rest against the version
+            // the hand saw would refuse the transaction's own consequences as
+            // somebody else's edit.
+            const options = index === 0 ? { against: { version: this.version } } : {};
+            const outcome = document.apply(intent, options);
+            if (outcome.applied) applied.push([outcome.effective, inverse]);
+            else if (outcome.reason) {
+                for (const [, undo] of [...applied].reverse()) document.apply(undo);
+                applied.length = 0;
+                prepared.length = 0;
+            }
+        });
+        if (applied.length === 0) return false;
+
+        log.history.record(
+            applied.map(([effective, inverse]) => ({
+                structure: log.structure,
+                forward: { edit: effective } as Step,
+                backward: inverse,
+                key: Document.coalesceKey(effective),
+            })),
+            { label },
+        );
+        for (const [effective] of applied) this.project(effective);
+        return this.changed();
     }
 
     /**
@@ -2193,6 +2269,22 @@ export class Editor {
      * which of the three happened.
      */
     private configure(element: Element, config: Record<string, unknown>): boolean {
+        if (element instanceof Aggregate) {
+            // An aggregate's configuration is the writer's own restrictions on
+            // it, and for a logical one that is its **declared buses** — the
+            // private wiring a patcher cord names. Written whole, like every
+            // other configuration: what the intent does not carry is not there.
+            element.setBuses((config.buses as unknown[]) ?? []);
+            return true;
+        }
+        if (element instanceof Generator) {
+            // A member's configuration is what it passes to the instrument, and
+            // a cord is two of those naming one bus.
+            (element as Element & { controls?: Record<string, unknown> | null }).controls = {
+                ...((config.controls as Record<string, unknown>) ?? {}),
+            };
+            return true;
+        }
         if (element instanceof Vector) {
             // A take's configuration is the **window** it reads. The
             // configuration is written whole, so a key the intent does not carry

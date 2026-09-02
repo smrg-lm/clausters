@@ -58,6 +58,7 @@ export {
 export type {
     AggregateKind,
     AggregateOptions,
+    Bus,
     BusRate,
     BusSpec,
     ChildSpec,

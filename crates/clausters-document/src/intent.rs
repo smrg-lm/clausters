@@ -166,11 +166,17 @@ pub enum Intent {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         dur: Option<f64>,
     },
-    /// What a leaf's configuration now is, whole.
+    /// What a node's configuration now is, whole.
     ///
     /// Whole rather than a patch, because a patch is a delta by another name:
     /// two overlapping patches applied out of order give two different results,
     /// and the absolute rule exists precisely to make order stop mattering.
+    ///
+    /// A leaf's, usually — but an **aggregate** carries one too (the writer's
+    /// own restrictions: a track's view rules, a patcher's declared buses), and
+    /// this reaches that as well. A cord drawn between two members is three of
+    /// these in one transaction, which is what makes it undoable without a
+    /// fifth verb.
     Configure {
         /// The node being configured.
         node: NodeId,
@@ -603,14 +609,25 @@ fn find_member(node: &Node, id: NodeId) -> Option<&Member> {
     members.iter().find_map(|m| find_member(&m.node, id))
 }
 
+/// The configuration a body carries, for the bodies that carry one — **the
+/// aggregate among them**.
+///
+/// It was a leaf's alone, and that left the one field the format has for a
+/// writer's own restrictions on an aggregate (`Body::Aggregate::config`)
+/// reachable by no verb at all: a patcher's declared buses, a track's view
+/// restrictions. So a client editing them wrote the objects directly, which is
+/// exactly the shape that cannot be logged — an edit nothing can describe is an
+/// edit nothing can invert. The vocabulary already said what to do about it;
+/// what was missing was the door.
 fn config(body: &Body) -> Option<&Opaque> {
     match body {
         Body::Clang { config, .. }
         | Body::Sequence { config, .. }
         | Body::Vector { config, .. }
         | Body::Segments { config, .. }
-        | Body::Generator { config, .. } => Some(config),
-        Body::Aggregate { .. } | Body::Unknown(_) => None,
+        | Body::Generator { config, .. }
+        | Body::Aggregate { config, .. } => Some(config),
+        Body::Unknown(_) => None,
     }
 }
 
@@ -640,14 +657,16 @@ fn members_mut(body: &mut Body) -> Option<&mut Vec<Member>> {
     }
 }
 
+/// The same, to write. See [`config`].
 fn config_mut(body: &mut Body) -> Option<&mut Opaque> {
     match body {
         Body::Clang { config, .. }
         | Body::Sequence { config, .. }
         | Body::Vector { config, .. }
         | Body::Segments { config, .. }
-        | Body::Generator { config, .. } => Some(config),
-        Body::Aggregate { .. } | Body::Unknown(_) => None,
+        | Body::Generator { config, .. }
+        | Body::Aggregate { config, .. } => Some(config),
+        Body::Unknown(_) => None,
     }
 }
 

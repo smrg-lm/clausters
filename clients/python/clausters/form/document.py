@@ -346,11 +346,19 @@ def _body(element, ids: _Ids) -> dict:
         # A body this build does not know, on its way back out untouched.
         return {k: v for k, v in preserved.items() if k not in _TEMPORAL}
     if isinstance(element, Aggregate):
-        return {
+        # A logical aggregate's **declared buses** ride in the body's opaque
+        # config, the same door a `Track`'s restrictions use: they are the
+        # writer's own wiring, carried and never read. Without this a patch lost
+        # its buses on every round trip -- the cords survived (a member's
+        # controls are in its own config) while the buses they name did not, so
+        # a reopened patcher drew the connections and could render none of them.
+        # And an edit no format carries is an edit no history can invert, which
+        # is why a cord was undoable by nothing.
+        return _with_config({
             "kind": "aggregate",
             "grouping": LOGICAL if element.kind == LOGICAL else CONCRETE,
             "members": [_member(handle, ids) for handle in element.handles],
-        }
+        }, {"buses": element.bus_specs} if element.bus_specs else None)
     if isinstance(element, Track):
         # A Set with the restrictions of a multitrack view, and its items are
         # placed elements like any others -- which is what makes a note in a
@@ -700,6 +708,7 @@ def _element(node: dict, resolve, *, placed: bool = False):
             kind=LOGICAL if node.get("grouping") == LOGICAL else CONCRETE,
             onset=onset,
             duration=duration,
+            buses=config.get("buses") or None,
         )
         for member in node.get("members", []):
             child = member["node"]

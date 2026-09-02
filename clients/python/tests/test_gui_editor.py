@@ -2462,3 +2462,52 @@ def test_a_note_keeps_the_id_the_document_gave_it():
     ids = [getattr(item, ID_ATTR, None)
            for _, item in _editable_timeline(element) if _pitch(item) is not None]
     assert ids and all(i is not None for i in ids), "every note carries its node"
+
+
+def test_a_cord_is_an_edit_and_undoes_in_one_step():
+    """A cord was the last gesture that wrote the arrangement directly, on the
+    grounds that no intent described it — and the vocabulary had said what to do
+    all along. An edit states the resulting value, and what a cord results in is
+    the two members' controls and the aggregate's declared buses: three
+    `configure`s, one entry, one undo."""
+    src = SynthDef("gsrc", out(control("out"), sine(control("freq", 220.0))))
+    sink = SynthDef("gsink", out(0, in_(control("in")) * control("amp", 0.3)))
+    g = Aggregate(kind=LOGICAL, name="chain")
+    hs = g.add(Generator(src))
+    hk = g.add(Generator(sink))
+    ed = editor(g)
+    ed.open(_FakeHost())
+    tree = ed.draw()
+    wid = [c for c in tree["children"] if is_plane(c)][0]["children"][0]["id"]
+
+    assert ed.apply("/gui_event", [wid, SEQ, UNSTATED, "wire", 0, "out", 1, "in"]) is True
+    bus = hs.element.controls["out"]
+    assert hk.element.controls["in"] == bus
+    assert g.bus_names == [bus], "and the aggregate declares the bus it names"
+
+    assert ed.can_undo, "a cord is an edit like any other"
+    assert ed.undo_label == "draw a cord"
+    assert ed.undo() is True
+    assert not hs.element.controls, "both ends come back"
+    assert not hk.element.controls
+    assert g.bus_names == [], "and the bus goes with them"
+    assert not ed.can_undo, "one gesture, one step"
+
+    assert ed.redo() is True
+    assert hk.element.controls["in"] == bus
+    assert g.bus_names == [bus]
+
+
+def test_a_logical_aggregates_buses_survive_the_document():
+    """The other half, and the reason the cord could not be logged: a patch's
+    buses were in no format at all. The cords survived a round trip — a member's
+    controls are in its own config — while the buses they name did not, so a
+    reopened patcher drew connections it could render none of."""
+    from clausters.form.document import from_document, to_document
+
+    g = Aggregate(kind=LOGICAL, name="chain", buses=[("mix", "audio")])
+    g.add(Generator(SynthDef("gsrc", out(control("out"), sine(220.0))),
+                    controls={"out": "mix"}))
+    back = from_document(to_document(g))
+    assert back.bus_names == ["mix"]
+    assert back.bus_specs == [{"name": "mix", "rate": "audio", "channels": 1}]
