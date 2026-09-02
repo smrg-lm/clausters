@@ -2464,6 +2464,18 @@ export class Editor {
     }
 
     /**
+     * What a redo would be called, for a menu item.
+     *
+     * The pair of {@link Editor.undoLabel}, and it stops being decoration the
+     * moment a second window is open on the composition: with one pile over all
+     * of them, a label is how a person knows which edit a keystroke is about to
+     * move — and both windows read the same one.
+     */
+    get redoLabel(): string | undefined {
+        return this.log?.redoLabel;
+    }
+
+    /**
      * Re-schedule after an edit when `follow` is on **and there is something to
      * re-schedule**.
      *

@@ -115,8 +115,11 @@ b.on_closed(lambda: globals().__setitem__("_closed", True))
 # 3. **Ctrl+Shift+Z over either** redoes it, once — one order, not two.
 # 4. **Sweep a selection in one window.** The other keeps its own.
 #
-# The read-out below prints what each window says about the history after every
-# event, so the agreement is legible without pressing anything twice.
+# The read-out below prints what each window says about the history — both
+# directions — after every event, so the agreement is legible without pressing
+# anything twice. Watch `can_redo`: it turns true in *both* windows on an undo
+# in either, and at the end of the history both sides stay false and nothing
+# redraws.
 
 # %%
 def run(seconds=None):
@@ -141,10 +144,19 @@ def run(seconds=None):
             gui.dispatch(*message)      # the window handles: `on_closed`
             left.apply(*message)
             right.apply(*message)
-        state = (left.can_undo, left.undo_label, right.can_undo, right.undo_label)
+        # Both directions, both windows. The **redo** side is what makes "one
+        # order, not two" legible: undo in either window and `can_redo` turns
+        # true in *both*, because there is one pile and both are standing at the
+        # same place in it. It is also what says a step did nothing -- at the
+        # end of the history both stay False, and no window redraws.
+        state = tuple((editor.can_undo, editor.undo_label,
+                       editor.can_redo, editor.redo_label)
+                      for editor in (left, right))
         if state != shown:
-            print(f"left: can_undo={state[0]} label={state[1]!r} | "
-                  f"right: can_undo={state[2]} label={state[3]!r}")
+            for name, (can_undo, undo, can_redo, redo) in zip(("left ", "right"), state):
+                print(f"{name}: can_undo={can_undo!s:5} {undo!r:24}"
+                      f" can_redo={can_redo!s:5} {redo!r}")
+            print("-" * 72)
             shown = state
 
 

@@ -2342,6 +2342,17 @@ class Editor:
         """What an undo would be called, for a menu item."""
         return None if self._log is None else self._log.undo_label
 
+    @property
+    def redo_label(self) -> "str | None":
+        """What a redo would be called, for a menu item.
+
+        The pair of `undo_label`, and it stops being decoration the moment a
+        second window is open on the composition: with one pile over all of
+        them, a label is how a person knows which edit a keystroke is about to
+        move — and both windows read the same one.
+        """
+        return None if self._log is None else self._log.redo_label
+
     def _follow_render(self):
         """Re-schedule after an edit when `follow` is on **and there is
         something to re-schedule**.

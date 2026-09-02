@@ -45,7 +45,11 @@ in a history.
 
 The two windows are two <code>gui.Editor</code>s over one arrangement. Nothing
 wires them together — the sharing is not a feature of this page, it is where the
-history lives.</div>
+history lives.
+
+The read-out prints what each window says about the history, both directions.
+Watch <b>canRedo</b>: it turns true in <i>both</i> windows on an undo in either,
+and at the end of the history both stay false and nothing redraws.</div>
 
       <button id="run">open both windows</button>
       <div class="stages">
@@ -129,12 +133,21 @@ history lives.</div>
 
         // What each window says about the history after every event, so the
         // agreement is legible without pressing anything twice.
+        //
+        // Both directions, both windows. The **redo** side is what makes "one
+        // order, not two" legible: undo in either window and `canRedo` turns
+        // true in *both*, because there is one pile and both are standing at
+        // the same place in it. It is also what says a step did nothing -- at
+        // the end of the history both stay false, and no window redraws.
+        const pad = (v, n) => String(v).padEnd(n);
         let shown = null;
         setInterval(() => {
-          const state = [left.canUndo, left.undoLabel, right.canUndo, right.undoLabel];
-          const line = `left: canUndo=${state[0]} label=${JSON.stringify(state[1])} | `
-            + `right: canUndo=${state[2]} label=${JSON.stringify(state[3])}`;
-          if (line !== shown) { log(line); shown = line; }
+          const line = [["left ", left], ["right", right]]
+            .map(([name, ed]) => `${name}: canUndo=${pad(ed.canUndo, 5)} `
+              + `${pad(JSON.stringify(ed.undoLabel ?? null), 24)}`
+              + ` canRedo=${pad(ed.canRedo, 5)} ${JSON.stringify(ed.redoLabel ?? null)}`)
+            .join("\n");
+          if (line !== shown) { log(line + "\n" + "-".repeat(72)); shown = line; }
         }, 200);
       }
 
