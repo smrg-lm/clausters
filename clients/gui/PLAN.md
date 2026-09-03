@@ -3143,6 +3143,29 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 
 ## Found by use: the running list of fixes
 
+- ✅ **The auto-fit was taught door by door, and the doors kept disagreeing**
+  *(found 2026-09-03, on the report that a view still re-framed itself with
+  `autofit` off; fixed the same day)*. `autofit` first landed as a guard inside
+  `set_timeline_total_inner`, and every other way the content reaches a window
+  kept the rule it had written for itself: `set_timeline_offset` refitted by a
+  test of its own (and clamped against the raw total instead of the navigable
+  span), the redefine's reseed in `sync_timeline_groups` re-clamped the window
+  it had just decided to keep, `set_timeline_link` re-clamped and never brought
+  `GroupState::total` in step, and `follow_timeline_end` paged the axis forward
+  because paging is not spelled "refit". The visible defect was the smallest of
+  them: with the switch off, a piece that got *shorter* still pulled a window
+  back onto its content.
+
+  Now there is one `Host::content_moved` and every door goes through it: it asks
+  `group_autofit` first, and with the switch off it registers the extent and
+  touches nothing -- not the refit, and not the clamp either, since the clamp
+  belongs to the hand that navigates. The "was it showing everything" test is
+  one predicate (`Host::showing_everything`), asked in the same words by the
+  extent door and the redefine. Tested: a pinned window survives a shrink
+  through each door, one member that does not follow its content pins the group
+  (a waveform linked to a lane), and a roll with the switch off does not page
+  forward under a take being written into it.
+
 - ⬜ **The score's element hit is a linear scan over the whole page** *(found
   2026-09-03, measuring the vertical axis for a different design and checking a
   premise that the score's hit was the scalable case)*. `ScoreData::hit`

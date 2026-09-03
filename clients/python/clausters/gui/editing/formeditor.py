@@ -250,23 +250,32 @@ class FormEditor(Editor):
         #: where you dropped it). Off by default — an edit then only changes the
         #: arrangement, and `rerender` decides when it is heard.
         self.follow = bool(follow)
-        #: Whether the views **follow their content**: the time axis refits when
-        #: the composition's length changes, and a roll's pitch domain re-centres
-        #: on the notes it holds. Off by default here, which is the opposite of
-        #: the host's own default and deliberate — an editor's content changes
-        #: are mostly the reader's *own* edits, and an edit that re-frames the
-        #: view is the window starting over under the hand that made it. The
-        #: time half is the widgets' ``autofit`` prop; the pitch half is this
-        #: editor's, since the domain is a prop it derives.
+        #: Whether the views **follow their content**. One switch, and it has
+        #: three faces, because a picture fits itself to what is in it in three
+        #: places: the **time window** refits when the composition's length
+        #: changes, a roll's **pitch domain** re-centres on the notes it holds,
+        #: and a **clip with no stated length** is drawn as long as its content,
+        #: so moving the last note of a phrase resized the clip it was in.
+        #:
+        #: Off by default here, which is the opposite of the host's own default
+        #: and deliberate — an editor's content changes are mostly the reader's
+        #: *own* edits, and an edit that re-frames the view is the window
+        #: starting over under the hand that made it.
+        #:
+        #: The time face is the widgets' ``autofit`` prop, which the host reads
+        #: at every door the content reaches a window by. The other two are
+        #: derived here, so they are held here, by `_fit`.
         self.autofit = bool(autofit)
-        #: The pitch window each roll was first drawn with, by element identity.
-        #: **Not reset by a draw**, unlike every registry beside it: those
-        #: describe the widgets a draw made and this describes what the reader
-        #: is looking at, which a redraw is precisely not entitled to move
-        #: — what keeps a note edit from re-centring the roll under the hand
-        #: while `autofit` is off. A note can never leave the domain (a drag
-        #: clamps the pitch into it), so it never has to grow.
+        #: The pitch window each roll was first drawn with, by element identity,
+        #: and the length each clip was first drawn at, by placement identity —
+        #: the two things this editor *derives from the content*, held by
+        #: `_fit` while `autofit` is off.
+        #:
+        #: **Not reset by a draw**, unlike every registry beside them: those
+        #: describe the widgets a draw made, and these describe what the reader
+        #: is looking at, which a redraw is precisely not entitled to move.
         self._pitch: dict = {}
+        self._length: dict = {}
         #: The elements shown as lanes of their own instead of a summary clip
         #: (the base level: an aggregate resolved rather than collapsed).
         self._expanded: set[int] = set()
@@ -2680,38 +2689,51 @@ class FormEditor(Editor):
         return [self._lane([self._clip_for(element, base, owner, member)],
                            element, base, member)]
 
+    def _fit(self, held: dict, key, lo: float, hi: float) -> tuple:
+        """One quantity **derived from the content**, held while `autofit` is
+        off: the ``(lo, hi)`` just derived, widened by whatever this key has
+        needed before.
+
+        There are two of these — a roll's pitch domain and a clip's drawn length
+        — and they are one rule, so they are one method. With the switch on,
+        each draw simply says what the content says. With it off, the value the
+        reader is looking at is the widest this key has ever needed, so a
+        content change under the hand cannot make the picture smaller: a note
+        moved earlier does not shorten the clip it is in, and a note removed
+        does not collapse the roll around what is left.
+
+        **Grows rather than freezes.** A frozen value could not take content
+        that legitimately arrived — a roll can never be written above its own
+        top line, a clip could never hold a phrase a script lengthened — and
+        growing is what makes it stable: an edge only ever moves outward, so
+        nothing slides under the hand.
+
+        Keyed by identity rather than by widget id, because a widget is
+        allocated afresh on every redefine and what the reader is looking at has
+        to outlive that — a structural edit is exactly when the re-framing
+        showed."""
+        if self.autofit:
+            return lo, hi
+        was = held.get(key)
+        if was is not None:
+            lo, hi = min(was[0], lo), max(was[1], hi)
+        held[key] = (lo, hi)
+        return lo, hi
+
     def _pitch_window(self, element, notes) -> dict:
         """The ``min``/``max`` a roll is drawn over: the notes it holds, with
         headroom, and never narrower than the default octave range.
 
-        While `autofit` is off it **only ever grows**, which is the vertical half
-        of the rule the time axis keeps: a note dragged to a new pitch moved the
-        extremes, so the domain was re-derived and the whole roll slid under the
-        hand that moved one note -- and so did removing the highest note, which
-        collapsed the window around what was left.
-
-        Grows rather than freezes, because a **drag clamps a pitch into the
-        window the roll is drawn over**: a domain that could not widen would be
-        a roll that can never be written above its own top line. So the held
-        window is the widest one this element has needed. It is monotone, which
-        is the whole of what makes it stable: an edge only ever moves outward,
-        so nothing under the hand slides.
-
-        Keyed by the element's identity rather than by a widget id, because the
-        widget is allocated afresh on every redefine and the window has to
-        outlive that: a structural edit is exactly when the re-centring showed.
-        """
+        The **vertical** face of the auto-fit, so it is held by `_fit` like the
+        other two: a note dragged to a new pitch moved the extremes, and the
+        domain re-derived from them slid the whole roll under the hand that
+        moved one note — as did removing the highest note, which collapsed the
+        window around what was left."""
         pitches = [n[2] for n in notes]
-        window = dict(min=min(min(pitches) - PITCH_PAD, DEFAULT_PITCH[1]),
-                      max=max(max(pitches) + PITCH_PAD, DEFAULT_PITCH[0]))
-        if self.autofit:
-            return window
-        held = self._pitch.get(id(element))
-        if held is not None:
-            window = dict(min=min(held["min"], window["min"]),
-                          max=max(held["max"], window["max"]))
-        self._pitch[id(element)] = window
-        return window
+        lo, hi = self._fit(self._pitch, id(element),
+                           min(min(pitches) - PITCH_PAD, DEFAULT_PITCH[1]),
+                           max(max(pitches) + PITCH_PAD, DEFAULT_PITCH[0]))
+        return dict(min=lo, max=hi)
 
     def _lane(self, clips: list, element, base: float = 0.0, member=None) -> dict:
         """One `track` lane holding ``clips``, with the shared time chrome and
@@ -2738,13 +2760,22 @@ class FormEditor(Editor):
 
         One rule, in one place, because two of them is how a picture and a
         model come to disagree: the draw asks this, and so does every path that
-        has to put a placement back (`_redrawn`, after an inverse or a redo)."""
-        length = member.dur if (member is not None and member.dur is not None) else None
-        if length is None and isinstance(element, Element):
-            length = element.duration
+        has to put a placement back (`_redrawn`, after an inverse or a redo).
+
+        A placement that states no length is drawn **as long as its content**,
+        which is the third face of the auto-fit and the one a reader meets
+        oftenest: moving the last note of a phrase earlier shortened the clip it
+        was in, and every clip after it on the lane went with the total. So the
+        derived length is held by `_fit` while `autofit` is off, exactly as the
+        pitch domain is — a stated length is the reader's own and is never
+        held."""
+        if member is not None and member.dur is not None:
+            return member.dur
+        length = element.duration if isinstance(element, Element) else None
         if length is None:
             length = self._extent(element)
-        return length
+        key = id(member) if member is not None else id(element)
+        return self._fit(self._length, key, 0.0, length)[1]
 
     def _drawn_dur(self, element, member, body=None, at: float = 0.0) -> float:
         """The same length in **timeline units**, which needs the body: a take

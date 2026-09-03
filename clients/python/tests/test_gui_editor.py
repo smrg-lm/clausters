@@ -808,6 +808,52 @@ def test_an_undone_take_clip_answers_with_a_correction_the_wire_can_carry():
     assert any("loop" in p for p in sent), f"the window came back: {sent}"
 
 
+def test_a_clip_keeps_the_length_it_was_drawn_at_while_autofit_is_off():
+    """Found by use: moving a note earlier shortened the clip it was in.
+
+    The third face of the auto-fit, and the one a reader meets oftenest. A
+    placement that states no length is drawn *as long as its content*, so a note
+    edit that moved the end of the phrase resized the clip -- and with it the
+    lane's extent and everything the shared axis is measured against. Under
+    `autofit` it is held by the same rule the pitch domain follows: only ever
+    growing, and never for a length the reader stated themselves.
+    """
+    from clausters.seq.timeline import Timeline
+
+    def piece():
+        lead = Track(Timeline([(0.0, SeqEvent(midinote=60, dur=1.0)),
+                               (3.0, SeqEvent(midinote=64, dur=1.0))]))
+        return Aggregate([(0.0, Aggregate([(0.0, lead)], name="lead"))], name="piece")
+
+    def clip(tree):
+        node = _find(tree, lambda n: "notes" in n)
+        return node["id"], node["notes"], node["dur"]
+
+    # On: the clip is as long as what is in it, both ways.
+    ed = FormEditor(piece(), sample_rate=SR, tempo=TEMPO, autofit=True)
+    wid, notes, before = clip(ed.draw())
+    earlier = list(notes)
+    earlier[5] = BEAT            # the second note back to beat 1
+    assert ed.apply("/gui_event", [wid, SEQ, UNSTATED, "notes", *earlier]) is True
+    assert clip(ed.draw())[2] < before, "it followed the content in"
+
+    # Off: the same edit leaves the clip where it was drawn...
+    ed = FormEditor(piece(), sample_rate=SR, tempo=TEMPO, autofit=False)
+    wid, notes, before = clip(ed.draw())
+    earlier = list(notes)
+    earlier[5] = BEAT
+    assert ed.apply("/gui_event", [wid, SEQ, UNSTATED, "notes", *earlier]) is True
+    assert clip(ed.draw())[2] == before, "the clip kept its length"
+    # ...and the registry says the same, or the next edit would be measured
+    # against a picture nobody is drawing.
+    assert ed._clips[wid].dur == before
+
+    # A length the reader states is theirs, and is drawn as stated.
+    assert ed.apply("/gui_event",
+                    [wid, SEQ, UNSTATED, "clip", 0.0, before / 2.0, 0.0]) is True
+    assert clip(ed.draw())[2] == pytest.approx(before / 2.0, abs=1.0)
+
+
 def test_the_views_do_not_re_frame_themselves_while_autofit_is_off():
     """Found by use: dragging a note re-centred the whole roll, and every
     structural edit refitted the time axis.

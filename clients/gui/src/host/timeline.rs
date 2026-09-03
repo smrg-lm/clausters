@@ -603,21 +603,45 @@ impl Host {
         self.set_timeline_total_inner(id, total, false);
     }
 
-    fn set_timeline_total_inner(&mut self, id: i32, total: usize, refit: bool) {
-        let Some(key) = self.timeline_key(id) else {
-            self.timelines.totals.insert(id, total);
+    /// **Was this window showing exactly the whole timeline?** — the one test
+    /// that decides whether a content change refits it, asked in the same words
+    /// wherever it is asked: here for an extent registered, and in
+    /// [`sync_timeline_groups`] for a def rebuilt. Anything else — zoomed in, or
+    /// zoomed out into the empty headroom a lane has on purpose — is a window
+    /// somebody chose, and choosing it is what stops the content from moving it.
+    ///
+    /// [`sync_timeline_groups`]: Host::sync_timeline_groups
+    fn showing_everything(len: f64, total: usize) -> bool {
+        len > 0.0 && (len - total as f64).abs() < 1.0
+    }
+
+    /// **What a change in the content does to the window** — the one place that
+    /// decides it, for every door the content comes in by: an extent
+    /// registered, a clip's offset set, a lane rebuilt under a redefine.
+    ///
+    /// `refit` is what the *caller* would like ("it was showing it all, keep
+    /// showing it all"); `autofit` is what the **view** allows, and it comes
+    /// first. Off, the window is the reader's and nothing about the content
+    /// touches it — not a refit, and not the re-clamp either, since a piece
+    /// that got shorter would otherwise pull a window back off the empty bars
+    /// the reader had deliberately scrolled onto. The extent is still
+    /// registered, so navigating still knows how far it can go: the clamp
+    /// happens when the *hand* moves the window, which is where it belongs.
+    ///
+    /// `old_total` is the group's extent before the change, since "was it
+    /// showing everything" is a question about the picture the reader had.
+    fn content_moved(&mut self, key: GroupKey, old_total: usize, refit: bool) {
+        if !self.group_autofit(key) {
+            let new_total = self.timeline_total(key);
+            if let Some(state) = self.timelines.states.get_mut(&key) {
+                state.total = new_total;
+            }
             return;
-        };
-        // **A view that does not follow its content never refits**, whatever
-        // the caller asked for: the extent is registered either way, and what
-        // `autofit` decides is only whether the *window* moves with it.
-        let refit = refit && self.group_autofit(key);
-        let old_total = self.timeline_total(key);
-        self.timelines.totals.insert(id, total);
+        }
         let new_total = self.timeline_total(key);
         let span = self.timeline_span(key);
         if let Some(state) = self.timelines.states.get_mut(&key) {
-            if refit && (state.nav.len - old_total as f64).abs() < 1.0 {
+            if refit && Self::showing_everything(state.nav.len, old_total) {
                 // It was showing exactly the whole timeline: keep showing it all.
                 state.nav = View::full(new_total);
             } else {
@@ -630,6 +654,16 @@ impl Host {
             // whether it was showing everything once the members are gone.
             state.total = new_total;
         }
+    }
+
+    fn set_timeline_total_inner(&mut self, id: i32, total: usize, refit: bool) {
+        let Some(key) = self.timeline_key(id) else {
+            self.timelines.totals.insert(id, total);
+            return;
+        };
+        let old_total = self.timeline_total(key);
+        self.timelines.totals.insert(id, total);
+        self.content_moved(key, old_total, refit);
     }
 
     /// Registers every `track` lane's extent — the end of its last clip — with
@@ -874,17 +908,12 @@ impl Host {
                 editor.offset = offset;
             }
         }
-        // The placement changed the group length: a group showing its whole
-        // timeline keeps showing all of it (follows the growth/shrink); a
-        // zoomed one just re-clamps — the same rule as `set_timeline_total`.
-        let new_total = self.timeline_total(key);
-        if let Some(state) = self.timelines.states.get_mut(&key) {
-            if state.nav.len >= old_total as f64 {
-                state.nav = View::full(new_total);
-            } else {
-                state.nav.set_start(state.nav.start, new_total);
-            }
-        }
+        // The placement changed the group length, which is a change in the
+        // content like any other -- so it goes through the one rule that
+        // decides what that does to the window, `autofit` included. It used to
+        // keep a rule of its own here, and two of them is how one door came to
+        // re-frame a view the others had been taught to leave alone.
+        self.content_moved(key, old_total, true);
         self.timeline_roots(key)
     }
 
@@ -918,13 +947,13 @@ impl Host {
                 total: 1,
             })
         });
-        // Re-clamp the (carried or adopted) window against the new membership
-        // and align every member with the group.
+        // Joining a group changes what the window stands against, so it is a
+        // content change like any other and goes through the same rule: the
+        // carried or adopted window is re-clamped (and left alone where the
+        // view does not follow its content), and `total` is brought in step so
+        // the next redefine can still ask what this one was showing.
         let total = self.timeline_total(new_key);
-        if let Some(state) = self.timelines.states.get_mut(&new_key) {
-            let start = state.nav.start;
-            state.nav.set_start(start, total);
-        }
+        self.content_moved(new_key, total, false);
         self.prune_timeline_groups();
         for root in self.timeline_roots(new_key) {
             if !roots.contains(&root) {
@@ -1022,10 +1051,18 @@ impl Host {
                         // through.
                         Some((old, was))
                             if old.len > 0.0
-                                && (!autofit || (old.len - was as f64).abs() >= 1.0) =>
+                                && !(autofit && Self::showing_everything(old.len, was)) =>
                         {
                             let mut nav = old;
-                            nav.set_start(nav.start, span);
+                            // Re-clamped only where the view follows its
+                            // content: with the switch off the window is the
+                            // reader's, and a piece that got shorter under a
+                            // structural edit must not pull it back -- the same
+                            // sentence `content_moved` says, at the one door
+                            // that does not come through it.
+                            if autofit {
+                                nav.set_start(nav.start, span);
+                            }
                             nav
                         }
                         _ => View::full(total),
@@ -1147,6 +1184,12 @@ impl Host {
         let Some(key) = self.timeline_key(id) else {
             return;
         };
+        // A view that does not follow its content does not follow it here
+        // either: paging forward as a take is written *is* following it, and
+        // the switch is the general answer rather than a rule per door.
+        if !self.group_autofit(key) {
+            return;
+        }
         let total = self.timeline_total(key) as f64;
         let span = self.timeline_span(key);
         let Some(state) = self.timelines.states.get_mut(&key) else {
@@ -1879,6 +1922,34 @@ mod tests {
             (384_000.0, 384_000.0),
             "one window forward, same length"
         );
+
+        // ...and a roll that does not follow its content does not follow it
+        // here either: the page-forward is the content moving the window, which
+        // is the one thing the switch turns off, wherever it is spelled.
+        let mut host = Host::new();
+        host.handle_packet(
+            def_msg(
+                1,
+                r#"{"type":"window","margin":0,"children":[
+                {"id":100,"type":"notes","notes":[],"min":48,"max":84,"autofit":0,
+                 "sample_rate":48000.0,"tempo":2.0}
+            ]}"#,
+            ),
+            from(),
+        );
+        host.handle_packet(
+            set_msg(
+                100,
+                &[(
+                    "notes",
+                    OscType::String("[400000.0, 24000.0, 62.0, 100, 0]".into()),
+                )],
+            ),
+            from(),
+        );
+        let (nav, total) = host.timeline_nav(100).unwrap();
+        assert_eq!(nav.start, 0.0, "the window stayed where it was left");
+        assert_eq!(total, 424_000, "and the extent is registered all the same");
     }
 
     /// Where a person put the axis is **screen state**, and no content change is
@@ -2095,6 +2166,122 @@ mod tests {
         // the door an acknowledgement comes back through.
         host.handle_packet(set_msg(110, &[("offset", OscType::Float(2000.0))]), from());
         assert_eq!(host.timeline_nav(100).map(|(n, _)| n.len), Some(400.0));
+    }
+
+    /// **The switch means the same thing on every view that carries it, and a
+    /// group is one window.** A lane, a roll, a waveform, a spectrogram and a
+    /// ruler all navigate through the one group model, so `autofit` is one
+    /// behaviour and not one per widget: whichever of them says it does not
+    /// follow its content, the axis they share stops following it — for all of
+    /// them, and by every door. A reader who pinned a view pinned the axis it is
+    /// on, and a linked view refitting it from the side would be the same defect
+    /// wearing a neighbour's name.
+    #[test]
+    fn one_member_that_does_not_follow_its_content_pins_the_group() {
+        let json = r#"{"type":"window","margin":0,"children":[
+            {"id":10,"type":"signal","view":"trace","data":[0.0,0.5],"link":1},
+            {"id":20,"type":"field","link":1,"autofit":0,"children":[
+                {"id":21,"type":"field","offset":0.0,"dur":400.0}]}
+        ]}"#;
+        let mut host = Host::new();
+        host.handle_packet(def_msg(1, json), from());
+        host.sync_track_totals();
+        host.set_timeline_view(10, Some(0.0), Some(400.0));
+        // The waveform's own door -- a front registering the data it loaded --
+        // and the lane's, which is the composition's extent.
+        host.set_timeline_total(10, 4000);
+        host.sync_track_totals();
+        assert_eq!(
+            host.timeline_nav(10).map(|(n, _)| n.len),
+            Some(400.0),
+            "the lane's `autofit` pinned the axis the waveform is on too"
+        );
+        // The extent is registered all the same: what is pinned is the window,
+        // never how far it may be navigated.
+        assert_eq!(host.timeline_nav(10).map(|(_, t)| t), Some(4000));
+
+        // The same window with nobody objecting follows, which is the default
+        // and what every view did before there was a switch.
+        let mut host = Host::new();
+        host.handle_packet(def_msg(1, &json.replace(r#""autofit":0,"#, "")), from());
+        host.sync_track_totals();
+        host.set_timeline_view(10, Some(0.0), Some(400.0));
+        host.set_timeline_total(10, 4000);
+        assert_eq!(host.timeline_nav(10).map(|(n, _)| n.len), Some(4000.0));
+    }
+
+    /// **A window pinned out past the content stays there when the content
+    /// shrinks**, whichever door the change comes in by.
+    ///
+    /// The refit was taught to ask `autofit` first, and the *clamp* was not —
+    /// so a piece that got shorter still pulled the window back onto it, which
+    /// is the same defect wearing the smaller of its two faces: moving a note
+    /// so the sequence ends earlier scrolled the view. With the switch off
+    /// nothing about the content touches the window at all, and the doors are
+    /// one rule rather than one rule each: an extent registered, a clip's
+    /// offset set, and the page-forward that follows a take being written.
+    #[test]
+    fn a_pinned_window_is_not_pulled_back_by_content_that_shrinks() {
+        let lanes = |dur: f64| {
+            format!(
+                r#"{{"type":"window","margin":0,"children":[
+                    {{"id":100,"type":"field","link":7,"autofit":0,"children":[
+                        {{"id":110,"type":"field","offset":0.0,"dur":{dur}}}]}}
+                ]}}"#
+            )
+        };
+        let mut host = Host::new();
+        host.handle_packet(def_msg(1, &lanes(8000.0)), from());
+        host.sync_track_totals();
+        // Zoomed in and panned onto the last quarter, where the reader is
+        // working.
+        host.set_timeline_view(100, Some(6000.0), Some(2000.0));
+        assert_eq!(
+            host.timeline_nav(100).map(|(n, _)| (n.start, n.len)),
+            Some((6000.0, 2000.0))
+        );
+
+        // The extent registered: the content now ends long before the window.
+        // (On the lane, which is what `sync_track_totals` registers -- the
+        // group's extent is the longest of its members.)
+        host.set_timeline_total(100, 1000);
+        assert_eq!(
+            host.timeline_nav(100).map(|(n, _)| (n.start, n.len)),
+            Some((6000.0, 2000.0)),
+            "the registered extent moved the window"
+        );
+        // The clip's offset set: the door an acknowledgement and an undo take.
+        host.handle_packet(set_msg(110, &[("offset", OscType::Float(0.0))]), from());
+        assert_eq!(
+            host.timeline_nav(100).map(|(n, _)| (n.start, n.len)),
+            Some((6000.0, 2000.0)),
+            "a placement moved the window"
+        );
+        // And the redefine, which rebuilds the lane under it.
+        host.handle_packet(def_msg(1, &lanes(1000.0)), from());
+        assert_eq!(
+            host.timeline_nav(100).map(|(n, _)| (n.start, n.len)),
+            Some((6000.0, 2000.0)),
+            "a redefine moved the window"
+        );
+
+        // With the switch on, the same shrink does what a monitor wants.
+        let mut host = Host::new();
+        host.handle_packet(
+            def_msg(
+                1,
+                &lanes(8000.0).replace(r#""autofit":0"#, r#""autofit":1"#),
+            ),
+            from(),
+        );
+        host.sync_track_totals();
+        assert_eq!(host.timeline_nav(100).map(|(n, _)| n.len), Some(8000.0));
+        host.set_timeline_total(100, 1000);
+        assert_eq!(
+            host.timeline_nav(100).map(|(n, _)| (n.start, n.len)),
+            Some((0.0, 1000.0)),
+            "a following view was showing everything, and goes on doing so"
+        );
     }
 
     /// The editor's case, end to end: its lanes carry no `link`, so they share

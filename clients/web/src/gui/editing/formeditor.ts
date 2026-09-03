@@ -157,14 +157,21 @@ export interface EditorOptions {
     /** Re-render on every edit (the live editor). */
     follow?: boolean;
     /**
-     * Whether the views **follow their content**: the time axis refits when the
-     * composition's length changes, and a roll's pitch domain re-centres on the
-     * notes it holds. Off by default here, which is the opposite of the host's
-     * own default and deliberate — an editor's content changes are mostly the
-     * reader's *own* edits, and an edit that re-frames the view is the window
-     * starting over under the hand that made it. The time half is the widgets'
-     * `autofit` prop; the pitch half is this editor's, since the domain is a
-     * prop it derives.
+     * Whether the views **follow their content**. One switch, and it has three
+     * faces, because a picture fits itself to what is in it in three places: the
+     * **time window** refits when the composition's length changes, a roll's
+     * **pitch domain** re-centres on the notes it holds, and a **clip with no
+     * stated length** is drawn as long as its content, so moving the last note
+     * of a phrase resized the clip it was in.
+     *
+     * Off by default here, which is the opposite of the host's own default and
+     * deliberate — an editor's content changes are mostly the reader's *own*
+     * edits, and an edit that re-frames the view is the window starting over
+     * under the hand that made it.
+     *
+     * The time face is the widgets' `autofit` prop, which the host reads at
+     * every door the content reaches a window by. The other two are derived
+     * here, so they are held here, by one rule (`FormEditor.fit`).
      */
     autofit?: boolean;
     /** Extra GuiDef nodes placed under the lanes (a transport panel, say). */
@@ -319,12 +326,17 @@ export class FormEditor extends Editor<Element> implements Adopting {
     /** Whether the views follow their content (see the option). */
     autofit: boolean;
     /**
-     * The pitch window each roll was first drawn with, by element. **Not reset
-     * by a draw**, unlike the registries beside it: those describe the widgets a
-     * draw made and this describes what the reader is looking at, which a redraw
-     * is precisely not entitled to move.
+     * The pitch window each roll was first drawn with, by element, and the
+     * length each clip was first drawn at, by placement — the two things this
+     * editor *derives from the content*, held by {@link FormEditor.fit} while
+     * `autofit` is off.
+     *
+     * **Not reset by a draw**, unlike the registries beside them: those describe
+     * the widgets a draw made, and these describe what the reader is looking at,
+     * which a redraw is precisely not entitled to move.
      */
-    private pitch = new Map<Element, { min: number; max: number }>();
+    private pitch = new Map<Element, [number, number]>();
+    private length = new Map<Element | Member, [number, number]>();
     /** Widgets appended to the window after the lanes. They are the script's. */
     extra: GuiNode[];
     /**
@@ -2952,42 +2964,63 @@ export class FormEditor extends Editor<Element> implements Adopting {
      * pressing one writes back through the log like every other edit.
      */
     /**
+     * One quantity **derived from the content**, held while `autofit` is off:
+     * the `[lo, hi]` just derived, widened by whatever this key has needed
+     * before.
+     *
+     * There are two of these — a roll's pitch domain and a clip's drawn length —
+     * and they are one rule, so they are one method. With the switch on, each
+     * draw simply says what the content says. With it off, the value the reader
+     * is looking at is the widest this key has ever needed, so a content change
+     * under the hand cannot make the picture smaller: a note moved earlier does
+     * not shorten the clip it is in, and a note removed does not collapse the
+     * roll around what is left.
+     *
+     * **Grows rather than freezes.** A frozen value could not take content that
+     * legitimately arrived — a roll can never be written above its own top line,
+     * a clip could never hold a phrase a script lengthened — and growing is what
+     * makes it stable: an edge only ever moves outward, so nothing slides under
+     * the hand.
+     *
+     * Keyed by identity rather than by widget id, because a widget is allocated
+     * afresh on every redefine and what the reader is looking at has to outlive
+     * that — a structural edit is exactly when the re-framing showed.
+     */
+    private fit<K>(
+        held: Map<K, [number, number]>,
+        key: K,
+        lo: number,
+        hi: number,
+    ): [number, number] {
+        if (this.autofit) return [lo, hi];
+        const was = held.get(key);
+        if (was !== undefined) [lo, hi] = [Math.min(was[0], lo), Math.max(was[1], hi)];
+        held.set(key, [lo, hi]);
+        return [lo, hi];
+    }
+
+    /**
      * The `min`/`max` a roll is drawn over: the notes it holds, with headroom,
      * and never narrower than the default octave range.
      *
-     * While `autofit` is off it **only ever grows**, which is the vertical half
-     * of the rule the time axis keeps: a note dragged to a new pitch moved the
-     * extremes, so the domain was re-derived and the whole roll slid under the
-     * hand that moved one note — and so did removing the highest note, which
-     * collapsed the window around what was left.
-     *
-     * Grows rather than freezes, because a **drag clamps a pitch into the
-     * window the roll is drawn over**: a domain that could not widen would be a
-     * roll that can never be written above its own top line. So the held window
-     * is the widest one this element has needed. It is monotone, which is the
-     * whole of what makes it stable: an edge only ever moves outward, so
-     * nothing under the hand slides.
-     *
-     * Keyed by the element itself rather than by a widget id, because the
-     * widget is allocated afresh on every redefine and the window has to
-     * outlive that: a structural edit is exactly when the re-centring showed.
+     * The **vertical** face of the auto-fit, so it is held by
+     * {@link FormEditor.fit} like the other two: a note dragged to a new pitch
+     * moved the extremes, and the domain re-derived from them slid the whole
+     * roll under the hand that moved one note — as did removing the highest
+     * note, which collapsed the window around what was left.
      */
     private pitchWindow(
         element: Element,
         notes: readonly (readonly number[])[],
     ): { min: number; max: number } {
         const pitches = notes.map((n) => n[2]);
-        let window = {
-            min: Math.min(Math.min(...pitches) - PITCH_PAD, DEFAULT_PITCH[1]),
-            max: Math.max(Math.max(...pitches) + PITCH_PAD, DEFAULT_PITCH[0]),
-        };
-        if (this.autofit) return window;
-        const held = this.pitch.get(element);
-        if (held !== undefined) {
-            window = { min: Math.min(held.min, window.min), max: Math.max(held.max, window.max) };
-        }
-        this.pitch.set(element, window);
-        return window;
+        const [min, max] = this.fit(
+            this.pitch,
+            element,
+            Math.min(Math.min(...pitches) - PITCH_PAD, DEFAULT_PITCH[1]),
+            Math.max(Math.max(...pitches) + PITCH_PAD, DEFAULT_PITCH[0]),
+        );
+        return { min, max };
     }
 
     private lane(
@@ -3055,12 +3088,20 @@ export class FormEditor extends Editor<Element> implements Adopting {
      * One rule, in one place, because two of them is how a picture and a model
      * come to disagree: the draw asks this, and so does every path that has to
      * put a placement back ({@link Editor.redrawn}, after an inverse or a redo).
+     *
+     * A placement that states no length is drawn **as long as its content**,
+     * which is the third face of the auto-fit and the one a reader meets
+     * oftenest: moving the last note of a phrase earlier shortened the clip it
+     * was in, and every clip after it on the lane went with the total. So the
+     * derived length is held by {@link FormEditor.fit} while `autofit` is off,
+     * exactly as the pitch domain is — a stated length is the reader's own and
+     * is never held.
      */
     private drawnLength(element: Element, member: Member | null): number {
-        let length = member !== null && member.dur !== null ? member.dur : null;
-        if (length === null && element instanceof Element) length = element.duration;
+        if (member !== null && member.dur !== null) return member.dur;
+        let length = element instanceof Element ? element.duration : null;
         if (length === null) length = this.extentOf(element);
-        return length;
+        return this.fit(this.length, member ?? element, 0.0, length)[1];
     }
 
     /**

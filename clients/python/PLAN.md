@@ -1126,6 +1126,24 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
 
 ## Found by use: the running list of fixes and open questions
 
+- ✅ **A clip resized itself when a note inside it moved** *(found 2026-09-03,
+  testing `composer.py` with `autofit=False`; fixed the same day)*. A placement
+  that states no length is drawn *as long as its content*, so moving the last
+  note of a phrase earlier shortened the clip it was in -- and with it the
+  lane's extent and everything the shared axis is measured against. It is the
+  third face of the auto-fit, beside the time window (the host's) and the
+  pitch domain (this editor's), and it now goes through the same rule: while
+  `autofit` is off, `_drawn_length` holds what the clip was drawn at. A stated
+  length is the reader's own and is never held.
+
+  The two derived quantities are one method now, `FormEditor._fit` (and
+  `FormEditor.fit` in TypeScript): the derived pair widened by whatever that key
+  has needed before, keyed by identity so it outlives the redefine that mints
+  fresh widget ids. Grows rather than freezes, because a frozen value could not
+  take content that legitimately arrived -- a roll can never be written above
+  its own top line -- and growing is what makes it stable: an edge only ever
+  moves outward, so nothing slides under the hand.
+
 - ✅ **An OSC marker dragged in a roll changes the picture and nothing else**
   *(found 2026-09-02, auditing which data edits reach the history now that the
   edit stack is in; fixed 2026-09-02)*. The roll drew a lane of OSC markers and

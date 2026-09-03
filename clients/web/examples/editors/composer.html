@@ -55,12 +55,14 @@ the pointer over a clip, <b>e</b> cuts it in two and <b>j</b> joins it back with
 what touches it — the two halves are two windows onto one buffer.
 
 <b>The view never re-frames itself.</b> The editor is built with
-<code>autofit: false</code>, which says the window is <i>yours</i> — the time
-axis stays where you left it when the composition's length changes, and a roll's
-pitch range stops re-centring when you drag a note. It is off here and on by
-default in the host: in an editor the content change is nearly always your own
-edit, and an edit that re-frames the view is the window starting over under the
-hand that made it.
+<code>autofit: false</code>, which says the picture is <i>yours</i>. One switch
+with three faces, because a view fits itself to what is in it in three places:
+the time axis stays where you left it when the composition's length changes, a
+roll's pitch range stops re-centring when you drag a note, and a clip whose
+length nobody stated stops resizing itself when you move the last note of the
+phrase inside it. It is off here and on by default in the host: in an editor the
+content change is nearly always your own edit, and an edit that re-frames the
+view is the window starting over under the hand that made it.
 
 <b>Drag a clip onto another lane</b> and it follows your hand down the stack; the
 drop is one edit, so Ctrl+Z puts it back where it came from in one step. It is
