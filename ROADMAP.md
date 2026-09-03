@@ -86,6 +86,22 @@ leaves no line here, because its plan's checkbox and the commit already carry it
   paints every lane. It is what the next entry has to be measured against, and it
   is first because it states the criterion the other one is a case of.
 
+- ⬜ **A window onto notes is a window while the session lasts and a copy once it
+  is written** *(`clients/python/PLAN.md`, Found by use)*. The split over notes
+  shipped sharing one timeline live, and the document writes each half's notes
+  again -- with the **same node ids** in both, which the edit log addresses by.
+  Same crate change as the entry below and it closes both, so they are read
+  together; this one is the reason it is a fix rather than a direction.
+
+- ⬜ **A clone: a new sequence made from a clip, or from a segment of one**
+  *(`clients/python/PLAN.md`, Future directions)*. The arrangement can only make
+  a second thing out of a first by **referring** to it; the verb that copies --
+  deliberately, into a structure of its own -- does not exist. It is worth having
+  on its own, and it is also a candidate answer to the entry above (a split that
+  clones needs no crate change, at the price of a cut that deletes instead of
+  hiding). The three shapes are named there; the decision is one decision and
+  covers both entries.
+
 - ⬜ **A run of windows onto several timelines has nowhere to be stored**
   *(`clients/python/PLAN.md`, Found by use, inside "Which edits a clip admits is
   asked of `form`'s classes")*. The split, the trim and the join over notes

@@ -1126,6 +1126,43 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
 
 ## Found by use: the running list of fixes and open questions
 
+- ⬜ **A window onto notes is a window while the session lasts and a copy once
+  it is written** *(found 2026-09-03 by the user, right after the split
+  shipped: "cuando se hace un split de un pianoroll, sigue siendo una ventana a
+  los datos originales?" -- read the two roads in the document and they are not
+  the same road)*. Live, the two halves of a split share one `Timeline` object,
+  which is what the entry above claims and what its tests check. In the
+  **document** they do not:
+
+  ```
+  vector    id=3  dur=2.0                       src={source: 7, ...}
+  vector    id=9  dur=1.0  start=48000          src={source: 7, ...}
+
+  aggregate id=5  dur=3.0  {form: track}        members=3  (clangs 6, 7, 8)
+  aggregate id=10 dur=2.0  {form: track, start} members=3  (clangs 6, 7, 8)
+  ```
+
+  Three things are wrong there and the third is the serious one. The notes are
+  **written twice**; reopening the piece gives each half its own timeline, so
+  the sharing is gone and "the cut hides, it does not delete" becomes "each half
+  secretly holds the whole phrase"; and the two halves **claim the same node
+  ids**, which is the one thing the document cannot tolerate -- identity is what
+  the edit log addresses by, and an intent naming node 6 now has two parents to
+  mean it under.
+
+  **The cause is structural.** A vector's contents live *outside* the tree and
+  its node names them by reference (`SourceRef`), which is exactly why a window
+  is cheap and exact there. A track's contents live *inside* the tree, as
+  members. So a window onto notes cannot be a reference until a segment's source
+  can name **a node**, which is the generalization already written down for the
+  join across timelines (`Body::Segments`, `SegmentRef`, and `duration_unit`
+  derived from the sources rather than fixed at `Seconds`). It is one change and
+  it closes both.
+
+  Until it lands, the split over notes is correct for the session that made it
+  and wrong the moment the piece is saved -- so this is a *fix*, not a
+  direction, and it is ahead of the join in the order.
+
 - ✅ **Which edits a clip admits is asked of `form`'s classes, not of the data**
   *(found 2026-09-03 while chasing "the clip does not respond"; re-framed the
   same day with the user, whose reading is the entry; fixed the same day)*.
@@ -2587,6 +2624,46 @@ work, where a pending item reads as done.)*
   tempo 1 and was freed after **one** at tempo 2 — half the take.
 
 ## Future directions (a design that is not a fix)
+
+- ⬜ **A clone: a new sequence made from a clip, or from a segment of one**
+  *(named 2026-09-03 by the user, reading the window/copy question above: "crear
+  una nueva secuencia a partir de un clip o un segmento de un clip clonado, ahí
+  sí el contenido del nuevo clip sería una copia de los datos en otra
+  estructura")*. Today the arrangement has one way of making a second thing out
+  of a first, and it is a **window**: a split, a trim and a join all refer, and
+  nothing is copied. The verb that is missing is the other one, and it is a
+  **deliberate act rather than a side effect** -- take this clip, or this stretch
+  of it, and give me its contents as **a structure of their own**: a new
+  timeline of notes, a new take of samples, independent from that moment on.
+
+  It is worth having on its own terms. A window is right for a cut, and wrong
+  for "I want to develop this phrase without touching the one it came from" --
+  which today can only be done by writing the timeline out in a script. It is
+  also the verb whose absence makes a split *feel* like it should copy, so
+  naming it separates the two questions instead of letting one answer both.
+
+  **And it is a candidate answer to the entry above** ("A window onto notes is a
+  window while the session lasts and a copy once it is written"): if a split of
+  notes *cloned* rather than windowed, each half would hold its own timeline
+  with its own node ids, nothing would collide, and the crate would need no
+  change at all. What that costs is exactly what the windows buy -- the cut
+  would stop hiding and start deleting, so dragging a half's edge back out would
+  bring back nothing, and a join would no longer be the inverse of a split but a
+  merge of two independent copies. The two are therefore read together, and the
+  decision is one decision:
+
+  - **windows all the way** -- the crate learns to let a segment name a node,
+    the split stays reversible, and the clone is added beside it as its own
+    verb;
+  - **clone for notes** -- the split over notes copies, the crate is untouched,
+    and the reversibility a take has is not a thing a phrase has;
+  - **both, with the window as the default** -- which is what a DAW's "make
+    unique" does to a shared clip, and is probably where this lands, but it is
+    written here as an option rather than chosen.
+
+  Whatever it is, the *verb* belongs in the vocabulary in one shape for every
+  material, like the others: a clone of a stretch of samples is a bounce of that
+  window into a new take, which is the same act one unit over.
 
 Every entry carries a checkbox, like "Found by use" above: an open direction has
 to read as open, and one that converges into a milestone leaves this list rather
