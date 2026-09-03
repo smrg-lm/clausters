@@ -3143,6 +3143,28 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 
 ## Found by use: the running list of fixes
 
+- ⬜ **A refused edit springs back and says nothing** *(found 2026-09-03, while
+  chasing "the clip does not respond": pressing `e` over a piano-roll clip is
+  answered by a clear refusal nobody can see)*. The acknowledgement already
+  carries the reason -- `/gui_ack`'s optional trailing string -- and the host
+  parses it into `ack::Acked::reason`, where it stops: nothing reads it and
+  nothing draws it. So an edit the owner declined, with a sentence saying
+  exactly why, reaches the person at the window as a clip that did not move.
+  `host/ack.rs`'s own module doc states the standard this fails: *"an edit that
+  springs back with no explanation teaches 'sometimes it does not work' rather
+  than 'not here'"*.
+
+  What is undecided is **where a reason shows**, and it is a real question
+  rather than a detail: a window has no status line of its own (the composer
+  example has one, but that is the script's widget and a refusal is not the
+  script's business), the corner slot is taken by the cursor read-out, and a
+  notice that lingers is noise while one that vanishes is missed. The three
+  candidates: a transient line in the window's own chrome, a flash on the widget
+  that refused, or an event a client may draw where it likes -- the last being
+  what the `"refused"` emissions already are for the gestures the *host* itself
+  declines, which is an inconsistency of its own (the host refuses out loud and
+  the owner refuses silently).
+
 - ✅ **Four views drew one gesture four ways, and one of them drew nothing**
   *(found 2026-09-03, on the report that a lane's marquee draws no rectangle;
   fixed the same day)*. Every view that lets a hand sweep a selection had

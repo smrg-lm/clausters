@@ -2533,6 +2533,23 @@ work, where a pending item reads as done.)*
 
 ## Future directions (a design that is not a fix)
 
+- ⬜ **A clip over a track cannot be split, and a timeline is not an algorithm**
+  *(found 2026-09-03, while chasing "the clip does not respond")*. `_apply_split`
+  admits `Vector` and `Segments` and refuses everything else, on the ground that
+  splitting "a pattern or an aggregate would have to say what half of an
+  algorithm is". That is right about a **generator** and wrong about a
+  `Track`: a track is a timeline of notes, cutting it at a time is exactly as
+  definable as cutting samples, and the two halves are two windows onto one
+  timeline -- the same placement rule, in the other unit. As it stands the `e`
+  the composer example teaches over a take does nothing over a roll clip, and
+  the reason it gives is not shown (`clients/gui/PLAN.md`, Found by use,
+  "A refused edit springs back and says nothing").
+
+  What it needs: the split's window arithmetic in beats, and an answer for a
+  note the cut falls *inside* -- shorten it into the first half, move it whole
+  to the second, or cut it in two, which is the roll's own `e` one level down
+  and should give the same answer.
+
 Every entry carries a checkbox, like "Found by use" above: an open direction has
 to read as open, and one that converges into a milestone leaves this list rather
 than being ticked here.

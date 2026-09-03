@@ -77,6 +77,14 @@ Each is small, owned by its plan, and blocked by nothing.
 The section fills from section 3's review and empties again; a fix that lands
 leaves no line here, because its plan's checkbox and the commit already carry it.
 
+- ⬜ **A clip over a track cannot be split, and a timeline is not an algorithm**
+  *(`clients/python/PLAN.md`, Future directions)*. The split admits samples and
+  refuses everything else, which is right about a generator and wrong about a
+  `Track`: cutting a timeline of notes at a time is as definable as cutting
+  samples, and the halves are two windows onto one timeline. The example teaches
+  `e` over a take and it does nothing over a roll clip. The one thing to settle
+  is a note the cut falls inside, and the roll's own `e` already answers it.
+
 - ⬜ **Nothing checks that a pair of examples makes the same calls, and a hand
   audit does not scale** *(`clients/python/PLAN.md`, Found by use)*. 61 Python
   examples have a page twin and the non-divergence rule says each pair is one
@@ -93,6 +101,16 @@ leaves no line here, because its plan's checkbox and the commit already carry it
 
 Same size of work, except the shape depends on an answer. The decision is named
 on each one; none of them is being taken by this file.
+
+- ⬜ **A refused edit springs back and says nothing** *(`clients/gui/PLAN.md`,
+  Found by use)*. The acknowledgement carries the reason and the host parses it
+  into a field nothing reads, so an edit an owner declined -- with a sentence
+  saying why -- reaches the person at the window as a clip that did not move.
+  **The decision**: where a reason shows. A window has no status line of its
+  own, the corner slot is the cursor read-out's, and the entry names the three
+  candidates. Related: the host refuses its *own* gestures out loud (a
+  `"refused"` event), so the two halves of one window disagree about whether a
+  refusal is announced.
 
 - ⬜ **A clip dropped where another already starts merges the whole lane into
   one** *(`clients/python/PLAN.md`, Found by use)*. An aggregate whose members
