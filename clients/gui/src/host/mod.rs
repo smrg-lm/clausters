@@ -59,6 +59,10 @@ pub mod guidef;
 // Which of a container's layered contents a hand is editing — the one rule
 // that decides between claimants over the same pixels, read by the drawing,
 // the press and the wire alike.
+// The vertical axis: the stack of bands a timeline view places its boxes on --
+// a roll's semitone rows and a multitrack's lanes, which differ only in whether
+// they are all the same height.
+pub mod bands;
 pub mod layers;
 // One geometry for every box that lives on a time axis: a note in a roll and a
 // clip on a lane are the same object with respect to editing and positioning,

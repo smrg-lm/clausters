@@ -23,6 +23,7 @@
 use clausters_core::scale;
 use serde_json::Value;
 
+use crate::host::bands::Bands;
 use crate::host::font;
 use crate::host::layout::Rect;
 use crate::host::metrics::Metrics;
@@ -166,10 +167,23 @@ fn to_x(s: f64, nav: &View, body: Rect) -> f64 {
     body.x as f64 + (s - nav.start) / nav.len.max(1.0) * body.w as f64
 }
 
-/// The height in pixels of one semitone row over the pitch window `[lo, hi]`.
+/// **The roll's vertical axis**: one band per semitone of the window
+/// `[lo, hi]`, the top band being pitch `hi`.
+///
 /// The window shows every whole row `lo..=hi` — `hi - lo + 1` of them — so the
 /// pixel axis spans `[lo - 0.5, hi + 0.5]` and the extreme rows draw in full
 /// instead of being clipped at the grid edges.
+///
+/// It is a [`Bands::Uniform`], which is the same type a multitrack's lanes are
+/// a [`Bands::Table`] of: **a semitone row and a lane are one structure**, and
+/// they differ only in whether every band is the same height. A chromatic roll
+/// says they are, and the arm that says so holds no memory at all.
+pub fn bands(lo: f32, hi: f32, grid: Rect) -> Bands {
+    let rows = (hi - lo + 1.0).max(1.0);
+    Bands::uniform(rows as usize, grid.h / rows)
+}
+
+/// The height in pixels of one semitone row over the pitch window `[lo, hi]`.
 pub fn row_height(lo: f32, hi: f32, grid: Rect) -> f32 {
     let rows = (hi - lo + 1.0).max(1.0);
     grid.h / rows
@@ -210,8 +224,11 @@ pub fn pitch_visible(p: f32, lo: f32, hi: f32) -> bool {
 /// placed *on* a row — a note bar — wants this one and cuts itself against the
 /// grid, because a row leaving the view is cut, not slid back in.
 pub fn row_center(pitch: f32, lo: f32, hi: f32, grid: Rect) -> f32 {
-    let rows = (hi - lo + 1.0).max(1.0);
-    grid.y + grid.h * (hi + 0.5 - pitch) / rows
+    // The band the pitch sits on, measured from the grid's top: pitch `hi` is
+    // band 0. Deliberately **not** `Bands::at`, which clamps to the stack — a
+    // row leaving the view is cut where it is, not slid back in, and the caller
+    // is the one that cuts it (`visible_band`).
+    grid.y + (hi + 0.5 - pitch) * row_height(lo, hi, grid)
 }
 
 /// A pitch's y pixel (its row centre) **inside** `grid`: high pitch at the top.
@@ -228,9 +245,7 @@ pub fn pitch_to_y(pitch: f32, lo: f32, hi: f32, grid: Rect) -> f32 {
 /// window — the inverse of [`pitch_to_y`], so a drop lands on the row it is
 /// drawn on.
 pub fn y_to_pitch(y: f32, lo: f32, hi: f32, grid: Rect) -> f32 {
-    let rows = (hi - lo + 1.0).max(1.0);
-    let frac = ((y - grid.y) / grid.h.max(1.0)).clamp(0.0, 1.0);
-    hi + 0.5 - frac * rows
+    hi + 0.5 - bands(lo, hi, grid).index_of(y - grid.y)
 }
 
 // --- Drawing --------------------------------------------------------------
