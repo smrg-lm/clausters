@@ -11,6 +11,13 @@ What to do in the window: **drag a note** to move it, **drag its edge** to
 resize, **Ctrl+click** to add or remove one, and **Ctrl+Z** to step back. The
 notes are the timeline's, so playing it after an edit plays what was drawn.
 
+**The lane under the grid is the timeline's OSC markers**, and it is edited the
+same way: drag one to move it, Ctrl+click one to remove it, Ctrl+Z to step back.
+A marker is matched back to its item by its **label**, which is the address it
+sends, so the message survives the drag — print it with ``read_back()``. Adding
+one *there* is refused and says why, because a marker is the message it sends
+and the lane has no way to type an address: add it here in the script instead.
+
 **A note keeps what the roll cannot draw.** Order is the only identity the
 payload carries, so the i-th note's own `clausters.seq.Event` is *edited* rather
 than rebuilt from the five numbers a roll can say — which is what keeps the
@@ -31,14 +38,15 @@ import time
 
 from clausters import Session
 from clausters.gui import edit
-from clausters.seq import Timeline
+from clausters.seq import OscItem, Timeline
 from clausters.seq.event import Event
 
 # %% [markdown]
 # ## A timeline, filled the ordinary way
 #
 # Beats and events. The `instrument` on the last one is the point of the second
-# cell below: the roll cannot draw it, and editing must not lose it.
+# cell below: the roll cannot draw it, and editing must not lose it — and so are
+# the marker's arguments, which the lane draws even less of.
 
 # %%
 timeline = Timeline([
@@ -46,6 +54,7 @@ timeline = Timeline([
     (1.0, Event(midinote=64, dur=1.0)),
     (2.0, Event(midinote=67, dur=2.0)),
     (4.0, Event(midinote=72, dur=1.0, instrument="default", amp=0.4)),
+    (3.0, OscItem("/mark", 1, "cue")),
 ])
 
 # %% [markdown]
@@ -85,10 +94,13 @@ def play():
 # %%
 def read_back():
     """Every note as it now stands, with what the roll never drew."""
-    for beat, event in timeline:
-        extra = {k: v for k, v in dict(event).items()
+    for beat, item in timeline:
+        if isinstance(item, OscItem):
+            print(f"  {beat:5.2f}  osc {item.addr}   {list(item.args)}")
+            continue
+        extra = {k: v for k, v in dict(item).items()
                  if k not in ("midinote", "dur", "sustain", "velocity", "type")}
-        print(f"  {beat:5.2f}  midinote {event.midinote():5.1f}   {extra}")
+        print(f"  {beat:5.2f}  midinote {item.midinote():5.1f}   {extra}")
 
 
 # %%

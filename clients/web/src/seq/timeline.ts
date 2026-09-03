@@ -108,6 +108,56 @@ export class MidiItem {
 }
 
 /**
+ * The key that names a raw OSC message in an item's data, and the one that names
+ * raw MIDI bytes. An `Event` carries neither — it is its own parameters — so
+ * what an item *is* is told apart by which of the two keys is there, and by
+ * neither being there.
+ */
+export const OSC_KEY = "osc";
+/** @see {@link OSC_KEY} */
+export const MIDI_KEY = "midi";
+
+/**
+ * One timeline item as plain, JSON-able data — or `null` for an item this has no
+ * description of.
+ *
+ * **One description, because two seams need it.** A document writes a timeline's
+ * items as the configuration of a placed clang, and the editing domain hands
+ * them across the crate's `events` vocabulary as an event's opaque `data`; the
+ * two are the same question — *what is this item, written down* — and answering
+ * it twice is how a marker comes back from one of them as a note.
+ *
+ * An `Event` travels as its parameters. An {@link OscItem} and a
+ * {@link MidiItem} are not parameters, and each names itself with its own key
+ * (`OSC_KEY`, `MIDI_KEY`), which is what a reader tells them apart
+ * by.
+ */
+export function itemData(item: unknown): Record<string, unknown> | null {
+    if (item instanceof OscItem) return { [OSC_KEY]: String(item.addr), args: [...item.args] };
+    if (item instanceof MidiItem) return { [MIDI_KEY]: [...item.message] };
+    const props = (item as { props?: unknown } | null)?.props;
+    if (props !== undefined && props !== null && typeof props === "object") {
+        return { ...(props as Record<string, unknown>) };
+    }
+    if (item !== null && typeof item === "object") return { ...(item as Record<string, unknown>) };
+    return null;
+}
+
+/** The item {@link itemData} wrote: an `OscItem`, a `MidiItem`, or the `Event` anything else is. */
+export function itemFromData(data: Record<string, unknown> | null | undefined): unknown {
+    const held = { ...(data ?? {}) };
+    if (OSC_KEY in held) {
+        const addr = String(held[OSC_KEY]);
+        const args = (held.args ?? []) as MsgArg[];
+        return new OscItem(addr, ...args);
+    }
+    if (MIDI_KEY in held) {
+        return new MidiItem((held[MIDI_KEY] ?? []) as ArrayLike<number>);
+    }
+    return new Event(held);
+}
+
+/**
  * How many events a bounce records before it decides the pattern is endless
  * (`Timeline.fromPattern`'s `maxEvents` default).
  *

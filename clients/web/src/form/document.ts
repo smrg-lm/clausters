@@ -48,7 +48,7 @@
 // `Vector` leaves over one server buffer — until the addressing settles.
 
 import { Event as SeqEvent } from "../seq/event.ts";
-import { Timeline } from "../seq/timeline.ts";
+import { MIDI_KEY, OSC_KEY, Timeline, itemData, itemFromData } from "../seq/timeline.ts";
 import { pointsToEnv } from "../defs/ugens/index.ts";
 import { CONCRETE, LOGICAL, Aggregate, Member } from "./aggregate.ts";
 import type { BusSpec } from "./aggregate.ts";
@@ -675,7 +675,7 @@ function kindBody(element: Element, ids: Ids): DocNode {
         return buses.length > 0 ? withConfig(body, { buses }) : body;
     }
     if (element instanceof Clang) {
-        return withConfig({ kind: "clang" }, plain(element.wraps) as DocNode);
+        return withConfig({ kind: "clang" }, plain(itemConfig(element.wraps)) as DocNode);
     }
     if (element instanceof Sequence) {
         const items = element.wraps;
@@ -849,11 +849,31 @@ function placeableTwice(handle: Member, ids: Ids): void {
 /**
  * A timeline item as a placed clang, with an id stamped on the item itself so it
  * survives to the next conversion.
+ *
+ * **Whatever the item is.** A clang is "parameters or actions that happen
+ * together" and its configuration is the client's own terms, which is what an
+ * OSC marker and a raw MIDI message are as much as a note — so all three travel
+ * as the one description {@link itemData} writes, and come back as themselves.
+ * Handing the item over raw wrote a marker as the *name* that answered for it,
+ * which reopened as a note with no parameters: a lane a piece could draw and not
+ * save.
  */
 function timelineMember(beat: number, item: unknown, ids: Ids): DocNode {
     const out: DocNode = { id: ids.of(item as object) };
-    Object.assign(out, withConfig({ kind: "clang" }, plain(item) as DocNode));
+    Object.assign(out, withConfig({ kind: "clang" }, plain(itemConfig(item)) as DocNode));
     return { offset: Number(beat), node: out };
+}
+
+/**
+ * One timeline item as the config a clang carries.
+ *
+ * A note is its own parameters and {@link plain} already knows how to spell
+ * them; a marker names itself, through the one shared description
+ * ({@link itemData}). Anything else is written as the reference it always was.
+ */
+function itemConfig(item: unknown): unknown {
+    if (item instanceof SeqEvent) return item;
+    return itemData(item) ?? item;
 }
 
 /**
@@ -1198,7 +1218,16 @@ function fromNode(src: DocNode, resolve: Resolver | null, placed = false): Eleme
         }
         built = aggregate;
     } else if (kind === "clang") {
-        built = new Clang(new SeqEvent(eventConfig(config)), onset, duration);
+        // An OSC marker and a raw MIDI message are clangs too, and each names
+        // itself in its config -- see `timelineMember`.
+        const named = OSC_KEY in config || MIDI_KEY in config;
+        built = new Clang(
+            named
+                ? (itemFromData(config as Record<string, unknown>) as SeqEvent)
+                : new SeqEvent(eventConfig(config)),
+            onset,
+            duration,
+        );
     } else if (kind === "sequence") {
         const members = src.members as DocNode[] | undefined;
         const items =

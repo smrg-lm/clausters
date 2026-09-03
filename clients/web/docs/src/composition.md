@@ -342,6 +342,14 @@ instrument and everything else the roll cannot show, and the length a drag on
 its edge sets is the note's `sustain` — which is what the bar draws — so its
 `dur` and `legato` stay as they were written.
 
+An **OSC marker** is edited the same way, in its own lane: dragged or removed,
+it is written onto the timeline like a note, and matched back to its item by its
+*label* — which is the address it sends — so a marker keeps its message across a
+drag, and removing one does not hand its neighbour's message to the wrong
+marker. **Adding** one there is refused, and says why: a marker *is* the message
+it sends and the lane has no way to type an address, so it is added from the
+page (`timeline.add(beat, new OscItem("/addr", ...))`) and dragged here.
+
 **Cut, copy and paste are one mechanism.** A block of notes copied out of a roll
 (`Ctrl+C`) is written onto the roll a paste addresses as an ordinary edit of its
 notes — the same call a drag on a note goes through — so it is one entry on the

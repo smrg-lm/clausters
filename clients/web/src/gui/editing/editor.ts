@@ -515,7 +515,17 @@ export class Editor<S = unknown> implements Adopting {
         if (NOT_AN_EDIT.includes(tag)) return this.observe(id, tag, rest);
         if (this.domain === null) return false;
         const payload = this.domain.payload(this.structure, tag, rest);
-        if (payload === null || payload === undefined) return false;
+        if (payload === null || payload === undefined) {
+            // Nothing, or a refusal. A refusal says why and hands the widget
+            // back what it should be drawing, so the picture stops agreeing with
+            // the hand instead of with the structure.
+            const reason = this.domain.refusal(this.structure, tag, rest);
+            if (reason !== null) {
+                this.reason = reason;
+                this.resync(id);
+            }
+            return false;
+        }
         return this.edit(payload, this.domain.label(payload));
     }
 

@@ -29,7 +29,7 @@ const BEAT = SR / TEMPO;
 
 /** What the host is told, so an answer can be read. */
 class FakeHost {
-    acks: [number, [number, Record<string, PropValue>][]][] = [];
+    acks: [number, [number, Record<string, PropValue>][], string | undefined][] = [];
     trees: GuiNode[] = [];
     private next = 20_000;
 
@@ -48,11 +48,22 @@ class FakeHost {
     onMessage(): () => void {
         return () => {};
     }
-    ack(seq: number): void {
-        this.acks.push([seq, []]);
+    ack(
+        seq: number,
+        _docVersion = 0,
+        _generations: readonly (readonly [number, number])[] = [],
+        reason?: string,
+    ): void {
+        this.acks.push([seq, [], reason]);
     }
-    push(seq: number, sets: readonly (readonly [number, Record<string, PropValue>])[]): void {
-        this.acks.push([seq, sets.map((s) => [s[0], s[1]])]);
+    push(
+        seq: number,
+        sets: readonly (readonly [number, Record<string, PropValue>])[],
+        _docVersion = 0,
+        _generations: readonly (readonly [number, number])[] = [],
+        reason?: string,
+    ): void {
+        this.acks.push([seq, sets.map((s) => [s[0], s[1]]), reason]);
     }
 }
 
@@ -210,6 +221,83 @@ test("what the roll does not draw is kept", async () => {
     assert.ok(
         [...timeline].some(([, item]) => item === marker),
         "a rebuilt timeline would have dropped it",
+    );
+});
+
+test("a marker dragged in the roll moves it on the timeline", async () => {
+    // The lane the roll draws and nobody answered: a marker slid in the OSC
+    // lane is an edit of the timeline, with an inverse like any other.
+    const timeline = aTimeline();
+    timeline.add(3.0, new OscItem("/hit", 7));
+    const editor = edit(timeline, { sampleRate: SR, tempo: TEMPO });
+    const { wid } = await opened(editor);
+
+    assert.equal(editor.apply("/gui_event", [wid, 1, 0, "osc", 1.5 * BEAT, "/hit"]), true);
+    const at = [...timeline].filter(([, item]) => item instanceof OscItem);
+    assert.equal(at.length, 1);
+    assert.equal(at[0][0], 1.5, "the marker moved");
+    assert.deepEqual(
+        (at[0][1] as OscItem).args,
+        [7],
+        "the message it sends is not the lane's to lose",
+    );
+    assert.equal(editor.undoLabel, "edit the markers");
+    assert.equal(editor.undo(), true);
+    assert.deepEqual(
+        [...timeline].filter(([, i]) => i instanceof OscItem).map(([beat]) => beat),
+        [3.0],
+    );
+});
+
+test("a marker removed in the roll leaves its neighbours theirs", async () => {
+    // Matched by label rather than by order, so removing one does not hand the
+    // next one's message to the wrong marker.
+    const timeline = new Timeline([
+        [0.0, new OscItem("/a", 1)],
+        [1.0, new OscItem("/b", 2)],
+        [2.0, new OscItem("/c", 3)],
+    ]);
+    const editor = edit(timeline, { sampleRate: SR, tempo: TEMPO });
+    const { wid } = await opened(editor);
+
+    assert.equal(
+        editor.apply("/gui_event", [wid, 1, 0, "osc", 0.0, "/a", 2 * BEAT, "/c"]),
+        true,
+    );
+    assert.deepEqual(
+        [...timeline].map(([, item]) => [(item as OscItem).addr, [...(item as OscItem).args]]),
+        [["/a", [1]], ["/c", [3]]],
+    );
+});
+
+test("a marker added in the roll is refused and says why", async () => {
+    // A marker is the message it sends and the lane cannot type one, so the
+    // gesture is answered rather than half-applied: the reason, and the markers
+    // as they still are.
+    const timeline = new Timeline([[0.0, new OscItem("/a")]]);
+    const editor = edit(timeline, { sampleRate: SR, tempo: TEMPO });
+    const { host, wid } = await opened(editor);
+
+    assert.equal(
+        editor.apply("/gui_event", [wid, 1, 0, "osc", 0.0, "/a", BEAT, ""]),
+        false,
+    );
+    assert.equal([...timeline].length, 1);
+    const [seq, corrections, reason] = host.acks[host.acks.length - 1];
+    assert.equal(seq, 1);
+    assert.ok(String(reason).includes("OscItem"));
+    assert.deepEqual(corrections[0][1].osc, [0.0, "/a"]);
+});
+
+test("the notes gesture does not move the markers", async () => {
+    const timeline = aTimeline();
+    timeline.add(3.0, new OscItem("/hit"));
+    const editor = edit(timeline, { sampleRate: SR, tempo: TEMPO });
+    const { wid } = await opened(editor);
+    editor.apply("/gui_event", [wid, 1, 0, "notes", 0.0, BEAT, 67, 100, 0]);
+    assert.deepEqual(
+        [...timeline].map(([beat, item]) => [beat, (item as object).constructor.name]),
+        [[0.0, "Event"], [3.0, "OscItem"]],
     );
 });
 

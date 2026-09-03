@@ -18,8 +18,8 @@
 
 import { EVENTS, domainEdit } from "../../document.ts";
 import { Event as SeqEvent } from "../../seq/event.ts";
-import { MidiItem, OscItem, Timeline } from "../../seq/timeline.ts";
-import { flatNotes, pianoroll, window as guiWindow } from "../guidef.ts";
+import { MidiItem, OscItem, Timeline, itemData, itemFromData } from "../../seq/timeline.ts";
+import { flatNotes, flatOsc, pianoroll, window as guiWindow } from "../guidef.ts";
 import type { GuiNode } from "../guidef.ts";
 import type { PropValue } from "../host.ts";
 import { Domain } from "./domain.ts";
@@ -29,6 +29,9 @@ import { View } from "./view.ts";
 
 /** What the `pianoroll` widget sends and takes per note. */
 export const QUINTUPLE = 5;
+
+/** And per OSC marker: the time and the label. */
+export const PAIR = 2;
 
 /** One note, as the roll draws it. */
 export type Note = [start: number, dur: number, pitch: number, velocity: number, channel: number];
@@ -53,8 +56,57 @@ export function quintuples(flat: readonly unknown[]): Note[] {
 }
 
 /**
- * A timeline's vocabulary: the crate's `events`, with each event's own
- * parameters carried in its `data`.
+ * A flat `osc` payload as `[time, label]` tuples, dropping a trailing odd value
+ * the same way {@link quintuples} drops a partial group.
+ */
+export function pairs(flat: readonly unknown[]): [number, string][] {
+    const out: [number, string][] = [];
+    for (let i = 0; i + PAIR <= flat.length; i += PAIR) {
+        out.push([Number(flat[i]), String(flat[i + 1])]);
+    }
+    return out;
+}
+
+/**
+ * One item's data as a string two of them can be compared by — key order is the
+ * serializer's business and not a difference between two items.
+ */
+function stable(data: unknown): string {
+    return JSON.stringify(sorted(data));
+}
+
+/** `value` with every object's keys in one order, however deep. */
+function sorted(value: unknown): unknown {
+    if (Array.isArray(value)) return value.map(sorted);
+    if (value === null || typeof value !== "object") return value;
+    const held = value as Record<string, unknown>;
+    return Object.keys(held)
+        .sort()
+        .map((key) => [key, sorted(held[key])]);
+}
+
+/**
+ * The label the roll's OSC lane draws for an item, or `null` when the item is
+ * not one of that lane's — an `OscItem` labels with its address, a `MidiItem`
+ * with a short tag.
+ */
+function labelOf(item: unknown): string | null {
+    if (item instanceof OscItem) return String(item.addr);
+    if (item instanceof MidiItem) return "midi";
+    return null;
+}
+
+/**
+ * A timeline's vocabulary: the crate's `events`, with each item's own parameters
+ * carried in its `data`.
+ *
+ * **Every item is an event here, not only the notes.** A timeline holds OSC
+ * markers and raw MIDI beside its notes, the roll draws them in a lane of their
+ * own, and the crate is explicit that an event's `data` is the client's and that
+ * a lane of markers is one of the things this domain is for. So the state is the
+ * whole timeline and the two lanes are two *gestures* over it — which is what
+ * makes a marker dragged in the roll an edit with an inverse, instead of a
+ * picture that quietly stops agreeing with the data.
  */
 export class NotesDomain extends Domain<Timeline> {
     override readonly name = EVENTS;
@@ -75,8 +127,52 @@ export class NotesDomain extends Domain<Timeline> {
      */
     editable = true;
 
+    /**
+     * What the last payload was a gesture *of*. Both lanes state the same
+     * whole-list intent, so the payload alone cannot say which hand made it, and
+     * an undo menu that called a dragged marker "edit the notes" would be naming
+     * the wrong lane.
+     */
+    private verb = "edit the notes";
+
     payload(structure: Timeline, tag: string, values: readonly unknown[]): unknown {
-        if (tag !== "notes" || !this.editable) return null;
+        if (!this.editable) return null;
+        if (tag === "notes") {
+            this.verb = "edit the notes";
+            return { intent: "setevents", events: this.notesNow(structure, values) };
+        }
+        if (tag === "osc") {
+            const markers = this.markersNow(structure, values);
+            if (markers === null) return null; // an unnamed marker — see `refusal`
+            this.verb = "edit the markers";
+            return { intent: "setevents", events: markers };
+        }
+        return null;
+    }
+
+    /**
+     * Why a marker gesture this domain understands cannot be written.
+     *
+     * A marker *is* a message, and the address is the whole of what it sends;
+     * the roll has no way to type one, so a marker added there has nothing to
+     * become. Saying so is the point — a picture that springs back with nothing
+     * attached teaches "sometimes it does not work" rather than "not here".
+     */
+    override refusal(structure: Timeline, tag: string, values: readonly unknown[]): string | null {
+        if (tag === "osc" && this.editable && this.markersNow(structure, values) === null) {
+            return (
+                "a marker is the message it sends, and a roll cannot say which: " +
+                "add it with timeline.add(beat, new OscItem(addr, ...)) and drag it here"
+            );
+        }
+        return null;
+    }
+
+    /**
+     * The whole timeline after a `notes` gesture: the drawn notes, with every
+     * marker left exactly where it is.
+     */
+    private notesNow(structure: Timeline, values: readonly unknown[]): CrateEvent[] {
         const held = [...structure]
             .map(([, item]) => item)
             .filter((item): item is SeqEvent => item instanceof SeqEvent);
@@ -108,14 +204,61 @@ export class NotesDomain extends Domain<Timeline> {
             if (Math.trunc(channel)) params.channel = Math.trunc(channel);
             events.push({ at: start / this.unitsPerBeat, data: plain(params) });
         });
-        return { intent: "setevents", events };
+        return events.concat(this.kept(structure, (item) => item instanceof SeqEvent));
     }
 
-    /** The timeline as the crate holds it. */
+    /**
+     * The whole timeline after an `osc` gesture — the notes untouched and the
+     * markers as the lane now holds them — or `null` when the gesture added one
+     * that has no message to send.
+     *
+     * **A marker is matched by its label**, which is its address, and only then
+     * by order among the ones that share it. The payload carries the label the
+     * lane drew, so the message a marker sends survives being dragged and —
+     * unlike the notes one lane up, where order is the only identity there is —
+     * survives a *neighbour* being removed as well.
+     */
+    private markersNow(structure: Timeline, values: readonly unknown[]): CrateEvent[] | null {
+        const held = [...structure].filter(([, item]) => labelOf(item) !== null);
+        const taken = new Set<number>();
+        const markers: CrateEvent[] = [];
+        for (const [time, label] of pairs(values)) {
+            const was = held.findIndex(
+                ([, item], i) => !taken.has(i) && labelOf(item) === label,
+            );
+            if (was < 0) return null;
+            taken.add(was);
+            markers.push({
+                at: time / this.unitsPerBeat,
+                data: plain(itemData(held[was][1]) ?? {}),
+            });
+        }
+        return this.kept(structure, (item) => labelOf(item) !== null).concat(markers);
+    }
+
+    /**
+     * The items the gesture did **not** draw, as the crate holds them — what
+     * keeps the lane nobody touched out of the edit that rebuilt the other one,
+     * and out of the inverse that puts it back.
+     */
+    private kept(structure: Timeline, drawn: (item: unknown) => boolean): CrateEvent[] {
+        const out: CrateEvent[] = [];
+        for (const [beat, item] of structure) {
+            const data = itemData(item);
+            if (!drawn(item) && data !== null) out.push({ at: Number(beat), data: plain(data) });
+        }
+        return out;
+    }
+
+    /**
+     * The timeline as the crate holds it — every item, notes and markers alike,
+     * since both are edited through this vocabulary.
+     */
     state(structure: Timeline): CrateEvent[] {
         const out: CrateEvent[] = [];
         for (const [beat, item] of structure) {
-            if (item instanceof SeqEvent) out.push({ at: Number(beat), data: plain(item.props) });
+            const data = itemData(item);
+            if (data !== null) out.push({ at: Number(beat), data: plain(data) });
         }
         return out;
     }
@@ -127,20 +270,41 @@ export class NotesDomain extends Domain<Timeline> {
     project(structure: Timeline, payload: unknown): boolean {
         const edited = domainEdit(this.name, this.state(structure), payload);
         if (edited === undefined || !edited.applied) return false;
-        // **What is not a note is kept.** A timeline holds OSC and MIDI items
-        // too, and a roll draws none of them; rebuilding from the events alone
-        // would silently drop what the view could not see.
-        const others = [...structure].filter(([, item]) => !(item instanceof SeqEvent));
+        // **What this build cannot describe is kept.** An item that is neither
+        // an event nor a marker never entered the state, so it is held aside and
+        // put back rather than rebuilt from a description nobody wrote.
+        const others = [...structure].filter(([, item]) => itemData(item) === null);
+        // **An item the edit did not change is the same object**, matched by
+        // what it says rather than by where it sits — so a marker the notes
+        // gesture never touched, and a note that only moved, come out the other
+        // side as themselves, keeping whatever the JSON seam cannot carry (a
+        // message's arguments, an event's resolved server). Only what the
+        // gesture actually rewrote is built from its description.
+        const held: [string, unknown][] = [];
+        for (const [, item] of structure) {
+            const data = itemData(item);
+            if (data !== null) held.push([stable(plain(data)), item]);
+        }
         structure.clear();
         for (const event of edited.state as CrateEvent[]) {
-            structure.add(Number(event.at ?? 0), new SeqEvent({ ...(event.data ?? {}) }));
+            const data = event.data ?? {};
+            const key = stable(data);
+            const was = held.findIndex(([heldKey, item]) => item !== null && heldKey === key);
+            let item: unknown;
+            if (was >= 0) {
+                item = held[was][1];
+                held[was] = [key, null];
+            } else {
+                item = itemFromData(data);
+            }
+            structure.add(Number(event.at ?? 0), item);
         }
         for (const [beat, item] of others) structure.add(beat, item);
         return true;
     }
 
     override label(): string {
-        return "edit the notes";
+        return this.verb;
     }
 }
 
@@ -182,7 +346,12 @@ export class NotesView extends View<Timeline> {
     }
 
     override props(editor: Editor<Timeline>): Record<string, PropValue> {
-        return { notes: flatNotes(drawn(editor)) as PropValue };
+        // **Both lanes**: a correction is what the widget should be drawing, and
+        // a refused marker is answered by the markers as they still are.
+        return {
+            notes: flatNotes(drawn(editor)) as PropValue,
+            osc: flatOsc(markers(editor)) as PropValue,
+        };
     }
 }
 
@@ -215,10 +384,10 @@ export interface NotesEditorOptions extends GenericEditorOptions<Timeline> {
  * roll's OSC lane. An `OscItem` labels with its address, a `MidiItem` with a
  * short tag.
  *
- * Display only: a marker carries the time and a label, not the full message, so
- * it is drawn and not edited back. The domain keeps them across an edit
- * ({@link NotesDomain.project}), which is the half that matters — a lane nobody
- * can move is still a lane nobody may lose.
+ * The label is the whole of what the lane can say — the message's arguments are
+ * not drawn — which is why a marker moved or removed there is matched back to
+ * its item **by label** and one added there is refused: the address is what a
+ * marker sends, and the lane has no way to type one.
  */
 function markers(editor: Editor<Timeline>): [number, string][] {
     const out: [number, string][] = [];

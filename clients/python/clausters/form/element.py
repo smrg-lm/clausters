@@ -238,17 +238,24 @@ class Element:
 class Clang(Element):
     """*event/clip*: parameters grouped into one action, internally simultaneous.
 
-    Wraps a `clausters.seq.Event` (or a plain ``dict`` of parameters). Its
-    ``duration`` defaults to the event's ``dur`` when not given explicitly; its
-    ``onset`` usually comes from its placement in an `Aggregate`.
+    Wraps a `clausters.seq.Event` (or a plain ``dict`` of parameters), and
+    equally a `clausters.seq.timeline.OscItem` or `MidiItem` — an action that
+    happens at one moment is a clang whether it is a note or a message, which is
+    what `Element.play`'s double dispatch has always assumed and what a timeline
+    written into a document is read back as. Anything that plays itself is taken
+    as it is; anything else is the parameters of an event.
+
+    Its ``duration`` defaults to the event's ``dur`` when not given explicitly;
+    its ``onset`` usually comes from its placement in an `Aggregate`.
     """
 
     def __init__(self, event, onset=None, duration=None, *, name=None):
         from ..seq.event import Event as SeqEvent
 
-        wrapped = event if isinstance(event, SeqEvent) else SeqEvent(event)
+        wrapped = event if callable(getattr(event, "play", None)) \
+            else SeqEvent(event)
         if duration is None:
-            dur = wrapped.get("dur")
+            dur = wrapped.get("dur") if isinstance(wrapped, dict) else None
             if dur is not None:
                 duration = float(dur)
         super().__init__(wraps=wrapped, onset=onset, duration=duration,

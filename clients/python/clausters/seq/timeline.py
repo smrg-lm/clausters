@@ -64,6 +64,51 @@ class MidiItem:
         destination.send_message(self.message)
 
 
+#: The key that names a raw OSC message in an item's data, and the one that
+#: names raw MIDI bytes. An `clausters.seq.event.Event` carries neither -- it is
+#: its own parameters -- so what an item *is* is told apart by which of the two
+#: keys is there, and by neither being there.
+OSC_KEY = "osc"
+MIDI_KEY = "midi"
+
+
+def item_data(item) -> "dict | None":
+    """One timeline item as plain, JSON-able data — or ``None`` for an item this
+    has no description of.
+
+    **One description, because two seams need it.** A document writes a
+    timeline's items as the configuration of a placed clang, and the editing
+    domain hands them across the crate's ``events`` vocabulary as an event's
+    opaque ``data``; the two are the same question — *what is this item, written
+    down* — and answering it twice is how a marker comes back from one of them
+    as a note.
+
+    An `Event` is a `dict` and travels as itself. An `OscItem` and a `MidiItem`
+    are not, and each names itself with its own key (`OSC_KEY`, `MIDI_KEY`),
+    which is what a reader tells them apart by.
+    """
+    if isinstance(item, OscItem):
+        return {OSC_KEY: str(item.addr), "args": list(item.args)}
+    if isinstance(item, MidiItem):
+        return {MIDI_KEY: list(item.message)}
+    if isinstance(item, dict):
+        return dict(item)
+    return None
+
+
+def item_from_data(data):
+    """The item `item_data` wrote: an `OscItem`, a `MidiItem`, or the
+    `clausters.seq.event.Event` anything else is."""
+    from .event import Event
+
+    data = dict(data or {})
+    if OSC_KEY in data:
+        return OscItem(str(data[OSC_KEY]), *(data.get("args") or ()))
+    if MIDI_KEY in data:
+        return MidiItem(bytes(int(b) & 0xFF for b in data[MIDI_KEY]))
+    return Event(data)
+
+
 #: How many events a bounce records before it decides the pattern is endless
 #: (`Timeline.from_pattern`'s ``max_events`` default).
 #:

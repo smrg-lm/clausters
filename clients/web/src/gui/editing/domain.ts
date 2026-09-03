@@ -50,6 +50,22 @@ export abstract class Domain<S = unknown> {
     abstract payload(structure: S, tag: string, values: readonly unknown[]): unknown;
 
     /**
+     * Why a gesture this domain *does* understand cannot be written — `null`
+     * when there is no such case.
+     *
+     * The difference from {@link payload} answering `null` is the whole of it: a
+     * tag that is not this domain's is nothing, and the host goes on drawing
+     * what it drew because nothing here disagrees. A tag that *is* this domain's
+     * and cannot be honoured is a **refusal**, and a refusal the host is not
+     * told about leaves the picture and the data disagreeing silently — the one
+     * failure the acknowledgement exists to make impossible. What comes back is
+     * the sentence the user is shown.
+     */
+    refusal(_structure: S, _tag: string, _values: readonly unknown[]): string | null {
+        return null;
+    }
+
+    /**
      * The state `payload` is about to replace — **the inverse**.
      *
      * Read before the edit lands, which is why it is a method here rather than

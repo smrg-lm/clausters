@@ -456,6 +456,13 @@ class Editor:
             return False
         payload = self.domain.payload(self.structure, tag, values)
         if payload is None:
+            # Nothing, or a refusal. A refusal says why and hands the widget
+            # back what it should be drawing, so the picture stops agreeing
+            # with the hand instead of with the structure.
+            reason = self.domain.refusal(self.structure, tag, values)
+            if reason is not None:
+                self._reason = reason
+                self._resync(wid)
             return False
         return self._edit(payload, self.domain.label(payload))
 

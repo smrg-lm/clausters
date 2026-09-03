@@ -45,6 +45,20 @@ class Domain:
         """
         raise NotImplementedError
 
+    def refusal(self, structure, tag: str, values) -> "str | None":
+        """Why a gesture this domain *does* understand cannot be written —
+        ``None`` when there is no such case.
+
+        The difference from `payload` answering ``None`` is the whole of it: a
+        tag that is not this domain's is nothing, and the host goes on drawing
+        what it drew because nothing here disagrees. A tag that *is* this
+        domain's and cannot be honoured is a **refusal**, and a refusal the
+        host is not told about leaves the picture and the data disagreeing
+        silently — the one failure the acknowledgement exists to make
+        impossible. What comes back is the sentence the user is shown.
+        """
+        return None
+
     def current(self, structure, payload: dict) -> "dict | None":
         """The state ``payload`` is about to replace — **the inverse**.
 

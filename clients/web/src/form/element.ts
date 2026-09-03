@@ -340,9 +340,15 @@ export class Element {
 /**
  * *event/clip*: parameters grouped into one action, internally simultaneous.
  *
- * Wraps a `seq.Event` (or a plain object of parameters). Its `duration` defaults
- * to the event's `dur` when not given explicitly; its `onset` usually comes from
- * its placement in an {@link Aggregate}.
+ * Wraps a `seq.Event` (or a plain object of parameters), and equally an
+ * `OscItem` or a `MidiItem` — an action that happens at one moment is a clang
+ * whether it is a note or a message, which is what `Element.play`'s double
+ * dispatch has always assumed and what a timeline written into a document is
+ * read back as. Anything that plays itself is taken as it is; anything else is
+ * the parameters of an event.
+ *
+ * Its `duration` defaults to the event's `dur` when not given explicitly; its
+ * `onset` usually comes from its placement in an {@link Aggregate}.
  */
 export class Clang extends Element {
     constructor(
@@ -351,10 +357,13 @@ export class Clang extends Element {
         duration: Beats = null,
         { name = null }: ElementOptions = {},
     ) {
-        const wrapped = event instanceof SeqEvent ? event : new SeqEvent(event);
+        const plays = typeof (event as { play?: unknown })?.play === "function";
+        const wrapped = plays
+            ? (event as SeqEvent)
+            : new SeqEvent(event as Record<string, unknown>);
         let dur = beats(duration);
         if (dur === null) {
-            const own = wrapped.get("dur");
+            const own = wrapped instanceof SeqEvent ? wrapped.get("dur") : null;
             if (own !== null && own !== undefined) dur = Number(own);
         }
         super(wrapped, onset, dur, false, { name });

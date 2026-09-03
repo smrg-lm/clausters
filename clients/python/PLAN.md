@@ -1126,26 +1126,52 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
 
 ## Found by use: the running list of fixes and open questions
 
-- ⬜ **An OSC marker dragged in a roll changes the picture and nothing else**
+- ✅ **An OSC marker dragged in a roll changes the picture and nothing else**
   *(found 2026-09-02, auditing which data edits reach the history now that the
-  edit stack is in)*. `open_pianoroll` draws a lane of OSC markers
-  (`pianoroll(osc=…)`) and the host emits `"osc" <time label …>` when one is
-  dragged, added or removed — and `Editor._route` has no branch for it. The
-  event falls through, the acknowledgement carries no correction, and the host
-  goes on drawing where the hand left the marker: the picture and the timeline
-  disagree, silently, which is the one failure mode the whole edit-back rule is
-  built to make impossible.
+  edit stack is in; fixed 2026-09-02)*. The roll drew a lane of OSC markers and
+  the host emitted `"osc"` when one was dragged, added or removed; no branch
+  read it, the acknowledgement carried no correction, and the host went on
+  drawing where the hand left the marker — the picture and the timeline
+  disagreeing, silently.
 
-  It is the last edit-back the editor draws and does not answer. The fix is the
-  `"notes"` route one lane down — the markers as the resulting list, written
-  onto the same `Timeline` through a `setmembers` — and it lands with undo for
-  free, since that is what the vocabulary already does. What has to be decided
-  first is small but real: a marker is an `OscItem`, not a `Clang`, so what the
-  member's node *is* has to be settled the way `_timeline_member` settled it for
-  notes.
+  **The fix is the one the entry named, and the decision it was waiting on went
+  the short way**: a marker is an event of the same `events` vocabulary the
+  notes already travel in. The crate says so itself — an event is a position and
+  a payload it never reads, "beats for a roll on the musical grid, seconds for a
+  lane of markers" — so `NotesDomain`'s state stopped being *the notes* and
+  became *the timeline*, and the two lanes became two gestures over it. Undo,
+  the inverse and the acknowledgement came with the vocabulary, unchanged.
 
-  The dedicated example wires it by hand (`examples/editors/pianoroll.py`), which
-  is why nothing noticed: the example works and the editor does not.
+  **What a marker is as data is written once**, in `clausters.seq.item_data` /
+  `item_from_data`, because the domain was not the only seam that needed it: a
+  document wrote a timeline's items as `_plain(item)`, which for an `OscItem` is
+  the *reference* that answers for it — so a piece with a marker **reopened
+  with a note that had no parameters**. Both seams now write the same
+  description, and a clang is what an OSC message and raw MIDI are placed as,
+  which is what `Element.play`'s double dispatch had always assumed.
+
+  **Two things the work turned up.** An item the edit did not touch comes out of
+  a projection as *the same object*, matched by what it says rather than by
+  where it sits — which is what keeps a message's arguments (and a note that
+  only moved) whole across an edit that rebuilt the other lane. And
+  `FormEditor._osc` had been dead since the composed roll took the drawing over:
+  no clip body draws a marker lane, so the only roll that draws one is the
+  dedicated view, which is why the branch belonged in the domain and not in the
+  arrangement's editor.
+
+  **Adding a marker in the lane is refused, and says why** — see the entry
+  below, which is what is left of this one.
+
+- ⬜ **A marker can be added in a roll and not named** *(named 2026-09-02,
+  closing the entry above)*. The lane's Ctrl+click adds a marker with no label,
+  and a marker *is* the message it sends: with no address there is nothing to
+  write onto the timeline, so the gesture is refused with the reason and the
+  lane springs back. That is honest and it is not finished — what is missing is
+  a way to **name** one, which is a host capability (a widget with no text entry
+  cannot ask for an address) and not a client gap. Until it exists a marker is
+  added from the script and dragged in the view. **Related:** the same missing
+  entry is what a marker's *arguments* would need, and they are not drawn at
+  all.
 
 - ⬜ **The score keeps a second history, and nothing joins the two**
   *(found 2026-09-02, in the same audit)*. An engraved page is edited through

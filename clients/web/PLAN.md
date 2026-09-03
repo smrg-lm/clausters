@@ -1729,13 +1729,23 @@ Every entry carries a checkbox, like the plan's "Found by use" below: an
 open direction has to read as open, and one that converges into a milestone leaves
 this list rather than being ticked here.
 
-- ⬜ **An OSC marker dragged in a roll changes the picture and nothing else**
-  *(the port of `clients/python/PLAN.md`'s entry of the same name — the gap is
-  identical here, which at least makes it a shared hole and not a divergence)*.
-  The roll draws a lane of OSC markers and the host emits `"osc"`, and
-  `Editor.route` has no branch for it: the event falls through, nothing
-  corrects the picture, and the drawing and the timeline part company in
-  silence. Fixed the same way in both clients, and only in both.
+- ✅ **An OSC marker dragged in a roll changes the picture and nothing else**
+  *(the port of `clients/python/PLAN.md`'s entry of the same name — the gap was
+  identical here, which at least made it a shared hole and not a divergence;
+  fixed 2026-09-02, in the same commit and by the same calls)*. `NotesDomain`'s
+  state is the whole timeline rather than its notes, a marker is an event of the
+  same `events` vocabulary, and what an item is as data is written once in
+  `seq/timeline.ts`'s `itemData` / `itemFromData` — which the document's
+  `timelineMember` reads too, so a marker survives a save here as well.
+  **Adding** one is refused with the reason, the host having no way to name it;
+  the plan entry for that half is the Python client's, since the missing piece
+  is the host's.
+
+  Two spellings are `idiom` and are the only difference: an item the projection
+  keeps is matched by a **sorted-key JSON string** where Python compares dicts
+  (which are order-independent already), and a note's parameters still travel
+  through `plain`'s own `EVENT_KEYS` mapping, which is why the write side hands
+  an `Event` over as itself and only a marker through `itemData`.
 
 - ✅ **Who builds `libfaust-wasm`** *(left over from **W7**/**B5**, decided and
   done 2026-08-27)*. The question was whether CI grows an **emsdk** leg or the

@@ -52,7 +52,7 @@ from ...defs.ugens import points_to_env
 from ...form.render import flatten
 from ...seq.automation import Automation
 from ...seq.event import Event as SeqEvent
-from ...seq.timeline import MidiItem, OscItem, Timeline
+from ...seq.timeline import Timeline
 from ..guidef import (_flat_notes, _flat_points, clip, patch, signal,
                       scroll, timeruler, track, window)
 from ..transport import Transport
@@ -1764,26 +1764,6 @@ class FormEditor(Editor):
         while f"w{i}" in taken:
             i += 1
         return f"w{i}"
-
-    def _osc(self, element) -> list:
-        """The OSC (and raw MIDI) items of an element as ``(time_units, label)``
-        pairs — the piano-roll's OSC lane. An `OscItem` labels with its address,
-        a `MidiItem` with a short tag. Display only: a marker carries the time and
-        a label, not the full message, so it is not written back (see
-        `open_pianoroll`)."""
-        if isinstance(element, (Aggregate, Vector)):
-            return []
-        try:
-            events = flatten(element, 0.0, mixed=False)
-        except (NotImplementedError, TypeError):
-            return []
-        out = []
-        for beat, item in events:
-            if isinstance(item, OscItem):
-                out.append((self.beats_to_units(beat), str(item.addr)))
-            elif isinstance(item, MidiItem):
-                out.append((self.beats_to_units(beat), "midi"))
-        return out
 
     def _changed(self, applied: bool = True) -> bool:
         """The arrangement was edited: mark it, and re-render now when `follow` is

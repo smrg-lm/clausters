@@ -357,8 +357,15 @@ and `legato` stay as they were written. A generator — a `Pbind`, a `Routine` �
 bounced notes are bounced onto a timeline of their own and the roll opens
 *read-only* — the widget is told so, rather than refusing each drag after the
 hand has made it; bounce it to a `Track` (the change of state) and the same view
-becomes an editor. OSC items are shown in their lane but not
-written back: their marker carries a time and a label, not the full message.
+becomes an editor.
+
+An **OSC marker** is edited the same way, in its own lane: dragged or removed,
+it is written onto the timeline like a note, and matched back to its item by its
+*label* — which is the address it sends — so a marker keeps its message across a
+drag, and removing one does not hand its neighbour's message to the wrong
+marker. **Adding** one there is refused, and says why: a marker *is* the message
+it sends and the lane has no way to type an address, so it is added from the
+script (`timeline.add(beat, OscItem("/addr", ...))`) and dragged here.
 
 Quantization exists on both surfaces, because the GUI also runs standalone:
 `q` over the roll snaps the selected notes' onsets (or all of them) to the

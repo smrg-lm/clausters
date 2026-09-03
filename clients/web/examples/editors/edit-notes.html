@@ -31,6 +31,14 @@ list, which needs a tree to be a member <i>of</i>; this is the timeline itself.
 to add or remove one, <b>Ctrl+Z</b> to step back. Then press play: the notes are
 the timeline's, so what sounds is what was drawn.
 
+<b>The lane under the grid is the timeline's OSC markers</b>, and it is edited
+the same way: drag one to move it, Ctrl+click one to remove it, Ctrl+Z to step
+back. A marker is matched back to its item by its <b>label</b>, which is the
+address it sends, so the message survives the drag — press the read-back button
+to see it. Adding one <i>there</i> is refused and says why, because a marker is
+the message it sends and the lane has no way to type an address: add it in the
+page instead.
+
 <b>A note keeps what the roll cannot draw.</b> Order is the only identity the
 payload carries, so the i-th note's own <code>Event</code> is <i>edited</i>
 rather than rebuilt from the five numbers a roll can say — which is what keeps
@@ -56,19 +64,21 @@ the instrument, and everything else the author put on it.</div>
     -->
     <script type="module">
       import { Session, gui } from "../../dist/index.js";
-      import { Event, Timeline } from "../../dist/seq/index.js";
+      import { Event, OscItem, Timeline } from "../../dist/seq/index.js";
 
       const $ = (id) => document.getElementById(id);
       const log = (line) => { $("log").textContent += line + "\n"; };
 
       // A timeline, filled the ordinary way: beats and events. The `instrument`
       // on the last one is the point of the read-back button — the roll cannot
-      // draw it, and editing must not lose it.
+      // draw it, and editing must not lose it — and so are the marker's
+      // arguments, which the lane draws even less of.
       const timeline = new Timeline([
         [0.0, new Event({ midinote: 60, dur: 1.0 })],
         [1.0, new Event({ midinote: 64, dur: 1.0 })],
         [2.0, new Event({ midinote: 67, dur: 2.0 })],
         [4.0, new Event({ midinote: 72, dur: 1.0, instrument: "default", amp: 0.4 })],
+        [3.0, new OscItem("/mark", 1, "cue")],
       ]);
 
       let session = null;
@@ -76,10 +86,14 @@ the instrument, and everything else the author put on it.</div>
       /** Every note as it now stands, with what the roll never drew. */
       function readBack() {
         const drawn = ["midinote", "dur", "sustain", "velocity", "type"];
-        for (const [beat, event] of timeline) {
+        for (const [beat, item] of timeline) {
+          if (item instanceof OscItem) {
+            log(`  ${beat.toFixed(2)}  osc ${item.addr}   ${JSON.stringify([...item.args])}`);
+            continue;
+          }
           const extra = Object.fromEntries(
-            Object.entries(event.props).filter(([k]) => !drawn.includes(k)));
-          log(`  ${beat.toFixed(2)}  midinote ${event.midinote()}   ${JSON.stringify(extra)}`);
+            Object.entries(item.props).filter(([k]) => !drawn.includes(k)));
+          log(`  ${beat.toFixed(2)}  midinote ${item.midinote()}   ${JSON.stringify(extra)}`);
         }
       }
 

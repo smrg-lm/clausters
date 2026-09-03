@@ -554,7 +554,7 @@ def _kind_body(element, ids: _Ids) -> dict:
             ],
         }, {"form": FORM_TRACK})
     if isinstance(element, Clang):
-        return _with_config({"kind": "clang"}, _plain(element.wraps))
+        return _with_config({"kind": "clang"}, _plain(_item_data(element.wraps)))
     if isinstance(element, Sequence):
         items = element.wraps
         if isinstance(items, (list, tuple)) and all(
@@ -740,10 +740,28 @@ def _placeable_twice(handle, ids: _Ids):
 
 def _timeline_member(beat, item, ids: _Ids) -> dict:
     """A timeline item as a placed clang, with an id stamped on the item itself
-    so it survives to the next conversion."""
+    so it survives to the next conversion.
+
+    **Whatever the item is.** A clang is "parameters or actions that happen
+    together" and its configuration is the client's own terms, which is what an
+    OSC marker and a raw MIDI message are as much as a note — so all three
+    travel as the one description `clausters.seq.item_data` writes, and come
+    back as themselves. Handing the item over raw wrote a marker as the *name*
+    that answered for it, which reopened as a note with no parameters: a lane a
+    piece could draw and not save."""
     node = {"id": ids.of(item)}
-    node.update(_with_config({"kind": "clang"}, _plain(item)))
+    node.update(_with_config({"kind": "clang"}, _plain(_item_data(item))))
     return {"offset": float(beat), "node": node}
+
+
+def _item_data(item):
+    """One timeline item as the config a clang carries — the shared
+    description, falling back to the item itself for anything it has none of
+    (which `_plain` then writes as the reference it always did)."""
+    from ..seq.timeline import item_data
+
+    data = item_data(item)
+    return item if data is None else data
 
 
 def _timeline_items(timeline) -> list:
@@ -977,9 +995,11 @@ def _element(node: dict, resolve, *, placed: bool = False):
                 setattr(handle, ID_ATTR, int(child["id"]))
         built = aggregate
     elif kind == "clang":
-        from ..seq import Event as SeqEvent
+        from ..seq.timeline import item_from_data
 
-        built = Clang(SeqEvent(config), onset=onset, duration=duration)
+        # An OSC marker and a raw MIDI message are clangs too, and each names
+        # itself in its config -- see `_timeline_member`.
+        built = Clang(item_from_data(config), onset=onset, duration=duration)
     elif kind == "sequence":
         members = node.get("members")
         if members:

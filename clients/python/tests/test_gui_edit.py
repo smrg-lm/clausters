@@ -198,6 +198,67 @@ def test_what_the_roll_does_not_draw_is_kept():
         "a rebuilt timeline would have dropped it"
 
 
+def test_a_marker_dragged_in_the_roll_moves_it_on_the_timeline():
+    # The lane the roll draws and nobody answered: a marker slid in the OSC
+    # lane is an edit of the timeline, with an inverse like any other.
+    from clausters.seq.timeline import OscItem
+
+    timeline = a_timeline()
+    timeline.add(3.0, OscItem("/hit", 7))
+    editor = edit(timeline, sample_rate=SR, tempo=TEMPO)
+    _host, wid = opened(editor)
+    assert editor.apply("/gui_event", [wid, 1, 0, "osc", 1.5 * BEAT, "/hit"])
+    at = [(beat, item) for beat, item in timeline if isinstance(item, OscItem)]
+    assert at == [(1.5, at[0][1])], "the marker moved, and it is the same item"
+    assert at[0][1].args == (7,), "the message it sends is not the lane's to lose"
+    assert editor.undo_label == "edit the markers"
+    assert editor.undo() is True
+    assert [beat for beat, item in timeline if isinstance(item, OscItem)] == [3.0]
+
+
+def test_a_marker_removed_in_the_roll_leaves_its_neighbours_theirs():
+    # Matched by label rather than by order, so removing one does not hand the
+    # next one's message to the wrong marker.
+    from clausters.seq.timeline import OscItem
+
+    timeline = Timeline([(0.0, OscItem("/a", 1)), (1.0, OscItem("/b", 2)),
+                         (2.0, OscItem("/c", 3))])
+    editor = edit(timeline, sample_rate=SR, tempo=TEMPO)
+    _host, wid = opened(editor)
+    assert editor.apply("/gui_event", [wid, 1, 0, "osc", 0.0, "/a", 2 * BEAT, "/c"])
+    assert [(item.addr, item.args) for _beat, item in timeline] == \
+        [("/a", (1,)), ("/c", (3,))]
+
+
+def test_a_marker_added_in_the_roll_is_refused_and_says_why():
+    # A marker is the message it sends and the lane cannot type one, so the
+    # gesture is answered rather than half-applied: the reason, and the markers
+    # as they still are.
+    from clausters.seq.timeline import OscItem
+
+    timeline = Timeline([(0.0, OscItem("/a"))])
+    editor = edit(timeline, sample_rate=SR, tempo=TEMPO)
+    host, wid = opened(editor)
+    assert editor.apply("/gui_event", [wid, 1, 0, "osc", 0.0, "/a", BEAT, ""]) \
+        is False
+    assert len(timeline) == 1
+    seq, corrections, reason = host.acks[-1]
+    assert seq == 1 and "OscItem" in (reason or "")
+    assert corrections and corrections[0][1]["osc"] == [0.0, "/a"]
+
+
+def test_the_notes_gesture_does_not_move_the_markers():
+    from clausters.seq.timeline import OscItem
+
+    timeline = a_timeline()
+    timeline.add(3.0, OscItem("/hit"))
+    editor = edit(timeline, sample_rate=SR, tempo=TEMPO)
+    _host, wid = opened(editor)
+    editor.apply("/gui_event", [wid, 1, 0, "notes", 0.0, BEAT, 67, 100, 0])
+    assert [(beat, type(item).__name__) for beat, item in timeline] == \
+        [(0.0, "Event"), (3.0, "OscItem")]
+
+
 # ---- samples ----
 
 def test_a_stroke_writes_the_servers_buffer_and_undoes_off_the_wire():

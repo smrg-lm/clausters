@@ -38,5 +38,5 @@ export {
     asPattern,
 } from "./pattern.ts";
 export type { Bindings } from "./pattern.ts";
-export { Entry, MidiItem, OscItem, Playhead, Timeline } from "./timeline.ts";
+export { Entry, MidiItem, OscItem, Playhead, Timeline, itemData, itemFromData } from "./timeline.ts";
 export type { PlayDestination, TimelineItem } from "./timeline.ts";
