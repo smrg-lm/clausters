@@ -1986,6 +1986,21 @@ impl Host {
                 _ => None,
             })
             .collect();
+        // The same rule for a lane header: what a `Configure` leaves is what
+        // the header draws. Without it an undo of a mute moved the document and
+        // left the button down -- the picture keeping the hand's answer after
+        // the piece had gone back, which is exactly what the clip's own comment
+        // above is about.
+        let mixed: Vec<(i32, clausters_document::Opaque)> = applied
+            .iter()
+            .filter(|a| a.applied)
+            .filter_map(|a| match &a.effective {
+                clausters_document::Intent::Configure { node, config } => {
+                    owner.header_of(*node).map(|w| (w, config.clone()))
+                }
+                _ => None,
+            })
+            .collect();
         for (widget, offset, dur) in moves {
             if let Some(w) = self.window_def_mut(def_id).and_then(|t| t.find_mut(widget))
                 && let WidgetKind::Clip {
@@ -1996,6 +2011,30 @@ impl Host {
                 // Already in units: the length rule converts from the clip's
                 // own unit, which the offset's single ratio cannot.
                 *d = dur;
+            }
+        }
+        for (widget, config) in mixed {
+            if let Some(w) = self.window_def_mut(def_id).and_then(|t| t.find_mut(widget))
+                && let WidgetKind::Track { header, .. } = &mut w.kind
+            {
+                let table = config.0.as_object();
+                // **Only what the header already offers.** A lane whose def
+                // named no mute has no mute button, and a document key cannot
+                // grow one after the fact -- the tree is what decides which
+                // controls a lane has.
+                if let Some(mute) = header.mute.as_mut() {
+                    *mute =
+                        table.and_then(|t| t.get("mute")).and_then(Value::as_bool) == Some(true);
+                }
+                if let Some(solo) = header.solo.as_mut() {
+                    *solo =
+                        table.and_then(|t| t.get("solo")).and_then(Value::as_bool) == Some(true);
+                }
+                if let Some(level) = header.level.as_mut()
+                    && let Some(v) = table.and_then(|t| t.get("level")).and_then(Value::as_f64)
+                {
+                    *level = (v as f32).clamp(0.0, 1.0);
+                }
             }
         }
     }

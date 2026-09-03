@@ -3129,22 +3129,32 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 
 ## Found by use: the running list of fixes
 
-- ⬜ **A session host draws no lane mixing, and its header controls reach
-  nothing** *(found 2026-09-02, closing the Python client's `C48`, which put
-  `mute`/`solo`/`level` in the node's configuration and made both clients draw
-  and route them)*. The host already emits the three tags from a lane header
-  (`host/gestures/effects.rs`) and already carries the configuration across a
-  save, because a node's config is opaque and it is round-tripped whole. What it
-  does not do is **read** it: `host/document/tree.rs` builds a lane with a label
-  and the time chrome and no `mute`/`solo`/`level`, and the lane widget is bound
-  to no node (only its clips are), so a press on a header it does not draw would
-  have nothing to name. So a piece muted in a client opens **audible** in
-  `clausters-gui --session`, and the toggle a person presses there changes
-  nothing that is saved. Two small pieces: draw the three props from the node's
-  config, and bind the lane widget to its member's node so `answer_own` can turn
-  the tag into a `Configure` — which is the same intent the clients emit, so the
-  undo comes out of the document exactly as theirs does. A lane's `height` stays
-  what it is: the view's, carried by nothing.
+- ✅ **A session host draws no lane mixing, and its header controls reach
+  nothing** *(found 2026-09-02, closing the Python client's `C48`; fixed
+  2026-09-02)*. The host emitted the three tags from a lane header and carried
+  the configuration across a save, and did neither of the two things in
+  between: it did not **read** the mixing (a lane was a label and the time
+  chrome, so a piece muted in a client opened audible) and the lane widget was
+  bound to no node (only its clips were), so a press on a header named nothing.
+
+  Both pieces landed as the entry described. `tree.rs` draws `mute`/`solo`/`level`
+  from the node's configuration — **only the keys the document holds**, since a
+  header is presence-driven and a `false` this driver invented would grow a
+  button the piece never asked for — and `read_event` turns the tag into a
+  `Configure`, the same intent a client emits, so the undo comes out of the
+  document identically whoever made the edit. A configuration is replaced whole,
+  so it starts from what the node carries: a fader cannot erase a mute.
+
+  **Two things the work forced, and both are the same shape as a bug already
+  fixed for clips.** A node can be drawn *twice* — a lane holding one element is
+  that element's header and its clip — so "which widget is this node" has two
+  answers and the bindings are two maps (`Drawn::bindings`, `Drawn::headers`),
+  rather than one where a `HashMap`'s iteration order decides which picture an
+  undo moves. And `adopt` had to learn `Configure`: without it an undo of a mute
+  moved the document and left the button down, which is exactly what the clip's
+  own "an undo that moves the model and not the picture" comment is about.
+
+  A lane's `height` stayed what it was: the view's, carried by nothing.
 
 - ✅ **A tie between two different pitches is accepted, written, and dropped by
   the engraver with a warning nobody reads** *(found 2026-08-29, round-tripping

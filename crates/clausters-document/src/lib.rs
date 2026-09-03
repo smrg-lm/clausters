@@ -587,6 +587,25 @@ impl Body {
         }
     }
 
+    /// This body's configuration — the client's own terms, carried and never
+    /// interpreted — for the bodies that have one.
+    ///
+    /// Public because a **reader** needs it as much as [`Intent::Configure`]
+    /// does: a driver drawing a document has to show what a leaf says about
+    /// itself (a lane's mixing, a curve's points), and re-deriving which bodies
+    /// carry a config is how one of them gets forgotten.
+    pub fn config(&self) -> Option<&Opaque> {
+        match self {
+            Body::Clang { config, .. }
+            | Body::Sequence { config, .. }
+            | Body::Vector { config, .. }
+            | Body::Segments { config, .. }
+            | Body::Generator { config, .. }
+            | Body::Aggregate { config, .. } => Some(config),
+            Body::Unknown(_) => None,
+        }
+    }
+
     /// The unit a length of this body is in.
     ///
     /// **Seconds** for the bodies that reference samples ([`Body::Vector`],

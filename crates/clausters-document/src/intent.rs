@@ -624,15 +624,7 @@ fn find_member(node: &Node, id: NodeId) -> Option<&Member> {
 /// edit nothing can invert. The vocabulary already said what to do about it;
 /// what was missing was the door.
 fn config(body: &Body) -> Option<&Opaque> {
-    match body {
-        Body::Clang { config, .. }
-        | Body::Sequence { config, .. }
-        | Body::Vector { config, .. }
-        | Body::Segments { config, .. }
-        | Body::Generator { config, .. }
-        | Body::Aggregate { config, .. } => Some(config),
-        Body::Unknown(_) => None,
-    }
+    body.config()
 }
 
 fn find_mut(node: &mut Node, id: NodeId) -> Option<&mut Node> {

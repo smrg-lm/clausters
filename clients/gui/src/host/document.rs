@@ -39,8 +39,10 @@ use std::collections::HashMap;
 use clausters_core::osc::OscType;
 use clausters_document::clipboard::decode_samples;
 use clausters_document::{
-    Against, Document, Intent, NodeId, Outcome, Rules, Session, TimeUnit, apply_logged, log::Log,
+    Against, Document, Intent, NodeId, Opaque, Outcome, Rules, Session, TimeUnit, apply_logged,
+    log::Log,
 };
+use serde_json::Value;
 
 /// An OSC argument that may have been sent as a float or as an int.
 fn float_at(args: &[OscType], n: usize) -> Option<f32> {
@@ -116,6 +118,9 @@ pub struct Owner {
     /// the node. Nothing infers it — the tree that built the widgets records
     /// it, so a picture and the samples under it cannot drift apart.
     nodes: HashMap<i32, NodeId>,
+    /// And which node each **lane header** configures. See
+    /// [`Owner::bind_header`] for why it is not the same map.
+    headers: HashMap<i32, NodeId>,
 }
 
 /// What applying an edit left behind, for the caller to draw and answer with.
@@ -147,6 +152,7 @@ impl Owner {
             save_path: None,
             takes: sources::Takes::default(),
             nodes: HashMap::new(),
+            headers: HashMap::new(),
         }
     }
 
@@ -272,14 +278,37 @@ impl Owner {
         self.nodes.insert(widget_id, node);
     }
 
+    /// Says which node a **lane header's** gestures address.
+    ///
+    /// A second map rather than a second entry in the first, because one node
+    /// can be drawn twice: a lane holding a single element binds that element
+    /// for its header *and* for the clip inside it. Both directions have to
+    /// stay answerable — a gesture asks which node a widget is (either map
+    /// does), and an applied edit asks which widget a node is, where "the clip"
+    /// and "the header" are different questions with different answers.
+    pub fn bind_header(&mut self, widget_id: i32, node: NodeId) {
+        self.headers.insert(widget_id, node);
+    }
+
     /// Forgets a widget — a window closing, or a tree rebuilt.
     pub fn unbind(&mut self, widget_id: i32) {
         self.nodes.remove(&widget_id);
+        self.headers.remove(&widget_id);
     }
 
     /// The node a widget addresses, if it addresses one.
     pub fn node_of(&self, widget_id: i32) -> Option<NodeId> {
-        self.nodes.get(&widget_id).copied()
+        self.nodes
+            .get(&widget_id)
+            .or_else(|| self.headers.get(&widget_id))
+            .copied()
+    }
+
+    /// The lane header drawing this node, if one does.
+    pub fn header_of(&self, node: NodeId) -> Option<i32> {
+        self.headers
+            .iter()
+            .find_map(|(widget, bound)| (*bound == node).then_some(*widget))
     }
 
     /// Reads a widget's `/gui_event` payload as an edit to the document, with
@@ -335,6 +364,43 @@ impl Owner {
                         values: vec![value],
                     },
                     "edit a sample",
+                ))
+            }
+            // A lane header's toggle or fader. **The composition's**, not the
+            // window's: what is muted is a fact about the piece, so it goes
+            // through the log like a clip's move and survives a save. It is the
+            // same `Configure` a client emits, which is why the undo comes out
+            // of the document identically whoever made the edit.
+            //
+            // A configuration is replaced **whole**, so this starts from what
+            // the node already carries and writes one key over it — the rule
+            // the intent states, and the reason a fader cannot quietly erase a
+            // mute.
+            "mute" | "solo" | "level" => {
+                let value = match (tag, args.get(1)) {
+                    ("level", _) => Value::from(float_at(args, 1)? as f64),
+                    (_, Some(OscType::Int(flag))) => Value::from(*flag != 0),
+                    (_, Some(OscType::Bool(flag))) => Value::from(*flag),
+                    (_, Some(OscType::Float(flag))) => Value::from(*flag != 0.0),
+                    _ => return None,
+                };
+                let mut config = self
+                    .document
+                    .find(node)
+                    .and_then(|n| n.body.config())
+                    .and_then(|c| c.0.as_object().cloned())
+                    .unwrap_or_default();
+                config.insert(tag.into(), value);
+                Some((
+                    Intent::Configure {
+                        node,
+                        config: Opaque(Value::Object(config)),
+                    },
+                    match tag {
+                        "mute" => "mute the lane",
+                        "solo" => "solo the lane",
+                        _ => "level the lane",
+                    },
                 ))
             }
             // A whole stroke (D2), the run as a blob.
@@ -592,6 +658,53 @@ mod tests {
             redone[0].effective
         );
         assert!(!owner.can_redo(), "and there is nothing further forward");
+    }
+
+    /// A lane header's toggle is the composition's, so it travels the road a
+    /// clip's move does: one `Configure`, through the log, undoable out of the
+    /// document — the same intent a client emits, which is what makes the two
+    /// undo alike.
+    #[test]
+    fn a_lane_header_configures_the_element_and_undoes() {
+        let mut track = aggregate(2, vec![]);
+        if let Body::Aggregate { config, .. } = &mut track.body {
+            *config = Opaque(serde_json::json!({"level": 0.5}));
+        }
+        let mut owner = Owner::new(Document::new(aggregate(
+            1,
+            vec![Member {
+                offset: 0.0,
+                dur: None,
+                node: track,
+            }],
+        )));
+        owner.bind(70, NodeId(2));
+
+        let args = [OscType::String("mute".into()), OscType::Int(1)];
+        let (intent, label) = owner.read_event(70, &args).expect("a header is an edit");
+        assert_eq!(label, "mute the lane");
+        // **Whole, so it starts from what is there**: a mute that dropped the
+        // level would be a fader nobody moved.
+        match &intent {
+            Intent::Configure { node, config } => {
+                assert_eq!(*node, NodeId(2));
+                assert_eq!(config.0["mute"], true);
+                assert_eq!(config.0["level"], 0.5, "and the level it already had");
+            }
+            other => panic!("{other:?}"),
+        }
+
+        let applied = owner.apply(&intent, &Against::default(), label);
+        assert!(applied.applied);
+        let undone = owner.undo();
+        assert_eq!(undone.len(), 1);
+        match &undone[0].effective {
+            Intent::Configure { config, .. } => assert!(
+                config.0.get("mute").is_none_or(|v| v == false),
+                "unmuted again: {config:?}"
+            ),
+            other => panic!("{other:?}"),
+        }
     }
 
     /// The translation, and the two ways it declines: a payload it does not
@@ -981,6 +1094,112 @@ mod window_verb_tests {
             offset_of(&host),
             0.0,
             "the undo moved the picture, not only the document"
+        );
+    }
+
+    /// The header, end to end in a host that owns what it draws: press mute,
+    /// and the document is muted; undo, and the **button** comes back up with
+    /// it.
+    #[test]
+    fn a_muted_lane_undoes_the_button_and_not_only_the_document() {
+        use crate::host::widget::WidgetKind;
+
+        let def_id = 1;
+        let mut track = Node::new(
+            NodeId(2),
+            Body::Aggregate {
+                grouping: Grouping::Concrete,
+                members: vec![Member {
+                    offset: 0.0,
+                    dur: Some(1.0),
+                    node: Node::new(
+                        NodeId(3),
+                        Body::Clang {
+                            config: Opaque::default(),
+                            fires: None,
+                        },
+                    ),
+                }],
+                config: Opaque::none(),
+            },
+        );
+        // A lane whose element says it is not muted: the header has the button,
+        // because the document holds the key.
+        if let Body::Aggregate { config, .. } = &mut track.body {
+            *config = Opaque(serde_json::json!({"mute": false}));
+        }
+        let doc = Document::new(Node::new(
+            NodeId(1),
+            Body::Aggregate {
+                grouping: Grouping::Concrete,
+                members: vec![Member {
+                    offset: 0.0,
+                    dur: None,
+                    node: track,
+                }],
+                config: Opaque::none(),
+            },
+        ));
+        let drawn = super::tree::draw(
+            &doc,
+            &super::tree::Look {
+                first_id: def_id + 1,
+                units_per_beat: 100.0,
+                ..super::tree::Look::default()
+            },
+            "t",
+        );
+        let mut owner = Owner::new(doc).with_units_per_beat(100.0);
+        for b in &drawn.bindings {
+            owner.bind(b.widget, b.node);
+        }
+        for b in &drawn.headers {
+            owner.bind_header(b.widget, b.node);
+        }
+        let lane = drawn.headers[0].widget;
+
+        let mut host = Host::new();
+        host.handle_packet(
+            crate::host::OscPacket::Message(crate::host::OscMessage {
+                addr: "/gui_def".into(),
+                args: vec![OscType::Int(def_id), OscType::String(drawn.def.to_string())],
+            }),
+            crate::host::ClientId::Udp(std::net::SocketAddr::from((
+                std::net::Ipv4Addr::LOCALHOST,
+                9000,
+            ))),
+        );
+        host.owner = Some(owner);
+
+        let muted = |host: &Host| match host.widget_kind(def_id, lane) {
+            Some(WidgetKind::Track { header, .. }) => header.mute,
+            other => panic!("lane {lane} is {other:?}"),
+        };
+        assert_eq!(muted(&host), Some(false), "drawn from the document");
+
+        let seq = host.outbox.borrow_mut().stamp(def_id, lane);
+        assert!(host.answer_own(
+            def_id,
+            lane,
+            seq,
+            &[OscType::String("mute".into()), OscType::Int(1)]
+        ));
+        assert_eq!(
+            host.owner
+                .as_ref()
+                .and_then(|o| o.document.find(NodeId(2)))
+                .and_then(|n| n.body.config())
+                .map(|c| c.0["mute"].clone()),
+            Some(serde_json::json!(true)),
+            "the piece is muted, and it is the piece that says so"
+        );
+
+        let seq = host.outbox.borrow_mut().stamp(def_id, def_id);
+        assert!(host.answer_own(def_id, def_id, seq, &[OscType::String("undo".into())]));
+        assert_eq!(
+            muted(&host),
+            Some(false),
+            "the undo lifted the button, not only the document"
         );
     }
 

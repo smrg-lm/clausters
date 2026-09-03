@@ -102,6 +102,14 @@ pub struct Drawn {
     pub def: Value,
     /// Every clip's widget, and the node it draws.
     pub bindings: Vec<Bound>,
+    /// Every **lane's** widget, and the node its header configures.
+    ///
+    /// Kept apart from the clips rather than folded in with them, because the
+    /// two answer different questions: a clip is a placement a hand moves, a
+    /// lane is an element a hand mutes. Both are bound the same way and by the
+    /// same call — what is separate is only the *counting*, so "twelve clips"
+    /// goes on meaning twelve clips.
+    pub headers: Vec<Bound>,
     /// The next free widget id, so a caller can keep allocating after it.
     pub next_id: i32,
 }
@@ -119,12 +127,21 @@ pub fn draw(document: &Document, look: &Look<'_>, title: &str) -> Drawn {
         next: look.first_id,
     };
     let mut bindings = Vec::new();
+    let mut headers = Vec::new();
     let mut lanes: Vec<Value> = Vec::new();
 
     match &document.root.body {
         Body::Aggregate { members, .. } => {
             for member in members {
-                lane_of(member, 0.0, look, &mut ids, &mut bindings, &mut lanes);
+                lane_of(
+                    member,
+                    0.0,
+                    look,
+                    &mut ids,
+                    &mut bindings,
+                    &mut headers,
+                    &mut lanes,
+                );
             }
         }
         // A document that is one thing is one lane holding it.
@@ -134,7 +151,15 @@ pub fn draw(document: &Document, look: &Look<'_>, title: &str) -> Drawn {
                 dur: None,
                 node: document.root.clone(),
             };
-            lane_of(&member, 0.0, look, &mut ids, &mut bindings, &mut lanes);
+            lane_of(
+                &member,
+                0.0,
+                look,
+                &mut ids,
+                &mut bindings,
+                &mut headers,
+                &mut lanes,
+            );
         }
     }
 
@@ -162,6 +187,7 @@ pub fn draw(document: &Document, look: &Look<'_>, title: &str) -> Drawn {
     Drawn {
         def,
         bindings,
+        headers,
         next_id: ids.next,
     }
 }
@@ -221,12 +247,14 @@ impl Ids {
 ///
 /// `base` accumulates the offsets on the way down, because a clip's offset is
 /// absolute on the shared axis while a member's is relative to its aggregate.
+#[allow(clippy::too_many_arguments)] // one accumulator per thing being built
 fn lane_of(
     member: &Member,
     base: Beats,
     look: &Look<'_>,
     ids: &mut Ids,
     bindings: &mut Vec<Bound>,
+    headers: &mut Vec<Bound>,
     lanes: &mut Vec<Value>,
 ) {
     let here = base + member.offset;
@@ -236,7 +264,7 @@ fn lane_of(
             .any(|inner| matches!(inner.node.body, Body::Aggregate { .. }))
     {
         for inner in members {
-            lane_of(inner, here, look, ids, bindings, lanes);
+            lane_of(inner, here, look, ids, bindings, headers, lanes);
         }
         return;
     }
@@ -257,12 +285,29 @@ fn lane_of(
             .collect(),
         _ => vec![clip_of(member, base, look, ids, bindings)],
     };
+    let widget = ids.take();
+    // **The lane is bound to what it draws.** Its header's mute, solo and level
+    // are the *element's* configuration, so a press on one has to name a node —
+    // and until this binding existed only the clips inside a lane named
+    // anything, which left a header a person could press and nothing could
+    // read.
+    headers.push(Bound {
+        widget,
+        node: member.node.id,
+    });
     let mut props = Map::new();
-    props.insert("id".into(), json!(ids.take()));
+    props.insert("id".into(), json!(widget));
     props.insert("type".into(), json!("field"));
     props.insert("label".into(), json!(label));
     props.insert("sample_rate".into(), json!(look.sample_rate));
     props.insert("tempo".into(), json!(look.tempo));
+    // The mixing the piece carries. A node's configuration is opaque here and
+    // is round-tripped whole, so it was already saved and already restored;
+    // what was missing was drawing it, which is why a piece muted in a client
+    // opened audible.
+    for (key, value) in mixing_of(&member.node) {
+        props.insert(key.into(), value);
+    }
     if look.quant > 0.0 {
         props.insert("snap".into(), json!(look.quant * look.units_per_beat));
     }
@@ -557,6 +602,26 @@ fn roll_clip(
 /// What a node is called on screen. The document holds no names — a name is a
 /// client's idea — so this says what it *is*, which is what a reader needs from
 /// a picture drawn by a host that was handed a file.
+/// The three mixing props a lane header draws, as the node carries them.
+///
+/// Only what is actually written: a lane with no `mute` in its configuration is
+/// not muted, and saying so with a `false` would be this driver inventing a
+/// value the document does not hold. The keys are the clients' own
+/// (`clausters.form.document`'s `MIXING`), which is what makes a piece muted in
+/// a script open muted here.
+fn mixing_of(node: &Node) -> Vec<(&'static str, Value)> {
+    let Some(config) = node.body.config() else {
+        return Vec::new();
+    };
+    let Some(table) = config.0.as_object() else {
+        return Vec::new();
+    };
+    ["mute", "solo", "level"]
+        .into_iter()
+        .filter_map(|key| table.get(key).map(|value| (key, value.clone())))
+        .collect()
+}
+
 fn label_of(node: &Node) -> String {
     match &node.body {
         Body::Clang { .. } => format!("clang {}", node.id.0),
@@ -701,6 +766,50 @@ mod tests {
         assert_eq!(kids.len(), 2, "one lane and the ruler");
         assert_eq!(drawn.bindings.len(), 1);
         assert_eq!(drawn.bindings[0].node, NodeId(1));
+    }
+
+    /// **A piece muted in a client opens muted here.** A node's configuration
+    /// was already carried across a save; what was missing was reading it.
+    #[test]
+    fn a_lane_draws_the_mixing_its_element_carries() {
+        let mut track = aggregate(2, vec![placed(0.0, None, clang(3))]);
+        if let Body::Aggregate { config, .. } = &mut track.body {
+            *config = Opaque(serde_json::json!({"mute": true, "level": 0.25}));
+        }
+        let doc = Document::new(aggregate(1, vec![placed(0.0, None, track)]));
+        let drawn = draw(&doc, &Look::default(), "session");
+        let lane = &children(&drawn.def)[0];
+        assert_eq!(lane["mute"], true);
+        assert_eq!(lane["level"], 0.25);
+        assert!(
+            lane.get("solo").is_none(),
+            "only what the document holds: an absent key is not a false one"
+        );
+    }
+
+    /// And the header is bound, so a press on it names the node it configures —
+    /// which is what the clips inside the lane had and the lane itself did not.
+    #[test]
+    fn a_lane_is_bound_to_the_element_its_header_configures() {
+        let doc = Document::new(aggregate(
+            1,
+            vec![placed(
+                0.0,
+                None,
+                aggregate(2, vec![placed(0.0, None, clang(3))]),
+            )],
+        ));
+        let drawn = draw(&doc, &Look::default(), "session");
+        assert_eq!(
+            drawn.headers.iter().map(|b| b.node).collect::<Vec<_>>(),
+            vec![NodeId(2)],
+            "one lane, bound to the track it draws"
+        );
+        assert_eq!(drawn.headers[0].widget, children(&drawn.def)[0]["id"]);
+        assert!(
+            drawn.bindings.iter().all(|b| b.node != NodeId(2)),
+            "and the clips are still the clips"
+        );
     }
 
     #[test]

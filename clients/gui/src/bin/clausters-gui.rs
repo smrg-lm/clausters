@@ -691,6 +691,9 @@ fn run_session(
     for bound in &drawn.bindings {
         owner.bind(bound.widget, bound.node);
     }
+    for bound in &drawn.headers {
+        owner.bind_header(bound.widget, bound.node);
+    }
 
     // Saving is **Ctrl+S**, a user's action rather than an exit's side effect —
     // and it writes only where `--save-to` named a file, since overwriting what
