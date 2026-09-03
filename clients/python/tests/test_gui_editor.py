@@ -16,7 +16,9 @@ from clausters.form import (Aggregate, Element, Generator, Clang, Sequence,
                             Track, Vector)
 from clausters.form.aggregate import LOGICAL
 from clausters.form.document import FIRST_VERSION, to_document
+from clausters.base import _osclib
 from clausters.gui.editing import FormEditor
+from clausters.gui.host import _prop_args
 from clausters.gui.editing.formeditor import _logical_patch
 from clausters.seq.event import Event as SeqEvent
 from clausters.seq.timeline import Timeline
@@ -776,6 +778,36 @@ def test_the_editor_opens_on_the_ambient_host_like_every_other_view():
     assert ed._host is host
 
 
+def test_an_undone_take_clip_answers_with_a_correction_the_wire_can_carry():
+    """Found by use, undoing a clip move in the composer example: the editor
+    raised on the way out with ``OSC has no bool tag here; use int``.
+
+    A correction for a clip over samples states the window the undo put back,
+    and a window carries a ``loop`` -- a flag, which OSC has no tag for. The
+    rule was written down and applied in one of the two places props become
+    arguments: `GuiHost.set` coerced a flag and `GuiHost.push` did not, so the
+    values a *gesture* states crossed and the values an *acknowledgement*
+    carries did not. One helper now, which is the shape of the bug: two
+    spellings of one rule, and only one of them knew it."""
+    from clausters.form import Vector
+
+    class Buf:
+        bufnum, frames, channels, sample_rate = 1, int(SR), 1, SR
+
+    take = Vector(Buf(), duration=1.0, instrument="take")
+    piece = Aggregate([(0.0, Aggregate([(0.0, take)], name="drums"))], name="piece")
+    host = _FakeHost()
+    ed = FormEditor(piece, sample_rate=SR, tempo=TEMPO)
+    ed.open(host)
+    wid = next(iter(ed._clips))
+    assert ed.apply("/gui_event", [wid, SEQ, UNSTATED, "clip", BEAT, SEC, 0.0]) is True
+    # The undo answers with the placement and the window, and the fake host
+    # builds the very message the real one would: a bool here raises.
+    ed.undo()
+    sent = [props for _seq, sets in host.acks for _w, props in sets]
+    assert any("loop" in p for p in sent), f"the window came back: {sent}"
+
+
 class _FakeHost:
     """Records the `/gui_set`s the editor sends (the lanes' playhead chrome) and
     the acknowledgements it answers events with, and hands out widget ids like
@@ -810,6 +842,13 @@ class _FakeHost:
         self.answers.append((seq, doc_version, reason))
 
     def push(self, seq, *sets, doc_version=0, generations=(), reason=None):
+        # **Built as the real host builds them**, so a correction that cannot
+        # cross the wire fails here rather than in a running window. It could
+        # not before, and that is how an undo of a clip over samples -- whose
+        # window carries a `loop` -- reached a person as a traceback: OSC has no
+        # bool tag, and nothing between the prop and the socket said so.
+        for wid, props in sets:
+            _osclib.message("/gui_set", int(wid), *_prop_args(props))
         self.acks.append((seq, list(sets)))
         self.answers.append((seq, doc_version, reason))
 

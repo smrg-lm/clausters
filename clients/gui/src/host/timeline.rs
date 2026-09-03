@@ -978,14 +978,24 @@ impl Host {
                     let span = self.timeline_span(m.key);
                     let held = carried.get(&m.key);
                     let nav = match held.map(|(state, was)| (state.nav, *was)) {
-                        // The same rule a growing extent follows: a view that
-                        // was showing the whole timeline goes on showing all of
-                        // it, and a zoomed one keeps its window and is only
-                        // re-clamped. **Zoomed in is measured against the total
-                        // it was showing**, not against the new one: a view that
-                        // filled a 400-long piece is showing everything, and
-                        // that is still true when the piece becomes 800 long.
-                        Some((old, was)) if old.len > 0.0 && old.len < was as f64 => {
+                        // **The same test `set_timeline_total_inner` makes**,
+                        // and in the same words: only a window that was showing
+                        // *exactly* the whole timeline is refitted to the new
+                        // one. Anything else keeps its length and is only
+                        // re-clamped -- zoomed in, and equally **zoomed out into
+                        // the empty headroom**, which a lane has on purpose so
+                        // there is somewhere to drag a clip to. Asking instead
+                        // whether the window was *shorter* than the content read
+                        // a zoomed-out view as "showing everything" and snapped
+                        // it back onto the content, on every structural edit.
+                        //
+                        // Measured against the total it was showing, not the new
+                        // one: a view that filled a 400-long piece was showing
+                        // everything, and that is still true when the piece
+                        // becomes 800 long.
+                        Some((old, was))
+                            if old.len > 0.0 && (old.len - was as f64).abs() >= 1.0 =>
+                        {
                             let mut nav = old;
                             nav.set_start(nav.start, span);
                             nav
@@ -1977,6 +1987,41 @@ mod tests {
             (after.start, after.len),
             (1000.0, 400.0),
             "and the window is where the hand left it"
+        );
+    }
+
+    /// **A window zoomed *out* survives too.** A lane has empty headroom past
+    /// its content on purpose — there has to be somewhere to drag a clip to —
+    /// so a view standing in it is as deliberate as a zoomed-in one, and a
+    /// structural edit is not entitled to pull it back onto the content.
+    ///
+    /// The carry asked whether the window was *shorter* than the content, which
+    /// reads a zoomed-out view as "this one was showing everything". So zooming
+    /// out and splitting a clip snapped the axis back, and so did any edit that
+    /// left the composition shorter than the window.
+    #[test]
+    fn a_window_zoomed_out_past_the_content_survives_a_redefine() {
+        let lanes = |dur: f64| {
+            format!(
+                r#"{{"type":"window","margin":0,"children":[
+                    {{"id":100,"type":"field","link":7,"children":[
+                        {{"id":110,"type":"field","offset":0.0,"dur":{dur}}}]}}
+                ]}}"#
+            )
+        };
+        let mut host = Host::new();
+        host.handle_packet(def_msg(1, &lanes(4000.0)), from());
+        host.sync_track_totals();
+        // Zoomed out into the headroom: the window is twice the composition.
+        host.set_timeline_view(100, Some(0.0), Some(8000.0));
+        assert_eq!(host.timeline_nav(100).map(|(n, _)| n.len), Some(8000.0));
+        // A structural edit that leaves the piece *shorter* than the window.
+        host.handle_packet(def_msg(1, &lanes(2000.0)), from());
+        let (after, total) = host.timeline_nav(100).unwrap();
+        assert_eq!(total, 2000);
+        assert_eq!(
+            after.len, 8000.0,
+            "the window is where the hand left it, out in the empty time"
         );
     }
 

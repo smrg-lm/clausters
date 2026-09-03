@@ -31,6 +31,30 @@ from ..errors import ReplyTimeout
 __all__ = ["GuiHost", "WidgetInfo", "DEFAULT_PORT"]
 
 
+def _prop_args(props) -> list:
+    """A prop table as flat ``key value …`` OSC arguments.
+
+    The one place a prop becomes a wire value, and it exists because there were
+    two: a `/gui_set` coerced a flag and a **correction** did not, so an undo of
+    a clip over samples -- whose window carries a ``loop`` -- crashed the editor
+    on the way out. The web client had the rule once, at its own wire
+    (`wireValue`), which is where it belongs.
+
+    A ``bool`` rides as ``1``/``0``: OSC's own boolean tags carry no argument,
+    so a flag has always been an int there. A structure rides as the JSON
+    **string** every non-scalar prop already travels as (`points`, `notes`), a
+    tuple as the list it is.
+    """
+    args = []
+    for k, v in props.items():
+        if isinstance(v, bool):
+            v = int(v)
+        elif isinstance(v, (dict, list, tuple)):
+            v = json.dumps(list(v) if isinstance(v, tuple) else v)
+        args += [k, v]
+    return args
+
+
 @dataclass
 class WidgetInfo:
     """What a widget **is now**, as `GuiHost.query` reports it: its ``type`` and
@@ -538,14 +562,7 @@ class GuiHost:
         ``set(fills=False)`` is what a reader of ``fills=True`` in a `guidef`
         builder will type, so it means the same thing here.
         """
-        args = []
-        for k, v in props.items():
-            if isinstance(v, bool):
-                v = int(v)
-            elif isinstance(v, (dict, list, tuple)):
-                v = json.dumps(list(v) if isinstance(v, tuple) else v)
-            args += [k, v]
-        self._osc.send_msg(self.target, "/gui_set", id, *args)
+        self._osc.send_msg(self.target, "/gui_set", id, *_prop_args(props))
 
     def ack(self, seq: int, doc_version: int = 0, generations=(), reason=None):
         """``/gui_ack <seq> <docVersion> [<source> <generation>…] [<reason>]`` —
@@ -596,12 +613,7 @@ class GuiHost:
         """
         messages = []
         for id, props in sets:
-            args = []
-            for k, v in props.items():
-                if isinstance(v, (dict, list, tuple)):
-                    v = json.dumps(list(v) if isinstance(v, tuple) else v)
-                args += [k, v]
-            messages.append(("/gui_set", int(id), *args))
+            messages.append(("/gui_set", int(id), *_prop_args(props)))
         ack = [int(seq), int(doc_version)]
         for source, generation in generations:
             ack += [int(source), int(generation)]
