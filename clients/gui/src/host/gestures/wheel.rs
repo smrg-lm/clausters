@@ -239,9 +239,14 @@ impl Gestures {
                     let anchor = if kind.centres_y_zoom() {
                         0.5
                     } else {
-                        let lane_top = axis.body.y as f64
-                            + ((cy - axis.body.y as f64) / y.lane_h).floor() * y.lane_h;
-                        1.0 - ((cy - lane_top) / y.lane_h).clamp(0.0, 1.0)
+                        // The lane under the cursor, read off the view's own
+                        // band stack — the same question a roll asks about a
+                        // semitone and a multitrack about a lane.
+                        let bands = y.bands();
+                        let local = cy - axis.body.y as f64;
+                        let i = bands.index_at(local as f32).unwrap_or(0);
+                        let (top, h) = bands.band(i);
+                        1.0 - ((local - top as f64) / (h as f64).max(1.0)).clamp(0.0, 1.0)
                     };
                     zoom_timeline_y(host, &mut out, def_id, tid, factor, anchor);
                 }

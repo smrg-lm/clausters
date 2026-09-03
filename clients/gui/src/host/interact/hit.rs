@@ -211,6 +211,7 @@ fn time_axis(
             strip: Rect::new(p.rect.x, p.rect.y, (body.x - p.rect.x).max(0.0), p.rect.h),
             start,
             len,
+            lanes: p.widget.id.map_or(1, |id| lanes(id, &p.widget.kind)).max(1),
             lane_h: (body.h as f64
                 / p.widget.id.map_or(1, |id| lanes(id, &p.widget.kind)).max(1) as f64)
                 .max(1.0),

@@ -41,6 +41,7 @@ use crate::view::{Framing, Renderers, TimelineView};
 use crate::viewport::View;
 use crate::waveform::{WaveformData, WaveformView};
 
+use super::bands::Bands;
 use super::layout::{self, Rect};
 use super::metrics::Metrics;
 use crate::canvas::{self, CanvasView};
@@ -689,10 +690,15 @@ pub(crate) fn ink_of(p: &layout::Placed) -> Ink {
 
 /// The lane sub-rectangle `ch` of `lanes` inside `body` (stacked top to
 /// bottom, no gap — the divider line is overlay chrome).
+///
+/// The **third** row a view stacks, beside a roll's semitone and a
+/// multitrack's lane, and the same structure: a band of the vertical axis. So
+/// it is a [`Bands`] like the other two, on its uniform arm — a channel stack
+/// divides its body evenly because every channel is worth the same picture.
 pub(crate) fn lane_rect(body: Rect, lanes: usize, ch: usize) -> Rect {
-    let lanes = lanes.max(1) as f32;
-    let h = body.h / lanes;
-    Rect::new(body.x, body.y + ch as f32 * h, body.w, h)
+    let lanes = lanes.max(1);
+    let (y, h) = Bands::uniform(lanes, body.h / lanes as f32).band(ch);
+    Rect::new(body.x, body.y + y, body.w, h)
 }
 
 /// The time-ruler unit of `editor` (the beats grid rides its props).

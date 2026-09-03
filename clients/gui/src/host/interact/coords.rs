@@ -100,6 +100,23 @@ pub(crate) struct YAxis {
     /// How many pixels one window's worth spans: a **lane's** height, since one
     /// vertical window is shared by every channel lane of a stacked view.
     pub lane_h: f64,
+    /// How many lanes the view stacks — with [`lane_h`](Self::lane_h), the
+    /// whole of its vertical stack.
+    pub lanes: usize,
+}
+
+impl YAxis {
+    /// The view's vertical **band stack**, in the body's own coordinates.
+    ///
+    /// A channel lane is the same structure a roll's semitone row and a
+    /// multitrack's lane are, so the gestures over it ask one type — which is
+    /// also where a stack of *unequal* rows would enter, on the tabulated arm.
+    /// A channel stack divides evenly because every channel is worth the same
+    /// picture, and that is a statement about channels rather than about what
+    /// the axis can hold.
+    pub fn bands(&self) -> super::super::bands::Bands {
+        super::super::bands::Bands::uniform(self.lanes.max(1), self.lane_h as f32)
+    }
 }
 
 /// One container over a hit, with the rectangle its coordinate system occupies
