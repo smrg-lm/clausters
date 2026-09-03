@@ -111,6 +111,13 @@ const PITCH_PAD = 2.0;
 type Note = [number, number, number, number, number];
 
 /**
+ * What {@link FormEditor.holdKey} files a held value under: the document node
+ * (`"node:7"`) when there is one, and the arrangement object itself until the
+ * first conversion numbers it.
+ */
+type HoldKey = string | Element | Aggregate | Member;
+
+/**
  * What a clip widget was drawn from: the placement it shows (`owner` aggregate
  * and `member` handle, the arrangement's stable identity), the `base` in beats
  * its aggregate sits at (a clip's offset is absolute on the shared axis, a
@@ -326,17 +333,18 @@ export class FormEditor extends Editor<Element> implements Adopting {
     /** Whether the views follow their content (see the option). */
     autofit: boolean;
     /**
-     * The pitch window each roll was first drawn with, by element, and the
-     * length each clip was first drawn at, by placement — the two things this
-     * editor *derives from the content*, held by {@link FormEditor.fit} while
-     * `autofit` is off.
+     * The pitch window each roll was first drawn with, and the length each clip
+     * was first drawn at — the two things this editor *derives from the
+     * content*, held by {@link FormEditor.fit} while `autofit` is off, under the
+     * document node {@link FormEditor.holdKey} reads rather than the object
+     * itself, so a hold outlives the reparent or the restore that replaces it.
      *
      * **Not reset by a draw**, unlike the registries beside them: those describe
      * the widgets a draw made, and these describe what the reader is looking at,
      * which a redraw is precisely not entitled to move.
      */
-    private pitch = new Map<Element, [number, number]>();
-    private length = new Map<Element | Member, [number, number]>();
+    private pitch = new Map<HoldKey, [number, number]>();
+    private length = new Map<HoldKey, [number, number]>();
     /** Widgets appended to the window after the lanes. They are the script's. */
     extra: GuiNode[];
     /**
@@ -2954,15 +2962,6 @@ export class FormEditor extends Editor<Element> implements Adopting {
         return [this.lane([this.clipFor(element, base, owner, member)], element, base, member)];
     }
 
-    /** One `track` lane holding `clips`, with the shared time chrome. */
-    /**
-     * One `track` lane holding `clips`, with the shared time chrome and the
-     * **mixing** the element carries.
-     *
-     * The header's toggles and its fader are drawn from the composition, not
-     * from the view: what the lane shows is what a reopened document says, and
-     * pressing one writes back through the log like every other edit.
-     */
     /**
      * One quantity **derived from the content**, held while `autofit` is off:
      * the `[lo, hi]` just derived, widened by whatever this key has needed
@@ -2982,9 +2981,9 @@ export class FormEditor extends Editor<Element> implements Adopting {
      * makes it stable: an edge only ever moves outward, so nothing slides under
      * the hand.
      *
-     * Keyed by identity rather than by widget id, because a widget is allocated
-     * afresh on every redefine and what the reader is looking at has to outlive
-     * that — a structural edit is exactly when the re-framing showed.
+     * Keyed by {@link FormEditor.holdKey}, never by the widget id: a widget is
+     * allocated afresh on every redefine, and a structural edit is exactly when
+     * the re-framing showed.
      */
     private fit<K>(
         held: Map<K, [number, number]>,
@@ -2997,6 +2996,37 @@ export class FormEditor extends Editor<Element> implements Adopting {
         if (was !== undefined) [lo, hi] = [Math.min(was[0], lo), Math.max(was[1], hi)];
         held.set(key, [lo, hi]);
         return [lo, hi];
+    }
+
+    /**
+     * What a held value is filed under: **the node the document names**, and the
+     * object itself only until there is one.
+     *
+     * A hold has to outlive the object it was derived from, because the
+     * arrangement replaces objects for edits that change nothing a reader can
+     * see. A clip that changes lane *reparents* — the handle leaves one
+     * aggregate and a fresh one joins another — and so does a placement that
+     * comes back from an undo ({@link FormEditor.setPlacements} adds it again).
+     * Filed under the object, the hold was lost at exactly those doors: the clip
+     * was re-derived from its content and the picture shrank under the hand,
+     * which is the re-framing `autofit` is off to prevent.
+     *
+     * The document already keeps the identity that survives all of them — the
+     * node id, carried across the reparent on purpose and stamped back onto a
+     * restored placement — so that is the key. Asking for one before the first
+     * conversion has to trigger it, exactly as {@link FormEditor.nodeId} does, or
+     * the hold a session's first draw filed would be orphaned by its first edit.
+     *
+     * The object remains the fallback for a holder the document has not numbered,
+     * and it is only a fallback: it does not survive a rebuild.
+     */
+    private holdKey(holder: Element | Aggregate | Member): HoldKey {
+        let node = docIdOf(holder);
+        if (node === null) {
+            this.history(); // `toDocument` is what stamps the id
+            node = docIdOf(holder);
+        }
+        return node === null ? holder : `node:${node}`;
     }
 
     /**
@@ -3016,13 +3046,21 @@ export class FormEditor extends Editor<Element> implements Adopting {
         const pitches = notes.map((n) => n[2]);
         const [min, max] = this.fit(
             this.pitch,
-            element,
+            this.holdKey(element),
             Math.min(Math.min(...pitches) - PITCH_PAD, DEFAULT_PITCH[1]),
             Math.max(Math.max(...pitches) + PITCH_PAD, DEFAULT_PITCH[0]),
         );
         return { min, max };
     }
 
+    /**
+     * One `track` lane holding `clips`, with the shared time chrome and the
+     * **mixing** the element carries.
+     *
+     * The header's toggles and its fader are drawn from the composition, not
+     * from the view: what the lane shows is what a reopened document says, and
+     * pressing one writes back through the log like every other edit.
+     */
     private lane(
         clips: GuiNode[],
         element: Element,
@@ -3101,7 +3139,7 @@ export class FormEditor extends Editor<Element> implements Adopting {
         if (member !== null && member.dur !== null) return member.dur;
         let length = element instanceof Element ? element.duration : null;
         if (length === null) length = this.extentOf(element);
-        return this.fit(this.length, member ?? element, 0.0, length)[1];
+        return this.fit(this.length, this.holdKey(member ?? element), 0.0, length)[1];
     }
 
     /**

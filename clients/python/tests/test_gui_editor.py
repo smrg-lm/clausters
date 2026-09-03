@@ -854,6 +854,63 @@ def test_a_clip_keeps_the_length_it_was_drawn_at_while_autofit_is_off():
     assert clip(ed.draw())[2] == pytest.approx(before / 2.0, abs=1.0)
 
 
+def test_a_held_length_survives_the_clip_changing_lane():
+    """Found by use: a clip edited and then dragged to another lane snapped back
+    to its content's length, with `autofit` off.
+
+    The hold was right and its key was not. A clip that changes lane
+    **reparents** — the handle leaves one aggregate and a fresh one joins
+    another — and a hold filed under the object it was derived from is lost at
+    exactly that door, so the draw re-derived the length and the clip shrank
+    under the hand. The undo of a cut is the same door: the placement comes back
+    as a new handle.
+
+    The document already keeps the identity that survives both — the node id,
+    carried across the reparent on purpose — and that is what `_hold_key` files
+    under.
+    """
+    from clausters.seq.timeline import Timeline
+
+    def piece():
+        lead = Track(Timeline([(0.0, SeqEvent(midinote=60, dur=1.0)),
+                               (3.0, SeqEvent(midinote=64, dur=1.0))]))
+        bass = Track(Timeline([(0.0, SeqEvent(midinote=48, dur=1.0))]))
+        return Aggregate([(0.0, Aggregate([(0.0, lead)], name="lead")),
+                          (0.0, Aggregate([(0.0, bass)], name="bass"))],
+                         name="piece")
+
+    def clip(ed):
+        node = _find(ed.draw(), lambda n: "notes" in n and len(n["notes"]) >= 10)
+        return node["id"], list(node["notes"]), node["dur"]
+
+    ed = FormEditor(piece(), sample_rate=SR, tempo=TEMPO, autofit=False)
+    wid, notes, before = clip(ed)
+    earlier = list(notes)
+    earlier[5] = BEAT            # the second note back to beat 1
+    assert ed.apply("/gui_event", [wid, SEQ, UNSTATED, "notes", *earlier]) is True
+    assert clip(ed)[2] == before, "the clip kept its length"
+
+    # ...and it is still the clip the reader was looking at after it changes
+    # lane. Dropped clear of what is already there: a drop that starts where
+    # another clip starts is a different rule (simultaneous members draw as one
+    # layered clip), and this is about the hold.
+    lane = [w for w, e in ed._lanes.items() if getattr(e, "name", None) == "bass"][-1]
+    wid = clip(ed)[0]
+    assert ed.apply("/gui_event", [wid, SEQ, UNSTATED, "lane", lane, 4 * BEAT]) is True
+    assert clip(ed)[2] == before, "the length crossed the lane with it"
+
+    # With the switch on it follows the content there, as everywhere else.
+    ed = FormEditor(piece(), sample_rate=SR, tempo=TEMPO, autofit=True)
+    wid, notes, before = clip(ed)
+    earlier = list(notes)
+    earlier[5] = BEAT
+    assert ed.apply("/gui_event", [wid, SEQ, UNSTATED, "notes", *earlier]) is True
+    lane = [w for w, e in ed._lanes.items() if getattr(e, "name", None) == "bass"][-1]
+    assert ed.apply("/gui_event", [clip(ed)[0], SEQ, UNSTATED, "lane", lane,
+                                   4 * BEAT]) is True
+    assert clip(ed)[2] < before, "it followed the content in"
+
+
 def test_the_views_do_not_re_frame_themselves_while_autofit_is_off():
     """Found by use: dragging a note re-centred the whole roll, and every
     structural edit refitted the time axis.

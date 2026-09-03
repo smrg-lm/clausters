@@ -266,10 +266,11 @@ class FormEditor(Editor):
         #: at every door the content reaches a window by. The other two are
         #: derived here, so they are held here, by `_fit`.
         self.autofit = bool(autofit)
-        #: The pitch window each roll was first drawn with, by element identity,
-        #: and the length each clip was first drawn at, by placement identity —
-        #: the two things this editor *derives from the content*, held by
-        #: `_fit` while `autofit` is off.
+        #: The pitch window each roll was first drawn with, and the length each
+        #: clip was first drawn at — the two things this editor *derives from
+        #: the content*, held by `_fit` while `autofit` is off, under the
+        #: document node `_hold_key` reads rather than an object's `id()`, so a
+        #: hold outlives the reparent or the restore that replaces the object.
         #:
         #: **Not reset by a draw**, unlike every registry beside them: those
         #: describe the widgets a draw made, and these describe what the reader
@@ -2708,10 +2709,9 @@ class FormEditor(Editor):
         growing is what makes it stable: an edge only ever moves outward, so
         nothing slides under the hand.
 
-        Keyed by identity rather than by widget id, because a widget is
-        allocated afresh on every redefine and what the reader is looking at has
-        to outlive that — a structural edit is exactly when the re-framing
-        showed."""
+        Keyed by `_hold_key`, never by the widget id: a widget is allocated
+        afresh on every redefine, and a structural edit is exactly when the
+        re-framing showed."""
         if self.autofit:
             return lo, hi
         was = held.get(key)
@@ -2719,6 +2719,35 @@ class FormEditor(Editor):
             lo, hi = min(was[0], lo), max(was[1], hi)
         held[key] = (lo, hi)
         return lo, hi
+
+    def _hold_key(self, holder) -> tuple:
+        """What a held value is filed under: **the node the document names**,
+        and the object itself only until there is one.
+
+        A hold has to outlive the object it was derived from, because the
+        arrangement replaces objects for edits that change nothing a reader can
+        see. A clip that changes lane *reparents* — the handle leaves one
+        aggregate and a fresh one joins another — and so does a placement that
+        comes back from an undo (`_set_placements` adds it again). Filed under
+        `id()`, the hold was lost at exactly those doors: the clip was re-derived
+        from its content and the picture shrank under the hand, which is the
+        re-framing `autofit` is off to prevent.
+
+        The document already keeps the identity that survives all of them — the
+        node id, carried across the reparent on purpose and stamped back onto a
+        restored placement — so that is the key. Asking for one before the first
+        conversion has to trigger it, exactly as `_node_id` does, or the hold a
+        session's first draw filed would be orphaned by its first edit.
+
+        `id()` remains the fallback for a holder the document has not numbered,
+        and it is only a fallback: it is not stable across a rebuild, and a
+        freed object's number can come back on another one.
+        """
+        node = getattr(holder, ID_ATTR, None)
+        if node is None:
+            self._history()          # `to_document` is what stamps the id
+            node = getattr(holder, ID_ATTR, None)
+        return ("node", int(node)) if node is not None else ("live", id(holder))
 
     def _pitch_window(self, element, notes) -> dict:
         """The ``min``/``max`` a roll is drawn over: the notes it holds, with
@@ -2730,7 +2759,7 @@ class FormEditor(Editor):
         moved one note — as did removing the highest note, which collapsed the
         window around what was left."""
         pitches = [n[2] for n in notes]
-        lo, hi = self._fit(self._pitch, id(element),
+        lo, hi = self._fit(self._pitch, self._hold_key(element),
                            min(min(pitches) - PITCH_PAD, DEFAULT_PITCH[1]),
                            max(max(pitches) + PITCH_PAD, DEFAULT_PITCH[0]))
         return dict(min=lo, max=hi)
@@ -2774,7 +2803,7 @@ class FormEditor(Editor):
         length = element.duration if isinstance(element, Element) else None
         if length is None:
             length = self._extent(element)
-        key = id(member) if member is not None else id(element)
+        key = self._hold_key(member if member is not None else element)
         return self._fit(self._length, key, 0.0, length)[1]
 
     def _drawn_dur(self, element, member, body=None, at: float = 0.0) -> float:

@@ -1126,6 +1126,42 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
 
 ## Found by use: the running list of fixes and open questions
 
+- ✅ **A clip that changed lane went back to its content's length** *(found
+  2026-09-03, testing `composer.py` with `autofit=False`; fixed the same day)*.
+  The hold was right and its key was not. `_fit` filed a held pair under the
+  object it was derived from (`id(member)`, the handle itself in TypeScript),
+  and the arrangement *replaces* that object for edits that change nothing a
+  reader can see: a clip that changes lane reparents -- the handle leaves one
+  aggregate and a fresh one joins another -- and a placement that comes back
+  from an undo is added again. At those doors the hold was orphaned, the draw
+  re-derived the length from the content, and the clip shrank under the hand,
+  which is exactly the re-framing the switch is off to prevent.
+
+  The document already keeps the identity that survives all of them -- the node
+  id, carried across the reparent on purpose and stamped back onto a restored
+  placement -- so that is the key: `FormEditor._hold_key` / `holdKey`, which
+  asks for the id and triggers the first conversion if that is what it takes,
+  the way `_node_id` does. The object itself remains a fallback for a holder the
+  document has not numbered yet. An element is never replaced, which is why the
+  pitch domain never showed this; it is filed under the node now too, so the two
+  faces answer one question. (This amends the entry below, which said identity
+  was enough: it is enough for a redefine, not for a reparent.)
+
+- ⬜ **A clip dropped where another already starts merges the whole lane into
+  one** *(found 2026-09-03, while reproducing the above)*. An aggregate whose
+  members start and end together is drawn as one clip with layered bodies --
+  they are *one thing* on the timeline -- and two members with no stated length
+  count as ending together. So dropping a clip onto a lane at the same onset as
+  the clip already there makes the lane draw a single layered clip, and neither
+  placement can be addressed on its own until the drop is undone.
+
+  The rule reads an authored structure correctly; what is in question is
+  whether a *drop* should be able to make one silently. The two candidates: only
+  collapse when the members' lengths are stated (an unstated pair is not
+  evidence they end together), or decide the layering when the window opens and
+  leave a drop out of it. Either is a decision, not a bug fix, so it is written
+  down rather than taken.
+
 - ✅ **A clip resized itself when a note inside it moved** *(found 2026-09-03,
   testing `composer.py` with `autofit=False`; fixed the same day)*. A placement
   that states no length is drawn *as long as its content*, so moving the last

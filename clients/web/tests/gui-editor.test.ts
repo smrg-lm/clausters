@@ -1301,6 +1301,79 @@ test("a logical aggregate's buses survive the document", () => {
 
 // ---- the lane header: what is the composition's, and what is the view's ----
 
+test("a held length survives the clip changing lane", () => {
+    // Found by use: a clip edited and then dragged to another lane snapped back
+    // to its content's length, with `autofit` off.
+    //
+    // The hold was right and its key was not. A clip that changes lane
+    // *reparents* -- the handle leaves one aggregate and a fresh one joins
+    // another -- and a hold filed under the object it was derived from is lost at
+    // exactly that door, so the draw re-derived the length and the clip shrank
+    // under the hand. The undo of a cut is the same door. The key is the node id,
+    // which the document carries across the reparent on purpose.
+    const piece = (): Aggregate => {
+        const lead = new Track(
+            new Timeline([
+                [0.0, new SeqEvent({ midinote: 60, dur: 1.0 })],
+                [3.0, new SeqEvent({ midinote: 64, dur: 1.0 })],
+            ]),
+        );
+        const bass = new Track(new Timeline([[0.0, new SeqEvent({ midinote: 48, dur: 1.0 })]]));
+        return new Aggregate(
+            [
+                [0.0, new Aggregate([[0.0, lead]], "concrete", { name: "lead" })],
+                [0.0, new Aggregate([[0.0, bass]], "concrete", { name: "bass" })],
+            ],
+            "concrete",
+            { name: "piece" },
+        );
+    };
+    // The roll is whichever clip carries the two notes; the lane it should land
+    // on is the other band.
+    const clip = (ed: FormEditor): GuiNode => {
+        const stack = lanes(ed.draw());
+        const found = stack.flatMap(clipsOf).find((c) => ((c.notes ?? []) as number[]).length >= 10);
+        return found as GuiNode;
+    };
+    const other = (ed: FormEditor): number => (lanes(ed.draw())[1] as GuiNode).id as number;
+
+    let ed = editor(piece(), { autofit: false });
+    let roll = clip(ed);
+    const before = roll.dur as number;
+    const earlier = [...((roll.notes ?? []) as number[])];
+    earlier[5] = BEAT; // the second note back to beat 1
+    assert.equal(
+        ed.apply("/gui_event", [roll.id as number, SEQ, UNSTATED, "notes", ...earlier]),
+        true,
+    );
+    assert.equal(clip(ed).dur, before, "the clip kept its length");
+
+    // ...and it is still the clip the reader was looking at after it changes
+    // lane. Dropped clear of what is already there: a drop that starts where
+    // another clip starts is a different rule (simultaneous members draw as one
+    // layered clip), and this is about the hold.
+    assert.equal(
+        ed.apply("/gui_event", [clip(ed).id as number, SEQ, UNSTATED, "lane", other(ed), 4 * BEAT]),
+        true,
+    );
+    assert.equal(clip(ed).dur, before, "the length crossed the lane with it");
+
+    // With the switch on it follows the content there, as everywhere else.
+    ed = editor(piece(), { autofit: true });
+    roll = clip(ed);
+    const followed = [...((roll.notes ?? []) as number[])];
+    followed[5] = BEAT;
+    assert.equal(
+        ed.apply("/gui_event", [roll.id as number, SEQ, UNSTATED, "notes", ...followed]),
+        true,
+    );
+    assert.equal(
+        ed.apply("/gui_event", [clip(ed).id as number, SEQ, UNSTATED, "lane", other(ed), 4 * BEAT]),
+        true,
+    );
+    assert.ok((clip(ed).dur as number) < before, "it followed the content in");
+});
+
 test("a lane header draws the composition's mixing and writes it back", () => {
     const laneElement = new Aggregate(
         [[0.0, new Clang(new SeqEvent({ midinote: 60, dur: 1.0 }))]],
