@@ -175,12 +175,16 @@ fn locate(source: &Source, beside: &Path) -> Result<PathBuf, String> {
 /// files nothing draws.
 fn referenced(session: &Session) -> Vec<SourceId> {
     let mut found: Vec<SourceId> = Vec::new();
-    session.document.root.walk(&mut |node| {
+    session.document.walk(&mut |node| {
         // Assembled samples names one source per window; a reader that took
         // only the first would open a joined clip with the rest of it silent.
         let named: Vec<SourceId> = match &node.body {
             Body::Vector { source, .. } => vec![source.source],
-            Body::Segments { segments, .. } => segments.iter().map(|s| s.source.source).collect(),
+            Body::Segments { segments, .. } => segments
+                .iter()
+                .filter_map(|s| s.source.samples())
+                .map(|source| source.source)
+                .collect(),
             _ => Vec::new(),
         };
         for source in named {

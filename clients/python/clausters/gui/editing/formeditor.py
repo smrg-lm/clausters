@@ -161,6 +161,15 @@ class FormEditing(Editing):
         # already had a context of its own was being edited on its own terms,
         # and taking its history away without being asked is not this walk's
         # to do.
+        # **A shared timeline is content, and content is named by intents too.**
+        # Two windows onto one timeline write the notes once, under a node of
+        # their own, so a note edit names *that* node -- and the projection has
+        # to find its way back to an element that holds the timeline. Any reader
+        # will do: they all hold the same one.
+        timeline = getattr(element, "wraps", None)
+        content = getattr(timeline, ID_ATTR, None) if timeline is not None else None
+        if content is not None:
+            self.by_node.setdefault(int(content), (owner, member, element))
         if getattr(element, ATTR, None) is None:
             setattr(element, ATTR, self)
         if isinstance(element, Aggregate):
@@ -1838,7 +1847,7 @@ class FormEditor(Editor):
         timeline = _editable_timeline(element)
         if timeline is None:
             return False
-        node = self._node_id(element)
+        node = self._notes_node(element, timeline)
         if node is None:
             return False
         # **The window the roll drew.** A track is a window onto its timeline
@@ -1912,6 +1921,19 @@ class FormEditor(Editor):
             return False
         self._project(outcome["effective"])
         return self._changed(outcome["applied"])
+
+    def _notes_node(self, element, timeline) -> "int | None":
+        """The node whose members are these notes.
+
+        Usually the element's own. When the timeline is **content** -- two or
+        more windows read it, so the document holds the notes once under a node
+        of their own -- it is that node, because that is where the notes are and
+        an intent has to name where they are. Asked of the conversion (which is
+        what decides, and what stamps the id) rather than of a flag kept here.
+        """
+        self._history()
+        node = getattr(timeline, ID_ATTR, None)
+        return int(node) if node is not None else self._node_id(element)
 
     def _note_window(self, element) -> tuple:
         """The beats of the timeline a roll over ``element`` **draws**: its

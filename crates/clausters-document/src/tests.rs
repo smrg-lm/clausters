@@ -422,3 +422,106 @@ fn an_aggregates_own_restrictions_are_carried_and_never_read() {
     assert_eq!(back.root.body.members().len(), 1);
     assert!(matches!(back.root.body, Body::Aggregate { .. }));
 }
+
+// ---- windows onto content: a cut is a reference, not a copy ----
+
+fn window(source: SegmentSource, start: f64, duration: f64) -> SegmentRef {
+    SegmentRef {
+        source,
+        start,
+        duration,
+    }
+}
+
+fn samples(id: u64) -> SegmentSource {
+    SegmentSource::Samples(SourceRef {
+        source: SourceId(id),
+        lifetime: Lifetime::Session,
+        generation: 0,
+        range: None,
+    })
+}
+
+#[test]
+fn a_window_onto_a_node_says_so_on_the_wire_and_leaves_a_sample_window_as_it_was() {
+    // The two shapes are told apart by what they carry, which is what keeps
+    // every document written before content existed reading unchanged.
+    let over_samples = serde_json::to_value(samples(7)).unwrap();
+    assert_eq!(over_samples["source"], serde_json::json!(7));
+    assert!(over_samples.get("node").is_none());
+
+    let over_node = serde_json::to_value(SegmentSource::Node { node: NodeId(12) }).unwrap();
+    assert_eq!(over_node, serde_json::json!({ "node": 12 }));
+
+    for source in [samples(7), SegmentSource::Node { node: NodeId(12) }] {
+        let back: SegmentSource =
+            serde_json::from_str(&serde_json::to_string(&source).unwrap()).unwrap();
+        assert_eq!(source, back);
+    }
+}
+
+#[test]
+fn assembled_data_takes_the_unit_of_what_it_assembles() {
+    // A run of windows onto samples is seconds, like the vector it is the
+    // several-windows form of; a run of windows onto nodes is beats, because
+    // what a node holds is musical. Derived, never stored.
+    let over_samples = Body::Segments {
+        segments: vec![window(samples(7), 0.0, 1.0)],
+        config: Opaque::none(),
+    };
+    let over_notes = Body::Segments {
+        segments: vec![window(SegmentSource::Node { node: NodeId(12) }, 1.0, 2.0)],
+        config: Opaque::none(),
+    };
+    assert_eq!(over_samples.duration_unit(), TimeUnit::Seconds);
+    assert_eq!(over_notes.duration_unit(), TimeUnit::Beats);
+}
+
+#[test]
+fn content_is_beside_the_tree_and_in_the_same_id_space() {
+    // Two windows onto one timeline: the notes live once, in `content`, and
+    // both halves name them. That is the whole point of the table -- written
+    // into the tree twice, the same note would have two parents and one id.
+    let shared = aggregate(
+        10,
+        vec![placed(0.0, None, clang(11)), placed(1.0, None, clang(12))],
+    );
+    let half = |id: u64, start: f64, dur: f64| {
+        node(
+            id,
+            Body::Segments {
+                segments: vec![window(SegmentSource::Node { node: NodeId(10) }, start, dur)],
+                config: Opaque::none(),
+            },
+        )
+    };
+    let document = Document::new(aggregate(
+        1,
+        vec![
+            placed(0.0, Some(1.0), half(2, 0.0, 1.0)),
+            placed(1.0, Some(1.0), half(3, 1.0, 1.0)),
+        ],
+    ))
+    .with_content(vec![shared]);
+
+    // The content is reachable by id, like anything else an intent can name...
+    assert_eq!(document.find(NodeId(11)).map(|n| n.id), Some(NodeId(11)));
+    // ...it counts for the ids a client may mint next...
+    assert_eq!(document.max_id(), NodeId(12));
+    // ...and it survives the format, empty or not.
+    let back: Document = serde_json::from_str(&serde_json::to_string(&document).unwrap()).unwrap();
+    assert_eq!(document, back);
+    assert!(
+        !serde_json::to_string(&Document::new(clang(1)))
+            .unwrap()
+            .contains("content")
+    );
+}
+
+#[test]
+fn an_id_that_means_one_thing_in_the_tree_and_another_in_the_content_is_refused() {
+    let document = Document::new(aggregate(1, vec![placed(0.0, None, clang(2))]))
+        .with_content(vec![aggregate(2, vec![])]);
+    let message = document.duplicate_id().expect("the clash is refused");
+    assert!(message.contains("node id 2"), "{message}");
+}

@@ -86,13 +86,6 @@ leaves no line here, because its plan's checkbox and the commit already carry it
   paints every lane. It is what the next entry has to be measured against, and it
   is first because it states the criterion the other one is a case of.
 
-- ⬜ **A window onto notes is a window while the session lasts and a copy once it
-  is written** *(`clients/python/PLAN.md`, Found by use)*. The split over notes
-  shipped sharing one timeline live, and the document writes each half's notes
-  again -- with the **same node ids** in both, which the edit log addresses by.
-  Same crate change as the entry below and it closes both, so they are read
-  together; this one is the reason it is a fix rather than a direction.
-
 - ⬜ **A clone: a new sequence made from a clip, or from a segment of one**
   *(`clients/python/PLAN.md`, Future directions)*. The arrangement can only make
   a second thing out of a first by **referring** to it; the verb that copies --
@@ -102,14 +95,15 @@ leaves no line here, because its plan's checkbox and the commit already carry it
   hiding). The three shapes are named there; the decision is one decision and
   covers both entries.
 
-- ⬜ **A run of windows onto several timelines has nowhere to be stored**
+- ⬜ **A join across timelines has a shape to be written in and no writer yet**
   *(`clients/python/PLAN.md`, Found by use, inside "Which edits a clip admits is
   asked of `form`'s classes")*. The split, the trim and the join over notes
-  shipped on 2026-09-03; what a join of windows onto *different* timelines would
-  make is a `NoteSegments`, and the document stores a segment as samples only
-  (`SegmentRef`'s source, `Body::Segments` answering `Seconds` by construction).
-  It is refused out loud with that reason. Closing it is a crate change that
-  reaches both clients' projections and the parity vectors.
+  shipped on 2026-09-03, and the document learned windows onto content the same
+  day -- so a run of windows over *several* timelines is now expressible and is
+  simply not built: the join refuses it out loud, and reading one raises with the
+  element it would need (`clausters.segments.NoteSegments`). What is left is the
+  editor's join and both clients' readers, with no format question in front of
+  it.
 
 - ⬜ **Two clips at the same onset are drawn as one, and neither can be addressed**
   *(`clients/python/PLAN.md`, Found by use)*. Overlapping placements on a track

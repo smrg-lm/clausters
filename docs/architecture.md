@@ -593,6 +593,24 @@ reasoning:
   be placed twice is what the node *references* (a buffer, a generator, a
   pattern); an element carrying its samples inside the node is refused, because
   two of those are two copies that diverge.
+- **A window is onto samples or onto a node, and the second is why
+  `Document::content` exists.** The rule above holds for material the document
+  does not carry — samples live outside it, so two windows are two references
+  and nothing is copied. It does not hold for material whose parts are *nodes*:
+  a timeline of notes carries its notes inside the node, so cutting one in two
+  and writing both halves writes the notes twice, with the same ids in each,
+  which is the divergence that bullet refuses. `SegmentSource` therefore has a
+  second shape — `{"node": id}` — and the node it names lives in
+  **`Document::content`**, beside the tree rather than in it: the tree is
+  *placement*, content is what placements read, and both are one id space so a
+  window and an intent name a node the same way. It is the arrangement's own
+  answer to what a session's source table does for samples, and it is empty (and
+  unwritten) in every document that shares nothing. The clients' half of the rule is
+  one line: **a timeline more than one element holds is written as content and
+  each reader as a window naming it**, and one a single element holds is written
+  exactly as before — the table is for sharing, not for tracks. Reading gives
+  every window over one node the same object, which is what makes a reopened cut
+  behave like the cut that made it.
 - **An id names one node, and the door checks it.** An intent addresses a node
   by its id, so an id that names two *different* nodes is applied to whichever
   the lookup reaches first while the sender's own index keeps the other — one

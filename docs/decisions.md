@@ -844,6 +844,51 @@ to play it, and a logical aggregate emits the bus-wired configuration the server
 already expresses (a `GraphDef`) rather than a wiring language of its own. Both
 exceptions were resolved in the algebra's favour, and both are recorded above.
 
+## Windows all the way: a cut refers, and what two windows share lives beside the tree
+
+A cut is a **window**, not a rewrite: both halves read the material they always
+read, and lengthening either one brings back what the cut hid. That is why a
+split can be undone by a join, and why trimming a take back out gives its frames
+again. It held for samples from the start and it did not hold for notes, and the
+difference is where the contents live.
+
+**Context.** A vector's samples are *outside* the document — a `SourceRef` names
+them and a session's table says where they are — so two windows onto one take are
+two references and nothing is copied. A track's notes are *inside* the document,
+as nodes, because a note has to be addressable: an intent names it, a log
+inverts it. So writing two windows onto one timeline wrote every note twice,
+with the same ids in each. The format tolerated it (`duplicate_id` refuses two
+*different* nodes under one id, and identical copies are not that), which is
+precisely why it was invisible: it stayed consistent while the two halves shared
+one object in memory, and came apart on reopening, where each half got a
+timeline of its own and the two drifted from the first edit.
+
+**Decision (2026-09-03, the user's, over two alternatives).** Windows all the
+way. A window is onto samples **or onto a node** (`SegmentSource`), and the node
+it names lives in **`Document::content`** — beside the tree, not in it, because
+the tree is *placement* and content is what placements read. One id space for
+both halves, so a window and an intent name a node the same way, and the finders
+an intent uses reach content as well as the tree.
+
+**The alternatives, and what they cost.** *A split that clones* — each half gets
+its own copy of the notes, nothing collides, the crate never changes — was
+rejected because it takes the property the whole layer is built on: a cut would
+delete rather than hide, dragging a half's edge back out would bring back
+nothing, and a join would stop being a split's inverse. *Leaving it* was
+rejected because the live model and the written one disagreed, which is the one
+disagreement a save cannot survive. The clone is worth having as **its own
+verb** — "make this stretch a structure of its own" is a real act, and the
+absence of it is what made a split feel like it should copy — and it is written
+down as one rather than as the answer to this.
+
+**Consequence.** The client writes a timeline **two elements hold** as content
+and each reader as a window naming it; a timeline one element holds is written
+exactly as before, because the table is for sharing and not for tracks. Every
+document written before this reads back identical: samples are the object a
+`SourceRef` already was, a node is `{"node": id}`, and `content` is skipped when
+empty. What a join across *different* timelines makes — a run of windows over
+several nodes — is now expressible, and is the next thing to build on it.
+
 ## A view is configured by what it holds, and the arrangement is not the norm
 
 `clausters.form` is the layer that *places* things in time, and because it was

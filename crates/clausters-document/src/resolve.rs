@@ -324,11 +324,17 @@ fn pieces_of_segments(
         if length == 0 {
             continue;
         }
+        // What this resolves is **samples**, so a window onto a node of the
+        // document contributes none: its contents are nodes, and what reads
+        // those is the tree walk, not a range of frames.
+        let Some(source) = segment.source.samples() else {
+            continue;
+        };
         let range_start = segment.start.max(0.0).round() as u64 + into;
         out.push(Resolved {
             node: member.node.id,
-            source: segment.source.source,
-            generation: segment.source.generation,
+            source: source.source,
+            generation: source.generation,
             range: Range {
                 start: range_start,
                 end: range_start + length,

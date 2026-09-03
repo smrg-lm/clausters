@@ -287,6 +287,15 @@ export class FormEditing extends Editing {
         // window onto samples, so what an intent names is the window.
         const node = docIdOf(member ?? element);
         if (node !== null) this.byNode.set(node, [owner, member, element]);
+        // **A shared timeline is content, and content is named by intents too.**
+        // Two windows onto one timeline write the notes once, under a node of
+        // their own, so a note edit names *that* node — and the projection has
+        // to find its way back to an element that holds the timeline. Any reader
+        // will do: they all hold the same one.
+        const held = docIdOf(element.wraps);
+        if (held !== null && !this.byNode.has(held)) {
+            this.byNode.set(held, [owner, member, element]);
+        }
         // A view opened over a *part* of this composition — a dedicated roll of
         // one track — must reach this context and not mint a second one, so the
         // walk claims what it passes. Only where there is none: a part that
@@ -1964,7 +1973,7 @@ export class FormEditor extends Editor<Element> implements Adopting {
     ): boolean {
         const timeline = editableTimeline(element);
         if (timeline === null) return false;
-        const node = this.nodeId(element);
+        const node = this.notesNode(element, timeline);
         if (node === null) return false;
         // **The window the roll drew.** A track is a window onto its timeline (a
         // trim reads from further in, a split gives two windows over one
@@ -2058,6 +2067,21 @@ export class FormEditor extends Editor<Element> implements Adopting {
      * have to agree about it — a roll that drew a window and wrote back the
      * whole timeline would delete every note the window did not show.
      */
+    /**
+     * The node whose members are these notes.
+     *
+     * Usually the element's own. When the timeline is **content** — two or more
+     * windows read it, so the document holds the notes once under a node of
+     * their own — it is that node, because that is where the notes are and an
+     * intent has to name where they are. Asked of the conversion (which is what
+     * decides, and what stamps the id) rather than of a flag kept here.
+     */
+    private notesNode(element: Element, timeline: unknown): number | null {
+        this.history();
+        const held = docIdOf(timeline);
+        return held !== null ? held : this.nodeId(element);
+    }
+
     private noteWindow(element: Element): [number, number] {
         const lo = Number(element.windowStart() ?? 0.0);
         const length = element.duration;

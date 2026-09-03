@@ -1769,3 +1769,42 @@ test("a placement that came back from an undo can still be moved", () => {
     const moved = clipsOf(lanes(ed.draw())[0] as GuiNode)[1] as GuiNode;
     assert.equal(moved.offset, 2 * BEAT);
 });
+
+test("a split over notes writes the notes once and reopens sharing them", () => {
+    // A window is a window once the piece is written down, too. The notes are
+    // nodes, so two halves written as two tracks would write every note twice
+    // with the same ids in each — one identity, two parents, which is what the
+    // document refuses and what made a reopened piece hand the halves two
+    // timelines that drift apart from the first edit. They are `content` now:
+    // held once, named by both windows.
+    const ed = editor();
+    const clip = clipsOf(lanes(ed.draw())[1] as GuiNode)[0] as GuiNode;
+    ed.apply("/gui_event", [clip.id, SEQ, UNSTATED, "split", BEAT]);
+
+    const document = toDocument(ed.element);
+    const held = (document.content ?? [])[0] as Record<string, unknown>;
+    assert.equal((held.members as unknown[]).length, 3); // the melody's notes, once
+    const lane = ((document.root.members as Record<string, unknown>[])[1]
+        ?.node as Record<string, unknown>).members as Record<string, unknown>[];
+    const windows = lane.map((m) => m.node as Record<string, unknown>);
+    assert.deepEqual(windows.map((w) => w.kind), ["segments", "segments"]);
+    assert.deepEqual(
+        windows.map((w) => (w.segments as Record<string, unknown>[])[0]?.source),
+        [{ node: held.id }, { node: held.id }],
+    );
+    assert.deepEqual(
+        windows.map((w) => (w.segments as Record<string, unknown>[])[0]?.start),
+        [0.0, 1.0],
+    );
+    // Two windows, two ids of their own — and neither is the content's.
+    assert.equal(new Set([...windows.map((w) => w.id), held.id]).size, 3);
+
+    // Reopened, the halves read **one** timeline: the sharing is the document's,
+    // not a fact about the session that made it.
+    const back = fromDocument(document) as Aggregate;
+    const lead = (back.handles[1] as Member).element as Aggregate;
+    const [first, second] = lead.handles.map((h) => h.element as Track);
+    assert.equal(first?.wraps, second?.wraps);
+    assert.equal((first?.wraps as Timeline).length, 3);
+    assert.deepEqual([first?.windowStart(), second?.windowStart()], [0.0, 1.0]);
+});

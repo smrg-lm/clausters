@@ -248,14 +248,16 @@ impl Session {
     /// reader reports rather than discovering one element at a time.
     pub fn dangling(&self) -> Vec<SourceId> {
         let mut missing = Vec::new();
-        self.document.root.walk(&mut |node| {
+        self.document.walk(&mut |node| {
             let named: Vec<crate::SourceId> = match &node.body {
                 crate::Body::Vector { source, .. } => vec![source.source],
                 // Assembled samples names one source per window, and a table
                 // covering only the first would reopen with the rest missing.
-                crate::Body::Segments { segments, .. } => {
-                    segments.iter().map(|s| s.source.source).collect()
-                }
+                crate::Body::Segments { segments, .. } => segments
+                    .iter()
+                    .filter_map(|s| s.source.samples())
+                    .map(|source| source.source)
+                    .collect(),
                 _ => Vec::new(),
             };
             for source in named {

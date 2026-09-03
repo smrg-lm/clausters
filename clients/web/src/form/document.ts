@@ -73,6 +73,11 @@ export type DocNode = Record<string, any>;
 export interface DocumentJson {
     version: number;
     root: DocNode;
+    /**
+     * **Content the tree reads rather than places**: the nodes a window names
+     * (`{"node": id}`). Absent in every document that shares nothing.
+     */
+    content?: DocNode[];
 }
 
 /** A session: the document, plus the table that says where its source is. */
@@ -114,6 +119,15 @@ export function setDocId(obj: unknown, id: number): void {
 }
 
 /**
+ * Takes the stamp off `obj` — for material that **stops** being content: a join
+ * makes two windows one element again, and a timeline still carrying the id it
+ * had as content would send the next edit to a node the document no longer has.
+ */
+export function clearDocId(obj: unknown): void {
+    if (obj !== null && typeof obj === "object") docIds.delete(obj as object);
+}
+
+/**
  * The version an unedited document carries.
  *
  * One rather than zero, because zero is what an edit means by *unstated* when it
@@ -137,7 +151,79 @@ export function toDocument(
     element: Element,
     { version = FIRST_VERSION }: { version?: number } = {},
 ): DocumentJson {
-    return { version: Math.trunc(version), root: node(element, new Ids(element)) };
+    const ids = new Ids(element);
+    const shared = sharedContent(element, ids);
+    const out: DocumentJson = {
+        version: Math.trunc(version),
+        root: node(element, ids, null, shared),
+    };
+    if (shared.size > 0) {
+        // **Content is written once, and the tree names it.** Its nodes are in
+        // the same id space as the tree's, which is what lets a window and an
+        // intent name the same thing.
+        out.content = [...shared.values()].map((entry) => entry.node);
+    }
+    return out;
+}
+
+/** One piece of shared content: the node it was written as, and its id. */
+interface Content {
+    id: number;
+    node: DocNode;
+}
+
+/**
+ * The material **more than one element reads**, as content nodes.
+ *
+ * A window onto samples costs nothing to repeat because the samples are not in
+ * the document; a window onto a timeline of notes is not so lucky — the notes
+ * are nodes, so writing two windows as two tracks writes every note twice, with
+ * the same ids in each, and a reopened piece gets two timelines that drift apart
+ * from the first edit. So a timeline **two elements hold** is written once,
+ * here, and each of its readers becomes a window naming it.
+ *
+ * A timeline only one element holds is written exactly as it always was: the
+ * table exists for sharing, not for tracks.
+ */
+function sharedContent(root: Element, ids: Ids): Map<Timeline, Content> {
+    const holders = new Map<Timeline, Track[]>();
+    const scan = (element: Element): void => {
+        if (element instanceof Track) {
+            const found = holders.get(element.timeline) ?? [];
+            found.push(element);
+            holders.set(element.timeline, found);
+        }
+        for (const child of children(element)) scan(child as Element);
+    };
+    scan(root);
+    const shared = new Map<Timeline, Content>();
+    for (const [timeline, tracks] of holders) {
+        if (tracks.length < 2) {
+            // **Not content, and it has to stop being it.** A join makes two
+            // windows one element again, and a timeline still carrying the id it
+            // had as content would send the next note edit to a node this
+            // document no longer has.
+            if (docIdOf(timeline) !== null) clearDocId(timeline);
+            continue;
+        }
+        // The content node carries the notes, and the id is the **timeline's**
+        // own — stamped on it, so a second conversion names the same node and
+        // every intent recorded against a note still lands.
+        const id = ids.of(timeline as unknown as Element);
+        shared.set(timeline, {
+            id,
+            node: {
+                id,
+                kind: "aggregate",
+                grouping: CONCRETE,
+                members: timelineItems(timeline).map(([beat, item]) =>
+                    timelineMember(beat, item, ids),
+                ),
+                config: { form: FORM_TRACK },
+            },
+        });
+    }
+    return shared;
 }
 
 /**
@@ -480,7 +566,18 @@ export function fromDocument(
     document: DocumentJson,
     { resolve }: { resolve?: Resolver } = {},
 ): Element {
-    return fromNode(document.root, resolve ?? null);
+    // **Content first, because the tree names it.** A window onto a node reads
+    // material the document holds once and several windows share, so it is built
+    // before the tree and handed down — and every window over one node gets the
+    // *same* object, which is the whole point: two halves of a cut edit one
+    // timeline, and reopening a piece must not hand them two.
+    const content = new Map<number, Element>();
+    for (const held of document.content ?? []) {
+        const built = fromNode(held, resolve ?? null);
+        content.set(Number(held.id), built);
+        setDocId(built.wraps ?? built, Number(held.id));
+    }
+    return fromNode(document.root, resolve ?? null, false, content);
 }
 
 // ---- arrangement -> document ----
@@ -605,7 +702,12 @@ function children(element: Element): object[] {
  * One element as a document node: the temporal metadata every node has, plus the
  * body that says what it is.
  */
-function node(element: Element, ids: Ids, member: Member | null = null): DocNode {
+function node(
+    element: Element,
+    ids: Ids,
+    member: Member | null = null,
+    shared: Map<Timeline, Content> | null = null,
+): DocNode {
     const out: DocNode = { id: ids.of(element, member) };
     if (typeof element.name === "string" && element.name) {
         // A referenceable label, never a second identity -- the server's own
@@ -616,7 +718,7 @@ function node(element: Element, ids: Ids, member: Member | null = null): DocNode
     if (element.onset !== null) out.onset = Number(element.onset);
     if (element.duration !== null) out.duration = Number(element.duration);
     if (element.resident) out.resident = true;
-    Object.assign(out, body(element, ids));
+    Object.assign(out, body(element, ids, shared));
     return out;
 }
 
@@ -633,7 +735,7 @@ const TEMPORAL = new Set(["id", "name", "onset", "duration", "resident"]);
  */
 export const FORM_TRACK = "track";
 
-function kindBody(element: Element, ids: Ids): DocNode {
+function kindBody(element: Element, ids: Ids, shared: Map<Timeline, Content> | null = null): DocNode {
     const kept = preserved(element);
     if (kept !== null) {
         // A body this build does not know, on its way back out untouched.
@@ -642,6 +744,30 @@ function kindBody(element: Element, ids: Ids): DocNode {
         );
     }
     if (element instanceof Track) {
+        const entry = shared?.get(element.timeline);
+        if (entry !== undefined) {
+            // **This timeline is content, so this element is a window onto it.**
+            // More than one element reads it, and writing the notes once per
+            // reader would write one identity twice — so the notes are in
+            // `content` and each reader names the node. The *element's* length
+            // stays the node's own, absent when nobody stated one; the window's
+            // length is how much of the material it can show, which is what a
+            // reader that does not resolve the content lays the clip out with.
+            const start = Number(element.start);
+            const length =
+                element.duration !== null
+                    ? Number(element.duration)
+                    : Math.max(0.0, Number(element.timeline.duration()) - start);
+            return withConfig(
+                {
+                    kind: "segments",
+                    segments: [
+                        { source: { node: entry.id }, start, duration: length },
+                    ],
+                },
+                { form: FORM_TRACK },
+            );
+        }
         // A Set with the restrictions of a multitrack view, and its items are
         // placed elements like any others -- which is what makes a note in a
         // roll addressable, and therefore editable and undoable. Which
@@ -668,7 +794,7 @@ function kindBody(element: Element, ids: Ids): DocNode {
         const body = {
             kind: "aggregate",
             grouping: element.kind === LOGICAL ? LOGICAL : CONCRETE,
-            members: element.handles.map((handle) => placement(handle, ids)),
+            members: element.handles.map((handle) => placement(handle, ids, shared)),
         };
         // A logical aggregate's **declared buses** ride in the body's opaque
         // config, the same door a `Track`'s restrictions use: they are the
@@ -810,11 +936,15 @@ function preserved(element: Element): DocNode | null {
  * **handle's**, so one element placed twice is two windows and not one
  * ambiguous name.
  */
-function placement(handle: Member, ids: Ids): DocNode {
+function placement(
+    handle: Member,
+    ids: Ids,
+    shared: Map<Timeline, Content> | null = null,
+): DocNode {
     placeableTwice(handle, ids);
     const out: DocNode = {
         offset: Number(handle.offset),
-        node: node(handle.element, ids, handle),
+        node: node(handle.element, ids, handle, shared),
     };
     if (handle.dur !== null) out.dur = Number(handle.dur);
     return out;
@@ -914,8 +1044,8 @@ export const MIXING: Record<string, boolean | number> = {
  * `Configure` intent replaces a configuration whole, and one that started from a
  * config without them would silence-then-unsilence a lane on every curve edit.
  */
-function body(element: Element, ids: Ids): DocNode {
-    const out = kindBody(element, ids);
+function body(element: Element, ids: Ids, shared: Map<Timeline, Content> | null = null): DocNode {
+    const out = kindBody(element, ids, shared);
     const mixing = mixingOf(element);
     if (Object.keys(mixing).length > 0) {
         out.config = { ...((out.config as DocNode) ?? {}), ...mixing };
@@ -1175,7 +1305,12 @@ function eventConfig(config: DocNode): Record<string, unknown> {
 
 // ---- document -> arrangement ----
 
-function fromNode(src: DocNode, resolve: Resolver | null, placed = false): Element {
+function fromNode(
+    src: DocNode,
+    resolve: Resolver | null,
+    placed = false,
+    content: Map<number, Element> | null = null,
+): Element {
     const kind = src.kind;
     const config: DocNode = src.config ?? {};
     const onset = src.onset ?? null;
@@ -1213,7 +1348,7 @@ function fromNode(src: DocNode, resolve: Resolver | null, placed = false): Eleme
         for (const member of (src.members as DocNode[]) ?? []) {
             const child = member.node as DocNode;
             const handle = aggregate.add(
-                fromNode(child, resolve, true),
+                fromNode(child, resolve, true, content),
                 Number(member.offset ?? 0.0),
                 member.dur === undefined || member.dur === null ? null : Number(member.dur),
             );
@@ -1239,10 +1374,44 @@ function fromNode(src: DocNode, resolve: Resolver | null, placed = false): Eleme
         const members = src.members as DocNode[] | undefined;
         const items =
             members && members.length > 0
-                ? members.map((m) => fromNode(m.node as DocNode, resolve))
+                ? members.map((m) => fromNode(m.node as DocNode, resolve, false, content))
                 : (resolved(resolve, "sequence", config) || config.sequence);
         built = new Sequence(items, onset, duration);
     } else if (kind === "segments") {
+        const windows = (src.segments as DocNode[]) ?? [];
+        const overNodes = windows.filter(
+            (w) => typeof w.source === "object" && w.source !== null &&
+                "node" in (w.source as DocNode),
+        );
+        if (overNodes.length > 0) {
+            // **A window onto content**: the material is a node of this
+            // document, built once and shared by every window that names it, so
+            // this element is a `Track` reading that timeline from `start`. Its
+            // own length is the node's — absent when nobody stated one — and the
+            // window's is how much of the material it can show, which is what a
+            // reader that does not resolve the content lays it out with.
+            if (overNodes.length > 1) {
+                throw new Error(
+                    "a run of windows onto several nodes is not built yet: the " +
+                        "element for it is `NoteSegments` (../segments.ts), and " +
+                        "what makes one is a join across timelines",
+                );
+            }
+            const window = overNodes[0] as DocNode;
+            const named = Number((window.source as DocNode).node);
+            const held = content?.get(named);
+            const timeline = held?.wraps;
+            if (!(timeline instanceof Timeline)) {
+                throw new Error(
+                    `a window names content node ${named}, which this document ` +
+                        "does not hold: a window and the material it reads are " +
+                        "written together",
+                );
+            }
+            built = new Track(timeline, onset, duration, {
+                start: Number(window.start ?? 0.0),
+            });
+        } else {
         built = new Segments(
             ((src.segments as DocNode[]) ?? []).map(
                 (seg) =>
@@ -1260,6 +1429,7 @@ function fromNode(src: DocNode, resolve: Resolver | null, placed = false): Eleme
                 controls: (config.controls as Record<string, unknown>) ?? null,
             },
         );
+        }
     } else if (kind === "vector") {
         built = new Vector(
             (resolved(resolve, "vector", src.source) as SourceLike) ||

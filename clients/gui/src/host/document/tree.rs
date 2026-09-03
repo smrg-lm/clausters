@@ -73,6 +73,14 @@ pub struct Look<'a> {
     /// itself, and the registry drops the whole subtree — which looks like an
     /// empty window and one line in the log.
     pub first_id: i32,
+    /// The document's **content**: the nodes a window names
+    /// ([`clausters_document::SegmentSource::Node`]).
+    ///
+    /// A cut over notes leaves two windows onto one timeline, and the timeline
+    /// is here rather than in either of them — so without this a split roll clip
+    /// draws as an empty rectangle, which is the picture for *the samples are
+    /// elsewhere* and a lie about notes the document is holding.
+    pub content: Option<&'a [Node]>,
     /// The session's samples, once somebody has resolved it to buffers.
     ///
     /// `None` — or a source missing from it — draws a take as its placement and
@@ -91,6 +99,7 @@ impl Default for Look<'_> {
             tempo: 1.0,
             quant: 0.0,
             first_id: 1,
+            content: None,
             takes: None,
         }
     }
@@ -129,6 +138,12 @@ pub fn draw(document: &Document, look: &Look<'_>, title: &str) -> Drawn {
     let mut bindings = Vec::new();
     let mut headers = Vec::new();
     let mut lanes: Vec<Value> = Vec::new();
+    // The content is the document's, so it is filled in here rather than asked
+    // of a caller that would have to remember.
+    let look = &Look {
+        content: Some(&document.content),
+        ..*look
+    };
 
     match &document.root.body {
         Body::Aggregate { members, .. } => {
@@ -279,9 +294,21 @@ fn lane_of(
             let notes = notes_of(members).expect("checked");
             vec![roll_clip(member, here, notes, look, ids, bindings)]
         }
+        // A **window onto a timeline**: what a cut over notes leaves. The notes
+        // are content the document holds once, and this half shows the stretch
+        // of them its window names.
+        Body::Segments { .. } if windowed_notes(&member.node, look).is_some() => {
+            let notes = windowed_notes(&member.node, look).expect("checked");
+            vec![roll_clip(member, here, notes, look, ids, bindings)]
+        }
         Body::Aggregate { members, .. } => members
             .iter()
-            .map(|inner| clip_of(inner, here, look, ids, bindings))
+            .map(|inner| match windowed_notes(&inner.node, look) {
+                // A lane of clips, one of which is a window onto notes: the two
+                // halves of a cut sit on the lane like any other pair of clips.
+                Some(notes) => roll_clip(inner, here, notes, look, ids, bindings),
+                None => clip_of(inner, here, look, ids, bindings),
+            })
             .collect(),
         _ => vec![clip_of(member, base, look, ids, bindings)],
     };
@@ -366,7 +393,13 @@ fn clip_of(
             let len = segment.duration * look.units_per_second;
             let at = cursor;
             cursor += len;
-            let Some(take) = look.takes.and_then(|t| t.get(segment.source.source)) else {
+            // A window onto a **node** draws nothing here: what it reads is
+            // content of the document, not a take, and the body that shows it
+            // is the one its own kind asks for.
+            let Some(source) = segment.source.samples() else {
+                continue;
+            };
+            let Some(take) = look.takes.and_then(|t| t.get(source.source)) else {
                 continue;
             };
             let mut body = Map::new();
@@ -418,13 +451,17 @@ fn take_editors(
     };
     let mut seen: Vec<clausters_document::SourceId> = Vec::new();
     let mut out = Vec::new();
-    document.root.walk(&mut |node| {
+    document.walk(&mut |node| {
         // One pane per **source**, and assembled samples names several: a
         // joined clip is edited piece by piece, since a piece is what a file
         // is.
         let sources: Vec<clausters_document::SourceId> = match &node.body {
             Body::Vector { source, .. } => vec![source.source],
-            Body::Segments { segments, .. } => segments.iter().map(|s| s.source.source).collect(),
+            Body::Segments { segments, .. } => segments
+                .iter()
+                .filter_map(|s| s.source.samples())
+                .map(|source| source.source)
+                .collect(),
             _ => return,
         };
         for source in sources {
@@ -521,6 +558,34 @@ fn take_of(node: &Node, look: &Look<'_>) -> Option<super::sources::Take> {
         return None;
     };
     look.takes?.get(source.source)
+}
+
+/// The notes a **window onto content** shows, placed from the window's own zero.
+///
+/// A cut over notes is two windows onto one timeline: the timeline is a node in
+/// [`Document::content`] and each half names it. What a half draws is the notes
+/// inside its window, shifted back to its own start — the same reading the
+/// clients do, made here so a host with no client draws a split piece the way
+/// the piece is.
+fn windowed_notes(node: &Node, look: &Look<'_>) -> Option<Vec<(Beats, Beats, f32)>> {
+    let Body::Segments { segments, .. } = &node.body else {
+        return None;
+    };
+    let window = segments.first()?;
+    let named = window.source.node()?;
+    let held = look.content?.iter().find(|n| n.id == named)?;
+    let Body::Aggregate { members, .. } = &held.body else {
+        return None;
+    };
+    let notes = notes_of(members)?;
+    let (from, to) = (window.start, window.start + window.duration);
+    Some(
+        notes
+            .into_iter()
+            .filter(|(start, _, _)| *start >= from && *start < to)
+            .map(|(start, dur, pitch)| (start - from, dur, pitch))
+            .collect(),
+    )
 }
 
 /// The `notes` body of an aggregate of clangs — the flat `start dur pitch velocity
@@ -914,12 +979,12 @@ mod take_tests {
         std::fs::write(dir.join("a.wav"), b"one").expect("write");
         std::fs::write(dir.join("b.wav"), b"two").expect("write");
         let segment = |source: u64, start: f64, duration: f64| SegmentRef {
-            source: SourceRef {
+            source: clausters_document::SegmentSource::Samples(SourceRef {
                 source: SourceId(source),
                 lifetime: Lifetime::Session,
                 generation: 0,
                 range: None,
-            },
+            }),
             start,
             duration,
         };
@@ -1291,6 +1356,62 @@ mod depth_tests {
             2,
             "the first track's two notes"
         );
+    }
+
+    /// **A cut over notes draws as two clips of one timeline**, and the host
+    /// has to read the window to do it: the notes are content the document
+    /// holds once, each half names it, and a host that stopped at the tree
+    /// would draw two empty rectangles where the phrase is.
+    #[test]
+    fn a_window_onto_content_draws_the_notes_its_window_names() {
+        use clausters_document::{SegmentRef, SegmentSource};
+
+        let note = |id: u64, pitch: f64| {
+            Node::new(
+                NodeId(id),
+                Body::Clang {
+                    config: Opaque(json!({ "midinote": pitch, "dur": 1.0 })),
+                    fires: None,
+                },
+            )
+        };
+        let held = aggregate(10, vec![at(0.0, note(11, 60.0)), at(2.0, note(12, 64.0))]);
+        let half = |id: u64, start: Beats, dur: Beats| {
+            Node::new(
+                NodeId(id),
+                Body::Segments {
+                    segments: vec![SegmentRef {
+                        source: SegmentSource::Node { node: NodeId(10) },
+                        start,
+                        duration: dur,
+                    }],
+                    config: Opaque::none(),
+                },
+            )
+        };
+        let doc = Document::new(aggregate(
+            1,
+            vec![at(
+                0.0,
+                aggregate(
+                    4,
+                    vec![at(0.0, half(2, 0.0, 2.0)), at(2.0, half(3, 2.0, 2.0))],
+                ),
+            )],
+        ))
+        .with_content(vec![held]);
+
+        let drawn = draw(&doc, &Look::default(), "piece");
+        let clips = drawn.def["children"][0]["children"].as_array().unwrap();
+        assert_eq!(clips.len(), 2, "one clip per window");
+        // Each half draws the note its window holds, placed from its own zero --
+        // and the second's note is *not* drawn at beat two, which is where it
+        // sits on the timeline they share.
+        for clip in clips {
+            let notes = clip["notes"].as_array().unwrap();
+            assert_eq!(notes.len() / 5, 1, "one note in each window");
+            assert_eq!(notes[0], 0.0, "placed from the window's own start");
+        }
     }
 
     /// The offsets accumulate all the way down: a note two beats into a track

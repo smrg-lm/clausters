@@ -379,7 +379,8 @@ pub(crate) fn current(document: &Document, intent: &Intent) -> Option<Intent> {
     let id = intent.node();
     match intent {
         Intent::Place { .. } => {
-            let member = find_member(&document.root, id)?;
+            let member = find_member(&document.root, id)
+                .or_else(|| document.content.iter().find_map(|n| find_member(n, id)))?;
             Some(Intent::Place {
                 node: id,
                 offset: member.offset,
@@ -427,7 +428,11 @@ fn generation(document: &Document, id: NodeId) -> Option<u64> {
         // Assembled data is as fresh as its **stalest** piece: an edit made
         // against it was made against every window it shows, so any one of them
         // being rewritten is what a staleness check has to catch.
-        Body::Segments { segments, .. } => segments.iter().map(|s| s.source.generation).max(),
+        Body::Segments { segments, .. } => segments
+            .iter()
+            .filter_map(|s| s.source.samples())
+            .map(|source| source.generation)
+            .max(),
         _ => None,
     }
 }
@@ -440,7 +445,7 @@ fn place(
     rules: &Rules,
 ) -> Outcome {
     let snapped = rules.snap(offset);
-    let Some(member) = find_member_mut(&mut document.root, id) else {
+    let Some(member) = find_member_in_document(document, id) else {
         // Nothing to place, and nothing to hand back either: the caller's own
         // value is the only description of a node the document does not hold.
         return Outcome::refused(
@@ -484,7 +489,7 @@ fn place(
 }
 
 fn configure(document: &mut Document, id: NodeId, config: &Opaque) -> Outcome {
-    let Some(node) = find_mut(&mut document.root, id) else {
+    let Some(node) = find_in_document(document, id) else {
         return Outcome::refused(
             Intent::Configure {
                 node: id,
@@ -517,7 +522,7 @@ fn configure(document: &mut Document, id: NodeId, config: &Opaque) -> Outcome {
 }
 
 fn set_members(document: &mut Document, id: NodeId, members: &[Member]) -> Outcome {
-    let Some(node) = find_mut(&mut document.root, id) else {
+    let Some(node) = find_in_document(document, id) else {
         return Outcome::refused(
             Intent::SetMembers {
                 node: id,
@@ -570,7 +575,7 @@ fn write_samples(
             reason.to_string(),
         )
     };
-    let Some(node) = find_mut(&mut document.root, id) else {
+    let Some(node) = find_in_document(document, id) else {
         return refuse("no such node");
     };
     let Body::Vector { source, .. } = &mut node.body else {
@@ -625,6 +630,35 @@ fn find_member(node: &Node, id: NodeId) -> Option<&Member> {
 /// what was missing was the door.
 fn config(body: &Body) -> Option<&Opaque> {
     body.config()
+}
+
+/// The node an intent names, **anywhere in the document**: the tree first, then
+/// the content beside it.
+///
+/// Content is not placement, so it is not in the tree — and it is addressed by
+/// exactly the same ids, because a note held once and read by two windows is
+/// still a note an edit has to be able to name. An intent that could only reach
+/// the tree would refuse every edit to shared material.
+fn find_in_document(document: &mut Document, id: NodeId) -> Option<&mut Node> {
+    if find_mut(&mut document.root, id).is_some() {
+        return find_mut(&mut document.root, id);
+    }
+    document
+        .content
+        .iter_mut()
+        .find_map(|node| find_mut(node, id))
+}
+
+/// The member an intent names, anywhere in the document. See
+/// [`find_in_document`].
+fn find_member_in_document(document: &mut Document, id: NodeId) -> Option<&mut Member> {
+    if find_member_mut(&mut document.root, id).is_some() {
+        return find_member_mut(&mut document.root, id);
+    }
+    document
+        .content
+        .iter_mut()
+        .find_map(|node| find_member_mut(node, id))
 }
 
 fn find_mut(node: &mut Node, id: NodeId) -> Option<&mut Node> {

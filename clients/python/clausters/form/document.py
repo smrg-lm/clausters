@@ -74,7 +74,61 @@ def to_document(element, *, version: int = FIRST_VERSION) -> dict:
     Returns:
         The document as plain JSON-able Python — ``{"version": …, "root": …}``.
     """
-    return {"version": int(version), "root": _node(element, _Ids(element))}
+    ids = _Ids(element)
+    shared = _shared_content(element, ids)
+    document = {"version": int(version), "root": _node(element, ids, shared=shared)}
+    if shared:
+        # **Content is written once, and the tree names it.** Its nodes are in
+        # the same id space as the tree's, which is what lets a window and an
+        # intent name the same thing.
+        document["content"] = [entry["node"] for entry in shared.values()]
+    return document
+
+
+def _shared_content(root, ids: "_Ids") -> dict:
+    """The material **more than one element reads**, as content nodes.
+
+    A window onto samples costs nothing to repeat because the samples are not in
+    the document; a window onto a timeline of notes is not so lucky -- the notes
+    are nodes, so writing two windows as two tracks writes every note twice,
+    with the same ids in each, and a reopened piece gets two timelines that
+    drift apart from the first edit. So a timeline **two elements hold** is
+    written once, here, and each of its readers becomes a window naming it
+    (`clausters_document::SegmentSource::Node`).
+
+    A timeline only one element holds is written exactly as it always was: the
+    table exists for sharing, not for tracks.
+
+    Returns ``{id(timeline): {"id": node id, "node": the content node}}``, built
+    before the tree so the tree can name what is in it.
+    """
+    holders: dict = {}
+    def scan(element):
+        if isinstance(element, Track):
+            holders.setdefault(id(element.wraps), []).append(element)
+        for child in _children(element):
+            scan(child)
+    scan(root)
+    shared = {}
+    for key, tracks in holders.items():
+        timeline = tracks[0].wraps
+        if len(tracks) < 2:
+            # **Not content, and it has to stop being it.** A join makes two
+            # windows one element again, and a timeline still carrying the id it
+            # had as content would send the next note edit to a node this
+            # document no longer has.
+            if getattr(timeline, ID_ATTR, None) is not None:
+                setattr(timeline, ID_ATTR, None)
+            continue
+        # The content node carries the notes, and the id is the **timeline's**
+        # own -- stamped on it, so a second conversion names the same node and
+        # every intent recorded against a note still lands.
+        node = {"id": ids.of(timeline), "kind": "aggregate", "grouping": CONCRETE,
+                "members": [_timeline_member(beat, item, ids)
+                            for beat, item in _timeline_items(timeline)],
+                "config": {"form": FORM_TRACK}}
+        shared[key] = {"id": node["id"], "node": node}
+    return shared
 
 
 #: The session format this client writes (the crate's `session::FORMAT`).
@@ -380,7 +434,17 @@ def from_document(document: dict, *, resolve=None):
     Returns:
         The root `clausters.form.Element`.
     """
-    return _element(document["root"], resolve)
+    # **Content first, because the tree names it.** A window onto a node reads
+    # material the document holds once and several windows share, so it is built
+    # before the tree and handed down -- and every window over one node gets the
+    # *same* object, which is the whole point: two halves of a cut edit one
+    # timeline, and reopening a piece must not hand them two.
+    content = {}
+    for node in document.get("content") or ():
+        built = _element(node, resolve)
+        content[int(node["id"])] = built
+        setattr(getattr(built, "wraps", built), ID_ATTR, int(node["id"]))
+    return _element(document["root"], resolve, content=content)
 
 
 # ---- arrangement -> document ----
@@ -488,7 +552,7 @@ def _children(element) -> list:
     return []
 
 
-def _node(element, ids: _Ids, member=None) -> dict:
+def _node(element, ids: _Ids, member=None, *, shared=None) -> dict:
     """One element as a document node: the temporal metadata every node has,
     plus the body that says what it is."""
     node = {"id": ids.of(element, member)}
@@ -504,7 +568,7 @@ def _node(element, ids: _Ids, member=None) -> dict:
         node["duration"] = float(element.duration)
     if element.resident:
         node["resident"] = True
-    node.update(_body(element, ids))
+    node.update(_body(element, ids, shared))
     return node
 
 
@@ -520,7 +584,7 @@ _TEMPORAL = ("id", "name", "onset", "duration", "resident")
 FORM_TRACK = "track"
 
 
-def _kind_body(element, ids: _Ids) -> dict:
+def _kind_body(element, ids: _Ids, shared=None) -> dict:
     preserved = _preserved(element)
     if preserved is not None:
         # A body this build does not know, on its way back out untouched.
@@ -537,9 +601,27 @@ def _kind_body(element, ids: _Ids) -> dict:
         return _with_config({
             "kind": "aggregate",
             "grouping": LOGICAL if element.kind == LOGICAL else CONCRETE,
-            "members": [_member(handle, ids) for handle in element.handles],
+            "members": [_member(handle, ids, shared) for handle in element.handles],
         }, {"buses": element.bus_specs} if element.bus_specs else None)
     if isinstance(element, Track):
+        entry = (shared or {}).get(id(element.wraps))
+        if entry is not None:
+            # **This timeline is content, so this element is a window onto it.**
+            # More than one element reads it, and writing the notes once per
+            # reader would write one identity twice -- so the notes are in
+            # `content` and each reader names the node
+            # (`SegmentSource::Node`). The *element's* length stays the node's
+            # own, absent when nobody stated one; the window's length is how
+            # much of the material it can show, which is what a reader that
+            # does not resolve the content lays the clip out with.
+            start = float(element.start)
+            length = (float(element.duration) if element.duration is not None
+                      else max(0.0, float(element.wraps.duration()) - start))
+            return _with_config({
+                "kind": "segments",
+                "segments": [{"source": {"node": entry["id"]},
+                              "start": start, "duration": length}],
+            }, {"form": FORM_TRACK})
         # A Set with the restrictions of a multitrack view, and its items are
         # placed elements like any others -- which is what makes a note in a
         # roll addressable, and therefore editable and undoable. Which
@@ -657,7 +739,7 @@ def _kind_body(element, ids: _Ids) -> dict:
 MIXING = {"mute": False, "solo": False, "level": 1.0}
 
 
-def _body(element, ids: _Ids) -> dict:
+def _body(element, ids: _Ids, shared=None) -> dict:
     """One element's body — what kind of thing it is — with the **mixing** the
     composition holds over it laid into its configuration.
 
@@ -669,7 +751,7 @@ def _body(element, ids: _Ids) -> dict:
     from a config without them would silence-then-unsilence a lane on every
     curve edit.
     """
-    body = _kind_body(element, ids)
+    body = _kind_body(element, ids, shared)
     mixing = mixing_of(element)
     if mixing:
         config = dict(body.get("config") or {})
@@ -708,12 +790,13 @@ def _preserved(element):
     return None
 
 
-def _member(handle, ids: _Ids) -> dict:
+def _member(handle, ids: _Ids, shared=None) -> dict:
     """One placement: where it sits, and the node it holds — whose id is the
     **handle's**, so one element placed twice is two windows and not one
     ambiguous name."""
     _placeable_twice(handle, ids)
-    member = {"offset": float(handle.offset), "node": _node(handle.element, ids, handle)}
+    member = {"offset": float(handle.offset),
+              "node": _node(handle.element, ids, handle, shared=shared)}
     if handle.dur is not None:
         member["dur"] = float(handle.dur)
     return member
@@ -955,7 +1038,7 @@ def _plain(value):
 # ---- document -> arrangement ----
 
 
-def _element(node: dict, resolve, *, placed: bool = False):
+def _element(node: dict, resolve, *, placed: bool = False, content=None):
     kind = node.get("kind")
     config = node.get("config") or {}
     onset = node.get("onset")
@@ -993,7 +1076,7 @@ def _element(node: dict, resolve, *, placed: bool = False):
         for member in node.get("members", []):
             child = member["node"]
             handle = aggregate.add(
-                _element(child, resolve, placed=True),
+                _element(child, resolve, placed=True, content=content),
                 offset=member.get("offset", 0.0),
                 dur=member.get("dur"),
             )
@@ -1011,26 +1094,55 @@ def _element(node: dict, resolve, *, placed: bool = False):
     elif kind == "sequence":
         members = node.get("members")
         if members:
-            items = [_element(m["node"], resolve) for m in members]
+            items = [_element(m["node"], resolve, content=content) for m in members]
         else:
             items = _resolved(resolve, "sequence", config) or config.get("sequence")
         built = Sequence(items, onset=onset, duration=duration)
     elif kind == "segments":
-        built = Segments(
-            [
-                (
-                    _resolved(resolve, "vector", seg.get("source"))
-                    or FrozenSource(seg.get("source") or {}),
-                    seg.get("start", 0.0),
-                    seg.get("duration", 0.0),
+        windows = list(node.get("segments") or ())
+        over_nodes = [w for w in windows if isinstance(w.get("source"), dict)
+                      and "node" in (w.get("source") or {})]
+        if over_nodes:
+            # **A window onto content**: the material is a node of this
+            # document, built once and shared by every window that names it, so
+            # this element is a `Track` reading that timeline from `start`. Its
+            # own length is the node's -- absent when nobody stated one -- and
+            # the window's is how much of the material it can show, which is
+            # what a reader that does not resolve the content lays it out with.
+            if len(over_nodes) > 1:
+                raise NotImplementedError(
+                    "a run of windows onto several nodes is not built yet: the "
+                    "element for it is `clausters.segments.NoteSegments`, and "
+                    "what makes one is a join across timelines"
                 )
-                for seg in node.get("segments") or ()
-            ],
-            onset=onset,
-            duration=duration,
-            instrument=config.get("instrument"),
-            controls=config.get("controls"),
-        )
+            window = over_nodes[0]
+            held = (content or {}).get(int(window["source"]["node"]))
+            timeline = getattr(held, "wraps", None)
+            if timeline is None:
+                raise ValueError(
+                    "a window names content node "
+                    f"{window['source']['node']}, which this document does not "
+                    "hold: a window and the material it reads are written "
+                    "together"
+                )
+            built = Track(timeline, onset=onset, duration=duration,
+                          start=float(window.get("start", 0.0)))
+        else:
+            built = Segments(
+                [
+                    (
+                        _resolved(resolve, "vector", seg.get("source"))
+                        or FrozenSource(seg.get("source") or {}),
+                        seg.get("start", 0.0),
+                        seg.get("duration", 0.0),
+                    )
+                    for seg in windows
+                ],
+                onset=onset,
+                duration=duration,
+                instrument=config.get("instrument"),
+                controls=config.get("controls"),
+            )
     elif kind == "vector":
         built = Vector(
             _resolved(resolve, "vector", node.get("source"))

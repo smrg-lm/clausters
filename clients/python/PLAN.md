@@ -1162,42 +1162,38 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   the two doors that replace one are the lane change and this restore, both now
   keyed on the node.
 
-- ⬜ **A window onto notes is a window while the session lasts and a copy once
-  it is written** *(found 2026-09-03 by the user, right after the split
-  shipped: "cuando se hace un split de un pianoroll, sigue siendo una ventana a
-  los datos originales?" -- read the two roads in the document and they are not
-  the same road)*. Live, the two halves of a split share one `Timeline` object,
-  which is what the entry above claims and what its tests check. In the
-  **document** they do not:
+- ✅ **A window onto notes is a window while the session lasts and a copy once
+  it is written** *(found 2026-09-03 by the user, right after the split shipped:
+  "cuando se hace un split de un pianoroll, sigue siendo una ventana a los datos
+  originales?" -- read the two roads in the document and they were not the same
+  road; fixed the same day, the direction being the user's)*. Live, the two
+  halves of a split shared one `Timeline`. In the document they did not: the
+  notes were written twice, both halves claimed the same node ids, and reopening
+  gave each half a timeline of its own.
 
-  ```
-  vector    id=3  dur=2.0                       src={source: 7, ...}
-  vector    id=9  dur=1.0  start=48000          src={source: 7, ...}
+  **Fixed by making the document able to say what the client already meant.**
+  The crate learned a second kind of window (`SegmentSource::Node`) and a place
+  for what two windows share (`Document::content`) -- the entry in
+  `crates/clausters-document/PLAN.md` has that half. This side is the
+  conversion: a timeline **more than one element holds** is written once as
+  content and each reader as a window naming it; one that a single element holds
+  is written exactly as before, because the table is for sharing and not for
+  tracks. Reading gives every window over one node the *same* object, which is
+  what restores the property that was lost -- reopening a cut piece hands the
+  halves one timeline, so an edit through either reaches both and lengthening
+  one brings back what the cut hid.
 
-  aggregate id=5  dur=3.0  {form: track}        members=3  (clangs 6, 7, 8)
-  aggregate id=10 dur=2.0  {form: track, start} members=3  (clangs 6, 7, 8)
-  ```
+  Two things fell out of it and both are the same rule (*an intent names where
+  the material is*). A **note edit names the content node**, not the window,
+  since that is where the notes are -- so the editor asks the conversion (which
+  is what decides and what stamps the id) instead of keeping a flag; and the
+  index maps that node back to any reader, since they all hold the one timeline.
+  A timeline that **stops** being shared has its stamp taken off, or the first
+  edit after a join would name a node the document no longer has.
 
-  Three things are wrong there and the third is the serious one. The notes are
-  **written twice**; reopening the piece gives each half its own timeline, so
-  the sharing is gone and "the cut hides, it does not delete" becomes "each half
-  secretly holds the whole phrase"; and the two halves **claim the same node
-  ids**, which is the one thing the document cannot tolerate -- identity is what
-  the edit log addresses by, and an intent naming node 6 now has two parents to
-  mean it under.
-
-  **The cause is structural.** A vector's contents live *outside* the tree and
-  its node names them by reference (`SourceRef`), which is exactly why a window
-  is cheap and exact there. A track's contents live *inside* the tree, as
-  members. So a window onto notes cannot be a reference until a segment's source
-  can name **a node**, which is the generalization already written down for the
-  join across timelines (`Body::Segments`, `SegmentRef`, and `duration_unit`
-  derived from the sources rather than fixed at `Seconds`). It is one change and
-  it closes both.
-
-  Until it lands, the split over notes is correct for the session that made it
-  and wrong the moment the piece is saved -- so this is a *fix*, not a
-  direction, and it is ahead of the join in the order.
+  The decision behind the shape -- windows all the way, against a split that
+  clones -- is in `docs/decisions.md`, and the clone stays written down as a
+  verb worth having on its own.
 
 - ✅ **Which edits a clip admits is asked of `form`'s classes, not of the data**
   *(found 2026-09-03 while chasing "the clip does not respond"; re-framed the

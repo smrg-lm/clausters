@@ -3083,3 +3083,40 @@ def test_a_placement_that_came_back_from_an_undo_can_still_be_moved():
                                    restored["dur"]]) is True
     _, moved = clips(lanes(ed.draw())[0])
     assert moved["offset"] == pytest.approx(2 * BEAT)
+
+
+def test_a_split_over_notes_writes_the_notes_once_and_reopens_sharing_them():
+    """A window is a window once the piece is written down, too.
+
+    The notes are nodes, so two halves written as two tracks would write every
+    note twice with the same ids in each -- one identity, two parents, which is
+    what the document refuses and what made a reopened piece hand the halves two
+    timelines that drift apart from the first edit. They are `content` now: held
+    once, named by both windows.
+    """
+    from clausters.form import to_document
+    from clausters.form.document import from_document
+
+    ed = editor()
+    (clip,) = clips(lanes(ed.draw())[1])
+    ed.apply("/gui_event", [clip["id"], SEQ, UNSTATED, "split", BEAT])
+
+    document = to_document(ed.element)
+    (held,) = document["content"]
+    assert len(held["members"]) == 3            # the melody's notes, once
+    lane = document["root"]["members"][1]["node"]["members"]
+    windows = [m["node"] for m in lane]
+    assert [w["kind"] for w in windows] == ["segments", "segments"]
+    assert [w["segments"][0]["source"] for w in windows] == [
+        {"node": held["id"]}, {"node": held["id"]}]
+    assert [w["segments"][0]["start"] for w in windows] == [0.0, 1.0]
+    # Two windows, two ids of their own -- and neither is the content's.
+    assert len({w["id"] for w in windows} | {held["id"]}) == 3
+
+    # Reopened, the halves read **one** timeline: the sharing is the document's,
+    # not a fact about the session that made it.
+    back = from_document(document)
+    first, second = [h.element for h in back.handles[1].element.handles]
+    assert first.wraps is second.wraps
+    assert len(first.wraps) == 3
+    assert (first.window_start(), second.window_start()) == (0.0, 1.0)

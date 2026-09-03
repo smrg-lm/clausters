@@ -326,6 +326,16 @@ are written once there, over lengths, and each kind supplies only what the base
 cannot know: how a position advances by a length, and what one window holds. So
 a phrase of notes cuts and joins exactly as a phrase of samples does.
 
+**And a window stays a window when the piece is written down.** Two elements
+reading one timeline — which is what a split leaves — are saved as *one* copy of
+the notes plus two windows naming it: the notes live in the document's `content`,
+each half is a window over that node, and reopening hands the two halves the
+**same** timeline again. So an edit through either reaches both, and dragging a
+half's edge back out brings back the notes the cut hid, exactly as it does after
+a split of samples. Written as two tracks instead, the notes would be saved twice
+under one set of ids, and the halves would come back as two timelines that drift
+apart from the first edit.
+
 And the placement rule holds over it like everything else: shorten the clip and
 it draws and plays the segments it reaches; lengthen it and the rest come back.
 

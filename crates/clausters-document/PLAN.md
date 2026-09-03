@@ -530,6 +530,37 @@ Every entry carries a checkbox, and one that converges into numbered milestones 
 
 Every entry is a checkbox, and a fixed one stays with the record of what was wrong.
 
+- ✅ **A window could only be onto samples, so a cut over notes was a copy**
+  *(found 2026-09-03 by the user, on the split over notes that shipped the same
+  day: "cuando se hace un split de un pianoroll, sigue siendo una ventana a los
+  datos originales?" -- it was, until it was written down; fixed the same day)*.
+  `SegmentRef.source` was a `SourceRef` and nothing else, so the only material a
+  window could be onto was samples. That is enough while what a window reads
+  lives *outside* the document -- two windows are two references and nothing is
+  copied -- and it is not enough for a timeline of notes, whose notes are
+  **nodes**: two windows written as two tracks wrote every note twice, with the
+  same ids in each, which is one identity under two parents. It passed
+  `duplicate_id` only because the copies were identical (the check refuses two
+  *different* nodes under one id, deliberately), and it came apart on reopening,
+  where each half got a timeline of its own.
+
+  Two additions, and the second is what the first needs:
+  **`SegmentSource`** -- a window is onto `Samples(SourceRef)` or onto a
+  `Node { node }` of this document -- and **`Document::content`**, where a node
+  a window names lives. Content is not placement, so it is not in the tree; it
+  *is* in the document, in the same id space, which is what lets a window and an
+  intent name a node the same way. `Body::Segments::duration_unit` is derived
+  from the sources rather than fixed at `Seconds`, the finders an intent uses
+  reach content as well as the tree (without that, no edit could touch shared
+  material), and `duplicate_id`/`max_id`/a session's dangling scan all cover
+  both halves.
+
+  The wire is unchanged for everything that existed: samples are the object a
+  `SourceRef` already was, a node is `{"node": id}`, and `content` is skipped
+  when it is empty -- so every document written before this reads back
+  identical. What decided the shape, over the two alternatives the user weighed,
+  is in `docs/decisions.md`.
+
 - ✅ **The document measures two kinds of leaf with one unit, and for one of
   them the unit is wrong** *(found 2026-08-30 by the user, arguing that concrete
   time is seconds or samples and that beats are a ruler and a snap the editor

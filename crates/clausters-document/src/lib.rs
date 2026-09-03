@@ -219,22 +219,83 @@ pub struct SourceRef {
     pub range: Option<Range>,
 }
 
-/// One window of a [`Body::Segments`]: which samples, from which frame, for how
-/// long.
+/// What a window is onto: samples, or a **node of this document**.
 ///
-/// The length is in **seconds**, because these are samples: their seconds were
-/// fixed when they were recorded and no tempo change moves them. The frame is
-/// the client's own coordinate — the two are bridged by whoever knows the rate,
-/// which is never this crate. [`SourceRef::range`] says the same thing in
+/// Two things a window can be over, and the difference is where the contents
+/// live. **Samples** live outside the document — a [`SourceRef`] names them and
+/// a session's table says where they are — which is what makes a window onto
+/// them cheap: two windows are two references and nothing is copied. A
+/// **node** is content the document itself holds, in [`Document::content`], and
+/// naming one buys exactly the same thing for material the crate cannot put in
+/// a file: a timeline of notes, an assembled sequence, anything whose parts are
+/// addressable nodes rather than opaque frames.
+///
+/// Without the second variant a window onto events could only be a *copy*: the
+/// notes written once per window, with the same node ids in each, which is two
+/// parents for one identity and the one thing an edit log cannot address. This
+/// is what "a cut is a window, not a rewrite" means once the piece is written
+/// down.
+///
+/// On the wire the two are told apart by shape, so **every document written
+/// before this existed reads unchanged**: samples are the object a `SourceRef`
+/// already was, a node is `{"node": <id>}`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum SegmentSource {
+    /// Samples, named the way a [`Body::Vector`] names them.
+    Samples(SourceRef),
+    /// A node of this document, held in [`Document::content`].
+    Node {
+        /// The content node this window reads.
+        node: NodeId,
+    },
+}
+
+impl SegmentSource {
+    /// The samples this window is onto, or `None` when it is onto a node.
+    pub fn samples(&self) -> Option<&SourceRef> {
+        match self {
+            SegmentSource::Samples(source) => Some(source),
+            SegmentSource::Node { .. } => None,
+        }
+    }
+
+    /// The content node this window reads, or `None` when it is onto samples.
+    pub fn node(&self) -> Option<NodeId> {
+        match self {
+            SegmentSource::Samples(_) => None,
+            SegmentSource::Node { node } => Some(*node),
+        }
+    }
+
+    /// The unit lengths over this source are measured in: **seconds** for
+    /// samples, whose seconds were fixed when they were recorded, and **beats**
+    /// for a node, which is musical like everything else the tree holds.
+    pub fn unit(&self) -> TimeUnit {
+        match self {
+            SegmentSource::Samples(_) => TimeUnit::Seconds,
+            SegmentSource::Node { .. } => TimeUnit::Beats,
+        }
+    }
+}
+
+/// One window of a [`Body::Segments`]: which source, from where, for how long.
+///
+/// The length is in the unit the source **measures** — seconds for samples,
+/// whose seconds were fixed when they were recorded and which no tempo change
+/// moves; beats for a node. The start is in the unit the source is
+/// **addressed** in, which for samples is the frame (the client's own
+/// coordinate, bridged by whoever knows the rate, which is never this crate)
+/// and for a node is the beat. [`SourceRef::range`] says the same thing in
 /// frames alone and is what a writer that knows the frame count uses instead.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SegmentRef {
-    /// The samples this window is onto.
-    pub source: SourceRef,
-    /// The first frame it reads.
+    /// What this window is onto.
+    pub source: SegmentSource,
+    /// Where it opens, in the source's own addressing unit.
     #[serde(default)]
     pub start: f64,
-    /// How long it lasts, in seconds.
+    /// How long it lasts, in the unit the source measures.
     pub duration: Seconds,
 }
 
@@ -617,7 +678,17 @@ impl Body {
     /// reads as beats, which is what the rest of the format defaults to.
     pub fn duration_unit(&self) -> TimeUnit {
         match self {
-            Body::Vector { .. } | Body::Segments { .. } => TimeUnit::Seconds,
+            Body::Vector { .. } => TimeUnit::Seconds,
+            // **Assembled data takes the unit of what it assembles.** A run of
+            // windows onto samples is seconds like the vector it is the
+            // several-windows form of; a run of windows onto nodes is beats,
+            // because what a node holds is musical. A run says so through its
+            // first window rather than by being told, which is the same rule
+            // this method is: derived from the body, never stored beside it.
+            Body::Segments { segments, .. } => segments
+                .first()
+                .map(|s| s.source.unit())
+                .unwrap_or(TimeUnit::Seconds),
             _ => TimeUnit::Beats,
         }
     }
@@ -697,6 +768,23 @@ pub struct Document {
     pub version: u64,
     /// The composition.
     pub root: Node,
+    /// **Content the tree reads rather than places**: the nodes a
+    /// [`SegmentSource::Node`] names.
+    ///
+    /// The tree is placement — where things sit and how they nest — and every
+    /// node in it is somewhere at some time. This is the other half, and it
+    /// exists for the same reason a session has a source table: **two windows
+    /// onto one thing need the thing to live somewhere neither of them owns**.
+    /// Samples solve it by living outside the document entirely; a timeline of
+    /// notes cannot, because its notes are nodes an intent has to be able to
+    /// name, so it lives here instead — once, with its own ids, referred to by
+    /// as many windows as the piece has.
+    ///
+    /// Empty in every document that has no shared content, which is why it is
+    /// skipped when it is: a file written before this existed reads back
+    /// identical.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub content: Vec<Node>,
 }
 
 /// What a document looks like on the way in, before [`Document`]'s own rule
@@ -707,6 +795,8 @@ pub struct Document {
 struct RawDocument {
     version: u64,
     root: Node,
+    #[serde(default)]
+    content: Vec<Node>,
 }
 
 impl TryFrom<RawDocument> for Document {
@@ -716,6 +806,7 @@ impl TryFrom<RawDocument> for Document {
         let document = Document {
             version: raw.version,
             root: raw.root,
+            content: raw.content,
         };
         match document.duplicate_id() {
             Some(message) => Err(message),
@@ -733,12 +824,34 @@ impl Document {
         Self {
             version: FIRST_VERSION,
             root,
+            content: Vec::new(),
+        }
+    }
+
+    /// The same document with `content` held beside the tree — the nodes a
+    /// [`SegmentSource::Node`] names.
+    pub fn with_content(mut self, content: Vec<Node>) -> Self {
+        self.content = content;
+        self
+    }
+
+    /// Every node of this document: the tree, then the content it reads.
+    ///
+    /// Content is not placement, so it is not *in* the tree — but it is in the
+    /// document, and everything that asks "what nodes are there" (an id check,
+    /// a source table, a staleness scan) means both halves.
+    pub fn walk(&self, visit: &mut impl FnMut(&Node)) {
+        self.root.walk(visit);
+        for node in &self.content {
+            node.walk(visit);
         }
     }
 
     /// The node with this id, anywhere in the tree.
     pub fn find(&self, id: NodeId) -> Option<&Node> {
-        self.root.find(id)
+        self.root
+            .find(id)
+            .or_else(|| self.content.iter().find_map(|node| node.find(id)))
     }
 
     /// The first node id that names two **different** nodes, described so the
@@ -800,6 +913,13 @@ impl Document {
         let mut seen = HashMap::new();
         let mut clash = None;
         walk(&self.root, &mut seen, &mut clash);
+        // **Content is in the same id space as the tree**, and it has to be: a
+        // window names a content node by the id an intent would use, so an id
+        // that meant one thing in the tree and another beside it would make the
+        // reference ambiguous in exactly the way this check exists to stop.
+        for node in &self.content {
+            walk(node, &mut seen, &mut clash);
+        }
         clash
     }
 
@@ -807,7 +927,9 @@ impl Document {
     /// document it did not author.
     pub fn max_id(&self) -> NodeId {
         let mut max = self.root.id;
-        self.root.walk(&mut |node| {
+        // Content is in the same id space, so a client that minted past the
+        // tree alone would hand a fresh node an id a window already names.
+        self.walk(&mut |node| {
             if node.id > max {
                 max = node.id;
             }
