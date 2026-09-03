@@ -341,7 +341,7 @@ impl Gestures {
     /// dragging it would have.
     ///
     /// The roll's `q` over a lane's clips, and literally the same call
-    /// ([`placement::quantize`]): the selection is where the pointer has been,
+    /// ([`super::super::placement::quantize`]): the selection is where the pointer has been,
     /// which is why this is a key and not a gesture. Nothing selected quantizes
     /// nothing — a lane's clips are the composition, and "all of them" is not
     /// something to do by leaning on a letter. (A roll's `q` quantizes every
