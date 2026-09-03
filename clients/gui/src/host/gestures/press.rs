@@ -485,7 +485,7 @@ impl Gestures {
             .window_def(ctx.def_id)
             .and_then(|t| t.find(h.id))
             .is_some_and(|w| layers::active(w) == layers::Layer::Placement);
-        if placement_active && h.part != interact::ClipPart::Body {
+        if placement_active && h.part != interact::Part::Body {
             return false;
         }
         let Some(layer) = element::layer_under_pointer(host, ctx, at, cx, cy) else {

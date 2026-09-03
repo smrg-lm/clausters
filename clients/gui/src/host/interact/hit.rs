@@ -16,7 +16,7 @@ use super::super::Host;
 use super::super::layout::{self, Rect};
 use super::super::widget::WidgetKind;
 use super::coords::{Coords, Frame, Hit, TimeAxis, YAxis, clip_part};
-use super::{ClipPart, HeaderPart};
+use super::{HeaderPart, Part};
 use crate::host::graphics::track;
 use crate::viewport::View;
 
@@ -292,10 +292,10 @@ pub(crate) struct ClipHit {
     /// above are only what the clip's *placement* on the lane is dragged
     /// through.
     pub local: View,
-    pub part: ClipPart,
+    pub part: Part,
     /// The placement the press found, as one value — the snapshot a drag is
     /// measured against.
-    pub placement: super::ClipPlacement,
+    pub placement: super::Placement,
     /// What the contents behind the clip allows its edges to do (how many
     /// frames it has, whether the window loops off them).
     pub contents: super::Contents,
@@ -347,7 +347,7 @@ pub(crate) fn clip_hit(
         rect,
         nav,
         local: local.nav,
-        placement: super::ClipPlacement {
+        placement: super::Placement {
             offset,
             dur,
             start: window.start,

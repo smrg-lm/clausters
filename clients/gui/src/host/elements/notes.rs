@@ -33,6 +33,7 @@ use crate::host::graphics::track::Note;
 use crate::host::layout::Rect;
 use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
+use crate::host::placement::{self, Bounds};
 use crate::host::widget::element::{
     BodyRole, Claim, Ctx, Element, Events, Input, Key, KeyInput, MidiNote, Needs, Take, TimeSpace,
 };
@@ -90,7 +91,7 @@ enum Drag {
     /// One note moving in time and pitch, or one of its edges resizing it.
     Note {
         index: usize,
-        part: pianoroll::NotePart,
+        part: placement::Part,
         press_time: f64,
         orig_start: f64,
         orig_dur: f64,
@@ -311,7 +312,7 @@ impl Notes {
                 nearest(r.velocity, &nav, self.notes.iter().map(|n| n.start), fx).map(|index| {
                     pianoroll::NoteHit {
                         index,
-                        part: pianoroll::NotePart::Body,
+                        part: placement::Part::Body,
                     }
                 });
             return Hit {
@@ -645,9 +646,10 @@ impl Element for Notes {
                 orig_start,
                 orig_dur,
             }) => {
+                let bounds = self.edit_bounds(input);
                 match part {
-                    pianoroll::NotePart::Body => {
-                        let start = snap_to(orig_start + (time - press_time), self.snap);
+                    placement::Part::Body => {
+                        let start = orig_start + (time - press_time);
                         let pitch = pianoroll::y_to_pitch(at.1 as f32, lo, hi, r.grid);
                         // The duration is asserted **first**: the clamp against
                         // the far edge measures the note's tail, so a duration
@@ -656,16 +658,9 @@ impl Element for Notes {
                         if let Some(n) = self.notes.get_mut(index) {
                             n.dur = orig_dur;
                         }
-                        pianoroll::move_note(&mut self.notes, index, start, pitch, lo, hi, limit);
+                        pianoroll::move_note(&mut self.notes, index, start, pitch, lo, hi, bounds);
                     }
-                    other => pianoroll::resize_note(
-                        &mut self.notes,
-                        index,
-                        other,
-                        snap_to(time, self.snap),
-                        MIN_DUR,
-                        limit,
-                    ),
+                    other => pianoroll::resize_note(&mut self.notes, index, other, time, bounds),
                 }
                 Events::none()
             }
@@ -883,6 +878,16 @@ impl Notes {
         }
     }
 
+    /// What bounds one note drag: the roll's own snap grid, the note floor and
+    /// the far edge this placement's edits stop at.
+    fn edit_bounds(&self, input: &Input) -> Bounds {
+        Bounds {
+            grid: self.snap,
+            min_dur: MIN_DUR,
+            limit: self.edit_limit(input),
+        }
+    }
+
     /// The rate the ruler and the readout are placed on: the widget's own when
     /// it names one, else the server's.
     fn rate(&self, world_rate: f64) -> f64 {
@@ -992,7 +997,7 @@ impl Notes {
                     let index = self.insert(pianoroll::Note::new(time, dur, pitch));
                     self.drag = Some(Drag::Note {
                         index,
-                        part: pianoroll::NotePart::End,
+                        part: placement::Part::End,
                         press_time: time,
                         orig_start: time,
                         orig_dur: dur,
@@ -1015,7 +1020,7 @@ impl Notes {
             return self.start_marquee(t, Some(p));
         };
         let press_time = self.time_at(h.grid, &h.nav, at.0);
-        if nh.part == pianoroll::NotePart::Body {
+        if nh.part == placement::Part::Body {
             // Grabbing a **selected** note moves the whole selection; grabbing
             // an unselected one drops the selection and moves singly.
             if self.selected.contains(&nh.index) {
@@ -1111,14 +1116,13 @@ impl Notes {
     }
 }
 
-/// Snaps `t` to the `grid` (0 = whole units), the one rounding every note edit
-/// shares.
+/// Snaps `t` to the `grid`, the one rounding every note edit shares — and it
+/// is [`placement::snap`], the same one a clip's edge lands on. This used to be
+/// a second spelling of it whose no-grid arm returned the raw value while its
+/// own doc said whole units; the axis' unit is the sample, so "no grid" is the
+/// finest grid there is.
 fn snap_to(t: f64, grid: f64) -> f64 {
-    if grid > 0.0 {
-        (t / grid).round() * grid
-    } else {
-        t
-    }
+    placement::snap(t, grid)
 }
 
 /// The notes on the host-wide clipboard, when what is on it is a note block —
@@ -1492,7 +1496,7 @@ mod tests {
         assert!(matches!(
             r.drag,
             Some(Drag::Note {
-                part: pianoroll::NotePart::End,
+                part: placement::Part::End,
                 ..
             })
         ));

@@ -122,7 +122,7 @@ pub(crate) fn header_set(
 
 /// Writes a clip's placement (`offset`/`dur`, each clamped `>= 0`) in the host
 /// tree — the drag's mutation.
-pub(crate) fn clip_set(host: &mut Host, def_id: i32, clip_id: i32, placed: super::ClipPlacement) {
+pub(crate) fn clip_set(host: &mut Host, def_id: i32, clip_id: i32, placed: super::Placement) {
     if let Some(tree) = host.window_def_mut(def_id)
         && let Some(w) = tree.find_mut(clip_id)
     {

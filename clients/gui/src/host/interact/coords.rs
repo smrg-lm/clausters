@@ -7,7 +7,8 @@
 //! [`Hit`]) and the readers that pick one system out of a chain ([`plane_of`],
 //! [`time_of`], [`local_time_of`]). Beside them sits the small arithmetic that
 //! inverts the renderer's maps — a pixel back to a sample ([`sample_at`]) — and
-//! the placement one drag step produces ([`clip_drag_placement`]).
+//! the drag one press on a clip's grip produces ([`clip_drag_placement`], which
+//! is [`placement::drag`] with the clip's own bounds).
 //!
 //! **Nothing here mentions the [`Host`]**, which is the line that keeps this
 //! module the vocabulary rather than a fourth door: it is geometry and types,
@@ -20,6 +21,7 @@
 //! [`edit`]: super::edit
 
 use super::super::layout::Rect;
+use super::super::placement::{self, Bounds, Contents, Part, Placement};
 use super::super::widget::{GestureMap, ScrollView, WidgetKind};
 use crate::host::graphics::track;
 use crate::host::metrics::Metrics;
@@ -169,44 +171,25 @@ pub(crate) fn local_time_of(chain: &[Frame]) -> Option<(i32, TimeAxis)> {
     })
 }
 
-/// Which part of a clip a press landed on: its body (move) or one of its edges
-/// (resize). The edge zone is a few pixels at each end; a clip too narrow for
-/// two edge zones is all body.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(crate) enum ClipPart {
-    Body,
-    Start,
-    End,
-}
-
 /// Which part of a clip spanning pixels `[x0, x1]` the pointer x fell on —
 /// **the strips the grips are drawn on**, and only the ends that carry one.
 ///
-/// It reads the same [`track::clip_grips`] the renderer draws, so the pixels
-/// that light up are the pixels that resize; `ends` is which of the clip's own
-/// ends are on screen, since an end that is not cannot be grabbed (the
-/// rectangle's edge there is the window's, not the clip's). The width is the
-/// `grip_w` role: it was a literal in device pixels, which halved the grab zone
-/// on a HiDPI screen — a clip was hardest to resize exactly where its edge was
-/// thinnest.
-pub(crate) fn clip_part(rect: Rect, ends: (bool, bool), m: &Metrics, x: f32) -> ClipPart {
+/// The note's answer to the same question is [`placement::part_at`], a margin
+/// at each end of the bar: same three parts, different picture. This one reads
+/// the same [`track::clip_grips`] the renderer draws, so the pixels that light
+/// up are the pixels that resize; `ends` is which of the clip's own ends are on
+/// screen, since an end that is not cannot be grabbed (the rectangle's edge
+/// there is the window's, not the clip's). The width is the `grip_w` role: it
+/// was a literal in device pixels, which halved the grab zone on a HiDPI screen
+/// — a clip was hardest to resize exactly where its edge was thinnest.
+pub(crate) fn clip_part(rect: Rect, ends: (bool, bool), m: &Metrics, x: f32) -> Part {
     let (start, end) = track::clip_grips(rect, ends, m);
     if start.is_some_and(|r| x >= r.x && x <= r.x + r.w) {
-        ClipPart::Start
+        Part::Start
     } else if end.is_some_and(|r| x >= r.x && x <= r.x + r.w) {
-        ClipPart::End
+        Part::End
     } else {
-        ClipPart::Body
-    }
-}
-
-/// Snaps a timeline sample value to a drag grid: to the nearest multiple of
-/// `grid` when it is positive, else to a whole sample.
-pub(crate) fn snap(v: f64, grid: f64) -> f64 {
-    if grid > 0.0 {
-        (v / grid).round() * grid
-    } else {
-        v.round()
+        Part::Body
     }
 }
 
@@ -217,116 +200,35 @@ pub(crate) fn sample_at(nav_start: f64, nav_len: f64, body_x: f64, body_w: f64, 
     nav_start + nav_len * ((x - body_x) / body_w.max(1.0))
 }
 
-/// The shortest a **drag** may leave a clip: **one sample**, the smallest length
-/// the axis addresses.
-///
-/// A clip that can be dragged to nothing is gone for good — zero duration draws
-/// no rectangle, so there is nothing left to press, and the piece keeps a clip
-/// nobody can see or reach. One sample is the whole of the floor: it is a
-/// **length in the axis' own units, never a count of pixels** — the same rule
-/// the time selection follows — so the same drag stops at the same place at
-/// every zoom, and a reader zoomed in to the sample can keep trimming right down
-/// to the grain.
-///
-/// It is deliberately **not the `snap` grid**, which was the first answer here
-/// and was wrong in both directions: zoomed in it refused to trim below a grid
-/// step the axis can plainly resolve, and zoomed out it made the shortest
-/// possible clip a different length on every lane. The grid is where an edge
-/// *lands*, not how short a clip may be. Keeping a clip that short *visible* is
-/// the drawing's job ([`track::clip_x_range`]).
-const MIN_CLIP_DUR: f64 = 1.0;
-
-/// **What a clip drag produces**: where the clip sits, how long it is, and
-/// which part of its contents it shows.
-///
-/// The three move together and that is the whole of what an edge drag means: a
-/// clip is a window onto a segment of data, so pulling its **start** edge to
-/// the right hides the contents's head rather than compressing it — the offset,
-/// the duration and the window's `start` all advance by the same amount. Its
-/// **end** edge changes only the duration, since the head of the window has not
-/// moved.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct ClipPlacement {
-    pub offset: f64,
-    pub dur: f64,
-    /// The source frame the clip's own time zero reads.
-    pub start: f64,
-}
-
-/// What the contents behind a clip allows a drag to do: how many frames there
-/// are, and whether the window may run off them.
-///
-/// `total` is `None` for a clip with no contents to run off — a roll, a bare
-/// automation — and then an edge drag is bounded by nothing but the clip's own
-/// floor, which is what it always was.
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub(crate) struct Contents {
-    pub total: Option<f64>,
-    pub looping: bool,
-}
-
-impl Contents {
-    /// Whether an edge may be pulled past the contents — a **looping** clip's
-    /// may, because past the end is the beginning again and before the start is
-    /// the tail of the iteration before.
-    fn unbounded(&self) -> bool {
-        self.looping || self.total.is_none()
-    }
-}
-
 /// The clip placement one drag step produces, against the press-time snapshot
-/// (`press_sample`, `orig`) so a clamped edge never drifts: a body drag moves
-/// the offset, an edge drag trims — never below [`MIN_CLIP_DUR`], never past
-/// the contents unless the clip loops, and the start stays within `[0, end]` —
-/// snapped to `grid`.
+/// (`press_sample`, `orig`): the cursor's delta is turned into the axis
+/// position the grabbed part is pulled to, and the shared
+/// [`placement::drag`] does the rest — the same arithmetic a note's drag runs.
+///
+/// A clip's domain has no far edge (the lane is as long as its clips), so the
+/// bounds carry only the grid and the floor; what stops an edge is the contents
+/// behind it.
 pub(crate) fn clip_drag_placement(
-    part: ClipPart,
+    part: Part,
     sample: f64,
     press_sample: f64,
-    orig: ClipPlacement,
+    orig: Placement,
     contents: Contents,
     grid: f64,
-) -> ClipPlacement {
+) -> Placement {
     let delta = sample - press_sample;
-    let end = orig.offset + orig.dur;
-    // A clip already shorter than the floor is not *grown* to it — a drag moves
-    // the edge it was given hold of, and snapping the far end out to a minimum
-    // nobody asked for is an edit of its own. It simply cannot shrink further.
-    let floor = MIN_CLIP_DUR.min(orig.dur.max(0.0));
-    match part {
-        ClipPart::Body => ClipPlacement {
-            offset: snap(orig.offset + delta, grid),
-            ..orig
+    let target = match part {
+        Part::End => orig.offset + orig.dur + delta,
+        Part::Body | Part::Start => orig.offset + delta,
+    };
+    placement::drag(
+        part,
+        target,
+        orig,
+        contents,
+        Bounds {
+            grid,
+            ..Bounds::default()
         },
-        ClipPart::End => {
-            let mut new_end = snap(end + delta, grid).max(orig.offset + floor);
-            // The contents runs out where the window does: without a loop the
-            // end edge stops at the last frame, because past it there is
-            // nothing to show and nothing to play.
-            if let Some(total) = contents.total.filter(|_| !contents.unbounded()) {
-                new_end = new_end.min(orig.offset + (total - orig.start).max(floor));
-            }
-            ClipPlacement {
-                dur: new_end - orig.offset,
-                ..orig
-            }
-        }
-        ClipPart::Start => {
-            let mut new_off = snap(orig.offset + delta, grid).min(end - floor).max(0.0);
-            // ...and the same at the head: the window cannot begin before the
-            // contents does unless the clip loops, where what lies before frame
-            // zero is the tail of the iteration before it.
-            if !contents.unbounded() {
-                new_off = new_off.max(orig.offset - orig.start);
-            }
-            ClipPlacement {
-                offset: new_off,
-                dur: end - new_off,
-                // The trim: the window's head travels with the edge, which is
-                // what makes the contents stand still while the clip shows less
-                // of it.
-                start: orig.start + (new_off - orig.offset),
-            }
-        }
-    }
+    )
 }

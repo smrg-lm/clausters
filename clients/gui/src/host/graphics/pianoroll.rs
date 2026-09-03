@@ -27,6 +27,7 @@ use crate::host::font;
 use crate::host::layout::Rect;
 use crate::host::metrics::Metrics;
 use crate::host::paint::Draw;
+use crate::host::placement::{self, Bounds, Contents, Part, Placement, Placements};
 use crate::viewport::View;
 
 /// One note: its `start`/`dur` in timeline sample units (relative to the owning
@@ -468,24 +469,12 @@ pub fn draw_osc_lane(d: &mut Draw, lane: Rect, nav: &View, offset: f64, marks: &
 
 // --- Hit-testing ----------------------------------------------------------
 
-/// Which part of a note the cursor grabbed — the start/end edges resize it, the
-/// body moves it, exactly the clip's `Start`/`End`/`Body` split.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum NotePart {
-    Body,
-    Start,
-    End,
-}
-
 /// A note hit: its index in the note list and which part.
 #[derive(Clone, Copy, Debug)]
 pub struct NoteHit {
     pub index: usize,
-    pub part: NotePart,
+    pub part: Part,
 }
-
-/// The device-pixel grab margin for a note's start/end edges.
-const EDGE_PX: f32 = 4.0;
 
 /// The note under `(x, y)` in the grid, if any — the last drawn (topmost) match
 /// wins. Returns the edge part when the cursor is within `EDGE_PX` of a wide
@@ -521,26 +510,11 @@ pub fn note_hit(
             continue;
         };
         if x >= nx0 && x <= nx1 && y >= ny && y <= ny + nh {
-            let part = note_part(nx0, nx1, x);
+            let part = placement::part_at(nx0, nx1, x);
             found = Some(NoteHit { index: i, part });
         }
     }
     found
-}
-
-/// The part of a `[x0, x1]` note bar `x` falls on (edges before the body, and
-/// only when the bar is wide enough to grab an edge).
-fn note_part(x0: f32, x1: f32, x: f32) -> NotePart {
-    if x1 - x0 < 3.0 * EDGE_PX {
-        return NotePart::Body;
-    }
-    if x - x0 <= EDGE_PX {
-        NotePart::Start
-    } else if x1 - x <= EDGE_PX {
-        NotePart::End
-    } else {
-        NotePart::Body
-    }
 }
 
 /// The timeline (region-relative) sample position a grid x pixel maps back to —
@@ -552,33 +526,43 @@ pub fn time_at(grid: Rect, nav: &View, offset: f64, x: f32) -> f64 {
 
 // --- Editing (pure, mapping-free) -----------------------------------------
 
-/// The far edge an edit stops at: the length of the domain the notes live in,
-/// or `None` for a domain with no far edge.
+/// **Indexed access to the note list**, so every block edit a note shares with
+/// a clip is written once (`crate::host::placement`) and both call it.
 ///
-/// A roll standing on its own has no far edge — its content *is* what it spans,
-/// so a note dragged rightwards simply lengthens it. A roll drawn as a **clip's
-/// body** has one: the clip's own `dur`, past which a note would still exist and
-/// no longer be drawn, since the body is clipped to the rectangle. What is
-/// edited has to stay visible, so the note stops at the edge and the clip's
-/// length is changed the way a clip's length is changed — by its own edge.
-pub type Limit = Option<f64>;
+/// A note's row is its pitch and its `Placement::start` is always zero: there
+/// is no source behind a note to window, so an edge drag's trim has nowhere to
+/// travel and the accessor drops it.
+impl Placements for [Note] {
+    fn len(&self) -> usize {
+        <[Note]>::len(self)
+    }
 
-/// Where a note of `dur` may start inside `limit`: past zero, and near enough
-/// the far edge that its **tail** still lands inside.
-///
-/// A note is clamped whole rather than by its onset, which is the difference
-/// between a note that stops at the edge and one whose head stops there while
-/// the rest of it goes over — the part that would vanish being exactly the part
-/// being dragged. A note longer than the whole domain pins to zero: its tail
-/// cannot fit, so the near edge is the one that can be honoured.
-fn clamp_start(start: f64, dur: f64, limit: Limit) -> f64 {
-    let last = limit.map_or(f64::INFINITY, |l| l - dur.max(0.0));
-    start.min(last).max(0.0)
+    fn placement(&self, i: usize) -> Placement {
+        let n = self[i];
+        Placement {
+            offset: n.start,
+            dur: n.dur,
+            start: 0.0,
+        }
+    }
+
+    fn set_placement(&mut self, i: usize, p: Placement) {
+        self[i].start = p.offset;
+        self[i].dur = p.dur;
+    }
+
+    fn row(&self, i: usize) -> f32 {
+        self[i].pitch
+    }
+
+    fn set_row(&mut self, i: usize, r: f32) {
+        self[i].pitch = r;
+    }
 }
 
-/// Move the note at `index` to a new start (clamped into `0..limit`, tail
-/// included — see [`Limit`]) and pitch (clamped into `[lo, hi]`, rounded to the
-/// nearest semitone). The duration is kept.
+/// Move the note at `index` to a new start (clamped into the bounds' domain,
+/// tail included) and pitch (clamped into `[lo, hi]`, rounded to the nearest
+/// semitone). The duration is kept.
 pub fn move_note(
     notes: &mut [Note],
     index: usize,
@@ -586,45 +570,29 @@ pub fn move_note(
     pitch: f32,
     lo: f32,
     hi: f32,
-    limit: Limit,
+    bounds: Bounds,
 ) {
-    if let Some(n) = notes.get_mut(index) {
-        n.start = clamp_start(start, n.dur, limit);
-        n.pitch = pitch.round().clamp(lo, hi);
+    if index >= notes.len() {
+        return;
     }
+    let orig = notes.placement(index);
+    let placed = placement::drag(Part::Body, start, orig, Contents::default(), bounds);
+    notes.set_placement(index, placed);
+    notes.set_row(index, pitch.round().clamp(lo, hi));
 }
 
-/// Resize the note at `index` by dragging one edge to timeline-relative `t`.
-/// `Start` moves the onset (keeping the end fixed), `End` moves the end; a note
-/// never shrinks below `min_dur`, and never grows past `limit`.
+/// Resize the note at `index` by dragging one edge to timeline-relative `t` —
+/// the clip's edge drag, over a note.
 ///
-/// `Start` needs no far edge of its own: it holds the end still, so an edge
-/// already inside stays inside. A note a script placed *over* the edge is left
-/// where it is rather than dragged in — an edit moves what it is given hold of,
-/// and pulling the far end in would be an edit nobody asked for.
-pub fn resize_note(
-    notes: &mut [Note],
-    index: usize,
-    part: NotePart,
-    t: f64,
-    min_dur: f64,
-    limit: Limit,
-) {
-    if let Some(n) = notes.get_mut(index) {
-        match part {
-            NotePart::End => {
-                let end = limit.map_or(t, |l| t.min(l));
-                n.dur = (end - n.start).max(min_dur);
-            }
-            NotePart::Start => {
-                let end = n.start + n.dur;
-                let start = t.min(end - min_dur).max(0.0);
-                n.start = start;
-                n.dur = end - start;
-            }
-            NotePart::Body => {}
-        }
+/// `Start` moves the onset (keeping the end fixed), `End` moves the end; a note
+/// never shrinks below the bounds' floor, and never grows past their domain.
+pub fn resize_note(notes: &mut [Note], index: usize, part: Part, t: f64, bounds: Bounds) {
+    if index >= notes.len() || part == Part::Body {
+        return;
     }
+    let orig = notes.placement(index);
+    let placed = placement::drag(part, t, orig, Contents::default(), bounds);
+    notes.set_placement(index, placed);
 }
 
 /// Set the velocity (clamped `0..127`) of the note at `index`.
@@ -664,34 +632,14 @@ pub fn remove_note(notes: &mut Vec<Note>, index: usize) {
 // the time × pitch rectangle become the selected set.
 
 /// The indices of the notes intersecting the time span `[t0, t1)` whose row
-/// touches the pitch band `[p_lo, p_hi]` (a note's row spans half a semitone
-/// either side of its pitch). Either range may come reversed (a marquee drags
-/// both ways).
+/// touches the pitch band `[p_lo, p_hi]` — [`placement::in_rect`] over the note
+/// list, the same marquee a lane's clips answer.
 pub fn notes_in_rect(notes: &[Note], t0: f64, t1: f64, p_lo: f32, p_hi: f32) -> Vec<usize> {
-    let (t0, t1) = if t0 <= t1 { (t0, t1) } else { (t1, t0) };
-    let (p_lo, p_hi) = if p_lo <= p_hi {
-        (p_lo, p_hi)
-    } else {
-        (p_hi, p_lo)
-    };
-    notes
-        .iter()
-        .enumerate()
-        .filter(|(_, n)| {
-            n.start < t1
-                && n.start + n.dur.max(0.0) > t0
-                && n.pitch + 0.5 >= p_lo
-                && n.pitch - 0.5 <= p_hi
-        })
-        .map(|(i, _)| i)
-        .collect()
+    placement::in_rect(notes, t0, t1, p_lo, p_hi)
 }
 
-/// Move a block of notes rigidly from a press-time snapshot: `orig` is
-/// `(index, start, pitch)` per selected note, `dt`/`dp` the drag deltas. The
-/// deltas are clamped **as one** — no start below zero, no tail past `limit`,
-/// no pitch outside `[lo, hi]` — so the block stops at an edge instead of
-/// folding against it. Durations are kept.
+/// Move a block of notes rigidly from a press-time snapshot — the shared
+/// [`placement::move_block`], with the pitch window as the row bounds.
 pub fn move_notes_from(
     notes: &mut [Note],
     orig: &[(usize, f64, f32)],
@@ -701,44 +649,7 @@ pub fn move_notes_from(
     hi: f32,
     limit: Limit,
 ) {
-    if orig.is_empty() {
-        return;
-    }
-    let min_start = orig
-        .iter()
-        .map(|(_, s, _)| *s)
-        .fold(f64::INFINITY, f64::min);
-    // The block's far end is its last **tail**, so it stops where a single note
-    // would. Read from the snapshot's starts and the notes' current durations:
-    // a block move never touches a duration.
-    let max_end = orig
-        .iter()
-        .filter_map(|(i, s, _)| notes.get(*i).map(|n| s + n.dur.max(0.0)))
-        .fold(f64::NEG_INFINITY, f64::max);
-    // The near edge is applied last, so a block longer than the whole domain
-    // pins to zero rather than to a negative start — the same choice a single
-    // over-long note makes.
-    let dt = match limit {
-        Some(l) if max_end.is_finite() => dt.min(l - max_end).max(-min_start),
-        _ => dt.max(-min_start),
-    };
-    let (min_p, max_p) = orig
-        .iter()
-        .fold((f32::INFINITY, f32::NEG_INFINITY), |(a, b), (_, _, p)| {
-            (a.min(p.round()), b.max(p.round()))
-        });
-    // A block already wider than the window cannot move rigidly in pitch.
-    let dp = if lo - min_p <= hi - max_p {
-        dp.round().clamp(lo - min_p, hi - max_p)
-    } else {
-        0.0
-    };
-    for (i, s, p) in orig {
-        if let Some(n) = notes.get_mut(*i) {
-            n.start = s + dt;
-            n.pitch = (p.round() + dp).clamp(lo, hi);
-        }
-    }
+    placement::move_block(notes, orig, dt, dp, (lo, hi), limit);
 }
 
 /// Remove a set of notes by index (any order, duplicates tolerated).
@@ -765,26 +676,7 @@ pub fn nudge_velocities_from(notes: &mut [Note], orig: &[(usize, i32)], dv: i32)
     }
 }
 
-/// The selection re-mapped after the note at `removed` left the list: the
-/// removed index drops out, higher indices shift down one.
-pub fn selection_after_removal(selected: &[usize], removed: usize) -> Vec<usize> {
-    selected
-        .iter()
-        .filter(|&&i| i != removed)
-        .map(|&i| if i > removed { i - 1 } else { i })
-        .collect()
-}
-
-/// Toggle a note in or out of the selection (Alt+click: a non-rectangular
-/// selection built one note at a time).
-pub fn toggle_selected(selected: &mut Vec<usize>, index: usize) {
-    match selected.iter().position(|&i| i == index) {
-        Some(p) => {
-            selected.remove(p);
-        }
-        None => selected.push(index),
-    }
-}
+pub use crate::host::placement::{Limit, selection_after_removal, toggle_selected};
 
 /// Copy a selection of notes, normalized so the block's earliest onset is 0 —
 /// the clipboard form [`paste_notes`] re-places (pitches stay absolute).
@@ -816,31 +708,10 @@ pub fn paste_notes(notes: &mut Vec<Note>, clip: &[Note], at: f64) -> Vec<usize> 
         .collect()
 }
 
-/// Quantize note onsets to the `grid` (timeline samples): each start snaps to
-/// the nearest grid line, durations untouched. `indices` picks the notes (the
-/// selection); empty quantizes them all. A zero/negative grid is a no-op.
-/// Returns whether anything moved.
+/// Quantize note onsets to the `grid` (timeline samples) — the shared
+/// [`placement::quantize`], which a lane's clips run the same way.
 pub fn quantize_notes(notes: &mut [Note], indices: &[usize], grid: f64) -> bool {
-    if grid <= 0.0 {
-        return false;
-    }
-    let snap = |s: f64| (s / grid).round() * grid;
-    let mut moved = false;
-    let mut apply = |n: &mut Note| {
-        let s = snap(n.start).max(0.0);
-        moved |= s != n.start;
-        n.start = s;
-    };
-    if indices.is_empty() {
-        notes.iter_mut().for_each(&mut apply);
-    } else {
-        for &i in indices {
-            if let Some(n) = notes.get_mut(i) {
-                apply(n);
-            }
-        }
-    }
-    moved
+    placement::quantize(notes, indices, grid)
 }
 
 #[cfg(test)]
@@ -848,6 +719,23 @@ mod tests {
     use super::*;
     use crate::host::paint::Mesh;
     use crate::host::theme::Theme;
+
+    /// The bounds of an edit inside a domain that ends at `l` — a clip's body.
+    fn limited(l: f64) -> Bounds {
+        Bounds {
+            limit: Some(l),
+            ..Bounds::default()
+        }
+    }
+
+    /// The bounds of an edit with its own floor.
+    fn floor(min_dur: f64, limit: Limit) -> Bounds {
+        Bounds {
+            grid: 0.0,
+            min_dur,
+            limit,
+        }
+    }
 
     fn grid() -> Rect {
         Rect::new(50.0, 10.0, 400.0, 240.0)
@@ -956,13 +844,13 @@ mod tests {
         let yc = pitch_to_y(60.0, 24.0, 96.0, g);
         // Near the start edge.
         let h = note_hit(g, &nv, 0.0, &notes, 24.0, 96.0, x0 + 1.0, yc).unwrap();
-        assert_eq!(h.part, NotePart::Start);
+        assert_eq!(h.part, Part::Start);
         // Near the end edge.
         let h = note_hit(g, &nv, 0.0, &notes, 24.0, 96.0, x1 - 1.0, yc).unwrap();
-        assert_eq!(h.part, NotePart::End);
+        assert_eq!(h.part, Part::End);
         // In the middle → body.
         let h = note_hit(g, &nv, 0.0, &notes, 24.0, 96.0, (x0 + x1) * 0.5, yc).unwrap();
-        assert_eq!(h.part, NotePart::Body);
+        assert_eq!(h.part, Part::Body);
         // Off the note → miss.
         assert!(note_hit(g, &nv, 0.0, &notes, 24.0, 96.0, x0 - 20.0, yc).is_none());
     }
@@ -970,7 +858,7 @@ mod tests {
     #[test]
     fn move_clamps_pitch_and_start() {
         let mut notes = vec![Note::new(100.0, 200.0, 60.0)];
-        move_note(&mut notes, 0, -50.0, 200.7, 24.0, 96.0, None);
+        move_note(&mut notes, 0, -50.0, 200.7, 24.0, 96.0, Bounds::default());
         assert_eq!(notes[0].start, 0.0);
         assert_eq!(notes[0].pitch, 96.0); // clamped to hi, rounded
         assert_eq!(notes[0].dur, 200.0); // duration kept
@@ -981,17 +869,17 @@ mod tests {
         // Unbounded (a roll's own view): the note goes where it is dropped, and
         // the roll's span grows with it.
         let mut notes = vec![Note::new(100.0, 200.0, 60.0)];
-        move_note(&mut notes, 0, 5000.0, 60.0, 24.0, 96.0, None);
+        move_note(&mut notes, 0, 5000.0, 60.0, 24.0, 96.0, Bounds::default());
         assert_eq!(notes[0].start, 5000.0);
         // Bounded (a clip's body): the **tail** stops at the edge, so the last
         // start is limit - dur and the note stays whole and visible.
         let mut notes = vec![Note::new(100.0, 200.0, 60.0)];
-        move_note(&mut notes, 0, 5000.0, 60.0, 24.0, 96.0, Some(1000.0));
+        move_note(&mut notes, 0, 5000.0, 60.0, 24.0, 96.0, limited(1000.0));
         assert_eq!((notes[0].start, notes[0].dur), (800.0, 200.0));
         // A note longer than the clip pins to the near edge: its tail cannot
         // fit, so the edge that can be honoured is zero.
         let mut notes = vec![Note::new(0.0, 400.0, 60.0)];
-        move_note(&mut notes, 0, 300.0, 60.0, 24.0, 96.0, Some(200.0));
+        move_note(&mut notes, 0, 300.0, 60.0, 24.0, 96.0, limited(200.0));
         assert_eq!(notes[0].start, 0.0);
     }
 
@@ -999,11 +887,11 @@ mod tests {
     fn resize_respects_min_dur_from_either_edge() {
         let mut notes = vec![Note::new(100.0, 200.0, 60.0)];
         // Drag the end back past the start → clamped to min_dur.
-        resize_note(&mut notes, 0, NotePart::End, 50.0, 10.0, None);
+        resize_note(&mut notes, 0, Part::End, 50.0, floor(10.0, None));
         assert_eq!(notes[0].dur, 10.0);
         // Drag the start forward past the end → clamped.
         let mut notes = vec![Note::new(100.0, 200.0, 60.0)]; // end = 300
-        resize_note(&mut notes, 0, NotePart::Start, 400.0, 10.0, None);
+        resize_note(&mut notes, 0, Part::Start, 400.0, floor(10.0, None));
         assert_eq!(notes[0].start, 290.0);
         assert_eq!(notes[0].dur, 10.0);
     }
@@ -1012,12 +900,12 @@ mod tests {
     fn a_resize_stops_the_tail_at_the_limit() {
         // The end edge dragged past the clip's own length stops there.
         let mut notes = vec![Note::new(100.0, 200.0, 60.0)];
-        resize_note(&mut notes, 0, NotePart::End, 5000.0, 10.0, Some(1000.0));
+        resize_note(&mut notes, 0, Part::End, 5000.0, floor(10.0, Some(1000.0)));
         assert_eq!(notes[0].dur, 900.0);
         // The start edge holds the end still, so a note already inside stays
         // inside with no far edge of its own.
         let mut notes = vec![Note::new(100.0, 200.0, 60.0)];
-        resize_note(&mut notes, 0, NotePart::Start, 50.0, 10.0, Some(1000.0));
+        resize_note(&mut notes, 0, Part::Start, 50.0, floor(10.0, Some(1000.0)));
         assert_eq!((notes[0].start, notes[0].dur), (50.0, 250.0));
     }
 

@@ -60,6 +60,10 @@ pub mod guidef;
 // that decides between claimants over the same pixels, read by the drawing,
 // the press and the wire alike.
 pub mod layers;
+// One geometry for every box that lives on a time axis: a note in a roll and a
+// clip on a lane are the same object with respect to editing and positioning,
+// and the arithmetic is written here once.
+pub mod placement;
 pub mod play;
 pub mod registry;
 pub mod voices;
@@ -3254,7 +3258,7 @@ mod tests {
             &mut host,
             1,
             21,
-            interact::ClipPlacement {
+            interact::Placement {
                 offset: 40.0,
                 dur: 100.0,
                 start: 0.0,

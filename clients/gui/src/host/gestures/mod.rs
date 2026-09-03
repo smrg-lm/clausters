@@ -235,7 +235,7 @@ enum Drag {
         /// clip itself is not; the cursor mapping and the edge scroll reach the
         /// shared axis through it.
         lane: i32,
-        part: interact::ClipPart,
+        part: interact::Part,
         body_x: f64,
         body_w: f64,
         nav_start: f64,
@@ -244,7 +244,7 @@ enum Drag {
         /// The placement the press found — where the clip sat, how long it was
         /// and which part of its contents it showed, so a clamped edge is
         /// measured against the press rather than against the last step.
-        orig: interact::ClipPlacement,
+        orig: interact::Placement,
         /// What the contents behind the clip allows the edges to do.
         contents: interact::Contents,
         grid: f64,
@@ -290,9 +290,9 @@ impl Gestures {
             Some(Drag::Clip { id, part, .. }) => Grab::Clip(
                 *id,
                 match part {
-                    interact::ClipPart::Start => Some(ClipSide::Start),
-                    interact::ClipPart::End => Some(ClipSide::End),
-                    interact::ClipPart::Body => None,
+                    interact::Part::Start => Some(ClipSide::Start),
+                    interact::Part::End => Some(ClipSide::End),
+                    interact::Part::Body => None,
                 },
             ),
             Some(_) => Grab::Other,

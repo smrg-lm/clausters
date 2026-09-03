@@ -47,9 +47,11 @@ mod tests;
 /// and this is the door onto it.
 pub(crate) use crate::host::graphics::track::HeaderPart;
 
+/// The box geometry a clip shares with a note, re-exported so the gesture
+/// machine names one placement rather than two.
+pub(crate) use crate::host::placement::{Contents, Part, Placement};
 pub(crate) use coords::{
-    ClipPart, ClipPlacement, Contents, Coords, Frame, Hit, clip_drag_placement, local_time_of,
-    plane_of, sample_at, time_of,
+    Coords, Frame, Hit, clip_drag_placement, local_time_of, plane_of, sample_at, time_of,
 };
 pub(crate) use edit::{clip_set, header_set, lane_resize, scroll_set_view};
 pub(crate) use hit::{ClipHit, clip_hit, header_hit, hit, sole_time_axis};

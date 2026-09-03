@@ -326,7 +326,7 @@ pub(super) fn pan_timeline(
 pub(super) struct ClipDrag {
     pub(super) id: i32,
     pub(super) lane: i32,
-    pub(super) part: interact::ClipPart,
+    pub(super) part: interact::Part,
     pub(super) body_x: f64,
     pub(super) body_w: f64,
     pub(super) nav_start: f64,
@@ -334,7 +334,7 @@ pub(super) struct ClipDrag {
     pub(super) press_sample: f64,
     /// The placement the press found: where the clip sat, how long it was, and
     /// which part of its contents it showed.
-    pub(super) orig: interact::ClipPlacement,
+    pub(super) orig: interact::Placement,
     /// What the contents behind it allows — how many frames there are, and
     /// whether the window loops off them.
     pub(super) contents: interact::Contents,
