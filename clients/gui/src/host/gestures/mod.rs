@@ -170,7 +170,17 @@ enum Drag {
         /// or two, and without this that reads as a selection two samples wide:
         /// harmless for a copy and audible the moment it is also a loop.
         origin_x: f64,
+        /// Where the press landed vertically, for the **other** axis of the
+        /// rectangle: the lanes a sweep down a multitrack stack crosses. Kept
+        /// beside `origin_x` rather than inside `value`, because a stack of
+        /// lanes is not a measured value — it is the second axis a lane has,
+        /// and the one a roll spells in semitones.
+        origin_y: f64,
         value: Option<(ValueAxis, f64)>,
+        /// The lanes this sweep can cross, read at the press for the reason a
+        /// clip drag reads them there: they do not move while it is in flight.
+        /// Empty for a view that is not one of a stack.
+        stack: nav::LaneStack,
     },
     /// Dragging one **sample** of a navigable trace vertically — the smallest
     /// destructive edit, and the one that proves the whole route.

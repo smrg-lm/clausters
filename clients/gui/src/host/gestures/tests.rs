@@ -2255,6 +2255,69 @@ fn a_swept_lane_hands_its_clips_to_one_block_move() {
     );
 }
 
+/// **A marquee crosses lanes, because the stack is its second axis.** One hand
+/// dragging down the stack means every clip it passed over, which is the roll's
+/// own gesture one level up: a semitone row and a lane are one structure, and
+/// [`Bands::window`] answers "which rows did this rectangle cross" for both.
+///
+/// The half that is easy to get wrong is the drop: cleared per lane, the
+/// selection would keep only what the lane the sweep ended on had.
+#[test]
+fn a_marquee_dragged_down_the_stack_takes_the_clips_of_every_lane_it_crossed() {
+    let mut host = host_from(
+        r#"{"type":"window","margin":0,"layout":"col","snap":100.0,"children":[
+            {"id":80,"type":"field","label":"one","link":"a","snap":100.0,"children":[
+                {"id":81,"type":"field","offset":400.0,"dur":300.0,"data":[0.0,1.0]}]},
+            {"id":90,"type":"field","label":"two","link":"a","snap":100.0,"children":[
+                {"id":91,"type":"field","offset":400.0,"dur":300.0,"data":[0.0,1.0]}]},
+            {"id":95,"type":"field","label":"three","link":"a","snap":100.0,"children":[
+                {"id":96,"type":"field","offset":400.0,"dur":300.0,"data":[0.0,1.0]}]}]}"#,
+    );
+    host.sync_track_totals();
+    let mut g = Gestures::default();
+    let ctx = GestureCtx::new(1, 800, 300);
+    // Alt is the crate's selection modifier, and an Alt press on a clip's own
+    // body adds that one -- so a sweep starts on the lane's empty strip, as it
+    // does for a hand.
+    let sweeping = GestureCtx {
+        alt: true,
+        ..GestureCtx::new(1, 800, 300)
+    };
+    let held = |host: &Host, id: i32| {
+        host.window_def(1)
+            .and_then(|t| t.find(id))
+            .is_some_and(|w| w.selected)
+    };
+    let (first, second) = (placed_rect(&host, &ctx, 81), placed_rect(&host, &ctx, 91));
+    let third = placed_rect(&host, &ctx, 96);
+    let (from, to) = ((first.x - 20.0) as f64, (first.x + first.w * 0.5) as f64);
+    // Down from the first lane into the second, and no further.
+    let (y0, y1) = (
+        (first.y + first.h * 0.5) as f64,
+        (second.y + second.h * 0.5) as f64,
+    );
+    g.press(&mut host, &sweeping, from, y0);
+    g.drag_to(&mut host, &sweeping, to, y1);
+    g.release(&mut host, &sweeping, to, y1);
+    assert!(
+        held(&host, 81) && held(&host, 91),
+        "both lanes the rectangle crossed",
+    );
+    assert!(!held(&host, 96), "and not the one below it");
+
+    // A sweep that stays inside one lane takes that one's clips only, which is
+    // the case that worked before there was a second axis at all.
+    let y2 = (third.y + third.h * 0.5) as f64;
+    g.press(&mut host, &sweeping, from, y2);
+    g.drag_to(&mut host, &sweeping, to, y2);
+    g.release(&mut host, &sweeping, to, y2);
+    assert!(held(&host, 96), "the lane the sweep was in");
+    assert!(
+        !held(&host, 81) && !held(&host, 91),
+        "and the hand let go of the rest",
+    );
+}
+
 /// **A clip changes lane by the call a note changes row with.** One vertical
 /// axis, one `index_at`: the clip follows the hand across the stack while it is
 /// still held -- a clip drawn on a lane it is not over would be a lie -- and

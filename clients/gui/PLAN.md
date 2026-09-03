@@ -3143,6 +3143,44 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 
 ## Found by use: the running list of fixes
 
+- ✅ **Four views drew one gesture four ways, and one of them drew nothing**
+  *(found 2026-09-03, on the report that a lane's marquee draws no rectangle;
+  fixed the same day)*. Every view that lets a hand sweep a selection had
+  written the drawing itself, and the four had drifted apart: the signal views
+  drew the band with the half-sample rule and with the value restriction the
+  sweep had set, the roll drew a full-height stripe from the raw sample and
+  **threw away the pitch band it had just swept**, the multitrack lane drew
+  nothing at all -- so a marquee over it looked like a gesture the window had
+  ignored -- and the patcher drew its own rectangle in its own alpha.
+
+  One routine now (`graphics::selection`), and the difference between the views
+  is a value rather than a copy: `Vertical` says what the second axis measures,
+  which is the only question a sweep asks that a view answers differently, and
+  it decides whether the sweep is a stripe or a rectangle cut out of one. The
+  edges follow from the same answer instead of a flag -- a full-height band owns
+  its two vertical edges, since its top and bottom are the lane's own, and a
+  restricted one owns all four because every one of them is a value the hand
+  chose.
+
+  **And the rectangle has a second axis on a lane stack too**: a sweep down the
+  lanes takes the clips of every lane it crossed, through `Bands::window` and
+  the stack read at the press -- the same call the roll makes for the semitone
+  rows a rectangle crosses, which is what one vertical axis is for. The drop
+  happens once for all of them; cleared per lane, the selection would keep only
+  what the lane the sweep ended on had.
+
+- ⬜ **The swept time band is the whole group's, so a sweep over two lanes of
+  five paints all five** *(found 2026-09-03, writing the above)*. The time
+  selection belongs to the navigation group -- it is the loop span, and every
+  linked view draws it -- so the stripe correctly appears on every lane, while
+  the *clips* the sweep took are only those of the lanes it crossed. The
+  picture and the hand therefore disagree about the vertical half of the
+  rectangle. Making them agree means the group holding **which lanes** the
+  sweep crossed beside the span it swept, as an index range into the stack;
+  what has to be decided first is whether that range is host-internal (set by
+  the sweep, dropped by any `/gui_set` of the selection) or a property of the
+  axis on the wire, which is a protocol change and reaches both clients.
+
 - ✅ **The auto-fit was taught door by door, and the doors kept disagreeing**
   *(found 2026-09-03, on the report that a view still re-framed itself with
   `autofit` off; fixed the same day)*. `autofit` first landed as a guard inside

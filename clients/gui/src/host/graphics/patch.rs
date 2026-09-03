@@ -801,7 +801,7 @@ pub fn draw(
     label: Option<&str>,
     state: &CanvasState<'_>,
 ) {
-    let (mesh, _m, theme) = d.parts();
+    let (mesh, m, theme) = d.parts();
     let CanvasState {
         live,
         selected,
@@ -928,10 +928,12 @@ pub fn draw(
         mesh.line([x0, y0], [cx, cy], 1.5 * scale, theme.live);
     }
 
-    // The selection marquee in flight, over everything.
+    // The selection marquee in flight, over everything — drawn by the routine
+    // every swept selection is drawn by, because one hand sweeping one
+    // rectangle looks like one thing whatever it is sweeping over. Here both of
+    // its axes are the hand's, so all four edges are.
     if let Some(r) = marquee {
-        mesh.rect(r, with_alpha(theme.selection, 0.15));
-        mesh.border(r, 1.0, theme.selection);
+        super::selection::draw_rect(&mut Draw::new(mesh, m, theme), r);
     }
 }
 

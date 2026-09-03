@@ -222,7 +222,9 @@ impl Gestures {
                 nav_len,
                 anchor,
                 origin_x,
+                origin_y,
                 value,
+                stack,
             } => {
                 // Against the group's **current** window (the press-time one is
                 // the fallback for a view that is in no group): the axis may
@@ -258,13 +260,22 @@ impl Gestures {
                 // **A sweep over a lane is also its marquee**: the shared time
                 // selection is set either way, and the clips inside it become
                 // the hand's — the very rule a roll follows for the notes
-                // inside the same sweep. The vertical half of the rectangle is
-                // the lane itself; a sweep across lanes is what the vertical
-                // axis is for.
-                if matches!(host.widget_kind(def_id, id), Some(WidgetKind::Track { .. }))
-                    && interact::select_clips_in(host, def_id, id, anchor, cur)
-                {
-                    out.push(GestureEffect::Redraw(def_id));
+                // inside the same sweep.
+                //
+                // **And the rectangle has a second axis here too**: the lanes,
+                // which is what a hand dragging down the stack means by it. It
+                // is the roll's own gesture one level up — a semitone row and a
+                // lane are one structure — so it is the same call
+                // ([`Bands::window`], through the stack read at the press), and
+                // a sweep that stays inside one lane catches that one.
+                if matches!(host.widget_kind(def_id, id), Some(WidgetKind::Track { .. })) {
+                    let lanes = match stack.across(origin_y.min(cy), origin_y.max(cy)) {
+                        found if found.is_empty() => vec![id],
+                        found => found,
+                    };
+                    if interact::select_clips_in(host, def_id, &lanes, anchor, cur) {
+                        out.push(GestureEffect::Redraw(def_id));
+                    }
                 }
                 // The span follows the hand; the head does not. A loop set
                 // while the take repeats inside it changes where it wraps and

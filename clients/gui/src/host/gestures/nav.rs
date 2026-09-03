@@ -356,6 +356,21 @@ impl LaneStack {
             .get(self.bands.index_at(cy as f32 - self.top)?)
             .copied()
     }
+
+    /// The lanes a **vertical span** touches, top to bottom — what a marquee
+    /// sweeping down the stack catches.
+    ///
+    /// [`Bands::window`] is the same call a roll makes for the semitone rows a
+    /// rectangle crosses, which is the point of one vertical axis: a lane and a
+    /// row are one structure, so sweeping across either is one piece of code.
+    /// A span that touches nothing (a stack that was never read, a sweep above
+    /// the first lane) catches nothing.
+    pub(super) fn across(&self, y0: f64, y1: f64) -> Vec<i32> {
+        let range = self
+            .bands
+            .window(y0 as f32 - self.top, y1 as f32 - self.top);
+        self.ids.get(range).map(<[i32]>::to_vec).unwrap_or_default()
+    }
 }
 
 /// The stack `lane_id` belongs to: every `track` in the window on the same

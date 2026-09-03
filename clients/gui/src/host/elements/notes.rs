@@ -936,20 +936,21 @@ impl Notes {
         let (mesh, m, theme) = d.parts();
         let to_x =
             |s: f64| (grid.x as f64 + (s - nav.start) / nav.len.max(1.0) * grid.w as f64) as f32;
-        if let Some((start, len)) = time.sel {
-            let x0 = to_x(start).clamp(grid.x, grid.x + grid.w);
-            let x1 = to_x(start + len).clamp(grid.x, grid.x + grid.w);
-            if x1 > x0 {
-                let band = crate::host::theme::with_alpha(theme.selection, 0.18);
-                let edge = crate::host::theme::with_alpha(theme.selection, 0.75);
-                mesh.rect(Rect::new(x0, grid.y, x1 - x0, grid.h), band);
-                mesh.rect(Rect::new(x0, grid.y, m.divider_w, grid.h), edge);
-                mesh.rect(
-                    Rect::new(x1 - m.divider_w, grid.y, m.divider_w, grid.h),
-                    edge,
-                );
-            }
-        }
+        // The sweep, through the one routine every view that lets a hand draw
+        // one draws it with: the same half-sample edges as a waveform's, and
+        // **the pitch band this roll's own marquee swept** — which it used to
+        // throw away, drawing a full-height stripe over a selection that held a
+        // few semitones of it.
+        let (lo, hi) = self.pitch_window();
+        crate::host::graphics::selection::draw_span(
+            &mut Draw::new(mesh, m, theme),
+            grid,
+            nav,
+            time.sel,
+            1,
+            self.editor.value_range(),
+            crate::host::graphics::selection::Vertical::Pitch { lo, hi },
+        );
         if let Some(pos) = time.head
             && pos >= nav.start
             && pos <= nav.start + nav.len

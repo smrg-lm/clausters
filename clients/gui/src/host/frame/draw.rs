@@ -9,6 +9,7 @@
 //! tree.
 
 use super::*;
+use crate::host::graphics::selection;
 
 /// Draws the time-ruler strip under `body` for the visible `nav` window
 /// (aligned with the body, so its ticks sit under the samples they label even
@@ -93,50 +94,20 @@ pub(super) enum Vertical {
     Frequency(f64, FreqScale, f64),
 }
 
-/// The vertical extents a selection band covers, as `(y, height)` per lane:
-/// the whole body for a selection restricted on one axis, and the value range's
-/// own slice of each lane for one restricted on two.
+/// Which of [`selection::Vertical`]'s answers this view gives — the one thing a
+/// sweep asks that a view answers differently.
 ///
-/// The range is mapped through the same pair the picture was drawn with — the
-/// element's domain and the view's vertical window — so the band's edges land
-/// on the values the ruler beside it labels. A range that survives a zoom out
-/// of the visible window is clipped to the lane rather than dropped: the
-/// selection still holds those values, they are simply off screen.
-fn value_bands(
-    editor: &EditorProps,
-    body: Rect,
-    lanes: usize,
-    vertical: Vertical,
-) -> Vec<(f32, f32)> {
-    let whole = vec![(body.y, body.h)];
-    let Vertical::Value(domain) = vertical else {
-        return whole; // a frequency axis' second axis is bins, not a value
-    };
-    let Some((min, max)) = editor.value_range() else {
-        return whole;
-    };
-    let lanes = lanes.max(1);
-    let (y0, y_len) = editor.y_view();
-    let mut out = Vec::with_capacity(lanes);
-    for ch in 0..lanes {
-        let lane = lane_rect(body, lanes, ch);
-        // Value -> display -> the lane's own height, the inverse of the read
-        // the marquee made.
-        let y_of = |v: f64| {
-            let d = crate::waveform::value_to_display(v as f32, domain.0, domain.1);
-            let rel = 1.0 - ((d - y0) / y_len.max(f64::MIN_POSITIVE));
-            lane.y + (rel as f32) * lane.h
-        };
-        let (top, bottom) = (y_of(max), y_of(min));
-        let (top, bottom) = (
-            top.clamp(lane.y, lane.y + lane.h),
-            bottom.clamp(lane.y, lane.y + lane.h),
-        );
-        if bottom > top {
-            out.push((top, bottom - top));
-        }
+/// A spectrogram gives the same answer as a lane of clips and for a different
+/// reason: the one measures bins and the other measures nothing, and neither
+/// leaves a value for a selection to be restricted on.
+fn sweep_axis(editor: &EditorProps, vertical: Vertical) -> selection::Vertical {
+    match vertical {
+        Vertical::Value(domain) => selection::Vertical::Value {
+            domain,
+            window: editor.y_view(),
+        },
+        Vertical::Frequency(..) => selection::Vertical::Whole,
     }
-    out
 }
 
 /// Draws the selection overlay and playhead of one timeline view — both read
@@ -159,41 +130,23 @@ pub(super) fn draw_editor_overlay(
     let m = inputs.metrics;
     let nav = &chrome.nav;
     mesh.border(body, m.divider_w, theme.view_frame);
-    // Selection: a translucent band with hard edges, clipped to the body.
+    // Selection: a translucent band with hard edges, clipped to the body — the
+    // half-sample rule and the edges are the shared routine's, not this pass'.
     //
-    // **The band runs from halfway to halfway.** `(start, len)` is a count of
-    // samples — indices `start .. start + len` — and each of them owns the half
-    // sample-width on either side of it, so the edges fall midway between the
-    // last selected sample and the first one left out. Drawn edge-to-edge
-    // instead, the band would end *on* the last selected sample and read as
-    // excluding it, which is exactly the ambiguity a sample-level zoom exposes.
-    if let Some((start, len)) = chrome.selection() {
-        let x0 = sample_to_x(start - 0.5, nav, body).clamp(body.x, body.x + body.w);
-        let x1 = sample_to_x(start + len - 0.5, nav, body).clamp(body.x, body.x + body.w);
-        if x1 > x0 {
-            // **The band answers for both axes.** Restricted in value, it is
-            // the rectangle the hand drew and not a full-height wash, or the
-            // picture would say the whole signal is selected where the
-            // selection holds a band of it. The restriction is drawn in *every*
-            // lane, for the reason a value zoom is centred in every lane: one
-            // vertical window serves them all and a value says the same thing
-            // in each, so a range of values is a range in each of them.
-            for lane in value_bands(&item.editor, body, lanes, vertical) {
-                mesh.rect(
-                    Rect::new(x0, lane.0, x1 - x0, lane.1),
-                    with_alpha(theme.selection, 0.18),
-                );
-                mesh.rect(
-                    Rect::new(x0, lane.0, m.divider_w, lane.1),
-                    with_alpha(theme.selection, 0.75),
-                );
-                mesh.rect(
-                    Rect::new(x1 - m.divider_w, lane.0, m.divider_w, lane.1),
-                    with_alpha(theme.selection, 0.75),
-                );
-            }
-        }
-    }
+    // **The band answers for both axes**, through the one routine every view
+    // that lets a hand sweep one draws it with ([`graphics::selection`]):
+    // restricted in value it is the rectangle the hand drew and not a
+    // full-height wash, or the picture would say the whole signal is selected
+    // where the selection holds a band of it.
+    selection::draw_span(
+        &mut Draw::new(mesh, m, theme),
+        body,
+        nav,
+        chrome.selection(),
+        lanes,
+        item.editor.value_range(),
+        sweep_axis(&item.editor, vertical),
+    );
     // **The edit the hand is making, drawn over the picture and marked as
     // pending.** The samples under it has not changed — the host owns no data
     // — so this is the one thing on screen that is not what the document says.
@@ -645,6 +598,21 @@ pub(super) fn draw_static_meshes(
                     &item.editor,
                 );
             }
+            // **The sweep, which a lane drew nothing of.** The span was set,
+            // the clips inside it were taken into the hand, and the one thing
+            // missing was the picture of it — so a marquee over a lane looked
+            // like a gesture the window had ignored. Through the same routine
+            // the signal views draw theirs with, into the overlay for the
+            // reason the playhead is: a lane's clips are drawn after it.
+            selection::draw_span(
+                &mut Draw::new(over, m, th),
+                body,
+                &nav,
+                chrome.selection(),
+                1,
+                None,
+                selection::Vertical::Whole,
+            );
             // The playhead, over the clips: the engine clock as a timeline
             // position (`playhead_at` anchors timeline sample 0 to a clock
             // value), so it sweeps the lane as the composition plays.
@@ -791,34 +759,26 @@ mod tests {
     use super::*;
     use crate::waveform::DEFAULT_DOMAIN;
 
-    /// **A selection restricted in value is drawn as the rectangle it is**, in
-    /// every lane, and an unrestricted one is the full-height band it always
-    /// was. The edges land where the geometry puts those values, which is the
-    /// property that lets the marquee and the picture agree: read a value out
-    /// of the band's own y and it is the value the sweep put in.
+    /// **The view's answer to what its second axis is**, which is the whole of
+    /// what a sweep asks it. The drawing that answer feeds is
+    /// [`selection`]'s and is tested there; what is tested here is that this
+    /// pass hands it the pair the picture was drawn with.
     #[test]
-    fn a_restricted_selection_is_a_band_of_its_own_values() {
-        let body = Rect::new(0.0, 0.0, 200.0, 100.0);
+    fn a_view_says_what_its_second_axis_measures() {
         let mut editor = EditorProps::body();
-        // Unrestricted: one band, the whole body, however many lanes.
+        editor.y_start = 0.25;
+        editor.y_len = 0.5;
         assert_eq!(
-            value_bands(&editor, body, 2, Vertical::Value(DEFAULT_DOMAIN)),
-            vec![(body.y, body.h)]
+            sweep_axis(&editor, Vertical::Value(DEFAULT_DOMAIN)),
+            selection::Vertical::Value {
+                domain: DEFAULT_DOMAIN,
+                window: (0.25, 0.5),
+            },
         );
-        // The upper half of full scale, over two stacked lanes: a band in each,
-        // each inside its own lane and none of them the whole of it.
-        (editor.sel_min, editor.sel_max) = (0.0, 1.0);
-        let bands = value_bands(&editor, body, 2, Vertical::Value(DEFAULT_DOMAIN));
-        assert_eq!(bands.len(), 2, "a value says the same thing in every lane");
-        for (i, (y, h)) in bands.iter().enumerate() {
-            let lane = lane_rect(body, 2, i);
-            assert!(*y >= lane.y - 0.01 && y + h <= lane.y + lane.h + 0.01);
-            assert!(*h < lane.h * 0.75, "the upper half is not the whole lane");
-        }
-        // A frequency axis is not a value axis: its second axis is bins, so the
-        // band stays full height whatever a value range says.
+        // A frequency axis is not a value axis: its second axis is bins, so
+        // nothing restricts a sweep over it.
         let freq = Vertical::Frequency(24_000.0, FreqScale::Linear, 20.0);
-        assert_eq!(value_bands(&editor, body, 1, freq), vec![(body.y, body.h)]);
+        assert_eq!(sweep_axis(&editor, freq), selection::Vertical::Whole);
     }
 
     /// The vertical strip follows the domain the geometry was built through.

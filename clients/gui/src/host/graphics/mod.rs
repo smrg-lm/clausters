@@ -33,6 +33,7 @@ pub mod piano;
 pub mod pianoroll;
 #[cfg(feature = "notation")]
 pub mod score;
+pub mod selection;
 pub mod shape;
 pub mod signal;
 pub mod textedit;

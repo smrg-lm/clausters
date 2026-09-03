@@ -263,6 +263,13 @@ impl Gestures {
                 );
                 let anchor_v = value.map(|v| v.value_at(cy));
                 set_selection(host, out, def_id, id, anchor, anchor, None);
+                // The stack this sweep can cross, where it is a lane of one:
+                // read at the press, like a clip drag's, and not read at all
+                // for a view that stands on its own.
+                let stack = match host.widget_kind(def_id, id) {
+                    Some(WidgetKind::Track { .. }) => super::nav::lane_stack(host, ctx, id),
+                    _ => super::nav::LaneStack::default(),
+                };
                 self.drag = Some(Drag::Select {
                     id,
                     body: axis.body,
@@ -270,7 +277,9 @@ impl Gestures {
                     nav_len: axis.nav.len,
                     anchor,
                     origin_x: cx,
+                    origin_y: cy,
                     value: value.zip(anchor_v),
+                    stack,
                 });
                 out.push(GestureEffect::Redraw(def_id));
                 true

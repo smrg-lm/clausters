@@ -150,32 +150,38 @@ pub(crate) fn set_clip_selected(host: &mut Host, def_id: i32, id: i32, on: bool)
     }
 }
 
-/// **The marquee**: selects the clips of `lane_id` whose span meets the time
-/// span `[t0, t1)`, dropping whatever was held elsewhere. Returns whether the
-/// selection changed.
+/// **The marquee**: selects the clips of every lane in `lanes` whose span meets
+/// the time span `[t0, t1)`, dropping whatever was held elsewhere. Returns
+/// whether the selection changed.
 ///
 /// The rule is the roll's, one level up: a sweep sets the shared time selection
 /// and the boxes inside it become the selected set — `placement::in_rect` over
-/// the lane's clips, the same call `notes_in_rect` is. The vertical half of the
-/// rectangle is the lane itself for now; a sweep across lanes is what the
-/// vertical axis is for.
+/// each lane's clips, the same call `notes_in_rect` is.
+///
+/// **Several lanes, one hand.** The rectangle's vertical half is the stack, so
+/// what it catches is every clip of every lane it crossed, and the drop happens
+/// **once** for all of them: cleared per lane, each lane would keep only what
+/// the last one selected, which is the whole selection collapsing onto the lane
+/// the sweep happened to end on.
 pub(crate) fn select_clips_in(
     host: &mut Host,
     def_id: i32,
-    lane_id: i32,
+    lanes: &[i32],
     t0: f64,
     t1: f64,
 ) -> bool {
     let mut changed = clear_clip_selection(host, def_id);
-    let Some(lane) = host
-        .window_def_mut(def_id)
-        .and_then(|t| t.find_mut(lane_id))
-    else {
-        return changed;
-    };
-    let mut clips = crate::host::graphics::track::LaneClips::of(lane, 0.0);
-    for i in crate::host::placement::in_rect(&clips, t0, t1, 0.0, 0.0) {
-        changed |= clips.set_selected(i, true);
+    for lane_id in lanes {
+        let Some(lane) = host
+            .window_def_mut(def_id)
+            .and_then(|t| t.find_mut(*lane_id))
+        else {
+            continue;
+        };
+        let mut clips = crate::host::graphics::track::LaneClips::of(lane, 0.0);
+        for i in crate::host::placement::in_rect(&clips, t0, t1, 0.0, 0.0) {
+            changed |= clips.set_selected(i, true);
+        }
     }
     changed
 }
